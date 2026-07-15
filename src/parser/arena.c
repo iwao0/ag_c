@@ -19,9 +19,6 @@ struct arena_context_t {
   size_t peak_bytes;
 };
 
-static arena_context_t default_arena_context;
-static arena_context_t *active_arena_context = &default_arena_context;
-
 static char *arena_block_data(arena_block_t *block) {
   return (char *)(block + 1);
 }
@@ -29,10 +26,6 @@ static char *arena_block_data(arena_block_t *block) {
 // 関数ごとに arena をリセットするため、現在量ではなく「最大の 1 関数」を表すピークを返す。
 size_t arena_total_reserved_bytes_in(const arena_context_t *context) {
   return context ? context->peak_bytes : 0;
-}
-
-size_t arena_total_reserved_bytes(void) {
-  return arena_total_reserved_bytes_in(active_arena_context);
 }
 
 size_t arena_current_reserved_bytes_in(const arena_context_t *context) {
@@ -75,20 +68,12 @@ void *arena_alloc_in(arena_context_t *context, size_t size) {
   return ptr;
 }
 
-void *arena_alloc(size_t size) {
-  return arena_alloc_in(active_arena_context, size);
-}
-
 arena_checkpoint_t arena_checkpoint_in(arena_context_t *context) {
   return (arena_checkpoint_t){
       .context = context,
       .block = context ? context->current : NULL,
       .used = context && context->current ? context->current->used : 0,
   };
-}
-
-arena_checkpoint_t arena_checkpoint(void) {
-  return arena_checkpoint_in(active_arena_context);
 }
 
 void arena_rollback_in(
@@ -112,13 +97,6 @@ void arena_rollback_in(
   context->current = saved;
 }
 
-void arena_rollback(arena_checkpoint_t checkpoint) {
-  arena_context_t *context = checkpoint.context
-                                 ? checkpoint.context
-                                 : active_arena_context;
-  arena_rollback_in(context, checkpoint);
-}
-
 void arena_free_all_in(arena_context_t *context) {
   if (!context) return;
   arena_block_t *block = context->head;
@@ -132,28 +110,12 @@ void arena_free_all_in(arena_context_t *context) {
   context->reserved_bytes = 0;
 }
 
-void arena_free_all(void) {
-  arena_free_all_in(active_arena_context);
-}
-
 arena_context_t *arena_context_create(void) {
   return calloc(1, sizeof(arena_context_t));
 }
 
-arena_context_t *arena_context_activate(arena_context_t *context) {
-  arena_context_t *previous = active_arena_context;
-  active_arena_context = context ? context : &default_arena_context;
-  return previous;
-}
-
-arena_context_t *arena_context_active(void) {
-  return active_arena_context;
-}
-
 void arena_context_destroy(arena_context_t *context) {
-  if (!context || context == &default_arena_context) return;
+  if (!context) return;
   arena_free_all_in(context);
-  if (active_arena_context == context)
-    active_arena_context = &default_arena_context;
   free(context);
 }

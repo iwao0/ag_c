@@ -375,7 +375,8 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !declarator || !application) return;
   *application = (psx_runtime_declarator_application_t){0};
-  if (!ps_declarator_shape_copy(
+  if (!ps_declarator_shape_copy_in(
+          ps_ctx_arena(semantic_context),
           &application->shape, &declarator->declarator_shape)) {
     ps_diag_ctx(declarator->diagnostic_token, "declarator-resolution",
                 "invalid local declarator shape");
@@ -526,7 +527,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
   ps_decl_leave_scope_in(local_registry);
   ps_ctx_leave_block_scope_in(semantic_context);
   psx_set_resolved_function_parameter_types(
-      function_op, resolved_types, resolved_count,
+      ps_ctx_arena(semantic_context), function_op,
+      resolved_types, resolved_count,
       parameters->is_variadic);
   free(resolved_types);
 }

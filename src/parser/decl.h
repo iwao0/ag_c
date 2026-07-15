@@ -4,6 +4,7 @@
 /* decl.h は AST node 型 (node_t) と シンボルテーブル (global_var_t) の
  * 両方を使う。Phase C1-2: 両ヘッダを明示的に include する。 */
 #include "ast.h"
+#include "arena.h"
 #include "core.h"
 #include "lvar_public.h"
 #include "symtab.h"
@@ -56,7 +57,8 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
     psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations,
     lvar_t *var);
-node_t *ps_decl_bind_initializer_for_var(
+node_t *ps_decl_bind_initializer_for_var_in(
+    arena_context_t *arena_context,
     lvar_t *var, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok);
 

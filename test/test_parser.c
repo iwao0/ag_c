@@ -83,6 +83,181 @@
 static node_t **parsed_code;
 static ag_compilation_session_t *test_suite_session;
 
+static arena_context_t *test_arena_context(void) {
+  return ag_compilation_session_arena_context(test_suite_session);
+}
+
+/* Test fixtures use the suite session explicitly without repeating it at
+ * every constructor call. Production code is forbidden from these aliases. */
+#define ps_type_new(...) \
+  ps_type_new_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_integer(...) \
+  ps_type_new_integer_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_enum(...) \
+  ps_type_new_enum_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_float(...) \
+  ps_type_new_float_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_pointer(...) \
+  ps_type_new_pointer_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_function(...) \
+  ps_type_new_function_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_array(...) \
+  ps_type_new_array_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_clone(...) \
+  ps_type_clone_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_tag(...) \
+  ps_type_new_tag_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_set_function_params(...) \
+  ps_type_set_function_params_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_wrap_array_dims(...) \
+  ps_type_wrap_array_dims_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_apply_declarator_shape(...) \
+  ps_type_apply_declarator_shape_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_adjust_parameter_type(...) \
+  ps_type_adjust_parameter_type_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_usual_arithmetic_result(...) \
+  ps_type_usual_arithmetic_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_binary_result(...) \
+  ps_type_binary_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_conditional_result(...) \
+  ps_type_conditional_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_address_result(...) \
+  ps_type_address_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_decay_array(...) \
+  ps_type_decay_array_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_subscript_result(...) \
+  ps_type_subscript_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_generic_control(...) \
+  ps_type_generic_control_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_generic_select_index(...) \
+  ps_type_generic_select_index_in(test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_append_pointer(...) \
+  ps_declarator_shape_append_pointer_in(test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_append_array(...) \
+  ps_declarator_shape_append_array_in(test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_append_array_ex(...) \
+  ps_declarator_shape_append_array_ex_in(test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_append_vla_array(...) \
+  ps_declarator_shape_append_vla_array_in( \
+      test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_append_function(...) \
+  ps_declarator_shape_append_function_in(test_arena_context(), __VA_ARGS__)
+#define ps_declarator_op_set_function_params(...) \
+  ps_declarator_op_set_function_params_in( \
+      test_arena_context(), __VA_ARGS__)
+#define ps_declarator_shape_copy(...) \
+  ps_declarator_shape_copy_in(test_arena_context(), __VA_ARGS__)
+
+#define ps_node_new_binary(...) \
+  ps_node_new_binary_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_row_decay_pointer_arith_type(...) \
+  ps_node_row_decay_pointer_arith_type_in( \
+      test_arena_context(), __VA_ARGS__)
+#define psx_node_new_raw_binary(...) \
+  psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_shift_trunc_extend(...) \
+  ps_node_new_shift_trunc_extend_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_num(...) \
+  ps_node_new_num_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar(...) \
+  psx_node_new_lvar_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_typed(...) \
+  ps_node_new_lvar_typed_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_typed_at_for(...) \
+  ps_node_new_lvar_typed_at_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_type_at_for(...) \
+  ps_node_new_lvar_type_at_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar_scalar_slot_at(...) \
+  psx_node_new_lvar_scalar_slot_at_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar_fp_slot_at(...) \
+  psx_node_new_lvar_fp_slot_at_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_fp_slot_for(...) \
+  ps_node_new_lvar_fp_slot_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_param_placeholder(...) \
+  ps_node_new_param_placeholder_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_unsigned_lvar_typed(...) \
+  ps_node_new_unsigned_lvar_typed_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar_for(...) \
+  psx_node_new_lvar_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar_object_ref_for(...) \
+  psx_node_new_lvar_object_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_expr_ref_for(...) \
+  ps_node_new_lvar_expr_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_lvar_identifier_ref_for(...) \
+  psx_node_new_lvar_identifier_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_vla_decay_ref_for(...) \
+  psx_node_new_vla_decay_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_param_lvar_for(...) \
+  ps_node_new_param_lvar_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_array_elem_lvar_for(...) \
+  ps_node_new_array_elem_lvar_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_fp_to_int_cast(...) \
+  ps_node_new_fp_to_int_cast_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_int_to_fp_cast(...) \
+  ps_node_new_int_to_fp_cast_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_integer_cast_result(...) \
+  ps_node_new_integer_cast_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_integer_cast_result_ex(...) \
+  ps_node_new_integer_cast_result_ex_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_i64_to_i32_trunc_cast(...) \
+  ps_node_new_i64_to_i32_trunc_cast_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_pointer_cast_result(...) \
+  ps_node_new_pointer_cast_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_aggregate_cast_result(...) \
+  ps_node_new_aggregate_cast_result_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_void_cast_result(...) \
+  ps_node_new_void_cast_result_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_source_cast(...) \
+  psx_node_new_source_cast_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_gvar_array_addr_for(...) \
+  ps_node_new_gvar_array_addr_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_static_local_array_addr_for(...) \
+  psx_node_new_static_local_array_addr_for_in( \
+      test_arena_context(), __VA_ARGS__)
+#define ps_node_new_lvar_array_addr_for(...) \
+  ps_node_new_lvar_array_addr_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_addr_value_for(...) \
+  ps_node_new_addr_value_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_explicit_addr_value_for(...) \
+  ps_node_new_explicit_addr_value_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_unary_addr_for(...) \
+  ps_node_new_unary_addr_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_tag_member_deref_for(...) \
+  ps_node_new_tag_member_deref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_unary_deref_for(...) \
+  ps_node_new_unary_deref_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_unary_deref_syntax_for(...) \
+  psx_node_new_unary_deref_syntax_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_subscript_syntax_for(...) \
+  psx_node_new_subscript_syntax_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_subscript_deref_for(...) \
+  ps_node_new_subscript_deref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_tag_member_lvar_ref_for(...) \
+  ps_node_new_tag_member_lvar_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_gvar_for(...) \
+  ps_node_new_gvar_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_gvar_array_base_for(...) \
+  psx_node_new_gvar_array_base_for_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_static_local_gvar_for(...) \
+  psx_node_new_static_local_gvar_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_clone_lvalue_with_lhs(...) \
+  ps_node_clone_lvalue_with_lhs_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_vla_alloc(...) \
+  ps_node_new_vla_alloc_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_assign(...) \
+  ps_node_new_assign_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_raw_assign(...) \
+  psx_node_new_raw_assign_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_raw_decl_initializer(...) \
+  psx_node_new_raw_decl_initializer_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_compound_literal(...) \
+  psx_node_new_compound_literal_in(test_arena_context(), __VA_ARGS__)
+#define psx_node_new_raw_decl_initializer_list(...) \
+  psx_node_new_raw_decl_initializer_list_in( \
+      test_arena_context(), __VA_ARGS__)
+#define psx_node_new_initializer_list(...) \
+  psx_node_new_initializer_list_in(test_arena_context(), __VA_ARGS__)
+
 static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
 }
@@ -3267,6 +3442,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &returned_funcptr_shape));
   const psx_type_t *returned_callable_params[] = {integer};
   psx_set_resolved_function_parameter_types(
+      test_arena_context(),
       &returned_funcptr_shape.ops[returned_funcptr_shape.count - 1],
       returned_callable_params, 1, 0);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
@@ -9947,6 +10123,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *declarator_func_params[] = {
       ps_type_new_integer(TK_INT, 4, 0)};
   psx_set_resolved_function_parameter_types(
+      test_arena_context(),
       &array_of_funcptr_shape.ops[array_of_funcptr_shape.count - 1],
       declarator_func_params, 1, 0);
   psx_type_t *array_of_funcptr_type = ps_type_apply_declarator_shape(
@@ -15518,17 +15695,18 @@ static void test_recursive_declarator_capacity_boundary() {
 
 static void test_arena_checkpoint_rollback() {
   printf("test_arena_checkpoint_rollback...\n");
-  arena_free_all();
-  int *retained = arena_alloc(sizeof(*retained));
+  arena_context_t *arena_context = test_arena_context();
+  arena_free_all_in(arena_context);
+  int *retained = arena_alloc_in(arena_context, sizeof(*retained));
   *retained = 41;
-  arena_checkpoint_t checkpoint = arena_checkpoint();
-  int *discarded = arena_alloc(sizeof(*discarded));
+  arena_checkpoint_t checkpoint = arena_checkpoint_in(arena_context);
+  int *discarded = arena_alloc_in(arena_context, sizeof(*discarded));
   *discarded = 99;
-  arena_rollback(checkpoint);
-  int *reused = arena_alloc(sizeof(*reused));
+  arena_rollback_in(arena_context, checkpoint);
+  int *reused = arena_alloc_in(arena_context, sizeof(*reused));
   ASSERT_TRUE(reused == discarded);
   ASSERT_EQ(41, *retained);
-  arena_free_all();
+  arena_free_all_in(arena_context);
 }
 
 static void test_semantic_context_isolation() {
@@ -16440,7 +16618,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
   ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
-  arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
   ag_codegen_emit_context_t *previous_codegen = cg_context_active();
@@ -16454,7 +16631,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(4);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
@@ -16491,7 +16667,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(8);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
-  ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
@@ -16514,7 +16689,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
-  ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
@@ -16537,7 +16711,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
@@ -16556,7 +16729,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
-  ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(cg_context_active() == previous_codegen);

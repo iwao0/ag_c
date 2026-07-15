@@ -31,7 +31,7 @@ node_t *lower_complex_part_expression(
   if (!operand_type || operand_type->kind == PSX_TYPE_COMPLEX) return node;
   if (node->kind == ND_CREAL) return node->lhs;
   if (operand_type->kind == PSX_TYPE_FLOAT) return node;
-  return ps_node_new_integer_cast_result(
-      ps_node_new_num_in(ps_lowering_arena(lowering_context), 0),
-      node->type);
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
+  return ps_node_new_integer_cast_result_in(
+      arena_context, ps_node_new_num_in(arena_context, 0), node->type);
 }

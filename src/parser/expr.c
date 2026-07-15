@@ -192,8 +192,8 @@ static node_t *parse_compound_literal_from_type(
       ctx->semantic_context, ctx->global_registry, ctx->local_registry,
       ctx->runtime_context,
       ctx->local_declarations);
-  node_t *syntax = psx_node_new_compound_literal(
-      type_name, initializer, initializer_tok,
+  node_t *syntax = psx_node_new_compound_literal_in(
+      ctx->arena_context, type_name, initializer, initializer_tok,
       0, current_funcname == NULL);
   return apply_postfix(syntax, ctx);
 }
@@ -385,7 +385,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       token_t *assign_tok = curtok();
       set_curtok(curtok()->next);
       node_t *rhs = assign_ctx(ctx);
-      node_t *assign_node = psx_node_new_raw_assign(assign_target, rhs);
+      node_t *assign_node = psx_node_new_raw_assign_in(
+          ctx->arena_context, assign_target, rhs);
       assign_node->is_source_assignment = 1;
       assign_node->tok = assign_tok;
       node = (node_t *)assign_node;
@@ -406,8 +407,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
     case TK_OREQ: {
       token_t *op_tok = curtok();
       set_curtok(curtok()->next);
-      node_t *compound = psx_node_new_raw_assign(
-          assign_target, assign_ctx(ctx));
+      node_t *compound = psx_node_new_raw_assign_in(
+          ctx->arena_context, assign_target, assign_ctx(ctx));
       compound->is_source_compound_assignment = 1;
       compound->source_op = op_tok->kind;
       compound->tok = op_tok;
@@ -592,7 +593,8 @@ static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
     set_curtok(parsed_type.after_rparen);
     node_t *operand = cast_ctx(ctx);
     node_t *source_cast =
-        psx_node_new_source_cast(operand, parsed_type.type_name);
+        psx_node_new_source_cast_in(
+            ctx->arena_context, operand, parsed_type.type_name);
     source_cast->tok = cast_tok;
     return apply_postfix(source_cast, ctx);
   }
@@ -690,8 +692,10 @@ static node_t *build_pre_inc_dec_node(
   return node;
 }
 
-static node_t *build_unary_deref_syntax(node_t *operand, token_t *op_tok) {
-  node_t *syntax = psx_node_new_unary_deref_syntax_for(operand);
+static node_t *build_unary_deref_syntax(
+    node_t *operand, token_t *op_tok, expr_parse_ctx_t *ctx) {
+  node_t *syntax = psx_node_new_unary_deref_syntax_for_in(
+      ctx->arena_context, operand);
   syntax->tok = op_tok;
   return syntax;
 }
@@ -724,14 +728,15 @@ static node_t *build_unary_addr_node(
     /* `&arr` : 配列は既に decay 済みの ND_ADDR で表現されアドレス値は同じ。ただし
      * 結果型は `int(*)[N]` (ポインタ, 8B) なので、type_size=8 のコピーを返して
      * sizeof(&arr) が要素サイズでなく 8 を返すようにする (共有ノードは変更しない)。 */
-    return ps_node_new_explicit_addr_value_for(operand);
+    return ps_node_new_explicit_addr_value_for_in(
+        ctx->arena_context, operand);
   }
   /* `&f` (f は関数): 関数のアドレスは関数ポインタそのもの (= `f`)。ND_FUNCREF を
    * そのまま返す (ND_ADDR でラップすると IR builder が扱えず失敗する)。 */
   if (operand && operand->kind == ND_FUNCREF) {
     return operand;
   }
-  return ps_node_new_unary_addr_for(operand);
+  return ps_node_new_unary_addr_for_in(ctx->arena_context, operand);
 }
 
 static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
@@ -801,7 +806,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
   if (k == TK_MUL) {
     token_t *op_tok = curtok();
     set_curtok(curtok()->next);
-    return build_unary_deref_syntax(cast_ctx(ctx), op_tok);
+    return build_unary_deref_syntax(cast_ctx(ctx), op_tok, ctx);
   }
   if (k == TK_AMP) {
     set_curtok(curtok()->next);
@@ -814,8 +819,10 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
 
 // `left[right]` の構文をそのまま保持する。operand の判定と正規化は semantic pass が行う。
 static node_t *build_subscript_syntax(node_t *node, node_t *idx,
-                                      token_t *op_tok) {
-  node_t *syntax = psx_node_new_subscript_syntax_for(node, idx);
+                                      token_t *op_tok,
+                                      expr_parse_ctx_t *ctx) {
+  node_t *syntax = psx_node_new_subscript_syntax_for_in(
+      ctx->arena_context, node, idx);
   syntax->tok = op_tok;
   return syntax;
 }
@@ -848,7 +855,7 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
       set_curtok(curtok()->next);
       node_t *idx = expr_internal_ctx(ctx);
       tk_expect(']');
-      node = build_subscript_syntax(node, idx, op_tok);
+      node = build_subscript_syntax(node, idx, op_tok, ctx);
       continue;
     }
     if (k == TK_LPAREN) {

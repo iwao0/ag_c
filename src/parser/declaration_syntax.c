@@ -270,7 +270,9 @@ static int append_declarator_pointer(
   declaration_declarator_parse_context_t *parse_context = context;
   psx_parsed_declarator_t *declarator =
       parse_context ? parse_context->declarator : NULL;
-  return declarator && ps_declarator_shape_append_pointer(
+  return declarator && ps_declarator_shape_append_pointer_in(
+                           ps_parser_runtime_arena(
+                               parse_context->runtime_context),
                            &declarator->declarator_shape,
                            is_const, is_volatile);
 }
@@ -321,7 +323,8 @@ static int consume_declarator_suffix(
     }
     tk_expect(']');
     int op_index = declarator->declarator_shape.count;
-    if (!ps_declarator_shape_append_array_ex(
+    if (!ps_declarator_shape_append_array_ex_in(
+            ps_parser_runtime_arena(parse_context->runtime_context),
             &declarator->declarator_shape, 0, !has_size)) {
       diagnose_declarator_too_complex(context, current_token());
     }
@@ -344,7 +347,8 @@ static int consume_declarator_suffix(
   }
   if (current_token()->kind != TK_LPAREN) return 0;
   int op_index = declarator->declarator_shape.count;
-  if (!ps_declarator_shape_append_function(
+  if (!ps_declarator_shape_append_function_in(
+          ps_parser_runtime_arena(parse_context->runtime_context),
           &declarator->declarator_shape)) {
     diagnose_declarator_too_complex(context, current_token());
   }

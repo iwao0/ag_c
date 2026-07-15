@@ -125,6 +125,17 @@ if (/\barena_(?:alloc|total_reserved_bytes)\s*\(/.test(
     "frontend, semantic, declaration, lowering, declarator syntax, and driver code must use an explicit CompilationSession-owned arena",
   );
 }
+const compilationSessionArenaSource = await readFile(
+  "src/compilation_session.c",
+  "utf8",
+);
+if (/\barena_context_(?:activate|active)\s*\(/.test(
+      compilationSessionArenaSource,
+    )) {
+  throw new Error(
+    "CompilationSession activation must not mutate a process-global arena",
+  );
+}
 if (/\bps_type_(?:new(?:_integer|_enum|_float|_pointer|_function|_array|_tag)?|clone|apply_declarator_shape|adjust_parameter_type|binary_result|conditional_result|address_result|decay_array|subscript_result|generic_control)\s*\(/.test(
       explicitPhaseArenaSource,
     )) {
@@ -141,7 +152,65 @@ const explicitFrontendSemanticAndExpressionNodeSource = [
   parserStatementSource,
   parserLocalDeclarationSource,
 ].join("\n");
-if (/\b(?:ps_node_new_binary|psx_node_new_raw_binary|ps_node_new_num|ps_node_new_shift_trunc_extend)\s*\(/.test(
+const implicitArenaNodeConstructorRe = new RegExp(
+  "\\b(?:" +
+    [
+      "ps_node_new_binary",
+      "psx_node_new_raw_binary",
+      "ps_node_new_num",
+      "ps_node_new_shift_trunc_extend",
+      "ps_node_new_fp_to_int_cast",
+      "ps_node_new_int_to_fp_cast",
+      "ps_node_new_integer_cast_result",
+      "ps_node_new_integer_cast_result_ex",
+      "ps_node_new_i64_to_i32_trunc_cast",
+      "ps_node_new_pointer_cast_result",
+      "ps_node_new_aggregate_cast_result",
+      "ps_node_new_void_cast_result",
+      "psx_node_new_lvar",
+      "ps_node_new_lvar_typed",
+      "ps_node_new_lvar_typed_at_for",
+      "ps_node_new_lvar_type_at_for",
+      "psx_node_new_lvar_scalar_slot_at",
+      "psx_node_new_lvar_fp_slot_at",
+      "ps_node_new_lvar_fp_slot_for",
+      "ps_node_new_param_placeholder",
+      "ps_node_new_unsigned_lvar_typed",
+      "psx_node_new_lvar_for",
+      "psx_node_new_lvar_object_ref_for",
+      "ps_node_new_lvar_expr_ref_for",
+      "psx_node_new_lvar_identifier_ref_for",
+      "psx_node_new_vla_decay_ref_for",
+      "ps_node_new_param_lvar_for",
+      "ps_node_new_array_elem_lvar_for",
+      "ps_node_new_tag_member_lvar_ref_for",
+      "ps_node_new_gvar_for",
+      "psx_node_new_gvar_array_base_for",
+      "psx_node_new_static_local_gvar_for",
+      "psx_node_new_source_cast",
+      "ps_node_new_gvar_array_addr_for",
+      "psx_node_new_static_local_array_addr_for",
+      "ps_node_new_lvar_array_addr_for",
+      "ps_node_new_addr_value_for",
+      "ps_node_new_explicit_addr_value_for",
+      "ps_node_new_unary_addr_for",
+      "ps_node_new_tag_member_deref_for",
+      "ps_node_new_unary_deref_for",
+      "psx_node_new_unary_deref_syntax_for",
+      "psx_node_new_subscript_syntax_for",
+      "ps_node_new_subscript_deref_for",
+      "ps_node_clone_lvalue_with_lhs",
+      "ps_node_new_vla_alloc",
+      "ps_node_new_assign",
+      "psx_node_new_raw_assign",
+      "psx_node_new_raw_decl_initializer",
+      "psx_node_new_compound_literal",
+      "psx_node_new_raw_decl_initializer_list",
+      "psx_node_new_initializer_list",
+    ].join("|") +
+    ")\\s*\\(",
+);
+if (implicitArenaNodeConstructorRe.test(
       explicitFrontendSemanticAndExpressionNodeSource,
     )) {
   throw new Error(
@@ -493,7 +562,6 @@ if (sessionContextAccessorNames.some((name) =>
     /pp_context_activate\s*\(/.test(compilationSessionSource) ||
     /previous_preprocessor_context/.test(compilationSessionSource) ||
     !/arena_context_create\s*\(/.test(compilationSessionSource) ||
-    !/arena_context_activate\s*\(/.test(compilationSessionSource) ||
     !/arena_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/diag_context_create\s*\(/.test(compilationSessionSource) ||
     !/diag_context_activate\s*\(/.test(compilationSessionSource) ||
@@ -2247,10 +2315,10 @@ const compoundLiteralLoweringHeader = await readFile(
   "src/lowering/compound_literal_lowering.h",
   "utf8",
 );
-if (!/arena_alloc\s*\(\s*sizeof\s*\(\s*node_source_cast_t\s*\)\s*\)/.test(
+if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t\s*\)\s*\)/.test(
       nodeUtilsSource,
     ) ||
-    /node_source_cast_t\s*\*[^;=]*=\s*arena_alloc\s*\(\s*sizeof\s*\(\s*node_num_t\s*\)/.test(
+    /node_source_cast_t\s*\*[^;=]*=\s*arena_alloc(?:_in)?\s*\([^;]*sizeof\s*\(\s*node_num_t\s*\)/.test(
       nodeUtilsSource,
     )) {
   throw new Error("source casts must use their own arena allocation size");
@@ -2301,21 +2369,21 @@ const typeBuilderSource = await readFile(
   "utf8",
 );
 const typeBuilderApiNames = [
-  "ps_type_new",
-  "ps_type_new_integer",
-  "ps_type_new_enum",
-  "ps_type_new_float",
-  "ps_type_new_pointer",
-  "ps_type_new_function",
-  "ps_type_new_array",
-  "ps_type_clone",
+  "ps_type_new_in",
+  "ps_type_new_integer_in",
+  "ps_type_new_enum_in",
+  "ps_type_new_float_in",
+  "ps_type_new_pointer_in",
+  "ps_type_new_function_in",
+  "ps_type_new_array_in",
+  "ps_type_clone_in",
   "ps_type_clone_persistent",
-  "ps_type_new_tag",
+  "ps_type_new_tag_in",
   "ps_type_normalize_integer_identity",
-  "ps_type_set_function_params",
-  "ps_type_wrap_array_dims",
-  "ps_type_apply_declarator_shape",
-  "ps_type_adjust_parameter_type",
+  "ps_type_set_function_params_in",
+  "ps_type_wrap_array_dims_in",
+  "ps_type_apply_declarator_shape_in",
+  "ps_type_adjust_parameter_type_in",
   "ps_type_complete_array",
   "ps_type_set_decl_spec_qualifiers",
 ];
@@ -2406,13 +2474,13 @@ if (!/\bpsx_declarator_shape_t\b/.test(declaratorShapeSource) ||
 }
 const declaratorShapeBuilderApiNames = [
   "ps_declarator_shape_init",
-  "ps_declarator_shape_copy",
-  "ps_declarator_shape_append_pointer",
-  "ps_declarator_shape_append_array",
-  "ps_declarator_shape_append_array_ex",
-  "ps_declarator_shape_append_vla_array",
-  "ps_declarator_shape_append_function",
-  "ps_declarator_op_set_function_params",
+  "ps_declarator_shape_copy_in",
+  "ps_declarator_shape_append_pointer_in",
+  "ps_declarator_shape_append_array_in",
+  "ps_declarator_shape_append_array_ex_in",
+  "ps_declarator_shape_append_vla_array_in",
+  "ps_declarator_shape_append_function_in",
+  "ps_declarator_op_set_function_params_in",
   "ps_declarator_shape_set_array_bound",
   "ps_declarator_op_set_variadic",
   "ps_declarator_shape_count_ops",
@@ -2478,13 +2546,13 @@ if (declaratorShapeBuilderViolations.length) {
 }
 
 for (const functionName of [
-  "ps_type_usual_arithmetic_result",
-  "ps_type_binary_result",
-  "ps_type_conditional_result",
-  "ps_type_address_result",
-  "ps_type_decay_array",
-  "ps_type_subscript_result",
-  "ps_type_generic_control",
+  "ps_type_usual_arithmetic_result_in",
+  "ps_type_binary_result_in",
+  "ps_type_conditional_result_in",
+  "ps_type_address_result_in",
+  "ps_type_decay_array_in",
+  "ps_type_subscript_result_in",
+  "ps_type_generic_control_in",
 ]) {
   const signature = new RegExp(
     `\\bconst\\s+psx_type_t\\s*\\*\\s*${functionName}\\s*\\(`,
@@ -2616,7 +2684,7 @@ const readonlySemanticTypeResults = [
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_address_result_type"],
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_incdec_result_type"],
   ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
-  ["src/parser/node_utils.h", "ps_node_row_decay_pointer_arith_type"],
+  ["src/parser/node_utils.h", "ps_node_row_decay_pointer_arith_type_in"],
 ];
 for (const [file, functionName] of readonlySemanticTypeResults) {
   const source = await readFile(file, "utf8");

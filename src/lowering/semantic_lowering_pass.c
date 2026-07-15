@@ -204,7 +204,8 @@ static node_t *lower_tree(
     case ND_UNARY_DEREF:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      return lower_unary_deref_expression(node);
+      return lower_unary_deref_expression(
+          context->lowering_context, node);
     case ND_UNARY_NEGATE:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);

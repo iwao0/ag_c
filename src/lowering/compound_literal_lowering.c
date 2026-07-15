@@ -81,11 +81,18 @@ static node_t *lower_file_scope_compound_literal(
                     DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
   node_t *reference = is_array
-                          ? ps_node_new_gvar_array_addr_for(object.global)
-                          : ps_node_new_gvar_for(object.global);
+                          ? ps_node_new_gvar_array_addr_for_in(
+                                ps_lowering_arena(lowering_context),
+                                object.global)
+                          : ps_node_new_gvar_for_in(
+                                ps_lowering_arena(lowering_context),
+                                object.global);
   if (!compound->requires_addressable_object) return reference;
-  return is_array ? ps_node_new_explicit_addr_value_for(reference)
-                  : ps_node_new_unary_addr_for(reference);
+  return is_array
+             ? ps_node_new_explicit_addr_value_for_in(
+                   ps_lowering_arena(lowering_context), reference)
+             : ps_node_new_unary_addr_for_in(
+                   ps_lowering_arena(lowering_context), reference);
 }
 
 static node_t *lower_local_compound_literal(
@@ -126,12 +133,18 @@ static node_t *lower_local_compound_literal(
   }
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_t *reference = is_array
-                          ? ps_node_new_lvar_array_addr_for(object.var)
-                          : ps_node_new_lvar_expr_ref_for(object.var);
+                          ? ps_node_new_lvar_array_addr_for_in(
+                                ps_lowering_arena(lowering_context),
+                                object.var)
+                          : ps_node_new_lvar_expr_ref_for_in(
+                                ps_lowering_arena(lowering_context),
+                                object.var);
   if (compound->requires_addressable_object) {
     reference = is_array
-                    ? ps_node_new_explicit_addr_value_for(reference)
-                    : ps_node_new_unary_addr_for(reference);
+                    ? ps_node_new_explicit_addr_value_for_in(
+                          ps_lowering_arena(lowering_context), reference)
+                    : ps_node_new_unary_addr_for_in(
+                          ps_lowering_arena(lowering_context), reference);
   }
   return ps_node_new_binary_in(
       ps_lowering_arena(lowering_context), ND_COMMA,

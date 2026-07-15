@@ -110,19 +110,20 @@ psx_vla_lowering_result_t lower_vla_declaration(
     alloc_lhs = request->dimensions[0];
     alloc_rhs = outer;
   }
-  result.init = ps_node_new_vla_alloc(
-      var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
+  result.init = ps_node_new_vla_alloc_in(
+      arena_context, var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
 
   for (int level = 1; level < count - 1; level++) {
     node_t *stride = ps_node_new_num_in(arena_context, element_size);
     for (int i = count - 1; i >= level + 1; i--)
       stride = ps_node_new_binary_in(
           arena_context, ND_MUL, stride, request->dimensions[i]);
-    node_t *slot = ps_node_new_lvar_typed(
+    node_t *slot = ps_node_new_lvar_typed_in(
+        arena_context,
         frame_layout_vla_stride_offset(var_offset, level), 8);
     result.init = append_init(
         request->lowering_context, result.init,
-        ps_node_new_assign(slot, stride));
+        ps_node_new_assign_in(arena_context, slot, stride));
   }
   return result;
 }
@@ -152,13 +153,14 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   ps_local_registry_set_vla_descriptor(
       result.var, row_stride_offset, 0, 0, element_size);
 
-  node_t *slot = ps_node_new_lvar_typed(row_stride_offset, 8);
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
+  node_t *slot = ps_node_new_lvar_typed_in(
+      arena_context, row_stride_offset, 8);
   node_t *stride = ps_node_new_binary_in(
       arena_context, ND_MUL, request->row_dimension,
       ps_node_new_num_in(arena_context, element_size));
-  result.init = (node_t *)ps_node_new_assign(slot, stride);
+  result.init = ps_node_new_assign_in(arena_context, slot, stride);
   return result;
 }
 

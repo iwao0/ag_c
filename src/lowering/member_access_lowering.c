@@ -58,11 +58,14 @@ static node_t *materialize_call_rvalue(
     const token_t *fallback_diag_tok) {
   struct lvar_t *temporary = create_aggregate_temporary(
       lowering_context, local_registry, access, fallback_diag_tok);
-  node_t *target = ps_node_new_lvar_expr_ref_for(temporary);
-  node_t *assign = ps_node_new_assign(target, base);
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
+  node_t *target = ps_node_new_lvar_expr_ref_for_in(
+      arena_context, temporary);
+  node_t *assign = ps_node_new_assign_in(
+      arena_context, target, base);
   return ps_node_new_binary_in(
-      ps_lowering_arena(lowering_context), ND_COMMA, assign,
-      ps_node_new_lvar_expr_ref_for(temporary));
+      arena_context, ND_COMMA, assign,
+      ps_node_new_lvar_expr_ref_for_in(arena_context, temporary));
 }
 
 static node_t *materialize_ternary_rvalue(
@@ -77,15 +80,20 @@ static node_t *materialize_ternary_rvalue(
       ps_lowering_arena(lowering_context), sizeof(*select));
   select->base.kind = ND_TERNARY;
   select->base.lhs = ternary->base.lhs;
-  select->base.rhs = ps_node_new_assign(
-      ps_node_new_lvar_expr_ref_for(temporary),
+  select->base.rhs = ps_node_new_assign_in(
+      ps_lowering_arena(lowering_context),
+      ps_node_new_lvar_expr_ref_for_in(
+          ps_lowering_arena(lowering_context), temporary),
       ternary->base.rhs);
-  select->els = ps_node_new_assign(
-      ps_node_new_lvar_expr_ref_for(temporary),
+  select->els = ps_node_new_assign_in(
+      ps_lowering_arena(lowering_context),
+      ps_node_new_lvar_expr_ref_for_in(
+          ps_lowering_arena(lowering_context), temporary),
       ternary->els);
   return ps_node_new_binary_in(
       ps_lowering_arena(lowering_context), ND_COMMA, (node_t *)select,
-      ps_node_new_lvar_expr_ref_for(temporary));
+      ps_node_new_lvar_expr_ref_for_in(
+          ps_lowering_arena(lowering_context), temporary));
 }
 
 node_t *lower_member_access_expression_in(
@@ -116,12 +124,15 @@ node_t *lower_member_access_expression_in(
     if (base->kind == ND_COMMA && base->rhs) {
       address = ps_node_new_binary_in(
           ps_lowering_arena(lowering_context), ND_COMMA, base->lhs,
-          ps_node_new_addr_value_for(base->rhs));
+          ps_node_new_addr_value_for_in(
+              ps_lowering_arena(lowering_context), base->rhs));
     } else {
-      address = ps_node_new_addr_value_for(base);
+      address = ps_node_new_addr_value_for_in(
+          ps_lowering_arena(lowering_context), base);
     }
   }
-  node_t *result = ps_node_new_tag_member_deref_for(
+  node_t *result = ps_node_new_tag_member_deref_for_in(
+      ps_lowering_arena(lowering_context),
       address, base, access->resolved_member);
   if (result) result->tok = access->base.tok;
   return result ? result : (node_t *)access;

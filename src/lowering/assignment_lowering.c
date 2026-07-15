@@ -46,10 +46,13 @@ static node_t *materialize_lvalue_address_once(
       local_registry, name, (int)strlen(name), offset, 8, 0,
       address_type);
 
-  node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp);
-  *prefix = ps_node_new_assign(temp_lhs, address);
-  return ps_node_clone_lvalue_with_lhs(
-      target, ps_node_new_lvar_expr_ref_for(temp));
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
+  node_t *temp_lhs = ps_node_new_lvar_expr_ref_for_in(
+      arena_context, temp);
+  *prefix = ps_node_new_assign_in(arena_context, temp_lhs, address);
+  return ps_node_clone_lvalue_with_lhs_in(
+      arena_context, target,
+      ps_node_new_lvar_expr_ref_for_in(arena_context, temp));
 }
 
 node_t *lower_compound_assignment_expression(
@@ -79,7 +82,8 @@ node_t *lower_compound_assignment_expression(
 
   node_t *value = ps_node_new_binary_in(
       arena_context, binary_kind, target, rhs);
-  node_t *assign = ps_node_new_assign(target, value);
+  node_t *assign = ps_node_new_assign_in(
+      ps_lowering_arena(lowering_context), target, value);
   node_t *lowered = prefix
                         ? ps_node_new_binary_in(
                               arena_context, ND_COMMA, prefix, assign)

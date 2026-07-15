@@ -10,7 +10,8 @@ static node_t *make_scaled_offset(
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   int runtime_stride_slot = ps_node_vla_row_stride_frame_off(base);
   if (runtime_stride_slot) {
-    node_t *stride = ps_node_new_lvar_typed(runtime_stride_slot, 8);
+    node_t *stride = ps_node_new_lvar_typed_in(
+        arena_context, runtime_stride_slot, 8);
     return ps_node_new_binary_in(
         arena_context, ND_MUL, index, stride);
   }
@@ -39,7 +40,8 @@ node_t *lower_subscript_expression(
   node_t *index = node->rhs;
   token_t *source_tok = node->tok;
   node_t *scaled = make_scaled_offset(lowering_context, base, index);
-  node_t *lowered = ps_node_new_subscript_deref_for(
+  node_t *lowered = ps_node_new_subscript_deref_for_in(
+      ps_lowering_arena(lowering_context),
       base, base_address_of(base), scaled);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;

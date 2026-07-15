@@ -58,8 +58,14 @@ int psx_initializer_lowering_supports_recursive_aggregate(
   return 1;
 }
 
-static node_t *new_array_elem_assign(lvar_t *var, int idx, node_t *value) {
-  return ps_node_new_assign(ps_node_new_array_elem_lvar_for(var, idx), value);
+static node_t *new_array_elem_assign(
+    const initializer_lowering_context_t *context,
+    lvar_t *var, int idx, node_t *value) {
+  return ps_node_new_assign_in(
+      context->arena_context,
+      ps_node_new_array_elem_lvar_for_in(
+          context->arena_context, var, idx),
+      value);
 }
 
 typedef struct {
@@ -77,7 +83,7 @@ static void append_array_string_unit(uint32_t unit, void *user) {
   ctx->chain = append_init(
       ctx->lowering, ctx->chain,
       new_array_elem_assign(
-          ctx->var, ctx->idx,
+          ctx->lowering, ctx->var, ctx->idx,
           ps_node_new_num_in(ctx->lowering->arena_context, unit)));
   if (ctx->assigned) ctx->assigned[ctx->idx] = 1;
   ctx->idx++;
@@ -105,7 +111,7 @@ static node_t *lower_array_string_initializer_at(
     ctx.chain = append_init(
         context, ctx.chain,
         new_array_elem_assign(
-            var, ctx.idx,
+            context, var, ctx.idx,
             ps_node_new_num_in(context->arena_context, 0)));
     if (assigned) assigned[ctx.idx] = 1;
     ctx.idx++;
@@ -148,22 +154,26 @@ static node_t *lower_array_expr_initializer(
     node_lvar_t *source = (node_lvar_t *)value->rhs->lhs;
     node_t *chain = value->lhs;
     for (int i = 0; i < array_len; i++) {
-      node_t *dst = ps_node_new_array_elem_lvar_for(var, i);
-      node_t *src = ps_node_new_lvar_typed_at_for(
-          source->var, source->offset + i * elem_size, elem_size);
+      node_t *dst = ps_node_new_array_elem_lvar_for_in(
+          context->arena_context, var, i);
+      node_t *src = ps_node_new_lvar_typed_at_for_in(
+          context->arena_context, source->var,
+          source->offset + i * elem_size, elem_size);
       chain = append_init(
-          context, chain, ps_node_new_assign(dst, src));
+          context, chain,
+          ps_node_new_assign_in(context->arena_context, dst, src));
     }
     return chain;
   }
 
   if (array_len > 0) {
-    node_t *chain = new_array_elem_assign(var, 0, value);
+    node_t *chain = new_array_elem_assign(context, var, 0, value);
     for (int i = 1; i < array_len; i++) {
       chain = append_init(
           context, chain,
           new_array_elem_assign(
-              var, i, ps_node_new_num_in(context->arena_context, 0)));
+              context, var, i,
+              ps_node_new_num_in(context->arena_context, 0)));
     }
     return chain;
   }
@@ -247,7 +257,7 @@ static void lower_array_initializer_entries(
     } else {
       *chain = append_init(
           context, *chain,
-          new_array_elem_assign(var, index, entry->value));
+          new_array_elem_assign(context, var, index, entry->value));
       assigned[index] = 1;
       next_index = index + 1;
     }
@@ -283,14 +293,15 @@ typedef struct {
 static void append_typed_string_unit(uint32_t unit, void *user) {
   typed_string_lowering_ctx_t *ctx = user;
   if (ctx->index >= ctx->capacity) return;
-  node_t *target = ps_node_new_lvar_type_at_for(
-      ctx->var,
+  node_t *target = ps_node_new_lvar_type_at_for_in(
+      ctx->lowering->arena_context, ctx->var,
       ps_lvar_offset(ctx->var) + ctx->relative_offset +
           ctx->index * ctx->element_size,
       ctx->element_type);
   ctx->chain = append_init(
       ctx->lowering, ctx->chain,
-      ps_node_new_assign(
+      ps_node_new_assign_in(
+          ctx->lowering->arena_context,
           target,
           ps_node_new_num_in(ctx->lowering->arena_context, unit)));
   ctx->index++;
@@ -372,7 +383,8 @@ static node_t *lower_array_list_initializer(
       chain = append_init(
           context, chain,
           new_array_elem_assign(
-              var, i, ps_node_new_num_in(context->arena_context, 0)));
+              context, var, i,
+              ps_node_new_num_in(context->arena_context, 0)));
     }
   }
   free(assigned);
@@ -390,11 +402,13 @@ static node_t *append_object_zero_fill(
   for (int w = 0; w < 4; w++) {
     int width = widths[w];
     while (offset + width <= size) {
-      node_t *slot = ps_node_new_lvar_typed_at_for(
-          var, ps_lvar_offset(var) + offset, width);
+      node_t *slot = ps_node_new_lvar_typed_at_for_in(
+          context->arena_context, var,
+          ps_lvar_offset(var) + offset, width);
       chain = append_init(
           context, chain,
-          ps_node_new_assign(
+          ps_node_new_assign_in(
+              context->arena_context,
               slot, ps_node_new_num_in(context->arena_context, 0)));
       offset += width;
     }
@@ -525,12 +539,15 @@ static node_t *lower_typed_initializer_value(
     return chain;
   }
   node_t *target = direct_member
-                       ? ps_node_new_tag_member_lvar_ref_for(
-                             var, relative_offset, direct_member)
-                       : ps_node_new_lvar_type_at_for(
-                             var, ps_lvar_offset(var) + relative_offset, type);
+                       ? ps_node_new_tag_member_lvar_ref_for_in(
+                             context->arena_context, var,
+                             relative_offset, direct_member)
+                       : ps_node_new_lvar_type_at_for_in(
+                             context->arena_context, var,
+                             ps_lvar_offset(var) + relative_offset, type);
   return append_init(
-      context, chain, ps_node_new_assign(target, value));
+      context, chain,
+      ps_node_new_assign_in(context->arena_context, target, value));
 }
 
 static int initializer_list_is_flat_positional_scalar(
@@ -576,15 +593,18 @@ static node_t *append_typed_object_zero_fill(
   for (int i = 0; i < leaves.count; i++) {
     const typed_scalar_leaf_t *leaf = &leaves.items[i];
     node_t *target = leaf->direct_member
-                         ? ps_node_new_tag_member_lvar_ref_for(
-                               var, leaf->relative_offset,
+                         ? ps_node_new_tag_member_lvar_ref_for_in(
+                               context->arena_context, var,
+                               leaf->relative_offset,
                                leaf->direct_member)
-                         : ps_node_new_lvar_type_at_for(
-                               var, ps_lvar_offset(var) + leaf->relative_offset,
+                         : ps_node_new_lvar_type_at_for_in(
+                               context->arena_context, var,
+                               ps_lvar_offset(var) + leaf->relative_offset,
                                leaf->type);
     chain = append_init(
         context, chain,
-        ps_node_new_assign(
+        ps_node_new_assign_in(
+            context->arena_context,
             target, ps_node_new_num_in(context->arena_context, 0)));
   }
   free(leaves.items);
@@ -792,16 +812,19 @@ static node_t *try_lower_typed_array_copy(
     const typed_scalar_leaf_t *leaf = &leaves.items[i];
     int source_offset = source->offset +
                         (leaf->relative_offset - relative_offset);
-    node_t *src = ps_node_new_lvar_type_at_for(
-        source->var, source_offset, leaf->type);
+    node_t *src = ps_node_new_lvar_type_at_for_in(
+        context->arena_context, source->var, source_offset, leaf->type);
     node_t *dst = leaf->direct_member
-                      ? ps_node_new_tag_member_lvar_ref_for(
-                            var, leaf->relative_offset, leaf->direct_member)
-                      : ps_node_new_lvar_type_at_for(
-                            var, ps_lvar_offset(var) + leaf->relative_offset,
+                      ? ps_node_new_tag_member_lvar_ref_for_in(
+                            context->arena_context, var,
+                            leaf->relative_offset, leaf->direct_member)
+                      : ps_node_new_lvar_type_at_for_in(
+                            context->arena_context, var,
+                            ps_lvar_offset(var) + leaf->relative_offset,
                             leaf->type);
     chain = append_init(
-        context, chain, ps_node_new_assign(dst, src));
+        context, chain,
+        ps_node_new_assign_in(context->arena_context, dst, src));
   }
   free(leaves.items);
   return chain;
@@ -820,11 +843,13 @@ static node_t *lower_flat_typed_array_initializer_list(
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
   for (int i = 0; i < list->entry_count; i++) {
-    node_t *target = ps_node_new_lvar_type_at_for(
-        var, ps_lvar_offset(var) + relative_offset + i * leaf_size, leaf);
+    node_t *target = ps_node_new_lvar_type_at_for_in(
+        context->arena_context, var,
+        ps_lvar_offset(var) + relative_offset + i * leaf_size, leaf);
     chain = append_init(
         context, chain,
-        ps_node_new_assign(target, list->entries[i].value));
+        ps_node_new_assign_in(
+            context->arena_context, target, list->entries[i].value));
   }
   return chain;
 }
@@ -1055,10 +1080,12 @@ static node_t *lower_struct_list_initializer(
                    diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const tag_member_info_t *member = &definition->members[member_index];
-    node_t *lhs = ps_node_new_tag_member_lvar_ref_for(
-        var, member->offset, member);
+    node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
+        context->arena_context, var, member->offset, member);
     chain = append_init(
-        context, chain, ps_node_new_assign(lhs, entry->value));
+        context, chain,
+        ps_node_new_assign_in(
+            context->arena_context, lhs, entry->value));
     ordinal = aggregate_ordinal_after_member(definition, member_index);
   }
   return chain
@@ -1098,10 +1125,12 @@ static node_t *lower_union_list_initializer(
                    diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
     const tag_member_info_t *member = &definition->members[member_index];
-    node_t *lhs = ps_node_new_tag_member_lvar_ref_for(
-        var, member->offset, member);
+    node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
+        context->arena_context, var, member->offset, member);
     chain = append_init(
-        context, chain, ps_node_new_assign(lhs, entry->value));
+        context, chain,
+        ps_node_new_assign_in(
+            context->arena_context, lhs, entry->value));
   }
   return chain;
 }
@@ -1115,15 +1144,18 @@ static int aggregate_types_compatible(const psx_type_t *target,
   return ps_type_tag_identity_matches(target, value);
 }
 
-static node_t *new_decl_initializer_assign(node_t *target, node_t *value,
-                                           token_t *tok) {
-  node_t *assign = ps_node_new_assign(target, value);
+static node_t *new_decl_initializer_assign(
+    const initializer_lowering_context_t *context,
+    node_t *target, node_t *value, token_t *tok) {
+  node_t *assign = ps_node_new_assign_in(
+      context->arena_context, target, value);
   assign->is_decl_initializer = 1;
   assign->tok = tok;
   return assign;
 }
 
 static node_t *lower_aggregate_expr_initializer(
+    const initializer_lowering_context_t *context,
     node_decl_init_t *initializer, int allow_union_scalar) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
   const psx_type_t *target_type = var ? ps_lvar_get_decl_type(var) : NULL;
@@ -1133,7 +1165,7 @@ static node_t *lower_aggregate_expr_initializer(
 
   if (aggregate_types_compatible(target_type, value_type)) {
     return new_decl_initializer_assign(
-        initializer->base.lhs, initializer->base.rhs, tok);
+        context, initializer->base.lhs, initializer->base.rhs, tok);
   }
   if (!allow_union_scalar) {
     ps_diag_ctx(tok, "decl", "%s",
@@ -1151,10 +1183,10 @@ static node_t *lower_aggregate_expr_initializer(
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
     if (member->len <= 0) continue;
-    node_t *target = ps_node_new_tag_member_lvar_ref_for(
-        var, member->offset, member);
+    node_t *target = ps_node_new_tag_member_lvar_ref_for_in(
+        context->arena_context, var, member->offset, member);
     return new_decl_initializer_assign(
-        target, initializer->base.rhs, tok);
+        context, target, initializer->base.rhs, tok);
   }
   ps_diag_ctx(tok, "decl", "%s",
                diag_message_for(
@@ -1170,6 +1202,7 @@ static int initializer_entry_is_plain_scalar(
 }
 
 static node_t *lower_scalar_list_initializer(
+    const initializer_lowering_context_t *context,
     node_decl_init_t *initializer) {
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   if (list->entry_count != 1 ||
@@ -1179,7 +1212,7 @@ static node_t *lower_scalar_list_initializer(
                      DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
   }
   return new_decl_initializer_assign(
-      initializer->base.lhs, list->entries[0].value,
+      context, initializer->base.lhs, list->entries[0].value,
       initializer->base.tok);
 }
 
@@ -1203,14 +1236,14 @@ static node_t *lower_complex_list_initializer(
   int complex_size = ps_lvar_decl_sizeof(
       var, ps_lvar_storage_size(var, 0));
   int half = complex_size > 0 ? complex_size / 2 : 8;
-  node_t *real_lhs = ps_node_new_lvar_fp_slot_for(
-      var, ps_lvar_offset(var), half);
-  node_t *imag_lhs = ps_node_new_lvar_fp_slot_for(
-      var, ps_lvar_offset(var) + half, half);
+  node_t *real_lhs = ps_node_new_lvar_fp_slot_for_in(
+      context->arena_context, var, ps_lvar_offset(var), half);
+  node_t *imag_lhs = ps_node_new_lvar_fp_slot_for_in(
+      context->arena_context, var, ps_lvar_offset(var) + half, half);
   node_t *real_assign = new_decl_initializer_assign(
-      real_lhs, list->entries[0].value, initializer->base.tok);
+      context, real_lhs, list->entries[0].value, initializer->base.tok);
   node_t *imag_assign = new_decl_initializer_assign(
-      imag_lhs,
+      context, imag_lhs,
       list->entry_count > 1
           ? list->entries[1].value
           : ps_node_new_num_in(context->arena_context, 0),
@@ -1235,7 +1268,7 @@ static node_t *lower_typed_list_initializer(
     return lower_union_list_initializer(context, initializer);
   if (type->kind == PSX_TYPE_COMPLEX)
     return lower_complex_list_initializer(context, initializer, var);
-  return lower_scalar_list_initializer(initializer);
+  return lower_scalar_list_initializer(context, initializer);
 }
 
 static node_t *lower_typed_expr_initializer(
@@ -1251,10 +1284,10 @@ static node_t *lower_typed_expr_initializer(
   }
   if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
     return lower_aggregate_expr_initializer(
-        initializer, type->kind == PSX_TYPE_UNION);
+        context, initializer, type->kind == PSX_TYPE_UNION);
   }
   return new_decl_initializer_assign(
-      initializer->base.lhs, initializer->base.rhs,
+      context, initializer->base.lhs, initializer->base.rhs,
       initializer->base.tok);
 }
 

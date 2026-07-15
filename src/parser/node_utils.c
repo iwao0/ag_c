@@ -65,15 +65,16 @@ static int ctx_get_tag_member_info_scoped(
       semantic_context, tk, tn, tl, idx, out);
 }
 
-static psx_type_t *type_with_self_qualifiers(const psx_type_t *type,
-                                             int is_const_qualified,
-                                             int is_volatile_qualified) {
+static psx_type_t *type_with_self_qualifiers_in(
+    arena_context_t *arena_context, const psx_type_t *type,
+    int is_const_qualified, int is_volatile_qualified) {
   if (!type) return NULL;
-  psx_type_t *copy = arena_alloc(sizeof(psx_type_t));
+  psx_type_t *copy = arena_alloc_in(arena_context, sizeof(psx_type_t));
   *copy = *type;
   if (copy->kind == PSX_TYPE_ARRAY && copy->base) {
-    copy->base = type_with_self_qualifiers(
-        copy->base, is_const_qualified, is_volatile_qualified);
+    copy->base = type_with_self_qualifiers_in(
+        arena_context, copy->base,
+        is_const_qualified, is_volatile_qualified);
     return copy;
   }
   if (is_const_qualified) copy->is_const_qualified = 1;
@@ -2059,9 +2060,8 @@ static int node_is_unsigned(node_t *node) {
 }
 
 static int binary_usual_arith_unsigned(node_t *lhs, node_t *rhs) {
-  return type_result_unsigned(ps_type_usual_arithmetic_result(
-      ps_node_get_type(lhs), ps_node_get_type(rhs),
-      TK_FLOAT_KIND_NONE, 0));
+  return ps_type_usual_arithmetic_result_is_unsigned(
+      ps_node_get_type(lhs), ps_node_get_type(rhs));
 }
 
 int ps_node_integer_promotion_is_unsigned(node_t *node) {
@@ -2155,11 +2155,6 @@ node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
   return node;
 }
 
-node_t *psx_node_new_raw_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
-  return psx_node_new_raw_binary_in(
-      arena_context_active(), kind, lhs, rhs);
-}
-
 int ps_node_binary_type_op(
     node_kind_t kind, psx_type_binary_op_t *op) {
   if (!op) return 0;
@@ -2207,10 +2202,6 @@ node_t *ps_node_new_binary_in(arena_context_t *arena_context,
   return node;
 }
 
-node_t *ps_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
-  return ps_node_new_binary_in(arena_context_active(), kind, lhs, rhs);
-}
-
 node_t *ps_node_new_shift_trunc_extend_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
     int is_unsigned) {
@@ -2234,12 +2225,6 @@ node_t *ps_node_new_shift_trunc_extend_in(
   return shr;
 }
 
-node_t *ps_node_new_shift_trunc_extend(node_t *operand, int left_shift,
-                                       int is_unsigned) {
-  return ps_node_new_shift_trunc_extend_in(
-      arena_context_active(), operand, left_shift, is_unsigned);
-}
-
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
   node_num_t *node = arena_alloc_in(arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
@@ -2249,13 +2234,10 @@ node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
   return (node_t *)node;
 }
 
-node_t *ps_node_new_num(long long val) {
-  return ps_node_new_num_in(arena_context_active(), val);
-}
-
-static node_lvar_t *new_lvar_symbol_node(int offset, lvar_t *var,
+static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,
+                                         int offset, lvar_t *var,
                                          const psx_type_t *type) {
-  node_lvar_t *node = arena_alloc(sizeof(node_lvar_t));
+  node_lvar_t *node = arena_alloc_in(arena_context, sizeof(node_lvar_t));
   node->base.kind = ND_LVAR;
   node->base.type = type;
   node->offset = offset;
@@ -2268,18 +2250,23 @@ static node_lvar_t *new_lvar_symbol_node(int offset, lvar_t *var,
   return node;
 }
 
-node_t *psx_node_new_lvar(int offset) {
+node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset) {
   return (node_t *)new_lvar_symbol_node(
-      offset, NULL, ps_type_new_integer(TK_INT, 8, 0));
+      arena_context, offset, NULL,
+      ps_type_new_integer_in(arena_context, TK_INT, 8, 0));
 }
 
-node_t *ps_node_new_lvar_typed(int offset, int type_size) {
+node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
+                                  int offset, int type_size) {
   int size = type_size > 0 ? type_size : 8;
   return (node_t *)new_lvar_symbol_node(
-      offset, NULL, ps_type_new_integer(TK_INT, size, 0));
+      arena_context, offset, NULL,
+      ps_type_new_integer_in(arena_context, TK_INT, size, 0));
 }
 
-node_t *ps_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size) {
+node_t *ps_node_new_lvar_typed_at_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int offset,
+    int type_size) {
   const psx_type_t *type = NULL;
   if (owner) {
     const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
@@ -2291,82 +2278,117 @@ node_t *ps_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size) 
              (rel % scalar_elem_size) == 0)
       type = type_array_element_type_for_size(owner_type, type_size);
   }
-  if (!type) type = ps_type_new_integer(TK_INT, type_size > 0 ? type_size : 8, 0);
-  return (node_t *)new_lvar_symbol_node(offset, owner, type);
+  if (!type)
+    type = ps_type_new_integer_in(
+        arena_context, TK_INT, type_size > 0 ? type_size : 8, 0);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, offset, owner, type);
 }
 
-node_t *ps_node_new_lvar_type_at_for(lvar_t *owner, int offset,
-                                      const psx_type_t *type) {
-  return (node_t *)new_lvar_symbol_node(offset, owner, type);
+node_t *ps_node_new_lvar_type_at_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int offset,
+    const psx_type_t *type) {
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, offset, owner, type);
 }
 
-node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
-                                         tk_float_kind_t fp_kind, int is_bool) {
+node_t *psx_node_new_lvar_scalar_slot_at_in(
+    arena_context_t *arena_context, int offset, int type_size,
+    tk_float_kind_t fp_kind, int is_bool) {
   psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
-                         ? ps_type_new_float(fp_kind, type_size)
+                         ? ps_type_new_float_in(
+                               arena_context, fp_kind, type_size)
                      : is_bool
-                         ? ps_type_new_integer(TK_BOOL, type_size, 1)
-                         : ps_type_new_integer(TK_INT, type_size, 0);
-  return (node_t *)new_lvar_symbol_node(offset, NULL, type);
+                         ? ps_type_new_integer_in(
+                               arena_context, TK_BOOL, type_size, 1)
+                         : ps_type_new_integer_in(
+                               arena_context, TK_INT, type_size, 0);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, offset, NULL, type);
 }
 
-node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind) {
-  return psx_node_new_lvar_scalar_slot_at(offset, type_size, fp_kind, 0);
+node_t *psx_node_new_lvar_fp_slot_at_in(
+    arena_context_t *arena_context, int offset, int type_size,
+    tk_float_kind_t fp_kind) {
+  return psx_node_new_lvar_scalar_slot_at_in(
+      arena_context, offset, type_size, fp_kind, 0);
 }
 
-node_t *ps_node_new_lvar_fp_slot_for(lvar_t *owner, int offset, int type_size) {
+node_t *ps_node_new_lvar_fp_slot_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int offset,
+    int type_size) {
   tk_float_kind_t fp_kind = ps_lvar_fp_kind(owner);
   psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
-                         ? ps_type_new_float(fp_kind, type_size)
-                         : ps_type_new_integer(TK_INT, type_size, 0);
-  return (node_t *)new_lvar_symbol_node(offset, owner, type);
-}
-
-node_t *ps_node_new_param_placeholder(const psx_type_t *type) {
-  return (node_t *)new_lvar_symbol_node(0, NULL, type);
-}
-
-node_t *ps_node_new_unsigned_lvar_typed(int offset, int type_size) {
+                         ? ps_type_new_float_in(
+                               arena_context, fp_kind, type_size)
+                         : ps_type_new_integer_in(
+                               arena_context, TK_INT, type_size, 0);
   return (node_t *)new_lvar_symbol_node(
-      offset, NULL, ps_type_new_integer(TK_UNSIGNED, type_size, 1));
+      arena_context, offset, owner, type);
 }
 
-node_t *psx_node_new_lvar_for(lvar_t *var) {
+node_t *ps_node_new_param_placeholder_in(
+    arena_context_t *arena_context, const psx_type_t *type) {
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, 0, NULL, type);
+}
+
+node_t *ps_node_new_unsigned_lvar_typed_in(
+    arena_context_t *arena_context, int offset, int type_size) {
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, offset, NULL,
+      ps_type_new_integer_in(
+          arena_context, TK_UNSIGNED, type_size, 1));
+}
+
+node_t *psx_node_new_lvar_for_in(arena_context_t *arena_context,
+                                 lvar_t *var) {
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  return (node_t *)new_lvar_symbol_node(var ? var->offset : 0, var, type);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, var ? var->offset : 0, var, type);
 }
 
-node_t *psx_node_new_lvar_object_ref_for(lvar_t *var) {
-  return psx_node_new_lvar_for(var);
+node_t *psx_node_new_lvar_object_ref_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
+  return psx_node_new_lvar_for_in(arena_context, var);
 }
 
-node_t *ps_node_new_lvar_expr_ref_for(lvar_t *var) {
+node_t *ps_node_new_lvar_expr_ref_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
   const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  return (node_t *)new_lvar_symbol_node(var ? var->offset : 0, var, decl_type);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, var ? var->offset : 0, var, decl_type);
 }
 
-node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
+node_t *psx_node_new_lvar_identifier_ref_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
   if (var && var->is_static_local && var->static_global_name) {
-    return psx_node_new_static_local_gvar_for(var);
+    return psx_node_new_static_local_gvar_for_in(arena_context, var);
   }
 
-  return psx_node_new_lvar_for(var);
+  return psx_node_new_lvar_for_in(arena_context, var);
 }
 
-node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
+node_t *psx_node_new_vla_decay_ref_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
   const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_type_t *decay_type = ps_type_decay_array(array_type);
-  if (!decay_type) return psx_node_new_lvar_identifier_ref_for(var);
-  return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
+  const psx_type_t *decay_type = ps_type_decay_array_in(
+      arena_context, array_type);
+  if (!decay_type)
+    return psx_node_new_lvar_identifier_ref_for_in(arena_context, var);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, var->offset, var, decay_type);
 }
 
-node_t *ps_node_new_param_lvar_for(lvar_t *var) {
+node_t *ps_node_new_param_lvar_for_in(arena_context_t *arena_context,
+                                      lvar_t *var) {
   const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
   return (node_t *)new_lvar_symbol_node(
-      var ? var->offset : 0, var, decl_type);
+      arena_context, var ? var->offset : 0, var, decl_type);
 }
 
-node_t *ps_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
+node_t *ps_node_new_array_elem_lvar_for_in(
+    arena_context_t *arena_context, lvar_t *var, int idx) {
   const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
   const psx_type_t *elem_type =
       array_type && array_type->kind == PSX_TYPE_ARRAY
@@ -2377,9 +2399,10 @@ node_t *ps_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
                   : ps_lvar_array_scalar_element_size(var);
   int offset = var ? var->offset + idx * elem_size : 0;
   if (!elem_type)
-    elem_type = ps_type_new_integer(TK_INT, elem_size > 0 ? elem_size : 4,
-                                     0);
-  return (node_t *)new_lvar_symbol_node(offset, var, elem_type);
+    elem_type = ps_type_new_integer_in(
+        arena_context, TK_INT, elem_size > 0 ? elem_size : 4, 0);
+  return (node_t *)new_lvar_symbol_node(
+      arena_context, offset, var, elem_type);
 }
 
 static node_t *annotate_explicit_type(node_t *node,
@@ -2388,71 +2411,83 @@ static node_t *annotate_explicit_type(node_t *node,
   return node;
 }
 
-node_t *ps_node_new_fp_to_int_cast(node_t *operand,
-                                    const psx_type_t *cast_type) {
-  node_t *node = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_fp_to_int_cast_in(arena_context_t *arena_context,
+                                       node_t *operand,
+                                       const psx_type_t *cast_type) {
+  node_t *node = arena_alloc_in(arena_context, sizeof(node_t));
   node->kind = ND_FP_TO_INT;
   node->lhs = operand;
   return annotate_explicit_type(node, cast_type);
 }
 
-node_t *ps_node_new_int_to_fp_cast(node_t *operand,
-                                    const psx_type_t *cast_type) {
-  node_t *node = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_int_to_fp_cast_in(arena_context_t *arena_context,
+                                       node_t *operand,
+                                       const psx_type_t *cast_type) {
+  node_t *node = arena_alloc_in(arena_context, sizeof(node_t));
   node->kind = ND_INT_TO_FP;
   node->lhs = operand;
   return annotate_explicit_type(node, cast_type);
 }
 
-node_t *ps_node_new_integer_cast_result(node_t *operand,
-                                         const psx_type_t *cast_type) {
-  return ps_node_new_integer_cast_result_ex(operand, cast_type, 0);
+node_t *ps_node_new_integer_cast_result_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type) {
+  return ps_node_new_integer_cast_result_ex_in(
+      arena_context, operand, cast_type, 0);
 }
 
-node_t *ps_node_new_integer_cast_result_ex(node_t *operand,
-                                            const psx_type_t *cast_type,
-                                            int widen_zext_i64) {
-  node_t *wrap = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_integer_cast_result_ex_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type, int widen_zext_i64) {
+  node_t *wrap = arena_alloc_in(arena_context, sizeof(node_t));
   wrap->kind = ND_CAST;
   wrap->lhs = operand;
   wrap->widen_zext_i64 = widen_zext_i64 ? 1 : 0;
   return annotate_explicit_type(wrap, cast_type);
 }
 
-node_t *ps_node_new_i64_to_i32_trunc_cast(node_t *operand,
-                                           const psx_type_t *cast_type) {
+node_t *ps_node_new_i64_to_i32_trunc_cast_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type) {
   int is_unsigned = ps_type_is_unsigned(cast_type);
-  node_t *trunc = ps_node_new_shift_trunc_extend(operand, 32, is_unsigned);
-  return ps_node_new_integer_cast_result(trunc, cast_type);
+  node_t *trunc = ps_node_new_shift_trunc_extend_in(
+      arena_context, operand, 32, is_unsigned);
+  return ps_node_new_integer_cast_result_in(
+      arena_context, trunc, cast_type);
 }
 
-node_t *ps_node_new_pointer_cast_result(node_t *operand,
-                                         const psx_type_t *cast_type) {
-  node_t *wrap = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_pointer_cast_result_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type) {
+  node_t *wrap = arena_alloc_in(arena_context, sizeof(node_t));
   wrap->kind = ND_CAST;
   wrap->lhs = operand;
   return annotate_explicit_type(wrap, cast_type);
 }
 
-node_t *ps_node_new_aggregate_cast_result(
-    node_t *operand, const psx_type_t *cast_type) {
-  node_t *wrap = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_aggregate_cast_result_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type) {
+  node_t *wrap = arena_alloc_in(arena_context, sizeof(node_t));
   wrap->kind = ND_CAST;
   wrap->lhs = operand;
   return annotate_explicit_type(wrap, cast_type);
 }
 
-node_t *ps_node_new_void_cast_result(node_t *operand,
-                                     const psx_type_t *cast_type) {
-  node_t *wrap = arena_alloc(sizeof(node_t));
+node_t *ps_node_new_void_cast_result_in(arena_context_t *arena_context,
+                                        node_t *operand,
+                                        const psx_type_t *cast_type) {
+  node_t *wrap = arena_alloc_in(arena_context, sizeof(node_t));
   wrap->kind = ND_CAST;
   wrap->lhs = operand;
   return annotate_explicit_type(wrap, cast_type);
 }
 
-node_t *psx_node_new_source_cast(
+node_t *psx_node_new_source_cast_in(
+    arena_context_t *arena_context,
     node_t *operand, psx_type_name_ref_t type_name) {
-  node_source_cast_t *cast = arena_alloc(sizeof(node_source_cast_t));
+  node_source_cast_t *cast = arena_alloc_in(
+      arena_context, sizeof(node_source_cast_t));
   cast->base.kind = ND_CAST;
   cast->base.lhs = operand;
   cast->base.is_source_cast = 1;
@@ -2460,61 +2495,82 @@ node_t *psx_node_new_source_cast(
   return (node_t *)cast;
 }
 
-static node_t *new_addr_node(node_t *base) {
-  node_t *addr = arena_alloc(sizeof(node_t));
+static node_t *new_addr_node(arena_context_t *arena_context,
+                             node_t *base) {
+  node_t *addr = arena_alloc_in(arena_context, sizeof(node_t));
   addr->kind = ND_ADDR;
   addr->lhs = base;
   return addr;
 }
 
-static void init_array_addr_canonical_type(node_t *addr,
+static void init_array_addr_canonical_type(
+                                           arena_context_t *arena_context,
+                                           node_t *addr,
                                            const psx_type_t *array_type) {
   if (!addr || !array_type) return;
   ps_node_bind_type(
       addr, array_type->kind == PSX_TYPE_ARRAY
-                ? ps_type_decay_array(array_type)
+                ? ps_type_decay_array_in(arena_context, array_type)
                 : (type_is_pointer_view_type(array_type) ? array_type : NULL));
 }
 
-node_t *ps_node_new_gvar_array_addr_for(global_var_t *gv) {
-  node_t *addr = new_addr_node(psx_node_new_gvar_array_base_for(gv));
-  init_array_addr_canonical_type(addr, ps_gvar_get_decl_type(gv));
-  return addr;
-}
-
-node_t *psx_node_new_static_local_array_addr_for(lvar_t *var) {
+node_t *ps_node_new_gvar_array_addr_for_in(
+    arena_context_t *arena_context, global_var_t *gv) {
   node_t *addr = new_addr_node(
-      psx_node_new_static_local_gvar_for(var));
-  init_array_addr_canonical_type(addr, static_local_backing_decl_type(var));
+      arena_context,
+      psx_node_new_gvar_array_base_for_in(arena_context, gv));
+  init_array_addr_canonical_type(
+      arena_context, addr, ps_gvar_get_decl_type(gv));
   return addr;
 }
 
-node_t *ps_node_new_lvar_array_addr_for(lvar_t *var) {
-  node_t *addr = new_addr_node(psx_node_new_lvar_for(var));
-  init_array_addr_canonical_type(addr, ps_lvar_get_decl_type(var));
+node_t *psx_node_new_static_local_array_addr_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
+  node_t *addr = new_addr_node(
+      arena_context,
+      psx_node_new_static_local_gvar_for_in(arena_context, var));
+  init_array_addr_canonical_type(
+      arena_context, addr, static_local_backing_decl_type(var));
   return addr;
 }
 
-node_t *ps_node_new_addr_value_for(node_t *operand) {
-  node_t *addr = new_addr_node(operand);
-  ps_node_bind_type(addr, ps_type_address_result(ps_node_get_type(operand)));
+node_t *ps_node_new_lvar_array_addr_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
+  node_t *addr = new_addr_node(
+      arena_context, psx_node_new_lvar_for_in(arena_context, var));
+  init_array_addr_canonical_type(
+      arena_context, addr, ps_lvar_get_decl_type(var));
   return addr;
 }
 
-node_t *ps_node_new_explicit_addr_value_for(node_t *operand) {
+node_t *ps_node_new_addr_value_for_in(arena_context_t *arena_context,
+                                      node_t *operand) {
+  node_t *addr = new_addr_node(arena_context, operand);
+  ps_node_bind_type(
+      addr, ps_type_address_result_in(
+                arena_context, ps_node_get_type(operand)));
+  return addr;
+}
+
+node_t *ps_node_new_explicit_addr_value_for_in(
+    arena_context_t *arena_context, node_t *operand) {
   if (!operand || operand->kind != ND_ADDR) return operand;
-  node_t *cp = arena_alloc(sizeof(node_t));
+  node_t *cp = arena_alloc_in(arena_context, sizeof(node_t));
   *cp = *operand;
   cp->type_state = (psx_expr_type_state_t){0};
   ps_node_bind_type(
-      cp, ps_type_address_result(ps_node_get_type(operand->lhs)));
+      cp, ps_type_address_result_in(
+              arena_context, ps_node_get_type(operand->lhs)));
   cp->is_explicit_addr_expr = 1;
   return cp;
 }
 
-node_t *ps_node_new_unary_addr_for(node_t *operand) {
-  node_t *node = new_addr_node(operand);
-  ps_node_bind_type(node, ps_type_address_result(ps_node_get_type(operand)));
+node_t *ps_node_new_unary_addr_for_in(arena_context_t *arena_context,
+                                      node_t *operand) {
+  node_t *node = new_addr_node(arena_context, operand);
+  ps_node_bind_type(
+      node, ps_type_address_result_in(
+                arena_context, ps_node_get_type(operand)));
   node->is_explicit_addr_expr = 1;
   return node;
 }
@@ -2534,11 +2590,14 @@ static void advance_subscript_vla_runtime_view(node_t *result,
       remaining > 0 ? remaining - 1 : 0);
 }
 
-node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
-                                          const tag_member_info_t *info) {
+node_t *ps_node_new_tag_member_deref_for_in(
+    arena_context_t *arena_context, node_t *addr_base, node_t *base,
+    const tag_member_info_t *info) {
   if (!info) return NULL;
-  node_t *addr = ps_node_new_binary(ND_ADD, addr_base, ps_node_new_num(info->offset));
-  node_t *deref = arena_alloc(sizeof(node_t));
+  node_t *addr = ps_node_new_binary_in(
+      arena_context, ND_ADD, addr_base,
+      ps_node_new_num_in(arena_context, info->offset));
+  node_t *deref = arena_alloc_in(arena_context, sizeof(node_t));
   deref->kind = ND_DEREF;
   deref->lhs = addr;
   int mem_size = ps_tag_member_decl_value_size(info);
@@ -2561,53 +2620,60 @@ node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
   const psx_type_t *decl_type = ps_tag_member_decl_type(info);
   if (decl_type) {
     ps_node_bind_type(
-        deref, type_with_self_qualifiers(
-                   decl_type, member_is_const, member_is_volatile));
+        deref, type_with_self_qualifiers_in(
+                   arena_context, decl_type,
+                   member_is_const, member_is_volatile));
     deref->type_state.is_scalar_ptr_member_lvalue =
         mem_is_ptr && mem_size > 0 && mem_array_len <= 0;
   }
   return deref;
 }
 
-node_t *ps_node_new_unary_deref_for(node_t *operand) {
+node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
+                                       node_t *operand) {
   const psx_type_t *result_type =
       ps_type_dereference_result(ps_node_get_type(operand));
   if (!result_type) {
-    node_t *result = arena_alloc(sizeof(node_t));
+    node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
     result->kind = ND_DEREF;
     result->lhs = operand;
     return result;
   }
 
-  node_t *result = arena_alloc(sizeof(node_t));
+  node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
   result->kind = ND_DEREF;
   result->lhs = operand;
   ps_node_bind_type(result, result_type);
   return result;
 }
 
-node_t *psx_node_new_unary_deref_syntax_for(node_t *operand) {
-  node_t *result = arena_alloc(sizeof(node_t));
+node_t *psx_node_new_unary_deref_syntax_for_in(
+    arena_context_t *arena_context, node_t *operand) {
+  node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
   result->kind = ND_UNARY_DEREF;
   result->lhs = operand;
   return result;
 }
 
-node_t *psx_node_new_subscript_syntax_for(node_t *base, node_t *index) {
-  node_t *result = arena_alloc(sizeof(node_t));
+node_t *psx_node_new_subscript_syntax_for_in(
+    arena_context_t *arena_context, node_t *base, node_t *index) {
+  node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
   result->kind = ND_SUBSCRIPT;
   result->lhs = base;
   result->rhs = index;
   return result;
 }
 
-node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
-                                         node_t *scaled_offset) {
+node_t *ps_node_new_subscript_deref_for_in(
+    arena_context_t *arena_context, node_t *base, node_t *base_addr,
+    node_t *scaled_offset) {
   const psx_type_t *base_type = ps_node_get_type(base);
-  const psx_type_t *result_type = ps_type_subscript_result(base_type);
-  node_t *result = arena_alloc(sizeof(node_t));
+  const psx_type_t *result_type = ps_type_subscript_result_in(
+      arena_context, base_type);
+  node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
   result->kind = ND_DEREF;
-  result->lhs = ps_node_new_binary(ND_ADD, base_addr, scaled_offset);
+  result->lhs = ps_node_new_binary_in(
+      arena_context, ND_ADD, base_addr, scaled_offset);
   if (result_type) {
     ps_node_bind_type(result, result_type);
     advance_subscript_vla_runtime_view(result, base);
@@ -2616,23 +2682,27 @@ node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
   return result;
 }
 
-node_t *ps_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
-                                             const tag_member_info_t *info) {
+node_t *ps_node_new_tag_member_lvar_ref_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int member_offset,
+    const tag_member_info_t *info) {
   const psx_type_t *decl_type = ps_tag_member_decl_type(info);
   const psx_type_t *member_type = decl_type;
   if (decl_type) {
     int owner_is_const = lvar_self_is_const_qualified(owner);
     int owner_is_volatile = lvar_self_is_volatile_qualified(owner);
-    member_type = type_with_self_qualifiers(
-        member_type, owner_is_const, owner_is_volatile);
+    member_type = type_with_self_qualifiers_in(
+        arena_context, member_type,
+        owner_is_const, owner_is_volatile);
   }
   if (!member_type)
-    member_type = ps_type_new_integer(
+    member_type = ps_type_new_integer_in(
+        arena_context,
         ps_tag_member_decl_is_bool(info) ? TK_BOOL : TK_INT,
         ps_tag_member_decl_value_size(info),
         ps_tag_member_decl_is_unsigned(info));
   node_lvar_t *node = new_lvar_symbol_node(
-      (owner ? owner->offset : 0) + member_offset, owner, member_type);
+      arena_context, (owner ? owner->offset : 0) + member_offset,
+      owner, member_type);
   if (info && info->bit_width > 0) {
     node->base.type_state.bit_width = (unsigned char)info->bit_width;
     node->base.type_state.bit_offset = (unsigned char)info->bit_offset;
@@ -2641,8 +2711,10 @@ node_t *ps_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
   return (node_t *)node;
 }
 
-node_t *ps_node_new_gvar_for(global_var_t *gv) {
-  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
+                                global_var_t *gv) {
+  node_gvar_t *node = arena_alloc_in(
+      arena_context, sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (gv) {
     node->symbol = gv;
@@ -2654,8 +2726,10 @@ node_t *ps_node_new_gvar_for(global_var_t *gv) {
   return (node_t *)node;
 }
 
-node_t *psx_node_new_gvar_array_base_for(global_var_t *gv) {
-  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+node_t *psx_node_new_gvar_array_base_for_in(
+    arena_context_t *arena_context, global_var_t *gv) {
+  node_gvar_t *node = arena_alloc_in(
+      arena_context, sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (gv) {
     node->symbol = gv;
@@ -2667,8 +2741,10 @@ node_t *psx_node_new_gvar_array_base_for(global_var_t *gv) {
   return (node_t *)node;
 }
 
-node_t *psx_node_new_static_local_gvar_for(lvar_t *var) {
-  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+node_t *psx_node_new_static_local_gvar_for_in(
+    arena_context_t *arena_context, lvar_t *var) {
+  node_gvar_t *node = arena_alloc_in(
+      arena_context, sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (var) {
     node->symbol = var->static_global;
@@ -2685,23 +2761,27 @@ lvar_t *ps_node_lvar_symbol(node_t *node) {
   return ((node_lvar_t *)node)->var;
 }
 
-node_t *ps_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {
+node_t *ps_node_clone_lvalue_with_lhs_in(
+    arena_context_t *arena_context, node_t *target, node_t *lhs) {
   if (!target || !is_lvalue_clone_kind(target->kind)) return target;
   switch (target->kind) {
     case ND_LVAR: {
-      node_lvar_t *clone = arena_alloc(sizeof(node_lvar_t));
+      node_lvar_t *clone = arena_alloc_in(
+          arena_context, sizeof(node_lvar_t));
       *clone = *(node_lvar_t *)target;
       clone->base.lhs = lhs;
       return (node_t *)clone;
     }
     case ND_GVAR: {
-      node_gvar_t *clone = arena_alloc(sizeof(node_gvar_t));
+      node_gvar_t *clone = arena_alloc_in(
+          arena_context, sizeof(node_gvar_t));
       *clone = *(node_gvar_t *)target;
       clone->base.lhs = lhs;
       return (node_t *)clone;
     }
     case ND_STRING: {
-      node_string_t *clone = arena_alloc(sizeof(node_string_t));
+      node_string_t *clone = arena_alloc_in(
+          arena_context, sizeof(node_string_t));
       *clone = *(node_string_t *)target;
       clone->base.lhs = lhs;
       return (node_t *)clone;
@@ -2709,7 +2789,7 @@ node_t *ps_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {
     case ND_UNARY_DEREF:
     case ND_DEREF:
     {
-      node_t *clone = arena_alloc(sizeof(node_t));
+      node_t *clone = arena_alloc_in(arena_context, sizeof(node_t));
       *clone = *target;
       clone->lhs = lhs;
       return clone;
@@ -2743,7 +2823,8 @@ int ps_node_deref_decays_to_address(node_t *node) {
   return type && type->kind == PSX_TYPE_ARRAY;
 }
 
-const psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
+const psx_type_t *ps_node_row_decay_pointer_arith_type_in(
+    arena_context_t *arena_context, node_t *node) {
   if (!node || (node->kind != ND_DEREF && node->kind != ND_ADDR)) return NULL;
   int ds = ps_node_deref_size(node);
   if (ds <= 0 || ps_node_type_size(node) <= ds) return NULL;
@@ -2755,7 +2836,7 @@ const psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
           : NULL;
   if (!base) return NULL;
 
-  return ps_type_address_result(base);
+  return ps_type_address_result_in(arena_context, base);
 }
 
 int ps_node_bitfield_width(node_t *node) {
@@ -2799,10 +2880,12 @@ int ps_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
   return alloc->descriptor_frame_off > 0;
 }
 
-node_t *ps_node_new_vla_alloc(int descriptor_frame_off,
-                               int row_stride_frame_off,
-                               node_t *lhs, node_t *rhs) {
-  node_vla_alloc_t *node = arena_alloc(sizeof(node_vla_alloc_t));
+node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
+                                  int descriptor_frame_off,
+                                  int row_stride_frame_off,
+                                  node_t *lhs, node_t *rhs) {
+  node_vla_alloc_t *node = arena_alloc_in(
+      arena_context, sizeof(node_vla_alloc_t));
   node->base.kind = ND_VLA_ALLOC;
   node->base.lhs = lhs;
   node->base.rhs = rhs;
@@ -2811,24 +2894,27 @@ node_t *ps_node_new_vla_alloc(int descriptor_frame_off,
   return (node_t *)node;
 }
 
-node_t *psx_node_new_raw_assign(node_t *lhs, node_t *rhs) {
-  node_t *node = arena_alloc(sizeof(node_t));
+node_t *psx_node_new_raw_assign_in(arena_context_t *arena_context,
+                                   node_t *lhs, node_t *rhs) {
+  node_t *node = arena_alloc_in(arena_context, sizeof(node_t));
   node->kind = ND_ASSIGN;
   node->lhs = lhs;
   node->rhs = rhs;
   return node;
 }
 
-node_t *ps_node_new_assign(node_t *lhs, node_t *rhs) {
-  node_t *node = psx_node_new_raw_assign(lhs, rhs);
+node_t *ps_node_new_assign_in(arena_context_t *arena_context,
+                              node_t *lhs, node_t *rhs) {
+  node_t *node = psx_node_new_raw_assign_in(arena_context, lhs, rhs);
   ps_node_bind_type(node, ps_node_get_type(lhs));
   return node;
 }
 
-node_t *psx_node_new_raw_decl_initializer(node_t *target, node_t *value,
-                                          psx_decl_init_kind_t init_kind,
-                                          token_t *tok) {
-  node_decl_init_t *node = arena_alloc(sizeof(node_decl_init_t));
+node_t *psx_node_new_raw_decl_initializer_in(
+    arena_context_t *arena_context, node_t *target, node_t *value,
+    psx_decl_init_kind_t init_kind, token_t *tok) {
+  node_decl_init_t *node = arena_alloc_in(
+      arena_context, sizeof(node_decl_init_t));
   node->base.kind = ND_DECL_INIT;
   node->base.lhs = target;
   node->base.rhs = value;
@@ -2837,11 +2923,12 @@ node_t *psx_node_new_raw_decl_initializer(node_t *target, node_t *value,
   return (node_t *)node;
 }
 
-node_t *psx_node_new_compound_literal(
+node_t *psx_node_new_compound_literal_in(
+    arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *tok,
     int requires_addressable_object, int has_file_scope_storage) {
   node_compound_literal_t *node =
-      arena_alloc(sizeof(node_compound_literal_t));
+      arena_alloc_in(arena_context, sizeof(node_compound_literal_t));
   node->base.kind = ND_COMPOUND_LITERAL;
   node->base.rhs = initializer;
   node->base.tok = tok;
@@ -2852,17 +2939,22 @@ node_t *psx_node_new_compound_literal(
   return (node_t *)node;
 }
 
-node_t *psx_node_new_raw_decl_initializer_list(
+node_t *psx_node_new_raw_decl_initializer_list_in(
+    arena_context_t *arena_context,
     node_t *target, psx_decl_init_kind_t init_kind,
     psx_initializer_entry_t *entries, int entry_count, token_t *tok) {
-  return psx_node_new_raw_decl_initializer(
-      target, psx_node_new_initializer_list(entries, entry_count, tok),
+  return psx_node_new_raw_decl_initializer_in(
+      arena_context, target,
+      psx_node_new_initializer_list_in(
+          arena_context, entries, entry_count, tok),
       init_kind, tok);
 }
 
-node_t *psx_node_new_initializer_list(
+node_t *psx_node_new_initializer_list_in(
+    arena_context_t *arena_context,
     psx_initializer_entry_t *entries, int entry_count, token_t *tok) {
-  node_init_list_t *node = arena_alloc(sizeof(node_init_list_t));
+  node_init_list_t *node = arena_alloc_in(
+      arena_context, sizeof(node_init_list_t));
   node->base.kind = ND_INIT_LIST;
   node->base.tok = tok;
   node->entries = entries;

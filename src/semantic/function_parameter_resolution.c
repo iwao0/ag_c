@@ -10,7 +10,9 @@ void psx_resolve_declarator_syntax_in_context(
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width) {
   if (!parsed || !shape ||
-      !ps_declarator_shape_copy(shape, &parsed->declarator_shape)) {
+      !ps_declarator_shape_copy_in(
+          ps_ctx_arena(semantic_context),
+          shape, &parsed->declarator_shape)) {
     ps_diag_ctx(parsed ? parsed->diagnostic_token : NULL,
                 "declarator-resolution",
                 "invalid declarator shape");
@@ -51,10 +53,12 @@ void psx_resolve_declarator_syntax_in_context(
 }
 
 void psx_set_resolved_function_parameter_types(
+    arena_context_t *arena_context,
     psx_declarator_op_t *function_op,
     const psx_type_t *const *parameter_types,
     int parameter_count, int is_variadic) {
   if (!function_op || function_op->kind != PSX_DECL_OP_FUNCTION) return;
-  (void)ps_declarator_op_set_function_params(
-      function_op, parameter_types, parameter_count, is_variadic);
+  (void)ps_declarator_op_set_function_params_in(
+      arena_context, function_op,
+      parameter_types, parameter_count, is_variadic);
 }

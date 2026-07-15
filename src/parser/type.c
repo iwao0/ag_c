@@ -83,10 +83,6 @@ psx_type_t *ps_type_new_in(
   return type;
 }
 
-psx_type_t *ps_type_new(psx_type_kind_t kind) {
-  return ps_type_new_in(arena_context_active(), kind);
-}
-
 void ps_type_normalize_integer_identity(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_INTEGER) {
@@ -120,12 +116,6 @@ psx_type_t *ps_type_new_integer_in(
   return type;
 }
 
-psx_type_t *ps_type_new_integer(
-    token_kind_t scalar_kind, int size, int is_unsigned) {
-  return ps_type_new_integer_in(
-      arena_context_active(), scalar_kind, size, is_unsigned);
-}
-
 psx_type_t *ps_type_new_enum_in(
     arena_context_t *arena_context, char *tag_name, int tag_len,
     int tag_scope_depth_p1, int size) {
@@ -137,13 +127,6 @@ psx_type_t *ps_type_new_enum_in(
   type->tag_len = tag_len;
   type->tag_scope_depth_p1 = tag_scope_depth_p1;
   return type;
-}
-
-psx_type_t *ps_type_new_enum(
-    char *tag_name, int tag_len, int tag_scope_depth_p1, int size) {
-  return ps_type_new_enum_in(
-      arena_context_active(), tag_name, tag_len,
-      tag_scope_depth_p1, size);
 }
 
 psx_type_t *ps_type_new_float_in(
@@ -158,10 +141,6 @@ psx_type_t *ps_type_new_float_in(
   return type;
 }
 
-psx_type_t *ps_type_new_float(tk_float_kind_t fp_kind, int size) {
-  return ps_type_new_float_in(arena_context_active(), fp_kind, size);
-}
-
 static int type_integer_promotion_size(const psx_type_t *type) {
   int size = ps_type_sizeof(type);
   if (size <= 0) return 4;
@@ -174,6 +153,24 @@ int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
     return 0;
   }
   return ps_type_sizeof(type) >= 4 && ps_type_is_unsigned(type);
+}
+
+int ps_type_usual_arithmetic_result_is_unsigned(
+    const psx_type_t *lhs, const psx_type_t *rhs) {
+  if ((lhs && (lhs->kind == PSX_TYPE_FLOAT ||
+               lhs->kind == PSX_TYPE_COMPLEX)) ||
+      (rhs && (rhs->kind == PSX_TYPE_FLOAT ||
+               rhs->kind == PSX_TYPE_COMPLEX))) {
+    return 0;
+  }
+  int lhs_size = type_integer_promotion_size(lhs);
+  int rhs_size = type_integer_promotion_size(rhs);
+  int lhs_unsigned = ps_type_integer_promotion_is_unsigned(lhs);
+  int rhs_unsigned = ps_type_integer_promotion_is_unsigned(rhs);
+  if (lhs_unsigned == rhs_unsigned) return lhs_unsigned;
+  int unsigned_size = lhs_unsigned ? lhs_size : rhs_size;
+  int signed_size = lhs_unsigned ? rhs_size : lhs_size;
+  return unsigned_size >= signed_size;
 }
 
 const psx_type_t *ps_type_usual_arithmetic_result_in(
@@ -213,30 +210,14 @@ const psx_type_t *ps_type_usual_arithmetic_result_in(
 
   int lhs_size = type_integer_promotion_size(lhs);
   int rhs_size = type_integer_promotion_size(rhs);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned(lhs);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned(rhs);
-  int result_unsigned;
-  if (lhs_unsigned == rhs_unsigned) {
-    result_unsigned = lhs_unsigned;
-  } else {
-    int unsigned_size = lhs_unsigned ? lhs_size : rhs_size;
-    int signed_size = lhs_unsigned ? rhs_size : lhs_size;
-    result_unsigned = unsigned_size >= signed_size;
-  }
+  int result_unsigned =
+      ps_type_usual_arithmetic_result_is_unsigned(lhs, rhs);
   int size = lhs_size > rhs_size ? lhs_size : rhs_size;
   psx_type_t *type = ps_type_new_integer_in(
       arena_context, TK_EOF, size, result_unsigned);
   type->is_long_long =
       (lhs && lhs->is_long_long) || (rhs && rhs->is_long_long);
   return type;
-}
-
-const psx_type_t *ps_type_usual_arithmetic_result(
-    const psx_type_t *lhs, const psx_type_t *rhs,
-    tk_float_kind_t fallback_fp_kind, int force_complex) {
-  return ps_type_usual_arithmetic_result_in(
-      arena_context_active(), lhs, rhs,
-      fallback_fp_kind, force_complex);
 }
 
 const psx_type_t *ps_type_binary_result_in(
@@ -273,13 +254,6 @@ const psx_type_t *ps_type_binary_result_in(
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_binary_result(
-    psx_type_binary_op_t op, const psx_type_t *lhs,
-    const psx_type_t *rhs) {
-  return ps_type_binary_result_in(
-      arena_context_active(), op, lhs, rhs);
-}
-
 const psx_type_t *ps_type_conditional_result_in(
     arena_context_t *arena_context,
     const psx_type_t *then_type, const psx_type_t *else_type) {
@@ -300,12 +274,6 @@ const psx_type_t *ps_type_conditional_result_in(
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_conditional_result(
-    const psx_type_t *then_type, const psx_type_t *else_type) {
-  return ps_type_conditional_result_in(
-      arena_context_active(), then_type, else_type);
-}
-
 psx_type_t *ps_type_new_pointer_in(
     arena_context_t *arena_context, const psx_type_t *base) {
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_POINTER);
@@ -316,20 +284,12 @@ psx_type_t *ps_type_new_pointer_in(
   return type;
 }
 
-psx_type_t *ps_type_new_pointer(const psx_type_t *base) {
-  return ps_type_new_pointer_in(arena_context_active(), base);
-}
-
 psx_type_t *ps_type_new_function_in(
     arena_context_t *arena_context, const psx_type_t *return_type) {
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FUNCTION);
   if (!type) return NULL;
   type->base = return_type;
   return type;
-}
-
-psx_type_t *ps_type_new_function(const psx_type_t *return_type) {
-  return ps_type_new_function_in(arena_context_active(), return_type);
 }
 
 void ps_type_set_function_params_in(
@@ -350,15 +310,6 @@ void ps_type_set_function_params_in(
                     ? ps_type_clone_in(arena_context, param_types[i])
                     : NULL;
   function_type->param_types = params;
-}
-
-void ps_type_set_function_params(
-    psx_type_t *function_type,
-    const psx_type_t *const *param_types,
-    int param_count, int is_variadic) {
-  ps_type_set_function_params_in(
-      arena_context_active(), function_type, param_types,
-      param_count, is_variadic);
 }
 
 const psx_type_t *ps_type_derived_function(const psx_type_t *type) {
@@ -396,12 +347,6 @@ psx_type_t *ps_type_new_array_in(
   type->align = base && base->align > 0 ? base->align : 1;
   type->is_vla = is_vla ? 1 : 0;
   return type;
-}
-
-psx_type_t *ps_type_new_array(
-    const psx_type_t *base, int array_len, int size, int is_vla) {
-  return ps_type_new_array_in(
-      arena_context_active(), base, array_len, size, is_vla);
 }
 
 int ps_type_complete_array(psx_type_t *type, int array_len) {
@@ -442,10 +387,6 @@ psx_type_t *ps_type_clone_in(
   return dst;
 }
 
-psx_type_t *ps_type_clone(const psx_type_t *src) {
-  return ps_type_clone_in(arena_context_active(), src);
-}
-
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
   if (!src) return NULL;
   psx_type_t *dst = calloc(1, sizeof(psx_type_t));
@@ -482,12 +423,6 @@ psx_type_t *ps_type_wrap_array_dims_in(
     child_size = size;
   }
   return result;
-}
-
-psx_type_t *ps_type_wrap_array_dims(
-    psx_type_t *base, const int *dims, int dim_count) {
-  return ps_type_wrap_array_dims_in(
-      arena_context_active(), base, dims, dim_count);
 }
 
 void ps_declarator_shape_init(psx_declarator_shape_t *shape) {
@@ -530,25 +465,11 @@ int ps_declarator_shape_append_pointer_in(
   return 1;
 }
 
-int ps_declarator_shape_append_pointer(
-    psx_declarator_shape_t *shape, int is_const_qualified,
-    int is_volatile_qualified) {
-  return ps_declarator_shape_append_pointer_in(
-      arena_context_active(), shape,
-      is_const_qualified, is_volatile_qualified);
-}
-
 int ps_declarator_shape_append_array_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int array_len) {
   return ps_declarator_shape_append_array_ex_in(
       arena_context, shape, array_len, 0);
-}
-
-int ps_declarator_shape_append_array(
-    psx_declarator_shape_t *shape, int array_len) {
-  return ps_declarator_shape_append_array_in(
-      arena_context_active(), shape, array_len);
 }
 
 int ps_declarator_shape_append_array_ex_in(
@@ -563,12 +484,6 @@ int ps_declarator_shape_append_array_ex_in(
   return 1;
 }
 
-int ps_declarator_shape_append_array_ex(
-    psx_declarator_shape_t *shape, int array_len, int is_incomplete) {
-  return ps_declarator_shape_append_array_ex_in(
-      arena_context_active(), shape, array_len, is_incomplete);
-}
-
 int ps_declarator_shape_append_vla_array_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape) {
   psx_declarator_op_t *op =
@@ -579,21 +494,10 @@ int ps_declarator_shape_append_vla_array_in(
   return 1;
 }
 
-int ps_declarator_shape_append_vla_array(
-    psx_declarator_shape_t *shape) {
-  return ps_declarator_shape_append_vla_array_in(
-      arena_context_active(), shape);
-}
-
 int ps_declarator_shape_append_function_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape) {
   return declarator_shape_append(
              arena_context, shape, PSX_DECL_OP_FUNCTION) != NULL;
-}
-
-int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
-  return ps_declarator_shape_append_function_in(
-      arena_context_active(), shape);
 }
 
 int ps_declarator_op_set_function_params_in(
@@ -614,13 +518,6 @@ int ps_declarator_op_set_function_params_in(
   for (int i = 0; i < param_count; i++)
     op->function_param_types[i] = param_types ? param_types[i] : NULL;
   return 1;
-}
-
-int ps_declarator_op_set_function_params(
-    psx_declarator_op_t *op, const psx_type_t *const *param_types,
-    int param_count, int is_variadic) {
-  return ps_declarator_op_set_function_params_in(
-      arena_context_active(), op, param_types, param_count, is_variadic);
 }
 
 int ps_declarator_shape_set_array_bound(
@@ -688,13 +585,6 @@ int ps_declarator_shape_copy_in(
   return declarator_shape_append_shape(arena_context, dst, src);
 }
 
-int ps_declarator_shape_copy(
-    psx_declarator_shape_t *dst,
-    const psx_declarator_shape_t *src) {
-  return ps_declarator_shape_copy_in(
-      arena_context_active(), dst, src);
-}
-
 int ps_declarator_shape_count_ops(
     const psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind) {
   if (!shape) return 0;
@@ -736,12 +626,6 @@ psx_type_t *ps_type_apply_declarator_shape_in(
   return type;
 }
 
-psx_type_t *ps_type_apply_declarator_shape(
-    psx_type_t *base, const psx_declarator_shape_t *shape) {
-  return ps_type_apply_declarator_shape_in(
-      arena_context_active(), base, shape);
-}
-
 psx_type_t *ps_type_adjust_parameter_type_in(
     arena_context_t *arena_context, psx_type_t *type) {
   if (!type) return NULL;
@@ -753,11 +637,6 @@ psx_type_t *ps_type_adjust_parameter_type_in(
   if (type->kind == PSX_TYPE_FUNCTION)
     return ps_type_new_pointer_in(arena_context, type);
   return type;
-}
-
-psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type) {
-  return ps_type_adjust_parameter_type_in(
-      arena_context_active(), type);
 }
 
 psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
@@ -781,14 +660,6 @@ psx_type_t *ps_type_new_tag_in(
   type->size = size;
   type->align = size >= 8 ? 8 : (size >= 4 ? 4 : (size >= 2 ? 2 : 1));
   return type;
-}
-
-psx_type_t *ps_type_new_tag(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int tag_scope_depth_p1, int size) {
-  return ps_type_new_tag_in(
-      arena_context_active(), tag_kind, tag_name, tag_len,
-      tag_scope_depth_p1, size);
 }
 
 int ps_type_sizeof(const psx_type_t *type) {
@@ -892,18 +763,10 @@ const psx_type_t *ps_type_address_result_in(
   return ps_type_new_pointer_in(arena_context, type);
 }
 
-const psx_type_t *ps_type_address_result(const psx_type_t *type) {
-  return ps_type_address_result_in(arena_context_active(), type);
-}
-
 const psx_type_t *ps_type_decay_array_in(
     arena_context_t *arena_context, const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return NULL;
   return ps_type_new_pointer_in(arena_context, type->base);
-}
-
-const psx_type_t *ps_type_decay_array(const psx_type_t *type) {
-  return ps_type_decay_array_in(arena_context_active(), type);
 }
 
 const psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
@@ -921,10 +784,6 @@ const psx_type_t *ps_type_subscript_result_in(
     return NULL;
   }
   return ps_type_clone_in(arena_context, type->base);
-}
-
-const psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
-  return ps_type_subscript_result_in(arena_context_active(), type);
 }
 
 int ps_type_subscript_static_stride(const psx_type_t *type) {
@@ -1236,35 +1095,48 @@ const psx_type_t *ps_type_generic_control_in(
   return type;
 }
 
-const psx_type_t *ps_type_generic_control(const psx_type_t *control) {
-  return ps_type_generic_control_in(arena_context_active(), control);
-}
-
 int ps_type_generic_select_index_in(
     arena_context_t *arena_context, const psx_type_t *control,
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count) {
-  const psx_type_t *normalized = ps_type_generic_control_in(
-      arena_context, control);
-  if (!normalized || !association_types || association_count <= 0) return -1;
-  int default_index = -1;
-  for (int i = 0; i < association_count; i++) {
-    if (is_default && is_default[i]) {
-      if (default_index < 0) default_index = i;
-      continue;
-    }
-    if (ps_type_generic_matches(normalized, association_types[i])) return i;
-  }
-  return default_index;
+  (void)arena_context;
+  return ps_type_generic_select_index(
+      control, association_types, is_default, association_count);
 }
 
 int ps_type_generic_select_index(
     const psx_type_t *control,
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count) {
-  return ps_type_generic_select_index_in(
-      arena_context_active(), control, association_types,
-      is_default, association_count);
+  if (!control || !association_types || association_count <= 0) return -1;
+  psx_type_t normalized = *control;
+  psx_type_t decayed;
+  if (normalized.kind == PSX_TYPE_ARRAY ||
+      normalized.kind == PSX_TYPE_FUNCTION) {
+    memset(&decayed, 0, sizeof(decayed));
+    decayed.kind = PSX_TYPE_POINTER;
+    decayed.base = normalized.kind == PSX_TYPE_ARRAY
+                       ? normalized.base
+                       : control;
+    decayed.size = 8;
+    decayed.align = 8;
+    normalized = decayed;
+  } else if (normalized.kind == PSX_TYPE_INTEGER) {
+    if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;
+    else if (normalized.size == 1) normalized.scalar_kind = TK_CHAR;
+    else if (normalized.size == 2) normalized.scalar_kind = TK_SHORT;
+    else if (normalized.size == 8) normalized.scalar_kind = TK_LONG;
+    else normalized.scalar_kind = TK_INT;
+  }
+  int default_index = -1;
+  for (int i = 0; i < association_count; i++) {
+    if (is_default && is_default[i]) {
+      if (default_index < 0) default_index = i;
+      continue;
+    }
+    if (ps_type_generic_matches(&normalized, association_types[i])) return i;
+  }
+  return default_index;
 }
 
 int ps_type_is_tag_aggregate(const psx_type_t *type) {

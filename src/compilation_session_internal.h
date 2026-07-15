@@ -15,7 +15,6 @@ struct ag_compilation_session_t {
   psx_local_registry_t *local_registry;
   ag_preprocessor_context_t *preprocessor_context;
   arena_context_t *arena_context;
-  arena_context_t *previous_arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   ag_diagnostic_context_t *previous_diagnostic_context;
   tokenizer_context_t tokenizer;

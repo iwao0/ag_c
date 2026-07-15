@@ -7,6 +7,7 @@
 #include "lvar_internal.h"
 #include "local_registry.h"
 #include "node_utils.h"
+#include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
@@ -187,15 +188,16 @@ void ps_decl_reset_translation_unit_state_in(
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
-node_t *ps_decl_bind_initializer_for_var(
+node_t *ps_decl_bind_initializer_for_var_in(
+    arena_context_t *arena_context,
     lvar_t *var, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok) {
   node_t *target =
       ps_lvar_is_array(var) || ps_lvar_is_tag_aggregate(var)
-          ? psx_node_new_lvar_object_ref_for(var)
-          : ps_node_new_lvar_expr_ref_for(var);
-  return psx_node_new_raw_decl_initializer(
-      target, initializer, initializer_kind, init_tok);
+          ? psx_node_new_lvar_object_ref_for_in(arena_context, var)
+          : ps_node_new_lvar_expr_ref_for_in(arena_context, var);
+  return psx_node_new_raw_decl_initializer_in(
+      arena_context, target, initializer, initializer_kind, init_tok);
 }
 
 node_t *psx_decl_parse_initializer_for_var_in_contexts(
@@ -214,12 +216,13 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
         semantic_context, global_registry, local_registry,
         runtime_context,
         local_declarations);
-    return ps_decl_bind_initializer_for_var(
+    return ps_decl_bind_initializer_for_var_in(
+        ps_parser_runtime_arena(runtime_context),
         var, syntax, PSX_DECL_INIT_LIST, init_tok);
   }
   token_t *init_tok = curtok();
-  return ps_decl_bind_initializer_for_var(
-      var,
+  return ps_decl_bind_initializer_for_var_in(
+      ps_parser_runtime_arena(runtime_context), var,
       psx_expr_assign_in_contexts(
           semantic_context, global_registry, local_registry,
           runtime_context,

@@ -107,8 +107,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
     return 0;
   session->previous_session = active_compilation_session;
   active_compilation_session = session;
-  session->previous_arena_context =
-      arena_context_activate(session->arena_context);
   session->previous_diagnostic_context =
       diag_context_activate(session->diagnostic_context);
   session->previous_tokenizer_context =
@@ -136,10 +134,8 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   cg_context_activate(session->previous_codegen_emit_context);
   tk_context_activate(session->previous_tokenizer_context);
   diag_context_activate(session->previous_diagnostic_context);
-  arena_context_activate(session->previous_arena_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
-  session->previous_arena_context = NULL;
   session->previous_diagnostic_context = NULL;
   session->previous_tokenizer_context = NULL;
   session->previous_codegen_emit_context = NULL;

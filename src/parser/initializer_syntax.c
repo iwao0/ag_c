@@ -5,6 +5,7 @@
 #include "expr.h"
 #include "local_registry.h"
 #include "node_utils.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -174,5 +175,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
       if (tk_consume('}')) break;
     }
   }
-  return psx_node_new_initializer_list(entries, count, brace_tok);
+  return psx_node_new_initializer_list_in(
+      ps_parser_runtime_arena(runtime_context),
+      entries, count, brace_tok);
 }

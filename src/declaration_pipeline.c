@@ -379,7 +379,8 @@ static int append_definition_parameter(
   }
   if (!name) {
     result->args[result->nargs++] =
-        ps_node_new_param_placeholder(resolution.type);
+        ps_node_new_param_placeholder_in(
+            ps_lowering_arena(lowering_context), resolution.type);
     return 1;
   }
 
@@ -398,7 +399,8 @@ static int append_definition_parameter(
                  name->len, name->str);
   }
   result->args[result->nargs++] =
-      ps_node_new_param_lvar_for(lowered);
+      ps_node_new_param_lvar_for_in(
+          ps_lowering_arena(lowering_context), lowered);
   return 0;
 }
 
@@ -474,7 +476,8 @@ int psx_finish_function_definition_pipeline(
   for (int i = 0; i < result->nargs; i++)
     parameter_types[i] = ps_node_get_type(result->args[i]);
   psx_set_resolved_function_parameter_types(
-      primary, parameter_types, result->nargs,
+      ps_ctx_arena(state->semantic_context), primary,
+      parameter_types, result->nargs,
       primary->function_is_variadic);
   free(parameter_types);
 
@@ -802,8 +805,10 @@ int psx_finish_automatic_local_declaration_pipeline(
   }
 
   if (request->initializer->has_initializer) {
-    node_t *initializer = ps_decl_bind_initializer_for_var(
-        result->var, request->initializer->value, request->initializer->kind,
+    node_t *initializer = ps_decl_bind_initializer_for_var_in(
+        ps_lowering_arena(request->lowering_context),
+        result->var, request->initializer->value,
+        request->initializer->kind,
         request->initializer->value_tok);
     result->initialization = append_local_initialization(
         request->lowering_context, result->initialization, initializer);
