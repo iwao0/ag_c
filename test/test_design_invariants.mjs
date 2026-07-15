@@ -4398,8 +4398,11 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     !/populate_type_relations_body\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/\bps_type_clone_in\s*\(/.test(
+    !/psx_semantic_type_table_intern\s*\([^]*?ps_type_clone_in\s*\(\s*table->arena_context\s*,\s*type\s*\)/.test(
       semanticTypeIdentitySource,
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*psx_semantic_type_table_lookup\s*\(\s*const\s+psx_semantic_type_table_t\s*\*table\s*,\s*psx_type_id_t\s+type_id\s*\)\s*;/.test(
+      semanticTypeIdentityHeader,
     ) ||
     !/\bps_type_remove_all_qualifiers_recursive\s*\(/.test(
       semanticTypeIdentitySource,

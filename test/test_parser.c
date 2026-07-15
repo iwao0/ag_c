@@ -17922,6 +17922,37 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(materialized_const_int));
 
+  psx_type_t *mutable_element = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *mutable_array = ps_type_new_array(
+      mutable_element, 0, 0, 0);
+  psx_type_t *equivalent_array = ps_type_new_array(
+      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
+  psx_qual_type_t immutable_array_identity =
+      ps_ctx_intern_qual_type_in(context, mutable_array);
+  ASSERT_EQ(immutable_array_identity.type_id,
+            ps_ctx_intern_qual_type_in(
+                context, equivalent_array).type_id);
+  const psx_type_t *immutable_array = ps_ctx_type_by_id_in(
+      context, immutable_array_identity.type_id);
+  ASSERT_TRUE(immutable_array != NULL);
+  ASSERT_TRUE(immutable_array != mutable_array);
+  ASSERT_TRUE(immutable_array->base != mutable_element);
+  ASSERT_EQ(0, immutable_array->array_len);
+  ASSERT_TRUE(!immutable_array->is_vla);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(immutable_array->base));
+  ASSERT_TRUE(ps_type_complete_array(mutable_array, 7));
+  ps_type_add_qualifiers(
+      mutable_element, PSX_TYPE_QUALIFIER_CONST);
+  ASSERT_EQ(0, immutable_array->array_len);
+  ASSERT_TRUE(!immutable_array->is_vla);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(immutable_array->base));
+  ASSERT_EQ(plain_int_identity.type_id,
+            psx_semantic_type_table_base(
+                ps_ctx_semantic_type_table_in(context),
+                immutable_array_identity.type_id).type_id);
+
   psx_type_t *host_pointer = ps_type_new_pointer(plain_int);
   psx_type_t *wasm_pointer = ps_type_clone(host_pointer);
   psx_qual_type_t host_pointer_identity =
