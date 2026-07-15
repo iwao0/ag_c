@@ -3489,6 +3489,9 @@ const tagMemberStruct = tagContextSource.match(
 const tagMemberDeclStruct = tagContextSource.match(
   /typedef struct tag_member_decl_t\s*\{([\s\S]*?)\}\s*tag_member_decl_t\s*;/,
 );
+const tagMemberLayoutDraftStruct = tagContextSource.match(
+  /struct tag_member_layout_draft_t\s*\{([\s\S]*?)\n\};/,
+);
 const tagSizeLookupFunction = tagContextSource.match(
   /int\s+ps_ctx_get_tag_size_in\s*\([^]*?\n\}/,
 );
@@ -3537,11 +3540,25 @@ if (!recordMemberDeclStruct ||
 }
 if (!tagMemberStruct ||
     !/\btag_member_decl_t\s+declaration\s*;/.test(tagMemberStruct[1]) ||
-    !/\bpsx_record_member_layout_t\s+layout\s*;/.test(tagMemberStruct[1]) ||
-    /\b(?:offset|bit_offset|decl_type)\s*;/.test(tagMemberStruct[1]) ||
+    /\b(?:psx_record_member_layout_t|offset|bit_offset|decl_type)\b/.test(
+      tagMemberStruct[1],
+    ) ||
     !tagMemberDeclStruct ||
     !/\bpsx_type_t\s*\*\s*type\s*;/.test(tagMemberDeclStruct[1]) ||
-    /\b(?:offset|bit_offset)\s*;/.test(tagMemberDeclStruct[1])) {
+    /\b(?:offset|bit_offset)\s*;/.test(tagMemberDeclStruct[1]) ||
+    !tagMemberLayoutDraftStruct ||
+    !/\bconst\s+tag_member_t\s*\*\s*member\s*;/.test(
+      tagMemberLayoutDraftStruct[1],
+    ) ||
+    !/\bag_target_info_t\s+target\s*;/.test(
+      tagMemberLayoutDraftStruct[1],
+    ) ||
+    !/\bpsx_record_member_layout_t\s+placement\s*;/.test(
+      tagMemberLayoutDraftStruct[1],
+    ) ||
+    !/\btag_member_layout_draft_t\s*\*\s*aggregate_member_layout_drafts\s*;/.test(
+      tagContextSource,
+    )) {
   throw new Error(
     "parser-owned record members must keep declarations separate from target layout",
   );
