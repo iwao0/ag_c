@@ -894,6 +894,14 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
   return definition;
 }
 
+psx_record_id_t ps_ctx_resolve_tag_record_id_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len) {
+  const psx_record_decl_t *record =
+      ps_ctx_get_tag_definition_in(context, kind, name, len);
+  return record ? record->record_id : PSX_RECORD_ID_INVALID;
+}
+
 const psx_record_decl_t *ps_ctx_get_record_decl_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
   return psx_record_decl_table_lookup(

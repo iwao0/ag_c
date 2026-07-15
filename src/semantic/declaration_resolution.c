@@ -6,6 +6,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
+#include "../type_layout.h"
 
 #include <limits.h>
 
@@ -24,11 +25,8 @@ static psx_type_t *resolve_tag_base_type(
       ps_ctx_arena(semantic_context), kind, name, name_len,
       scope_depth >= 0 ? scope_depth + 1 : 0);
   ps_type_clear_cached_layout(type);
-  type->aggregate_definition = ps_ctx_get_tag_definition_in(
+  type->record_id = ps_ctx_resolve_tag_record_id_in(
       semantic_context, kind, name, name_len);
-  type->record_id = type->aggregate_definition
-                        ? type->aggregate_definition->record_id
-                        : PSX_RECORD_ID_INVALID;
   return type;
 }
 
@@ -158,26 +156,45 @@ const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
       semantic_context, specifier);
 }
 
-static int object_scalar_slots(
-    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+static int object_scalar_slots_by_id(
+    psx_semantic_context_t *semantic_context, psx_type_id_t type_id) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  const psx_record_layout_table_t *record_layouts =
+      ps_ctx_record_layout_table_in(semantic_context);
+  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      semantic_types, type_id);
   if (!type) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
     if (type->array_len <= 0) return 0;
-    int child = object_scalar_slots(semantic_context, type->base);
+    psx_type_id_t base_type_id =
+        psx_semantic_type_table_base(semantic_types, type_id).type_id;
+    int child = object_scalar_slots_by_id(
+        semantic_context, base_type_id);
     if (child <= 0 || child > INT_MAX / type->array_len) return 0;
     return child * type->array_len;
   }
   if (!ps_type_is_tag_aggregate(type)) return 1;
-  const psx_aggregate_definition_t *definition = type->aggregate_definition;
-  if (!definition || definition->member_count <= 0) return 0;
+  psx_record_id_t record_id = ps_type_record_id(type);
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, record_id);
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, record_id, target);
+  if (!record || !layout || record->member_count <= 0 ||
+      layout->member_count < record->member_count)
+    return 0;
   if (type->kind == PSX_TYPE_UNION) {
     int max_slots = 0;
     int max_bytes = -1;
-    for (int i = 0; i < definition->member_count; i++) {
-      const tag_member_info_t *member = &definition->members[i];
-      const psx_type_t *member_type = ps_tag_member_decl_type(member);
-      int slots = object_scalar_slots(semantic_context, member_type);
-      int bytes = ps_ctx_type_sizeof_in(semantic_context, member_type);
+    for (int i = 0; i < record->member_count; i++) {
+      psx_type_id_t member_type_id =
+          psx_semantic_type_table_record_member(
+              semantic_types, type_id, i).type_id;
+      int slots = object_scalar_slots_by_id(
+          semantic_context, member_type_id);
+      int bytes = ps_type_sizeof_id_with_records(
+          semantic_types, record_layouts, member_type_id, target);
       if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
         max_bytes = bytes;
         max_slots = slots;
@@ -187,20 +204,34 @@ static int object_scalar_slots(
   }
   int slots = 0;
   int covered_end = -1;
-  for (int i = 0; i < definition->member_count; i++) {
-    const tag_member_info_t *member = &definition->members[i];
-    if (member->offset < covered_end) continue;
-    const psx_type_t *member_type = ps_tag_member_decl_type(member);
-    int member_slots = object_scalar_slots(semantic_context, member_type);
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *member = &record->members[i];
+    const psx_record_member_layout_t *member_layout =
+        psx_record_layout_member(layout, i);
+    if (!member_layout) return 0;
+    if (member_layout->offset < covered_end) continue;
+    psx_type_id_t member_type_id =
+        psx_semantic_type_table_record_member(
+            semantic_types, type_id, i).type_id;
+    int member_slots = object_scalar_slots_by_id(
+        semantic_context, member_type_id);
     if (member_slots <= 0 || slots > INT_MAX - member_slots) return 0;
     slots += member_slots;
     if (member->len <= 0) {
-      int size = ps_ctx_type_sizeof_in(semantic_context, member_type);
-      int end = member->offset + size;
+      int size = ps_type_sizeof_id_with_records(
+          semantic_types, record_layouts, member_type_id, target);
+      int end = member_layout->offset + size;
       if (size > 0 && end > covered_end) covered_end = end;
     }
   }
   return slots;
+}
+
+static int object_scalar_slots(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
+      semantic_context, type).type_id;
+  return object_scalar_slots_by_id(semantic_context, type_id);
 }
 
 int psx_resolve_incomplete_array_type(

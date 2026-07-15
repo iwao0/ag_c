@@ -1946,9 +1946,20 @@ const declarationResolutionSource = await readFile(
 if (!/\bps_type_character_code_unit_width\s*\(/.test(
       declarationResolutionSource,
     ) ||
-    /\bps_type_sizeof\s*\(/.test(declarationResolutionSource)) {
+    /\bps_type_sizeof\s*\(/.test(declarationResolutionSource) ||
+    /->\s*aggregate_definition\b/.test(declarationResolutionSource) ||
+    /\bmember->offset\b/.test(declarationResolutionSource) ||
+    !/\bps_ctx_resolve_tag_record_id_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_member\s*\(/.test(
+      declarationResolutionSource,
+    )) {
   throw new Error(
-    "string initializer compatibility must use canonical character type identity",
+    "declaration resolution must use canonical type identity and explicit record layout",
   );
 }
 const genericSelectionResolutionSource = await readFile(
