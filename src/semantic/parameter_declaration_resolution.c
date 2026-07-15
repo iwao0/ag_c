@@ -37,12 +37,13 @@ int psx_resolve_parameter_declaration(
   if (!type) return 0;
   type = ps_type_adjust_parameter_type_in(
       ps_ctx_arena(request->type.semantic_context), type);
-  if (!type ||
-      ps_ctx_intern_qual_type_in(
-          request->type.semantic_context, type).type_id ==
-          PSX_TYPE_ID_INVALID ||
-      !psx_plan_parameter_storage_for_target(
-          type, ps_ctx_target_info(request->type.semantic_context),
+  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
+      request->type.semantic_context, type);
+  if (!type || identity.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_plan_parameter_storage_for_type_id(
+          ps_ctx_semantic_type_table_in(request->type.semantic_context),
+          identity.type_id,
+          ps_ctx_target_info(request->type.semantic_context),
           &resolution->storage)) {
     return 0;
   }

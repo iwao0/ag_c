@@ -2427,6 +2427,22 @@ const parameterDeclarationResolutionSource = await readFile(
   "src/semantic/parameter_declaration_resolution.c",
   "utf8",
 );
+const localDeclarationPlanHeader = await readFile(
+  "src/semantic/local_declaration_plan.h",
+  "utf8",
+);
+const localDeclarationPlanSource = await readFile(
+  "src/semantic/local_declaration_plan.c",
+  "utf8",
+);
+const parameterDeclarationPlanHeader = await readFile(
+  "src/semantic/parameter_declaration_plan.h",
+  "utf8",
+);
+const parameterDeclarationPlanSource = await readFile(
+  "src/semantic/parameter_declaration_plan.c",
+  "utf8",
+);
 const controlFlowValidationSource = await readFile(
   "src/semantic/control_flow_validation.c",
   "utf8",
@@ -3000,6 +3016,28 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
   );
 }
 
+for (const [name, header, source, functionName] of [
+  ["local", localDeclarationPlanHeader, localDeclarationPlanSource,
+   "psx_plan_local_storage_for_type_id"],
+  ["parameter", parameterDeclarationPlanHeader,
+   parameterDeclarationPlanSource,
+   "psx_plan_parameter_storage_for_type_id"],
+]) {
+  const signature = new RegExp(
+    `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
+  );
+  if (!signature.test(header) || !signature.test(source) ||
+      !/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
+      /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
+      /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
+        header,
+      )) {
+    throw new Error(
+      `${name} storage planning must accept TypeId and use target layout only through the semantic type table`,
+    );
+  }
+}
+
 for (const [name, source] of [
   ["expression", expressionLoweringSource],
   ["subscript", subscriptLoweringSource],
@@ -3022,7 +3060,7 @@ if (!automaticLocalPipeline ||
     !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_resolve_local_declaration\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
-    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_plan_parameter_storage_for_target\s*\(/.test(
+    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
       parameterDeclarationResolutionSource,
     )) {
   throw new Error(

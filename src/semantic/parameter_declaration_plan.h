@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_PARAMETER_DECLARATION_PLAN_H
 #define SEMANTIC_PARAMETER_DECLARATION_PLAN_H
 
-#include "../parser/type.h"
+#include "type_identity.h"
 #include "../target_info.h"
 
 typedef enum {
@@ -19,10 +19,9 @@ typedef struct {
   int is_byref;
 } psx_parameter_storage_plan_t;
 
-int psx_plan_parameter_storage(
-    const psx_type_t *type, psx_parameter_storage_plan_t *plan);
-int psx_plan_parameter_storage_for_target(
-    const psx_type_t *type, const ag_target_info_t *target,
+int psx_plan_parameter_storage_for_type_id(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_target_info_t *target,
     psx_parameter_storage_plan_t *plan);
 
 #endif

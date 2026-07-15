@@ -364,6 +364,26 @@ static psx_lowering_context_t *test_lowering_context(void) {
   return ag_compilation_session_lowering_context(test_suite_session);
 }
 
+static int plan_test_local_storage(
+    const psx_type_t *type, psx_local_storage_plan_t *plan) {
+  psx_qual_type_t identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
+  ag_target_info_t target = ag_target_info_host();
+  return psx_plan_local_storage_for_type_id(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      identity.type_id, &target, plan);
+}
+
+static int plan_test_parameter_storage(
+    const psx_type_t *type, psx_parameter_storage_plan_t *plan) {
+  psx_qual_type_t identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
+  ag_target_info_t target = ag_target_info_host();
+  return psx_plan_parameter_storage_for_type_id(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      identity.type_id, &target, plan);
+}
+
 static int test_tag_flat_slot_count(
     token_kind_t tag_kind, char *tag_name, int tag_len) {
   return ps_tag_flat_slot_count_in(
@@ -3009,17 +3029,17 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
   psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
   psx_local_storage_plan_t plan = {0};
-  ASSERT_TRUE(psx_plan_local_storage(matrix, &plan));
+  ASSERT_TRUE(plan_test_local_storage(matrix, &plan));
   ASSERT_EQ(24, plan.storage_size);
   ASSERT_EQ(4, plan.alignment);
 
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_type_t *pointers = ps_type_new_array(pointer, 3, 24, 0);
-  ASSERT_TRUE(psx_plan_local_storage(pointers, &plan));
+  ASSERT_TRUE(plan_test_local_storage(pointers, &plan));
   ASSERT_EQ(24, plan.storage_size);
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
-  ASSERT_TRUE(!psx_plan_local_storage(incomplete, &plan));
+  ASSERT_TRUE(!plan_test_local_storage(incomplete, &plan));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
       incomplete,
       &(psx_incomplete_array_resolution_t){
@@ -3027,7 +3047,7 @@ static void test_local_declaration_storage_plan_boundary() {
       }));
   ASSERT_EQ(5, incomplete->array_len);
   ASSERT_EQ(20, ps_type_sizeof(incomplete));
-  ASSERT_TRUE(psx_plan_local_storage(incomplete, &plan));
+  ASSERT_TRUE(plan_test_local_storage(incomplete, &plan));
 
   psx_type_t *partial_flat_matrix = ps_type_new_array(row, 0, 0, 0);
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
@@ -3049,14 +3069,14 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(2, nested_matrix->array_len);
   ASSERT_EQ(24, ps_type_sizeof(nested_matrix));
   psx_type_t *vla = ps_type_new_array(integer, 0, 0, 1);
-  ASSERT_TRUE(!psx_plan_local_storage(vla, &plan));
+  ASSERT_TRUE(!plan_test_local_storage(vla, &plan));
 
-  ASSERT_TRUE(psx_plan_local_storage(pointer, &plan));
+  ASSERT_TRUE(plan_test_local_storage(pointer, &plan));
   ASSERT_EQ(8, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
-  ASSERT_TRUE(psx_plan_local_storage(integer, &plan));
+  ASSERT_TRUE(plan_test_local_storage(integer, &plan));
   ASSERT_EQ(4, plan.storage_size);
-  ASSERT_TRUE(!psx_plan_local_storage(vla, &plan));
+  ASSERT_TRUE(!plan_test_local_storage(vla, &plan));
 
   reset_test_locals();
   lvar_t *lowered = lower_complete_local_object(
@@ -3204,14 +3224,14 @@ static void test_target_type_layout_boundary() {
                     types, pointer_array_identity.type_id, &wasm));
 
   psx_local_storage_plan_t local = {0};
-  ASSERT_TRUE(psx_plan_local_storage_for_target(
-      pointer_array, &wasm, &local));
+  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
+      types, pointer_array_identity.type_id, &wasm, &local));
   ASSERT_EQ(12, local.storage_size);
   ASSERT_EQ(4, local.alignment);
 
   psx_parameter_storage_plan_t parameter = {0};
-  ASSERT_TRUE(psx_plan_parameter_storage_for_target(
-      pointer, &wasm, &parameter));
+  ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
+      types, pointer_identity.type_id, &wasm, &parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
@@ -3446,18 +3466,18 @@ static void test_parameter_declaration_storage_plan_boundary() {
   reset_test_translation_unit_state();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_parameter_storage_plan_t plan = {0};
-  ASSERT_TRUE(psx_plan_parameter_storage(integer, &plan));
+  ASSERT_TRUE(plan_test_parameter_storage(integer, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_SCALAR, plan.kind);
   ASSERT_EQ(4, plan.storage_size);
 
   psx_type_t *pointer = ps_type_new_pointer(integer);
-  ASSERT_TRUE(psx_plan_parameter_storage(pointer, &plan));
+  ASSERT_TRUE(plan_test_parameter_storage(pointer, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
 
   psx_type_t *small_aggregate = ps_type_new_tag(
       TK_STRUCT, (char *)"SmallParam", 10, 0, 12);
-  ASSERT_TRUE(psx_plan_parameter_storage(small_aggregate, &plan));
+  ASSERT_TRUE(plan_test_parameter_storage(small_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE, plan.kind);
   ASSERT_EQ(12, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
@@ -3465,7 +3485,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
 
   psx_type_t *large_aggregate = ps_type_new_tag(
       TK_STRUCT, (char *)"LargeParam", 10, 0, 24);
-  ASSERT_TRUE(psx_plan_parameter_storage(large_aggregate, &plan));
+  ASSERT_TRUE(plan_test_parameter_storage(large_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
   ASSERT_TRUE(plan.is_byref);
@@ -3474,7 +3494,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   complex->size = 16;
   complex->align = 8;
   complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
-  ASSERT_TRUE(psx_plan_parameter_storage(complex, &plan));
+  ASSERT_TRUE(plan_test_parameter_storage(complex, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
   ASSERT_EQ(16, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
@@ -16417,12 +16437,19 @@ static void test_semantic_context_isolation() {
       NULL);
   node_function_definition_t parsed_function = {0};
   parsed_function.base.kind = ND_FUNCDEF;
+  psx_lowering_context_t *second_lowering_context =
+      ps_lowering_context_create(arena_context, diagnostics);
+  ASSERT_TRUE(second_lowering_context != NULL);
+  ps_lowering_context_bind_target(
+      second_lowering_context, ps_ctx_target_info(second));
+  ps_lowering_context_bind_semantic_types(
+      second_lowering_context, ps_ctx_semantic_type_table_in(second));
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declarations, second, test_global_registry(),
       test_local_registry(),
       ag_compilation_session_parser_runtime_context(test_suite_session),
-      test_lowering_context(),
+      second_lowering_context,
       test_compilation_options());
   ASSERT_TRUE(ps_parse_function_definition_body(
                   &parser_stream, &parsed_function,
@@ -16432,6 +16459,7 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
   ps_parser_stream_end(&parser_stream);
+  ps_lowering_context_destroy(second_lowering_context);
 
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);

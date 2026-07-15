@@ -890,6 +890,11 @@ int psx_finish_automatic_local_declaration_pipeline(
               ps_lowering_diagnostics(request->lowering_context),
               DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
+    if (ps_ctx_intern_qual_type_in(
+            request->semantic_context, completed_type).type_id ==
+        PSX_TYPE_ID_INVALID) {
+      return 0;
+    }
     if (!complete_declared_local_object(
             result->var,
             &(psx_local_object_request_t){
