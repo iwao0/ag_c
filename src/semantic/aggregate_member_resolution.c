@@ -66,10 +66,12 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
 }
 
 void psx_aggregate_layout_init(
-    psx_aggregate_layout_state_t *state, token_kind_t kind) {
+    psx_aggregate_layout_state_t *state, token_kind_t kind,
+    psx_record_id_t record_id) {
   if (!state) return;
   memset(state, 0, sizeof(*state));
   state->kind = kind;
+  state->record_id = record_id;
   state->alignment = 1;
   state->bitfield_storage_offset = -1;
 }
@@ -253,8 +255,9 @@ void psx_resolve_aggregate_member_declaration(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
   if (!layout || !request || !request->semantic_context ||
-      !is_aggregate_kind(request->target_tag_kind) ||
-      !request->target_tag_name || request->target_tag_name_len <= 0 ||
+      (layout->record_id == PSX_RECORD_ID_INVALID &&
+       (!is_aggregate_kind(request->target_tag_kind) ||
+        !request->target_tag_name || request->target_tag_name_len <= 0)) ||
       !request->base_type || !request->declarator_shape ||
       request->member_name_len < 0 || request->pack_alignment < 0 ||
       request->requested_alignment < 0) {
@@ -371,12 +374,18 @@ void psx_resolve_aggregate_member_declaration(
   free(promoted_members);
 
   int conflict_index = -1;
-  if (batch_count > 0 &&
-      !ps_ctx_register_tag_members_in(
-          semantic_context, request->target_tag_kind,
-          request->target_tag_name,
-          request->target_tag_name_len, batch, batch_count,
-          &conflict_index)) {
+  int registered = batch_count <= 0;
+  if (batch_count > 0 && layout->record_id != PSX_RECORD_ID_INVALID) {
+    registered = ps_ctx_register_record_members_in(
+        semantic_context, layout->record_id, batch, batch_count,
+        &conflict_index);
+  } else if (batch_count > 0) {
+    registered = ps_ctx_register_tag_members_in(
+        semantic_context, request->target_tag_kind,
+        request->target_tag_name, request->target_tag_name_len,
+        batch, batch_count, &conflict_index);
+  }
+  if (!registered) {
     resolution->status = PSX_AGGREGATE_MEMBER_DUPLICATE;
     if (conflict_index >= 0 && conflict_index < batch_count) {
       resolution->conflicting_name = batch[conflict_index].name;

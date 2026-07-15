@@ -1689,6 +1689,9 @@ const aggregateMemberResolutionHeader = await readFile(
 const aggregateMemberResolutionType = aggregateMemberResolutionHeader.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_resolution_t\s*;/,
 );
+const aggregateLayoutStateType = aggregateMemberResolutionHeader.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_layout_state_t\s*;/,
+);
 if (!aggregateMemberResolutionType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(
       aggregateMemberResolutionType[1],
@@ -1703,6 +1706,13 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionSource,
     ) ||
     !/aggregate_definition->is_complete/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !aggregateLayoutStateType ||
+    !/\bpsx_record_id_t\s+record_id\s*;/.test(
+      aggregateLayoutStateType[1],
+    ) ||
+    !/\bps_ctx_register_record_members_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
@@ -3209,6 +3219,12 @@ const semanticContextSource = await readFile(
 if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s*\(/.test(
       semanticContextSource,
     ) ||
+    !/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_get_record_decl_in\s*\(/.test(
+      semanticContextSource,
+    ) ||
+    !/\bps_ctx_register_record_members_in\s*\(/.test(
+      semanticContextSource,
+    ) ||
     !/\bpsx_qual_type_t\s+ps_ctx_intern_qual_type_in\s*\(/.test(
       semanticContextSource,
     ) ||
@@ -3220,6 +3236,16 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
     )) {
   throw new Error(
     "semantic context must expose const record and interned QualType views",
+  );
+}
+if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/\bps_ctx_get_tag_definition_in\s*\([\s\S]*?record->record_id[\s\S]*?psx_aggregate_layout_init\s*\([\s\S]*?record->record_id/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "aggregate body layout must bind member registration to stable RecordId identity",
   );
 }
 

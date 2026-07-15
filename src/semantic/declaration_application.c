@@ -56,9 +56,12 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
     int *out_size, int *out_align) {
   if (!semantic_context || !global_registry || !local_registry ||
       !body || !out_size) return 0;
+  const psx_record_decl_t *record = ps_ctx_get_tag_definition_in(
+      semantic_context, tag_kind, tag_name, tag_len);
+  if (!record || record->record_id == PSX_RECORD_ID_INVALID) return 0;
   int member_count = 0;
   psx_aggregate_layout_state_t layout;
-  psx_aggregate_layout_init(&layout, tag_kind);
+  psx_aggregate_layout_init(&layout, tag_kind, record->record_id);
   for (int i = 0; i < body->item_count; i++) {
     psx_parsed_aggregate_item_t *item = &body->items[i];
     if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {

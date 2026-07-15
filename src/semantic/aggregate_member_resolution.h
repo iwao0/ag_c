@@ -19,6 +19,7 @@ typedef enum {
 
 typedef struct {
   token_kind_t kind;
+  psx_record_id_t record_id;
   int current_offset;
   int union_size;
   int alignment;
@@ -56,7 +57,8 @@ typedef struct {
 } psx_aggregate_member_declaration_resolution_t;
 
 void psx_aggregate_layout_init(
-    psx_aggregate_layout_state_t *state, token_kind_t kind);
+    psx_aggregate_layout_state_t *state, token_kind_t kind,
+    psx_record_id_t record_id);
 int psx_aggregate_layout_size(const psx_aggregate_layout_state_t *state);
 int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state);
 void psx_resolve_aggregate_member_declaration(

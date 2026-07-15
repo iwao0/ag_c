@@ -3973,6 +3973,8 @@ static void test_aggregate_definition_ownership_boundary() {
       ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(first->record_id != PSX_RECORD_ID_INVALID);
+  ASSERT_EQ(first, ps_ctx_get_record_decl_in(
+                       test_semantic_context(), first->record_id));
   ASSERT_TRUE(!first->is_complete);
   ASSERT_EQ(0, first->member_count);
 
@@ -3983,8 +3985,8 @@ static void test_aggregate_definition_ownership_boundary() {
       .offset = 0,
       .decl_type = integer,
   };
-  ASSERT_TRUE(test_semantic_register_tag_members(
-      TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
+  ASSERT_TRUE(ps_ctx_register_record_members_in(
+      test_semantic_context(), first->record_id, &member, 1, NULL));
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   ASSERT_TRUE(first ==
@@ -4010,6 +4012,8 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_TRUE(second != NULL);
   ASSERT_TRUE(second != first);
   ASSERT_TRUE(second->record_id != first->record_id);
+  ASSERT_EQ(second, ps_ctx_get_record_decl_in(
+                        test_semantic_context(), second->record_id));
   psx_type_t first_type = {
       .kind = PSX_TYPE_STRUCT,
       .tag_kind = TK_STRUCT,
@@ -4558,7 +4562,8 @@ static void test_aggregate_member_resolution_boundary() {
       anonymous_tag, other_anonymous_tag));
 
   psx_aggregate_layout_state_t layout;
-  psx_aggregate_layout_init(&layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   psx_declarator_shape_t boundary_shape;
   ps_declarator_shape_init(&boundary_shape);
   psx_aggregate_member_declaration_resolution_t boundary;
@@ -4658,7 +4663,8 @@ static void test_aggregate_member_resolution_boundary() {
             boundary.status);
 
   psx_aggregate_layout_state_t bitfield_sign_layout;
-  psx_aggregate_layout_init(&bitfield_sign_layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &bitfield_sign_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   const psx_type_t *canonical_enum = resolve_tag_base_for_test(
       TK_ENUM, (char *)"E", 1);
   ASSERT_TRUE(canonical_enum != NULL);
@@ -4727,7 +4733,8 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(12, psx_aggregate_layout_size(&layout));
   ASSERT_EQ(4, psx_aggregate_layout_alignment(&layout));
 
-  psx_aggregate_layout_init(&layout, TK_UNION);
+  psx_aggregate_layout_init(
+      &layout, TK_UNION, PSX_RECORD_ID_INVALID);
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
@@ -4846,7 +4853,8 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__IncompleteMember", 18);
   ASSERT_TRUE(incomplete_base != NULL);
   psx_aggregate_layout_state_t constraint_layout;
-  psx_aggregate_layout_init(&constraint_layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &constraint_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
@@ -4915,7 +4923,8 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_t transaction_shape;
   ps_declarator_shape_init(&transaction_shape);
   psx_aggregate_layout_state_t transaction_layout;
-  psx_aggregate_layout_init(&transaction_layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &transaction_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   psx_aggregate_member_declaration_resolution_t transaction;
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
@@ -5120,7 +5129,8 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"PromSrc", 7,
       (char *)"b", 1, 4, integer, 3, 2, 1));
   psx_aggregate_layout_state_t promoted_layout;
-  psx_aggregate_layout_init(&promoted_layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &promoted_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   psx_declarator_shape_t promoted_shape;
   ps_declarator_shape_init(&promoted_shape);
   psx_resolve_aggregate_member_declaration(
@@ -5205,7 +5215,8 @@ static void test_aggregate_member_resolution_boundary() {
       (char *)"a", 1, &absent_promoted));
 
   psx_aggregate_layout_state_t anonymous_layout;
-  psx_aggregate_layout_init(&anonymous_layout, TK_STRUCT);
+  psx_aggregate_layout_init(
+      &anonymous_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
   psx_declarator_shape_t anonymous_shape;
   ps_declarator_shape_init(&anonymous_shape);
   psx_type_t *batch_source_type =

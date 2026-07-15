@@ -707,6 +707,16 @@ static tag_type_t *find_tag_type_in(
   return NULL;
 }
 
+static tag_type_t *find_tag_type_by_record_id_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id) {
+  if (!context || record_id == PSX_RECORD_ID_INVALID) return NULL;
+  for (tag_type_t *tag = context->tags_all; tag; tag = tag->next_all) {
+    if (tag->definition && tag->definition->record_id == record_id)
+      return tag;
+  }
+  return NULL;
+}
+
 bool ps_ctx_has_tag_type_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
@@ -851,6 +861,12 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
   return definition;
 }
 
+const psx_record_decl_t *ps_ctx_get_record_decl_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id) {
+  tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
+  return tag ? tag->definition : NULL;
+}
+
 int ps_ctx_get_tag_size_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
@@ -964,6 +980,20 @@ int ps_ctx_register_tag_members_in(
   if (tag && tag->definition)
     refresh_cached_tag_definition(context, tag);
   return 1;
+}
+
+int ps_ctx_register_record_members_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id,
+    const tag_member_info_t *members, int member_count,
+    int *out_conflict_index) {
+  tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
+  if (!tag) {
+    if (out_conflict_index) *out_conflict_index = -1;
+    return 0;
+  }
+  return ps_ctx_register_tag_members_in(
+      context, tag->kind, tag->name, tag->len,
+      members, member_count, out_conflict_index);
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {
