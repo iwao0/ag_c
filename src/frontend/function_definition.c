@@ -3,6 +3,7 @@
 #include "../semantic/declaration_application.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
+#include "../lowering/local_storage.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
@@ -16,11 +17,13 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    psx_lowering_context_t *lowering_context,
     psx_parsed_function_definition_t *definition) {
   if (!definition || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+      !local_registry || !runtime_context || !lowering_context)
     return NULL;
   ps_decl_reset_locals_in(local_registry);
+  local_storage_reset(lowering_context);
   ps_ctx_reset_function_scope_in(semantic_context);
 
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
@@ -40,6 +43,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
               .semantic_context = semantic_context,
               .global_registry = global_registry,
               .local_registry = local_registry,
+              .lowering_context = lowering_context,
               .base_type = base_type,
               .declarator = &definition->declarator,
           },
@@ -106,6 +110,6 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   ps_decl_set_current_funcname_in(
       local_registry, name->str, name->len);
   if (node->signature->is_variadic_function)
-    ps_decl_reserve_variadic_regs();
+    local_storage_reserve_prefix(lowering_context, 64);
   return node;
 }

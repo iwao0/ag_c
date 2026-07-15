@@ -10,10 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-void psx_static_local_lowering_reset(void) {
-  psx_lowering_context_t *ctx = ps_lowering_context_active();
-  memset(ctx->static_local_sequences, 0,
-         sizeof(ctx->static_local_sequences));
+void psx_static_local_lowering_reset_in(
+    psx_lowering_context_t *lowering_context) {
+  if (!lowering_context) return;
+  memset(lowering_context->static_local_sequences, 0,
+         sizeof(lowering_context->static_local_sequences));
 }
 
 int psx_static_local_prepare_global(global_var_t *global,
@@ -25,13 +26,15 @@ int psx_static_local_prepare_global(global_var_t *global,
 }
 
 static char *mangle_static_local_name(
+    psx_lowering_context_t *lowering_context,
     psx_static_local_kind_t kind,
     const char *function_name, int function_name_len,
     const char *name, int name_len, int *out_len) {
   static const char *const prefixes[PSX_STATIC_LOCAL_KIND_COUNT] = {
       "", "a", "ac", "s", "sa",
   };
-  if (kind < 0 || kind >= PSX_STATIC_LOCAL_KIND_COUNT) return NULL;
+  if (!lowering_context || kind < 0 ||
+      kind >= PSX_STATIC_LOCAL_KIND_COUNT) return NULL;
   const char *prefix = prefixes[kind];
   const char *function = function_name && function_name_len > 0
                              ? function_name : "anon";
@@ -40,7 +43,7 @@ static char *mangle_static_local_name(
   char sequence[16];
   int sequence_len = snprintf(
       sequence, sizeof(sequence), "%s%d", prefix,
-      ps_lowering_context_active()->static_local_sequences[kind]++);
+      lowering_context->static_local_sequences[kind]++);
   int total_len = function_len + 1 + name_len + 1 + sequence_len;
   char *mangled = malloc((size_t)total_len + 1);
   if (!mangled) return NULL;
@@ -62,11 +65,12 @@ lvar_t *lower_static_local_object(
     const psx_static_local_object_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
       !request->global || !request->type || !request->global_registry ||
-      !request->local_registry)
+      !request->local_registry || !request->lowering_context)
     return NULL;
   int mangled_len = 0;
   char *mangled = mangle_static_local_name(
-      request->kind, request->function_name, request->function_name_len,
+      request->lowering_context, request->kind,
+      request->function_name, request->function_name_len,
       request->name, request->name_len, &mangled_len);
   if (!mangled) return NULL;
 
@@ -94,7 +98,7 @@ int lower_static_local_declaration_storage(
   if (result) *result = (psx_static_local_declaration_result_t){0};
   if (!request || !request->name || request->name_len <= 0 ||
       !request->type || !request->global_registry ||
-      !request->local_registry)
+      !request->local_registry || !request->lowering_context)
     return 0;
 
   global_var_t *global = calloc(1, sizeof(*global));
@@ -108,6 +112,7 @@ int lower_static_local_declaration_storage(
       &(psx_static_local_object_request_t){
           .global_registry = request->global_registry,
           .local_registry = request->local_registry,
+          .lowering_context = request->lowering_context,
           .kind = request->kind,
           .function_name = request->function_name,
           .function_name_len = request->function_name_len,

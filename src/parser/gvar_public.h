@@ -98,8 +98,6 @@ typedef struct {
                 const psx_gvar_initializer_class_t *init_class);
 } psx_gvar_initializer_visit_ops_t;
 
-global_var_t *ps_find_global_var(char *name, int len);
-void ps_iter_globals(global_var_visitor_t fn, void *user);
 int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
 int ps_gvar_storage_size(const global_var_t *gv, int fallback_size);
 int ps_gvar_is_array(const global_var_t *gv);
@@ -152,9 +150,6 @@ unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int i
 int ps_gvar_is_extern_decl(const global_var_t *gv);
 int ps_gvar_is_thread_local(const global_var_t *gv);
 int ps_gvar_is_static_storage(const global_var_t *gv);
-int ps_gvar_is_extern_decl_by_name(char *name, int len);
-int ps_gvar_is_thread_local_by_name(char *name, int len);
-int ps_gvar_is_static_storage_by_name(char *name, int len);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
 const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv);

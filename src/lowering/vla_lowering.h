@@ -5,9 +5,11 @@
 #include "../parser/lvar_public.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 typedef struct {
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   node_t **dimensions;
@@ -29,6 +31,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
 
 typedef struct {
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   node_t *row_dimension;
@@ -48,6 +51,7 @@ typedef struct {
 
 typedef struct {
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   psx_parameter_vla_dimension_t *inner_dimensions;

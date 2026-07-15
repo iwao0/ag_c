@@ -25,6 +25,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
   const psx_type_t *base_type;
   int requested_alignment;
@@ -65,6 +66,7 @@ static void *begin_declaration(
   application->semantic_context = callbacks->semantic_context;
   application->global_registry = callbacks->global_registry;
   application->local_registry = callbacks->local_registry;
+  application->lowering_context = callbacks->lowering_context;
   application->options = callbacks->options;
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
@@ -132,6 +134,7 @@ static void begin_declarator(
                 .semantic_context = application->semantic_context,
                 .global_registry = application->global_registry,
                 .local_registry = application->local_registry,
+                .lowering_context = application->lowering_context,
                 .options = application->options,
                 .name = name->str,
                 .name_len = name->len,
@@ -158,6 +161,7 @@ static void begin_declarator(
             .semantic_context = application->semantic_context,
             .global_registry = application->global_registry,
             .local_registry = application->local_registry,
+            .lowering_context = application->lowering_context,
             .options = application->options,
             .function_name = function_name,
             .function_name_len = function_name_len,
@@ -181,6 +185,7 @@ static void begin_declarator(
       (psx_automatic_local_declaration_pipeline_request_t){
           .semantic_context = application->semantic_context,
           .local_registry = application->local_registry,
+          .lowering_context = application->lowering_context,
           .name = name->str,
           .name_len = name->len,
           .type = application->current_type,
@@ -255,17 +260,19 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options) {
   if (!callbacks) return;
   *callbacks = (psx_local_declaration_callbacks_t){0};
   if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context || !options)
+      !runtime_context || !lowering_context || !options)
     return;
   *callbacks = (psx_local_declaration_callbacks_t){
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
       .runtime_context = runtime_context,
+      .lowering_context = lowering_context,
       .options = options,
       .apply_static_assert = apply_static_assert,
       .begin_declaration = begin_declaration,

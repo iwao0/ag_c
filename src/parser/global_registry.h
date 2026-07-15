@@ -11,9 +11,6 @@ typedef struct psx_global_registry_t psx_global_registry_t;
 
 psx_global_registry_t *ps_global_registry_create(void);
 void ps_global_registry_destroy(psx_global_registry_t *registry);
-psx_global_registry_t *ps_global_registry_activate(
-    psx_global_registry_t *registry);
-psx_global_registry_t *ps_global_registry_active(void);
 
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry);
@@ -43,8 +40,6 @@ int ps_global_registry_next_string_literal_id(
 int ps_global_registry_next_float_literal_id(
     psx_global_registry_t *registry);
 
-void ps_global_registry_reset_translation_unit(void);
-void ps_global_registry_reset_diag_state(void);
 int ps_global_registry_bind_decl_type(
     global_var_t *global, const psx_type_t *type);
 int ps_global_registry_complete_array_type(

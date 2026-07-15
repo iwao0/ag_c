@@ -38,18 +38,6 @@ int ps_gvar_is_static_storage(const global_var_t *gv) {
   return (gv && gv->is_static) ? 1 : 0;
 }
 
-int ps_gvar_is_extern_decl_by_name(char *name, int len) {
-  return ps_gvar_is_extern_decl(ps_find_global_var(name, len));
-}
-
-int ps_gvar_is_thread_local_by_name(char *name, int len) {
-  return ps_gvar_is_thread_local(ps_find_global_var(name, len));
-}
-
-int ps_gvar_is_static_storage_by_name(char *name, int len) {
-  return ps_gvar_is_static_storage(ps_find_global_var(name, len));
-}
-
 char *ps_gvar_name(const global_var_t *gv) {
   return gv ? gv->name : NULL;
 }

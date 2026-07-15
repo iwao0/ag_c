@@ -51,10 +51,6 @@ struct global_var_t {
   unsigned int is_thread_local : 1; // 1: _Thread_local
   const psx_type_t *decl_type;
 };
-/* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
- * 呼び出し前に設定済みであること。各登録経路はこれを通すこと。 */
-void ps_register_global_var(global_var_t *gv);
-
 // 文字列リテラルテーブル（連結リスト）
 struct string_lit_t {
   string_lit_t *next;

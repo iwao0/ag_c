@@ -16,6 +16,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
   char *name;
   int name_len;
@@ -62,6 +63,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const psx_type_t *base_type;
   psx_parsed_declarator_t *declarator;
 } psx_function_definition_pipeline_request_t;
@@ -77,6 +79,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const psx_type_t *base_type;
   psx_runtime_declarator_application_t application;
   psx_function_definition_pipeline_result_t *result;
@@ -99,6 +102,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
   char *function_name;
   int function_name_len;
@@ -129,6 +133,7 @@ int psx_finish_static_local_declaration_pipeline(
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -157,6 +162,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
   char *name;
   int name_len;
@@ -170,6 +176,7 @@ int psx_apply_block_extern_declaration_pipeline(
 
 typedef struct {
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -179,7 +186,6 @@ typedef struct {
 struct lvar_t *psx_apply_temporary_local_declaration_pipeline(
     const psx_temporary_local_declaration_pipeline_request_t *request);
 
-void psx_declaration_pipeline_reset_translation_unit_state(void);
 void psx_declaration_pipeline_reset_translation_unit_state_in(
     psx_lowering_context_t *ctx);
 

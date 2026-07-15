@@ -11,8 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char *new_member_rvalue_name(void) {
-  int sequence = ps_lowering_context_active()->member_rvalue_sequence++;
+static char *new_member_rvalue_name(
+    psx_lowering_context_t *lowering_context) {
+  int sequence = lowering_context->member_rvalue_sequence++;
   int len = snprintf(NULL, 0, "__member_rvalue_%d", sequence);
   char *name = calloc((size_t)len + 1, 1);
   if (!name) return NULL;
@@ -21,6 +22,7 @@ static char *new_member_rvalue_name(void) {
 }
 
 static struct lvar_t *create_aggregate_temporary(
+    psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_member_access_t *access,
     const token_t *fallback_diag_tok) {
@@ -32,12 +34,13 @@ static struct lvar_t *create_aggregate_temporary(
   if (!object_type || ps_type_sizeof(object_type) <= 0) {
     ps_diag_ctx(tok, "member", "aggregate rvalue size resolution failed");
   }
-  char *name = new_member_rvalue_name();
+  char *name = new_member_rvalue_name(lowering_context);
   if (!name) ps_diag_ctx(tok, "member", "temporary name allocation failed");
   psx_type_t *type = ps_type_clone(object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
       &(psx_temporary_local_declaration_pipeline_request_t){
           .local_registry = local_registry,
+          .lowering_context = lowering_context,
           .name = name,
           .name_len = (int)strlen(name),
           .type = type,
@@ -48,11 +51,12 @@ static struct lvar_t *create_aggregate_temporary(
 }
 
 static node_t *materialize_call_rvalue(
+    psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_member_access_t *access, node_t *base,
     const token_t *fallback_diag_tok) {
   struct lvar_t *temporary = create_aggregate_temporary(
-      local_registry, access, fallback_diag_tok);
+      lowering_context, local_registry, access, fallback_diag_tok);
   node_t *target = ps_node_new_lvar_expr_ref_for(temporary);
   node_t *assign = ps_node_new_assign(target, base);
   return ps_node_new_binary(
@@ -61,12 +65,13 @@ static node_t *materialize_call_rvalue(
 }
 
 static node_t *materialize_ternary_rvalue(
+    psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_member_access_t *access, node_t *base,
     const token_t *fallback_diag_tok) {
   node_ctrl_t *ternary = (node_ctrl_t *)base;
   struct lvar_t *temporary = create_aggregate_temporary(
-      local_registry, access, fallback_diag_tok);
+      lowering_context, local_registry, access, fallback_diag_tok);
   node_ctrl_t *select = arena_alloc(sizeof(*select));
   select->base.kind = ND_TERNARY;
   select->base.lhs = ternary->base.lhs;
@@ -82,21 +87,25 @@ static node_t *materialize_ternary_rvalue(
 }
 
 node_t *lower_member_access_expression_in(
+    psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_member_access_t *access,
     const token_t *fallback_diag_tok) {
-  if (!access || !access->base.lhs || !access->resolved_member)
+  if (!lowering_context || !local_registry || !access ||
+      !access->base.lhs || !access->resolved_member)
     return (node_t *)access;
   node_t *base = access->base.lhs;
   if (!access->from_pointer) {
     if (base->kind == ND_FUNCALL) {
       base = materialize_call_rvalue(
-          local_registry, access, base, fallback_diag_tok);
+          lowering_context, local_registry, access, base,
+          fallback_diag_tok);
     } else if (base->kind == ND_TERNARY &&
                ps_type_find_aggregate_object_type(
                    ps_node_get_type(base))) {
       base = materialize_ternary_rvalue(
-          local_registry, access, base, fallback_diag_tok);
+          lowering_context, local_registry, access, base,
+          fallback_diag_tok);
     }
   }
 

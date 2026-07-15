@@ -6,6 +6,7 @@
 
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 typedef enum {
   PSX_STATIC_LOCAL_SCALAR,
@@ -19,6 +20,7 @@ typedef enum {
 typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   psx_static_local_kind_t kind;
   char *function_name;
   int function_name_len;
@@ -31,6 +33,7 @@ typedef struct {
 typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   psx_static_local_kind_t kind;
   char *function_name;
   int function_name_len;
@@ -47,7 +50,8 @@ typedef struct {
   int type_completed;
 } psx_static_local_declaration_result_t;
 
-void psx_static_local_lowering_reset(void);
+void psx_static_local_lowering_reset_in(
+    psx_lowering_context_t *lowering_context);
 int psx_static_local_prepare_global(global_var_t *global,
                                     const psx_type_t *type);
 lvar_t *lower_static_local_object(

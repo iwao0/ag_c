@@ -105,8 +105,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
   active_compilation_session = session;
   session->previous_semantic_context =
       ps_ctx_activate(session->semantic_context);
-  session->previous_global_registry =
-      ps_global_registry_activate(session->global_registry);
   session->previous_local_registry =
       ps_local_registry_activate(session->local_registry);
   session->previous_preprocessor_context =
@@ -119,10 +117,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       tk_context_activate(&session->tokenizer);
   session->previous_token_allocator_context =
       tk_allocator_context_activate(session->token_allocator_context);
-  session->previous_parser_runtime_context =
-      ps_parser_runtime_context_activate(session->parser_runtime_context);
-  session->previous_lowering_context =
-      ps_lowering_context_activate(session->lowering_context);
   session->previous_codegen_emit_context =
       cg_context_activate(session->codegen_emit_context);
   if (session->backend_activate)
@@ -144,16 +138,12 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
   cg_context_activate(session->previous_codegen_emit_context);
-  ps_lowering_context_activate(session->previous_lowering_context);
-  ps_parser_runtime_context_activate(
-      session->previous_parser_runtime_context);
   tk_allocator_context_activate(session->previous_token_allocator_context);
   tk_context_activate(session->previous_tokenizer_context);
   diag_context_activate(session->previous_diagnostic_context);
   arena_context_activate(session->previous_arena_context);
   pp_context_activate(session->previous_preprocessor_context);
   ps_local_registry_activate(session->previous_local_registry);
-  ps_global_registry_activate(session->previous_global_registry);
   ps_ctx_activate(session->previous_semantic_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
@@ -163,10 +153,7 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   session->previous_diagnostic_context = NULL;
   session->previous_tokenizer_context = NULL;
   session->previous_token_allocator_context = NULL;
-  session->previous_parser_runtime_context = NULL;
-  session->previous_lowering_context = NULL;
   session->previous_codegen_emit_context = NULL;
-  session->previous_global_registry = NULL;
   session->previous_semantic_context = NULL;
   session->is_active = 0;
   return 1;

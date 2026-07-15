@@ -330,16 +330,6 @@ lvar_t *ps_local_registry_create_static_alias_in(
   return var;
 }
 
-lvar_t *ps_local_registry_create_static_alias(
-    char *name, int name_len, char *global_name, int global_name_len,
-    const psx_type_t *type) {
-  return ps_local_registry_create_static_alias_in(
-      active_local_registry,
-      ps_find_global_var(global_name, global_name_len),
-      name, name_len,
-      global_name, global_name_len, type);
-}
-
 void ps_local_registry_update_storage_object_in(
     psx_local_registry_t *registry,
     lvar_t *var, int offset, int storage_size, int alignment) {

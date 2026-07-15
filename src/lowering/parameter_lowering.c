@@ -8,13 +8,15 @@
 
 static lvar_t *lower_parameter_with_plan(
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     char *name, int name_len, const psx_type_t *type,
     const psx_parameter_storage_plan_t *storage) {
-  if (!local_registry || !name || name_len <= 0 || !type || !storage)
+  if (!local_registry || !lowering_context || !name || name_len <= 0 ||
+      !type || !storage)
     return NULL;
 
   int offset = local_storage_allocate(
-      storage->storage_size, storage->alignment);
+      lowering_context, storage->storage_size, storage->alignment);
   lvar_t *var = ps_local_registry_create_storage_object_in(
       local_registry,
       name, name_len, offset,
@@ -27,11 +29,12 @@ static lvar_t *lower_parameter_with_plan(
 lvar_t *lower_parameter_declaration(
     const psx_parameter_lowering_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || !request->local_registry) return NULL;
+      !request->type || !request->local_registry ||
+      !request->lowering_context) return NULL;
   psx_parameter_storage_plan_t storage;
   if (!psx_plan_parameter_storage(request->type, &storage)) return NULL;
   return lower_parameter_with_plan(
-      request->local_registry,
+      request->local_registry, request->lowering_context,
       request->name, request->name_len, request->type, &storage);
 }
 
@@ -39,18 +42,19 @@ lvar_t *lower_resolved_parameter_declaration(
     const psx_resolved_parameter_lowering_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
       !request->resolution || !request->resolution->type ||
-      !request->local_registry) return NULL;
+      !request->local_registry || !request->lowering_context) return NULL;
   const psx_parameter_declaration_resolution_t *resolution =
       request->resolution;
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_NORMAL) {
     return lower_parameter_with_plan(
-        request->local_registry,
+        request->local_registry, request->lowering_context,
         request->name, request->name_len, resolution->type,
         &resolution->storage);
   }
 
   psx_parameter_vla_lowering_request_t vla = {
       .local_registry = request->local_registry,
+      .lowering_context = request->lowering_context,
       .name = request->name,
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,

@@ -17,30 +17,13 @@ struct psx_global_registry_t {
   global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
 };
 
-static psx_global_registry_t default_global_registry;
-static psx_global_registry_t *active_global_registry =
-    &default_global_registry;
-
 psx_global_registry_t *ps_global_registry_create(void) {
   return calloc(1, sizeof(psx_global_registry_t));
 }
 
 void ps_global_registry_destroy(psx_global_registry_t *registry) {
-  if (!registry || registry == &default_global_registry) return;
-  if (active_global_registry == registry)
-    active_global_registry = &default_global_registry;
+  if (!registry) return;
   free(registry);
-}
-
-psx_global_registry_t *ps_global_registry_activate(
-    psx_global_registry_t *registry) {
-  psx_global_registry_t *previous = active_global_registry;
-  active_global_registry = registry ? registry : &default_global_registry;
-  return previous;
-}
-
-psx_global_registry_t *ps_global_registry_active(void) {
-  return active_global_registry;
 }
 
 int ps_global_registry_bind_decl_type(
@@ -83,10 +66,6 @@ void ps_register_global_var_in(
   registry->gvars_by_bucket[h] = gv;
 }
 
-void ps_register_global_var(global_var_t *gv) {
-  ps_register_global_var_in(active_global_registry, gv);
-}
-
 void psx_register_string_lit_in(
     psx_global_registry_t *registry, string_lit_t *lit) {
   if (!registry || !lit) return;
@@ -111,10 +90,6 @@ global_var_t *ps_find_global_var_in(
       return gv;
   }
   return NULL;
-}
-
-global_var_t *ps_find_global_var(char *name, int len) {
-  return ps_find_global_var_in(active_global_registry, name, len);
 }
 
 string_lit_t *ps_find_string_lit_by_label_in(
@@ -145,10 +120,6 @@ void ps_iter_globals_in(
     fn(gv, user);
 }
 
-void ps_iter_globals(global_var_visitor_t fn, void *user) {
-  ps_iter_globals_in(active_global_registry, fn, user);
-}
-
 bool ps_iter_string_literals_in(
     psx_global_registry_t *registry,
     string_lit_visitor_t fn, void *user) {
@@ -158,10 +129,6 @@ bool ps_iter_string_literals_in(
   return true;
 }
 
-bool ps_iter_string_literals(string_lit_visitor_t fn, void *user) {
-  return ps_iter_string_literals_in(active_global_registry, fn, user);
-}
-
 bool ps_iter_float_literals_in(
     psx_global_registry_t *registry,
     float_lit_visitor_t fn, void *user) {
@@ -169,17 +136,6 @@ bool ps_iter_float_literals_in(
   for (float_lit_t *lit = registry->float_literals;
        lit; lit = lit->next) fn(lit, user);
   return true;
-}
-
-bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
-  return ps_iter_float_literals_in(active_global_registry, fn, user);
-}
-
-bool ps_has_string_literals(void) {
-  return active_global_registry->string_literals != NULL;
-}
-bool ps_has_float_literals(void) {
-  return active_global_registry->float_literals != NULL;
 }
 
 void ps_global_registry_reset_translation_unit_in(
@@ -194,17 +150,9 @@ void ps_global_registry_reset_translation_unit_in(
          sizeof(registry->gvars_by_bucket));
 }
 
-void ps_global_registry_reset_translation_unit(void) {
-  ps_global_registry_reset_translation_unit_in(active_global_registry);
-}
-
 void ps_global_registry_reset_diag_state_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
   for (global_var_t *gv = registry->global_vars; gv; gv = gv->next)
     gv->has_init = 0;
-}
-
-void ps_global_registry_reset_diag_state(void) {
-  ps_global_registry_reset_diag_state_in(active_global_registry);
 }

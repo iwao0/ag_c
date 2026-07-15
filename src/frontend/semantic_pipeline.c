@@ -15,6 +15,7 @@ static void analyze_function_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *function, const token_t *fallback_diag_tok) {
   if (!semantic_context || !local_registry ||
@@ -30,7 +31,7 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   function = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
-      options,
+      lowering_context, options,
       function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -55,6 +56,7 @@ void psx_frontend_analyze_function_in_session(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
+      ag_compilation_session_lowering_context(session),
       ag_compilation_session_options_view(session),
       function, fallback_diag_tok);
 }
@@ -63,6 +65,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *expression, const token_t *fallback_diag_tok) {
   expression = psx_bind_identifier_tree_in_contexts(
@@ -73,7 +76,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
       expression, NULL, fallback_diag_tok);
   expression = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
-      options,
+      lowering_context, options,
       expression, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -93,6 +96,7 @@ node_t *psx_frontend_analyze_expression_in_session(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
+      ag_compilation_session_lowering_context(session),
       ag_compilation_session_options_view(session),
       expression, fallback_diag_tok);
 }
@@ -101,6 +105,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *syntax, const token_t *fallback_diag_tok) {
   syntax = psx_bind_identifier_initializer_tree_in_contexts(
@@ -111,7 +116,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
       syntax, NULL, fallback_diag_tok);
   syntax = psx_lower_semantic_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
-      options,
+      lowering_context, options,
       syntax, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -125,6 +130,7 @@ void psx_frontend_analyze_program_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t **program) {
   if (!program) return;
@@ -138,7 +144,7 @@ void psx_frontend_analyze_program_in_contexts(
         program[i], NULL, program[i]->tok);
     program[i] = psx_lower_semantic_tree_in_contexts(
         semantic_context, global_registry, local_registry,
-        options,
+        lowering_context, options,
         program[i], program[i]->tok);
     psx_semantic_resolve_tree_in_contexts(
         semantic_context, global_registry, local_registry,
@@ -157,5 +163,6 @@ void psx_frontend_analyze_program_in_session(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
+      ag_compilation_session_lowering_context(session),
       ag_compilation_session_options_view(session), program);
 }

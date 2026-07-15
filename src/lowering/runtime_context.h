@@ -16,9 +16,6 @@ typedef struct psx_lowering_context_t {
 
 psx_lowering_context_t *ps_lowering_context_create(void);
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx);
-psx_lowering_context_t *ps_lowering_context_activate(
-    psx_lowering_context_t *ctx);
-psx_lowering_context_t *ps_lowering_context_active(void);
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx);
 
 #endif

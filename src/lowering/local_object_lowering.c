@@ -7,7 +7,8 @@
 lvar_t *lower_complete_local_object(
     const psx_local_object_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || !request->local_registry) return NULL;
+      !request->type || !request->local_registry ||
+      !request->lowering_context) return NULL;
 
   psx_local_storage_plan_t plan = {0};
   if (!psx_plan_local_storage(request->type, &plan)) return NULL;
@@ -16,7 +17,7 @@ lvar_t *lower_complete_local_object(
     alignment = request->requested_alignment;
 
   int offset = local_storage_allocate(
-      plan.storage_size, alignment);
+      request->lowering_context, plan.storage_size, alignment);
   return ps_local_registry_create_storage_object_in(
       request->local_registry,
       request->name, request->name_len, offset, plan.storage_size,
@@ -39,13 +40,14 @@ lvar_t *declare_incomplete_local_object(
 int complete_declared_local_object(
     lvar_t *var, const psx_local_object_request_t *request) {
   if (!var || !request || !request->type || !request->local_registry ||
+      !request->lowering_context ||
       request->type->kind != PSX_TYPE_ARRAY) return 0;
   psx_local_storage_plan_t plan = {0};
   if (!psx_plan_local_storage(request->type, &plan)) return 0;
   int alignment = request->requested_alignment > 0
                       ? request->requested_alignment : plan.alignment;
   int offset = local_storage_allocate(
-      plan.storage_size, alignment);
+      request->lowering_context, plan.storage_size, alignment);
   if (!ps_local_registry_complete_array_type(var, request->type)) return 0;
   ps_local_registry_update_storage_object_in(
       request->local_registry, var, offset, plan.storage_size, alignment);

@@ -4,9 +4,11 @@
 #include "../parser/decl.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 typedef struct {
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
   const psx_type_t *type;

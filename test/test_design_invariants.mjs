@@ -413,8 +413,9 @@ if (sessionContextAccessorNames.some((name) =>
       )
     ) ||
     !/ps_global_registry_create\s*\(/.test(compilationSessionSource) ||
-    !/ps_global_registry_activate\s*\(/.test(compilationSessionSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilationSessionSource) ||
+    /ps_global_registry_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_global_registry/.test(compilationSessionSource) ||
     !/ps_local_registry_create\s*\(/.test(compilationSessionSource) ||
     !/ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
     !/ps_local_registry_destroy\s*\(/.test(compilationSessionSource) ||
@@ -437,11 +438,15 @@ if (sessionContextAccessorNames.some((name) =>
     !/tk_allocator_context_activate\s*\(/.test(compilationSessionSource) ||
     !/tk_allocator_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/ps_parser_runtime_context_create\s*\(/.test(compilationSessionSource) ||
-    !/ps_parser_runtime_context_activate\s*\(/.test(compilationSessionSource) ||
     !/ps_parser_runtime_context_destroy\s*\(/.test(compilationSessionSource) ||
+    /ps_parser_runtime_context_activate\s*\(/.test(
+      compilationSessionSource,
+    ) ||
+    /previous_parser_runtime_context/.test(compilationSessionSource) ||
     !/ps_lowering_context_create\s*\(/.test(compilationSessionSource) ||
-    !/ps_lowering_context_activate\s*\(/.test(compilationSessionSource) ||
     !/ps_lowering_context_destroy\s*\(/.test(compilationSessionSource) ||
+    /ps_lowering_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_lowering_context/.test(compilationSessionSource) ||
     !/cg_context_create\s*\(/.test(compilationSessionSource) ||
     !/cg_context_activate\s*\(/.test(compilationSessionSource) ||
     !/cg_context_destroy\s*\(/.test(compilationSessionSource) ||
@@ -751,7 +756,15 @@ const loweringStateSources = await Promise.all([
 if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
     ) ||
-    !/default_lowering_context/.test(loweringRuntimeSource) ||
+    /default_lowering_context|active_lowering_context/.test(
+      loweringRuntimeSource,
+    ) ||
+    /ps_lowering_context_(?:active|activate)\s*\(/.test(
+      loweringRuntimeHeader,
+    ) ||
+    loweringStateSources.some((source) =>
+      /ps_lowering_context_(?:active|activate)\s*\(/.test(source)
+    ) ||
     loweringStateSources.some((source) =>
       /static\s+(?:frame_layout_t\s+current_layout|int\s+(?:object_sequences|file_scope_compound_sequence|local_compound_sequence|aggregate_temp_seq|compound_assignment_temp_seq|member_rvalue_sequence))/.test(
         source,
@@ -759,15 +772,23 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
     ) ||
     !/psx_declaration_pipeline_reset_translation_unit_state_in\s*\(\s*lowering_context\s*\)/.test(
       await readFile("src/frontend/translation_unit.c", "utf8"),
+    ) ||
+    !/\.lowering_context\s*=\s*lowering_context/.test(
+      await readFile("src/lowering/semantic_lowering_pass.c", "utf8"),
     )) {
   throw new Error(
-    "lowering temporary naming and frame state must be owned by lowering context",
+    "lowering temporary naming and frame state must use an explicit lowering context",
   );
 }
 if (!/struct\s+psx_parser_runtime_context_t\s*\{/.test(
       await readFile("src/parser/runtime_context.h", "utf8"),
     ) ||
-    !/default_parser_runtime_context/.test(parserRuntimeSource) ||
+    /default_parser_runtime_context|active_parser_runtime_context/.test(
+      parserRuntimeSource,
+    ) ||
+    /ps_parser_runtime_context_(?:active|activate)\s*\(/.test(
+      await readFile("src/parser/runtime_context.h", "utf8"),
+    ) ||
     /static\s+int\s+g_(?:recoverable_syntax_error|function_block_depth|recovery_block_depth)/.test(
       parserRuntimeConsumerSource,
     ) ||
@@ -831,10 +852,16 @@ if (!/struct\s+psx_global_registry_t\s*\{/.test(globalRegistrySource) ||
     !/psx_global_registry_t\s*\*ps_global_registry_create\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/psx_global_registry_t\s*\*ps_global_registry_activate\s*\(/.test(
+    !/void\s+ps_global_registry_destroy\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/void\s+ps_global_registry_destroy\s*\(/.test(
+    /default_global_registry|active_global_registry/.test(
+      globalRegistrySource,
+    ) ||
+    /ps_global_registry_(?:active|activate)\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    /\b(?:ps_register_global_var|ps_find_global_var|ps_iter_globals|ps_iter_string_literals|ps_iter_float_literals|ps_has_string_literals|ps_has_float_literals|ps_global_registry_reset_translation_unit|ps_global_registry_reset_diag_state)\s*\([^_]/.test(
       globalRegistrySource,
     ) ||
     /^static\s+(?:string_lit_t|float_lit_t|global_var_t)\s*\*(?:string_literals|float_literals|global_vars)\s*;/m.test(

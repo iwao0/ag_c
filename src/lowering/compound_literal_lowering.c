@@ -12,16 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-void psx_compound_literal_lowering_reset_translation_unit_state(void) {
-  psx_lowering_context_t *ctx = ps_lowering_context_active();
-  ctx->file_scope_compound_sequence = 0;
-  ctx->local_compound_sequence = 0;
-}
-
-static char *new_compound_object_name(int file_scope) {
-  psx_lowering_context_t *ctx = ps_lowering_context_active();
-  int sequence = file_scope ? ctx->file_scope_compound_sequence++
-                            : ctx->local_compound_sequence++;
+static char *new_compound_object_name(
+    psx_lowering_context_t *lowering_context, int file_scope) {
+  int sequence = file_scope
+                     ? lowering_context->file_scope_compound_sequence++
+                     : lowering_context->local_compound_sequence++;
   const char *format = file_scope ? "__compound_lit_%d"
                                   : "__compound_object_%d";
   int len = snprintf(NULL, 0, format, sequence);
@@ -35,6 +30,7 @@ static node_t *lower_file_scope_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
@@ -60,7 +56,7 @@ static node_t *lower_file_scope_compound_literal(
       .value_tok = compound->base.tok,
   };
   psx_global_declaration_pipeline_result_t object;
-  char *storage_name = new_compound_object_name(1);
+  char *storage_name = new_compound_object_name(lowering_context, 1);
   token_t *diag_tok = compound->base.tok
                           ? compound->base.tok
                           : (token_t *)fallback_diag_tok;
@@ -70,6 +66,7 @@ static node_t *lower_file_scope_compound_literal(
               .semantic_context = semantic_context,
               .global_registry = global_registry,
               .local_registry = local_registry,
+              .lowering_context = lowering_context,
               .options = options,
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
@@ -94,6 +91,7 @@ static node_t *lower_file_scope_compound_literal(
 static node_t *lower_local_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
   const psx_type_t *type = compound->type_name.resolved_type;
@@ -105,7 +103,7 @@ static node_t *lower_local_compound_literal(
   };
   psx_runtime_declarator_application_t application = {0};
   psx_automatic_local_declaration_pipeline_result_t object;
-  char *storage_name = new_compound_object_name(0);
+  char *storage_name = new_compound_object_name(lowering_context, 0);
   token_t *diag_tok = compound->base.tok
                           ? compound->base.tok
                           : (token_t *)fallback_diag_tok;
@@ -114,6 +112,7 @@ static node_t *lower_local_compound_literal(
           &(psx_automatic_local_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
               .local_registry = local_registry,
+              .lowering_context = lowering_context,
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
               .type = type,
@@ -142,19 +141,22 @@ node_t *lower_compound_literal_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry || !options)
+  if (!semantic_context || !global_registry || !local_registry ||
+      !lowering_context || !options)
     return node;
   if (!node || node->kind != ND_COMPOUND_LITERAL) return node;
   node_compound_literal_t *compound = (node_compound_literal_t *)node;
   node_t *lowered = compound->has_file_scope_storage
                         ? lower_file_scope_compound_literal(
                               semantic_context, global_registry,
-                              local_registry, options,
+                              local_registry, lowering_context, options,
                               compound, fallback_diag_tok)
                         : lower_local_compound_literal(
                               semantic_context, local_registry,
+                              lowering_context,
                               compound, fallback_diag_tok);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = node->tok;

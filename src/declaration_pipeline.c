@@ -32,11 +32,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void psx_declaration_pipeline_reset_translation_unit_state(void) {
-  psx_declaration_pipeline_reset_translation_unit_state_in(
-      ps_lowering_context_active());
-}
-
 void psx_declaration_pipeline_reset_translation_unit_state_in(
     psx_lowering_context_t *ctx) {
   ps_lowering_context_reset_translation_unit(ctx);
@@ -110,7 +105,7 @@ int psx_begin_global_declaration_pipeline(
   if (result) *result = (psx_global_declaration_pipeline_result_t){0};
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
-      !request->options ||
+      !request->lowering_context || !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
 
@@ -155,7 +150,7 @@ int psx_finish_global_declaration_pipeline(
     psx_global_declaration_pipeline_result_t *result) {
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
-      !request->options ||
+      !request->lowering_context || !request->options ||
       !result->global || !request->initializer) return 0;
   global_var_t *global = result->global;
   if (!request->is_extern_decl) {
@@ -184,6 +179,7 @@ int psx_finish_global_declaration_pipeline(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
+                request->lowering_context,
                 request->options,
                 initializer_resolution.initializer,
                 request->initializer->value_tok);
@@ -193,6 +189,7 @@ int psx_finish_global_declaration_pipeline(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
+                request->lowering_context,
                 request->options,
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
@@ -334,6 +331,7 @@ static int append_definition_parameter(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
     psx_parsed_function_parameter_t *parameter) {
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
@@ -387,6 +385,7 @@ static int append_definition_parameter(
   lvar_t *lowered = lower_resolved_parameter_declaration(
           &(psx_resolved_parameter_lowering_request_t){
               .local_registry = local_registry,
+              .lowering_context = lowering_context,
               .name = name->str,
               .name_len = name->len,
               .resolution = &resolution,
@@ -410,7 +409,7 @@ int psx_begin_function_definition_pipeline(
   if (state) *state = (psx_function_definition_pipeline_state_t){0};
   if (!request || !result || !request->base_type || !request->declarator ||
       !request->semantic_context || !request->global_registry ||
-      !request->local_registry ||
+      !request->local_registry || !request->lowering_context ||
       !request->declarator->identifier ||
       request->declarator->function_suffix_count <= 0 || !state) return 0;
 
@@ -431,6 +430,7 @@ int psx_begin_function_definition_pipeline(
   state->semantic_context = request->semantic_context;
   state->global_registry = request->global_registry;
   state->local_registry = request->local_registry;
+  state->lowering_context = request->lowering_context;
   state->base_type = request->base_type;
   state->result = result;
   state->primary_function_op_index =
@@ -448,7 +448,7 @@ int psx_apply_function_definition_parameter_pipeline(
   if (!state || !state->result || !parameter) return 0;
   int applied = append_definition_parameter(
       state->semantic_context, state->global_registry,
-      state->local_registry, state->result,
+      state->local_registry, state->lowering_context, state->result,
       &state->args_capacity, parameter);
   if (applied < 0) {
     if (state->parameter_count != 1) {
@@ -494,7 +494,7 @@ int psx_begin_static_local_declaration_pipeline(
   if (result) *result = (psx_static_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
-      !request->options ||
+      !request->lowering_context || !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
@@ -550,6 +550,7 @@ int psx_begin_static_local_declaration_pipeline(
           &(psx_static_local_declaration_request_t){
               .global_registry = request->global_registry,
               .local_registry = request->local_registry,
+              .lowering_context = request->lowering_context,
               .kind = kind,
               .function_name = request->function_name,
               .function_name_len = request->function_name_len,
@@ -571,7 +572,7 @@ int psx_finish_static_local_declaration_pipeline(
     psx_static_local_declaration_pipeline_result_t *result) {
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
-      !request->options ||
+      !request->lowering_context || !request->options ||
       !result->global || !result->alias || !request->initializer) return 0;
   if (!request->initializer->has_initializer) return 1;
 
@@ -594,13 +595,13 @@ int psx_finish_static_local_declaration_pipeline(
   if (resolution.is_aggregate_initializer) {
     resolution.initializer = psx_frontend_analyze_initializer_syntax_in_contexts(
         request->semantic_context, request->global_registry,
-        request->local_registry,
+        request->local_registry, request->lowering_context,
         request->options,
         resolution.initializer, request->initializer->value_tok);
   } else {
     resolution.initializer = psx_frontend_analyze_expression_in_contexts(
         request->semantic_context, request->global_registry,
-        request->local_registry,
+        request->local_registry, request->lowering_context,
         request->options,
         resolution.initializer,
         resolution.initializer->tok
@@ -671,7 +672,7 @@ int psx_begin_automatic_local_declaration_pipeline(
     *result = (psx_automatic_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->name || request->name_len <= 0 ||
       !request->type || !request->application || !request->initializer ||
-      !request->local_registry)
+      !request->local_registry || !request->lowering_context)
     return 0;
 
   psx_local_declaration_resolution_t resolution;
@@ -691,6 +692,7 @@ int psx_begin_automatic_local_declaration_pipeline(
       result->var = lower_complete_local_object(
               &(psx_local_object_request_t){
                   .local_registry = request->local_registry,
+                  .lowering_context = request->lowering_context,
                   .name = request->name,
                   .name_len = request->name_len,
                   .type = request->type,
@@ -702,6 +704,7 @@ int psx_begin_automatic_local_declaration_pipeline(
       result->var = declare_incomplete_local_object(
               &(psx_local_object_request_t){
                   .local_registry = request->local_registry,
+                  .lowering_context = request->lowering_context,
                   .name = request->name,
                   .name_len = request->name_len,
                   .type = request->type,
@@ -712,6 +715,7 @@ int psx_begin_automatic_local_declaration_pipeline(
     case PSX_LOCAL_STORAGE_VLA_OBJECT: {
       psx_vla_lowering_request_t lowering = {
           .local_registry = request->local_registry,
+          .lowering_context = request->lowering_context,
           .name = request->name,
           .name_len = request->name_len,
           .dimension_count = resolution.dimension_count,
@@ -740,6 +744,7 @@ int psx_begin_automatic_local_declaration_pipeline(
       vla = lower_pointer_to_vla_declaration(
           &(psx_pointer_vla_lowering_request_t){
               .local_registry = request->local_registry,
+              .lowering_context = request->lowering_context,
               .name = request->name,
               .name_len = request->name_len,
               .row_dimension = resolution.pointer_row_dimension,
@@ -776,6 +781,7 @@ int psx_finish_automatic_local_declaration_pipeline(
             result->var,
             &(psx_local_object_request_t){
                 .local_registry = request->local_registry,
+                .lowering_context = request->lowering_context,
                 .name = request->name,
                 .name_len = request->name_len,
                 .type = completed_type,
@@ -809,7 +815,8 @@ int psx_apply_automatic_local_declaration_pipeline(
 int psx_apply_block_extern_declaration_pipeline(
     const psx_block_extern_declaration_pipeline_request_t *request) {
   if (!request || !request->semantic_context || !request->global_registry ||
-      !request->local_registry || !request->options ||
+      !request->local_registry || !request->lowering_context ||
+      !request->options ||
       !request->name || request->name_len <= 0 ||
       !request->type) return 0;
   if (request->has_initializer) {
@@ -841,6 +848,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .semantic_context = request->semantic_context,
               .global_registry = request->global_registry,
               .local_registry = request->local_registry,
+              .lowering_context = request->lowering_context,
               .options = request->options,
               .name = request->name,
               .name_len = request->name_len,
@@ -858,12 +866,14 @@ int psx_apply_block_extern_declaration_pipeline(
 lvar_t *psx_apply_temporary_local_declaration_pipeline(
     const psx_temporary_local_declaration_pipeline_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || !request->local_registry) {
+      !request->type || !request->local_registry ||
+      !request->lowering_context) {
     return NULL;
   }
   return lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = request->local_registry,
+          .lowering_context = request->lowering_context,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,

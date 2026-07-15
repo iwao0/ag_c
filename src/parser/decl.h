@@ -43,7 +43,6 @@ void ps_decl_record_lvar_usage_in_region_in(
 void ps_decl_enter_scope(void);
 void ps_decl_leave_scope(void);
 lvar_t *ps_decl_get_locals(void);
-void ps_decl_reserve_variadic_regs(void);
 lvar_t *ps_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 void ps_decl_replay_lvar_usage_events(lvar_t *all_locals);
@@ -53,8 +52,6 @@ psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void);
 void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region);
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
 void psx_decl_attach_lvar_current_region(lvar_t *var);
-lvar_t *ps_decl_register_lvar_typed_align(
-    char *name, int len, int size, int align, const psx_type_t *type);
 void ps_decl_set_current_funcname_in(
     psx_local_registry_t *registry, char *name, int len);
 void ps_decl_get_current_funcname_in(

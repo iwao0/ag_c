@@ -8,7 +8,6 @@
 #include "local_registry.h"
 #include "node_utils.h"
 #include "../diag/diag.h"
-#include "../lowering/local_storage.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -17,22 +16,9 @@
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
-lvar_t *ps_decl_register_lvar_typed_align(
-    char *name, int len, int size, int align, const psx_type_t *type) {
-  if (!type) return NULL;
-  int offset = local_storage_allocate(size, align);
-  return ps_local_registry_create_storage_object(
-      name, len, offset, size, align, type);
-}
-
 void ps_decl_reset_locals_in(psx_local_registry_t *registry) {
   if (!registry) return;
   ps_local_registry_reset_in(registry);
-  local_storage_reset();
-}
-
-void ps_decl_reserve_variadic_regs(void) {
-  local_storage_reserve_prefix(64);
 }
 
 void ps_decl_set_current_funcname_in(

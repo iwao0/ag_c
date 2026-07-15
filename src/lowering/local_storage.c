@@ -3,17 +3,19 @@
 #include "frame_layout.h"
 #include "runtime_context.h"
 
-void local_storage_reset(void) {
-  frame_layout_reset(
-      &ps_lowering_context_active()->local_frame_layout);
+void local_storage_reset(psx_lowering_context_t *context) {
+  if (!context) return;
+  frame_layout_reset(&context->local_frame_layout);
 }
 
-void local_storage_reserve_prefix(int bytes) {
-  frame_layout_reserve_prefix(
-      &ps_lowering_context_active()->local_frame_layout, bytes);
+void local_storage_reserve_prefix(
+    psx_lowering_context_t *context, int bytes) {
+  if (!context) return;
+  frame_layout_reserve_prefix(&context->local_frame_layout, bytes);
 }
 
-int local_storage_allocate(int size, int align) {
-  return frame_layout_allocate(
-      &ps_lowering_context_active()->local_frame_layout, size, align);
+int local_storage_allocate(
+    psx_lowering_context_t *context, int size, int align) {
+  if (!context) return 0;
+  return frame_layout_allocate(&context->local_frame_layout, size, align);
 }

@@ -2,6 +2,7 @@
 
 #include "../diag/diag.h"
 #include "../declaration_pipeline.h"
+#include "../lowering/local_storage.h"
 #include "../lowering/runtime_context.h"
 #include "../semantic/declaration_registration.h"
 #include "function_definition.h"
@@ -71,6 +72,8 @@ int psx_frontend_stream_begin(
       ag_compilation_session_local_registry(session);
   psx_parser_runtime_context_t *runtime_context =
       ag_compilation_session_parser_runtime_context(session);
+  psx_lowering_context_t *lowering_context =
+      ag_compilation_session_lowering_context(session);
   const ag_compilation_options_t *options =
       ag_compilation_session_options_view(session);
   ps_global_registry_reset_diag_state_in(global_registry);
@@ -79,10 +82,12 @@ int psx_frontend_stream_begin(
   ps_ctx_reset_function_names_in(semantic_context);
   psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
       &stream->toplevel_declarations, semantic_context,
-      global_registry, local_registry, runtime_context, options);
+      global_registry, local_registry, runtime_context,
+      lowering_context, options);
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &stream->local_declarations, semantic_context,
-      global_registry, local_registry, runtime_context, options);
+      global_registry, local_registry, runtime_context,
+      lowering_context, options);
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context, global_registry, local_registry,
       runtime_context,
@@ -118,6 +123,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       psx_apply_toplevel_declaration_in_contexts(
           semantic_context, global_registry, local_registry,
           ag_compilation_session_parser_runtime_context(stream->session),
+          ag_compilation_session_lowering_context(stream->session),
           ag_compilation_session_options_view(stream->session),
           &item.value.declaration);
       ps_dispose_toplevel_declaration_syntax(
@@ -139,6 +145,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
           psx_apply_function_definition_header_in_contexts(
               semantic_context, global_registry, local_registry,
               ag_compilation_session_parser_runtime_context(session),
+              ag_compilation_session_lowering_context(session),
               &item.value.function_header);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,
@@ -149,6 +156,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
             function_name ? function_name->str : NULL,
             function_name ? function_name->len : 0, &checkpoint);
         ps_decl_reset_locals_in(local_registry);
+        local_storage_reset(
+            ag_compilation_session_lowering_context(session));
         ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);

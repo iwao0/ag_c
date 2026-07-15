@@ -1,5 +1,6 @@
 #include "../src/lowering/frame_layout.h"
 #include "../src/lowering/local_storage.h"
+#include "../src/lowering/runtime_context.h"
 #include <stdio.h>
 
 #define ASSERT_EQ(expected, actual)                                                \
@@ -50,13 +51,14 @@ static int test_vla_layout(void) {
 }
 
 static int test_current_local_storage(void) {
-  local_storage_reset();
-  ASSERT_EQ(0, local_storage_allocate(4, 4));
-  ASSERT_EQ(8, local_storage_allocate(8, 8));
+  psx_lowering_context_t lowering_context = {0};
+  local_storage_reset(&lowering_context);
+  ASSERT_EQ(0, local_storage_allocate(&lowering_context, 4, 4));
+  ASSERT_EQ(8, local_storage_allocate(&lowering_context, 8, 8));
 
-  local_storage_reset();
-  local_storage_reserve_prefix(64);
-  ASSERT_EQ(64, local_storage_allocate(8, 8));
+  local_storage_reset(&lowering_context);
+  local_storage_reserve_prefix(&lowering_context, 64);
+  ASSERT_EQ(64, local_storage_allocate(&lowering_context, 8, 8));
   return 0;
 }
 

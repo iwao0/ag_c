@@ -18,6 +18,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
 } psx_semantic_lowering_context_t;
 
@@ -96,6 +97,7 @@ static node_t *lower_source_cast_node(
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_CAST || !node->is_source_cast) return node;
   return lower_source_cast_expression(
+      context->lowering_context, context->local_registry,
       node, (token_t *)fallback_diag_tok, context->options);
 }
 
@@ -109,7 +111,8 @@ static node_t *lower_tree(
           context, node->rhs, fallback_diag_tok);
       node = lower_compound_literal_expression_in_contexts(
           context->semantic_context, context->global_registry,
-          context->local_registry, context->options,
+          context->local_registry, context->lowering_context,
+          context->options,
           node, fallback_diag_tok);
       return node->kind == ND_COMPOUND_LITERAL
                  ? node
@@ -187,7 +190,7 @@ static node_t *lower_tree(
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       return lower_member_access_expression_in(
-          context->local_registry,
+          context->lowering_context, context->local_registry,
           (node_member_access_t *)node, fallback_diag_tok);
     case ND_UNARY_DEREF:
       node->lhs = lower_tree(
@@ -233,7 +236,8 @@ static node_t *lower_tree(
       node = lower_source_cast_node(context, node, fallback_diag_tok);
       node = lower_aggregate_address_expression(node);
       node = lower_additive_expression_node(node);
-      node = lower_compound_assignment_expression(node);
+      node = lower_compound_assignment_expression(
+          context->lowering_context, context->local_registry, node);
       break;
   }
   return node;
@@ -243,14 +247,17 @@ node_t *psx_lower_semantic_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry || !options)
+  if (!semantic_context || !global_registry || !local_registry ||
+      !lowering_context || !options)
     return node;
   const psx_semantic_lowering_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
+      .lowering_context = lowering_context,
       .options = options,
   };
   return lower_tree(&context, node, fallback_diag_tok);
@@ -260,14 +267,17 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry || !options)
+  if (!semantic_context || !global_registry || !local_registry ||
+      !lowering_context || !options)
     return syntax;
   const psx_semantic_lowering_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
+      .lowering_context = lowering_context,
       .options = options,
   };
   return lower_initializer(&context, syntax, fallback_diag_tok);

@@ -7,17 +7,20 @@
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 node_t *psx_lower_semantic_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *node, const token_t *fallback_diag_tok);
 node_t *psx_lower_semantic_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_t *syntax, const token_t *fallback_diag_tok);
 

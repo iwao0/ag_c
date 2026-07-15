@@ -1,7 +1,7 @@
 #include "cast_lowering.h"
+#include "local_storage.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
-#include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
@@ -113,24 +113,27 @@ static int size_compatible_tag_value(node_t *expr,
          value_size == view->elem_size;
 }
 
-static char *new_aggregate_temp_name(void) {
-  int seq = ps_lowering_context_active()
-      ->aggregate_cast_temp_sequence++;
+static char *new_aggregate_temp_name(
+    psx_lowering_context_t *lowering_context) {
+  int seq = lowering_context->aggregate_cast_temp_sequence++;
   int len = snprintf(NULL, 0, "__aggregate_cast_%d", seq);
   char *name = calloc((size_t)len + 1, 1);
   snprintf(name, (size_t)len + 1, "__aggregate_cast_%d", seq);
   return name;
 }
 
-static node_t *lower_aggregate_cast(node_t *operand,
-                                    cast_target_view_t view,
-                                    token_t *diag_tok,
-                                    const ag_compilation_options_t *options) {
+static node_t *lower_aggregate_cast(
+    psx_lowering_context_t *lowering_context,
+    psx_local_registry_t *local_registry,
+    node_t *operand, cast_target_view_t view,
+    token_t *diag_tok,
+    const ag_compilation_options_t *options) {
   if (same_tag_value(operand, &view) ||
       (options->enable_size_compatible_nonscalar_cast &&
        size_compatible_tag_value(operand, &view))) {
     return ps_node_new_aggregate_cast_result(operand, view.target);
   }
+  if (!lowering_context || !local_registry) return operand;
 
   const psx_type_t *operand_type = ps_node_get_type(operand);
   if (ps_type_is_tag_aggregate(operand_type)) {
@@ -178,10 +181,12 @@ static node_t *lower_aggregate_cast(node_t *operand,
   }
 
   int object_size = view.elem_size > 0 ? view.elem_size : 8;
-  char *temp_name = new_aggregate_temp_name();
-  lvar_t *temp = ps_decl_register_lvar_typed_align(
-      temp_name, (int)strlen(temp_name), object_size, object_size,
-      view.target);
+  char *temp_name = new_aggregate_temp_name(lowering_context);
+  int offset = local_storage_allocate(
+      lowering_context, object_size, object_size);
+  lvar_t *temp = ps_local_registry_create_storage_object_in(
+      local_registry, temp_name, (int)strlen(temp_name), offset,
+      object_size, object_size, view.target);
 
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for(temp, member.offset, &member);
@@ -204,11 +209,15 @@ static node_t *integer_result_ex(node_t *operand, cast_target_view_t view,
       operand, view.target, widen_zext_i64);
 }
 
-static node_t *lower_cast(node_t *operand, cast_target_view_t view,
-                          token_t *diag_tok,
-                          const ag_compilation_options_t *options) {
+static node_t *lower_cast(
+    psx_lowering_context_t *lowering_context,
+    psx_local_registry_t *local_registry,
+    node_t *operand, cast_target_view_t view,
+    token_t *diag_tok,
+    const ag_compilation_options_t *options) {
   if (!view.is_pointer && ps_ctx_is_tag_aggregate_kind(view.tag_kind))
-    return lower_aggregate_cast(operand, view, diag_tok, options);
+    return lower_aggregate_cast(
+        lowering_context, local_registry, operand, view, diag_tok, options);
 
   if (operand && operand->kind == ND_NUM &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE &&
@@ -368,18 +377,22 @@ node_t *lower_implicit_value_conversion(node_t *operand,
   }
   if (source_type && ps_type_shape_matches(source_type, target_type))
     return operand;
-  return lower_cast(operand, view, fallback_diag_tok, options);
+  return lower_cast(
+      NULL, NULL, operand, view, fallback_diag_tok, options);
 }
 
-node_t *lower_source_cast_expression(node_t *node,
-                                     token_t *fallback_diag_tok,
-                                     const ag_compilation_options_t *options) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast || !options)
+node_t *lower_source_cast_expression(
+    psx_lowering_context_t *lowering_context,
+    psx_local_registry_t *local_registry,
+    node_t *node, token_t *fallback_diag_tok,
+    const ag_compilation_options_t *options) {
+  if (!lowering_context || !local_registry || !node ||
+      node->kind != ND_CAST || !node->is_source_cast || !options)
     return node;
   const psx_type_t *target = node->type;
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
-      operand, target_view(target),
+      lowering_context, local_registry, operand, target_view(target),
       node->tok ? node->tok : fallback_diag_tok, options);
   if (!lowered) return node;
   token_t *source_tok = node->tok;
