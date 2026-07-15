@@ -70,7 +70,6 @@ struct psx_type_t {
   const psx_type_t *base;
 
   int size;
-  int align;
   int array_len;
 
   token_kind_t scalar_kind;

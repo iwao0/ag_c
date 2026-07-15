@@ -127,7 +127,6 @@ void ps_type_normalize_scalar_identity(psx_type_t *type) {
 void ps_type_clear_cached_layout(psx_type_t *type) {
   if (!type) return;
   type->size = 0;
-  type->align = 0;
   ps_type_clear_cached_layout(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count; ++i)
@@ -154,7 +153,6 @@ void ps_type_clear_record_layout_cache(psx_type_t *type) {
       (type->kind == PSX_TYPE_ARRAY &&
        type_layout_contains_record_object(type->base))) {
     type->size = 0;
-    type->align = 0;
   }
 }
 
@@ -167,8 +165,6 @@ psx_type_t *ps_type_new_integer_in(
   if (!type) return NULL;
   type->scalar_kind = canonical_integer_scalar_kind(scalar_kind);
   type->size = size;
-  type->align = size > 0 ? size : 1;
-  if (type->align > 8) type->align = 8;
   type->is_unsigned = is_unsigned ? 1 : 0;
   if (scalar_kind == TK_CHAR) type->is_plain_char = 1;
   return type;
@@ -193,8 +189,6 @@ psx_type_t *ps_type_new_float_in(
   if (!type) return NULL;
   type->fp_kind = fp_kind;
   type->size = size;
-  type->align = size > 0 ? size : 1;
-  if (type->align > 8) type->align = 8;
   if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) type->is_long_double = 1;
   return type;
 }
@@ -366,7 +360,6 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
     type->fp_kind = fp;
     type->size = size;
-    type->align = ag_target_info_scalar_alignment(target, target_kind);
     return type;
   }
 
@@ -383,7 +376,6 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     psx_type_t *type = ps_type_new_float_in(
         arena_context, fp,
         ag_target_info_scalar_size(target, target_kind));
-    type->align = ag_target_info_scalar_alignment(target, target_kind);
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       type->is_long_double = 1;
     return type;
@@ -549,7 +541,6 @@ psx_type_t *ps_type_new_array_in(
   type->base = base;
   type->array_len = array_len;
   type->size = size;
-  type->align = base && base->align > 0 ? base->align : 1;
   type->is_vla = is_vla ? 1 : 0;
   return type;
 }
@@ -879,7 +870,6 @@ psx_type_t *ps_type_new_tag_in(
   type->tag_len = tag_len;
   type->tag_scope_depth_p1 = tag_scope_depth_p1;
   type->size = size;
-  type->align = size >= 8 ? 8 : (size >= 4 ? 4 : (size >= 2 ? 2 : 1));
   return type;
 }
 
@@ -1436,7 +1426,6 @@ int ps_type_generic_select_index(
                        ? normalized.base
                        : control;
     decayed.size = 8;
-    decayed.align = 8;
     normalized = decayed;
   } else if (normalized.kind == PSX_TYPE_INTEGER) {
     if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;

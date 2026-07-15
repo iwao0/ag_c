@@ -49,7 +49,6 @@ static psx_type_t *resolve_builtin_base_type(
                         ? fp_kind
                         : TK_FLOAT_KIND_DOUBLE;
     type->size = elem_size;
-    type->align = elem_size >= 8 ? 8 : elem_size;
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {

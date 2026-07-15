@@ -3203,6 +3203,7 @@ if (!canonicalTypeStruct ||
     !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(
       canonicalTypeStruct[1],
     ) ||
+    /\b(?:int\s+)?align\s*;/.test(canonicalTypeStruct[1]) ||
     /\bis_(?:const_qualified|volatile_qualified|atomic)\b/.test(
       canonicalTypeStruct[1],
     ) ||

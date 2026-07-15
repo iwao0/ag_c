@@ -1891,7 +1891,6 @@ static void test_additive_semantic_lowering_boundary() {
   psx_type_t *complex_float = ps_type_new(PSX_TYPE_COMPLEX);
   complex_float->fp_kind = TK_FLOAT_KIND_FLOAT;
   complex_float->size = 8;
-  complex_float->align = 4;
   const psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
       complex_float, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       TK_FLOAT_KIND_NONE, 0);
@@ -2094,7 +2093,6 @@ static void test_unary_operator_semantic_lowering_boundary() {
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   complex_type->size = 16;
-  complex_type->align = 8;
   lvar_t *complex_value = register_test_storage_fixture(
       (char *)"z", 1, 16, 8, 0);
   set_test_storage_fixture_type(complex_value, complex_type);
@@ -2974,7 +2972,6 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   complex_type->size = 16;
-  complex_type->align = 8;
   set_test_storage_fixture_type(value, complex_type);
 
   psx_initializer_entry_t *complex_entries =
@@ -3005,7 +3002,6 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   psx_type_t *float_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   float_complex_type->fp_kind = TK_FLOAT_KIND_FLOAT;
   float_complex_type->size = 8;
-  float_complex_type->align = 4;
   set_test_storage_fixture_type(float_value, float_complex_type);
   complex_entries = calloc(2, sizeof(*complex_entries));
   complex_entries[0].value = ps_node_new_num(1);
@@ -3254,7 +3250,6 @@ static void test_target_type_layout_boundary() {
   psx_type_layout_t layout = {0};
 
   ASSERT_EQ(0, pointer->size);
-  ASSERT_EQ(0, pointer->align);
   ASSERT_TRUE(ps_type_layout_of(pointer, &host, &layout));
   ASSERT_TRUE(layout.is_complete);
   ASSERT_EQ(8, layout.size);
@@ -3344,11 +3339,8 @@ static void test_target_type_layout_boundary() {
       psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
   ASSERT_EQ(0, canonical_pointer_array->size);
-  ASSERT_EQ(0, canonical_pointer_array->align);
   ASSERT_EQ(0, canonical_pointer_array->base->size);
-  ASSERT_EQ(0, canonical_pointer_array->base->align);
   ASSERT_EQ(0, canonical_pointer_array->base->base->size);
-  ASSERT_EQ(0, canonical_pointer_array->base->base->align);
   ASSERT_EQ(8, ps_type_sizeof_id_for_target(
                    types, pointer_identity.type_id, &host));
   ASSERT_EQ(4, ps_type_sizeof_id_for_target(
@@ -3380,7 +3372,6 @@ static void test_target_type_layout_boundary() {
                    semantic_context, pointer_type_tokens,
                    pointer_type_end));
   ASSERT_EQ(0, pointer->size);
-  ASSERT_EQ(0, pointer->align);
 
   psx_record_decl_t *record = arena_alloc_in(
       test_arena_context(), sizeof(*record));
@@ -3392,7 +3383,6 @@ static void test_target_type_layout_boundary() {
       TK_STRUCT, (char *)"__TargetRecord", 14, 1, 64);
   record_type->record_id = record->record_id;
   record_type->aggregate_definition = record;
-  record_type->align = 32;
   psx_qual_type_t record_identity = ps_ctx_intern_qual_type_in(
       test_semantic_context(), record_type);
   ASSERT_TRUE(record_identity.type_id != PSX_TYPE_ID_INVALID);
@@ -3849,7 +3839,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
 
   psx_type_t *complex = ps_type_new(PSX_TYPE_COMPLEX);
   complex->size = 16;
-  complex->align = 8;
   complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
   ASSERT_TRUE(plan_test_parameter_storage(complex, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
@@ -5178,7 +5167,6 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(!boundary.bit_is_signed);
 
   psx_type_t *packed_member = ps_type_new_integer(TK_SHORT, 2, 0);
-  packed_member->align = 8;
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
@@ -5255,7 +5243,6 @@ static void test_aggregate_member_resolution_boundary() {
             ps_type_pointer_view_structural_ptr_array_pointee_bytes(
                 member_type));
   ASSERT_EQ(8, ps_type_sizeof(member_type));
-  ASSERT_EQ(0, member_type->align);
   ASSERT_EQ(8, ps_type_alignof_for_target(
                    member_type, ps_ctx_target_info(test_semantic_context())));
   ASSERT_EQ(1, ps_type_pointer_depth(member_type));
@@ -5301,7 +5288,6 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__AlignedMember", 15);
   ASSERT_TRUE(aligned_member != NULL);
   ASSERT_EQ(0, ps_type_sizeof(aligned_member));
-  ASSERT_EQ(0, aligned_member->align);
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(
                     test_semantic_context(), aligned_member));
   ASSERT_EQ(4, ps_ctx_type_alignof_in(
@@ -6135,7 +6121,6 @@ static void test_local_initializer_parse_lowering_boundary() {
 
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->size = 16;
-  complex_type->align = 8;
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   lvar_t *complex_value = register_test_storage_fixture(
       (char *)"complex", 7, 16, 16, 0);
@@ -9882,7 +9867,6 @@ static void test_type_metadata_bridge() {
   psx_type_t *canonical_complex = ps_type_new(PSX_TYPE_COMPLEX);
   canonical_complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
   canonical_complex->size = 16;
-  canonical_complex->align = 8;
   set_test_storage_fixture_type(&tmp_complex_lvar, canonical_complex);
   const psx_type_t *tmp_complex_type = tmp_complex_lvar.decl_type;
   ASSERT_TRUE(tmp_complex_type != NULL);
@@ -10001,7 +9985,6 @@ static void test_type_metadata_bridge() {
   psx_type_t *typed_assign_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   typed_assign_complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   typed_assign_complex_type->size = 16;
-  typed_assign_complex_type->align = 8;
   typed_assign_complex_lhs_mem.type = typed_assign_complex_type;
   node_t *typed_assign_complex = ps_node_new_assign(
       &typed_assign_complex_lhs_mem, ps_node_new_num(0));
@@ -16711,10 +16694,8 @@ static void test_semantic_type_identity() {
 
   psx_type_t *host_pointer = ps_type_new_pointer(plain_int);
   host_pointer->size = 8;
-  host_pointer->align = 8;
   psx_type_t *wasm_pointer = ps_type_clone(host_pointer);
   wasm_pointer->size = 4;
-  wasm_pointer->align = 4;
   psx_qual_type_t host_pointer_identity =
       ps_ctx_intern_qual_type_in(context, host_pointer);
   psx_qual_type_t wasm_pointer_identity =
@@ -16792,10 +16773,8 @@ static void test_semantic_type_identity() {
   psx_type_t *first_record = ps_type_new_tag(
       TK_STRUCT, record_name, 14, 1, 8);
   first_record->record_id = 41;
-  first_record->align = 8;
   psx_type_t *same_record = ps_type_clone(first_record);
   same_record->size = 4;
-  same_record->align = 4;
   psx_type_t *other_record = ps_type_clone(first_record);
   other_record->record_id = 42;
   psx_qual_type_t first_record_identity =
