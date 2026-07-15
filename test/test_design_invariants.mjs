@@ -1895,6 +1895,24 @@ const memberAccessTargetLoweringSource = await readFile(
   "src/lowering/member_access_lowering.c",
   "utf8",
 );
+const memberNodeUtilsSource = await readFile(
+  "src/parser/node_utils.c",
+  "utf8",
+);
+const memberNodeUtilsHeader = await readFile(
+  "src/parser/node_utils.h",
+  "utf8",
+);
+if (/\bps_node_new_tag_member_(?:deref|lvar_ref)_for_in\s*\(/.test(
+      memberNodeUtilsSource,
+    ) ||
+    /\bps_node_new_tag_member_(?:deref|lvar_ref)_for_in\s*\(/.test(
+      memberNodeUtilsHeader,
+    )) {
+  throw new Error(
+    "member node constructors must require explicit declaration and layout inputs",
+  );
+}
 if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||

@@ -292,10 +292,12 @@ static int test_type_alignof_for_target(
   ps_node_new_explicit_addr_value_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_unary_addr_for(...) \
   ps_node_new_unary_addr_for_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_new_tag_member_deref_for(...) \
-  ps_node_new_tag_member_deref_for_in( \
+#define ps_node_new_tag_member_deref_for(addr_base, base, info) \
+  ps_node_new_tag_member_deref_with_layout_for_in( \
       test_arena_context(), \
-      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
+      ps_ctx_target_info(test_semantic_context()), (addr_base), (base), \
+      (info)->offset, ps_tag_member_decl_type(info), \
+      (info)->bit_is_signed, (info)->bit_width, (info)->bit_offset)
 #define ps_node_new_unary_deref_for(...) \
   ps_node_new_unary_deref_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_unary_deref_syntax_for(...) \
@@ -306,8 +308,11 @@ static int test_type_alignof_for_target(
   ps_node_new_subscript_deref_for_in( \
       test_arena_context(), \
       ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
-#define ps_node_new_tag_member_lvar_ref_for(...) \
-  ps_node_new_tag_member_lvar_ref_for_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_tag_member_lvar_ref_for(owner, member_offset, info) \
+  ps_node_new_tag_member_lvar_ref_with_layout_for_in( \
+      test_arena_context(), (owner), (member_offset), \
+      ps_tag_member_decl_type(info), (info)->bit_is_signed, \
+      (info)->bit_width, (info)->bit_offset)
 #define ps_node_new_gvar_for(...) \
   ps_node_new_gvar_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_gvar_array_base_for(...) \

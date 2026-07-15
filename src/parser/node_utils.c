@@ -2905,17 +2905,6 @@ node_t *ps_node_new_tag_member_deref_with_layout_for_in(
   return deref;
 }
 
-node_t *ps_node_new_tag_member_deref_for_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
-    node_t *addr_base, node_t *base, const tag_member_info_t *info) {
-  return info
-             ? ps_node_new_tag_member_deref_with_layout_for_in(
-                   arena_context, target, addr_base, base, info->offset,
-                   ps_tag_member_decl_type(info), info->bit_is_signed,
-                   info->bit_width, info->bit_offset)
-             : NULL;
-}
-
 node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
                                        node_t *operand) {
   const psx_type_t *result_type =
@@ -2991,15 +2980,6 @@ node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     node->base.type_state.bit_is_signed = bit_is_signed ? 1 : 0;
   }
   return (node_t *)node;
-}
-
-node_t *ps_node_new_tag_member_lvar_ref_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int member_offset,
-    const tag_member_info_t *info) {
-  return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
-      arena_context, owner, member_offset,
-      ps_tag_member_decl_type(info), info ? info->bit_is_signed : 0,
-      info ? info->bit_width : 0, info ? info->bit_offset : 0);
 }
 
 node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
