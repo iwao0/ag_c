@@ -151,8 +151,9 @@ static node_t *lower_local_compound_literal(
                     : ps_node_new_unary_addr_for_in(
                           ps_lowering_arena(lowering_context), reference);
   }
-  return ps_node_new_binary_in(
-      ps_lowering_arena(lowering_context), ND_COMMA,
+  return ps_node_new_binary_for_target_in(
+      ps_lowering_arena(lowering_context),
+      ps_lowering_target(lowering_context), ND_COMMA,
       object.initialization, reference);
 }
 

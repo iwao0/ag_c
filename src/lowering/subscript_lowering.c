@@ -13,8 +13,9 @@ static node_t *make_scaled_offset(
   if (runtime_stride_slot) {
     node_t *stride = ps_node_new_lvar_typed_in(
         arena_context, runtime_stride_slot, 8);
-    return ps_node_new_binary_in(
-        arena_context, ND_MUL, index, stride);
+    return ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(lowering_context),
+        ND_MUL, index, stride);
   }
   const psx_type_t *base_type = ps_node_get_type(base);
   int stride = ps_type_sizeof_id_with_records(
@@ -24,8 +25,8 @@ static node_t *make_scaled_offset(
           lowering_context, base_type ? base_type->base : NULL),
       ps_lowering_target(lowering_context));
   if (stride <= 0) stride = 8;
-  return ps_node_new_binary_in(
-      arena_context, ND_MUL, index,
+  return ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(lowering_context), ND_MUL, index,
       ps_node_new_num_in(arena_context, stride));
 }
 
@@ -49,6 +50,7 @@ node_t *lower_subscript_expression(
   node_t *scaled = make_scaled_offset(lowering_context, base, index);
   node_t *lowered = ps_node_new_subscript_deref_for_in(
       ps_lowering_arena(lowering_context),
+      ps_lowering_target(lowering_context),
       base, base_address_of(base), scaled);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;

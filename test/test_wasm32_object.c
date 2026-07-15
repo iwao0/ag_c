@@ -1192,7 +1192,7 @@ int main(void) {
 
   const char *struct_string_offset_reloc_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<s>",
-      "<.LC0>+0x2", "<.LC1>+0x1", "size=24"};
+      "<.LC0>+0x2", "<.LC1>+0x1", "size=12"};
   failures += run_objdump_check("global_struct_string_offset_data_reloc",
                                 "struct S{const char *a; int pad; const char *b;}; "
                                 "struct S s={\"abc\"+2,7,\"de\"+1}; "
@@ -1220,7 +1220,7 @@ int main(void) {
 
   const char *compound_literal_inner_ptr_reloc_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<ptrs>",
-      "<__compound_lit_0>", "<g>", "size=16"};
+      "<__compound_lit_0>", "<g>", "size=8"};
   failures += run_objdump_check("global_compound_literal_inner_ptr_data_reloc",
                                 "int g=11; int **ptrs=(int *[]){&g,&g}; "
                                 "int main(void){return **ptrs+*ptrs[1];}\n",
@@ -1321,7 +1321,7 @@ int main(void) {
                                 static_typedef_multidim_needles, 5);
 
   const char *static_typedef_multidim_ptr_needles[] = {
-      "<f.ptrs.", "binding=local", "size=32", "R_WASM_MEMORY_ADDR_I32", "<values>",
+      "<f.ptrs.", "binding=local", "size=16", "R_WASM_MEMORY_ADDR_I32", "<values>",
       "i32.load"};
   failures += run_objdump_check("static_typedef_multidim_ptr",
                                 "typedef int *IP2x2[2][2]; int values[4]={10,20,30,40}; "
@@ -1332,7 +1332,7 @@ int main(void) {
                                 static_typedef_multidim_ptr_needles, 6);
 
   const char *static_direct_multidim_ptr_needles[] = {
-      "<f.ptrs.", "binding=local", "size=32", "R_WASM_MEMORY_ADDR_I32", "<values>",
+      "<f.ptrs.", "binding=local", "size=16", "R_WASM_MEMORY_ADDR_I32", "<values>",
       "i32.store"};
   failures += run_objdump_check("static_direct_multidim_ptr",
                                 "int values[4]={1,2,3,4}; "

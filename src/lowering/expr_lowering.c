@@ -39,15 +39,15 @@ static node_t *scale_pointer_offset(
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   int stride_offset = ps_node_vla_row_stride_frame_off(pointer);
   if (stride_offset != 0) {
-    return ps_node_new_binary_in(
-        arena_context, ND_MUL, offset,
+    return ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(lowering_context), ND_MUL, offset,
         ps_node_new_lvar_typed_in(arena_context, stride_offset, 8));
   }
 
   int deref_size = pointer_arithmetic_stride(lowering_context, pointer);
   if (deref_size > 1) {
-    return ps_node_new_binary_in(
-        arena_context, ND_MUL, offset,
+    return ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(lowering_context), ND_MUL, offset,
         ps_node_new_num_in(arena_context, deref_size));
   }
   return offset;
@@ -57,8 +57,9 @@ static node_t *new_pointer_result(
     psx_lowering_context_t *lowering_context,
     node_kind_t kind, node_t *pointer, node_t *offset) {
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
-  node_t *result = ps_node_new_binary_in(
-      arena_context, kind, pointer, offset);
+  node_t *result = ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(lowering_context),
+      kind, pointer, offset);
   const psx_type_t *type = ps_node_array_decay_pointer_arith_type_in(
       arena_context, pointer);
   if (type) ps_node_bind_type(result, type);
@@ -84,12 +85,14 @@ node_t *lower_additive_expression(
   } else if (kind == ND_SUB &&
              is_pointer_arithmetic_operand(lowering_context, lhs)) {
     if (is_pointer_arithmetic_operand(lowering_context, rhs)) {
-      node_t *difference = ps_node_new_binary_in(
-          arena_context, ND_SUB, lhs, rhs);
+      node_t *difference = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(lowering_context),
+          ND_SUB, lhs, rhs);
       int deref_size = pointer_arithmetic_stride(lowering_context, lhs);
       return deref_size > 1
-                 ? ps_node_new_binary_in(
-                       arena_context, ND_DIV, difference,
+                 ? ps_node_new_binary_for_target_in(
+                       arena_context, ps_lowering_target(lowering_context),
+                       ND_DIV, difference,
                        ps_node_new_num_in(arena_context, deref_size))
                  : difference;
     }
@@ -98,8 +101,8 @@ node_t *lower_additive_expression(
         scale_pointer_offset(lowering_context, lhs, rhs));
   }
 
-  node_t *result = ps_node_new_binary_in(
-      arena_context, kind, lhs, rhs);
+  node_t *result = ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(lowering_context), kind, lhs, rhs);
   result->source_op = kind == ND_ADD ? TK_PLUS : TK_MINUS;
   return result;
 }

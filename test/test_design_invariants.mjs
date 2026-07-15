@@ -2564,6 +2564,7 @@ for (const removedApi of [
   "ps_node_row_decay_pointer_arith_type_in",
   "ps_node_new_shift_trunc_extend_in",
   "ps_node_compound_literal_array_size",
+  "ps_node_new_binary_in",
 ]) {
   if (new RegExp(`\\b${removedApi}\\s*\\(`).test(
         `${parserLayerSource}\n${loweringLayerSource}`,
@@ -2681,6 +2682,23 @@ if (!explicitWidthShiftConstructor ||
     )) {
   throw new Error(
     "shift truncation must consume a width already resolved against the active target",
+  );
+}
+const targetAwareBinaryConstructor = nodeUtilsSource.match(
+  /node_t\s*\*ps_node_new_binary_for_target_in\s*\([^]*?\n\}/,
+);
+if (!targetAwareBinaryConstructor ||
+    !/const\s+ag_target_info_t\s*\*target/.test(
+      targetAwareBinaryConstructor[0],
+    ) ||
+    !/ps_type_binary_result_for_target_in\s*\(\s*arena_context\s*,\s*target\s*,/s.test(
+      targetAwareBinaryConstructor[0],
+    ) ||
+    /ps_type_binary_result_in\s*\(/.test(
+      targetAwareBinaryConstructor[0],
+    )) {
+  throw new Error(
+    "typed binary construction must resolve result types against an explicit target",
   );
 }
 const assignmentLoweringSource = await readFile(

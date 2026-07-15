@@ -173,7 +173,9 @@ static arena_context_t *test_arena_context(void) {
   ps_declarator_shape_copy_in(test_arena_context(), __VA_ARGS__)
 
 #define ps_node_new_binary(...) \
-  ps_node_new_binary_in(test_arena_context(), __VA_ARGS__)
+  ps_node_new_binary_for_target_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_node_row_decay_pointer_arith_type(...) \
   ps_node_array_decay_pointer_arith_type_in( \
       test_arena_context(), __VA_ARGS__)
@@ -271,7 +273,9 @@ static arena_context_t *test_arena_context(void) {
 #define ps_node_new_unary_addr_for(...) \
   ps_node_new_unary_addr_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_tag_member_deref_for(...) \
-  ps_node_new_tag_member_deref_for_in(test_arena_context(), __VA_ARGS__)
+  ps_node_new_tag_member_deref_for_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_node_new_unary_deref_for(...) \
   ps_node_new_unary_deref_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_unary_deref_syntax_for(...) \
@@ -279,7 +283,9 @@ static arena_context_t *test_arena_context(void) {
 #define psx_node_new_subscript_syntax_for(...) \
   psx_node_new_subscript_syntax_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_subscript_deref_for(...) \
-  ps_node_new_subscript_deref_for_in(test_arena_context(), __VA_ARGS__)
+  ps_node_new_subscript_deref_for_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_node_new_tag_member_lvar_ref_for(...) \
   ps_node_new_tag_member_lvar_ref_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_gvar_for(...) \

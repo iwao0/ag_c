@@ -9,6 +9,7 @@
 #include "node_type_public.h"
 #include "node_vla_public.h"
 #include "tag_public.h"
+#include "../target_info.h"
 
 struct lvar_t;
 struct global_var_t;
@@ -44,8 +45,9 @@ const psx_type_t *ps_node_array_decay_pointer_arith_type_in(
     arena_context_t *arena_context, node_t *node);
 int ps_node_bitfield_width(node_t *node);
 
-node_t *ps_node_new_binary_in(arena_context_t *arena_context,
-                              node_kind_t kind, node_t *lhs, node_t *rhs);
+node_t *ps_node_new_binary_for_target_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_kind_t kind, node_t *lhs, node_t *rhs);
 node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
                                    node_kind_t kind, node_t *lhs,
                                    node_t *rhs);
@@ -133,7 +135,8 @@ node_t *ps_node_new_explicit_addr_value_for_in(
 node_t *ps_node_new_unary_addr_for_in(arena_context_t *arena_context,
                                       node_t *operand);
 node_t *ps_node_new_tag_member_deref_for_in(
-    arena_context_t *arena_context, node_t *addr_base, node_t *base,
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *addr_base, node_t *base,
     const struct tag_member_info_t *info);
 node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
                                        node_t *operand);
@@ -142,8 +145,8 @@ node_t *psx_node_new_unary_deref_syntax_for_in(
 node_t *psx_node_new_subscript_syntax_for_in(
     arena_context_t *arena_context, node_t *base, node_t *index);
 node_t *ps_node_new_subscript_deref_for_in(
-    arena_context_t *arena_context, node_t *base, node_t *base_addr,
-    node_t *scaled_offset);
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *base, node_t *base_addr, node_t *scaled_offset);
 node_t *ps_node_new_tag_member_lvar_ref_for_in(
     arena_context_t *arena_context, struct lvar_t *owner,
     int member_offset, const struct tag_member_info_t *info);

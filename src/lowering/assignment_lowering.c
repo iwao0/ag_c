@@ -76,18 +76,21 @@ node_t *lower_compound_assignment_expression(
     int scale = ps_lowering_type_deref_size(
         lowering_context, ps_node_get_type(target));
     if (scale > 1)
-      rhs = ps_node_new_binary_in(
-          arena_context, ND_MUL, rhs,
+      rhs = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(lowering_context), ND_MUL, rhs,
           ps_node_new_num_in(arena_context, scale));
   }
 
-  node_t *value = ps_node_new_binary_in(
-      arena_context, binary_kind, target, rhs);
+  node_t *value = ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(lowering_context),
+      binary_kind, target, rhs);
   node_t *assign = ps_node_new_assign_in(
       ps_lowering_arena(lowering_context), target, value);
   node_t *lowered = prefix
-                        ? ps_node_new_binary_in(
-                              arena_context, ND_COMMA, prefix, assign)
+                        ? ps_node_new_binary_for_target_in(
+                              arena_context,
+                              ps_lowering_target(lowering_context),
+                              ND_COMMA, prefix, assign)
                         : assign;
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;

@@ -221,8 +221,9 @@ static node_t *lower_aggregate_cast(
       ps_lowering_arena(lowering_context), member_ref, operand);
   node_t *result = ps_node_new_lvar_expr_ref_for_in(
       ps_lowering_arena(lowering_context), temp);
-  return ps_node_new_binary_in(
-      ps_lowering_arena(lowering_context), ND_COMMA, assign, result);
+  return ps_node_new_binary_for_target_in(
+      ps_lowering_arena(lowering_context),
+      ps_lowering_target(lowering_context), ND_COMMA, assign, result);
 }
 
 static node_t *pointer_result(arena_context_t *arena_context,
@@ -329,8 +330,9 @@ static node_t *lower_cast(
     if (target_unsigned && size >= 1 && size < 4 &&
         ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
         !ps_node_value_is_pointer_like(operand)) {
-      node_t *masked = ps_node_new_binary_in(
-          arena_context, ND_BITAND, operand,
+      node_t *masked = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(lowering_context),
+          ND_BITAND, operand,
           ps_node_new_num_in(arena_context, 0xffffffffLL));
       return integer_result(arena_context, masked, view);
     }
@@ -338,8 +340,9 @@ static node_t *lower_cast(
   }
 
   if (view.kind == TK_BOOL)
-    return annotate(ps_node_new_binary_in(
-                        arena_context, ND_NE, operand,
+    return annotate(ps_node_new_binary_for_target_in(
+                        arena_context, ps_lowering_target(lowering_context),
+                        ND_NE, operand,
                         ps_node_new_num_in(arena_context, 0)),
                     view.target);
   if (view.kind == TK_VOID)
@@ -361,8 +364,9 @@ static node_t *lower_cast(
       return annotate(number, view.target);
     }
     if (view.is_unsigned) {
-      node_t *masked = ps_node_new_binary_in(
-          arena_context, ND_BITAND, operand,
+      node_t *masked = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(lowering_context),
+          ND_BITAND, operand,
           ps_node_new_num_in(arena_context, mask));
       return integer_result(arena_context, masked, view);
     }
@@ -400,8 +404,9 @@ node_t *lower_implicit_value_conversion(
         ps_lowering_arena(lowering_context), operand, target_type);
   }
   if (target_type->kind == PSX_TYPE_BOOL)
-    return annotate(ps_node_new_binary_in(
-                        ps_lowering_arena(lowering_context), ND_NE, operand,
+    return annotate(ps_node_new_binary_for_target_in(
+                        ps_lowering_arena(lowering_context),
+                        ps_lowering_target(lowering_context), ND_NE, operand,
                         ps_node_new_num_in(
                             ps_lowering_arena(lowering_context), 0)),
                     target_type);
@@ -486,8 +491,9 @@ node_t *lower_aggregate_address_expression(
 
   node_t *address = ps_node_new_addr_value_for_in(
       ps_lowering_arena(lowering_context), value->rhs);
-  node_t *lowered = ps_node_new_binary_in(
-      ps_lowering_arena(lowering_context), ND_COMMA, value->lhs, address);
+  node_t *lowered = ps_node_new_binary_for_target_in(
+      ps_lowering_arena(lowering_context),
+      ps_lowering_target(lowering_context), ND_COMMA, value->lhs, address);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;
   return lowered;

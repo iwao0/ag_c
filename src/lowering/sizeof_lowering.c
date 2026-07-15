@@ -23,8 +23,9 @@ node_t *lower_sizeof_query_expression(
         arena_context, query->resolved_size);
   }
   return evaluated_prefix
-             ? ps_node_new_binary_in(
-                   arena_context, ND_COMMA,
+             ? ps_node_new_binary_for_target_in(
+                   arena_context, ps_lowering_target(lowering_context),
+                   ND_COMMA,
                    evaluated_prefix, result)
              : result;
 }

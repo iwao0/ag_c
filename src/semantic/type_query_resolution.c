@@ -152,13 +152,13 @@ static void resolve_sizeof_type_name(
     if (op->kind != PSX_DECL_OP_ARRAY) continue;
     node_t *bound = sizeof_type_bound_for_op(query, i);
     if (op->is_vla_array && bound) {
-      size = ps_node_new_binary_in(
-          arena_context, ND_MUL,
+      size = ps_node_new_binary_for_target_in(
+          arena_context, ps_ctx_target_info(semantic_context), ND_MUL,
           widen_size_value(semantic_context, bound), size);
       is_runtime = 1;
     } else {
-      size = ps_node_new_binary_in(
-          arena_context, ND_MUL,
+      size = ps_node_new_binary_for_target_in(
+          arena_context, ps_ctx_target_info(semantic_context), ND_MUL,
           widen_size_value(
               semantic_context,
               ps_node_new_num_in(arena_context, op->array_len)),

@@ -8,14 +8,16 @@ node_t *lower_unary_negate_expression(
   if (!node || node->kind != ND_UNARY_NEGATE || !node->lhs) return node;
   const psx_type_t *operand_type = ps_node_get_type(node->lhs);
   if (operand_type && operand_type->kind == PSX_TYPE_FLOAT) {
-    node_t *negated = ps_node_new_binary_in(
-        ps_lowering_arena(lowering_context), ND_FNEG, node->lhs, NULL);
+    node_t *negated = ps_node_new_binary_for_target_in(
+        ps_lowering_arena(lowering_context),
+        ps_lowering_target(lowering_context), ND_FNEG, node->lhs, NULL);
     ps_node_bind_type(negated, node->type);
     return negated;
   }
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
-  node_t *negated = ps_node_new_binary_in(
-      arena_context, ND_SUB, ps_node_new_num_in(arena_context, 0),
+  node_t *negated = ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(lowering_context), ND_SUB,
+      ps_node_new_num_in(arena_context, 0),
       node->lhs);
   ps_node_bind_type(negated, node->type);
   return negated;

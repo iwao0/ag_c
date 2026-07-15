@@ -92,8 +92,9 @@ static node_t *lower_sizeof_vla_indices(
   node_t *index = lower_tree(
       context, operand->rhs, fallback_diag_tok);
   return prefix
-             ? ps_node_new_binary_in(
+             ? ps_node_new_binary_for_target_in(
                    ps_lowering_arena(context->lowering_context),
+                   ps_lowering_target(context->lowering_context),
                    ND_COMMA, prefix, index)
              : index;
 }

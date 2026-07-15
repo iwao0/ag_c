@@ -2373,14 +2373,15 @@ int ps_node_binary_type_op(
   }
 }
 
-node_t *ps_node_new_binary_in(arena_context_t *arena_context,
-                              node_kind_t kind, node_t *lhs, node_t *rhs) {
+node_t *ps_node_new_binary_for_target_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = psx_node_new_raw_binary_in(
       arena_context, kind, lhs, rhs);
   psx_type_binary_op_t op;
   const psx_type_t *type = ps_node_binary_type_op(kind, &op)
-                               ? ps_type_binary_result_in(
-                                     arena_context, op,
+                               ? ps_type_binary_result_for_target_in(
+                                     arena_context, target, op,
                                      ps_node_get_type(lhs),
                                      ps_node_get_type(rhs))
                                : NULL;
@@ -2401,11 +2402,11 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
   if (operand_type && operand_type->kind == PSX_TYPE_INTEGER &&
       operand_type->is_long_long)
     execution_type->is_long_long = 1;
-  node_t *shl = ps_node_new_binary_in(
+  node_t *shl = psx_node_new_raw_binary_in(
       arena_context, ND_SHL, operand,
       ps_node_new_num_in(arena_context, left_shift));
   ps_node_bind_type(shl, execution_type);
-  node_t *shr = ps_node_new_binary_in(
+  node_t *shr = psx_node_new_raw_binary_in(
       arena_context, ND_SHR, shl,
       ps_node_new_num_in(arena_context, left_shift));
   ps_node_bind_type(shr, execution_type);
@@ -2759,11 +2760,11 @@ static void advance_subscript_vla_runtime_view(node_t *result,
 }
 
 node_t *ps_node_new_tag_member_deref_for_in(
-    arena_context_t *arena_context, node_t *addr_base, node_t *base,
-    const tag_member_info_t *info) {
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *addr_base, node_t *base, const tag_member_info_t *info) {
   if (!info) return NULL;
-  node_t *addr = ps_node_new_binary_in(
-      arena_context, ND_ADD, addr_base,
+  node_t *addr = ps_node_new_binary_for_target_in(
+      arena_context, target, ND_ADD, addr_base,
       ps_node_new_num_in(arena_context, info->offset));
   node_t *deref = arena_alloc_in(arena_context, sizeof(node_t));
   deref->kind = ND_DEREF;
@@ -2832,15 +2833,15 @@ node_t *psx_node_new_subscript_syntax_for_in(
 }
 
 node_t *ps_node_new_subscript_deref_for_in(
-    arena_context_t *arena_context, node_t *base, node_t *base_addr,
-    node_t *scaled_offset) {
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *base, node_t *base_addr, node_t *scaled_offset) {
   const psx_type_t *base_type = ps_node_get_type(base);
   const psx_type_t *result_type = ps_type_subscript_result_in(
       arena_context, base_type);
   node_t *result = arena_alloc_in(arena_context, sizeof(node_t));
   result->kind = ND_DEREF;
-  result->lhs = ps_node_new_binary_in(
-      arena_context, ND_ADD, base_addr, scaled_offset);
+  result->lhs = ps_node_new_binary_for_target_in(
+      arena_context, target, ND_ADD, base_addr, scaled_offset);
   if (result_type) {
     ps_node_bind_type(result, result_type);
     advance_subscript_vla_runtime_view(result, base);

@@ -18,8 +18,9 @@ static node_t *append_init(
     psx_lowering_context_t *lowering_context,
     node_t *chain, node_t *node) {
   return chain
-             ? ps_node_new_binary_in(
+             ? ps_node_new_binary_for_target_in(
                    ps_lowering_arena(lowering_context),
+                   ps_lowering_target(lowering_context),
                    ND_COMMA, chain, node)
              : node;
 }
@@ -109,23 +110,27 @@ psx_vla_lowering_result_t lower_vla_declaration(
   node_t *alloc_lhs = NULL;
   node_t *alloc_rhs = NULL;
   if (count == 1) {
-    alloc_lhs = ps_node_new_binary_in(
-        arena_context, ND_MUL, request->dimensions[0],
+    alloc_lhs = ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(request->lowering_context),
+        ND_MUL, request->dimensions[0],
         ps_node_new_num_in(arena_context, element_size));
   } else if (count == 2 && request->is_const[1]) {
-    alloc_lhs = ps_node_new_binary_in(
-        arena_context, ND_MUL, request->dimensions[0],
+    alloc_lhs = ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(request->lowering_context),
+        ND_MUL, request->dimensions[0],
         ps_node_new_num_in(arena_context, outer_stride));
   } else if (count == 2) {
     alloc_lhs = request->dimensions[0];
-    alloc_rhs = ps_node_new_binary_in(
-        arena_context, ND_MUL, request->dimensions[1],
+    alloc_rhs = ps_node_new_binary_for_target_in(
+        arena_context, ps_lowering_target(request->lowering_context),
+        ND_MUL, request->dimensions[1],
         ps_node_new_num_in(arena_context, element_size));
   } else {
     node_t *outer = ps_node_new_num_in(arena_context, element_size);
     for (int i = count - 1; i >= 1; i--)
-      outer = ps_node_new_binary_in(
-          arena_context, ND_MUL, outer, request->dimensions[i]);
+      outer = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(request->lowering_context),
+          ND_MUL, outer, request->dimensions[i]);
     alloc_lhs = request->dimensions[0];
     alloc_rhs = outer;
   }
@@ -135,8 +140,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
   for (int level = 1; level < count - 1; level++) {
     node_t *stride = ps_node_new_num_in(arena_context, element_size);
     for (int i = count - 1; i >= level + 1; i--)
-      stride = ps_node_new_binary_in(
-          arena_context, ND_MUL, stride, request->dimensions[i]);
+      stride = ps_node_new_binary_for_target_in(
+          arena_context, ps_lowering_target(request->lowering_context),
+          ND_MUL, stride, request->dimensions[i]);
     node_t *slot = ps_node_new_lvar_typed_in(
         arena_context,
         frame_layout_vla_stride_offset(var_offset, level), 8);
@@ -182,8 +188,9 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
       request->lowering_context);
   node_t *slot = ps_node_new_lvar_typed_in(
       arena_context, row_stride_offset, 8);
-  node_t *stride = ps_node_new_binary_in(
-      arena_context, ND_MUL, request->row_dimension,
+  node_t *stride = ps_node_new_binary_for_target_in(
+      arena_context, ps_lowering_target(request->lowering_context),
+      ND_MUL, request->row_dimension,
       ps_node_new_num_in(arena_context, element_size));
   result.init = ps_node_new_assign_in(arena_context, slot, stride);
   return result;

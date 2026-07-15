@@ -253,8 +253,9 @@ static void finish_declarator(
       }
       if (application->automatic_result.initialization) {
         application->initialization = application->initialization
-            ? ps_node_new_binary_in(
-                  ps_lowering_arena(application->lowering_context), ND_COMMA,
+            ? ps_node_new_binary_for_target_in(
+                  ps_lowering_arena(application->lowering_context),
+                  ps_lowering_target(application->lowering_context), ND_COMMA,
                   application->initialization,
                   application->automatic_result.initialization)
             : application->automatic_result.initialization;

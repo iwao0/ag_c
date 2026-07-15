@@ -88,8 +88,9 @@ static node_t *append_init(
     const initializer_lowering_context_t *context,
     node_t *chain, node_t *item) {
   return chain
-             ? ps_node_new_binary_in(
-                   context->arena_context, ND_COMMA, chain, item)
+             ? ps_node_new_binary_for_target_in(
+                   context->arena_context, context->target,
+                   ND_COMMA, chain, item)
              : item;
 }
 
@@ -1436,8 +1437,9 @@ static node_t *lower_complex_list_initializer(
           ? list->entries[1].value
           : ps_node_new_num_in(context->arena_context, 0),
       initializer->base.tok);
-  return ps_node_new_binary_in(
-      context->arena_context, ND_COMMA, real_assign, imag_assign);
+  return ps_node_new_binary_for_target_in(
+      context->arena_context, context->target,
+      ND_COMMA, real_assign, imag_assign);
 }
 
 static node_t *lower_typed_list_initializer(
