@@ -336,7 +336,7 @@ int lower_static_object_initializer(
   if (!psx_collect_initializer_scalar_leaves(
           ps_lowering_semantic_types(lowering_context),
           ps_lowering_target(lowering_context),
-          ps_lowering_type_id(lowering_context, type), 0,
+          ps_gvar_decl_type_id(global), 0,
           &lowering.leaves) || lowering.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&lowering.leaves);
     return 0;

@@ -3463,8 +3463,12 @@ if (declarationTypeBuilderViolations.length) {
   );
 }
 
-const staticDataInitializerSource = await readFile(
+const staticDataInitializerHeader = await readFile(
   "src/lowering/static_data_initializer.h",
+  "utf8",
+);
+const staticDataInitializerSource = await readFile(
+  "src/lowering/static_data_initializer.c",
   "utf8",
 );
 for (const functionName of [
@@ -3474,9 +3478,22 @@ for (const functionName of [
   const signature = new RegExp(
     `\\b${functionName}\\s*\\([\\s\\S]*?\\bconst\\s+psx_type_t\\s*\\*\\s*type\\b[\\s\\S]*?\\)\\s*;`,
   );
-  if (!signature.test(staticDataInitializerSource)) {
+  if (!signature.test(staticDataInitializerHeader)) {
     throw new Error(`${functionName} must consume a const type view`);
   }
+}
+if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*\)/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*ctx->global\s*\)\s*;/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/\bpsx_collect_initializer_scalar_leaves\s*\([\s\S]*?\bps_gvar_decl_type_id\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
+      staticDataInitializerSource,
+    )) {
+  throw new Error(
+    "global data and static initializer root layout must consume the symbol declaration TypeId",
+  );
 }
 
 const astTypeMutationRe =
