@@ -518,6 +518,26 @@ const wasmBackendContextSource = await readFile(
 const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
 const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
 const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
+const tokenizerNumberSource = await readFile(
+  "src/tokenizer/number.c",
+  "utf8",
+);
+const tokenizerLiteralsSource = await readFile(
+  "src/tokenizer/literals.c",
+  "utf8",
+);
+const tokenizerCursorSource = await readFile(
+  "src/tokenizer/cursor.c",
+  "utf8",
+);
+const tokenizerDiagnosticHelperSource = await readFile(
+  "src/tokenizer/diag_helper.h",
+  "utf8",
+);
+const tokenizerConfigRuntimeSource = await readFile(
+  "src/tokenizer/config_runtime.c",
+  "utf8",
+);
 const tokenizerAllocatorSource = await readFile(
   "src/tokenizer/allocator.c",
   "utf8",
@@ -624,7 +644,8 @@ if (sessionContextAccessorNames.some((name) =>
     !/arena_context_create\s*\(/.test(compilationSessionSource) ||
     !/arena_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/diag_context_create\s*\(/.test(compilationSessionSource) ||
-    !/diag_context_activate\s*\(/.test(compilationSessionSource) ||
+    /diag_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_diagnostic_context/.test(compilationSessionInternalHeader) ||
     !/diag_context_destroy\s*\(/.test(compilationSessionSource) ||
     /tk_context_activate\s*\(/.test(compilationSessionSource) ||
     /previous_tokenizer_context/.test(compilationSessionSource) ||
@@ -977,6 +998,10 @@ if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
       tokenizerFilenameSource,
     ) ||
     !/ctx->filename_table_count/.test(tokenizerFilenameSource) ||
+    /\btk_filename_(?:intern|lookup|reset_translation_unit)\s*\(/.test(
+      `${tokenizerFilenameSource}\n${tokenizerSource}\n${preprocessSource}`,
+    ) ||
+    !/tk_filename_intern_ctx\s*\(\s*ctx\s*,/.test(tokenizerSource) ||
     !/tk_filename_reset_translation_unit_ctx\s*\(/.test(
       tokenizerFilenameSource,
     )) {
@@ -2414,8 +2439,23 @@ const parserSemanticContextImplementation = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
+const diagnosticImplementationSource = await readFile(
+  "src/diag/diag.c",
+  "utf8",
+);
+const diagnosticPublicHeaderSource = await readFile(
+  "src/diag/diag.h",
+  "utf8",
+);
 const contextFreeParserDiagnosticApi =
   /\b(?:diag_(?:emit_atf|emit_tokf|report_atf|report_tokf|warn_tokf|emit_internalf|report_internalf|message_for|warn_message_for|text_for|has_error_records|active_limit_kind|limit_kind|reset_records)|ps_diag_ctx|ps_diag_missing|psx_diag_undefined_with_name|ps_diag_duplicate_with_name|ps_diag_only_in|pda_next_cap|pda_xreallocarray)\s*\(/;
+const compilerOwnedDiagnosticSource = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) => path !== "src/diag/diag.c" && path !== "src/diag/diag.h")
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
 if (!/\bDIAG_ERR_INTERNAL_INVARIANT_FAILED\b/.test(semanticInvariantsSource) ||
     /\bps_diag_ctx\s*\(/.test(semanticInvariantsSource)) {
   throw new Error(
@@ -2463,7 +2503,20 @@ if ([
       explicitDiagnosticInitializerResolutionSource,
       explicitDiagnosticInitializerLoweringSource,
       explicitDiagnosticStaticDataInitializerSource,
+      tokenizerSource,
+      tokenizerNumberSource,
+      tokenizerLiteralsSource,
+      tokenizerCursorSource,
+      tokenizerDiagnosticHelperSource,
+      tokenizerAllocatorSource,
+      tokenizerConfigRuntimeSource,
+      configSource,
     ].some((source) => contextFreeParserDiagnosticApi.test(source)) ||
+    contextFreeParserDiagnosticApi.test(compilerOwnedDiagnosticSource) ||
+    /\b(?:diag_context_(?:active|activate)|active_diagnostic_context|diag_current_context)\b/.test(
+      `${diagnosticImplementationSource}\n${diagnosticPublicHeaderSource}`,
+    ) ||
+    !/diag_published_context\s*\(/.test(diagnosticImplementationSource) ||
     !/ag_diagnostic_context_t\s*\*diagnostic_context\s*=\s*context->diagnostic_context\s*;/.test(
       parserSemanticContextImplementation,
     ) ||

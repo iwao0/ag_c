@@ -18,18 +18,10 @@ uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name) {
   return ctx->filename_table_count++;
 }
 
-uint16_t tk_filename_intern(const char *name) {
-  return tk_filename_intern_ctx(tk_context_active(), name);
-}
-
 const char *tk_filename_lookup_ctx(
     const tokenizer_context_t *ctx, uint16_t id) {
   if (!ctx || id >= ctx->filename_table_count) return NULL;
   return ctx->filename_table[id];
-}
-
-const char *tk_filename_lookup(uint16_t id) {
-  return tk_filename_lookup_ctx(tk_context_active(), id);
 }
 
 void tk_filename_reset_translation_unit_ctx(tokenizer_context_t *ctx) {
@@ -39,8 +31,4 @@ void tk_filename_reset_translation_unit_ctx(tokenizer_context_t *ctx) {
     ctx->filename_table[i] = NULL;
   }
   ctx->filename_table_count = 0;
-}
-
-void tk_filename_reset_translation_unit(void) {
-  tk_filename_reset_translation_unit_ctx(tk_context_active());
 }

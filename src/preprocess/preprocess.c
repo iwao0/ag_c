@@ -1994,7 +1994,10 @@ static token_t *handle_line(
     long long offset = new_line - (long long)tok->line_no;
     for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
       t->line_no = (int)((long long)t->line_no + offset);
-      if (new_file) t->file_name_id = tk_filename_intern(new_file);
+      if (new_file) {
+        t->file_name_id = tk_filename_intern_ctx(
+            g_preprocess_tk_ctx, new_file);
+      }
     }
   }
   free(new_file);
@@ -2337,7 +2340,8 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
       }
       if (!strcmp(name, "__FILE__")) {
         free(name);
-        const char *fn = tk_filename_lookup(tok->file_name_id);
+        const char *fn = tk_filename_lookup_ctx(
+            g_preprocess_tk_ctx, tok->file_name_id);
         const char *fname = fn ? fn : "";
         token_t *ft = make_string_token(context, fname, tok);
         cur->next = ft;
@@ -2829,7 +2833,7 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
     long long raw = (long long)nx->line_no - s->line_delta;  // 旧デルタを除いた素値
     s->line_delta = (int)(new_line - raw);
     if (new_file) {
-      s->file_override = tk_filename_intern(new_file);
+      s->file_override = tk_filename_intern_ctx(s->tk_ctx, new_file);
       s->file_override_set = 1;
     }
     /* 覗いたトークンは pushback 側に戻る = 以後デルタ非適用なので、新デルタ/上書きを今ここで
@@ -2982,7 +2986,8 @@ static int pps_step(pp_stream_t *s) {
       return 1;
     }
     if (id->len == 8 && memcmp(id->str, "__FILE__", 8) == 0) {
-      const char *fn = tk_filename_lookup(tok->file_name_id);
+      const char *fn = tk_filename_lookup_ctx(
+          s->tk_ctx, tok->file_name_id);
       pps_append(s, make_string_token(context, fn ? fn : "", tok));
       return 1;
     }

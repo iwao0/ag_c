@@ -34,14 +34,14 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 0) {
     if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_INT; return; }
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (!has_u && long_cnt == 1) {
@@ -54,13 +54,13 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 1) {
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (!has_u && long_cnt == 2) {
@@ -70,12 +70,12 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 2) {
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 }
 
@@ -86,18 +86,18 @@ static void parse_int_suffix(parsed_num_t *num, char **pp, unsigned long long va
 
   while (true) {
     if (*p == 'u' || *p == 'U') {
-      if (seen_u) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+      if (seen_u) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
       seen_u = true;
       p++;
       continue;
     }
     if (*p == 'l' || *p == 'L') {
       if ((p[1] == 'l' || p[1] == 'L')) {
-        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 2;
         p += 2;
       } else {
-        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 1;
         p++;
       }
@@ -107,7 +107,7 @@ static void parse_int_suffix(parsed_num_t *num, char **pp, unsigned long long va
   }
 
   if (tk_is_ident_start_byte(*p))
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
 
   choose_int_type(num, val, is_decimal, seen_u, long_cnt, err_loc);
   *pp = p;
@@ -126,11 +126,11 @@ static unsigned long long parse_digits(char **pp, int base) {
     if (digit >= base) break;
     has_digit = true;
     if (val > (ULLONG_MAX - (unsigned long long)digit) / (unsigned long long)base)
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, *pp, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, *pp, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
     val = val * (unsigned long long)base + (unsigned long long)digit;
     p++;
   }
-  if (!has_digit) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID, *pp, "%s", diag_message_for(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID));
+  if (!has_digit) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID, *pp, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID));
   *pp = p;
   return val;
 }
@@ -164,7 +164,7 @@ static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
     choose_int_type(num, val, true, false, 0, *pp);
   }
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
   return true;
@@ -215,7 +215,7 @@ static void parse_float_suffix(parsed_num_t *num, char **endp) {
   }
   if (tk_is_ident_start_byte(*end)) {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
   }
   *endp = end;
 }
@@ -232,7 +232,7 @@ static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
   num->fval = strtod(p, &end);
   if (is_hex && end == p) {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID, p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
   }
   parse_float_suffix(num, &end);
   *pp = end;
@@ -266,9 +266,9 @@ static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
   int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",
-          diag_text_for(DIAG_TEXT_WARNING),
-          diag_text_for(DIAG_TEXT_C11_AUDIT_PREFIX),
-          diag_text_for(text_id), pos);
+          TK_DIAG_TEXT(DIAG_TEXT_WARNING),
+          TK_DIAG_TEXT(DIAG_TEXT_C11_AUDIT_PREFIX),
+          TK_DIAG_TEXT(text_id), pos);
 }
 
 /**
@@ -296,13 +296,13 @@ static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_l
   if (p[1] == 'b' || p[1] == 'B') {
     if (!tk_is_binary_literal_enabled_in_ctx()) {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
     tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
     p += 2;
     if (*p != '0' && *p != '1') {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
     }
     parse_integer_literal_with_base(num, &p, 2, false, err_loc);
     *pp = p;
@@ -312,7 +312,7 @@ static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_l
   if (tk_is_digit(p[1])) {
     if (p[1] == '8' || p[1] == '9') {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
     }
     p++;
     if (*p >= '0' && *p <= '7') {
@@ -353,7 +353,7 @@ void tk_parse_number_literal(char **pp, parsed_num_t *num) {
   }
 
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
 }

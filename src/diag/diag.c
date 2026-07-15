@@ -50,8 +50,6 @@ static ag_diagnostic_context_t published_diagnostic_context = {
     .record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT,
     .byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT,
 };
-static ag_diagnostic_context_t *active_diagnostic_context =
-    &published_diagnostic_context;
 
 static ag_diagnostic_context_t *diag_prepare_context(
     ag_diagnostic_context_t *context) {
@@ -63,8 +61,8 @@ static ag_diagnostic_context_t *diag_prepare_context(
   return context;
 }
 
-static ag_diagnostic_context_t *diag_current_context(void) {
-  return diag_prepare_context(active_diagnostic_context);
+static ag_diagnostic_context_t *diag_published_context(void) {
+  return diag_prepare_context(&published_diagnostic_context);
 }
 
 static void diag_copy_text(char *dst, size_t cap, const char *src) {
@@ -232,7 +230,7 @@ void diag_reset_records_in(ag_diagnostic_context_t *context) {
 }
 
 void diag_reset_records(void) {
-  diag_reset_records_in(diag_current_context());
+  diag_reset_records_in(diag_published_context());
 }
 
 ag_diagnostic_context_t *diag_context_create(void) {
@@ -252,17 +250,6 @@ void diag_context_bind_tokenizer(
     ag_diagnostic_context_t *context,
     tokenizer_context_t *tokenizer_context) {
   if (context) context->tokenizer_context = tokenizer_context;
-}
-
-ag_diagnostic_context_t *diag_context_activate(
-    ag_diagnostic_context_t *context) {
-  ag_diagnostic_context_t *previous = active_diagnostic_context;
-  active_diagnostic_context = context ? context : &published_diagnostic_context;
-  return previous;
-}
-
-ag_diagnostic_context_t *diag_context_active(void) {
-  return diag_current_context();
 }
 
 static void diag_context_release_records(ag_diagnostic_context_t *context) {
@@ -287,9 +274,6 @@ static void diag_context_release_records(ag_diagnostic_context_t *context) {
 
 void diag_context_destroy(ag_diagnostic_context_t *context) {
   if (!context || context == &published_diagnostic_context) return;
-  if (active_diagnostic_context == context) {
-    active_diagnostic_context = &published_diagnostic_context;
-  }
   diag_context_release_records(context);
   free(context);
 }
@@ -359,15 +343,11 @@ int diag_has_error_records_in(const ag_diagnostic_context_t *context) {
 }
 
 int diag_has_error_records(void) {
-  return diag_has_error_records_in(diag_current_context());
+  return diag_has_error_records_in(diag_published_context());
 }
 
 int diag_limit_kind_in(const ag_diagnostic_context_t *context) {
   return context ? context->limit_kind : 0;
-}
-
-int diag_active_limit_kind(void) {
-  return diag_limit_kind_in(diag_current_context());
 }
 int agc_wasm_diagnostic_severity(int index) {
   const agc_diag_record_t *record = diag_record_at(index);
@@ -582,7 +562,7 @@ const char *diag_context_get_locale(
 }
 
 void diag_set_locale(const char *locale) {
-  diag_context_set_locale(diag_current_context(), locale);
+  diag_context_set_locale(diag_published_context(), locale);
 }
 
 /**
@@ -590,7 +570,7 @@ void diag_set_locale(const char *locale) {
  * @return 現在有効なロケール名。
  */
 const char *diag_get_locale(void) {
-  return diag_context_get_locale(diag_current_context());
+  return diag_context_get_locale(diag_published_context());
 }
 
 /**
@@ -608,7 +588,7 @@ const char *diag_message_for_in(
 }
 
 const char *diag_message_for(diag_error_id_t id) {
-  return diag_message_for_in(diag_current_context(), id);
+  return diag_message_for_in(diag_published_context(), id);
 }
 
 const char *diag_warn_message_for_in(
@@ -621,7 +601,7 @@ const char *diag_warn_message_for_in(
 }
 
 const char *diag_warn_message_for(diag_warn_id_t id) {
-  return diag_warn_message_for_in(diag_current_context(), id);
+  return diag_warn_message_for_in(diag_published_context(), id);
 }
 
 /**
@@ -639,7 +619,7 @@ const char *diag_text_for_in(
 }
 
 const char *diag_text_for(diag_text_id_t id) {
-  return diag_text_for_in(diag_current_context(), id);
+  return diag_text_for_in(diag_published_context(), id);
 }
 
 /**
@@ -748,7 +728,7 @@ void diag_emit_atf(
     const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  diag_emit_at_va(diag_current_context(), id, input, loc, fmt, ap);
+  diag_emit_at_va(diag_published_context(), id, input, loc, fmt, ap);
 }
 
 /**
@@ -795,7 +775,7 @@ void diag_emit_tokf(
     diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  diag_emit_tok_va(diag_current_context(), id, tok, fmt, ap);
+  diag_emit_tok_va(diag_published_context(), id, tok, fmt, ap);
 }
 
 static int diag_report_at_va(
@@ -840,7 +820,7 @@ int diag_report_atf(
   va_list ap;
   va_start(ap, fmt);
   int result = diag_report_at_va(
-      diag_current_context(), id, input, loc, fmt, ap);
+      diag_published_context(), id, input, loc, fmt, ap);
   va_end(ap);
   return result;
 }
@@ -880,7 +860,7 @@ int diag_report_tokf(
   va_list ap;
   va_start(ap, fmt);
   int result = diag_report_tok_va(
-      diag_current_context(), id, tok, fmt, ap);
+      diag_published_context(), id, tok, fmt, ap);
   va_end(ap);
   return result;
 }
@@ -919,7 +899,7 @@ void diag_warn_tokf(
     diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  diag_warn_tok_va(diag_current_context(), id, tok, fmt, ap);
+  diag_warn_tok_va(diag_published_context(), id, tok, fmt, ap);
   va_end(ap);
 }
 
@@ -961,7 +941,7 @@ void diag_emit_internalf(
     diag_error_id_t id, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  diag_emit_internal_va(diag_current_context(), id, fmt, ap);
+  diag_emit_internal_va(diag_published_context(), id, fmt, ap);
 }
 
 static void diag_report_internal_va(
@@ -994,6 +974,6 @@ void diag_report_internalf(
     diag_error_id_t id, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  diag_report_internal_va(diag_current_context(), id, fmt, ap);
+  diag_report_internal_va(diag_published_context(), id, fmt, ap);
   va_end(ap);
 }

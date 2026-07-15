@@ -374,7 +374,7 @@ void tk_decode_identifier_ucn(
     if (tk_parse_ucn_codepoint(start + i, &cp, &consumed)) {
       if (!tk_is_valid_ucn_codepoint(cp))
         TK_DIAG_ATF(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID, start + i, "%s",
-                    diag_message_for(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID));
+                    TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID));
       char tmp[4];
       int n = tk_encode_utf8(cp, tmp);
       memcpy(buf + bi, tmp, (size_t)n);

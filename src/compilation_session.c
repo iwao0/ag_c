@@ -118,8 +118,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
     return 0;
   session->previous_session = active_compilation_session;
   active_compilation_session = session;
-  session->previous_diagnostic_context =
-      diag_context_activate(session->diagnostic_context);
   if (session->backend_activate)
     session->backend_activate(session->backend_context);
   session->is_active = 1;
@@ -138,10 +136,8 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
     return 0;
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
-  diag_context_activate(session->previous_diagnostic_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
-  session->previous_diagnostic_context = NULL;
   session->is_active = 0;
   return 1;
 }

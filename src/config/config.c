@@ -127,6 +127,8 @@ static void format_config_toml_error(const config_toml_error_t *err, const char 
 void load_config_toml_in_session(
     ag_compilation_session_t *session, const char *source_path) {
   if (!ag_compilation_session_is_complete(session)) return;
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(session);
   config_values_t cfg;
   config_values_init_defaults(&cfg);
   apply_config_values(session, &cfg);
@@ -137,12 +139,18 @@ void load_config_toml_in_session(
     return;
   }
   char detail[512];
-  format_config_toml_error(&err, diag_get_locale(), detail, sizeof(detail));
+  format_config_toml_error(
+      &err, diag_context_get_locale(diagnostics), detail, sizeof(detail));
 
-  diag_report_internalf(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED,
-                        diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED), detail);
-  diag_report_internalf(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS,
-                        "%s", diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
+  diag_report_internalf_in(
+      diagnostics, DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED,
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED),
+      detail);
+  diag_report_internalf_in(
+      diagnostics, DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS, "%s",
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
   config_values_init_defaults(&cfg);
   apply_config_values(session, &cfg);
 }

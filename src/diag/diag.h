@@ -11,9 +11,6 @@ typedef struct tokenizer_context_t tokenizer_context_t;
 
 ag_diagnostic_context_t *diag_context_create(void);
 void diag_context_destroy(ag_diagnostic_context_t *context);
-ag_diagnostic_context_t *diag_context_activate(
-    ag_diagnostic_context_t *context);
-ag_diagnostic_context_t *diag_context_active(void);
 void diag_context_publish(const ag_diagnostic_context_t *context);
 void diag_context_bind_tokenizer(
     ag_diagnostic_context_t *context,
@@ -70,7 +67,6 @@ int agc_wasm_diagnostic_end_column(int index);
 int agc_wasm_diagnostic_end_offset(int index);
 int diag_has_error_records(void);
 int diag_has_error_records_in(const ag_diagnostic_context_t *context);
-int diag_active_limit_kind(void);
 int diag_limit_kind_in(const ag_diagnostic_context_t *context);
 
 /**

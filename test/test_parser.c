@@ -84,6 +84,10 @@
 static node_t **parsed_code;
 static ag_compilation_session_t *test_suite_session;
 
+static ag_diagnostic_context_t *test_diagnostics(void) {
+  return ag_compilation_session_diagnostic_context(test_suite_session);
+}
+
 static arena_context_t *test_arena_context(void) {
   return ag_compilation_session_arena_context(test_suite_session);
 }
@@ -1400,10 +1404,10 @@ static void expect_parse_fail(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -1419,10 +1423,10 @@ static void expect_parse_ok(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -1492,10 +1496,10 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -1533,10 +1537,10 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -1570,7 +1574,7 @@ static void expect_semantic_invariant_internal_error(
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     psx_require_semantic_tree_has_canonical_expression_types(
         ag_compilation_session_diagnostic_context(test_suite_session),
         node, fallback_diag_tok);
@@ -1608,10 +1612,10 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -1644,10 +1648,10 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records();
+    diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
     parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records() ? 1 : 0);
+    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -16698,7 +16702,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
   ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
-  ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
   ag_compilation_session_t *previous_session = test_suite_session;
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
@@ -16710,7 +16713,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(4);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   gen_set_output_callback_in(
       ag_compilation_session_codegen_emit_context(&host),
@@ -16756,7 +16758,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(8);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
-  ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&wasm), "wasm");
@@ -16783,7 +16784,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
-  ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(0, host_backend.deactivate_count);
@@ -16804,7 +16804,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&host), "-host-b");
@@ -16823,7 +16822,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
-  ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(strcmp(
       host_output.bytes, "host-a-host-explicit-host-b") == 0);

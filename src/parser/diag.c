@@ -73,28 +73,3 @@ void ps_diag_only_in_context(ag_diagnostic_context_t *diagnostics,
                                         DIAG_ERR_PARSER_ONLY_IN_SCOPE),
                     what, scope);
 }
-
-void ps_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  ps_diag_ctx_va(diag_context_active(), tok, rule, fmt, ap);
-  va_end(ap);
-}
-
-void ps_diag_missing(token_t *tok, const char *what) {
-  ps_diag_missing_in(diag_context_active(), tok, what);
-}
-
-void psx_diag_undefined_with_name(token_t *tok, const char *kind,
-                                  const char *name, int len) {
-  psx_diag_undefined_with_name_in(diag_context_active(), tok, kind, name, len);
-}
-
-void ps_diag_duplicate_with_name(token_t *tok, const char *kind,
-                                 const char *name, int len) {
-  ps_diag_duplicate_with_name_in(diag_context_active(), tok, kind, name, len);
-}
-
-void ps_diag_only_in(token_t *tok, const char *what, const char *scope) {
-  ps_diag_only_in_context(diag_context_active(), tok, what, scope);
-}

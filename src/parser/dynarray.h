@@ -44,13 +44,4 @@ static inline void *pda_xreallocarray_in(ag_diagnostic_context_t *diagnostics,
   return p;
 }
 
-static inline int pda_next_cap(int current_cap, int required_cap) {
-  return pda_next_cap_in(
-      diag_context_active(), current_cap, required_cap);
-}
-
-static inline void *pda_xreallocarray(void *ptr, size_t n, size_t size) {
-  return pda_xreallocarray_in(diag_context_active(), ptr, n, size);
-}
-
 #endif

@@ -11,7 +11,7 @@
 static token_t *require_current_token(tokenizer_context_t *ctx, diag_error_id_t id) {
   token_t *cur = ctx ? ctx->current_token : NULL;
   if (!cur) {
-    diag_emit_tokf(id, NULL, "%s", diag_message_for(id));
+    TK_DIAG_TOK_IN(ctx, id, NULL);
   }
   return cur;
 }
@@ -71,8 +71,11 @@ void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
   token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_TOKEN);
   token_kind_t kind = punctuator_kind_for_char(op);
   if (kind == TK_EOF || cur->kind != kind) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
-                   diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
+    diag_emit_tokf_in(
+        tk_context_diagnostics(use_ctx),
+        DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
+        TK_DIAG_MESSAGE_IN(
+            use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
   tk_advance_current_token(use_ctx, cur);
 }
@@ -86,14 +89,14 @@ int tk_expect_number_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER);
   if (cur->kind != TK_NUM) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
+    TK_DIAG_TOK_IN(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   if (tk_as_num(cur)->num_kind != TK_NUM_KIND_INT) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
+    TK_DIAG_TOK_IN(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   long long n = tk_as_num_int(cur)->val;
   if (n < INT_MIN || n > INT_MAX) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
+    TK_DIAG_TOK_IN(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   int val = (int)n;
   tk_advance_current_token(use_ctx, cur);

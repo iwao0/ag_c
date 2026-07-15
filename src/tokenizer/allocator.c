@@ -74,6 +74,12 @@ tk_allocator_context_t *tk_allocator_default_context(void) {
   return &default_allocator_context;
 }
 
+void tk_allocator_bind_diagnostic_context_in(
+    tk_allocator_context_t *ctx,
+    ag_diagnostic_context_t *diagnostic_context) {
+  if (ctx) ctx->diagnostic_context = diagnostic_context;
+}
+
 static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
   const unsigned char *u = p;
   const unsigned char *base = c ? chunk_data_const(c) : NULL;

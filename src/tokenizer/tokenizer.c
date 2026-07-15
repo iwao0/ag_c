@@ -178,7 +178,7 @@ static int checked_span_len(char *start, char *end, const char *what) {
   tokenizer_context_t *ctx = tk_runtime_ctx();
   if (diff < 0 || (size_t)diff > ctx->max_token_len_for_test ||
       (size_t)diff > (size_t)INT_MAX) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME, start, "%s", diag_message_for(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME), (char *)what);
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME, start, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME), (char *)what);
   }
   return (int)diff;
 }
@@ -194,7 +194,8 @@ static void init_token_base(token_t *tok, token_kind_t kind, int line_no,
                             const char *loc, int byte_length) {
   tok->kind = kind;
   tokenizer_context_t *ctx = tk_runtime_ctx();
-  tok->file_name_id = tk_filename_intern(ctx ? ctx->current_filename : NULL);
+  tok->file_name_id = tk_filename_intern_ctx(
+      ctx, ctx ? ctx->current_filename : NULL);
   tok->line_no = line_no;
   tok->byte_offset = -1;
   tok->byte_length = byte_length < 0 ? 0 : byte_length;
@@ -294,7 +295,7 @@ static bool tokenize_string_literal(
   while (true) {
     if (*p == '\0' || *p == '\n') {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED, p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED));
     }
     if (*p == '"') break;
     if (*p == '\\') {
@@ -345,17 +346,17 @@ static bool tokenize_char_literal(
   p++; // opening quote
   if (*p == '\0' || *p == '\n') {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED, p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED));
   }
   if (*p == '\'') {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY, p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY));
   }
   unsigned long long ch = 0;
   int nchar = 0;
   if (!tk_accept_multichar_char_constant()) {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
   }
   while (*p && *p != '\'') {
     int one = 0;
@@ -364,7 +365,7 @@ static bool tokenize_char_literal(
       one = tk_read_escape_char(&p);
     } else if (*p == '\n') {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
     } else {
       one = (unsigned char)*p;
       p++;
@@ -374,7 +375,7 @@ static bool tokenize_char_literal(
   }
   if (nchar == 0 || *p != '\'') {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
   }
   p++; // closing quote
   int len = checked_span_len(start, p, "文字リテラル");
@@ -919,7 +920,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
       s->p = p;
       if (tok) return tok;
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, s->p, "%s",
-                  diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
     }
     /* 寛容モード: scanner のエラーを longjmp で受け、トークン先頭の 1 文字を TK_UNKNOWN
      * にして進める (volatile は longjmp 後も値を保つため)。 */

@@ -26,8 +26,11 @@ static tokenizer_context_t *active_ctx;
 static ag_diagnostic_context_t *default_diagnostic_context;
 
 static ag_diagnostic_context_t *default_tokenizer_diagnostics(void) {
-  if (!default_diagnostic_context)
+  if (!default_diagnostic_context) {
     default_diagnostic_context = diag_context_create();
+    tk_allocator_bind_diagnostic_context_in(
+        tk_allocator_default_context(), default_diagnostic_context);
+  }
   return default_diagnostic_context;
 }
 
@@ -78,7 +81,10 @@ ag_diagnostic_context_t *tk_context_diagnostics(
 
 void tk_context_set_allocator(
     tokenizer_context_t *ctx, tk_allocator_context_t *allocator_context) {
-  if (ctx) ctx->allocator_context = allocator_context;
+  if (!ctx) return;
+  ctx->allocator_context = allocator_context;
+  tk_allocator_bind_diagnostic_context_in(
+      allocator_context, tk_context_diagnostics(ctx));
 }
 
 tk_allocator_context_t *tk_context_allocator(
