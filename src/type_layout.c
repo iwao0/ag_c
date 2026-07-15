@@ -5,6 +5,49 @@
 #include <limits.h>
 #include <string.h>
 
+static ag_target_scalar_kind_t integer_target_kind(
+    const psx_type_t *type) {
+  if (type && type->is_long_long) return AG_TARGET_SCALAR_LONG_LONG;
+  switch (type ? type->scalar_kind : TK_INT) {
+    case TK_CHAR: return AG_TARGET_SCALAR_CHAR;
+    case TK_SHORT: return AG_TARGET_SCALAR_SHORT;
+    case TK_LONG: return AG_TARGET_SCALAR_LONG;
+    default: return AG_TARGET_SCALAR_INT;
+  }
+}
+
+static ag_target_scalar_kind_t floating_target_kind(
+    const psx_type_t *type) {
+  int is_complex = type && type->kind == PSX_TYPE_COMPLEX;
+  if (type && (type->is_long_double ||
+               type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)) {
+    return is_complex ? AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX
+                      : AG_TARGET_SCALAR_LONG_DOUBLE;
+  }
+  if (type && type->fp_kind == TK_FLOAT_KIND_FLOAT)
+    return is_complex ? AG_TARGET_SCALAR_FLOAT_COMPLEX
+                      : AG_TARGET_SCALAR_FLOAT;
+  return is_complex ? AG_TARGET_SCALAR_DOUBLE_COMPLEX
+                    : AG_TARGET_SCALAR_DOUBLE;
+}
+
+static int layout_scalar(
+    const psx_type_t *type, const ag_target_info_t *target,
+    psx_type_layout_t *out) {
+  ag_target_scalar_kind_t kind;
+  if (type->kind == PSX_TYPE_BOOL) {
+    kind = AG_TARGET_SCALAR_CHAR;
+  } else if (type->kind == PSX_TYPE_INTEGER) {
+    kind = integer_target_kind(type);
+  } else {
+    kind = floating_target_kind(type);
+  }
+  out->size = ag_target_info_scalar_size(target, kind);
+  out->alignment = ag_target_info_scalar_alignment(target, kind);
+  out->is_complete = 1;
+  return 1;
+}
+
 static int layout_non_array(
     const psx_type_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
@@ -19,11 +62,16 @@ static int layout_non_array(
       return 1;
     case PSX_TYPE_POINTER:
       out->size = ag_target_info_pointer_size(target);
-      out->alignment = out->size;
+      out->alignment = ag_target_info_pointer_alignment(target);
       out->is_complete = 1;
       return 1;
     case PSX_TYPE_ARRAY:
       return 0;
+    case PSX_TYPE_BOOL:
+    case PSX_TYPE_INTEGER:
+    case PSX_TYPE_FLOAT:
+    case PSX_TYPE_COMPLEX:
+      return layout_scalar(type, target, out);
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
       if (type->aggregate_definition) {

@@ -3246,6 +3246,9 @@ static void test_target_type_layout_boundary() {
   ag_target_info_t host = ag_target_info_host();
   ag_target_info_t wasm = ag_target_info_wasm32();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
+  psx_type_t *float_complex = ps_type_new(PSX_TYPE_COMPLEX);
+  float_complex->fp_kind = TK_FLOAT_KIND_FLOAT;
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_type_t *pointer_array = ps_type_new_array(pointer, 3, 24, 0);
   psx_type_layout_t layout = {0};
@@ -3260,6 +3263,26 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_type_alignof_for_target(pointer, &wasm));
   ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
   ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
+  ASSERT_EQ(4, ps_type_sizeof_for_target(stale_integer, &host));
+  ASSERT_TRUE(ps_type_shape_matches(integer, stale_integer));
+  ag_target_info_t narrow_int_target = host;
+  narrow_int_target.scalar[AG_TARGET_SCALAR_INT] =
+      (ag_target_scalar_layout_t){2, 2};
+  ASSERT_TRUE(ag_target_info_equal(&host, &host));
+  ASSERT_TRUE(!ag_target_info_equal(&host, &wasm));
+  ASSERT_TRUE(!ag_target_info_equal(&host, &narrow_int_target));
+  ASSERT_EQ(2, ps_type_sizeof_for_target(integer, &narrow_int_target));
+  ASSERT_EQ(2, ps_type_alignof_for_target(integer, &narrow_int_target));
+  ASSERT_EQ(8, ps_type_sizeof_for_target(float_complex, &host));
+  ASSERT_EQ(8, ps_type_alignof_for_target(float_complex, &host));
+  ag_target_info_t packed_complex_target = host;
+  packed_complex_target.scalar[AG_TARGET_SCALAR_FLOAT_COMPLEX] =
+      (ag_target_scalar_layout_t){8, 2};
+  ASSERT_TRUE(!ag_target_info_equal(&host, &packed_complex_target));
+  ASSERT_EQ(8, ps_type_sizeof_for_target(
+                   float_complex, &packed_complex_target));
+  ASSERT_EQ(2, ps_type_alignof_for_target(
+                   float_complex, &packed_complex_target));
 
   psx_qual_type_t pointer_identity =
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);

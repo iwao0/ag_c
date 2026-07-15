@@ -927,10 +927,10 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
       if ((a->scalar_kind == TK_ENUM || b->scalar_kind == TK_ENUM) &&
           !ps_type_tag_identity_matches(a, b))
         return 0;
-      return a->scalar_kind == b->scalar_kind && a->size == b->size;
+      return a->scalar_kind == b->scalar_kind;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return a->fp_kind == b->fp_kind && a->size == b->size;
+      return a->fp_kind == b->fp_kind;
     case PSX_TYPE_POINTER:
       return ps_type_shape_matches(a->base, b->base);
     case PSX_TYPE_ARRAY:

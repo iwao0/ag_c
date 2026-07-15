@@ -17,9 +17,7 @@ struct psx_record_layout_table_t {
 
 static int target_matches(
     const ag_target_info_t *lhs, const ag_target_info_t *rhs) {
-  return lhs && rhs &&
-         ag_target_info_pointer_size(lhs) ==
-             ag_target_info_pointer_size(rhs);
+  return lhs && rhs && ag_target_info_equal(lhs, rhs);
 }
 
 psx_record_layout_table_t *psx_record_layout_table_create(void) {
