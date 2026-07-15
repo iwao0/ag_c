@@ -3672,6 +3672,12 @@ if (!aggregateWalkerLayoutSection ||
     !/\bgvar_apply_record_member_layout\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
+    !/\bgvar_record_find_unnamed_union_covering_offset\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bgvar_aggregate_member_iter_note_cover\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||

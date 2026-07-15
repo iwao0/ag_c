@@ -628,6 +628,11 @@ static int tag_union_init_member_for_slot_scoped(
     const psx_aggregate_definition_t *definition,
     const global_var_t *gv, int idx, tag_member_info_t *out,
     int *out_ordinal);
+static const psx_aggregate_definition_t *gvar_member_aggregate_definition(
+    const tag_member_info_t *member);
+static void gvar_aggregate_member_iter_note_cover(
+    gvar_aggregate_member_iter_t *iter, const tag_member_info_t *member,
+    int member_ordinal);
 
 static int gvar_member_value_size_for_target(
     const psx_semantic_type_table_t *semantic_types,
@@ -758,9 +763,7 @@ static int gvar_aggregate_member_next(gvar_aggregate_member_iter_t *iter,
             iter->aggregate_type_id, ordinal, &mi))
       return 0;
     if (ps_tag_flat_cover_state_covers(&iter->cover_state, &mi)) continue;
-    ps_tag_flat_cover_state_note_in(
-        iter->semantic_context, &iter->cover_state, iter->tag_kind,
-        iter->tag_name, iter->tag_len, &mi);
+    gvar_aggregate_member_iter_note_cover(iter, &mi, ordinal);
     *out = mi;
     if (out_ordinal) *out_ordinal = ordinal;
     return 1;
@@ -804,6 +807,88 @@ static const psx_aggregate_definition_t *gvar_member_aggregate_definition(
   return type && ps_type_is_tag_aggregate(type)
              ? type->aggregate_definition
              : NULL;
+}
+
+static int gvar_record_find_unnamed_union_covering_offset(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
+    const psx_aggregate_definition_t *definition,
+    int base_offset, int target_offset,
+    int *out_offset, int *out_size) {
+  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+      semantic_types, aggregate_type_id);
+  if (!aggregate_type || !definition ||
+      aggregate_type->record_id == PSX_RECORD_ID_INVALID)
+    return 0;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, aggregate_type->record_id, target);
+  if (!layout) return 0;
+  int member_count = definition->member_count;
+  if (layout->member_count < member_count) member_count = layout->member_count;
+  for (int i = 0; i < member_count; i++) {
+    tag_member_info_t member = definition->members[i];
+    if (!ps_tag_member_is_unnamed_aggregate(&member) ||
+        !gvar_apply_record_member_layout(
+            semantic_types, record_layouts, target, aggregate_type_id,
+            i, &member))
+      continue;
+    psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+        semantic_types, aggregate_type_id, i).type_id;
+    int member_size = ps_type_sizeof_id_with_records(
+        semantic_types, record_layouts, member_type_id, target);
+    int start = base_offset + member.offset;
+    if (member_size <= 0 || target_offset < start ||
+        target_offset >= start + member_size)
+      continue;
+    if (ps_tag_member_is_unnamed_union(&member)) {
+      if (out_offset) *out_offset = start;
+      if (out_size) *out_size = member_size;
+      return 1;
+    }
+    psx_type_id_t child_type_id = psx_semantic_type_table_array_leaf(
+        semantic_types, member_type_id).type_id;
+    if (gvar_record_find_unnamed_union_covering_offset(
+            semantic_types, record_layouts, target, child_type_id,
+            gvar_member_aggregate_definition(&member), start, target_offset,
+            out_offset, out_size))
+      return 1;
+  }
+  return 0;
+}
+
+static void gvar_aggregate_member_iter_note_cover(
+    gvar_aggregate_member_iter_t *iter, const tag_member_info_t *member,
+    int member_ordinal) {
+  if (!iter || !member) return;
+  if (!iter->definition) {
+    ps_tag_flat_cover_state_note_in(
+        iter->semantic_context, &iter->cover_state, iter->tag_kind,
+        iter->tag_name, iter->tag_len, member);
+    return;
+  }
+  psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+      iter->semantic_types, iter->aggregate_type_id,
+      member_ordinal).type_id;
+  if (ps_tag_member_is_unnamed_union(member)) {
+    int member_size = ps_type_sizeof_id_with_records(
+        iter->semantic_types, iter->record_layouts, member_type_id,
+        iter->target);
+    if (member_size > 0) {
+      iter->cover_state.covered_union_off = member->offset;
+      iter->cover_state.covered_union_size = member_size;
+    }
+    return;
+  }
+  int cover_offset = 0;
+  int cover_size = 0;
+  if (gvar_record_find_unnamed_union_covering_offset(
+          iter->semantic_types, iter->record_layouts, iter->target,
+          iter->aggregate_type_id, iter->definition, 0, member->offset,
+          &cover_offset, &cover_size)) {
+    iter->cover_state.covered_union_off = cover_offset;
+    iter->cover_state.covered_union_size = cover_size;
+  }
 }
 
 static psx_type_id_t gvar_member_type_id(

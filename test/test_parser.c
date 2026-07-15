@@ -12853,6 +12853,44 @@ static void test_type_metadata_bridge() {
   }
   ASSERT_EQ(0, walk_array_trace.padding_count);
 
+  parsed_code = parse_program_input(
+      "struct __tm_walk_anon { "
+      "  struct { union { int a; int b; }; }; int tail; "
+      "}; "
+      "struct __tm_walk_anon __tm_walk_anon_g = {1, 2}; "
+      "int main(void){ return 0; }");
+  (void)parsed_code;
+  const char walk_anon_global_name[] = "__tm_walk_anon_g";
+  global_var_t *walk_anon_gv = find_test_global_var(
+      (char *)walk_anon_global_name,
+      (int)sizeof(walk_anon_global_name) - 1);
+  ASSERT_TRUE(walk_anon_gv != NULL);
+  ASSERT_TRUE(walk_anon_gv->decl_type != NULL);
+  psx_record_decl_t *walk_anon_outer_record = (psx_record_decl_t *)
+      walk_anon_gv->decl_type->aggregate_definition;
+  ASSERT_TRUE(walk_anon_outer_record != NULL);
+  ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
+  const psx_type_t *walk_anon_inner_type = ps_tag_member_decl_tag_type(
+      &walk_anon_outer_record->members[0]);
+  ASSERT_TRUE(walk_anon_inner_type != NULL);
+  psx_record_decl_t *walk_anon_inner_record = (psx_record_decl_t *)
+      walk_anon_inner_type->aggregate_definition;
+  ASSERT_TRUE(walk_anon_inner_record != NULL);
+  ASSERT_TRUE(walk_anon_inner_record->member_count >= 1);
+  for (int i = 0; i < walk_anon_outer_record->member_count; i++)
+    ((tag_member_info_t *)walk_anon_outer_record->members)[i].offset = 80 + i;
+  for (int i = 0; i < walk_anon_inner_record->member_count; i++)
+    ((tag_member_info_t *)walk_anon_inner_record->members)[i].offset = 60 + i;
+  aggregate_walk_trace_t walk_anon_trace = {.gv = walk_anon_gv};
+  ASSERT_TRUE(test_gvar_walk_aggregate_initializer(
+      walk_anon_gv, 0, &walk_ops, &walk_anon_trace));
+  ASSERT_EQ(2, walk_anon_trace.scalar_count);
+  ASSERT_EQ(0, walk_anon_trace.scalar_offsets[0]);
+  ASSERT_EQ(4, walk_anon_trace.scalar_offsets[1]);
+  ASSERT_EQ(1, walk_anon_trace.scalar_values[0]);
+  ASSERT_EQ(2, walk_anon_trace.scalar_values[1]);
+  ASSERT_EQ(0, walk_anon_trace.padding_count);
+
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; int main(){ return 0; }");
   (void)parsed_code;
   global_var_t *gext = find_test_global_var("__tm_extern_arr", 15);
