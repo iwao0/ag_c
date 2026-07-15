@@ -118,6 +118,7 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
 int ps_type_integer_rank(const psx_type_t *type);
+int ps_type_character_code_unit_width(const psx_type_t *type);
 int ps_type_is_incomplete_array(const psx_type_t *type);
 const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type);
 const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type);

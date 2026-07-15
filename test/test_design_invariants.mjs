@@ -1862,6 +1862,14 @@ const declarationResolutionSource = await readFile(
   "src/semantic/declaration_resolution.c",
   "utf8",
 );
+if (!/\bps_type_character_code_unit_width\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    /\bps_type_sizeof\s*\(/.test(declarationResolutionSource)) {
+  throw new Error(
+    "string initializer compatibility must use canonical character type identity",
+  );
+}
 const genericSelectionResolutionSource = await readFile(
   "src/semantic/generic_selection_resolution.c",
   "utf8",

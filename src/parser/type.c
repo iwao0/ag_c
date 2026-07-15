@@ -190,6 +190,22 @@ int ps_type_integer_rank(const psx_type_t *type) {
   }
 }
 
+int ps_type_character_code_unit_width(const psx_type_t *type) {
+  if (!type || type->kind != PSX_TYPE_INTEGER ||
+      type->tag_kind == TK_ENUM)
+    return 0;
+  switch (type->scalar_kind) {
+    case TK_CHAR:
+      return 1;
+    case TK_SHORT:
+      return 2;
+    case TK_INT:
+      return 4;
+    default:
+      return 0;
+  }
+}
+
 int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
   if (!type || (type->kind != PSX_TYPE_BOOL &&
                 type->kind != PSX_TYPE_INTEGER)) {

@@ -16518,6 +16518,28 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(4, ps_type_integer_rank(legacy_unsigned_long));
   ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
       legacy_unsigned_long));
+  psx_type_t *stale_wide_short =
+      ps_type_new_integer(TK_SHORT, 64, 1);
+  psx_type_t *stale_narrow_int =
+      ps_type_new_integer(TK_INT, 1, 0);
+  psx_type_t *boolean = ps_type_new_integer(TK_BOOL, 1, 0);
+  ASSERT_EQ(2, ps_type_character_code_unit_width(stale_wide_short));
+  ASSERT_EQ(4, ps_type_character_code_unit_width(stale_narrow_int));
+  ASSERT_EQ(1, ps_type_character_code_unit_width(legacy_unsigned_char));
+  ASSERT_EQ(0, ps_type_character_code_unit_width(boolean));
+  node_string_t utf16_string = {0};
+  utf16_string.base.kind = ND_STRING;
+  utf16_string.char_width = TK_CHAR_WIDTH_CHAR16;
+  utf16_string.byte_len = 2;
+  psx_type_t *utf16_array = ps_type_new_array(
+      stale_wide_short, 0, 0, 0);
+  ASSERT_TRUE(psx_resolve_incomplete_array_initializer(
+      utf16_array, PSX_DECL_INIT_EXPR, (node_t *)&utf16_string));
+  ASSERT_EQ(3, utf16_array->array_len);
+  psx_type_t *boolean_array = ps_type_new_array(boolean, 0, 0, 0);
+  ASSERT_TRUE(!psx_resolve_incomplete_array_initializer(
+      boolean_array, PSX_DECL_INIT_EXPR, (node_t *)&utf16_string));
+  ASSERT_EQ(0, boolean_array->array_len);
   psx_type_t *const_int = ps_type_clone(plain_int);
   ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);
   psx_qual_type_t plain_int_identity =

@@ -230,7 +230,8 @@ static long long initializer_string_count(
   const node_string_t *string = (const node_string_t *)initializer;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
-  if (ps_type_sizeof(array_type->base) != width) return 0;
+  if (ps_type_character_code_unit_width(array_type->base) != width)
+    return 0;
   return (long long)string->byte_len + 1;
 }
 
