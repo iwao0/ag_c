@@ -3530,6 +3530,17 @@ const tagContextSource = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
+const tagMemberPublicSource = await readFile(
+  "src/parser/tag_member_public.h",
+  "utf8",
+);
+if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
+      `${tagContextSource}\n${tagMemberPublicSource}`,
+    )) {
+  throw new Error(
+    "semantic context must not expose combined tag member declaration and layout queries",
+  );
+}
 const tagTypeStruct = tagContextSource.match(
   /struct tag_type_t\s*\{([\s\S]*?)\n\};/,
 );

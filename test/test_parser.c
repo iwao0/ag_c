@@ -349,6 +349,54 @@ static psx_local_registry_t *test_local_registry(void) {
   return ag_compilation_session_local_registry(test_suite_session);
 }
 
+static int test_materialize_tag_member_info(
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout,
+    tag_member_info_t *out) {
+  if (!declaration || !layout || !out) return 0;
+  *out = ps_tag_member_declaration_view(declaration);
+  out->offset = layout->offset;
+  out->bit_offset = layout->bit_offset;
+  out->bit_width = layout->bit_width;
+  return 1;
+}
+
+static bool ps_ctx_get_tag_member_info_in(
+    psx_semantic_context_t *semantic_context,
+    token_kind_t kind, char *name, int len, int index,
+    tag_member_info_t *out) {
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  return ps_ctx_get_tag_member_in(
+             semantic_context, kind, name, len, index,
+             &declaration, &layout) &&
+         test_materialize_tag_member_info(&declaration, &layout, out);
+}
+
+static bool ps_ctx_find_tag_member_info_in(
+    psx_semantic_context_t *semantic_context,
+    token_kind_t kind, char *name, int len,
+    char *member_name, int member_len, tag_member_info_t *out) {
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  return ps_ctx_find_tag_member_in(
+             semantic_context, kind, name, len,
+             member_name, member_len, &declaration, &layout) &&
+         test_materialize_tag_member_info(&declaration, &layout, out);
+}
+
+static bool ps_ctx_find_tag_member_info_at_scope_in(
+    psx_semantic_context_t *semantic_context,
+    token_kind_t kind, char *name, int len, int scope_depth,
+    char *member_name, int member_len, tag_member_info_t *out) {
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  return ps_ctx_find_tag_member_at_scope_in(
+             semantic_context, kind, name, len, scope_depth,
+             member_name, member_len, &declaration, &layout) &&
+         test_materialize_tag_member_info(&declaration, &layout, out);
+}
+
 static bool test_semantic_has_tag_type(
     token_kind_t kind, char *name, int len) {
   return ps_ctx_has_tag_type_in(
