@@ -1105,15 +1105,12 @@ void ps_ctx_bind_record_ids_in(
   if (!context || !type) return;
   if (ps_type_is_tag_aggregate(type)) {
     psx_record_id_t record_id = type->record_id;
-    if (record_id == PSX_RECORD_ID_INVALID && type->aggregate_definition)
-      record_id = type->aggregate_definition->record_id;
     if (record_id == PSX_RECORD_ID_INVALID && type->tag_name &&
         type->tag_len > 0) {
       record_id = ps_ctx_resolve_tag_record_id_in(
           context, type->tag_kind, type->tag_name, type->tag_len);
     }
     type->record_id = record_id;
-    type->aggregate_definition = NULL;
   }
   ps_ctx_bind_record_ids_in(context, psx_type_owned_base_mut(type));
   for (int i = 0; i < type->param_count; i++)

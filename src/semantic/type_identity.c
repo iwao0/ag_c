@@ -185,7 +185,7 @@ psx_qual_type_t psx_semantic_type_table_intern(
   if (table->next_id == UINT_MAX) return result;
   psx_type_id_t id = table->next_id + 1;
   if (!reserve_type_id(table, id)) return result;
-  psx_type_t *canonical = ps_type_clone_for_identity_in(
+  psx_type_t *canonical = ps_type_clone_in(
       table->arena_context, type);
   if (!canonical) return result;
   ps_type_normalize_scalar_identity(canonical);

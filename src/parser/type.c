@@ -18,15 +18,9 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
   psx_record_id_t b_id = ps_type_record_id(b);
   if (a_id != PSX_RECORD_ID_INVALID && b_id != PSX_RECORD_ID_INVALID)
     return a_id == b_id;
-  if (a->aggregate_definition && b->aggregate_definition &&
-      a->aggregate_definition == b->aggregate_definition)
-    return 1;
   if (a->tag_len > 0 &&
       (!a->tag_name || !b->tag_name ||
        strncmp(a->tag_name, b->tag_name, (size_t)a->tag_len) != 0))
-    return 0;
-  if (a->tag_len == 0 &&
-      (a->aggregate_definition || b->aggregate_definition))
     return 0;
   return a->tag_scope_depth_p1 == 0 || b->tag_scope_depth_p1 == 0 ||
          a->tag_scope_depth_p1 == b->tag_scope_depth_p1;
@@ -35,10 +29,7 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
 psx_record_id_t ps_type_record_id(const psx_type_t *type) {
   if (!type || !ps_type_is_tag_aggregate(type))
     return PSX_RECORD_ID_INVALID;
-  if (type->record_id != PSX_RECORD_ID_INVALID) return type->record_id;
-  return type->aggregate_definition
-             ? type->aggregate_definition->record_id
-             : PSX_RECORD_ID_INVALID;
+  return type->record_id;
 }
 
 typedef struct psx_type_validation_path_t psx_type_validation_path_t;
@@ -485,40 +476,26 @@ int ps_type_is_incomplete_array(const psx_type_t *type) {
          type->array_len <= 0 && !type->is_vla;
 }
 
-static psx_type_t *ps_type_clone_with_record_decl_in(
-    arena_context_t *arena_context, const psx_type_t *src,
-    int retain_record_decl) {
+psx_type_t *ps_type_clone_in(
+    arena_context_t *arena_context, const psx_type_t *src) {
   if (!src) return NULL;
   psx_type_t *dst = ps_type_new_in(arena_context, src->kind);
   if (!dst) return NULL;
   *dst = *src;
-  if (!retain_record_decl) dst->aggregate_definition = NULL;
   dst->param_types = NULL;
-  dst->base = ps_type_clone_with_record_decl_in(
-      arena_context, src->base, retain_record_decl);
+  dst->base = ps_type_clone_in(arena_context, src->base);
   if (src->param_count > 0) {
     const psx_type_t **params =
         arena_alloc_in(
             arena_context,
             (size_t)src->param_count * sizeof(*params));
     for (int i = 0; i < src->param_count; i++)
-      params[i] = ps_type_clone_with_record_decl_in(
+      params[i] = ps_type_clone_in(
           arena_context,
-          src->param_types ? src->param_types[i] : NULL,
-          retain_record_decl);
+          src->param_types ? src->param_types[i] : NULL);
     dst->param_types = params;
   }
   return dst;
-}
-
-psx_type_t *ps_type_clone_in(
-    arena_context_t *arena_context, const psx_type_t *src) {
-  return ps_type_clone_with_record_decl_in(arena_context, src, 1);
-}
-
-psx_type_t *ps_type_clone_for_identity_in(
-    arena_context_t *arena_context, const psx_type_t *src) {
-  return ps_type_clone_with_record_decl_in(arena_context, src, 0);
 }
 
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {

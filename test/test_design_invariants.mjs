@@ -3426,9 +3426,7 @@ if (!canonicalTypeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*const\s*\*\s*param_types\s*;/.test(
       canonicalTypeStruct[1],
     ) ||
-    !/\bconst\s+psx_aggregate_definition_t\s*\*\s*aggregate_definition\s*;/.test(
-      canonicalTypeStruct[1],
-    ) ||
+    /\baggregate_definition\b/.test(canonicalTypeStruct[1]) ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(canonicalTypeStruct[1]) ||
     !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(
       canonicalTypeStruct[1],
@@ -3770,8 +3768,11 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     /\bconst\s+psx_aggregate_definition_t\s*\*/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/\bps_type_clone_for_identity_in\s*\(/.test(
+    !/\bps_type_clone_in\s*\(/.test(
       semanticTypeIdentitySource,
+    ) ||
+    /\bps_type_clone_for_identity_in\s*\(/.test(
+      `${semanticTypeIdentitySource}\n${canonicalTypeSource}`,
     ) ||
     !/\bpsx_semantic_type_table_bind_record_decls\s*\(/.test(
       semanticTypeIdentityHeader,
@@ -3856,13 +3857,12 @@ if (sourcesWithLegacyRecordAttachment.length > 0 ||
     ) ||
     !recordIdBinder ||
     !/type->record_id\s*=\s*record_id/.test(recordIdBinder[0]) ||
-    !/type->aggregate_definition\s*=\s*NULL/.test(recordIdBinder[0]) ||
     !/ps_ctx_resolve_tag_record_id_in\s*\(/.test(recordIdBinder[0]) ||
     !/psx_type_owned_base_mut\s*\(/.test(recordIdBinder[0]) ||
     !/psx_type_owned_param_mut\s*\(/.test(recordIdBinder[0]) ||
     !/i\s*<\s*type->param_count/.test(recordIdBinder[0])) {
   throw new Error(
-    "semantic type normalization must bind RecordId recursively without attaching RecordDecl pointers",
+    "semantic type normalization must bind RecordId recursively through pointer-free semantic types",
   );
 }
 if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(

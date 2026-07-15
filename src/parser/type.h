@@ -78,7 +78,6 @@ struct psx_type_t {
   int tag_len;
   int tag_scope_depth_p1;
   psx_record_id_t record_id;
-  const psx_aggregate_definition_t *aggregate_definition;
 
   psx_type_qualifiers_t qualifiers;
   unsigned int is_unsigned : 1;

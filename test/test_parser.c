@@ -3805,7 +3805,6 @@ static void test_target_type_layout_boundary() {
   psx_type_t *record_type = ps_type_new_tag(
       TK_STRUCT, (char *)"__TargetRecord", 14, 1, 64);
   record_type->record_id = record->record_id;
-  record_type->aggregate_definition = record;
   psx_qual_type_t record_identity = ps_ctx_intern_qual_type_in(
       test_semantic_context(), record_type);
   ASSERT_TRUE(record_identity.type_id != PSX_TYPE_ID_INVALID);
@@ -4498,7 +4497,6 @@ static void test_global_declaration_resolution_boundary() {
   psx_type_t *stale_complete_view = ps_type_new_tag(
       TK_STRUCT, incomplete_tag_name, incomplete_tag_len, 1, 64);
   stale_complete_view->record_id = incomplete_record->record_id;
-  stale_complete_view->aggregate_definition = incomplete_record;
   psx_global_declaration_resolution_t record_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -4525,7 +4523,6 @@ static void test_global_declaration_resolution_boundary() {
   psx_type_t *stale_incomplete_view = ps_type_new_tag(
       TK_STRUCT, complete_tag_name, complete_tag_len, 1, 0);
   stale_incomplete_view->record_id = complete_record->record_id;
-  stale_incomplete_view->aggregate_definition = complete_record;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
@@ -4859,23 +4856,29 @@ static void test_aggregate_definition_ownership_boundary() {
       .tag_name = tag_name,
       .tag_len = tag_name_len,
       .record_id = first->record_id,
-      .aggregate_definition = first,
   };
   psx_type_t second_type = first_type;
   second_type.record_id = second->record_id;
-  second_type.aggregate_definition = second;
   ASSERT_TRUE(!ps_type_tag_identity_matches(&first_type, &second_type));
   ASSERT_EQ(1, second->member_count);
   ASSERT_EQ(5, second->members[0].len);
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);
 
+  char parameter_tag_name[] = "__ParameterRecord";
+  int parameter_tag_name_len = (int)(sizeof(parameter_tag_name) - 1);
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, parameter_tag_name, parameter_tag_name_len,
+      1, 0, 1, 1));
+  const psx_record_decl_t *parameter_definition =
+      ps_ctx_get_tag_definition_in(
+          test_semantic_context(), TK_STRUCT,
+          parameter_tag_name, parameter_tag_name_len);
+  ASSERT_TRUE(parameter_definition != NULL);
   psx_type_t *return_record = ps_type_new_tag(
       TK_STRUCT, tag_name, tag_name_len, 1, 4);
-  return_record->aggregate_definition = first;
   psx_type_t *parameter_record = ps_type_new_tag(
-      TK_STRUCT, tag_name, tag_name_len, 1, 4);
-  parameter_record->aggregate_definition = second;
+      TK_STRUCT, parameter_tag_name, parameter_tag_name_len, 1, 1);
   psx_type_t *function_type = ps_type_new_function(
       ps_type_new_pointer(return_record));
   const psx_type_t *parameter_types[] = {
@@ -4883,13 +4886,10 @@ static void test_aggregate_definition_ownership_boundary() {
   };
   ps_type_set_function_params(function_type, parameter_types, 1, 0);
   ps_ctx_bind_record_ids_in(test_semantic_context(), function_type);
-  ASSERT_EQ(first->record_id,
-            ps_type_record_id(function_type->base->base));
-  ASSERT_TRUE(function_type->base->base->aggregate_definition == NULL);
   ASSERT_EQ(second->record_id,
+            ps_type_record_id(function_type->base->base));
+  ASSERT_EQ(parameter_definition->record_id,
             ps_type_record_id(function_type->param_types[0]->base));
-  ASSERT_TRUE(
-      function_type->param_types[0]->base->aggregate_definition == NULL);
 }
 
 static int register_boundary_tag_member(
@@ -5150,7 +5150,7 @@ static void test_declaration_phase_boundary() {
       resolve_test_decl_specifier_syntax(&phase.syntax);
   ASSERT_TRUE(unapplied_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, unapplied_type->kind);
-  ASSERT_TRUE(unapplied_type->aggregate_definition == NULL);
+  ASSERT_EQ(PSX_RECORD_ID_INVALID, ps_type_record_id(unapplied_type));
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
@@ -5448,21 +5448,14 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(!ps_type_tag_identity_matches(
       scoped_tag,
       ps_type_new_tag(TK_STRUCT, (char *)"Scoped", 6, 2, 4)));
-  psx_aggregate_definition_t anonymous_definition = {
-      .tag_kind = TK_STRUCT,
-  };
   psx_type_t *anonymous_tag = ps_type_new_tag(
       TK_STRUCT, NULL, 0, 1, 4);
-  anonymous_tag->aggregate_definition = &anonymous_definition;
+  anonymous_tag->record_id = 0xa001u;
   ASSERT_TRUE(ps_type_tag_identity_matches(
       anonymous_tag, ps_type_clone(anonymous_tag)));
-  psx_aggregate_definition_t other_anonymous_definition = {
-      .tag_kind = TK_STRUCT,
-  };
   psx_type_t *other_anonymous_tag = ps_type_new_tag(
       TK_STRUCT, NULL, 0, 1, 4);
-  other_anonymous_tag->aggregate_definition =
-      &other_anonymous_definition;
+  other_anonymous_tag->record_id = 0xa002u;
   ASSERT_TRUE(!ps_type_tag_identity_matches(
       anonymous_tag, other_anonymous_tag));
 
@@ -6372,7 +6365,6 @@ static void test_initializer_resolution_boundary() {
   psx_type_t *aggregate = ps_type_new_tag(
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 12);
   aggregate->record_id = definition.record_id;
-  aggregate->aggregate_definition = &definition;
   ASSERT_TRUE(define_test_record_decl(&definition));
   psx_type_id_t aggregate_type_id = ps_ctx_intern_qual_type_in(
       test_semantic_context(), aggregate).type_id;
@@ -6454,7 +6446,6 @@ static void test_initializer_resolution_boundary() {
       .members = recursive_members,
   };
   recursive->record_id = recursive_definition.record_id;
-  recursive->aggregate_definition = &recursive_definition;
   ASSERT_TRUE(define_test_record_decl(&recursive_definition));
   psx_type_id_t recursive_type_id = ps_ctx_intern_qual_type_in(
       test_semantic_context(), recursive).type_id;
@@ -6502,7 +6493,6 @@ static void test_local_initializer_parse_lowering_boundary() {
   };
   psx_type_t *aggregate = ps_type_new_tag(
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 16);
-  aggregate->aggregate_definition = &definition;
   aggregate->record_id = definition.record_id;
   ASSERT_TRUE(define_test_record_decl(&definition));
   const psx_record_member_layout_t aggregate_layout_members[2] = {
@@ -6560,7 +6550,6 @@ static void test_local_initializer_parse_lowering_boundary() {
   };
   psx_type_t *union_type = ps_type_new_tag(
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 4);
-  union_type->aggregate_definition = &union_definition;
   union_type->record_id = union_definition.record_id;
   ASSERT_TRUE(define_test_record_decl(&union_definition));
   const psx_record_member_layout_t union_layout_members[1] = {
@@ -6674,7 +6663,6 @@ static void test_static_data_initializer_boundary() {
   };
   psx_type_t *union_type = ps_type_new_tag(
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 8);
-  union_type->aggregate_definition = &union_definition;
   union_type->record_id = union_definition.record_id;
   ASSERT_TRUE(define_test_record_decl(&union_definition));
   const psx_record_member_layout_t union_layout_members[2] = {
@@ -17314,16 +17302,12 @@ static void test_semantic_type_identity() {
       .member_count = 1,
       .members = &recursive_member,
   };
-  recursive_record->aggregate_definition = &recursive_definition;
   ASSERT_TRUE(psx_record_decl_table_define(
       (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
       &recursive_definition));
   psx_qual_type_t recursive_identity =
       ps_ctx_intern_qual_type_in(context, recursive_record);
   ASSERT_TRUE(recursive_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(psx_semantic_type_table_lookup(
-                  ps_ctx_semantic_type_table_in(context),
-                  recursive_identity.type_id)->aggregate_definition == NULL);
   psx_qual_type_t recursive_pointer_identity =
       ps_ctx_find_interned_qual_type_in(context, recursive_pointer);
   ASSERT_TRUE(recursive_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
@@ -17346,7 +17330,6 @@ static void test_semantic_type_identity() {
   psx_type_t *completed_record = ps_type_new_tag(
       TK_STRUCT, completed_record_name, 23, 1, 0);
   completed_record->record_id = completed_definition.record_id;
-  completed_record->aggregate_definition = &completed_definition;
   ASSERT_TRUE(psx_record_decl_table_define(
       (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
       &completed_definition));
@@ -17613,7 +17596,7 @@ static void test_semantic_context_isolation() {
 
   psx_type_t *detached_tag_type = ps_type_new_tag(
       TK_STRUCT, direct_tag_name, 9, 1, 4);
-  ASSERT_TRUE(detached_tag_type->aggregate_definition == NULL);
+  ASSERT_EQ(PSX_RECORD_ID_INVALID, ps_type_record_id(detached_tag_type));
   node_t detached_base = {
       .kind = ND_LVAR,
       .type = detached_tag_type,
