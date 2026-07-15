@@ -370,8 +370,9 @@ static node_t *lower_cast(
         ps_lowering_type_size(lowering_context, ps_node_get_type(operand)) >= 8
             ? 64
             : 32;
-    node_t *truncated = ps_node_new_shift_trunc_extend_in(
-        arena_context, operand, source_width - width, 0);
+    node_t *truncated = ps_node_new_shift_trunc_extend_for_width_in(
+        arena_context, operand, source_width - width,
+        source_width / 8, 0);
     return integer_result_ex(arena_context, truncated, view, 0);
   }
 

@@ -55,9 +55,9 @@ node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
                                   int descriptor_frame_off,
                                   int row_stride_frame_off,
                                   node_t *lhs, node_t *rhs);
-node_t *ps_node_new_shift_trunc_extend_in(
+node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
-    int is_unsigned);
+    int execution_size, int is_unsigned);
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset);
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
@@ -186,4 +186,3 @@ void ps_node_expect_lvalue_at_in(
     const char *op, token_t *tok);
 
 #endif
-int ps_node_compound_literal_array_size(node_t *node);

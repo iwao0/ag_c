@@ -2428,11 +2428,10 @@ node_t *ps_node_new_binary_in(arena_context_t *arena_context,
   return node;
 }
 
-node_t *ps_node_new_shift_trunc_extend_in(
+node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
-    int is_unsigned) {
+    int execution_size, int is_unsigned) {
   const psx_type_t *operand_type = ps_node_get_type(operand);
-  int execution_size = ps_type_sizeof(operand_type);
   if (execution_size < 4) execution_size = 4;
   psx_type_t *execution_type = ps_type_new_integer_in(
       arena_context, execution_size >= 8 ? TK_LONG : TK_INT,
@@ -2657,8 +2656,8 @@ node_t *ps_node_new_i64_to_i32_trunc_cast_in(
     arena_context_t *arena_context, node_t *operand,
     const psx_type_t *cast_type) {
   int is_unsigned = ps_type_is_unsigned(cast_type);
-  node_t *trunc = ps_node_new_shift_trunc_extend_in(
-      arena_context, operand, 32, is_unsigned);
+  node_t *trunc = ps_node_new_shift_trunc_extend_for_width_in(
+      arena_context, operand, 32, 8, is_unsigned);
   return ps_node_new_integer_cast_result_in(
       arena_context, trunc, cast_type);
 }
@@ -3239,16 +3238,4 @@ void ps_node_expect_lvalue_at_in(
         diag_message_for_in(diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),
         (char *)op);
   }
-}
-
-int ps_node_compound_literal_array_size(node_t *node) {
-  if (!node) return 0;
-  if (node->kind == ND_COMMA)
-    return ps_node_compound_literal_array_size(node->rhs);
-  if (node->kind != ND_ADDR || node->is_explicit_addr_expr || !node->lhs)
-    return 0;
-  const psx_type_t *object_type = ps_node_get_type(node->lhs);
-  return object_type && object_type->kind == PSX_TYPE_ARRAY
-             ? ps_type_sizeof(object_type)
-             : 0;
 }

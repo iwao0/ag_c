@@ -2549,6 +2549,8 @@ for (const removedApi of [
   "ps_node_cast_i64_extension_info",
   "ps_node_i64_widen_source_is_unsigned",
   "ps_node_row_decay_pointer_arith_type_in",
+  "ps_node_new_shift_trunc_extend_in",
+  "ps_node_compound_literal_array_size",
 ]) {
   if (new RegExp(`\\b${removedApi}\\s*\\(`).test(
         `${parserLayerSource}\n${loweringLayerSource}`,
@@ -2654,6 +2656,20 @@ const explicitDiagnosticCastLoweringSource = await readFile(
   "src/lowering/cast_lowering.c",
   "utf8",
 );
+const explicitWidthShiftConstructor = nodeUtilsSource.match(
+  /node_t\s*\*ps_node_new_shift_trunc_extend_for_width_in\s*\([^]*?\n\}/,
+);
+if (!explicitWidthShiftConstructor ||
+    /\bps_type_(?:size|align)of\s*\(/.test(
+      explicitWidthShiftConstructor[0],
+    ) ||
+    !/ps_node_new_shift_trunc_extend_for_width_in\s*\([^;]*\bsource_width\s*\/\s*8\s*,/s.test(
+      explicitDiagnosticCastLoweringSource,
+    )) {
+  throw new Error(
+    "shift truncation must consume a width already resolved against the active target",
+  );
+}
 const assignmentLoweringSource = await readFile(
   "src/lowering/assignment_lowering.c",
   "utf8",

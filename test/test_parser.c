@@ -187,8 +187,8 @@ static arena_context_t *test_arena_context(void) {
   test_lvar_array_scalar_element_size(__VA_ARGS__)
 #define psx_node_new_raw_binary(...) \
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_new_shift_trunc_extend(...) \
-  ps_node_new_shift_trunc_extend_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_compound_literal_array_size(...) \
+  test_node_compound_literal_array_size(__VA_ARGS__)
 #define ps_node_new_num(...) \
   ps_node_new_num_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_lvar(...) \
@@ -596,6 +596,22 @@ static node_t *test_node_new_array_elem_lvar_for(
   return ps_node_new_lvar_type_at_for_in(
       test_arena_context(), var,
       ps_lvar_offset(var) + index * element_size, element);
+}
+
+static int test_node_compound_literal_array_size(node_t *node) {
+  if (!node) return 0;
+  if (node->kind == ND_COMMA) {
+    return test_node_compound_literal_array_size(node->rhs);
+  }
+  if (node->kind != ND_ADDR || node->is_explicit_addr_expr || !node->lhs) {
+    return 0;
+  }
+  const psx_type_t *object_type = ps_node_get_type(node->lhs);
+  return object_type && object_type->kind == PSX_TYPE_ARRAY
+             ? ps_type_sizeof_for_target(
+                   object_type,
+                   ps_ctx_target_info(test_semantic_context()))
+             : 0;
 }
 
 static int plan_test_local_storage(
