@@ -4967,6 +4967,48 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
   const psx_record_member_decl_t *first_members = first->members;
 
+  char order_tag_name[] = "__DeclarationOrder";
+  int order_tag_name_len = (int)(sizeof(order_tag_name) - 1);
+  psx_record_member_decl_t order_declarations[2] = {
+      {
+          .name = (char *)"first",
+          .len = 5,
+          .decl_type = integer,
+      },
+      {
+          .name = (char *)"second",
+          .len = 6,
+          .decl_type = integer,
+      },
+  };
+  psx_record_member_layout_t order_layouts[2] = {
+      {.offset = 4},
+      {.offset = 0},
+  };
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, order_tag_name, order_tag_name_len, 0, 0, 0, 0));
+  const psx_record_decl_t *order_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          test_semantic_context(), TK_STRUCT,
+          order_tag_name, order_tag_name_len);
+  ASSERT_TRUE(order_record != NULL);
+  ASSERT_TRUE(ps_ctx_register_record_members_in(
+      test_semantic_context(), order_record->record_id,
+      order_declarations, order_layouts, 2, NULL));
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, order_tag_name, order_tag_name_len, 1, 2, 8, 4));
+  ASSERT_EQ(2, order_record->member_count);
+  ASSERT_TRUE(strncmp(order_record->members[0].name, "first", 5) == 0);
+  ASSERT_TRUE(strncmp(order_record->members[1].name, "second", 6) == 0);
+  const psx_record_layout_t *order_layout =
+      psx_record_layout_table_lookup(
+          ps_ctx_record_layout_table_in(test_semantic_context()),
+          order_record->record_id,
+          ps_ctx_target_info(test_semantic_context()));
+  ASSERT_TRUE(order_layout != NULL);
+  ASSERT_EQ(4, psx_record_layout_member(order_layout, 0)->offset);
+  ASSERT_EQ(0, psx_record_layout_member(order_layout, 1)->offset);
+
   ps_ctx_reset_tag_diag_state_in(test_semantic_context());
   ASSERT_EQ(1, first->member_count);
   ASSERT_TRUE(first->is_complete);

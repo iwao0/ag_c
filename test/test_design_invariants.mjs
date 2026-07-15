@@ -3552,14 +3552,20 @@ const recordMemberDeclStruct = typeSource.match(
   /typedef struct psx_record_member_decl_t\s*\{([\s\S]*?)\}\s*psx_record_member_decl_t\s*;/,
 );
 if (!publishRecordLayoutFunction ||
-    !/\bget_tag_member_info_impl_in\s*\(/.test(
+    !/\bcollect_tag_member_declarations_in\s*\(/.test(
+      publishRecordLayoutFunction[0],
+    ) ||
+    !/\bfind_tag_member_layout_draft\s*\(/.test(
+      publishRecordLayoutFunction[0],
+    ) ||
+    /\b(?:tag_member_info_t|get_tag_member_info_impl_in)\b/.test(
       publishRecordLayoutFunction[0],
     ) ||
     /record->members\s*\[[^\]]+\]\s*\.(?:offset|bit_offset|bit_width)/.test(
       publishRecordLayoutFunction[0],
     )) {
   throw new Error(
-    "RecordLayout publication must not derive member placement from RecordDecl",
+    "RecordLayout publication must pair declaration-order members with target layout drafts",
   );
 }
 if (!recordMemberDeclStruct ||

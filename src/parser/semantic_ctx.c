@@ -101,34 +101,41 @@ static bool get_tag_member_info_impl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth,
     int index, tag_member_info_t *out);
+static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *member);
+static int collect_tag_member_declarations_in(
+    psx_semantic_context_t *context, const tag_type_t *tag,
+    tag_member_t ***out_members);
 
 static void refresh_cached_record_decl(
     psx_semantic_context_t *context, tag_type_t *tag) {
   if (!context || !tag || !tag->record_decl) return;
   psx_record_decl_t *record_decl = tag->record_decl;
+  tag_member_t **source_members = NULL;
+  int member_count = collect_tag_member_declarations_in(
+      context, tag, &source_members);
+  if (member_count < 0) return;
   psx_record_member_decl_t *members = NULL;
-  int member_count = record_decl->member_count;
   if (member_count > 0) {
     members = ctx_calloc_in(
         context, (size_t)member_count, sizeof(*members));
+    if (!members) {
+      free(source_members);
+      return;
+    }
     for (int i = 0; i < member_count; i++) {
-      tag_member_info_t member = {0};
-      if (!get_tag_member_info_impl_in(
-              context,
-              tag->kind, tag->name, tag->len, tag->scope_depth,
-              i, &member)) {
-        member_count = i;
-        break;
-      }
+      tag_member_t *member = source_members[i];
+      psx_type_t *decl_type = tag_member_record_decl_type_mut(member);
+      ps_ctx_bind_record_ids_in(context, decl_type);
       members[i] = (psx_record_member_decl_t){
-          .name = member.name,
-          .len = member.len,
-          .bit_width = member.bit_width,
-          .bit_is_signed = member.bit_is_signed,
-          .decl_type = member.decl_type,
+          .name = member->declaration.name,
+          .len = member->declaration.len,
+          .bit_width = member->declaration.bit_width,
+          .bit_is_signed = member->declaration.bit_is_signed,
+          .decl_type = decl_type,
       };
     }
   }
+  free(source_members);
 
   ctx_release_in(context, tag->record_decl_members);
   tag->record_decl_members = members;
@@ -206,6 +213,50 @@ struct psx_semantic_context_t {
   int scope_depth;
   int aggregate_member_decl_order;
 };
+
+static int collect_tag_member_declarations_in(
+    psx_semantic_context_t *context, const tag_type_t *tag,
+    tag_member_t ***out_members) {
+  if (out_members) *out_members = NULL;
+  if (!context || !tag || !out_members) return -1;
+
+  int capacity = 8;
+  int count = 0;
+  tag_member_t **members = malloc(
+      (size_t)capacity * sizeof(*members));
+  if (!members) return -1;
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (tag_member_t *member = context->aggregate_members_by_bucket[i];
+         member; member = member->next_hash) {
+      if (member->tag_kind != tag->kind || member->tag_len != tag->len ||
+          member->scope_depth != tag->scope_depth ||
+          strncmp(member->tag_name, tag->name, (size_t)tag->len) != 0)
+        continue;
+      if (count == capacity) {
+        capacity *= 2;
+        tag_member_t **grown = realloc(
+            members, (size_t)capacity * sizeof(*members));
+        if (!grown) {
+          free(members);
+          return -1;
+        }
+        members = grown;
+      }
+      members[count++] = member;
+    }
+  }
+  for (int i = 1; i < count; i++) {
+    tag_member_t *member = members[i];
+    int j = i;
+    while (j > 0 && member->decl_order < members[j - 1]->decl_order) {
+      members[j] = members[j - 1];
+      j--;
+    }
+    members[j] = member;
+  }
+  *out_members = members;
+  return count;
+}
 
 static psx_record_id_t allocate_record_id(
     psx_semantic_context_t *context) {
@@ -972,27 +1023,34 @@ int ps_ctx_publish_record_layout_in(
       alignment <= 0 || record->member_count < 0 || !tag)
     return 0;
   psx_record_member_layout_t *members = NULL;
-  if (record->member_count > 0) {
+  tag_member_t **source_members = NULL;
+  int source_member_count = collect_tag_member_declarations_in(
+      context, tag, &source_members);
+  if (source_member_count < 0 || source_member_count != record->member_count) {
+    free(source_members);
+    return 0;
+  }
+  if (source_member_count > 0) {
     members = malloc((size_t)record->member_count * sizeof(*members));
-    if (!members) return 0;
+    if (!members) {
+      free(source_members);
+      return 0;
+    }
     for (int i = 0; i < record->member_count; i++) {
-      tag_member_info_t member = {0};
-      if (!get_tag_member_info_impl_in(
-              context, tag->kind, tag->name, tag->len,
-              tag->scope_depth, i, &member)) {
+      const psx_record_member_layout_t *layout =
+          find_tag_member_layout_draft(context, source_members[i]);
+      if (!layout) {
+        free(source_members);
         free(members);
         return 0;
       }
-      members[i] = (psx_record_member_layout_t){
-          .offset = member.offset,
-          .bit_offset = member.bit_offset,
-          .bit_width = member.bit_width,
-      };
+      members[i] = *layout;
     }
   }
   int published = psx_record_layout_table_define(
       context->record_layouts, record_id, &context->target,
       size, alignment, members, record->member_count);
+  free(source_members);
   free(members);
   return published;
 }
