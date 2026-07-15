@@ -2928,10 +2928,10 @@ node_t *ps_node_new_subscript_deref_for_in(
   return result;
 }
 
-node_t *ps_node_new_tag_member_lvar_ref_for_in(
+node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     arena_context_t *arena_context, lvar_t *owner, int member_offset,
-    const tag_member_info_t *info) {
-  const psx_type_t *decl_type = ps_tag_member_decl_type(info);
+    const tag_member_info_t *declaration, int bit_width, int bit_offset) {
+  const psx_type_t *decl_type = ps_tag_member_decl_type(declaration);
   const psx_type_t *member_type = decl_type;
   if (decl_type) {
     int owner_is_const = lvar_self_is_const_qualified(owner);
@@ -2943,17 +2943,25 @@ node_t *ps_node_new_tag_member_lvar_ref_for_in(
   if (!member_type)
     member_type = ps_type_new_integer_in(
         arena_context,
-        ps_tag_member_decl_is_bool(info) ? TK_BOOL : TK_INT,
-        ps_tag_member_decl_is_unsigned(info));
+        ps_tag_member_decl_is_bool(declaration) ? TK_BOOL : TK_INT,
+        ps_tag_member_decl_is_unsigned(declaration));
   node_lvar_t *node = new_lvar_symbol_node(
       arena_context, (owner ? owner->offset : 0) + member_offset,
       owner, member_type);
-  if (info && info->bit_width > 0) {
-    node->base.type_state.bit_width = (unsigned char)info->bit_width;
-    node->base.type_state.bit_offset = (unsigned char)info->bit_offset;
-    node->base.type_state.bit_is_signed = info->bit_is_signed ? 1 : 0;
+  if (declaration && bit_width > 0) {
+    node->base.type_state.bit_width = (unsigned char)bit_width;
+    node->base.type_state.bit_offset = (unsigned char)bit_offset;
+    node->base.type_state.bit_is_signed = declaration->bit_is_signed ? 1 : 0;
   }
   return (node_t *)node;
+}
+
+node_t *ps_node_new_tag_member_lvar_ref_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int member_offset,
+    const tag_member_info_t *info) {
+  return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
+      arena_context, owner, member_offset, info,
+      info ? info->bit_width : 0, info ? info->bit_offset : 0);
 }
 
 node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,

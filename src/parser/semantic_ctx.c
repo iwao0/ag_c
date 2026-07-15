@@ -108,6 +108,7 @@ static void refresh_cached_record_decl(
         break;
       }
       members[i].offset = 0;
+      members[i].bit_offset = 0;
     }
   }
 

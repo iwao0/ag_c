@@ -3488,9 +3488,12 @@ if (!publishRecordLayoutFunction ||
 if (!refreshRecordDeclFunction ||
     !/members\s*\[\s*i\s*\]\.offset\s*=\s*0\s*;/.test(
       refreshRecordDeclFunction[0],
+    ) ||
+    !/members\s*\[\s*i\s*\]\.bit_offset\s*=\s*0\s*;/.test(
+      refreshRecordDeclFunction[0],
     )) {
   throw new Error(
-    "RecordDecl member snapshots must not retain target byte offsets",
+    "RecordDecl member snapshots must not retain target member placement",
   );
 }
 if (!canonicalTypeStruct ||
@@ -4277,6 +4280,26 @@ const initializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+const initializerMemberRef = initializerResolutionHeader.match(
+  /typedef\s+struct\s*\{([\s\S]*?)\}\s*psx_initializer_member_ref_t\s*;/,
+);
+if (!initializerMemberRef ||
+    !/\bpsx_record_id_t\s+record_id\s*;/.test(initializerMemberRef[1]) ||
+    !/\bint\s+member_index\s*;/.test(initializerMemberRef[1]) ||
+    !/\bpsx_record_member_layout_t\s+layout\s*;/.test(
+      initializerMemberRef[1],
+    ) ||
+    /\bdirect_member\b/.test(initializerResolutionHeader) ||
+    /\bdirect_member\b/.test(initializerResolutionSource) ||
+    /\bdirect_member\b/.test(initializerLoweringSource) ||
+    /\bdirect_member\b/.test(staticDataInitializerSource) ||
+    /\bps_node_new_tag_member_lvar_ref_for_in\s*\(/.test(
+      initializerLoweringSource,
+    )) {
+  throw new Error(
+    "initializer member identity and placement must remain explicit and separate",
+  );
+}
 if (/\bmember->offset\b/.test(initializerLoweringSource) ||
     /\b(?:first|selected|container)->offset\b/.test(
       initializerLoweringSource,

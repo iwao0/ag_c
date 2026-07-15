@@ -246,9 +246,10 @@ static node_t *lower_aggregate_cast(
       object_size, object_size, view.target, diag_tok);
 
   node_t *member_ref =
-      ps_node_new_tag_member_lvar_ref_for_in(
+      ps_node_new_tag_member_lvar_ref_with_layout_for_in(
           ps_lowering_arena(lowering_context),
-          temp, member_layout->offset, &member);
+          temp, member_layout->offset, &member,
+          member_layout->bit_width, member_layout->bit_offset);
   node_t *assign = ps_node_new_assign_in(
       ps_lowering_arena(lowering_context), member_ref, operand);
   node_t *result = ps_node_new_lvar_expr_ref_for_in(

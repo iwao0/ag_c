@@ -49,7 +49,7 @@ static const psx_record_decl_t *record_decl(
              : NULL;
 }
 
-static int record_member_offset(
+static const psx_record_member_layout_t *record_member_layout(
     const static_array_lowering_t *lowering,
     const psx_type_t *aggregate_type, int member_index) {
   const psx_lowering_context_t *context = lowering
@@ -57,13 +57,34 @@ static int record_member_offset(
                                               : NULL;
   if (!context || !aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
-    return -1;
+    return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(context), aggregate_type->record_id,
       ps_lowering_target(context));
-  const psx_record_member_layout_t *member_layout =
-      psx_record_layout_member(layout, member_index);
-  return member_layout ? member_layout->offset : -1;
+  return psx_record_layout_member(layout, member_index);
+}
+
+static int record_member_offset(
+    const static_array_lowering_t *lowering,
+    const psx_type_t *aggregate_type, int member_index) {
+  const psx_record_member_layout_t *layout = record_member_layout(
+      lowering, aggregate_type, member_index);
+  return layout ? layout->offset : -1;
+}
+
+static psx_initializer_member_ref_t initializer_member_ref(
+    const static_array_lowering_t *lowering,
+    const psx_type_t *aggregate_type, int member_index,
+    const tag_member_info_t *declaration) {
+  psx_initializer_member_ref_t ref = {
+      .declaration = declaration,
+      .record_id = ps_type_record_id(aggregate_type),
+      .member_index = member_index,
+  };
+  const psx_record_member_layout_t *layout = record_member_layout(
+      lowering, aggregate_type, member_index);
+  if (layout) ref.layout = *layout;
+  return ref;
 }
 
 static int leaf_index_at_offset(
@@ -79,10 +100,13 @@ static int leaf_index_for_target(
     const psx_initializer_scalar_leaf_list_t *leaves,
     const psx_initializer_target_t *target) {
   if (!leaves || !target) return -1;
-  if (target->direct_member) {
+  if (target->member_ref.declaration) {
     for (int i = 0; i < leaves->count; i++) {
       if (leaves->items[i].relative_offset == target->relative_offset &&
-          leaves->items[i].direct_member == target->direct_member)
+          leaves->items[i].member_ref.record_id ==
+              target->member_ref.record_id &&
+          leaves->items[i].member_ref.member_index ==
+              target->member_ref.member_index)
         return i;
     }
   }
@@ -106,7 +130,7 @@ static psx_initializer_target_t positional_target(
   target.type = leaf->type;
   target.type_id = leaf->type_id;
   target.relative_offset = leaf->relative_offset;
-  target.direct_member = leaf->direct_member;
+  target.member_ref = leaf->member_ref;
   const psx_record_decl_t *record = record_decl(
       lowering->lowering_context, context_type);
   if (context_type->kind == PSX_TYPE_UNION &&
@@ -119,7 +143,8 @@ static psx_initializer_target_t positional_target(
       target.relative_offset = context_offset +
                                record_member_offset(
                                    lowering, context_type, 0);
-      target.direct_member = member;
+      target.member_ref = initializer_member_ref(
+          lowering, context_type, 0, member);
     }
     target.first_member_index = 0;
     target.union_relative_offset = context_offset;
@@ -141,7 +166,8 @@ static psx_initializer_target_t positional_target(
       target.type_id = ps_lowering_type_id(
           lowering->lowering_context, member_type);
       target.relative_offset = member_offset;
-      target.direct_member = member;
+      target.member_ref = initializer_member_ref(
+          lowering, context_type, i, member);
       target.first_member_index = i;
       return target;
     }
@@ -160,7 +186,7 @@ static psx_initializer_target_t positional_target(
   target.type_id = ps_lowering_type_id(
       lowering->lowering_context, target.type);
   target.relative_offset = child_offset;
-  target.direct_member = NULL;
+  target.member_ref = (psx_initializer_member_ref_t){0};
   target.first_array_index = child_index;
   return target;
 }

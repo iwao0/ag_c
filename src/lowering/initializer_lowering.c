@@ -67,17 +67,48 @@ static int lvar_storage_size(
   return size > 0 ? size : fallback_size;
 }
 
-static int record_member_offset(
+static const psx_record_member_layout_t *record_member_layout(
     const initializer_lowering_context_t *context,
     const psx_type_t *aggregate_type, int member_index) {
   if (!context || !aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
-    return -1;
+    return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       context->record_layouts, aggregate_type->record_id, context->target);
-  const psx_record_member_layout_t *member_layout =
-      psx_record_layout_member(layout, member_index);
-  return member_layout ? member_layout->offset : -1;
+  return psx_record_layout_member(layout, member_index);
+}
+
+static int record_member_offset(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *aggregate_type, int member_index) {
+  const psx_record_member_layout_t *layout = record_member_layout(
+      context, aggregate_type, member_index);
+  return layout ? layout->offset : -1;
+}
+
+static psx_initializer_member_ref_t initializer_member_ref(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *aggregate_type, int member_index,
+    const tag_member_info_t *declaration) {
+  psx_initializer_member_ref_t ref = {
+      .declaration = declaration,
+      .record_id = ps_type_record_id(aggregate_type),
+      .member_index = member_index,
+  };
+  const psx_record_member_layout_t *layout = record_member_layout(
+      context, aggregate_type, member_index);
+  if (layout) ref.layout = *layout;
+  return ref;
+}
+
+static node_t *new_initializer_member_lvar_ref(
+    const initializer_lowering_context_t *context, lvar_t *owner,
+    int relative_offset, const psx_initializer_member_ref_t *member_ref) {
+  if (!member_ref || !member_ref->declaration) return NULL;
+  return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
+      context->arena_context, owner, relative_offset,
+      member_ref->declaration, member_ref->layout.bit_width,
+      member_ref->layout.bit_offset);
 }
 
 static const psx_record_decl_t *record_decl(
@@ -639,7 +670,7 @@ static node_t *lower_typed_initializer_value(
     const initializer_lowering_context_t *context,
     lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
     int relative_offset, node_t *value,
-    const tag_member_info_t *direct_member, node_t *chain,
+    const psx_initializer_member_ref_t *member_ref, node_t *chain,
     token_t *fallback_tok) {
   if (value && value->kind == ND_INIT_LIST) {
     return lower_typed_initializer_list(
@@ -662,10 +693,9 @@ static node_t *lower_typed_initializer_value(
       (type->kind == PSX_TYPE_ARRAY || ps_type_is_tag_aggregate(type))) {
     return chain;
   }
-  node_t *target = direct_member
-                       ? ps_node_new_tag_member_lvar_ref_for_in(
-                             context->arena_context, var,
-                             relative_offset, direct_member)
+  node_t *target = member_ref && member_ref->declaration
+                       ? new_initializer_member_lvar_ref(
+                             context, var, relative_offset, member_ref)
                        : ps_node_new_lvar_type_at_for_in(
                              context->arena_context, var,
                              ps_lvar_offset(var) + relative_offset, type);
@@ -720,11 +750,10 @@ static node_t *append_typed_object_zero_fill(
   }
   for (int i = 0; i < leaves.count; i++) {
     const typed_scalar_leaf_t *leaf = &leaves.items[i];
-    node_t *target = leaf->direct_member
-                         ? ps_node_new_tag_member_lvar_ref_for_in(
-                               context->arena_context, var,
-                               leaf->relative_offset,
-                               leaf->direct_member)
+    node_t *target = leaf->member_ref.declaration
+                         ? new_initializer_member_lvar_ref(
+                               context, var, leaf->relative_offset,
+                               &leaf->member_ref)
                          : ps_node_new_lvar_type_at_for_in(
                                context->arena_context, var,
                                ps_lvar_offset(var) + leaf->relative_offset,
@@ -784,7 +813,8 @@ static node_t *lower_flat_typed_object_initializer_list(
     }
     chain = lower_typed_initializer_value(
         context, var, leaf->type, leaf->type_id, leaf->relative_offset,
-        list->entries[i].value, leaf->direct_member,
+        list->entries[i].value,
+        leaf->member_ref.declaration ? &leaf->member_ref : NULL,
         chain, list->entries[i].tok ? list->entries[i].tok : fallback_tok);
     leaf_index++;
   }
@@ -845,7 +875,8 @@ static int immediate_subobject_at_leaf_cursor(
           .type_id = psx_semantic_type_table_record_member(
               context->semantic_types, type_id, i).type_id,
           .relative_offset = member_offset,
-          .direct_member = member,
+          .member_ref = initializer_member_ref(
+              context, type, i, member),
           .first_array_index = -1,
           .first_member_index = i,
       };
@@ -881,7 +912,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
       chain = lower_typed_initializer_value(
           context, var, target.type, target.type_id,
           target.relative_offset, entry->value,
-          target.direct_member, chain,
+          target.member_ref.declaration ? &target.member_ref : NULL, chain,
           entry->tok ? entry->tok : fallback_tok);
       leaf_cursor = psx_initializer_leaf_cursor_after_target_with_records(
           context->semantic_types, context->record_layouts,
@@ -905,7 +936,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
         chain = lower_typed_initializer_value(
             context, var, target.type, target.type_id,
             target.relative_offset, entry->value,
-            target.direct_member, chain,
+            target.member_ref.declaration ? &target.member_ref : NULL, chain,
             entry->tok ? entry->tok : fallback_tok);
         leaf_cursor = psx_initializer_leaf_cursor_after_target_with_records(
             context->semantic_types, context->record_layouts,
@@ -934,7 +965,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
     chain = lower_typed_initializer_value(
         context, var, leaf->type, leaf->type_id,
         leaf->relative_offset, entry->value,
-        leaf->direct_member, chain,
+        leaf->member_ref.declaration ? &leaf->member_ref : NULL, chain,
         entry->tok ? entry->tok : fallback_tok);
     leaf_cursor++;
   }
@@ -970,10 +1001,10 @@ static node_t *try_lower_typed_array_copy(
                         (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_type_at_for_in(
         context->arena_context, source->var, source_offset, leaf->type);
-    node_t *dst = leaf->direct_member
-                      ? ps_node_new_tag_member_lvar_ref_for_in(
-                            context->arena_context, var,
-                            leaf->relative_offset, leaf->direct_member)
+    node_t *dst = leaf->member_ref.declaration
+                      ? new_initializer_member_lvar_ref(
+                            context, var, leaf->relative_offset,
+                            &leaf->member_ref)
                       : ps_node_new_lvar_type_at_for_in(
                             context->arena_context, var,
                             ps_lvar_offset(var) + leaf->relative_offset,
@@ -1079,7 +1110,7 @@ static node_t *lower_typed_array_initializer_list(
       chain = lower_typed_initializer_value(
           context, var, target_type, target_type_id,
           target_offset, entry->value,
-          target.direct_member, chain,
+          target.member_ref.declaration ? &target.member_ref : NULL, chain,
           entry->tok ? entry->tok : fallback_tok);
       next_index = selected_index + 1;
       continue;
@@ -1181,7 +1212,7 @@ static node_t *lower_typed_aggregate_initializer_list(
       chain = lower_typed_initializer_value(
           context, var, target.type, target.type_id,
           target.relative_offset, entry->value,
-          target.direct_member, chain,
+          target.member_ref.declaration ? &target.member_ref : NULL, chain,
           entry->tok ? entry->tok : fallback_tok);
       if (type->kind == PSX_TYPE_STRUCT)
         ordinal = aggregate_ordinal_after_member(
@@ -1203,16 +1234,18 @@ static node_t *lower_typed_aggregate_initializer_list(
         context->semantic_types, type_id, member_index).type_id;
     int target_offset = relative_offset +
                         record_member_offset(context, type, member_index);
-    const tag_member_info_t *direct_member = member;
+    psx_initializer_member_ref_t member_ref = initializer_member_ref(
+        context, type, member_index, member);
     if (entry->index_expr_count > 0) {
       descend_array_designators(
           context, entry, 0, &target_type, &target_type_id,
           &target_offset, fallback_tok);
-      direct_member = NULL;
+      member_ref = (psx_initializer_member_ref_t){0};
     }
     chain = lower_typed_initializer_value(
         context, var, target_type, target_type_id,
-        target_offset, entry->value, direct_member,
+        target_offset, entry->value,
+        member_ref.declaration ? &member_ref : NULL,
         chain, entry->tok ? entry->tok : fallback_tok);
     if (type->kind == PSX_TYPE_STRUCT)
       ordinal = aggregate_ordinal_after_member(
@@ -1277,9 +1310,10 @@ static node_t *lower_struct_list_initializer(
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const tag_member_info_t *member = &record->members[member_index];
-    node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var,
-        record_member_offset(context, type, member_index), member);
+    psx_initializer_member_ref_t member_ref = initializer_member_ref(
+        context, type, member_index, member);
+    node_t *lhs = new_initializer_member_lvar_ref(
+        context, var, member_ref.layout.offset, &member_ref);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -1325,9 +1359,10 @@ static node_t *lower_union_list_initializer(
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
     const tag_member_info_t *member = &record->members[member_index];
-    node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var,
-        record_member_offset(context, type, member_index), member);
+    psx_initializer_member_ref_t member_ref = initializer_member_ref(
+        context, type, member_index, member);
+    node_t *lhs = new_initializer_member_lvar_ref(
+        context, var, member_ref.layout.offset, &member_ref);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -1385,9 +1420,10 @@ static node_t *lower_aggregate_expr_initializer(
   for (int i = 0; i < record->member_count; i++) {
     const tag_member_info_t *member = &record->members[i];
     if (member->len <= 0) continue;
-    node_t *target = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var,
-        record_member_offset(context, target_type, i), member);
+    psx_initializer_member_ref_t member_ref = initializer_member_ref(
+        context, target_type, i, member);
+    node_t *target = new_initializer_member_lvar_ref(
+        context, var, member_ref.layout.offset, &member_ref);
     return new_decl_initializer_assign(
         context, target, initializer->base.rhs, tok);
   }
