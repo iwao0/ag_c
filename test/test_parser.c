@@ -761,7 +761,7 @@ static lvar_t *register_test_typed_storage_fixture(
       test_lowering_context(), size, align);
   return ps_local_registry_create_storage_object_in(
       ag_compilation_session_local_registry(test_suite_session),
-      name, len, offset, size, align, type);
+      name, len, offset, size, align, type, NULL);
 }
 
 static lvar_t *register_test_storage_fixture(
@@ -1436,7 +1436,7 @@ static void expect_const_assign_ok_for_node(node_t *node) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    psx_node_reject_const_assign(node, "=");
+    ps_node_reject_const_assign_at(node, "=", NULL);
     _exit(0);
   }
   int status;
@@ -1451,7 +1451,7 @@ static void expect_const_assign_fail_for_node(node_t *node) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    psx_node_reject_const_assign(node, "=");
+    ps_node_reject_const_assign_at(node, "=", NULL);
     _exit(0);
   }
   int status;
@@ -1466,7 +1466,7 @@ static void expect_const_qual_discard_fail_for_nodes(node_t *lhs, node_t *rhs) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    psx_node_reject_const_qual_discard(lhs, rhs);
+    ps_node_reject_const_qual_discard_at(lhs, rhs, NULL);
     _exit(0);
   }
   int status;
@@ -16663,14 +16663,16 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_target_set_pointer_size(4);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
-  ASSERT_TRUE(tk_context_active() == &host.tokenizer);
+  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
   gen_set_output_callback(test_codegen_capture, &host_output);
   cg_emitf("host-a");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, host_backend.activate_count);
-  uint16_t host_filename = tk_filename_intern("host-session.c");
-  ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
+  uint16_t host_filename = tk_filename_intern_ctx(
+      &host.tokenizer, "host-session.c");
+  ASSERT_TRUE(strcmp(tk_filename_lookup_ctx(
+                         &host.tokenizer, host_filename),
                      "host-session.c") == 0);
   host.lowering_context->aggregate_cast_temp_sequence = 9;
   ASSERT_EQ(0, tk_allocator_total_chunks_in(host.token_allocator_context));
@@ -16678,7 +16680,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                   host.token_allocator_context, 1, 16) != NULL);
   ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
   ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
-  tk_set_enable_c11_audit_extensions(true);
+  tk_ctx_set_enable_c11_audit_extensions(&host.tokenizer, true);
   ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
   ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
   pragma_pack_set_in(host.parser_runtime_context, 4);
@@ -16690,7 +16692,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, wasm.parser_runtime_context->pragma_pack_current);
   ASSERT_TRUE(ag_compilation_session_options_view(&wasm)
                   ->enable_union_scalar_pointer_cast);
-  tk_set_tolerate_untokenizable(true);
+  tk_set_tolerate_untokenizable_ctx(&host.tokenizer, true);
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
@@ -16699,18 +16701,21 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_target_set_pointer_size(8);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
-  ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
+  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
   gen_set_output_callback(test_codegen_capture, &wasm_output);
   cg_emitf("wasm");
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(1, wasm_backend.activate_count);
-  uint16_t wasm_filename = tk_filename_intern("wasm-session.c");
+  uint16_t wasm_filename = tk_filename_intern_ctx(
+      &wasm.tokenizer, "wasm-session.c");
   ASSERT_EQ(host_filename, wasm_filename);
-  ASSERT_TRUE(strcmp(tk_filename_lookup(wasm_filename),
+  ASSERT_TRUE(strcmp(tk_filename_lookup_ctx(
+                         &wasm.tokenizer, wasm_filename),
                      "wasm-session.c") == 0);
-  tk_filename_reset_translation_unit();
-  ASSERT_TRUE(tk_filename_lookup(wasm_filename) == NULL);
+  tk_filename_reset_translation_unit_ctx(&wasm.tokenizer);
+  ASSERT_TRUE(tk_filename_lookup_ctx(
+                  &wasm.tokenizer, wasm_filename) == NULL);
   ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(0, pragma_pack_current_alignment_in(
                    wasm.parser_runtime_context));
@@ -16721,7 +16726,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
-  ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
+  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(0, host_backend.deactivate_count);
@@ -16743,12 +16748,13 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
-  ASSERT_TRUE(tk_context_active() == &host.tokenizer);
+  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
   cg_emitf("-host-b");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, wasm_backend.deactivate_count);
-  ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
+  ASSERT_TRUE(strcmp(tk_filename_lookup_ctx(
+                         &host.tokenizer, host_filename),
                      "host-session.c") == 0);
   ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(4, pragma_pack_current_alignment_in(
@@ -16798,6 +16804,8 @@ int main() {
   ag_compilation_session_t suite_session;
   ag_target_info_t suite_target = ag_target_info_host();
   ASSERT_TRUE(ag_compilation_session_init(&suite_session, &suite_target));
+  tokenizer_context_t *previous_test_tokenizer =
+      tk_context_activate(&suite_session.tokenizer);
   ASSERT_TRUE(ag_compilation_session_activate(&suite_session));
   test_suite_session = &suite_session;
   printf("Running tests for Parser...\n");
@@ -16909,6 +16917,7 @@ int main() {
   test_parser_width_limits();
   test_semantic_canonical_type_invariant();
 
+  tk_context_activate(previous_test_tokenizer);
   ASSERT_TRUE(ag_compilation_session_dispose(&suite_session));
   test_suite_session = NULL;
   printf("OK: All unit tests passed!\n");

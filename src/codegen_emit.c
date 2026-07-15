@@ -36,8 +36,8 @@ ag_codegen_emit_context_t *cg_context_active(void) {
                                      : &default_codegen_emit_context;
 }
 
-static void cg_raw_emit(const char *line, size_t len) {
-  ag_codegen_emit_context_t *ctx = cg_context_active();
+static void cg_raw_emit(
+    ag_codegen_emit_context_t *ctx, const char *line, size_t len) {
   if (ctx->output_cb) {
     ctx->output_cb(line, len, ctx->output_user_data);
   } else {
@@ -45,19 +45,22 @@ static void cg_raw_emit(const char *line, size_t len) {
   }
 }
 
-static void cg_emit_char(int ch) {
+static void cg_emit_char(ag_codegen_emit_context_t *ctx, int ch) {
   char c = (char)ch;
-  cg_raw_emit(&c, 1);
+  cg_raw_emit(ctx, &c, 1);
 }
 
-static void cg_emit_cstr_n(const char *s, int limit) {
+static void cg_emit_cstr_n(
+    ag_codegen_emit_context_t *ctx, const char *s, int limit) {
   if (!s) s = "(null)";
   size_t len = 0;
   while (s[len] && (limit < 0 || (int)len < limit)) len++;
-  cg_raw_emit(s, len);
+  cg_raw_emit(ctx, s, len);
 }
 
-static void cg_emit_uint_simple(unsigned long long v, unsigned base, int width, int zero_pad) {
+static void cg_emit_uint_simple(
+    ag_codegen_emit_context_t *ctx, unsigned long long v,
+    unsigned base, int width, int zero_pad) {
   char tmp[32];
   int n = 0;
   const char *digits = "0123456789abcdef";
@@ -68,35 +71,41 @@ static void cg_emit_uint_simple(unsigned long long v, unsigned base, int width, 
   } while (v != 0 && n < (int)sizeof(tmp));
   char pad = zero_pad ? '0' : ' ';
   while (n < width) {
-    cg_emit_char(pad);
+    cg_emit_char(ctx, pad);
     width--;
   }
-  while (n > 0) cg_emit_char(tmp[--n]);
+  while (n > 0) cg_emit_char(ctx, tmp[--n]);
 }
 
-static void cg_emit_int_simple(long long v, int width, int zero_pad) {
+static void cg_emit_int_simple(
+    ag_codegen_emit_context_t *ctx,
+    long long v, int width, int zero_pad) {
   if (v < 0) {
-    cg_emit_char('-');
-    cg_emit_uint_simple((unsigned long long)(-(v + 1)) + 1ull, 10, width > 0 ? width - 1 : 0, zero_pad);
+    cg_emit_char(ctx, '-');
+    cg_emit_uint_simple(
+        ctx, (unsigned long long)(-(v + 1)) + 1ull,
+        10, width > 0 ? width - 1 : 0, zero_pad);
   } else {
-    cg_emit_uint_simple((unsigned long long)v, 10, width, zero_pad);
+    cg_emit_uint_simple(
+        ctx, (unsigned long long)v, 10, width, zero_pad);
   }
 }
 
-void cg_emitf(const char *fmt, ...) {
-  ag_codegen_emit_context_t *ctx = cg_context_active();
+static void cg_vemitf_in(
+    ag_codegen_emit_context_t *ctx, const char *fmt, va_list args) {
+  if (!ctx || !fmt) abort();
   va_list ap;
-  va_start(ap, fmt);
+  va_copy(ap, args);
   if (ctx->simple_formatter) {
     const char *p = fmt;
     while (*p) {
       if (*p != '%') {
-        cg_emit_char(*p++);
+        cg_emit_char(ctx, *p++);
         continue;
       }
       p++;
       if (*p == '%') {
-        cg_emit_char('%');
+        cg_emit_char(ctx, '%');
         p++;
         continue;
       }
@@ -139,45 +148,42 @@ void cg_emitf(const char *fmt, ...) {
       }
 
       if (*p == 's') {
-        cg_emit_cstr_n(va_arg(ap, char *), precision);
+        cg_emit_cstr_n(ctx, va_arg(ap, char *), precision);
         p++;
       } else if (*p == 'c') {
-        cg_emit_char(va_arg(ap, int));
+        cg_emit_char(ctx, va_arg(ap, int));
         p++;
       } else if (*p == 'd') {
         long long v = length_l >= 2 ? va_arg(ap, long long) : (long long)va_arg(ap, int);
-        cg_emit_int_simple(v, width, zero_pad);
+        cg_emit_int_simple(ctx, v, width, zero_pad);
         p++;
       } else if (*p == 'u') {
         unsigned long long v;
         if (length_l >= 2) v = va_arg(ap, unsigned long long);
         else if (length_z) v = (unsigned long long)va_arg(ap, size_t);
         else v = (unsigned long long)va_arg(ap, unsigned int);
-        cg_emit_uint_simple(v, 10, width, zero_pad);
+        cg_emit_uint_simple(ctx, v, 10, width, zero_pad);
         p++;
       } else if (*p == 'x') {
         unsigned int v = va_arg(ap, unsigned int);
-        cg_emit_uint_simple(v, 16, width, zero_pad);
+        cg_emit_uint_simple(ctx, v, 16, width, zero_pad);
         p++;
       } else if (*p == 'g' || *p == 'f') {
         (void)va_arg(ap, double);
-        cg_emit_char('0');
+        cg_emit_char(ctx, '0');
         p++;
       } else {
-        cg_emit_char('%');
-        if (*p) cg_emit_char(*p++);
+        cg_emit_char(ctx, '%');
+        if (*p) cg_emit_char(ctx, *p++);
       }
     }
     va_end(ap);
     return;
   }
-  va_list ap2;
-  va_copy(ap2, ap);
   int need_i = vsnprintf(
-      ctx->format_stack_buf, sizeof(ctx->format_stack_buf), fmt, ap2);
-  va_end(ap2);
+      ctx->format_stack_buf, sizeof(ctx->format_stack_buf), fmt, ap);
+  va_end(ap);
   if (need_i < 0) {
-    va_end(ap);
     diag_emit_internalf(DIAG_ERR_CODEGEN_OUTPUT_FAILED, "%s",
                         diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
   }
@@ -187,23 +193,51 @@ void cg_emitf(const char *fmt, ...) {
   if (need >= sizeof(ctx->format_stack_buf)) {
     heap_buf = malloc(need + 1);
     if (!heap_buf) {
-      va_end(ap);
       diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
     }
-    vsnprintf(heap_buf, need + 1, fmt, ap);
+    va_list heap_args;
+    va_copy(heap_args, args);
+    vsnprintf(heap_buf, need + 1, fmt, heap_args);
+    va_end(heap_args);
     buf = heap_buf;
   }
-  va_end(ap);
-  cg_raw_emit(buf, need);
+  cg_raw_emit(ctx, buf, need);
   free(heap_buf);
 }
 
-void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
-  ag_codegen_emit_context_t *ctx = cg_context_active();
+void cg_emitf_in(
+    ag_codegen_emit_context_t *ctx, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  cg_vemitf_in(ctx, fmt, args);
+  va_end(args);
+}
+
+void cg_emitf(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  cg_vemitf_in(cg_context_active(), fmt, args);
+  va_end(args);
+}
+
+void gen_set_output_callback_in(
+    ag_codegen_emit_context_t *ctx,
+    gen_output_line_fn cb, void *user_data) {
+  if (!ctx) abort();
   ctx->output_cb = cb;
   ctx->output_user_data = user_data;
 }
 
+void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
+  gen_set_output_callback_in(cg_context_active(), cb, user_data);
+}
+
+void gen_set_simple_formatter_in(
+    ag_codegen_emit_context_t *ctx, int enable) {
+  if (!ctx) abort();
+  ctx->simple_formatter = enable;
+}
+
 void gen_set_simple_formatter(int enable) {
-  cg_context_active()->simple_formatter = enable;
+  gen_set_simple_formatter_in(cg_context_active(), enable);
 }

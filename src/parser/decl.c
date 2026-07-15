@@ -15,8 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
-
 void ps_decl_reset_locals_in(psx_local_registry_t *registry) {
   if (!registry) return;
   ps_local_registry_reset_in(registry);
@@ -210,8 +208,13 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return NULL;
-  if (curtok() && curtok()->kind == TK_LBRACE) {
-    token_t *init_tok = curtok();
+  tokenizer_context_t *tokenizer_context =
+      ps_parser_runtime_tokenizer(runtime_context);
+  if (!tokenizer_context) return NULL;
+  token_t *current_token =
+      tk_get_current_token_ctx(tokenizer_context);
+  if (current_token && current_token->kind == TK_LBRACE) {
+    token_t *init_tok = current_token;
     node_t *syntax = psx_parse_initializer_syntax_list_in_contexts(
         semantic_context, global_registry, local_registry,
         runtime_context,
@@ -220,7 +223,7 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
         ps_parser_runtime_arena(runtime_context),
         var, syntax, PSX_DECL_INIT_LIST, init_tok);
   }
-  token_t *init_tok = curtok();
+  token_t *init_tok = current_token;
   return ps_decl_bind_initializer_for_var_in(
       ps_parser_runtime_arena(runtime_context), var,
       psx_expr_assign_in_contexts(

@@ -18,7 +18,6 @@ struct ag_compilation_session_t {
   ag_diagnostic_context_t *diagnostic_context;
   ag_diagnostic_context_t *previous_diagnostic_context;
   tokenizer_context_t tokenizer;
-  tokenizer_context_t *previous_tokenizer_context;
   tk_allocator_context_t *token_allocator_context;
   psx_parser_runtime_context_t *parser_runtime_context;
   psx_lowering_context_t *lowering_context;

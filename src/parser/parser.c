@@ -73,8 +73,6 @@ static void skip_cv_qualifiers_into_ex(
     psx_semantic_context_t *semantic_context,
     tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
-static inline token_t *curtok(void);
-static inline void set_curtok(token_t *tok);
 static inline token_t *curtok_in(tokenizer_context_t *tokenizer_context);
 static inline void set_curtok_in(
     tokenizer_context_t *tokenizer_context, token_t *tok);
@@ -109,10 +107,6 @@ void psx_skip_gnu_attributes_at(token_t **t) {
   }
 }
 
-void psx_skip_gnu_attributes(void) {
-  psx_skip_gnu_attributes_ctx(tk_context_active());
-}
-
 void psx_skip_gnu_attributes_ctx(
     tokenizer_context_t *tokenizer_context) {
   while (psx_is_gnu_attribute_token(curtok_in(tokenizer_context))) {
@@ -120,14 +114,6 @@ void psx_skip_gnu_attributes_ctx(
     psx_skip_gnu_attributes_at(&t);
     set_curtok_in(tokenizer_context, t);
   }
-}
-
-static inline token_t *curtok(void) {
-  return tk_get_current_token();
-}
-
-static inline void set_curtok(token_t *tok) {
-  tk_set_current_token(tok);
 }
 
 static inline token_t *curtok_in(
@@ -300,32 +286,34 @@ void ps_parser_stream_begin_in_contexts(
   stream->previous_runtime_tokenizer_context =
       ps_parser_runtime_bind_tokenizer(runtime_context, runtime_tokenizer);
   tk_set_current_token_ctx(runtime_tokenizer, start);
-  tk_set_current_token(start);
   runtime_context->recoverable_syntax_error = 0;
   runtime_context->function_block_depth = 0;
   runtime_context->recovery_block_depth = 0;
 }
 
-static void psx_advance_recovery_token(void) {
-  tk_ensure_lookahead();
-  token_t *token = curtok();
-  if (token && token->next) set_curtok(token->next);
+static void psx_advance_recovery_token(
+    tokenizer_context_t *tokenizer_context) {
+  tk_ensure_lookahead_ctx(tokenizer_context);
+  token_t *token = curtok_in(tokenizer_context);
+  if (token && token->next)
+    set_curtok_in(tokenizer_context, token->next);
 }
 
-static void psx_synchronize_toplevel_declaration(void) {
-  token_t *start = curtok();
+static void psx_synchronize_toplevel_declaration(
+    tokenizer_context_t *tokenizer_context) {
+  token_t *start = curtok_in(tokenizer_context);
   int paren_depth = 0;
   int bracket_depth = 0;
   int brace_depth = 0;
-  while (!tk_at_eof()) {
-    token_kind_t kind = curtok()->kind;
+  while (!tk_at_eof_ctx(tokenizer_context)) {
+    token_kind_t kind = curtok_in(tokenizer_context)->kind;
     if (kind == TK_LPAREN) paren_depth++;
     else if (kind == TK_RPAREN && paren_depth > 0) paren_depth--;
     else if (kind == TK_LBRACKET) bracket_depth++;
     else if (kind == TK_RBRACKET && bracket_depth > 0) bracket_depth--;
     else if (kind == TK_LBRACE) brace_depth++;
     else if (kind == TK_RBRACE && brace_depth > 0) brace_depth--;
-    psx_advance_recovery_token();
+    psx_advance_recovery_token(tokenizer_context);
     if (kind == TK_SEMI && paren_depth == 0 && bracket_depth == 0 &&
         brace_depth == 0)
       break;
@@ -333,18 +321,22 @@ static void psx_synchronize_toplevel_declaration(void) {
         brace_depth == 0)
       break;
   }
-  if (curtok() == start && !tk_at_eof()) psx_advance_recovery_token();
+  if (curtok_in(tokenizer_context) == start &&
+      !tk_at_eof_ctx(tokenizer_context))
+    psx_advance_recovery_token(tokenizer_context);
 }
 
 int ps_parse_next_toplevel_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   if (!stream || !stream->semantic_context || !item) return 0;
   psx_semantic_context_t *semantic_context = stream->semantic_context;
+  tokenizer_context_t *tokenizer_context = stream->tk_ctx;
+  if (!tokenizer_context) return 0;
   *item = (psx_parsed_toplevel_item_t){0};
-  while (!tk_at_eof()) {
+  while (!tk_at_eof_ctx(tokenizer_context)) {
     if (psx_try_consume_pragma_pack_marker_in(stream->runtime_context))
       continue;
-    if (curtok()->kind == TK_STATIC_ASSERT) {
+    if (curtok_in(tokenizer_context)->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_TOPLEVEL_ITEM_STATIC_ASSERT;
       psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
@@ -352,9 +344,6 @@ int ps_parse_next_toplevel_item(
           stream->local_registry,
           stream->runtime_context,
           NULL);
-      if (stream && stream->tk_ctx) {
-        tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
-      }
       return 1;
     }
     psx_parsed_toplevel_declaration_t declaration = {0};
@@ -362,12 +351,13 @@ int ps_parse_next_toplevel_item(
             &declaration, semantic_context, stream->global_registry,
             stream->local_registry, stream->runtime_context)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
-      psx_synchronize_toplevel_declaration();
+      psx_synchronize_toplevel_declaration(tokenizer_context);
       if (diag_active_limit_kind()) break;
       continue;
     }
-    psx_skip_gnu_attributes();
-    if (!declaration.is_standalone_tag && curtok()->kind == TK_LBRACE) {
+    psx_skip_gnu_attributes_ctx(tokenizer_context);
+    if (!declaration.is_standalone_tag &&
+        curtok_in(tokenizer_context)->kind == TK_LBRACE) {
       psx_parsed_declarator_t *declarator = &declaration.declarators[0];
       if (declaration.is_typedef ||
           declarator->function_suffix_count <= 0) {
@@ -388,18 +378,12 @@ int ps_parse_next_toplevel_item(
               stream->local_registry, stream->runtime_context)) {
         ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
         item->kind = PSX_TOPLEVEL_ITEM_EOF;
-        psx_synchronize_toplevel_declaration();
+        psx_synchronize_toplevel_declaration(tokenizer_context);
         if (diag_active_limit_kind()) break;
         continue;
       }
     }
-    if (stream && stream->tk_ctx) {
-      tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
-    }
     return 1;
-  }
-  if (stream && stream->tk_ctx) {
-    tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
   }
   item->kind = PSX_TOPLEVEL_ITEM_EOF;
   return 0;
@@ -708,6 +692,7 @@ static node_block_t *parse_funcdef_body_block(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    tokenizer_context_t *tokenizer_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
   ps_ctx_enter_block_scope_in(semantic_context);
   ps_parser_enter_recovery_block_in(runtime_context);
@@ -717,14 +702,14 @@ static node_block_t *parse_funcdef_body_block(
   int i = 0;
   int body_cap = 16;
   body->body = calloc(body_cap, sizeof(node_t *));
-  while (!tk_consume('}')) {
+  while (!tk_consume_ctx(tokenizer_context, '}')) {
     // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
     if (psx_try_consume_pragma_pack_marker_in(runtime_context)) continue;
     if (i >= body_cap - 1) {
       body_cap = pda_next_cap(body_cap, i + 2);
       body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
     }
-    token_t *stmt_tok = curtok();
+    token_t *stmt_tok = curtok_in(tokenizer_context);
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(local_registry);
     body->body[i] = psx_stmt_stmt_in_contexts(
@@ -758,26 +743,27 @@ node_t *ps_parse_function_definition_body(
     return NULL;
   psx_semantic_context_t *semantic_context = stream->semantic_context;
   psx_parser_runtime_context_t *runtime = stream->runtime_context;
+  tokenizer_context_t *tokenizer_context = stream->tk_ctx;
+  if (!tokenizer_context) return NULL;
   runtime->recoverable_syntax_error = 0;
   runtime->recovery_block_depth = 0;
-  tk_expect('{');
+  tk_expect_ctx(tokenizer_context, '{');
   function->base.rhs =
       (node_t *)parse_funcdef_body_block(
           semantic_context, stream->global_registry,
           stream->local_registry, stream->runtime_context,
+          tokenizer_context,
           local_declarations);
   if (runtime->recoverable_syntax_error) {
     int depth = runtime->recovery_block_depth > 0
         ? runtime->recovery_block_depth : 1;
-    while (!tk_at_eof() && depth > 0) {
-      token_kind_t kind = curtok()->kind;
+    while (!tk_at_eof_ctx(tokenizer_context) && depth > 0) {
+      token_kind_t kind = curtok_in(tokenizer_context)->kind;
       if (kind == TK_LBRACE) depth++;
       else if (kind == TK_RBRACE) depth--;
-      psx_advance_recovery_token();
+      psx_advance_recovery_token(tokenizer_context);
     }
     ps_decl_set_current_funcname_in(stream->local_registry, NULL, 0);
-    if (stream && stream->tk_ctx)
-      tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
     runtime->recoverable_syntax_error = 0;
     runtime->recovery_block_depth = 0;
     return NULL;
@@ -785,9 +771,6 @@ node_t *ps_parse_function_definition_body(
   psx_ctx_validate_goto_refs_in(semantic_context);
   function->lvars = ps_decl_get_locals_in(stream->local_registry);
   ps_decl_set_current_funcname_in(stream->local_registry, NULL, 0);
-  if (stream && stream->tk_ctx) {
-    tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
-  }
   return (node_t *)function;
 }
 
@@ -807,12 +790,10 @@ node_t *ps_expr_in_contexts(
   tokenizer_context_t *previous_runtime_tokenizer =
       ps_parser_runtime_bind_tokenizer(runtime_context, runtime_tokenizer);
   tk_set_current_token_ctx(runtime_tokenizer, start);
-  tk_set_current_token(start);
   node_t *node = psx_expr_expr_in_contexts(
       semantic_context, global_registry, local_registry,
       runtime_context,
       local_declarations);
-  tk_set_current_token_ctx(runtime_tokenizer, tk_get_current_token());
   if (previous_runtime_tokenizer) {
     ps_parser_runtime_bind_tokenizer(
         runtime_context, previous_runtime_tokenizer);

@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
 static int type_is_pointer_view_type(const psx_type_t *type);
 static const psx_type_t *lvar_decl_type_view(const lvar_t *var);
 static const psx_type_t *gvar_decl_type_view(const global_var_t *gv);
@@ -2991,10 +2990,6 @@ void ps_node_reject_const_assign_at(node_t *node, const char *op,
   }
 }
 
-void psx_node_reject_const_assign(node_t *node, const char *op) {
-  ps_node_reject_const_assign_at(node, op, curtok());
-}
-
 static int node_pointee_is_const(node_t *node) {
   if (!node) return 0;
   return node_pointee_is_const_qualified(node);
@@ -3014,10 +3009,6 @@ void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
     diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, tok,
                    diag_message_for(DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
   }
-}
-
-void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
-  ps_node_reject_const_qual_discard_at(lhs, rhs, curtok());
 }
 
 void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
@@ -3041,10 +3032,6 @@ void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
     diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
                    diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
   }
-}
-
-void psx_node_expect_lvalue(node_t *node, const char *op) {
-  ps_node_expect_lvalue_at(node, op, curtok());
 }
 
 int ps_node_compound_literal_array_size(node_t *node) {

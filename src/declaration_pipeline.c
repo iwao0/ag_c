@@ -709,6 +709,7 @@ int psx_begin_automatic_local_declaration_pipeline(
                   .name_len = request->name_len,
                   .type = request->type,
                   .requested_alignment = request->requested_alignment,
+                  .diag_tok = request->diag_tok,
               });
       if (!result->var) return 0;
       break;
@@ -721,6 +722,7 @@ int psx_begin_automatic_local_declaration_pipeline(
                   .name_len = request->name_len,
                   .type = request->type,
                   .requested_alignment = request->requested_alignment,
+                  .diag_tok = request->diag_tok,
               });
       if (!result->var) return 0;
       break;
@@ -802,6 +804,7 @@ int psx_finish_automatic_local_declaration_pipeline(
                 .name_len = request->name_len,
                 .type = completed_type,
                 .requested_alignment = request->requested_alignment,
+                .diag_tok = request->diag_tok,
             })) {
       return 0;
     }

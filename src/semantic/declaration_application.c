@@ -519,7 +519,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
     resolved_count++;
     token_ident_t *name = parameter->declarator.identifier;
     if (name && !ps_local_registry_create_type_binding_in(
-                    local_registry, name->str, name->len, adjusted)) {
+                    local_registry, name->str, name->len, adjusted,
+                    (token_t *)name)) {
       ps_diag_ctx((token_t *)name, "param",
                   "prototype parameter binding failed");
     }

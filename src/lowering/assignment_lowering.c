@@ -44,7 +44,7 @@ static node_t *materialize_lvalue_address_once(
   int offset = local_storage_allocate(lowering_context, 8, 0);
   lvar_t *temp = ps_local_registry_create_storage_object_in(
       local_registry, name, (int)strlen(name), offset, 8, 0,
-      address_type);
+      address_type, target->tok ? target->tok : address->tok);
 
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   node_t *temp_lhs = ps_node_new_lvar_expr_ref_for_in(

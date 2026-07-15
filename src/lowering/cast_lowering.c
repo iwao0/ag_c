@@ -194,7 +194,7 @@ static node_t *lower_aggregate_cast(
       lowering_context, object_size, object_size);
   lvar_t *temp = ps_local_registry_create_storage_object_in(
       local_registry, temp_name, (int)strlen(temp_name), offset,
-      object_size, object_size, view.target);
+      object_size, object_size, view.target, diag_tok);
 
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for_in(

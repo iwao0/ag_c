@@ -109,8 +109,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
   active_compilation_session = session;
   session->previous_diagnostic_context =
       diag_context_activate(session->diagnostic_context);
-  session->previous_tokenizer_context =
-      tk_context_activate(&session->tokenizer);
   session->previous_codegen_emit_context =
       cg_context_activate(session->codegen_emit_context);
   if (session->backend_activate)
@@ -132,12 +130,10 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
   cg_context_activate(session->previous_codegen_emit_context);
-  tk_context_activate(session->previous_tokenizer_context);
   diag_context_activate(session->previous_diagnostic_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
   session->previous_diagnostic_context = NULL;
-  session->previous_tokenizer_context = NULL;
   session->previous_codegen_emit_context = NULL;
   session->is_active = 0;
   return 1;
@@ -223,6 +219,13 @@ ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
     const ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? session->diagnostic_context
+             : NULL;
+}
+
+ag_codegen_emit_context_t *ag_compilation_session_codegen_emit_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->codegen_emit_context
              : NULL;
 }
 

@@ -144,6 +144,10 @@ const parserRuntimeOwnershipHeader = await readFile(
 const implicitTokenizerCursorApiRe = /\b(?:tk_get_current_token|tk_set_current_token|tk_consume|tk_consume_str|tk_consume_ident|tk_expect|tk_expect_number|tk_at_eof|tk_ensure_lookahead)\s*\(/;
 const explicitParserTokenizerSources = [
   parserStatementSource,
+  await readFile("src/parser/parser.c", "utf8"),
+  await readFile("src/parser/decl.c", "utf8"),
+  await readFile("src/parser/local_registry.c", "utf8"),
+  await readFile("src/parser/node_utils.c", "utf8"),
   await readFile("src/parser/initializer_syntax.c", "utf8"),
   await readFile("src/parser/static_assert_declaration.c", "utf8"),
   await readFile("src/parser/declarator_syntax.c", "utf8"),
@@ -575,6 +579,7 @@ const sessionContextAccessorNames = [
   "preprocessor_context",
   "arena_context",
   "diagnostic_context",
+  "codegen_emit_context",
   "token_allocator_context",
   "parser_runtime_context",
   "lowering_context",
@@ -606,9 +611,8 @@ if (sessionContextAccessorNames.some((name) =>
     !/diag_context_create\s*\(/.test(compilationSessionSource) ||
     !/diag_context_activate\s*\(/.test(compilationSessionSource) ||
     !/diag_context_destroy\s*\(/.test(compilationSessionSource) ||
-    !/tk_context_activate\s*\(&session->tokenizer\)/.test(
-      compilationSessionSource,
-    ) ||
+    /tk_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_tokenizer_context/.test(compilationSessionSource) ||
     !/tk_context_dispose\s*\(&session->tokenizer\)/.test(
       compilationSessionSource,
     ) ||

@@ -44,6 +44,8 @@ arena_context_t *ag_compilation_session_arena_context(
     const ag_compilation_session_t *session);
 ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
     const ag_compilation_session_t *session);
+ag_codegen_emit_context_t *ag_compilation_session_codegen_emit_context(
+    const ag_compilation_session_t *session);
 psx_parser_runtime_context_t *ag_compilation_session_parser_runtime_context(
     const ag_compilation_session_t *session);
 psx_lowering_context_t *ag_compilation_session_lowering_context(

@@ -6,6 +6,7 @@
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct global_var_t global_var_t;
+typedef struct token_t token_t;
 
 typedef struct {
   unsigned scope_seq;
@@ -38,10 +39,12 @@ void psx_local_registry_add_in(
 lvar_t *ps_local_registry_create_storage_object_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type);
+    int alignment, const psx_type_t *decl_type,
+    token_t *diagnostic_token);
 lvar_t *ps_local_registry_create_type_binding_in(
     psx_local_registry_t *registry,
-    char *name, int name_len, const psx_type_t *type);
+    char *name, int name_len, const psx_type_t *type,
+    token_t *diagnostic_token);
 lvar_t *ps_local_registry_create_static_alias_in(
     psx_local_registry_t *registry,
     global_var_t *global,
@@ -60,6 +63,7 @@ void ps_local_registry_set_vla_descriptor(
     int row_stride_elem_size);
 void ps_local_registry_set_vla_param_inner_dims(
     lvar_t *var, const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count);
+    const int *inner_dim_src_offsets, int inner_dim_count,
+    token_t *diagnostic_token);
 
 #endif

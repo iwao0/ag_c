@@ -7,7 +7,6 @@
 #include "node_utils.h"
 #include "type.h"
 #include "type_builder.h"
-#include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -80,7 +79,7 @@ static void ensure_scope_parent_capacity(
       registry->scope_parent_by_seq,
       capacity * sizeof(*registry->scope_parent_by_seq));
   if (!grown) {
-    ps_diag_ctx(tk_get_current_token(), "scope",
+    ps_diag_ctx(NULL, "scope",
                 "local scope ancestry allocation failed");
   }
   memset(grown + registry->scope_parent_capacity, 0,
@@ -191,14 +190,15 @@ void psx_local_registry_add_in(
 lvar_t *ps_local_registry_create_storage_object_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type) {
+    int alignment, const psx_type_t *decl_type,
+    token_t *diagnostic_token) {
   if (!registry || !decl_type) return NULL;
   lvar_t *previous = ps_decl_find_lvar_in(registry, name, name_len);
   if (previous &&
       previous->scope_seq ==
           ps_local_registry_current_scope_seq_in(registry)) {
     ps_diag_duplicate_with_name(
-        tk_get_current_token(), "variable", name, name_len);
+        diagnostic_token, "variable", name, name_len);
   }
 
   lvar_t *var = calloc(1, sizeof(*var));
@@ -220,14 +220,15 @@ lvar_t *ps_local_registry_create_storage_object_in(
 
 lvar_t *ps_local_registry_create_type_binding_in(
     psx_local_registry_t *registry,
-    char *name, int name_len, const psx_type_t *type) {
+    char *name, int name_len, const psx_type_t *type,
+    token_t *diagnostic_token) {
   if (!registry || !name || name_len <= 0 || !type) return NULL;
   lvar_t *previous = ps_decl_find_lvar_in(registry, name, name_len);
   if (previous &&
       previous->scope_seq ==
           ps_local_registry_current_scope_seq_in(registry)) {
     ps_diag_duplicate_with_name(
-        tk_get_current_token(), "parameter", name, name_len);
+        diagnostic_token, "parameter", name, name_len);
   }
   lvar_t *var = calloc(1, sizeof(*var));
   if (!var) return NULL;
@@ -324,7 +325,8 @@ void ps_local_registry_set_vla_descriptor(
 
 void ps_local_registry_set_vla_param_inner_dims(
     lvar_t *var, const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count) {
+    const int *inner_dim_src_offsets, int inner_dim_count,
+    token_t *diagnostic_token) {
   if (!var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
   int *constants = NULL;
@@ -335,7 +337,7 @@ void ps_local_registry_set_vla_param_inner_dims(
     if (!constants || !source_offsets) {
       free(constants);
       free(source_offsets);
-      ps_diag_ctx(tk_get_current_token(), "vla",
+      ps_diag_ctx(diagnostic_token, "vla",
                   "VLA runtime dimension allocation failed");
       return;
     }

@@ -21,7 +21,7 @@ lvar_t *lower_complete_local_object(
   return ps_local_registry_create_storage_object_in(
       request->local_registry,
       request->name, request->name_len, offset, plan.storage_size,
-      alignment, request->type);
+      alignment, request->type, request->diag_tok);
 }
 
 lvar_t *declare_incomplete_local_object(
@@ -34,7 +34,8 @@ lvar_t *declare_incomplete_local_object(
   return ps_local_registry_create_storage_object_in(
       request->local_registry,
       request->name, request->name_len, 0, 0,
-      request->requested_alignment, request->type);
+      request->requested_alignment, request->type,
+      request->diag_tok);
 }
 
 int complete_declared_local_object(
