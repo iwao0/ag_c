@@ -3698,6 +3698,9 @@ const targetSensitiveLoweringSources = [
 const irNodeTypeSize = irBuilderSource.match(
   /static\s+int\s+ir_node_type_size\s*\([^]*?\n\}/,
 );
+const irAggregateSizeFromNode = irBuilderSource.match(
+  /static\s+int\s+aggregate_size_from_node\s*\([^]*?\n\}/,
+);
 if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_alignment\s*\(/.test(loweringRuntimeHeader) ||
@@ -3712,6 +3715,13 @@ if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !irNodeTypeSize ||
     !/\bps_node_qual_type\s*\(/.test(irNodeTypeSize[0]) ||
     /\bps_node_get_type\s*\(/.test(irNodeTypeSize[0]) ||
+    !irAggregateSizeFromNode ||
+    !/\bps_node_qual_type\s*\(/.test(irAggregateSizeFromNode[0]) ||
+    !/\baggregate_size_from_type_id\s*\(/.test(
+      irAggregateSizeFromNode[0],
+    ) ||
+    /\bps_node_get_type\s*\(/.test(irAggregateSizeFromNode[0]) ||
+    /\baggregate_size_from_type\s*\(/.test(irBuilderSource) ||
     /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",

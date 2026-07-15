@@ -127,13 +127,17 @@ static int ir_c_type_size(
       ir_type_id(ctx, type), ctx ? ctx->target : NULL);
 }
 
-static int ir_node_type_size(
-    const ir_build_ctx_t *ctx, const node_t *node) {
+static int ir_type_id_size(
+    const ir_build_ctx_t *ctx, psx_type_id_t type_id) {
   return ps_type_sizeof_id_with_records(
       ctx ? ctx->semantic_types : NULL,
       ctx ? ctx->record_layouts : NULL,
-      ps_node_qual_type(node).type_id,
-      ctx ? ctx->target : NULL);
+      type_id, ctx ? ctx->target : NULL);
+}
+
+static int ir_node_type_size(
+    const ir_build_ctx_t *ctx, const node_t *node) {
+  return ir_type_id_size(ctx, ps_node_qual_type(node).type_id);
 }
 
 static int ir_type_deref_size(
@@ -669,17 +673,21 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   return emit_load_sym_for_gvar(ctx, gv);
 }
 
-static int aggregate_size_from_node(
-    const ir_build_ctx_t *ctx, node_t *node) {
-  const psx_type_t *type = ps_node_get_type(node);
-  return ps_type_is_tag_aggregate(type) ? ir_c_type_size(ctx, type) : 0;
+static int aggregate_size_from_type_id(
+    const ir_build_ctx_t *ctx, psx_type_id_t type_id) {
+  const psx_type_t *type = ctx && ctx->semantic_types
+                               ? psx_semantic_type_table_lookup(
+                                     ctx->semantic_types, type_id)
+                               : NULL;
+  if (!ps_type_is_tag_aggregate(type)) return 0;
+  int size = ir_type_id_size(ctx, type_id);
+  return size > 0 ? size : 0;
 }
 
-static int aggregate_size_from_type(
-    const ir_build_ctx_t *ctx, const psx_type_t *type) {
-  if (!ps_type_is_tag_aggregate(type)) return 0;
-  int size = ir_c_type_size(ctx, type);
-  return size > 0 ? size : 0;
+static int aggregate_size_from_node(
+    const ir_build_ctx_t *ctx, node_t *node) {
+  return aggregate_size_from_type_id(
+      ctx, ps_node_qual_type(node).type_id);
 }
 
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
@@ -1634,13 +1642,19 @@ static void attach_callable_type_from_callee(
   attach_callable_type(ctx, call, ps_node_qual_type(callee).type_id);
 }
 
-static psx_type_id_t function_callable_return_type_id(
+static psx_type_id_t function_return_type_id(
     const ir_build_ctx_t *ctx,
     const node_function_definition_t *fn) {
   psx_type_id_t signature_type_id =
       ps_function_definition_signature_qual_type(fn).type_id;
-  psx_type_id_t return_type_id = psx_semantic_type_table_base(
+  return psx_semantic_type_table_base(
       ctx ? ctx->semantic_types : NULL, signature_type_id).type_id;
+}
+
+static psx_type_id_t function_callable_return_type_id(
+    const ir_build_ctx_t *ctx,
+    const node_function_definition_t *fn) {
+  psx_type_id_t return_type_id = function_return_type_id(ctx, fn);
   return ir_type_id_derives_function(ctx, return_type_id)
              ? return_type_id
              : PSX_TYPE_ID_INVALID;
@@ -3229,8 +3243,8 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   }
   int cur_ret_struct_size =
       ctx->cur_fn
-          ? aggregate_size_from_type(
-                ctx, ps_function_definition_return_type(ctx->cur_fn))
+          ? aggregate_size_from_type_id(
+                ctx, function_return_type_id(ctx, ctx->cur_fn))
           : 0;
   if (node->lhs && cur_ret_struct_size == 8 && ctx->f->ret_type == IR_TY_I64) {
     ir_val_t sv = build_small_struct_return_value(ctx, node->lhs, cur_ret_struct_size);
@@ -3756,7 +3770,8 @@ static int build_function(
     fail(ctx, "missing canonical C function return type");
     return 0;
   }
-  int ret_struct_size = aggregate_size_from_type(ctx, ret_type);
+  psx_type_id_t ret_type_id = function_return_type_id(ctx, fn);
+  int ret_struct_size = aggregate_size_from_type_id(ctx, ret_type_id);
   ir_type_t ret_ty = ir_type_from_type(ret_type);
   if (ret_type->kind == PSX_TYPE_VOID) {
     ret_ty = IR_TY_VOID;
@@ -3774,7 +3789,7 @@ static int build_function(
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
   if (ret_ty == IR_TY_I32 && ret_struct_size <= 0) {
-    if (ir_c_type_size(ctx, ret_type) >= 8) {
+    if (ir_type_id_size(ctx, ret_type_id) >= 8) {
       ret_ty = IR_TY_I64;
     }
   }
