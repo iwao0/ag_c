@@ -24,8 +24,9 @@ static int pointer_arithmetic_stride(
   if (type &&
       (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
-    int stride = ps_type_sizeof_id_for_target(
+    int stride = ps_type_sizeof_id_with_records(
         ps_lowering_semantic_types(lowering_context),
+        ps_lowering_record_layouts(lowering_context),
         ps_lowering_type_id(lowering_context, type->base),
         ps_lowering_target(lowering_context));
     if (stride > 0) return stride;

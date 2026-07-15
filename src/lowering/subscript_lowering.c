@@ -17,8 +17,9 @@ static node_t *make_scaled_offset(
         arena_context, ND_MUL, index, stride);
   }
   const psx_type_t *base_type = ps_node_get_type(base);
-  int stride = ps_type_sizeof_id_for_target(
+  int stride = ps_type_sizeof_id_with_records(
       ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(
           lowering_context, base_type ? base_type->base : NULL),
       ps_lowering_target(lowering_context));

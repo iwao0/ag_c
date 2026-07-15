@@ -3225,7 +3225,10 @@ for (const [name, source] of [
   ["translation unit data", translationUnitDataLoweringSource],
 ]) {
   const requiresRecordLayouts = [
+    "expression",
+    "subscript",
     "initializer",
+    "VLA",
     "static data initializer",
     "translation unit data",
   ].includes(name);

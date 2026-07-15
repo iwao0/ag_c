@@ -62,6 +62,7 @@
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
 #include "../src/lowering/expr_lowering.h"
+#include "../src/lowering/subscript_lowering.h"
 #include "../src/lowering/runtime_context.h"
 #include "../src/lowering/local_storage.h"
 #include "../src/lowering/local_object_lowering.h"
@@ -3345,9 +3346,11 @@ static void test_target_type_layout_boundary() {
             wasm_record_parameter.kind);
   ASSERT_EQ(8, wasm_record_parameter.storage_size);
   ASSERT_EQ(4, wasm_record_parameter.alignment);
-  psx_record_layout_table_destroy(record_layouts);
 
   psx_lowering_context_t *lowering = test_lowering_context();
+  const psx_record_layout_table_t *session_record_layouts =
+      ps_lowering_record_layouts(lowering);
+  ps_lowering_context_bind_record_layouts(lowering, record_layouts);
   ps_lowering_context_bind_target(lowering, &wasm);
   node_t *pointer_value = ps_node_new_num(0);
   ps_node_bind_type(pointer_value, ps_type_new_pointer(pointer));
@@ -3355,7 +3358,77 @@ static void test_target_type_layout_boundary() {
       lowering, ND_ADD, pointer_value, ps_node_new_num(2));
   ASSERT_EQ(ND_MUL, pointer_add->rhs->kind);
   ASSERT_EQ(4, as_num(pointer_add->rhs->rhs)->val);
+
+  psx_type_t *record_pointer = ps_type_new_pointer(record_type);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  test_semantic_context(), record_pointer).type_id !=
+              PSX_TYPE_ID_INVALID);
+  node_t *wasm_record_pointer = ps_node_new_num(0);
+  ps_node_bind_type(wasm_record_pointer, record_pointer);
+  node_t *wasm_record_add = lower_additive_expression(
+      lowering, ND_ADD, wasm_record_pointer, ps_node_new_num(1));
+  ASSERT_EQ(ND_MUL, wasm_record_add->rhs->kind);
+  ASSERT_EQ(8, as_num(wasm_record_add->rhs->rhs)->val);
+  node_t *wasm_record_subscript = lower_subscript_expression(
+      lowering, psx_node_new_subscript_syntax_for_in(
+                    test_arena_context(), wasm_record_pointer,
+                    ps_node_new_num(1)));
+  ASSERT_EQ(ND_DEREF, wasm_record_subscript->kind);
+  ASSERT_EQ(ND_MUL, wasm_record_subscript->lhs->rhs->kind);
+  ASSERT_EQ(8, as_num(wasm_record_subscript->lhs->rhs->rhs)->val);
+
+  psx_type_t *record_vla_type = ps_type_new_array(
+      record_type, 0, 0, 1);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  test_semantic_context(), record_vla_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  node_t *record_vla_dimensions[1] = {ps_node_new_num(3)};
+  long long record_vla_constants[1] = {0};
+  unsigned char record_vla_is_constant[1] = {0};
+  psx_vla_lowering_request_t record_vla_request = {
+      .local_registry = test_local_registry(),
+      .lowering_context = lowering,
+      .name = (char *)"target_vla",
+      .name_len = 10,
+      .dimensions = record_vla_dimensions,
+      .const_values = record_vla_constants,
+      .is_const = record_vla_is_constant,
+      .dimension_count = 1,
+      .type = record_vla_type,
+      .requested_alignment = 8,
+  };
+  reset_test_locals();
+  psx_vla_lowering_result_t wasm_record_vla = lower_vla_declaration(
+      &record_vla_request);
+  ASSERT_TRUE(wasm_record_vla.var != NULL);
+  ASSERT_EQ(ND_VLA_ALLOC, wasm_record_vla.init->kind);
+  ASSERT_EQ(ND_MUL, wasm_record_vla.init->lhs->kind);
+  ASSERT_EQ(8, as_num(wasm_record_vla.init->lhs->rhs)->val);
+
   ps_lowering_context_bind_target(lowering, &host);
+  node_t *host_record_pointer = ps_node_new_num(0);
+  ps_node_bind_type(host_record_pointer, record_pointer);
+  node_t *host_record_add = lower_additive_expression(
+      lowering, ND_ADD, host_record_pointer, ps_node_new_num(1));
+  ASSERT_EQ(ND_MUL, host_record_add->rhs->kind);
+  ASSERT_EQ(16, as_num(host_record_add->rhs->rhs)->val);
+  node_t *host_record_subscript = lower_subscript_expression(
+      lowering, psx_node_new_subscript_syntax_for_in(
+                    test_arena_context(), host_record_pointer,
+                    ps_node_new_num(1)));
+  ASSERT_EQ(ND_DEREF, host_record_subscript->kind);
+  ASSERT_EQ(ND_MUL, host_record_subscript->lhs->rhs->kind);
+  ASSERT_EQ(16, as_num(host_record_subscript->lhs->rhs->rhs)->val);
+  reset_test_locals();
+  psx_vla_lowering_result_t host_record_vla = lower_vla_declaration(
+      &record_vla_request);
+  ASSERT_TRUE(host_record_vla.var != NULL);
+  ASSERT_EQ(ND_VLA_ALLOC, host_record_vla.init->kind);
+  ASSERT_EQ(ND_MUL, host_record_vla.init->lhs->kind);
+  ASSERT_EQ(16, as_num(host_record_vla.init->lhs->rhs)->val);
+  ps_lowering_context_bind_record_layouts(
+      lowering, session_record_layouts);
+  psx_record_layout_table_destroy(record_layouts);
 }
 
 static void test_wasm_target_global_pointer_data_layout() {
