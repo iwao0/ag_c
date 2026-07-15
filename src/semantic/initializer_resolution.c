@@ -8,13 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static psx_type_id_t initializer_type_id(
-    const psx_semantic_type_table_t *semantic_types,
-    const psx_type_t *type) {
-  return psx_semantic_type_table_find(
-      semantic_types, type).type_id;
-}
-
 static int initializer_type_size(
     const psx_semantic_type_table_t *semantic_types,
     psx_type_id_t type_id, const ag_target_info_t *target) {
@@ -106,8 +99,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       }
       if (target.first_array_index < 0)
         target.first_array_index = (int)index;
-      psx_type_id_t element_type_id = initializer_type_id(
-          semantic_types, target.type->base);
+      psx_type_id_t element_type_id = psx_semantic_type_table_base(
+          semantic_types, target.type_id).type_id;
       target.relative_offset +=
           (int)index *
               initializer_type_size(
@@ -140,8 +133,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
     const tag_member_info_t *member = &definition->members[member_index];
     target.relative_offset += member->offset;
     target.type = ps_tag_member_decl_type(member);
-    target.type_id = initializer_type_id(
-        semantic_types, target.type);
+    target.type_id = psx_semantic_type_table_record_member(
+        semantic_types, target.type_id, member_index).type_id;
     target.direct_member = member;
   }
   return target;
@@ -170,22 +163,37 @@ static int append_scalar_leaf(
 static int canonical_definition_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target,
-    const psx_aggregate_definition_t *definition);
+    psx_type_id_t aggregate_type_id);
+
+static psx_type_id_t array_leaf_type_id(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_type_id_t type_id) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      semantic_types, type_id);
+  while (type && type->kind == PSX_TYPE_ARRAY) {
+    type_id = psx_semantic_type_table_base(
+        semantic_types, type_id).type_id;
+    type = psx_semantic_type_table_lookup(semantic_types, type_id);
+  }
+  return type ? type_id : PSX_TYPE_ID_INVALID;
+}
 
 static int canonical_member_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
-    const ag_target_info_t *target, const tag_member_info_t *member) {
+    const ag_target_info_t *target, const tag_member_info_t *member,
+    psx_type_id_t member_type_id) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
   int per = 1;
   const psx_type_t *member_type = ps_tag_member_decl_type(member);
-  const psx_type_t *aggregate_type =
-      ps_tag_member_is_tag_aggregate(member)
-          ? ps_type_array_leaf_type(member_type)
-          : NULL;
+  psx_type_id_t aggregate_type_id = ps_tag_member_is_tag_aggregate(member)
+                                        ? array_leaf_type_id(
+                                              semantic_types, member_type_id)
+                                        : PSX_TYPE_ID_INVALID;
+  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+      semantic_types, aggregate_type_id);
   if (aggregate_type && aggregate_type->aggregate_definition) {
     per = canonical_definition_flat_slot_count(
-        semantic_types, target,
-        aggregate_type->aggregate_definition);
+        semantic_types, target, aggregate_type_id);
   }
   int count = ps_type_array_flat_element_count(member_type);
   return count > 0 ? count * per : per;
@@ -194,7 +202,11 @@ static int canonical_member_flat_slot_count(
 static int canonical_definition_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target,
-    const psx_aggregate_definition_t *definition) {
+    psx_type_id_t aggregate_type_id) {
+  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+      semantic_types, aggregate_type_id);
+  const psx_aggregate_definition_t *definition =
+      aggregate_type ? aggregate_type->aggregate_definition : NULL;
   if (!definition || definition->member_count <= 0) return 1;
   int slots = 0;
   int union_max_bytes = -1;
@@ -202,14 +214,13 @@ static int canonical_definition_flat_slot_count(
   int covered_union_size = 0;
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
+    psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+        semantic_types, aggregate_type_id, i).type_id;
     int member_slots = canonical_member_flat_slot_count(
-        semantic_types, target, member);
+        semantic_types, target, member, member_type_id);
     if (definition->tag_kind == TK_UNION) {
       int bytes = initializer_type_size(
-          semantic_types,
-          initializer_type_id(
-              semantic_types, ps_tag_member_decl_type(member)),
-          target);
+          semantic_types, member_type_id, target);
       if (bytes > union_max_bytes ||
           (bytes == union_max_bytes && member_slots > slots)) {
         union_max_bytes = bytes;
@@ -227,10 +238,7 @@ static int canonical_definition_flat_slot_count(
     if (ps_tag_member_is_unnamed_union(member)) {
       covered_union_offset = member->offset;
       covered_union_size = initializer_type_size(
-          semantic_types,
-          initializer_type_id(
-              semantic_types, ps_tag_member_decl_type(member)),
-          target);
+          semantic_types, member_type_id, target);
     }
   }
   return slots > 0 ? slots : 1;
@@ -245,8 +253,8 @@ int psx_collect_initializer_scalar_leaves(
       semantic_types, type_id);
   if (!type || !list) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
-    psx_type_id_t child_type_id = initializer_type_id(
-        semantic_types, type->base);
+    psx_type_id_t child_type_id = psx_semantic_type_table_base(
+        semantic_types, type_id).type_id;
     int child_size = initializer_type_size(
         semantic_types, child_type_id, target);
     if (type->base && type->base->kind != PSX_TYPE_ARRAY &&
@@ -278,13 +286,13 @@ int psx_collect_initializer_scalar_leaves(
       int max_slots = -1;
       for (int i = 0; i < definition->member_count; i++) {
         const tag_member_info_t *candidate = &definition->members[i];
+        psx_type_id_t candidate_type_id =
+            psx_semantic_type_table_record_member(
+                semantic_types, type_id, i).type_id;
         int bytes = initializer_type_size(
-            semantic_types,
-            initializer_type_id(
-                semantic_types, ps_tag_member_decl_type(candidate)),
-            target);
+            semantic_types, candidate_type_id, target);
         int slots = canonical_member_flat_slot_count(
-            semantic_types, target, candidate);
+            semantic_types, target, candidate, candidate_type_id);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;
@@ -299,8 +307,8 @@ int psx_collect_initializer_scalar_leaves(
       if (type->kind == PSX_TYPE_STRUCT && member->offset < covered_end)
         continue;
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
-      psx_type_id_t member_type_id = initializer_type_id(
-          semantic_types, member_type);
+      psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+          semantic_types, type_id, i).type_id;
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||
                           ps_type_is_tag_aggregate(member_type))) {
         if (!psx_collect_initializer_scalar_leaves(

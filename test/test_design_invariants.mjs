@@ -3204,11 +3204,36 @@ if (!qualTypeStruct ||
     "QualType must pair an interned TypeId with qualifiers, independent of target layout",
   );
 }
-if (!/table->types\[id\]\s*=\s*canonical\s*;[^]*?definition->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
+if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id\s*;[^]*?populate_type_relations\s*\(\s*table\s*,\s*id\s*,\s*type\s*\)/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/populate_type_relations_body\s*\([^]*?definition->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
       semanticTypeIdentitySource,
     )) {
   throw new Error(
     "semantic type interning must register aggregate identity before recursively interning member types",
+  );
+}
+if (!/\bpsx_type_id_t\s+base_type_id\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_type_id_t\s*\*\s*parameter_type_ids\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_type_id_t\s*\*\s*record_member_type_ids\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_parameter\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      semanticTypeIdentityHeader,
+    )) {
+  throw new Error(
+    "interned TypeIds must retain recursive base, parameter, and record member TypeId relationships",
   );
 }
 

@@ -9,9 +9,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct {
+  const psx_type_t *type;
+  psx_type_id_t base_type_id;
+  psx_type_id_t *parameter_type_ids;
+  int parameter_count;
+  psx_type_id_t *record_member_type_ids;
+  int record_member_count;
+  unsigned char relations_populating;
+} psx_semantic_type_entry_t;
+
 struct psx_semantic_type_table_t {
   arena_context_t *arena_context;
-  const psx_type_t **types;
+  psx_semantic_type_entry_t *entries;
   size_t capacity;
   psx_type_id_t next_id;
 };
@@ -30,15 +40,15 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
 void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table) {
   if (!table) return;
   arena_context_destroy(table->arena_context);
-  free(table->types);
+  free(table->entries);
   free(table);
 }
 
 void psx_semantic_type_table_reset(psx_semantic_type_table_t *table) {
   if (!table) return;
   arena_free_all_in(table->arena_context);
-  free(table->types);
-  table->types = NULL;
+  free(table->entries);
+  table->entries = NULL;
   table->capacity = 0;
   table->next_id = PSX_TYPE_ID_INVALID;
 }
@@ -51,12 +61,12 @@ static int reserve_type_id(
     if (capacity > SIZE_MAX / 2) return 0;
     capacity *= 2;
   }
-  const psx_type_t **types = realloc(
-      table->types, capacity * sizeof(*types));
-  if (!types) return 0;
-  memset(types + table->capacity, 0,
-         (capacity - table->capacity) * sizeof(*types));
-  table->types = types;
+  psx_semantic_type_entry_t *entries = realloc(
+      table->entries, capacity * sizeof(*entries));
+  if (!entries) return 0;
+  memset(entries + table->capacity, 0,
+         (capacity - table->capacity) * sizeof(*entries));
+  table->entries = entries;
   table->capacity = capacity;
   return 1;
 }
@@ -76,12 +86,72 @@ psx_qual_type_t psx_semantic_type_table_find(
   }
   result.qualifiers = ps_type_qualifiers(type);
   for (psx_type_id_t id = 1; id <= table->next_id; id++) {
-    if (ps_type_unqualified_semantic_matches(table->types[id], type)) {
+    if (ps_type_unqualified_semantic_matches(
+            table->entries[id].type, type)) {
       result.type_id = id;
       return result;
     }
   }
   return invalid_qual_type();
+}
+
+static int populate_type_relations_body(
+    psx_semantic_type_table_t *table, psx_type_id_t id,
+    const psx_type_t *type) {
+  if (!table || id == PSX_TYPE_ID_INVALID || !type) return 0;
+  if (type->base) {
+    psx_qual_type_t base = psx_semantic_type_table_intern(
+        table, type->base);
+    if (base.type_id == PSX_TYPE_ID_INVALID) return 0;
+    table->entries[id].base_type_id = base.type_id;
+  }
+  if (type->param_count > table->entries[id].parameter_count) {
+    psx_type_id_t *parameter_type_ids = arena_alloc_in(
+        table->arena_context,
+        (size_t)type->param_count * sizeof(*parameter_type_ids));
+    if (!parameter_type_ids) return 0;
+    table->entries[id].parameter_type_ids = parameter_type_ids;
+    table->entries[id].parameter_count = type->param_count;
+  }
+  for (int i = 0; i < type->param_count; i++) {
+    if (!type->param_types) return 0;
+    psx_qual_type_t parameter = psx_semantic_type_table_intern(
+        table, type->param_types[i]);
+    if (parameter.type_id == PSX_TYPE_ID_INVALID) return 0;
+    table->entries[id].parameter_type_ids[i] = parameter.type_id;
+  }
+  const psx_aggregate_definition_t *definition =
+      type->aggregate_definition;
+  if (definition &&
+      definition->member_count > table->entries[id].record_member_count) {
+    psx_type_id_t *record_member_type_ids = arena_alloc_in(
+        table->arena_context,
+        (size_t)definition->member_count * sizeof(*record_member_type_ids));
+    if (!record_member_type_ids) return 0;
+    table->entries[id].record_member_type_ids = record_member_type_ids;
+    table->entries[id].record_member_count = definition->member_count;
+  }
+  for (int i = 0; definition && i < definition->member_count; i++) {
+    const psx_type_t *member_type =
+        ps_tag_member_decl_type(&definition->members[i]);
+    if (!member_type) continue;
+    psx_qual_type_t member = psx_semantic_type_table_intern(
+        table, member_type);
+    if (member.type_id == PSX_TYPE_ID_INVALID) return 0;
+    table->entries[id].record_member_type_ids[i] = member.type_id;
+  }
+  return 1;
+}
+
+static int populate_type_relations(
+    psx_semantic_type_table_t *table, psx_type_id_t id,
+    const psx_type_t *type) {
+  if (!table || id == PSX_TYPE_ID_INVALID || !type) return 0;
+  if (table->entries[id].relations_populating) return 1;
+  table->entries[id].relations_populating = 1;
+  int result = populate_type_relations_body(table, id, type);
+  table->entries[id].relations_populating = 0;
+  return result;
 }
 
 psx_qual_type_t psx_semantic_type_table_intern(
@@ -91,7 +161,11 @@ psx_qual_type_t psx_semantic_type_table_intern(
     return invalid_qual_type();
   }
   psx_qual_type_t result = psx_semantic_type_table_find(table, type);
-  if (result.type_id != PSX_TYPE_ID_INVALID) return result;
+  if (result.type_id != PSX_TYPE_ID_INVALID) {
+    return populate_type_relations(table, result.type_id, type)
+               ? result
+               : invalid_qual_type();
+  }
   result.qualifiers = ps_type_qualifiers(type);
   if (table->next_id == UINT_MAX) return result;
   psx_type_id_t id = table->next_id + 1;
@@ -101,34 +175,12 @@ psx_qual_type_t psx_semantic_type_table_intern(
   ps_type_remove_qualifiers(
       canonical, PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
                      PSX_TYPE_QUALIFIER_ATOMIC);
-  table->types[id] = canonical;
+  table->entries[id].type = canonical;
   table->next_id = id;
   result.type_id = id;
-
-  if (type->base &&
-      psx_semantic_type_table_intern(table, type->base).type_id ==
-          PSX_TYPE_ID_INVALID) {
-    return invalid_qual_type();
-  }
-  for (int i = 0; i < type->param_count; i++) {
-    if (!type->param_types ||
-        psx_semantic_type_table_intern(table, type->param_types[i]).type_id ==
-            PSX_TYPE_ID_INVALID) {
-      return invalid_qual_type();
-    }
-  }
-  const psx_aggregate_definition_t *definition =
-      type->aggregate_definition;
-  for (int i = 0; definition && i < definition->member_count; i++) {
-    const psx_type_t *member_type =
-        ps_tag_member_decl_type(&definition->members[i]);
-    if (member_type &&
-        psx_semantic_type_table_intern(table, member_type).type_id ==
-            PSX_TYPE_ID_INVALID) {
-      return invalid_qual_type();
-    }
-  }
-  return result;
+  return populate_type_relations(table, id, type)
+             ? result
+             : invalid_qual_type();
 }
 
 const psx_type_t *psx_semantic_type_table_lookup(
@@ -137,5 +189,52 @@ const psx_type_t *psx_semantic_type_table_lookup(
       type_id > table->next_id || (size_t)type_id >= table->capacity) {
     return NULL;
   }
-  return table->types[type_id];
+  return table->entries[type_id].type;
+}
+
+static psx_qual_type_t related_type(
+    const psx_semantic_type_table_t *table, psx_type_id_t related_type_id,
+    const psx_type_t *qualified_type) {
+  if (!table || related_type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_lookup(table, related_type_id))
+    return invalid_qual_type();
+  return (psx_qual_type_t){
+      .type_id = related_type_id,
+      .qualifiers = ps_type_qualifiers(qualified_type),
+  };
+}
+
+psx_qual_type_t psx_semantic_type_table_base(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
+  if (!type) return invalid_qual_type();
+  return related_type(
+      table, table->entries[type_id].base_type_id, type->base);
+}
+
+psx_qual_type_t psx_semantic_type_table_parameter(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id,
+    int parameter_index) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
+  if (!type || parameter_index < 0 ||
+      parameter_index >= table->entries[type_id].parameter_count ||
+      !type->param_types)
+    return invalid_qual_type();
+  return related_type(
+      table, table->entries[type_id].parameter_type_ids[parameter_index],
+      type->param_types[parameter_index]);
+}
+
+psx_qual_type_t psx_semantic_type_table_record_member(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id,
+    int member_index) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
+  const psx_aggregate_definition_t *definition =
+      type ? type->aggregate_definition : NULL;
+  if (!definition || member_index < 0 ||
+      member_index >= table->entries[type_id].record_member_count)
+    return invalid_qual_type();
+  return related_type(
+      table, table->entries[type_id].record_member_type_ids[member_index],
+      ps_tag_member_decl_type(&definition->members[member_index]));
 }

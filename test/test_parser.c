@@ -16091,6 +16091,10 @@ static void test_semantic_type_identity() {
   psx_qual_type_t wasm_pointer_identity =
       ps_ctx_intern_qual_type_in(context, wasm_pointer);
   ASSERT_EQ(host_pointer_identity.type_id, wasm_pointer_identity.type_id);
+  psx_qual_type_t pointer_base_identity = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(context), host_pointer_identity.type_id);
+  ASSERT_EQ(plain_int_identity.type_id, pointer_base_identity.type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, pointer_base_identity.qualifiers);
   ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(context, plain_int).type_id !=
               PSX_TYPE_ID_INVALID);
 
@@ -16099,6 +16103,34 @@ static void test_semantic_type_identity() {
       ps_ctx_intern_qual_type_in(context, pointer_to_const);
   ASSERT_TRUE(pointer_to_const_identity.type_id !=
               host_pointer_identity.type_id);
+  psx_qual_type_t qualified_pointer_base = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(context),
+      pointer_to_const_identity.type_id);
+  ASSERT_EQ(plain_int_identity.type_id, qualified_pointer_base.type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, qualified_pointer_base.qualifiers);
+
+  const psx_type_t *function_parameters[2] = {const_int, host_pointer};
+  psx_type_t *function_type = ps_type_new_function(plain_int);
+  ps_type_set_function_params(function_type, function_parameters, 2, 0);
+  psx_qual_type_t function_identity =
+      ps_ctx_intern_qual_type_in(context, function_type);
+  ASSERT_TRUE(function_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(plain_int_identity.type_id,
+            psx_semantic_type_table_base(
+                ps_ctx_semantic_type_table_in(context),
+                function_identity.type_id).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                function_identity.type_id, 0).qualifiers);
+  ASSERT_EQ(host_pointer_identity.type_id,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                function_identity.type_id, 1).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                function_identity.type_id, 2).type_id);
 
   char record_name[] = "IdentityRecord";
   psx_type_t *first_record = ps_type_new_tag(
@@ -16144,9 +16176,54 @@ static void test_semantic_type_identity() {
   psx_qual_type_t recursive_identity =
       ps_ctx_intern_qual_type_in(context, recursive_record);
   ASSERT_TRUE(recursive_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
-                  context, recursive_pointer).type_id !=
-              PSX_TYPE_ID_INVALID);
+  psx_qual_type_t recursive_pointer_identity =
+      ps_ctx_find_interned_qual_type_in(context, recursive_pointer);
+  ASSERT_TRUE(recursive_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(recursive_pointer_identity.type_id,
+            psx_semantic_type_table_record_member(
+                ps_ctx_semantic_type_table_in(context),
+                recursive_identity.type_id, 0).type_id);
+  ASSERT_EQ(recursive_identity.type_id,
+            psx_semantic_type_table_base(
+                ps_ctx_semantic_type_table_in(context),
+                recursive_pointer_identity.type_id).type_id);
+
+  char completed_record_name[] = "CompletedIdentityRecord";
+  psx_aggregate_definition_t completed_definition = {
+      .record_id = 44,
+      .tag_kind = TK_STRUCT,
+      .tag_name = completed_record_name,
+      .tag_len = 23,
+  };
+  psx_type_t *completed_record = ps_type_new_tag(
+      TK_STRUCT, completed_record_name, 23, 1, 0);
+  completed_record->record_id = completed_definition.record_id;
+  completed_record->aggregate_definition = &completed_definition;
+  psx_qual_type_t incomplete_record_identity =
+      ps_ctx_intern_qual_type_in(context, completed_record);
+  ASSERT_TRUE(incomplete_record_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_semantic_type_table_record_member(
+                ps_ctx_semantic_type_table_in(context),
+                incomplete_record_identity.type_id, 0).type_id);
+  tag_member_info_t completed_member = {
+      .name = (char *)"value",
+      .len = 5,
+      .decl_type = plain_int,
+  };
+  completed_definition.is_complete = 1;
+  completed_definition.size = 4;
+  completed_definition.align = 4;
+  completed_definition.member_count = 1;
+  completed_definition.members = &completed_member;
+  psx_qual_type_t completed_record_identity =
+      ps_ctx_intern_qual_type_in(context, completed_record);
+  ASSERT_EQ(incomplete_record_identity.type_id,
+            completed_record_identity.type_id);
+  ASSERT_EQ(plain_int_identity.type_id,
+            psx_semantic_type_table_record_member(
+                ps_ctx_semantic_type_table_in(context),
+                completed_record_identity.type_id, 0).type_id);
 
   psx_type_id_t retained_id = pointer_to_const_identity.type_id;
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
