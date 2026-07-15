@@ -23,7 +23,7 @@ typedef enum {
 } psx_local_storage_kind_t;
 
 typedef struct {
-  node_t *expression;
+  psx_semantic_expr_id_t expression_id;
   long long constant_value;
   int is_constant;
 } psx_local_vla_dimension_t;
@@ -41,7 +41,7 @@ typedef struct {
   psx_local_storage_kind_t storage_kind;
   psx_local_vla_dimension_t *dimensions;
   int dimension_count;
-  node_t *pointer_row_dimension;
+  psx_semantic_expr_id_t pointer_row_dimension_id;
 } psx_local_declaration_resolution_t;
 
 void psx_resolve_local_declaration(

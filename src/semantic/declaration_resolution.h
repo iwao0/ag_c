@@ -5,6 +5,7 @@
 #include "../parser/declarator_shape.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/type.h"
+#include "expression_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
@@ -21,7 +22,7 @@ typedef struct {
 
 typedef struct {
   int declarator_op_index;
-  node_t *expression;
+  psx_semantic_expr_id_t expression_id;
   long long constant_value;
   int is_constant;
 } psx_runtime_array_bound_t;

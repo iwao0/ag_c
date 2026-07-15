@@ -2947,6 +2947,42 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
   throw new Error("aggregate definition lookup must return a const view");
 }
 
+const vlaDeclarationResolutionSource = await readFile(
+  "src/semantic/declaration_resolution.h",
+  "utf8",
+);
+const runtimeArrayBoundStruct = vlaDeclarationResolutionSource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_runtime_array_bound_t\s*;/,
+);
+const localDeclarationResolutionSource = await readFile(
+  "src/semantic/local_declaration_resolution.h",
+  "utf8",
+);
+const localVlaDimensionStruct = localDeclarationResolutionSource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_local_vla_dimension_t\s*;/,
+);
+if (!runtimeArrayBoundStruct ||
+    !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
+      runtimeArrayBoundStruct[1],
+    ) ||
+    /\bnode_t\s*\*/.test(runtimeArrayBoundStruct[1]) ||
+    !localVlaDimensionStruct ||
+    !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
+      localVlaDimensionStruct[1],
+    ) ||
+    /\bnode_t\s*\*/.test(localVlaDimensionStruct[1]) ||
+    !/\bpsx_semantic_expr_id_t\s+pointer_row_dimension_id\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    /\bnode_t\s*\*\s*pointer_row_dimension\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    /\bpsx_semantic_expr_id_t\b/.test(canonicalTypeStruct[1])) {
+  throw new Error(
+    "VLA runtime bounds must use semantic expression IDs outside canonical types",
+  );
+}
+
 const lvarInternalSource = await readFile("src/parser/lvar_internal.h", "utf8");
 const lvarStruct = lvarInternalSource.match(/struct lvar_t\s*\{([\s\S]*?)\n\};/);
 const symtabSource = await readFile("src/parser/symtab.h", "utf8");

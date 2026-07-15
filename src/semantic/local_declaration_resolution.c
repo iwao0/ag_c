@@ -46,7 +46,8 @@ void psx_resolve_local_declaration(
     const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
     resolution->dimensions[leading_array_count++] =
         (psx_local_vla_dimension_t){
-            .expression = bound ? bound->expression : NULL,
+            .expression_id = bound ? bound->expression_id
+                                   : PSX_SEMANTIC_EXPR_ID_INVALID,
             .constant_value = bound && bound->is_constant
                                   ? bound->constant_value : 0,
             .is_constant = bound && bound->is_constant,
@@ -92,10 +93,12 @@ void psx_resolve_local_declaration(
       const psx_declarator_op_t *op = &application->shape.ops[i];
       if (op->kind != PSX_DECL_OP_ARRAY || !op->is_vla_array) continue;
       const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
-      if (!bound || !bound->expression || element_size <= 0)
+      if (!bound ||
+          bound->expression_id == PSX_SEMANTIC_EXPR_ID_INVALID ||
+          element_size <= 0)
         return;
       resolution->storage_kind = PSX_LOCAL_STORAGE_POINTER_TO_VLA;
-      resolution->pointer_row_dimension = bound->expression;
+      resolution->pointer_row_dimension_id = bound->expression_id;
       resolution->status = PSX_LOCAL_DECLARATION_OK;
       return;
     }

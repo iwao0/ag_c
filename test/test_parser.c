@@ -3136,6 +3136,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_automatic_local_declaration_pipeline_result_t pipeline_result = {0};
   ASSERT_TRUE(psx_apply_automatic_local_declaration_pipeline(
       &(psx_automatic_local_declaration_pipeline_request_t){
+          .semantic_context = test_semantic_context(),
           .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"pipeline_deferred",
@@ -4334,7 +4335,11 @@ static void test_local_declarator_application_boundary() {
   ASSERT_TRUE(applied.shape.ops[0].is_vla_array);
   ASSERT_EQ(0, applied.shape.ops[0].array_len);
   ASSERT_TRUE(!applied.array_bounds[0].is_constant);
-  ASSERT_TRUE(applied.array_bounds[0].expression != NULL);
+  ASSERT_TRUE(applied.array_bounds[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  test_semantic_context(),
+                  applied.array_bounds[0].expression_id) != NULL);
   ASSERT_TRUE(!applied.shape.ops[1].is_vla_array);
   ASSERT_EQ(4, applied.shape.ops[1].array_len);
   ASSERT_TRUE(applied.array_bounds[1].is_constant);
@@ -4387,6 +4392,16 @@ static void test_local_declaration_resolution_boundary() {
             resolution.storage_kind);
 
   node_t *runtime_bound = ps_node_new_num(7);
+  psx_semantic_expr_id_t runtime_bound_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), runtime_bound);
+  ASSERT_TRUE(runtime_bound_id != PSX_SEMANTIC_EXPR_ID_INVALID);
+  ASSERT_EQ(runtime_bound_id,
+            ps_ctx_register_semantic_expression_in(
+                test_semantic_context(), runtime_bound));
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  test_semantic_context(),
+                  PSX_SEMANTIC_EXPR_ID_INVALID) == NULL);
   psx_type_t *vla = ps_type_new_array(integer, 0, 0, 1);
   application = (psx_runtime_declarator_application_t){0};
   ps_declarator_shape_init(&application.shape);
@@ -4397,7 +4412,7 @@ static void test_local_declaration_resolution_boundary() {
   application.array_bound_count = 1;
   application.array_bounds[0] = (psx_runtime_array_bound_t){
       .declarator_op_index = 0,
-      .expression = runtime_bound,
+      .expression_id = runtime_bound_id,
   };
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
@@ -4410,7 +4425,11 @@ static void test_local_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_LOCAL_DECLARATION_OK, resolution.status);
   ASSERT_EQ(PSX_LOCAL_STORAGE_VLA_OBJECT, resolution.storage_kind);
   ASSERT_EQ(1, resolution.dimension_count);
-  ASSERT_TRUE(resolution.dimensions[0].expression == runtime_bound);
+  ASSERT_TRUE(resolution.dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  test_semantic_context(),
+                  resolution.dimensions[0].expression_id) == runtime_bound);
 
   psx_type_t *pointer_to_vla = ps_type_new_pointer(vla);
   application = (psx_runtime_declarator_application_t){0};
@@ -4424,7 +4443,7 @@ static void test_local_declaration_resolution_boundary() {
   application.array_bound_count = 1;
   application.array_bounds[0] = (psx_runtime_array_bound_t){
       .declarator_op_index = 1,
-      .expression = runtime_bound,
+      .expression_id = runtime_bound_id,
   };
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
@@ -4436,7 +4455,9 @@ static void test_local_declaration_resolution_boundary() {
       &resolution);
   ASSERT_EQ(PSX_LOCAL_DECLARATION_OK, resolution.status);
   ASSERT_EQ(PSX_LOCAL_STORAGE_POINTER_TO_VLA, resolution.storage_kind);
-  ASSERT_TRUE(resolution.pointer_row_dimension == runtime_bound);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  test_semantic_context(),
+                  resolution.pointer_row_dimension_id) == runtime_bound);
 }
 
 static void test_aggregate_member_resolution_boundary() {
@@ -16181,12 +16202,24 @@ static void test_semantic_context_isolation() {
       second, direct_label_name, 12, NULL);
   psx_ctx_validate_goto_refs_in(second);
 
+  node_t *semantic_expression = ps_node_new_num(9);
+  psx_semantic_expr_id_t semantic_expression_id =
+      ps_ctx_register_semantic_expression_in(
+          second, semantic_expression);
+  ASSERT_TRUE(semantic_expression_id != PSX_SEMANTIC_EXPR_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  second, semantic_expression_id) == semantic_expression);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  first, semantic_expression_id) == NULL);
+
   ps_ctx_record_unsupported_gnu_extension_warning_in(
       second, NULL, "context-isolation");
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ps_ctx_reset_translation_unit_scope_in(second);
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ASSERT_TRUE(ps_ctx_diagnostics(second) == diagnostics);
+  ASSERT_TRUE(ps_ctx_semantic_expression_in(
+                  second, semantic_expression_id) == NULL);
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
       second, direct_enum_name, 10, &value));
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(

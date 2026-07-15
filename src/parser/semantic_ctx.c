@@ -168,6 +168,7 @@ struct psx_semantic_context_t {
   ag_diagnostic_context_t *diagnostic_context;
   ag_target_info_t target;
   psx_record_id_t next_record_id;
+  psx_semantic_expression_table_t *semantic_expressions;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -231,10 +232,33 @@ static void ctx_release_all(psx_semantic_context_t *context) {
   }
 }
 
+psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
+    psx_semantic_context_t *context, node_t *expression) {
+  return context
+             ? psx_semantic_expression_table_register(
+                   context->semantic_expressions, expression)
+             : PSX_SEMANTIC_EXPR_ID_INVALID;
+}
+
+node_t *ps_ctx_semantic_expression_in(
+    const psx_semantic_context_t *context,
+    psx_semantic_expr_id_t expression_id) {
+  return context
+             ? psx_semantic_expression_table_lookup(
+                   context->semantic_expressions, expression_id)
+             : NULL;
+}
+
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
   if (context) {
+    context->semantic_expressions =
+        psx_semantic_expression_table_create();
+    if (!context->semantic_expressions) {
+      free(context);
+      return NULL;
+    }
     context->arena_context = arena_context;
     context->target = ag_target_info_host();
   }
@@ -244,6 +268,7 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
 void ps_ctx_destroy(psx_semantic_context_t *context) {
   if (!context) return;
   ctx_release_all(context);
+  psx_semantic_expression_table_destroy(context->semantic_expressions);
   free(context);
 }
 
@@ -356,11 +381,15 @@ void ps_ctx_reset_translation_unit_scope_in(
   arena_context_t *arena_context = context->arena_context;
   ag_diagnostic_context_t *diagnostic_context = context->diagnostic_context;
   ag_target_info_t target = context->target;
+  psx_semantic_expression_table_t *semantic_expressions =
+      context->semantic_expressions;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
   context->diagnostic_context = diagnostic_context;
   context->target = target;
+  context->semantic_expressions = semantic_expressions;
+  psx_semantic_expression_table_reset(semantic_expressions);
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(

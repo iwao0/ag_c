@@ -6,6 +6,7 @@
 #include "local_registry.h"
 #include "tag_member_public.h"
 #include "type.h"
+#include "../semantic/expression_identity.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -13,6 +14,7 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
+typedef struct node_t node_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
 
@@ -29,6 +31,11 @@ void ps_ctx_bind_target_info(
     psx_semantic_context_t *context, const ag_target_info_t *target);
 const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context);
+psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
+    psx_semantic_context_t *context, node_t *expression);
+node_t *ps_ctx_semantic_expression_in(
+    const psx_semantic_context_t *context,
+    psx_semantic_expr_id_t expression_id);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */
 void ps_ctx_reset_translation_unit_scope_in(

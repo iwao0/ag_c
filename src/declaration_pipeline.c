@@ -748,6 +748,7 @@ int psx_begin_automatic_local_declaration_pipeline(
     *result = (psx_automatic_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->name || request->name_len <= 0 ||
       !request->type || !request->application || !request->initializer ||
+      !request->semantic_context ||
       !request->local_registry || !request->lowering_context)
     return 0;
 
@@ -813,7 +814,10 @@ int psx_begin_automatic_local_declaration_pipeline(
           ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.is_const));
       for (int i = 0; i < resolution.dimension_count; i++) {
-        lowering.dimensions[i] = resolution.dimensions[i].expression;
+        lowering.dimensions[i] = ps_ctx_semantic_expression_in(
+            request->semantic_context,
+            resolution.dimensions[i].expression_id);
+        if (!lowering.dimensions[i]) return 0;
         lowering.const_values[i] =
             resolution.dimensions[i].constant_value;
         lowering.is_const[i] = resolution.dimensions[i].is_constant;
@@ -823,14 +827,18 @@ int psx_begin_automatic_local_declaration_pipeline(
       result->initialization = vla.init;
       break;
     }
-    case PSX_LOCAL_STORAGE_POINTER_TO_VLA:
+    case PSX_LOCAL_STORAGE_POINTER_TO_VLA: {
+      node_t *row_dimension = ps_ctx_semantic_expression_in(
+          request->semantic_context,
+          resolution.pointer_row_dimension_id);
+      if (!row_dimension) return 0;
       vla = lower_pointer_to_vla_declaration(
           &(psx_pointer_vla_lowering_request_t){
               .local_registry = request->local_registry,
               .lowering_context = request->lowering_context,
               .name = request->name,
               .name_len = request->name_len,
-              .row_dimension = resolution.pointer_row_dimension,
+              .row_dimension = row_dimension,
               .type = request->type,
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
@@ -838,6 +846,7 @@ int psx_begin_automatic_local_declaration_pipeline(
       result->var = vla.var;
       result->initialization = vla.init;
       break;
+    }
   }
   if (!result->var) return 0;
 

@@ -431,10 +431,18 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
     application->array_bounds[application->array_bound_count++] =
         (psx_runtime_array_bound_t){
             .declarator_op_index = parsed->declarator_op_index,
-            .expression = expression,
+            .expression_id = ps_ctx_register_semantic_expression_in(
+                semantic_context, expression),
             .constant_value = is_constant ? value : 0,
             .is_constant = is_constant,
         };
+    if (application->array_bounds[application->array_bound_count - 1]
+            .expression_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context), parsed->expression.start,
+          "declarator-resolution",
+          "runtime array bound expression registration failed");
+    }
   }
   for (int i = 0; i < declarator->function_suffix_count; i++) {
     const psx_parsed_function_suffix_t *suffix =
