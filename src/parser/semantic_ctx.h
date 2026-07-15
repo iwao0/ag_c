@@ -156,12 +156,19 @@ int ps_ctx_get_tag_align_in(
 int ps_ctx_register_tag_members_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *members, int member_count,
+    const psx_record_member_decl_t *declarations,
+    const psx_record_member_layout_t *layouts, int member_count,
     int *out_conflict_index);
 int ps_ctx_register_record_members_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
-    const tag_member_info_t *members, int member_count,
+    const psx_record_member_decl_t *declarations,
+    const psx_record_member_layout_t *layouts, int member_count,
     int *out_conflict_index);
+int psx_ctx_register_tag_member_in(
+    psx_semantic_context_t *context,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout, int *out_created);
 void ps_ctx_bind_record_ids_in(
     psx_semantic_context_t *context, psx_type_t *type);
 void ps_ctx_promote_tag_to_file_scope_in(

@@ -214,42 +214,63 @@ int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state) {
 static int collect_promoted_aggregate_members(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *source_type, int base_offset,
-    tag_member_info_t **out_members, int *out_member_count) {
-  *out_members = NULL;
+    psx_record_member_decl_t **out_declarations,
+    psx_record_member_layout_t **out_layouts,
+    int *out_member_count) {
+  *out_declarations = NULL;
+  *out_layouts = NULL;
   *out_member_count = 0;
   if (!ps_type_is_tag_aggregate(source_type) || !source_type->tag_name ||
       source_type->tag_len <= 0 || base_offset < 0)
     return 0;
-  int source_count = ps_ctx_get_tag_member_count_in(
-      semantic_context, ps_type_tag_token_kind(source_type),
-      source_type->tag_name,
-      source_type->tag_len);
-  if (source_count < 0) return 0;
-  tag_member_info_t *members = source_count > 0
-                                   ? calloc((size_t)source_count,
-                                            sizeof(*members))
-                                   : NULL;
-  if (source_count > 0 && !members) return 0;
+  psx_record_id_t record_id = ps_type_record_id(source_type);
+  if (record_id == PSX_RECORD_ID_INVALID) {
+    record_id = ps_ctx_resolve_tag_record_id_in(
+        semantic_context, ps_type_tag_token_kind(source_type),
+        source_type->tag_name, source_type->tag_len);
+  }
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, record_id);
+  const psx_record_layout_t *record_layout =
+      psx_record_layout_table_lookup(
+          ps_ctx_record_layout_table_in(semantic_context), record_id,
+          ps_ctx_target_info(semantic_context));
+  if (!record || !record_layout || !record->is_complete ||
+      (record->member_count > 0 && !record->members) ||
+      record_layout->member_count < record->member_count)
+    return 0;
+  int source_count = record->member_count;
+  psx_record_member_decl_t *declarations = source_count > 0
+      ? calloc((size_t)source_count, sizeof(*declarations))
+      : NULL;
+  psx_record_member_layout_t *layouts = source_count > 0
+      ? calloc((size_t)source_count, sizeof(*layouts))
+      : NULL;
+  if (source_count > 0 && (!declarations || !layouts)) {
+    free(declarations);
+    free(layouts);
+    return 0;
+  }
   int member_count = 0;
   for (int i = 0; i < source_count; i++) {
-    tag_member_info_t source = {0};
-    if (!ps_ctx_get_tag_member_info_in(
-            semantic_context, ps_type_tag_token_kind(source_type),
-            source_type->tag_name,
-            source_type->tag_len, i, &source)) {
-      free(members);
+    const psx_record_member_decl_t *source_declaration =
+        &record->members[i];
+    const psx_record_member_layout_t *source_layout =
+        psx_record_layout_member(record_layout, i);
+    if (source_declaration->len == 0) continue;
+    if (!source_layout || source_layout->offset < 0 ||
+        base_offset > INT_MAX - source_layout->offset) {
+      free(declarations);
+      free(layouts);
       return 0;
     }
-    if (source.len == 0) continue;
-    if (source.offset < 0 || base_offset > INT_MAX - source.offset) {
-      free(members);
-      return 0;
-    }
-    members[member_count] = source;
-    members[member_count].offset = base_offset + source.offset;
+    declarations[member_count] = *source_declaration;
+    layouts[member_count] = *source_layout;
+    layouts[member_count].offset = base_offset + source_layout->offset;
     member_count++;
   }
-  *out_members = members;
+  *out_declarations = declarations;
+  *out_layouts = layouts;
   *out_member_count = member_count;
   return 1;
 }
@@ -347,64 +368,84 @@ void psx_resolve_aggregate_member_declaration(
     if (placement.status != PSX_AGGREGATE_MEMBER_OK) return;
   }
 
-  tag_member_info_t *promoted_members = NULL;
+  psx_record_member_decl_t *promoted_declarations = NULL;
+  psx_record_member_layout_t *promoted_layouts = NULL;
   int promoted_count = 0;
   if (is_anonymous_aggregate) {
     if (!collect_promoted_aggregate_members(
             semantic_context, type, resolution->offset,
-            &promoted_members, &promoted_count))
+            &promoted_declarations, &promoted_layouts,
+            &promoted_count))
       return;
   }
 
   int own_member_count = has_name || is_anonymous_aggregate ? 1 : 0;
   int batch_count = own_member_count + promoted_count;
-  tag_member_info_t *batch = batch_count > 0
-                                 ? calloc((size_t)batch_count, sizeof(*batch))
-                                 : NULL;
-  if (batch_count > 0 && !batch) {
-    free(promoted_members);
+  psx_record_member_decl_t *batch_declarations = batch_count > 0
+      ? calloc((size_t)batch_count, sizeof(*batch_declarations))
+      : NULL;
+  psx_record_member_layout_t *batch_layouts = batch_count > 0
+      ? calloc((size_t)batch_count, sizeof(*batch_layouts))
+      : NULL;
+  if (batch_count > 0 && (!batch_declarations || !batch_layouts)) {
+    free(promoted_declarations);
+    free(promoted_layouts);
+    free(batch_declarations);
+    free(batch_layouts);
     return;
   }
   if (own_member_count) {
-    batch[0] = (tag_member_info_t){
+    batch_declarations[0] = (psx_record_member_decl_t){
         .name = has_name ? request->member_name : (char *)"",
         .len = has_name ? request->member_name_len : 0,
-        .offset = resolution->offset,
         .bit_width = request->has_bitfield ? request->bit_width : 0,
-        .bit_offset = resolution->bit_offset,
         .bit_is_signed = resolution->bit_is_signed,
         .decl_type = type,
     };
+    batch_layouts[0] = (psx_record_member_layout_t){
+        .offset = resolution->offset,
+        .bit_offset = resolution->bit_offset,
+        .bit_width = request->has_bitfield ? request->bit_width : 0,
+    };
   }
   if (promoted_count > 0) {
-    memcpy(batch + own_member_count, promoted_members,
-           (size_t)promoted_count * sizeof(*batch));
+    memcpy(batch_declarations + own_member_count, promoted_declarations,
+           (size_t)promoted_count * sizeof(*batch_declarations));
+    memcpy(batch_layouts + own_member_count, promoted_layouts,
+           (size_t)promoted_count * sizeof(*batch_layouts));
   }
-  free(promoted_members);
+  free(promoted_declarations);
+  free(promoted_layouts);
 
   int conflict_index = -1;
   int registered = batch_count <= 0;
   if (batch_count > 0 && layout->record_id != PSX_RECORD_ID_INVALID) {
     registered = ps_ctx_register_record_members_in(
-        semantic_context, layout->record_id, batch, batch_count,
+        semantic_context, layout->record_id,
+        batch_declarations, batch_layouts, batch_count,
         &conflict_index);
   } else if (batch_count > 0) {
     registered = ps_ctx_register_tag_members_in(
         semantic_context, request->target_tag_kind,
         request->target_tag_name, request->target_tag_name_len,
-        batch, batch_count, &conflict_index);
+        batch_declarations, batch_layouts, batch_count,
+        &conflict_index);
   }
   if (!registered) {
     resolution->status = PSX_AGGREGATE_MEMBER_DUPLICATE;
     if (conflict_index >= 0 && conflict_index < batch_count) {
-      resolution->conflicting_name = batch[conflict_index].name;
-      resolution->conflicting_name_len = batch[conflict_index].len;
+      resolution->conflicting_name =
+          batch_declarations[conflict_index].name;
+      resolution->conflicting_name_len =
+          batch_declarations[conflict_index].len;
     }
-    free(batch);
+    free(batch_declarations);
+    free(batch_layouts);
     return;
   }
   resolution->registered_member_count = batch_count;
-  free(batch);
+  free(batch_declarations);
+  free(batch_layouts);
   *layout = working_layout;
   resolution->status = PSX_AGGREGATE_MEMBER_OK;
 }

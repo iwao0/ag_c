@@ -375,17 +375,57 @@ static int test_semantic_register_tag_type(
 static int test_semantic_register_tag_member(
     token_kind_t kind, char *name, int len,
     const tag_member_info_t *member, int *out_created) {
+  psx_record_member_decl_t declaration = {
+      .name = member->name,
+      .len = member->len,
+      .bit_width = member->bit_width,
+      .bit_is_signed = member->bit_is_signed,
+      .decl_type = ps_tag_member_decl_type(member),
+  };
+  psx_record_member_layout_t layout = {
+      .offset = member->offset,
+      .bit_offset = member->bit_offset,
+      .bit_width = member->bit_width,
+  };
   return psx_ctx_register_tag_member_in(
-      test_semantic_context(), kind, name, len, member, out_created);
+      test_semantic_context(), kind, name, len,
+      &declaration, &layout, out_created);
 }
 
-static int test_semantic_register_tag_members(
+static int test_register_tag_members_in_context(
+    psx_semantic_context_t *semantic_context,
     token_kind_t kind, char *name, int len,
     const tag_member_info_t *members, int member_count,
     int *out_conflict_index) {
-  return ps_ctx_register_tag_members_in(
-      test_semantic_context(), kind, name, len, members, member_count,
-      out_conflict_index);
+  psx_record_member_decl_t *declarations = calloc(
+      (size_t)member_count, sizeof(*declarations));
+  psx_record_member_layout_t *layouts = calloc(
+      (size_t)member_count, sizeof(*layouts));
+  if (!declarations || !layouts) {
+    free(declarations);
+    free(layouts);
+    return 0;
+  }
+  for (int i = 0; i < member_count; i++) {
+    declarations[i] = (psx_record_member_decl_t){
+        .name = members[i].name,
+        .len = members[i].len,
+        .bit_width = members[i].bit_width,
+        .bit_is_signed = members[i].bit_is_signed,
+        .decl_type = ps_tag_member_decl_type(&members[i]),
+    };
+    layouts[i] = (psx_record_member_layout_t){
+        .offset = members[i].offset,
+        .bit_offset = members[i].bit_offset,
+        .bit_width = members[i].bit_width,
+    };
+  }
+  int registered = ps_ctx_register_tag_members_in(
+      semantic_context, kind, name, len,
+      declarations, layouts, member_count, out_conflict_index);
+  free(declarations);
+  free(layouts);
+  return registered;
 }
 
 static int test_semantic_define_enum_const(
@@ -4894,14 +4934,24 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_EQ(0, first->member_count);
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
-  tag_member_info_t member = {
+  psx_record_member_decl_t member_declaration = {
       .name = (char *)"value",
       .len = 5,
-      .offset = 0,
       .decl_type = integer,
   };
+  psx_record_member_layout_t member_layout = {
+      .offset = 0,
+  };
+  psx_record_member_layout_t mismatched_layout = member_layout;
+  mismatched_layout.bit_width = 1;
+  int conflict_index = -1;
+  ASSERT_TRUE(!ps_ctx_register_record_members_in(
+      test_semantic_context(), first->record_id,
+      &member_declaration, &mismatched_layout, 1, &conflict_index));
+  ASSERT_EQ(0, conflict_index);
   ASSERT_TRUE(ps_ctx_register_record_members_in(
-      test_semantic_context(), first->record_id, &member, 1, NULL));
+      test_semantic_context(), first->record_id,
+      &member_declaration, &member_layout, 1, NULL));
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   ASSERT_TRUE(first ==
@@ -4923,8 +4973,9 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);
 
-  ASSERT_TRUE(test_semantic_register_tag_members(
-      TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+      test_semantic_context(), TK_STRUCT, tag_name, tag_name_len,
+      &member_declaration, &member_layout, 1, NULL));
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   const psx_record_decl_t *second =
@@ -17732,7 +17783,7 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second, test_local_registry(),
       TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
-  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+  ASSERT_TRUE(test_register_tag_members_in_context(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
@@ -18075,7 +18126,7 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first.semantic_context, first.local_registry,
       TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
-  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+  ASSERT_TRUE(test_register_tag_members_in_context(
       first.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       first_aggregate_members, 2, NULL));
@@ -18085,7 +18136,7 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second.semantic_context, second.local_registry,
       TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
-  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+  ASSERT_TRUE(test_register_tag_members_in_context(
       second.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       second_aggregate_members, 2, NULL));

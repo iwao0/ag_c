@@ -433,11 +433,13 @@ static const psx_record_member_layout_t *find_tag_member_layout_draft(
 static int initialize_tag_member_record(
     psx_semantic_context_t *context,
     tag_member_t *m,
-    const tag_member_info_t *desc) {
-  if (!context || !m || !desc || m->declaration.type) return 0;
-  m->declaration.bit_width = desc->bit_width;
-  m->declaration.bit_is_signed = desc->bit_is_signed;
-  const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout) {
+  if (!context || !m || !declaration || !layout || m->declaration.type)
+    return 0;
+  m->declaration.bit_width = declaration->bit_width;
+  m->declaration.bit_is_signed = declaration->bit_is_signed;
+  const psx_type_t *desc_type = psx_record_member_decl_type(declaration);
   m->declaration.type = ctx_type_clone_persistent_in(context, desc_type);
   if (!m->declaration.type) return 0;
   ps_ctx_bind_record_ids_in(context, m->declaration.type);
@@ -446,11 +448,7 @@ static int initialize_tag_member_record(
   if (!draft) return 0;
   draft->member = m;
   draft->target = context->target;
-  draft->placement = (psx_record_member_layout_t){
-      .offset = desc->offset,
-      .bit_offset = desc->bit_offset,
-      .bit_width = desc->bit_width,
-  };
+  draft->placement = *layout;
   draft->next = context->aggregate_member_layout_drafts;
   context->aggregate_member_layout_drafts = draft;
   return 1;
@@ -1032,14 +1030,15 @@ int ps_ctx_get_tag_align_in(
 static tag_member_t *find_tag_member_record_at_current_scope_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *desc, unsigned bucket) {
-  if (!context || !desc || desc->len <= 0) return NULL;
+    const psx_record_member_decl_t *declaration, unsigned bucket) {
+  if (!context || !declaration || declaration->len <= 0) return NULL;
   for (tag_member_t *m = context->aggregate_members_by_bucket[bucket];
        m; m = m->next_hash) {
     if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->declaration.len == desc->len &&
+        m->declaration.len == declaration->len &&
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->declaration.name, desc->name, (size_t)desc->len) == 0 &&
+        strncmp(m->declaration.name, declaration->name,
+                (size_t)declaration->len) == 0 &&
         m->scope_depth == context->scope_depth) {
       return m;
     }
@@ -1050,15 +1049,16 @@ static tag_member_t *find_tag_member_record_at_current_scope_in(
 static int insert_tag_member_record_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *desc, unsigned bucket) {
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout, unsigned bucket) {
   tag_member_t *m = ctx_calloc_in(context, 1, sizeof(tag_member_t));
   if (!m) return 0;
   m->tag_kind = tag_kind;
   m->tag_name = tag_name;
   m->tag_len = tag_len;
-  m->declaration.name = desc->name;
-  m->declaration.len = desc->len;
-  if (!initialize_tag_member_record(context, m, desc)) return 0;
+  m->declaration.name = declaration->name;
+  m->declaration.len = declaration->len;
+  if (!initialize_tag_member_record(context, m, declaration, layout)) return 0;
   m->decl_order = context->aggregate_member_decl_order++;
   m->scope_depth = context->scope_depth;
   m->next_hash = context->aggregate_members_by_bucket[bucket];
@@ -1085,10 +1085,12 @@ static int count_tag_member_records_in(
 int psx_ctx_register_tag_member_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *desc, int *out_created) {
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout, int *out_created) {
   if (out_created) *out_created = 0;
   if (!ps_ctx_register_tag_members_in(
-          context, tag_kind, tag_name, tag_len, desc, 1, NULL))
+          context, tag_kind, tag_name, tag_len,
+          declaration, layout, 1, NULL))
     return 0;
   if (out_created) *out_created = 1;
   return 1;
@@ -1097,33 +1099,41 @@ int psx_ctx_register_tag_member_in(
 int ps_ctx_register_tag_members_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *members, int member_count,
+    const psx_record_member_decl_t *declarations,
+    const psx_record_member_layout_t *layouts, int member_count,
     int *out_conflict_index) {
   if (out_conflict_index) *out_conflict_index = -1;
   if (!context ||
       (tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
-      tag_len <= 0 || !members || member_count <= 0) {
+      tag_len <= 0 || !declarations || !layouts || member_count <= 0) {
     return 0;
   }
 
   for (int i = 0; i < member_count; i++) {
-    const tag_member_info_t *desc = &members[i];
-    if (!desc->name || desc->len < 0 || !ps_tag_member_decl_type(desc)) {
+    const psx_record_member_decl_t *declaration = &declarations[i];
+    const psx_record_member_layout_t *layout = &layouts[i];
+    if (!declaration->name || declaration->len < 0 ||
+        !psx_record_member_decl_type(declaration) || layout->offset < 0 ||
+        layout->bit_offset < 0 || layout->bit_width < 0 ||
+        layout->bit_width != declaration->bit_width) {
       if (out_conflict_index) *out_conflict_index = i;
       return 0;
     }
-    if (desc->len == 0) continue;
+    if (declaration->len == 0) continue;
     unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                       psx_ctx_hash_name(desc->name, desc->len)) &
+                       psx_ctx_hash_name(
+                           declaration->name, declaration->len)) &
                       (PCTX_HASH_BUCKETS - 1u);
     if (find_tag_member_record_at_current_scope_in(
-            context, tag_kind, tag_name, tag_len, desc, bucket)) {
+            context, tag_kind, tag_name, tag_len, declaration, bucket)) {
       if (out_conflict_index) *out_conflict_index = i;
       return 0;
     }
     for (int j = 0; j < i; j++) {
-      if (members[j].len == desc->len && desc->len > 0 &&
-          strncmp(members[j].name, desc->name, (size_t)desc->len) == 0) {
+      if (declarations[j].len == declaration->len &&
+          declaration->len > 0 &&
+          strncmp(declarations[j].name, declaration->name,
+                  (size_t)declaration->len) == 0) {
         if (out_conflict_index) *out_conflict_index = i;
         return 0;
       }
@@ -1131,12 +1141,14 @@ int ps_ctx_register_tag_members_in(
   }
 
   for (int i = 0; i < member_count; i++) {
-    const tag_member_info_t *desc = &members[i];
+    const psx_record_member_decl_t *declaration = &declarations[i];
     unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                       psx_ctx_hash_name(desc->name, desc->len)) &
+                       psx_ctx_hash_name(
+                           declaration->name, declaration->len)) &
                       (PCTX_HASH_BUCKETS - 1u);
     if (!insert_tag_member_record_in(
-            context, tag_kind, tag_name, tag_len, desc, bucket))
+            context, tag_kind, tag_name, tag_len,
+            declaration, &layouts[i], bucket))
       return 0;
   }
   tag_type_t *tag = find_tag_type_in(
@@ -1161,7 +1173,8 @@ int ps_ctx_register_tag_members_in(
 
 int ps_ctx_register_record_members_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
-    const tag_member_info_t *members, int member_count,
+    const psx_record_member_decl_t *declarations,
+    const psx_record_member_layout_t *layouts, int member_count,
     int *out_conflict_index) {
   tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
   if (!tag) {
@@ -1170,7 +1183,7 @@ int ps_ctx_register_record_members_in(
   }
   return ps_ctx_register_tag_members_in(
       context, tag->kind, tag->name, tag->len,
-      members, member_count, out_conflict_index);
+      declarations, layouts, member_count, out_conflict_index);
 }
 
 static int compare_tag_members_in(

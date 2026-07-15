@@ -1773,6 +1773,10 @@ const aggregateMemberResolutionHeader = await readFile(
   "src/semantic/aggregate_member_resolution.h",
   "utf8",
 );
+const aggregateRegistryHeader = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
 const aggregateMemberResolutionType = aggregateMemberResolutionHeader.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_resolution_t\s*;/,
 );
@@ -1812,6 +1816,19 @@ if (!aggregateMemberResolutionType ||
     ) ||
     !/\bps_ctx_register_record_members_in\s*\(/.test(
       aggregateMemberResolutionSource,
+    ) ||
+    /\btag_member_info_t\b/.test(aggregateMemberResolutionSource) ||
+    /\bps_ctx_(?:get|find)_tag_member_info/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_member\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/ps_ctx_register_record_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
+      aggregateRegistryHeader,
+    ) ||
+    !/ps_ctx_register_tag_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
+      aggregateRegistryHeader,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
