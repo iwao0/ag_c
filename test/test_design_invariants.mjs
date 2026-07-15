@@ -4059,8 +4059,12 @@ if (/\bmember->offset\b/.test(initializerLoweringSource) ||
     ) ||
     /\baggregate_definition\b/.test(initializerLoweringSource) ||
     /\bmember->offset\b/.test(staticDataInitializerSource) ||
+    /\baggregate_definition\b/.test(staticDataInitializerSource) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       initializerLoweringSource,
+    ) ||
+    !/\bpsx_record_decl_table_lookup\s*\(/.test(
+      staticDataInitializerSource,
     ) ||
     !/\brecord_member_offset\s*\(/.test(initializerLoweringSource) ||
     !/\brecord_member_offset\s*\(/.test(staticDataInitializerSource)) {

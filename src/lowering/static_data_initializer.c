@@ -39,6 +39,16 @@ static int type_size(
   return lowering_type_size(lowering->lowering_context, type);
 }
 
+static const psx_record_decl_t *record_decl(
+    const psx_lowering_context_t *lowering_context,
+    const psx_type_t *type) {
+  return lowering_context && type
+             ? psx_record_decl_table_lookup(
+                   ps_lowering_record_decls(lowering_context),
+                   ps_type_record_id(type))
+             : NULL;
+}
+
 static int record_member_offset(
     const static_array_lowering_t *lowering,
     const psx_type_t *aggregate_type, int member_index) {
@@ -97,11 +107,11 @@ static psx_initializer_target_t positional_target(
   target.type_id = leaf->type_id;
   target.relative_offset = leaf->relative_offset;
   target.direct_member = leaf->direct_member;
+  const psx_record_decl_t *record = record_decl(
+      lowering->lowering_context, context_type);
   if (context_type->kind == PSX_TYPE_UNION &&
-      context_type->aggregate_definition &&
-      context_type->aggregate_definition->member_count > 0) {
-    const tag_member_info_t *member =
-        &context_type->aggregate_definition->members[0];
+      record && record->member_count > 0) {
+    const tag_member_info_t *member = &record->members[0];
     if (preserve_subobject) {
       target.type = ps_tag_member_decl_type(member);
       target.type_id = ps_lowering_type_id(
@@ -117,12 +127,9 @@ static psx_initializer_target_t positional_target(
     return target;
   }
   if (!preserve_subobject) return target;
-  if (context_type->kind == PSX_TYPE_STRUCT &&
-      context_type->aggregate_definition) {
-    const psx_aggregate_definition_t *definition =
-        context_type->aggregate_definition;
-    for (int i = 0; i < definition->member_count; i++) {
-      const tag_member_info_t *member = &definition->members[i];
+  if (context_type->kind == PSX_TYPE_STRUCT && record) {
+    for (int i = 0; i < record->member_count; i++) {
+      const tag_member_info_t *member = &record->members[i];
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
       int member_offset = context_offset +
                           record_member_offset(
@@ -329,17 +336,21 @@ static void lower_array_list(
   }
 }
 
-static int type_contains_float(const psx_type_t *type) {
+static int type_contains_float(
+    const psx_lowering_context_t *lowering_context,
+    const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_FLOAT) return 1;
   if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_FUNCTION)
     return 0;
   if (type->kind == PSX_TYPE_ARRAY)
-    return type_contains_float(type->base);
-  if (ps_type_is_tag_aggregate(type) && type->aggregate_definition) {
-    for (int i = 0; i < type->aggregate_definition->member_count; i++) {
-      if (type_contains_float(ps_tag_member_decl_type(
-              &type->aggregate_definition->members[i]))) return 1;
+    return type_contains_float(lowering_context, type->base);
+  const psx_record_decl_t *record = record_decl(lowering_context, type);
+  if (ps_type_is_tag_aggregate(type) && record) {
+    for (int i = 0; i < record->member_count; i++) {
+      if (type_contains_float(
+              lowering_context,
+              ps_tag_member_decl_type(&record->members[i]))) return 1;
     }
   }
   return 0;
@@ -367,7 +378,8 @@ int lower_static_object_initializer(
     return 0;
   }
   ps_gvar_init_slots_alloc(
-      global, lowering.leaves.count, type_contains_float(type));
+      global, lowering.leaves.count,
+      type_contains_float(lowering_context, type));
   global->init_count = lowering.leaves.count;
   for (int i = 0; i < lowering.leaves.count; i++)
     ps_gvar_init_slot_clear(global, i);
