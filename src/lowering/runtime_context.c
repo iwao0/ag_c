@@ -69,11 +69,23 @@ psx_type_id_t ps_lowering_type_id(
              ps_lowering_semantic_types(ctx), type).type_id;
 }
 
-int ps_lowering_type_size(
-    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+int ps_lowering_type_id_size(
+    const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
   return ps_type_sizeof_id_with_records(
       ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
-      ps_lowering_type_id(ctx, type), ps_lowering_target(ctx));
+      type_id, ps_lowering_target(ctx));
+}
+
+int ps_lowering_type_id_alignment(
+    const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
+  return ps_type_alignof_id_with_records(
+      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
+      type_id, ps_lowering_target(ctx));
+}
+
+int ps_lowering_type_size(
+    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+  return ps_lowering_type_id_size(ctx, ps_lowering_type_id(ctx, type));
 }
 
 int ps_lowering_type_deref_size(
@@ -87,9 +99,8 @@ int ps_lowering_type_deref_size(
 
 int ps_lowering_type_alignment(
     const psx_lowering_context_t *ctx, const psx_type_t *type) {
-  return ps_type_alignof_id_with_records(
-      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
-      ps_lowering_type_id(ctx, type), ps_lowering_target(ctx));
+  return ps_lowering_type_id_alignment(
+      ctx, ps_lowering_type_id(ctx, type));
 }
 
 const ag_target_info_t *ps_lowering_target(

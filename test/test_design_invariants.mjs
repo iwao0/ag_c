@@ -3672,7 +3672,12 @@ const targetSensitiveLoweringSources = [
   declarationPipelineSource,
   irBuilderSource,
 ].join("\n");
+const irNodeTypeSize = irBuilderSource.match(
+  /static\s+int\s+ir_node_type_size\s*\([^]*?\n\}/,
+);
 if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
+    !/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
+    !/\bps_lowering_type_id_alignment\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_deref_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_alignment\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(
@@ -3681,6 +3686,9 @@ if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_type_alignof_id_with_records\s*\(/.test(
       loweringRuntimeSource,
     ) ||
+    !irNodeTypeSize ||
+    !/\bps_node_qual_type\s*\(/.test(irNodeTypeSize[0]) ||
+    /\bps_node_get_type\s*\(/.test(irNodeTypeSize[0]) ||
     /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",

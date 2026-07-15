@@ -120,7 +120,11 @@ static int ir_c_type_size(
 
 static int ir_node_type_size(
     const ir_build_ctx_t *ctx, const node_t *node) {
-  return ir_c_type_size(ctx, ps_node_get_type(node));
+  return ps_type_sizeof_id_with_records(
+      ctx ? ctx->semantic_types : NULL,
+      ctx ? ctx->record_layouts : NULL,
+      ps_node_qual_type(node).type_id,
+      ctx ? ctx->target : NULL);
 }
 
 static int ir_type_deref_size(
