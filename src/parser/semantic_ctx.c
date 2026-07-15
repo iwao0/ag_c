@@ -276,6 +276,11 @@ const psx_type_t *ps_ctx_type_by_id_in(
              : NULL;
 }
 
+const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
+    const psx_semantic_context_t *context) {
+  return context ? context->semantic_types : NULL;
+}
+
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));

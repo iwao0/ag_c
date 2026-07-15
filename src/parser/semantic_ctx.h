@@ -43,6 +43,8 @@ psx_qual_type_t ps_ctx_find_interned_qual_type_in(
     const psx_semantic_context_t *context, const psx_type_t *type);
 const psx_type_t *ps_ctx_type_by_id_in(
     const psx_semantic_context_t *context, psx_type_id_t type_id);
+const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
+    const psx_semantic_context_t *context);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */
 void ps_ctx_reset_translation_unit_scope_in(

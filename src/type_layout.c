@@ -77,3 +77,29 @@ int ps_type_alignof_for_target(
              ? layout.alignment
              : 0;
 }
+
+int ps_type_layout_of_id(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_target_info_t *target, psx_type_layout_t *out) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
+  return type ? ps_type_layout_of(type, target, out) : 0;
+}
+
+int ps_type_sizeof_id_for_target(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return ps_type_layout_of_id(types, type_id, target, &layout) &&
+                 layout.is_complete
+             ? layout.size
+             : 0;
+}
+
+int ps_type_alignof_id_for_target(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return ps_type_layout_of_id(types, type_id, target, &layout)
+             ? layout.alignment
+             : 0;
+}

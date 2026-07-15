@@ -2948,11 +2948,13 @@ if (!canonicalTypeStruct ||
 
 const typeLayoutSource = await readFile("src/type_layout.c", "utf8");
 if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
+    !/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
+    !/\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
     /out->is_complete\s*=\s*type->aggregate_definition->align/.test(
       typeLayoutSource,
     )) {
   throw new Error(
-    "record completeness must come from RecordDecl rather than target layout",
+    "layout must resolve TypeId with an explicit target and get record completeness from RecordDecl",
   );
 }
 

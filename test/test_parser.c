@@ -3183,6 +3183,26 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
   ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
 
+  psx_qual_type_t pointer_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
+  psx_qual_type_t pointer_array_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), pointer_array);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  ASSERT_TRUE(types != NULL);
+  ASSERT_EQ(8, ps_type_sizeof_id_for_target(
+                   types, pointer_identity.type_id, &host));
+  ASSERT_EQ(4, ps_type_sizeof_id_for_target(
+                   types, pointer_identity.type_id, &wasm));
+  ASSERT_EQ(8, ps_type_alignof_id_for_target(
+                   types, pointer_identity.type_id, &host));
+  ASSERT_EQ(4, ps_type_alignof_id_for_target(
+                   types, pointer_identity.type_id, &wasm));
+  ASSERT_EQ(24, ps_type_sizeof_id_for_target(
+                    types, pointer_array_identity.type_id, &host));
+  ASSERT_EQ(12, ps_type_sizeof_id_for_target(
+                    types, pointer_array_identity.type_id, &wasm));
+
   psx_local_storage_plan_t local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_target(
       pointer_array, &wasm, &local));
