@@ -18,18 +18,26 @@ static token_t *current_token(
   return tk_get_current_token_ctx(tokenizer(runtime_context));
 }
 
+static ag_diagnostic_context_t *diagnostics(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_diagnostics(runtime_context);
+}
+
 static psx_parsed_function_parameter_t *append_function_parameter(
     psx_parsed_function_parameters_t *parameters,
     psx_parser_runtime_context_t *runtime_context) {
   if (parameters->count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(runtime_context), "function-parameter-syntax",
-                 "function parameter limit exceeded");
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context),
+                   "function-parameter-syntax",
+                   "function parameter limit exceeded");
   }
   if (parameters->count == parameters->capacity) {
-    parameters->capacity = pda_next_cap(
-        parameters->capacity, parameters->count + 1);
-    parameters->items = pda_xreallocarray(
-        parameters->items, (size_t)parameters->capacity,
+    parameters->capacity = pda_next_cap_in(
+        diagnostics(runtime_context), parameters->capacity,
+        parameters->count + 1);
+    parameters->items = pda_xreallocarray_in(
+        diagnostics(runtime_context), parameters->items,
+        (size_t)parameters->capacity,
         sizeof(*parameters->items));
   }
   psx_parsed_function_parameter_t *parameter =
@@ -97,10 +105,11 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     int parsed_specifier = psx_try_parse_decl_specifier_syntax_ex(
         &parameter->specifier, &specifier_options);
     if (!parsed_specifier) {
-      diag_report_tokf(
-          DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN,
+      diag_report_tokf_in(
+          diagnostics(runtime_context), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN,
           current_token(runtime_context), "%s",
-          diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
+          diag_message_for_in(diagnostics(runtime_context),
+                              DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
       synchronize_function_parameters(runtime_context);
       return 0;
     }

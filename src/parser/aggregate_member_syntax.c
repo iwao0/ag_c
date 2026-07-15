@@ -22,17 +22,22 @@ static token_t *current_token(
   return tk_get_current_token_ctx(tokenizer(runtime_context));
 }
 
+static ag_diagnostic_context_t *diagnostics(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_diagnostics(runtime_context);
+}
+
 static psx_parsed_aggregate_item_t *append_aggregate_item(
     psx_parsed_aggregate_body_t *body,
     psx_parser_runtime_context_t *runtime_context) {
   if (body->item_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(runtime_context), "aggregate-syntax",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "aggregate-syntax",
                  "aggregate declaration limit exceeded");
   }
   if (body->item_count == body->item_capacity) {
-    body->item_capacity = pda_next_cap(
+    body->item_capacity = pda_next_cap_in(diagnostics(runtime_context),
         body->item_capacity, body->item_count + 1);
-    body->items = pda_xreallocarray(
+    body->items = pda_xreallocarray_in(diagnostics(runtime_context),
         body->items, (size_t)body->item_capacity, sizeof(*body->items));
   }
   psx_parsed_aggregate_item_t *item = &body->items[body->item_count++];
@@ -44,14 +49,14 @@ static psx_parsed_declarator_t *append_aggregate_declarator(
     psx_parsed_aggregate_member_declaration_t *declaration,
     psx_parser_runtime_context_t *runtime_context) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(runtime_context), "aggregate-syntax",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "aggregate-syntax",
                  "aggregate declarator limit exceeded");
   }
   if (declaration->declarator_count == declaration->declarator_capacity) {
-    declaration->declarator_capacity = pda_next_cap(
+    declaration->declarator_capacity = pda_next_cap_in(diagnostics(runtime_context),
         declaration->declarator_capacity,
         declaration->declarator_count + 1);
-    declaration->declarators = pda_xreallocarray(
+    declaration->declarators = pda_xreallocarray_in(diagnostics(runtime_context),
         declaration->declarators,
         (size_t)declaration->declarator_capacity,
         sizeof(*declaration->declarators));
@@ -69,8 +74,7 @@ void psx_parse_aggregate_body_with_options(
   if (!options || !options->semantic_context || !options->global_registry ||
       !options->local_registry || !options->runtime_context ||
       !tokenizer(options->runtime_context)) {
-    ps_diag_ctx(NULL, "aggregate-syntax",
-                "parser contexts must be provided explicitly");
+    return;
   }
   psx_parser_runtime_context_t *runtime_context = options->runtime_context;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
@@ -108,9 +112,9 @@ void psx_parse_aggregate_body_with_options(
           options ? options->context : NULL);
       int has_comma = tk_consume_ctx(tk_ctx, ',');
       if (!declarator->identifier && !declarator->has_bitfield && has_comma)
-        ps_diag_missing(
+        ps_diag_missing_in(diagnostics(runtime_context),
             current_token(runtime_context),
-            diag_text_for(DIAG_TEXT_MEMBER_NAME));
+            diag_text_for_in(diagnostics(runtime_context), DIAG_TEXT_MEMBER_NAME));
       if (!has_comma) break;
     }
     tk_expect_ctx(tk_ctx, ';');

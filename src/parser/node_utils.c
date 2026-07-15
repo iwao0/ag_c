@@ -2961,8 +2961,9 @@ node_t *psx_node_new_initializer_list_in(
   return (node_t *)node;
 }
 
-void ps_node_reject_const_assign_at(node_t *node, const char *op,
-                                     token_t *tok) {
+void ps_node_reject_const_assign_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *node,
+    const char *op, token_t *tok) {
   (void)op;
   if (!node) return;
   if (node->kind == ND_GENERIC_SELECTION) {
@@ -2972,8 +2973,9 @@ void ps_node_reject_const_assign_at(node_t *node, const char *op,
                        ? selection->selected_index
                        : ps_node_generic_selection_index(selection);
     if (selected >= 0 && selected < selection->association_count) {
-      ps_node_reject_const_assign_at(
-          selection->associations[selected].expression, op, tok);
+      ps_node_reject_const_assign_at_in(
+          diagnostics, selection->associations[selected].expression,
+          op, tok);
     }
     return;
   }
@@ -2984,8 +2986,10 @@ void ps_node_reject_const_assign_at(node_t *node, const char *op,
      * ポインタ自身の const (`int * const p`) と pointee の const
      * (`const int *p`) は pointer node と base node に分かれている。 */
     if (node_self_is_const_qualified(node)) {
-      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, tok,
-                     diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT, tok,
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT));
     }
   }
 }
@@ -2995,8 +2999,9 @@ static int node_pointee_is_const(node_t *node) {
   return node_pointee_is_const_qualified(node);
 }
 
-void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
-                                           token_t *tok) {
+void ps_node_reject_const_qual_discard_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
+    token_t *tok) {
   if (!lhs || !rhs) return;
   if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
   if (!ps_node_value_is_pointer_like(lhs)) return;
@@ -3006,12 +3011,16 @@ void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
   }
   if (node_pointee_is_const_qualified(lhs)) return;
   if (node_pointee_is_const(rhs)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, tok,
-                   diag_message_for(DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_CONST_QUAL_DISCARD, tok,
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
   }
 }
 
-void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
+void ps_node_expect_lvalue_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *node,
+    const char *op, token_t *tok) {
   if (node && node->kind == ND_GENERIC_SELECTION) {
     node_generic_selection_t *selection =
         (node_generic_selection_t *)node;
@@ -3019,8 +3028,9 @@ void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
                        ? selection->selected_index
                        : ps_node_generic_selection_index(selection);
     if (selected >= 0 && selected < selection->association_count) {
-      ps_node_expect_lvalue_at(
-          selection->associations[selected].expression, op, tok);
+      ps_node_expect_lvalue_at_in(
+          diagnostics, selection->associations[selected].expression,
+          op, tok);
       return;
     }
   }
@@ -3029,9 +3039,28 @@ void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
                 node->kind != ND_UNARY_DEREF &&
                 node->kind != ND_SUBSCRIPT &&
                 node->kind != ND_DEREF && node->kind != ND_GVAR)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
-                   diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
+        diag_message_for_in(diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),
+        (char *)op);
   }
+}
+
+void ps_node_reject_const_assign_at(node_t *node, const char *op,
+                                    token_t *tok) {
+  ps_node_reject_const_assign_at_in(
+      diag_context_active(), node, op, tok);
+}
+
+void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
+                                          token_t *tok) {
+  ps_node_reject_const_qual_discard_at_in(
+      diag_context_active(), lhs, rhs, tok);
+}
+
+void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
+  ps_node_expect_lvalue_at_in(
+      diag_context_active(), node, op, tok);
 }
 
 int ps_node_compound_literal_array_size(node_t *node) {

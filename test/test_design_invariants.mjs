@@ -901,8 +901,17 @@ if (/active_session_view\s*\(/.test(frontendTranslationUnitSessionSource) ||
 if (/^static\s+(?:gen_output_line_fn|void\s*\*|char\s+|int\s+)\b(?:gen_output|cg_format_stack_buf|gen_simple_formatter)/m.test(
       codegenEmitSource,
     ) ||
-    !/struct\s+ag_codegen_emit_context_t\s*\{/.test(codegenEmitSource)) {
-  throw new Error("backend output routing and formatting must be context-owned");
+    !/struct\s+ag_codegen_emit_context_t\s*\{/.test(codegenEmitSource) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      codegenEmitSource,
+    ) ||
+    !/cg_context_create\s*\(\s*session->diagnostic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    /\bdiag_(?:emit_internalf|message_for)\s*\(/.test(codegenEmitSource)) {
+  throw new Error(
+    "backend output, formatting, and diagnostics must be context-owned",
+  );
 }
 
 if (!/ag_compilation_session_codegen_emit_context\s*\(/.test(
@@ -942,7 +951,8 @@ const explicitCodegenEmitSources = [
 ];
 if (explicitCodegenEmitSources.some((source) =>
       /\bcg_context_(?:active|activate)\s*\(/.test(source) ||
-      /\bcg_emitf\s*\(/.test(source)
+      /\bcg_emitf\s*\(/.test(source) ||
+      /\bdiag_(?:emit_internalf|message_for)\s*\(/.test(source)
     ) ||
     !/gen_ir_module_in\s*\(/.test(arm64IrEmitSource) ||
     !/ir_build_emit_function_with_options_in\s*\(/.test(
@@ -1003,6 +1013,13 @@ const loweringStateSources = await Promise.all([
 ]);
 if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
+    ) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      loweringRuntimeHeader,
+    ) ||
+    !/ps_lowering_diagnostics\s*\(/.test(loweringRuntimeHeader) ||
+    !/ps_lowering_context_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*\)/.test(
+      compilationSessionSource,
     ) ||
     /default_lowering_context|active_lowering_context/.test(
       loweringRuntimeSource,
@@ -1119,6 +1136,22 @@ if (/default_preprocessor_context|active_preprocessor_context/.test(
     )) {
   throw new Error(
     "preprocessor state and stream callbacks must require an explicit context",
+  );
+}
+const contextFreePreprocessorDiagnosticApi =
+  /\bdiag_(?:emit_atf|emit_tokf|report_atf|report_tokf|warn_tokf|emit_internalf|report_internalf|message_for|warn_message_for|text_for|has_error_records|limit_kind)\s*\(/;
+if (!/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      preprocessSource,
+    ) ||
+    !/pp_context_create\s*\(\s*ag_diagnostic_context_t\s*\*diagnostic_context/.test(
+      preprocessSource,
+    ) ||
+    !/pp_context_create\s*\(\s*session->diagnostic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    contextFreePreprocessorDiagnosticApi.test(preprocessSource)) {
+  throw new Error(
+    "preprocessor diagnostics must use the CompilationSession-owned diagnostic context",
   );
 }
 const globalRegistrySource = await readFile(
@@ -2080,6 +2113,10 @@ if (/^static\s+obj_ctx_t\s+g_obj\s*;/m.test(wasmObjSource) ||
       wasmObjSource,
     ) ||
     !/struct\s+wasm32_obj_context_t\s*\{/.test(wasmObjSource) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      wasmObjSource,
+    ) ||
+    /\bdiag_(?:emit_internalf|message_for)\s*\(/.test(wasmObjSource) ||
     !/wasm32_obj_clear_module\s*\(&g_obj\)/.test(wasmObjSource)) {
   throw new Error(
     "Wasm object module, capture, and emit state must be context-owned and reset with cleanup",
@@ -2307,10 +2344,72 @@ const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",
 );
+const controlFlowValidationSource = await readFile(
+  "src/semantic/control_flow_validation.c",
+  "utf8",
+);
+const semanticDiagnosticsSource = await readFile(
+  "src/semantic/semantic_diagnostics.c",
+  "utf8",
+);
+const functionParameterSyntaxSource = await readFile(
+  "src/parser/function_parameter_syntax.c",
+  "utf8",
+);
+const parserDeclarationSyntaxSource = await readFile(
+  "src/parser/declaration_syntax.c",
+  "utf8",
+);
+const aggregateMemberSyntaxSource = await readFile(
+  "src/parser/aggregate_member_syntax.c",
+  "utf8",
+);
+const staticAssertDeclarationSource = await readFile(
+  "src/parser/static_assert_declaration.c",
+  "utf8",
+);
+const parserSemanticContextImplementation = await readFile(
+  "src/parser/semantic_ctx.c",
+  "utf8",
+);
+const contextFreeParserDiagnosticApi =
+  /\b(?:diag_(?:emit_atf|emit_tokf|report_atf|report_tokf|warn_tokf|emit_internalf|report_internalf|message_for|warn_message_for|text_for|has_error_records|limit_kind)|ps_diag_ctx|ps_diag_missing|psx_diag_undefined_with_name|ps_diag_duplicate_with_name|ps_diag_only_in|pda_next_cap|pda_xreallocarray)\s*\(/;
 if (!/\bDIAG_ERR_INTERNAL_INVARIANT_FAILED\b/.test(semanticInvariantsSource) ||
     /\bps_diag_ctx\s*\(/.test(semanticInvariantsSource)) {
   throw new Error(
     "semantic invariant failures must be reported as internal compiler errors",
+  );
+}
+if ([
+      semanticInvariantsSource,
+      controlFlowValidationSource,
+      semanticDiagnosticsSource,
+      lvarUsageAnalysisSource,
+      semanticPassSource,
+      identifierBindingSource,
+      enumConstantResolutionSource,
+      declarationRegistrationSource,
+      declarationApplicationSource,
+      functionParameterResolutionSource,
+      functionParameterSyntaxSource,
+      parserDeclarationSyntaxSource,
+      aggregateMemberSyntaxSource,
+      localDeclarationSyntaxSource,
+      toplevelDeclarationSyntaxSource,
+      staticAssertDeclarationSource,
+      parserSemanticContextImplementation,
+    ].some((source) => contextFreeParserDiagnosticApi.test(source)) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*=\s*context->diagnostic_context\s*;/.test(
+      parserSemanticContextImplementation,
+    ) ||
+    !/context->diagnostic_context\s*=\s*diagnostic_context\s*;/.test(
+      parserSemanticContextImplementation,
+    ) ||
+    /\bps_node_(?:reject_const_assign_at|reject_const_qual_discard_at|expect_lvalue_at)\s*\(/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "migrated parser and semantic phases must preserve and use explicit diagnostic contexts",
   );
 }
 const nodeKindEnum = astSource.match(

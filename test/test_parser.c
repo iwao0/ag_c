@@ -1566,6 +1566,7 @@ static void expect_semantic_invariant_internal_error(
     freopen("/dev/null", "w", stdout);
     diag_reset_records();
     psx_require_semantic_tree_has_canonical_expression_types(
+        ag_compilation_session_diagnostic_context(test_suite_session),
         node, fallback_diag_tok);
     _exit(0);
   }
@@ -15729,6 +15730,10 @@ static void test_semantic_context_isolation() {
     ps_ctx_destroy(second);
     return;
   }
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(test_suite_session);
+  ps_ctx_bind_diagnostic_context(first, diagnostics);
+  ps_ctx_bind_diagnostic_context(second, diagnostics);
 
   char enum_name[] = "ContextValue";
   char tag_name[] = "ContextTag";
@@ -16016,6 +16021,7 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ps_ctx_reset_translation_unit_scope_in(second);
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
+  ASSERT_TRUE(ps_ctx_diagnostics(second) == diagnostics);
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
       second, direct_enum_name, 10, &value));
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
@@ -16567,6 +16573,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.diagnostic_context);
   ASSERT_TRUE(pp_context_diagnostics(host.preprocessor_context) ==
               host.diagnostic_context);
+  ASSERT_TRUE(ps_lowering_diagnostics(host.lowering_context) ==
+              host.diagnostic_context);
   ASSERT_TRUE(ag_compilation_session_codegen_emit_context(&host) ==
               host.codegen_emit_context);
   ASSERT_TRUE(ag_compilation_session_parser_runtime_context(&host) ==
@@ -16601,6 +16609,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_diagnostics(wasm.parser_runtime_context) ==
               wasm.diagnostic_context);
   ASSERT_TRUE(pp_context_diagnostics(wasm.preprocessor_context) ==
+              wasm.diagnostic_context);
+  ASSERT_TRUE(ps_lowering_diagnostics(wasm.lowering_context) ==
               wasm.diagnostic_context);
   ASSERT_TRUE(ag_compilation_session_codegen_emit_context(&wasm) ==
               wasm.codegen_emit_context);

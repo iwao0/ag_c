@@ -1,5 +1,6 @@
 #include "backend_context.h"
 
+#include "../../codegen_emit.h"
 #include "wasm32_ir.h"
 #include "wasm32_obj.h"
 #include <stdlib.h>
@@ -18,7 +19,8 @@ wasm32_backend_context_t *wasm32_backend_context_create(
   wasm32_backend_context_t *ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
   ctx->ir = wasm32_ir_context_create(emit_context);
-  ctx->obj = wasm32_obj_context_create();
+  ctx->obj = wasm32_obj_context_create(
+      cg_context_diagnostics(emit_context));
   if (!ctx->ir || !ctx->obj) {
     wasm32_ir_context_destroy(ctx->ir);
     wasm32_obj_context_destroy(ctx->obj);

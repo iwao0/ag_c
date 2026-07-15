@@ -6,8 +6,10 @@
 #include <stdio.h>
 
 typedef struct wasm32_obj_context_t wasm32_obj_context_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-wasm32_obj_context_t *wasm32_obj_context_create(void);
+wasm32_obj_context_t *wasm32_obj_context_create(
+    ag_diagnostic_context_t *diagnostic_context);
 void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx);
 wasm32_obj_context_t *wasm32_obj_context_activate(
     wasm32_obj_context_t *ctx);

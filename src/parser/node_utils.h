@@ -13,6 +13,7 @@
 struct lvar_t;
 struct global_var_t;
 struct tag_member_info_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 void ps_node_bind_type(node_t *node, const psx_type_t *type);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
@@ -178,9 +179,18 @@ node_t *psx_node_new_initializer_list_in(
 
 void ps_node_reject_const_assign_at(node_t *node, const char *op,
                                      token_t *tok);
+void ps_node_reject_const_assign_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *node,
+    const char *op, token_t *tok);
 void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
                                            token_t *tok);
+void ps_node_reject_const_qual_discard_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
+    token_t *tok);
 void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok);
+void ps_node_expect_lvalue_at_in(
+    ag_diagnostic_context_t *diagnostics, node_t *node,
+    const char *op, token_t *tok);
 
 #endif
 int ps_node_compound_literal_array_size(node_t *node);

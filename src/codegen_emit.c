@@ -5,19 +5,29 @@
 #include <stdlib.h>
 
 struct ag_codegen_emit_context_t {
+  ag_diagnostic_context_t *diagnostic_context;
   gen_output_line_fn output_cb;
   void *output_user_data;
   char format_stack_buf[256];
   int simple_formatter;
 };
 
-ag_codegen_emit_context_t *cg_context_create(void) {
-  return calloc(1, sizeof(ag_codegen_emit_context_t));
+ag_codegen_emit_context_t *cg_context_create(
+    ag_diagnostic_context_t *diagnostic_context) {
+  ag_codegen_emit_context_t *context =
+      calloc(1, sizeof(ag_codegen_emit_context_t));
+  if (context) context->diagnostic_context = diagnostic_context;
+  return context;
 }
 
 void cg_context_destroy(ag_codegen_emit_context_t *ctx) {
   if (!ctx) return;
   free(ctx);
+}
+
+ag_diagnostic_context_t *cg_context_diagnostics(
+    const ag_codegen_emit_context_t *ctx) {
+  return ctx ? ctx->diagnostic_context : NULL;
 }
 
 static void cg_raw_emit(
@@ -168,8 +178,10 @@ static void cg_vemitf_in(
       ctx->format_stack_buf, sizeof(ctx->format_stack_buf), fmt, ap);
   va_end(ap);
   if (need_i < 0) {
-    diag_emit_internalf(DIAG_ERR_CODEGEN_OUTPUT_FAILED, "%s",
-                        diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
+    diag_emit_internalf_in(
+        ctx->diagnostic_context, DIAG_ERR_CODEGEN_OUTPUT_FAILED, "%s",
+        diag_message_for_in(
+            ctx->diagnostic_context, DIAG_ERR_CODEGEN_OUTPUT_FAILED));
   }
   size_t need = (size_t)need_i;
   char *buf = ctx->format_stack_buf;
@@ -177,7 +189,10 @@ static void cg_vemitf_in(
   if (need >= sizeof(ctx->format_stack_buf)) {
     heap_buf = malloc(need + 1);
     if (!heap_buf) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+      diag_emit_internalf_in(
+          ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+          diag_message_for_in(
+              ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
     }
     va_list heap_args;
     va_copy(heap_args, args);

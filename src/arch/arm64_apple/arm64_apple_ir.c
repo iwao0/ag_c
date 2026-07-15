@@ -325,9 +325,13 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_BR_COND:       gen_inst_br_cond(ctx, inst); return;
     case IR_RET:           gen_inst_ret(ctx, inst); return;
     default:
-      diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                          diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
-                          ir_op_name(inst->op));
+      diag_emit_internalf_in(
+          cg_context_diagnostics(ctx->emit_context),
+          DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+          diag_message_for_in(
+              cg_context_diagnostics(ctx->emit_context),
+              DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+          ir_op_name(inst->op));
   }
 }
 

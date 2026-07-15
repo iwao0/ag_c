@@ -5,48 +5,96 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-void ps_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
+static void ps_diag_ctx_va(ag_diagnostic_context_t *diagnostics, token_t *tok,
+                           const char *rule, const char *fmt, va_list ap) {
   va_list ap2;
   va_copy(ap2, ap);
   int len = vsnprintf(NULL, 0, fmt, ap2);
   va_end(ap2);
   if (len < 0) {
-    va_end(ap);
-    diag_emit_tokf(DIAG_ERR_PARSER_DIAG_FORMAT_FAILED, tok, "%s",
-                   diag_message_for(DIAG_ERR_PARSER_DIAG_FORMAT_FAILED));
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_DIAG_FORMAT_FAILED, tok, "%s",
+        diag_message_for_in(diagnostics, DIAG_ERR_PARSER_DIAG_FORMAT_FAILED));
   }
 
   char *detail = calloc((size_t)len + 1, 1);
   if (!detail) {
-    va_end(ap);
-    diag_emit_tokf(DIAG_ERR_INTERNAL_OOM, tok, "[%s] %s", (char *)rule,
-                   diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_tokf_in(diagnostics, DIAG_ERR_INTERNAL_OOM, tok, "[%s] %s",
+                      (char *)rule,
+                      diag_message_for_in(diagnostics, DIAG_ERR_INTERNAL_OOM));
   }
   vsnprintf(detail, (size_t)len + 1, fmt, ap);
-  va_end(ap);
-  diag_emit_tokf(DIAG_ERR_PARSER_RULE_DETAIL, tok,
-                 diag_message_for(DIAG_ERR_PARSER_RULE_DETAIL), (char *)rule, detail);
+  diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_RULE_DETAIL, tok,
+                    diag_message_for_in(diagnostics,
+                                        DIAG_ERR_PARSER_RULE_DETAIL),
+                    (char *)rule, detail);
   free(detail);
 }
 
+void ps_diag_ctx_in(ag_diagnostic_context_t *diagnostics, token_t *tok,
+                    const char *rule, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  ps_diag_ctx_va(diagnostics, tok, rule, fmt, ap);
+  va_end(ap);
+}
+
+void ps_diag_missing_in(ag_diagnostic_context_t *diagnostics, token_t *tok,
+                        const char *what) {
+  diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_MISSING_ITEM, tok,
+                    diag_message_for_in(diagnostics,
+                                        DIAG_ERR_PARSER_MISSING_ITEM),
+                    what);
+}
+
+void psx_diag_undefined_with_name_in(ag_diagnostic_context_t *diagnostics,
+                                    token_t *tok, const char *kind,
+                                    const char *name, int len) {
+  diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_UNDEFINED_WITH_KIND, tok,
+                    diag_message_for_in(diagnostics,
+                                        DIAG_ERR_PARSER_UNDEFINED_WITH_KIND),
+                    kind, len, name);
+}
+
+void ps_diag_duplicate_with_name_in(ag_diagnostic_context_t *diagnostics,
+                                    token_t *tok, const char *kind,
+                                    const char *name, int len) {
+  diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_DUPLICATE_WITH_KIND, tok,
+                    diag_message_for_in(diagnostics,
+                                        DIAG_ERR_PARSER_DUPLICATE_WITH_KIND),
+                    kind, len, name);
+}
+
+void ps_diag_only_in_context(ag_diagnostic_context_t *diagnostics,
+                             token_t *tok, const char *what,
+                             const char *scope) {
+  diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_ONLY_IN_SCOPE, tok,
+                    diag_message_for_in(diagnostics,
+                                        DIAG_ERR_PARSER_ONLY_IN_SCOPE),
+                    what, scope);
+}
+
+void ps_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  ps_diag_ctx_va(diag_context_active(), tok, rule, fmt, ap);
+  va_end(ap);
+}
+
 void ps_diag_missing(token_t *tok, const char *what) {
-  diag_emit_tokf(DIAG_ERR_PARSER_MISSING_ITEM, tok,
-                 diag_message_for(DIAG_ERR_PARSER_MISSING_ITEM), what);
+  ps_diag_missing_in(diag_context_active(), tok, what);
 }
 
-void psx_diag_undefined_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  diag_emit_tokf(DIAG_ERR_PARSER_UNDEFINED_WITH_KIND, tok,
-                 diag_message_for(DIAG_ERR_PARSER_UNDEFINED_WITH_KIND), kind, len, name);
+void psx_diag_undefined_with_name(token_t *tok, const char *kind,
+                                  const char *name, int len) {
+  psx_diag_undefined_with_name_in(diag_context_active(), tok, kind, name, len);
 }
 
-void ps_diag_duplicate_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_WITH_KIND, tok,
-                 diag_message_for(DIAG_ERR_PARSER_DUPLICATE_WITH_KIND), kind, len, name);
+void ps_diag_duplicate_with_name(token_t *tok, const char *kind,
+                                 const char *name, int len) {
+  ps_diag_duplicate_with_name_in(diag_context_active(), tok, kind, name, len);
 }
 
 void ps_diag_only_in(token_t *tok, const char *what, const char *scope) {
-  diag_emit_tokf(DIAG_ERR_PARSER_ONLY_IN_SCOPE, tok,
-                 diag_message_for(DIAG_ERR_PARSER_ONLY_IN_SCOPE), what, scope);
+  ps_diag_only_in_context(diag_context_active(), tok, what, scope);
 }

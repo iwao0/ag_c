@@ -19,6 +19,8 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
@@ -32,26 +34,26 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
       &resolution);
   if (resolution.status == PSX_TYPEDEF_DECLARATION_OK) return;
   if (resolution.status == PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT) {
-    ps_diag_ctx(diag_tok, "typedef",
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                  "typedef名 '%.*s' の型が以前の宣言と異なります (C11 6.7p3)",
                  name_len, name);
   }
   if (resolution.status == PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "typedef",
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                  "'%.*s' はオブジェクトとして既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
   if (resolution.status == PSX_TYPEDEF_DECLARATION_FUNCTION_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "typedef",
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                  "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
   if (resolution.status == PSX_TYPEDEF_DECLARATION_ENUM_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "typedef",
+    ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                  "'%.*s' はenum定数として既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
-  ps_diag_ctx(diag_tok, "typedef",
+  ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                "canonical typedef declaration resolution failed for '%.*s'",
                name_len, name);
 }
@@ -62,6 +64,8 @@ void psx_apply_parsed_enum_constant_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int name_len, long long value, token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
   psx_enum_constant_resolution_t resolution;
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
@@ -75,25 +79,25 @@ void psx_apply_parsed_enum_constant_in_contexts(
       &resolution);
   if (resolution.status == PSX_ENUM_CONSTANT_OK) return;
   if (resolution.status == PSX_ENUM_CONSTANT_DUPLICATE) {
-    ps_diag_duplicate_with_name(
+    ps_diag_duplicate_with_name_in(diagnostics,
         diag_tok, "enum constant", name, name_len);
   }
   if (resolution.status == PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "enum",
+    ps_diag_ctx_in(diagnostics, diag_tok, "enum",
                  "'%.*s' はオブジェクトとして既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
   if (resolution.status == PSX_ENUM_CONSTANT_FUNCTION_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "enum",
+    ps_diag_ctx_in(diagnostics, diag_tok, "enum",
                  "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
   if (resolution.status == PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT) {
-    ps_diag_ctx(diag_tok, "enum",
+    ps_diag_ctx_in(diagnostics, diag_tok, "enum",
                  "'%.*s' はtypedef名として既に宣言されています (C11 6.7p4)",
                  name_len, name);
   }
-  ps_diag_ctx(diag_tok, "enum",
+  ps_diag_ctx_in(diagnostics, diag_tok, "enum",
                "canonical enum constant resolution failed for '%.*s'",
                name_len, name);
 }
@@ -105,6 +109,8 @@ void psx_apply_parsed_tag_declaration_in_contexts(
     psx_tag_declaration_mode_t mode, int member_count,
     int size, int alignment, token_t *diag_tok) {
   if (!semantic_context || !local_registry) return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
   psx_tag_declaration_resolution_t resolution;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
@@ -121,16 +127,16 @@ void psx_apply_parsed_tag_declaration_in_contexts(
       &resolution);
   if (resolution.status == PSX_TAG_DECLARATION_OK) return;
   if (resolution.status == PSX_TAG_DECLARATION_REDEFINITION) {
-    ps_diag_ctx(diag_tok, "tag",
+    ps_diag_ctx_in(diagnostics, diag_tok, "tag",
                  "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
                  name_len, name);
   }
   if (resolution.status == PSX_TAG_DECLARATION_KIND_CONFLICT) {
-    ps_diag_ctx(diag_tok, "tag",
+    ps_diag_ctx_in(diagnostics, diag_tok, "tag",
                  "タグ '%.*s' は同一スコープで異なる種類として宣言されています (C11 6.7.2.3)",
                  name_len, name);
   }
-  ps_diag_ctx(diag_tok, "tag",
+  ps_diag_ctx_in(diagnostics, diag_tok, "tag",
                "canonical tag declaration resolution failed for '%.*s'",
                name_len, name);
 }
@@ -139,42 +145,45 @@ int psx_apply_aggregate_member_declaration(
     psx_aggregate_layout_state_t *layout,
     const psx_aggregate_member_declaration_request_t *request,
     token_t *diag_tok) {
+  if (!request || !request->semantic_context) return 0;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(request->semantic_context);
   psx_aggregate_member_declaration_resolution_t resolution;
   psx_resolve_aggregate_member_declaration(layout, request, &resolution);
   if (resolution.status == PSX_AGGREGATE_MEMBER_OK)
     return resolution.registered_member_count;
   if (resolution.status == PSX_AGGREGATE_MEMBER_MISSING_NAME) {
-    ps_diag_missing(diag_tok, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    ps_diag_missing_in(diagnostics, diag_tok, diag_text_for_in(diagnostics, DIAG_TEXT_MEMBER_NAME));
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE) {
-    ps_diag_ctx(diag_tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics, diag_tok, "decl", "%s",
+                 diag_message_for_in(diagnostics,
                      DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN));
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_FUNCTION_TYPE) {
-    ps_diag_ctx(diag_tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics, diag_tok, "decl", "%s",
+                 diag_message_for_in(diagnostics,
                      DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
   }
   if (resolution.status ==
       PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE) {
-    ps_diag_ctx(diag_tok, "member",
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field width %d exceeds its %d-bit storage type",
                  request ? request->bit_width : 0,
                  resolution.storage_size * 8);
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE) {
-    ps_diag_ctx(diag_tok, "member",
+    ps_diag_ctx_in(diagnostics, diag_tok, "member",
                  "bit-field has non-integer canonical type");
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_DUPLICATE) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(diagnostics,
         diag_tok, "member",
         "メンバ '%.*s' は同じaggregate内で重複しています (C11 6.7.2.1)",
         resolution.conflicting_name_len,
         resolution.conflicting_name ? resolution.conflicting_name : "");
   }
-  ps_diag_ctx(diag_tok, "member",
+  ps_diag_ctx_in(diagnostics, diag_tok, "member",
                "aggregate member declaration resolution failed");
   return 0;
 }
@@ -186,6 +195,8 @@ void psx_apply_static_assert_in_contexts(
     node_t *condition, token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry || !condition)
     return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
   condition = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       condition, diag_tok);
@@ -202,14 +213,14 @@ void psx_apply_static_assert_in_contexts(
       },
       &resolution);
   if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
+    diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
                    diag_tok, "%s",
-                   diag_message_for(
+                   diag_message_for_in(diagnostics,
                        DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
   }
   if (resolution.status == PSX_STATIC_ASSERT_FAILED) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED,
+    diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED,
                    diag_tok, "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+                   diag_message_for_in(diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
 }

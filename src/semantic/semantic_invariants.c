@@ -250,6 +250,7 @@ static const char *semantic_invariant_status_name(
 }
 
 static void emit_semantic_invariant_failure(
+    ag_diagnostic_context_t *diagnostics,
     const psx_semantic_invariant_failure_t *failure,
     const token_t *fallback_diag_tok) {
   const node_t *node = failure ? failure->node : NULL;
@@ -257,27 +258,35 @@ static void emit_semantic_invariant_failure(
   const char *detail = semantic_invariant_status_name(
       failure ? failure->status : PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND);
   if (tok) {
-    diag_emit_tokf(
-        DIAG_ERR_INTERNAL_INVARIANT_FAILED, tok, "%s: %s (node kind %d)",
-        diag_message_for(DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED, tok,
+        "%s: %s (node kind %d)",
+        diag_message_for_in(diagnostics,
+                            DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
         node ? (int)node->kind : -1);
   }
-  diag_emit_internalf(
-      DIAG_ERR_INTERNAL_INVARIANT_FAILED, "%s: %s (node kind %d)",
-      diag_message_for(DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
+  diag_emit_internalf_in(
+      diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+      "%s: %s (node kind %d)",
+      diag_message_for_in(diagnostics,
+                          DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
       node ? (int)node->kind : -1);
 }
 
 void psx_require_semantic_tree_has_canonical_expression_types(
-    const node_t *root, const token_t *fallback_diag_tok) {
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure;
   if (validate_node(root, &failure, 0)) return;
-  emit_semantic_invariant_failure(&failure, fallback_diag_tok);
+  emit_semantic_invariant_failure(
+      diagnostics, &failure, fallback_diag_tok);
 }
 
 void psx_require_semantic_initializer_has_canonical_expression_types(
-    const node_t *root, const token_t *fallback_diag_tok) {
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
   if (validate_node(root, &failure, 1)) return;
-  emit_semantic_invariant_failure(&failure, fallback_diag_tok);
+  emit_semantic_invariant_failure(
+      diagnostics, &failure, fallback_diag_tok);
 }

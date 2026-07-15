@@ -22,11 +22,18 @@ static token_t *curtok(
   return tk_get_current_token_ctx(tokenizer(callbacks));
 }
 
+static ag_diagnostic_context_t *diagnostics(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  return callbacks && callbacks->runtime_context
+             ? ps_parser_runtime_diagnostics(callbacks->runtime_context)
+             : NULL;
+}
+
 static int is_local_typedef_name(token_t *token, void *context) {
   return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
-static void require_callbacks(
+static int callbacks_are_complete(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks || !callbacks->apply_static_assert ||
       !callbacks->begin_declaration || !callbacks->begin_declarator ||
@@ -34,14 +41,14 @@ static void require_callbacks(
       !callbacks->semantic_context || !callbacks->global_registry ||
       !callbacks->local_registry || !callbacks->runtime_context ||
       !callbacks->options || !tokenizer(callbacks)) {
-    ps_diag_ctx(NULL, "local-declaration-syntax",
-                "local declaration application callbacks are required");
+    return 0;
   }
+  return 1;
 }
 
 node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks) {
-  require_callbacks(callbacks);
+  if (!callbacks_are_complete(callbacks)) return NULL;
   tokenizer_context_t *tk_ctx = tokenizer(callbacks);
   if (curtok(callbacks)->kind == TK_STATIC_ASSERT) {
     psx_parsed_static_assert_declaration_t assertion;
@@ -71,9 +78,9 @@ node_t *psx_parse_local_declaration_syntax(
               .local_registry = callbacks->local_registry,
               .runtime_context = callbacks->runtime_context,
           })) {
-    diag_report_tokf(
+    diag_report_tokf_in(diagnostics(callbacks),
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(callbacks), "%s",
-        diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
+        diag_message_for_in(diagnostics(callbacks), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     ps_parser_mark_recoverable_syntax_error_in(
         callbacks->runtime_context);
     return NULL;
@@ -97,8 +104,8 @@ node_t *psx_parse_local_declaration_syntax(
   int declarator_count = 0;
   for (;;) {
     if (++declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx(curtok(callbacks), "decl",
-                  diag_message_for(
+      ps_diag_ctx_in(diagnostics(callbacks), curtok(callbacks), "decl",
+                  diag_message_for_in(diagnostics(callbacks),
                       DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
                   PS_MAX_DECLARATOR_COUNT);
     }
@@ -115,8 +122,8 @@ node_t *psx_parse_local_declaration_syntax(
         callbacks->local_registry, callbacks->runtime_context,
         callbacks);
     if (!declarator.identifier) {
-      ps_diag_ctx(curtok(callbacks), "decl", "%s",
-                  diag_message_for(
+      ps_diag_ctx_in(diagnostics(callbacks), curtok(callbacks), "decl", "%s",
+                  diag_message_for_in(diagnostics(callbacks),
                       DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
 
@@ -128,9 +135,9 @@ node_t *psx_parse_local_declaration_syntax(
          initializer.value_tok->kind == TK_COMMA ||
          initializer.value_tok->kind == TK_RBRACE ||
          initializer.value_tok->kind == TK_EOF)) {
-      diag_report_tokf(
+      diag_report_tokf_in(diagnostics(callbacks),
           DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer.value_tok,
-          "%s", diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
+          "%s", diag_message_for_in(diagnostics(callbacks), DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
       psx_dispose_declarator_syntax(&declarator);
       if (callbacks->abort_declaration)
         callbacks->abort_declaration(declaration_context);

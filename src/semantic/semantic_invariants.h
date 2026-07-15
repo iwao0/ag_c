@@ -3,6 +3,8 @@
 
 #include "../parser/ast.h"
 
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+
 typedef enum {
   PSX_SEMANTIC_INVARIANT_OK = 0,
   PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION,
@@ -22,8 +24,10 @@ typedef struct {
 int psx_semantic_tree_has_canonical_expression_types(
     const node_t *root, psx_semantic_invariant_failure_t *failure);
 void psx_require_semantic_tree_has_canonical_expression_types(
-    const node_t *root, const token_t *fallback_diag_tok);
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok);
 void psx_require_semantic_initializer_has_canonical_expression_types(
-    const node_t *root, const token_t *fallback_diag_tok);
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok);
 
 #endif

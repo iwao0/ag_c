@@ -131,6 +131,7 @@ typedef struct {
 } obj_ctx_t;
 
 struct wasm32_obj_context_t {
+  ag_diagnostic_context_t *diagnostic_context;
   obj_ctx_t obj;
   wb_t capture;
   uint32_t capture_limit;
@@ -177,8 +178,11 @@ static void wasm32_obj_clear_module(obj_ctx_t *obj) {
   memset(obj, 0, sizeof(*obj));
 }
 
-wasm32_obj_context_t *wasm32_obj_context_create(void) {
-  return calloc(1, sizeof(wasm32_obj_context_t));
+wasm32_obj_context_t *wasm32_obj_context_create(
+    ag_diagnostic_context_t *diagnostic_context) {
+  wasm32_obj_context_t *context = calloc(1, sizeof(*context));
+  if (context) context->diagnostic_context = diagnostic_context;
+  return context;
 }
 
 void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx) {
@@ -211,30 +215,34 @@ wasm32_obj_context_t *wasm32_obj_context_active(void) {
   (wasm32_obj_context_active()->emit_local_unsigned)
 #define g_emit_local_count (wasm32_obj_context_active()->emit_local_count)
 
+static ag_diagnostic_context_t *wasm32_obj_diagnostics(void) {
+  return wasm32_obj_context_active()->diagnostic_context;
+}
+
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
 
 static void obj_unsupported_op(ir_op_t op) {
-  diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+  diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_obj_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       ir_op_name(op));
 }
 
 static void obj_unsupported_msg(const char *msg) {
-  diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+  diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_obj_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       msg);
 }
 
 static void *xrealloc(void *p, size_t n) {
   void *q = realloc(p, n);
-  if (!q) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  if (!q) diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   return q;
 }
 
 static char *dup_name(const char *s, int len) {
   char *p = malloc((size_t)len + 1);
-  if (!p) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  if (!p) diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   memcpy(p, s, (size_t)len);
   p[len] = '\0';
   return p;
@@ -2765,18 +2773,18 @@ void wasm32_obj_end(void) {
       g_obj_capture_limit_exceeded = 1;
       return;
     }
-    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "Wasm object output exceeds addressable size");
+    diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "Wasm object output exceeds addressable size");
   }
 
   if (g_obj.out && fwrite(out.data, 1, out.len, g_obj.out) != out.len) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to write Wasm object output");
+    diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "failed to write Wasm object output");
   }
   if (g_obj.capture_output) {
     free(g_obj_capture.data);
     g_obj_capture = out;
   } else {
     if (!g_obj.out) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "missing Wasm object output sink");
+      diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "missing Wasm object output sink");
     }
     free(out.data);
   }

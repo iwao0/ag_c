@@ -25,7 +25,8 @@ static void analyze_function_in_contexts(
       function, fallback_diag_tok);
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
-  psx_validate_control_flow(function, fallback_diag_tok);
+  psx_validate_control_flow(
+      semantic_context, function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       function, current_function, fallback_diag_tok);
@@ -38,15 +39,18 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   current_function->lvars = ps_decl_get_locals_in(local_registry);
   psx_emit_semantic_warnings(
-      function, current_function, fallback_diag_tok);
-  psx_emit_unreachable_warnings(function, fallback_diag_tok);
+      ps_ctx_diagnostics(semantic_context), function, current_function,
+      fallback_diag_tok);
+  psx_emit_unreachable_warnings(
+      semantic_context, function, fallback_diag_tok);
   psx_lower_implicit_conversions(
       lowering_context, function, current_function,
       fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
-      function, fallback_diag_tok);
+      ps_ctx_diagnostics(semantic_context), function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
-      local_registry, current_function, fallback_diag_tok);
+      ps_ctx_diagnostics(semantic_context), local_registry,
+      current_function, fallback_diag_tok);
 }
 
 void psx_frontend_analyze_function_in_session(
@@ -85,7 +89,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
   psx_lower_implicit_conversions(
       lowering_context, expression, NULL, fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
-      expression, fallback_diag_tok);
+      ps_ctx_diagnostics(semantic_context), expression, fallback_diag_tok);
   return expression;
 }
 
@@ -123,7 +127,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
       syntax, NULL, fallback_diag_tok);
   psx_require_semantic_initializer_has_canonical_expression_types(
-      syntax, fallback_diag_tok);
+      ps_ctx_diagnostics(semantic_context), syntax, fallback_diag_tok);
   return syntax;
 }
 
@@ -153,7 +157,7 @@ void psx_frontend_analyze_program_in_contexts(
     psx_lower_implicit_conversions(
         lowering_context, program[i], NULL, program[i]->tok, options);
     psx_require_semantic_tree_has_canonical_expression_types(
-        program[i], program[i]->tok);
+        ps_ctx_diagnostics(semantic_context), program[i], program[i]->tok);
   }
 }
 

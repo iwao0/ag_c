@@ -5,9 +5,11 @@
 #include "static_local_lowering.h"
 
 typedef struct arena_context_t arena_context_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 typedef struct psx_lowering_context_t {
   arena_context_t *arena_context;
+  ag_diagnostic_context_t *diagnostic_context;
   frame_layout_t local_frame_layout;
   int static_local_sequences[PSX_STATIC_LOCAL_KIND_COUNT];
   int file_scope_compound_sequence;
@@ -18,9 +20,12 @@ typedef struct psx_lowering_context_t {
 } psx_lowering_context_t;
 
 psx_lowering_context_t *ps_lowering_context_create(
-    arena_context_t *arena_context);
+    arena_context_t *arena_context,
+    ag_diagnostic_context_t *diagnostic_context);
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx);
 arena_context_t *ps_lowering_arena(
+    const psx_lowering_context_t *ctx);
+ag_diagnostic_context_t *ps_lowering_diagnostics(
     const psx_lowering_context_t *ctx);
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx);
 

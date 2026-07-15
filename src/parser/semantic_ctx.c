@@ -325,9 +325,11 @@ void ps_ctx_reset_translation_unit_scope_in(
     psx_semantic_context_t *context) {
   if (!context) return;
   arena_context_t *arena_context = context->arena_context;
+  ag_diagnostic_context_t *diagnostic_context = context->diagnostic_context;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
+  context->diagnostic_context = diagnostic_context;
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(
@@ -337,7 +339,10 @@ void ps_ctx_record_unsupported_gnu_extension_warning_in(
   deferred_parser_warning_t *w = ctx_calloc_in(
       context, 1, sizeof(deferred_parser_warning_t));
   if (!w) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(context->diagnostic_context,
+                            DIAG_ERR_INTERNAL_OOM));
   }
   w->tok = tok;
   w->name = name;
@@ -358,10 +363,13 @@ void ps_ctx_emit_deferred_parser_warnings_in(
   while (rev) {
     deferred_parser_warning_t *w = rev;
     rev = w->next_all;
-    diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, w->tok,
-                   "%s: %s",
-                   diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
-                   w->name ? w->name : "");
+    diag_warn_tokf_in(
+        context->diagnostic_context,
+        DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, w->tok, "%s: %s",
+        diag_warn_message_for_in(
+            context->diagnostic_context,
+            DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+        w->name ? w->name : "");
     ctx_release_in(context, w);
   }
 }
@@ -547,7 +555,10 @@ void psx_ctx_register_label_def_in(
   for (label_def_t *d = context->label_definitions_by_bucket[bucket];
        d; d = d->next_hash) {
     if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
-      ps_diag_duplicate_with_name(tok, diag_text_for(DIAG_TEXT_LABEL), name, len);
+      ps_diag_duplicate_with_name_in(
+          context->diagnostic_context, tok,
+          diag_text_for_in(context->diagnostic_context, DIAG_TEXT_LABEL), name,
+          len);
     }
   }
   label_def_t *d = ctx_calloc_in(context, 1, sizeof(label_def_t));
@@ -573,8 +584,11 @@ void psx_ctx_validate_goto_refs_in(
       }
     }
     if (!found) {
-      ps_diag_ctx(g->tok, "goto", diag_message_for(DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
-                   g->len, g->name);
+      ps_diag_ctx_in(
+          context->diagnostic_context, g->tok, "goto",
+          diag_message_for_in(context->diagnostic_context,
+                              DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
+          g->len, g->name);
     }
   }
 }

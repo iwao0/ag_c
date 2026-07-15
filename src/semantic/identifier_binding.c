@@ -146,7 +146,8 @@ static node_t *materialize_identifier(
     case PSX_IDENTIFIER_UNDECLARED_CALL:
       return NULL;
     case PSX_IDENTIFIER_UNDEFINED:
-      psx_diag_undefined_with_name(
+      psx_diag_undefined_with_name_in(
+          ps_ctx_diagnostics(context->semantic_context),
           identifier->base.tok
               ? identifier->base.tok
               : (token_t *)context->fallback_diag_tok,
@@ -258,7 +259,8 @@ static void bind_direct_call(
       : NULL;
   if (!call->callee_type ||
       call->callee_type->kind != PSX_TYPE_FUNCTION) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(context->semantic_context),
         identifier->base.tok
             ? identifier->base.tok
             : (token_t *)context->fallback_diag_tok,
@@ -271,7 +273,8 @@ static void bind_direct_call(
       ? call->argument_count < expected
       : call->argument_count != expected;
   if (mismatch) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(context->semantic_context),
         identifier->base.tok
             ? identifier->base.tok
             : (token_t *)context->fallback_diag_tok,

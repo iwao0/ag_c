@@ -72,8 +72,9 @@ int ag_compilation_session_init(
       session->arena_context, &session->tokenizer,
       session->diagnostic_context);
   session->lowering_context = ps_lowering_context_create(
-      session->arena_context);
-  session->codegen_emit_context = cg_context_create();
+      session->arena_context, session->diagnostic_context);
+  session->codegen_emit_context = cg_context_create(
+      session->diagnostic_context);
   if (!session->semantic_context || !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
       !session->arena_context || !session->diagnostic_context ||

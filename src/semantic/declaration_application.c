@@ -78,12 +78,13 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
             semantic_context, global_registry, local_registry,
             &declaration->specifier);
     if (!member_base_type) {
-      ps_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), declaration->specifier.diagnostic_token, "decl", "%s",
+                   diag_message_for_in(ps_ctx_diagnostics(semantic_context),
                        DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     int requested_alignment =
-        psx_apply_parsed_decl_alignment(&declaration->specifier);
+        psx_apply_parsed_decl_alignment(
+            semantic_context, &declaration->specifier);
     for (int j = 0; j < declaration->declarator_count; j++) {
       psx_parsed_declarator_t *head = &declaration->declarators[j];
       ps_prepare_constant_declarator_expressions_in_context(
@@ -253,7 +254,8 @@ int psx_apply_declaration_phase_in_contexts(
   if (!semantic_context || !global_registry || !local_registry || !phase ||
       phase->state != PSX_DECLARATION_PHASE_SYNTAX) return 0;
   phase->requested_alignment =
-      psx_apply_parsed_decl_alignment(&phase->syntax);
+      psx_apply_parsed_decl_alignment(
+          semantic_context, &phase->syntax);
   if (standalone_tag &&
       phase->syntax.source == PSX_PARSED_DECL_TYPE_TAG) {
     psx_apply_parsed_standalone_tag_in_contexts(
@@ -289,14 +291,15 @@ const psx_type_t *psx_apply_parsed_decl_specifier_in_contexts(
 }
 
 int psx_apply_parsed_decl_alignment(
+    psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
-  if (!specifier) return 0;
+  if (!semantic_context || !specifier) return 0;
   int alignment = 0;
   for (int i = 0; i < specifier->alignas_expression_count; i++) {
     const psx_parsed_const_expr_t *expression =
         &specifier->alignas_expressions[i];
     if (!expression->has_constant_value) {
-      ps_diag_ctx(expression->start, "declaration-application",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), expression->start, "declaration-application",
                    "alignment syntax value was not prepared");
     }
     int value = (int)expression->constant_value;
@@ -343,7 +346,7 @@ void psx_apply_parsed_declarator_in_contexts(
         shape->ops[suffix->declarator_op_index].kind !=
             PSX_DECL_OP_FUNCTION ||
         !suffix->parameters) {
-      ps_diag_ctx(declarator->diagnostic_token, "declarator-application",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), declarator->diagnostic_token, "declarator-application",
                    "invalid deferred function suffix target");
     }
     psx_apply_parsed_function_parameters_in_contexts(
@@ -378,7 +381,7 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
   if (!ps_declarator_shape_copy_in(
           ps_ctx_arena(semantic_context),
           &application->shape, &declarator->declarator_shape)) {
-    ps_diag_ctx(declarator->diagnostic_token, "declarator-resolution",
+    ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), declarator->diagnostic_token, "declarator-resolution",
                 "invalid local declarator shape");
   }
   if (declarator->array_bound_count > 0) {
@@ -393,12 +396,12 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
         parsed->declarator_op_index >= application->shape.count ||
         application->shape.ops[parsed->declarator_op_index].kind !=
             PSX_DECL_OP_ARRAY) {
-      ps_diag_ctx(parsed->expression.start, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "declarator-resolution",
                    "invalid local array bound target");
     }
     node_t *expression = parsed->expression.node;
     if (!expression) {
-      ps_diag_ctx(parsed->expression.start, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "declarator-resolution",
                    "runtime array bound syntax was not prepared");
     }
     expression = psx_bind_identifier_tree_in_contexts(
@@ -410,8 +413,8 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
     int is_constant = 1;
     long long value = psx_eval_const_int(expression, &is_constant);
     if (is_constant && value < 0) {
-      ps_diag_ctx(parsed->expression.start, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "decl", "%s",
+                   diag_message_for_in(ps_ctx_diagnostics(semantic_context),
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
     if (is_constant && value == 0) {
@@ -422,7 +425,7 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
     if (!ps_declarator_shape_set_array_bound(
             &application->shape, parsed->declarator_op_index,
             is_constant ? (int)value : 0, !is_constant)) {
-      ps_diag_ctx(parsed->expression.start, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "declarator-resolution",
                   "invalid local array bound target");
     }
     application->array_bounds[application->array_bound_count++] =
@@ -440,7 +443,7 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
         suffix->declarator_op_index >= application->shape.count ||
         application->shape.ops[suffix->declarator_op_index].kind !=
             PSX_DECL_OP_FUNCTION) {
-      ps_diag_ctx(declarator->diagnostic_token, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), declarator->diagnostic_token, "declarator-resolution",
                    "invalid local function suffix target");
     }
     psx_declarator_op_t *function_op =
@@ -467,13 +470,13 @@ void psx_apply_parsed_function_parameters_in_contexts(
   if (!semantic_context || !global_registry || !local_registry) return;
   if (!parameters || !function_op ||
       function_op->kind != PSX_DECL_OP_FUNCTION) {
-    ps_diag_ctx(diagnostic_token, "declarator-application",
+    ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), diagnostic_token, "declarator-application",
                  "invalid function parameter syntax target");
   }
   const psx_type_t **resolved_types = parameters->count > 0
       ? calloc((size_t)parameters->count, sizeof(*resolved_types)) : NULL;
   if (parameters->count > 0 && !resolved_types) {
-    ps_diag_ctx(diagnostic_token, "declarator-application",
+    ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), diagnostic_token, "declarator-application",
                 "function parameter type allocation failed");
   }
   int resolved_count = 0;
@@ -486,8 +489,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
             semantic_context, global_registry, local_registry,
             &parameter->specifier);
     if (!base) {
-      ps_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parameter->specifier.diagnostic_token, "param", "%s",
+                   diag_message_for_in(ps_ctx_diagnostics(semantic_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     psx_local_lookup_point_t parameter_lookup_point =
         ps_local_registry_capture_lookup_point_in(local_registry);
@@ -521,7 +524,7 @@ void psx_apply_parsed_function_parameters_in_contexts(
     if (name && !ps_local_registry_create_type_binding_in(
                     local_registry, name->str, name->len, adjusted,
                     (token_t *)name)) {
-      ps_diag_ctx((token_t *)name, "param",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), (token_t *)name, "param",
                   "prototype parameter binding failed");
     }
   }

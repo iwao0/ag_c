@@ -13,20 +13,20 @@ void psx_resolve_declarator_syntax_in_context(
       !ps_declarator_shape_copy_in(
           ps_ctx_arena(semantic_context),
           shape, &parsed->declarator_shape)) {
-    ps_diag_ctx(parsed ? parsed->diagnostic_token : NULL,
+    ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed ? parsed->diagnostic_token : NULL,
                 "declarator-resolution",
                 "invalid declarator shape");
   }
   for (int i = 0; i < parsed->array_bound_count; i++) {
     const psx_parsed_array_bound_t *bound = &parsed->array_bounds[i];
     if (!bound->expression.has_constant_value) {
-      ps_diag_ctx(bound->expression.start, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), bound->expression.start, "declarator-resolution",
                    "constant array bound syntax was not prepared");
     }
     long long value = bound->expression.constant_value;
     if (value < 0) {
-      ps_diag_ctx(bound->expression.start, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), bound->expression.start, "decl", "%s",
+                   diag_message_for_in(ps_ctx_diagnostics(semantic_context),
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
     if (value == 0) {
@@ -36,14 +36,14 @@ void psx_resolve_declarator_syntax_in_context(
     }
     if (!ps_declarator_shape_set_array_bound(
             shape, bound->declarator_op_index, (int)value, 0)) {
-      ps_diag_ctx(bound->expression.start, "declarator-resolution",
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), bound->expression.start, "declarator-resolution",
                    "invalid deferred array bound target");
     }
   }
   if (bit_width) *bit_width = 0;
   if (parsed->has_bitfield) {
     if (!parsed->bit_width_expression.has_constant_value) {
-      ps_diag_ctx(parsed->bit_width_expression.start,
+      ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->bit_width_expression.start,
                    "declarator-resolution",
                    "bit-field width syntax was not prepared");
     }

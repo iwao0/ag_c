@@ -75,9 +75,12 @@ long long psx_resolve_prepared_enum_const_expr_in_context(
     if (!ps_ctx_find_enum_const_in(
             semantic_context,
             expression->identifier, expression->identifier_len, &value)) {
-      ps_diag_ctx(
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
           expression->diagnostic_token, "enum",
-          diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
+          diag_message_for_in(
+              ps_ctx_diagnostics(semantic_context),
+              DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
           expression->identifier_len, expression->identifier);
     }
     return value;

@@ -22,6 +22,11 @@ static token_t *current_token(
   return tk_get_current_token_ctx(tokenizer(runtime_context));
 }
 
+static ag_diagnostic_context_t *diagnostics(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_diagnostics(runtime_context);
+}
+
 static int is_toplevel_typedef_name(token_t *token, void *context) {
   return psx_ctx_is_typedef_name_token_in(context, token);
 }
@@ -30,19 +35,19 @@ static void require_declarator_name(
     const psx_parsed_declarator_t *declarator,
     psx_parser_runtime_context_t *runtime_context) {
   if (declarator && declarator->identifier) return;
-  diag_emit_tokf(
+  diag_emit_tokf_in(diagnostics(runtime_context),
       DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED,
       current_token(runtime_context), "%s",
-      diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+      diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
 }
 
 static void append_declarator_slot(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_parser_runtime_context_t *runtime_context) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(diagnostics(runtime_context),
         current_token(runtime_context), "decl",
-        diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+        diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
         PS_MAX_DECLARATOR_COUNT);
   }
   int next_count = declaration->declarator_count + 1;
@@ -50,7 +55,7 @@ static void append_declarator_slot(
       declaration->declarators,
       sizeof(*declaration->declarators) * (size_t)next_count);
   if (!grown) {
-    ps_diag_ctx(current_token(runtime_context), "decl",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "decl",
                 "top-level declaration syntax allocation failed");
   }
   declaration->declarators = grown;
@@ -58,7 +63,7 @@ static void append_declarator_slot(
       declaration->initializers,
       sizeof(*declaration->initializers) * (size_t)next_count);
   if (!grown_initializers) {
-    ps_diag_ctx(current_token(runtime_context), "decl",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "decl",
                 "top-level initializer syntax allocation failed");
   }
   declaration->initializers = grown_initializers;
@@ -115,10 +120,10 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
               .runtime_context = runtime_context,
               .allow_implicit_int = 0,
           })) {
-    diag_report_tokf(
+    diag_report_tokf_in(diagnostics(runtime_context),
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN,
         current_token(runtime_context), "%s",
-        diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
+        diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     return 0;
   }
   ps_prepare_decl_specifier_alignments_in_context(
@@ -189,9 +194,9 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_prepare_optional_initializer_syntax(
         initializer, runtime_context);
     if (initializer_value_is_missing(initializer)) {
-      diag_report_tokf(
+      diag_report_tokf_in(diagnostics(runtime_context),
           DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer->value_tok,
-          "%s", diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
+          "%s", diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
       abort_toplevel_declaration(callbacks, declaration_context);
       return 0;
     }

@@ -18,6 +18,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct declaration_declarator_parse_context_t
+    declaration_declarator_parse_context_t;
+
 static tokenizer_context_t *tokenizer(
     psx_parser_runtime_context_t *runtime_context) {
   return ps_parser_runtime_tokenizer(runtime_context);
@@ -28,6 +31,11 @@ static token_t *current_token(
   return tk_get_current_token_ctx(tokenizer(runtime_context));
 }
 
+static ag_diagnostic_context_t *diagnostics(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_diagnostics(runtime_context);
+}
+
 static const psx_decl_specifier_syntax_options_t *
 complete_decl_specifier_syntax_options(
     const psx_decl_specifier_syntax_options_t *options,
@@ -36,14 +44,14 @@ complete_decl_specifier_syntax_options(
   if (!options || !options->semantic_context || !options->global_registry ||
       !options->local_registry || !options->runtime_context ||
       !tokenizer(options->runtime_context)) {
-    ps_diag_ctx(NULL, "declaration-syntax",
-                "semantic, registry, and parser runtime contexts must be provided explicitly");
+    return NULL;
   }
   *storage = *options;
   return storage;
 }
 
-static void diagnose_type_name_storage_class(token_t *start) {
+static void diagnose_type_name_storage_class(
+    psx_parser_runtime_context_t *runtime_context, token_t *start) {
   for (token_t *token = start;
        token && psx_is_decl_prefix_token(token->kind);
        token = token->next) {
@@ -51,15 +59,15 @@ static void diagnose_type_name_storage_class(token_t *start) {
         token->kind == TK_STATIC || token->kind == TK_AUTO ||
         token->kind == TK_REGISTER || token->kind == TK_ALIGNAS ||
         token->kind == TK_INLINE || token->kind == TK_NORETURN) {
-      ps_diag_ctx(
+      ps_diag_ctx_in(diagnostics(runtime_context),
           token, "cast", "%s",
-          diag_message_for(DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
+          diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
     }
   }
   if (start && start->kind == TK_TYPEDEF) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(diagnostics(runtime_context),
         start, "cast", "%s",
-        diag_message_for(DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
+        diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
   }
 }
 
@@ -111,7 +119,7 @@ static void consume_declaration_alignas(
       parse_context ? parse_context->runtime_context : NULL;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   if (!specifier || specifier->alignas_expression_count >= 8) {
-    ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                  "declaration alignas limit exceeded");
   }
   tk_set_current_token_ctx(
@@ -121,7 +129,7 @@ static void consume_declaration_alignas(
   token_t *end = find_declaration_expression_end(
       start, TK_RPAREN, TK_EOF);
   if (!end) {
-    ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                  "unterminated declaration alignas");
   }
   psx_parsed_const_expr_t *expression =
@@ -132,10 +140,7 @@ static void consume_declaration_alignas(
   tk_expect_ctx(tk_ctx, ')');
 }
 
-static void diagnose_declarator_too_complex(void *context, token_t *tok) {
-  (void)context;
-  ps_diag_ctx(tok, "declaration-syntax", "declarator is too complex");
-}
+static void diagnose_declarator_too_complex(void *context, token_t *tok);
 
 static psx_parsed_array_bound_t *append_array_bound(
     psx_parsed_declarator_t *declarator,
@@ -145,7 +150,7 @@ static psx_parsed_array_bound_t *append_array_bound(
       declarator->array_bound_count > declarator->array_bound_capacity)
     return NULL;
   if (declarator->array_bound_count == declarator->array_bound_capacity) {
-    int capacity = pda_next_cap(
+    int capacity = pda_next_cap_in(diagnostics(runtime_context),
         declarator->array_bound_capacity,
         declarator->array_bound_count + 1);
     psx_parsed_array_bound_t *bounds =
@@ -174,7 +179,7 @@ static psx_parsed_function_suffix_t *append_function_suffix(
     return NULL;
   if (declarator->function_suffix_count ==
       declarator->function_suffix_capacity) {
-    int capacity = pda_next_cap(
+    int capacity = pda_next_cap_in(diagnostics(runtime_context),
         declarator->function_suffix_capacity,
         declarator->function_suffix_count + 1);
     psx_parsed_function_suffix_t *suffixes =
@@ -203,6 +208,7 @@ static int parse_type_name_syntax_at(
   psx_decl_specifier_syntax_options_t complete_options;
   options = complete_decl_specifier_syntax_options(
       options, &complete_options);
+  if (!options) return 0;
   psx_parser_runtime_context_t *runtime_context =
       options->runtime_context;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
@@ -213,7 +219,7 @@ static int parse_type_name_syntax_at(
   if (!type_start) return 0;
 
   out->diagnostic_token = type_start;
-  diagnose_type_name_storage_class(type_start);
+  diagnose_type_name_storage_class(runtime_context, type_start);
   if (type_start->kind == TK_ATOMIC && type_start->next &&
       type_start->next->kind == TK_LPAREN) {
     out->atomic_inner = calloc(1, sizeof(*out->atomic_inner));
@@ -276,7 +282,7 @@ void psx_dispose_type_name_syntax(psx_parsed_type_name_t *type_name) {
   *type_name = (psx_parsed_type_name_t){0};
 }
 
-typedef struct {
+struct declaration_declarator_parse_context_t {
   psx_parsed_declarator_t *declarator;
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
@@ -286,7 +292,17 @@ typedef struct {
   void *typedef_name_context;
   int allow_implicit_function_parameters;
   int has_syntax_error;
-} declaration_declarator_parse_context_t;
+};
+
+static void diagnose_declarator_too_complex(void *context, token_t *tok) {
+  declaration_declarator_parse_context_t *parse_context = context;
+  psx_parser_runtime_context_t *runtime_context =
+      parse_context ? parse_context->runtime_context : NULL;
+  if (!runtime_context) return;
+  ps_diag_ctx_in(
+      diagnostics(runtime_context), tok, "declaration-syntax",
+      "declarator is too complex");
+}
 
 static int append_declarator_pointer(
     void *context, int is_const, int is_volatile, int nesting_depth) {
@@ -344,7 +360,7 @@ static int consume_declarator_suffix(
       expression_end = find_declaration_expression_end(
           current_token(runtime_context), TK_RBRACKET, TK_EOF);
       if (!expression_end) {
-        ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+        ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                      "unterminated array bound");
       }
       tk_set_current_token_ctx(tk_ctx, expression_end);
@@ -391,7 +407,7 @@ static int consume_declarator_suffix(
   psx_parsed_function_parameters_t *parameters =
       calloc(1, sizeof(*parameters));
   if (!parameters) {
-    ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                  "function parameter syntax allocation failed");
   }
   if (!psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
@@ -518,7 +534,7 @@ static int parse_declarator_syntax_tree_into(
     declarator->bit_width_expression =
         make_parsed_const_expr(start, end);
     if (!declarator->bit_width_expression.end) {
-      ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+      ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                    "unterminated bit-field width");
     }
     tk_set_current_token_ctx(
@@ -616,7 +632,7 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
         runtime_context,
         local_declarations);
     if (current_token(runtime_context) != expression->end) {
-      ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+      ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                    "runtime array bound was not fully consumed");
     }
   }
@@ -692,9 +708,9 @@ static void parse_tag_specifier(
     psx_make_anonymous_tag_name_in(
         options->runtime_context, &action->name, &action->name_len);
   } else {
-    ps_diag_missing(
+    ps_diag_missing_in(diagnostics(runtime_context),
         current_token(runtime_context),
-        diag_text_for(DIAG_TEXT_TAG_NAME));
+        diag_text_for_in(diagnostics(runtime_context), DIAG_TEXT_TAG_NAME));
   }
 
   if (tk_consume_ctx(tk_ctx, '{')) {
@@ -702,7 +718,7 @@ static void parse_tag_specifier(
     if (action->kind == TK_ENUM) {
       action->enum_body = calloc(1, sizeof(*action->enum_body));
       if (!action->enum_body) {
-        ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+        ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                      "enum body allocation failed");
       }
       psx_parse_enum_body_in_contexts(
@@ -710,7 +726,7 @@ static void parse_tag_specifier(
     } else {
       action->aggregate_body = calloc(1, sizeof(*action->aggregate_body));
       if (!action->aggregate_body) {
-        ps_diag_ctx(current_token(runtime_context), "declaration-syntax",
+        ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                      "aggregate body allocation failed");
       }
       psx_parse_aggregate_body_with_options(
@@ -728,6 +744,7 @@ int psx_try_parse_decl_specifier_syntax_ex(
   psx_decl_specifier_syntax_options_t complete_options;
   options = complete_decl_specifier_syntax_options(
       options, &complete_options);
+  if (!options) return 0;
   psx_parser_runtime_context_t *runtime_context =
       options->runtime_context;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
@@ -806,10 +823,14 @@ void psx_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options) {
   if (psx_try_parse_decl_specifier_syntax_ex(specifier, options)) return;
-  ps_diag_ctx(
-      current_token(options ? options->runtime_context : NULL),
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
+  if (!runtime_context) return;
+  ps_diag_ctx_in(
+      diagnostics(runtime_context), current_token(runtime_context),
       "decl", "%s",
-               diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
+      diag_message_for_in(
+          diagnostics(runtime_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
 }
 
 void ps_dispose_decl_specifier_syntax(

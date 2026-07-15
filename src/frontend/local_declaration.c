@@ -86,7 +86,8 @@ static void *begin_declaration(
                 "canonical local declaration type resolution failed");
   }
   application->requested_alignment =
-      psx_apply_parsed_decl_alignment(specifier);
+      psx_apply_parsed_decl_alignment(
+          application->semantic_context, specifier);
   application->is_extern = specifier->type_spec.is_extern ? 1 : 0;
   application->is_static = specifier->type_spec.is_static ? 1 : 0;
   return application;

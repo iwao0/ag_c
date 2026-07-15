@@ -26,6 +26,11 @@ typedef struct {
   const token_t *fallback_diag_tok;
 } psx_semantic_traversal_t;
 
+static ag_diagnostic_context_t *semantic_diagnostics(
+    psx_semantic_context_t *semantic_context) {
+  return ps_ctx_diagnostics(semantic_context);
+}
+
 static void semantic_transform_node(
     node_t *node, const psx_semantic_traversal_t *traversal);
 
@@ -66,8 +71,9 @@ static void semantic_transform_initializer_syntax(
 }
 
 static void semantic_transform_return(
-    node_t *node, node_function_definition_t *current_func,
-                                      const token_t *fallback_diag_tok) {
+    ag_diagnostic_context_t *diagnostics, node_t *node,
+    node_function_definition_t *current_func,
+    const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
   const psx_type_t *return_type =
@@ -76,17 +82,17 @@ static void semantic_transform_return(
 
   if (!node->lhs) {
     if (!returns_void) {
-      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
+      diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                      "%s",
-                     diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
+                     diag_message_for_in(diagnostics, DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
     }
     return;
   }
 
   if (returns_void) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
+    diag_emit_tokf_in(diagnostics, DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                    "%s",
-                   diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
+                   diag_message_for_in(diagnostics, DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
   }
 
   /* C11 6.8.6.4 / 6.5.16.1: NULL pointer constant 0 is allowed, but a nonzero
@@ -95,7 +101,7 @@ static void semantic_transform_return(
       node->lhs->kind == ND_NUM) {
     node_num_t *num = (node_num_t *)node->lhs;
     if (num->val != 0) {
-      ps_diag_ctx((token_t *)tok, "return",
+      ps_diag_ctx_in(diagnostics, (token_t *)tok, "return",
                    "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
                    num->val);
     }
@@ -112,6 +118,7 @@ static void semantic_transform_node_array(
 }
 
 static void semantic_validate_assignment(node_t *node,
+                                         ag_diagnostic_context_t *diagnostics,
                                          const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
@@ -122,22 +129,23 @@ static void semantic_validate_assignment(node_t *node,
       node_function_call_t *call =
           (node_function_call_t *)node->rhs;
       if (!call->callee && call->direct_name) {
-        ps_diag_ctx(tok, "assign",
+        ps_diag_ctx_in(diagnostics, tok, "assign",
                      "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
                      call->direct_name_len, call->direct_name);
       }
     }
-    ps_diag_ctx(tok, "assign",
+    ps_diag_ctx_in(diagnostics, tok, "assign",
                  "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
   }
 
   if (node->is_decl_initializer) {
     const psx_type_t *lhs_type = ps_node_get_type(node->lhs);
     int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
-    ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
+    ps_node_reject_const_qual_discard_at_in(
+        diagnostics, node->lhs, node->rhs, tok);
     if (lhs_is_pointer && node->rhs->kind == ND_NUM &&
         ((node_num_t *)node->rhs)->val != 0) {
-      ps_diag_ctx(tok, "init",
+      ps_diag_ctx_in(diagnostics, tok, "init",
                    "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
                    ((node_num_t *)node->rhs)->val);
     }
@@ -145,12 +153,12 @@ static void semantic_validate_assignment(node_t *node,
         !ps_type_is_tag_aggregate(lhs_type) &&
         lhs_type->kind != PSX_TYPE_ARRAY) {
       if (ps_node_value_is_pointer_like(node->rhs)) {
-        ps_diag_ctx(tok, "init",
+        ps_diag_ctx_in(diagnostics, tok, "init",
                      "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
       if (ps_type_is_tag_aggregate(rhs_type) &&
           ps_type_sizeof(rhs_type) > 0) {
-        ps_diag_ctx(tok, "init",
+        ps_diag_ctx_in(diagnostics, tok, "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
                      ps_ctx_tag_kind_spelling(rhs_type->tag_kind));
       }
@@ -160,23 +168,27 @@ static void semantic_validate_assignment(node_t *node,
   if (!node->is_source_assignment &&
       !node->is_source_compound_assignment) return;
   if (node->lhs->kind == ND_FUNCREF) {
-    ps_diag_ctx(tok, "assign",
+    ps_diag_ctx_in(diagnostics, tok, "assign",
                  "関数識別子に代入することはできません (C11 6.5.16p2)");
   }
-  ps_node_expect_lvalue_at(node->lhs, "=", tok);
-  ps_node_reject_const_assign_at(node->lhs, "=", tok);
+  ps_node_expect_lvalue_at_in(diagnostics, node->lhs, "=", tok);
+  ps_node_reject_const_assign_at_in(
+      diagnostics, node->lhs, "=", tok);
   if (node->is_source_assignment)
-    ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
+    ps_node_reject_const_qual_discard_at_in(
+        diagnostics, node->lhs, node->rhs, tok);
 }
 
 static void semantic_resolve_subscript(
     psx_semantic_context_t *semantic_context, node_t *node,
     const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_SUBSCRIPT) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   psx_subscript_operands_resolution_t operands;
   psx_resolve_subscript_operands(node->lhs, node->rhs, &operands);
   if (operands.status == PSX_SUBSCRIPT_OPERANDS_INVALID) {
-    ps_diag_ctx(node->tok ? node->tok : (token_t *)fallback_diag_tok,
+    ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
                 "subscript",
                 "サブスクリプトの両辺ともポインタ/配列ではありません (C11 6.5.2.1p1)");
   }
@@ -191,14 +203,16 @@ static void semantic_resolve_unary_deref(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_UNARY_DEREF) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
   psx_deref_operand_status_t status = psx_resolve_deref_operand(node->lhs);
   if (status == PSX_DEREF_OPERAND_NOT_POINTER) {
-    ps_diag_ctx(tok, "deref",
+    ps_diag_ctx_in(diagnostics, tok, "deref",
                 "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
   }
   if (status == PSX_DEREF_OPERAND_VOID_POINTER) {
-    ps_diag_ctx(tok, "deref",
+    ps_diag_ctx_in(diagnostics, tok, "deref",
                 "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
   semantic_bind_result_type(
@@ -211,11 +225,13 @@ static void semantic_resolve_arithmetic_unary(
     node_t *node, const char *operator_name,
     const token_t *fallback_diag_tok) {
   if (!node) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   semantic_bind_result_type(
       node, psx_resolve_arithmetic_unary_result_type(
                 semantic_context, node->kind, node->lhs));
   if (node->type) return;
-  ps_diag_ctx(node->tok ? node->tok : (token_t *)fallback_diag_tok,
+  ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
               "unary", "%s のオペランドは算術型でなければなりません",
               operator_name);
 }
@@ -224,18 +240,21 @@ static void semantic_resolve_incdec(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   const char *op = node->kind == ND_PRE_INC || node->kind == ND_POST_INC
                        ? "++"
                        : "--";
   token_t *tok = node->tok
                      ? node->tok
                      : (token_t *)fallback_diag_tok;
-  ps_node_expect_lvalue_at(node->lhs, op, tok);
-  ps_node_reject_const_assign_at(node->lhs, op, tok);
+  ps_node_expect_lvalue_at_in(diagnostics, node->lhs, op, tok);
+  ps_node_reject_const_assign_at_in(
+      diagnostics, node->lhs, op, tok);
   const psx_type_t *type = psx_resolve_incdec_result_type(
       semantic_context, node->lhs);
   if (!type) {
-    ps_diag_ctx(tok, "incdec",
+    ps_diag_ctx_in(diagnostics, tok, "incdec",
                 "%s のオペランドは実数型またはポインタ型でなければなりません",
                 op);
   }
@@ -247,6 +266,8 @@ static void semantic_resolve_member_access(
     node_member_access_t *access,
     const token_t *fallback_diag_tok) {
   if (!access || !access->base.lhs) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   token_t *tok = access->base.tok
                      ? access->base.tok
                      : (token_t *)fallback_diag_tok;
@@ -261,16 +282,16 @@ static void semantic_resolve_member_access(
       },
       &resolution);
   if (resolution.status == PSX_MEMBER_ACCESS_INVALID_BASE) {
-    diag_emit_tokf(
+    diag_emit_tokf_in(diagnostics,
         DIAG_ERR_PARSER_INVALID_CONTEXT, tok, "%s",
-        diag_message_for(
+        diag_message_for_in(diagnostics,
             access->from_pointer
                 ? DIAG_ERR_PARSER_ARROW_LHS_REQUIRES_STRUCT_PTR
                 : DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT));
   }
   if (resolution.status == PSX_MEMBER_ACCESS_NOT_FOUND) {
-    ps_diag_ctx(tok, "member",
-                diag_message_for(DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
+    ps_diag_ctx_in(diagnostics, tok, "member",
+                diag_message_for_in(diagnostics, DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
                 access->member_name_len, access->member_name);
   }
 
@@ -304,6 +325,8 @@ static void semantic_resolve_function_reference(
     node_funcref_t *reference,
     const token_t *fallback_diag_tok) {
   if (!reference) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   const psx_type_t *source_type = ps_node_get_type((node_t *)reference);
   const psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
       ? psx_resolve_function_reference_type(
@@ -313,7 +336,7 @@ static void semantic_resolve_function_reference(
     type = ps_type_clone_in(
         ps_ctx_arena(semantic_context), source_type);
   if (!type) {
-    ps_diag_ctx(reference->base.tok
+    ps_diag_ctx_in(diagnostics, reference->base.tok
                     ? reference->base.tok
                     : (token_t *)fallback_diag_tok,
                 "funcref", "canonical function type is not bound");
@@ -356,6 +379,8 @@ static void semantic_resolve_function_call(
     node_function_call_t *call,
     const token_t *fallback_diag_tok) {
   if (!call) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   psx_function_call_resolution_t resolution;
   psx_resolve_function_call_type(
       call->callee_type,
@@ -379,7 +404,7 @@ static void semantic_resolve_function_call(
       return;
     }
   }
-  ps_diag_ctx(call->base.tok
+  ps_diag_ctx_in(diagnostics, call->base.tok
                   ? call->base.tok
                   : (token_t *)fallback_diag_tok,
               "funcall", "canonical callable type is not bound");
@@ -442,6 +467,8 @@ static void semantic_resolve_generic_selection(
     node_generic_selection_t *selection,
     const token_t *fallback_diag_tok) {
   if (!selection) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
   psx_collect_lvar_usage_events_in(
       local_registry, selection->control, NULL);
   token_t *tok = selection->base.tok
@@ -460,19 +487,19 @@ static void semantic_resolve_generic_selection(
   }
   switch (resolution.status) {
     case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT:
-      ps_diag_ctx(conflict_tok, "generic",
+      ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
                   "_Generic に default association を複数指定できません (C11 6.5.1.1p2)");
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE:
-      ps_diag_ctx(conflict_tok, "generic",
+      ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
                   "_Generic に互換な型associationを複数指定できません (C11 6.5.1.1p2)");
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH:
-      ps_diag_ctx(tok, "generic", "%s",
-                  diag_message_for(DIAG_ERR_PARSER_GENERIC_NO_MATCH));
+      ps_diag_ctx_in(diagnostics, tok, "generic", "%s",
+                  diag_message_for_in(diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH));
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED:
-      ps_diag_ctx(conflict_tok, "generic",
+      ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
                   "canonical generic association/result type is not bound");
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_OK:
@@ -541,6 +568,8 @@ static void semantic_resolve_sizeof_query(
     node_sizeof_query_t *query,
     const psx_semantic_traversal_t *traversal) {
   if (!query) return;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(traversal->semantic_context);
   const token_t *fallback_diag_tok = traversal->fallback_diag_tok;
   psx_parsed_type_name_t *syntax = query->type_name.syntax;
   if (query->is_type_name && syntax) {
@@ -570,16 +599,16 @@ static void semantic_resolve_sizeof_query(
                                   : (token_t *)fallback_diag_tok);
   switch (resolution.status) {
     case PSX_TYPE_QUERY_RESOLUTION_NEGATIVE_ARRAY_BOUND:
-      ps_diag_ctx(issue_tok, "sizeof", "%s",
-                  diag_message_for(
+      ps_diag_ctx_in(diagnostics, issue_tok, "sizeof", "%s",
+                  diag_message_for_in(diagnostics,
                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       return;
     case PSX_TYPE_QUERY_RESOLUTION_INVALID_ARRAY_BOUND_TARGET:
-      ps_diag_ctx(issue_tok, "sizeof",
+      ps_diag_ctx_in(diagnostics, issue_tok, "sizeof",
                   "invalid deferred sizeof array bound target");
       return;
     case PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED:
-      ps_diag_ctx(issue_tok, "sizeof",
+      ps_diag_ctx_in(diagnostics, issue_tok, "sizeof",
                   "canonical sizeof query type is not bound");
       return;
     case PSX_TYPE_QUERY_RESOLUTION_OK:
@@ -613,6 +642,8 @@ static void semantic_transform_node(
   if (!node) return;
   node_function_definition_t *current_func = traversal->current_func;
   const token_t *fallback_diag_tok = traversal->fallback_diag_tok;
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(traversal->semantic_context);
 
   switch (node->kind) {
     case ND_DECL_INIT: {
@@ -628,11 +659,12 @@ static void semantic_transform_node(
           node, ps_type_clone_in(
                     ps_ctx_arena(traversal->semantic_context),
                     ps_node_get_type(node->lhs)));
-      semantic_validate_assignment(node, fallback_diag_tok);
+      semantic_validate_assignment(node, diagnostics, fallback_diag_tok);
       break;
     }
     case ND_RETURN:
-      semantic_transform_return(node, current_func, fallback_diag_tok);
+      semantic_transform_return(
+          diagnostics, node, current_func, fallback_diag_tok);
       semantic_transform_node(node->lhs, traversal);
       break;
     case ND_BLOCK:
@@ -762,7 +794,7 @@ static void semantic_transform_node(
                       traversal->semantic_context, node->lhs));
       if (node->is_explicit_addr_expr &&
           ps_node_bitfield_width(node->lhs) > 0) {
-        ps_diag_ctx(node->tok
+        ps_diag_ctx_in(diagnostics, node->tok
                         ? node->tok
                         : (token_t *)fallback_diag_tok,
                     "addr",
@@ -830,7 +862,7 @@ static void semantic_transform_node(
     default:
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
-      semantic_validate_assignment(node, fallback_diag_tok);
+      semantic_validate_assignment(node, diagnostics, fallback_diag_tok);
       if (node->kind == ND_ASSIGN)
         ps_node_bind_type(node, ps_node_get_type(node->lhs));
       break;

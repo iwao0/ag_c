@@ -158,6 +158,10 @@ static ag_codegen_emit_context_t *wasm32_ir_emit_context(void) {
   return ctx->emit_context;
 }
 
+static ag_diagnostic_context_t *wasm32_ir_diagnostics(void) {
+  return cg_context_diagnostics(wasm32_ir_emit_context());
+}
+
 #define wasm_cg_emitf(...) \
   cg_emitf_in(wasm32_ir_emit_context(), __VA_ARGS__)
 static const char k_wasm_indent_spaces[] = "                                ";
@@ -228,14 +232,14 @@ static int align_to(int value, int align) {
 }
 
 static void wasm_unsupported_op(ir_op_t op) {
-  diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+  diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       ir_op_name(op));
 }
 
 static void wasm_unsupported_msg(const char *msg) {
-  diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+  diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       msg);
 }
 
@@ -256,8 +260,8 @@ static wasm_function_symbol_t *function_symbol_state(
     wasm_function_symbol_t *next = realloc(
         g_function_symbols.symbols, (size_t)next_cap * sizeof(*next));
     if (!next)
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
-                          diag_message_for(DIAG_ERR_INTERNAL_OOM));
+      diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+                          diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
     g_function_symbols.symbols = next;
     g_function_symbols.cap = next_cap;
   }
@@ -266,8 +270,8 @@ static wasm_function_symbol_t *function_symbol_state(
   memset(symbol, 0, sizeof(*symbol));
   symbol->name = malloc((size_t)name_len + 1);
   if (!symbol->name)
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   memcpy(symbol->name, name, (size_t)name_len);
   symbol->name[name_len] = '\0';
   symbol->name_len = name_len;
@@ -325,7 +329,7 @@ static wasm_data_symbol_t *intern_data_symbol(const char *name, int name_len, in
   if (g_data.symbol_count == g_data.symbol_cap) {
     int ncap = g_data.symbol_cap ? g_data.symbol_cap * 2 : 32;
     wasm_data_symbol_t *n = realloc(g_data.symbols, (size_t)ncap * sizeof(*n));
-    if (!n) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
     g_data.symbols = n;
     g_data.symbol_cap = ncap;
   }
@@ -333,8 +337,8 @@ static wasm_data_symbol_t *intern_data_symbol(const char *name, int name_len, in
   wasm_data_symbol_t *s = &g_data.symbols[g_data.symbol_count++];
   s->name = malloc((size_t)name_len + 1);
   if (!s->name)
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   memcpy(s->name, name, (size_t)name_len);
   s->name[name_len] = '\0';
   s->name_len = name_len;
@@ -380,15 +384,15 @@ static int intern_function_table_ref(char *name, int name_len) {
   if (g_func_table.ref_count == g_func_table.ref_cap) {
     int ncap = g_func_table.ref_cap ? g_func_table.ref_cap * 2 : 16;
     wasm_func_ref_t *n = realloc(g_func_table.refs, (size_t)ncap * sizeof(*n));
-    if (!n) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
     g_func_table.refs = n;
     g_func_table.ref_cap = ncap;
   }
   int idx = g_func_table.ref_count++;
   g_func_table.refs[idx].name = malloc((size_t)name_len + 1);
   if (!g_func_table.refs[idx].name)
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   memcpy(g_func_table.refs[idx].name, name, (size_t)name_len);
   g_func_table.refs[idx].name[name_len] = '\0';
   g_func_table.refs[idx].name_len = name_len;
@@ -619,7 +623,7 @@ static void add_alloca_slot(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   if (ctx->alloca_count == ctx->alloca_cap) {
     int ncap = ctx->alloca_cap ? ctx->alloca_cap * 2 : 16;
     wasm_alloca_slot_t *n = realloc(ctx->allocas, (size_t)ncap * sizeof(*n));
-    if (!n) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
     ctx->allocas = n;
     ctx->alloca_cap = ncap;
   }
@@ -730,7 +734,7 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx,
       int ncap = ctx->global_func_state_cap ? ctx->global_func_state_cap * 2 : 8;
       wasm_global_func_state_t *n =
           realloc(ctx->global_func_states, (size_t)ncap * sizeof(*n));
-      if (!n) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+      if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
       ctx->global_func_states = n;
       ctx->global_func_state_cap = ncap;
     }
@@ -801,7 +805,7 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
   if (!ctx->vreg_type_seen || !ctx->vreg_types || !ctx->vreg_unsigned ||
       !ctx->vreg_func_ref_names || !ctx->vreg_func_ref_name_lens || !ctx->vreg_global_refs ||
       !ctx->vreg_global_ref_offsets || !ctx->vreg_const_known || !ctx->vreg_const_values) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
   }
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {

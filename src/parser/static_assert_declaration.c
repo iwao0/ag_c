@@ -29,14 +29,17 @@ void psx_parse_static_assert_syntax_in_contexts(
     return;
   tokenizer_context_t *tokenizer_context =
       ps_parser_runtime_tokenizer(runtime_context);
+  ag_diagnostic_context_t *diagnostics =
+      ps_parser_runtime_diagnostics(runtime_context);
   memset(declaration, 0, sizeof(*declaration));
   declaration->diagnostic_token = current_token(runtime_context);
   if (current_token(runtime_context)->kind != TK_STATIC_ASSERT) {
-    diag_emit_tokf(
-        DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED,
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED,
         current_token(runtime_context),
                    "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
+                   diag_message_for_in(
+                       diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
   }
   tk_set_current_token_ctx(
       tokenizer_context, current_token(runtime_context)->next);
@@ -47,9 +50,11 @@ void psx_parse_static_assert_syntax_in_contexts(
       local_declarations);
   tk_expect_ctx(tokenizer_context, ',');
   if (current_token(runtime_context)->kind != TK_STRING) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING,
+    diag_emit_tokf_in(diagnostics,
+                   DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING,
                    current_token(runtime_context), "%s",
-                   diag_message_for(
+                   diag_message_for_in(
+                       diagnostics,
                        DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
   }
   tk_set_current_token_ctx(

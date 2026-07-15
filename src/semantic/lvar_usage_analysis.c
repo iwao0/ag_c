@@ -183,6 +183,7 @@ static void record_preinitialized_locals(
 }
 
 static void emit_usage_warnings(
+    ag_diagnostic_context_t *diagnostics,
     node_function_definition_t *function,
     const token_t *fallback) {
   if (!function) return;
@@ -192,21 +193,24 @@ static void emit_usage_warnings(
     if (!view.is_used && !view.is_unevaluated_used &&
         !view.is_address_taken && !view.is_param &&
         view.name && view.name[0] != '_') {
-      diag_warn_tokf(
-          DIAG_WARN_PARSER_UNUSED_VARIABLE, fallback,
-          diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
+      diag_warn_tokf_in(
+          diagnostics, DIAG_WARN_PARSER_UNUSED_VARIABLE, fallback,
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_UNUSED_VARIABLE),
           view.name_len, view.name);
     } else if (view.is_used && !view.is_initialized &&
                !view.is_param && !view.is_array) {
-      diag_warn_tokf(
-          DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, fallback,
-          diag_warn_message_for(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
+      diag_warn_tokf_in(
+          diagnostics, DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, fallback,
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
           view.name_len, view.name);
     }
   }
 }
 
 void psx_analyze_function_lvar_usage_in(
+    ag_diagnostic_context_t *diagnostics,
     psx_local_registry_t *local_registry,
     node_function_definition_t *function,
     const token_t *fallback_diag_tok) {
@@ -216,5 +220,5 @@ void psx_analyze_function_lvar_usage_in(
   record_preinitialized_locals(local_registry, function);
   ps_decl_replay_lvar_usage_events_in(
       local_registry, function->lvars);
-  emit_usage_warnings(function, fallback_diag_tok);
+  emit_usage_warnings(diagnostics, function, fallback_diag_tok);
 }

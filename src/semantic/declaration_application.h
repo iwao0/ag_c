@@ -50,6 +50,7 @@ const psx_type_t *psx_apply_runtime_declarator_type_in_context(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application);
 int psx_apply_parsed_decl_alignment(
+    psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier);
 void psx_apply_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
