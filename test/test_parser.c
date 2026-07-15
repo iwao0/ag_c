@@ -467,21 +467,31 @@ static bool test_semantic_has_tag_type(
       test_semantic_context(), kind, name, len);
 }
 
+static int test_semantic_register_tag_type(
+    token_kind_t kind, char *name, int len,
+    int is_complete, int member_count, int tag_size, int tag_align);
+
 static void test_semantic_define_tag_type_with_layout(
     token_kind_t kind, char *name, int len,
     int member_count, int tag_size, int tag_align) {
   int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  ASSERT_TRUE(test_semantic_register_tag_type(
       kind, name, len, is_complete, member_count, tag_size, tag_align));
 }
 
 static int test_semantic_register_tag_type(
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count, int tag_size, int tag_align) {
-  return ps_ctx_register_tag_type_in_contexts(
+  if (!ps_ctx_register_tag_type_in_contexts(
       test_semantic_context(), test_local_registry(),
-      kind, name, len, is_complete, member_count, tag_size, tag_align);
+      kind, name, len, is_complete, member_count))
+    return 0;
+  if (!is_complete || (kind != TK_STRUCT && kind != TK_UNION)) return 1;
+  const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
+      test_semantic_context(), kind, name, len);
+  return record && ps_ctx_publish_record_layout_in(
+      test_semantic_context(), record->record_id,
+      tag_size, tag_align > 0 ? tag_align : 1);
 }
 
 static int test_semantic_register_tag_member(
@@ -4990,7 +5000,7 @@ static void test_global_declaration_resolution_boundary() {
   int incomplete_tag_len = 26;
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       test_semantic_context(), test_local_registry(), TK_STRUCT,
-      incomplete_tag_name, incomplete_tag_len, 0, 0, 0, 1));
+      incomplete_tag_name, incomplete_tag_len, 0, 0));
   const psx_record_decl_t *incomplete_record =
       ps_ctx_ensure_tag_record_decl_in(
           test_semantic_context(), TK_STRUCT,
@@ -5017,12 +5027,14 @@ static void test_global_declaration_resolution_boundary() {
   int complete_tag_len = 24;
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       test_semantic_context(), test_local_registry(), TK_STRUCT,
-      complete_tag_name, complete_tag_len, 1, 0, 16, 8));
+      complete_tag_name, complete_tag_len, 1, 0));
   const psx_record_decl_t *complete_record = ps_ctx_ensure_tag_record_decl_in(
       test_semantic_context(), TK_STRUCT,
       complete_tag_name, complete_tag_len);
   ASSERT_TRUE(complete_record != NULL);
   ASSERT_TRUE(complete_record->is_complete);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), complete_record->record_id, 16, 8));
   psx_type_t *stale_incomplete_view = ps_type_new_tag(
       TK_STRUCT, complete_tag_name, complete_tag_len, 1, 0);
   stale_incomplete_view->record_id = complete_record->record_id;
@@ -5247,7 +5259,6 @@ static void test_tag_declaration_resolution_boundary() {
                   ps_ctx_target_info(test_semantic_context())) == NULL);
 
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
-  request.alignment = 1;
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
@@ -5261,6 +5272,13 @@ static void test_tag_declaration_resolution_boundary() {
           ps_ctx_record_layout_table_in(test_semantic_context()),
           outer_record_id,
           ps_ctx_target_info(test_semantic_context()));
+  ASSERT_TRUE(outer_layout == NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), outer_record_id, 0, 1));
+  outer_layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(test_semantic_context()),
+      outer_record_id,
+      ps_ctx_target_info(test_semantic_context()));
   ASSERT_TRUE(outer_layout != NULL);
   ASSERT_EQ(1, outer_layout->alignment);
   psx_resolve_tag_declaration(&request, &resolution);
@@ -5268,7 +5286,6 @@ static void test_tag_declaration_resolution_boundary() {
 
   request.kind = TK_UNION;
   request.mode = PSX_TAG_DECLARATION_FORWARD;
-  request.alignment = 0;
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
 
@@ -5285,7 +5302,6 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_TRUE(shadow_definition != NULL);
   ASSERT_TRUE(shadow_definition->record_id != outer_record_id);
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
-  request.alignment = 1;
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_EQ(1, resolution.scope_depth);
@@ -6306,11 +6322,16 @@ static void test_aggregate_member_resolution_boundary() {
           .name = (char *)"__AlignedMember",
           .name_len = 15,
           .mode = PSX_TAG_DECLARATION_DEFINITION,
-          .size = 12,
-          .alignment = 4,
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  const psx_record_decl_t *aligned_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          test_semantic_context(), TK_STRUCT,
+          (char *)"__AlignedMember", 15);
+  ASSERT_TRUE(aligned_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), aligned_record->record_id, 12, 4));
   const psx_type_t *aligned_member = resolve_tag_base_for_test(
       TK_STRUCT, (char *)"__AlignedMember", 15);
   ASSERT_TRUE(aligned_member != NULL);
@@ -6591,8 +6612,6 @@ static void test_aggregate_member_resolution_boundary() {
           .name_len = 7,
           .mode = PSX_TAG_DECLARATION_DEFINITION,
           .member_count = 1,
-          .size = 8,
-          .alignment = 4,
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
@@ -6610,6 +6629,12 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(register_boundary_tag_member(
       TK_STRUCT, (char *)"PromSrc", 7,
       (char *)"b", 1, 4, integer, 3, 2, 1));
+  const psx_record_decl_t *promoted_source_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          test_semantic_context(), TK_STRUCT, (char *)"PromSrc", 7);
+  ASSERT_TRUE(promoted_source_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), promoted_source_record->record_id, 8, 4));
   psx_aggregate_layout_state_t promoted_layout;
   psx_aggregate_layout_init(
       &promoted_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
@@ -6662,8 +6687,6 @@ static void test_aggregate_member_resolution_boundary() {
           .name_len = 8,
           .mode = PSX_TAG_DECLARATION_DEFINITION,
           .member_count = 2,
-          .size = 8,
-          .alignment = 4,
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
@@ -6684,6 +6707,12 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(register_boundary_tag_member(
       TK_STRUCT, (char *)"BatchSrc", 8,
       (char *)"b", 1, 4, integer, 0, 0, 0));
+  const psx_record_decl_t *batch_source_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          test_semantic_context(), TK_STRUCT, (char *)"BatchSrc", 8);
+  ASSERT_TRUE(batch_source_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), batch_source_record->record_id, 8, 4));
   ASSERT_TRUE(register_boundary_tag_member(
       TK_STRUCT, (char *)"BatchDst", 8,
       (char *)"b", 1, 0, integer, 0, 0, 0));
@@ -18178,7 +18207,7 @@ static void test_semantic_context_isolation() {
       first, test_local_registry(), enum_name, 12, 11, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first, test_local_registry(),
-      TK_STRUCT, tag_name, 10, 0, 0, 0, 0));
+      TK_STRUCT, tag_name, 10, 0, 0));
 
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
       second, enum_name, 12, &value));
@@ -18319,13 +18348,19 @@ static void test_semantic_context_isolation() {
   };
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second, test_local_registry(),
-      TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
+      TK_STRUCT, direct_tag_name, 9, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second, test_local_registry(),
-      TK_STRUCT, direct_tag_name, 9, 1, 1, 4, 4));
+      TK_STRUCT, direct_tag_name, 9, 1, 1));
+  const psx_record_decl_t *direct_layout_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          second, TK_STRUCT, direct_tag_name, 9);
+  ASSERT_TRUE(direct_layout_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      second, direct_layout_record->record_id, 4, 4));
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       first, TK_STRUCT, direct_tag_name, 9));
   ASSERT_TRUE(ps_ctx_has_tag_type_in(
@@ -18455,7 +18490,13 @@ static void test_semantic_context_isolation() {
   psx_apply_parsed_tag_declaration_in_contexts(
       second, test_local_registry(),
       TK_STRUCT, applied_tag_name, 10,
-      PSX_TAG_DECLARATION_DEFINITION, 0, 8, 8, NULL);
+      PSX_TAG_DECLARATION_DEFINITION, 0, NULL);
+  const psx_record_decl_t *applied_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          second, TK_STRUCT, applied_tag_name, 10);
+  ASSERT_TRUE(applied_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      second, applied_record->record_id, 8, 8));
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       first, TK_STRUCT, applied_tag_name, 10));
   ASSERT_EQ(8, ps_ctx_get_tag_size_in(
@@ -18683,24 +18724,38 @@ static void test_compilation_session_registry_isolation() {
   };
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first.semantic_context, first.local_registry,
-      TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
+      TK_STRUCT, session_aggregate_name, 16, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       first.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       first_aggregate_members, 2, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first.semantic_context, first.local_registry,
-      TK_STRUCT, session_aggregate_name, 16, 1, 2, 8, 4));
+      TK_STRUCT, session_aggregate_name, 16, 1, 2));
+  const psx_record_decl_t *first_session_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          first.semantic_context, TK_STRUCT,
+          session_aggregate_name, 16);
+  ASSERT_TRUE(first_session_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      first.semantic_context, first_session_record->record_id, 8, 4));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second.semantic_context, second.local_registry,
-      TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
+      TK_STRUCT, session_aggregate_name, 16, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       second.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       second_aggregate_members, 2, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second.semantic_context, second.local_registry,
-      TK_STRUCT, session_aggregate_name, 16, 1, 2, 12, 4));
+      TK_STRUCT, session_aggregate_name, 16, 1, 2));
+  const psx_record_decl_t *second_session_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          second.semantic_context, TK_STRUCT,
+          session_aggregate_name, 16);
+  ASSERT_TRUE(second_session_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      second.semantic_context, second_session_record->record_id, 12, 4));
   first_aggregate_type = ps_ctx_clone_tag_type_at_in_contexts(
       first.semantic_context, first.local_registry,
       TK_STRUCT, session_aggregate_name, 16,
@@ -18769,7 +18824,7 @@ static void test_compilation_session_registry_isolation() {
       (char *)"FIRST_ENUM", 10, 37, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first.semantic_context, first.local_registry,
-      TK_STRUCT, (char *)"FirstTag", 8, 0, 0, 0, 0));
+      TK_STRUCT, (char *)"FirstTag", 8, 0, 0));
   psx_local_lookup_point_t first_namespace_point =
       ps_local_registry_capture_lookup_point_in(first.local_registry);
   const psx_type_t *isolated_typedef_type = NULL;

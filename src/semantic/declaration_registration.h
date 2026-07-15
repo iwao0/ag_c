@@ -24,7 +24,7 @@ void psx_apply_parsed_tag_declaration_in_contexts(
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int name_len,
     psx_tag_declaration_mode_t mode, int member_count,
-    int size, int alignment, token_t *diag_tok);
+    token_t *diag_tok);
 int psx_apply_aggregate_member_declaration(
     psx_aggregate_layout_state_t *layout,
     const psx_aggregate_member_declaration_request_t *request,

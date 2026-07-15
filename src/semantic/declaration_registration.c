@@ -107,7 +107,7 @@ void psx_apply_parsed_tag_declaration_in_contexts(
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int name_len,
     psx_tag_declaration_mode_t mode, int member_count,
-    int size, int alignment, token_t *diag_tok) {
+    token_t *diag_tok) {
   if (!semantic_context || !local_registry) return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
@@ -121,8 +121,6 @@ void psx_apply_parsed_tag_declaration_in_contexts(
           .name_len = name_len,
           .mode = mode,
           .member_count = member_count,
-          .size = size,
-          .alignment = alignment,
       },
       &resolution);
   if (resolution.status == PSX_TAG_DECLARATION_OK) return;

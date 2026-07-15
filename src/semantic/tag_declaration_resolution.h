@@ -27,16 +27,12 @@ typedef struct {
   int name_len;
   psx_tag_declaration_mode_t mode;
   int member_count;
-  int size;
-  int alignment;
 } psx_tag_declaration_resolution_request_t;
 
 typedef struct {
   psx_tag_declaration_status_t status;
   int registered;
   int scope_depth;
-  int size;
-  int alignment;
 } psx_tag_declaration_resolution_t;
 
 void psx_resolve_tag_declaration(

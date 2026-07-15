@@ -906,8 +906,7 @@ int ps_ctx_register_tag_type_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
-    int is_complete, int member_count,
-    int tag_size, int tag_align) {
+    int is_complete, int member_count) {
   if (!context || !local_registry || !name || len <= 0) return 0;
   tag_type_t *existing = find_tag_type_in(context, kind, name, len);
   /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
@@ -927,10 +926,6 @@ int ps_ctx_register_tag_type_in_contexts(
         record_decl->member_count = member_count;
       if (is_complete) record_decl->is_complete = 1;
       refresh_cached_record_decl(context, existing);
-      if (is_complete)
-        (void)ps_ctx_publish_record_layout_in(
-            context, record_decl->record_id,
-            tag_size, tag_align > 0 ? tag_align : 1);
     } else if (kind == TK_ENUM && is_complete) {
       existing->enum_is_complete = 1;
     }
@@ -966,10 +961,6 @@ int ps_ctx_register_tag_type_in_contexts(
       return 0;
     refresh_cached_record_decl(context, t);
   }
-  if (tag_type_is_complete(t) && t->record_decl)
-    (void)ps_ctx_publish_record_layout_in(
-        context, t->record_decl->record_id,
-        tag_size, tag_align > 0 ? tag_align : 1);
   return 1;
 }
 

@@ -1788,6 +1788,10 @@ const tagDeclarationResolutionSource = await readFile(
   "src/semantic/tag_declaration_resolution.c",
   "utf8",
 );
+const tagDeclarationResolutionHeader = await readFile(
+  "src/semantic/tag_declaration_resolution.h",
+  "utf8",
+);
 const aggregateMemberResolutionSource = await readFile(
   "src/semantic/aggregate_member_resolution.c",
   "utf8",
@@ -3784,6 +3788,13 @@ const tagAlignLookupFunction = tagContextSource.match(
 const publishRecordLayoutFunction = tagContextSource.match(
   /int\s+ps_ctx_publish_record_layout_in\s*\([^]*?\n\}/,
 );
+const registerTagTypeFunction = tagContextSource.match(
+  /int\s+ps_ctx_register_tag_type_in_contexts\s*\([^]*?\n\}/,
+);
+const tagDeclarationRequestStruct =
+  tagDeclarationResolutionHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_tag_declaration_resolution_request_t\s*;/,
+  );
 const refreshRecordDeclFunction = tagContextSource.match(
   /static\s+void\s+refresh_cached_record_decl\s*\([^]*?\n\}/,
 );
@@ -3814,6 +3825,22 @@ if (!publishRecordLayoutFunction ||
     )) {
   throw new Error(
     "RecordLayout publication must pair declaration-order members with target layout drafts",
+  );
+}
+if (!registerTagTypeFunction ||
+    !tagDeclarationRequestStruct ||
+    /\b(?:size|alignment)\s*;/.test(tagDeclarationRequestStruct[1]) ||
+    /\bps_ctx_publish_record_layout_in\s*\(/.test(
+      registerTagTypeFunction[0],
+    ) ||
+    /\bps_ctx_publish_record_layout_in\s*\(/.test(
+      tagDeclarationResolutionSource,
+    ) ||
+    !/\bps_ctx_publish_record_layout_in\s*\(/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "tag declaration must own RecordDecl state while aggregate layout is published explicitly",
   );
 }
 if (!getTagMemberFunction ||

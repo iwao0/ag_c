@@ -134,19 +134,17 @@ static void apply_decl_tag_action(
   psx_apply_parsed_tag_declaration_in_contexts(
       semantic_context, local_registry,
       action->kind, action->name, action->name_len,
-      PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0,
+      PSX_TAG_DECLARATION_REFERENCE, 0,
       action->diagnostic_token);
   if (action->action != PSX_PARSED_TAG_DEFINITION) return;
 
   int member_count = 0;
   int size = 0;
-  int alignment = 0;
+  int alignment = 1;
   if (action->kind == TK_ENUM) {
     member_count = psx_apply_parsed_enum_body_in_contexts(
         semantic_context, global_registry, local_registry,
         action->enum_body);
-    size = 4;
-    alignment = 4;
   } else {
     member_count = psx_apply_parsed_aggregate_body_layout_in_contexts(
         semantic_context, global_registry, local_registry,
@@ -156,7 +154,7 @@ static void apply_decl_tag_action(
   psx_apply_parsed_tag_declaration_in_contexts(
       semantic_context, local_registry,
       action->kind, action->name, action->name_len,
-      PSX_TAG_DECLARATION_DEFINITION, member_count, size, alignment,
+      PSX_TAG_DECLARATION_DEFINITION, member_count,
       action->diagnostic_token);
   if (action->kind == TK_STRUCT || action->kind == TK_UNION) {
     const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
@@ -334,7 +332,7 @@ void psx_apply_parsed_standalone_tag_in_contexts(
   psx_apply_parsed_tag_declaration_in_contexts(
       semantic_context, local_registry,
       action->kind, action->name, action->name_len,
-      PSX_TAG_DECLARATION_FORWARD, 0, 0, 0,
+      PSX_TAG_DECLARATION_FORWARD, 0,
       action->diagnostic_token);
 }
 

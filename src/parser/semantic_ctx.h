@@ -135,7 +135,7 @@ int ps_ctx_register_tag_type_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
-    int is_complete, int member_count, int tag_size, int tag_align);
+    int is_complete, int member_count);
 int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context);
 int ps_ctx_find_tag_kind_at_current_scope_in(
     psx_semantic_context_t *context,

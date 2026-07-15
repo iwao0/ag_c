@@ -17,8 +17,7 @@ void psx_resolve_tag_declaration(
   resolution->status = PSX_TAG_DECLARATION_INVALID;
   if (!request || !request->semantic_context || !request->local_registry ||
       !is_tag_kind(request->kind) || !request->name ||
-      request->name_len <= 0 || request->member_count < 0 ||
-      request->size < 0 || request->alignment < 0) {
+      request->name_len <= 0 || request->member_count < 0) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
@@ -44,8 +43,7 @@ void psx_resolve_tag_declaration(
     if (!ps_ctx_register_tag_type_in_contexts(
             semantic_context, local_registry, request->kind,
             request->name, request->name_len,
-            is_complete, request->member_count, request->size,
-            request->alignment)) {
+            is_complete, request->member_count)) {
       resolution->status = is_complete
                                ? PSX_TAG_DECLARATION_REDEFINITION
                                : PSX_TAG_DECLARATION_INVALID;
@@ -55,12 +53,6 @@ void psx_resolve_tag_declaration(
     resolution->status = PSX_TAG_DECLARATION_OK;
   }
   resolution->scope_depth = ps_ctx_get_tag_scope_depth_in(
-      semantic_context, request->kind,
-      request->name, request->name_len);
-  resolution->size = ps_ctx_get_tag_size_in(
-      semantic_context, request->kind,
-      request->name, request->name_len);
-  resolution->alignment = ps_ctx_get_tag_align_in(
       semantic_context, request->kind,
       request->name, request->name_len);
 }
