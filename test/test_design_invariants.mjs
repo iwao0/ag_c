@@ -3347,6 +3347,7 @@ for (const [name, source] of [
   ["expression", expressionLoweringSource],
   ["assignment", assignmentLoweringSource],
   ["cast", explicitDiagnosticCastLoweringSource],
+  ["IR builder", irBuilderSource],
 ]) {
   if (/\bps_node_(?:type|storage_type|deref)_size\s*\(/.test(source)) {
     throw new Error(
