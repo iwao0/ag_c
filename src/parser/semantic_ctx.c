@@ -46,8 +46,6 @@ struct tag_type_t {
   int len;
   int member_count;
   int is_complete;
-  int size;
-  int align;       // struct/union のアラインメント (_Alignof 用、agg_align)。0 = 未設定。
   int scope_depth;
   unsigned scope_seq;
   unsigned declaration_seq;
@@ -755,15 +753,15 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     psx_type_t *type = kind == TK_ENUM
         ? ps_type_new_enum_in(
               context->arena_context, name, len, tag->scope_depth + 1,
-              tag->size > 0 ? tag->size : 4)
+              ag_target_info_scalar_size(
+                  &context->target, AG_TARGET_SCALAR_INT))
         : ps_type_new_tag_in(
               context->arena_context, kind, name, len,
-              tag->scope_depth + 1, tag->size);
+              tag->scope_depth + 1, 0);
     type->aggregate_definition = tag->definition;
     type->record_id = tag->definition
                           ? tag->definition->record_id
                           : PSX_RECORD_ID_INVALID;
-    if (tag->align > 0) type->align = tag->align;
     return type;
   }
   return NULL;
@@ -787,18 +785,16 @@ int ps_ctx_register_tag_type_in_contexts(
      * 二重定義。一方が前方宣言なら従来どおり update。 */
     if (existing->is_complete && is_complete) return 0;
     if (member_count > existing->member_count) existing->member_count = member_count;
-    if (tag_size > existing->size) existing->size = tag_size;
-    if (tag_align > existing->align) existing->align = tag_align;
     if (is_complete) existing->is_complete = 1;
     if (existing->is_complete && !existing->definition)
       (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
     else
       refresh_cached_tag_definition(context, existing);
-    if (existing->is_complete && existing->definition &&
+    if (is_complete && existing->definition &&
         (kind == TK_STRUCT || kind == TK_UNION))
       (void)ps_ctx_publish_record_layout_in(
           context, existing->definition->record_id,
-          existing->size, existing->align > 0 ? existing->align : 1);
+          tag_size, tag_align > 0 ? tag_align : 1);
     return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -809,8 +805,6 @@ int ps_ctx_register_tag_type_in_contexts(
   t->len = len;
   t->member_count = member_count;
   t->is_complete = is_complete ? 1 : 0;
-  t->size = tag_size;
-  t->align = tag_align;
   t->scope_depth = context->scope_depth;
   t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
   t->declaration_seq =
@@ -831,7 +825,7 @@ int ps_ctx_register_tag_type_in_contexts(
     if (t->definition)
       (void)ps_ctx_publish_record_layout_in(
           context, t->definition->record_id,
-          t->size, t->align > 0 ? t->align : 1);
+          tag_size, tag_align > 0 ? tag_align : 1);
   }
   return 1;
 }
@@ -919,14 +913,30 @@ int ps_ctx_get_tag_size_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
-  return t ? t->size : -1;
+  if (!t) return -1;
+  if (kind == TK_ENUM)
+    return ag_target_info_scalar_size(
+        &context->target, AG_TARGET_SCALAR_INT);
+  if (!t->definition || t->definition->record_id == PSX_RECORD_ID_INVALID)
+    return 0;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      context->record_layouts, t->definition->record_id, &context->target);
+  return layout ? layout->size : 0;
 }
 
 int ps_ctx_get_tag_align_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
-  return (t && t->align > 0) ? t->align : -1;
+  if (!t) return -1;
+  if (kind == TK_ENUM)
+    return ag_target_info_scalar_alignment(
+        &context->target, AG_TARGET_SCALAR_INT);
+  if (!t->definition || t->definition->record_id == PSX_RECORD_ID_INVALID)
+    return -1;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      context->record_layouts, t->definition->record_id, &context->target);
+  return layout ? layout->alignment : -1;
 }
 
 static tag_member_t *find_tag_member_record_at_current_scope_in(
@@ -1027,10 +1037,16 @@ int ps_ctx_register_tag_members_in(
       context, tag_kind, tag_name, tag_len);
   if (tag && tag->definition) {
     refresh_cached_tag_definition(context, tag);
-    if (tag->is_complete)
+    const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+        context->record_layouts, tag->definition->record_id,
+        &context->target);
+    if (tag->is_complete && layout) {
+      int size = layout->size;
+      int alignment = layout->alignment;
       (void)ps_ctx_publish_record_layout_in(
           context, tag->definition->record_id,
-          tag->size, tag->align > 0 ? tag->align : 1);
+          size, alignment);
+    }
   }
   return 1;
 }

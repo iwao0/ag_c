@@ -3791,6 +3791,13 @@ static void test_parameter_declaration_storage_plan_boundary() {
       TK_STRUCT, large_parameter_tag, 10,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(large_aggregate != NULL);
+  ASSERT_EQ(0, ps_type_sizeof(large_aggregate));
+  ASSERT_EQ(24, ps_ctx_get_tag_size_in(
+                    test_semantic_context(), TK_STRUCT,
+                    large_parameter_tag, 10));
+  ASSERT_EQ(8, ps_ctx_get_tag_align_in(
+                   test_semantic_context(), TK_STRUCT,
+                   large_parameter_tag, 10));
   ASSERT_TRUE(plan_test_parameter_storage(large_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
@@ -3818,7 +3825,10 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(lowered->is_param);
   ASSERT_TRUE(lowered->is_byref_param);
   ASSERT_EQ(8, lowered->size);
-  ASSERT_EQ(24, ps_lvar_decl_sizeof(lowered, 0));
+  ASSERT_EQ(0, ps_lvar_decl_sizeof(lowered, 0));
+  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+                    test_semantic_context(),
+                    ps_lvar_get_decl_type(lowered)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
             ps_lvar_get_decl_type(lowered)->kind);
 

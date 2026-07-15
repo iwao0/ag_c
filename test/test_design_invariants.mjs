@@ -3163,6 +3163,19 @@ for (const functionName of [
 const canonicalTypeStruct = typeSource.match(
   /struct psx_type_t\s*\{([\s\S]*?)\n\};/,
 );
+const tagContextSource = await readFile(
+  "src/parser/semantic_ctx.c",
+  "utf8",
+);
+const tagTypeStruct = tagContextSource.match(
+  /struct tag_type_t\s*\{([\s\S]*?)\n\};/,
+);
+const tagSizeLookupFunction = tagContextSource.match(
+  /int\s+ps_ctx_get_tag_size_in\s*\([^]*?\n\}/,
+);
+const tagAlignLookupFunction = tagContextSource.match(
+  /int\s+ps_ctx_get_tag_align_in\s*\([^]*?\n\}/,
+);
 const recordDeclStruct = typeSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
@@ -3192,6 +3205,24 @@ if (!canonicalTypeStruct ||
     )) {
   throw new Error(
     "canonical recursive types must expose one qualifier value and const record declarations with stable identity and explicit completeness",
+  );
+}
+
+if (!tagTypeStruct ||
+    /\b(?:size|align)\s*;/.test(tagTypeStruct[1]) ||
+    !tagSizeLookupFunction ||
+    !tagAlignLookupFunction ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      tagSizeLookupFunction[0],
+    ) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      tagAlignLookupFunction[0],
+    ) ||
+    !/ps_type_new_tag_in\s*\([^]*?tag->scope_depth\s*\+\s*1\s*,\s*0\s*\)/.test(
+      tagContextSource,
+    )) {
+  throw new Error(
+    "tag declarations must own identity and completeness while target record layout stays in RecordLayoutTable",
   );
 }
 
