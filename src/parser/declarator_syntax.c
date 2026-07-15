@@ -28,7 +28,9 @@ static declarator_parse_result_t parse_declarator_recursive(
     if (pointer_count == pointer_capacity) {
       int capacity = pda_next_cap(pointer_capacity, pointer_count + 1);
       declarator_pointer_qualifiers_t *qualifiers =
-          arena_alloc((size_t)capacity * sizeof(*qualifiers));
+          arena_alloc_in(
+              syntax->arena_context,
+              (size_t)capacity * sizeof(*qualifiers));
       if (pointer_qualifiers && pointer_count > 0) {
         memcpy(qualifiers, pointer_qualifiers,
                (size_t)pointer_count * sizeof(*qualifiers));

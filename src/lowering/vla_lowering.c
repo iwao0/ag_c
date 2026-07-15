@@ -2,6 +2,7 @@
 
 #include "frame_layout.h"
 #include "local_storage.h"
+#include "runtime_context.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
@@ -29,12 +30,16 @@ static lvar_t *create_vla_storage(
       name, name_len, offset, storage_size, alignment, type);
 }
 
-static psx_type_t *runtime_stride_storage_type(int count) {
+static psx_type_t *runtime_stride_storage_type(
+    psx_lowering_context_t *lowering_context, int count) {
   if (count <= 0) return NULL;
-  psx_type_t *slot = ps_type_new_integer(TK_LONG, 8, 0);
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
+  psx_type_t *slot = ps_type_new_integer_in(
+      arena_context, TK_LONG, 8, 0);
   return count == 1
              ? slot
-             : ps_type_new_array(slot, count, count * 8, 0);
+             : ps_type_new_array_in(
+                   arena_context, slot, count, count * 8, 0);
 }
 
 psx_vla_lowering_result_t lower_vla_declaration(
@@ -193,7 +198,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     result.stride_storage = create_vla_storage(
         request->local_registry, request->lowering_context,
         stride_name, stride_name_len, 8 * count, 0,
-        runtime_stride_storage_type(count));
+        runtime_stride_storage_type(request->lowering_context, count));
     if (!result.stride_storage) return result;
 
     int *constants = calloc((size_t)count, sizeof(*constants));

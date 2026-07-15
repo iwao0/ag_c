@@ -3,6 +3,8 @@
 
 #include "declaration_resolution.h"
 
+typedef struct arena_context_t arena_context_t;
+
 typedef enum {
   PSX_LOCAL_DECLARATION_OK = 0,
   PSX_LOCAL_DECLARATION_INVALID,
@@ -26,6 +28,7 @@ typedef struct {
 } psx_local_vla_dimension_t;
 
 typedef struct {
+  arena_context_t *arena_context;
   const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int has_initializer;

@@ -15,15 +15,17 @@ static psx_type_t *resolve_tag_base_type(
   int scope_depth = ps_ctx_get_tag_scope_depth_in(
       semantic_context, kind, name, name_len);
   if (kind == TK_ENUM) {
-    return ps_type_new_enum(
-        name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, 4);
+    return ps_type_new_enum_in(
+        ps_ctx_arena(semantic_context), name, name_len,
+        scope_depth >= 0 ? scope_depth + 1 : 0, 4);
   }
   if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
   int size = ps_ctx_get_tag_size_in(
       semantic_context, kind, name, name_len);
   if (size < 0) size = 0;
-  psx_type_t *type = ps_type_new_tag(
-      kind, name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, size);
+  psx_type_t *type = ps_type_new_tag_in(
+      ps_ctx_arena(semantic_context), kind, name, name_len,
+      scope_depth >= 0 ? scope_depth + 1 : 0, size);
   type->aggregate_definition = ps_ctx_get_tag_definition_in(
       semantic_context, kind, name, name_len);
   if (type->aggregate_definition && type->aggregate_definition->align > 0)
@@ -32,6 +34,7 @@ static psx_type_t *resolve_tag_base_type(
 }
 
 static psx_type_t *resolve_builtin_base_type(
+    psx_semantic_context_t *semantic_context,
     token_kind_t kind, const psx_type_spec_result_t *specifier) {
   int elem_size = ps_ctx_scalar_type_size(kind);
   if (specifier->is_complex) elem_size *= 2;
@@ -41,7 +44,8 @@ static psx_type_t *resolve_builtin_base_type(
   else if (kind == TK_DOUBLE)
     fp_kind = TK_FLOAT_KIND_DOUBLE;
   if (specifier->is_complex) {
-    psx_type_t *type = ps_type_new(PSX_TYPE_COMPLEX);
+    psx_type_t *type = ps_type_new_in(
+        ps_ctx_arena(semantic_context), PSX_TYPE_COMPLEX);
     type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
                         ? fp_kind
                         : TK_FLOAT_KIND_DOUBLE;
@@ -50,15 +54,18 @@ static psx_type_t *resolve_builtin_base_type(
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {
-    return ps_type_new_float(fp_kind, elem_size);
+    return ps_type_new_float_in(
+        ps_ctx_arena(semantic_context), fp_kind, elem_size);
   }
   if (kind == TK_VOID) {
-    psx_type_t *type = ps_type_new(PSX_TYPE_VOID);
+    psx_type_t *type = ps_type_new_in(
+        ps_ctx_arena(semantic_context), PSX_TYPE_VOID);
     type->scalar_kind = TK_VOID;
     return type;
   }
-  return ps_type_new_integer(
-      kind, elem_size, specifier->is_unsigned);
+  return ps_type_new_integer_in(
+      ps_ctx_arena(semantic_context), kind, elem_size,
+      specifier->is_unsigned);
 }
 
 static void apply_decl_specifier_type_properties(
@@ -80,11 +87,13 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
   if (!request || !request->semantic_context || !request->base_type)
     return NULL;
   psx_semantic_context_t *semantic_context = request->semantic_context;
-  psx_type_t *type = ps_type_clone(request->base_type);
+  psx_type_t *type = ps_type_clone_in(
+      ps_ctx_arena(semantic_context), request->base_type);
   if (!type) return NULL;
   if (request->declarator_shape) {
-    type = ps_type_apply_declarator_shape(
-        type, request->declarator_shape);
+    type = ps_type_apply_declarator_shape_in(
+        ps_ctx_arena(semantic_context), type,
+        request->declarator_shape);
   }
   ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
   return type;
@@ -105,7 +114,8 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
   int override_plain_char = 0;
   switch (specifier->source) {
     case PSX_PARSED_DECL_TYPE_BUILTIN:
-      type = resolve_builtin_base_type(syntax->kind, syntax);
+      type = resolve_builtin_base_type(
+          semantic_context, syntax->kind, syntax);
       override_plain_char = syntax->kind == TK_CHAR;
       break;
     case PSX_PARSED_DECL_TYPE_TAG:
@@ -124,11 +134,13 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
               specifier->typedef_name->len,
               &typedef_type))
         return NULL;
-      type = ps_type_clone(typedef_type);
+      type = ps_type_clone_in(
+          ps_ctx_arena(semantic_context), typedef_type);
       break;
     }
     case PSX_PARSED_DECL_TYPE_IMPLICIT_INT:
-      type = resolve_builtin_base_type(TK_INT, syntax);
+      type = resolve_builtin_base_type(
+          semantic_context, TK_INT, syntax);
       break;
     default:
       return NULL;

@@ -16,10 +16,14 @@ static node_t *annotate(node_t *node, const psx_type_t *type) {
   return node;
 }
 
-static node_t *fp_to_int(node_t *operand, const psx_type_t *type) {
+static node_t *fp_to_int(
+    psx_lowering_context_t *lowering_context,
+    node_t *operand, const psx_type_t *type) {
   if (!operand || ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE)
     return operand;
-  if (!type) type = ps_type_new_integer(TK_INT, 4, 0);
+  if (!type)
+    type = ps_type_new_integer_in(
+        ps_lowering_arena(lowering_context), TK_INT, 4, 0);
   return ps_node_new_fp_to_int_cast(operand, type);
 }
 
@@ -230,7 +234,9 @@ static node_t *lower_cast(
   }
 
   if (view.is_pointer || view.kind == TK_LONG) {
-    operand = fp_to_int(operand, view.is_pointer ? NULL : view.target);
+    operand = fp_to_int(
+        lowering_context, operand,
+        view.is_pointer ? NULL : view.target);
     if (!view.is_pointer && view.kind == TK_LONG) {
       if (operand->kind == ND_NUM) {
         return annotate(operand, view.target);
@@ -269,7 +275,7 @@ static node_t *lower_cast(
 
   if (view.kind == TK_INT || view.kind == TK_ENUM ||
       view.kind == TK_SIGNED || view.kind == TK_UNSIGNED) {
-    operand = fp_to_int(operand, view.target);
+    operand = fp_to_int(lowering_context, operand, view.target);
     int target_unsigned = view.kind != TK_ENUM &&
                           (view.is_unsigned || view.kind == TK_UNSIGNED);
     if (operand->kind == ND_NUM) {
@@ -301,7 +307,7 @@ static node_t *lower_cast(
     return ps_node_new_void_cast_result(operand, view.target);
 
   if (view.kind == TK_SHORT || view.kind == TK_CHAR) {
-    operand = fp_to_int(operand, view.target);
+    operand = fp_to_int(lowering_context, operand, view.target);
     int width = view.kind == TK_SHORT ? 16 : 8;
     long long mask = view.kind == TK_SHORT ? 0xffffLL : 0xffLL;
     if (operand->kind == ND_NUM) {

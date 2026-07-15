@@ -36,7 +36,8 @@ static struct lvar_t *create_aggregate_temporary(
   }
   char *name = new_member_rvalue_name(lowering_context);
   if (!name) ps_diag_ctx(tok, "member", "temporary name allocation failed");
-  psx_type_t *type = ps_type_clone(object_type);
+  psx_type_t *type = ps_type_clone_in(
+      ps_lowering_arena(lowering_context), object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
       &(psx_temporary_local_declaration_pipeline_request_t){
           .local_registry = local_registry,
@@ -72,7 +73,8 @@ static node_t *materialize_ternary_rvalue(
   node_ctrl_t *ternary = (node_ctrl_t *)base;
   struct lvar_t *temporary = create_aggregate_temporary(
       lowering_context, local_registry, access, fallback_diag_tok);
-  node_ctrl_t *select = arena_alloc(sizeof(*select));
+  node_ctrl_t *select = arena_alloc_in(
+      ps_lowering_arena(lowering_context), sizeof(*select));
   select->base.kind = ND_TERNARY;
   select->base.lhs = ternary->base.lhs;
   select->base.rhs = ps_node_new_assign(

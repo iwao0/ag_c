@@ -73,15 +73,18 @@ static node_t *materialize_global(
 
 static node_t *materialize_function(
     const node_identifier_t *identifier,
-    const psx_identifier_resolution_t *resolution) {
+    const psx_identifier_resolution_t *resolution,
+    const psx_identifier_binding_context_t *context) {
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution->function);
-  node_funcref_t *reference = arena_alloc(sizeof(*reference));
+  node_funcref_t *reference = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*reference));
   reference->base.kind = ND_FUNCREF;
   ps_node_bind_type(
       (node_t *)reference,
       function_type
-          ? ps_type_clone(function_type)
+          ? ps_type_clone_in(
+                ps_ctx_arena(context->semantic_context), function_type)
           : NULL);
   reference->funcname = identifier->name;
   reference->funcname_len = identifier->name_len;
@@ -131,7 +134,7 @@ static node_t *materialize_identifier(
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
       return materialize_global(identifier, resolution.global);
     case PSX_IDENTIFIER_FUNCTION:
-      return materialize_function(identifier, &resolution);
+      return materialize_function(identifier, &resolution, context);
     case PSX_IDENTIFIER_UNDECLARED_CALL:
       return NULL;
     case PSX_IDENTIFIER_UNDEFINED:
@@ -173,7 +176,7 @@ static node_t *materialize_address_operand(
     return node;
   }
   if (resolution.kind == PSX_IDENTIFIER_FUNCTION)
-    return materialize_function(identifier, &resolution);
+    return materialize_function(identifier, &resolution, context);
   return materialize_identifier(
       identifier, 0, context, NULL);
 }
@@ -240,7 +243,8 @@ static void bind_direct_call(
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution.function);
   call->callee_type = function_type
-      ? ps_type_clone(function_type)
+      ? ps_type_clone_in(
+            ps_ctx_arena(context->semantic_context), function_type)
       : NULL;
   if (!call->callee_type ||
       call->callee_type->kind != PSX_TYPE_FUNCTION) {

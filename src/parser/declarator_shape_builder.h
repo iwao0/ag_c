@@ -3,19 +3,41 @@
 
 #include "declarator_shape.h"
 
+typedef struct arena_context_t arena_context_t;
+
 void ps_declarator_shape_init(psx_declarator_shape_t *shape);
+int ps_declarator_shape_copy_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *dst,
+    const psx_declarator_shape_t *src);
 int ps_declarator_shape_copy(psx_declarator_shape_t *dst,
                              const psx_declarator_shape_t *src);
+int ps_declarator_shape_append_pointer_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int is_const_qualified, int is_volatile_qualified);
 int ps_declarator_shape_append_pointer(
     psx_declarator_shape_t *shape, int is_const_qualified,
     int is_volatile_qualified);
+int ps_declarator_shape_append_array_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int array_len);
 int ps_declarator_shape_append_array(
     psx_declarator_shape_t *shape, int array_len);
+int ps_declarator_shape_append_array_ex_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int array_len, int is_incomplete);
 int ps_declarator_shape_append_array_ex(
     psx_declarator_shape_t *shape, int array_len, int is_incomplete);
+int ps_declarator_shape_append_vla_array_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape);
 int ps_declarator_shape_append_vla_array(
     psx_declarator_shape_t *shape);
+int ps_declarator_shape_append_function_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape);
 int ps_declarator_shape_append_function(psx_declarator_shape_t *shape);
+int ps_declarator_op_set_function_params_in(
+    arena_context_t *arena_context, psx_declarator_op_t *op,
+    const psx_type_t *const *param_types,
+    int param_count, int is_variadic);
 int ps_declarator_op_set_function_params(
     psx_declarator_op_t *op, const psx_type_t *const *param_types,
     int param_count, int is_variadic);

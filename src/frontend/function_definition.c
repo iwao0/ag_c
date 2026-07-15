@@ -11,6 +11,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/runtime_context.h"
 
 node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_semantic_context_t *semantic_context,
@@ -80,7 +81,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
 
   token_ident_t *name = definition->declarator.identifier;
   node_function_definition_t *node =
-      arena_alloc(sizeof(node_function_definition_t));
+      arena_alloc_in(ps_parser_runtime_arena(runtime_context),
+                     sizeof(node_function_definition_t));
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)name;
   node->base.is_implicit_int_return =

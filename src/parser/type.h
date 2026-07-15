@@ -36,6 +36,7 @@ typedef enum {
 } psx_type_binary_op_t;
 
 struct tag_member_info_t;
+typedef struct arena_context_t arena_context_t;
 
 typedef struct psx_aggregate_definition_t {
   token_kind_t tag_kind;
@@ -78,13 +79,23 @@ struct psx_type_t {
 
 };
 
+const psx_type_t *ps_type_usual_arithmetic_result_in(
+    arena_context_t *arena_context,
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    tk_float_kind_t fallback_fp_kind, int force_complex);
 const psx_type_t *ps_type_usual_arithmetic_result(
     const psx_type_t *lhs, const psx_type_t *rhs,
     tk_float_kind_t fallback_fp_kind, int force_complex);
 int ps_type_integer_promotion_is_unsigned(const psx_type_t *type);
+const psx_type_t *ps_type_binary_result_in(
+    arena_context_t *arena_context, psx_type_binary_op_t op,
+    const psx_type_t *lhs, const psx_type_t *rhs);
 const psx_type_t *ps_type_binary_result(
     psx_type_binary_op_t op, const psx_type_t *lhs,
     const psx_type_t *rhs);
+const psx_type_t *ps_type_conditional_result_in(
+    arena_context_t *arena_context,
+    const psx_type_t *then_type, const psx_type_t *else_type);
 const psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type);
 /* Returns the function node contained in a pointer/array derivation chain.
@@ -108,9 +119,15 @@ int ps_type_array_scalar_element_size(const psx_type_t *type);
 int ps_type_array_subscript_stride_elements(const psx_type_t *type,
                                              int depth);
 int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth);
+const psx_type_t *ps_type_address_result_in(
+    arena_context_t *arena_context, const psx_type_t *type);
 const psx_type_t *ps_type_address_result(const psx_type_t *type);
+const psx_type_t *ps_type_decay_array_in(
+    arena_context_t *arena_context, const psx_type_t *type);
 const psx_type_t *ps_type_decay_array(const psx_type_t *type);
 const psx_type_t *ps_type_dereference_result(const psx_type_t *type);
+const psx_type_t *ps_type_subscript_result_in(
+    arena_context_t *arena_context, const psx_type_t *type);
 const psx_type_t *ps_type_subscript_result(const psx_type_t *type);
 int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
@@ -133,9 +150,15 @@ int ps_type_format_canonical_signature(const psx_type_t *type,
                                        char *out, size_t out_size);
 int ps_type_generic_matches(const psx_type_t *control,
                             const psx_type_t *association);
+const psx_type_t *ps_type_generic_control_in(
+    arena_context_t *arena_context, const psx_type_t *control);
 const psx_type_t *ps_type_generic_control(const psx_type_t *control);
 int ps_type_generic_select_index(
     const psx_type_t *control,
+    const psx_type_t *const *association_types,
+    const unsigned char *is_default, int association_count);
+int ps_type_generic_select_index_in(
+    arena_context_t *arena_context, const psx_type_t *control,
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);

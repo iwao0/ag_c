@@ -41,7 +41,8 @@ static const psx_type_t *bind_base_type(
         .scope_seq = point.scope_seq,
         .declaration_seq = point.declaration_seq,
     };
-    psx_type_t *type = ps_type_clone(
+    psx_type_t *type = ps_type_clone_in(
+        ps_ctx_arena(semantic_context),
         psx_resolve_bound_type_name_ref_in_contexts(
             semantic_context, global_registry, local_registry, &inner));
     if (type) type->is_atomic = 1;
@@ -58,7 +59,8 @@ static const psx_type_t *bind_base_type(
             specifier->typedef_name->len, point, &bound))
       return NULL;
     return apply_reference_qualifiers(
-        ps_type_clone(bound), specifier);
+        ps_type_clone_in(ps_ctx_arena(semantic_context), bound),
+        specifier);
   }
   if (specifier->source == PSX_PARSED_DECL_TYPE_TAG &&
       specifier->tag_action.action == PSX_PARSED_TAG_REFERENCE) {

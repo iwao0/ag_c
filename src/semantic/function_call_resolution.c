@@ -1,5 +1,6 @@
 #include "function_call_resolution.h"
 
+#include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
 
 #include <string.h>
@@ -25,8 +26,11 @@ void psx_resolve_function_call_type(
 }
 
 const psx_type_t *psx_resolve_function_reference_type(
+    psx_semantic_context_t *semantic_context,
     const psx_type_t *function_type) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION)
     return NULL;
-  return ps_type_new_pointer(ps_type_clone(function_type));
+  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
+  return ps_type_new_pointer_in(
+      arena_context, ps_type_clone_in(arena_context, function_type));
 }

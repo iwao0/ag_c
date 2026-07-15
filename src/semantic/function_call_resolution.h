@@ -3,6 +3,8 @@
 
 #include "../parser/type.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_FUNCTION_CALL_RESOLUTION_OK = 0,
   PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
@@ -18,6 +20,7 @@ void psx_resolve_function_call_type(
     const psx_type_t *callee_type, int is_implicit_declaration,
     psx_function_call_resolution_t *resolution);
 const psx_type_t *psx_resolve_function_reference_type(
+    psx_semantic_context_t *semantic_context,
     const psx_type_t *function_type);
 
 #endif

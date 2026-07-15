@@ -137,7 +137,8 @@ static node_t *lower_tree(
                                  fallback_diag_tok)
                            : NULL;
       return lower_tree(
-          context, lower_sizeof_query_expression(query, prefix),
+          context, lower_sizeof_query_expression(
+                       context->lowering_context, query, prefix),
           fallback_diag_tok);
     }
     case ND_ALIGNOF_QUERY:

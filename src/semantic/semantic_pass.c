@@ -169,8 +169,9 @@ static void semantic_validate_assignment(node_t *node,
     ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
 }
 
-static void semantic_resolve_subscript(node_t *node,
-                                       const token_t *fallback_diag_tok) {
+static void semantic_resolve_subscript(
+    psx_semantic_context_t *semantic_context, node_t *node,
+    const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_SUBSCRIPT) return;
   psx_subscript_operands_resolution_t operands;
   psx_resolve_subscript_operands(node->lhs, node->rhs, &operands);
@@ -182,10 +183,12 @@ static void semantic_resolve_subscript(node_t *node,
   node->lhs = operands.base;
   node->rhs = operands.index;
   semantic_bind_result_type(
-      node, psx_resolve_indirection_result_type(node->lhs));
+      node, psx_resolve_indirection_result_type(
+                semantic_context, node->lhs));
 }
 
 static void semantic_resolve_unary_deref(
+    psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_UNARY_DEREF) return;
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
@@ -199,16 +202,18 @@ static void semantic_resolve_unary_deref(
                 "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
   semantic_bind_result_type(
-      node, psx_resolve_indirection_result_type(node->lhs));
+      node, psx_resolve_indirection_result_type(
+                semantic_context, node->lhs));
 }
 
 static void semantic_resolve_arithmetic_unary(
+    psx_semantic_context_t *semantic_context,
     node_t *node, const char *operator_name,
     const token_t *fallback_diag_tok) {
   if (!node) return;
   semantic_bind_result_type(
       node, psx_resolve_arithmetic_unary_result_type(
-                node->kind, node->lhs));
+                semantic_context, node->kind, node->lhs));
   if (node->type) return;
   ps_diag_ctx(node->tok ? node->tok : (token_t *)fallback_diag_tok,
               "unary", "%s のオペランドは算術型でなければなりません",
@@ -216,6 +221,7 @@ static void semantic_resolve_arithmetic_unary(
 }
 
 static void semantic_resolve_incdec(
+    psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return;
   const char *op = node->kind == ND_PRE_INC || node->kind == ND_POST_INC
@@ -226,7 +232,8 @@ static void semantic_resolve_incdec(
                      : (token_t *)fallback_diag_tok;
   ps_node_expect_lvalue_at(node->lhs, op, tok);
   ps_node_reject_const_assign_at(node->lhs, op, tok);
-  const psx_type_t *type = psx_resolve_incdec_result_type(node->lhs);
+  const psx_type_t *type = psx_resolve_incdec_result_type(
+      semantic_context, node->lhs);
   if (!type) {
     ps_diag_ctx(tok, "incdec",
                 "%s のオペランドは実数型またはポインタ型でなければなりません",
@@ -267,13 +274,18 @@ static void semantic_resolve_member_access(
                 access->member_name_len, access->member_name);
   }
 
-  access->resolved_member = arena_alloc(sizeof(*access->resolved_member));
+  access->resolved_member = arena_alloc_in(
+      ps_ctx_arena(semantic_context), sizeof(*access->resolved_member));
   *access->resolved_member = resolution.member;
 
   const psx_type_t *decl_type =
       ps_tag_member_decl_type(access->resolved_member);
   const psx_type_t *object_type = resolution.base_object_type;
-  psx_type_t *access_type = decl_type ? ps_type_clone(decl_type) : NULL;
+  psx_type_t *access_type = decl_type
+                                ? ps_type_clone_in(
+                                      ps_ctx_arena(semantic_context),
+                                      decl_type)
+                                : NULL;
   if (access_type && object_type)
     ps_type_set_decl_spec_qualifiers(
         access_type, object_type->is_const_qualified,
@@ -288,15 +300,18 @@ static void semantic_resolve_member_access(
 }
 
 static void semantic_resolve_function_reference(
+    psx_semantic_context_t *semantic_context,
     node_funcref_t *reference,
     const token_t *fallback_diag_tok) {
   if (!reference) return;
   const psx_type_t *source_type = ps_node_get_type((node_t *)reference);
   const psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
-      ? psx_resolve_function_reference_type(source_type)
+      ? psx_resolve_function_reference_type(
+            semantic_context, source_type)
       : NULL;
   if (!type && ps_type_callable_function(source_type))
-    type = ps_type_clone(source_type);
+    type = ps_type_clone_in(
+        ps_ctx_arena(semantic_context), source_type);
   if (!type) {
     ps_diag_ctx(reference->base.tok
                     ? reference->base.tok
@@ -337,6 +352,7 @@ static node_t *semantic_normalize_call_deref_chain(
 }
 
 static void semantic_resolve_function_call(
+    psx_semantic_context_t *semantic_context,
     node_function_call_t *call,
     const token_t *fallback_diag_tok) {
   if (!call) return;
@@ -348,7 +364,8 @@ static void semantic_resolve_function_call(
   if (resolution.status == PSX_FUNCTION_CALL_RESOLUTION_OK) {
     if (resolution.function_type) {
       if (!call->callee_type)
-        call->callee_type = ps_type_clone(resolution.function_type);
+        call->callee_type = ps_type_clone_in(
+            ps_ctx_arena(semantic_context), resolution.function_type);
       semantic_bind_result_type(
           (node_t *)call,
           ps_type_function_return_type(call->callee_type));
@@ -356,7 +373,9 @@ static void semantic_resolve_function_call(
     }
     if (call->base.is_implicit_func_decl) {
       semantic_bind_result_type(
-          (node_t *)call, ps_type_new_integer(TK_INT, 4, 0));
+          (node_t *)call,
+          ps_type_new_integer_in(
+              ps_ctx_arena(semantic_context), TK_INT, 4, 0));
       return;
     }
   }
@@ -383,7 +402,9 @@ static void semantic_resolve_source_cast(
   if (!cast || !cast->base.is_source_cast) return;
   semantic_bind_result_type(
       (node_t *)cast,
-      ps_type_clone(semantic_resolve_type_name_ref(
+      ps_type_clone_in(
+          ps_ctx_arena(semantic_context),
+          semantic_resolve_type_name_ref(
           semantic_context, global_registry, local_registry,
           &cast->type_name)));
 }
@@ -396,7 +417,8 @@ static void semantic_resolve_compound_literal(
   if (!compound) return;
   const psx_type_t *object_type = compound->type_name.resolved_type;
   if (!object_type) {
-    psx_type_t *resolved = ps_type_clone(
+    psx_type_t *resolved = ps_type_clone_in(
+        ps_ctx_arena(semantic_context),
         semantic_resolve_type_name_ref(
             semantic_context, global_registry, local_registry,
             &compound->type_name));
@@ -405,10 +427,11 @@ static void semantic_resolve_compound_literal(
     compound->type_name.resolved_type = resolved;
     object_type = resolved;
   }
-  const psx_type_t *result = ps_type_clone(object_type);
+  const psx_type_t *result = ps_type_clone_in(
+      ps_ctx_arena(semantic_context), object_type);
   if (compound->requires_addressable_object)
     result = psx_resolve_address_result_type(
-        &(node_t){.type = result});
+        semantic_context, &(node_t){.type = result});
   semantic_bind_result_type((node_t *)compound, result);
 }
 
@@ -458,7 +481,8 @@ static void semantic_resolve_generic_selection(
   selection->selected_index = resolution.selected_index;
   semantic_bind_result_type(
       (node_t *)selection,
-      ps_type_clone(ps_node_get_type(
+      ps_type_clone_in(
+          ps_ctx_arena(semantic_context), ps_node_get_type(
           selection->associations[resolution.selected_index].expression)));
 }
 
@@ -601,7 +625,9 @@ static void semantic_transform_node(
         semantic_transform_node(node->rhs, traversal);
       }
       semantic_bind_result_type(
-          node, ps_type_clone(ps_node_get_type(node->lhs)));
+          node, ps_type_clone_in(
+                    ps_ctx_arena(traversal->semantic_context),
+                    ps_node_get_type(node->lhs)));
       semantic_validate_assignment(node, fallback_diag_tok);
       break;
     }
@@ -634,22 +660,29 @@ static void semantic_transform_node(
         semantic_transform_node(
             call->arguments[i], traversal);
       }
-      semantic_resolve_function_call(call, fallback_diag_tok);
+      semantic_resolve_function_call(
+          traversal->semantic_context, call, fallback_diag_tok);
       break;
     }
     case ND_FUNCREF:
       semantic_resolve_function_reference(
+          traversal->semantic_context,
           (node_funcref_t *)node, fallback_diag_tok);
       break;
     case ND_VA_ARG_AREA:
       if (!node->type)
         semantic_bind_result_type(
-            node, ps_type_new_pointer(ps_type_new(PSX_TYPE_VOID)));
+            node, ps_type_new_pointer_in(
+                      ps_ctx_arena(traversal->semantic_context),
+                      ps_type_new_in(
+                          ps_ctx_arena(traversal->semantic_context),
+                          PSX_TYPE_VOID)));
       break;
     case ND_SUBSCRIPT:
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
-      semantic_resolve_subscript(node, fallback_diag_tok);
+      semantic_resolve_subscript(
+          traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_MEMBER_ACCESS:
       semantic_transform_node(node->lhs, traversal);
@@ -659,18 +692,21 @@ static void semantic_transform_node(
       break;
     case ND_UNARY_DEREF:
       semantic_transform_node(node->lhs, traversal);
-      semantic_resolve_unary_deref(node, fallback_diag_tok);
+      semantic_resolve_unary_deref(
+          traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_UNARY_NEGATE:
       semantic_transform_node(node->lhs, traversal);
       semantic_resolve_arithmetic_unary(
+          traversal->semantic_context,
           node, "単項 -", fallback_diag_tok);
       break;
     case ND_CREAL:
     case ND_CIMAG:
       semantic_transform_node(node->lhs, traversal);
       semantic_resolve_arithmetic_unary(
-          node, node->kind == ND_CREAL ? "__real__" : "__imag__",
+          traversal->semantic_context, node,
+          node->kind == ND_CREAL ? "__real__" : "__imag__",
           fallback_diag_tok);
       break;
     case ND_GENERIC_SELECTION: {
@@ -722,7 +758,8 @@ static void semantic_transform_node(
       semantic_transform_node(node->lhs, traversal);
       if (!node->type)
         semantic_bind_result_type(
-            node, psx_resolve_address_result_type(node->lhs));
+            node, psx_resolve_address_result_type(
+                      traversal->semantic_context, node->lhs));
       if (node->is_explicit_addr_expr &&
           ps_node_bitfield_width(node->lhs) > 0) {
         ps_diag_ctx(node->tok
@@ -737,7 +774,8 @@ static void semantic_transform_node(
     case ND_POST_INC:
     case ND_POST_DEC:
       semantic_transform_node(node->lhs, traversal);
-      semantic_resolve_incdec(node, fallback_diag_tok);
+      semantic_resolve_incdec(
+          traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_COMMA:
     case ND_ADD:
@@ -761,6 +799,7 @@ static void semantic_transform_node(
       if (!ps_node_get_type(node)) {
         semantic_bind_result_type(
             node, psx_resolve_binary_result_type(
+                      traversal->semantic_context,
                       node->kind, node->lhs, node->rhs));
       }
       break;
@@ -776,6 +815,7 @@ static void semantic_transform_node(
       if (node->kind == ND_TERNARY)
         semantic_bind_result_type(
             node, psx_resolve_conditional_result_type(
+                      traversal->semantic_context,
                       node->rhs, ctrl->els));
       break;
     }
@@ -783,7 +823,8 @@ static void semantic_transform_node(
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
       semantic_bind_result_type(
-          node, psx_resolve_sequence_result_type(node->rhs));
+          node, psx_resolve_sequence_result_type(
+                    traversal->semantic_context, node->rhs));
       break;
     }
     default:

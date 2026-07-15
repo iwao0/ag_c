@@ -96,6 +96,26 @@ const loweringSourceFiles = allSourceFiles.filter(
 const loweringLayerSource = (
   await Promise.all(loweringSourceFiles.map((path) => readFile(path, "utf8")))
 ).join("\n");
+const explicitArenaDeclarationPipelineSource = await readFile(
+  "src/declaration_pipeline.c",
+  "utf8",
+);
+const explicitPhaseArenaSource = [
+  frontendLayerSource,
+  explicitSemanticLayerSource,
+  loweringLayerSource,
+  explicitArenaDeclarationPipelineSource,
+  await readFile("src/parser/declaration_syntax.c", "utf8"),
+  await readFile("src/parser/declarator_syntax.c", "utf8"),
+  await readFile("src/main.c", "utf8"),
+].join("\n");
+if (/\barena_(?:alloc|total_reserved_bytes)\s*\(/.test(
+      explicitPhaseArenaSource,
+    )) {
+  throw new Error(
+    "frontend, semantic, declaration, lowering, declarator syntax, and driver code must use an explicit CompilationSession-owned arena",
+  );
+}
 if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
       loweringLayerSource,
     )) {

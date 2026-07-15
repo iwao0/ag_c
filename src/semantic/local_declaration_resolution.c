@@ -19,7 +19,9 @@ void psx_resolve_local_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_LOCAL_DECLARATION_INVALID;
-  if (!request || !request->type || !request->application) return;
+  if (!request || !request->arena_context || !request->type ||
+      !request->application)
+    return;
 
   const psx_type_t *type = request->type;
   if (type->kind == PSX_TYPE_VOID) {
@@ -31,7 +33,8 @@ void psx_resolve_local_declaration(
   const psx_runtime_declarator_application_t *application =
       request->application;
   if (application->shape.count > 0) {
-    resolution->dimensions = arena_alloc(
+    resolution->dimensions = arena_alloc_in(
+        request->arena_context,
         (size_t)application->shape.count * sizeof(*resolution->dimensions));
   }
   int leading_array_count = 0;

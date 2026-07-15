@@ -73,12 +73,18 @@ psx_type_t *psx_type_owned_param_mut(psx_type_t *owner, int index) {
   return (psx_type_t *)owner->param_types[index];
 }
 
-psx_type_t *ps_type_new(psx_type_kind_t kind) {
-  psx_type_t *type = arena_alloc(sizeof(psx_type_t));
+psx_type_t *ps_type_new_in(
+    arena_context_t *arena_context, psx_type_kind_t kind) {
+  psx_type_t *type = arena_alloc_in(arena_context, sizeof(psx_type_t));
+  if (!type) return NULL;
   type->kind = kind;
   type->scalar_kind = TK_EOF;
   type->tag_kind = TK_EOF;
   return type;
+}
+
+psx_type_t *ps_type_new(psx_type_kind_t kind) {
+  return ps_type_new_in(arena_context_active(), kind);
 }
 
 void ps_type_normalize_integer_identity(psx_type_t *type) {
@@ -98,8 +104,13 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
   }
 }
 
-psx_type_t *ps_type_new_integer(token_kind_t scalar_kind, int size, int is_unsigned) {
-  psx_type_t *type = ps_type_new(scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
+psx_type_t *ps_type_new_integer_in(
+    arena_context_t *arena_context, token_kind_t scalar_kind,
+    int size, int is_unsigned) {
+  psx_type_t *type = ps_type_new_in(
+      arena_context,
+      scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
+  if (!type) return NULL;
   type->scalar_kind = scalar_kind;
   type->size = size;
   type->align = size > 0 ? size : 1;
@@ -109,10 +120,18 @@ psx_type_t *ps_type_new_integer(token_kind_t scalar_kind, int size, int is_unsig
   return type;
 }
 
-psx_type_t *ps_type_new_enum(char *tag_name, int tag_len,
-                              int tag_scope_depth_p1, int size) {
-  psx_type_t *type = ps_type_new_integer(
-      TK_ENUM, size > 0 ? size : 4, 0);
+psx_type_t *ps_type_new_integer(
+    token_kind_t scalar_kind, int size, int is_unsigned) {
+  return ps_type_new_integer_in(
+      arena_context_active(), scalar_kind, size, is_unsigned);
+}
+
+psx_type_t *ps_type_new_enum_in(
+    arena_context_t *arena_context, char *tag_name, int tag_len,
+    int tag_scope_depth_p1, int size) {
+  psx_type_t *type = ps_type_new_integer_in(
+      arena_context, TK_ENUM, size > 0 ? size : 4, 0);
+  if (!type) return NULL;
   type->tag_kind = TK_ENUM;
   type->tag_name = tag_name;
   type->tag_len = tag_len;
@@ -120,14 +139,27 @@ psx_type_t *ps_type_new_enum(char *tag_name, int tag_len,
   return type;
 }
 
-psx_type_t *ps_type_new_float(tk_float_kind_t fp_kind, int size) {
-  psx_type_t *type = ps_type_new(PSX_TYPE_FLOAT);
+psx_type_t *ps_type_new_enum(
+    char *tag_name, int tag_len, int tag_scope_depth_p1, int size) {
+  return ps_type_new_enum_in(
+      arena_context_active(), tag_name, tag_len,
+      tag_scope_depth_p1, size);
+}
+
+psx_type_t *ps_type_new_float_in(
+    arena_context_t *arena_context, tk_float_kind_t fp_kind, int size) {
+  psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FLOAT);
+  if (!type) return NULL;
   type->fp_kind = fp_kind;
   type->size = size;
   type->align = size > 0 ? size : 1;
   if (type->align > 8) type->align = 8;
   if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) type->is_long_double = 1;
   return type;
+}
+
+psx_type_t *ps_type_new_float(tk_float_kind_t fp_kind, int size) {
+  return ps_type_new_float_in(arena_context_active(), fp_kind, size);
 }
 
 static int type_integer_promotion_size(const psx_type_t *type) {
@@ -144,7 +176,8 @@ int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
   return ps_type_sizeof(type) >= 4 && ps_type_is_unsigned(type);
 }
 
-const psx_type_t *ps_type_usual_arithmetic_result(
+const psx_type_t *ps_type_usual_arithmetic_result_in(
+    arena_context_t *arena_context,
     const psx_type_t *lhs, const psx_type_t *rhs,
     tk_float_kind_t fallback_fp_kind, int force_complex) {
   int result_is_complex =
@@ -157,7 +190,7 @@ const psx_type_t *ps_type_usual_arithmetic_result(
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
     int size = fp == TK_FLOAT_KIND_FLOAT ? 8 : 16;
-    psx_type_t *type = ps_type_new(PSX_TYPE_COMPLEX);
+    psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
     type->fp_kind = fp;
     type->size = size;
     type->align = size >= 8 ? 8 : 4;
@@ -171,8 +204,8 @@ const psx_type_t *ps_type_usual_arithmetic_result(
     if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    psx_type_t *type = ps_type_new_float(
-        fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+    psx_type_t *type = ps_type_new_float_in(
+        arena_context, fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       type->is_long_double = 1;
     return type;
@@ -191,79 +224,118 @@ const psx_type_t *ps_type_usual_arithmetic_result(
     result_unsigned = unsigned_size >= signed_size;
   }
   int size = lhs_size > rhs_size ? lhs_size : rhs_size;
-  psx_type_t *type = ps_type_new_integer(TK_EOF, size, result_unsigned);
+  psx_type_t *type = ps_type_new_integer_in(
+      arena_context, TK_EOF, size, result_unsigned);
   type->is_long_long =
       (lhs && lhs->is_long_long) || (rhs && rhs->is_long_long);
   return type;
 }
 
-const psx_type_t *ps_type_binary_result(
-    psx_type_binary_op_t op, const psx_type_t *lhs,
+const psx_type_t *ps_type_usual_arithmetic_result(
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    tk_float_kind_t fallback_fp_kind, int force_complex) {
+  return ps_type_usual_arithmetic_result_in(
+      arena_context_active(), lhs, rhs,
+      fallback_fp_kind, force_complex);
+}
+
+const psx_type_t *ps_type_binary_result_in(
+    arena_context_t *arena_context, psx_type_binary_op_t op,
+    const psx_type_t *lhs,
     const psx_type_t *rhs) {
   if (op == PSX_TYPE_BINARY_COMMA)
-    return ps_type_clone(rhs);
+    return ps_type_clone_in(arena_context, rhs);
   if (op == PSX_TYPE_BINARY_COMPARE || op == PSX_TYPE_BINARY_LOGICAL)
-    return ps_type_new_integer(TK_INT, 4, 0);
+    return ps_type_new_integer_in(arena_context, TK_INT, 4, 0);
   if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
-    return ps_type_usual_arithmetic_result(
-        lhs, NULL, TK_FLOAT_KIND_NONE, 0);
+    return ps_type_usual_arithmetic_result_in(
+        arena_context, lhs, NULL, TK_FLOAT_KIND_NONE, 0);
 
   int lhs_pointer = ps_type_is_pointer_like(lhs);
   int rhs_pointer = ps_type_is_pointer_like(rhs);
   if (op == PSX_TYPE_BINARY_ADD && lhs_pointer != rhs_pointer)
     return (lhs_pointer ? lhs : rhs)->kind == PSX_TYPE_ARRAY
-               ? ps_type_decay_array(lhs_pointer ? lhs : rhs)
-               : ps_type_clone(lhs_pointer ? lhs : rhs);
+               ? ps_type_decay_array_in(
+                     arena_context, lhs_pointer ? lhs : rhs)
+               : ps_type_clone_in(
+                     arena_context, lhs_pointer ? lhs : rhs);
   if (op == PSX_TYPE_BINARY_SUB) {
     if (lhs_pointer && rhs_pointer)
-      return ps_type_new_integer(TK_LONG, 8, 0);
+      return ps_type_new_integer_in(arena_context, TK_LONG, 8, 0);
     if (lhs_pointer)
       return lhs->kind == PSX_TYPE_ARRAY
-                 ? ps_type_decay_array(lhs)
-                 : ps_type_clone(lhs);
+                 ? ps_type_decay_array_in(arena_context, lhs)
+                 : ps_type_clone_in(arena_context, lhs);
   }
-  return ps_type_usual_arithmetic_result(
-      lhs, rhs, TK_FLOAT_KIND_NONE,
+  return ps_type_usual_arithmetic_result_in(
+      arena_context, lhs, rhs, TK_FLOAT_KIND_NONE,
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_conditional_result(
+const psx_type_t *ps_type_binary_result(
+    psx_type_binary_op_t op, const psx_type_t *lhs,
+    const psx_type_t *rhs) {
+  return ps_type_binary_result_in(
+      arena_context_active(), op, lhs, rhs);
+}
+
+const psx_type_t *ps_type_conditional_result_in(
+    arena_context_t *arena_context,
     const psx_type_t *then_type, const psx_type_t *else_type) {
   if (ps_type_is_pointer_like(then_type))
     return then_type->kind == PSX_TYPE_ARRAY
-               ? ps_type_decay_array(then_type)
-               : ps_type_clone(then_type);
+               ? ps_type_decay_array_in(arena_context, then_type)
+               : ps_type_clone_in(arena_context, then_type);
   if (ps_type_is_pointer_like(else_type))
     return else_type->kind == PSX_TYPE_ARRAY
-               ? ps_type_decay_array(else_type)
-               : ps_type_clone(else_type);
+               ? ps_type_decay_array_in(arena_context, else_type)
+               : ps_type_clone_in(arena_context, else_type);
   if (then_type && else_type && then_type->kind == else_type->kind &&
       ps_type_is_tag_aggregate(then_type))
-    return ps_type_clone(then_type);
-  return ps_type_usual_arithmetic_result(
-      then_type, else_type, TK_FLOAT_KIND_NONE,
+    return ps_type_clone_in(arena_context, then_type);
+  return ps_type_usual_arithmetic_result_in(
+      arena_context, then_type, else_type, TK_FLOAT_KIND_NONE,
       (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }
 
-psx_type_t *ps_type_new_pointer(const psx_type_t *base) {
-  psx_type_t *type = ps_type_new(PSX_TYPE_POINTER);
+const psx_type_t *ps_type_conditional_result(
+    const psx_type_t *then_type, const psx_type_t *else_type) {
+  return ps_type_conditional_result_in(
+      arena_context_active(), then_type, else_type);
+}
+
+psx_type_t *ps_type_new_pointer_in(
+    arena_context_t *arena_context, const psx_type_t *base) {
+  psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_POINTER);
+  if (!type) return NULL;
   type->base = base;
   type->size = 8;
   type->align = 8;
   return type;
 }
 
-psx_type_t *ps_type_new_function(const psx_type_t *return_type) {
-  psx_type_t *type = ps_type_new(PSX_TYPE_FUNCTION);
+psx_type_t *ps_type_new_pointer(const psx_type_t *base) {
+  return ps_type_new_pointer_in(arena_context_active(), base);
+}
+
+psx_type_t *ps_type_new_function_in(
+    arena_context_t *arena_context, const psx_type_t *return_type) {
+  psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FUNCTION);
+  if (!type) return NULL;
   type->base = return_type;
   return type;
 }
 
-void ps_type_set_function_params(psx_type_t *function_type,
-                                  const psx_type_t *const *param_types,
-                                  int param_count, int is_variadic) {
+psx_type_t *ps_type_new_function(const psx_type_t *return_type) {
+  return ps_type_new_function_in(arena_context_active(), return_type);
+}
+
+void ps_type_set_function_params_in(
+    arena_context_t *arena_context, psx_type_t *function_type,
+    const psx_type_t *const *param_types,
+    int param_count, int is_variadic) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION) return;
   if (param_count < 0) param_count = 0;
   function_type->param_types = NULL;
@@ -271,10 +343,22 @@ void ps_type_set_function_params(psx_type_t *function_type,
   function_type->is_variadic_function = is_variadic ? 1 : 0;
   if (param_count == 0) return;
   const psx_type_t **params =
-      arena_alloc((size_t)param_count * sizeof(*params));
+      arena_alloc_in(
+          arena_context, (size_t)param_count * sizeof(*params));
   for (int i = 0; i < param_count; i++)
-    params[i] = param_types ? ps_type_clone(param_types[i]) : NULL;
+    params[i] = param_types
+                    ? ps_type_clone_in(arena_context, param_types[i])
+                    : NULL;
   function_type->param_types = params;
+}
+
+void ps_type_set_function_params(
+    psx_type_t *function_type,
+    const psx_type_t *const *param_types,
+    int param_count, int is_variadic) {
+  ps_type_set_function_params_in(
+      arena_context_active(), function_type, param_types,
+      param_count, is_variadic);
 }
 
 const psx_type_t *ps_type_derived_function(const psx_type_t *type) {
@@ -301,16 +385,23 @@ const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
   return function ? function->base : NULL;
 }
 
-psx_type_t *ps_type_new_array(const psx_type_t *base,
-                              int array_len, int size,
-                              int is_vla) {
-  psx_type_t *type = ps_type_new(PSX_TYPE_ARRAY);
+psx_type_t *ps_type_new_array_in(
+    arena_context_t *arena_context, const psx_type_t *base,
+    int array_len, int size, int is_vla) {
+  psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_ARRAY);
+  if (!type) return NULL;
   type->base = base;
   type->array_len = array_len;
   type->size = size;
   type->align = base && base->align > 0 ? base->align : 1;
   type->is_vla = is_vla ? 1 : 0;
   return type;
+}
+
+psx_type_t *ps_type_new_array(
+    const psx_type_t *base, int array_len, int size, int is_vla) {
+  return ps_type_new_array_in(
+      arena_context_active(), base, array_len, size, is_vla);
 }
 
 int ps_type_complete_array(psx_type_t *type, int array_len) {
@@ -329,21 +420,30 @@ int ps_type_is_incomplete_array(const psx_type_t *type) {
          type->array_len <= 0 && !type->is_vla;
 }
 
-psx_type_t *ps_type_clone(const psx_type_t *src) {
+psx_type_t *ps_type_clone_in(
+    arena_context_t *arena_context, const psx_type_t *src) {
   if (!src) return NULL;
-  psx_type_t *dst = ps_type_new(src->kind);
+  psx_type_t *dst = ps_type_new_in(arena_context, src->kind);
+  if (!dst) return NULL;
   *dst = *src;
   dst->param_types = NULL;
-  dst->base = ps_type_clone(src->base);
+  dst->base = ps_type_clone_in(arena_context, src->base);
   if (src->param_count > 0) {
     const psx_type_t **params =
-        arena_alloc((size_t)src->param_count * sizeof(*params));
+        arena_alloc_in(
+            arena_context,
+            (size_t)src->param_count * sizeof(*params));
     for (int i = 0; i < src->param_count; i++)
-      params[i] = ps_type_clone(
+      params[i] = ps_type_clone_in(
+          arena_context,
           src->param_types ? src->param_types[i] : NULL);
     dst->param_types = params;
   }
   return dst;
+}
+
+psx_type_t *ps_type_clone(const psx_type_t *src) {
+  return ps_type_clone_in(arena_context_active(), src);
 }
 
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
@@ -365,8 +465,9 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
   return dst;
 }
 
-psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
-                                     const int *dims, int dim_count) {
+psx_type_t *ps_type_wrap_array_dims_in(
+    arena_context_t *arena_context, psx_type_t *base,
+    const int *dims, int dim_count) {
   if (!base || !dims || dim_count <= 0) return base;
   const psx_type_t *child = base;
   psx_type_t *result = NULL;
@@ -375,11 +476,18 @@ psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
   for (int i = dim_count - 1; i >= 0; i--) {
     int len = dims[i];
     int size = len > 0 ? len * child_size : 0;
-    result = ps_type_new_array(child, len, size, 0);
+    result = ps_type_new_array_in(
+        arena_context, child, len, size, 0);
     child = result;
     child_size = size;
   }
   return result;
+}
+
+psx_type_t *ps_type_wrap_array_dims(
+    psx_type_t *base, const int *dims, int dim_count) {
+  return ps_type_wrap_array_dims_in(
+      arena_context_active(), base, dims, dim_count);
 }
 
 void ps_declarator_shape_init(psx_declarator_shape_t *shape) {
@@ -388,14 +496,16 @@ void ps_declarator_shape_init(psx_declarator_shape_t *shape) {
 }
 
 static psx_declarator_op_t *declarator_shape_append(
-    psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind) {
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    psx_declarator_op_kind_t kind) {
   if (!shape || shape->count < 0 || shape->capacity < 0 ||
       shape->count > shape->capacity)
     return NULL;
   if (shape->count == shape->capacity) {
     int capacity = pda_next_cap(shape->capacity, shape->count + 1);
     psx_declarator_op_t *ops =
-        arena_alloc((size_t)capacity * sizeof(*ops));
+        arena_alloc_in(
+            arena_context, (size_t)capacity * sizeof(*ops));
     if (shape->ops && shape->count > 0)
       memcpy(ops, shape->ops, (size_t)shape->count * sizeof(*ops));
     shape->ops = ops;
@@ -407,47 +517,88 @@ static psx_declarator_op_t *declarator_shape_append(
   return op;
 }
 
-int ps_declarator_shape_append_pointer(
-    psx_declarator_shape_t *shape, int is_const_qualified,
+int ps_declarator_shape_append_pointer_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int is_const_qualified,
     int is_volatile_qualified) {
   psx_declarator_op_t *op =
-      declarator_shape_append(shape, PSX_DECL_OP_POINTER);
+      declarator_shape_append(
+          arena_context, shape, PSX_DECL_OP_POINTER);
   if (!op) return 0;
   op->is_const_qualified = is_const_qualified ? 1u : 0u;
   op->is_volatile_qualified = is_volatile_qualified ? 1u : 0u;
   return 1;
 }
 
-int ps_declarator_shape_append_array(
-    psx_declarator_shape_t *shape, int array_len) {
-  return ps_declarator_shape_append_array_ex(shape, array_len, 0);
+int ps_declarator_shape_append_pointer(
+    psx_declarator_shape_t *shape, int is_const_qualified,
+    int is_volatile_qualified) {
+  return ps_declarator_shape_append_pointer_in(
+      arena_context_active(), shape,
+      is_const_qualified, is_volatile_qualified);
 }
 
-int ps_declarator_shape_append_array_ex(
-    psx_declarator_shape_t *shape, int array_len, int is_incomplete) {
+int ps_declarator_shape_append_array_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int array_len) {
+  return ps_declarator_shape_append_array_ex_in(
+      arena_context, shape, array_len, 0);
+}
+
+int ps_declarator_shape_append_array(
+    psx_declarator_shape_t *shape, int array_len) {
+  return ps_declarator_shape_append_array_in(
+      arena_context_active(), shape, array_len);
+}
+
+int ps_declarator_shape_append_array_ex_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int array_len, int is_incomplete) {
   psx_declarator_op_t *op =
-      declarator_shape_append(shape, PSX_DECL_OP_ARRAY);
+      declarator_shape_append(
+          arena_context, shape, PSX_DECL_OP_ARRAY);
   if (!op) return 0;
   op->array_len = array_len;
   op->is_incomplete_array = is_incomplete ? 1u : 0u;
   return 1;
 }
 
-int ps_declarator_shape_append_vla_array(
-    psx_declarator_shape_t *shape) {
+int ps_declarator_shape_append_array_ex(
+    psx_declarator_shape_t *shape, int array_len, int is_incomplete) {
+  return ps_declarator_shape_append_array_ex_in(
+      arena_context_active(), shape, array_len, is_incomplete);
+}
+
+int ps_declarator_shape_append_vla_array_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape) {
   psx_declarator_op_t *op =
-      declarator_shape_append(shape, PSX_DECL_OP_ARRAY);
+      declarator_shape_append(
+          arena_context, shape, PSX_DECL_OP_ARRAY);
   if (!op) return 0;
   op->is_vla_array = 1;
   return 1;
 }
 
-int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
-  return declarator_shape_append(shape, PSX_DECL_OP_FUNCTION) != NULL;
+int ps_declarator_shape_append_vla_array(
+    psx_declarator_shape_t *shape) {
+  return ps_declarator_shape_append_vla_array_in(
+      arena_context_active(), shape);
 }
 
-int ps_declarator_op_set_function_params(
-    psx_declarator_op_t *op, const psx_type_t *const *param_types,
+int ps_declarator_shape_append_function_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape) {
+  return declarator_shape_append(
+             arena_context, shape, PSX_DECL_OP_FUNCTION) != NULL;
+}
+
+int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
+  return ps_declarator_shape_append_function_in(
+      arena_context_active(), shape);
+}
+
+int ps_declarator_op_set_function_params_in(
+    arena_context_t *arena_context, psx_declarator_op_t *op,
+    const psx_type_t *const *param_types,
     int param_count, int is_variadic) {
   if (!op || op->kind != PSX_DECL_OP_FUNCTION || param_count < 0)
     return 0;
@@ -457,10 +608,19 @@ int ps_declarator_op_set_function_params(
   op->has_canonical_function_params = 1;
   if (param_count == 0) return 1;
   op->function_param_types =
-      arena_alloc((size_t)param_count * sizeof(*op->function_param_types));
+      arena_alloc_in(
+          arena_context,
+          (size_t)param_count * sizeof(*op->function_param_types));
   for (int i = 0; i < param_count; i++)
     op->function_param_types[i] = param_types ? param_types[i] : NULL;
   return 1;
+}
+
+int ps_declarator_op_set_function_params(
+    psx_declarator_op_t *op, const psx_type_t *const *param_types,
+    int param_count, int is_variadic) {
+  return ps_declarator_op_set_function_params_in(
+      arena_context_active(), op, param_types, param_count, is_variadic);
 }
 
 int ps_declarator_shape_set_array_bound(
@@ -485,27 +645,33 @@ int ps_declarator_op_set_variadic(
 }
 
 static int declarator_shape_append_shape(
-    psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix) {
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    const psx_declarator_shape_t *suffix) {
   if (!shape || !suffix || suffix->count < 0) return 0;
   int suffix_count = suffix->count;
   for (int i = 0; i < suffix_count; i++) {
     const psx_declarator_op_t *op = &suffix->ops[i];
     int appended = 0;
     if (op->kind == PSX_DECL_OP_POINTER) {
-      appended = ps_declarator_shape_append_pointer(
-          shape, op->is_const_qualified, op->is_volatile_qualified);
+      appended = ps_declarator_shape_append_pointer_in(
+          arena_context, shape,
+          op->is_const_qualified, op->is_volatile_qualified);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       if (op->is_vla_array)
-        appended = ps_declarator_shape_append_vla_array(shape);
+        appended = ps_declarator_shape_append_vla_array_in(
+            arena_context, shape);
       else
-        appended = ps_declarator_shape_append_array_ex(
-            shape, op->array_len, op->is_incomplete_array);
+        appended = ps_declarator_shape_append_array_ex_in(
+            arena_context, shape,
+            op->array_len, op->is_incomplete_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
-      appended = ps_declarator_shape_append_function(shape);
+      appended = ps_declarator_shape_append_function_in(
+          arena_context, shape);
       if (appended && op->has_canonical_function_params) {
         psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
-        appended = ps_declarator_op_set_function_params(
-            copy, op->function_param_types, op->function_param_count,
+        appended = ps_declarator_op_set_function_params_in(
+            arena_context, copy,
+            op->function_param_types, op->function_param_count,
             op->function_is_variadic);
       }
     }
@@ -514,11 +680,19 @@ static int declarator_shape_append_shape(
   return 1;
 }
 
-int ps_declarator_shape_copy(psx_declarator_shape_t *dst,
-                             const psx_declarator_shape_t *src) {
+int ps_declarator_shape_copy_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *dst,
+    const psx_declarator_shape_t *src) {
   if (!dst || !src) return 0;
   ps_declarator_shape_init(dst);
-  return declarator_shape_append_shape(dst, src);
+  return declarator_shape_append_shape(arena_context, dst, src);
+}
+
+int ps_declarator_shape_copy(
+    psx_declarator_shape_t *dst,
+    const psx_declarator_shape_t *src) {
+  return ps_declarator_shape_copy_in(
+      arena_context_active(), dst, src);
 }
 
 int ps_declarator_shape_count_ops(
@@ -531,14 +705,15 @@ int ps_declarator_shape_count_ops(
   return count;
 }
 
-psx_type_t *ps_type_apply_declarator_shape(
-    psx_type_t *base, const psx_declarator_shape_t *shape) {
+psx_type_t *ps_type_apply_declarator_shape_in(
+    arena_context_t *arena_context, psx_type_t *base,
+    const psx_declarator_shape_t *shape) {
   if (!base || !shape) return base;
   psx_type_t *type = base;
   for (int i = shape->count - 1; i >= 0; i--) {
     const psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
-      type = ps_type_new_pointer(type);
+      type = ps_type_new_pointer_in(arena_context, type);
       type->is_const_qualified = op->is_const_qualified;
       type->is_volatile_qualified = op->is_volatile_qualified;
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
@@ -546,13 +721,14 @@ psx_type_t *ps_type_apply_declarator_shape(
       if (elem_size <= 0) elem_size = ps_type_deref_size(type);
       if (elem_size <= 0) elem_size = 1;
       int total_size = op->array_len > 0 ? op->array_len * elem_size : 0;
-      type = ps_type_new_array(
-          type, op->array_len, total_size, op->is_vla_array);
+      type = ps_type_new_array_in(
+          arena_context, type, op->array_len,
+          total_size, op->is_vla_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
-      type = ps_type_new_function(type);
+      type = ps_type_new_function_in(arena_context, type);
       if (op->has_canonical_function_params) {
-        ps_type_set_function_params(
-            type, op->function_param_types,
+        ps_type_set_function_params_in(
+            arena_context, type, op->function_param_types,
             op->function_param_count, op->function_is_variadic);
       }
     }
@@ -560,15 +736,28 @@ psx_type_t *ps_type_apply_declarator_shape(
   return type;
 }
 
-psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type) {
+psx_type_t *ps_type_apply_declarator_shape(
+    psx_type_t *base, const psx_declarator_shape_t *shape) {
+  return ps_type_apply_declarator_shape_in(
+      arena_context_active(), base, shape);
+}
+
+psx_type_t *ps_type_adjust_parameter_type_in(
+    arena_context_t *arena_context, psx_type_t *type) {
   if (!type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    psx_type_t *adjusted = ps_type_new_pointer(type->base);
+    psx_type_t *adjusted = ps_type_new_pointer_in(
+        arena_context, type->base);
     return adjusted;
   }
   if (type->kind == PSX_TYPE_FUNCTION)
-    return ps_type_new_pointer(type);
+    return ps_type_new_pointer_in(arena_context, type);
   return type;
+}
+
+psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type) {
+  return ps_type_adjust_parameter_type_in(
+      arena_context_active(), type);
 }
 
 psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
@@ -579,9 +768,12 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
   }
 }
 
-psx_type_t *ps_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
-                             int tag_scope_depth_p1, int size) {
-  psx_type_t *type = ps_type_new(ps_type_kind_from_tag_kind(tag_kind));
+psx_type_t *ps_type_new_tag_in(
+    arena_context_t *arena_context, token_kind_t tag_kind,
+    char *tag_name, int tag_len, int tag_scope_depth_p1, int size) {
+  psx_type_t *type = ps_type_new_in(
+      arena_context, ps_type_kind_from_tag_kind(tag_kind));
+  if (!type) return NULL;
   type->tag_kind = tag_kind;
   type->tag_name = tag_name;
   type->tag_len = tag_len;
@@ -589,6 +781,14 @@ psx_type_t *ps_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
   type->size = size;
   type->align = size >= 8 ? 8 : (size >= 4 ? 4 : (size >= 2 ? 2 : 1));
   return type;
+}
+
+psx_type_t *ps_type_new_tag(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int tag_scope_depth_p1, int size) {
+  return ps_type_new_tag_in(
+      arena_context_active(), tag_kind, tag_name, tag_len,
+      tag_scope_depth_p1, size);
 }
 
 int ps_type_sizeof(const psx_type_t *type) {
@@ -686,14 +886,24 @@ int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth) {
   return ps_type_sizeof(type->base);
 }
 
-const psx_type_t *ps_type_address_result(const psx_type_t *type) {
+const psx_type_t *ps_type_address_result_in(
+    arena_context_t *arena_context, const psx_type_t *type) {
   if (!type) return NULL;
-  return ps_type_new_pointer(type);
+  return ps_type_new_pointer_in(arena_context, type);
+}
+
+const psx_type_t *ps_type_address_result(const psx_type_t *type) {
+  return ps_type_address_result_in(arena_context_active(), type);
+}
+
+const psx_type_t *ps_type_decay_array_in(
+    arena_context_t *arena_context, const psx_type_t *type) {
+  if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return NULL;
+  return ps_type_new_pointer_in(arena_context, type->base);
 }
 
 const psx_type_t *ps_type_decay_array(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return NULL;
-  return ps_type_new_pointer(type->base);
+  return ps_type_decay_array_in(arena_context_active(), type);
 }
 
 const psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
@@ -704,12 +914,17 @@ const psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
   return type->base;
 }
 
-const psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
+const psx_type_t *ps_type_subscript_result_in(
+    arena_context_t *arena_context, const psx_type_t *type) {
   if (!type || !type->base ||
       (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
     return NULL;
   }
-  return ps_type_clone(type->base);
+  return ps_type_clone_in(arena_context, type->base);
+}
+
+const psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
+  return ps_type_subscript_result_in(arena_context_active(), type);
 }
 
 int ps_type_subscript_static_stride(const psx_type_t *type) {
@@ -1008,23 +1223,29 @@ int ps_type_generic_matches(const psx_type_t *control,
   return ps_type_shape_matches(control_function, association_function);
 }
 
-const psx_type_t *ps_type_generic_control(const psx_type_t *control) {
-  psx_type_t *type = ps_type_clone(control);
+const psx_type_t *ps_type_generic_control_in(
+    arena_context_t *arena_context, const psx_type_t *control) {
+  psx_type_t *type = ps_type_clone_in(arena_context, control);
   if (!type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    type = ps_type_new_pointer(type->base);
+    type = ps_type_new_pointer_in(arena_context, type->base);
   } else if (type->kind == PSX_TYPE_FUNCTION) {
-    type = ps_type_new_pointer(type);
+    type = ps_type_new_pointer_in(arena_context, type);
   }
   ps_type_normalize_integer_identity(type);
   return type;
 }
 
-int ps_type_generic_select_index(
-    const psx_type_t *control,
+const psx_type_t *ps_type_generic_control(const psx_type_t *control) {
+  return ps_type_generic_control_in(arena_context_active(), control);
+}
+
+int ps_type_generic_select_index_in(
+    arena_context_t *arena_context, const psx_type_t *control,
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count) {
-  const psx_type_t *normalized = ps_type_generic_control(control);
+  const psx_type_t *normalized = ps_type_generic_control_in(
+      arena_context, control);
   if (!normalized || !association_types || association_count <= 0) return -1;
   int default_index = -1;
   for (int i = 0; i < association_count; i++) {
@@ -1035,6 +1256,15 @@ int ps_type_generic_select_index(
     if (ps_type_generic_matches(normalized, association_types[i])) return i;
   }
   return default_index;
+}
+
+int ps_type_generic_select_index(
+    const psx_type_t *control,
+    const psx_type_t *const *association_types,
+    const unsigned char *is_default, int association_count) {
+  return ps_type_generic_select_index_in(
+      arena_context_active(), control, association_types,
+      is_default, association_count);
 }
 
 int ps_type_is_tag_aggregate(const psx_type_t *type) {

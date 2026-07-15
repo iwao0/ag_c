@@ -20,7 +20,8 @@ void psx_resolve_static_initializer(
     return;
   }
 
-  psx_type_t *type = ps_type_clone(request->type);
+  psx_type_t *type = ps_type_clone_in(
+      ps_ctx_arena(request->semantic_context), request->type);
   if (!type) return;
   resolution->type = type;
   resolution->kind = request->kind;

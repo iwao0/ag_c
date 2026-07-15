@@ -1685,9 +1685,11 @@ static void test_additive_semantic_lowering_boundary() {
   node_t array_operand = {.kind = ND_LVAR, .type = array_type};
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
             psx_resolve_deref_operand(&array_operand));
-  ASSERT_TRUE(psx_resolve_incdec_result_type(&array_operand) == NULL);
+  ASSERT_TRUE(psx_resolve_incdec_result_type(
+                  test_semantic_context(), &array_operand) == NULL);
   node_t pointer_operand = {.kind = ND_LVAR, .type = pointer_type};
-  ASSERT_TRUE(psx_resolve_incdec_result_type(&pointer_operand) != NULL);
+  ASSERT_TRUE(psx_resolve_incdec_result_type(
+                  test_semantic_context(), &pointer_operand) != NULL);
 
   psx_type_t *comma_rhs = ps_type_new_float(
       TK_FLOAT_KIND_DOUBLE, 8);
@@ -2171,11 +2173,13 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(ps_type_function_return_type(function_pointer_array) == NULL);
 
   const psx_type_t *reference_type =
-      psx_resolve_function_reference_type(function);
+      psx_resolve_function_reference_type(
+          test_semantic_context(), function);
   ASSERT_TRUE(reference_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference_type->kind);
   ASSERT_TRUE(ps_type_derived_function(reference_type) != NULL);
-  ASSERT_TRUE(psx_resolve_function_reference_type(parameter) == NULL);
+  ASSERT_TRUE(psx_resolve_function_reference_type(
+                  test_semantic_context(), parameter) == NULL);
 
   test_semantic_define_function_name_with_ret(
       function_name, function_name_len, 0);
@@ -3115,6 +3119,7 @@ static void test_vla_lowering_request_boundary() {
 
 static void test_parameter_declaration_storage_plan_boundary() {
   printf("test_parameter_declaration_storage_plan_boundary...\n");
+  reset_test_translation_unit_state();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_parameter_storage_plan_t plan = {0};
   ASSERT_TRUE(psx_plan_parameter_storage(integer, &plan));
@@ -3216,7 +3221,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
   const psx_type_t *parameter_types[2] = {integer, pointer};
   psx_type_t *function_input = ps_type_new_function(ps_type_clone(pointer));
   ps_type_set_function_params(function_input, parameter_types, 2, 1);
-  reset_test_translation_unit_state();
   static char planned_function_name[] = "__planned_function";
   psx_function_declaration_resolution_t planned_function = {0};
   psx_resolve_function_declaration(
@@ -4026,6 +4030,8 @@ static void test_local_declaration_resolution_boundary() {
 
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
           .type = integer,
           .application = &application,
       },
@@ -4039,6 +4045,8 @@ static void test_local_declaration_resolution_boundary() {
       &application.shape, 0, 1));
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
           .type = incomplete,
           .application = &application,
       },
@@ -4047,6 +4055,8 @@ static void test_local_declaration_resolution_boundary() {
             resolution.status);
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
           .type = incomplete,
           .application = &application,
           .has_initializer = 1,
@@ -4071,6 +4081,8 @@ static void test_local_declaration_resolution_boundary() {
   };
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
           .type = vla,
           .application = &application,
       },
@@ -4096,6 +4108,8 @@ static void test_local_declaration_resolution_boundary() {
   };
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
           .type = pointer_to_vla,
           .application = &application,
       },
@@ -15814,7 +15828,9 @@ static void test_semantic_context_isolation() {
 
   ps_ctx_record_unsupported_gnu_extension_warning_in(
       second, NULL, "context-isolation");
+  ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ps_ctx_reset_translation_unit_scope_in(second);
+  ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
       second, direct_enum_name, 10, &value));
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(

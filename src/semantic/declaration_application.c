@@ -381,7 +381,8 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
                 "invalid local declarator shape");
   }
   if (declarator->array_bound_count > 0) {
-    application->array_bounds = arena_alloc(
+    application->array_bounds = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
         (size_t)declarator->array_bound_count *
         sizeof(*application->array_bounds));
   }
@@ -511,7 +512,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
       resolved_count = 0;
       break;
     }
-    psx_type_t *adjusted = ps_type_adjust_parameter_type(type);
+    psx_type_t *adjusted = ps_type_adjust_parameter_type_in(
+        ps_ctx_arena(semantic_context), type);
     resolved_types[resolved_count] = adjusted;
     resolved_count++;
     token_ident_t *name = parameter->declarator.identifier;

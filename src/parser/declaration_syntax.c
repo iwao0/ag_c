@@ -11,6 +11,7 @@
 #include "enum_const.h"
 #include "expr.h"
 #include "function_parameter_syntax.h"
+#include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 
@@ -117,7 +118,8 @@ static void diagnose_declarator_too_complex(void *context, token_t *tok) {
 }
 
 static psx_parsed_array_bound_t *append_array_bound(
-    psx_parsed_declarator_t *declarator) {
+    psx_parsed_declarator_t *declarator,
+    psx_parser_runtime_context_t *runtime_context) {
   if (!declarator || declarator->array_bound_count < 0 ||
       declarator->array_bound_capacity < 0 ||
       declarator->array_bound_count > declarator->array_bound_capacity)
@@ -127,7 +129,9 @@ static psx_parsed_array_bound_t *append_array_bound(
         declarator->array_bound_capacity,
         declarator->array_bound_count + 1);
     psx_parsed_array_bound_t *bounds =
-        arena_alloc((size_t)capacity * sizeof(*bounds));
+        arena_alloc_in(
+            ps_parser_runtime_arena(runtime_context),
+            (size_t)capacity * sizeof(*bounds));
     if (declarator->array_bounds && declarator->array_bound_count > 0) {
       memcpy(bounds, declarator->array_bounds,
              (size_t)declarator->array_bound_count * sizeof(*bounds));
@@ -142,7 +146,8 @@ static psx_parsed_array_bound_t *append_array_bound(
 }
 
 static psx_parsed_function_suffix_t *append_function_suffix(
-    psx_parsed_declarator_t *declarator) {
+    psx_parsed_declarator_t *declarator,
+    psx_parser_runtime_context_t *runtime_context) {
   if (!declarator || declarator->function_suffix_count < 0 ||
       declarator->function_suffix_capacity < 0 ||
       declarator->function_suffix_count > declarator->function_suffix_capacity)
@@ -153,7 +158,9 @@ static psx_parsed_function_suffix_t *append_function_suffix(
         declarator->function_suffix_capacity,
         declarator->function_suffix_count + 1);
     psx_parsed_function_suffix_t *suffixes =
-        arena_alloc((size_t)capacity * sizeof(*suffixes));
+        arena_alloc_in(
+            ps_parser_runtime_arena(runtime_context),
+            (size_t)capacity * sizeof(*suffixes));
     if (declarator->function_suffixes &&
         declarator->function_suffix_count > 0) {
       memcpy(suffixes, declarator->function_suffixes,
@@ -319,7 +326,8 @@ static int consume_declarator_suffix(
       diagnose_declarator_too_complex(context, current_token());
     }
     if (has_size) {
-      psx_parsed_array_bound_t *bound = append_array_bound(declarator);
+      psx_parsed_array_bound_t *bound = append_array_bound(
+          declarator, parse_context->runtime_context);
       if (!bound)
         diagnose_declarator_too_complex(context, current_token());
       *bound = (psx_parsed_array_bound_t){
@@ -341,7 +349,7 @@ static int consume_declarator_suffix(
     diagnose_declarator_too_complex(context, current_token());
   }
   psx_parsed_function_suffix_t *suffix =
-      append_function_suffix(declarator);
+      append_function_suffix(declarator, parse_context->runtime_context);
   if (!suffix)
     diagnose_declarator_too_complex(context, current_token());
   psx_parsed_function_parameters_t *parameters =
@@ -450,6 +458,7 @@ static int parse_declarator_syntax_tree_into(
   declarator->identifier = psx_parse_declarator_syntax(
       &(psx_declarator_syntax_t){
           .context = &parse_context,
+          .arena_context = ps_parser_runtime_arena(runtime_context),
           .is_grouping_parenthesis =
               is_grouping_parenthesis
                   ? is_grouping_parenthesis

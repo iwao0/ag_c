@@ -3,6 +3,7 @@
 #include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
+#include "parser/arena.h"
 #include "frontend/translation_unit.h"
 #include "tokenizer/tokenizer.h"
 #include "tokenizer/allocator.h"
@@ -22,14 +23,14 @@
 
 /* メモリ計測モード (環境変数 AG_MEM_STATS=1)。コンパイル各段が確保したメモリの
  * 内訳とプロセスのピーク RSS を stderr に出す。8MB 級のタイト環境への移植検討用。
- * カウンタ getter は各アロケータが提供する (ir.h / 下記 extern)。 */
-size_t arena_total_reserved_bytes(void);         /* src/parser/arena.c */
+ * カウンタ getter は各アロケータが提供する。 */
 
 static void print_mem_stats(
     const ag_compilation_session_t *session, size_t source_bytes) {
   size_t tok = tk_allocator_total_reserved_bytes_in(
       ag_compilation_session_token_allocator_context(session));
-  size_t ast  = arena_total_reserved_bytes();
+  size_t ast = arena_total_reserved_bytes_in(
+      ag_compilation_session_arena_context(session));
   size_t ninst = ir_inst_total_count();
   size_t nblk  = ir_block_total_count();
   size_t ir_inst_bytes  = ninst * sizeof(ir_inst_t);

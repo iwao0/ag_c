@@ -2,6 +2,7 @@
 #include "declaration_type_builder.h"
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
+#include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
 
 #include <string.h>
@@ -34,7 +35,8 @@ int psx_resolve_parameter_declaration(
   memset(resolution, 0, sizeof(*resolution));
   psx_type_t *type = psx_build_decl_type(&request->type);
   if (!type) return 0;
-  type = ps_type_adjust_parameter_type(type);
+  type = ps_type_adjust_parameter_type_in(
+      ps_ctx_arena(request->type.semantic_context), type);
   if (!type ||
       !psx_plan_parameter_storage(type,
                                   &resolution->storage)) {
@@ -55,7 +57,8 @@ int psx_resolve_parameter_declaration(
 
   resolution->inner_dimension_count = request->inner_dimension_count;
   if (request->inner_dimension_count > 0) {
-    resolution->inner_dimensions = arena_alloc(
+    resolution->inner_dimensions = arena_alloc_in(
+        ps_ctx_arena(request->type.semantic_context),
         (size_t)request->inner_dimension_count *
         sizeof(*resolution->inner_dimensions));
     memcpy(resolution->inner_dimensions, request->inner_dimensions,

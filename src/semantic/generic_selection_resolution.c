@@ -43,7 +43,8 @@ void psx_resolve_generic_selection_in_contexts(
             semantic_context, global_registry, local_registry,
             &association->type_name);
     if (resolved) {
-      psx_type_t *normalized = ps_type_clone(resolved);
+      psx_type_t *normalized = ps_type_clone_in(
+          ps_ctx_arena(semantic_context), resolved);
       ps_type_normalize_integer_identity(normalized);
       association->type_name.resolved_type = normalized;
       resolved = normalized;

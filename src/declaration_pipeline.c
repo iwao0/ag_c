@@ -265,8 +265,8 @@ int psx_apply_function_declaration_pipeline(
   if (request->function_node) {
     const psx_type_t *function_type =
         ps_function_symbol_type(resolution.function);
-    request->function_node->signature = ps_type_clone(
-        function_type);
+    request->function_node->signature = ps_type_clone_in(
+        ps_ctx_arena(request->semantic_context), function_type);
   }
   return 1;
 }
@@ -294,7 +294,8 @@ static int resolve_definition_parameter(
       },
   };
   if (application->shape.count > 0) {
-    semantic_request.inner_dimensions = arena_alloc(
+    semantic_request.inner_dimensions = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
         (size_t)application->shape.count *
         sizeof(*semantic_request.inner_dimensions));
   }
@@ -678,6 +679,7 @@ int psx_begin_automatic_local_declaration_pipeline(
   psx_local_declaration_resolution_t resolution;
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
+          .arena_context = ps_lowering_arena(request->lowering_context),
           .type = request->type,
           .application = request->application,
           .has_initializer = request->initializer->has_initializer,
@@ -723,11 +725,14 @@ int psx_begin_automatic_local_declaration_pipeline(
           .requested_alignment = request->requested_alignment,
           .diag_tok = request->diag_tok,
       };
-      lowering.dimensions = arena_alloc(
+      lowering.dimensions = arena_alloc_in(
+          ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.dimensions));
-      lowering.const_values = arena_alloc(
+      lowering.const_values = arena_alloc_in(
+          ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.const_values));
-      lowering.is_const = arena_alloc(
+      lowering.is_const = arena_alloc_in(
+          ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.is_const));
       for (int i = 0; i < resolution.dimension_count; i++) {
         lowering.dimensions[i] = resolution.dimensions[i].expression;
@@ -767,7 +772,8 @@ int psx_finish_automatic_local_declaration_pipeline(
   if (!request || !result || !result->var || !request->initializer)
     return 0;
   if (ps_type_is_incomplete_array(request->type)) {
-    psx_type_t *completed_type = ps_type_clone(request->type);
+    psx_type_t *completed_type = ps_type_clone_in(
+        ps_lowering_arena(request->lowering_context), request->type);
     if (!completed_type) return 0;
     if (!request->initializer->has_initializer ||
         !psx_resolve_incomplete_array_initializer(

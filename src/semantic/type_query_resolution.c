@@ -46,9 +46,11 @@ static node_t *sizeof_type_bound_for_op(
   return NULL;
 }
 
-static node_t *widen_size_value(node_t *value) {
+static node_t *widen_size_value(
+    psx_semantic_context_t *semantic_context, node_t *value) {
   return ps_node_new_integer_cast_result(
-      value, ps_type_new_integer(TK_UNSIGNED, 8, 1));
+      value, ps_type_new_integer_in(
+                 ps_ctx_arena(semantic_context), TK_UNSIGNED, 8, 1));
 }
 
 static void resolve_sizeof_type_name(
@@ -71,7 +73,8 @@ static void resolve_sizeof_type_name(
   const psx_type_t *base_type = query->type_name.bound_base_type;
   psx_declarator_shape_t *shape = &syntax->declarator.declarator_shape;
   if (syntax->declarator.array_bound_count > 0) {
-    resolution->zero_length_bound_indices = arena_alloc(
+    resolution->zero_length_bound_indices = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
         (size_t)syntax->declarator.array_bound_count *
         sizeof(*resolution->zero_length_bound_indices));
   }
@@ -118,12 +121,14 @@ static void resolve_sizeof_type_name(
 
   int base_size = ps_type_sizeof(base_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
-  node_t *size = widen_size_value(ps_node_new_num(base_size));
+  node_t *size = widen_size_value(
+      semantic_context, ps_node_new_num(base_size));
   int is_runtime = 0;
   for (int i = shape->count - 1; i >= 0; i--) {
     psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
-      size = widen_size_value(ps_node_new_num(8));
+      size = widen_size_value(
+          semantic_context, ps_node_new_num(8));
       is_runtime = 0;
       continue;
     }
@@ -131,17 +136,22 @@ static void resolve_sizeof_type_name(
     node_t *bound = sizeof_type_bound_for_op(query, i);
     if (op->is_vla_array && bound) {
       size = ps_node_new_binary(
-          ND_MUL, widen_size_value(bound), size);
+          ND_MUL, widen_size_value(semantic_context, bound), size);
       is_runtime = 1;
     } else {
       size = ps_node_new_binary(
-          ND_MUL, widen_size_value(ps_node_new_num(op->array_len)), size);
+          ND_MUL,
+          widen_size_value(
+              semantic_context, ps_node_new_num(op->array_len)),
+          size);
     }
   }
   if (is_runtime) query->runtime_size_expr = size;
 }
 
-static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
+static const psx_type_t *sizeof_operand_type(
+    psx_semantic_context_t *semantic_context,
+    node_sizeof_query_t *query) {
   if (!query) return NULL;
   if (query->is_type_name) return query->type_name.resolved_type;
   node_t *operand = query->operand;
@@ -151,7 +161,8 @@ static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
     const psx_type_t *object_type = compound->type_name.resolved_type;
     if (object_type && object_type->kind == PSX_TYPE_ARRAY &&
         object_type->array_len <= 0 && compound->base.rhs) {
-      psx_type_t *completed = ps_type_clone(object_type);
+      psx_type_t *completed = ps_type_clone_in(
+          ps_ctx_arena(semantic_context), object_type);
       if (completed && psx_resolve_incomplete_array_initializer(
                            completed, PSX_DECL_INIT_LIST,
                            compound->base.rhs)) {
@@ -198,9 +209,11 @@ void psx_resolve_sizeof_query_in_contexts(
       semantic_context, global_registry, local_registry,
       query, resolution);
   if (resolution->status != PSX_TYPE_QUERY_RESOLUTION_OK) return;
-  const psx_type_t *type = sizeof_operand_type(query);
+  const psx_type_t *type = sizeof_operand_type(
+      semantic_context, query);
   if (!query->is_type_name && type) {
-    psx_type_t *completed_view = ps_type_clone(type);
+    psx_type_t *completed_view = ps_type_clone_in(
+        ps_ctx_arena(semantic_context), type);
     ps_ctx_refresh_type_completeness_in(
         semantic_context, completed_view);
     type = completed_view;

@@ -1,6 +1,7 @@
 #include "parameter_lowering.h"
 
 #include "local_storage.h"
+#include "runtime_context.h"
 #include "vla_lowering.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
@@ -62,7 +63,8 @@ lvar_t *lower_resolved_parameter_declaration(
       .diag_tok = request->diag_tok,
   };
   if (resolution->inner_dimension_count > 0) {
-    vla.inner_dimensions = arena_alloc(
+    vla.inner_dimensions = arena_alloc_in(
+        ps_lowering_arena(request->lowering_context),
         (size_t)resolution->inner_dimension_count *
         sizeof(*vla.inner_dimensions));
   }

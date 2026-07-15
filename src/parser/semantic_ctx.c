@@ -312,8 +312,10 @@ void ps_ctx_reset_function_names_in(psx_semantic_context_t *context) {
 void ps_ctx_reset_translation_unit_scope_in(
     psx_semantic_context_t *context) {
   if (!context) return;
+  arena_context_t *arena_context = context->arena_context;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
+  context->arena_context = arena_context;
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(
@@ -601,11 +603,12 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
             local_registry, tag->scope_seq, point.scope_seq))
       continue;
     psx_type_t *type = kind == TK_ENUM
-        ? ps_type_new_enum(
-              name, len, tag->scope_depth + 1,
+        ? ps_type_new_enum_in(
+              context->arena_context, name, len, tag->scope_depth + 1,
               tag->size > 0 ? tag->size : 4)
-        : ps_type_new_tag(
-              kind, name, len, tag->scope_depth + 1, tag->size);
+        : ps_type_new_tag_in(
+              context->arena_context, kind, name, len,
+              tag->scope_depth + 1, tag->size);
     type->aggregate_definition = tag->definition;
     if (tag->align > 0) type->align = tag->align;
     return type;
