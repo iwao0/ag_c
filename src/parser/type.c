@@ -233,11 +233,6 @@ int ps_type_integer_promotion_is_unsigned_for_target(
              integer_rank_size(3, target);
 }
 
-int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_integer_promotion_is_unsigned_for_target(type, &target);
-}
-
 typedef struct {
   int rank;
   int is_unsigned;
@@ -294,13 +289,6 @@ int ps_type_usual_arithmetic_result_is_unsigned_for_target(
     return 0;
   }
   return usual_integer_conversion(lhs, rhs, target).is_unsigned;
-}
-
-int ps_type_usual_arithmetic_result_is_unsigned(
-    const psx_type_t *lhs, const psx_type_t *rhs) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_usual_arithmetic_result_is_unsigned_for_target(
-      lhs, rhs, &target);
 }
 
 static ag_target_scalar_kind_t floating_target_kind(

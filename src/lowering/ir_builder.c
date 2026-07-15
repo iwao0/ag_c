@@ -1758,9 +1758,10 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   int is_shift = node->kind == ND_SHL || node->kind == ND_SHR;
   int shift_uses_unsigned = ps_node_shift_operation_is_unsigned(node);
   /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
-   * 従う。UAC 判定は parser/node_utils.c の typed result helper に集約し、
-   * IR 側で rank / promotion を再実装しない。 */
-  int uac_unsig = ps_node_usual_arith_is_unsigned(node);
+   * 従い、現在のIR targetに対して解決する。 */
+  int uac_unsig = ps_type_usual_arithmetic_result_is_unsigned_for_target(
+      ps_node_get_type(node->lhs), ps_node_get_type(node->rhs),
+      ctx->target);
   ir_op_t op = IR_ADD;
   switch (node->kind) {
     case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;

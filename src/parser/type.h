@@ -101,11 +101,8 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *lhs, const psx_type_t *rhs,
     tk_float_kind_t fallback_fp_kind, int force_complex);
-int ps_type_integer_promotion_is_unsigned(const psx_type_t *type);
 int ps_type_integer_promotion_is_unsigned_for_target(
     const psx_type_t *type, const ag_target_info_t *target);
-int ps_type_usual_arithmetic_result_is_unsigned(
-    const psx_type_t *lhs, const psx_type_t *rhs);
 int ps_type_usual_arithmetic_result_is_unsigned_for_target(
     const psx_type_t *lhs, const psx_type_t *rhs,
     const ag_target_info_t *target);

@@ -9,14 +9,11 @@ typedef struct psx_type_t psx_type_t;
 const psx_type_t *ps_node_get_type(const node_t *node);
 const psx_type_t *ps_function_definition_return_type(
     const node_function_definition_t *function);
-int ps_node_integer_promotion_is_unsigned(node_t *n);
 int ps_node_conversion_value_is_unsigned(node_t *n);
 int ps_node_shift_operation_is_unsigned(node_t *n);
 tk_float_kind_t ps_node_value_fp_kind(node_t *node);
 int ps_node_value_is_complex(node_t *node);
 int ps_node_value_is_void(node_t *node);
-int ps_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
-int ps_node_usual_arith_is_unsigned(node_t *n);
 int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int ps_node_value_is_pointer_like(node_t *node);

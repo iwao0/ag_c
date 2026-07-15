@@ -212,17 +212,24 @@ static void warn_identical_logical(
 }
 
 static void warn_sign_compare(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const char *op, const token_t *tok) {
   if (!lhs || !rhs) return;
-  int lhs_unsigned = ps_node_integer_promotion_is_unsigned(lhs);
-  int rhs_unsigned = ps_node_integer_promotion_is_unsigned(rhs);
+  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
+      ps_node_get_type(lhs), target);
+  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
+      ps_node_get_type(rhs), target);
   if (lhs_unsigned == rhs_unsigned) return;
   node_t *signed_side = lhs_unsigned ? rhs : lhs;
   if (signed_side->kind == ND_NUM &&
       ((node_num_t *)signed_side)->val >= 0)
     return;
-  if (!ps_node_usual_arith_operands_is_unsigned(lhs, rhs)) return;
+  if (!ps_type_usual_arithmetic_result_is_unsigned_for_target(
+          ps_node_get_type(lhs), ps_node_get_type(rhs), target)) {
+    return;
+  }
   diag_warn_tokf_in(diagnostics,
       DIAG_WARN_PARSER_SIGN_COMPARE, tok,
       "符号付きと符号なしの整数を比較しています ('%s' / 負値が大きな正の値として扱われる可能性)",
@@ -257,6 +264,7 @@ static void warn_unsigned_zero(
 }
 
 static void warn_comparison(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   token_kind_t op_kind = node ? node->source_op : TK_EOF;
@@ -279,7 +287,8 @@ static void warn_comparison(
     if (nodes_identity_equal(lhs, rhs))
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_SELF_COMPARE, tok,
                      "自己比較 (常に同じ値): '%s'", op);
-    warn_sign_compare(diagnostics, lhs, rhs, op, tok);
+    warn_sign_compare(
+        semantic_context, diagnostics, lhs, rhs, op, tok);
     node_t *pointer = NULL;
     node_t *number = NULL;
     if (lhs && rhs && ps_node_value_is_pointer_like(lhs) &&
@@ -298,7 +307,8 @@ static void warn_comparison(
           ((node_num_t *)number)->val, op);
     }
   } else {
-    warn_sign_compare(diagnostics, lhs, rhs, op, tok);
+    warn_sign_compare(
+        semantic_context, diagnostics, lhs, rhs, op, tok);
     warn_unsigned_zero(diagnostics, lhs, rhs, op, tok);
   }
 }
@@ -428,7 +438,8 @@ static void emit_node_warning(
     case ND_NE:
     case ND_LT:
     case ND_LE:
-      warn_comparison(diagnostics, node, fallback_diag_tok);
+      warn_comparison(
+          semantic_context, diagnostics, node, fallback_diag_tok);
       break;
     case ND_ADD:
     case ND_SUB:

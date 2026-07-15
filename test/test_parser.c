@@ -203,6 +203,8 @@ static arena_context_t *test_arena_context(void) {
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_compound_literal_array_size(...) \
   test_node_compound_literal_array_size(__VA_ARGS__)
+#define ps_node_usual_arith_is_unsigned(...) \
+  test_node_usual_arith_is_unsigned(__VA_ARGS__)
 #define ps_node_new_num(...) \
   ps_node_new_num_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_lvar(...) \
@@ -1251,6 +1253,29 @@ static int test_type_pointer_view_structural_ptr_array_pointee_bytes(
   int bytes = test_type_sizeof(type->base);
   if (bytes <= 0) bytes = test_type_deref_size(type);
   return bytes > 0 ? bytes : 0;
+}
+
+static int test_node_usual_arith_is_unsigned(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_ADD:
+    case ND_SUB:
+    case ND_MUL:
+    case ND_DIV:
+    case ND_MOD:
+    case ND_BITAND:
+    case ND_BITXOR:
+    case ND_BITOR:
+    case ND_LT:
+    case ND_LE:
+    case ND_EQ:
+    case ND_NE:
+      return ps_type_usual_arithmetic_result_is_unsigned_for_target(
+          ps_node_get_type(node->lhs), ps_node_get_type(node->rhs),
+          ps_ctx_target_info(test_semantic_context()));
+    default:
+      return ps_type_is_unsigned(ps_node_get_type(node));
+  }
 }
 
 static const psx_type_t *canonical_node_pointee_type(node_t *node) {
@@ -6795,12 +6820,16 @@ static void test_expr_shift() {
 
     node_t *promoted_signed_shift = parse_expr_input("(unsigned char)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
-  ASSERT_TRUE(!ps_node_integer_promotion_is_unsigned(promoted_signed_shift->lhs));
+  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_target(
+      ps_node_get_type(promoted_signed_shift->lhs),
+      ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(promoted_signed_shift));
 
     node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
-  ASSERT_TRUE(ps_node_integer_promotion_is_unsigned(promoted_unsigned_shift->lhs));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
+      ps_node_get_type(promoted_unsigned_shift->lhs),
+      ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(ps_node_shift_operation_is_unsigned(promoted_unsigned_shift));
 
     node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
@@ -16982,12 +17011,14 @@ static void test_semantic_type_identity() {
       plain_int, stale_wide_int));
   ASSERT_EQ(TK_INT, stale_narrow_unsigned_int->scalar_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_narrow_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
-      stale_narrow_unsigned_int));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
+      stale_narrow_unsigned_int,
+      ps_ctx_target_info(test_semantic_context())));
   ASSERT_EQ(TK_INT, stale_wide_unsigned_int->scalar_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_wide_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
-      stale_wide_unsigned_int));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
+      stale_wide_unsigned_int,
+      ps_ctx_target_info(test_semantic_context())));
   psx_type_t *stale_wide_short =
       ps_type_new_integer(TK_SHORT, 64, 1);
   psx_type_t *stale_narrow_int =

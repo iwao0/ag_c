@@ -2295,15 +2295,6 @@ static int node_is_unsigned(node_t *node) {
   return node ? type_result_unsigned(ps_node_get_type(node)) : 0;
 }
 
-static int binary_usual_arith_unsigned(node_t *lhs, node_t *rhs) {
-  return ps_type_usual_arithmetic_result_is_unsigned(
-      ps_node_get_type(lhs), ps_node_get_type(rhs));
-}
-
-int ps_node_integer_promotion_is_unsigned(node_t *node) {
-  return ps_type_integer_promotion_is_unsigned(ps_node_get_type(node));
-}
-
 tk_float_kind_t ps_node_value_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
   const psx_type_t *type = ps_node_get_type(node);
@@ -2340,35 +2331,6 @@ int ps_node_conversion_value_is_unsigned(node_t *node) {
 int ps_node_shift_operation_is_unsigned(node_t *node) {
   if (!node || (node->kind != ND_SHL && node->kind != ND_SHR)) return 0;
   return node_is_unsigned(node);
-}
-
-int ps_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
-  return binary_usual_arith_unsigned(lhs, rhs);
-}
-
-int ps_node_usual_arith_is_unsigned(node_t *node) {
-  if (!node) return 0;
-  switch (node->kind) {
-    case ND_ADD:
-    case ND_SUB:
-    case ND_MUL:
-    case ND_DIV:
-    case ND_MOD:
-    case ND_BITAND:
-    case ND_BITXOR:
-    case ND_BITOR:
-    case ND_LT:
-    case ND_LE:
-    case ND_EQ:
-    case ND_NE:
-      return ps_node_usual_arith_operands_is_unsigned(node->lhs, node->rhs);
-    case ND_TERNARY: {
-      const psx_type_t *type = ps_node_get_type(node);
-      return type_result_unsigned(type);
-    }
-    default:
-      return type_result_unsigned(ps_node_get_type(node));
-  }
 }
 
 node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
