@@ -833,6 +833,21 @@ static tag_type_t *find_tag_type_in(
   return NULL;
 }
 
+static tag_type_t *find_tag_type_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int scope_depth) {
+  if (!context || !name || len <= 0 || scope_depth < 0) return NULL;
+  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
+  for (tag_type_t *tag = context->tags_by_bucket[bucket];
+       tag; tag = tag->next_hash) {
+    if (tag->kind == kind && tag->len == len &&
+        tag->scope_depth == scope_depth &&
+        strncmp(tag->name, name, (size_t)len) == 0)
+      return tag;
+  }
+  return NULL;
+}
+
 static tag_type_t *find_tag_type_by_record_id_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
   if (!context || record_id == PSX_RECORD_ID_INVALID) return NULL;
@@ -1244,35 +1259,6 @@ int ps_ctx_register_record_members_in(
       declarations, layouts, member_count, out_conflict_index);
 }
 
-static int compare_tag_members_in(
-    const psx_semantic_context_t *context,
-    const tag_member_t *ma, const tag_member_t *mb) {
-  const psx_record_member_layout_t *la =
-      find_tag_member_layout_draft(context, ma);
-  const psx_record_member_layout_t *lb =
-      find_tag_member_layout_draft(context, mb);
-  int offset_a = la ? la->offset : 0;
-  int offset_b = lb ? lb->offset : 0;
-  if (offset_a != offset_b) return (offset_a < offset_b) ? -1 : 1;
-  if (ma->decl_order != mb->decl_order) return (ma->decl_order < mb->decl_order) ? -1 : 1;
-  return 0;
-}
-
-static void sort_tag_members_in(
-    const psx_semantic_context_t *context,
-    tag_member_t **members, int member_count) {
-  for (int i = 1; i < member_count; i++) {
-    tag_member_t *member = members[i];
-    int j = i;
-    while (j > 0 &&
-           compare_tag_members_in(context, member, members[j - 1]) < 0) {
-      members[j] = members[j - 1];
-      j--;
-    }
-    members[j] = member;
-  }
-}
-
 /* Resolve aggregate identity across the complete owned type tree. Record
  * declarations remain owned by RecordDeclTable and are not retained by types. */
 void ps_ctx_bind_record_ids_in(
@@ -1322,33 +1308,17 @@ static bool get_tag_member_info_impl_in(
     token_kind_t kind, char *name, int len,
     int scope_depth, int index, tag_member_info_t *out) {
   if (!context || !out) return false;
-  int target_scope = scope_depth;
-  if (target_scope < 0) {
-    tag_type_t *tt = find_tag_type_in(context, kind, name, len);
-    if (!tt) return false;
-    target_scope = tt->scope_depth;
-  }
-  int cap = 8;
-  int n = 0;
-  tag_member_t **members = calloc((size_t)cap, sizeof(tag_member_t *));
-  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
-    for (tag_member_t *m = context->aggregate_members_by_bucket[i];
-         m; m = m->next_hash) {
-      if (m->tag_kind != kind || m->tag_len != len) continue;
-      if (strncmp(m->tag_name, name, (size_t)len) != 0) continue;
-      if (m->scope_depth != target_scope) continue;
-      if (n >= cap) {
-        cap *= 2;
-        members = realloc(members, (size_t)cap * sizeof(tag_member_t *));
-      }
-      members[n++] = m;
-    }
-  }
-  if (n == 0 || index < 0 || index >= n) {
+  tag_type_t *tag = scope_depth >= 0
+                        ? find_tag_type_at_scope_in(
+                              context, kind, name, len, scope_depth)
+                        : find_tag_type_in(context, kind, name, len);
+  if (!tag) return false;
+  tag_member_t **members = NULL;
+  int n = collect_tag_member_declarations_in(context, tag, &members);
+  if (n <= 0 || index < 0 || index >= n) {
     free(members);
     return false;
   }
-  sort_tag_members_in(context, members, n);
   bool found = fill_tag_member_info_in(context, members[index], out);
   free(members);
   return found;
@@ -1380,7 +1350,7 @@ static bool find_tag_member_info_impl_in(
   return false;
 }
 
-/* tag の index 番目 (offset 昇順) のメンバ全属性を取得する。最も内側 tag の scope_depth に
+/* tag の index 番目 (宣言順) のメンバ全属性を取得する。最も内側 tag の scope_depth に
  * 固定 (shadow 対応)。 */
 bool ps_ctx_get_tag_member_info_in(
     psx_semantic_context_t *context,

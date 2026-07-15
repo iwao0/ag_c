@@ -5008,6 +5008,17 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(order_layout != NULL);
   ASSERT_EQ(4, psx_record_layout_member(order_layout, 0)->offset);
   ASSERT_EQ(0, psx_record_layout_member(order_layout, 1)->offset);
+  tag_member_info_t order_member = {0};
+  ASSERT_TRUE(ps_ctx_get_tag_member_info_in(
+      test_semantic_context(), TK_STRUCT,
+      order_tag_name, order_tag_name_len, 0, &order_member));
+  ASSERT_TRUE(strncmp(order_member.name, "first", 5) == 0);
+  ASSERT_EQ(4, order_member.offset);
+  ASSERT_TRUE(ps_ctx_get_tag_member_info_in(
+      test_semantic_context(), TK_STRUCT,
+      order_tag_name, order_tag_name_len, 1, &order_member));
+  ASSERT_TRUE(strncmp(order_member.name, "second", 6) == 0);
+  ASSERT_EQ(0, order_member.offset);
 
   ps_ctx_reset_tag_diag_state_in(test_semantic_context());
   ASSERT_EQ(1, first->member_count);

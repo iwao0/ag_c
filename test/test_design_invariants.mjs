@@ -3545,6 +3545,9 @@ const publishRecordLayoutFunction = tagContextSource.match(
 const refreshRecordDeclFunction = tagContextSource.match(
   /static\s+void\s+refresh_cached_record_decl\s*\([^]*?\n\}/,
 );
+const getTagMemberInfoFunction = tagContextSource.match(
+  /static\s+bool\s+get_tag_member_info_impl_in\s*\([^]*?\n\}/,
+);
 const recordDeclStruct = typeSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
@@ -3566,6 +3569,15 @@ if (!publishRecordLayoutFunction ||
     )) {
   throw new Error(
     "RecordLayout publication must pair declaration-order members with target layout drafts",
+  );
+}
+if (!getTagMemberInfoFunction ||
+    !/\bcollect_tag_member_declarations_in\s*\(/.test(
+      getTagMemberInfoFunction[0],
+    ) ||
+    /\bsort_tag_members_in\s*\(/.test(getTagMemberInfoFunction[0])) {
+  throw new Error(
+    "parser member compatibility views must preserve declaration order",
   );
 }
 if (!recordMemberDeclStruct ||
