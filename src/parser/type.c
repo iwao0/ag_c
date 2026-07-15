@@ -85,6 +85,17 @@ psx_type_t *psx_type_owned_param_mut(psx_type_t *owner, int index) {
   return (psx_type_t *)owner->param_types[index];
 }
 
+static token_kind_t canonical_integer_scalar_kind(
+    token_kind_t scalar_kind, int size) {
+  if (scalar_kind != TK_SIGNED && scalar_kind != TK_UNSIGNED &&
+      scalar_kind != TK_EOF)
+    return scalar_kind;
+  if (size <= 1) return TK_CHAR;
+  if (size == 2) return TK_SHORT;
+  if (size >= 8) return TK_LONG;
+  return TK_INT;
+}
+
 psx_type_t *ps_type_new_in(
     arena_context_t *arena_context, psx_type_kind_t kind) {
   psx_type_t *type = arena_alloc_in(arena_context, sizeof(psx_type_t));
@@ -99,10 +110,9 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_INTEGER) {
     if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
-    else if (type->size == 1) type->scalar_kind = TK_CHAR;
-    else if (type->size == 2) type->scalar_kind = TK_SHORT;
-    else if (type->size == 8) type->scalar_kind = TK_LONG;
-    else type->scalar_kind = TK_INT;
+    else
+      type->scalar_kind = canonical_integer_scalar_kind(
+          type->scalar_kind, type->size);
   }
   ps_type_normalize_integer_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
@@ -119,7 +129,7 @@ psx_type_t *ps_type_new_integer_in(
       arena_context,
       scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
   if (!type) return NULL;
-  type->scalar_kind = scalar_kind;
+  type->scalar_kind = canonical_integer_scalar_kind(scalar_kind, size);
   type->size = size;
   type->align = size > 0 ? size : 1;
   if (type->align > 8) type->align = 8;
@@ -159,12 +169,33 @@ static int type_integer_promotion_size(const psx_type_t *type) {
   return size < 4 ? 4 : size;
 }
 
+int ps_type_integer_rank(const psx_type_t *type) {
+  if (!type) return 0;
+  if (type->kind == PSX_TYPE_BOOL) return 0;
+  if (type->kind != PSX_TYPE_INTEGER) return 0;
+  if (type->is_plain_char) return 1;
+  if (type->is_long_long) return 5;
+  switch (type->scalar_kind) {
+    case TK_CHAR:
+      return 1;
+    case TK_SHORT:
+      return 2;
+    case TK_INT:
+    case TK_ENUM:
+      return 3;
+    case TK_LONG:
+      return 4;
+    default:
+      return 0;
+  }
+}
+
 int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
   if (!type || (type->kind != PSX_TYPE_BOOL &&
                 type->kind != PSX_TYPE_INTEGER)) {
     return 0;
   }
-  return ps_type_sizeof(type) >= 4 && ps_type_is_unsigned(type);
+  return ps_type_integer_rank(type) >= 3 && ps_type_is_unsigned(type);
 }
 
 int ps_type_usual_arithmetic_result_is_unsigned(
@@ -913,27 +944,6 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
   }
 }
 
-static int semantic_integer_rank(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->is_plain_char) return 1;
-  if (type->is_long_long) return 5;
-  switch (type->scalar_kind) {
-    case TK_CHAR:
-      return 1;
-    case TK_SHORT:
-      return 2;
-    case TK_INT:
-      return 3;
-    case TK_LONG:
-      return 4;
-    default:
-      if (type->size <= 1) return 1;
-      if (type->size <= 2) return 2;
-      if (type->size <= 4) return 3;
-      return 4;
-  }
-}
-
 static int semantic_type_matches(
     const psx_type_t *a, const psx_type_t *b, int compare_qualifiers) {
   if (a == b) return 1;
@@ -949,7 +959,7 @@ static int semantic_type_matches(
       }
       return a->is_unsigned == b->is_unsigned &&
              a->is_plain_char == b->is_plain_char &&
-             semantic_integer_rank(a) == semantic_integer_rank(b);
+             ps_type_integer_rank(a) == ps_type_integer_rank(b);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       return a->fp_kind == b->fp_kind &&
@@ -1239,10 +1249,9 @@ int ps_type_generic_select_index(
     normalized = decayed;
   } else if (normalized.kind == PSX_TYPE_INTEGER) {
     if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;
-    else if (normalized.size == 1) normalized.scalar_kind = TK_CHAR;
-    else if (normalized.size == 2) normalized.scalar_kind = TK_SHORT;
-    else if (normalized.size == 8) normalized.scalar_kind = TK_LONG;
-    else normalized.scalar_kind = TK_INT;
+    else
+      normalized.scalar_kind = canonical_integer_scalar_kind(
+          normalized.scalar_kind, normalized.size);
   }
   int default_index = -1;
   for (int i = 0; i < association_count; i++) {

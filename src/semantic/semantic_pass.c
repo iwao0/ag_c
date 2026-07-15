@@ -156,8 +156,7 @@ static void semantic_validate_assignment(node_t *node,
         ps_diag_ctx_in(diagnostics, tok, "init",
                      "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
-      if (ps_type_is_tag_aggregate(rhs_type) &&
-          ps_type_sizeof(rhs_type) > 0) {
+      if (ps_type_is_tag_aggregate(rhs_type)) {
         ps_diag_ctx_in(diagnostics, tok, "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
                      ps_ctx_tag_kind_spelling(rhs_type->tag_kind));

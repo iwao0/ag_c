@@ -33,7 +33,8 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
   if (!type) return NULL;
   if (kind == ND_UNARY_NEGATE) {
     if (type->kind == PSX_TYPE_BOOL ||
-        (type->kind == PSX_TYPE_INTEGER && ps_type_sizeof(type) < 4))
+        (type->kind == PSX_TYPE_INTEGER &&
+         ps_type_integer_rank(type) < 3))
       return ps_type_new_integer_in(
           ps_ctx_arena(semantic_context), TK_INT, 4, 0);
     if (type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT ||

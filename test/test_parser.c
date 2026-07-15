@@ -2070,6 +2070,17 @@ static void test_unary_deref_semantic_lowering_boundary() {
 
 static void test_unary_operator_semantic_lowering_boundary() {
   printf("test_unary_operator_semantic_lowering_boundary...\n");
+  psx_type_t *stale_wide_char = ps_type_new_integer(TK_CHAR, 8, 0);
+  node_t *stale_wide_char_value = ps_node_new_num(1);
+  ps_node_bind_type(stale_wide_char_value, stale_wide_char);
+  const psx_type_t *promoted_stale_char =
+      psx_resolve_arithmetic_unary_result_type(
+          test_semantic_context(), ND_UNARY_NEGATE,
+          stale_wide_char_value);
+  ASSERT_TRUE(promoted_stale_char != NULL);
+  ASSERT_EQ(TK_INT, promoted_stale_char->scalar_kind);
+  ASSERT_EQ(3, ps_type_integer_rank(promoted_stale_char));
+
   reset_test_locals();
   lvar_t *integer = register_test_storage_fixture(
       (char *)"i", 1, 4, 4, 0);
@@ -16490,6 +16501,23 @@ static void test_semantic_type_identity() {
   if (!context) return;
 
   psx_type_t *plain_int = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *stale_wide_int = ps_type_new_integer(TK_INT, 8, 0);
+  psx_type_t *legacy_unsigned_char =
+      ps_type_new_integer(TK_UNSIGNED, 1, 1);
+  psx_type_t *legacy_unsigned_long =
+      ps_type_new_integer(TK_UNSIGNED, 8, 1);
+  ASSERT_EQ(3, ps_type_integer_rank(plain_int));
+  ASSERT_EQ(3, ps_type_integer_rank(stale_wide_int));
+  ASSERT_TRUE(ps_type_unqualified_semantic_matches(
+      plain_int, stale_wide_int));
+  ASSERT_EQ(TK_CHAR, legacy_unsigned_char->scalar_kind);
+  ASSERT_EQ(1, ps_type_integer_rank(legacy_unsigned_char));
+  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned(
+      legacy_unsigned_char));
+  ASSERT_EQ(TK_LONG, legacy_unsigned_long->scalar_kind);
+  ASSERT_EQ(4, ps_type_integer_rank(legacy_unsigned_long));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
+      legacy_unsigned_long));
   psx_type_t *const_int = ps_type_clone(plain_int);
   ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);
   psx_qual_type_t plain_int_identity =

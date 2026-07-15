@@ -2609,6 +2609,20 @@ const semanticDiagnosticsSource = await readFile(
   "src/semantic/semantic_diagnostics.c",
   "utf8",
 );
+const expressionOperandResolutionSource = await readFile(
+  "src/semantic/expression_operand_resolution.c",
+  "utf8",
+);
+if (!/\bps_type_integer_rank\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    /\bps_type_sizeof\s*\(/.test(expressionOperandResolutionSource) ||
+    /\bps_type_sizeof\s*\(/.test(semanticDiagnosticsSource) ||
+    /\bps_type_sizeof\s*\(/.test(semanticPassSource)) {
+  throw new Error(
+    "semantic rank and category checks must not use target layout size",
+  );
+}
 const functionParameterSyntaxSource = await readFile(
   "src/parser/function_parameter_syntax.c",
   "utf8",
