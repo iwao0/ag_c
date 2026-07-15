@@ -29,22 +29,31 @@ static tokenizer_context_t *tk_tokenize_ctx_active = NULL;
  * 非ストリーム経路では NULL なので無影響。カーソル更新の 2 経路
  * (逐次前進 tk_advance_current_token と明示ジャンプ tk_set_current_token_ctx)
  * の両方で呼ぶ。 */
-void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, void (*fn)(token_t *)) {
+void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, tk_cursor_hook_t fn,
+                            void *user_data) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  if (use_ctx) use_ctx->cursor_hook = fn;
+  if (use_ctx) {
+    use_ctx->cursor_hook = fn;
+    use_ctx->cursor_hook_user_data = user_data;
+  }
 }
 
-void tk_set_cursor_hook(void (*fn)(token_t *)) {
-  tk_set_cursor_hook_ctx(NULL, fn);
+void tk_set_cursor_hook(tk_cursor_hook_t fn, void *user_data) {
+  tk_set_cursor_hook_ctx(NULL, fn, user_data);
 }
 
-void (*tk_get_cursor_hook_ctx(tokenizer_context_t *ctx))(token_t *) {
+tk_cursor_hook_t tk_get_cursor_hook_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   return use_ctx ? use_ctx->cursor_hook : NULL;
 }
 
-void (*tk_get_cursor_hook(void))(token_t *) {
+tk_cursor_hook_t tk_get_cursor_hook(void) {
   return tk_get_cursor_hook_ctx(NULL);
+}
+
+void *tk_get_cursor_hook_user_data_ctx(tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  return use_ctx ? use_ctx->cursor_hook_user_data : NULL;
 }
 
 tokenizer_context_t *tk_runtime_ctx(void) {
@@ -60,26 +69,32 @@ void tk_advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
   if (!ctx) return;
   token_t *nx = cur ? cur->next : NULL;
   ctx->current_token = nx;
-  if (ctx->cursor_hook && nx) ctx->cursor_hook(nx);
+  if (ctx->cursor_hook && nx)
+    ctx->cursor_hook(ctx->cursor_hook_user_data, nx);
 }
 
 /* カーソルを進めない深い前方先読み (パーサの _Generic 型照合等) の直前に呼び、ストリーミング
  * 生成器に前方 lookahead を満たさせるフック。プリプロセッサが登録する。未登録 (非ストリーム
  * の単体テスト等) では no-op。parser↔preprocess を直接リンクせず疎結合に保つための間接化。 */
 void tk_set_ensure_lookahead_hook_ctx(
-    tokenizer_context_t *ctx, void (*fn)(void)) {
+    tokenizer_context_t *ctx, tk_ensure_lookahead_hook_t fn,
+    void *user_data) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  if (use_ctx) use_ctx->ensure_lookahead_hook = fn;
+  if (use_ctx) {
+    use_ctx->ensure_lookahead_hook = fn;
+    use_ctx->ensure_lookahead_hook_user_data = user_data;
+  }
 }
 
-void tk_set_ensure_lookahead_hook(void (*fn)(void)) {
-  tk_set_ensure_lookahead_hook_ctx(NULL, fn);
+void tk_set_ensure_lookahead_hook(tk_ensure_lookahead_hook_t fn,
+                                  void *user_data) {
+  tk_set_ensure_lookahead_hook_ctx(NULL, fn, user_data);
 }
 
 void tk_ensure_lookahead_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   if (use_ctx && use_ctx->ensure_lookahead_hook)
-    use_ctx->ensure_lookahead_hook();
+    use_ctx->ensure_lookahead_hook(use_ctx->ensure_lookahead_hook_user_data);
 }
 
 void tk_ensure_lookahead(void) { tk_ensure_lookahead_ctx(NULL); }
@@ -102,7 +117,8 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
   if (use_ctx) {
     use_ctx->current_token = tok;
   }
-  if (use_ctx && use_ctx->cursor_hook && tok) use_ctx->cursor_hook(tok);
+  if (use_ctx && use_ctx->cursor_hook && tok)
+    use_ctx->cursor_hook(use_ctx->cursor_hook_user_data, tok);
 }
 
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {

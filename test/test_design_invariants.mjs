@@ -432,8 +432,9 @@ if (sessionContextAccessorNames.some((name) =>
     /ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
     /previous_local_registry/.test(compilationSessionSource) ||
     !/pp_context_create\s*\(/.test(compilationSessionSource) ||
-    !/pp_context_activate\s*\(/.test(compilationSessionSource) ||
     !/pp_context_destroy\s*\(/.test(compilationSessionSource) ||
+    /pp_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_preprocessor_context/.test(compilationSessionSource) ||
     !/arena_context_create\s*\(/.test(compilationSessionSource) ||
     !/arena_context_activate\s*\(/.test(compilationSessionSource) ||
     !/arena_context_destroy\s*\(/.test(compilationSessionSource) ||
@@ -834,10 +835,14 @@ if (!/struct\s+tk_allocator_context_t\s*\{/.test(
     )) {
   throw new Error("token allocator storage must be owned by allocator context");
 }
-if (!/void\s*\(\*cursor_hook\)\s*\(token_t\s*\*\)\s*;/.test(
+if (!/tk_cursor_hook_t\s+cursor_hook\s*;/.test(
       tokenizerHeader,
     ) ||
-    !/void\s*\(\*ensure_lookahead_hook\)\s*\(void\)\s*;/.test(
+    !/void\s*\*cursor_hook_user_data\s*;/.test(tokenizerHeader) ||
+    !/tk_ensure_lookahead_hook_t\s+ensure_lookahead_hook\s*;/.test(
+      tokenizerHeader,
+    ) ||
+    !/void\s*\*ensure_lookahead_hook_user_data\s*;/.test(
       tokenizerHeader,
     ) ||
     !/bool\s+tolerate_untokenizable\s*;/.test(tokenizerHeader) ||
@@ -854,6 +859,20 @@ if (!/void\s*\(\*cursor_hook\)\s*\(token_t\s*\*\)\s*;/.test(
     )) {
   throw new Error(
     "tokenizer callbacks and tolerant scanning state must be owned by tokenizer context",
+  );
+}
+if (/default_preprocessor_context|active_preprocessor_context/.test(
+      preprocessSource,
+    ) ||
+    /pp_context_(?:active|activate)\s*\(/.test(preprocessSource) ||
+    !/pp_stream_open_for_target\s*\(ag_preprocessor_context_t\s*\*context/.test(
+      preprocessSource,
+    ) ||
+    !/preprocess_for_target_ctx\s*\(ag_preprocessor_context_t\s*\*context/.test(
+      preprocessSource,
+    )) {
+  throw new Error(
+    "preprocessor state and stream callbacks must require an explicit context",
   );
 }
 const globalRegistrySource = await readFile(

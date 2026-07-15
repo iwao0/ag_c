@@ -295,6 +295,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
 
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open_for_target(
+      ag_compilation_session_preprocessor_context(session),
       &pps, tk_ctx, ag_compilation_session_target(session), source);
 
   if (object_mode) {
@@ -542,6 +543,7 @@ int main(int argc, char **argv) {
    * をすべて扱える。 */
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open_for_target(
+      ag_compilation_session_preprocessor_context(session),
       &pps, tk_ctx, ag_compilation_session_target(session), source);
 
 #ifdef AGC_TARGET_WASM32

@@ -45,36 +45,24 @@ struct ag_preprocessor_context_t {
   pp_stream_t *active_stream;
 };
 
-static ag_preprocessor_context_t default_preprocessor_context = {
-    .virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH,
-    .if_expr_eval = true,
-};
-static ag_preprocessor_context_t *active_preprocessor_context =
-    &default_preprocessor_context;
-
-#define macros (active_preprocessor_context->macros)
-#define retired_include_sources \
-  (active_preprocessor_context->retired_include_sources)
-#define include_stack (active_preprocessor_context->include_stack)
-#define include_depth (active_preprocessor_context->include_depth)
-#define macro_expand_steps (active_preprocessor_context->macro_expand_steps)
-#define include_last_errno (active_preprocessor_context->include_last_errno)
-#define g_virtual_headers (active_preprocessor_context->virtual_headers)
-#define g_virtual_header_count \
-  (active_preprocessor_context->virtual_header_count)
-#define g_virtual_headers_enabled \
-  (active_preprocessor_context->virtual_headers_enabled)
-#define g_virtual_include_depth_limit \
-  (active_preprocessor_context->virtual_include_depth_limit)
-#define if_expr_eval_steps (active_preprocessor_context->if_expr_eval_steps)
-#define g_if_expr_eval (active_preprocessor_context->if_expr_eval)
-#define pp_date_buf (active_preprocessor_context->date_buf)
-#define pp_time_buf (active_preprocessor_context->time_buf)
-#define pragma_once_list (active_preprocessor_context->pragma_once_list)
-#define cond_incl (active_preprocessor_context->cond_incl)
-#define g_preprocess_tk_ctx (active_preprocessor_context->tokenizer)
-#define g_preprocess_target (active_preprocessor_context->target)
-#define g_active_pps (active_preprocessor_context->active_stream)
+#define macros (context->macros)
+#define retired_include_sources (context->retired_include_sources)
+#define include_stack (context->include_stack)
+#define include_depth (context->include_depth)
+#define macro_expand_steps (context->macro_expand_steps)
+#define include_last_errno (context->include_last_errno)
+#define g_virtual_headers (context->virtual_headers)
+#define g_virtual_header_count (context->virtual_header_count)
+#define g_virtual_headers_enabled (context->virtual_headers_enabled)
+#define g_virtual_include_depth_limit (context->virtual_include_depth_limit)
+#define if_expr_eval_steps (context->if_expr_eval_steps)
+#define g_if_expr_eval (context->if_expr_eval)
+#define pp_date_buf (context->date_buf)
+#define pp_time_buf (context->time_buf)
+#define pragma_once_list (context->pragma_once_list)
+#define cond_incl (context->cond_incl)
+#define g_preprocess_tk_ctx (context->tokenizer)
+#define g_preprocess_target (context->target)
 
 #define MACRO_INLINE_PARAMS 8
 /* アライメント降順 (ポインタ/配列 → int → bool) に並べてパディングを除き sizeof=104B
@@ -95,7 +83,8 @@ struct pp_owned_source {
   char *buf;
 };
 
-static void retain_include_source(char *buf) {
+static void retain_include_source(
+    ag_preprocessor_context_t *context, char *buf) {
   if (!buf) return;
   pp_owned_source_t *source = calloc(1, sizeof(*source));
   if (!source) {
@@ -107,7 +96,8 @@ static void retain_include_source(char *buf) {
   retired_include_sources = source;
 }
 
-static void reset_retired_include_sources(void) {
+static void reset_retired_include_sources(
+    ag_preprocessor_context_t *context) {
   while (retired_include_sources) {
     pp_owned_source_t *source = retired_include_sources;
     retired_include_sources = source->next;
@@ -124,7 +114,7 @@ static void free_macro(macro_t *m) {
   free(m);
 }
 
-static void reset_macros(void) {
+static void reset_macros(ag_preprocessor_context_t *context) {
   while (macros) {
     macro_t *m = macros;
     macros = m->next;
@@ -168,14 +158,15 @@ static const char *k_pp_month_names[] = {
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
 
-static void if_expr_step_or_die(void) {
+static void if_expr_step_or_die(ag_preprocessor_context_t *context) {
   if_expr_eval_steps++;
   if (if_expr_eval_steps > PP_MAX_IF_EXPR_EVAL_STEPS) {
     pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, NULL);
   }
 }
 
-static void record_include_errno(int err) {
+static void record_include_errno(
+    ag_preprocessor_context_t *context, int err) {
   if (!err) return;
   if (include_last_errno == 0) {
     include_last_errno = err;
@@ -360,14 +351,17 @@ void pp_virtual_headers_configure_in(
   context->virtual_include_depth_limit = max_include_depth;
 }
 
-static const pp_virtual_header_t *find_virtual_header(const char *path) {
+static const pp_virtual_header_t *find_virtual_header(
+    ag_preprocessor_context_t *context, const char *path) {
   for (int i = 0; i < g_virtual_header_count; i++) {
     if (!strcmp(g_virtual_headers[i].path, path)) return &g_virtual_headers[i];
   }
   return NULL;
 }
 
-static const pp_virtual_header_t *resolve_virtual_header(const char *path,
+static const pp_virtual_header_t *resolve_virtual_header(
+                                                         ag_preprocessor_context_t *context,
+                                                         const char *path,
                                                          const char *current_file,
                                                          char **out_path) {
   validate_virtual_path_or_die(path);
@@ -380,7 +374,7 @@ static const pp_virtual_header_t *resolve_virtual_header(const char *path,
       snprintf(candidate, len, "%s%s", dir, path);
       free(dir);
       validate_virtual_path_or_die(candidate);
-      const pp_virtual_header_t *relative = find_virtual_header(candidate);
+      const pp_virtual_header_t *relative = find_virtual_header(context, candidate);
       if (relative) {
         *out_path = candidate;
         return relative;
@@ -388,7 +382,7 @@ static const pp_virtual_header_t *resolve_virtual_header(const char *path,
       free(candidate);
     }
   }
-  const pp_virtual_header_t *direct = find_virtual_header(path);
+  const pp_virtual_header_t *direct = find_virtual_header(context, path);
   if (direct) {
     *out_path = my_strndup(path, strlen(path));
     return direct;
@@ -502,37 +496,39 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
   }
 }
 
-static char *read_include_file_secure(const char *candidate, const char *display_path) {
+static char *read_include_file_secure(
+    ag_preprocessor_context_t *context,
+    const char *candidate, const char *display_path) {
   int oflags = O_RDONLY | O_CLOEXEC;
 #ifdef O_NOFOLLOW
   oflags |= O_NOFOLLOW;
 #endif
   int fd = open(candidate, oflags);
   if (fd < 0) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     return NULL;
   }
 
   struct stat st;
   if (fstat(fd, &st) != 0) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     close(fd);
     return NULL;
   }
   if (!S_ISREG(st.st_mode)) {
-    record_include_errno(EINVAL);
+    record_include_errno(context, EINVAL);
     close(fd);
     return NULL;
   }
   if (st.st_size < 0 || (uintmax_t)st.st_size > PP_MAX_INCLUDE_FILE_BYTES) {
-    record_include_errno(EFBIG);
+    record_include_errno(context, EFBIG);
     close(fd);
     return NULL;
   }
 
   FILE *fp = fdopen(fd, "r");
   if (!fp) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     close(fd);
     return NULL;
   }
@@ -547,7 +543,7 @@ static char *read_include_file_secure(const char *candidate, const char *display
 #endif
   if (!have_opened_path) {
     if (!realpath(candidate, opened_path)) {
-      record_include_errno(errno);
+      record_include_errno(context, errno);
       fclose(fp);
       return NULL;
     }
@@ -559,13 +555,13 @@ static char *read_include_file_secure(const char *candidate, const char *display
   }
 
   if (fseek(fp, 0, SEEK_END) == -1) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     fclose(fp);
     return NULL;
   }
   long file_size = ftell(fp);
   if (file_size < 0) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     fclose(fp);
     return NULL;
   }
@@ -575,19 +571,19 @@ static char *read_include_file_secure(const char *candidate, const char *display
     return NULL;
   }
   if (fseek(fp, 0, SEEK_SET) == -1) {
-    record_include_errno(errno);
+    record_include_errno(context, errno);
     fclose(fp);
     return NULL;
   }
 
   char *buf = calloc(1, size + 2);
   if (!buf) {
-    record_include_errno(ENOMEM);
+    record_include_errno(context, ENOMEM);
     fclose(fp);
     return NULL;
   }
   if (fread(buf, 1, size, fp) != size) {
-    record_include_errno(errno ? errno : EIO);
+    record_include_errno(context, errno ? errno : EIO);
     fclose(fp);
     free(buf);
     return NULL;
@@ -612,7 +608,9 @@ static char *dirname_dup_or_null(const char *path) {
   return dir;
 }
 
-static char *try_load_include_candidate(const char *root, const char *filename, char **out_loaded_path) {
+static char *try_load_include_candidate(
+    ag_preprocessor_context_t *context, const char *root,
+    const char *filename, char **out_loaded_path) {
   size_t cand_len = strlen(root) + strlen(filename) + 1;
   char *candidate = calloc(cand_len, 1);
   if (!candidate) {
@@ -620,7 +618,7 @@ static char *try_load_include_candidate(const char *root, const char *filename, 
   }
   snprintf(candidate, cand_len, "%s%s", root, filename);
   validate_include_realpath_or_die(candidate, filename);
-  char *buf = read_include_file_secure(candidate, filename);
+  char *buf = read_include_file_secure(context, candidate, filename);
   if (buf && out_loaded_path) {
     *out_loaded_path = normalize_include_path_or_die(candidate);
   }
@@ -628,18 +626,22 @@ static char *try_load_include_candidate(const char *root, const char *filename, 
   return buf;
 }
 
-static char *load_include_with_allowlist_or_die(const char *filename, const char *current_file,
+static char *load_include_with_allowlist_or_die(
+                                                ag_preprocessor_context_t *context,
+                                                const char *filename, const char *current_file,
                                                 char **out_loaded_path) {
   include_last_errno = 0;
   if (out_loaded_path) *out_loaded_path = NULL;
   char *current_dir = dirname_dup_or_null(current_file);
   if (current_dir) {
-    char *buf = try_load_include_candidate(current_dir, filename, out_loaded_path);
+    char *buf = try_load_include_candidate(
+        context, current_dir, filename, out_loaded_path);
     free(current_dir);
     if (buf) return buf;
   }
   for (size_t i = 0; i < sizeof(k_include_search_roots) / sizeof(k_include_search_roots[0]); i++) {
-    char *buf = try_load_include_candidate(k_include_search_roots[i], filename, out_loaded_path);
+    char *buf = try_load_include_candidate(
+        context, k_include_search_roots[i], filename, out_loaded_path);
     if (buf) return buf;
   }
   return NULL;
@@ -675,7 +677,8 @@ static char *normalize_include_path_or_die(const char *path) {
   return out;
 }
 
-static void push_include_or_die(const char *path) {
+static void push_include_or_die(
+    ag_preprocessor_context_t *context, const char *path) {
   if (g_virtual_headers_enabled) {
     for (include_frame_t *f = include_stack; f; f = f->next) {
       if (!strcmp(f->path, path)) {
@@ -697,7 +700,7 @@ static void push_include_or_die(const char *path) {
   include_depth++;
 }
 
-static void pop_include(void) {
+static void pop_include(ag_preprocessor_context_t *context) {
   if (!include_stack) return;
   include_frame_t *f = include_stack;
   include_stack = f->next;
@@ -705,7 +708,8 @@ static void pop_include(void) {
   if (include_depth > 0) include_depth--;
 }
 
-static void count_macro_expansion_or_die(void) {
+static void count_macro_expansion_or_die(
+    ag_preprocessor_context_t *context) {
   macro_expand_steps++;
   if (macro_expand_steps > PP_MAX_MACRO_EXPANSIONS) {
     pp_error(DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, NULL);
@@ -749,7 +753,9 @@ static char *my_strndup(const char *s, size_t n) {
   return p;
 }
 
-static void add_macro(char *name, bool is_funclike, bool is_variadic, char **params, int num_params, token_t *body) {
+static void add_macro(ag_preprocessor_context_t *context, char *name,
+                      bool is_funclike, bool is_variadic, char **params,
+                      int num_params, token_t *body) {
   macro_t *m = calloc(1, sizeof(macro_t));
   m->name = name;
   m->body = body;
@@ -766,7 +772,8 @@ static void add_macro(char *name, bool is_funclike, bool is_variadic, char **par
   macros = m;
 }
 
-static macro_t *find_macro(char *name) {
+static macro_t *find_macro(
+    ag_preprocessor_context_t *context, const char *name) {
   for (macro_t *m = macros; m; m = m->next) {
     if (!strcmp(m->name, name))
       return m;
@@ -779,7 +786,7 @@ struct pragma_once_entry {
   pragma_once_entry_t *next;
   char *path;
 };
-static void reset_pragma_once_list(void) {
+static void reset_pragma_once_list(ag_preprocessor_context_t *context) {
   while (pragma_once_list) {
     pragma_once_entry_t *entry = pragma_once_list;
     pragma_once_list = entry->next;
@@ -788,15 +795,17 @@ static void reset_pragma_once_list(void) {
   }
 }
 
-static bool pragma_once_seen(const char *path) {
+static bool pragma_once_seen(
+    ag_preprocessor_context_t *context, const char *path) {
   for (pragma_once_entry_t *e = pragma_once_list; e; e = e->next) {
     if (!strcmp(e->path, path)) return true;
   }
   return false;
 }
 
-static void pragma_once_add(const char *path) {
-  if (pragma_once_seen(path)) return;
+static void pragma_once_add(
+    ag_preprocessor_context_t *context, const char *path) {
+  if (pragma_once_seen(context, path)) return;
   pragma_once_entry_t *e = calloc(1, sizeof(pragma_once_entry_t));
   e->path = my_strndup(path, strlen(path));
   e->next = pragma_once_list;
@@ -850,25 +859,28 @@ static token_t *make_string_token(const char *s, token_t *ref) {
   return (token_t *)t;
 }
 
-static void add_int_macro(const char *name, long long val) {
+static void add_int_macro(
+    ag_preprocessor_context_t *context, const char *name, long long val) {
   token_t *tok = make_int_token(val, NULL);
-  add_macro(my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
-static void add_string_macro(const char *name, const char *s) {
+static void add_string_macro(
+    ag_preprocessor_context_t *context, const char *name, const char *s) {
   token_t *tok = make_string_token(s, NULL);
-  add_macro(my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
-static void pp_init_predefined_macros(const ag_target_info_t *target) {
+static void pp_init_predefined_macros(
+    ag_preprocessor_context_t *context, const ag_target_info_t *target) {
   int pointer_size = ag_target_info_pointer_size(target);
-  add_int_macro("__STDC__", 1);
-  add_int_macro("__STDC_VERSION__", 201112LL);
+  add_int_macro(context, "__STDC__", 1);
+  add_int_macro(context, "__STDC_VERSION__", 201112LL);
   if (pointer_size == 8) {
-    add_int_macro("__LP64__", 1);
+    add_int_macro(context, "__LP64__", 1);
   }
   if (pointer_size == 4) {
-    add_int_macro("__wasm32__", 1);
+    add_int_macro(context, "__wasm32__", 1);
   }
 
   time_t now = time(NULL);
@@ -877,8 +889,8 @@ static void pp_init_predefined_macros(const ag_target_info_t *target) {
            k_pp_month_names[tm_info->tm_mon], tm_info->tm_mday, tm_info->tm_year + 1900);
   snprintf(pp_time_buf, sizeof(pp_time_buf), "%02d:%02d:%02d",
            tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
-  add_string_macro("__DATE__", pp_date_buf);
-  add_string_macro("__TIME__", pp_time_buf);
+  add_string_macro(context, "__DATE__", pp_date_buf);
+  add_string_macro(context, "__TIME__", pp_time_buf);
 }
 
 static hideset_t *new_hideset(char *name) {
@@ -1039,14 +1051,18 @@ static token_t *skip_cond_incl(token_t *tok) {
   return tok;
 }
 
-static long const_expr(token_t **rest, token_t *tok);
-static void skip_const_expr(token_t **rest, token_t *tok);
-static long add(token_t **rest, token_t *tok);
+static long const_expr(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
+static void skip_const_expr(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
+static long add(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok);
 
-static long primary(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
+static long primary(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
   if (tok->kind == TK_LPAREN) {
-    long val = const_expr(&tok, tok->next);
+    long val = const_expr(context, &tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
       pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
     }
@@ -1068,40 +1084,42 @@ static long primary(token_t **rest, token_t *tok) {
   pp_error(DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
 }
 
-static long unary(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
+static long unary(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
   if (tok->kind == TK_PLUS) {
-    return unary(rest, tok->next);
+    return unary(context, rest, tok->next);
   }
   if (tok->kind == TK_MINUS) {
-    return -unary(rest, tok->next);
+    return -unary(context, rest, tok->next);
   }
   if (tok->kind == TK_BANG) {
-    return !unary(rest, tok->next);
+    return !unary(context, rest, tok->next);
   }
   if (tok->kind == TK_TILDE) {
-    return ~unary(rest, tok->next);
+    return ~unary(context, rest, tok->next);
   }
-  return primary(rest, tok);
+  return primary(context, rest, tok);
 }
 
-static long mul(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = unary(&tok, tok);
+static long mul(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = unary(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_MUL) {
-      if_expr_step_or_die();
-      val *= unary(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val *= unary(context, &tok, tok->next);
     } else if (tok->kind == TK_DIV) {
-      if_expr_step_or_die();
-      long rhs = unary(&tok, tok->next);
+      if_expr_step_or_die(context);
+      long rhs = unary(context, &tok, tok->next);
       if (g_if_expr_eval) {
         if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
         val /= rhs;
       }
     } else if (tok->kind == TK_MOD) {
-      if_expr_step_or_die();
-      long rhs = unary(&tok, tok->next);
+      if_expr_step_or_die(context);
+      long rhs = unary(context, &tok, tok->next);
       if (g_if_expr_eval) {
         if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
         val %= rhs;
@@ -1114,16 +1132,17 @@ static long mul(token_t **rest, token_t *tok) {
 }
 
 /* シフト `<<` `>>` (加減算より低く、関係演算より高い)。 */
-static long shift(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = add(&tok, tok);
+static long shift(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = add(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_SHL) {
-      if_expr_step_or_die();
-      val = val << add(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val << add(context, &tok, tok->next);
     } else if (tok->kind == TK_SHR) {
-      if_expr_step_or_die();
-      val = val >> add(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val >> add(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1131,16 +1150,17 @@ static long shift(token_t **rest, token_t *tok) {
   }
 }
 
-static long add(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = mul(&tok, tok);
+static long add(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = mul(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PLUS) {
-      if_expr_step_or_die();
-      val += mul(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val += mul(context, &tok, tok->next);
     } else if (tok->kind == TK_MINUS) {
-      if_expr_step_or_die();
-      val -= mul(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val -= mul(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1148,22 +1168,23 @@ static long add(token_t **rest, token_t *tok) {
   }
 }
 
-static long relational(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = shift(&tok, tok);
+static long relational(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = shift(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_LT) {
-      if_expr_step_or_die();
-      val = val < shift(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val < shift(context, &tok, tok->next);
     } else if (tok->kind == TK_LE) {
-      if_expr_step_or_die();
-      val = val <= shift(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val <= shift(context, &tok, tok->next);
     } else if (tok->kind == TK_GT) {
-      if_expr_step_or_die();
-      val = val > shift(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val > shift(context, &tok, tok->next);
     } else if (tok->kind == TK_GE) {
-      if_expr_step_or_die();
-      val = val >= shift(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val >= shift(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1171,16 +1192,17 @@ static long relational(token_t **rest, token_t *tok) {
   }
 }
 
-static long equality(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = relational(&tok, tok);
+static long equality(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = relational(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_EQEQ) {
-      if_expr_step_or_die();
-      val = val == relational(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val == relational(context, &tok, tok->next);
     } else if (tok->kind == TK_NEQ) {
-      if_expr_step_or_die();
-      val = val != relational(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val != relational(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1189,13 +1211,14 @@ static long equality(token_t **rest, token_t *tok) {
 }
 
 /* ビット AND `&` (等価演算より低く、ビット XOR より高い)。 */
-static long bitand(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = equality(&tok, tok);
+static long bitand(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = equality(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_AMP) {
-      if_expr_step_or_die();
-      val = val & equality(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val & equality(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1204,13 +1227,14 @@ static long bitand(token_t **rest, token_t *tok) {
 }
 
 /* ビット XOR `^`。 */
-static long bitxor(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = bitand(&tok, tok);
+static long bitxor(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = bitand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_CARET) {
-      if_expr_step_or_die();
-      val = val ^ bitand(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val ^ bitand(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1219,13 +1243,14 @@ static long bitxor(token_t **rest, token_t *tok) {
 }
 
 /* ビット OR `|`。 */
-static long bitor(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = bitxor(&tok, tok);
+static long bitor(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = bitxor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_PIPE) {
-      if_expr_step_or_die();
-      val = val | bitxor(&tok, tok->next);
+      if_expr_step_or_die(context);
+      val = val | bitxor(context, &tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -1233,17 +1258,18 @@ static long bitor(token_t **rest, token_t *tok) {
   }
 }
 
-static long logand(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = bitor(&tok, tok);
+static long logand(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = bitor(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_ANDAND) {
-      if_expr_step_or_die();
+      if_expr_step_or_die(context);
       if (val) {
-        long rhs = bitor(&tok, tok->next);
+        long rhs = bitor(context, &tok, tok->next);
         val = val && rhs;
       } else {
-        skip_const_expr(&tok, tok->next);
+        skip_const_expr(context, &tok, tok->next);
       }
     } else {
       *rest = tok;
@@ -1252,17 +1278,18 @@ static long logand(token_t **rest, token_t *tok) {
   }
 }
 
-static long logor(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long val = logand(&tok, tok);
+static long logor(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long val = logand(context, &tok, tok);
   for (;;) {
     if (tok->kind == TK_OROR) {
-      if_expr_step_or_die();
+      if_expr_step_or_die(context);
       if (val) {
-        skip_const_expr(&tok, tok->next);
+        skip_const_expr(context, &tok, tok->next);
         val = 1;
       } else {
-        long rhs = logand(&tok, tok->next);
+        long rhs = logand(context, &tok, tok->next);
         val = val || rhs;
       }
     } else {
@@ -1274,40 +1301,43 @@ static long logor(token_t **rest, token_t *tok) {
 
 /* 条件演算子 `?:` (C11 6.10.1 が #if 定数式で要求)。最も低い優先順位。
  * ゼロ除算等を避けるため C と同様に選択側のみ評価する。 */
-static long conditional(token_t **rest, token_t *tok) {
-  if_expr_step_or_die();
-  long cond = logor(&tok, tok);
+static long conditional(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  if_expr_step_or_die(context);
+  long cond = logor(context, &tok, tok);
   if (tok->kind != TK_QUESTION) {
     *rest = tok;
     return cond;
   }
-  if_expr_step_or_die();
+  if_expr_step_or_die(context);
   if (cond) {
-    long then_val = const_expr(&tok, tok->next);
+    long then_val = const_expr(context, &tok, tok->next);
     if (tok->kind != TK_COLON) {
       pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
     }
-    skip_const_expr(&tok, tok->next);
+    skip_const_expr(context, &tok, tok->next);
     *rest = tok;
     return then_val;
   }
-  skip_const_expr(&tok, tok->next);
+  skip_const_expr(context, &tok, tok->next);
   if (tok->kind != TK_COLON) {
     pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
   }
-  long else_val = conditional(&tok, tok->next);
+  long else_val = conditional(context, &tok, tok->next);
   *rest = tok;
   return else_val;
 }
 
-static long const_expr(token_t **rest, token_t *tok) {
-  return conditional(rest, tok);
+static long const_expr(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
+  return conditional(context, rest, tok);
 }
 
-static void skip_const_expr(token_t **rest, token_t *tok) {
+static void skip_const_expr(
+    ag_preprocessor_context_t *context, token_t **rest, token_t *tok) {
   bool saved = g_if_expr_eval;
   g_if_expr_eval = false;
-  (void)const_expr(rest, tok);
+  (void)const_expr(context, rest, tok);
   g_if_expr_eval = saved;
 }
 
@@ -1315,7 +1345,8 @@ static void skip_const_expr(token_t **rest, token_t *tok) {
  * 戻り値は TK_EOF 終端の展開済みリスト。include_depth を一時的に上げて
  * macro_expand_steps のリセットや定義済みマクロ再初期化を回避する
  * (展開ステップの暴走ガードは維持される)。 */
-static token_t *pp_expand_arg(token_t *arg) {
+static token_t *pp_expand_arg(
+    ag_preprocessor_context_t *context, token_t *arg) {
   token_t *copy = copy_token_list(arg); // NULL 終端の深いコピー
   token_t *eof = tk_allocator_calloc(1, sizeof(token_t));
   eof->kind = TK_EOF;
@@ -1331,12 +1362,13 @@ static token_t *pp_expand_arg(token_t *arg) {
   int saved_depth = include_depth;
   include_depth++;
   token_t *expanded = preprocess_for_target_ctx(
-      g_preprocess_tk_ctx, g_preprocess_target, list);
+      context, g_preprocess_tk_ctx, g_preprocess_target, list);
   include_depth = saved_depth;
   return expanded;
 }
 
-static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
+static bool evaluate_constexpr(
+    ag_preprocessor_context_t *context, token_t **rest_tok, token_t *tok) {
    token_t head;
    head.next = NULL;
    token_t *cur = &head;
@@ -1370,7 +1402,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
          if (t->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED, NULL);
          token_ident_t *id = as_ident(t);
          char *name = my_strndup(id->str, id->len);
-         bool is_def = find_macro(name) != NULL;
+         bool is_def = find_macro(context, name) != NULL;
          free(name);
          t = t->next;
          if (has_paren) {
@@ -1402,12 +1434,12 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    cur2->next->kind = TK_EOF;
 
    token_t *expanded = preprocess_for_target_ctx(
-       g_preprocess_tk_ctx, g_preprocess_target, head2.next);
+       context, g_preprocess_tk_ctx, g_preprocess_target, head2.next);
 
    if (expanded->kind == TK_EOF) return false;
    if_expr_eval_steps = 0;
    token_t *rest;
-  long val = const_expr(&rest, expanded);
+  long val = const_expr(context, &rest, expanded);
   if (rest->kind != TK_EOF) {
     pp_error(DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN, NULL);
   }
@@ -1485,7 +1517,8 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   return (token_t *)res;
 }
 
-static token_t *paste_tokens(token_t *tok) {
+static token_t *paste_tokens(
+    ag_preprocessor_context_t *context, token_t *tok) {
   if (!tok) return NULL;
   token_t head; head.next = tok;
   token_t *prev = &head;
@@ -1553,7 +1586,8 @@ static char *consume_required_macro_name(token_t **ptok) {
 }
 
 // 条件分岐スタックに新しいエントリを push。
-static void push_cond_incl(bool included) {
+static void push_cond_incl(
+    ag_preprocessor_context_t *context, bool included) {
   cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
   ci->ctx = IN_THEN;
   ci->included = included;
@@ -1562,19 +1596,21 @@ static void push_cond_incl(bool included) {
 }
 
 // #ifdef / #ifndef: マクロ定義の有無で then/else を選択。negated=true で #ifndef。
-static token_t *handle_ifdef_or_ifndef(token_t *tok, bool negated) {
+static token_t *handle_ifdef_or_ifndef(
+    ag_preprocessor_context_t *context, token_t *tok, bool negated) {
   tok = tok->next; // skip directive name
   char *name = consume_required_macro_name(&tok);
-  bool defined = find_macro(name) != NULL;
+  bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
-  push_cond_incl(is_true);
+  push_cond_incl(context, is_true);
   tok = skip_to_next_line(tok);
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
 }
 
-static token_t *handle_else(token_t *tok) {
+static token_t *handle_else(
+    ag_preprocessor_context_t *context, token_t *tok) {
   if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
   cond_incl->ctx = IN_ELSE;
@@ -1587,7 +1623,8 @@ static token_t *handle_else(token_t *tok) {
   return tok;
 }
 
-static token_t *handle_elif(token_t *tok) {
+static token_t *handle_elif(
+    ag_preprocessor_context_t *context, token_t *tok) {
   if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
@@ -1596,21 +1633,23 @@ static token_t *handle_elif(token_t *tok) {
     tok = skip_to_next_line(tok);
     return skip_cond_incl(tok);
   }
-  bool is_true = evaluate_constexpr(&tok, tok);
+  bool is_true = evaluate_constexpr(context, &tok, tok);
   if (is_true) cond_incl->included = true;
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
 }
 
-static token_t *handle_if(token_t *tok) {
+static token_t *handle_if(
+    ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
-  bool is_true = evaluate_constexpr(&tok, tok);
-  push_cond_incl(is_true);
+  bool is_true = evaluate_constexpr(context, &tok, tok);
+  push_cond_incl(context, is_true);
   if (!is_true) tok = skip_cond_incl(tok);
   return tok;
 }
 
-static token_t *handle_endif(token_t *tok) {
+static token_t *handle_endif(
+    ag_preprocessor_context_t *context, token_t *tok) {
   if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
   cond_incl_t *ci = cond_incl;
   cond_incl = cond_incl->next;
@@ -1677,7 +1716,8 @@ static char *consume_include_filename(token_t **ptok) {
 }
 
 // include_last_errno に応じて適切な診断 ID を選ぶ。
-static diag_error_id_t include_read_failure_diag_id(void) {
+static diag_error_id_t include_read_failure_diag_id(
+    ag_preprocessor_context_t *context) {
   if (include_last_errno == ENOENT) return DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND;
   if (include_last_errno == EACCES || include_last_errno == EPERM) return DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED;
   if (include_last_errno == ELOOP) return DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP;
@@ -1685,7 +1725,8 @@ static diag_error_id_t include_read_failure_diag_id(void) {
 }
 
 // #define MACRO_NAME [( params )] body...
-static token_t *handle_define(token_t *tok) {
+static token_t *handle_define(
+    ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
   if (tok->kind != TK_IDENT) {
     pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
@@ -1745,11 +1786,13 @@ static token_t *handle_define(token_t *tok) {
   }
   cur_body->next = NULL;
 
-  add_macro(name, is_funclike, is_variadic, params, num_params, head.next);
+  add_macro(context, name, is_funclike, is_variadic, params, num_params,
+            head.next);
   return tok;
 }
 
-static void remove_macro_by_name(const char *name) {
+static void remove_macro_by_name(
+    ag_preprocessor_context_t *context, const char *name) {
   macro_t *prev = NULL;
   for (macro_t *m = macros; m; prev = m, m = m->next) {
     if (!strcmp(m->name, name)) {
@@ -1761,10 +1804,11 @@ static void remove_macro_by_name(const char *name) {
   }
 }
 
-static token_t *handle_undef(token_t *tok) {
+static token_t *handle_undef(
+    ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
   char *name = consume_required_macro_name(&tok);
-  remove_macro_by_name(name);
+  remove_macro_by_name(context, name);
   free(name);
   return skip_to_next_line(tok);
 }
@@ -1832,7 +1876,8 @@ static token_t *handle_error(token_t *tok) {
 }
 
 /* #line 引数列 (指令行の残りトークン) をマクロ展開する (#if 定数式と同様)。 */
-static token_t *pp_expand_directive_line(token_t *args) {
+static token_t *pp_expand_directive_line(
+    ag_preprocessor_context_t *context, token_t *args) {
   token_t head;
   head.next = NULL;
   token_t *cur = &head;
@@ -1848,7 +1893,7 @@ static token_t *pp_expand_directive_line(token_t *args) {
   int saved_depth = include_depth;
   include_depth++;
   token_t *expanded = preprocess_for_target_ctx(
-      g_preprocess_tk_ctx, g_preprocess_target, head.next);
+      context, g_preprocess_tk_ctx, g_preprocess_target, head.next);
   include_depth = saved_depth;
   return expanded;
 }
@@ -1877,9 +1922,10 @@ static bool pp_parse_line_directive_args(token_t *tok, long long *out_line, char
 }
 
 // #line N ["filename"]: 以降のトークンの line_no / file_name_id を書き換える。
-static token_t *handle_line(token_t *tok) {
+static token_t *handle_line(
+    ag_preprocessor_context_t *context, token_t *tok) {
   token_t *args = tok->next;
-  token_t *expanded = pp_expand_directive_line(args);
+  token_t *expanded = pp_expand_directive_line(context, args);
   long long new_line;
   char *new_file = NULL;
   if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
@@ -1944,12 +1990,13 @@ static void warn_unsupported_gnu_extension_token(const token_t *tok) {
                  id->len, id->str);
 }
 
-static token_t *handle_pragma(token_t *tok, token_t **pcur) {
+static token_t *handle_pragma(
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
   tok = tok->next;
   if (ident_is(tok, "once")) {
     tok = tok->next;
     if (include_stack) {
-      pragma_once_add(include_stack->path);
+      pragma_once_add(context, include_stack->path);
     }
   } else if (ident_is(tok, "pack")) {
     tok = tok->next;
@@ -1966,12 +2013,14 @@ static token_t *handle_pragma(token_t *tok, token_t **pcur) {
 /* オブジェクト形式マクロ本体を展開して返す (本体コピー + ## paste + hideset 付与 +
  * 呼び出し位置への line/file 再配置 + 先頭 at_bol/has_space)。本体が空なら NULL。
  * batch (preprocess_ctx) と streaming (pps_step) の双方から呼び、展開を完全一致させる。 */
-static token_t *pp_expand_objlike(macro_t *m, token_t *macro_tok, char *name) {
+static token_t *pp_expand_objlike(
+    ag_preprocessor_context_t *context, macro_t *m,
+    token_t *macro_tok, char *name) {
   token_t *body_copy = copy_token_list(m->body);
-  body_copy = paste_tokens(body_copy);
+  body_copy = paste_tokens(context, body_copy);
   hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
-    count_macro_expansion_or_die();
+    count_macro_expansion_or_die(context);
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
@@ -2043,7 +2092,9 @@ static int pp_param_idx_for_ident(macro_t *m, token_t *ident_tok) {
 
 /* func-like マクロ本体に実引数を代入し、## paste・# stringize・hideset 付与・行再配置を行って
  * 展開結果を返す (NULL 終端、空なら NULL)。name は new_hideset 用 (free しない)。 */
-static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **args, char *name) {
+static token_t *pp_expand_funclike(
+    ag_preprocessor_context_t *context, macro_t *m,
+    token_t *macro_tok, token_t **args, char *name) {
   /* ## の位置検査 (本体側)。 */
   token_t *prev_body = NULL;
   for (token_t *bt = m->body; bt; bt = bt->next) {
@@ -2110,7 +2161,9 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
             continue;
           }
         }
-        token_t *sub = paste_operand ? args[p_idx] : pp_expand_arg(args[p_idx]);
+        token_t *sub = paste_operand
+                           ? args[p_idx]
+                           : pp_expand_arg(context, args[p_idx]);
         for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
           cur_body->next = copy_token(a);
           cur_body = cur_body->next;
@@ -2142,10 +2195,10 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
   }
   cur_body->next = NULL;
 
-  token_t *body_copy = paste_tokens(body_head.next);
+  token_t *body_copy = paste_tokens(context, body_head.next);
   hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
-    count_macro_expansion_or_die();
+    count_macro_expansion_or_die(context);
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
@@ -2157,16 +2210,18 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
 }
 
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
-token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
+token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
+                                   tokenizer_context_t *tk_ctx,
                                    const ag_target_info_t *target,
                                    token_t *tok) {
+  if (!context) return NULL;
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
   const ag_target_info_t *prev_target = g_preprocess_target;
   g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
   g_preprocess_target = target;
   if (include_depth == 0) {
     macro_expand_steps = 0;
-    pp_init_predefined_macros(target);
+    pp_init_predefined_macros(context, target);
   }
 
   token_t head;
@@ -2181,18 +2236,18 @@ token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
       /* #include はストリーム経路 (pps_handle_include) で処理する。batch preprocess_ctx は
        * マクロ引数展開・#if 式評価のサブ展開でのみ使われ、それらのトークン列に #include 指令は
        * 現れないため、ここで #include を扱う必要はない。 */
-      if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(tok, false); continue; }
-      if (is_dir(tok, "ifndef")) { tok = handle_ifdef_or_ifndef(tok, true);  continue; }
-      if (is_dir(tok, "else"))   { tok = handle_else(tok);  continue; }
-      if (is_dir(tok, "elif"))   { tok = handle_elif(tok);  continue; }
-      if (is_dir(tok, "if"))     { tok = handle_if(tok);    continue; }
-      if (is_dir(tok, "endif"))  { tok = handle_endif(tok); continue; }
+      if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(context, tok, false); continue; }
+      if (is_dir(tok, "ifndef")) { tok = handle_ifdef_or_ifndef(context, tok, true);  continue; }
+      if (is_dir(tok, "else"))   { tok = handle_else(context, tok);  continue; }
+      if (is_dir(tok, "elif"))   { tok = handle_elif(context, tok);  continue; }
+      if (is_dir(tok, "if"))     { tok = handle_if(context, tok);    continue; }
+      if (is_dir(tok, "endif"))  { tok = handle_endif(context, tok); continue; }
       
-      if (is_dir(tok, "define")) { tok = handle_define(tok); continue; }
-      if (is_dir(tok, "undef"))  { tok = handle_undef(tok);  continue; }
+      if (is_dir(tok, "define")) { tok = handle_define(context, tok); continue; }
+      if (is_dir(tok, "undef"))  { tok = handle_undef(context, tok);  continue; }
       if (is_dir(tok, "error"))  { tok = handle_error(tok); }
-      if (is_dir(tok, "line"))   { tok = handle_line(tok);   continue; }
-      if (is_dir(tok, "pragma")) { tok = handle_pragma(tok, &cur); continue; }
+      if (is_dir(tok, "line"))   { tok = handle_line(context, tok);   continue; }
+      if (is_dir(tok, "pragma")) { tok = handle_pragma(context, tok, &cur); continue; }
 
       // ひとまず改行（次の行頭）またはEOFまでトークンを読み飛ばす
       while (tok->kind != TK_EOF && !tok->at_bol) {
@@ -2224,17 +2279,18 @@ token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
         continue;
       }
 
-      macro_t *m = find_macro(name);
+      macro_t *m = find_macro(context, name);
       
       if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
-        count_macro_expansion_or_die();
+        count_macro_expansion_or_die(context);
         if (m->is_funclike) {
            if (tok->next && tok->next->kind == TK_LPAREN) {
              token_t *macro_tok = tok;
              token_t *rparen = NULL;
              token_t **args = pp_collect_args(m, tok->next->next, &rparen);
              tok = rparen->next;  // skip ')'
-             token_t *body_copy = pp_expand_funclike(m, macro_tok, args, name);
+             token_t *body_copy = pp_expand_funclike(
+                 context, m, macro_tok, args, name);
              free(args);
              if (body_copy) {
                token_t *tail = body_copy;
@@ -2246,7 +2302,7 @@ token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
              continue;
            }
         } else {
-           token_t *body_copy = pp_expand_objlike(m, tok, name);
+           token_t *body_copy = pp_expand_objlike(context, m, tok, name);
            if (body_copy) {
               token_t *tail = body_copy;
               while (tail->next) tail = tail->next;
@@ -2310,6 +2366,7 @@ struct pp_include_frame {
 };
 
 struct pp_stream {
+  ag_preprocessor_context_t *context;
   tokenizer_context_t *tk_ctx;
   ag_target_info_t target;
   tk_token_stream_t *lex;
@@ -2337,39 +2394,47 @@ struct pp_stream {
 
 static token_t *pps_pull_raw(pp_stream_t *s);
 static void pps_pushback_one(pp_stream_t *s, token_t *t);
-static void pps_on_advance(token_t *cursor);
-static void pps_ensure_lookahead(void);
+static void pps_on_advance(void *user_data, token_t *cursor);
+static void pps_ensure_lookahead(void *user_data);
 
-typedef void (*pps_cursor_hook_t)(token_t *);
+typedef struct {
+  tk_cursor_hook_t callback;
+  void *user_data;
+} pps_cursor_hook_binding_t;
 
-static pps_cursor_hook_t pps_suspend_cursor_hook(pp_stream_t *s) {
-  pps_cursor_hook_t saved_hook = tk_get_cursor_hook_ctx(s->tk_ctx);
-  tk_set_cursor_hook_ctx(s->tk_ctx, NULL);
-  return saved_hook;
+static pps_cursor_hook_binding_t pps_suspend_cursor_hook(pp_stream_t *s) {
+  pps_cursor_hook_binding_t saved = {
+      .callback = tk_get_cursor_hook_ctx(s->tk_ctx),
+      .user_data = tk_get_cursor_hook_user_data_ctx(s->tk_ctx),
+  };
+  tk_set_cursor_hook_ctx(s->tk_ctx, NULL, NULL);
+  return saved;
 }
 
-static void pps_restore_cursor_hook(pp_stream_t *s, pps_cursor_hook_t hook) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, hook);
+static void pps_restore_cursor_hook(
+    pp_stream_t *s, pps_cursor_hook_binding_t binding) {
+  tk_set_cursor_hook_ctx(s->tk_ctx, binding.callback, binding.user_data);
 }
 
 static void pps_install_tokenizer_hooks(pp_stream_t *s) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, pps_on_advance);
-  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, pps_ensure_lookahead);
+  tk_set_cursor_hook_ctx(s->tk_ctx, pps_on_advance, s);
+  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, pps_ensure_lookahead, s);
 }
 
 static void pps_clear_tokenizer_hooks(pp_stream_t *s) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, NULL);
-  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, NULL);
+  tk_set_cursor_hook_ctx(s->tk_ctx, NULL, NULL);
+  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, NULL, NULL);
 }
 
 static void pps_activate(pp_stream_t *s) {
-  g_active_pps = s;
+  s->context->active_stream = s;
   pps_install_tokenizer_hooks(s);
 }
 
 static void pps_deactivate(pp_stream_t *s) {
+  if (!s) return;
   pps_clear_tokenizer_hooks(s);
-  if (!s || g_active_pps == s) g_active_pps = NULL;
+  if (s->context->active_stream == s) s->context->active_stream = NULL;
 }
 
 static void pps_update_stream_pin(pp_stream_t *s) {
@@ -2399,8 +2464,9 @@ static void pps_append(pp_stream_t *s, token_t *t) {
  * 間だけフックを退避する。dispatch 経由の pop ではフックは既に NULL なので、現在値を保存して
  * 復元する (無条件で pps_on_advance に戻すと dispatch 中にフックを誤って再有効化してしまう)。 */
 static void pps_pop_frame(pp_stream_t *s) {
+  ag_preprocessor_context_t *context = s->context;
   pp_include_frame_t *f = s->frames;
-  pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
+  pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
   tk_stream_delete(s->lex);          // EOF に達した被 include の lexer
   pps_restore_cursor_hook(s, saved_hook);
   tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
@@ -2412,11 +2478,11 @@ static void pps_pop_frame(pp_stream_t *s) {
   s->file_override     = f->saved_file_override;
   s->lex    = f->parent_lex;
   s->frames = f->parent;
-  pop_include();
+  pop_include(s->context);
   free(f->path_owned);  // pop_include() の後 (include_stack が path を参照するため)
   /* Tokens and semantic records may still point into a physical include buffer.
    * Keep it until the next translation unit starts and frontend state is reset. */
-  if (f->buf_owned) retain_include_source(f->buf);
+  if (f->buf_owned) retain_include_source(s->context, f->buf);
   free(f);
 }
 
@@ -2461,6 +2527,7 @@ static int pp_body_is_single_call_replacement(token_t *body) {
 /* `MACRO(args)(more)` 形: 置換列末尾の `)` の直後の `(more)` だけを繋ぎ、
  * その閉じ `)` までを preprocess_for_target_ctx で縮約してから pushback する。 */
 static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
+  ag_preprocessor_context_t *context = s->context;
   if (!body) return NULL;
   token_t *copy = copy_token_list(body);
   token_t *tail = copy;
@@ -2493,7 +2560,7 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
   int saved_depth = include_depth;
   include_depth++;
   token_t *expanded = preprocess_for_target_ctx(
-      g_preprocess_tk_ctx, g_preprocess_target, copy);
+      context, g_preprocess_tk_ctx, g_preprocess_target, copy);
   include_depth = saved_depth;
   if (expanded) {
     token_t *prev = NULL;
@@ -2624,31 +2691,35 @@ static void pps_skip_cond_incl(pp_stream_t *s) {
 /* ストリーミング版の条件指令ハンドラ。式評価/スタック操作はバッチの補助関数を再利用し、
  * 偽分岐の読み飛ばしだけ pps_skip_cond_incl に差し替える。after_hash は指令名トークン。 */
 static void pps_handle_if(pp_stream_t *s, token_t *after_hash) {
+  ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;
-  bool is_true = evaluate_constexpr(&tok, tok);
-  push_cond_incl(is_true);
+  bool is_true = evaluate_constexpr(context, &tok, tok);
+  push_cond_incl(context, is_true);
   if (!is_true) pps_skip_cond_incl(s);
 }
 static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) {
+  ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;
   char *name = consume_required_macro_name(&tok);
-  bool defined = find_macro(name) != NULL;
+  bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
-  push_cond_incl(is_true);
+  push_cond_incl(context, is_true);
   if (!is_true) pps_skip_cond_incl(s);
 }
 static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
+  ag_preprocessor_context_t *context = s->context;
   if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
   token_t *tok = after_hash->next;
   if (cond_incl->included) { pps_skip_cond_incl(s); return; }
-  bool is_true = evaluate_constexpr(&tok, tok);
+  bool is_true = evaluate_constexpr(context, &tok, tok);
   if (is_true) cond_incl->included = true;
   else pps_skip_cond_incl(s);
 }
 static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
+  ag_preprocessor_context_t *context = s->context;
   (void)after_hash;
   if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
   if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
@@ -2664,7 +2735,8 @@ static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
  *   結果は常に N - raw_next_line に一致する (HANDOFF Stage 4 参照)。
  * after_hash は指令名 "line" トークン。バッチ同様、N が無効なら何もしない (デルタ不変)。 */
 static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
-  token_t *expanded = pp_expand_directive_line(after_hash->next);
+  token_t *expanded = pp_expand_directive_line(
+      s->context, after_hash->next);
   long long new_line;
   char *new_file = NULL;
   if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
@@ -2694,13 +2766,15 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
  * O(ウィンドウ) で pull し、EOF で pps_pop_frame が親へ戻す。dispatch 中 (フック NULL) に
  * 呼ばれる前提。 */
 static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
+  ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;  // skip "include"
   char *filename = consume_include_filename(&tok);
   const char *current_file = tk_get_filename_ctx(g_preprocess_tk_ctx);
   char *loaded_path = NULL;
   char *buf = NULL;
   if (g_virtual_headers_enabled) {
-    const pp_virtual_header_t *header = resolve_virtual_header(filename, current_file, &loaded_path);
+    const pp_virtual_header_t *header = resolve_virtual_header(
+        s->context, filename, current_file, &loaded_path);
     if (!header) {
       diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND,
                           diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND), filename);
@@ -2711,14 +2785,15 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
     char *normalized = normalize_include_path_or_die(filename);
     free(filename);
     filename = normalized;
-    buf = load_include_with_allowlist_or_die(filename, current_file, &loaded_path);
+    buf = load_include_with_allowlist_or_die(
+        s->context, filename, current_file, &loaded_path);
     if (!buf) {  // not found / 権限 / symlink loop: 診断して終了
-      diag_error_id_t id = include_read_failure_diag_id();
+      diag_error_id_t id = include_read_failure_diag_id(context);
       diag_emit_internalf(id, diag_message_for(id), filename);
     }
   }
   if (!loaded_path) loaded_path = my_strndup(filename, strlen(filename));
-  if (pragma_once_seen(loaded_path)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
+  if (pragma_once_seen(context, loaded_path)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
     free(filename);
     free(loaded_path);
     return;
@@ -2740,7 +2815,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
 
   /* 被 include 内の #pragma once が include_stack->path に被 include 名を記録できるよう、
    * tokenize 前に push する。深さ/循環制限もここで発火しうる (バッチ同様)。 */
-  push_include_or_die(loaded_path);
+  push_include_or_die(s->context, loaded_path);
 
   /* ctx はframe所有のpathを借用する。tokenのfilename tableは文字列をコピーするので、
    * frame pop後も発行済みfile_name_idは有効なまま。 */
@@ -2768,6 +2843,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
 /* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif/line) は
  * バッチハンドラ相当を行バッファ上で実行。条件指令・include は streaming 版を呼ぶ。 */
 static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
+  ag_preprocessor_context_t *context = s->context;
   token_t *tok = line->next;  // '#' を読み飛ばす
   if (!tok || tok->kind == TK_EOF) return;  // 空指令 '#'
   if (is_dir(tok, "ifdef"))  { pps_handle_ifdef(s, tok, false); return; }
@@ -2775,20 +2851,20 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   if (is_dir(tok, "if"))     { pps_handle_if(s, tok); return; }
   if (is_dir(tok, "elif"))   { pps_handle_elif(s, tok); return; }
   if (is_dir(tok, "else"))   { pps_handle_else(s, tok); return; }
-  if (is_dir(tok, "endif"))  { handle_endif(tok); return; }
+  if (is_dir(tok, "endif"))  { handle_endif(context, tok); return; }
   if (is_dir(tok, "include")) { pps_handle_include(s, tok); return; }
   if (is_dir(tok, "define")) {
     tk_allocator_set_recyclable(0);  // マクロ本体は永続アリーナへ (window 解放で消さない)
-    handle_define(tok);
+    handle_define(context, tok);
     tk_allocator_set_recyclable(1);
     return;
   }
-  if (is_dir(tok, "undef"))  { handle_undef(tok); return; }
+  if (is_dir(tok, "undef"))  { handle_undef(context, tok); return; }
   if (is_dir(tok, "line"))   { pps_handle_line(s, tok); return; }
   if (is_dir(tok, "error"))  { handle_error(tok); return; }
   if (is_dir(tok, "pragma")) {
     token_t lc; lc.next = NULL; token_t *cur = &lc;
-    handle_pragma(tok, &cur);                 // pragma pack マーカーを lc に append
+    handle_pragma(context, tok, &cur);        // pragma pack マーカーを lc に append
     for (token_t *t = lc.next; t; ) { token_t *nx = t->next; pps_append(s, t); t = nx; }
     return;
   }
@@ -2798,6 +2874,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
 /* 入力 1 論理ステップを処理し、出力へ append したトークン数を返す (指令やマクロ展開の
  * pushback では 0)。EOF は append (1) して s->eof_done を立てる。 */
 static int pps_step(pp_stream_t *s) {
+  ag_preprocessor_context_t *context = s->context;
   token_t *tok = pps_pull_raw(s);
   if (!tok) { s->eof_done = 1; return 0; }
   if (tok->kind == TK_EOF) {
@@ -2810,7 +2887,7 @@ static int pps_step(pp_stream_t *s) {
    * カーソルフックを発火させるので一時的に外す。 */
   if (tok->at_bol && tok->kind == TK_HASH) {
     token_t *line = pps_materialize_line(s, tok);
-    pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
+    pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
     pps_dispatch_directive(s, line);
     pps_restore_cursor_hook(s, saved_hook);
     return 0;
@@ -2829,9 +2906,9 @@ static int pps_step(pp_stream_t *s) {
       return 1;
     }
     char *name = my_strndup(id->str, id->len);
-    macro_t *m = find_macro(name);
+    macro_t *m = find_macro(context, name);
     if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
-      count_macro_expansion_or_die();  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
+      count_macro_expansion_or_die(s->context);  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
       /* マクロ展開は batch と同じ pp_expand_objlike / pp_expand_funclike を使い、結果を
        * pushback して rescan する (= batch の splice + continue 相当)。展開中は paste_tokens
        * (tk_tokenize_ctx) / pp_expand_arg (preprocess_for_target_ctx) がネスト session でカーソルフックを
@@ -2842,8 +2919,9 @@ static int pps_step(pp_stream_t *s) {
           token_t *grp = pps_materialize_balanced(s, nx);
           token_t *rparen = NULL;
           token_t **args = pp_collect_args(m, grp, &rparen);
-          pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
-          token_t *body = pp_expand_funclike(m, tok, args, name);
+          pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
+          token_t *body = pp_expand_funclike(
+              context, m, tok, args, name);
           free(args);
           if (body) {
             /* The suffix rescan calls preprocess_for_target_ctx() on a synthetic token list.
@@ -2864,8 +2942,9 @@ static int pps_step(pp_stream_t *s) {
         free(name);
         return 1;
       } else {
-        pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
-        token_t *body = pp_expand_objlike(m, tok, name);  // ## 展開で tk_tokenize_ctx 経由あり
+        pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
+        token_t *body = pp_expand_objlike(
+            context, m, tok, name);  // ## 展開で tk_tokenize_ctx 経由あり
         pps_restore_cursor_hook(s, saved_hook);
         if (body) {
           if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 = out-of-order
@@ -2914,8 +2993,8 @@ static void pps_refill(pp_stream_t *s) {
 
 /* カーソル前進フック: 必要時のみ補充 (refill_at に到達 or 先が尽きた) + 通過チャンク解放。
  * 大半の前進では補充判定が O(1) ですぐ抜ける。 */
-static void pps_on_advance(token_t *cursor) {
-  pp_stream_t *s = g_active_pps;
+static void pps_on_advance(void *user_data, token_t *cursor) {
+  pp_stream_t *s = user_data;
   if (!s || !cursor) return;  // ネスト字句/プリプロセスが current_token=NULL で発火する場合あり
   s->cursor = cursor;
   if (cursor == s->reclaim_hold) s->reclaim_hold = NULL;  // out-of-order 区間を通過 → 解放再開
@@ -2930,40 +3009,45 @@ static void pps_on_advance(token_t *cursor) {
  * 前方 lookahead を明示的に満たす。set_curtok のジャンプが refill_at を飛び越えると補充が
  * チェーン末尾到達まで起きず、t->next の純粋な先読みが未生成境界 (NULL) を踏むため、
  * 深い型先読みの直前に呼んで窓を確保する。非ストリーム時は no-op。 */
-static void pps_ensure_lookahead(void) {
-  if (g_active_pps && g_active_pps->cursor) pps_refill(g_active_pps);
+static void pps_ensure_lookahead(void *user_data) {
+  pp_stream_t *s = user_data;
+  if (s && s->cursor) pps_refill(s);
 }
 
 /* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
  * 先頭トークン (パーサのカーソル開始位置) を返す。 */
-token_t *pp_stream_open_for_target(pp_stream_t **out_s,
+token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
+                                   pp_stream_t **out_s,
                                    tokenizer_context_t *tk_ctx,
                                    const ag_target_info_t *target,
                                    const char *src) {
+  if (!context || !out_s) return NULL;
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
+  if (!s) return NULL;
+  s->context = context;
   s->tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
   s->target = target ? *target : ag_target_info_host();
   g_preprocess_tk_ctx = s->tk_ctx;
   g_preprocess_target = &s->target;
   /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に
    * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
-  reset_macros();
-  reset_retired_include_sources();
+  reset_macros(context);
+  reset_retired_include_sources(context);
   tk_allocator_reset_translation_unit();
   tk_filename_reset_translation_unit();
-  reset_pragma_once_list();
+  reset_pragma_once_list(context);
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
     cond_incl = entry->next;
     free(entry);
   }
-  while (include_stack) pop_include();
+  while (include_stack) pop_include(context);
   macro_expand_steps = 0;
   if_expr_eval_steps = 0;
   include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
   tk_allocator_set_recyclable(0);
-  pp_init_predefined_macros(target);
+  pp_init_predefined_macros(context, target);
   /* 以後の生成は recyclable アリーナ。 */
   tk_allocator_set_recyclable(1);
   s->lex = tk_stream_new(s->tk_ctx, src);
@@ -2978,28 +3062,28 @@ token_t *pp_stream_open_for_target(pp_stream_t **out_s,
 }
 
 void pp_stream_close(pp_stream_t *s) {
+  if (!s) return;
+  ag_preprocessor_context_t *context = s->context;
   pps_deactivate(s);
   tk_allocator_set_recyclable(0);
   tk_allocator_recyc_stream_unpin();
   tk_allocator_recyc_reset();
-  if (s) {
-    /* 早期終了 (パーサが EOF まで来なかった) で残った被 include フレームを後始末する。
-     * フックは既に NULL なので tk_stream_delete はフックを発火しない。 */
-    while (s->frames) {
-      pp_include_frame_t *f = s->frames;
-      tk_stream_delete(s->lex);
-      s->lex = f->parent_lex;
-      s->frames = f->parent;
-      pop_include();
-      free(f->path_owned);
-      if (f->buf_owned) retain_include_source(f->buf);
-      free(f);
-    }
+  /* 早期終了 (パーサが EOF まで来なかった) で残った被 include フレームを後始末する。
+   * フックは既に NULL なので tk_stream_delete はフックを発火しない。 */
+  while (s->frames) {
+    pp_include_frame_t *f = s->frames;
     tk_stream_delete(s->lex);
-    if (g_preprocess_tk_ctx == s->tk_ctx) g_preprocess_tk_ctx = NULL;
-    if (g_preprocess_target == &s->target) g_preprocess_target = NULL;
-    free(s);
+    s->lex = f->parent_lex;
+    s->frames = f->parent;
+    pop_include(s->context);
+    free(f->path_owned);
+    if (f->buf_owned) retain_include_source(s->context, f->buf);
+    free(f);
   }
+  tk_stream_delete(s->lex);
+  if (g_preprocess_tk_ctx == s->tk_ctx) g_preprocess_tk_ctx = NULL;
+  if (g_preprocess_target == &s->target) g_preprocess_target = NULL;
+  free(s);
 }
 
 ag_preprocessor_context_t *pp_context_create(void) {
@@ -3010,31 +3094,18 @@ ag_preprocessor_context_t *pp_context_create(void) {
   return context;
 }
 
-ag_preprocessor_context_t *pp_context_activate(
-    ag_preprocessor_context_t *context) {
-  ag_preprocessor_context_t *previous = active_preprocessor_context;
-  active_preprocessor_context = context ? context : &default_preprocessor_context;
-  return previous;
-}
-
-ag_preprocessor_context_t *pp_context_active(void) {
-  return active_preprocessor_context;
-}
-
 void pp_context_destroy(ag_preprocessor_context_t *context) {
-  if (!context || context == &default_preprocessor_context) return;
-  ag_preprocessor_context_t *previous = pp_context_activate(context);
-  if (g_active_pps) pp_stream_close(g_active_pps);
-  reset_macros();
-  reset_retired_include_sources();
-  reset_pragma_once_list();
+  if (!context) return;
+  if (context->active_stream) pp_stream_close(context->active_stream);
+  reset_macros(context);
+  reset_retired_include_sources(context);
+  reset_pragma_once_list(context);
   pp_virtual_headers_clear_in(context);
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
     cond_incl = entry->next;
     free(entry);
   }
-  while (include_stack) pop_include();
-  pp_context_activate(previous == context ? NULL : previous);
+  while (include_stack) pop_include(context);
   free(context);
 }

@@ -5,6 +5,8 @@
 #include <stddef.h>
 
 typedef struct tokenizer_context_t tokenizer_context_t;
+typedef void (*tk_cursor_hook_t)(void *user_data, token_t *cursor);
+typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 
 #define TK_FILENAME_TABLE_CAP 256
 
@@ -17,8 +19,10 @@ struct tokenizer_context_t {
   token_t *current_token;
   const char *user_input;
   const char *current_filename;
-  void (*cursor_hook)(token_t *);
-  void (*ensure_lookahead_hook)(void);
+  tk_cursor_hook_t cursor_hook;
+  void *cursor_hook_user_data;
+  tk_ensure_lookahead_hook_t ensure_lookahead_hook;
+  void *ensure_lookahead_hook_user_data;
   bool tolerate_untokenizable;
   void *tolerate_jump_target;
   size_t stats_base_chunks;
@@ -171,15 +175,20 @@ tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in);
 void tk_stream_delete(tk_token_stream_t *s);
 
 /* パーサのカーソル前進フックを登録する (トークンストリーム driver 用、NULL で解除)。 */
-void tk_set_cursor_hook(void (*fn)(token_t *));
-void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, void (*fn)(token_t *));
+void tk_set_cursor_hook(tk_cursor_hook_t fn, void *user_data);
+void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, tk_cursor_hook_t fn,
+                            void *user_data);
 /* 現在のカーソル前進フックを取得する (ネスト処理中に一時退避・復元する用)。 */
-void (*tk_get_cursor_hook(void))(token_t *);
-void (*tk_get_cursor_hook_ctx(tokenizer_context_t *ctx))(token_t *);
+tk_cursor_hook_t tk_get_cursor_hook(void);
+tk_cursor_hook_t tk_get_cursor_hook_ctx(tokenizer_context_t *ctx);
+void *tk_get_cursor_hook_user_data_ctx(tokenizer_context_t *ctx);
 /* カーソルを進めない深い前方先読みの直前に呼ぶ。登録された生成器が前方 lookahead を満たす
  * (プリプロセッサが tk_set_ensure_lookahead_hook で登録)。未登録なら no-op。 */
-void tk_set_ensure_lookahead_hook(void (*fn)(void));
-void tk_set_ensure_lookahead_hook_ctx(tokenizer_context_t *ctx, void (*fn)(void));
+void tk_set_ensure_lookahead_hook(tk_ensure_lookahead_hook_t fn,
+                                  void *user_data);
+void tk_set_ensure_lookahead_hook_ctx(tokenizer_context_t *ctx,
+                                      tk_ensure_lookahead_hook_t fn,
+                                      void *user_data);
 void tk_ensure_lookahead(void);
 void tk_ensure_lookahead_ctx(tokenizer_context_t *ctx);
 

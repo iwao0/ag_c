@@ -16404,7 +16404,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
   ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
-  ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
@@ -16421,7 +16420,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(4);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
@@ -16459,7 +16457,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(8);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
-  ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
@@ -16484,7 +16481,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
-  ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
@@ -16510,7 +16506,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
-  ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
@@ -16531,7 +16526,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
-  ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
