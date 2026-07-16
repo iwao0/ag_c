@@ -24,6 +24,7 @@
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/runtime_context.h"
 #include "../src/parser/stmt.h"
+#include "../src/parser/stmt_legacy.h"
 #include "../src/parser/symtab.h"
 #include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
@@ -1216,6 +1217,15 @@ typedef struct {
   psx_name_classifier_t name_classifier;
 } test_expression_syntax_services_t;
 
+typedef struct {
+  psx_expression_syntax_context_t expression;
+  int block_scope_depth;
+  int block_enter_count;
+  int block_leave_count;
+  int usage_begin_count;
+  int usage_end_count;
+} test_statement_syntax_services_t;
+
 static int test_expression_parse_type_name(
     void *context, token_t *start, int runtime_bounds,
     psx_parsed_type_name_t *out) {
@@ -1229,6 +1239,37 @@ static int test_expression_parse_type_name(
                    start, &options, out)
              : psx_parse_type_name_syntax_at(
                    start, &options, out);
+}
+
+static node_t *test_statement_parse_expression(void *context) {
+  test_statement_syntax_services_t *services = context;
+  return psx_expr_expr_syntax(&services->expression);
+}
+
+static void test_statement_enter_block_scope(void *context) {
+  test_statement_syntax_services_t *services = context;
+  services->block_scope_depth++;
+  services->block_enter_count++;
+}
+
+static void test_statement_leave_block_scope(void *context) {
+  test_statement_syntax_services_t *services = context;
+  services->block_scope_depth--;
+  services->block_leave_count++;
+}
+
+static psx_lvar_usage_region_t *test_statement_begin_usage_region(
+    void *context) {
+  test_statement_syntax_services_t *services = context;
+  services->usage_begin_count++;
+  return (psx_lvar_usage_region_t *)services;
+}
+
+static void test_statement_end_usage_region(
+    void *context, psx_lvar_usage_region_t *region) {
+  test_statement_syntax_services_t *services = context;
+  ASSERT_TRUE(region == (psx_lvar_usage_region_t *)services);
+  services->usage_end_count++;
 }
 
 static void test_parser_name_classifier_boundary() {
@@ -1326,6 +1367,44 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(address_syntax->lhs != NULL);
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
   ASSERT_TRUE(address_syntax->lhs->resolution_state == NULL);
+
+  tk_tokenize((char *)"{ if (0) ; }");
+  test_statement_syntax_services_t statement_services = {
+      .expression = {
+          .runtime_context = syntax_services.runtime_context,
+          .name_classifier = classifier,
+      },
+  };
+  psx_statement_syntax_context_t statement_syntax = {
+      .context = &statement_services,
+      .runtime_context = syntax_services.runtime_context,
+      .name_classifier = classifier,
+      .parse_expression = test_statement_parse_expression,
+      .enter_block_scope = test_statement_enter_block_scope,
+      .leave_block_scope = test_statement_leave_block_scope,
+      .begin_usage_region = test_statement_begin_usage_region,
+      .end_usage_region = test_statement_end_usage_region,
+  };
+  node_t *standalone_statement =
+      psx_stmt_stmt_syntax(&statement_syntax);
+  ASSERT_TRUE(standalone_statement != NULL);
+  ASSERT_EQ(ND_BLOCK, standalone_statement->kind);
+  ASSERT_TRUE(standalone_statement->resolution_state == NULL);
+  node_block_t *standalone_block =
+      (node_block_t *)standalone_statement;
+  ASSERT_TRUE(standalone_block->body != NULL);
+  ASSERT_TRUE(standalone_block->body[0] != NULL);
+  ASSERT_EQ(ND_IF, standalone_block->body[0]->kind);
+  ASSERT_TRUE(standalone_block->body[0]->resolution_state == NULL);
+  ASSERT_TRUE(standalone_block->body[0]->lhs != NULL);
+  ASSERT_EQ(ND_NUM, standalone_block->body[0]->lhs->kind);
+  ASSERT_TRUE(
+      standalone_block->body[0]->lhs->resolution_state == NULL);
+  ASSERT_EQ(0, statement_services.block_scope_depth);
+  ASSERT_EQ(1, statement_services.block_enter_count);
+  ASSERT_EQ(1, statement_services.block_leave_count);
+  ASSERT_EQ(1, statement_services.usage_begin_count);
+  ASSERT_EQ(1, statement_services.usage_end_count);
 }
 
 static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {

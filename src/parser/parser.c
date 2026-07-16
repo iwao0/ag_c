@@ -17,6 +17,7 @@
 #include "local_registry.h"
 #include "lvar_internal.h"
 #include "stmt.h"
+#include "stmt_legacy.h"
 #include "type.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"

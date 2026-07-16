@@ -1,17 +1,12 @@
 #include "stmt.h"
-#include "lvar_internal.h"
-#include "local_registry.h"
 #include "arena.h"
+#include "ast.h"
 #include "core.h"
-#include "decl.h"
 #include "diag.h"
 #include "dynarray.h"
-#include "enum_const.h"
-#include "expr.h"
-#include "node_utils.h"
 #include "parser_recovery.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
+#include "syntax_node.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -19,14 +14,10 @@
 #include <string.h>
 
 typedef struct {
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
+  psx_statement_syntax_context_t syntax;
   psx_parser_runtime_context_t *runtime_context;
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
-  const psx_local_declaration_callbacks_t *local_declarations;
-  psx_name_classifier_t name_classifier;
 } psx_statement_parse_context_t;
 
 static inline token_t *curtok(psx_statement_parse_context_t *context) {
@@ -55,22 +46,47 @@ static int is_label_start_stmt(psx_statement_parse_context_t *context) {
          curtok(context)->next->kind == TK_COLON;
 }
 
+static void require_syntax_service(
+    psx_statement_parse_context_t *context, const char *name) {
+  diag_emit_internalf_in(
+      diagnostics(context), DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+      "%s: statement syntax service '%s' is unavailable",
+      diag_message_for_in(
+          diagnostics(context), DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+      name);
+  ps_parser_mark_recoverable_syntax_error_in(
+      context->runtime_context);
+}
+
 static int is_decl_like_start_stmt(
     psx_statement_parse_context_t *context) {
   if (curtok(context)->kind == TK_TYPEDEF) return 1;
   if (curtok(context)->kind == TK_STATIC_ASSERT) return 1;
-  if (psx_ctx_is_type_token(curtok(context)->kind) ||
+  if (psx_is_type_specifier_token(curtok(context)->kind) ||
       psx_is_decl_prefix_token(curtok(context)->kind) ||
       ps_name_classifier_is_typedef_name(
-          &context->name_classifier, curtok(context))) return 1;
-  if (psx_ctx_is_tag_keyword(curtok(context)->kind)) return 1;
+          &context->syntax.name_classifier, curtok(context))) return 1;
+  if (psx_is_tag_keyword_token(curtok(context)->kind)) return 1;
   return 0;
 }
 
 static node_t *parse_decl_like_stmt(
     psx_statement_parse_context_t *context) {
-  return psx_parse_local_declaration_syntax(
-      context->local_declarations);
+  if (!context->syntax.parse_local_declaration) {
+    require_syntax_service(context, "parse_local_declaration");
+    return NULL;
+  }
+  return context->syntax.parse_local_declaration(
+      context->syntax.context);
+}
+
+static node_t *parse_expression(
+    psx_statement_parse_context_t *context) {
+  if (!context->syntax.parse_expression) {
+    require_syntax_service(context, "parse_expression");
+    return NULL;
+  }
+  return context->syntax.parse_expression(context->syntax.context);
 }
 
 static node_t *block_item(psx_statement_parse_context_t *context) {
@@ -127,19 +143,15 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
     default: break;
   }
   /* 式文 (式を評価して結果を捨てる) */
-  node_t *node = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node_t *node = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
 
 static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
   tk_consume_ctx(context->tokenizer_context, '{');
-  ps_ctx_enter_block_scope_in(context->semantic_context);
-  ps_decl_enter_scope_in(context->local_registry);
+  if (context->syntax.enter_block_scope)
+    context->syntax.enter_block_scope(context->syntax.context);
   ps_parser_enter_recovery_block_in(context->runtime_context);
   node_block_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_block_t));
@@ -159,15 +171,20 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
     }
     token_t *stmt_tok = curtok(context);
     psx_lvar_usage_region_t *region =
-        psx_decl_begin_lvar_usage_region_in(context->local_registry);
+        context->syntax.begin_usage_region
+            ? context->syntax.begin_usage_region(
+                  context->syntax.context)
+            : NULL;
     node->body[i] = block_item(context);
-    psx_decl_end_lvar_usage_region_in(context->local_registry, region);
+    if (context->syntax.end_usage_region)
+      context->syntax.end_usage_region(
+          context->syntax.context, region);
     if (ps_parser_has_recoverable_syntax_error_in(
             context->runtime_context)) {
       node->body[i] = NULL;
       ps_parser_leave_recovery_block_in(context->runtime_context);
-      ps_decl_leave_scope_in(context->local_registry);
-      ps_ctx_leave_block_scope_in(context->semantic_context);
+      if (context->syntax.leave_block_scope)
+        context->syntax.leave_block_scope(context->syntax.context);
       return NULL;
     }
     if (node->body[i]) {
@@ -178,8 +195,8 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
   }
   node->body[i] = NULL;
   ps_parser_leave_recovery_block_in(context->runtime_context);
-  ps_decl_leave_scope_in(context->local_registry);
-  ps_ctx_leave_block_scope_in(context->semantic_context);
+  if (context->syntax.leave_block_scope)
+    context->syntax.leave_block_scope(context->syntax.context);
   return (node_t *)node;
 }
 
@@ -205,26 +222,17 @@ static int is_stmt_expr_value_stmt(node_t *s) {
   }
 }
 
-node_t *psx_parse_statement_expression_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
+node_t *psx_parse_statement_expression_syntax(
+    const psx_statement_syntax_context_t *syntax_context) {
+  if (!syntax_context || !syntax_context->runtime_context)
     return NULL;
+  psx_parser_runtime_context_t *runtime_context =
+      syntax_context->runtime_context;
   psx_statement_parse_context_t context = {
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
+      .syntax = *syntax_context,
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
-      .local_declarations = local_declarations,
-      .name_classifier =
-          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   if (!context.tokenizer_context) return NULL;
   tk_expect_ctx(context.tokenizer_context, '(');
@@ -258,11 +266,7 @@ static node_t *parse_stmt_return(
     node->lhs = NULL;
     return node;
   }
-  node->lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node->lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
@@ -273,11 +277,7 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_IF;
-  node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node->base.lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ')');
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
    * (clang -Wempty-body 相当)。 */
@@ -296,11 +296,7 @@ static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_WHILE;
-  node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node->base.lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -319,11 +315,7 @@ static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
   }
   set_curtok(context, curtok(context)->next);
   tk_expect_ctx(context->tokenizer_context, '(');
-  node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node->base.lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ')');
   tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
@@ -339,35 +331,25 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
   if (!tk_consume_ctx(context->tokenizer_context, ';')) {
     if (is_decl_like_start_stmt(context)) {
       for_has_decl = 1;
-      ps_decl_enter_scope_in(context->local_registry);
+      if (context->syntax.enter_local_scope)
+        context->syntax.enter_local_scope(context->syntax.context);
       node->init = parse_decl_like_stmt(context);
     } else {
-      node->init = psx_expr_expr_in_contexts(
-          context->semantic_context, context->global_registry,
-          context->local_registry, context->runtime_context,
-          &context->name_classifier,
-          context->local_declarations);
+      node->init = parse_expression(context);
       tk_expect_ctx(context->tokenizer_context, ';');
     }
   }
   if (!tk_consume_ctx(context->tokenizer_context, ';')) {
-    node->base.lhs = psx_expr_expr_in_contexts(
-        context->semantic_context, context->global_registry,
-        context->local_registry, context->runtime_context,
-        &context->name_classifier,
-        context->local_declarations);
+    node->base.lhs = parse_expression(context);
     tk_expect_ctx(context->tokenizer_context, ';');
   }
   if (!tk_consume_ctx(context->tokenizer_context, ')')) {
-    node->inc = psx_expr_expr_in_contexts(
-        context->semantic_context, context->global_registry,
-        context->local_registry, context->runtime_context,
-        &context->name_classifier,
-        context->local_declarations);
+    node->inc = parse_expression(context);
     tk_expect_ctx(context->tokenizer_context, ')');
   }
   node->base.rhs = stmt_internal(context);
-  if (for_has_decl) ps_decl_leave_scope_in(context->local_registry);
+  if (for_has_decl && context->syntax.leave_local_scope)
+    context->syntax.leave_local_scope(context->syntax.context);
   return (node_t *)node;
 }
 
@@ -379,11 +361,7 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_SWITCH;
   node->base.tok = switch_tok;
-  node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->global_registry,
-      context->local_registry, context->runtime_context,
-      &context->name_classifier,
-      context->local_declarations);
+  node->base.lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -396,9 +374,12 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
       context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
-  node->val = psx_parse_case_const_expr_in_contexts(
-      context->semantic_context, &context->name_classifier,
-      context->tokenizer_context);
+  if (!context->syntax.parse_case_constant) {
+    require_syntax_service(context, "parse_case_constant");
+    return NULL;
+  }
+  node->val = context->syntax.parse_case_constant(
+      context->syntax.context);
   tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -449,8 +430,9 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   node->base.kind = ND_GOTO;
   node->name = ident->str;
   node->name_len = ident->len;
-  psx_ctx_register_goto_ref_in(
-      context->semantic_context, ident->str, ident->len, goto_tok);
+  if (context->syntax.register_goto)
+    context->syntax.register_goto(
+        context->syntax.context, ident->str, ident->len, goto_tok);
   tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
 }
@@ -463,32 +445,25 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
   node->base.kind = ND_LABEL;
   node->name = ident->str;
   node->name_len = ident->len;
-  psx_ctx_register_label_def_in(
-      context->semantic_context, ident->str, ident->len, curtok(context));
+  if (context->syntax.register_label)
+    context->syntax.register_label(
+        context->syntax.context, ident->str, ident->len,
+        curtok(context));
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
 
-node_t *psx_stmt_stmt_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
+node_t *psx_stmt_stmt_syntax(
+    const psx_statement_syntax_context_t *syntax_context) {
+  if (!syntax_context || !syntax_context->runtime_context)
     return NULL;
+  psx_parser_runtime_context_t *runtime_context =
+      syntax_context->runtime_context;
   psx_statement_parse_context_t context = {
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
+      .syntax = *syntax_context,
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
-      .local_declarations = local_declarations,
-      .name_classifier =
-          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   if (!context.tokenizer_context) return NULL;
   node_t *result = stmt_internal(&context);

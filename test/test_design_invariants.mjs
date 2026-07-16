@@ -285,6 +285,14 @@ const expressionSyntaxAdapterSource = await readFile(
   "src/parser/expression_syntax_adapter.c",
   "utf8",
 );
+const statementSyntaxContextSource = await readFile(
+  "src/parser/statement_syntax_context.h",
+  "utf8",
+);
+const statementSyntaxAdapterSource = await readFile(
+  "src/parser/statement_syntax_adapter.c",
+  "utf8",
+);
 const parserStatementSource = await readFile("src/parser/stmt.c", "utf8");
 const parserLocalDeclarationSource = await readFile(
   "src/parser/local_declaration_syntax.c",
@@ -2620,7 +2628,8 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
       statementParserSource,
     ) ||
     /active_local_declarations/.test(statementParserSource) ||
-    !/psx_expr_expr_in_contexts\s*\(/.test(statementParserSource) ||
+    /psx_expr_expr_in_contexts\s*\(/.test(statementParserSource) ||
+    !/syntax\.parse_expression/.test(statementParserSource) ||
     !/psx_parse_statement_expression_in_contexts\s*\(/.test(
       expressionSyntaxAdapterSource,
     ) ||
@@ -2953,9 +2962,11 @@ if (!/typedef\s+enum\s*\{[^]*?\}\s*psx_syntax_node_kind_t\s*;/.test(
     /typedef\s+enum\s*\{[^]*?\}\s*node_kind_t\s*;/.test(astSource) ||
     resolvedOnlyNodeKindPattern.test(parserSyntaxSources) ||
     /#include\s+"node_utils\.h"/.test(parserExpressionSource) ||
-    !/#include\s+"syntax_node\.h"/.test(parserExpressionSource)) {
+    !/#include\s+"syntax_node\.h"/.test(parserExpressionSource) ||
+    /#include\s+"node_utils\.h"/.test(parserStatementSource) ||
+    !/#include\s+"syntax_node\.h"/.test(parserStatementSource)) {
   throw new Error(
-    "Syntax AST and resolver-created working node kinds must remain separate, and expression parsing must depend only on syntax node construction",
+    "Syntax AST and resolver-created working node kinds must remain separate, and syntax parsing must depend only on syntax node construction",
   );
 }
 if (/__va_arg_area/.test(parserExpressionSource) ||
@@ -2995,6 +3006,43 @@ if (!/psx_expression_syntax_context_t\s+syntax\s*;/.test(
     )) {
   throw new Error(
     "expression parser core must receive a syntax-only context with NameClassifier while semantic registries remain isolated in the compatibility adapter",
+  );
+}
+const statementParseContext = statementParserSource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_statement_parse_context_t\s*;/,
+)?.[1] ?? "";
+if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
+      statementParseContext,
+    ) ||
+    /psx_(?:semantic_context|global_registry|local_registry)_t/.test(
+      `${statementParseContext}\n${statementSyntaxContextSource}`,
+    ) ||
+    /#include\s+"(?:semantic_ctx|global_registry|local_registry|decl|enum_const|expr)\.h"/.test(
+      statementParserSource,
+    ) ||
+    /\bpsx_(?:stmt_stmt|parse_statement_expression)_in_contexts\s*\(/.test(
+      statementParserSource,
+    ) ||
+    !/\bpsx_stmt_stmt_syntax\s*\(/.test(statementParserSource) ||
+    !/\bpsx_parse_statement_expression_syntax\s*\(/.test(
+      statementParserSource,
+    ) ||
+    !/psx_name_classifier_t\s+name_classifier\s*;/.test(
+      statementSyntaxContextSource,
+    ) ||
+    !/psx_stmt_stmt_syntax\s*\(\s*&syntax\s*\)/.test(
+      statementSyntaxAdapterSource,
+    ) ||
+    !/psx_parse_statement_expression_syntax\s*\(\s*&syntax\s*\)/.test(
+      statementSyntaxAdapterSource,
+    ) ||
+    !/syntax\.parse_expression/.test(statementParserSource) ||
+    !/syntax\.parse_local_declaration/.test(statementParserSource) ||
+    !/syntax\.parse_case_constant/.test(statementParserSource) ||
+    !/syntax\.register_goto/.test(statementParserSource) ||
+    !/syntax\.register_label/.test(statementParserSource)) {
+  throw new Error(
+    "statement parser core must receive a syntax-only context with NameClassifier while semantic registries remain isolated in the compatibility adapter",
   );
 }
 if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(

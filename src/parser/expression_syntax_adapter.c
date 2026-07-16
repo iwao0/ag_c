@@ -6,7 +6,7 @@
 #include "local_registry.h"
 #include "runtime_context.h"
 #include "semantic_ctx.h"
-#include "stmt.h"
+#include "stmt_legacy.h"
 #include "../diag/diag.h"
 
 typedef struct {
