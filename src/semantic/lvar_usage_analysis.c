@@ -150,6 +150,17 @@ void psx_collect_lvar_usage_events_in(
             local_registry, call->arguments[i], region);
       return;
     }
+    case ND_GENERIC_SELECTION: {
+      node_generic_selection_t *selection =
+          (node_generic_selection_t *)node;
+      int selected = selection->selected_index;
+      if (selected >= 0 && selected < selection->association_count) {
+        psx_collect_lvar_usage_events_in(
+            local_registry,
+            selection->associations[selected].expression, region);
+      }
+      return;
+    }
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {

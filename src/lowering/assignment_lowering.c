@@ -36,6 +36,16 @@ static node_t *materialize_lvalue_address_once(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_t *target, node_t **prefix) {
+  if (target && target->kind == ND_GENERIC_SELECTION) {
+    node_generic_selection_t *selection =
+        (node_generic_selection_t *)target;
+    int selected = selection->selected_index;
+    if (selected >= 0 && selected < selection->association_count) {
+      return materialize_lvalue_address_once(
+          lowering_context, local_registry,
+          selection->associations[selected].expression, prefix);
+    }
+  }
   if (!target ||
       (target->kind != ND_UNARY_DEREF &&
        target->kind != ND_DEREF) ||

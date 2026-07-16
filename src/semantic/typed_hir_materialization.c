@@ -541,6 +541,25 @@ static int copy_vla_payload(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  if (source && source->kind == ND_GENERIC_SELECTION) {
+    const node_generic_selection_t *selection =
+        (const node_generic_selection_t *)source;
+    psx_qual_type_t qual_type = ps_node_qual_type(source);
+    int selected = selection->selected_index;
+    if (!canonical_type_exists(builder, qual_type)) {
+      set_failure(
+          builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+      return NULL;
+    }
+    if (selected < 0 || selected >= selection->association_count ||
+        !selection->associations[selected].expression) {
+      set_failure(
+          builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+      return NULL;
+    }
+    return build_node(
+        builder, selection->associations[selected].expression);
+  }
   psx_hir_node_spec_t spec = {0};
   psx_hir_node_role_t role = PSX_HIR_ROLE_STATEMENT;
   psx_qual_type_t qual_type = {

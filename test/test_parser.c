@@ -3832,6 +3832,24 @@ static node_t *parse_raw_function_item(
 }
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
+
+static node_t *selected_generic_expression(node_t *node) {
+  if (!node || node->kind != ND_GENERIC_SELECTION) return node;
+  node_generic_selection_t *selection =
+      (node_generic_selection_t *)node;
+  int selected = selection->selected_index;
+  if (selected < 0 || selected >= selection->association_count)
+    return NULL;
+  return selection->associations[selected].expression;
+}
+
+static void assert_selected_generic_number(
+    node_t *node, long long expected) {
+  node_t *selected = selected_generic_expression(node);
+  ASSERT_TRUE(selected != NULL);
+  ASSERT_EQ(ND_NUM, selected->kind);
+  ASSERT_EQ(expected, as_num(selected)->val);
+}
 static node_lvar_t *as_lvar(node_t *n) { return (node_lvar_t *)n; }
 static node_function_definition_t *as_function_definition(node_t *n) {
   ASSERT_TRUE(n != NULL);
@@ -5550,15 +5568,50 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
-  node_t *lowered = analyze_test_expression(raw, NULL);
-  ASSERT_TRUE(lowered != raw);
+  node_t *typed = analyze_test_expression(raw, NULL);
+  ASSERT_TRUE(typed != raw);
   ASSERT_TRUE(selection->associations[0].type_name.resolved_type == NULL);
   ASSERT_EQ(-1, selection->selected_index);
   ASSERT_TRUE(ps_node_get_type((node_t *)selection) == NULL);
   ASSERT_TRUE(ps_node_get_type(selection->associations[0].expression) == NULL);
-  ASSERT_EQ(ND_ADD, lowered->kind);
-  ASSERT_TRUE(ps_node_get_type(lowered) != NULL);
-  ASSERT_EQ(1, as_num(lowered->rhs)->val);
+  ASSERT_EQ(ND_GENERIC_SELECTION, typed->kind);
+  node_generic_selection_t *typed_selection =
+      (node_generic_selection_t *)typed;
+  ASSERT_EQ(0, typed_selection->selected_index);
+  ASSERT_TRUE(ps_node_get_type(typed) != NULL);
+  node_t *selected_expression =
+      typed_selection->associations[0].expression;
+  ASSERT_EQ(ND_ADD, selected_expression->kind);
+  ASSERT_TRUE(ps_node_get_type(selected_expression) != NULL);
+  ASSERT_EQ(1, as_num(selected_expression->rhs)->val);
+
+  node_t **program = parse_program_input(
+      "int __typed_hir_generic(int x) { "
+      "return _Generic(x, int: x + 1, default: x + 200); }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  ASSERT_EQ(ND_GENERIC_SELECTION, body->body[0]->lhs->kind);
+  node_generic_selection_t *work_selection =
+      (node_generic_selection_t *)body->body[0]->lhs;
+  ASSERT_EQ(0, work_selection->selected_index);
+  ASSERT_TRUE(ps_node_get_type((node_t *)work_selection) != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_selected_literal = 0;
+  int found_unselected_literal = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node || psx_hir_node_kind(hir_node) != PSX_HIR_NUMBER)
+      continue;
+    long long value = psx_hir_node_integer_value(hir_node);
+    if (value == 1) found_selected_literal = 1;
+    if (value == 200) found_unselected_literal = 1;
+  }
+  ASSERT_TRUE(found_selected_literal);
+  ASSERT_TRUE(!found_unselected_literal);
 }
 
 static void test_sizeof_semantic_lowering_boundary() {
@@ -10535,7 +10588,7 @@ static void test_expr_generic() {
   node_t *canonical_generic_return =
       as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, canonical_generic_return->kind);
-  ASSERT_EQ(53, as_num(canonical_generic_return->lhs)->val);
+  assert_selected_generic_number(canonical_generic_return->lhs, 53);
   node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
       "(int (*)(ExprCanonicalParam, int *, ...))0");
   ASSERT_EQ(ND_CAST, canonical_expr_funcptr->kind);
@@ -10584,20 +10637,17 @@ static void test_expr_generic() {
   node_t *typedef_funcref_return =
       as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, typedef_funcref_return->kind);
-  ASSERT_EQ(ND_NUM, typedef_funcref_return->lhs->kind);
-  ASSERT_EQ(9, as_num(typedef_funcref_return->lhs)->val);
+  assert_selected_generic_number(typedef_funcref_return->lhs, 9);
 
     node_t *g1 = parse_expr_input("_Generic(1, int: 11, default: 22)");
-  ASSERT_EQ(ND_NUM, g1->kind);
-  ASSERT_EQ(11, as_num(g1)->val);
+  assert_selected_generic_number(g1, 11);
 
     node_t *g2 = parse_expr_input("_Generic(1.0, float: 11, double: 33, default: 22)");
-  ASSERT_EQ(ND_NUM, g2->kind);
-  ASSERT_EQ(33, as_num(g2)->val);
+  assert_selected_generic_number(g2, 33);
 
   node_t *generic_atomic_scalar =
       parse_expr_input("_Generic(1, _Atomic(int): 41, default: 42)");
-  ASSERT_EQ(ND_NUM, generic_atomic_scalar->kind);
+  assert_selected_generic_number(generic_atomic_scalar, 41);
   expect_parse_ok(
       "int main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
   expect_parse_ok(
@@ -10606,8 +10656,7 @@ static void test_expr_generic() {
   parsed_code = parse_program_input("int main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
   node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(3, as_num(ret->lhs)->val);
+  assert_selected_generic_number(ret->lhs, 3);
 
   parsed_code = parse_program_input(
       "typedef int (*fp_t)(int); "
@@ -10615,24 +10664,21 @@ static void test_expr_generic() {
       "int main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
   node_t *ret_fp = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_fp->kind);
-  ASSERT_EQ(ND_NUM, ret_fp->lhs->kind);
-  ASSERT_EQ(13, as_num(ret_fp->lhs)->val);
+  assert_selected_generic_number(ret_fp->lhs, 13);
 
   parsed_code = parse_program_input(
       "double fd(double x){ return x; } "
       "int main(){ return _Generic(fd, double (*)(double): 17, default: 7); }");
   node_t *ret_func_designator = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_func_designator->kind);
-  ASSERT_EQ(ND_NUM, ret_func_designator->lhs->kind);
-  ASSERT_EQ(17, as_num(ret_func_designator->lhs)->val);
+  assert_selected_generic_number(ret_func_designator->lhs, 17);
 
   parsed_code = parse_program_input(
       "int fg(int x){ return x; } "
       "int main(){ int (*p)(int)=fg; return _Generic((p), int (*)(int): 19, default: 7); }");
   node_t *ret_parenthesized_fp = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_fp->kind);
-  ASSERT_EQ(ND_NUM, ret_parenthesized_fp->lhs->kind);
-  ASSERT_EQ(19, as_num(ret_parenthesized_fp->lhs)->val);
+  assert_selected_generic_number(ret_parenthesized_fp->lhs, 19);
 
   parsed_code = parse_program_input(
       "int (*__tm_gen_rowfn(void))[3] { return 0; } "
@@ -10641,8 +10687,7 @@ static void test_expr_generic() {
   node_t *ret_parenthesized_nested_fp =
       as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_nested_fp->kind);
-  ASSERT_EQ(ND_NUM, ret_parenthesized_nested_fp->lhs->kind);
-  ASSERT_EQ(23, as_num(ret_parenthesized_nested_fp->lhs)->val);
+  assert_selected_generic_number(ret_parenthesized_nested_fp->lhs, 23);
 
   parsed_code = parse_program_input(
       "int (*__tm_gen_growfn(void))[3] { return 0; } "
@@ -10651,8 +10696,8 @@ static void test_expr_generic() {
   node_t *ret_parenthesized_global_nested_fp =
       as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_global_nested_fp->kind);
-  ASSERT_EQ(ND_NUM, ret_parenthesized_global_nested_fp->lhs->kind);
-  ASSERT_EQ(29, as_num(ret_parenthesized_global_nested_fp->lhs)->val);
+  assert_selected_generic_number(
+      ret_parenthesized_global_nested_fp->lhs, 29);
 
   reset_test_locals();
   char synthetic_nested_name[] = "p";
@@ -10667,8 +10712,7 @@ static void test_expr_generic() {
   ASSERT_TRUE(synthetic_nested != NULL);
   node_t *ret_structural_nested_fp = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(p, int (*(*)(void))[3]: 31, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_nested_fp->kind);
-  ASSERT_EQ(31, as_num(ret_structural_nested_fp)->val);
+  assert_selected_generic_number(ret_structural_nested_fp, 31);
 
   reset_test_locals();
   char synthetic_ret_funcptr_name[] = "q";
@@ -10694,16 +10738,14 @@ static void test_expr_generic() {
       ps_node_get_type(synthetic_ret_funcptr_ref), "p<p<i32(i32)>()>");
   node_t *ret_structural_ret_funcptr = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(q, int (*(*)(void))(int): 37, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_ret_funcptr->kind);
-  ASSERT_EQ(37, as_num(ret_structural_ret_funcptr)->val);
+  assert_selected_generic_number(ret_structural_ret_funcptr, 37);
   node_t *ret_structural_ret_funcptr_nomatch = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(q, int (*(*)(void))(double): 41, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_ret_funcptr_nomatch->kind);
-  ASSERT_EQ(7, as_num(ret_structural_ret_funcptr_nomatch)->val);
+  assert_selected_generic_number(ret_structural_ret_funcptr_nomatch, 7);
   node_t *ret_structural_ret_funcptr_ret_nomatch = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(q, double (*(*)(void))(int): 43, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_ret_funcptr_ret_nomatch->kind);
-  ASSERT_EQ(7, as_num(ret_structural_ret_funcptr_ret_nomatch)->val);
+  assert_selected_generic_number(
+      ret_structural_ret_funcptr_ret_nomatch, 7);
 
   reset_test_locals();
   char synthetic_double_ret_funcptr_name[] = "r";
@@ -10727,12 +10769,12 @@ static void test_expr_generic() {
       synthetic_double_ret_funcptr_ty, "p<p<f64(i32)>()>");
   node_t *ret_structural_double_ret_funcptr = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(r, double (*(*)(void))(int): 47, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_double_ret_funcptr->kind);
-  ASSERT_EQ(47, as_num(ret_structural_double_ret_funcptr)->val);
+  assert_selected_generic_number(
+      ret_structural_double_ret_funcptr, 47);
   node_t *ret_structural_double_ret_funcptr_nomatch = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(r, int (*(*)(void))(int): 49, default: 7)");
-  ASSERT_EQ(ND_NUM, ret_structural_double_ret_funcptr_nomatch->kind);
-  ASSERT_EQ(7, as_num(ret_structural_double_ret_funcptr_nomatch)->val);
+  assert_selected_generic_number(
+      ret_structural_double_ret_funcptr_nomatch, 7);
 
   expect_parse_ok(
       "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
@@ -10742,15 +10784,13 @@ static void test_expr_generic() {
       "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
   node_t *ret_struct = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_struct->kind);
-  ASSERT_EQ(ND_NUM, ret_struct->lhs->kind);
-  ASSERT_EQ(1, as_num(ret_struct->lhs)->val);
+  assert_selected_generic_number(ret_struct->lhs, 1);
 
   parsed_code = parse_program_input(
       "int main(){ struct S{int x;}; struct T{int x;}; return _Generic((struct S){1}, struct T: 1, default: 2); }");
   node_t *ret_struct_nomatch = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_struct_nomatch->kind);
-  ASSERT_EQ(ND_NUM, ret_struct_nomatch->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_struct_nomatch->lhs)->val);
+  assert_selected_generic_number(ret_struct_nomatch->lhs, 2);
   expect_parse_ok(
       "int main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
   expect_parse_ok(
@@ -10763,141 +10803,121 @@ static void test_expr_generic() {
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }");
   node_t *ret_ptr_kind = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_kind->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_kind->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_kind->lhs)->val);
+  assert_selected_generic_number(ret_ptr_kind->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }");
   node_t *ret_ptr_fp = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_fp->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_fp->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_fp->lhs)->val);
+  assert_selected_generic_number(ret_ptr_fp->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }");
   node_t *ret_ptr_tag = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_tag->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_tag->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_tag->lhs)->val);
+  assert_selected_generic_number(ret_ptr_tag->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
   node_t *ret_ptr_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_const->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_const->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_const->lhs)->val);
+  assert_selected_generic_number(ret_ptr_const->lhs, 2);
 
   parsed_code = parse_program_input(
       "typedef const int *cip_t; int main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
   node_t *ret_typedef_const_ptr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_const_ptr->kind);
-  ASSERT_EQ(ND_NUM, ret_typedef_const_ptr->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_typedef_const_ptr->lhs)->val);
+  assert_selected_generic_number(ret_typedef_const_ptr->lhs, 2);
 
   parsed_code = parse_program_input(
       "typedef volatile int *vip_t; int main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }");
   node_t *ret_typedef_volatile_ptr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_volatile_ptr->kind);
-  ASSERT_EQ(ND_NUM, ret_typedef_volatile_ptr->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_typedef_volatile_ptr->lhs)->val);
+  assert_selected_generic_number(ret_typedef_volatile_ptr->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }");
   node_t *ret_ptr_ptr_kind = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[5];
   ASSERT_EQ(ND_RETURN, ret_ptr_ptr_kind->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_ptr_kind->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_ptr_kind->lhs)->val);
+  assert_selected_generic_number(ret_ptr_ptr_kind->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
   node_t *ret_ptr_unsigned = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_unsigned->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_unsigned->lhs)->val);
+  assert_selected_generic_number(ret_ptr_unsigned->lhs, 2);
 
   parsed_code = parse_program_input(
       "typedef unsigned int *uip_t; int main(){ unsigned int u=0; uip_t pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
   node_t *ret_ptr_unsigned_typedef = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned_typedef->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_unsigned_typedef->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_unsigned_typedef->lhs)->val);
+  assert_selected_generic_number(ret_ptr_unsigned_typedef->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int *p=&x; int * const *pp=&p; return _Generic(pp, int**:1, int * const *:2, default:3); }");
   node_t *ret_ptr_level_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_const->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_level_const->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_level_const->lhs)->val);
+  assert_selected_generic_number(ret_ptr_level_const->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }");
   node_t *ret_ptr_level_volatile = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_volatile->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_level_volatile->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_level_volatile->lhs)->val);
+  assert_selected_generic_number(ret_ptr_level_volatile->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }");
   node_t *ret_unsigned_long = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_unsigned_long->kind);
-  ASSERT_EQ(ND_NUM, ret_unsigned_long->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_unsigned_long->lhs)->val);
+  assert_selected_generic_number(ret_unsigned_long->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }");
   node_t *ret_long_signed = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_long_signed->kind);
-  ASSERT_EQ(ND_NUM, ret_long_signed->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_long_signed->lhs)->val);
+  assert_selected_generic_number(ret_long_signed->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((1 ? (char)1 : (char)2), char:1, int:2, default:3); }");
   node_t *ret_ternary_promoted_char = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_promoted_char->kind);
-  ASSERT_EQ(ND_NUM, ret_ternary_promoted_char->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ternary_promoted_char->lhs)->val);
+  assert_selected_generic_number(ret_ternary_promoted_char->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((1 ? (long double)1.0 : (double)2.0), long double:4, double:5, default:6); }");
   node_t *ret_ternary_long_double = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_long_double->kind);
-  ASSERT_EQ(ND_NUM, ret_ternary_long_double->lhs->kind);
-  ASSERT_EQ(4, as_num(ret_ternary_long_double->lhs)->val);
+  assert_selected_generic_number(ret_ternary_long_double->lhs, 4);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((long double){1.0}, long double:4, double:5, default:6); }");
   node_t *ret_compound_long_double = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_compound_long_double->kind);
-  ASSERT_EQ(ND_NUM, ret_compound_long_double->lhs->kind);
-  ASSERT_EQ(4, as_num(ret_compound_long_double->lhs)->val);
+  assert_selected_generic_number(ret_compound_long_double->lhs, 4);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((_Complex double)1, double:5, _Complex double:4, default:6); }");
   node_t *ret_complex_cast = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_complex_cast->kind);
-  ASSERT_EQ(ND_NUM, ret_complex_cast->lhs->kind);
-  ASSERT_EQ(4, as_num(ret_complex_cast->lhs)->val);
+  assert_selected_generic_number(ret_complex_cast->lhs, 4);
 
   parsed_code = parse_program_input(
       "int main(){ _Complex double z=1; return _Generic(z, double:5, _Complex double:4, default:6); }");
   node_t *ret_complex_lvar = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_complex_lvar->kind);
-  ASSERT_EQ(ND_NUM, ret_complex_lvar->lhs->kind);
-  ASSERT_EQ(4, as_num(ret_complex_lvar->lhs)->val);
+  assert_selected_generic_number(ret_complex_lvar->lhs, 4);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic(1, int const:2, default:3); }");
   node_t *ret_int_post_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_int_post_const->kind);
-  ASSERT_EQ(ND_NUM, ret_int_post_const->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_int_post_const->lhs)->val);
+  assert_selected_generic_number(ret_int_post_const->lhs, 2);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }");
   node_t *ret_ptr_post_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_post_const->kind);
-  ASSERT_EQ(ND_NUM, ret_ptr_post_const->lhs->kind);
-  ASSERT_EQ(2, as_num(ret_ptr_post_const->lhs)->val);
+  assert_selected_generic_number(ret_ptr_post_const->lhs, 2);
 }
 
 static void test_expr_sizeof() {

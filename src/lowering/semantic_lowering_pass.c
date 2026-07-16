@@ -5,7 +5,6 @@
 #include "cast_lowering.h"
 #include "compound_literal_lowering.h"
 #include "expr_lowering.h"
-#include "generic_selection_lowering.h"
 #include "initializer_lowering.h"
 #include "member_access_lowering.h"
 #include "runtime_context.h"
@@ -125,11 +124,15 @@ static node_t *lower_tree(
                  : lower_tree(
                        context, node, fallback_diag_tok);
     case ND_GENERIC_SELECTION: {
-      node_t *selected = lower_generic_selection_expression(node);
-      return selected == node
-                 ? node
-                 : lower_tree(
-                       context, selected, fallback_diag_tok);
+      node_generic_selection_t *selection =
+          (node_generic_selection_t *)node;
+      int selected = selection->selected_index;
+      if (selected >= 0 && selected < selection->association_count) {
+        selection->associations[selected].expression = lower_tree(
+            context, selection->associations[selected].expression,
+            fallback_diag_tok);
+      }
+      break;
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
@@ -368,6 +371,18 @@ void psx_lower_implicit_conversions(
             fallback_diag_tok, options);
       lower_call_arguments(
           lowering_context, call, fallback_diag_tok, options);
+      break;
+    }
+    case ND_GENERIC_SELECTION: {
+      node_generic_selection_t *selection =
+          (node_generic_selection_t *)node;
+      int selected = selection->selected_index;
+      if (selected >= 0 && selected < selection->association_count) {
+        psx_lower_implicit_conversions(
+            lowering_context,
+            selection->associations[selected].expression,
+            current_func, fallback_diag_tok, options);
+      }
       break;
     }
     case ND_IF:

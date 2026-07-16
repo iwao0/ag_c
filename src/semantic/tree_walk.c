@@ -30,6 +30,17 @@ static int walk_node(
       }
       break;
     }
+    case ND_GENERIC_SELECTION: {
+      const node_generic_selection_t *selection =
+          (const node_generic_selection_t *)node;
+      int selected = selection->selected_index;
+      if (selected >= 0 && selected < selection->association_count) {
+        return walk_node(
+            selection->associations[selected].expression,
+            visitor, user);
+      }
+      return 1;
+    }
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {

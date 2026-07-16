@@ -5728,6 +5728,23 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
     "typed unary dereference must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
+if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/selection->associations\[selected\]\.expression/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /\blower_generic_selection_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) =>
+        /src\/lowering\/generic_selection_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "resolved generic selection must materialize only its selected expression directly into Typed HIR",
+  );
+}
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
       compilationSession,
     )) {
