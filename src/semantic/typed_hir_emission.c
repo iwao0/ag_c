@@ -63,10 +63,14 @@ static psx_hir_node_id_t emit_node(
   }
 
   psx_hir_node_id_t result = PSX_HIR_NODE_ID_INVALID;
-  if (source->role == PSX_HIR_ROLE_EXPRESSION) {
+  int is_expression =
+      psx_hir_kind_is_expression(source->spec.kind);
+  if (is_expression) {
+    const psx_resolved_hir_expression_t *typed_expression =
+        (const psx_resolved_hir_expression_t *)source;
     psx_hir_expression_spec_t expression = {
         .node = spec,
-        .qual_type = source->expression_type,
+        .qual_type = typed_expression->qual_type,
     };
     result = psx_hir_module_add_expression(
         emitter->module, &expression);
@@ -79,7 +83,7 @@ static psx_hir_node_id_t emit_node(
   if (result == PSX_HIR_NODE_ID_INVALID) {
     set_failure(
         emitter,
-        source->role == PSX_HIR_ROLE_EXPRESSION
+        is_expression
             ? PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE
             : PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
         source);

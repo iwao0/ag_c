@@ -56,6 +56,7 @@ typedef struct {
   unsigned char is_thread_local;
 } psx_hir_symbol_spec_t;
 
+int psx_hir_kind_is_expression(psx_hir_node_kind_t kind);
 size_t psx_hir_module_checkpoint(const psx_hir_module_t *module);
 size_t psx_hir_module_symbol_checkpoint(const psx_hir_module_t *module);
 void psx_hir_module_rollback(

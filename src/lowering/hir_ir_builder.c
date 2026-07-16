@@ -94,12 +94,20 @@ static ir_abi_param_info_t classify_node_type(
 
 static psx_type_kind_t node_type_kind(
     const hir_ir_context_t *context, const psx_hir_node_t *node) {
-  const psx_type_t *type = node
-                               ? psx_semantic_type_table_lookup(
-                                     context->options->semantic_types,
-                                     psx_hir_node_qual_type(node).type_id)
-                               : NULL;
+  const psx_type_t *type =
+      node ? psx_semantic_type_table_lookup(
+                 context->options->semantic_types,
+                 psx_hir_node_qual_type(node).type_id)
+           : NULL;
   return type ? type->kind : PSX_TYPE_INVALID;
+}
+
+static const psx_type_t *node_semantic_type(
+    const hir_ir_context_t *context, const psx_hir_node_t *node) {
+  return node ? psx_semantic_type_table_lookup(
+                    context->options->semantic_types,
+                    psx_hir_node_qual_type(node).type_id)
+              : NULL;
 }
 
 static ir_val_t unsupported_expr(hir_ir_context_t *context) {
@@ -1082,6 +1090,139 @@ static int hir_node_is_lvalue(const psx_hir_node_t *node) {
          kind == PSX_HIR_MEMBER_ACCESS;
 }
 
+static int semantic_type_is_pointer_like(const psx_type_t *type) {
+  return type && (type->kind == PSX_TYPE_POINTER ||
+                  type->kind == PSX_TYPE_ARRAY);
+}
+
+static ir_val_t pointer_stride_value(
+    hir_ir_context_t *context, const psx_hir_node_t *pointer) {
+  int stride_offset = psx_hir_node_vla_stride_frame_offset(pointer);
+  if (stride_offset != 0) {
+    int slot_size = psx_hir_node_vla_stride_slot_size(pointer);
+    if (slot_size < 8) return unsupported_expr(context);
+    int stride_pointer = local_storage_address(
+        context, stride_offset, slot_size, 8);
+    if (stride_pointer < 0) return ir_val_none();
+    int stride_vreg = new_vreg(context);
+    if (stride_vreg < 0) return ir_val_none();
+    ir_inst_t *load = ir_inst_new(IR_LOAD);
+    if (!load) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    load->dst = ir_val_vreg(stride_vreg, IR_TY_I64);
+    load->src1 = ir_val_vreg(stride_pointer, IR_TY_PTR);
+    if (!append_instruction(context, load)) return ir_val_none();
+    return load->dst;
+  }
+
+  psx_qual_type_t element_type = psx_semantic_type_table_base(
+      context->options->semantic_types,
+      psx_hir_node_qual_type(pointer).type_id);
+  int stride_bytes = ps_type_sizeof_id_with_records(
+      context->options->semantic_types,
+      context->options->record_layouts,
+      element_type.type_id, context->options->target);
+  if (stride_bytes <= 0) return unsupported_expr(context);
+  return ir_val_imm(IR_TY_I64, stride_bytes);
+}
+
+static ir_val_t pointer_with_element_offset(
+    hir_ir_context_t *context, const psx_hir_node_t *pointer_node,
+    ir_val_t pointer, const psx_hir_node_t *index_node,
+    ir_val_t index, int subtract) {
+  ir_abi_param_info_t index_type =
+      classify_node_type(context, index_node);
+  if (pointer.type != IR_TY_PTR ||
+      index_type.param_class != IR_ABI_PARAM_INTEGER ||
+      !is_integer_ir_type(index.type))
+    return unsupported_expr(context);
+  index = emit_integer_width_conversion(
+      context, index, IR_TY_I64, !index_type.is_unsigned);
+  ir_val_t stride = pointer_stride_value(context, pointer_node);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t byte_offset = emit_integer_binary(
+      context, IR_MUL, index, stride, IR_TY_I64);
+  if (subtract && context->status == IR_HIR_BUILD_OK) {
+    byte_offset = emit_integer_binary(
+        context, IR_SUB, ir_val_imm(IR_TY_I64, 0),
+        byte_offset, IR_TY_I64);
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int result = new_vreg(context);
+  if (result < 0) return ir_val_none();
+  ir_inst_t *lea = ir_inst_new(IR_LEA);
+  if (!lea) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  lea->dst = ir_val_vreg(result, IR_TY_PTR);
+  lea->src1 = pointer;
+  lea->src2 = byte_offset;
+  if (!append_instruction(context, lea)) return ir_val_none();
+  return lea->dst;
+}
+
+static int try_build_pointer_arithmetic(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    const psx_hir_node_t *lhs, const psx_hir_node_t *rhs,
+    ir_abi_param_info_t result_type, ir_val_t *result) {
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB) return 0;
+  const psx_type_t *left_semantic_type =
+      node_semantic_type(context, lhs);
+  const psx_type_t *right_semantic_type =
+      node_semantic_type(context, rhs);
+  int left_pointer =
+      semantic_type_is_pointer_like(left_semantic_type);
+  int right_pointer =
+      semantic_type_is_pointer_like(right_semantic_type);
+  if (!left_pointer && !right_pointer) return 0;
+
+  ir_val_t left = build_expr(context, lhs);
+  ir_val_t right = build_expr(context, rhs);
+  if (context->status != IR_HIR_BUILD_OK) {
+    *result = ir_val_none();
+    return 1;
+  }
+  if (left_pointer && right_pointer) {
+    if (kind != PSX_HIR_SUB ||
+        left.type != IR_TY_PTR || right.type != IR_TY_PTR ||
+        result_type.param_class != IR_ABI_PARAM_INTEGER) {
+      *result = unsupported_expr(context);
+      return 1;
+    }
+    ir_val_t byte_difference = emit_integer_binary(
+        context, IR_SUB, left, right, IR_TY_I64);
+    ir_val_t stride = pointer_stride_value(context, lhs);
+    if (context->status == IR_HIR_BUILD_OK &&
+        !(stride.id == IR_VAL_IMM && stride.imm == 1)) {
+      byte_difference = emit_integer_binary(
+          context, IR_DIV, byte_difference, stride, IR_TY_I64);
+    }
+    if (context->status == IR_HIR_BUILD_OK) {
+      byte_difference = emit_integer_width_conversion(
+          context, byte_difference,
+          scalar_storage_type(result_type), 1);
+    }
+    *result = byte_difference;
+    return 1;
+  }
+  if (left_pointer) {
+    *result = pointer_with_element_offset(
+        context, lhs, left, rhs, right, kind == PSX_HIR_SUB);
+    return 1;
+  }
+  if (kind != PSX_HIR_ADD) {
+    *result = unsupported_expr(context);
+    return 1;
+  }
+  *result = pointer_with_element_offset(
+      context, rhs, right, lhs, left, 0);
+  return 1;
+}
+
 static ir_val_t subscript_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   const psx_hir_node_t *base = child_for_edge(
@@ -1110,35 +1251,7 @@ static ir_val_t subscript_address(
       context, index_value, IR_TY_I64, !index_type.is_unsigned);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
 
-  ir_val_t stride = ir_val_none();
-  int stride_offset = psx_hir_node_vla_stride_frame_offset(base);
-  if (stride_offset != 0) {
-    int slot_size = psx_hir_node_vla_stride_slot_size(base);
-    if (slot_size < 8) return unsupported_expr(context);
-    int stride_pointer = local_storage_address(
-        context, stride_offset, slot_size, 8);
-    if (stride_pointer < 0) return ir_val_none();
-    int stride_vreg = new_vreg(context);
-    if (stride_vreg < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(stride_vreg, IR_TY_I64);
-    load->src1 = ir_val_vreg(stride_pointer, IR_TY_PTR);
-    if (!append_instruction(context, load)) return ir_val_none();
-    stride = load->dst;
-  } else {
-    psx_qual_type_t element_type = psx_semantic_type_table_base(
-        context->options->semantic_types, base_qual_type.type_id);
-    int stride_bytes = ps_type_sizeof_id_with_records(
-        context->options->semantic_types,
-        context->options->record_layouts,
-        element_type.type_id, context->options->target);
-    if (stride_bytes <= 0) return unsupported_expr(context);
-    stride = ir_val_imm(IR_TY_I64, stride_bytes);
-  }
+  ir_val_t stride = pointer_stride_value(context, base);
 
   ir_val_t byte_offset = emit_integer_binary(
       context, IR_MUL, index_value, stride, IR_TY_I64);
@@ -1631,12 +1744,14 @@ static ir_val_t build_complex_component(
   const psx_hir_node_t *operand = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   int is_real = psx_hir_node_kind(node) == PSX_HIR_CREAL;
-  if (!operand || !is_float_abi_type(result_type))
+  if (!operand || !is_direct_value_abi_type(result_type))
     return unsupported_expr(context);
   ir_abi_param_info_t operand_type = classify_node_type(
       context, operand);
   if (!is_complex_abi_type(operand_type)) {
     if (!is_real) {
+      if (!is_float_abi_type(result_type))
+        return ir_val_imm(result_type.type, 0);
       int zero_vreg = new_vreg(context);
       if (zero_vreg < 0) return ir_val_none();
       ir_inst_t *zero = ir_inst_new(IR_LOAD_FP_IMM);
@@ -1655,6 +1770,8 @@ static ir_val_t build_complex_component(
           context, value, operand_type, result_type);
     return value;
   }
+  if (!is_float_abi_type(result_type))
+    return unsupported_expr(context);
   if (operand_type.type != result_type.type)
     return unsupported_expr(context);
   ir_val_t value = build_expr(context, operand);
@@ -2237,6 +2354,23 @@ static ir_val_t build_compound_assignment(
   result = coerce_direct_value(
       context, result, operation_type, target_type);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  const psx_type_t *target_semantic_type =
+      node_semantic_type(context, target);
+  if (target_semantic_type &&
+      target_semantic_type->kind == PSX_TYPE_BOOL) {
+    result = scalar_truth_value(context, result);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    result = coerce_direct_value(
+        context, result,
+        (ir_abi_param_info_t){
+            .type = IR_TY_I32,
+            .param_class = IR_ABI_PARAM_INTEGER,
+            .source_size = 4,
+            .is_unsigned = 1,
+        },
+        target_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  }
   if (is_bitfield)
     return emit_bitfield_store(
         context, pointer, result, bit_width, bit_offset);
@@ -3459,6 +3593,10 @@ static ir_val_t build_expr(
   const psx_hir_node_t *rhs = child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
   if (!lhs || !rhs) return unsupported_expr(context);
+  ir_val_t pointer_result = ir_val_none();
+  if (try_build_pointer_arithmetic(
+          context, node, lhs, rhs, type, &pointer_result))
+    return pointer_result;
   ir_val_t left = build_expr(context, lhs);
   ir_val_t right = build_expr(context, rhs);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();

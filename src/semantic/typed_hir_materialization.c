@@ -72,76 +72,72 @@ static int append_child(
 }
 
 static int map_kind(
-    psx_work_node_kind_t source, psx_hir_node_kind_t *kind,
-    psx_hir_node_role_t *role) {
-#define MAP_EXPR(source_kind, hir_kind) \
-  case source_kind: *kind = hir_kind; *role = PSX_HIR_ROLE_EXPRESSION; return 1
-#define MAP_STMT(source_kind, hir_kind) \
-  case source_kind: *kind = hir_kind; *role = PSX_HIR_ROLE_STATEMENT; return 1
+    psx_work_node_kind_t source, psx_hir_node_kind_t *kind) {
+#define MAP(source_kind, hir_kind) \
+  case source_kind: *kind = hir_kind; return 1
   switch (source) {
-    MAP_EXPR(ND_ADD, PSX_HIR_ADD);
-    MAP_EXPR(ND_SUB, PSX_HIR_SUB);
-    MAP_EXPR(ND_MUL, PSX_HIR_MUL);
-    MAP_EXPR(ND_DIV, PSX_HIR_DIV);
-    MAP_EXPR(ND_MOD, PSX_HIR_MOD);
-    MAP_EXPR(ND_EQ, PSX_HIR_EQ);
-    MAP_EXPR(ND_NE, PSX_HIR_NE);
-    MAP_EXPR(ND_LT, PSX_HIR_LT);
-    MAP_EXPR(ND_LE, PSX_HIR_LE);
-    MAP_EXPR(ND_BITAND, PSX_HIR_BITAND);
-    MAP_EXPR(ND_BITXOR, PSX_HIR_BITXOR);
-    MAP_EXPR(ND_BITOR, PSX_HIR_BITOR);
-    MAP_EXPR(ND_SHL, PSX_HIR_SHL);
-    MAP_EXPR(ND_SHR, PSX_HIR_SHR);
-    MAP_EXPR(ND_LOGAND, PSX_HIR_LOGAND);
-    MAP_EXPR(ND_LOGOR, PSX_HIR_LOGOR);
-    MAP_EXPR(ND_TERNARY, PSX_HIR_TERNARY);
-    MAP_EXPR(ND_COMMA, PSX_HIR_COMMA);
-    MAP_EXPR(ND_ASSIGN, PSX_HIR_ASSIGN);
-    MAP_EXPR(ND_LVAR, PSX_HIR_LOCAL);
-    MAP_STMT(ND_IF, PSX_HIR_IF);
-    MAP_STMT(ND_WHILE, PSX_HIR_WHILE);
-    MAP_STMT(ND_DO_WHILE, PSX_HIR_DO_WHILE);
-    MAP_STMT(ND_FOR, PSX_HIR_FOR);
-    MAP_STMT(ND_SWITCH, PSX_HIR_SWITCH);
-    MAP_STMT(ND_CASE, PSX_HIR_CASE);
-    MAP_STMT(ND_DEFAULT, PSX_HIR_DEFAULT);
-    MAP_STMT(ND_BREAK, PSX_HIR_BREAK);
-    MAP_STMT(ND_CONTINUE, PSX_HIR_CONTINUE);
-    MAP_STMT(ND_GOTO, PSX_HIR_GOTO);
-    MAP_STMT(ND_LABEL, PSX_HIR_LABEL);
-    MAP_EXPR(ND_PRE_INC, PSX_HIR_PRE_INC);
-    MAP_EXPR(ND_PRE_DEC, PSX_HIR_PRE_DEC);
-    MAP_EXPR(ND_POST_INC, PSX_HIR_POST_INC);
-    MAP_EXPR(ND_POST_DEC, PSX_HIR_POST_DEC);
-    MAP_STMT(ND_RETURN, PSX_HIR_RETURN);
-    MAP_STMT(ND_BLOCK, PSX_HIR_BLOCK);
-    MAP_STMT(ND_FUNCDEF, PSX_HIR_FUNCTION);
-    MAP_EXPR(ND_FUNCALL, PSX_HIR_CALL);
-    MAP_EXPR(ND_FUNCREF, PSX_HIR_FUNCTION_REF);
-    MAP_EXPR(ND_UNARY_NEGATE, PSX_HIR_NEGATE);
-    MAP_EXPR(ND_UNARY_DEREF, PSX_HIR_DEREF);
-    MAP_EXPR(ND_DEREF, PSX_HIR_DEREF);
-    MAP_EXPR(ND_SUBSCRIPT, PSX_HIR_SUBSCRIPT);
-    MAP_EXPR(ND_MEMBER_ACCESS, PSX_HIR_MEMBER_ACCESS);
-    MAP_EXPR(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
-    MAP_EXPR(ND_ADDR, PSX_HIR_ADDRESS);
-    MAP_EXPR(ND_STRING, PSX_HIR_STRING);
-    MAP_EXPR(ND_NUM, PSX_HIR_NUMBER);
-    MAP_EXPR(ND_GVAR, PSX_HIR_GLOBAL);
-    MAP_STMT(ND_VLA_ALLOC, PSX_HIR_VLA_ALLOC);
-    MAP_EXPR(ND_FP_TO_INT, PSX_HIR_FP_TO_INT);
-    MAP_EXPR(ND_INT_TO_FP, PSX_HIR_INT_TO_FP);
-    MAP_EXPR(ND_VA_ARG_AREA, PSX_HIR_VA_ARG_AREA);
-    MAP_EXPR(ND_CAST, PSX_HIR_CAST);
-    MAP_EXPR(ND_CREAL, PSX_HIR_CREAL);
-    MAP_EXPR(ND_CIMAG, PSX_HIR_CIMAG);
-    MAP_EXPR(ND_STMT_EXPR, PSX_HIR_STMT_EXPR);
+    MAP(ND_ADD, PSX_HIR_ADD);
+    MAP(ND_SUB, PSX_HIR_SUB);
+    MAP(ND_MUL, PSX_HIR_MUL);
+    MAP(ND_DIV, PSX_HIR_DIV);
+    MAP(ND_MOD, PSX_HIR_MOD);
+    MAP(ND_EQ, PSX_HIR_EQ);
+    MAP(ND_NE, PSX_HIR_NE);
+    MAP(ND_LT, PSX_HIR_LT);
+    MAP(ND_LE, PSX_HIR_LE);
+    MAP(ND_BITAND, PSX_HIR_BITAND);
+    MAP(ND_BITXOR, PSX_HIR_BITXOR);
+    MAP(ND_BITOR, PSX_HIR_BITOR);
+    MAP(ND_SHL, PSX_HIR_SHL);
+    MAP(ND_SHR, PSX_HIR_SHR);
+    MAP(ND_LOGAND, PSX_HIR_LOGAND);
+    MAP(ND_LOGOR, PSX_HIR_LOGOR);
+    MAP(ND_TERNARY, PSX_HIR_TERNARY);
+    MAP(ND_COMMA, PSX_HIR_COMMA);
+    MAP(ND_ASSIGN, PSX_HIR_ASSIGN);
+    MAP(ND_LVAR, PSX_HIR_LOCAL);
+    MAP(ND_IF, PSX_HIR_IF);
+    MAP(ND_WHILE, PSX_HIR_WHILE);
+    MAP(ND_DO_WHILE, PSX_HIR_DO_WHILE);
+    MAP(ND_FOR, PSX_HIR_FOR);
+    MAP(ND_SWITCH, PSX_HIR_SWITCH);
+    MAP(ND_CASE, PSX_HIR_CASE);
+    MAP(ND_DEFAULT, PSX_HIR_DEFAULT);
+    MAP(ND_BREAK, PSX_HIR_BREAK);
+    MAP(ND_CONTINUE, PSX_HIR_CONTINUE);
+    MAP(ND_GOTO, PSX_HIR_GOTO);
+    MAP(ND_LABEL, PSX_HIR_LABEL);
+    MAP(ND_PRE_INC, PSX_HIR_PRE_INC);
+    MAP(ND_PRE_DEC, PSX_HIR_PRE_DEC);
+    MAP(ND_POST_INC, PSX_HIR_POST_INC);
+    MAP(ND_POST_DEC, PSX_HIR_POST_DEC);
+    MAP(ND_RETURN, PSX_HIR_RETURN);
+    MAP(ND_BLOCK, PSX_HIR_BLOCK);
+    MAP(ND_FUNCDEF, PSX_HIR_FUNCTION);
+    MAP(ND_FUNCALL, PSX_HIR_CALL);
+    MAP(ND_FUNCREF, PSX_HIR_FUNCTION_REF);
+    MAP(ND_UNARY_NEGATE, PSX_HIR_NEGATE);
+    MAP(ND_UNARY_DEREF, PSX_HIR_DEREF);
+    MAP(ND_DEREF, PSX_HIR_DEREF);
+    MAP(ND_SUBSCRIPT, PSX_HIR_SUBSCRIPT);
+    MAP(ND_MEMBER_ACCESS, PSX_HIR_MEMBER_ACCESS);
+    MAP(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
+    MAP(ND_ADDR, PSX_HIR_ADDRESS);
+    MAP(ND_STRING, PSX_HIR_STRING);
+    MAP(ND_NUM, PSX_HIR_NUMBER);
+    MAP(ND_GVAR, PSX_HIR_GLOBAL);
+    MAP(ND_VLA_ALLOC, PSX_HIR_VLA_ALLOC);
+    MAP(ND_FP_TO_INT, PSX_HIR_FP_TO_INT);
+    MAP(ND_INT_TO_FP, PSX_HIR_INT_TO_FP);
+    MAP(ND_VA_ARG_AREA, PSX_HIR_VA_ARG_AREA);
+    MAP(ND_CAST, PSX_HIR_CAST);
+    MAP(ND_CREAL, PSX_HIR_CREAL);
+    MAP(ND_CIMAG, PSX_HIR_CIMAG);
+    MAP(ND_STMT_EXPR, PSX_HIR_STMT_EXPR);
     default:
       return 0;
   }
-#undef MAP_EXPR
-#undef MAP_STMT
+#undef MAP
 }
 
 static int compound_operator(
@@ -166,12 +162,26 @@ static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source);
 static psx_resolved_hir_node_t *materialize_node_record(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
-    psx_hir_node_role_t role, psx_qual_type_t qual_type,
     const hir_children_t *children,
     const psx_hir_symbol_spec_t *symbol,
-    const node_t *source);
+    const node_t *source, size_t storage_size);
 static int canonical_type_exists(
     const hir_materializer_t *builder, psx_qual_type_t type);
+static psx_qual_type_t resolved_expression_type(
+    const psx_resolved_hir_node_t *node);
+
+static psx_resolved_hir_node_t *materialize_expression_spec(
+    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
+    psx_qual_type_t qual_type, const hir_children_t *children,
+    const psx_hir_symbol_spec_t *symbol, const node_t *source) {
+  psx_resolved_hir_expression_t *expression =
+      (psx_resolved_hir_expression_t *)materialize_node_record(
+          builder, spec, children, symbol, source,
+          sizeof(*expression));
+  if (!expression) return NULL;
+  expression->qual_type = qual_type;
+  return &expression->node;
+}
 
 static psx_resolved_hir_node_t *materialize_expression(
     hir_materializer_t *builder, psx_hir_node_kind_t kind,
@@ -182,9 +192,18 @@ static psx_resolved_hir_node_t *materialize_expression(
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
-  return materialize_node_record(
-      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
-      children, NULL, source);
+  return materialize_expression_spec(
+      builder, &spec, qual_type, children, NULL, source);
+}
+
+static psx_resolved_hir_node_t *materialize_statement(
+    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
+    const hir_children_t *children, const node_t *source) {
+  psx_resolved_hir_statement_t *statement =
+      (psx_resolved_hir_statement_t *)materialize_node_record(
+          builder, spec, children, NULL, source,
+          sizeof(*statement));
+  return statement ? &statement->node : NULL;
 }
 
 static psx_resolved_hir_node_t *materialize_comma(
@@ -219,7 +238,7 @@ static int materialize_sizeof_vla_indices(
     return 1;
   }
   *prefix = materialize_comma(
-      builder, *prefix, index, index->expression_type, source);
+      builder, *prefix, index, resolved_expression_type(index), source);
   return *prefix != NULL;
 }
 
@@ -238,9 +257,8 @@ static psx_resolved_hir_node_t *materialize_sizeof_value(
         .object_size = PSX_VLA_RUNTIME_SLOT_SIZE,
         .object_align = PSX_VLA_RUNTIME_SLOT_SIZE,
     };
-    return materialize_node_record(
-        builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
-        NULL, NULL, &query->base);
+    return materialize_expression_spec(
+        builder, &spec, qual_type, NULL, NULL, &query->base);
   }
   psx_hir_node_spec_t spec = {
       .kind = PSX_HIR_NUMBER,
@@ -248,9 +266,8 @@ static psx_resolved_hir_node_t *materialize_sizeof_value(
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .integer_value = query->resolved_size,
   };
-  return materialize_node_record(
-      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
-      NULL, NULL, &query->base);
+  return materialize_expression_spec(
+      builder, &spec, qual_type, NULL, NULL, &query->base);
 }
 
 static psx_resolved_hir_node_t *materialize_sizeof_query(
@@ -291,19 +308,16 @@ static int is_statement_expression_value(
 
 static psx_resolved_hir_node_t *materialize_node_record(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
-    psx_hir_node_role_t role, psx_qual_type_t qual_type,
     const hir_children_t *children,
     const psx_hir_symbol_spec_t *symbol,
-    const node_t *source) {
+    const node_t *source, size_t storage_size) {
   psx_resolved_hir_node_t *node = arena_alloc_in(
-      builder->arena_context, sizeof(*node));
+      builder->arena_context, storage_size);
   if (!node) {
     set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
     return NULL;
   }
   node->spec = *spec;
-  node->role = role;
-  node->expression_type = qual_type;
   node->source_node_kind = source ? (int)source->kind : -1;
   node->spec.children = NULL;
   node->spec.child_edges = NULL;
@@ -331,6 +345,15 @@ static psx_resolved_hir_node_t *materialize_node_record(
   return node;
 }
 
+static psx_qual_type_t resolved_expression_type(
+    const psx_resolved_hir_node_t *node) {
+  if (!node || !psx_hir_kind_is_expression(node->spec.kind)) {
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  return ((const psx_resolved_hir_expression_t *)node)->qual_type;
+}
+
 static psx_resolved_hir_node_t *build_statement_expression_prefix(
     hir_materializer_t *builder, const node_t *source) {
   const node_block_t *block =
@@ -356,11 +379,8 @@ static psx_resolved_hir_node_t *build_statement_expression_prefix(
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
-  psx_resolved_hir_node_t *result = materialize_node_record(
-      builder, &spec, PSX_HIR_ROLE_STATEMENT,
-      (psx_qual_type_t){
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      &children, NULL, source);
+  psx_resolved_hir_node_t *result = materialize_statement(
+      builder, &spec, &children, source);
   free(children.items);
   free(children.edges);
   return result;
@@ -455,7 +475,7 @@ static psx_qual_type_t child_qual_type(
   for (size_t i = 0; i < children->count; i++) {
     if (children->edges[i] != edge) continue;
     const psx_resolved_hir_node_t *child = children->items[i];
-    if (child) return child->expression_type;
+    if (child) return resolved_expression_type(child);
   }
   return (psx_qual_type_t){
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -574,9 +594,8 @@ static psx_resolved_hir_node_t *materialize_local_object_reference(
       .object_size = ps_lvar_frame_storage_size(local),
       .object_align = ps_lvar_align_bytes(local),
   };
-  return materialize_node_record(
-      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
-      NULL, NULL, source);
+  return materialize_expression_spec(
+      builder, &spec, qual_type, NULL, NULL, source);
 }
 
 static psx_resolved_hir_node_t *materialize_global_object_reference(
@@ -594,9 +613,9 @@ static psx_resolved_hir_node_t *materialize_global_object_reference(
       .name_length = ps_gvar_name_len(global) > 0
                          ? (size_t)ps_gvar_name_len(global) : 0,
   };
-  return materialize_node_record(
-      builder, &spec, PSX_HIR_ROLE_EXPRESSION,
-      ps_gvar_decl_qual_type(global), NULL, &symbol, source);
+  return materialize_expression_spec(
+      builder, &spec, ps_gvar_decl_qual_type(global),
+      NULL, &symbol, source);
 }
 
 static psx_resolved_hir_node_t *materialize_address_of_object(
@@ -884,18 +903,18 @@ static psx_resolved_hir_node_t *build_node(
     return build_node(builder, lowered);
   }
   psx_hir_node_spec_t spec = {0};
-  psx_hir_node_role_t role = PSX_HIR_ROLE_STATEMENT;
   psx_qual_type_t qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   spec.attached_qual_type = qual_type;
-  if (!map_kind(source->kind, &spec.kind, &role)) {
+  if (!map_kind(source->kind, &spec.kind)) {
     set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return NULL;
   }
   if (source->kind == ND_ASSIGN &&
       source->is_source_compound_assignment)
     spec.kind = PSX_HIR_COMPOUND_ASSIGN;
-  if (role == PSX_HIR_ROLE_EXPRESSION) {
+  int is_expression = psx_hir_kind_is_expression(spec.kind);
+  if (is_expression) {
     qual_type = ps_node_qual_type(source);
     if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
@@ -953,16 +972,20 @@ static psx_resolved_hir_node_t *build_node(
     free(children.edges);
     return NULL;
   }
-  if (role == PSX_HIR_ROLE_EXPRESSION &&
+  if (is_expression &&
       !derive_structural_expression_type(
           builder, source, &children, &qual_type)) {
     free(children.items);
     free(children.edges);
     return NULL;
   }
-  psx_resolved_hir_node_t *result = materialize_node_record(
-      builder, &spec, role, qual_type, &children,
-      has_symbol ? &symbol : NULL, source);
+  psx_resolved_hir_node_t *result =
+      is_expression
+          ? materialize_expression_spec(
+                builder, &spec, qual_type, &children,
+                has_symbol ? &symbol : NULL, source)
+          : materialize_statement(
+                builder, &spec, &children, source);
   free(children.items);
   free(children.edges);
   return result;

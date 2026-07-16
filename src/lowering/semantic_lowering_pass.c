@@ -1,12 +1,9 @@
 #include "semantic_lowering_pass.h"
 
-#include "assignment_lowering.h"
 #include "cast_lowering.h"
 #include "compound_literal_lowering.h"
-#include "expr_lowering.h"
 #include "initializer_lowering.h"
 #include "runtime_context.h"
-#include "complex_part_lowering.h"
 #include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../semantic/generic_selection_resolution.h"
@@ -63,21 +60,6 @@ static node_t *lower_initializer(
         context, entry->value, fallback_diag_tok);
   }
   return syntax;
-}
-
-static node_t *lower_additive_expression_node(
-    const psx_semantic_lowering_context_t *context, node_t *node) {
-  if (!node ||
-      (node->source_op != TK_PLUS && node->source_op != TK_MINUS) ||
-      (node->kind != ND_ADD && node->kind != ND_SUB)) {
-    return node;
-  }
-  token_t *source_tok = node->tok;
-  node_t *lowered = lower_additive_expression(
-      context->lowering_context, node->kind, node->lhs, node->rhs);
-  if (!lowered || lowered == node) return node;
-  if (!lowered->tok) lowered->tok = source_tok;
-  return lowered;
 }
 
 static void lower_sizeof_vla_indices(
@@ -233,16 +215,10 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;
     case ND_CREAL:
-    case ND_CIMAG: {
+    case ND_CIMAG:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      node_t *lowered = lower_complex_part_expression(
-          context->lowering_context, node);
-      return lowered == node
-                 ? node
-                 : lower_tree(
-                       context, lowered, fallback_diag_tok);
-    }
+      break;
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {
@@ -267,9 +243,6 @@ static node_t *lower_tree(
       lower_source_cast_node(context, node, fallback_diag_tok);
       node = lower_aggregate_address_expression(
           context->lowering_context, node);
-      node = lower_additive_expression_node(context, node);
-      node = lower_compound_assignment_expression(
-          context->lowering_context, context->local_registry, node);
       break;
   }
   return node;

@@ -5,8 +5,6 @@
 
 struct psx_hir_node_t {
   psx_hir_node_kind_t kind;
-  psx_hir_node_role_t role;
-  psx_qual_type_t qual_type;
   psx_qual_type_t attached_qual_type;
   psx_hir_node_id_t *children;
   psx_hir_edge_kind_t *child_edges;
@@ -37,6 +35,11 @@ struct psx_hir_node_t {
   unsigned char member_from_pointer;
   unsigned char is_static_function;
 };
+
+typedef struct {
+  psx_hir_node_t node;
+  psx_qual_type_t qual_type;
+} psx_hir_expression_node_t;
 
 struct psx_hir_symbol_t {
   char *name;
@@ -252,7 +255,7 @@ psx_hir_symbol_id_t psx_hir_module_intern_symbol(
   return (psx_hir_symbol_id_t)module->symbol_count;
 }
 
-static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
+int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
   switch (kind) {
     case PSX_HIR_ADD:
     case PSX_HIR_SUB:
@@ -304,15 +307,13 @@ static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
 
 static psx_hir_node_id_t add_node(
     psx_hir_module_t *module, const psx_hir_node_spec_t *spec,
-    psx_hir_node_role_t role, psx_qual_type_t qual_type) {
+    size_t node_size) {
   if (!module || !spec) return PSX_HIR_NODE_ID_INVALID;
   if (!reserve_nodes(module, module->node_count + 1))
     return PSX_HIR_NODE_ID_INVALID;
-  psx_hir_node_t *node = calloc(1, sizeof(*node));
+  psx_hir_node_t *node = calloc(1, node_size);
   if (!node) return PSX_HIR_NODE_ID_INVALID;
   node->kind = spec->kind;
-  node->role = role;
-  node->qual_type = qual_type;
   node->attached_qual_type = spec->attached_qual_type;
   node->child_count = spec->child_count;
   node->name_length = spec->name_length;
@@ -387,22 +388,25 @@ static psx_hir_node_id_t add_node(
 psx_hir_node_id_t psx_hir_module_add_expression(
     psx_hir_module_t *module,
     const psx_hir_expression_spec_t *spec) {
-  if (!spec || !hir_kind_is_expression(spec->node.kind) ||
+  if (!spec || !psx_hir_kind_is_expression(spec->node.kind) ||
       spec->qual_type.type_id == PSX_TYPE_ID_INVALID)
     return PSX_HIR_NODE_ID_INVALID;
-  return add_node(
-      module, &spec->node, PSX_HIR_ROLE_EXPRESSION,
-      spec->qual_type);
+  psx_hir_node_id_t id = add_node(
+      module, &spec->node, sizeof(psx_hir_expression_node_t));
+  if (id != PSX_HIR_NODE_ID_INVALID) {
+    psx_hir_expression_node_t *expression =
+        (psx_hir_expression_node_t *)module->nodes[id - 1];
+    expression->qual_type = spec->qual_type;
+  }
+  return id;
 }
 
 psx_hir_node_id_t psx_hir_module_add_statement(
     psx_hir_module_t *module,
     const psx_hir_statement_spec_t *spec) {
-  if (!spec || hir_kind_is_expression(spec->node.kind))
+  if (!spec || psx_hir_kind_is_expression(spec->node.kind))
     return PSX_HIR_NODE_ID_INVALID;
-  return add_node(
-      module, &spec->node, PSX_HIR_ROLE_STATEMENT,
-      invalid_qual_type());
+  return add_node(module, &spec->node, sizeof(psx_hir_node_t));
 }
 
 int psx_hir_module_add_root(
@@ -419,11 +423,15 @@ psx_hir_node_kind_t psx_hir_node_kind(const psx_hir_node_t *node) {
 }
 
 psx_hir_node_role_t psx_hir_node_role(const psx_hir_node_t *node) {
-  return node ? node->role : PSX_HIR_ROLE_STATEMENT;
+  return node && psx_hir_kind_is_expression(node->kind)
+             ? PSX_HIR_ROLE_EXPRESSION
+             : PSX_HIR_ROLE_STATEMENT;
 }
 
 psx_qual_type_t psx_hir_node_qual_type(const psx_hir_node_t *node) {
-  return node ? node->qual_type : invalid_qual_type();
+  if (!node || !psx_hir_kind_is_expression(node->kind))
+    return invalid_qual_type();
+  return ((const psx_hir_expression_node_t *)node)->qual_type;
 }
 
 psx_qual_type_t psx_hir_node_attached_qual_type(

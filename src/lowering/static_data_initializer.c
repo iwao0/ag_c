@@ -61,6 +61,23 @@ static int resolved_member_offset(
   return 1;
 }
 
+static int static_pointer_stride(
+    psx_lowering_context_t *lowering_context, const node_t *pointer) {
+  if (!lowering_context || !pointer) return 0;
+  psx_type_id_t pointer_type_id =
+      ps_node_qual_type(pointer).type_id;
+  if (pointer_type_id == PSX_TYPE_ID_INVALID)
+    pointer_type_id = ps_lowering_type_id(
+        lowering_context, ps_node_get_type((node_t *)pointer));
+  psx_qual_type_t element_type = psx_semantic_type_table_base(
+      ps_lowering_semantic_types(lowering_context), pointer_type_id);
+  if (element_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  return ps_type_sizeof_id_with_records(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context),
+      element_type.type_id, ps_lowering_target(lowering_context));
+}
+
 static int resolve_static_address_constant(
     psx_lowering_context_t *lowering_context, node_t *node,
     char **symbol, int *symbol_len, long long *offset) {
@@ -142,6 +159,12 @@ static int resolve_static_address_constant(
               symbol, symbol_len, offset)) {
         long long addend = psx_eval_const_int(node->rhs, &ok);
         if (!ok) return 0;
+        if (node->source_op == TK_PLUS) {
+          int stride = static_pointer_stride(
+              lowering_context, node->lhs);
+          if (stride <= 0) return 0;
+          addend *= stride;
+        }
         *offset += addend;
         return 1;
       }
@@ -150,6 +173,12 @@ static int resolve_static_address_constant(
               symbol, symbol_len, offset)) {
         long long addend = psx_eval_const_int(node->lhs, &ok);
         if (!ok) return 0;
+        if (node->source_op == TK_PLUS) {
+          int stride = static_pointer_stride(
+              lowering_context, node->rhs);
+          if (stride <= 0) return 0;
+          addend *= stride;
+        }
         *offset += addend;
         return 1;
       }
@@ -163,6 +192,12 @@ static int resolve_static_address_constant(
         return 0;
       long long addend = psx_eval_const_int(node->rhs, &ok);
       if (!ok) return 0;
+      if (node->source_op == TK_MINUS) {
+        int stride = static_pointer_stride(
+            lowering_context, node->lhs);
+        if (stride <= 0) return 0;
+        addend *= stride;
+      }
       *offset -= addend;
       return 1;
     }
@@ -232,8 +267,18 @@ static long long eval_static_const_int(
             &right_symbol, &right_len, &right_offset) &&
         same_static_symbol(
             left_symbol, left_len, right_symbol, right_len)) {
+      long long difference = left_offset - right_offset;
+      if (node->source_op == TK_MINUS) {
+        int stride = static_pointer_stride(
+            lowering_context, node->lhs);
+        if (stride <= 0 || difference % stride != 0) {
+          if (ok) *ok = 0;
+          return 0;
+        }
+        difference /= stride;
+      }
       if (ok) *ok = 1;
-      return left_offset - right_offset;
+      return difference;
     }
   }
   switch (node->kind) {

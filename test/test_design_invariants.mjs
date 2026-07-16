@@ -872,10 +872,6 @@ const loweringRuntimeSource = await readFile(
   "src/lowering/runtime_context.c",
   "utf8",
 );
-const expressionLoweringSource = await readFile(
-  "src/lowering/expr_lowering.c",
-  "utf8",
-);
 const translationUnitDataLoweringSource = await readFile(
   "src/lowering/translation_unit_data_lowering.c",
   "utf8",
@@ -1345,7 +1341,6 @@ const loweringStateSources = await Promise.all([
   readFile("src/lowering/static_local_lowering.c", "utf8"),
   readFile("src/lowering/compound_literal_lowering.c", "utf8"),
   readFile("src/lowering/cast_lowering.c", "utf8"),
-  readFile("src/lowering/assignment_lowering.c", "utf8"),
 ]);
 if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
@@ -3340,8 +3335,8 @@ if (!arrayDecayPointerArithmeticType ||
     /\bps_type_(?:size|align)of\s*\(/.test(
       arrayDecayPointerArithmeticType[0],
     ) ||
-    !/ps_node_array_decay_pointer_arith_type_in\s*\(/.test(
-      expressionLoweringSource,
+    !/try_build_pointer_arithmetic\s*\(/.test(
+      hirIrBuilder,
     )) {
   throw new Error(
     "array decay result typing must follow semantic type shape without querying target layout",
@@ -3390,10 +3385,6 @@ if (!targetAwareBinaryConstructor ||
     "typed binary construction must resolve result types against an explicit target",
   );
 }
-const assignmentLoweringSource = await readFile(
-  "src/lowering/assignment_lowering.c",
-  "utf8",
-);
 const explicitDiagnosticInitializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
@@ -4625,7 +4616,7 @@ for (const [name, header, source, functionName] of [
 }
 
 for (const [name, source, requiredLayoutCall] of [
-  ["expression", expressionLoweringSource, /\bps_lowering_type_deref_size\s*\(/],
+  ["pointer arithmetic", hirIrBuilder, /\bps_type_sizeof_id_with_records\s*\(/],
   ["subscript", hirIrBuilder, /\bps_type_sizeof_id_with_records\s*\(/],
   ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
   ["VLA", vlaLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
@@ -4746,8 +4737,6 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
   );
 }
 for (const [name, source] of [
-  ["expression", expressionLoweringSource],
-  ["assignment", assignmentLoweringSource],
   ["cast", explicitDiagnosticCastLoweringSource],
   ["IR builder", irBuilderSource],
 ]) {
@@ -5078,7 +5067,9 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
     !/PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE/.test(frameLayoutSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(frameLayoutSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(vlaLoweringSource) ||
-    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(expressionLoweringSource) ||
+    !/pointer_stride_value\s*\([^]*?vla_stride_slot_size/.test(
+      hirIrBuilder,
+    ) ||
     !/source->kind\s*==\s*ND_SUBSCRIPT[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
       resolvedTreeMaterialization,
     ) ||
@@ -5731,6 +5722,12 @@ if (/parser\/ast\.h|\bnode_t\b|\bnode_kind_t\b|\bpsx_type_t\b/.test(
 const hirCommonNodeSpec = hirInternalHeader.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_hir_node_spec_t\s*;/,
 )?.[1] ?? "";
+const storedHirNode = hirImplementation.match(
+  /struct\s+psx_hir_node_t\s*\{([^]*?)\};/,
+)?.[1] ?? "";
+const resolvedHirNode = resolvedHirNodeInternalHeader.match(
+  /struct\s+psx_resolved_hir_node_t\s*\{([^]*?)\};/,
+)?.[1] ?? "";
 if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
     !/typedef\s+struct\s*\{\s*psx_hir_node_spec_t\s+node\s*;\s*psx_qual_type_t\s+qual_type\s*;\s*\}\s*psx_hir_expression_spec_t\s*;/.test(
       hirInternalHeader,
@@ -5740,6 +5737,21 @@ if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
     ) ||
     /psx_hir_node_role_t\s+role\s*;|psx_qual_type_t\s+qual_type\s*;/.test(
       hirCommonNodeSpec,
+    ) ||
+    /psx_hir_node_role_t\s+role\s*;|psx_qual_type_t\s+qual_type\s*;/.test(
+      storedHirNode,
+    ) ||
+    !/typedef\s+struct\s*\{\s*psx_hir_node_t\s+node\s*;\s*psx_qual_type_t\s+qual_type\s*;\s*\}\s*psx_hir_expression_node_t\s*;/.test(
+      hirImplementation,
+    ) ||
+    /psx_hir_node_role_t\s+role\s*;|psx_qual_type_t\s+expression_type\s*;/.test(
+      resolvedHirNode,
+    ) ||
+    !/typedef\s+struct\s*\{\s*psx_resolved_hir_node_t\s+node\s*;\s*psx_qual_type_t\s+qual_type\s*;\s*\}\s*psx_resolved_hir_expression_t\s*;/.test(
+      resolvedHirNodeInternalHeader,
+    ) ||
+    !/typedef\s+struct\s*\{\s*psx_resolved_hir_node_t\s+node\s*;\s*\}\s*psx_resolved_hir_statement_t\s*;/.test(
+      resolvedHirNodeInternalHeader,
     ) ||
     /\bpsx_hir_module_add_node\b/.test(hirInternalHeader) ||
     !/\bpsx_hir_module_add_expression\b/.test(hirInternalHeader) ||
@@ -5758,7 +5770,7 @@ if (!/PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
     "resolved-tree HIR emission must reject unresolved syntax node kinds",
   );
 }
-if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
+if (!/MAP\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
     /\blower_unary_deref_expression\s*\(/.test(
@@ -5771,7 +5783,7 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
     "typed unary dereference must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
-if (!/MAP_EXPR\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
+if (!/MAP\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
     !/\bPSX_HIR_SUBSCRIPT\b/.test(hirHeader) ||
@@ -5787,7 +5799,21 @@ if (!/MAP_EXPR\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
     "typed subscript must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
-if (!/MAP_EXPR\s*\(\s*ND_MEMBER_ACCESS\s*,\s*PSX_HIR_MEMBER_ACCESS\s*\)/.test(
+if (!/try_build_pointer_arithmetic\s*\(/.test(hirIrBuilder) ||
+    !/pointer_stride_value\s*\(/.test(hirIrBuilder) ||
+    !/psx_hir_node_vla_stride_frame_offset\s*\(/.test(hirIrBuilder) ||
+    !/ps_type_sizeof_id_with_records\s*\(/.test(hirIrBuilder) ||
+    /\blower_additive_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/expr_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "pointer arithmetic must preserve source operators through Typed HIR and apply target stride in HIR lowering",
+  );
+}
+if (!/MAP\s*\(\s*ND_MEMBER_ACCESS\s*,\s*PSX_HIR_MEMBER_ACCESS\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
     !/\bPSX_HIR_MEMBER_ACCESS\b/.test(hirHeader) ||
@@ -5812,22 +5838,17 @@ if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
       resolvedTreeMaterialization,
     ) ||
     !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder) ||
-    !/node->lhs->kind\s*==\s*ND_SUBSCRIPT[^]*?return\s+node\s*;/.test(
-      assignmentLoweringSource,
+    /\blower_compound_assignment_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/assignment_lowering\.[ch]$/.test(path),
     )) {
   throw new Error(
-    "subscript compound assignment must preserve one lvalue evaluation through Typed HIR",
+    "compound assignment must preserve one lvalue evaluation directly through Typed HIR",
   );
 }
-if (!/node->lhs->kind\s*==\s*ND_SUBSCRIPT\s*\|\|[^]*?node->lhs->kind\s*==\s*ND_MEMBER_ACCESS[^]*?return\s+node\s*;/.test(
-      assignmentLoweringSource,
-    ) ||
-    !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder)) {
-  throw new Error(
-    "member compound assignment must preserve one lvalue evaluation through Typed HIR",
-  );
-}
-if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
+if (!/MAP\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
     !/\bPSX_HIR_NEGATE\b/.test(hirHeader) ||
@@ -5847,6 +5868,28 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
     )) {
   throw new Error(
     "typed unary negate must remain distinct from syntax lowering and materialize as PSX_HIR_NEGATE",
+  );
+}
+if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/MAP\s*\(\s*ND_CIMAG\s*,\s*PSX_HIR_CIMAG\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/case\s+ND_CREAL\s*:\s*case\s+ND_CIMAG\s*:[^]*?node->lhs\s*=\s*lower_tree[^]*?break\s*;/.test(
+      semanticLoweringPassSource,
+    ) ||
+    !/build_complex_component\s*\([^]*?!is_float_abi_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
+      hirIrBuilder,
+    ) ||
+    /\blower_complex_part_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/complex_part_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "resolved real/imag operators must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
 if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
@@ -5872,7 +5915,7 @@ if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
     "generic selection resolution must stay outside Syntax AST and materialize its selected expression directly into Typed HIR",
   );
 }
-if (!/MAP_EXPR\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
+if (!/MAP\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
     !/node_alignof_query_t[^]*?resolved_alignment/.test(
@@ -5984,7 +6027,7 @@ if (!functionResolutionBoundary ||
     !/struct\s+psx_typed_hir_tree_t\s*\{\s*psx_resolved_hir_node_t\s*\*root\s*;\s*\}/.test(
       resolvedTreeInternalHeader,
     ) ||
-    !/psx_hir_expression_spec_t\s+expression\s*=\s*\{[^]*?\.qual_type\s*=\s*source->expression_type/.test(
+    !/psx_hir_expression_spec_t\s+expression\s*=\s*\{[^]*?\.qual_type\s*=\s*typed_expression->qual_type/.test(
       resolvedTreeHir,
     ) ||
     !/psx_resolved_hir_node_t\s*\*root\s*=\s*build_node/.test(
