@@ -1,11 +1,11 @@
-#include "resolved_tree_hir.h"
+#include "typed_hir_materialization.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "../hir/hir_internal.h"
-#include "resolved_hir_node_internal.h"
-#include "resolved_tree_internal.h"
+#include "typed_hir_node_internal.h"
+#include "typed_hir_tree_internal.h"
 
 typedef struct {
   psx_hir_module_t *module;
@@ -87,28 +87,19 @@ static psx_hir_node_id_t emit_node(
   return result;
 }
 
-psx_hir_node_id_t psx_resolved_tree_emit_hir(
+psx_hir_node_id_t psx_typed_hir_tree_emit(
     psx_hir_module_t *module,
-    const psx_resolved_tree_t *resolved_tree,
+    const psx_typed_hir_tree_t *typed_tree,
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  if (!module || !resolved_tree) {
+  if (!module || !typed_tree) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind = -1;
     }
     return PSX_HIR_NODE_ID_INVALID;
   }
-  if (psx_resolved_tree_phase(resolved_tree) !=
-      PSX_RESOLVED_TREE_HIR_READY) {
-    if (failure) {
-      failure->status = PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION;
-      failure->source_node_kind = -1;
-    }
-    return PSX_HIR_NODE_ID_INVALID;
-  }
-  const psx_resolved_hir_node_t *source =
-      psx_resolved_tree_hir_root(resolved_tree);
+  const psx_resolved_hir_node_t *source = typed_tree->root;
   if (!source) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_UNMATERIALIZED;

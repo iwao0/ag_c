@@ -80,19 +80,19 @@ const hirInternalHeader = await readFile(
   "utf8",
 );
 const resolvedTreeHir = await readFile(
-  "src/semantic/resolved_tree_hir.c",
+  "src/semantic/typed_hir_emission.c",
   "utf8",
 );
 const resolvedTreeMaterialization = await readFile(
-  "src/semantic/resolved_tree_materialization.c",
+  "src/semantic/typed_hir_materialization.c",
   "utf8",
 );
 const resolvedTreeHirHeader = await readFile(
-  "src/semantic/resolved_tree_hir.h",
+  "src/semantic/typed_hir_materialization.h",
   "utf8",
 );
 const resolvedHirNodeInternalHeader = await readFile(
-  "src/semantic/resolved_hir_node_internal.h",
+  "src/semantic/typed_hir_node_internal.h",
   "utf8",
 );
 const resolutionWorkTree = await readFile(
@@ -104,7 +104,11 @@ const resolutionWorkTreeHeader = await readFile(
   "utf8",
 );
 const resolvedTreeHeader = await readFile(
-  "src/semantic/resolved_tree.h",
+  "src/semantic/typed_hir_tree.h",
+  "utf8",
+);
+const resolvedTreeInternalHeader = await readFile(
+  "src/semantic/typed_hir_tree_internal.h",
   "utf8",
 );
 const hirIrBuilder = `${await readFile(
@@ -1608,7 +1612,7 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_function_to_hir_in_session/.test(
       semanticPipelineHeader,
     ) ||
-    !/psx_frontend_resolve_function_tree_in_session/.test(
+    !/psx_frontend_resolve_function_work_tree_in_session/.test(
       semanticPipelineInternalHeader,
     ) ||
     /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
@@ -1744,7 +1748,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       parserStreamHeader,
     ) ||
     !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
-    !/psx_frontend_resolve_function_tree_in_session\s*\(/.test(
+    !/psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -5717,7 +5721,7 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
   throw new Error("CompilationSession must own the Typed HIR module");
 }
 const functionResolutionBoundary = semanticPipelineSource.match(
-  /psx_resolved_tree_t\s*\*psx_frontend_resolve_function_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /psx_resolution_work_tree_t\s*\*\s*psx_frontend_resolve_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const expressionResolutionBoundary = semanticPipelineSource.match(
   /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
@@ -5732,77 +5736,86 @@ if (!functionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
     !programResolutionBoundary ||
-    !/psx_resolved_tree_create_from_syntax\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
       functionResolutionBoundary[1],
     ) ||
     !/const\s+node_t\s*\*syntax_expression/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_resolved_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_tree_in_contexts\s*\(/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_tree_in_contexts\s*\(/.test(
       expressionResolutionBoundary[1],
     ) ||
     !/const\s+node_t\s*\*syntax\s*,\s*const\s+token_t\s*\*fallback_diag_tok/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_resolved_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_initializer_tree_in_contexts\s*\(/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_initializer_tree_in_contexts\s*\(/.test(
       initializerResolutionBoundary[1],
     ) ||
-    !/psx_resolved_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
       resolutionWorkTreeHeader,
     ) ||
-    !/struct\s+psx_resolved_tree_t\s*\{[^]*?node_t\s*\*root\s*;[^]*?psx_resolved_tree_phase_t\s+phase\s*;[^]*?\};/.test(
+    !/struct\s+psx_resolution_work_tree_t\s*\{[^]*?node_t\s*\*root\s*;[^]*?psx_resolution_work_phase_t\s+phase\s*;[^]*?\};/.test(
       resolutionWorkTree,
     ) ||
+    /hir_root|psx_resolved_hir_node_t/.test(resolutionWorkTree) ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHeader) ||
-    !/typedef\s+struct\s+psx_resolved_tree_t\s+psx_resolved_tree_t\s*;/.test(
+    !/typedef\s+struct\s+psx_typed_hir_tree_t\s+psx_typed_hir_tree_t\s*;/.test(
       resolvedTreeHeader,
     ) ||
-    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHirHeader) ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(
       resolvedHirNodeInternalHeader,
     ) ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b|\bpsx_semantic_context_t\b/.test(
       resolvedTreeHir,
     ) ||
-    !/const\s+psx_resolved_tree_t\s*\*resolved_tree/.test(
+    !/const\s+psx_resolution_work_tree_t\s*\*work_tree/.test(
+      resolvedTreeHirHeader,
+    ) ||
+    !/const\s+psx_typed_hir_tree_t\s*\*typed_tree/.test(
       resolvedTreeHirHeader,
     ) ||
     !/PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
       resolvedTreeHirHeader,
     ) ||
-    !/psx_resolved_tree_phase\s*\(\s*resolved_tree\s*\)\s*!=\s*PSX_RESOLVED_TREE_HIR_READY/.test(
-      resolvedTreeHir,
-    ) ||
-    !/int\s+psx_resolved_tree_materialize_hir\s*\(/.test(
+    !/psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_materialize_hir\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/psx_resolved_tree_publish_hir_root\s*\(/.test(
+    !/psx_resolution_work_tree_phase\s*\(\s*work_tree\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/psx_resolved_tree_hir_root\s*\(/.test(resolvedTreeHir) ||
+    !/phase\s*!=\s*PSX_RESOLUTION_WORK_FINALIZED/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/struct\s+psx_typed_hir_tree_t\s*\{\s*psx_resolved_hir_node_t\s*\*root\s*;\s*\}/.test(
+      resolvedTreeInternalHeader,
+    ) ||
     !/psx_hir_expression_spec_t\s+expression\s*=\s*\{[^]*?\.qual_type\s*=\s*source->expression_type/.test(
       resolvedTreeHir,
     ) ||
     !/psx_resolved_hir_node_t\s*\*root\s*=\s*build_node/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/psx_hir_node_id_t\s+psx_resolved_tree_emit_hir\s*\(/.test(
+    !/typed_tree->root/.test(resolvedTreeHir) ||
+    !/psx_hir_node_id_t\s+psx_typed_hir_tree_emit\s*\(/.test(
       resolvedTreeHir,
     ) ||
     /ps_node_|ND_[A-Z0-9_]+/.test(resolvedTreeHir) ||
-    !/psx_resolved_tree_emit_hir\s*\(/.test(semanticPipelineSource) ||
+    !/psx_resolution_work_tree_materialize_hir\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_typed_hir_tree_emit\s*\(/.test(semanticPipelineSource) ||
     /typed_hir_builder/.test(
       `${semanticPipelineSource}\n${semanticPipelineInternalHeader}`,
     ) ||
     allSourceFiles.some((path) => /typed_hir_builder\.[ch]$/.test(path)) ||
-    !/next\s*!=\s*\(psx_resolved_tree_phase_t\)\(expected\s*\+\s*1\)/.test(
+    !/next\s*!=\s*\(psx_resolution_work_phase_t\)\(expected\s*\+\s*1\)/.test(
       resolutionWorkTree,
     ) ||
-    !/tree\s*&&\s*tree->phase\s*>=\s*PSX_RESOLVED_TREE_FINALIZED[^]*?\?\s*tree->root\s*:\s*NULL/.test(
+    !/tree\s*&&\s*tree->phase\s*>=\s*PSX_RESOLUTION_WORK_FINALIZED[^]*?\?\s*tree->root\s*:\s*NULL/.test(
       resolutionWorkTree,
     )) {
   throw new Error(
-    "frontend resolvers must own ordered resolved-tree phases and leave parser syntax nodes unchanged",
+    "frontend resolvers must keep mutable resolution work trees separate from materialized Typed HIR trees",
   );
 }
 const functionAnalysisBoundary = semanticPipelineSource.match(

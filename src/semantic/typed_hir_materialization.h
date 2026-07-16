@@ -1,8 +1,9 @@
-#ifndef SEMANTIC_RESOLVED_TREE_HIR_H
-#define SEMANTIC_RESOLVED_TREE_HIR_H
+#ifndef SEMANTIC_TYPED_HIR_MATERIALIZATION_H
+#define SEMANTIC_TYPED_HIR_MATERIALIZATION_H
 
 #include "../hir/hir.h"
-#include "resolved_tree.h"
+#include "resolution_work_tree.h"
+#include "typed_hir_tree.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
@@ -22,13 +23,13 @@ typedef struct {
   int source_node_kind;
 } psx_resolved_hir_build_failure_t;
 
-int psx_resolved_tree_materialize_hir(
-    psx_resolved_tree_t *resolved_tree,
+psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
+    const psx_resolution_work_tree_t *work_tree,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure);
-psx_hir_node_id_t psx_resolved_tree_emit_hir(
+psx_hir_node_id_t psx_typed_hir_tree_emit(
     psx_hir_module_t *module,
-    const psx_resolved_tree_t *resolved_tree,
+    const psx_typed_hir_tree_t *typed_tree,
     psx_resolved_hir_build_failure_t *failure);
 
 #endif

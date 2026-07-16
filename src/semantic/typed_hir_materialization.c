@@ -1,4 +1,4 @@
-#include "resolved_tree_hir.h"
+#include "typed_hir_materialization.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,9 +11,9 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
-#include "resolved_hir_node_internal.h"
+#include "typed_hir_node_internal.h"
 #include "resolved_node_kind.h"
-#include "resolved_tree_internal.h"
+#include "typed_hir_tree_internal.h"
 #include "resolution_work_tree.h"
 
 typedef struct {
@@ -620,42 +620,48 @@ static psx_resolved_hir_node_t *build_node(
   return result;
 }
 
-int psx_resolved_tree_materialize_hir(
-    psx_resolved_tree_t *resolved_tree,
+psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
+    const psx_resolution_work_tree_t *work_tree,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  const node_t *semantic_root = psx_resolved_tree_root(resolved_tree);
-  if (!resolved_tree || !semantic_context || !semantic_root) {
+  const node_t *semantic_root =
+      psx_resolution_work_tree_root(work_tree);
+  if (!work_tree || !semantic_context || !semantic_root) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind = semantic_root
                                       ? (int)semantic_root->kind : -1;
     }
-    return 0;
+    return NULL;
   }
-  psx_resolved_tree_phase_t phase =
-      psx_resolved_tree_phase(resolved_tree);
-  if (phase != PSX_RESOLVED_TREE_FINALIZED &&
-      phase != PSX_RESOLVED_TREE_HIR_READY) {
+  psx_resolution_work_phase_t phase =
+      psx_resolution_work_tree_phase(work_tree);
+  if (phase != PSX_RESOLUTION_WORK_FINALIZED) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION;
       failure->source_node_kind = (int)semantic_root->kind;
     }
-    return 0;
+    return NULL;
   }
-  if (psx_resolved_tree_hir_root(resolved_tree)) return 1;
   hir_materializer_t builder = {
       .arena_context = ps_ctx_arena(semantic_context),
       .semantic_context = semantic_context,
       .failure = failure,
   };
   psx_resolved_hir_node_t *root = build_node(&builder, semantic_root);
-  if (!root ||
-      !psx_resolved_tree_publish_hir_root(resolved_tree, root)) {
+  if (!root) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
       failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
-    return 0;
+    return NULL;
   }
-  return 1;
+  psx_typed_hir_tree_t *typed_tree = arena_alloc_in(
+      builder.arena_context, sizeof(*typed_tree));
+  if (!typed_tree) {
+    if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
+      failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
+    return NULL;
+  }
+  typed_tree->root = root;
+  return typed_tree;
 }

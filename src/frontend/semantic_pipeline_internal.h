@@ -7,9 +7,10 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
-typedef struct psx_resolved_tree_t psx_resolved_tree_t;
+typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
 
-psx_resolved_tree_t *psx_frontend_resolve_function_tree_in_session(
+psx_resolution_work_tree_t *
+psx_frontend_resolve_function_work_tree_in_session(
     ag_compilation_session_t *session,
     const node_t *syntax_function, const token_t *fallback_diag_tok,
     psx_hir_node_id_t *hir_root);

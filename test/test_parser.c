@@ -61,8 +61,8 @@
 #include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
-#include "../src/semantic/resolved_tree_hir.h"
 #include "../src/semantic/resolution_work_tree.h"
+#include "../src/semantic/typed_hir_materialization.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
 #include "../src/semantic/tag_declaration_resolution.h"
@@ -1801,24 +1801,24 @@ static void test_typed_hir_ownership_and_type_boundary() {
   node_num_t syntax_number = {0};
   syntax_number.base.kind = ND_NUM;
   syntax_number.val = 7;
-  psx_resolved_tree_t *unfinalized =
-      psx_resolved_tree_create_from_syntax(
+  psx_resolution_work_tree_t *unfinalized =
+      psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), (node_t *)&syntax_number);
   ASSERT_TRUE(unfinalized != NULL);
-  ASSERT_EQ(PSX_RESOLVED_TREE_CLONED,
-            psx_resolved_tree_phase(unfinalized));
+  ASSERT_EQ(PSX_RESOLUTION_WORK_CLONED,
+            psx_resolution_work_tree_phase(unfinalized));
   psx_hir_module_t *isolated_hir = psx_hir_module_create();
   ASSERT_TRUE(isolated_hir != NULL);
   psx_resolved_hir_build_failure_t failure = {0};
-  ASSERT_TRUE(!psx_resolved_tree_materialize_hir(
+  ASSERT_TRUE(!psx_resolution_work_tree_materialize_hir(
       unfinalized, test_semantic_context(), &failure));
   ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
             failure.status);
   failure = (psx_resolved_hir_build_failure_t){0};
   ASSERT_EQ(PSX_HIR_NODE_ID_INVALID,
-            psx_resolved_tree_emit_hir(
-                isolated_hir, unfinalized, &failure));
-  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
+            psx_typed_hir_tree_emit(
+                isolated_hir, NULL, &failure));
+  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
             failure.status);
   ASSERT_EQ(0, psx_hir_module_root_count(isolated_hir));
   ASSERT_TRUE(syntax_number.base.resolution_state == NULL);
@@ -1827,11 +1827,12 @@ static void test_typed_hir_ownership_and_type_boundary() {
   node_num_t typed_number = {0};
   typed_number.base.kind = ND_NUM;
   typed_number.val = 11;
-  psx_resolved_tree_t *typed_tree =
-      psx_resolved_tree_create_from_syntax(
+  psx_resolution_work_tree_t *typed_work_tree =
+      psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), (node_t *)&typed_number);
-  ASSERT_TRUE(typed_tree != NULL);
-  node_t *typed_root = psx_resolved_tree_mutable_root(typed_tree);
+  ASSERT_TRUE(typed_work_tree != NULL);
+  node_t *typed_root =
+      psx_resolution_work_tree_mutable_root(typed_work_tree);
   ASSERT_TRUE(typed_root != NULL);
   const psx_type_t *int_type =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -1839,26 +1840,28 @@ static void test_typed_hir_ownership_and_type_boundary() {
       intern_test_qual_type(int_type);
   ASSERT_TRUE(int_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ps_node_bind_qual_type(typed_root, int_type, int_qual_type);
-  ASSERT_TRUE(psx_resolved_tree_advance_with_root(
-      typed_tree, PSX_RESOLVED_TREE_CLONED,
-      PSX_RESOLVED_TREE_BOUND, typed_root));
-  ASSERT_TRUE(psx_resolved_tree_advance_with_root(
-      typed_tree, PSX_RESOLVED_TREE_BOUND,
-      PSX_RESOLVED_TREE_TYPED, typed_root));
-  ASSERT_TRUE(psx_resolved_tree_advance_with_root(
-      typed_tree, PSX_RESOLVED_TREE_TYPED,
-      PSX_RESOLVED_TREE_LOWERED, typed_root));
-  ASSERT_TRUE(psx_resolved_tree_advance_with_root(
-      typed_tree, PSX_RESOLVED_TREE_LOWERED,
-      PSX_RESOLVED_TREE_FINALIZED, typed_root));
+  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      typed_work_tree, PSX_RESOLUTION_WORK_CLONED,
+      PSX_RESOLUTION_WORK_BOUND, typed_root));
+  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      typed_work_tree, PSX_RESOLUTION_WORK_BOUND,
+      PSX_RESOLUTION_WORK_TYPED, typed_root));
+  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      typed_work_tree, PSX_RESOLUTION_WORK_TYPED,
+      PSX_RESOLUTION_WORK_LOWERED, typed_root));
+  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
+      PSX_RESOLUTION_WORK_FINALIZED, typed_root));
   failure = (psx_resolved_hir_build_failure_t){0};
-  ASSERT_TRUE(psx_resolved_tree_materialize_hir(
-      typed_tree, test_semantic_context(), &failure));
-  ASSERT_EQ(PSX_RESOLVED_TREE_HIR_READY,
-            psx_resolved_tree_phase(typed_tree));
+  psx_typed_hir_tree_t *typed_tree =
+      psx_resolution_work_tree_materialize_hir(
+          typed_work_tree, test_semantic_context(), &failure);
+  ASSERT_TRUE(typed_tree != NULL);
+  ASSERT_EQ(PSX_RESOLUTION_WORK_FINALIZED,
+            psx_resolution_work_tree_phase(typed_work_tree));
   isolated_hir = psx_hir_module_create();
   ASSERT_TRUE(isolated_hir != NULL);
-  psx_hir_node_id_t typed_root_id = psx_resolved_tree_emit_hir(
+  psx_hir_node_id_t typed_root_id = psx_typed_hir_tree_emit(
       isolated_hir, typed_tree, &failure);
   ASSERT_TRUE(typed_root_id != PSX_HIR_NODE_ID_INVALID);
   const psx_hir_node_t *typed_hir_root =

@@ -6,12 +6,10 @@
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "../parser/node_utils.h"
-#include "resolved_tree_internal.h"
 
-struct psx_resolved_tree_t {
+struct psx_resolution_work_tree_t {
   node_t *root;
-  psx_resolved_hir_node_t *hir_root;
-  psx_resolved_tree_phase_t phase;
+  psx_resolution_work_phase_t phase;
 };
 
 static size_t node_storage_size(const node_t *node) {
@@ -290,60 +288,47 @@ static node_t *clone_node(
   return copy;
 }
 
-psx_resolved_tree_t *psx_resolved_tree_create_from_syntax(
+psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root) {
   if (!arena_context || !syntax_root) return NULL;
-  psx_resolved_tree_t *tree = arena_alloc_in(
+  psx_resolution_work_tree_t *tree = arena_alloc_in(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
   tree->root = clone_node(arena_context, syntax_root);
   if (!tree->root) return NULL;
-  tree->phase = PSX_RESOLVED_TREE_CLONED;
+  tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
 }
 
-node_t *psx_resolved_tree_mutable_root(psx_resolved_tree_t *tree) {
+node_t *psx_resolution_work_tree_mutable_root(
+    psx_resolution_work_tree_t *tree) {
   return tree ? tree->root : NULL;
 }
 
-const node_t *psx_resolved_tree_root(const psx_resolved_tree_t *tree) {
+const node_t *psx_resolution_work_tree_root(
+    const psx_resolution_work_tree_t *tree) {
   return tree ? tree->root : NULL;
 }
 
-node_t *psx_resolved_tree_legacy_root(psx_resolved_tree_t *tree) {
-  return tree && tree->phase >= PSX_RESOLVED_TREE_FINALIZED
+node_t *psx_resolution_work_tree_legacy_root(
+    psx_resolution_work_tree_t *tree) {
+  return tree && tree->phase >= PSX_RESOLUTION_WORK_FINALIZED
              ? tree->root : NULL;
 }
 
-psx_resolved_tree_phase_t psx_resolved_tree_phase(
-    const psx_resolved_tree_t *tree) {
-  return tree ? tree->phase : PSX_RESOLVED_TREE_INVALID;
+psx_resolution_work_phase_t psx_resolution_work_tree_phase(
+    const psx_resolution_work_tree_t *tree) {
+  return tree ? tree->phase : PSX_RESOLUTION_WORK_INVALID;
 }
 
-int psx_resolved_tree_advance_with_root(
-    psx_resolved_tree_t *tree, psx_resolved_tree_phase_t expected,
-    psx_resolved_tree_phase_t next, node_t *root) {
+int psx_resolution_work_tree_advance_with_root(
+    psx_resolution_work_tree_t *tree,
+    psx_resolution_work_phase_t expected,
+    psx_resolution_work_phase_t next, node_t *root) {
   if (!tree || !root || tree->phase != expected ||
-      next != (psx_resolved_tree_phase_t)(expected + 1))
+      next != (psx_resolution_work_phase_t)(expected + 1))
     return 0;
   tree->root = root;
   tree->phase = next;
   return 1;
-}
-
-int psx_resolved_tree_publish_hir_root(
-    psx_resolved_tree_t *tree, psx_resolved_hir_node_t *root) {
-  if (!tree || !root ||
-      tree->phase != PSX_RESOLVED_TREE_FINALIZED ||
-      tree->hir_root)
-    return 0;
-  tree->hir_root = root;
-  tree->phase = PSX_RESOLVED_TREE_HIR_READY;
-  return 1;
-}
-
-const psx_resolved_hir_node_t *psx_resolved_tree_hir_root(
-    const psx_resolved_tree_t *tree) {
-  return tree && tree->phase == PSX_RESOLVED_TREE_HIR_READY
-             ? tree->hir_root : NULL;
 }
