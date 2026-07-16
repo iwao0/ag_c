@@ -71,7 +71,6 @@
 #include "../src/lowering/abi_lowering.h"
 #include "../src/lowering/hir_ir_builder.h"
 #include "../src/lowering/expr_lowering.h"
-#include "../src/lowering/subscript_lowering.h"
 #include "../src/lowering/runtime_context.h"
 #include "../src/lowering/local_storage.h"
 #include "../src/lowering/local_object_lowering.h"
@@ -2200,7 +2199,9 @@ static void test_typed_hir_post_inc_lowering_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(2, ir->funcs->param_abi_count);
-  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_ADD));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_ADD));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MUL));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_LEA));
   ASSERT_EQ(4, count_ir_op(ir->funcs, IR_STORE));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
@@ -5139,7 +5140,7 @@ static void test_expr_compound_literal_array_subscript() {
 
   // 配列型複合リテラルへの添字アクセス: ((int[2]){1,2})[1]
   node_t *node = parse_expr_input("((int[2]){1,2})[1]");
-  ASSERT_EQ(ND_DEREF, node->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, node->kind);
 
   node_t *inferred = parse_expr_input("(int[]){1,2,3}");
   ASSERT_EQ(ND_COMMA, inferred->kind);
@@ -5350,18 +5351,45 @@ static void test_subscript_semantic_lowering_boundary() {
   node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != subscript_syntax);
   ASSERT_EQ(ND_SUBSCRIPT, subscript_syntax->kind);
-  ASSERT_EQ(ND_DEREF, node->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, node->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, node->lhs->kind);
   ASSERT_TRUE(ps_node_get_type(node) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(node)->kind);
-  ASSERT_EQ(ND_ADD, node->lhs->kind);
-  ASSERT_TRUE(node->lhs->lhs->kind != ND_SUBSCRIPT);
+  ASSERT_TRUE(ps_node_get_type(node->lhs) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(node->lhs)->kind);
 
   node_t *reversed = parse_expr_input_with_existing_locals("1[a]");
   ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
   ASSERT_EQ(ND_NUM, reversed->lhs->kind);
   ASSERT_EQ(ND_IDENTIFIER, reversed->rhs->kind);
   reversed = analyze_test_expression(reversed, NULL);
-  ASSERT_EQ(ND_DEREF, reversed->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
+  ASSERT_TRUE(ps_node_get_type(reversed->lhs) != NULL);
+  ASSERT_TRUE(ps_type_is_pointer_like(ps_node_get_type(reversed->lhs)));
+  ASSERT_EQ(ND_NUM, reversed->rhs->kind);
+
+  node_t **program = parse_program_input(
+      "int __typed_hir_subscript(int *value) { return value[1]; }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, body->body[0]->lhs->kind);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_typed_hir_subscript = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_SUBSCRIPT &&
+        psx_hir_node_qual_type(hir_node).type_id !=
+            PSX_TYPE_ID_INVALID) {
+      found_typed_hir_subscript = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_typed_hir_subscript);
 }
 
 static void test_unary_deref_semantic_lowering_boundary() {
@@ -6178,6 +6206,31 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_EQ(ND_COMMA, node->kind);
   ASSERT_EQ(ND_ASSIGN, node->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, node->rhs->kind);
+
+  node_t **program = parse_program_input(
+      "int __typed_hir_subscript_compound(int *values, int index) { "
+      "values[index] += 2; return values[index]; }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_TRUE(body->body[0]->is_source_compound_assignment);
+  ASSERT_EQ(ND_SUBSCRIPT, body->body[0]->lhs->kind);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_subscript_compound = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_COMPOUND_ASSIGN &&
+        psx_hir_node_compound_operator(hir_node) ==
+            PSX_HIR_COMPOUND_ADD) {
+      found_subscript_compound = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_subscript_compound);
 }
 
 static void test_translation_unit_frontend_boundary() {
@@ -7221,14 +7274,6 @@ static void test_target_type_layout_boundary() {
       lowering, ND_ADD, wasm_record_pointer, ps_node_new_num(1));
   ASSERT_EQ(ND_MUL, wasm_record_add->rhs->kind);
   ASSERT_EQ(8, as_num(wasm_record_add->rhs->rhs)->val);
-  node_t *wasm_record_subscript = lower_subscript_expression(
-      lowering, psx_node_new_subscript_syntax_for_in(
-                    test_arena_context(), wasm_record_pointer,
-                    ps_node_new_num(1)));
-  ASSERT_EQ(ND_DEREF, wasm_record_subscript->kind);
-  ASSERT_EQ(ND_MUL, wasm_record_subscript->lhs->rhs->kind);
-  ASSERT_EQ(8, as_num(wasm_record_subscript->lhs->rhs->rhs)->val);
-
   psx_type_t *record_vla_type = ps_type_new_array(
       record_type, 0, 0, 1);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
@@ -7299,13 +7344,6 @@ static void test_target_type_layout_boundary() {
       lowering, ND_ADD, host_record_pointer, ps_node_new_num(1));
   ASSERT_EQ(ND_MUL, host_record_add->rhs->kind);
   ASSERT_EQ(16, as_num(host_record_add->rhs->rhs)->val);
-  node_t *host_record_subscript = lower_subscript_expression(
-      lowering, psx_node_new_subscript_syntax_for_in(
-                    test_arena_context(), host_record_pointer,
-                    ps_node_new_num(1)));
-  ASSERT_EQ(ND_DEREF, host_record_subscript->kind);
-  ASSERT_EQ(ND_MUL, host_record_subscript->lhs->rhs->kind);
-  ASSERT_EQ(16, as_num(host_record_subscript->lhs->rhs->rhs)->val);
   reset_test_locals();
   psx_vla_lowering_result_t host_record_vla = lower_vla_declaration(
       &record_vla_request);
@@ -13665,12 +13703,12 @@ static void test_type_metadata_bridge() {
     }
   }
   ASSERT_TRUE(vla_ptr_arith_elem != NULL);
-  ASSERT_EQ(ND_DEREF, vla_ptr_arith_elem->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, vla_ptr_arith_elem->kind);
   ASSERT_EQ(4, ps_node_type_size(vla_ptr_arith_elem));
   ASSERT_TRUE(vla_ptr_arith_elem->lhs != NULL);
-  ASSERT_EQ(ND_ADD, vla_ptr_arith_elem->lhs->kind);
-  ASSERT_TRUE(vla_ptr_arith_elem->lhs->lhs != NULL);
-  ASSERT_TRUE(vla_ptr_arith_elem->lhs->lhs->kind != ND_DEREF);
+  ASSERT_EQ(ND_UNARY_DEREF, vla_ptr_arith_elem->lhs->kind);
+  ASSERT_TRUE(vla_ptr_arith_elem->rhs != NULL);
+  ASSERT_EQ(ND_NUM, vla_ptr_arith_elem->rhs->kind);
 
   parsed_code = parse_program_input(
       "int __tm_vla_fp_sidecar(int m) { double a[2][3]; double (*p)[m] = a; "
@@ -18292,7 +18330,7 @@ static void test_type_metadata_bridge() {
   }
   ASSERT_TRUE(indirect_explicit_row_ret != NULL);
   node_t *indirect_explicit_row_elem = indirect_explicit_row_ret->lhs;
-  ASSERT_EQ(ND_DEREF, indirect_explicit_row_elem->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, indirect_explicit_row_elem->kind);
   ASSERT_EQ(4, ps_node_type_size(indirect_explicit_row_elem));
   ASSERT_EQ(0, ps_node_deref_size(indirect_explicit_row_elem));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(indirect_explicit_row_elem));
@@ -20290,7 +20328,8 @@ static void test_semantic_canonical_type_invariant() {
   node_t raw_subscript = {.kind = ND_SUBSCRIPT};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &raw_subscript, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, failure.status);
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE,
+            failure.status);
   ASSERT_TRUE(failure.node == &raw_subscript);
 
   node_t raw_initializer = {.kind = ND_INIT_LIST};

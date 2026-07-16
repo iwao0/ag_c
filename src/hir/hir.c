@@ -271,6 +271,7 @@ static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_TERNARY:
     case PSX_HIR_COMMA:
     case PSX_HIR_ASSIGN:
+    case PSX_HIR_COMPOUND_ASSIGN:
     case PSX_HIR_LOCAL:
     case PSX_HIR_PRE_INC:
     case PSX_HIR_PRE_DEC:
@@ -279,6 +280,7 @@ static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_CALL:
     case PSX_HIR_FUNCTION_REF:
     case PSX_HIR_DEREF:
+    case PSX_HIR_SUBSCRIPT:
     case PSX_HIR_ADDRESS:
     case PSX_HIR_STRING:
     case PSX_HIR_NUMBER:
@@ -458,6 +460,13 @@ long long psx_hir_node_integer_value(const psx_hir_node_t *node) {
 
 double psx_hir_node_floating_value(const psx_hir_node_t *node) {
   return node ? node->floating_value : 0.0;
+}
+
+psx_hir_compound_operator_t psx_hir_node_compound_operator(
+    const psx_hir_node_t *node) {
+  return node
+             ? (psx_hir_compound_operator_t)node->integer_value
+             : PSX_HIR_COMPOUND_ADD;
 }
 
 int psx_hir_node_storage_offset(const psx_hir_node_t *node) {

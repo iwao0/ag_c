@@ -76,6 +76,7 @@ node_t *lower_compound_assignment_expression(
       !node->is_source_compound_assignment || !node->lhs || !node->rhs) {
     return node;
   }
+  if (node->lhs->kind == ND_SUBSCRIPT) return node;
   if (!lowering_context || !local_registry) return node;
 
   token_t *source_tok = node->tok;

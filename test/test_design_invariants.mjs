@@ -850,10 +850,6 @@ const expressionLoweringSource = await readFile(
   "src/lowering/expr_lowering.c",
   "utf8",
 );
-const subscriptLoweringSource = await readFile(
-  "src/lowering/subscript_lowering.c",
-  "utf8",
-);
 const translationUnitDataLoweringSource = await readFile(
   "src/lowering/translation_unit_data_lowering.c",
   "utf8",
@@ -4582,7 +4578,7 @@ for (const [name, header, source, functionName] of [
 
 for (const [name, source, requiredLayoutCall] of [
   ["expression", expressionLoweringSource, /\bps_lowering_type_deref_size\s*\(/],
-  ["subscript", subscriptLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["subscript", hirIrBuilder, /\bps_type_sizeof_id_with_records\s*\(/],
   ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
   ["VLA", vlaLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
   ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bps_type_sizeof_id_with_records\s*\(/],
@@ -5036,7 +5032,9 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(frameLayoutSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(vlaLoweringSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(expressionLoweringSource) ||
-    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(subscriptLoweringSource) ||
+    !/source->kind\s*==\s*ND_SUBSCRIPT[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
+      resolvedTreeMaterialization,
+    ) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(typeQueryResolutionSource) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(irBuilderSource) ||
     !/AG_TARGET_SCALAR_LONG_LONG[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
@@ -5724,6 +5722,34 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
     )) {
   throw new Error(
     "typed unary dereference must materialize directly into Typed HIR without parser-shaped lowering",
+  );
+}
+if (!/MAP_EXPR\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/\bPSX_HIR_SUBSCRIPT\b/.test(hirHeader) ||
+    !/kind\s*==\s*PSX_HIR_SUBSCRIPT/.test(hirIrBuilder) ||
+    !/\bsubscript_address\s*\(/.test(hirIrBuilder) ||
+    /\blower_subscript_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/subscript_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "typed subscript must materialize directly into Typed HIR without parser-shaped lowering",
+  );
+}
+if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
+    !/source->kind\s*==\s*ND_ASSIGN[^]*?is_source_compound_assignment[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder) ||
+    !/node->lhs->kind\s*==\s*ND_SUBSCRIPT[^]*?return\s+node\s*;/.test(
+      assignmentLoweringSource,
+    )) {
+  throw new Error(
+    "subscript compound assignment must preserve one lvalue evaluation through Typed HIR",
   );
 }
 if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(

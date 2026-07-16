@@ -7,7 +7,6 @@
 #include "initializer_lowering.h"
 #include "member_access_lowering.h"
 #include "runtime_context.h"
-#include "subscript_lowering.h"
 #include "complex_part_lowering.h"
 #include "../parser/node_utils.h"
 
@@ -183,7 +182,7 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       node->rhs = lower_tree(
           context, node->rhs, fallback_diag_tok);
-      return lower_subscript_expression(context->lowering_context, node);
+      break;
     case ND_MEMBER_ACCESS:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
@@ -310,6 +309,7 @@ static void lower_assignment_conversion(
     const ag_compilation_options_t *options) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs)
     return;
+  if (node->is_source_compound_assignment) return;
   node->rhs = lower_implicit_value_conversion(
       lowering_context, node->rhs, ps_node_get_type(node->lhs),
       node->tok ? node->tok : (token_t *)fallback_diag_tok,

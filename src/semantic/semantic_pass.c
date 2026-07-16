@@ -5,9 +5,11 @@
 #include "../parser/arena.h"
 #include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
+#include "../parser/node_vla_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "assignment_validation.h"
 #include "expression_operand_resolution.h"
@@ -320,6 +322,14 @@ static void semantic_resolve_subscript(
         node, psx_resolve_indirection_result_type(
                   semantic_context, node->lhs));
   }
+  int frame_off = ps_node_vla_row_stride_frame_off(node->lhs);
+  int remaining = ps_node_vla_strides_remaining(node->lhs);
+  ps_node_set_vla_runtime_view(
+      node,
+      frame_off != 0 && remaining > 0
+          ? frame_off + PSX_VLA_RUNTIME_SLOT_SIZE
+          : 0,
+      remaining > 0 ? remaining - 1 : 0);
 }
 
 static void semantic_resolve_unary_deref(

@@ -12,6 +12,8 @@
 #include "../tokenizer/literals.h"
 #include "../type_layout.h"
 
+#include <string.h>
+
 typedef struct {
   psx_lowering_context_t *lowering_context;
   global_var_t *global;
@@ -37,6 +39,194 @@ static int lowering_type_size(
 static int type_size(
     const static_array_lowering_t *lowering, const psx_type_t *type) {
   return lowering_type_size(lowering->lowering_context, type);
+}
+
+static int resolve_static_address_constant(
+    psx_lowering_context_t *lowering_context, node_t *node,
+    char **symbol, int *symbol_len, long long *offset) {
+  if (!lowering_context || !node || !symbol || !symbol_len || !offset)
+    return 0;
+  switch (node->kind) {
+    case ND_ADDR:
+      if (node->lhs &&
+          (node->lhs->kind == ND_SUBSCRIPT ||
+           node->lhs->kind == ND_DEREF))
+        return resolve_static_address_constant(
+            lowering_context,
+            node->lhs->kind == ND_DEREF ? node->lhs->lhs : node->lhs,
+            symbol, symbol_len, offset);
+      break;
+    case ND_SUBSCRIPT: {
+      if (!resolve_static_address_constant(
+              lowering_context, node->lhs,
+              symbol, symbol_len, offset))
+        return 0;
+      int ok = 1;
+      long long index = psx_eval_const_int(node->rhs, &ok);
+      psx_type_id_t base_type_id =
+          ps_node_qual_type(node->lhs).type_id;
+      if (base_type_id == PSX_TYPE_ID_INVALID)
+        base_type_id = ps_lowering_type_id(
+            lowering_context, ps_node_get_type(node->lhs));
+      psx_qual_type_t element_type =
+          psx_semantic_type_table_base(
+              ps_lowering_semantic_types(lowering_context),
+              base_type_id);
+      int stride = ps_type_sizeof_id_with_records(
+          ps_lowering_semantic_types(lowering_context),
+          ps_lowering_record_layouts(lowering_context),
+          element_type.type_id,
+          ps_lowering_target(lowering_context));
+      if (!ok || stride <= 0) return 0;
+      *offset += index * stride;
+      return 1;
+    }
+    case ND_CAST:
+      return resolve_static_address_constant(
+          lowering_context, node->lhs, symbol, symbol_len, offset);
+    case ND_ADD: {
+      int ok = 1;
+      if (resolve_static_address_constant(
+              lowering_context, node->lhs,
+              symbol, symbol_len, offset)) {
+        long long addend = psx_eval_const_int(node->rhs, &ok);
+        if (!ok) return 0;
+        *offset += addend;
+        return 1;
+      }
+      if (resolve_static_address_constant(
+              lowering_context, node->rhs,
+              symbol, symbol_len, offset)) {
+        long long addend = psx_eval_const_int(node->lhs, &ok);
+        if (!ok) return 0;
+        *offset += addend;
+        return 1;
+      }
+      return 0;
+    }
+    case ND_SUB: {
+      int ok = 1;
+      if (!resolve_static_address_constant(
+              lowering_context, node->lhs,
+              symbol, symbol_len, offset))
+        return 0;
+      long long addend = psx_eval_const_int(node->rhs, &ok);
+      if (!ok) return 0;
+      *offset -= addend;
+      return 1;
+    }
+    default:
+      break;
+  }
+  return psx_resolve_static_address_constant(
+      node, symbol, symbol_len, offset);
+}
+
+static int same_static_symbol(
+    const char *left, int left_len, const char *right, int right_len) {
+  if (!left || !right || left_len != right_len) return 0;
+  if (left_len == -1) return left == right;
+  return left_len > 0 &&
+         memcmp(left, right, (size_t)left_len) == 0;
+}
+
+static long long eval_static_const_int(
+    psx_lowering_context_t *lowering_context,
+    node_t *node, int *ok) {
+  int direct_ok = 1;
+  long long direct = psx_eval_const_int(node, &direct_ok);
+  if (direct_ok) {
+    if (ok) *ok = 1;
+    return direct;
+  }
+  if (!node) {
+    if (ok) *ok = 0;
+    return 0;
+  }
+  if (node->kind == ND_CAST)
+    return eval_static_const_int(lowering_context, node->lhs, ok);
+  if (node->kind == ND_UNARY_NEGATE) {
+    long long value =
+        eval_static_const_int(lowering_context, node->lhs, ok);
+    return !ok || *ok ? -value : 0;
+  }
+  if (node->kind == ND_SUB) {
+    char *left_symbol = NULL;
+    char *right_symbol = NULL;
+    int left_len = 0;
+    int right_len = 0;
+    long long left_offset = 0;
+    long long right_offset = 0;
+    if (resolve_static_address_constant(
+            lowering_context, node->lhs,
+            &left_symbol, &left_len, &left_offset) &&
+        resolve_static_address_constant(
+            lowering_context, node->rhs,
+            &right_symbol, &right_len, &right_offset) &&
+        same_static_symbol(
+            left_symbol, left_len, right_symbol, right_len)) {
+      if (ok) *ok = 1;
+      return left_offset - right_offset;
+    }
+  }
+  switch (node->kind) {
+    case ND_ADD:
+    case ND_SUB:
+    case ND_MUL:
+    case ND_DIV:
+    case ND_MOD:
+    case ND_SHL:
+    case ND_SHR:
+    case ND_BITAND:
+    case ND_BITXOR:
+    case ND_BITOR:
+    case ND_EQ:
+    case ND_NE:
+    case ND_LT:
+    case ND_LE:
+    case ND_LOGAND:
+    case ND_LOGOR:
+      break;
+    default:
+      if (ok) *ok = 0;
+      return 0;
+  }
+  int operands_ok = 1;
+  long long left = eval_static_const_int(
+      lowering_context, node->lhs, &operands_ok);
+  if (!operands_ok) {
+    if (ok) *ok = 0;
+    return 0;
+  }
+  long long right = eval_static_const_int(
+      lowering_context, node->rhs, &operands_ok);
+  if (!operands_ok ||
+      ((node->kind == ND_DIV || node->kind == ND_MOD) && right == 0)) {
+    if (ok) *ok = 0;
+    return 0;
+  }
+  if (ok) *ok = 1;
+  switch (node->kind) {
+    case ND_ADD: return left + right;
+    case ND_SUB: return left - right;
+    case ND_MUL: return left * right;
+    case ND_DIV: return left / right;
+    case ND_MOD: return left % right;
+    case ND_SHL: return left << right;
+    case ND_SHR: return left >> right;
+    case ND_BITAND: return left & right;
+    case ND_BITXOR: return left ^ right;
+    case ND_BITOR: return left | right;
+    case ND_EQ: return left == right;
+    case ND_NE: return left != right;
+    case ND_LT: return left < right;
+    case ND_LE: return left <= right;
+    case ND_LOGAND: return left && right;
+    case ND_LOGOR: return left || right;
+    default:
+      if (ok) *ok = 0;
+      return 0;
+  }
 }
 
 static const psx_record_decl_t *record_decl(
@@ -224,8 +414,9 @@ static void write_scalar_value(
   long long offset = 0;
   if (type && (type->kind == PSX_TYPE_POINTER ||
                type->kind == PSX_TYPE_FUNCTION)) {
-    if (psx_resolve_static_address_constant(
-            value, &symbol, &symbol_len, &offset)) {
+    if (resolve_static_address_constant(
+            lowering->lowering_context, value,
+            &symbol, &symbol_len, &offset)) {
       integer = offset;
     }
   } else if (type && type->kind == PSX_TYPE_FLOAT) {
@@ -234,7 +425,8 @@ static void write_scalar_value(
     if (!ok) floating = 0.0;
   } else {
     int ok = 1;
-    integer = psx_eval_const_int(value, &ok);
+    integer = eval_static_const_int(
+        lowering->lowering_context, value, &ok);
     if (!ok) integer = 0;
     if (type && type->kind == PSX_TYPE_BOOL) integer = integer != 0;
   }
@@ -464,7 +656,8 @@ static int lower_static_scalar_expression(
         lowering_context, global, type, (node_string_t *)initializer);
 
   int integer_ok = 1;
-  long long integer = psx_eval_const_int(initializer, &integer_ok);
+  long long integer = eval_static_const_int(
+      lowering_context, initializer, &integer_ok);
   if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX) {
     int floating_ok = 1;
     double floating = psx_eval_const_fp(initializer, &floating_ok);
@@ -481,8 +674,9 @@ static int lower_static_scalar_expression(
   char *symbol = NULL;
   int symbol_len = 0;
   long long offset = 0;
-  if (psx_resolve_static_address_constant(
-          initializer, &symbol, &symbol_len, &offset)) {
+  if (resolve_static_address_constant(
+          lowering_context, initializer,
+          &symbol, &symbol_len, &offset)) {
     global->init_symbol = symbol;
     global->init_symbol_len = symbol_len;
     global->init_symbol_offset = offset;

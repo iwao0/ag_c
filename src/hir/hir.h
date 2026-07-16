@@ -31,6 +31,7 @@ typedef enum {
   PSX_HIR_TERNARY,
   PSX_HIR_COMMA,
   PSX_HIR_ASSIGN,
+  PSX_HIR_COMPOUND_ASSIGN,
   PSX_HIR_LOCAL,
   PSX_HIR_IF,
   PSX_HIR_WHILE,
@@ -53,6 +54,7 @@ typedef enum {
   PSX_HIR_CALL,
   PSX_HIR_FUNCTION_REF,
   PSX_HIR_DEREF,
+  PSX_HIR_SUBSCRIPT,
   PSX_HIR_ADDRESS,
   PSX_HIR_STRING,
   PSX_HIR_NUMBER,
@@ -67,6 +69,19 @@ typedef enum {
   PSX_HIR_CIMAG,
   PSX_HIR_STMT_EXPR,
 } psx_hir_node_kind_t;
+
+typedef enum {
+  PSX_HIR_COMPOUND_ADD,
+  PSX_HIR_COMPOUND_SUB,
+  PSX_HIR_COMPOUND_MUL,
+  PSX_HIR_COMPOUND_DIV,
+  PSX_HIR_COMPOUND_MOD,
+  PSX_HIR_COMPOUND_SHL,
+  PSX_HIR_COMPOUND_SHR,
+  PSX_HIR_COMPOUND_BITAND,
+  PSX_HIR_COMPOUND_BITXOR,
+  PSX_HIR_COMPOUND_BITOR,
+} psx_hir_compound_operator_t;
 
 typedef enum {
   PSX_HIR_ROLE_STATEMENT,
@@ -120,6 +135,8 @@ const char *psx_hir_node_literal_contents(
     const psx_hir_node_t *node, size_t *length);
 long long psx_hir_node_integer_value(const psx_hir_node_t *node);
 double psx_hir_node_floating_value(const psx_hir_node_t *node);
+psx_hir_compound_operator_t psx_hir_node_compound_operator(
+    const psx_hir_node_t *node);
 int psx_hir_node_storage_offset(const psx_hir_node_t *node);
 int psx_hir_node_object_offset(const psx_hir_node_t *node);
 int psx_hir_node_object_size(const psx_hir_node_t *node);

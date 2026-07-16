@@ -8,6 +8,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_type_public.h"
+#include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
@@ -118,6 +119,7 @@ static int map_kind(
     MAP_EXPR(ND_UNARY_NEGATE, PSX_HIR_NEGATE);
     MAP_EXPR(ND_UNARY_DEREF, PSX_HIR_DEREF);
     MAP_EXPR(ND_DEREF, PSX_HIR_DEREF);
+    MAP_EXPR(ND_SUBSCRIPT, PSX_HIR_SUBSCRIPT);
     MAP_EXPR(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
     MAP_EXPR(ND_ADDR, PSX_HIR_ADDRESS);
     MAP_EXPR(ND_STRING, PSX_HIR_STRING);
@@ -136,6 +138,24 @@ static int map_kind(
   }
 #undef MAP_EXPR
 #undef MAP_STMT
+}
+
+static int compound_operator(
+    token_kind_t source, psx_hir_compound_operator_t *result) {
+  if (!result) return 0;
+  switch (source) {
+    case TK_PLUSEQ: *result = PSX_HIR_COMPOUND_ADD; return 1;
+    case TK_MINUSEQ: *result = PSX_HIR_COMPOUND_SUB; return 1;
+    case TK_MULEQ: *result = PSX_HIR_COMPOUND_MUL; return 1;
+    case TK_DIVEQ: *result = PSX_HIR_COMPOUND_DIV; return 1;
+    case TK_MODEQ: *result = PSX_HIR_COMPOUND_MOD; return 1;
+    case TK_SHLEQ: *result = PSX_HIR_COMPOUND_SHL; return 1;
+    case TK_SHREQ: *result = PSX_HIR_COMPOUND_SHR; return 1;
+    case TK_ANDEQ: *result = PSX_HIR_COMPOUND_BITAND; return 1;
+    case TK_XOREQ: *result = PSX_HIR_COMPOUND_BITXOR; return 1;
+    case TK_OREQ: *result = PSX_HIR_COMPOUND_BITOR; return 1;
+    default: return 0;
+  }
 }
 
 static psx_resolved_hir_node_t *build_node(
@@ -521,6 +541,13 @@ static int attach_global_symbol(
 static void copy_payload(
     const node_t *source, psx_hir_node_spec_t *spec) {
   switch (source->kind) {
+    case ND_ASSIGN:
+      if (source->is_source_compound_assignment) {
+        psx_hir_compound_operator_t op = PSX_HIR_COMPOUND_ADD;
+        if (compound_operator(source->source_op, &op))
+          spec->integer_value = op;
+      }
+      break;
     case ND_ALIGNOF_QUERY:
       spec->integer_value =
           ((const node_alignof_query_t *)source)->resolved_alignment;
@@ -627,6 +654,13 @@ static void copy_payload(
 static int copy_vla_payload(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
+  if (source->kind == ND_SUBSCRIPT) {
+    spec->vla_stride_frame_offset =
+        ps_node_vla_row_stride_frame_off((node_t *)source);
+    if (spec->vla_stride_frame_offset != 0)
+      spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
+    return 1;
+  }
   if (source->kind != ND_LVAR) return 1;
   const lvar_t *var = ((const node_lvar_t *)source)->var;
   if (!var || !ps_lvar_is_vla(var)) return 1;
@@ -692,6 +726,9 @@ static psx_resolved_hir_node_t *build_node(
     set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return NULL;
   }
+  if (source->kind == ND_ASSIGN &&
+      source->is_source_compound_assignment)
+    spec.kind = PSX_HIR_COMPOUND_ASSIGN;
   if (role == PSX_HIR_ROLE_EXPRESSION) {
     qual_type = ps_node_qual_type(source);
     if (!canonical_type_exists(builder, qual_type)) {
