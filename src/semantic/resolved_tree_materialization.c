@@ -1,9 +1,9 @@
-#include "typed_hir_builder.h"
+#include "resolved_tree_hir.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "../hir/hir_internal.h"
+#include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
@@ -11,48 +11,51 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
+#include "resolved_hir_node_internal.h"
+#include "resolved_tree_internal.h"
 #include "resolution_work_tree.h"
 
 typedef struct {
-  psx_hir_module_t *module;
+  arena_context_t *arena_context;
   const psx_semantic_context_t *semantic_context;
-  psx_typed_hir_build_failure_t *failure;
-} hir_builder_t;
+  psx_resolved_hir_build_failure_t *failure;
+} hir_materializer_t;
 
 typedef struct {
-  psx_hir_node_id_t *items;
+  psx_resolved_hir_node_t **items;
   psx_hir_edge_kind_t *edges;
   size_t count;
   size_t capacity;
 } hir_children_t;
 
 static void set_failure(
-    hir_builder_t *builder, psx_typed_hir_build_status_t status,
+    hir_materializer_t *builder, psx_resolved_hir_build_status_t status,
     const node_t *source) {
-  if (!builder->failure || builder->failure->status != PSX_TYPED_HIR_BUILD_OK)
+  if (!builder->failure ||
+      builder->failure->status != PSX_RESOLVED_HIR_BUILD_OK)
     return;
   builder->failure->status = status;
   builder->failure->source_node_kind = source ? (int)source->kind : -1;
 }
 
 static int append_child(
-    hir_builder_t *builder, hir_children_t *children,
-    psx_hir_node_id_t child, psx_hir_edge_kind_t edge,
+    hir_materializer_t *builder, hir_children_t *children,
+    psx_resolved_hir_node_t *child, psx_hir_edge_kind_t edge,
     const node_t *source) {
-  if (child == PSX_HIR_NODE_ID_INVALID) return 0;
+  if (!child) return 0;
   if (children->count == children->capacity) {
     size_t capacity = children->capacity ? children->capacity * 2 : 4;
-    psx_hir_node_id_t *items = realloc(
+    psx_resolved_hir_node_t **items = realloc(
         children->items, capacity * sizeof(*items));
     if (!items) {
-      set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
+      set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
       return 0;
     }
     children->items = items;
     psx_hir_edge_kind_t *edges = realloc(
         children->edges, capacity * sizeof(*edges));
     if (!edges) {
-      set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
+      set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
       return 0;
     }
     children->edges = edges;
@@ -132,8 +135,8 @@ static int map_kind(
 #undef MAP_STMT
 }
 
-static psx_hir_node_id_t build_node(
-    hir_builder_t *builder, const node_t *source);
+static psx_resolved_hir_node_t *build_node(
+    hir_materializer_t *builder, const node_t *source);
 
 static int is_statement_expression_value(
     const node_t *statement_expression, const node_t *candidate) {
@@ -145,14 +148,56 @@ static int is_statement_expression_value(
          candidate->tok == value->tok;
 }
 
-static psx_hir_node_id_t build_statement_expression_prefix(
-    hir_builder_t *builder, const node_t *source) {
+static psx_resolved_hir_node_t *materialize_node_record(
+    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
+    psx_hir_node_role_t role, psx_qual_type_t qual_type,
+    const hir_children_t *children,
+    const psx_hir_symbol_spec_t *symbol,
+    const node_t *source) {
+  psx_resolved_hir_node_t *node = arena_alloc_in(
+      builder->arena_context, sizeof(*node));
+  if (!node) {
+    set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+    return NULL;
+  }
+  node->spec = *spec;
+  node->role = role;
+  node->expression_type = qual_type;
+  node->source_node_kind = source ? (int)source->kind : -1;
+  node->spec.children = NULL;
+  node->spec.child_edges = NULL;
+  node->spec.child_count = children ? children->count : 0;
+  if (children && children->count) {
+    node->children = arena_alloc_in(
+        builder->arena_context,
+        children->count * sizeof(*node->children));
+    node->child_edges = arena_alloc_in(
+        builder->arena_context,
+        children->count * sizeof(*node->child_edges));
+    if (!node->children || !node->child_edges) {
+      set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+      return NULL;
+    }
+    memcpy(node->children, children->items,
+           children->count * sizeof(*node->children));
+    memcpy(node->child_edges, children->edges,
+           children->count * sizeof(*node->child_edges));
+  }
+  if (symbol) {
+    node->symbol = *symbol;
+    node->has_symbol = 1;
+  }
+  return node;
+}
+
+static psx_resolved_hir_node_t *build_statement_expression_prefix(
+    hir_materializer_t *builder, const node_t *source) {
   const node_block_t *block =
       source && source->lhs && source->lhs->kind == ND_BLOCK
           ? (const node_block_t *)source->lhs : NULL;
   if (!block) {
-    set_failure(builder, PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
-    return PSX_HIR_NODE_ID_INVALID;
+    set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
   }
   hir_children_t children = {0};
   for (int i = 0; block->body && block->body[i]; i++) {
@@ -162,29 +207,26 @@ static psx_hir_node_id_t build_statement_expression_prefix(
             PSX_HIR_EDGE_BLOCK_ITEM, block->body[i])) {
       free(children.items);
       free(children.edges);
-      return PSX_HIR_NODE_ID_INVALID;
+      return NULL;
     }
   }
   psx_hir_node_spec_t spec = {
       .kind = PSX_HIR_BLOCK,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .children = children.items,
-      .child_edges = children.edges,
-      .child_count = children.count,
   };
-  psx_hir_statement_spec_t statement = {.node = spec};
-  psx_hir_node_id_t result = psx_hir_module_add_statement(
-      builder->module, &statement);
+  psx_resolved_hir_node_t *result = materialize_node_record(
+      builder, &spec, PSX_HIR_ROLE_STATEMENT,
+      (psx_qual_type_t){
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      &children, NULL, source);
   free(children.items);
   free(children.edges);
-  if (result == PSX_HIR_NODE_ID_INVALID)
-    set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
   return result;
 }
 
 static int build_and_append(
-    hir_builder_t *builder, hir_children_t *children,
+    hir_materializer_t *builder, hir_children_t *children,
     const node_t *source, psx_hir_edge_kind_t edge) {
   if (!source) return 1;
   return append_child(
@@ -192,7 +234,7 @@ static int build_and_append(
 }
 
 static int build_special_children(
-    hir_builder_t *builder, hir_children_t *children,
+    hir_materializer_t *builder, hir_children_t *children,
     const node_t *source, int *include_common_children) {
   *include_common_children = 1;
   switch (source->kind) {
@@ -257,13 +299,13 @@ static int build_special_children(
 }
 
 static int canonical_type_exists(
-    const hir_builder_t *builder, psx_qual_type_t type) {
+    const hir_materializer_t *builder, psx_qual_type_t type) {
   return type.type_id != PSX_TYPE_ID_INVALID &&
          ps_ctx_type_by_id_in(builder->semantic_context, type.type_id) != NULL;
 }
 
 static psx_qual_type_t child_qual_type(
-    const hir_builder_t *builder, const hir_children_t *children,
+    const hir_materializer_t *builder, const hir_children_t *children,
     psx_hir_edge_kind_t edge) {
   if (!builder || !children) {
     return (psx_qual_type_t){
@@ -271,16 +313,15 @@ static psx_qual_type_t child_qual_type(
   }
   for (size_t i = 0; i < children->count; i++) {
     if (children->edges[i] != edge) continue;
-    const psx_hir_node_t *child = psx_hir_module_lookup(
-        builder->module, children->items[i]);
-    if (child) return psx_hir_node_qual_type(child);
+    const psx_resolved_hir_node_t *child = children->items[i];
+    if (child) return child->expression_type;
   }
   return (psx_qual_type_t){
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
 }
 
 static int derive_structural_expression_type(
-    hir_builder_t *builder, const node_t *source,
+    hir_materializer_t *builder, const node_t *source,
     const hir_children_t *children, psx_qual_type_t *qual_type) {
   psx_qual_type_t derived = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -298,7 +339,7 @@ static int derive_structural_expression_type(
   }
   if (!canonical_type_exists(builder, derived)) {
     set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return 0;
   }
   *qual_type = derived;
@@ -306,19 +347,20 @@ static int derive_structural_expression_type(
 }
 
 static int attach_global_symbol(
-    hir_builder_t *builder, const node_t *source,
-    psx_hir_node_spec_t *spec) {
+    hir_materializer_t *builder, const node_t *source,
+    psx_hir_symbol_spec_t *symbol, int *has_symbol) {
+  if (has_symbol) *has_symbol = 0;
   if (source->kind != ND_GVAR) return 1;
   const global_var_t *global = ((const node_gvar_t *)source)->symbol;
   if (!global) {
     set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
     return 0;
   }
   psx_qual_type_t qual_type = ps_gvar_decl_qual_type(global);
   if (!canonical_type_exists(builder, qual_type)) {
     set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return 0;
   }
   const psx_semantic_type_table_t *semantic_types =
@@ -344,7 +386,7 @@ static int attach_global_symbol(
             semantic_types, record_layouts, base.type_id, target);
     }
   }
-  psx_hir_symbol_spec_t symbol = {
+  *symbol = (psx_hir_symbol_spec_t){
       .name = ps_gvar_name(global),
       .name_length = ps_gvar_name_len(global) > 0
                          ? (size_t)ps_gvar_name_len(global) : 0,
@@ -355,13 +397,7 @@ static int attach_global_symbol(
       .is_static = ps_gvar_is_static_storage(global) ? 1 : 0,
       .is_thread_local = ps_gvar_is_thread_local(global) ? 1 : 0,
   };
-  spec->symbol_id = psx_hir_module_intern_symbol(
-      builder->module, &symbol);
-  if (spec->symbol_id == PSX_HIR_SYMBOL_ID_INVALID) {
-    set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
-    return 0;
-  }
+  if (has_symbol) *has_symbol = 1;
   return 1;
 }
 
@@ -468,7 +504,7 @@ static void copy_payload(
 }
 
 static int copy_vla_payload(
-    hir_builder_t *builder, const node_t *source,
+    hir_materializer_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
   if (source->kind != ND_LVAR) return 1;
   const lvar_t *var = ((const node_lvar_t *)source)->var;
@@ -482,12 +518,12 @@ static int copy_vla_payload(
   spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
   int count = ps_lvar_vla_param_inner_dim_count(var);
   if (count <= 0) return 1;
-  int *constants = malloc((size_t)count * sizeof(*constants));
-  int *source_offsets = malloc((size_t)count * sizeof(*source_offsets));
+  int *constants = arena_alloc_in(
+      builder->arena_context, (size_t)count * sizeof(*constants));
+  int *source_offsets = arena_alloc_in(
+      builder->arena_context, (size_t)count * sizeof(*source_offsets));
   if (!constants || !source_offsets) {
-    free(constants);
-    free(source_offsets);
-    set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
+    set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
     return 0;
   }
   for (int i = 0; i < count; i++) {
@@ -501,31 +537,23 @@ static int copy_vla_payload(
   return 1;
 }
 
-static void free_vla_payload(psx_hir_node_spec_t *spec) {
-  free((int *)spec->vla_dimension_constants);
-  free((int *)spec->vla_dimension_source_offsets);
-  spec->vla_dimension_constants = NULL;
-  spec->vla_dimension_source_offsets = NULL;
-  spec->vla_dimension_count = 0;
-}
-
-static psx_hir_node_id_t build_node(
-    hir_builder_t *builder, const node_t *source) {
+static psx_resolved_hir_node_t *build_node(
+    hir_materializer_t *builder, const node_t *source) {
   psx_hir_node_spec_t spec = {0};
   psx_hir_node_role_t role = PSX_HIR_ROLE_STATEMENT;
   psx_qual_type_t qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   spec.attached_qual_type = qual_type;
   if (!map_kind(source->kind, &spec.kind, &role)) {
-    set_failure(builder, PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
-    return PSX_HIR_NODE_ID_INVALID;
+    set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
   }
   if (role == PSX_HIR_ROLE_EXPRESSION) {
     qual_type = ps_node_qual_type(source);
     if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
-          builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
-      return PSX_HIR_NODE_ID_INVALID;
+          builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+      return NULL;
     }
   }
   copy_payload(source, &spec);
@@ -541,22 +569,25 @@ static psx_hir_node_id_t build_node(
       spec.bit_is_signed = bit_is_signed ? 1 : 0;
     }
   }
-  if (!attach_global_symbol(builder, source, &spec))
-    return PSX_HIR_NODE_ID_INVALID;
+  psx_hir_symbol_spec_t symbol = {0};
+  int has_symbol = 0;
+  if (!attach_global_symbol(
+          builder, source, &symbol, &has_symbol))
+    return NULL;
   if (source->kind == ND_FUNCDEF &&
       !canonical_type_exists(builder, spec.attached_qual_type)) {
     set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
-    return PSX_HIR_NODE_ID_INVALID;
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
   }
   if (spec.attached_qual_type.type_id != PSX_TYPE_ID_INVALID &&
       !canonical_type_exists(builder, spec.attached_qual_type)) {
     set_failure(
-        builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
-    return PSX_HIR_NODE_ID_INVALID;
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
   }
   if (!copy_vla_payload(builder, source, &spec))
-    return PSX_HIR_NODE_ID_INVALID;
+    return NULL;
 
   hir_children_t children = {0};
   int include_common_children = 1;
@@ -571,79 +602,58 @@ static psx_hir_node_id_t build_node(
                 ? PSX_HIR_EDGE_FUNCTION_BODY : PSX_HIR_EDGE_RHS)))) {
     free(children.items);
     free(children.edges);
-    free_vla_payload(&spec);
-    return PSX_HIR_NODE_ID_INVALID;
+    return NULL;
   }
-  spec.children = children.items;
-  spec.child_edges = children.edges;
-  spec.child_count = children.count;
   if (role == PSX_HIR_ROLE_EXPRESSION &&
       !derive_structural_expression_type(
           builder, source, &children, &qual_type)) {
     free(children.items);
     free(children.edges);
-    free_vla_payload(&spec);
-    return PSX_HIR_NODE_ID_INVALID;
+    return NULL;
   }
-  psx_hir_node_id_t result = PSX_HIR_NODE_ID_INVALID;
-  if (role == PSX_HIR_ROLE_EXPRESSION) {
-    psx_hir_expression_spec_t expression = {
-        .node = spec,
-        .qual_type = qual_type,
-    };
-    result = psx_hir_module_add_expression(
-        builder->module, &expression);
-  } else {
-    psx_hir_statement_spec_t statement = {.node = spec};
-    result = psx_hir_module_add_statement(
-        builder->module, &statement);
-  }
+  psx_resolved_hir_node_t *result = materialize_node_record(
+      builder, &spec, role, qual_type, &children,
+      has_symbol ? &symbol : NULL, source);
   free(children.items);
   free(children.edges);
-  free_vla_payload(&spec);
-  if (result == PSX_HIR_NODE_ID_INVALID)
-    set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
   return result;
 }
 
-int psx_build_typed_hir_root(
-    psx_hir_module_t *module,
+int psx_resolved_tree_materialize_hir(
+    psx_resolved_tree_t *resolved_tree,
     const psx_semantic_context_t *semantic_context,
-    const psx_resolved_tree_t *resolved_tree,
-    psx_typed_hir_build_failure_t *failure) {
+    psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
   const node_t *semantic_root = psx_resolved_tree_root(resolved_tree);
-  if (!module || !semantic_context || !semantic_root) {
+  if (!resolved_tree || !semantic_context || !semantic_root) {
     if (failure) {
-      failure->status = PSX_TYPED_HIR_BUILD_INVALID_INPUT;
+      failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind = semantic_root
                                       ? (int)semantic_root->kind : -1;
     }
     return 0;
   }
-  if (psx_resolved_tree_phase(resolved_tree) !=
-      PSX_RESOLVED_TREE_FINALIZED) {
+  psx_resolved_tree_phase_t phase =
+      psx_resolved_tree_phase(resolved_tree);
+  if (phase != PSX_RESOLVED_TREE_FINALIZED &&
+      phase != PSX_RESOLVED_TREE_HIR_READY) {
     if (failure) {
-      failure->status = PSX_TYPED_HIR_BUILD_UNFINALIZED_RESOLUTION;
+      failure->status = PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION;
       failure->source_node_kind = (int)semantic_root->kind;
     }
     return 0;
   }
-  size_t node_checkpoint = psx_hir_module_checkpoint(module);
-  size_t root_checkpoint = psx_hir_module_root_count(module);
-  size_t symbol_checkpoint = psx_hir_module_symbol_checkpoint(module);
-  hir_builder_t builder = {
-      .module = module,
+  if (psx_resolved_tree_hir_root(resolved_tree)) return 1;
+  hir_materializer_t builder = {
+      .arena_context = ps_ctx_arena(semantic_context),
       .semantic_context = semantic_context,
       .failure = failure,
   };
-  psx_hir_node_id_t root = build_node(&builder, semantic_root);
-  if (root == PSX_HIR_NODE_ID_INVALID ||
-      !psx_hir_module_add_root(module, root)) {
-    if (failure && failure->status == PSX_TYPED_HIR_BUILD_OK)
-      failure->status = PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY;
-    psx_hir_module_rollback(
-        module, node_checkpoint, root_checkpoint, symbol_checkpoint);
+  psx_resolved_hir_node_t *root = build_node(&builder, semantic_root);
+  if (!root ||
+      !psx_resolved_tree_publish_hir_root(resolved_tree, root)) {
+    if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
+      failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
     return 0;
   }
   return 1;

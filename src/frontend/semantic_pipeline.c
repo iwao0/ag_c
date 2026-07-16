@@ -13,24 +13,24 @@
 #include "../semantic/semantic_diagnostics.h"
 #include "../semantic/semantic_invariants.h"
 #include "../semantic/semantic_pass.h"
-#include "../semantic/typed_hir_builder.h"
+#include "../semantic/resolved_tree_hir.h"
 #include "../semantic/resolution_work_tree.h"
 
 static psx_hir_node_id_t build_session_hir(
     ag_compilation_session_t *session,
-    const psx_resolved_tree_t *resolved_tree,
+    psx_resolved_tree_t *resolved_tree,
     const token_t *fallback_diag_tok) {
   psx_hir_module_t *hir = ag_compilation_session_hir_module(session);
-  size_t roots_before = psx_hir_module_root_count(hir);
-  psx_typed_hir_build_failure_t failure;
-  if (psx_build_typed_hir_root(
-          hir,
+  psx_resolved_hir_build_failure_t failure;
+  psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (psx_resolved_tree_materialize_hir(
+          resolved_tree,
           ag_compilation_session_semantic_context(session),
-          resolved_tree, &failure)) {
-    if (psx_hir_module_root_count(hir) == roots_before + 1)
-      return psx_hir_module_root_at(hir, roots_before);
-    return PSX_HIR_NODE_ID_INVALID;
+          &failure)) {
+    hir_root = psx_resolved_tree_emit_hir(
+        hir, resolved_tree, &failure);
   }
+  if (hir_root != PSX_HIR_NODE_ID_INVALID) return hir_root;
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);
   if (fallback_diag_tok) {

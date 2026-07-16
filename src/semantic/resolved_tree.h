@@ -10,6 +10,7 @@ typedef enum {
   PSX_RESOLVED_TREE_TYPED,
   PSX_RESOLVED_TREE_LOWERED,
   PSX_RESOLVED_TREE_FINALIZED,
+  PSX_RESOLVED_TREE_HIR_READY,
 } psx_resolved_tree_phase_t;
 
 psx_resolved_tree_phase_t psx_resolved_tree_phase(

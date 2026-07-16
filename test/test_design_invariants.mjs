@@ -79,12 +79,20 @@ const hirInternalHeader = await readFile(
   "src/hir/hir_internal.h",
   "utf8",
 );
-const typedHirBuilder = await readFile(
-  "src/semantic/typed_hir_builder.c",
+const resolvedTreeHir = await readFile(
+  "src/semantic/resolved_tree_hir.c",
   "utf8",
 );
-const typedHirBuilderHeader = await readFile(
-  "src/semantic/typed_hir_builder.h",
+const resolvedTreeMaterialization = await readFile(
+  "src/semantic/resolved_tree_materialization.c",
+  "utf8",
+);
+const resolvedTreeHirHeader = await readFile(
+  "src/semantic/resolved_tree_hir.h",
+  "utf8",
+);
+const resolvedHirNodeInternalHeader = await readFile(
+  "src/semantic/resolved_hir_node_internal.h",
   "utf8",
 );
 const resolutionWorkTree = await readFile(
@@ -5536,9 +5544,11 @@ if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
     "Typed HIR construction must structurally require canonical QualType for expressions",
   );
 }
-if (!/PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(typedHirBuilder)) {
+if (!/PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
+      resolvedTreeMaterialization,
+    )) {
   throw new Error(
-    "Typed HIR builder must reject unresolved syntax node kinds",
+    "resolved-tree HIR emission must reject unresolved syntax node kinds",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
@@ -5587,20 +5597,48 @@ if (!functionResolutionBoundary ||
     !/typedef\s+struct\s+psx_resolved_tree_t\s+psx_resolved_tree_t\s*;/.test(
       resolvedTreeHeader,
     ) ||
-    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(typedHirBuilderHeader) ||
+    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHirHeader) ||
+    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(
+      resolvedHirNodeInternalHeader,
+    ) ||
+    /parser\/|\bnode_t\b|\bnode_kind_t\b|\bpsx_semantic_context_t\b/.test(
+      resolvedTreeHir,
+    ) ||
     !/const\s+psx_resolved_tree_t\s*\*resolved_tree/.test(
-      typedHirBuilderHeader,
+      resolvedTreeHirHeader,
     ) ||
-    !/PSX_TYPED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
-      typedHirBuilderHeader,
+    !/PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
+      resolvedTreeHirHeader,
     ) ||
-    !/psx_resolved_tree_phase\s*\(\s*resolved_tree\s*\)\s*!=\s*PSX_RESOLVED_TREE_FINALIZED/.test(
-      typedHirBuilder,
+    !/psx_resolved_tree_phase\s*\(\s*resolved_tree\s*\)\s*!=\s*PSX_RESOLVED_TREE_HIR_READY/.test(
+      resolvedTreeHir,
     ) ||
+    !/int\s+psx_resolved_tree_materialize_hir\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_resolved_tree_publish_hir_root\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_resolved_tree_hir_root\s*\(/.test(resolvedTreeHir) ||
+    !/psx_hir_expression_spec_t\s+expression\s*=\s*\{[^]*?\.qual_type\s*=\s*source->expression_type/.test(
+      resolvedTreeHir,
+    ) ||
+    !/psx_resolved_hir_node_t\s*\*root\s*=\s*build_node/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_hir_node_id_t\s+psx_resolved_tree_emit_hir\s*\(/.test(
+      resolvedTreeHir,
+    ) ||
+    /ps_node_|ND_[A-Z0-9_]+/.test(resolvedTreeHir) ||
+    !/psx_resolved_tree_emit_hir\s*\(/.test(semanticPipelineSource) ||
+    /typed_hir_builder/.test(
+      `${semanticPipelineSource}\n${semanticPipelineInternalHeader}`,
+    ) ||
+    allSourceFiles.some((path) => /typed_hir_builder\.[ch]$/.test(path)) ||
     !/next\s*!=\s*\(psx_resolved_tree_phase_t\)\(expected\s*\+\s*1\)/.test(
       resolutionWorkTree,
     ) ||
-    !/tree\s*&&\s*tree->phase\s*==\s*PSX_RESOLVED_TREE_FINALIZED[^]*?\?\s*tree->root\s*:\s*NULL/.test(
+    !/tree\s*&&\s*tree->phase\s*>=\s*PSX_RESOLVED_TREE_FINALIZED[^]*?\?\s*tree->root\s*:\s*NULL/.test(
       resolutionWorkTree,
     )) {
   throw new Error(
