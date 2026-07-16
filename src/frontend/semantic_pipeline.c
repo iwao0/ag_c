@@ -1,5 +1,6 @@
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"
+#include "local_declaration.h"
 
 #include "../diag/diag.h"
 #include "../lowering/semantic_lowering_pass.h"
@@ -64,6 +65,10 @@ static int analyze_function_in_contexts(
       psx_resolution_work_tree_mutable_semantic_root(work_tree);
   if (!semantic_context || !local_registry ||
       !function || function->kind != ND_FUNCDEF) return 0;
+  if (!psx_resolve_local_declaration_syntax_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, &function))
+    return 0;
   function = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       function, fallback_diag_tok);
@@ -185,6 +190,10 @@ node_t *psx_frontend_analyze_expression_in_contexts(
   }
   node_t *expression =
       psx_resolution_work_tree_mutable_semantic_root(work_tree);
+  if (!psx_resolve_local_declaration_syntax_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, &expression))
+    return NULL;
   expression = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, fallback_diag_tok);
@@ -262,6 +271,10 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
   }
   node_t *initializer =
       psx_resolution_work_tree_mutable_semantic_root(work_tree);
+  if (!psx_resolve_local_declaration_syntax_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, &initializer))
+    return NULL;
   initializer = psx_bind_identifier_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       initializer, fallback_diag_tok);

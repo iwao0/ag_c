@@ -41,26 +41,20 @@ static long long parse_case_constant(void *context) {
 static void enter_block_scope(void *context) {
   psx_legacy_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_enter_scope(&adapter->name_classifier);
-  ps_ctx_enter_block_scope_in(adapter->semantic_context);
-  ps_decl_enter_scope_in(adapter->local_registry);
 }
 
 static void leave_block_scope(void *context) {
   psx_legacy_statement_syntax_adapter_t *adapter = context;
-  ps_decl_leave_scope_in(adapter->local_registry);
-  ps_ctx_leave_block_scope_in(adapter->semantic_context);
   ps_name_classifier_leave_scope(&adapter->name_classifier);
 }
 
 static void enter_local_scope(void *context) {
   psx_legacy_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_enter_scope(&adapter->name_classifier);
-  ps_decl_enter_scope_in(adapter->local_registry);
 }
 
 static void leave_local_scope(void *context) {
   psx_legacy_statement_syntax_adapter_t *adapter = context;
-  ps_decl_leave_scope_in(adapter->local_registry);
   ps_name_classifier_leave_scope(&adapter->name_classifier);
 }
 

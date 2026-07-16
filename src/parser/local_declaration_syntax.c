@@ -1,6 +1,8 @@
 #include "local_declaration_syntax.h"
 
+#include "arena.h"
 #include "diag.h"
+#include "function_parameter_syntax.h"
 #include "node_utils.h"
 #include "parser_recovery.h"
 #include "runtime_context.h"
@@ -9,6 +11,15 @@
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
+
+#include <string.h>
+
+static arena_context_t *arena(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  return callbacks && callbacks->runtime_context
+             ? ps_parser_runtime_arena(callbacks->runtime_context)
+             : NULL;
+}
 
 static tokenizer_context_t *tokenizer(
     const psx_local_declaration_callbacks_t *callbacks) {
@@ -32,8 +43,6 @@ static ag_diagnostic_context_t *diagnostics(
 static int callbacks_are_complete(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks ||
-      !callbacks->begin_declaration || !callbacks->begin_declarator ||
-      !callbacks->finish_declarator || !callbacks->finish_declaration ||
       !callbacks->semantic_context || !callbacks->global_registry ||
       !callbacks->local_registry || !callbacks->runtime_context ||
       !callbacks->options ||
@@ -41,6 +50,83 @@ static int callbacks_are_complete(
     return 0;
   }
   return 1;
+}
+
+static int append_declarator_slot(
+    psx_parsed_local_declaration_t *declaration,
+    const psx_local_declaration_callbacks_t *callbacks) {
+  if (!declaration || !arena(callbacks)) return 0;
+  if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
+    ps_diag_ctx_in(
+        diagnostics(callbacks), curtok(callbacks), "decl",
+        diag_message_for_in(
+            diagnostics(callbacks),
+            DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+        PS_MAX_DECLARATOR_COUNT);
+    return 0;
+  }
+  int next_count = declaration->declarator_count + 1;
+  psx_parsed_declarator_t *declarators = arena_alloc_in(
+      arena(callbacks),
+      (size_t)next_count * sizeof(*declarators));
+  psx_parsed_initializer_t *initializers = arena_alloc_in(
+      arena(callbacks),
+      (size_t)next_count * sizeof(*initializers));
+  if (!declarators || !initializers) return 0;
+  if (declaration->declarator_count > 0) {
+    memcpy(
+        declarators, declaration->declarators,
+        (size_t)declaration->declarator_count * sizeof(*declarators));
+    memcpy(
+        initializers, declaration->initializers,
+        (size_t)declaration->declarator_count * sizeof(*initializers));
+  }
+  declarators[next_count - 1] = (psx_parsed_declarator_t){0};
+  initializers[next_count - 1] = (psx_parsed_initializer_t){0};
+  declaration->declarators = declarators;
+  declaration->initializers = initializers;
+  declaration->declarator_count = next_count;
+  return 1;
+}
+
+static void record_decl_specifier_binding_events(
+    const psx_parsed_decl_specifier_t *specifier,
+    const psx_name_classifier_t *name_classifier) {
+  if (!specifier ||
+      specifier->source != PSX_PARSED_DECL_TYPE_TAG ||
+      specifier->tag_action.action == PSX_PARSED_TAG_NONE)
+    return;
+  ps_name_classifier_record_binding_event(name_classifier);
+  if (specifier->tag_action.kind != TK_ENUM ||
+      specifier->tag_action.action != PSX_PARSED_TAG_DEFINITION ||
+      !specifier->tag_action.enum_body)
+    return;
+  for (int i = 0;
+       i < specifier->tag_action.enum_body->member_count; i++)
+    ps_name_classifier_record_binding_event(name_classifier);
+}
+
+static void record_declarator_resolution_events(
+    const psx_parsed_declarator_t *declarator,
+    const psx_name_classifier_t *name_classifier) {
+  if (!declarator) return;
+  for (int i = 0; i < declarator->function_suffix_count; i++) {
+    const psx_parsed_function_parameters_t *parameters =
+        declarator->function_suffixes[i].parameters;
+    if (!parameters) continue;
+    ps_name_classifier_reserve_scope(name_classifier);
+    for (int p = 0; p < parameters->count; p++) {
+      const psx_parsed_function_parameter_t *parameter =
+          &parameters->items[p];
+      record_decl_specifier_binding_events(
+          &parameter->specifier, name_classifier);
+      record_declarator_resolution_events(
+          &parameter->declarator, name_classifier);
+      if (parameter->declarator.identifier)
+        ps_name_classifier_record_binding_event(
+            name_classifier);
+    }
+  }
 }
 
 node_t *psx_parse_local_declaration_syntax(
@@ -60,12 +146,20 @@ node_t *psx_parse_local_declaration_syntax(
         assertion.condition, assertion.diagnostic_token);
   }
 
-  int is_typedef = curtok(callbacks)->kind == TK_TYPEDEF;
-  if (is_typedef)
+  node_local_declaration_t *node = arena_alloc_in(
+      arena(callbacks), sizeof(*node));
+  psx_parsed_local_declaration_t *declaration = arena_alloc_in(
+      arena(callbacks), sizeof(*declaration));
+  if (!node || !declaration) return NULL;
+  node->base.kind = ND_LOCAL_DECLARATION;
+  node->declaration = declaration;
+  declaration->diagnostic_token = curtok(callbacks);
+  declaration->is_typedef =
+      curtok(callbacks)->kind == TK_TYPEDEF;
+  if (declaration->is_typedef)
     tk_set_current_token_ctx(tk_ctx, curtok(callbacks)->next);
-  psx_parsed_decl_specifier_t specifier;
   if (!psx_try_parse_decl_specifier_syntax_ex(
-          &specifier,
+          &declaration->specifier,
           &(psx_decl_specifier_syntax_options_t){
               .name_classifier = &callbacks->name_classifier,
               .semantic_context = callbacks->semantic_context,
@@ -80,91 +174,74 @@ node_t *psx_parse_local_declaration_syntax(
         callbacks->runtime_context);
     return NULL;
   }
-  ps_prepare_decl_specifier_alignments_in_context(
-      &specifier, callbacks->semantic_context,
-      &callbacks->name_classifier);
-  int standalone_tag =
-      specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
+  declaration->is_extern =
+      declaration->specifier.type_spec.is_extern ? 1 : 0;
+  declaration->is_static =
+      declaration->specifier.type_spec.is_static ? 1 : 0;
+  record_decl_specifier_binding_events(
+      &declaration->specifier, &callbacks->name_classifier);
+  declaration->is_standalone_tag =
+      declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
       curtok(callbacks)->kind == TK_SEMI;
-  void *declaration_context = callbacks->begin_declaration(
-      callbacks->context, &specifier, is_typedef, standalone_tag);
 
-  if (standalone_tag) {
+  if (declaration->is_standalone_tag) {
     tk_expect_ctx(tk_ctx, ';');
-    node_t *result =
-        callbacks->finish_declaration(declaration_context);
-    ps_dispose_decl_specifier_syntax(&specifier);
-    return result;
+    return &node->base;
   }
 
-  int declarator_count = 0;
   for (;;) {
-    if (++declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx_in(diagnostics(callbacks), curtok(callbacks), "decl",
-                  diag_message_for_in(diagnostics(callbacks),
-                      DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-                  PS_MAX_DECLARATOR_COUNT);
-    }
-    psx_parsed_declarator_t declarator;
+    if (!append_declarator_slot(declaration, callbacks)) return NULL;
+    psx_parsed_declarator_t *declarator =
+        &declaration->declarators[declaration->declarator_count - 1];
     psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
-        &declarator, callbacks->semantic_context,
+        declarator, callbacks->semantic_context,
         callbacks->global_registry,
         callbacks->local_registry, callbacks->runtime_context,
         &callbacks->name_classifier);
     ps_parse_runtime_declarator_expressions_in_contexts(
-        &declarator, callbacks->semantic_context,
+        declarator, callbacks->semantic_context,
         callbacks->global_registry,
         callbacks->local_registry, callbacks->runtime_context,
         callbacks);
-    if (!declarator.identifier) {
+    record_declarator_resolution_events(
+        declarator, &callbacks->name_classifier);
+    if (!declarator->identifier) {
       ps_diag_ctx_in(diagnostics(callbacks), curtok(callbacks), "decl", "%s",
                   diag_message_for_in(diagnostics(callbacks),
                       DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
 
-    psx_parsed_initializer_t initializer;
+    psx_parsed_initializer_t *initializer =
+        &declaration->initializers[declaration->declarator_count - 1];
     psx_prepare_optional_initializer_syntax(
-        &initializer, callbacks->runtime_context);
-    if (initializer.has_initializer && initializer.value_tok &&
-        (initializer.value_tok->kind == TK_SEMI ||
-         initializer.value_tok->kind == TK_COMMA ||
-         initializer.value_tok->kind == TK_RBRACE ||
-         initializer.value_tok->kind == TK_EOF)) {
+        initializer, callbacks->runtime_context);
+    if (initializer->has_initializer && initializer->value_tok &&
+        (initializer->value_tok->kind == TK_SEMI ||
+         initializer->value_tok->kind == TK_COMMA ||
+         initializer->value_tok->kind == TK_RBRACE ||
+         initializer->value_tok->kind == TK_EOF)) {
       diag_report_tokf_in(diagnostics(callbacks),
-          DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer.value_tok,
+          DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer->value_tok,
           "%s", diag_message_for_in(diagnostics(callbacks), DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
-      psx_dispose_declarator_syntax(&declarator);
-      if (callbacks->abort_declaration)
-        callbacks->abort_declaration(declaration_context);
-      else
-        callbacks->finish_declaration(declaration_context);
-      ps_dispose_decl_specifier_syntax(&specifier);
       ps_parser_mark_recoverable_syntax_error_in(
           callbacks->runtime_context);
       return NULL;
     }
-    callbacks->begin_declarator(
-        declaration_context, &declarator, &initializer);
     ps_name_classifier_declare(
         &callbacks->name_classifier,
-        (token_t *)declarator.identifier, is_typedef);
-    if (initializer.has_initializer) {
-      token_t *assign_tok = initializer.assign_tok;
+        (token_t *)declarator->identifier, declaration->is_typedef);
+    if (initializer->has_initializer) {
+      token_t *assign_tok = initializer->assign_tok;
       tk_expect_ctx(tk_ctx, '=');
       psx_parse_initializer_syntax_value_in_contexts(
-          &initializer, assign_tok, callbacks->semantic_context,
+          initializer, assign_tok, callbacks->semantic_context,
           callbacks->global_registry,
           callbacks->local_registry, callbacks->runtime_context,
           &callbacks->name_classifier,
           callbacks);
     }
-    callbacks->finish_declarator(
-        declaration_context, &initializer);
-    psx_dispose_declarator_syntax(&declarator);
     if (!tk_consume_ctx(tk_ctx, ',')) break;
   }
   tk_expect_ctx(tk_ctx, ';');
-  node_t *result = callbacks->finish_declaration(declaration_context);
-  ps_dispose_decl_specifier_syntax(&specifier);
-  return result;
+  return &node->base;
 }

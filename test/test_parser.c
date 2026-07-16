@@ -3970,8 +3970,26 @@ static node_t *parse_raw_function_item(
       &item->value.function_header);
   psx_local_declaration_callbacks_t local_declarations;
   init_test_local_declaration_callbacks(&local_declarations);
+  psx_parser_name_environment_t name_environment;
+  psx_local_lookup_point_t initial_lookup_point =
+      ps_local_registry_capture_lookup_point_in(
+          test_local_registry());
+  ps_parser_name_environment_init(
+      &name_environment,
+      ps_ctx_name_classifier(test_semantic_context()));
+  ps_parser_name_environment_reset_at(
+      &name_environment,
+      ps_ctx_name_classifier(test_semantic_context()),
+      initial_lookup_point.scope_seq,
+      ps_local_registry_next_scope_seq_in(
+          test_local_registry()),
+      initial_lookup_point.declaration_seq);
+  local_declarations.name_classifier =
+      ps_parser_name_environment_classifier(
+          &name_environment);
   node_t *function = ps_parse_function_definition_body(
       stream, header, &local_declarations);
+  ps_parser_name_environment_dispose(&name_environment);
   ps_dispose_function_definition_header_syntax(
       &item->value.function_header);
   return function;
@@ -6628,7 +6646,9 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__frontend_boundary", 19) != NULL);
   ASSERT_TRUE(find_func_lvar(as_function_definition(parsed), "input") != NULL);
+  ASSERT_TRUE(find_func_lvar(as_function_definition(parsed), "x") == NULL);
   node_block_t *parsed_body = as_block(as_function_definition(parsed)->base.rhs);
+  ASSERT_EQ(ND_LOCAL_DECLARATION, parsed_body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, parsed_body->body[1]->kind);
   ASSERT_TRUE(parsed_body->body[1]->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
@@ -6639,6 +6659,9 @@ static void test_translation_unit_frontend_boundary() {
   psx_hir_node_id_t hir_root =
       resolve_test_function_to_hir(parsed, parsed->tok);
   ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(
+      ps_decl_find_lvar_in(
+          test_local_registry(), (char *)"x", 1) != NULL);
   ASSERT_EQ(ND_ASSIGN, raw_compound_assignment->kind);
   ASSERT_TRUE(raw_compound_assignment->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
@@ -21844,9 +21867,18 @@ static void test_semantic_context_isolation() {
       ag_compilation_session_parser_runtime_context(test_suite_session),
       second_lowering_context,
       test_compilation_options());
-  ASSERT_TRUE(ps_parse_function_definition_body(
-                  &parser_stream, &parsed_function,
-                  &local_declarations) != NULL);
+  node_t *parsed_function_syntax =
+      ps_parse_function_definition_body(
+          &parser_stream, &parsed_function,
+          &local_declarations);
+  ASSERT_TRUE(parsed_function_syntax != NULL);
+  ASSERT_TRUE(
+      psx_resolve_local_declaration_syntax_tree_in_contexts(
+          second, test_global_registry(), test_local_registry(),
+          second_lowering_context, test_compilation_options(),
+          &parsed_function_syntax));
+  parsed_function.lvars =
+      ps_decl_get_locals_in(test_local_registry());
   ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
   psx_ctx_validate_goto_refs_in(second);
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));

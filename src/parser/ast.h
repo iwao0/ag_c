@@ -9,6 +9,7 @@
 struct lvar_t;
 struct psx_lvar_usage_region_t;
 struct psx_parsed_type_name_t;
+struct psx_parsed_local_declaration_t;
 struct psx_node_resolution_state_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
@@ -89,6 +90,11 @@ typedef struct {
   node_t base;
   psx_decl_init_kind_t init_kind;
 } node_decl_init_t;
+
+typedef struct {
+  node_t base;
+  struct psx_parsed_local_declaration_t *declaration;
+} node_local_declaration_t;
 
 typedef struct {
   node_t base;

@@ -11,6 +11,18 @@ typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct ag_compilation_options_t ag_compilation_options_t;
 
+typedef struct psx_parsed_local_declaration_t {
+  psx_parsed_decl_specifier_t specifier;
+  psx_parsed_declarator_t *declarators;
+  psx_parsed_initializer_t *initializers;
+  int declarator_count;
+  int is_typedef;
+  int is_extern;
+  int is_static;
+  int is_standalone_tag;
+  token_t *diagnostic_token;
+} psx_parsed_local_declaration_t;
+
 typedef struct psx_local_declaration_callbacks_t {
   void *context;
   psx_name_classifier_t name_classifier;

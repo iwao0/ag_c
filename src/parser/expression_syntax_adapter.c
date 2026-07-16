@@ -22,6 +22,10 @@ static void capture_lookup_point(
     void *context, unsigned *scope_seq,
     unsigned *declaration_seq) {
   psx_legacy_expression_syntax_adapter_t *adapter = context;
+  if (ps_name_classifier_capture_lookup_point(
+          &adapter->name_classifier,
+          scope_seq, declaration_seq))
+    return;
   psx_local_lookup_point_t point =
       ps_local_registry_capture_lookup_point_in(
           adapter->local_registry);

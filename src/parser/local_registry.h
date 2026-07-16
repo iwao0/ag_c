@@ -9,6 +9,7 @@ typedef struct global_var_t global_var_t;
 typedef struct token_t token_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 
 typedef struct {
   unsigned scope_seq;
@@ -23,6 +24,8 @@ void ps_local_registry_bind_semantic_types(
     const psx_semantic_type_table_t *semantic_types);
 
 unsigned ps_local_registry_current_scope_seq_in(
+    const psx_local_registry_t *registry);
+unsigned ps_local_registry_next_scope_seq_in(
     const psx_local_registry_t *registry);
 unsigned ps_local_registry_register_binding_event_in(
     psx_local_registry_t *registry);
@@ -40,6 +43,10 @@ void ps_local_registry_set_current_function_in(
 void ps_local_registry_get_current_function_in(
     const psx_local_registry_t *registry,
     char **out_name, int *out_len);
+psx_lvar_usage_region_t *
+ps_local_registry_set_current_usage_region_in(
+    psx_local_registry_t *registry,
+    psx_lvar_usage_region_t *region);
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var);
 lvar_t *ps_local_registry_create_storage_object_in(

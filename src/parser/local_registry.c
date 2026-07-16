@@ -171,6 +171,11 @@ unsigned ps_local_registry_current_scope_seq_in(
   return registry ? registry->current_scope_seq : 0;
 }
 
+unsigned ps_local_registry_next_scope_seq_in(
+    const psx_local_registry_t *registry) {
+  return registry ? registry->next_scope_seq : 0;
+}
+
 unsigned ps_local_registry_register_binding_event_in(
     psx_local_registry_t *registry) {
   return registry ? ++registry->next_declaration_seq : 0;
@@ -505,6 +510,17 @@ void ps_local_registry_get_current_function_in(
     *out_name = registry ? registry->current_function_name : NULL;
   if (out_len)
     *out_len = registry ? registry->current_function_name_len : 0;
+}
+
+psx_lvar_usage_region_t *
+ps_local_registry_set_current_usage_region_in(
+    psx_local_registry_t *registry,
+    psx_lvar_usage_region_t *region) {
+  if (!registry) return NULL;
+  psx_lvar_usage_region_t *previous =
+      registry->current_usage_region;
+  registry->current_usage_region = region;
+  return previous;
 }
 
 void ps_decl_enter_scope_in(psx_local_registry_t *registry) {

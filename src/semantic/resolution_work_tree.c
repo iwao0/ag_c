@@ -7,6 +7,7 @@
 #include "../parser/ast.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/function_parameter_syntax.h"
+#include "../parser/local_declaration_syntax.h"
 #include "../parser/node_utils.h"
 #include "vla_runtime_plan.h"
 
@@ -29,6 +30,8 @@ static size_t node_storage_size(const node_t *node) {
     case ND_ALIGNOF_QUERY: return sizeof(node_alignof_query_t);
     case ND_INIT_LIST: return sizeof(node_init_list_t);
     case ND_DECL_INIT: return sizeof(node_decl_init_t);
+    case ND_LOCAL_DECLARATION:
+      return sizeof(node_local_declaration_t);
     case ND_STATIC_ASSERT: return sizeof(node_static_assert_t);
     case ND_VLA_ALLOC: return sizeof(node_vla_alloc_t);
     case ND_NUM: return sizeof(node_num_t);
@@ -385,6 +388,43 @@ static int clone_generic_selection(
   return 1;
 }
 
+static psx_parsed_local_declaration_t *clone_local_declaration(
+    arena_context_t *arena_context,
+    const psx_parsed_local_declaration_t *source) {
+  if (!source) return NULL;
+  psx_parsed_local_declaration_t *destination = arena_alloc_in(
+      arena_context, sizeof(*destination));
+  if (!destination) return NULL;
+  *destination = *source;
+  destination->declarators = NULL;
+  destination->initializers = NULL;
+  if (!clone_decl_specifier(
+          arena_context, &destination->specifier,
+          &source->specifier))
+    return NULL;
+  if (source->declarator_count <= 0) return destination;
+  size_t count = (size_t)source->declarator_count;
+  destination->declarators = arena_alloc_in(
+      arena_context, count * sizeof(*destination->declarators));
+  destination->initializers = arena_alloc_in(
+      arena_context, count * sizeof(*destination->initializers));
+  if (!destination->declarators || !destination->initializers)
+    return NULL;
+  for (size_t i = 0; i < count; i++) {
+    if (!clone_parsed_declarator(
+            arena_context, &destination->declarators[i],
+            &source->declarators[i]))
+      return NULL;
+    destination->initializers[i] = source->initializers[i];
+    destination->initializers[i].value = clone_node(
+        arena_context, source->initializers[i].value);
+    if (source->initializers[i].value &&
+        !destination->initializers[i].value)
+      return NULL;
+  }
+  return destination;
+}
+
 static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source) {
   if (!source) return NULL;
@@ -558,6 +598,17 @@ static node_t *clone_node(
         return NULL;
       }
       break;
+    case ND_LOCAL_DECLARATION: {
+      node_local_declaration_t *declaration =
+          (node_local_declaration_t *)copy;
+      declaration->declaration = clone_local_declaration(
+          arena_context,
+          ((const node_local_declaration_t *)source)->declaration);
+      if (((const node_local_declaration_t *)source)->declaration &&
+          !declaration->declaration)
+        return NULL;
+      break;
+    }
     default:
       break;
   }

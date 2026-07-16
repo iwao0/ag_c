@@ -162,9 +162,15 @@ static int frontend_next_function_internal(
               ag_compilation_session_parser_runtime_context(session),
               ag_compilation_session_lowering_context(session),
               &item.value.function_header);
-      ps_parser_name_environment_reset(
+      psx_local_lookup_point_t initial_lookup_point =
+          ps_local_registry_capture_lookup_point_in(
+              local_registry);
+      ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
-          ps_ctx_name_classifier(semantic_context));
+          ps_ctx_name_classifier(semantic_context),
+          initial_lookup_point.scope_seq,
+          ps_local_registry_next_scope_seq_in(local_registry),
+          initial_lookup_point.declaration_seq);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(
               &stream->local_name_environment);
