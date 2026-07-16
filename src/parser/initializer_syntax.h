@@ -2,14 +2,16 @@
 #define PARSER_INITIALIZER_SYNTAX_H
 
 #include "ast.h"
-#include "name_classifier.h"
 
-typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
-typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
-typedef struct psx_local_declaration_callbacks_t
-    psx_local_declaration_callbacks_t;
+
+typedef struct {
+  void *context;
+  psx_parser_runtime_context_t *runtime_context;
+  node_t *(*parse_assignment_expression)(void *context);
+  void (*record_unsupported_gnu_extension)(
+      void *context, const token_t *token, const char *name);
+} psx_initializer_syntax_context_t;
 
 typedef struct {
   int has_initializer;
@@ -19,23 +21,13 @@ typedef struct {
   token_t *value_tok;
 } psx_parsed_initializer_t;
 
-node_t *psx_parse_initializer_syntax_list_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations);
+node_t *psx_parse_initializer_syntax_list_with_context(
+    const psx_initializer_syntax_context_t *context);
 void psx_prepare_optional_initializer_syntax(
     psx_parsed_initializer_t *out,
     psx_parser_runtime_context_t *runtime_context);
-void psx_parse_initializer_syntax_value_in_contexts(
+void psx_parse_initializer_syntax_value_with_context(
     psx_parsed_initializer_t *out, token_t *assign_tok,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations);
+    const psx_initializer_syntax_context_t *context);
 
 #endif

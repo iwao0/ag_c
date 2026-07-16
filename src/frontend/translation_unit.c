@@ -90,9 +90,9 @@ int psx_frontend_stream_begin(
       global_registry, local_registry, runtime_context,
       lowering_context, options);
   psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &stream->local_declaration_adapter,
       &stream->local_declarations, semantic_context,
-      global_registry, local_registry, runtime_context,
-      lowering_context, options);
+      global_registry, local_registry, runtime_context);
   ps_parser_name_environment_init(
       &stream->local_name_environment,
       ps_ctx_name_classifier(semantic_context));

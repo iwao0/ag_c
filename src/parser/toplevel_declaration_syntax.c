@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "diag.h"
+#include "expr.h"
 #include "local_registry.h"
 #include "runtime_context.h"
 #include "semantic_ctx.h"
@@ -25,6 +26,30 @@ static token_t *current_token(
 static ag_diagnostic_context_t *diagnostics(
     psx_parser_runtime_context_t *runtime_context) {
   return ps_parser_runtime_diagnostics(runtime_context);
+}
+
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
+  const psx_name_classifier_t *name_classifier;
+} psx_toplevel_initializer_syntax_adapter_t;
+
+static node_t *parse_toplevel_initializer_assignment_expression(
+    void *context) {
+  psx_toplevel_initializer_syntax_adapter_t *adapter = context;
+  return psx_expr_assign_in_contexts(
+      adapter->semantic_context, adapter->global_registry,
+      adapter->local_registry, adapter->runtime_context,
+      adapter->name_classifier, NULL);
+}
+
+static void record_toplevel_initializer_unsupported_gnu_extension(
+    void *context, const token_t *token, const char *name) {
+  psx_toplevel_initializer_syntax_adapter_t *adapter = context;
+  ps_ctx_record_unsupported_gnu_extension_warning_in(
+      adapter->semantic_context, token, name);
 }
 
 static void require_declarator_name(
@@ -70,19 +95,17 @@ static void append_declarator_slot(
 
 static int parse_declarator_head(
     psx_parsed_toplevel_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier) {
+    const psx_decl_specifier_syntax_options_t *options) {
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
   append_declarator_slot(declaration, runtime_context);
   psx_parsed_declarator_t *declarator =
       &declaration->declarators[declaration->declarator_count - 1];
   if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
-          declarator, semantic_context, global_registry, local_registry,
-          runtime_context, name_classifier)) return 0;
+          declarator, options)) return 0;
   ps_prepare_constant_declarator_expressions_in_context(
-      declarator, semantic_context, name_classifier);
+      declarator, options->semantic_context,
+      options->name_classifier);
   require_declarator_name(declarator, runtime_context);
   return 1;
 }
@@ -98,6 +121,21 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
       !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
+  psx_toplevel_initializer_syntax_adapter_t expression_adapter = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .runtime_context = runtime_context,
+      .name_classifier = name_classifier,
+  };
+  psx_decl_specifier_syntax_options_t syntax_options = {
+      .name_classifier = name_classifier,
+      .expression_context = &expression_adapter,
+      .parse_assignment_expression =
+          parse_toplevel_initializer_assignment_expression,
+      .semantic_context = semantic_context,
+      .runtime_context = runtime_context,
+  };
   *declaration = (psx_parsed_toplevel_declaration_t){0};
   declaration->diagnostic_token = current_token(runtime_context);
   if (current_token(runtime_context)->kind == TK_TYPEDEF) {
@@ -109,11 +147,13 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
   if (!psx_try_parse_decl_specifier_syntax_ex(
           &declaration->specifier,
           &(psx_decl_specifier_syntax_options_t){
-              .name_classifier = name_classifier,
-              .semantic_context = semantic_context,
-              .global_registry = global_registry,
-              .local_registry = local_registry,
-              .runtime_context = runtime_context,
+              .name_classifier = syntax_options.name_classifier,
+              .expression_context =
+                  syntax_options.expression_context,
+              .parse_assignment_expression =
+                  syntax_options.parse_assignment_expression,
+              .semantic_context = syntax_options.semantic_context,
+              .runtime_context = syntax_options.runtime_context,
               .allow_implicit_int = 0,
           })) {
     diag_report_tokf_in(diagnostics(runtime_context),
@@ -133,8 +173,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
       current_token(runtime_context)->kind == TK_SEMI;
   if (!declaration->is_standalone_tag &&
       !parse_declarator_head(
-          declaration, semantic_context, global_registry, local_registry,
-          runtime_context, name_classifier))
+          declaration, &syntax_options))
     return 0;
   return 1;
 }
@@ -168,6 +207,22 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
       !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
+  psx_toplevel_initializer_syntax_adapter_t initializer_adapter = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .runtime_context = runtime_context,
+      .name_classifier =
+          callbacks ? &callbacks->name_classifier : NULL,
+  };
+  psx_initializer_syntax_context_t initializer_syntax = {
+      .context = &initializer_adapter,
+      .runtime_context = runtime_context,
+      .parse_assignment_expression =
+          parse_toplevel_initializer_assignment_expression,
+      .record_unsupported_gnu_extension =
+          record_toplevel_initializer_unsupported_gnu_extension,
+  };
   void *declaration_context = callbacks && callbacks->begin_declaration
       ? callbacks->begin_declaration(callbacks->context, declaration)
       : NULL;
@@ -184,9 +239,17 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
         &declaration->declarators[declaration->declarator_count - 1];
     psx_parsed_initializer_t *initializer =
         &declaration->initializers[declaration->declarator_count - 1];
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        declarator, semantic_context, global_registry, local_registry,
-        runtime_context, NULL);
+    ps_parse_runtime_declarator_expressions_with_options(
+        declarator,
+        &(psx_decl_specifier_syntax_options_t){
+            .name_classifier =
+                callbacks ? &callbacks->name_classifier : NULL,
+            .expression_context = &initializer_adapter,
+            .parse_assignment_expression =
+                parse_toplevel_initializer_assignment_expression,
+            .semantic_context = semantic_context,
+            .runtime_context = runtime_context,
+        });
     psx_prepare_optional_initializer_syntax(
         initializer, runtime_context);
     if (initializer_value_is_missing(initializer)) {
@@ -202,18 +265,23 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
       tk_expect_ctx(tk_ctx, '=');
-      psx_parse_initializer_syntax_value_in_contexts(
-          initializer, assign_tok, semantic_context,
-          global_registry, local_registry, runtime_context,
-          callbacks ? &callbacks->name_classifier : NULL, NULL);
+      psx_parse_initializer_syntax_value_with_context(
+          initializer, assign_tok, &initializer_syntax);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
     if (!tk_consume_ctx(tk_ctx, ',')) break;
     if (!parse_declarator_head(
-            declaration, semantic_context, global_registry,
-            local_registry, runtime_context,
-            callbacks ? &callbacks->name_classifier : NULL)) {
+            declaration,
+            &(psx_decl_specifier_syntax_options_t){
+                .name_classifier =
+                    callbacks ? &callbacks->name_classifier : NULL,
+                .expression_context = &initializer_adapter,
+                .parse_assignment_expression =
+                    parse_toplevel_initializer_assignment_expression,
+                .semantic_context = semantic_context,
+                .runtime_context = runtime_context,
+            })) {
       abort_toplevel_declaration(callbacks, declaration_context);
       return 0;
     }

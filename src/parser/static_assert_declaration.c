@@ -1,9 +1,6 @@
 #include "static_assert_declaration.h"
 
-#include "expr.h"
-#include "local_registry.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
@@ -16,16 +13,13 @@ static token_t *current_token(
       ps_parser_runtime_tokenizer(runtime_context));
 }
 
-void psx_parse_static_assert_syntax_in_contexts(
+void psx_parse_static_assert_syntax_with_context(
     psx_parsed_static_assert_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!declaration || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context ||
+    const psx_static_assert_syntax_context_t *context) {
+  psx_parser_runtime_context_t *runtime_context =
+      context ? context->runtime_context : NULL;
+  if (!declaration || !runtime_context ||
+      !context->parse_assignment_expression ||
       !ps_parser_runtime_tokenizer(runtime_context))
     return;
   tokenizer_context_t *tokenizer_context =
@@ -45,10 +39,8 @@ void psx_parse_static_assert_syntax_in_contexts(
   tk_set_current_token_ctx(
       tokenizer_context, current_token(runtime_context)->next);
   tk_expect_ctx(tokenizer_context, '(');
-  declaration->condition = psx_expr_assign_in_contexts(
-      semantic_context, global_registry, local_registry,
-      runtime_context, name_classifier,
-      local_declarations);
+  declaration->condition =
+      context->parse_assignment_expression(context->context);
   tk_expect_ctx(tokenizer_context, ',');
   if (current_token(runtime_context)->kind != TK_STRING) {
     diag_emit_tokf_in(diagnostics,

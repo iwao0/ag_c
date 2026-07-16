@@ -5,11 +5,7 @@
 #include "declaration_syntax.h"
 #include "initializer_syntax.h"
 
-typedef struct psx_local_registry_t psx_local_registry_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
-typedef struct psx_lowering_context_t psx_lowering_context_t;
-typedef struct ag_compilation_options_t ag_compilation_options_t;
 
 typedef struct psx_parsed_local_declaration_t {
   psx_parsed_decl_specifier_t specifier;
@@ -26,24 +22,17 @@ typedef struct psx_parsed_local_declaration_t {
 typedef struct psx_local_declaration_callbacks_t {
   void *context;
   psx_name_classifier_t name_classifier;
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
-  psx_lowering_context_t *lowering_context;
-  const ag_compilation_options_t *options;
-  void *(*begin_declaration)(
-      void *context, const psx_parsed_decl_specifier_t *specifier,
-      int is_typedef, int is_standalone_tag);
-  void (*begin_declarator)(
-      void *declaration_context,
-      const psx_parsed_declarator_t *declarator,
-      const psx_parsed_initializer_t *initializer);
-  void (*finish_declarator)(
-      void *declaration_context,
-      const psx_parsed_initializer_t *initializer);
-  node_t *(*finish_declaration)(void *declaration_context);
-  void (*abort_declaration)(void *declaration_context);
+  node_t *(*parse_static_assert)(void *context);
+  int (*parse_decl_specifier)(
+      void *context, psx_parsed_decl_specifier_t *specifier);
+  void (*parse_declarator)(
+      void *context, psx_parsed_declarator_t *declarator);
+  void (*parse_runtime_declarator_expressions)(
+      void *context, psx_parsed_declarator_t *declarator);
+  void (*parse_initializer)(
+      void *context, psx_parsed_initializer_t *initializer,
+      token_t *assign_tok);
 } psx_local_declaration_callbacks_t;
 
 node_t *psx_parse_local_declaration_syntax(

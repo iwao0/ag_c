@@ -2,9 +2,7 @@
 
 #include "diag.h"
 #include "dynarray.h"
-#include "local_registry.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../pragma_pack.h"
 #include "../tokenizer/tokenizer.h"
@@ -25,6 +23,15 @@ static token_t *current_token(
 static ag_diagnostic_context_t *diagnostics(
     psx_parser_runtime_context_t *runtime_context) {
   return ps_parser_runtime_diagnostics(runtime_context);
+}
+
+static node_t *parse_aggregate_static_assert_assignment_expression(
+    void *context) {
+  const psx_decl_specifier_syntax_options_t *options = context;
+  return options && options->parse_assignment_expression
+             ? options->parse_assignment_expression(
+                   options->expression_context)
+             : NULL;
 }
 
 static psx_parsed_aggregate_item_t *append_aggregate_item(
@@ -71,8 +78,8 @@ void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
-  if (!options || !options->semantic_context || !options->global_registry ||
-      !options->local_registry || !options->runtime_context ||
+  if (!options || !options->semantic_context ||
+      !options->runtime_context ||
       !tokenizer(options->runtime_context)) {
     return;
   }
@@ -84,13 +91,14 @@ void psx_parse_aggregate_body_with_options(
         append_aggregate_item(body, runtime_context);
     if (current_token(runtime_context)->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_PARSED_AGGREGATE_STATIC_ASSERT;
-      psx_parse_static_assert_syntax_in_contexts(
+      psx_parse_static_assert_syntax_with_context(
           &item->value.static_assertion,
-          options ? options->semantic_context : NULL,
-          options ? options->global_registry : NULL,
-          options ? options->local_registry : NULL,
-          options ? options->runtime_context : NULL,
-          options ? options->name_classifier : NULL, NULL);
+          &(psx_static_assert_syntax_context_t){
+              .context = (void *)options,
+              .runtime_context = options->runtime_context,
+              .parse_assignment_expression =
+                  parse_aggregate_static_assert_assignment_expression,
+          });
       continue;
     }
 
@@ -105,11 +113,7 @@ void psx_parse_aggregate_body_with_options(
       psx_parsed_declarator_t *declarator =
           append_aggregate_declarator(declaration, runtime_context);
       psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
-          declarator, options ? options->semantic_context : NULL,
-          options ? options->global_registry : NULL,
-          options ? options->local_registry : NULL,
-          options ? options->runtime_context : NULL,
-          options ? options->name_classifier : NULL);
+          declarator, options);
       int has_comma = tk_consume_ctx(tk_ctx, ',');
       if (!declarator->identifier && !declarator->has_bitfield && has_comma)
         ps_diag_missing_in(diagnostics(runtime_context),

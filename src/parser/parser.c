@@ -354,6 +354,18 @@ static void psx_synchronize_toplevel_declaration(
     psx_advance_recovery_token(tokenizer_context);
 }
 
+static node_t *parse_toplevel_static_assert_assignment_expression(
+    void *context) {
+  psx_parser_stream_t *stream = context;
+  return psx_expr_assign_in_contexts(
+      stream->semantic_context, stream->global_registry,
+      stream->local_registry, stream->runtime_context,
+      stream->toplevel_declarations
+          ? &stream->toplevel_declarations->name_classifier
+          : NULL,
+      NULL);
+}
+
 int ps_parse_next_toplevel_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   if (!stream || !stream->semantic_context || !item) return 0;
@@ -366,15 +378,14 @@ int ps_parse_next_toplevel_item(
       continue;
     if (curtok_in(tokenizer_context)->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_TOPLEVEL_ITEM_STATIC_ASSERT;
-      psx_parse_static_assert_syntax_in_contexts(
+      psx_parse_static_assert_syntax_with_context(
           &item->value.static_assertion,
-          semantic_context, stream->global_registry,
-          stream->local_registry,
-          stream->runtime_context,
-          stream->toplevel_declarations
-              ? &stream->toplevel_declarations->name_classifier
-              : NULL,
-          NULL);
+          &(psx_static_assert_syntax_context_t){
+              .context = stream,
+              .runtime_context = stream->runtime_context,
+              .parse_assignment_expression =
+                  parse_toplevel_static_assert_assignment_expression,
+          });
       return 1;
     }
     psx_parsed_toplevel_declaration_t declaration = {0};

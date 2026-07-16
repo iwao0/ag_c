@@ -1159,6 +1159,23 @@ static node_t *parse_test_expression_from(token_t *start) {
       NULL, NULL, start);
 }
 
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
+  const psx_name_classifier_t *name_classifier;
+} test_declaration_expression_service_t;
+
+static node_t *parse_test_declaration_assignment_expression(
+    void *context) {
+  test_declaration_expression_service_t *service = context;
+  return psx_expr_assign_in_contexts(
+      service->semantic_context, service->global_registry,
+      service->local_registry, service->runtime_context,
+      service->name_classifier, NULL);
+}
+
 static void begin_test_parser_stream(
     psx_parser_stream_t *stream,
     tokenizer_context_t *tokenizer_context, token_t *start,
@@ -1173,15 +1190,24 @@ static void begin_test_parser_stream(
 }
 
 static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
+  test_declaration_expression_service_t expression_service = {
+      .semantic_context =
+          ag_compilation_session_semantic_context(test_suite_session),
+      .global_registry =
+          ag_compilation_session_global_registry(test_suite_session),
+      .local_registry =
+          ag_compilation_session_local_registry(test_suite_session),
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(test_suite_session),
+  };
   psx_parse_aggregate_body_with_options(
       body,
       &(psx_decl_specifier_syntax_options_t){
+          .expression_context = &expression_service,
+          .parse_assignment_expression =
+              parse_test_declaration_assignment_expression,
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
-          .global_registry =
-              ag_compilation_session_global_registry(test_suite_session),
-          .local_registry =
-              ag_compilation_session_local_registry(test_suite_session),
           .runtime_context =
               ag_compilation_session_parser_runtime_context(test_suite_session),
       });
@@ -1205,10 +1231,6 @@ static void parse_test_decl_specifier_syntax(
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
-          .global_registry =
-              ag_compilation_session_global_registry(test_suite_session),
-          .local_registry =
-              ag_compilation_session_local_registry(test_suite_session),
           .runtime_context =
               ag_compilation_session_parser_runtime_context(test_suite_session),
       });
@@ -1216,15 +1238,24 @@ static void parse_test_decl_specifier_syntax(
 
 static int parse_test_type_name_syntax_at(
     token_t *start, psx_parsed_type_name_t *type_name) {
+  test_declaration_expression_service_t expression_service = {
+      .semantic_context =
+          ag_compilation_session_semantic_context(test_suite_session),
+      .global_registry =
+          ag_compilation_session_global_registry(test_suite_session),
+      .local_registry =
+          ag_compilation_session_local_registry(test_suite_session),
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(test_suite_session),
+  };
   return psx_parse_type_name_syntax_at(
       start,
       &(psx_decl_specifier_syntax_options_t){
+          .expression_context = &expression_service,
+          .parse_assignment_expression =
+              parse_test_declaration_assignment_expression,
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
-          .global_registry =
-              ag_compilation_session_global_registry(test_suite_session),
-          .local_registry =
-              ag_compilation_session_local_registry(test_suite_session),
           .runtime_context =
               ag_compilation_session_parser_runtime_context(test_suite_session),
       },
@@ -1376,8 +1407,6 @@ static void test_parser_name_classifier_boundary() {
       &(psx_decl_specifier_syntax_options_t){
           .name_classifier = &classifier,
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .runtime_context =
               ag_compilation_session_parser_runtime_context(
                   test_suite_session),
@@ -1497,23 +1526,37 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
   psx_parsed_declarator_t declarator;
   psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
       &declarator,
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      NULL);
+      &(psx_decl_specifier_syntax_options_t){
+          .semantic_context =
+              ag_compilation_session_semantic_context(test_suite_session),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(
+                  test_suite_session),
+      });
   return declarator;
 }
 
 static void parse_test_runtime_declarator_expressions(
     psx_parsed_declarator_t *declarator) {
-  ps_parse_runtime_declarator_expressions_in_contexts(
+  test_declaration_expression_service_t expression_service = {
+      .semantic_context =
+          ag_compilation_session_semantic_context(test_suite_session),
+      .global_registry =
+          ag_compilation_session_global_registry(test_suite_session),
+      .local_registry =
+          ag_compilation_session_local_registry(test_suite_session),
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(test_suite_session),
+  };
+  ps_parse_runtime_declarator_expressions_with_options(
       declarator,
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      NULL);
+      &(psx_decl_specifier_syntax_options_t){
+          .expression_context = &expression_service,
+          .parse_assignment_expression =
+              parse_test_declaration_assignment_expression,
+          .semantic_context = expression_service.semantic_context,
+          .runtime_context = expression_service.runtime_context,
+      });
 }
 
 static void prepare_test_constant_declarator_expressions(
@@ -1581,15 +1624,15 @@ static void apply_test_toplevel_declaration(
 }
 
 static void init_test_local_declaration_callbacks(
+    psx_frontend_local_declaration_syntax_adapter_t *adapter,
     psx_local_declaration_callbacks_t *callbacks) {
   psx_frontend_init_local_declaration_callbacks_in_contexts(
+      adapter,
       callbacks,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      test_lowering_context(),
-      ag_compilation_session_options_view(test_suite_session));
+      ag_compilation_session_parser_runtime_context(test_suite_session));
 }
 
 static void init_test_toplevel_declaration_callbacks(
@@ -1688,25 +1731,33 @@ static void apply_test_parsed_declarator(
 
 static void parse_test_initializer_syntax_value(
     psx_parsed_initializer_t *initializer, token_t *assign_tok) {
-  psx_name_classifier_t name_classifier =
-      ps_ctx_name_classifier(test_semantic_context());
-  psx_parse_initializer_syntax_value_in_contexts(
-      initializer, assign_tok,
+  psx_frontend_local_declaration_syntax_adapter_t adapter;
+  psx_local_declaration_callbacks_t syntax;
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &adapter, &syntax,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      &name_classifier,
-      NULL);
+      ag_compilation_session_parser_runtime_context(test_suite_session));
+  syntax.parse_initializer(
+      syntax.context, initializer, assign_tok);
 }
 
 static node_t *parse_test_initializer_for_var(lvar_t *var) {
+  psx_frontend_local_declaration_syntax_adapter_t adapter;
+  psx_local_declaration_callbacks_t syntax;
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &adapter, &syntax,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session));
   return psx_decl_parse_initializer_for_var_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
-      NULL, var);
+      &syntax, var);
 }
 
 /* Test-only storage fixtures may start with a simple scalar/array type and
@@ -3969,8 +4020,11 @@ static node_t *parse_raw_function_item(
   node_function_definition_t *header =
       apply_test_function_definition_header(
       &item->value.function_header);
+  psx_frontend_local_declaration_syntax_adapter_t
+      local_declaration_adapter;
   psx_local_declaration_callbacks_t local_declarations;
-  init_test_local_declaration_callbacks(&local_declarations);
+  init_test_local_declaration_callbacks(
+      &local_declaration_adapter, &local_declarations);
   psx_parser_name_environment_t name_environment;
   psx_local_lookup_point_t initial_lookup_point =
       ps_local_registry_capture_lookup_point_in(
@@ -21914,12 +21968,13 @@ static void test_semantic_context_isolation() {
   ps_lowering_context_bind_record_layouts(
       second_lowering_context, ps_ctx_record_layout_table_in(second));
   psx_local_declaration_callbacks_t local_declarations;
+  psx_frontend_local_declaration_syntax_adapter_t
+      local_declaration_adapter;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &local_declaration_adapter,
       &local_declarations, second, test_global_registry(),
       test_local_registry(),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      second_lowering_context,
-      test_compilation_options());
+      ag_compilation_session_parser_runtime_context(test_suite_session));
   node_t *parsed_function_syntax =
       ps_parse_function_definition_body(
           &parser_stream, &parsed_function,
@@ -22190,13 +22245,20 @@ static void test_compilation_session_registry_isolation() {
                "} *); }");
   tk_set_current_token_ctx(&first.tokenizer, nested_context_tokens);
   ASSERT_TRUE(ag_compilation_session_is_active(&second));
+  test_declaration_expression_service_t nested_expression_service = {
+      .semantic_context = first.semantic_context,
+      .global_registry = first.global_registry,
+      .local_registry = first.local_registry,
+      .runtime_context = first.parser_runtime_context,
+  };
   psx_parsed_aggregate_body_t nested_context_body;
   psx_parse_aggregate_body_with_options(
       &nested_context_body,
       &(psx_decl_specifier_syntax_options_t){
+          .expression_context = &nested_expression_service,
+          .parse_assignment_expression =
+              parse_test_declaration_assignment_expression,
           .semantic_context = first.semantic_context,
-          .global_registry = first.global_registry,
-          .local_registry = first.local_registry,
           .runtime_context = first.parser_runtime_context,
       });
   ASSERT_TRUE(ag_compilation_session_is_active(&second));

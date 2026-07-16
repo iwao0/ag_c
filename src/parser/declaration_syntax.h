@@ -11,8 +11,6 @@ typedef struct psx_parsed_function_parameters_t
     psx_parsed_function_parameters_t;
 typedef struct node_t node_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
-typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_local_declaration_callbacks_t
     psx_local_declaration_callbacks_t;
@@ -55,9 +53,9 @@ typedef struct {
   const psx_name_classifier_t *name_classifier;
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
   void *context;
+  void *expression_context;
+  node_t *(*parse_assignment_expression)(void *context);
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
   int allow_implicit_int;
 } psx_decl_specifier_syntax_options_t;
@@ -116,36 +114,17 @@ int psx_try_parse_decl_specifier_syntax_ex(
     const psx_decl_specifier_syntax_options_t *options);
 void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier);
+    const psx_decl_specifier_syntax_options_t *options);
 int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier);
+    const psx_decl_specifier_syntax_options_t *options);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context);
+    const psx_decl_specifier_syntax_options_t *options);
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier);
-void ps_parse_runtime_declarator_expressions_in_contexts(
+    const psx_decl_specifier_syntax_options_t *options);
+void ps_parse_runtime_declarator_expressions_with_options(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_local_declaration_callbacks_t *local_declarations);
+    const psx_decl_specifier_syntax_options_t *options);
 void ps_prepare_constant_declarator_expressions_in_context(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,

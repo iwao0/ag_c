@@ -1960,13 +1960,34 @@ const explicitLocalDeclarationLowering = [
   vlaLoweringSource,
   staticLocalLoweringSource,
 ].join("\n");
-if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
+if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
       localDeclarationHeader,
     ) ||
-    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+    !/psx_name_classifier_t\s+name_classifier\s*;/.test(
       localDeclarationHeader,
     ) ||
-    !/callbacks->context\s*=\s*callbacks\s*;/.test(
+    !/psx_parser_runtime_context_t\s*\*runtime_context\s*;/.test(
+      localDeclarationHeader,
+    ) ||
+    !/parse_decl_specifier/.test(localDeclarationHeader) ||
+    !/parse_declarator/.test(localDeclarationHeader) ||
+    !/parse_initializer/.test(localDeclarationHeader) ||
+    /\b(?:begin_declaration|begin_declarator|finish_declarator|finish_declaration|abort_declaration)\s*\)\s*\(/.test(
+      localDeclarationHeader,
+    ) ||
+    /\bpsx_lowering_context_t\s*\*lowering_context\s*;|\bag_compilation_options_t\s*\*options\s*;/.test(
+      localDeclarationHeader,
+    ) ||
+    /callbacks->(?:context|lowering_context|options|begin_declaration|begin_declarator|finish_declarator|finish_declaration|abort_declaration)/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    /callbacks->(?:semantic_context|global_registry|local_registry)/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    !/psx_frontend_local_declaration_syntax_adapter_t/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    !/psx_local_declaration_application_context_t/.test(
       localDeclarationFrontendSource,
     ) ||
     !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
@@ -1997,7 +2018,7 @@ if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
     ) ||
     !/ps_register_global_var_in\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
-    "local declaration and parameter lowering must use explicitly passed registries",
+    "local declaration syntax must receive only runtime, NameClassifier, and syntax services while semantic application and lowering use frontend-owned registries",
   );
 }
 if (!/psx_frontend_analyze_initializer_syntax_in_contexts\s*\([\s\S]*?request->local_registry/.test(
@@ -2613,6 +2634,22 @@ const initializerSyntaxSource = await readFile(
   "src/parser/initializer_syntax.c",
   "utf8",
 );
+const initializerSyntaxHeader = await readFile(
+  "src/parser/initializer_syntax.h",
+  "utf8",
+);
+if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
+      `${initializerSyntaxHeader}\n${initializerSyntaxSource}`,
+    ) ||
+    /#include\s+"(?:semantic_ctx|global_registry|local_registry)\.h"/.test(
+      initializerSyntaxSource,
+    ) ||
+    !/psx_initializer_syntax_context_t/.test(initializerSyntaxHeader) ||
+    !/parse_assignment_expression/.test(initializerSyntaxHeader)) {
+  throw new Error(
+    "initializer syntax parsing must depend only on parser runtime and explicit syntax-expression services",
+  );
+}
 const localDeclarationSyntaxSource = await readFile(
   "src/parser/local_declaration_syntax.c",
   "utf8",
@@ -2679,13 +2716,25 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/psx_parse_statement_expression_in_contexts\s*\(/.test(
       expressionSyntaxAdapterSource,
     ) ||
-    !/psx_parse_initializer_syntax_list_in_contexts\s*\(/.test(
+    !/psx_parse_initializer_syntax_list_with_context\s*\(/.test(
       expressionSyntaxAdapterSource,
     ) ||
-    !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
+    /ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
       initializerSyntaxSource,
     ) ||
-    !/psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts\s*\(/.test(
+    !/context->record_unsupported_gnu_extension/.test(
+      initializerSyntaxSource,
+    ) ||
+    /psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/callbacks->parse_decl_specifier\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/callbacks->parse_declarator\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/callbacks->parse_initializer\s*\(/.test(
       localDeclarationSyntaxSource,
     ) ||
     !/psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts\s*\(/.test(
@@ -3024,8 +3073,11 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
   );
 }
 if (!/\bND_STATIC_ASSERT\b/.test(syntaxNodeKindHeader) ||
-    !/psx_node_new_static_assert_syntax_in\s*\(/.test(
+    !/callbacks->parse_static_assert\s*\(/.test(
       localDeclarationSyntaxSource,
+    ) ||
+    !/psx_node_new_static_assert_syntax_in\s*\(/.test(
+      localDeclarationFrontendSource,
     ) ||
     /\bapply_static_assert\b/.test(localDeclarationSyntaxSource) ||
     /\bapply_static_assert\b/.test(localDeclarationFrontendSource) ||
@@ -3706,6 +3758,26 @@ const staticAssertDeclarationSource = await readFile(
   "src/parser/static_assert_declaration.c",
   "utf8",
 );
+const staticAssertDeclarationHeader = await readFile(
+  "src/parser/static_assert_declaration.h",
+  "utf8",
+);
+if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
+      `${staticAssertDeclarationHeader}\n${staticAssertDeclarationSource}`,
+    ) ||
+    /#include\s+"(?:semantic_ctx|global_registry|local_registry)\.h"/.test(
+      staticAssertDeclarationSource,
+    ) ||
+    !/psx_static_assert_syntax_context_t/.test(
+      staticAssertDeclarationHeader,
+    ) ||
+    !/parse_assignment_expression/.test(
+      staticAssertDeclarationHeader,
+    )) {
+  throw new Error(
+    "static assert syntax parsing must depend only on parser runtime and an explicit assignment-expression service",
+  );
+}
 const parserSemanticContextImplementation = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",

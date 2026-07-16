@@ -40,12 +40,33 @@ static void current_function_name(
       adapter->local_registry, name, name_len);
 }
 
-static node_t *parse_initializer_list(void *context) {
+static node_t *parse_initializer_assignment_expression(
+    void *context) {
   psx_legacy_expression_syntax_adapter_t *adapter = context;
-  return psx_parse_initializer_syntax_list_in_contexts(
+  return psx_expr_assign_in_contexts(
       adapter->semantic_context, adapter->global_registry,
       adapter->local_registry, adapter->runtime_context,
       &adapter->name_classifier, adapter->local_declarations);
+}
+
+static void record_initializer_unsupported_gnu_extension(
+    void *context, const token_t *token, const char *name) {
+  psx_legacy_expression_syntax_adapter_t *adapter = context;
+  ps_ctx_record_unsupported_gnu_extension_warning_in(
+      adapter->semantic_context, token, name);
+}
+
+static node_t *parse_initializer_list(void *context) {
+  psx_legacy_expression_syntax_adapter_t *adapter = context;
+  return psx_parse_initializer_syntax_list_with_context(
+      &(psx_initializer_syntax_context_t){
+          .context = adapter,
+          .runtime_context = adapter->runtime_context,
+          .parse_assignment_expression =
+              parse_initializer_assignment_expression,
+          .record_unsupported_gnu_extension =
+              record_initializer_unsupported_gnu_extension,
+      });
 }
 
 static node_t *parse_statement_expression(void *context) {
@@ -77,9 +98,10 @@ static int parse_type_name(
       .diagnose_complex_requires_float =
           diagnose_type_name_complex_requires_float,
       .context = adapter,
+      .expression_context = adapter,
+      .parse_assignment_expression =
+          parse_initializer_assignment_expression,
       .semantic_context = adapter->semantic_context,
-      .global_registry = adapter->global_registry,
-      .local_registry = adapter->local_registry,
       .runtime_context = adapter->runtime_context,
   };
   int parsed = runtime_bounds
@@ -88,10 +110,8 @@ static int parse_type_name(
                    : psx_parse_type_name_syntax_at(
                          start, &options, out);
   if (parsed && runtime_bounds)
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        &out->declarator, adapter->semantic_context,
-        adapter->global_registry, adapter->local_registry,
-        adapter->runtime_context, adapter->local_declarations);
+    ps_parse_runtime_declarator_expressions_with_options(
+        &out->declarator, &options);
   return parsed;
 }
 

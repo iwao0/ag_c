@@ -7,8 +7,6 @@
 #include "node_utils.h"
 #include "parser_recovery.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
-#include "static_assert_declaration.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
@@ -44,10 +42,14 @@ static ag_diagnostic_context_t *diagnostics(
 static int callbacks_are_complete(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks ||
-      !callbacks->semantic_context || !callbacks->global_registry ||
-      !callbacks->local_registry || !callbacks->runtime_context ||
-      !callbacks->options ||
-      !callbacks->name_classifier.is_typedef_name || !tokenizer(callbacks)) {
+      !callbacks->runtime_context ||
+      !callbacks->name_classifier.is_typedef_name ||
+      !callbacks->parse_static_assert ||
+      !callbacks->parse_decl_specifier ||
+      !callbacks->parse_declarator ||
+      !callbacks->parse_runtime_declarator_expressions ||
+      !callbacks->parse_initializer ||
+      !tokenizer(callbacks)) {
     return 0;
   }
   return 1;
@@ -163,18 +165,8 @@ node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks_are_complete(callbacks)) return NULL;
   tokenizer_context_t *tk_ctx = tokenizer(callbacks);
-  if (curtok(callbacks)->kind == TK_STATIC_ASSERT) {
-    psx_parsed_static_assert_declaration_t assertion;
-    psx_parse_static_assert_syntax_in_contexts(
-          &assertion, callbacks->semantic_context,
-          callbacks->global_registry,
-          callbacks->local_registry, callbacks->runtime_context,
-          &callbacks->name_classifier,
-          callbacks);
-    return psx_node_new_static_assert_syntax_in(
-        ps_parser_runtime_arena(callbacks->runtime_context),
-        assertion.condition, assertion.diagnostic_token);
-  }
+  if (curtok(callbacks)->kind == TK_STATIC_ASSERT)
+    return callbacks->parse_static_assert(callbacks->context);
 
   node_local_declaration_t *node = arena_alloc_in(
       arena(callbacks), sizeof(*node));
@@ -188,15 +180,8 @@ node_t *psx_parse_local_declaration_syntax(
       curtok(callbacks)->kind == TK_TYPEDEF;
   if (declaration->is_typedef)
     tk_set_current_token_ctx(tk_ctx, curtok(callbacks)->next);
-  if (!psx_try_parse_decl_specifier_syntax_ex(
-          &declaration->specifier,
-          &(psx_decl_specifier_syntax_options_t){
-              .name_classifier = &callbacks->name_classifier,
-              .semantic_context = callbacks->semantic_context,
-              .global_registry = callbacks->global_registry,
-              .local_registry = callbacks->local_registry,
-              .runtime_context = callbacks->runtime_context,
-          })) {
+  if (!callbacks->parse_decl_specifier(
+          callbacks->context, &declaration->specifier)) {
     diag_report_tokf_in(diagnostics(callbacks),
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(callbacks), "%s",
         diag_message_for_in(diagnostics(callbacks), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
@@ -223,16 +208,10 @@ node_t *psx_parse_local_declaration_syntax(
     if (!append_declarator_slot(declaration, callbacks)) return NULL;
     psx_parsed_declarator_t *declarator =
         &declaration->declarators[declaration->declarator_count - 1];
-    psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
-        declarator, callbacks->semantic_context,
-        callbacks->global_registry,
-        callbacks->local_registry, callbacks->runtime_context,
-        &callbacks->name_classifier);
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        declarator, callbacks->semantic_context,
-        callbacks->global_registry,
-        callbacks->local_registry, callbacks->runtime_context,
-        callbacks);
+    callbacks->parse_declarator(
+        callbacks->context, declarator);
+    callbacks->parse_runtime_declarator_expressions(
+        callbacks->context, declarator);
     record_declarator_resolution_events(
         declarator, &callbacks->name_classifier);
     if (!declarator->identifier) {
@@ -263,12 +242,8 @@ node_t *psx_parse_local_declaration_syntax(
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
       tk_expect_ctx(tk_ctx, '=');
-      psx_parse_initializer_syntax_value_in_contexts(
-          initializer, assign_tok, callbacks->semantic_context,
-          callbacks->global_registry,
-          callbacks->local_registry, callbacks->runtime_context,
-          &callbacks->name_classifier,
-          callbacks);
+      callbacks->parse_initializer(
+          callbacks->context, initializer, assign_tok);
     }
     if (!tk_consume_ctx(tk_ctx, ',')) break;
   }

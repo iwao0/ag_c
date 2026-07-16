@@ -7,11 +7,29 @@
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/expr.h"
 #include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/runtime_context.h"
+
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
+  psx_name_classifier_t name_classifier;
+} psx_function_definition_expression_adapter_t;
+
+static node_t *parse_function_definition_assignment_expression(
+    void *context) {
+  psx_function_definition_expression_adapter_t *adapter = context;
+  return psx_expr_assign_in_contexts(
+      adapter->semantic_context, adapter->global_registry,
+      adapter->local_registry, adapter->runtime_context,
+      &adapter->name_classifier, NULL);
+}
 
 node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_semantic_context_t *semantic_context,
@@ -37,9 +55,23 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
         diagnostics, definition->diagnostic_token, "funcdef",
         "canonical function return base type resolution failed");
   }
-  ps_parse_runtime_declarator_expressions_in_contexts(
-      &definition->declarator, semantic_context, global_registry,
-      local_registry, runtime_context, NULL);
+  psx_function_definition_expression_adapter_t expression_adapter = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .runtime_context = runtime_context,
+      .name_classifier = ps_ctx_name_classifier(semantic_context),
+  };
+  ps_parse_runtime_declarator_expressions_with_options(
+      &definition->declarator,
+      &(psx_decl_specifier_syntax_options_t){
+          .name_classifier = &expression_adapter.name_classifier,
+          .expression_context = &expression_adapter,
+          .parse_assignment_expression =
+              parse_function_definition_assignment_expression,
+          .semantic_context = semantic_context,
+          .runtime_context = runtime_context,
+      });
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(

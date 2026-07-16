@@ -68,13 +68,11 @@ static void synchronize_function_parameters(
 int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_parsed_function_parameters_t *parameters,
     psx_function_parameter_type_mode_t type_mode,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier) {
-  if (!parameters || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context || !tokenizer(runtime_context))
+    const psx_decl_specifier_syntax_options_t *options) {
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
+  if (!parameters || !options || !runtime_context ||
+      !tokenizer(runtime_context))
     return 0;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   tk_expect_ctx(tk_ctx, '(');
@@ -89,17 +87,12 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     }
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters, runtime_context);
-    psx_decl_specifier_syntax_options_t specifier_options = {
-        .name_classifier =
-            type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
-                ? NULL : name_classifier,
-        .semantic_context = semantic_context,
-        .global_registry = global_registry,
-        .local_registry = local_registry,
-        .runtime_context = runtime_context,
-        .allow_implicit_int =
-            type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
-    };
+    psx_decl_specifier_syntax_options_t specifier_options = *options;
+    specifier_options.name_classifier =
+        type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
+            ? NULL : options->name_classifier;
+    specifier_options.allow_implicit_int =
+        type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT;
     int parsed_specifier = psx_try_parse_decl_specifier_syntax_ex(
         &parameter->specifier, &specifier_options);
     if (!parsed_specifier) {
@@ -113,8 +106,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     }
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree_in_contexts(
-            semantic_context, global_registry, local_registry,
-            runtime_context, name_classifier);
+            options);
     if (tk_consume_ctx(tk_ctx, ',')) continue;
     tk_expect_ctx(tk_ctx, ')');
     return 1;

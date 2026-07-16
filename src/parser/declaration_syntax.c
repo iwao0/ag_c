@@ -244,9 +244,10 @@ static int parse_type_name_syntax_at(
     }
   }
 
+  psx_decl_specifier_syntax_options_t declarator_options = *options;
+  declarator_options.name_classifier = NULL;
   out->declarator = psx_parse_abstract_declarator_syntax_tree_in_contexts(
-      options->semantic_context, options->global_registry,
-      options->local_registry, options->runtime_context);
+      &declarator_options);
   if (prepare_constant_bounds)
     ps_prepare_constant_declarator_expressions_in_context(
         &out->declarator, options->semantic_context,
@@ -284,9 +285,7 @@ void psx_dispose_type_name_syntax(psx_parsed_type_name_t *type_name) {
 
 struct declaration_declarator_parse_context_t {
   psx_parsed_declarator_t *declarator;
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
+  const psx_decl_specifier_syntax_options_t *options;
   psx_parser_runtime_context_t *runtime_context;
   const psx_name_classifier_t *name_classifier;
   int allow_implicit_function_parameters;
@@ -417,11 +416,7 @@ static int consume_declarator_suffix(
               : (parse_context->allow_implicit_function_parameters
                      ? PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT
                      : PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF),
-          parse_context->semantic_context,
-          parse_context->global_registry,
-          parse_context->local_registry,
-          parse_context->runtime_context,
-          parse_context->name_classifier))
+          parse_context->options))
     parse_context->has_syntax_error = 1;
   *suffix = (psx_parsed_function_suffix_t){
       .declarator_op_index = op_index,
@@ -489,21 +484,17 @@ static int parse_declarator_syntax_tree_into(
     psx_parsed_declarator_t *declarator,
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
+    const psx_decl_specifier_syntax_options_t *options,
     int allow_implicit_function_parameters) {
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
   memset(declarator, 0, sizeof(*declarator));
   ps_declarator_shape_init(&declarator->declarator_shape);
   declaration_declarator_parse_context_t parse_context = {
       .declarator = declarator,
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
+      .options = options,
       .runtime_context = runtime_context,
-      .name_classifier = name_classifier,
+      .name_classifier = options ? options->name_classifier : NULL,
       .allow_implicit_function_parameters =
           allow_implicit_function_parameters,
   };
@@ -544,69 +535,47 @@ static int parse_declarator_syntax_tree_into(
 
 void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier) {
-  if (!declarator || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+    const psx_decl_specifier_syntax_options_t *options) {
+  if (!declarator || !options || !options->runtime_context)
     return;
   parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, semantic_context, global_registry, local_registry,
-      runtime_context, name_classifier, 0);
+      declarator, 0, NULL, options, 0);
 }
 
 int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier) {
-  if (!declarator || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+    const psx_decl_specifier_syntax_options_t *options) {
+  if (!declarator || !options || !options->runtime_context)
     return 0;
   return parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, semantic_context, global_registry, local_registry,
-      runtime_context, name_classifier, 0);
+      declarator, 0, NULL, options, 0);
 }
 
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context) {
+    const psx_decl_specifier_syntax_options_t *options) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
-      &declarator, 1, NULL, semantic_context, global_registry, local_registry,
-      runtime_context, NULL, 0);
+      &declarator, 1, NULL, options, 0);
   return declarator;
 }
 
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier) {
+    const psx_decl_specifier_syntax_options_t *options) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
       &declarator, 0, is_parameter_grouping_parenthesis,
-      semantic_context, global_registry, local_registry,
-      runtime_context, name_classifier, 0);
+      options, 0);
   return declarator;
 }
 
-void ps_parse_runtime_declarator_expressions_in_contexts(
+void ps_parse_runtime_declarator_expressions_with_options(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!declarator || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context || !tokenizer(runtime_context))
+    const psx_decl_specifier_syntax_options_t *options) {
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
+  if (!declarator || !options ||
+      !options->parse_assignment_expression ||
+      !runtime_context || !tokenizer(runtime_context))
     return;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   token_t *saved = current_token(runtime_context);
@@ -615,11 +584,9 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
         &declarator->array_bounds[i].expression;
     if (expression->node || !expression->start || !expression->end) continue;
     tk_set_current_token_ctx(tk_ctx, expression->start);
-    expression->node = psx_expr_assign_in_contexts(
-        semantic_context, global_registry, local_registry,
-        runtime_context,
-        local_declarations ? &local_declarations->name_classifier : NULL,
-        local_declarations);
+    expression->node =
+        options->parse_assignment_expression(
+            options->expression_context);
     if (current_token(runtime_context) != expression->end) {
       ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                    "runtime array bound was not fully consumed");
@@ -629,10 +596,8 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
     psx_parsed_function_parameters_t *parameters =
         declarator->function_suffixes[i].parameters;
     for (int p = 0; parameters && p < parameters->count; p++) {
-      ps_parse_runtime_declarator_expressions_in_contexts(
-          &parameters->items[p].declarator, semantic_context,
-          global_registry, local_registry, runtime_context,
-          local_declarations);
+      ps_parse_runtime_declarator_expressions_with_options(
+          &parameters->items[p].declarator, options);
     }
   }
   tk_set_current_token_ctx(tk_ctx, saved);

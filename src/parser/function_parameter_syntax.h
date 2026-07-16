@@ -24,11 +24,7 @@ typedef enum {
 int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_parsed_function_parameters_t *parameters,
     psx_function_parameter_type_mode_t type_mode,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier);
+    const psx_decl_specifier_syntax_options_t *options);
 void psx_dispose_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
 

@@ -187,24 +187,13 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
   if (!tokenizer_context) return NULL;
   token_t *current_token =
       tk_get_current_token_ctx(tokenizer_context);
-  if (current_token && current_token->kind == TK_LBRACE) {
-    token_t *init_tok = current_token;
-    node_t *syntax = psx_parse_initializer_syntax_list_in_contexts(
-        semantic_context, global_registry, local_registry,
-        runtime_context,
-        local_declarations ? &local_declarations->name_classifier : NULL,
-        local_declarations);
-    return ps_decl_bind_initializer_for_var_in(
-        ps_parser_runtime_arena(runtime_context),
-        var, syntax, PSX_DECL_INIT_LIST, init_tok);
-  }
-  token_t *init_tok = current_token;
+  if (!local_declarations ||
+      !local_declarations->parse_initializer)
+    return NULL;
+  psx_parsed_initializer_t initializer;
+  local_declarations->parse_initializer(
+      local_declarations->context, &initializer, current_token);
   return ps_decl_bind_initializer_for_var_in(
-      ps_parser_runtime_arena(runtime_context), var,
-      psx_expr_assign_in_contexts(
-          semantic_context, global_registry, local_registry,
-          runtime_context,
-          local_declarations ? &local_declarations->name_classifier : NULL,
-          local_declarations),
-      PSX_DECL_INIT_EXPR, init_tok);
+      ps_parser_runtime_arena(runtime_context), var, initializer.value,
+      initializer.kind, initializer.value_tok);
 }
