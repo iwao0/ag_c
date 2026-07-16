@@ -1,9 +1,10 @@
 #include "ui_texts.h"
+#include "locale_config.h"
 #include <string.h>
 
 const char *diag_ui_text_for(diag_ui_text_id_t id, const char *locale) {
   const char *msg = NULL;
-#if defined(DIAG_LANG_ALL)
+#if defined(AGC_DIAG_LOCALE_ALL)
   if (locale && strcmp(locale, "en") == 0) {
     msg = diag_ui_text_en(id);
     if (msg) return msg;
@@ -15,7 +16,7 @@ const char *diag_ui_text_for(diag_ui_text_id_t id, const char *locale) {
     msg = diag_ui_text_en(id);
     if (msg) return msg;
   }
-#elif defined(DIAG_LANG_EN)
+#elif defined(AGC_DIAG_LOCALE_EN_ONLY)
   (void)locale;
   msg = diag_ui_text_en(id);
   if (msg) return msg;

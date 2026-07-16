@@ -3301,6 +3301,18 @@ const selfHostBuildSource = await readFile(
   "scripts/build_wasm_selfhost_api.sh",
   "utf8",
 );
+const diagnosticLocaleConfigSource = await readFile(
+  "src/diag/locale_config.h",
+  "utf8",
+);
+const diagnosticCoreSource = await readFile(
+  "src/diag/diag.c",
+  "utf8",
+);
+const diagnosticUiTextsSource = await readFile(
+  "src/diag/ui_texts.c",
+  "utf8",
+);
 const makefileSource = await readFile("Makefile", "utf8");
 if (semanticWarningCalls.length === 0 ||
     semanticWarningCalls.some((body) =>
@@ -3330,6 +3342,10 @@ if (semanticWarningCalls.length === 0 ||
     !/src\/diag\/messages_ja\.c\|src\/diag\/messages_en\.c/.test(
       selfHostBuildSource,
     ) ||
+    !/AGC_DIAG_LOCALE_ALL/.test(diagnosticLocaleConfigSource) ||
+    !/defined\(AGC_DIAG_LOCALE_ALL\)/.test(diagnosticCoreSource) ||
+    !/defined\(AGC_DIAG_LOCALE_ALL\)/.test(diagnosticUiTextsSource) ||
+    /defined\(DIAG_LANG_ALL\)/.test(diagnosticUiTextsSource) ||
     !/^DIAG_LANG\?=all$/m.test(makefileSource)) {
   throw new Error(
     "user-facing diagnostics must come from per-context locale catalogs across native and Wasm paths",

@@ -199,6 +199,53 @@ if (!englishImplicitFunction.message.includes("function 'printf' is not declared
     })}`,
   );
 }
+
+function compileLocalizedExpectedToken(locale) {
+  stderrChunks.length = 0;
+  try {
+    compiler.compileWat({
+      name: "localized-error.c",
+      source: "int main(void {\n",
+    }, { diagnosticLocale: locale });
+  } catch (err) {
+    const diagnostic = err.diagnostics?.find(({ code }) => code === "E2006");
+    if (!diagnostic) {
+      throw new Error(
+        `localized E2006 was not emitted for ${locale}: ${JSON.stringify(err.diagnostics)}`,
+      );
+    }
+    return {
+      diagnostic,
+      rendered: String(err && err.message ? err.message : err),
+      streamed: stderrChunks.join(""),
+    };
+  }
+  throw new Error(`localized E2006 source unexpectedly compiled for ${locale}`);
+}
+const englishExpectedToken = compileLocalizedExpectedToken("en");
+const japaneseExpectedToken = compileLocalizedExpectedToken("ja");
+const englishExpectedTokenAgain = compileLocalizedExpectedToken("en");
+for (const result of [englishExpectedToken, englishExpectedTokenAgain]) {
+  if (!result.diagnostic.message.includes("Expected token is missing") ||
+      !result.rendered.includes("actual token") ||
+      !result.streamed.includes("actual token") ||
+      result.rendered.includes("実際のトークン") ||
+      result.streamed.includes("実際のトークン")) {
+    throw new Error(
+      `English E2006 mixed diagnostic locales: ${JSON.stringify(result)}`,
+    );
+  }
+}
+if (!japaneseExpectedToken.diagnostic.message.includes("トークンが必要です") ||
+    !japaneseExpectedToken.rendered.includes("実際のトークン") ||
+    !japaneseExpectedToken.streamed.includes("実際のトークン") ||
+    japaneseExpectedToken.rendered.includes("actual token") ||
+    japaneseExpectedToken.streamed.includes("actual token")) {
+  throw new Error(
+    `Japanese E2006 mixed diagnostic locales: ${JSON.stringify(japaneseExpectedToken)}`,
+  );
+}
+
 for (const diagnostic of [
   japaneseImplicitFunction,
   englishImplicitFunctionAgain,

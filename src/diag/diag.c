@@ -1,4 +1,5 @@
 #include "diag.h"
+#include "locale_config.h"
 #include "messages.h"
 #include "ui_texts.h"
 #include "../tokenizer/tokenizer.h"
@@ -512,7 +513,7 @@ static void diag_vfprint_escaped(FILE *out, const char *fmt, va_list ap) {
   free(tmp);
 }
 
-#if !defined(DIAG_LANG_JA) && !defined(DIAG_LANG_EN)
+#if defined(AGC_DIAG_LOCALE_ALL)
 static int diag_locale_is_en(
     const ag_diagnostic_context_t *context) {
   return strcmp(diag_context_get_locale(context), "en") == 0;
@@ -528,7 +529,7 @@ static int diag_locale_is_en(
       if (!(OUT)) (OUT) = (EN_EXPR);               \
     }                                              \
   } while (0)
-#elif defined(DIAG_LANG_EN)
+#elif defined(AGC_DIAG_LOCALE_EN_ONLY)
 #define DIAG_LOOKUP_LOCALE(CONTEXT, OUT, JA_EXPR, EN_EXPR) \
   do {                                             \
     (void)(CONTEXT);                               \
