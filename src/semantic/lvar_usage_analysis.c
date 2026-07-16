@@ -187,6 +187,8 @@ void psx_collect_lvar_usage_events_in(
     case ND_BLOCK:
       collect_array(local_registry, ((node_block_t *)node)->body, region);
       return;
+    case ND_STATIC_ASSERT:
+      return;
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;

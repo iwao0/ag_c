@@ -4037,6 +4037,8 @@ static int build_statement(
     case PSX_HIR_VLA_ALLOC:
       (void)build_vla_allocation(context, node);
       return context->status == IR_HIR_BUILD_OK;
+    case PSX_HIR_NOP:
+      return 1;
     case PSX_HIR_IF: {
       const psx_hir_node_t *condition = child_for_edge(
           context, node, PSX_HIR_EDGE_LHS, 0);

@@ -46,6 +46,10 @@ typedef struct {
   unsigned char evaluates_vla_operand;
 } psx_sizeof_query_resolution_state_t;
 
+typedef struct {
+  int resolved_alignment;
+} psx_alignof_query_resolution_state_t;
+
 typedef enum {
   PSX_SOURCE_CAST_UNRESOLVED = 0,
   PSX_SOURCE_CAST_DIRECT_HIR,
@@ -70,6 +74,7 @@ typedef struct psx_node_resolution_state_t {
   psx_compound_literal_resolution_t compound_literal;
   psx_generic_selection_resolution_state_t generic_selection;
   psx_sizeof_query_resolution_state_t sizeof_query;
+  psx_alignof_query_resolution_state_t alignof_query;
   psx_source_cast_resolution_t source_cast;
 } psx_node_resolution_state_t;
 

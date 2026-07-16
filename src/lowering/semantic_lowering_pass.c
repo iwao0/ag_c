@@ -111,6 +111,13 @@ static node_t *lower_tree(
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return NULL;
   switch (node->kind) {
+    case ND_STATIC_ASSERT: {
+      node_static_assert_t *assertion =
+          (node_static_assert_t *)node;
+      assertion->condition = lower_tree(
+          context, assertion->condition, fallback_diag_tok);
+      return node;
+    }
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *compound =
           (node_compound_literal_t *)node;

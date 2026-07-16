@@ -20,6 +20,8 @@ node_t *psx_node_new_subscript_syntax_for_in(
     arena_context_t *arena_context, node_t *base, node_t *index);
 node_t *psx_node_new_raw_assign_in(
     arena_context_t *arena_context, node_t *lhs, node_t *rhs);
+node_t *psx_node_new_static_assert_syntax_in(
+    arena_context_t *arena_context, node_t *condition, token_t *token);
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *token,

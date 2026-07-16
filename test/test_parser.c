@@ -40,6 +40,7 @@
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
+#include "../src/semantic/alignof_query_resolution.h"
 #include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/constant_expression.h"
 #include "../src/semantic/declaration_resolution.h"
@@ -3931,7 +3932,9 @@ static void assert_typed_alignof(
   ASSERT_TRUE(query_node != NULL);
   node_alignof_query_t *query =
       (node_alignof_query_t *)query_node;
-  ASSERT_EQ(expected_alignment, query->resolved_alignment);
+  ASSERT_EQ(
+      expected_alignment,
+      psx_alignof_query_resolved_alignment(query));
   ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
               PSX_TYPE_ID_INVALID);
 }
@@ -6052,7 +6055,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(align_query->type_name.resolved_type == NULL);
   resolve_test_alignof_query(align_query);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
-  ASSERT_EQ(4, align_query->resolved_alignment);
+  ASSERT_EQ(4, psx_alignof_query_resolved_alignment(align_query));
   node_t *typed_align = analyze_test_expression(raw_align, NULL);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
   assert_typed_alignof(typed_align, 4);
@@ -6607,6 +6610,53 @@ static void test_toplevel_static_assert_frontend_boundary() {
   ASSERT_TRUE(parse_raw_function_item(&stream, &item) != NULL);
   ASSERT_TRUE(!ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_EOF, item.kind);
+  ps_parser_stream_end(&stream);
+}
+
+static void test_block_static_assert_syntax_hir_boundary() {
+  printf("test_block_static_assert_syntax_hir_boundary...\n");
+  const char *source =
+      "int __block_static_assert(void) { "
+      "_Static_assert(1 + 1 == 2, \"ok\"); return 7; }";
+
+  reset_test_translation_unit_state();
+  psx_parser_stream_t stream = {0};
+  begin_test_parser_stream(
+      &stream, NULL, tk_tokenize((char *)source), NULL);
+  psx_parsed_toplevel_item_t item;
+  ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
+  ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
+  node_t *syntax_function = parse_raw_function_item(&stream, &item);
+  ASSERT_TRUE(syntax_function != NULL);
+  node_block_t *syntax_body =
+      as_block(as_function_definition(syntax_function)->base.rhs);
+  ASSERT_EQ(ND_STATIC_ASSERT, syntax_body->body[0]->kind);
+  node_static_assert_t *syntax_assertion =
+      (node_static_assert_t *)syntax_body->body[0];
+  node_t *syntax_condition = syntax_assertion->condition;
+  ASSERT_TRUE(syntax_condition != NULL);
+  ASSERT_TRUE(syntax_condition->resolution_state == NULL);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  size_t checkpoint = psx_hir_module_node_count(hir);
+  psx_hir_node_id_t hir_root =
+      resolve_test_function_to_hir(
+          syntax_function, syntax_function->tok);
+  ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_EQ(ND_STATIC_ASSERT, syntax_body->body[0]->kind);
+  ASSERT_TRUE(syntax_assertion->condition == syntax_condition);
+  ASSERT_TRUE(syntax_condition->resolution_state == NULL);
+
+  int found_nop = 0;
+  for (size_t i = checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (node && psx_hir_node_kind(node) == PSX_HIR_NOP)
+      found_nop = 1;
+  }
+  ASSERT_TRUE(found_nop);
   ps_parser_stream_end(&stream);
 }
 
@@ -12511,7 +12561,7 @@ static void test_type_decl() {
 
   parsed_code = parse_program_input("int main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_STATIC_ASSERT, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
@@ -22614,6 +22664,7 @@ int main() {
   test_compound_assignment_semantic_lowering_boundary();
   test_translation_unit_frontend_boundary();
   test_toplevel_static_assert_frontend_boundary();
+  test_block_static_assert_syntax_hir_boundary();
   test_toplevel_declaration_frontend_boundary();
   test_toplevel_callback_context_boundary();
   test_toplevel_compound_initializer_frontend_boundary();

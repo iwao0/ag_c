@@ -1,5 +1,6 @@
 #include "constant_expression.h"
 
+#include "alignof_query_resolution.h"
 #include "generic_selection_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "../parser/gvar_public.h"
@@ -88,11 +89,13 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     }
     case ND_ALIGNOF_QUERY: {
       node_alignof_query_t *query = (node_alignof_query_t *)node;
-      if (query->resolved_alignment <= 0) {
+      int alignment =
+          psx_alignof_query_resolved_alignment(query);
+      if (alignment <= 0) {
         if (ok) *ok = 0;
         return 0;
       }
-      return query->resolved_alignment;
+      return alignment;
     }
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =

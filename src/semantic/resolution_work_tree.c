@@ -28,6 +28,7 @@ static size_t node_storage_size(const node_t *node) {
     case ND_ALIGNOF_QUERY: return sizeof(node_alignof_query_t);
     case ND_INIT_LIST: return sizeof(node_init_list_t);
     case ND_DECL_INIT: return sizeof(node_decl_init_t);
+    case ND_STATIC_ASSERT: return sizeof(node_static_assert_t);
     case ND_VLA_ALLOC: return sizeof(node_vla_alloc_t);
     case ND_NUM: return sizeof(node_num_t);
     case ND_LVAR: return sizeof(node_lvar_t);
@@ -373,6 +374,16 @@ static node_t *clone_node(
               &((const node_compound_literal_t *)source)->type_name))
         return NULL;
       break;
+    case ND_STATIC_ASSERT: {
+      node_static_assert_t *assertion = (node_static_assert_t *)copy;
+      const node_static_assert_t *source_assertion =
+          (const node_static_assert_t *)source;
+      assertion->condition = clone_node(
+          arena_context, source_assertion->condition);
+      if (source_assertion->condition && !assertion->condition)
+        return NULL;
+      break;
+    }
     case ND_CAST:
       if (source->is_source_cast &&
           !clone_type_name_ref(

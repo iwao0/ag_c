@@ -31,7 +31,7 @@ static ag_diagnostic_context_t *diagnostics(
 
 static int callbacks_are_complete(
     const psx_local_declaration_callbacks_t *callbacks) {
-  if (!callbacks || !callbacks->apply_static_assert ||
+  if (!callbacks ||
       !callbacks->begin_declaration || !callbacks->begin_declarator ||
       !callbacks->finish_declarator || !callbacks->finish_declaration ||
       !callbacks->semantic_context || !callbacks->global_registry ||
@@ -55,11 +55,9 @@ node_t *psx_parse_local_declaration_syntax(
           callbacks->local_registry, callbacks->runtime_context,
           &callbacks->name_classifier,
           callbacks);
-    callbacks->apply_static_assert(
-        callbacks->context, assertion.condition,
-        assertion.diagnostic_token);
-    return psx_node_new_syntax_int_in(
-        ps_parser_runtime_arena(callbacks->runtime_context), 0, NULL);
+    return psx_node_new_static_assert_syntax_in(
+        ps_parser_runtime_arena(callbacks->runtime_context),
+        assertion.condition, assertion.diagnostic_token);
   }
 
   int is_typedef = curtok(callbacks)->kind == TK_TYPEDEF;

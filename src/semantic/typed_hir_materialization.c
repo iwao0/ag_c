@@ -15,6 +15,7 @@
 #include "../type_layout.h"
 #include "../lowering/runtime_initializer_plan.h"
 #include "compound_literal_resolution.h"
+#include "alignof_query_resolution.h"
 #include "typed_hir_node_internal.h"
 #include "generic_selection_resolution.h"
 #include "resolved_node_kind.h"
@@ -115,6 +116,7 @@ static int map_kind(
     MAP(ND_POST_INC, PSX_HIR_POST_INC);
     MAP(ND_POST_DEC, PSX_HIR_POST_DEC);
     MAP(ND_RETURN, PSX_HIR_RETURN);
+    MAP(ND_STATIC_ASSERT, PSX_HIR_NOP);
     MAP(ND_BLOCK, PSX_HIR_BLOCK);
     MAP(ND_FUNCDEF, PSX_HIR_FUNCTION);
     MAP(ND_FUNCALL, PSX_HIR_CALL);
@@ -450,6 +452,9 @@ static int build_special_children(
       }
       return 1;
     }
+    case ND_STATIC_ASSERT:
+      *include_common_children = 0;
+      return 1;
     case ND_FUNCDEF: {
       const node_function_definition_t *function =
           (const node_function_definition_t *)source;
@@ -1012,7 +1017,8 @@ static int copy_payload(
       break;
     case ND_ALIGNOF_QUERY:
       spec->integer_value =
-          ((const node_alignof_query_t *)source)->resolved_alignment;
+          psx_alignof_query_resolved_alignment(
+              (const node_alignof_query_t *)source);
       break;
     case ND_NUM: {
       const node_num_t *number = (const node_num_t *)source;

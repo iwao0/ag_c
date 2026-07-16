@@ -147,7 +147,6 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
-  int resolved_alignment;
 } node_alignof_query_t;
 
 typedef struct {
@@ -155,6 +154,11 @@ typedef struct {
   psx_initializer_entry_t *entries;
   int entry_count;
 } node_init_list_t;
+
+typedef struct {
+  node_t base;
+  node_t *condition;
+} node_static_assert_t;
 
 typedef struct {
   node_t base;

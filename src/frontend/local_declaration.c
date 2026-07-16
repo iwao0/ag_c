@@ -50,15 +50,6 @@ static ag_diagnostic_context_t *application_diagnostics(
   return ps_ctx_diagnostics(application->semantic_context);
 }
 
-static void apply_static_assert(
-    void *context, node_t *condition, token_t *diagnostic_token) {
-  const psx_local_declaration_callbacks_t *callbacks = context;
-  psx_apply_static_assert_in_contexts(
-      callbacks->semantic_context, callbacks->global_registry,
-      callbacks->local_registry,
-      condition, diagnostic_token);
-}
-
 static void *begin_declaration(
     void *context, const psx_parsed_decl_specifier_t *specifier,
     int is_typedef, int is_standalone_tag) {
@@ -304,7 +295,6 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
       .runtime_context = runtime_context,
       .lowering_context = lowering_context,
       .options = options,
-      .apply_static_assert = apply_static_assert,
       .begin_declaration = begin_declaration,
       .begin_declarator = begin_declarator,
       .finish_declarator = finish_declarator,

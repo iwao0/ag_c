@@ -2996,6 +2996,25 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
     "__va_arg_area must parse as identifier syntax and materialize during identifier binding",
   );
 }
+if (!/\bND_STATIC_ASSERT\b/.test(syntaxNodeKindHeader) ||
+    !/psx_node_new_static_assert_syntax_in\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    /\bapply_static_assert\b/.test(localDeclarationSyntaxSource) ||
+    /\bapply_static_assert\b/.test(localDeclarationFrontendSource) ||
+    !/case\s+ND_STATIC_ASSERT\s*:[^]*?psx_resolve_static_assert\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/MAP\s*\(\s*ND_STATIC_ASSERT\s*,\s*PSX_HIR_NOP\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/case\s+PSX_HIR_NOP\s*:\s*return\s+1\s*;/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "block static assertions must remain immutable Syntax AST until resolver processing and materialize as Typed HIR no-ops",
+  );
+}
 const expressionParseContext = parserExpressionSource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*expr_parse_ctx_t\s*;/,
 )?.[1] ?? "";
@@ -3149,6 +3168,9 @@ const genericAssociation = astSource.match(
 const sizeofQueryNode = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*node_sizeof_query_t\s*;/,
 );
+const alignofQueryNode = astSource.match(
+  /typedef struct\s*\{([^{}]*)\}\s*node_alignof_query_t\s*;/,
+);
 if (!typeNameRef ||
     !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
       typeNameRef[1],
@@ -3168,7 +3190,10 @@ if (!typeNameRef ||
     /\bpsx_type_t\s*\*\s*type\s*;/.test(genericAssociation[1]) ||
     !sizeofQueryNode ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(sizeofQueryNode[1]) ||
-    /\bqueried_type\b/.test(sizeofQueryNode[1])) {
+    /\bqueried_type\b/.test(sizeofQueryNode[1]) ||
+    !alignofQueryNode ||
+    !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(alignofQueryNode[1]) ||
+    /\bresolved_alignment\b/.test(alignofQueryNode[1])) {
   throw new Error(
     "type-name expressions must keep resolved types only in their type-name reference",
   );
@@ -6004,7 +6029,7 @@ if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
 if (!/MAP\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/node_alignof_query_t[^]*?resolved_alignment/.test(
+    !/psx_alignof_query_resolved_alignment\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
     /\blower_alignof_query_expression\s*\(/.test(

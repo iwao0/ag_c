@@ -35,6 +35,7 @@ static node_semantic_role_t semantic_role(psx_work_node_kind_t kind) {
     case ND_BLOCK:
     case ND_FUNCDEF:
     case ND_VLA_ALLOC:
+    case ND_STATIC_ASSERT:
       return NODE_SEMANTIC_ROLE_NON_EXPRESSION;
 
     case ND_IDENTIFIER:

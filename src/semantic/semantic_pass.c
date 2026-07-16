@@ -13,12 +13,14 @@
 #include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "assignment_validation.h"
+#include "constant_expression.h"
 #include "expression_operand_resolution.h"
 #include "function_call_resolution.h"
 #include "generic_selection_resolution.h"
 #include "lvar_usage_analysis.h"
 #include "member_access_resolution.h"
 #include "sizeof_query_resolution.h"
+#include "static_assert_resolution.h"
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 
@@ -848,6 +850,39 @@ static void semantic_transform_node(
       semantic_diagnostics(traversal->semantic_context);
 
   switch (node->kind) {
+    case ND_STATIC_ASSERT: {
+      node_static_assert_t *assertion =
+          (node_static_assert_t *)node;
+      semantic_transform_node(assertion->condition, traversal);
+      int is_constant = 1;
+      long long value =
+          psx_eval_const_int(assertion->condition, &is_constant);
+      psx_static_assert_resolution_t resolution;
+      psx_resolve_static_assert(
+          &(psx_static_assert_request_t){
+              .is_constant = is_constant,
+              .value = value,
+          },
+          &resolution);
+      token_t *diagnostic_token = node->tok
+                                      ? node->tok
+                                      : (token_t *)fallback_diag_tok;
+      if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT) {
+        diag_emit_tokf_in(
+            diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
+            diagnostic_token, "%s",
+            diag_message_for_in(
+                diagnostics,
+                DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
+      } else if (resolution.status == PSX_STATIC_ASSERT_FAILED) {
+        diag_emit_tokf_in(
+            diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED,
+            diagnostic_token, "%s",
+            diag_message_for_in(
+                diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+      }
+      break;
+    }
     case ND_NUM:
       semantic_resolve_number_literal(
           traversal->semantic_context, traversal->global_registry,

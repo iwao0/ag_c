@@ -20,8 +20,6 @@ typedef struct psx_local_declaration_callbacks_t {
   psx_parser_runtime_context_t *runtime_context;
   psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
-  void (*apply_static_assert)(
-      void *context, node_t *condition, token_t *diagnostic_token);
   void *(*begin_declaration)(
       void *context, const psx_parsed_decl_specifier_t *specifier,
       int is_typedef, int is_standalone_tag);

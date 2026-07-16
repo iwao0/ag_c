@@ -3,6 +3,7 @@
 
 #include "constant_expression.h"
 #include "declaration_resolution.h"
+#include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "type_name_resolution.h"
 #include "../parser/arena.h"
@@ -310,10 +311,16 @@ void psx_resolve_alignof_query_in_contexts(
     node_alignof_query_t *query) {
   if (!semantic_context || !global_registry || !local_registry || !query)
     return;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), &query->base))
+    return;
   const psx_type_t *type =
       psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
           &query->type_name);
   int alignment = query_type_alignment(semantic_context, type);
-  query->resolved_alignment = alignment > 0 ? alignment : 1;
+  psx_alignof_query_resolution_state_t *resolution =
+      psx_alignof_query_resolution_state(query);
+  if (resolution)
+    resolution->resolved_alignment = alignment > 0 ? alignment : 1;
 }

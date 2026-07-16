@@ -35,6 +35,10 @@ static int walk_node(
       }
       return 1;
     }
+    case ND_STATIC_ASSERT:
+      return walk_node(
+          ((const node_static_assert_t *)node)->condition,
+          visitor, user);
     case ND_FUNCDEF: {
       const node_function_definition_t *function =
           (const node_function_definition_t *)node;

@@ -1,6 +1,7 @@
 #include "identifier_binding.h"
 
 #include "identifier_resolution.h"
+#include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
@@ -366,6 +367,12 @@ static node_t *bind_node(
     }
     case ND_INIT_LIST:
       return bind_initializer(node, context);
+    case ND_STATIC_ASSERT: {
+      node_static_assert_t *assertion =
+          (node_static_assert_t *)node;
+      bind_slot(&assertion->condition, context);
+      return node;
+    }
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *literal =
           (node_compound_literal_t *)node;
@@ -407,7 +414,8 @@ static node_t *bind_node(
       return node;
     }
     case ND_ALIGNOF_QUERY:
-      if (((node_alignof_query_t *)node)->resolved_alignment > 0)
+      if (psx_alignof_query_resolved_alignment(
+              (node_alignof_query_t *)node) > 0)
         return node;
       bind_type_name(
           &((node_alignof_query_t *)node)->type_name,
