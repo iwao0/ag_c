@@ -1,16 +1,10 @@
 #include "expr.h"
 #include "arena.h"
 #include "core.h"
-#include "decl.h"
 #include "diag.h"
 #include "dynarray.h"
-#include "initializer_syntax.h"
-#include "global_registry.h"
-#include "local_registry.h"
-#include "node_utils.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
-#include "stmt.h"
+#include "syntax_node.h"
 #include "type.h"
 #include "type_builder.h"
 #include "declaration_syntax.h"
@@ -26,14 +20,10 @@
 #define PS_MAX_PAREN_NEST_DEPTH 1024
 
 typedef struct {
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
+  psx_expression_syntax_context_t syntax;
   psx_parser_runtime_context_t *runtime_context;
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
-  const psx_local_declaration_callbacks_t *local_declarations;
-  psx_name_classifier_t name_classifier;
   int unevaluated_operand_depth;
   int expr_nest_depth;
   int paren_nest_depth;
@@ -59,22 +49,16 @@ typedef struct {
 } parsed_parenthesized_type_name_t;
 
 static expr_parse_ctx_t expr_parse_ctx_default(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
+    const psx_expression_syntax_context_t *syntax_context) {
+  psx_parser_runtime_context_t *runtime_context =
+      syntax_context ? syntax_context->runtime_context : NULL;
   expr_parse_ctx_t ctx = {
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
+      .syntax = syntax_context
+                    ? *syntax_context
+                    : (psx_expression_syntax_context_t){0},
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
-      .local_declarations = local_declarations,
-      .name_classifier =
-          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   return ctx;
 }
@@ -133,7 +117,8 @@ static int in_unevaluated_operand(const expr_parse_ctx_t *ctx) {
 }
 
 static node_t *new_binary_with_source_op(
-    expr_parse_ctx_t *ctx, node_kind_t kind, node_t *lhs, node_t *rhs,
+    expr_parse_ctx_t *ctx, psx_syntax_node_kind_t kind,
+    node_t *lhs, node_t *rhs,
     token_kind_t source_op) {
   node_t *node = psx_node_new_raw_binary_in(
       ctx->arena_context, kind, lhs, rhs);
@@ -154,21 +139,29 @@ static int is_type_name_start_token(
     return 1;
   if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
   if (t->kind == TK_STRUCT || t->kind == TK_UNION || t->kind == TK_ENUM) return 1;
-  if (psx_ctx_is_type_token(t->kind)) return 1;
+  if (psx_is_type_specifier_token(t->kind)) return 1;
   if (ctx && ps_name_classifier_is_typedef_name(
-                 &ctx->name_classifier, t)) return 1;
+                 &ctx->syntax.name_classifier, t)) return 1;
   return 0;
 }
 
-static void diagnose_type_name_complex_requires_float(
-    void *context, token_t *token) {
-  psx_semantic_context_t *semantic_context = context;
-  diag_emit_tokf_in(
-      ps_ctx_diagnostics(semantic_context),
-      DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s",
-      diag_message_for_in(
-          ps_ctx_diagnostics(semantic_context),
-          DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT));
+static void capture_lookup_point(
+    expr_parse_ctx_t *ctx, unsigned *scope_seq,
+    unsigned *declaration_seq) {
+  if (scope_seq) *scope_seq = 0;
+  if (declaration_seq) *declaration_seq = 0;
+  if (ctx && ctx->syntax.capture_lookup_point)
+    ctx->syntax.capture_lookup_point(
+        ctx->syntax.context, scope_seq, declaration_seq);
+}
+
+static void current_function_name(
+    expr_parse_ctx_t *ctx, char **name, int *name_len) {
+  if (name) *name = NULL;
+  if (name_len) *name_len = 0;
+  if (ctx && ctx->syntax.current_function_name)
+    ctx->syntax.current_function_name(
+        ctx->syntax.context, name, name_len);
 }
 
 static int parse_generic_assoc_type(
@@ -205,15 +198,14 @@ static node_t *parse_compound_literal_from_type(
   set_curtok(ctx, after_rparen);
   char *current_funcname = NULL;
   int current_funcname_len = 0;
-  ps_decl_get_current_funcname_in(
-      ctx->local_registry, &current_funcname, &current_funcname_len);
+  current_function_name(
+      ctx, &current_funcname, &current_funcname_len);
   (void)current_funcname_len;
   token_t *initializer_tok = curtok(ctx);
-  node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
-      ctx->semantic_context, ctx->global_registry, ctx->local_registry,
-      ctx->runtime_context,
-      &ctx->name_classifier,
-      ctx->local_declarations);
+  node_t *initializer = ctx->syntax.parse_initializer_list
+                            ? ctx->syntax.parse_initializer_list(
+                                  ctx->syntax.context)
+                            : NULL;
   node_t *syntax = psx_node_new_compound_literal_in(
       ctx->arena_context, type_name, initializer, initializer_tok,
       0, current_funcname == NULL);
@@ -247,19 +239,9 @@ static int parenthesized_type_name_is_compound_literal(
     return 0;
   }
   psx_parsed_type_name_t syntax;
-  if (!psx_parse_type_name_syntax_at(
-          tok->next,
-          &(psx_decl_specifier_syntax_options_t){
-              .name_classifier = &ctx->name_classifier,
-              .diagnose_complex_requires_float =
-                  diagnose_type_name_complex_requires_float,
-              .context = ctx->semantic_context,
-              .semantic_context = ctx->semantic_context,
-              .global_registry = ctx->global_registry,
-              .local_registry = ctx->local_registry,
-              .runtime_context = ctx->runtime_context,
-          },
-          &syntax)) {
+  if (!ctx->syntax.parse_type_name ||
+      !ctx->syntax.parse_type_name(
+          ctx->syntax.context, tok->next, 0, &syntax)) {
     return 0;
   }
   token_t *end = syntax.end;
@@ -275,49 +257,20 @@ static int capture_type_name_ref_at(
   if (!start || !out || !is_type_name_start_token(start, ctx)) return 0;
   psx_parsed_type_name_t *syntax =
       arena_alloc_in(ctx->arena_context, sizeof(psx_parsed_type_name_t));
-  int parsed = runtime_bounds
-                   ? psx_parse_runtime_type_name_syntax_at(
-                         start,
-                         &(psx_decl_specifier_syntax_options_t){
-                             .name_classifier = &ctx->name_classifier,
-                             .diagnose_complex_requires_float =
-                                 diagnose_type_name_complex_requires_float,
-                             .context = ctx->semantic_context,
-                             .semantic_context = ctx->semantic_context,
-                             .global_registry = ctx->global_registry,
-                             .local_registry = ctx->local_registry,
-                             .runtime_context = ctx->runtime_context,
-                         },
-                         syntax)
-                   : psx_parse_type_name_syntax_at(
-                         start,
-                         &(psx_decl_specifier_syntax_options_t){
-                             .name_classifier = &ctx->name_classifier,
-                             .diagnose_complex_requires_float =
-                                 diagnose_type_name_complex_requires_float,
-                             .context = ctx->semantic_context,
-                             .semantic_context = ctx->semantic_context,
-                             .global_registry = ctx->global_registry,
-                             .local_registry = ctx->local_registry,
-                             .runtime_context = ctx->runtime_context,
-                         },
-                         syntax);
+  int parsed = ctx->syntax.parse_type_name &&
+               ctx->syntax.parse_type_name(
+                   ctx->syntax.context, start, runtime_bounds,
+                   syntax);
   if (!parsed) {
     return 0;
   }
-  if (runtime_bounds)
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        &syntax->declarator, ctx->semantic_context,
-        ctx->global_registry,
-        ctx->local_registry,
-        ctx->runtime_context,
-        ctx->local_declarations);
-  psx_local_lookup_point_t point =
-      ps_local_registry_capture_lookup_point_in(ctx->local_registry);
+  unsigned scope_seq = 0;
+  unsigned declaration_seq = 0;
+  capture_lookup_point(ctx, &scope_seq, &declaration_seq);
   *out = (psx_type_name_ref_t){
       .syntax = syntax,
-      .scope_seq = point.scope_seq,
-      .declaration_seq = point.declaration_seq,
+      .scope_seq = scope_seq,
+      .declaration_seq = declaration_seq,
   };
   if (out_end) *out_end = syntax->end;
   return 1;
@@ -343,35 +296,19 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx);
 
-node_t *psx_expr_expr_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
+node_t *psx_expr_expr_syntax(
+    const psx_expression_syntax_context_t *syntax_context) {
+  if (!syntax_context || !syntax_context->runtime_context)
     return NULL;
-  expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, global_registry, local_registry, runtime_context,
-      name_classifier, local_declarations);
+  expr_parse_ctx_t ctx = expr_parse_ctx_default(syntax_context);
   return expr_internal_ctx(&ctx);
 }
 
-node_t *psx_expr_assign_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
+node_t *psx_expr_assign_syntax(
+    const psx_expression_syntax_context_t *syntax_context) {
+  if (!syntax_context || !syntax_context->runtime_context)
     return NULL;
-  expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, global_registry, local_registry, runtime_context,
-      name_classifier, local_declarations);
+  expr_parse_ctx_t ctx = expr_parse_ctx_default(syntax_context);
   return assign_ctx(&ctx);
 }
 
@@ -391,32 +328,16 @@ static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = conditional_ctx(ctx);
-  node_t *lhs_prefix = NULL;
-  node_t *assign_target = node;
-  if (node && node->kind == ND_COMMA && node->rhs &&
-      (node->rhs->kind == ND_LVAR || node->rhs->kind == ND_UNARY_DEREF ||
-       node->rhs->kind == ND_DEREF || node->rhs->kind == ND_GVAR)) {
-    lhs_prefix = node->lhs;
-    assign_target = node->rhs;
-  }
-  /* C11 6.5.16p2: 代入演算子の LHS は modifiable lvalue でなければならない。
-   * 関数識別子 (ND_FUNCREF) はそうではない (`f = 5;` 等は非合法)。後段の IR builder で
-   * "ir build/emit failed" になっていたのを、ここで分かりやすい診断にする。
-   * 代入系トークン (`=`/`+=`/`-=`/...) が来ているときだけ check し、それ以外
-   * (関数呼び出し `f(...)` や関数アドレス取得 `&f` 等) は素通し。 */
   switch (curtok(ctx)->kind) {
     case TK_ASSIGN: {
       token_t *assign_tok = curtok(ctx);
       set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = assign_ctx(ctx);
       node_t *assign_node = psx_node_new_raw_assign_in(
-          ctx->arena_context, assign_target, rhs);
+          ctx->arena_context, node, rhs);
       assign_node->is_source_assignment = 1;
       assign_node->tok = assign_tok;
       node = (node_t *)assign_node;
-      if (lhs_prefix)
-        node = psx_node_new_raw_binary_in(
-            ctx->arena_context, ND_COMMA, lhs_prefix, node);
       break;
     }
     case TK_PLUSEQ:
@@ -432,14 +353,11 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       token_t *op_tok = curtok(ctx);
       set_curtok(ctx, curtok(ctx)->next);
       node_t *compound = psx_node_new_raw_assign_in(
-          ctx->arena_context, assign_target, assign_ctx(ctx));
+          ctx->arena_context, node, assign_ctx(ctx));
       compound->is_source_compound_assignment = 1;
       compound->source_op = op_tok->kind;
       compound->tok = op_tok;
-      node = lhs_prefix
-                 ? psx_node_new_raw_binary_in(
-                       ctx->arena_context, ND_COMMA, lhs_prefix, compound)
-                 : compound;
+      node = compound;
       break;
     }
     default: break;
@@ -706,7 +624,8 @@ static node_t *parse_alignof_type_name(
 }
 
 static node_t *build_pre_inc_dec_node(
-    node_kind_t kind, token_t *op_tok, expr_parse_ctx_t *ctx) {
+    psx_syntax_node_kind_t kind, token_t *op_tok,
+    expr_parse_ctx_t *ctx) {
   node_t *target = unary_ctx(ctx);
   node_t *node = arena_alloc_in(ctx->arena_context, sizeof(node_t));
   node->kind = kind;
@@ -733,33 +652,13 @@ static node_t *build_unary_addr_node(
     return operand;
   }
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
-    /* `&(compound-literal)` 等、値が COMMA(init, ref) の形。rhs に同じ単項 & の
-     * ロジックを再帰適用する (直接 ND_ADDR で包むと配列複合リテラルの rhs が
-     * 既に ND_ADDR (decay 済み) のとき二重に ND_ADDR でラップされ ir_build が
-     * 失敗する)。下の ND_ADDR/ND_FUNCREF 簡約をここでも効かせる。 */
+    /* Preserve the comma prefix while applying address-of to its value. */
     return psx_node_new_raw_binary_in(
         ctx->arena_context, ND_COMMA, operand->lhs,
         build_unary_addr_node(operand->rhs, ctx));
   }
-  // C 仕様: 配列名 `arr` は (sizeof/&/レジスタ変数を除く) 文脈ではポインタ崩壊する。
-  // `&arr` ではアドレス値はそのまま (型だけ `int(*)[N]` に変わる)。
-  // ag_c では配列ローカル変数の参照は build_array_lvar_addr_node により
-  // ND_ADDR(ND_LVAR) として表現されているため、`&arr` でさらに ND_ADDR でラップすると
-  // codegen の `gen_lval` が ND_ADDR を受理せず E4002 になる。
-  // 既に ND_ADDR で表現されているアドレス値はそのまま返す。
-  if (operand && operand->kind == ND_ADDR) {
-    /* `&arr` : 配列は既に decay 済みの ND_ADDR で表現されアドレス値は同じ。ただし
-     * 結果型は `int(*)[N]` (ポインタ, 8B) なので、type_size=8 のコピーを返して
-     * sizeof(&arr) が要素サイズでなく 8 を返すようにする (共有ノードは変更しない)。 */
-    return ps_node_new_explicit_addr_value_for_in(
-        ctx->arena_context, operand);
-  }
-  /* `&f` (f は関数): 関数のアドレスは関数ポインタそのもの (= `f`)。ND_FUNCREF を
-   * そのまま返す (ND_ADDR でラップすると IR builder が扱えず失敗する)。 */
-  if (operand && operand->kind == ND_FUNCREF) {
-    return operand;
-  }
-  return ps_node_new_unary_addr_for_in(ctx->arena_context, operand);
+  return psx_node_new_unary_addr_syntax_for_in(
+      ctx->arena_context, operand);
 }
 
 static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
@@ -852,7 +751,7 @@ static node_t *build_subscript_syntax(node_t *node, node_t *idx,
 }
 
 static node_t *build_post_inc_dec_node(
-    node_kind_t kind, node_t *operand, token_t *op_tok,
+    psx_syntax_node_kind_t kind, node_t *operand, token_t *op_tok,
     expr_parse_ctx_t *ctx) {
   node_t *n = arena_alloc_in(ctx->arena_context, sizeof(node_t));
   n->kind = kind;
@@ -916,25 +815,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
       arena_alloc_in(ctx->arena_context, sizeof(node_function_call_t));
   node->base.kind = ND_FUNCALL;
   node->base.tok = call_tok;
-  /* callee が bare 関数参照 (ND_FUNCREF) のとき — 典型的には `_Generic(...)(args)` が
-   * 関数を選んだ場合や `(funcname)(args)` — は直接呼び出しに変換する。funcname 経由なら
-   * プロトタイプから戻り型/引数の fp ABI を引けるので、tgmath の `sqrt(2.0)` 等が double を
-   * 正しく d0 で渡し受けできる (bare funcref の間接呼び出しはシグネチャを持たず整数扱いで
-   * 値が化けていた)。 */
-  if (callee && callee->kind == ND_FUNCREF) {
-    node_funcref_t *fr = (node_funcref_t *)callee;
-    node->direct_name = fr->funcname;
-    node->direct_name_len = fr->funcname_len;
-    const psx_type_t *function = ps_type_callable_function(
-        ps_node_get_type((node_t *)fr));
-    node->callee_type = function
-                            ? ps_type_clone_in(ctx->arena_context, function)
-                            : NULL;
-    node->callee = NULL;
-    callee = NULL;
-  } else {
-    node->callee = callee;
-  }
+  node->callee = callee;
   int nargs = 0;
   int arg_cap = 16;
   node->arguments = calloc(arg_cap, sizeof(node_t *));
@@ -1071,8 +952,8 @@ static node_string_t *make_string_lit_node(
 static node_t *make_func_name_string_node(expr_parse_ctx_t *ctx) {
   char *current_funcname = NULL;
   int current_funcname_len = 0;
-  ps_decl_get_current_funcname_in(
-      ctx->local_registry, &current_funcname, &current_funcname_len);
+  current_function_name(
+      ctx, &current_funcname, &current_funcname_len);
   const char *fname = current_funcname ? current_funcname : "";
   int flen = current_funcname ? current_funcname_len : 0;
   char *fstr = calloc((size_t)flen + 1, 1);
@@ -1163,19 +1044,14 @@ static node_t *try_parse_builtin_expect_call(token_ident_t *tok, expr_parse_ctx_
 static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0)
     return make_func_name_string_node(ctx);
-  if (tok->len == 13 && memcmp(tok->str, "__va_arg_area", 13) == 0) {
-    node_t *node = arena_alloc_in(ctx->arena_context, sizeof(*node));
-    node->kind = ND_VA_ARG_AREA;
-    node->tok = (token_t *)tok;
-    return node;
-  }
   if (curtok(ctx)->kind == TK_LPAREN) {
     node_t *builtin = try_parse_builtin_expect_call(tok, ctx);
     if (builtin) return builtin;
   }
 
-  psx_local_lookup_point_t point =
-      ps_local_registry_capture_lookup_point_in(ctx->local_registry);
+  unsigned scope_seq = 0;
+  unsigned declaration_seq = 0;
+  capture_lookup_point(ctx, &scope_seq, &declaration_seq);
   node_identifier_t *identifier = arena_alloc_in(
       ctx->arena_context, sizeof(*identifier));
   identifier->base.kind = ND_IDENTIFIER;
@@ -1184,8 +1060,8 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
       in_unevaluated_operand(ctx) ? 1 : 0;
   identifier->name = tok->str;
   identifier->name_len = tok->len;
-  identifier->scope_seq = point.scope_seq;
-  identifier->declaration_seq = point.declaration_seq;
+  identifier->scope_seq = scope_seq;
+  identifier->declaration_seq = declaration_seq;
   return (node_t *)identifier;
 }
 
@@ -1199,10 +1075,10 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
 
   if (curtok(ctx)->kind == TK_LPAREN && curtok(ctx)->next &&
       curtok(ctx)->next->kind == TK_LBRACE) {
-    return psx_parse_statement_expression_in_contexts(
-        ctx->semantic_context, ctx->global_registry, ctx->local_registry,
-        ctx->runtime_context, &ctx->name_classifier,
-        ctx->local_declarations);
+    return ctx->syntax.parse_statement_expression
+               ? ctx->syntax.parse_statement_expression(
+                     ctx->syntax.context)
+               : NULL;
   }
 
   if (curtok(ctx)->kind == TK_LPAREN) {

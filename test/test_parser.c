@@ -1211,6 +1211,26 @@ static int test_name_classifier_is_typedef(
                  (size_t)identifier->len) == 0;
 }
 
+typedef struct {
+  psx_parser_runtime_context_t *runtime_context;
+  psx_name_classifier_t name_classifier;
+} test_expression_syntax_services_t;
+
+static int test_expression_parse_type_name(
+    void *context, token_t *start, int runtime_bounds,
+    psx_parsed_type_name_t *out) {
+  test_expression_syntax_services_t *services = context;
+  psx_decl_specifier_syntax_options_t options = {
+      .name_classifier = &services->name_classifier,
+      .runtime_context = services->runtime_context,
+  };
+  return runtime_bounds
+             ? psx_parse_runtime_type_name_syntax_at(
+                   start, &options, out)
+             : psx_parse_type_name_syntax_at(
+                   start, &options, out);
+}
+
 static void test_parser_name_classifier_boundary() {
   printf("test_parser_name_classifier_boundary...\n");
   reset_test_translation_unit_state();
@@ -1259,6 +1279,53 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(classifier_context.call_count > 0);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
       test_semantic_context(), (char *)"Alias", 5, NULL));
+
+  classifier_context.call_count = 0;
+  tk_tokenize((char *)"sizeof(Alias)");
+  test_expression_syntax_services_t syntax_services = {
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(
+              test_suite_session),
+      .name_classifier = classifier,
+  };
+  psx_expression_syntax_context_t expression_syntax = {
+      .context = &syntax_services,
+      .runtime_context = syntax_services.runtime_context,
+      .name_classifier = classifier,
+      .parse_type_name = test_expression_parse_type_name,
+  };
+  node_t *standalone_sizeof =
+      psx_expr_expr_syntax(&expression_syntax);
+  ASSERT_TRUE(standalone_sizeof != NULL);
+  ASSERT_EQ(ND_SIZEOF_QUERY, standalone_sizeof->kind);
+  ASSERT_TRUE(
+      ((node_sizeof_query_t *)standalone_sizeof)->is_type_name);
+  ASSERT_TRUE(standalone_sizeof->resolution_state == NULL);
+  ASSERT_TRUE(classifier_context.call_count > 0);
+
+  tk_tokenize((char *)"__va_arg_area");
+  node_t *va_arg_area_syntax = psx_expr_expr_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      &classifier, NULL);
+  ASSERT_TRUE(va_arg_area_syntax != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, va_arg_area_syntax->kind);
+  ASSERT_TRUE(va_arg_area_syntax->resolution_state == NULL);
+  ASSERT_EQ(13, ((node_identifier_t *)va_arg_area_syntax)->name_len);
+
+  tk_tokenize((char *)"&value");
+  node_t *address_syntax = psx_expr_expr_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      &classifier, NULL);
+  ASSERT_TRUE(address_syntax != NULL);
+  ASSERT_EQ(ND_ADDR, address_syntax->kind);
+  ASSERT_TRUE(address_syntax->resolution_state == NULL);
+  ASSERT_TRUE(address_syntax->lhs != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
+  ASSERT_TRUE(address_syntax->lhs->resolution_state == NULL);
 }
 
 static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
@@ -19982,7 +20049,7 @@ static void test_semantic_canonical_type_invariant() {
             failure.status);
   ASSERT_TRUE(failure.node == &raw_initializer);
 
-  node_t invalid_node_kind = {.kind = (node_kind_t)999};
+  node_t invalid_node_kind = {.kind = (psx_work_node_kind_t)999};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &invalid_node_kind, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, failure.status);

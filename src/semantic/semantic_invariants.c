@@ -6,6 +6,7 @@
 #include "../parser/node_type_public.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
+#include "resolved_node_kind.h"
 #include "tree_walk.h"
 #include "type_identity_pass.h"
 
@@ -17,7 +18,7 @@ typedef enum {
   NODE_SEMANTIC_ROLE_TYPED_EXPRESSION,
 } node_semantic_role_t;
 
-static node_semantic_role_t semantic_role(node_kind_t kind) {
+static node_semantic_role_t semantic_role(psx_work_node_kind_t kind) {
   switch (kind) {
     case ND_IF:
     case ND_WHILE:

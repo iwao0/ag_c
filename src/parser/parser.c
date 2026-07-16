@@ -83,6 +83,18 @@ bool psx_is_decl_prefix_token(token_kind_t k) {
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
 }
 
+bool psx_is_type_specifier_token(token_kind_t kind) {
+  return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID ||
+         kind == TK_SHORT || kind == TK_LONG || kind == TK_FLOAT ||
+         kind == TK_DOUBLE || kind == TK_BOOL || kind == TK_SIGNED ||
+         kind == TK_UNSIGNED || kind == TK_COMPLEX ||
+         kind == TK_IMAGINARY;
+}
+
+bool psx_is_tag_keyword_token(token_kind_t kind) {
+  return kind == TK_STRUCT || kind == TK_UNION || kind == TK_ENUM;
+}
+
 bool psx_is_gnu_attribute_token(const token_t *t) {
   if (!t || t->kind != TK_IDENT) return 0;
   const token_ident_t *id = (const token_ident_t *)t;

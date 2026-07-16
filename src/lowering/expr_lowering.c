@@ -57,7 +57,7 @@ static node_t *scale_pointer_offset(
 
 static node_t *new_pointer_result(
     psx_lowering_context_t *lowering_context,
-    node_kind_t kind, node_t *pointer, node_t *offset) {
+    psx_syntax_node_kind_t kind, node_t *pointer, node_t *offset) {
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   node_t *result = ps_node_new_binary_for_target_in(
       arena_context, ps_lowering_target(lowering_context),
@@ -70,7 +70,7 @@ static node_t *new_pointer_result(
 
 node_t *lower_additive_expression(
     psx_lowering_context_t *lowering_context,
-    node_kind_t kind, node_t *lhs, node_t *rhs) {
+    psx_syntax_node_kind_t kind, node_t *lhs, node_t *rhs) {
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   if (kind == ND_ADD) {
     if (!is_pointer_arithmetic_operand(lowering_context, lhs) &&

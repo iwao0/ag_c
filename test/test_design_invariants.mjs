@@ -277,6 +277,14 @@ const explicitArenaDeclarationPipelineSource = await readFile(
   "utf8",
 );
 const parserExpressionSource = await readFile("src/parser/expr.c", "utf8");
+const expressionSyntaxContextSource = await readFile(
+  "src/parser/expression_syntax_context.h",
+  "utf8",
+);
+const expressionSyntaxAdapterSource = await readFile(
+  "src/parser/expression_syntax_adapter.c",
+  "utf8",
+);
 const parserStatementSource = await readFile("src/parser/stmt.c", "utf8");
 const parserLocalDeclarationSource = await readFile(
   "src/parser/local_declaration_syntax.c",
@@ -2587,6 +2595,7 @@ const implicitActiveContextFallback =
   /semantic_context\s*\?\s*semantic_context\s*:\s*ps_ctx_active\s*\(\)|if\s*\(\s*!semantic_context\s*\)\s*semantic_context\s*=\s*ps_ctx_active\s*\(\)/;
 const explicitParserContextSources = [
   expressionParserSource,
+  expressionSyntaxAdapterSource,
   statementParserSource,
   initializerSyntaxSource,
   enumConstSource,
@@ -2613,10 +2622,10 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     /active_local_declarations/.test(statementParserSource) ||
     !/psx_expr_expr_in_contexts\s*\(/.test(statementParserSource) ||
     !/psx_parse_statement_expression_in_contexts\s*\(/.test(
-      expressionParserSource,
+      expressionSyntaxAdapterSource,
     ) ||
     !/psx_parse_initializer_syntax_list_in_contexts\s*\(/.test(
-      expressionParserSource,
+      expressionSyntaxAdapterSource,
     ) ||
     !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
       initializerSyntaxSource,
@@ -2884,12 +2893,21 @@ if (legacyRecursiveTypeMetadata.length) {
 }
 
 const astSource = await readFile("src/parser/ast.h", "utf8");
+const syntaxNodeKindHeader = await readFile(
+  "src/parser/syntax_node_kind.h",
+  "utf8",
+);
+const resolvedNodeKindHeader = await readFile(
+  "src/semantic/resolved_node_kind.h",
+  "utf8",
+);
 const nodeResolutionStateSource = await readFile(
   "src/parser/node_resolution_state.h",
   "utf8",
 );
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
+    !/\bpsx_work_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
     !/\bstruct\s+psx_node_resolution_state_t\s*\*\s*resolution_state\s*;/.test(
       nodeStruct[1],
     ) ||
@@ -2898,6 +2916,85 @@ if (!nodeStruct ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
     "syntax node_t must keep semantic type identity in separate resolution state",
+  );
+}
+const resolvedOnlyNodeKinds = [
+  "ND_LVAR",
+  "ND_FUNCREF",
+  "ND_DEREF",
+  "ND_GVAR",
+  "ND_VLA_ALLOC",
+  "ND_FP_TO_INT",
+  "ND_INT_TO_FP",
+  "ND_FNEG",
+  "ND_VA_ARG_AREA",
+];
+const resolvedOnlyNodeKindPattern = new RegExp(
+  `\\b(?:${resolvedOnlyNodeKinds.join("|")})\\b`,
+);
+const parserSyntaxSources = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) =>
+        path.startsWith("src/parser/") &&
+        path.endsWith(".c") &&
+        path !== "src/parser/node_utils.c")
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (!/typedef\s+enum\s*\{[^]*?\}\s*psx_syntax_node_kind_t\s*;/.test(
+      syntaxNodeKindHeader,
+    ) ||
+    !/typedef\s+enum\s*\{[^]*?\}\s*psx_resolved_node_kind_t\s*;/.test(
+      resolvedNodeKindHeader,
+    ) ||
+    resolvedOnlyNodeKindPattern.test(syntaxNodeKindHeader) ||
+    /resolved_node_kind\.h/.test(astSource) ||
+    /typedef\s+enum\s*\{[^]*?\}\s*node_kind_t\s*;/.test(astSource) ||
+    resolvedOnlyNodeKindPattern.test(parserSyntaxSources) ||
+    /#include\s+"node_utils\.h"/.test(parserExpressionSource) ||
+    !/#include\s+"syntax_node\.h"/.test(parserExpressionSource)) {
+  throw new Error(
+    "Syntax AST and resolver-created working node kinds must remain separate, and expression parsing must depend only on syntax node construction",
+  );
+}
+if (/__va_arg_area/.test(parserExpressionSource) ||
+    !/memcmp\s*\(\s*identifier->name\s*,\s*"__va_arg_area"/.test(
+      identifierBindingSource,
+    ) ||
+    !/node->kind\s*=\s*ND_VA_ARG_AREA/.test(identifierBindingSource)) {
+  throw new Error(
+    "__va_arg_area must parse as identifier syntax and materialize during identifier binding",
+  );
+}
+const expressionParseContext = parserExpressionSource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*expr_parse_ctx_t\s*;/,
+)?.[1] ?? "";
+if (!/psx_expression_syntax_context_t\s+syntax\s*;/.test(
+      expressionParseContext,
+    ) ||
+    /psx_(?:semantic_context|global_registry|local_registry)_t/.test(
+      `${expressionParseContext}\n${expressionSyntaxContextSource}`,
+    ) ||
+    /#include\s+"(?:semantic_ctx|global_registry|local_registry|decl|initializer_syntax|stmt)\.h"/.test(
+      parserExpressionSource,
+    ) ||
+    /\bpsx_expr_(?:expr|assign)_in_contexts\s*\(/.test(
+      parserExpressionSource,
+    ) ||
+    !/\bpsx_expr_expr_syntax\s*\(/.test(parserExpressionSource) ||
+    !/\bpsx_expr_assign_syntax\s*\(/.test(parserExpressionSource) ||
+    !/psx_name_classifier_t\s+name_classifier\s*;/.test(
+      expressionSyntaxContextSource,
+    ) ||
+    !/psx_expr_expr_syntax\s*\(\s*&syntax_context\s*\)/.test(
+      expressionSyntaxAdapterSource,
+    ) ||
+    !/psx_expr_assign_syntax\s*\(\s*&syntax_context\s*\)/.test(
+      expressionSyntaxAdapterSource,
+    )) {
+  throw new Error(
+    "expression parser core must receive a syntax-only context with NameClassifier while semantic registries remain isolated in the compatibility adapter",
   );
 }
 if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
@@ -3554,18 +3651,33 @@ if ([
     "migrated parser and semantic phases must preserve and use explicit diagnostic contexts",
   );
 }
-const nodeKindEnum = astSource.match(
-  /typedef enum\s*\{([\s\S]*?)\}\s*node_kind_t\s*;/,
+const syntaxNodeKindSource = await readFile(
+  "src/parser/syntax_node_kind.h",
+  "utf8",
+);
+const resolvedNodeKindSource = await readFile(
+  "src/semantic/resolved_node_kind.h",
+  "utf8",
+);
+const syntaxNodeKindEnum = syntaxNodeKindSource.match(
+  /typedef enum\s*\{([\s\S]*?)\}\s*psx_syntax_node_kind_t\s*;/,
+);
+const resolvedNodeKindEnum = resolvedNodeKindSource.match(
+  /typedef enum\s*\{([\s\S]*?)\}\s*psx_resolved_node_kind_t\s*;/,
 );
 const semanticRoleClassifier = semanticInvariantsSource.match(
   /static\s+node_semantic_role_t\s+semantic_role\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
 );
-if (!nodeKindEnum || !semanticRoleClassifier) {
+if (!syntaxNodeKindEnum || !resolvedNodeKindEnum ||
+    !semanticRoleClassifier) {
   throw new Error("semantic node role classification must remain inspectable");
 }
 const declaredNodeKinds = [
   ...new Set(
-    [...nodeKindEnum[1].matchAll(/\bND_[A-Z0-9_]+\b/g)].map(
+    [
+      ...syntaxNodeKindEnum[1].matchAll(/\bND_[A-Z0-9_]+\b/g),
+      ...resolvedNodeKindEnum[1].matchAll(/\bND_[A-Z0-9_]+\b/g),
+    ].map(
       (match) => match[0],
     ),
   ),
@@ -3583,7 +3695,7 @@ const duplicateNodeKinds = classifiedNodeKinds.filter(
 if (missingNodeKinds.length || duplicateNodeKinds.length ||
     classifiedNodeKindSet.size !== declaredNodeKinds.length) {
   throw new Error(
-    "every AST node kind must have exactly one semantic expression role; " +
+    "every syntax and resolved working node kind must have exactly one semantic expression role; " +
       `missing: ${missingNodeKinds.join(", ") || "none"}; ` +
       `duplicates: ${[...new Set(duplicateNodeKinds)].join(", ") || "none"}`,
   );

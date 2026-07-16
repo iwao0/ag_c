@@ -41,8 +41,7 @@ complete_decl_specifier_syntax_options(
     const psx_decl_specifier_syntax_options_t *options,
     psx_decl_specifier_syntax_options_t *storage) {
   if (!storage) return NULL;
-  if (!options || !options->semantic_context || !options->global_registry ||
-      !options->local_registry || !options->runtime_context ||
+  if (!options || !options->runtime_context ||
       !tokenizer(options->runtime_context)) {
     return NULL;
   }

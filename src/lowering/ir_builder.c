@@ -29,6 +29,7 @@
 #include "../parser/node_vla_public.h"
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../diag/diag.h"
 #include "../diag/warning_catalog.h"
 #include <stdio.h>

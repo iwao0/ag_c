@@ -12,6 +12,7 @@
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
 #include "resolved_hir_node_internal.h"
+#include "resolved_node_kind.h"
 #include "resolved_tree_internal.h"
 #include "resolution_work_tree.h"
 
@@ -67,7 +68,7 @@ static int append_child(
 }
 
 static int map_kind(
-    node_kind_t source, psx_hir_node_kind_t *kind,
+    psx_work_node_kind_t source, psx_hir_node_kind_t *kind,
     psx_hir_node_role_t *role) {
 #define MAP_EXPR(source_kind, hir_kind) \
   case source_kind: *kind = hir_kind; *role = PSX_HIR_ROLE_EXPRESSION; return 1

@@ -8,8 +8,10 @@
 #include "gvar_public.h"
 #include "node_type_public.h"
 #include "node_vla_public.h"
+#include "syntax_node.h"
 #include "tag_public.h"
 #include "../target_info.h"
+#include "../semantic/resolved_node_kind.h"
 
 struct lvar_t;
 struct global_var_t;
@@ -63,12 +65,9 @@ int ps_node_bitfield_width(node_t *node);
 
 node_t *ps_node_new_binary_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
-    node_kind_t kind, node_t *lhs, node_t *rhs);
-node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
-                                   node_kind_t kind, node_t *lhs,
-                                   node_t *rhs);
+    psx_work_node_kind_t kind, node_t *lhs, node_t *rhs);
 int ps_node_binary_type_op(
-    node_kind_t kind, psx_type_binary_op_t *op);
+    psx_work_node_kind_t kind, psx_type_binary_op_t *op);
 node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
                                   int descriptor_frame_off,
                                   int row_stride_frame_off,
@@ -76,8 +75,6 @@ node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
 node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
     int execution_size, int is_unsigned);
-node_t *psx_node_new_syntax_int_in(
-    arena_context_t *arena_context, long long val, token_t *tok);
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset);
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
@@ -137,9 +134,6 @@ node_t *ps_node_new_aggregate_cast_result_in(
 node_t *ps_node_new_void_cast_result_in(arena_context_t *arena_context,
                                         node_t *operand,
                                         const psx_type_t *cast_type);
-node_t *psx_node_new_source_cast_in(
-    arena_context_t *arena_context,
-    node_t *operand, psx_type_name_ref_t type_name);
 node_t *ps_node_new_gvar_array_addr_for_in(
     arena_context_t *arena_context, struct global_var_t *gv);
 node_t *psx_node_new_static_local_array_addr_for_in(
@@ -159,10 +153,6 @@ node_t *ps_node_new_tag_member_deref_with_layout_for_in(
     int bit_width, int bit_offset);
 node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
                                        node_t *operand);
-node_t *psx_node_new_unary_deref_syntax_for_in(
-    arena_context_t *arena_context, node_t *operand);
-node_t *psx_node_new_subscript_syntax_for_in(
-    arena_context_t *arena_context, node_t *base, node_t *index);
 node_t *ps_node_new_subscript_deref_for_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     node_t *base, node_t *base_addr, node_t *scaled_offset);
@@ -181,15 +171,9 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     arena_context_t *arena_context, node_t *target, node_t *lhs);
 node_t *ps_node_new_assign_in(arena_context_t *arena_context,
                               node_t *lhs, node_t *rhs);
-node_t *psx_node_new_raw_assign_in(arena_context_t *arena_context,
-                                   node_t *lhs, node_t *rhs);
 node_t *psx_node_new_raw_decl_initializer_in(
     arena_context_t *arena_context, node_t *target, node_t *value,
     psx_decl_init_kind_t init_kind, token_t *tok);
-node_t *psx_node_new_compound_literal_in(
-    arena_context_t *arena_context,
-    psx_type_name_ref_t type_name, node_t *initializer, token_t *tok,
-    int requires_addressable_object, int has_file_scope_storage);
 node_t *psx_node_new_raw_decl_initializer_list_in(
     arena_context_t *arena_context,
     node_t *target, psx_decl_init_kind_t init_kind,

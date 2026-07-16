@@ -99,6 +99,20 @@ static node_t *materialize_function(
   return (node_t *)reference;
 }
 
+static node_t *materialize_builtin_va_arg_area(
+    const node_identifier_t *identifier,
+    const psx_identifier_binding_context_t *context) {
+  node_t *node = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*node));
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(context->semantic_context), node))
+    return NULL;
+  node->kind = ND_VA_ARG_AREA;
+  copy_identifier_source_state(node, identifier);
+  return node;
+}
+
 static void resolve_identifier(
     const node_identifier_t *identifier, int is_call,
     const psx_identifier_binding_context_t *context,
@@ -127,6 +141,12 @@ static node_t *materialize_identifier(
     node_identifier_t *identifier, int is_call,
     const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *out_resolution) {
+  if (!is_call && identifier->name_len == 13 &&
+      memcmp(identifier->name, "__va_arg_area", 13) == 0) {
+    if (out_resolution)
+      *out_resolution = (psx_identifier_resolution_t){0};
+    return materialize_builtin_va_arg_area(identifier, context);
+  }
   psx_identifier_resolution_t resolution;
   resolve_identifier(identifier, is_call, context, &resolution);
   if (out_resolution) *out_resolution = resolution;

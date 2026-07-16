@@ -46,6 +46,8 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     psx_semantic_context_t *semantic_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 bool psx_is_decl_prefix_token(token_kind_t k);
+bool psx_is_type_specifier_token(token_kind_t kind);
+bool psx_is_tag_keyword_token(token_kind_t kind);
 bool psx_is_gnu_attribute_token(const token_t *t);
 void psx_skip_gnu_attributes_ctx(tokenizer_context_t *tokenizer_context);
 void psx_skip_gnu_attributes_at(token_t **t);

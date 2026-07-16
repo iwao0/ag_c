@@ -4,6 +4,7 @@
 #include "../tokenizer/token.h"
 #include "../type_system/type_ids.h"
 #include "core.h"
+#include "syntax_node_kind.h"
 #include "type.h"
 struct lvar_t;
 struct psx_lvar_usage_region_t;
@@ -12,77 +13,6 @@ struct psx_node_resolution_state_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
  * symtab 型を使うファイルは symtab.h を個別に include すること。 */
-
-// 抽象構文木 (AST) のノードの種類
-typedef enum {
-  ND_ADD,    // +
-  ND_SUB,    // -
-  ND_MUL,    // *
-  ND_DIV,    // /
-  ND_MOD,    // %
-  ND_EQ,     // ==
-  ND_NE,     // !=
-  ND_LT,     // <
-  ND_LE,     // <=
-  ND_BITAND, // &
-  ND_BITXOR, // ^
-  ND_BITOR,  // |
-  ND_SHL,    // <<
-  ND_SHR,    // >>
-  ND_LOGAND, // &&
-  ND_LOGOR,  // ||
-  ND_TERNARY, // ?:
-  ND_COMMA,  // ,
-  ND_ASSIGN, // =
-  ND_IDENTIFIER, // raw identifier reference; semantic binding前のみ存在する
-  ND_LVAR,   // ローカル変数
-  ND_IF,     // if
-  ND_WHILE,  // while
-  ND_DO_WHILE, // do ... while
-  ND_FOR,    // for
-  ND_SWITCH, // switch
-  ND_CASE,   // case
-  ND_DEFAULT, // default
-  ND_BREAK,  // break
-  ND_CONTINUE, // continue
-  ND_GOTO,   // goto
-  ND_LABEL,  // label:
-  ND_PRE_INC, // ++x
-  ND_PRE_DEC, // --x
-  ND_POST_INC, // x++
-  ND_POST_DEC, // x--
-  ND_RETURN,  // return
-  ND_BLOCK,   // { ... }
-  ND_FUNCDEF, // 関数定義
-  ND_FUNCALL, // 関数呼び出し
-  ND_FUNCREF, // 関数シンボル参照（関数ポインタ値）
-  ND_UNARY_NEGATE, // raw unary -operand。semantic lowering 前のみ存在する。
-  ND_UNARY_DEREF, // raw unary *operand。semantic lowering 前のみ存在する。
-  ND_SUBSCRIPT, // raw 添字式 base[index]。semantic lowering 前のみ存在する。
-  ND_MEMBER_ACCESS, // raw base.member/base->member。semantic lowering 前のみ存在する。
-  ND_GENERIC_SELECTION, // raw _Generic selection。semantic lowering 前のみ存在する。
-  ND_SIZEOF_QUERY, // raw sizeof(type/expression)。semantic lowering 前のみ存在する。
-  ND_ALIGNOF_QUERY, // raw _Alignof(type)。semantic lowering 前のみ存在する。
-  ND_DEREF,   // 間接参照 (*p)
-  ND_ADDR,    // アドレス取得 (&x)
-  ND_STRING,  // 文字列リテラル
-  ND_NUM,     // 整数
-  ND_GVAR,    // グローバル変数参照
-  ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト)。descriptor 情報は node_utils 経由で読む。
-  ND_FP_TO_INT, // 浮動小数点 → 整数キャスト: lhs=FP式 (fp_kind が float/double を保持)
-  ND_INT_TO_FP, // 整数/別幅FP → 浮動小数点キャスト: lhs=式、fp_kind が変換先(float/double)を保持
-  ND_FNEG,      // 浮動小数点の単項マイナス (-x): lhs=FP式、fp_kind が float/double を保持。
-                // 符号ビット反転 (IR_FNEG)。`0.0 - x` だと -0.0 が +0.0 になるため専用ノード。
-  ND_VA_ARG_AREA, // 識別子 `__va_arg_area`: stack 上の variadic 引数領域の先頭アドレス。
-                  // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
-  ND_CAST,       // 明示 cast wrapper。canonical target typeを保持し、operandを壊さない。
-  ND_COMPOUND_LITERAL, // prepared syntax; semantic loweringでobjectを実体化
-  ND_INIT_LIST, // raw braced initializer syntax
-  ND_DECL_INIT, // raw declaration initializer, lowered after semantic resolution
-  ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
-  ND_CIMAG,       // GNU __imag__ x: 複素数 lhs の虚部 (実数なら 0)。fp_kind=結果型。
-  ND_STMT_EXPR,   // GNU statement expression ({ ...; expr })
-} node_kind_t;
 
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
@@ -128,7 +58,7 @@ typedef struct {
   unsigned char has_member;
 } psx_initializer_entry_t;
 struct node_t {
-  node_kind_t kind; // ノードの型
+  psx_work_node_kind_t kind;
 
   // ツリー構造用
   node_t *lhs;      // 左辺 / 条件式

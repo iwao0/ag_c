@@ -28,7 +28,7 @@ const psx_type_t *psx_resolve_indirection_result_type(
 
 const psx_type_t *psx_resolve_arithmetic_unary_result_type(
     psx_semantic_context_t *semantic_context,
-    node_kind_t kind, node_t *operand) {
+    psx_work_node_kind_t kind, node_t *operand) {
   const psx_type_t *type = ps_node_get_type(operand);
   if (!type) return NULL;
   if (kind == ND_UNARY_NEGATE) {
@@ -60,7 +60,7 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
 
 const psx_type_t *psx_resolve_binary_result_type(
     psx_semantic_context_t *semantic_context,
-    node_kind_t kind, node_t *lhs, node_t *rhs) {
+    psx_work_node_kind_t kind, node_t *lhs, node_t *rhs) {
   psx_type_binary_op_t op;
   if (!ps_node_binary_type_op(kind, &op)) return NULL;
   return ps_type_binary_result_for_target_in(

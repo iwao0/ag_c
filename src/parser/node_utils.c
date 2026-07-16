@@ -42,7 +42,7 @@ static void *resolution_node_alloc_in(
   return node;
 }
 
-static int is_lvalue_clone_kind(node_kind_t kind) {
+static int is_lvalue_clone_kind(psx_work_node_kind_t kind) {
   return kind == ND_LVAR || kind == ND_GVAR || kind == ND_UNARY_DEREF ||
          kind == ND_SUBSCRIPT ||
          kind == ND_DEREF ||
@@ -2575,7 +2575,7 @@ int ps_node_shift_operation_is_unsigned(node_t *node) {
 }
 
 node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
-                                   node_kind_t kind, node_t *lhs,
+                                   psx_syntax_node_kind_t kind, node_t *lhs,
                                    node_t *rhs) {
   node_t *node = arena_alloc_in(arena_context, sizeof(node_t));
   node->kind = kind;
@@ -2585,7 +2585,7 @@ node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
 }
 
 int ps_node_binary_type_op(
-    node_kind_t kind, psx_type_binary_op_t *op) {
+    psx_work_node_kind_t kind, psx_type_binary_op_t *op) {
   if (!op) return 0;
   switch (kind) {
     case ND_COMMA: *op = PSX_TYPE_BINARY_COMMA; return 1;
@@ -2616,7 +2616,7 @@ int ps_node_binary_type_op(
 
 node_t *ps_node_new_binary_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
-    node_kind_t kind, node_t *lhs, node_t *rhs) {
+    psx_work_node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = psx_node_new_raw_binary_in(
       arena_context, kind, lhs, rhs);
   if (!ps_node_prepare_resolution_state_in(
@@ -3116,6 +3116,16 @@ node_t *psx_node_new_unary_deref_syntax_for_in(
       arena_context, sizeof(node_t));
   result->kind = ND_UNARY_DEREF;
   result->lhs = operand;
+  return result;
+}
+
+node_t *psx_node_new_unary_addr_syntax_for_in(
+    arena_context_t *arena_context, node_t *operand) {
+  node_t *result = arena_alloc_in(
+      arena_context, sizeof(node_t));
+  result->kind = ND_ADDR;
+  result->lhs = operand;
+  result->is_explicit_addr_expr = 1;
   return result;
 }
 

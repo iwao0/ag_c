@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static node_kind_t compound_binary_kind(token_kind_t op) {
+static psx_syntax_node_kind_t compound_binary_kind(token_kind_t op) {
   switch (op) {
     case TK_PLUSEQ: return ND_ADD;
     case TK_MINUSEQ: return ND_SUB;
@@ -65,7 +65,8 @@ node_t *lower_compound_assignment_expression(
   if (!lowering_context || !local_registry) return node;
 
   token_t *source_tok = node->tok;
-  node_kind_t binary_kind = compound_binary_kind(node->source_op);
+  psx_syntax_node_kind_t binary_kind =
+      compound_binary_kind(node->source_op);
   node_t *prefix = NULL;
   node_t *target = materialize_lvalue_address_once(
       lowering_context, local_registry, node->lhs, &prefix);
