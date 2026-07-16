@@ -1,6 +1,7 @@
 #include "constant_expression.h"
 
 #include "generic_selection_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
@@ -76,12 +77,14 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      if (query->runtime_size_expr || query->runtime_size_slot != 0 ||
-          query->resolved_size <= 0) {
+      int resolved_size = psx_sizeof_query_resolved_size(query);
+      if (psx_sizeof_query_runtime_plan(query) ||
+          psx_sizeof_query_runtime_size_slot(query) != 0 ||
+          resolved_size <= 0) {
         if (ok) *ok = 0;
         return 0;
       }
-      return query->resolved_size;
+      return resolved_size;
     }
     case ND_ALIGNOF_QUERY: {
       node_alignof_query_t *query = (node_alignof_query_t *)node;

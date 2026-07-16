@@ -56,7 +56,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/semantic/semantic_invariants.o $(OBJROOT)/semantic/t
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/assignment_validation.o $(OBJROOT)/semantic/lowered_tree_validation.o
 PARSER_LIB_OBJS+=$(OBJROOT)/hir/hir.o $(OBJROOT)/semantic/typed_hir_emission.o $(OBJROOT)/semantic/typed_hir_materialization.o $(OBJROOT)/semantic/resolution_work_tree.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/record_decl_table.o $(OBJROOT)/semantic/record_layout.o
-PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
+PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/lowering/runtime_initializer_plan.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
 PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。

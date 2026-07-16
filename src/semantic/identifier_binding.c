@@ -1,6 +1,7 @@
 #include "identifier_binding.h"
 
 #include "identifier_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/diag.h"
@@ -396,13 +397,13 @@ static node_t *bind_node(
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      if (query->resolved_size > 0 || query->runtime_size_slot != 0 ||
-          query->runtime_size_expr ||
+      if (psx_sizeof_query_resolved_size(query) > 0 ||
+          psx_sizeof_query_runtime_size_slot(query) != 0 ||
+          psx_sizeof_query_runtime_plan(query) ||
           (query->is_type_name && query->type_name.resolved_type))
         return node;
       bind_type_name(&query->type_name, context);
       bind_slot(&query->operand, context);
-      bind_slot(&query->runtime_size_expr, context);
       return node;
     }
     case ND_ALIGNOF_QUERY:

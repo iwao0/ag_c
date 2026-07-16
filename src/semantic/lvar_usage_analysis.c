@@ -6,6 +6,7 @@
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "generic_selection_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
 
 static int is_aggregate_lvar(node_t *node) {
@@ -157,18 +158,20 @@ void psx_collect_lvar_usage_events_in(
   }
   switch (node->kind) {
     case ND_COMPOUND_LITERAL: {
-      psx_compound_literal_resolution_t *resolution =
-          node->resolution_state
-              ? &node->resolution_state->compound_literal : NULL;
-      if (!resolution || !resolution->is_planned) {
+      psx_collect_lvar_usage_events_in(
+          local_registry, node->rhs, region);
+      return;
+    }
+    case ND_INIT_LIST: {
+      node_init_list_t *list = (node_init_list_t *)node;
+      for (int i = 0; i < list->entry_count; i++) {
         psx_collect_lvar_usage_events_in(
-            local_registry, node->rhs, region);
-        return;
+            local_registry, list->entries[i].value, region);
+        for (int d = 0; d < list->entries[i].index_expr_count; d++) {
+          psx_collect_lvar_usage_events_in(
+              local_registry, list->entries[i].index_exprs[d], region);
+        }
       }
-      psx_collect_lvar_usage_events_in(
-          local_registry, resolution->runtime_initialization, region);
-      psx_collect_lvar_usage_events_in(
-          local_registry, resolution->direct_value, region);
       return;
     }
     case ND_ASSIGN:
@@ -216,9 +219,13 @@ void psx_collect_lvar_usage_events_in(
       return;
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      psx_collect_lvar_usage_events_in(
-          local_registry, query->runtime_size_expr, region);
-      if (query->evaluates_vla_operand) {
+      const psx_sizeof_runtime_plan_t *plan =
+          psx_sizeof_query_runtime_plan_const(query);
+      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
+        psx_collect_lvar_usage_events_in(
+            local_registry, plan->runtime_bounds[i], region);
+      }
+      if (psx_sizeof_query_evaluates_vla_operand(query)) {
         collect_sizeof_vla_indices(
             local_registry, query->operand, region);
       }

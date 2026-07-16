@@ -3,6 +3,7 @@
 
 #include "../compilation_options.h"
 #include "../parser/ast.h"
+#include "../parser/node_resolution_state.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -12,9 +13,10 @@ typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct {
   struct lvar_t *local_object;
   struct global_var_t *global_object;
-  node_t *runtime_initialization;
-  node_t *direct_value;
+  node_t *initialization_tree;
+  int direct_initializer_index;
   const psx_type_t *object_type;
+  psx_compound_literal_resolution_kind_t kind;
 } psx_compound_literal_storage_plan_t;
 
 int psx_plan_compound_literal_storage_in_contexts(

@@ -475,10 +475,7 @@ static node_t *clone_node(
               &source_query->type_name))
         return NULL;
       query->operand = clone_node(arena_context, source_query->operand);
-      query->runtime_size_expr = clone_node(
-          arena_context, source_query->runtime_size_expr);
-      if ((source_query->operand && !query->operand) ||
-          (source_query->runtime_size_expr && !query->runtime_size_expr)) {
+      if (source_query->operand && !query->operand) {
         return NULL;
       }
       break;

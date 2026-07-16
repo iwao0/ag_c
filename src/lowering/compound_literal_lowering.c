@@ -47,8 +47,9 @@ static int plan_file_scope_compound_literal(
       list->entries[0].designator_count == 0 &&
       list->entries[0].value &&
       list->entries[0].value->kind == ND_NUM) {
-    plan->direct_value = list->entries[0].value;
-    plan->object_type = ps_node_get_type(plan->direct_value);
+    plan->direct_initializer_index = 0;
+    plan->object_type = ps_node_get_type(list->entries[0].value);
+    plan->kind = PSX_COMPOUND_LITERAL_DIRECT_INITIALIZER;
     return 1;
   }
 
@@ -89,6 +90,7 @@ static int plan_file_scope_compound_literal(
   if (!object.global) return 0;
   plan->global_object = object.global;
   plan->object_type = ps_gvar_get_decl_type(object.global);
+  plan->kind = PSX_COMPOUND_LITERAL_GLOBAL_OBJECT;
   return plan->object_type != NULL;
 }
 
@@ -133,8 +135,9 @@ static int plan_local_compound_literal(
   }
   if (!object.var) return 0;
   plan->local_object = object.var;
-  plan->runtime_initialization = object.initialization;
+  plan->initialization_tree = object.initialization;
   plan->object_type = ps_lvar_get_decl_type(object.var);
+  plan->kind = PSX_COMPOUND_LITERAL_LOCAL_OBJECT;
   return plan->object_type != NULL;
 }
 
@@ -147,7 +150,11 @@ int psx_plan_compound_literal_storage_in_contexts(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
-  if (plan) *plan = (psx_compound_literal_storage_plan_t){0};
+  if (plan) {
+    *plan = (psx_compound_literal_storage_plan_t){
+        .direct_initializer_index = -1,
+    };
+  }
   if (!semantic_context || !global_registry || !local_registry ||
       !lowering_context || !options || !compound || !plan)
     return 0;

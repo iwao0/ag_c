@@ -1,6 +1,8 @@
 #include "tree_walk.h"
 
+#include "compound_literal_resolution.h"
 #include "generic_selection_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "../parser/node_resolution_state.h"
 
 static int walk_node(
@@ -21,14 +23,10 @@ static int walk_node(
 
   switch (node->kind) {
     case ND_COMPOUND_LITERAL: {
-      const psx_compound_literal_resolution_t *resolution =
-          node->resolution_state
-              ? &node->resolution_state->compound_literal : NULL;
-      if (!resolution || !resolution->is_planned)
-        return walk_node(node->rhs, visitor, user);
-      return walk_node(
-                 resolution->runtime_initialization, visitor, user) &&
-             walk_node(resolution->direct_value, visitor, user);
+      const node_compound_literal_t *compound =
+          (const node_compound_literal_t *)node;
+      return psx_compound_literal_is_planned(compound)
+                 ? 1 : walk_node(node->rhs, visitor, user);
     }
     case ND_BLOCK: {
       node_t *const *body = ((const node_block_t *)node)->body;
@@ -66,9 +64,13 @@ static int walk_node(
     case ND_SIZEOF_QUERY: {
       const node_sizeof_query_t *query =
           (const node_sizeof_query_t *)node;
-      if (!walk_node(query->runtime_size_expr, visitor, user))
-        return 0;
-      return !query->evaluates_vla_operand ||
+      const psx_sizeof_runtime_plan_t *plan =
+          psx_sizeof_query_runtime_plan_const(query);
+      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
+        if (!walk_node(plan->runtime_bounds[i], visitor, user))
+          return 0;
+      }
+      return !psx_sizeof_query_evaluates_vla_operand(query) ||
              walk_sizeof_vla_indices(query->operand, visitor, user);
     }
     case ND_IF:

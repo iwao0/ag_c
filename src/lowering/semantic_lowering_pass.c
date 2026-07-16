@@ -3,10 +3,13 @@
 #include "cast_lowering.h"
 #include "compound_literal_lowering.h"
 #include "initializer_lowering.h"
+#include "runtime_initializer_plan.h"
 #include "runtime_context.h"
 #include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 #include "../semantic/generic_selection_resolution.h"
+#include "../semantic/sizeof_query_resolution.h"
 #include "../semantic/source_cast_resolution.h"
 
 typedef struct {
@@ -114,7 +117,9 @@ static node_t *lower_tree(
       psx_compound_literal_resolution_t *resolution =
           node->resolution_state
               ? &node->resolution_state->compound_literal : NULL;
-      if (resolution && resolution->is_planned) return node;
+      if (resolution &&
+          resolution->kind != PSX_COMPOUND_LITERAL_UNPLANNED)
+        return node;
       node->rhs = lower_initializer(
           context, node->rhs, fallback_diag_tok);
       psx_compound_literal_storage_plan_t plan;
@@ -125,23 +130,38 @@ static node_t *lower_tree(
           !resolution) {
         return node;
       }
-      if (plan.runtime_initialization) {
-        plan.runtime_initialization = lower_tree(
-            context, plan.runtime_initialization, fallback_diag_tok);
+      psx_runtime_initializer_plan_t *runtime_initializer = NULL;
+      if (plan.initialization_tree) {
+        plan.initialization_tree = lower_tree(
+            context, plan.initialization_tree, fallback_diag_tok);
+        runtime_initializer = psx_build_runtime_initializer_plan(
+            context->lowering_context, plan.initialization_tree);
+        if (!runtime_initializer) return node;
       }
       resolution->local_object = plan.local_object;
       resolution->global_object = plan.global_object;
-      resolution->runtime_initialization =
-          plan.runtime_initialization;
-      resolution->direct_value = plan.direct_value;
-      resolution->is_planned = 1;
+      resolution->runtime_initializer = runtime_initializer;
+      resolution->direct_initializer_index =
+          plan.direct_initializer_index;
+      resolution->kind = plan.kind;
       const psx_type_t *result_type = plan.object_type;
       if (compound->requires_addressable_object && result_type) {
         result_type = ps_type_address_result_in(
             ps_lowering_arena(context->lowering_context), result_type);
       }
-      if (result_type) ps_node_bind_type(node, result_type);
-      node->rhs = NULL;
+      if (result_type) {
+        psx_qual_type_t result_qual_type =
+            ps_ctx_intern_qual_type_in(
+                context->semantic_context, result_type);
+        const psx_type_t *canonical_result =
+            ps_ctx_type_by_id_in(
+                context->semantic_context,
+                result_qual_type.type_id);
+        if (canonical_result) {
+          ps_node_bind_qual_type(
+              node, canonical_result, result_qual_type);
+        }
+      }
       return node;
     }
     case ND_GENERIC_SELECTION: {
@@ -149,20 +169,19 @@ static node_t *lower_tree(
           (node_generic_selection_t *)node;
       node_t *selected =
           psx_generic_selection_selected_expression(selection);
-      if (selected) {
-        selection->base.resolution_state->generic_selection
-            .selected_expression = lower_tree(
-                context, selected, fallback_diag_tok);
-      }
+      if (selected)
+        lower_tree(context, selected, fallback_diag_tok);
       break;
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      if (query->runtime_size_expr) {
-        query->runtime_size_expr = lower_tree(
-            context, query->runtime_size_expr, fallback_diag_tok);
+      psx_sizeof_runtime_plan_t *plan =
+          psx_sizeof_query_runtime_plan(query);
+      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
+        plan->runtime_bounds[i] = lower_tree(
+            context, plan->runtime_bounds[i], fallback_diag_tok);
       }
-      if (query->evaluates_vla_operand) {
+      if (psx_sizeof_query_evaluates_vla_operand(query)) {
         lower_sizeof_vla_indices(
             context, query->operand, fallback_diag_tok);
       }

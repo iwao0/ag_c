@@ -120,18 +120,16 @@ int psx_generic_selection_selected_index(
 
 node_t *psx_generic_selection_selected_expression(
     node_generic_selection_t *selection) {
-  psx_generic_selection_resolution_state_t *resolution =
-      selection && selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
-  return resolution && resolution->is_resolved
-             ? resolution->selected_expression : NULL;
+  int selected = psx_generic_selection_selected_index(selection);
+  return selection && selected >= 0 &&
+                 selected < selection->association_count
+             ? selection->associations[selected].expression : NULL;
 }
 
 const node_t *psx_generic_selection_selected_expression_const(
     const node_generic_selection_t *selection) {
-  const psx_generic_selection_resolution_state_t *resolution =
-      selection && selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
-  return resolution && resolution->is_resolved
-             ? resolution->selected_expression : NULL;
+  int selected = psx_generic_selection_selected_index(selection);
+  return selection && selected >= 0 &&
+                 selected < selection->association_count
+             ? selection->associations[selected].expression : NULL;
 }

@@ -3903,12 +3903,24 @@ const sourceCastResolutionHeader = await readFile(
   "src/semantic/source_cast_resolution.h",
   "utf8",
 );
+const compoundLiteralResolutionHeader = await readFile(
+  "src/semantic/compound_literal_resolution.h",
+  "utf8",
+);
 const compoundLiteralLoweringSource = await readFile(
   "src/lowering/compound_literal_lowering.c",
   "utf8",
 );
 const compoundLiteralLoweringHeader = await readFile(
   "src/lowering/compound_literal_lowering.h",
+  "utf8",
+);
+const runtimeInitializerPlanHeader = await readFile(
+  "src/lowering/runtime_initializer_plan.h",
+  "utf8",
+);
+const runtimeInitializerPlanSource = await readFile(
+  "src/lowering/runtime_initializer_plan.c",
   "utf8",
 );
 const typedHirMaterializationSource = await readFile(
@@ -3994,6 +4006,28 @@ if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
     !/source\s*&&\s*source->kind\s*==\s*ND_COMPOUND_LITERAL/.test(
       typedHirMaterializationSource,
     ) ||
+    /selected_expression|direct_value/.test(nodeResolutionStateSource) ||
+    !/PSX_COMPOUND_LITERAL_DIRECT_INITIALIZER/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/direct_initializer_index/.test(nodeResolutionStateSource) ||
+    !/psx_compound_literal_direct_initializer_const\s*\(/.test(
+      compoundLiteralResolutionHeader,
+    ) ||
+    /struct\s+node_t\s*\*runtime_initialization/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/struct\s+psx_runtime_initializer_plan_t\s*\*runtime_initializer/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/psx_build_runtime_initializer_plan\s*\(/.test(
+      runtimeInitializerPlanHeader,
+    ) ||
+    !/PSX_RUNTIME_INITIALIZER_ASSIGN/.test(runtimeInitializerPlanSource) ||
+    !/materialize_runtime_initializer\s*\(/.test(
+      typedHirMaterializationSource,
+    ) ||
+    /node->rhs\s*=\s*NULL/.test(semanticLoweringPassSource) ||
     /_Static_assert\s*\(\s*sizeof\s*\(\s*node_compound_literal_t\s*\)/.test(
       compoundLiteralLoweringSource,
     ) ||
@@ -5989,11 +6023,23 @@ if (!/source\s*&&\s*source->kind\s*==\s*ND_SIZEOF_QUERY/.test(
     !/materialize_sizeof_value\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
+    !/psx_sizeof_query_runtime_plan_const\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/PSX_HIR_MUL/.test(resolvedTreeMaterialization) ||
     !/runtime_size_slot/.test(
       resolvedTreeMaterialization,
     ) ||
     !/materialize_sizeof_vla_indices\s*\(/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/psx_sizeof_runtime_plan_t/.test(typeQueryResolutionSource) ||
+    !/runtime_bounds/.test(typeQueryResolutionSource) ||
+    /\bps_node_new_[A-Za-z0-9_]*\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    /runtime_size_expr|resolved_size|runtime_size_slot|evaluates_vla_operand/.test(
+      sizeofQueryNode?.[1] ?? "",
     ) ||
     /\blower_sizeof_query_expression\s*\(/.test(
       semanticLoweringPassSource,
@@ -6002,7 +6048,7 @@ if (!/source\s*&&\s*source->kind\s*==\s*ND_SIZEOF_QUERY/.test(
       (path) => /src\/lowering\/sizeof_lowering\.[ch]$/.test(path),
     )) {
   throw new Error(
-    "resolved sizeof queries must materialize constant and VLA values directly into Typed HIR",
+    "sizeof resolution must stay outside Syntax AST and materialize its runtime plan directly into Typed HIR",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(

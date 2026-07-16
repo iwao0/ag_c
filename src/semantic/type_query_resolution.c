@@ -3,6 +3,7 @@
 
 #include "constant_expression.h"
 #include "declaration_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "type_name_resolution.h"
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
@@ -57,15 +58,6 @@ static node_t *sizeof_type_bound_for_op(
       return bound->expression.node;
   }
   return NULL;
-}
-
-static node_t *widen_size_value(
-    psx_semantic_context_t *semantic_context, node_t *value) {
-  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
-  return ps_node_new_integer_cast_result_in(
-      arena_context, value,
-      ps_type_new_integer_kind_in(
-          arena_context, PSX_INTEGER_KIND_LONG, 1, 0));
 }
 
 static void resolve_sizeof_type_name(
@@ -138,36 +130,48 @@ static void resolve_sizeof_type_name(
   int base_size = query_type_size(semantic_context, base_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
-  node_t *size = widen_size_value(
-      semantic_context, ps_node_new_num_in(arena_context, base_size));
+  psx_sizeof_runtime_plan_t *runtime_plan =
+      arena_alloc_in(arena_context, sizeof(*runtime_plan));
+  node_t **runtime_bounds = syntax->declarator.array_bound_count > 0
+                                ? arena_alloc_in(
+                                      arena_context,
+                                      (size_t)syntax->declarator
+                                          .array_bound_count *
+                                          sizeof(*runtime_bounds))
+                                : NULL;
+  if (!runtime_plan ||
+      (syntax->declarator.array_bound_count > 0 && !runtime_bounds)) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
+  *runtime_plan = (psx_sizeof_runtime_plan_t){
+      .runtime_bounds = runtime_bounds,
+      .constant_factor = base_size,
+  };
   int is_runtime = 0;
   for (int i = shape->count - 1; i >= 0; i--) {
     psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
-      size = widen_size_value(
-          semantic_context,
-          ps_node_new_num_in(
-              arena_context, ag_target_info_pointer_size(target)));
+      runtime_plan->constant_factor =
+          ag_target_info_pointer_size(target);
+      runtime_plan->runtime_bound_count = 0;
       is_runtime = 0;
       continue;
     }
     if (op->kind != PSX_DECL_OP_ARRAY) continue;
     node_t *bound = sizeof_type_bound_for_op(query, i);
     if (op->is_vla_array && bound) {
-      size = ps_node_new_binary_for_target_in(
-          arena_context, ps_ctx_target_info(semantic_context), ND_MUL,
-          widen_size_value(semantic_context, bound), size);
+      runtime_plan->runtime_bounds[
+          runtime_plan->runtime_bound_count++] = bound;
       is_runtime = 1;
     } else {
-      size = ps_node_new_binary_for_target_in(
-          arena_context, ps_ctx_target_info(semantic_context), ND_MUL,
-          widen_size_value(
-              semantic_context,
-              ps_node_new_num_in(arena_context, op->array_len)),
-          size);
+      runtime_plan->constant_factor *= op->array_len;
     }
   }
-  if (is_runtime) query->runtime_size_expr = size;
+  psx_sizeof_query_resolution_state_t *query_resolution =
+      psx_sizeof_query_resolution_state(query);
+  if (is_runtime && query_resolution)
+    query_resolution->runtime_plan = runtime_plan;
 }
 
 static const psx_type_t *sizeof_operand_type(
@@ -226,6 +230,18 @@ void psx_resolve_sizeof_query_in_contexts(
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), &query->base)) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
+  psx_sizeof_query_resolution_state_t *query_resolution =
+      psx_sizeof_query_resolution_state(query);
+  if (!query_resolution) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
+  memset(query_resolution, 0, sizeof(*query_resolution));
 
   resolve_sizeof_type_name(
       semantic_context, global_registry, local_registry,
@@ -248,41 +264,43 @@ void psx_resolve_sizeof_query_in_contexts(
     if (subscript_depth == 0) {
       const psx_type_t *decl_type = ps_lvar_get_decl_type(var);
       if (decl_type && decl_type->kind == PSX_TYPE_ARRAY)
-        query->runtime_size_slot =
+        query_resolution->runtime_size_slot =
             ps_lvar_offset(var) + PSX_VLA_RUNTIME_SIZE_RELATIVE_OFFSET;
     } else {
       int row_slot = ps_lvar_vla_row_stride_frame_off(var);
       int remaining = ps_lvar_vla_strides_remaining(var);
       if (row_slot != 0 &&
           (subscript_depth == 1 || subscript_depth - 1 <= remaining)) {
-        query->runtime_size_slot =
+        query_resolution->runtime_size_slot =
             row_slot + PSX_VLA_RUNTIME_SLOT_SIZE * (subscript_depth - 1);
       }
     }
-    if (query->runtime_size_slot != 0 && subscript_depth > 0)
-      query->evaluates_vla_operand = 1;
+    if (query_resolution->runtime_size_slot != 0 && subscript_depth > 0)
+      query_resolution->evaluates_vla_operand = 1;
   } else if (!query->is_type_name && type && type->is_vla &&
              subscript_depth > 0 && type->kind == PSX_TYPE_ARRAY &&
              ps_node_vla_row_stride_frame_off(query->operand) != 0) {
-    query->runtime_size_slot =
+    query_resolution->runtime_size_slot =
         ps_node_vla_row_stride_frame_off(query->operand);
-    query->evaluates_vla_operand = 1;
+    query_resolution->evaluates_vla_operand = 1;
   }
 
-  resolution->usage_root = query->runtime_size_slot != 0
+  resolution->usage_root = query_resolution->runtime_size_slot != 0
                                ? base
                                : query->operand;
-  resolution->evaluates_vla_operand = query->evaluates_vla_operand;
-  if (query->runtime_size_slot != 0) return;
+  resolution->evaluates_vla_operand =
+      query_resolution->evaluates_vla_operand;
+  if (query_resolution->runtime_size_slot != 0) return;
   if (query->operand && query->operand->kind == ND_STRING) {
     node_string_t *string = (node_string_t *)query->operand;
     int width = string->char_width ? (int)string->char_width : 1;
-    query->resolved_size = (string->byte_len + 1) * width;
+    query_resolution->resolved_size =
+        (string->byte_len + 1) * width;
     return;
   }
   int size = type ? query_type_size(semantic_context, type) : 0;
   if (type && type->kind == PSX_TYPE_VOID) size = 1;
-  query->resolved_size = size > 0 ? size : 8;
+  query_resolution->resolved_size = size > 0 ? size : 8;
 }
 
 void psx_resolve_alignof_query_in_contexts(

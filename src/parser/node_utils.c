@@ -2250,9 +2250,9 @@ static node_t *generic_selection_semantic_expression(
   const psx_generic_selection_resolution_state_t *resolution =
       selection->base.resolution_state
           ? &selection->base.resolution_state->generic_selection : NULL;
-  if (resolution && resolution->is_resolved)
-    return resolution->selected_expression;
-  int selected = ps_node_generic_selection_index(selection);
+  int selected = resolution && resolution->is_resolved
+                     ? resolution->selected_index
+                     : ps_node_generic_selection_index(selection);
   return selected >= 0 && selected < selection->association_count
              ? selection->associations[selected].expression : NULL;
 }

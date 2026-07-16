@@ -141,11 +141,7 @@ typedef struct {
   node_t base;
   node_t *operand;
   psx_type_name_ref_t type_name;
-  node_t *runtime_size_expr;
-  int resolved_size;
-  int runtime_size_slot;
   unsigned char is_type_name;
-  unsigned char evaluates_vla_operand;
 } node_sizeof_query_t;
 
 typedef struct {

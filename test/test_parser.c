@@ -40,6 +40,7 @@
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
+#include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/constant_expression.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
@@ -54,6 +55,7 @@
 #include "../src/semantic/identifier_binding.h"
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_pass.h"
+#include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/type_name_resolution.h"
@@ -72,6 +74,7 @@
 #include "../src/lowering/abi_lowering.h"
 #include "../src/lowering/hir_ir_builder.h"
 #include "../src/lowering/runtime_context.h"
+#include "../src/lowering/runtime_initializer_plan.h"
 #include "../src/lowering/local_storage.h"
 #include "../src/lowering/local_object_lowering.h"
 #include "../src/lowering/parameter_lowering.h"
@@ -858,7 +861,8 @@ static int test_node_compound_literal_array_size(node_t *node) {
         node->resolution_state
             ? &node->resolution_state->compound_literal : NULL;
     const psx_type_t *object_type = NULL;
-    if (resolution && resolution->is_planned) {
+    if (resolution &&
+        resolution->kind != PSX_COMPOUND_LITERAL_UNPLANNED) {
       if (resolution->local_object) {
         object_type = ps_lvar_get_decl_type(resolution->local_object);
       } else if (resolution->global_object) {
@@ -891,7 +895,8 @@ static lvar_t *test_compound_literal_local_object(node_t *node) {
     return NULL;
   psx_compound_literal_resolution_t *resolution =
       &node->resolution_state->compound_literal;
-  return resolution->is_planned ? resolution->local_object : NULL;
+  return resolution->kind == PSX_COMPOUND_LITERAL_LOCAL_OBJECT
+             ? resolution->local_object : NULL;
 }
 
 static int plan_test_local_storage(
@@ -3939,7 +3944,7 @@ static void assert_typed_sizeof(
   ASSERT_TRUE(query_node != NULL);
   node_sizeof_query_t *query =
       (node_sizeof_query_t *)query_node;
-  ASSERT_EQ(expected_size, query->resolved_size);
+  ASSERT_EQ(expected_size, psx_sizeof_query_resolved_size(query));
   ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
               PSX_TYPE_ID_INVALID);
 }
@@ -5188,15 +5193,20 @@ static void test_expr_compound_literal() {
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   ASSERT_EQ(ND_COMPOUND_LITERAL, lowered->kind);
-  ASSERT_TRUE(lowered->rhs == NULL);
+  ASSERT_EQ(ND_INIT_LIST, lowered->rhs->kind);
   ASSERT_TRUE(lowered->resolution_state != NULL);
   const psx_compound_literal_resolution_t *resolution =
       &lowered->resolution_state->compound_literal;
-  ASSERT_TRUE(resolution->is_planned);
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_LOCAL_OBJECT, resolution->kind);
   ASSERT_TRUE(resolution->local_object != NULL);
   ASSERT_TRUE(resolution->global_object == NULL);
-  ASSERT_TRUE(resolution->runtime_initialization != NULL);
-  ASSERT_TRUE(resolution->direct_value == NULL);
+  ASSERT_TRUE(resolution->runtime_initializer != NULL);
+  ASSERT_TRUE(resolution->runtime_initializer->item_count > 0);
+  ASSERT_EQ(-1, resolution->direct_initializer_index);
+  ASSERT_TRUE(
+      psx_compound_literal_direct_initializer(
+          (node_compound_literal_t *)lowered) == NULL);
 
   node_t *node = parse_expr_input("(int){3}");
   ASSERT_EQ(ND_COMPOUND_LITERAL, node->kind);
@@ -5238,7 +5248,7 @@ static void test_expr_compound_literal_array_subscript() {
   node_t *array_literal = parse_expr_input("(int[3]){1,2,3}");
   ASSERT_EQ(ND_COMPOUND_LITERAL, array_literal->kind);
   ASSERT_EQ(12, ps_node_compound_literal_array_size(array_literal));
-  ASSERT_TRUE(array_literal->rhs == NULL);
+  ASSERT_EQ(ND_INIT_LIST, array_literal->rhs->kind);
 
   // 配列型複合リテラルへの添字アクセス: ((int[2]){1,2})[1]
   node_t *node = parse_expr_input("((int[2]){1,2})[1]");
@@ -5849,7 +5859,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(direct_resolution.usage_root == expr_query->operand);
   ASSERT_TRUE(ps_node_get_type(expr_query->operand) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(expr_query->operand)->kind);
-  ASSERT_EQ(4, expr_query->resolved_size);
+  ASSERT_EQ(4, psx_sizeof_query_resolved_size(expr_query));
   node_t *typed_expr = analyze_test_expression(raw_expr, NULL);
   assert_typed_sizeof(typed_expr, 4);
 
@@ -5862,7 +5872,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(direct_type_query->type_name.resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY,
             direct_type_query->type_name.resolved_type->kind);
-  ASSERT_EQ(12, direct_type_query->resolved_size);
+  ASSERT_EQ(12, psx_sizeof_query_resolved_size(direct_type_query));
 
   node_sizeof_query_t *negative_type_query =
       (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
@@ -5947,7 +5957,12 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(raw_vla_bound->resolution_state == NULL);
   ASSERT_EQ(ND_LVAR, typed_vla_bound->kind);
   ASSERT_TRUE(typed_vla_bound->resolution_state != NULL);
-  ASSERT_TRUE(typed_vla_query->runtime_size_expr != NULL);
+  const psx_sizeof_runtime_plan_t *runtime_plan =
+      psx_sizeof_query_runtime_plan_const(typed_vla_query);
+  ASSERT_TRUE(runtime_plan != NULL);
+  ASSERT_EQ(1, runtime_plan->runtime_bound_count);
+  ASSERT_EQ(4, runtime_plan->constant_factor);
+  ASSERT_TRUE(runtime_plan->runtime_bounds[0] == typed_vla_bound);
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
@@ -6006,8 +6021,10 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(vla_query_node != NULL);
   node_sizeof_query_t *vla_query =
       (node_sizeof_query_t *)vla_query_node;
-  ASSERT_TRUE(vla_query->runtime_size_slot != 0);
-  ASSERT_TRUE(vla_query->evaluates_vla_operand);
+  int runtime_size_slot =
+      psx_sizeof_query_runtime_size_slot(vla_query);
+  ASSERT_TRUE(runtime_size_slot != 0);
+  ASSERT_TRUE(psx_sizeof_query_evaluates_vla_operand(vla_query));
   int found_runtime_slot = 0;
   int found_index_prefix = 0;
   for (size_t i = hir_checkpoint + 1;
@@ -6017,7 +6034,7 @@ static void test_sizeof_semantic_lowering_boundary() {
     if (!hir_node) continue;
     if (psx_hir_node_kind(hir_node) == PSX_HIR_LOCAL &&
         psx_hir_node_storage_offset(hir_node) ==
-            vla_query->runtime_size_slot) {
+            runtime_size_slot) {
       found_runtime_slot = 1;
     }
     if (psx_hir_node_kind(hir_node) == PSX_HIR_COMMA)

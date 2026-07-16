@@ -13,9 +13,12 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
+#include "../lowering/runtime_initializer_plan.h"
+#include "compound_literal_resolution.h"
 #include "typed_hir_node_internal.h"
 #include "generic_selection_resolution.h"
 #include "resolved_node_kind.h"
+#include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
 #include "typed_hir_tree_internal.h"
 #include "resolution_work_tree.h"
@@ -169,6 +172,9 @@ static int canonical_type_exists(
     const hir_materializer_t *builder, psx_qual_type_t type);
 static psx_qual_type_t resolved_expression_type(
     const psx_resolved_hir_node_t *node);
+static psx_resolved_hir_node_t *materialize_cast_expression(
+    hir_materializer_t *builder, const node_t *source,
+    psx_resolved_hir_node_t *operand, psx_qual_type_t qual_type);
 
 static psx_resolved_hir_node_t *materialize_expression_spec(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
@@ -245,15 +251,50 @@ static int materialize_sizeof_vla_indices(
 static psx_resolved_hir_node_t *materialize_sizeof_value(
     hir_materializer_t *builder, const node_sizeof_query_t *query,
     psx_qual_type_t qual_type) {
-  if (query->runtime_size_expr)
-    return build_node(builder, query->runtime_size_expr);
-  if (query->runtime_size_slot != 0) {
+  const psx_sizeof_runtime_plan_t *plan =
+      psx_sizeof_query_runtime_plan_const(query);
+  if (plan) {
+    psx_hir_node_spec_t number_spec = {
+        .kind = PSX_HIR_NUMBER,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .integer_value = plan->constant_factor,
+    };
+    psx_resolved_hir_node_t *value = materialize_expression_spec(
+        builder, &number_spec, qual_type, NULL, NULL, &query->base);
+    if (!value) return NULL;
+    for (int i = 0; i < plan->runtime_bound_count; i++) {
+      node_t *bound_source = plan->runtime_bounds[i];
+      psx_resolved_hir_node_t *bound =
+          build_node(builder, bound_source);
+      if (!bound) return NULL;
+      bound = materialize_cast_expression(
+          builder, bound_source, bound, qual_type);
+      if (!bound) return NULL;
+      psx_resolved_hir_node_t *items[] = {value, bound};
+      psx_hir_edge_kind_t edges[] = {
+          PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+      hir_children_t children = {
+          .items = items,
+          .edges = edges,
+          .count = 2,
+          .capacity = 2,
+      };
+      value = materialize_expression(
+          builder, PSX_HIR_MUL, qual_type, &children, &query->base);
+      if (!value) return NULL;
+    }
+    return value;
+  }
+  int runtime_size_slot =
+      psx_sizeof_query_runtime_size_slot(query);
+  if (runtime_size_slot != 0) {
     psx_hir_node_spec_t spec = {
         .kind = PSX_HIR_LOCAL,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-        .storage_offset = query->runtime_size_slot,
-        .object_offset = query->runtime_size_slot,
+        .storage_offset = runtime_size_slot,
+        .object_offset = runtime_size_slot,
         .object_size = PSX_VLA_RUNTIME_SLOT_SIZE,
         .object_align = PSX_VLA_RUNTIME_SLOT_SIZE,
     };
@@ -264,7 +305,7 @@ static psx_resolved_hir_node_t *materialize_sizeof_value(
       .kind = PSX_HIR_NUMBER,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .integer_value = query->resolved_size,
+      .integer_value = psx_sizeof_query_resolved_size(query),
   };
   return materialize_expression_spec(
       builder, &spec, qual_type, NULL, NULL, &query->base);
@@ -282,7 +323,7 @@ static psx_resolved_hir_node_t *materialize_sizeof_query(
   psx_resolved_hir_node_t *value =
       materialize_sizeof_value(builder, query, qual_type);
   if (!value) return NULL;
-  if (!query->evaluates_vla_operand) return value;
+  if (!psx_sizeof_query_evaluates_vla_operand(query)) return value;
   psx_resolved_hir_node_t *prefix = NULL;
   if (!materialize_sizeof_vla_indices(
           builder, query->operand, &prefix, source))
@@ -649,6 +690,90 @@ static psx_resolved_hir_node_t *materialize_global_object_reference(
       NULL, &symbol, source);
 }
 
+static psx_resolved_hir_node_t *materialize_runtime_initializer_value(
+    hir_materializer_t *builder,
+    const psx_runtime_initializer_value_t *value,
+    const node_t *source) {
+  if (!value) return NULL;
+  switch (value->kind) {
+    case PSX_RUNTIME_INITIALIZER_VALUE_EXPRESSION:
+      return build_node(builder, value->expression);
+    case PSX_RUNTIME_INITIALIZER_VALUE_LOCAL:
+      return materialize_local_subobject_reference(
+          builder, value->local.local, value->local.relative_offset,
+          value->local.qual_type, value->local.bit_width,
+          value->local.bit_offset, value->local.bit_is_signed, source);
+    case PSX_RUNTIME_INITIALIZER_VALUE_NUMBER: {
+      if (!canonical_type_exists(builder, value->resolved_qual_type)) {
+        set_failure(
+            builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+        return NULL;
+      }
+      psx_hir_node_spec_t spec = {
+          .kind = PSX_HIR_NUMBER,
+          .integer_value = value->number.integer_value,
+          .floating_value = value->number.floating_value,
+      };
+      return materialize_expression_spec(
+          builder, &spec, value->resolved_qual_type,
+          NULL, NULL, source);
+    }
+  }
+  return NULL;
+}
+
+static psx_resolved_hir_node_t *materialize_runtime_initializer_item(
+    hir_materializer_t *builder,
+    const psx_runtime_initializer_item_t *item,
+    const node_t *source) {
+  if (!item) return NULL;
+  psx_resolved_hir_node_t *value =
+      materialize_runtime_initializer_value(
+          builder, &item->value, source);
+  if (!value ||
+      item->kind == PSX_RUNTIME_INITIALIZER_EVALUATE)
+    return value;
+  psx_resolved_hir_node_t *target =
+      materialize_local_subobject_reference(
+          builder, item->target.local, item->target.relative_offset,
+          item->target.qual_type, item->target.bit_width,
+          item->target.bit_offset, item->target.bit_is_signed, source);
+  if (!target) return NULL;
+  psx_resolved_hir_node_t *items[] = {target, value};
+  psx_hir_edge_kind_t edges[] = {
+      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+  hir_children_t children = {
+      .items = items,
+      .edges = edges,
+      .count = 2,
+      .capacity = 2,
+  };
+  return materialize_expression(
+      builder, PSX_HIR_ASSIGN, item->target.qual_type,
+      &children, source);
+}
+
+static psx_resolved_hir_node_t *materialize_runtime_initializer(
+    hir_materializer_t *builder,
+    const psx_runtime_initializer_plan_t *plan,
+    const node_t *source) {
+  if (!plan || plan->item_count <= 0) return NULL;
+  psx_resolved_hir_node_t *sequence = NULL;
+  for (int i = 0; i < plan->item_count; i++) {
+    const psx_runtime_initializer_item_t *item = &plan->items[i];
+    psx_resolved_hir_node_t *current =
+        materialize_runtime_initializer_item(builder, item, source);
+    if (!current) return NULL;
+    sequence = sequence
+                   ? materialize_comma(
+                         builder, sequence, current,
+                         item->result_qual_type, source)
+                   : current;
+    if (!sequence) return NULL;
+  }
+  return sequence;
+}
+
 static psx_resolved_hir_node_t *materialize_address_of_object(
     hir_materializer_t *builder,
     psx_resolved_hir_node_t *object,
@@ -673,7 +798,8 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
       source->resolution_state
           ? &source->resolution_state->compound_literal : NULL;
   psx_qual_type_t result_type = ps_node_qual_type(source);
-  if (!resolution || !resolution->is_planned) {
+  if (!resolution ||
+      resolution->kind == PSX_COMPOUND_LITERAL_UNPLANNED) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return NULL;
@@ -683,8 +809,9 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
-  if (resolution->direct_value)
-    return build_node(builder, resolution->direct_value);
+  const node_t *direct =
+      psx_compound_literal_direct_initializer_const(compound);
+  if (direct) return build_node(builder, direct);
 
   psx_resolved_hir_node_t *object =
       resolution->local_object
@@ -699,9 +826,10 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
                 builder, object, result_type, source)
           : object;
   if (!value) return NULL;
-  if (!resolution->runtime_initialization) return value;
+  if (!resolution->runtime_initializer) return value;
   psx_resolved_hir_node_t *initialization =
-      build_node(builder, resolution->runtime_initialization);
+      materialize_runtime_initializer(
+          builder, resolution->runtime_initializer, source);
   if (!initialization) return NULL;
   return materialize_comma(
       builder, initialization, value, result_type, source);

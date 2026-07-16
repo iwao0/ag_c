@@ -18,6 +18,7 @@
 #include "generic_selection_resolution.h"
 #include "lvar_usage_analysis.h"
 #include "member_access_resolution.h"
+#include "sizeof_query_resolution.h"
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 
@@ -703,14 +704,14 @@ static void semantic_resolve_generic_selection(
       break;
   }
   selection_resolution->selected_index = resolution.selected_index;
-  selection_resolution->selected_expression =
-      selection->associations[resolution.selected_index].expression;
   selection_resolution->is_resolved = 1;
+  node_t *selected_expression =
+      selection->associations[resolution.selected_index].expression;
   semantic_bind_result_type(
       (node_t *)selection,
       ps_type_clone_in(
           ps_ctx_arena(semantic_context), ps_node_get_type(
-              selection_resolution->selected_expression)));
+              selected_expression)));
 }
 
 static void semantic_mark_usage_evaluated(node_t *node) {
@@ -830,7 +831,7 @@ static void semantic_resolve_sizeof_query(
         traversal->local_registry, resolution.usage_root, NULL);
   if (resolution.evaluates_vla_operand)
     semantic_mark_sizeof_indices_evaluated(query->operand);
-  if (query->runtime_size_slot != 0)
+  if (psx_sizeof_query_runtime_size_slot(query) != 0)
     return;
 }
 

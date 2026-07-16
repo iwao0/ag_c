@@ -6,6 +6,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/diag.h"
 #include "../diag/diag.h"
+#include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
 #include "../type_layout.h"
@@ -268,12 +269,13 @@ static lvar_t *array_copy_source_local(
     return NULL;
   psx_compound_literal_resolution_t *resolution =
       &value->resolution_state->compound_literal;
-  if (!resolution->is_planned || !resolution->local_object)
+  if (resolution->kind != PSX_COMPOUND_LITERAL_LOCAL_OBJECT ||
+      !resolution->local_object)
     return NULL;
   if (source_offset)
     *source_offset = ps_lvar_offset(resolution->local_object);
   if (initialization)
-    *initialization = resolution->runtime_initialization;
+    *initialization = value;
   return resolution->local_object;
 }
 

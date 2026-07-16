@@ -7,6 +7,7 @@
 #include "../parser/global_registry.h"
 #include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
+#include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
@@ -87,7 +88,8 @@ static int resolve_static_address_constant(
       const psx_compound_literal_resolution_t *resolution =
           node->resolution_state
               ? &node->resolution_state->compound_literal : NULL;
-      if (!resolution || !resolution->is_planned ||
+      if (!resolution ||
+          resolution->kind != PSX_COMPOUND_LITERAL_GLOBAL_OBJECT ||
           !resolution->global_object)
         return 0;
       *symbol = ps_gvar_name(resolution->global_object);
@@ -225,13 +227,11 @@ static long long eval_static_const_int(
     return 0;
   }
   if (node->kind == ND_COMPOUND_LITERAL) {
-    const psx_compound_literal_resolution_t *resolution =
-        node->resolution_state
-            ? &node->resolution_state->compound_literal : NULL;
-    if (resolution && resolution->is_planned &&
-        resolution->direct_value) {
+    node_t *direct = psx_compound_literal_direct_initializer(
+        (node_compound_literal_t *)node);
+    if (direct) {
       return eval_static_const_int(
-          lowering_context, resolution->direct_value, ok);
+          lowering_context, direct, ok);
     }
   }
   if (node->kind == ND_CAST) {
