@@ -2921,12 +2921,40 @@ static void test_typed_hir_aggregate_member_storage_without_ast() {
       "struct S { int x; int y; int z; }; "
       "int main(void) { "
       "struct S value = {1, 2, 3}; struct S *pointer = &value; "
-      "return pointer->x + pointer->y * 10 + pointer->z * 100; }");
+      "return value.x + pointer->y * 10 + pointer->z * 100; }");
   ASSERT_TRUE(program != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  int member_count = 0;
+  int saw_pointer_member = 0;
+  int saw_object_member = 0;
+  int saw_member_offset_0 = 0;
+  int saw_member_offset_4 = 0;
+  int saw_member_offset_8 = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!node ||
+        psx_hir_node_kind(node) != PSX_HIR_MEMBER_ACCESS)
+      continue;
+    member_count++;
+    if (psx_hir_node_member_from_pointer(node))
+      saw_pointer_member = 1;
+    else
+      saw_object_member = 1;
+    int offset = psx_hir_node_member_offset(node);
+    if (offset == 0) saw_member_offset_0 = 1;
+    if (offset == 4) saw_member_offset_4 = 1;
+    if (offset == 8) saw_member_offset_8 = 1;
+  }
+  ASSERT_EQ(3, member_count);
+  ASSERT_TRUE(saw_pointer_member);
+  ASSERT_TRUE(saw_object_member);
+  ASSERT_TRUE(saw_member_offset_0);
+  ASSERT_TRUE(saw_member_offset_4);
+  ASSERT_TRUE(saw_member_offset_8);
   free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -4568,14 +4596,19 @@ static void test_member_access_resolution_boundary() {
   node_t *lowered_access = analyze_test_expression(
       raw_access, raw_access->tok);
   ASSERT_TRUE(lowered_access != raw_access);
-  ASSERT_EQ(ND_DEREF, lowered_access->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, lowered_access->kind);
   ASSERT_TRUE(member_syntax->resolved_member == NULL);
   ASSERT_TRUE(ps_node_get_type(member_syntax->base.lhs) == NULL);
+  node_member_access_t *resolved_access =
+      (node_member_access_t *)lowered_access;
+  ASSERT_TRUE(resolved_access->resolved_member != NULL);
+  ASSERT_EQ(member_record->record_id,
+            resolved_access->resolved_record_id);
+  ASSERT_EQ(1, resolved_access->resolved_member_index);
   ASSERT_TRUE(ps_node_get_type(lowered_access) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_access)->kind);
   ASSERT_EQ(4, ps_type_sizeof(ps_node_get_type(lowered_access)));
-  ASSERT_EQ(ND_ADD, lowered_access->lhs->kind);
-  ASSERT_EQ(4, as_num(lowered_access->lhs->rhs)->val);
+  ASSERT_EQ(ND_LVAR, lowered_access->lhs->kind);
 
   node_t *pointer_node = psx_node_new_lvar_identifier_ref_for(pointer);
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
@@ -6231,6 +6264,42 @@ static void test_compound_assignment_semantic_lowering_boundary() {
     }
   }
   ASSERT_TRUE(found_subscript_compound);
+
+  program = parse_program_input(
+      "struct __TypedHirMemberCompound { int value; }; "
+      "int __typed_hir_member_compound("
+      "struct __TypedHirMemberCompound *object) { "
+      "object->value += 3; return object->value; }");
+  ASSERT_TRUE(program != NULL);
+  body = as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_TRUE(body->body[0]->is_source_compound_assignment);
+  ASSERT_EQ(ND_MEMBER_ACCESS, body->body[0]->lhs->kind);
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  int found_member_compound = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node ||
+        psx_hir_node_kind(hir_node) != PSX_HIR_COMPOUND_ASSIGN ||
+        psx_hir_node_compound_operator(hir_node) !=
+            PSX_HIR_COMPOUND_ADD)
+      continue;
+    for (size_t child = 0;
+         child < psx_hir_node_child_count(hir_node); child++) {
+      if (psx_hir_node_child_edge_at(hir_node, child) !=
+          PSX_HIR_EDGE_LHS)
+        continue;
+      const psx_hir_node_t *target = psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(hir_node, child));
+      if (target &&
+          psx_hir_node_kind(target) == PSX_HIR_MEMBER_ACCESS) {
+        found_member_compound = 1;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(found_member_compound);
 }
 
 static void test_translation_unit_frontend_boundary() {
@@ -11881,13 +11950,13 @@ static void test_expr_member_access() {
   node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   node_t *assign = body->body[2];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
-  ASSERT_EQ(ND_DEREF, assign->lhs->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, assign->lhs->kind);
   ASSERT_EQ(4, ps_node_type_size(assign->lhs));
-  ASSERT_EQ(ND_ADD, assign->lhs->lhs->kind);
+  ASSERT_EQ(ND_LVAR, assign->lhs->lhs->kind);
 
   node_t *ret = body->body[3];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_DEREF, ret->lhs->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->kind);
 
   parsed_code = parse_program_input(
       "int f(void) { static struct { int n; int m; } s = {3, 4}; "
@@ -11918,7 +11987,7 @@ static void test_expr_member_access() {
   }
   ASSERT_TRUE(ret != NULL);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
-  ASSERT_EQ(ND_DEREF, ret->lhs->lhs->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->lhs->kind);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(ret->lhs->lhs));
 
   parsed_code = parse_program_input(
@@ -11955,7 +12024,7 @@ static void test_expr_member_access() {
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   assign = body->body[4];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
-  ASSERT_EQ(ND_DEREF, assign->lhs->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, assign->lhs->kind);
   ASSERT_EQ(4, ps_node_type_size(assign->lhs));
 
   parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
@@ -11975,10 +12044,8 @@ static void test_expr_member_access() {
   ASSERT_EQ(ND_FUNCALL, call->kind);
   ASSERT_EQ(1, as_function_call(call)->argument_count);
   node_t *array_member = as_function_call(call)->arguments[0];
-  ASSERT_EQ(ND_DEREF, array_member->kind);
-  ASSERT_TRUE(ps_node_deref_decays_to_address(array_member));
+  ASSERT_EQ(ND_MEMBER_ACCESS, array_member->kind);
   ASSERT_EQ(1, ps_node_type_size(array_member));
-  ASSERT_EQ(1, ps_node_deref_size(array_member));
 
   parsed_code = parse_program_input(
       "int main(void) { struct B { signed int x:3; }; "
@@ -16241,7 +16308,7 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *member = body->body[2];
-  ASSERT_EQ(ND_DEREF, member->kind);
+  ASSERT_EQ(ND_MEMBER_ACCESS, member->kind);
   const psx_type_t *array_ty = ps_node_get_type(member);
   ASSERT_TRUE(array_ty != NULL);
   ASSERT_TRUE(ps_node_get_type(member) != NULL);

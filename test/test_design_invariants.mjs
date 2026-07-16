@@ -1320,7 +1320,6 @@ const loweringStateSources = await Promise.all([
   readFile("src/lowering/compound_literal_lowering.c", "utf8"),
   readFile("src/lowering/cast_lowering.c", "utf8"),
   readFile("src/lowering/assignment_lowering.c", "utf8"),
-  readFile("src/lowering/member_access_lowering.c", "utf8"),
 ]);
 if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
@@ -2186,10 +2185,6 @@ const memberAccessAstHeader = await readFile(
   "src/parser/ast.h",
   "utf8",
 );
-const memberAccessTargetLoweringSource = await readFile(
-  "src/lowering/member_access_lowering.c",
-  "utf8",
-);
 const memberNodeUtilsSource = await readFile(
   "src/parser/node_utils.c",
   "utf8",
@@ -2242,22 +2237,25 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
-      memberAccessTargetLoweringSource,
+      resolvedTreeMaterialization,
     ) ||
     !/\bpsx_record_layout_member\s*\(/.test(
-      memberAccessTargetLoweringSource,
+      resolvedTreeMaterialization,
     ) ||
     /member->(?:offset|bit_offset|bit_width)\s*=/.test(
-      memberAccessTargetLoweringSource,
+      resolvedTreeMaterialization,
     ) ||
     /\btag_member_info_t\b/.test(
-      memberAccessTargetLoweringSource,
+      resolvedTreeMaterialization,
     ) ||
-    !/\bps_node_new_tag_member_deref_with_layout_for_in\s*\(/.test(
-      memberAccessTargetLoweringSource,
+    !/spec->member_offset\s*=\s*member->offset/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/spec->bit_offset\s*=\s*\(unsigned char\)member->bit_offset/.test(
+      resolvedTreeMaterialization,
     )) {
   throw new Error(
-    "member access semantics must retain RecordId and ordinal while lowering resolves target offsets",
+    "member access semantics must retain RecordId and ordinal while Typed HIR materialization resolves target offsets",
   );
 }
 if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
@@ -3327,10 +3325,6 @@ const parserTypeImplementationSource = await readFile(
   "src/parser/type.c",
   "utf8",
 );
-const memberAccessLoweringSource = await readFile(
-  "src/lowering/member_access_lowering.c",
-  "utf8",
-);
 const explicitDiagnosticCompoundLiteralLoweringSource = await readFile(
   "src/lowering/compound_literal_lowering.c",
   "utf8",
@@ -3664,7 +3658,6 @@ if ([
       vlaLoweringSource,
       globalObjectLoweringSource,
       explicitDiagnosticCompoundLiteralLoweringSource,
-      memberAccessLoweringSource,
       explicitDiagnosticCastLoweringSource,
       irBuilderSource,
       compilerMainSource,
@@ -4017,7 +4010,6 @@ const typeBuilderUsers = new Set([
   "src/semantic/type_identity.c",
   "src/lowering/vla_lowering.c",
   "src/lowering/cast_lowering.c",
-  "src/lowering/member_access_lowering.c",
   "test/test_parser.c",
 ]);
 const typeBuilderFiles = [...sourceFiles, "test/test_parser.c"];
@@ -4622,7 +4614,6 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
 const targetSensitiveLoweringSources = [
   loweringRuntimeSource,
   explicitDiagnosticCastLoweringSource,
-  memberAccessLoweringSource,
   declarationPipelineSource,
   irBuilderSource,
 ].join("\n");
@@ -5740,6 +5731,26 @@ if (!/MAP_EXPR\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
     "typed subscript must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
+if (!/MAP_EXPR\s*\(\s*ND_MEMBER_ACCESS\s*,\s*PSX_HIR_MEMBER_ACCESS\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/\bPSX_HIR_MEMBER_ACCESS\b/.test(hirHeader) ||
+    !/\bmember_address\s*\(/.test(hirIrBuilder) ||
+    !/kind\s*==\s*PSX_HIR_MEMBER_ACCESS/.test(hirIrBuilder) ||
+    !/psx_hir_node_member_offset\s*\(/.test(hirIrBuilder) ||
+    !/case\s+ND_MEMBER_ACCESS\s*:[^]*?node->lhs\s*=\s*lower_tree[^]*?break\s*;/.test(
+      semanticLoweringPassSource,
+    ) ||
+    /\blower_member_access_expression(?:_in)?\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/member_access_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "typed member access must materialize directly into Typed HIR without parser-shaped lowering",
+  );
+}
 if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
     !/source->kind\s*==\s*ND_ASSIGN[^]*?is_source_compound_assignment[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
       resolvedTreeMaterialization,
@@ -5750,6 +5761,14 @@ if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
     )) {
   throw new Error(
     "subscript compound assignment must preserve one lvalue evaluation through Typed HIR",
+  );
+}
+if (!/node->lhs->kind\s*==\s*ND_SUBSCRIPT\s*\|\|[^]*?node->lhs->kind\s*==\s*ND_MEMBER_ACCESS[^]*?return\s+node\s*;/.test(
+      assignmentLoweringSource,
+    ) ||
+    !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder)) {
+  throw new Error(
+    "member compound assignment must preserve one lvalue evaluation through Typed HIR",
   );
 }
 if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
@@ -5984,9 +6003,6 @@ if (!functionAnalysisBoundary ||
     ) ||
     !/void\s+psx_validate_assignment_in_context\s*\([^]*?const\s+node_t\s*\*node/.test(
       assignmentValidationSource,
-    ) ||
-    !/materialize_ternary_rvalue\s*\([^]*?ps_node_bind_type\s*\(\s*\(node_t\s*\*\)select\s*,\s*ps_node_get_type\(base\)\s*\)/.test(
-      memberAccessLoweringSource,
     )) {
   throw new Error(
     "semantic pipeline must resolve once before lowering and use read-only validation afterward",

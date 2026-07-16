@@ -55,6 +55,7 @@ typedef enum {
   PSX_HIR_FUNCTION_REF,
   PSX_HIR_DEREF,
   PSX_HIR_SUBSCRIPT,
+  PSX_HIR_MEMBER_ACCESS,
   PSX_HIR_ADDRESS,
   PSX_HIR_STRING,
   PSX_HIR_NUMBER,
@@ -141,6 +142,8 @@ int psx_hir_node_storage_offset(const psx_hir_node_t *node);
 int psx_hir_node_object_offset(const psx_hir_node_t *node);
 int psx_hir_node_object_size(const psx_hir_node_t *node);
 int psx_hir_node_object_align(const psx_hir_node_t *node);
+int psx_hir_node_member_offset(const psx_hir_node_t *node);
+int psx_hir_node_member_from_pointer(const psx_hir_node_t *node);
 int psx_hir_node_vla_stride_frame_offset(const psx_hir_node_t *node);
 int psx_hir_node_vla_stride_source_offset(const psx_hir_node_t *node);
 int psx_hir_node_vla_stride_element_size(const psx_hir_node_t *node);

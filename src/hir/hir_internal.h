@@ -19,6 +19,7 @@ typedef struct {
   int object_offset;
   int object_size;
   int object_align;
+  int member_offset;
   int vla_stride_frame_offset;
   int vla_stride_source_offset;
   int vla_stride_element_size;
@@ -31,6 +32,7 @@ typedef struct {
   unsigned char bit_width;
   unsigned char bit_offset;
   unsigned char bit_is_signed;
+  unsigned char member_from_pointer;
   unsigned char is_static_function;
 } psx_hir_node_spec_t;
 

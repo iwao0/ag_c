@@ -41,6 +41,24 @@ static int type_size(
   return lowering_type_size(lowering->lowering_context, type);
 }
 
+static int resolved_member_offset(
+    psx_lowering_context_t *lowering_context,
+    const node_member_access_t *access, int *offset) {
+  if (!lowering_context || !access || !offset ||
+      access->resolved_record_id == PSX_RECORD_ID_INVALID ||
+      access->resolved_member_index < 0)
+    return 0;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      ps_lowering_record_layouts(lowering_context),
+      access->resolved_record_id,
+      ps_lowering_target(lowering_context));
+  const psx_record_member_layout_t *layout_member =
+      psx_record_layout_member(layout, access->resolved_member_index);
+  if (!layout_member) return 0;
+  *offset = layout_member->offset;
+  return 1;
+}
+
 static int resolve_static_address_constant(
     psx_lowering_context_t *lowering_context, node_t *node,
     char **symbol, int *symbol_len, long long *offset) {
@@ -50,6 +68,7 @@ static int resolve_static_address_constant(
     case ND_ADDR:
       if (node->lhs &&
           (node->lhs->kind == ND_SUBSCRIPT ||
+           node->lhs->kind == ND_MEMBER_ACCESS ||
            node->lhs->kind == ND_DEREF))
         return resolve_static_address_constant(
             lowering_context,
@@ -79,6 +98,19 @@ static int resolve_static_address_constant(
           ps_lowering_target(lowering_context));
       if (!ok || stride <= 0) return 0;
       *offset += index * stride;
+      return 1;
+    }
+    case ND_MEMBER_ACCESS: {
+      const node_member_access_t *access =
+          (const node_member_access_t *)node;
+      int member_offset = 0;
+      if (!resolve_static_address_constant(
+              lowering_context, node->lhs,
+              symbol, symbol_len, offset) ||
+          !resolved_member_offset(
+              lowering_context, access, &member_offset))
+        return 0;
+      *offset += member_offset;
       return 1;
     }
     case ND_CAST:

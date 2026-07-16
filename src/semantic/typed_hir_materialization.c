@@ -120,6 +120,7 @@ static int map_kind(
     MAP_EXPR(ND_UNARY_DEREF, PSX_HIR_DEREF);
     MAP_EXPR(ND_DEREF, PSX_HIR_DEREF);
     MAP_EXPR(ND_SUBSCRIPT, PSX_HIR_SUBSCRIPT);
+    MAP_EXPR(ND_MEMBER_ACCESS, PSX_HIR_MEMBER_ACCESS);
     MAP_EXPR(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
     MAP_EXPR(ND_ADDR, PSX_HIR_ADDRESS);
     MAP_EXPR(ND_STRING, PSX_HIR_STRING);
@@ -538,8 +539,9 @@ static int attach_global_symbol(
   return 1;
 }
 
-static void copy_payload(
-    const node_t *source, psx_hir_node_spec_t *spec) {
+static int copy_payload(
+    hir_materializer_t *builder, const node_t *source,
+    psx_hir_node_spec_t *spec) {
   switch (source->kind) {
     case ND_ASSIGN:
       if (source->is_source_compound_assignment) {
@@ -567,6 +569,32 @@ static void copy_payload(
         spec->object_align = ps_lvar_align_bytes(local->var);
       } else {
         spec->object_offset = local->offset;
+      }
+      break;
+    }
+    case ND_MEMBER_ACCESS: {
+      const node_member_access_t *access =
+          (const node_member_access_t *)source;
+      const psx_record_layout_t *layout =
+          psx_record_layout_table_lookup(
+              ps_ctx_record_layout_table_in(builder->semantic_context),
+              access->resolved_record_id,
+              ps_ctx_target_info(builder->semantic_context));
+      const psx_record_member_layout_t *member =
+          psx_record_layout_member(layout, access->resolved_member_index);
+      if (!access->resolved_member || !member) {
+        set_failure(
+            builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+        return 0;
+      }
+      spec->member_offset = member->offset;
+      spec->member_from_pointer = access->from_pointer ? 1 : 0;
+      if (access->resolved_member->bit_width > 0) {
+        spec->bit_width =
+            (unsigned char)access->resolved_member->bit_width;
+        spec->bit_offset = (unsigned char)member->bit_offset;
+        spec->bit_is_signed =
+            access->resolved_member->bit_is_signed ? 1 : 0;
       }
       break;
     }
@@ -649,6 +677,7 @@ static void copy_payload(
     default:
       break;
   }
+  return 1;
 }
 
 static int copy_vla_payload(
@@ -737,12 +766,14 @@ static psx_resolved_hir_node_t *build_node(
       return NULL;
     }
   }
-  copy_payload(source, &spec);
+  if (!copy_payload(builder, source, &spec))
+    return NULL;
   {
     int bit_width = 0;
     int bit_offset = 0;
     int bit_is_signed = 0;
-    if (ps_node_bitfield_info(
+    if (source->kind != ND_MEMBER_ACCESS &&
+        ps_node_bitfield_info(
             (node_t *)source, &bit_width, &bit_offset,
             &bit_is_signed)) {
       spec.bit_width = (unsigned char)bit_width;

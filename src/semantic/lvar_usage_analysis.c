@@ -32,6 +32,12 @@ static node_t *assigned_aggregate_lvar_from_member_address(node_t *address) {
 static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
   if (!base) return NULL;
   if (is_aggregate_lvar(base)) return base;
+  if (base->kind == ND_MEMBER_ACCESS) {
+    node_member_access_t *access = (node_member_access_t *)base;
+    return access->from_pointer
+               ? NULL
+               : assigned_aggregate_lvar_from_member_base(base->lhs);
+  }
   if (base->kind == ND_COMMA && base->rhs)
     return assigned_aggregate_lvar_from_member_base(base->rhs);
   if (is_dereference(base) && base->lhs)
@@ -42,6 +48,12 @@ static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
 static node_t *assigned_lvar_from_target(node_t *target) {
   if (!target) return NULL;
   if (target->kind == ND_LVAR) return target;
+  if (target->kind == ND_MEMBER_ACCESS) {
+    node_member_access_t *access = (node_member_access_t *)target;
+    return access->from_pointer
+               ? NULL
+               : assigned_aggregate_lvar_from_member_base(target->lhs);
+  }
   if (is_dereference(target) && target->lhs &&
       target->lhs->kind == ND_ADDR && target->lhs->lhs &&
       target->lhs->lhs->kind == ND_LVAR)
@@ -73,6 +85,18 @@ static void record_address_taken(
     if (var)
       ps_decl_record_lvar_usage_in_region_in(
           local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+    return;
+  }
+  if (operand->kind == ND_MEMBER_ACCESS) {
+    node_member_access_t *access = (node_member_access_t *)operand;
+    if (!access->from_pointer) {
+      node_t *lvar =
+          assigned_aggregate_lvar_from_member_base(operand->lhs);
+      lvar_t *var = ps_node_lvar_symbol(lvar);
+      if (var)
+        ps_decl_record_lvar_usage_in_region_in(
+            local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+    }
     return;
   }
   if (operand->kind == ND_ADDR && operand->lhs) {

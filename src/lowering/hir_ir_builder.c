@@ -147,6 +147,8 @@ static int store_direct_value(
 static ir_val_t materialize_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_abi_param_info_t target_type);
+static ir_val_t aggregate_value_address(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
 
 static int current_block_is_terminated(const hir_ir_context_t *context) {
   if (!context->function->cur_block ||
@@ -1076,7 +1078,8 @@ static int hir_node_is_lvalue(const psx_hir_node_t *node) {
   if (!node) return 0;
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   return kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL ||
-         kind == PSX_HIR_DEREF || kind == PSX_HIR_SUBSCRIPT;
+         kind == PSX_HIR_DEREF || kind == PSX_HIR_SUBSCRIPT ||
+         kind == PSX_HIR_MEMBER_ACCESS;
 }
 
 static ir_val_t subscript_address(
@@ -1154,6 +1157,22 @@ static ir_val_t subscript_address(
   return lea->dst;
 }
 
+static ir_val_t member_address(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  const psx_hir_node_t *base = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!base) return unsupported_expr(context);
+  ir_val_t base_address =
+      psx_hir_node_member_from_pointer(node)
+          ? build_expr(context, base)
+          : aggregate_value_address(context, base);
+  if (context->status != IR_HIR_BUILD_OK ||
+      base_address.type != IR_TY_PTR)
+    return unsupported_expr(context);
+  return pointer_with_offset(
+      context, base_address, psx_hir_node_member_offset(node));
+}
+
 static ir_val_t lvalue_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node) return unsupported_expr(context);
@@ -1175,6 +1194,8 @@ static ir_val_t lvalue_address(
   }
   if (psx_hir_node_kind(node) == PSX_HIR_SUBSCRIPT)
     return subscript_address(context, node);
+  if (psx_hir_node_kind(node) == PSX_HIR_MEMBER_ACCESS)
+    return member_address(context, node);
   return unsupported_expr(context);
 }
 
@@ -2545,9 +2566,6 @@ static ir_val_t build_scalar_or_void_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_abi_param_info_t result_type);
 
-static ir_val_t aggregate_value_address(
-    hir_ir_context_t *context, const psx_hir_node_t *node);
-
 static ir_val_t build_aggregate_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_abi_param_info_t target_type) {
@@ -2651,9 +2669,27 @@ static ir_val_t aggregate_value_address(
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   if (hir_node_is_lvalue(node))
     return lvalue_address(context, node);
+  ir_abi_param_info_t type = classify_node_type(context, node);
+  if (is_register_aggregate_abi_type(type)) {
+    ir_val_t value = build_expr(context, node);
+    int alignment = ps_type_alignof_id_with_records(
+        context->options->semantic_types,
+        context->options->record_layouts,
+        psx_hir_node_qual_type(node).type_id,
+        context->options->target);
+    if (alignment <= 0)
+      return unsupported_expr(context);
+    int temporary = allocate_scalar_temp(
+        context, type.source_size, alignment);
+    if (context->status != IR_HIR_BUILD_OK || temporary < 0 ||
+        !store_direct_value(
+            context, ir_val_vreg(temporary, IR_TY_PTR), value))
+      return ir_val_none();
+    return ir_val_vreg(temporary, IR_TY_PTR);
+  }
   if (kind == PSX_HIR_CALL)
     return build_scalar_or_void_call(
-        context, node, classify_node_type(context, node));
+        context, node, type);
   if (kind == PSX_HIR_ASSIGN)
     return build_aggregate_assignment(
         context, node, classify_node_type(context, node));
@@ -3282,6 +3318,35 @@ static ir_val_t build_expr(
     if (result_kind == PSX_TYPE_ARRAY ||
         result_kind == PSX_TYPE_FUNCTION)
       return pointer;
+    int result = new_vreg(context);
+    if (result < 0) return ir_val_none();
+    ir_inst_t *load = ir_inst_new(IR_LOAD);
+    if (!load) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    load->dst = ir_val_vreg(result, scalar_storage_type(type));
+    load->src1 = pointer;
+    load->is_unsigned = type.is_unsigned ? 1 : 0;
+    if (!append_instruction(context, load)) return ir_val_none();
+    return load->dst;
+  }
+
+  if (psx_hir_node_kind(node) == PSX_HIR_MEMBER_ACCESS) {
+    ir_val_t pointer = lvalue_address(context, node);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    psx_type_kind_t result_kind = node_type_kind(context, node);
+    if (result_kind == PSX_TYPE_ARRAY ||
+        result_kind == PSX_TYPE_FUNCTION)
+      return pointer;
+    int bit_width = 0;
+    int bit_offset = 0;
+    int bit_is_signed = 0;
+    if (psx_hir_node_bitfield_info(
+            node, &bit_width, &bit_offset, &bit_is_signed))
+      return emit_bitfield_load(
+          context, pointer, bit_width, bit_offset, bit_is_signed,
+          scalar_storage_type(type));
     int result = new_vreg(context);
     if (result < 0) return ir_val_none();
     ir_inst_t *load = ir_inst_new(IR_LOAD);

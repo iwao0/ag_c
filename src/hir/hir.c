@@ -21,6 +21,7 @@ struct psx_hir_node_t {
   int object_offset;
   int object_size;
   int object_align;
+  int member_offset;
   int vla_stride_frame_offset;
   int vla_stride_source_offset;
   int vla_stride_element_size;
@@ -33,6 +34,7 @@ struct psx_hir_node_t {
   unsigned char bit_width;
   unsigned char bit_offset;
   unsigned char bit_is_signed;
+  unsigned char member_from_pointer;
   unsigned char is_static_function;
 };
 
@@ -281,6 +283,7 @@ static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_FUNCTION_REF:
     case PSX_HIR_DEREF:
     case PSX_HIR_SUBSCRIPT:
+    case PSX_HIR_MEMBER_ACCESS:
     case PSX_HIR_ADDRESS:
     case PSX_HIR_STRING:
     case PSX_HIR_NUMBER:
@@ -320,6 +323,7 @@ static psx_hir_node_id_t add_node(
   node->object_offset = spec->object_offset;
   node->object_size = spec->object_size;
   node->object_align = spec->object_align;
+  node->member_offset = spec->member_offset;
   node->vla_stride_frame_offset = spec->vla_stride_frame_offset;
   node->vla_stride_source_offset = spec->vla_stride_source_offset;
   node->vla_stride_element_size = spec->vla_stride_element_size;
@@ -330,6 +334,7 @@ static psx_hir_node_id_t add_node(
   node->bit_width = spec->bit_width;
   node->bit_offset = spec->bit_offset;
   node->bit_is_signed = spec->bit_is_signed;
+  node->member_from_pointer = spec->member_from_pointer;
   node->is_static_function = spec->is_static_function;
   if (spec->child_count) {
     node->children = malloc(spec->child_count * sizeof(*node->children));
@@ -483,6 +488,14 @@ int psx_hir_node_object_size(const psx_hir_node_t *node) {
 
 int psx_hir_node_object_align(const psx_hir_node_t *node) {
   return node ? node->object_align : 0;
+}
+
+int psx_hir_node_member_offset(const psx_hir_node_t *node) {
+  return node ? node->member_offset : 0;
+}
+
+int psx_hir_node_member_from_pointer(const psx_hir_node_t *node) {
+  return node && node->member_from_pointer;
 }
 
 int psx_hir_node_vla_stride_frame_offset(const psx_hir_node_t *node) {

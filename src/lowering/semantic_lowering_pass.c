@@ -5,7 +5,6 @@
 #include "compound_literal_lowering.h"
 #include "expr_lowering.h"
 #include "initializer_lowering.h"
-#include "member_access_lowering.h"
 #include "runtime_context.h"
 #include "complex_part_lowering.h"
 #include "../parser/node_utils.h"
@@ -186,9 +185,7 @@ static node_t *lower_tree(
     case ND_MEMBER_ACCESS:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      return lower_member_access_expression_in(
-          context->lowering_context, context->local_registry,
-          (node_member_access_t *)node, fallback_diag_tok);
+      break;
     case ND_UNARY_DEREF:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
