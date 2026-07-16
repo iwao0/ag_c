@@ -3871,6 +3871,19 @@ static void assert_typed_alignof(
   ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
               PSX_TYPE_ID_INVALID);
 }
+
+static void assert_typed_sizeof(
+    node_t *node, int expected_size) {
+  ASSERT_TRUE(node != NULL);
+  node_t *query_node =
+      find_binary_tree_node_kind(node, ND_SIZEOF_QUERY);
+  ASSERT_TRUE(query_node != NULL);
+  node_sizeof_query_t *query =
+      (node_sizeof_query_t *)query_node;
+  ASSERT_EQ(expected_size, query->resolved_size);
+  ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
+              PSX_TYPE_ID_INVALID);
+}
 static node_lvar_t *as_lvar(node_t *n) { return (node_lvar_t *)n; }
 static node_function_definition_t *as_function_definition(node_t *n) {
   ASSERT_TRUE(n != NULL);
@@ -5661,11 +5674,8 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(expr_query->operand) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(expr_query->operand)->kind);
   ASSERT_EQ(4, expr_query->resolved_size);
-  node_t *lowered_expr = analyze_test_expression(raw_expr, NULL);
-  ASSERT_EQ(ND_NUM, lowered_expr->kind);
-  ASSERT_EQ(4, as_num(lowered_expr)->val);
-  ASSERT_TRUE(ps_node_qual_type(lowered_expr).type_id !=
-              PSX_TYPE_ID_INVALID);
+  node_t *typed_expr = analyze_test_expression(raw_expr, NULL);
+  assert_typed_sizeof(typed_expr, 4);
 
   node_t *direct_type_raw =
       parse_expr_input_with_existing_locals("sizeof(int[3])");
@@ -5710,10 +5720,9 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM,
             type_query->type_name.syntax->declarator
                 .array_bounds[0].expression.node->kind);
-  node_t *lowered_type = analyze_test_expression(raw_type, NULL);
+  node_t *typed_type = analyze_test_expression(raw_type, NULL);
   ASSERT_TRUE(type_query->type_name.resolved_type == NULL);
-  ASSERT_EQ(ND_NUM, lowered_type->kind);
-  ASSERT_EQ(12, as_num(lowered_type)->val);
+  assert_typed_sizeof(typed_type, 12);
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
@@ -5724,9 +5733,73 @@ static void test_sizeof_semantic_lowering_boundary() {
       parse_expr_input_with_existing_locals("sizeof(&a)");
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_addr->kind);
   ASSERT_TRUE(((node_sizeof_query_t *)raw_addr)->operand->is_explicit_addr_expr);
-  node_t *lowered_addr = analyze_test_expression(raw_addr, NULL);
-  ASSERT_EQ(ND_NUM, lowered_addr->kind);
-  ASSERT_EQ(8, as_num(lowered_addr)->val);
+  node_t *typed_addr = analyze_test_expression(raw_addr, NULL);
+  assert_typed_sizeof(typed_addr, 8);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  node_t **sizeof_program = parse_program_input(
+      "unsigned long __typed_hir_sizeof(void) { "
+      "return sizeof(int[3]); }");
+  ASSERT_TRUE(sizeof_program != NULL);
+  node_block_t *sizeof_body =
+      as_block(as_function_definition(sizeof_program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, sizeof_body->body[0]->kind);
+  assert_typed_sizeof(sizeof_body->body[0]->lhs, 12);
+  int found_size_literal = 0;
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_NUMBER &&
+        psx_hir_node_integer_value(hir_node) == 12) {
+      found_size_literal = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_size_literal);
+
+  hir_checkpoint = psx_hir_module_node_count(hir);
+  node_t **vla_program = parse_program_input(
+      "unsigned long __typed_hir_sizeof_vla(int n, int i) { "
+      "int a[n][n]; return sizeof(a[i]); }");
+  ASSERT_TRUE(vla_program != NULL);
+  node_block_t *vla_body =
+      as_block(as_function_definition(vla_program[0])->base.rhs);
+  node_t *vla_return = NULL;
+  for (int i = 0; vla_body->body[i]; i++) {
+    if (vla_body->body[i]->kind == ND_RETURN) {
+      vla_return = vla_body->body[i];
+      break;
+    }
+  }
+  ASSERT_TRUE(vla_return != NULL);
+  node_t *vla_query_node =
+      find_binary_tree_node_kind(vla_return->lhs, ND_SIZEOF_QUERY);
+  ASSERT_TRUE(vla_query_node != NULL);
+  node_sizeof_query_t *vla_query =
+      (node_sizeof_query_t *)vla_query_node;
+  ASSERT_TRUE(vla_query->runtime_size_slot != 0);
+  ASSERT_TRUE(vla_query->evaluates_vla_operand);
+  int found_runtime_slot = 0;
+  int found_index_prefix = 0;
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node) continue;
+    if (psx_hir_node_kind(hir_node) == PSX_HIR_LOCAL &&
+        psx_hir_node_storage_offset(hir_node) ==
+            vla_query->runtime_size_slot) {
+      found_runtime_slot = 1;
+    }
+    if (psx_hir_node_kind(hir_node) == PSX_HIR_COMMA)
+      found_index_prefix = 1;
+  }
+  ASSERT_TRUE(found_runtime_slot);
+  ASSERT_TRUE(found_index_prefix);
 
   node_t *raw_align =
       parse_expr_input_with_existing_locals("_Alignof(int[3])");
@@ -5750,8 +5823,6 @@ static void test_sizeof_semantic_lowering_boundary() {
       as_block(as_function_definition(program[0])->base.rhs);
   ASSERT_EQ(ND_RETURN, body->body[0]->kind);
   assert_typed_alignof(body->body[0]->lhs, 8);
-  psx_hir_module_t *hir =
-      ag_compilation_session_hir_module(test_suite_session);
   int found_alignment_literal = 0;
   for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
@@ -10967,52 +11038,40 @@ static void test_expr_sizeof() {
   printf("test_expr_sizeof...\n");
 
     node_t *n1 = parse_expr_input("sizeof(int)");
-  ASSERT_EQ(ND_NUM, n1->kind);
-  ASSERT_EQ(4, as_num(n1)->val);
+  assert_typed_sizeof(n1, 4);
 
     node_t *n0 = parse_expr_input("sizeof(void)");
-  ASSERT_EQ(ND_NUM, n0->kind);
-  ASSERT_EQ(1, as_num(n0)->val);
+  assert_typed_sizeof(n0, 1);
 
     node_t *n2 = parse_expr_input("sizeof(int*)");
-  ASSERT_EQ(ND_NUM, n2->kind);
-  ASSERT_EQ(8, as_num(n2)->val);
+  assert_typed_sizeof(n2, 8);
 
     node_t *n2q1 = parse_expr_input("sizeof(int * const)");
-  ASSERT_EQ(ND_NUM, n2q1->kind);
-  ASSERT_EQ(8, as_num(n2q1)->val);
+  assert_typed_sizeof(n2q1, 8);
 
     node_t *n2q2 = parse_expr_input("sizeof(int * volatile)");
-  ASSERT_EQ(ND_NUM, n2q2->kind);
-  ASSERT_EQ(8, as_num(n2q2)->val);
+  assert_typed_sizeof(n2q2, 8);
 
     node_t *n2q3 = parse_expr_input("sizeof(int * restrict)");
-  ASSERT_EQ(ND_NUM, n2q3->kind);
-  ASSERT_EQ(8, as_num(n2q3)->val);
+  assert_typed_sizeof(n2q3, 8);
 
     node_t *n2a = parse_expr_input("sizeof(int[10])");
-  ASSERT_EQ(ND_NUM, n2a->kind);
-  ASSERT_EQ(40, as_num(n2a)->val);
+  assert_typed_sizeof(n2a, 40);
 
     node_t *n2b = parse_expr_input("sizeof(int (*)[3])");
-  ASSERT_EQ(ND_NUM, n2b->kind);
-  ASSERT_EQ(8, as_num(n2b)->val);
+  assert_typed_sizeof(n2b, 8);
 
     node_t *n2c = parse_expr_input("sizeof((int[3]))");
-  ASSERT_EQ(ND_NUM, n2c->kind);
-  ASSERT_EQ(12, as_num(n2c)->val);
+  assert_typed_sizeof(n2c, 12);
 
     node_t *n3 = parse_expr_input("sizeof(int (*)(int))");
-  ASSERT_EQ(ND_NUM, n3->kind);
-  ASSERT_EQ(8, as_num(n3)->val);
+  assert_typed_sizeof(n3, 8);
 
     node_t *n4 = parse_expr_input("sizeof(_Complex double)");
-  ASSERT_EQ(ND_NUM, n4->kind);
-  ASSERT_EQ(16, as_num(n4)->val);
+  assert_typed_sizeof(n4, 16);
 
     node_t *n5 = parse_expr_input("sizeof(float _Imaginary)");
-  ASSERT_EQ(ND_NUM, n5->kind);
-  ASSERT_EQ(8, as_num(n5)->val);
+  assert_typed_sizeof(n5, 8);
 
     node_t *a1 = parse_expr_input("_Alignof(int)");
   assert_typed_alignof(a1, 4);
@@ -11046,8 +11105,7 @@ static void test_expr_sizeof() {
   parsed_code = parse_program_input("int main() { int x; return sizeof(x); }");
   node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(4, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 4);
   expect_parse_ok_without_message("int main(void){ int x; return sizeof(x); }", "W3004");
   expect_parse_ok_without_message("int main(void){ int a[3]; return sizeof(a); }", "W3003");
   expect_parse_ok_without_message("int main(void){ int n=3; int a[n]; return sizeof(a); }", "W3003");
@@ -11058,8 +11116,7 @@ static void test_expr_sizeof() {
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(4, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 4);
 
   parsed_code = parse_program_input(
       "typedef struct Forward Forward; "
@@ -11067,8 +11124,7 @@ static void test_expr_sizeof() {
       "int main(void) { Forward *body = 0; return sizeof(*body); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(16, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 16);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return _Alignof(struct S); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
@@ -11078,26 +11134,22 @@ static void test_expr_sizeof() {
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(8, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 8);
 
   parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3 (*)[2]); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(8, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 8);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S[3]); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(12, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 12);
 
   parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3[2]); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(24, as_num(ret->lhs)->val);
+  assert_typed_sizeof(ret->lhs, 24);
 
     // (char)300: signed char へ切り詰めて ND_NUM へ畳み込む (300 → 44)。
     node_t *c1 = parse_expr_input("(char)300");
@@ -13546,8 +13598,7 @@ static void test_type_metadata_bridge() {
     }
   }
   ASSERT_TRUE(vla_ptr_sizeof_return != NULL);
-  ASSERT_EQ(ND_NUM, vla_ptr_sizeof_return->lhs->kind);
-  ASSERT_EQ(8, as_num(vla_ptr_sizeof_return->lhs)->val);
+  assert_typed_sizeof(vla_ptr_sizeof_return->lhs, 8);
   node_t *vla_ptr_node = psx_node_new_lvar_identifier_ref_for(vla_ptr_lvar);
   int vla_ptr_inner =
       canonical_node_array_subscript_stride_bytes(vla_ptr_node, 0);

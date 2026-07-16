@@ -7,7 +7,6 @@
 #include "initializer_lowering.h"
 #include "member_access_lowering.h"
 #include "runtime_context.h"
-#include "sizeof_lowering.h"
 #include "subscript_lowering.h"
 #include "unary_operator_lowering.h"
 #include "../parser/node_utils.h"
@@ -80,20 +79,14 @@ static node_t *lower_additive_expression_node(
   return lowered;
 }
 
-static node_t *lower_sizeof_vla_indices(
+static void lower_sizeof_vla_indices(
     const psx_semantic_lowering_context_t *context,
     node_t *operand, const token_t *fallback_diag_tok) {
-  if (!operand || operand->kind != ND_SUBSCRIPT) return NULL;
-  node_t *prefix = lower_sizeof_vla_indices(
+  if (!operand || operand->kind != ND_SUBSCRIPT) return;
+  lower_sizeof_vla_indices(
       context, operand->lhs, fallback_diag_tok);
-  node_t *index = lower_tree(
+  operand->rhs = lower_tree(
       context, operand->rhs, fallback_diag_tok);
-  return prefix
-             ? ps_node_new_binary_for_target_in(
-                   ps_lowering_arena(context->lowering_context),
-                   ps_lowering_target(context->lowering_context),
-                   ND_COMMA, prefix, index)
-             : index;
 }
 
 static node_t *lower_source_cast_node(
@@ -139,15 +132,11 @@ static node_t *lower_tree(
         query->runtime_size_expr = lower_tree(
             context, query->runtime_size_expr, fallback_diag_tok);
       }
-      node_t *prefix = query->evaluates_vla_operand
-                           ? lower_sizeof_vla_indices(
-                                 context, query->operand,
-                                 fallback_diag_tok)
-                           : NULL;
-      return lower_tree(
-          context, lower_sizeof_query_expression(
-                       context->lowering_context, query, prefix),
-          fallback_diag_tok);
+      if (query->evaluates_vla_operand) {
+        lower_sizeof_vla_indices(
+            context, query->operand, fallback_diag_tok);
+      }
+      break;
     }
     case ND_ALIGNOF_QUERY:
       break;
@@ -379,6 +368,22 @@ void psx_lower_implicit_conversions(
             lowering_context,
             selection->associations[selected].expression,
             current_func, fallback_diag_tok, options);
+      }
+      break;
+    }
+    case ND_SIZEOF_QUERY: {
+      node_sizeof_query_t *query = (node_sizeof_query_t *)node;
+      psx_lower_implicit_conversions(
+          lowering_context, query->runtime_size_expr, current_func,
+          fallback_diag_tok, options);
+      if (query->evaluates_vla_operand) {
+        node_t *operand = query->operand;
+        while (operand && operand->kind == ND_SUBSCRIPT) {
+          psx_lower_implicit_conversions(
+              lowering_context, operand->rhs, current_func,
+              fallback_diag_tok, options);
+          operand = operand->lhs;
+        }
       }
       break;
     }

@@ -1,6 +1,17 @@
 #include "tree_walk.h"
 
 static int walk_node(
+    const node_t *node, psx_semantic_tree_visitor_t visitor, void *user);
+
+static int walk_sizeof_vla_indices(
+    const node_t *operand, psx_semantic_tree_visitor_t visitor,
+    void *user) {
+  if (!operand || operand->kind != ND_SUBSCRIPT) return 1;
+  return walk_sizeof_vla_indices(operand->lhs, visitor, user) &&
+         walk_node(operand->rhs, visitor, user);
+}
+
+static int walk_node(
     const node_t *node, psx_semantic_tree_visitor_t visitor, void *user) {
   if (!node) return 1;
   if (visitor && !visitor(node, user)) return 0;
@@ -40,6 +51,14 @@ static int walk_node(
             visitor, user);
       }
       return 1;
+    }
+    case ND_SIZEOF_QUERY: {
+      const node_sizeof_query_t *query =
+          (const node_sizeof_query_t *)node;
+      if (!walk_node(query->runtime_size_expr, visitor, user))
+        return 0;
+      return !query->evaluates_vla_operand ||
+             walk_sizeof_vla_indices(query->operand, visitor, user);
     }
     case ND_IF:
     case ND_FOR:

@@ -104,6 +104,16 @@ static void collect_array(
     psx_collect_lvar_usage_events_in(local_registry, nodes[i], region);
 }
 
+static void collect_sizeof_vla_indices(
+    psx_local_registry_t *local_registry,
+    node_t *operand, psx_lvar_usage_region_t *region) {
+  if (!operand || operand->kind != ND_SUBSCRIPT) return;
+  collect_sizeof_vla_indices(
+      local_registry, operand->lhs, region);
+  psx_collect_lvar_usage_events_in(
+      local_registry, operand->rhs, region);
+}
+
 void psx_collect_lvar_usage_events_in(
     psx_local_registry_t *local_registry,
     node_t *node, psx_lvar_usage_region_t *inherited_region) {
@@ -158,6 +168,16 @@ void psx_collect_lvar_usage_events_in(
         psx_collect_lvar_usage_events_in(
             local_registry,
             selection->associations[selected].expression, region);
+      }
+      return;
+    }
+    case ND_SIZEOF_QUERY: {
+      node_sizeof_query_t *query = (node_sizeof_query_t *)node;
+      psx_collect_lvar_usage_events_in(
+          local_registry, query->runtime_size_expr, region);
+      if (query->evaluates_vla_operand) {
+        collect_sizeof_vla_indices(
+            local_registry, query->operand, region);
       }
       return;
     }

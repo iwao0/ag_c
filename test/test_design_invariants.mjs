@@ -4021,7 +4021,6 @@ const typeBuilderUsers = new Set([
   "src/semantic/expression_operand_resolution.c",
   "src/semantic/type_identity.c",
   "src/lowering/vla_lowering.c",
-  "src/lowering/sizeof_lowering.c",
   "src/lowering/cast_lowering.c",
   "src/lowering/member_access_lowering.c",
   "test/test_parser.c",
@@ -5759,6 +5758,28 @@ if (!/MAP_EXPR\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
     )) {
   throw new Error(
     "resolved alignof queries must materialize directly as Typed HIR numbers",
+  );
+}
+if (!/source\s*&&\s*source->kind\s*==\s*ND_SIZEOF_QUERY/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/materialize_sizeof_value\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/runtime_size_slot/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/materialize_sizeof_vla_indices\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /\blower_sizeof_query_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/sizeof_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "resolved sizeof queries must materialize constant and VLA values directly into Typed HIR",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(

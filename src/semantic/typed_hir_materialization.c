@@ -140,6 +140,120 @@ static int map_kind(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source);
+static psx_resolved_hir_node_t *materialize_node_record(
+    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
+    psx_hir_node_role_t role, psx_qual_type_t qual_type,
+    const hir_children_t *children,
+    const psx_hir_symbol_spec_t *symbol,
+    const node_t *source);
+static int canonical_type_exists(
+    const hir_materializer_t *builder, psx_qual_type_t type);
+
+static psx_resolved_hir_node_t *materialize_expression(
+    hir_materializer_t *builder, psx_hir_node_kind_t kind,
+    psx_qual_type_t qual_type, const hir_children_t *children,
+    const node_t *source) {
+  psx_hir_node_spec_t spec = {
+      .kind = kind,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  return materialize_node_record(
+      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
+      children, NULL, source);
+}
+
+static psx_resolved_hir_node_t *materialize_comma(
+    hir_materializer_t *builder,
+    psx_resolved_hir_node_t *lhs, psx_resolved_hir_node_t *rhs,
+    psx_qual_type_t qual_type, const node_t *source) {
+  psx_resolved_hir_node_t *items[] = {lhs, rhs};
+  psx_hir_edge_kind_t edges[] = {
+      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+  hir_children_t children = {
+      .items = items,
+      .edges = edges,
+      .count = 2,
+      .capacity = 2,
+  };
+  return materialize_expression(
+      builder, PSX_HIR_COMMA, qual_type, &children, source);
+}
+
+static int materialize_sizeof_vla_indices(
+    hir_materializer_t *builder, const node_t *operand,
+    psx_resolved_hir_node_t **prefix, const node_t *source) {
+  if (!operand || operand->kind != ND_SUBSCRIPT) return 1;
+  if (!materialize_sizeof_vla_indices(
+          builder, operand->lhs, prefix, source))
+    return 0;
+  psx_resolved_hir_node_t *index =
+      build_node(builder, operand->rhs);
+  if (!index) return 0;
+  if (!*prefix) {
+    *prefix = index;
+    return 1;
+  }
+  *prefix = materialize_comma(
+      builder, *prefix, index, index->expression_type, source);
+  return *prefix != NULL;
+}
+
+static psx_resolved_hir_node_t *materialize_sizeof_value(
+    hir_materializer_t *builder, const node_sizeof_query_t *query,
+    psx_qual_type_t qual_type) {
+  if (query->runtime_size_expr)
+    return build_node(builder, query->runtime_size_expr);
+  if (query->runtime_size_slot != 0) {
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_LOCAL,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .storage_offset = query->runtime_size_slot,
+        .object_offset = query->runtime_size_slot,
+        .object_size = PSX_VLA_RUNTIME_SLOT_SIZE,
+        .object_align = PSX_VLA_RUNTIME_SLOT_SIZE,
+    };
+    return materialize_node_record(
+        builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
+        NULL, NULL, &query->base);
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_NUMBER,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .integer_value = query->resolved_size,
+  };
+  return materialize_node_record(
+      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
+      NULL, NULL, &query->base);
+}
+
+static psx_resolved_hir_node_t *materialize_sizeof_query(
+    hir_materializer_t *builder, const node_sizeof_query_t *query) {
+  const node_t *source = &query->base;
+  psx_qual_type_t qual_type = ps_node_qual_type(source);
+  if (!canonical_type_exists(builder, qual_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
+  }
+  psx_resolved_hir_node_t *value =
+      materialize_sizeof_value(builder, query, qual_type);
+  if (!value) return NULL;
+  if (!query->evaluates_vla_operand) return value;
+  psx_resolved_hir_node_t *prefix = NULL;
+  if (!materialize_sizeof_vla_indices(
+          builder, query->operand, &prefix, source))
+    return NULL;
+  if (!prefix) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
+  }
+  return materialize_comma(
+      builder, prefix, value, qual_type, source);
+}
 
 static int is_statement_expression_value(
     const node_t *statement_expression, const node_t *candidate) {
@@ -546,6 +660,10 @@ static int copy_vla_payload(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  if (source && source->kind == ND_SIZEOF_QUERY) {
+    return materialize_sizeof_query(
+        builder, (const node_sizeof_query_t *)source);
+  }
   if (source && source->kind == ND_GENERIC_SELECTION) {
     const node_generic_selection_t *selection =
         (const node_generic_selection_t *)source;
