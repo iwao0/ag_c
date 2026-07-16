@@ -1,6 +1,7 @@
 #ifndef PARSER_ENUM_CONST_H
 #define PARSER_ENUM_CONST_H
 
+#include "name_classifier.h"
 #include "../tokenizer/token.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
@@ -40,16 +41,20 @@ typedef struct {
 
 long long psx_parse_enum_const_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context);
 long long psx_parse_case_const_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context);
 long long psx_eval_parsed_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     token_t *start, token_t *end);
 void psx_parse_enum_body_in_contexts(
     psx_parsed_enum_body_t *body,
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context);
 void psx_dispose_parsed_enum_body(psx_parsed_enum_body_t *body);
 

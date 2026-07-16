@@ -22,6 +22,7 @@ void psx_parse_static_assert_syntax_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!declaration || !semantic_context || !global_registry ||
       !local_registry || !runtime_context ||
@@ -46,7 +47,7 @@ void psx_parse_static_assert_syntax_in_contexts(
   tk_expect_ctx(tokenizer_context, '(');
   declaration->condition = psx_expr_assign_in_contexts(
       semantic_context, global_registry, local_registry,
-      runtime_context,
+      runtime_context, name_classifier,
       local_declarations);
   tk_expect_ctx(tokenizer_context, ',');
   if (current_token(runtime_context)->kind != TK_STRING) {

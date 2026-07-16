@@ -130,6 +130,7 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   node_t *node = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ';');
   return node;
@@ -209,6 +210,7 @@ node_t *psx_parse_statement_expression_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
@@ -222,10 +224,7 @@ node_t *psx_parse_statement_expression_in_contexts(
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
       .name_classifier =
-          local_declarations &&
-                  local_declarations->name_classifier.is_typedef_name
-              ? local_declarations->name_classifier
-              : ps_ctx_name_classifier(semantic_context),
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   if (!context.tokenizer_context) return NULL;
   tk_expect_ctx(context.tokenizer_context, '(');
@@ -262,6 +261,7 @@ static node_t *parse_stmt_return(
   node->lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ';');
   return node;
@@ -276,6 +276,7 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ')');
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
@@ -298,6 +299,7 @@ static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
@@ -320,6 +322,7 @@ static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ')');
   tk_expect_ctx(context->tokenizer_context, ';');
@@ -342,6 +345,7 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
       node->init = psx_expr_expr_in_contexts(
           context->semantic_context, context->global_registry,
           context->local_registry, context->runtime_context,
+          &context->name_classifier,
           context->local_declarations);
       tk_expect_ctx(context->tokenizer_context, ';');
     }
@@ -350,6 +354,7 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
     node->base.lhs = psx_expr_expr_in_contexts(
         context->semantic_context, context->global_registry,
         context->local_registry, context->runtime_context,
+        &context->name_classifier,
         context->local_declarations);
     tk_expect_ctx(context->tokenizer_context, ';');
   }
@@ -357,6 +362,7 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
     node->inc = psx_expr_expr_in_contexts(
         context->semantic_context, context->global_registry,
         context->local_registry, context->runtime_context,
+        &context->name_classifier,
         context->local_declarations);
     tk_expect_ctx(context->tokenizer_context, ')');
   }
@@ -376,6 +382,7 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
+      &context->name_classifier,
       context->local_declarations);
   tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
@@ -390,7 +397,8 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
   node->val = psx_parse_case_const_expr_in_contexts(
-      context->semantic_context, context->tokenizer_context);
+      context->semantic_context, &context->name_classifier,
+      context->tokenizer_context);
   tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -466,6 +474,7 @@ node_t *psx_stmt_stmt_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
@@ -479,10 +488,7 @@ node_t *psx_stmt_stmt_in_contexts(
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
       .name_classifier =
-          local_declarations &&
-                  local_declarations->name_classifier.is_typedef_name
-              ? local_declarations->name_classifier
-              : ps_ctx_name_classifier(semantic_context),
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   if (!context.tokenizer_context) return NULL;
   node_t *result = stmt_internal(&context);

@@ -89,7 +89,8 @@ void psx_parse_aggregate_body_with_options(
           options ? options->semantic_context : NULL,
           options ? options->global_registry : NULL,
           options ? options->local_registry : NULL,
-          options ? options->runtime_context : NULL, NULL);
+          options ? options->runtime_context : NULL,
+          options ? options->name_classifier : NULL, NULL);
       continue;
     }
 

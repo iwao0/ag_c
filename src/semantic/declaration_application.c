@@ -62,6 +62,8 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
   int member_count = 0;
   psx_aggregate_layout_state_t layout;
   psx_aggregate_layout_init(&layout, record);
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(semantic_context);
   for (int i = 0; i < body->item_count; i++) {
     psx_parsed_aggregate_item_t *item = &body->items[i];
     if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {
@@ -75,7 +77,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
     psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
     ps_prepare_decl_specifier_alignments_in_context(
-        &declaration->specifier, semantic_context);
+        &declaration->specifier, semantic_context, &name_classifier);
     const psx_type_t *member_base_type =
         psx_apply_parsed_decl_specifier_in_contexts(
             semantic_context, global_registry, local_registry,
@@ -91,7 +93,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
     for (int j = 0; j < declaration->declarator_count; j++) {
       psx_parsed_declarator_t *head = &declaration->declarators[j];
       ps_prepare_constant_declarator_expressions_in_context(
-          head, semantic_context);
+          head, semantic_context, &name_classifier);
       psx_declarator_shape_t resolved_shape;
       int resolved_bit_width = 0;
       psx_apply_parsed_declarator_in_contexts(

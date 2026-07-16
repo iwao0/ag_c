@@ -5371,10 +5371,14 @@ const nameClassifierUsers = [
   "src/parser/alignas_value.c",
 ];
 const directTypedefLookupUsers = [];
+const implicitNameClassifierUsers = [];
 for (const file of nameClassifierUsers) {
   const source = await readFile(file, "utf8");
   if (/\bpsx_ctx_is_typedef_name_token_in\s*\(/.test(source)) {
     directTypedefLookupUsers.push(file);
+  }
+  if (/\bps_ctx_name_classifier\s*\(/.test(source)) {
+    implicitNameClassifierUsers.push(file);
   }
 }
 if (!/typedef\s+struct\s*\{[^]*?void\s*\*context\s*;[^]*?psx_typedef_name_classifier_fn\s+is_typedef_name\s*;[^]*?\}\s*psx_name_classifier_t\s*;/.test(
@@ -5389,12 +5393,15 @@ if (!/typedef\s+struct\s*\{[^]*?void\s*\*context\s*;[^]*?psx_typedef_name_classi
     /\bpsx_decl_typedef_name_predicate_t\b/.test(
       `${declarationSyntaxHeader}\n${nameClassifierHeader}`,
     ) ||
-    directTypedefLookupUsers.length > 0) {
+    directTypedefLookupUsers.length > 0 ||
+    implicitNameClassifierUsers.length > 0) {
   throw new Error(
     "parser typedef ambiguity must be isolated behind the NameClassifier interface" +
       (directTypedefLookupUsers.length
         ? `:\n${directTypedefLookupUsers.join("\n")}`
-        : ""),
+        : implicitNameClassifierUsers.length
+          ? `:\n${implicitNameClassifierUsers.join("\n")}`
+          : ""),
   );
 }
 

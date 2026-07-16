@@ -53,6 +53,7 @@ node_t *psx_parse_local_declaration_syntax(
           &assertion, callbacks->semantic_context,
           callbacks->global_registry,
           callbacks->local_registry, callbacks->runtime_context,
+          &callbacks->name_classifier,
           callbacks);
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
@@ -82,7 +83,8 @@ node_t *psx_parse_local_declaration_syntax(
     return NULL;
   }
   ps_prepare_decl_specifier_alignments_in_context(
-      &specifier, callbacks->semantic_context);
+      &specifier, callbacks->semantic_context,
+      &callbacks->name_classifier);
   int standalone_tag =
       specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
       curtok(callbacks)->kind == TK_SEMI;
@@ -152,6 +154,7 @@ node_t *psx_parse_local_declaration_syntax(
           &initializer, assign_tok, callbacks->semantic_context,
           callbacks->global_registry,
           callbacks->local_registry, callbacks->runtime_context,
+          &callbacks->name_classifier,
           callbacks);
     }
     callbacks->finish_declarator(

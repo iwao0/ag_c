@@ -49,10 +49,12 @@ static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx);
 
 long long psx_parse_enum_const_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context) {
   enum_const_eval_ctx_t ctx = {
       .semantic_context = semantic_context,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
+      .name_classifier =
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
       .tokenizer_context = tokenizer_context,
   };
   return parse_conditional_ctx(&ctx);
@@ -60,11 +62,13 @@ long long psx_parse_enum_const_expr_in_contexts(
 
 long long psx_parse_case_const_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context) {
   enum_const_eval_ctx_t ctx = {
       .allow_wide_const = 1,
       .semantic_context = semantic_context,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
+      .name_classifier =
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
       .tokenizer_context = tokenizer_context,
   };
   return parse_conditional_ctx(&ctx);
@@ -72,6 +76,7 @@ long long psx_parse_case_const_expr_in_contexts(
 
 long long psx_eval_parsed_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     token_t *start, token_t *end) {
   if (!start || !end) {
     ps_diag_ctx_in(
@@ -84,7 +89,7 @@ long long psx_eval_parsed_enum_const_expr_in_context(
       &tokenizer_context, ps_ctx_diagnostics(semantic_context));
   tk_set_current_token_ctx(&tokenizer_context, start);
   long long value = psx_parse_enum_const_expr_in_contexts(
-      semantic_context, &tokenizer_context);
+      semantic_context, name_classifier, &tokenizer_context);
   if (tk_get_current_token_ctx(&tokenizer_context) != end) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
@@ -505,10 +510,13 @@ static void dispose_prepared_enum_expr(psx_parsed_enum_expr_t *expression) {
 void psx_parse_enum_body_in_contexts(
     psx_parsed_enum_body_t *body,
     psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier,
     tokenizer_context_t *tokenizer_context) {
   if (!body || !semantic_context || !tokenizer_context) return;
   enum_const_eval_ctx_t ctx = {
       .semantic_context = semantic_context,
+      .name_classifier =
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
       .tokenizer_context = tokenizer_context,
   };
   memset(body, 0, sizeof(*body));

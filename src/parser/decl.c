@@ -192,6 +192,7 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
     node_t *syntax = psx_parse_initializer_syntax_list_in_contexts(
         semantic_context, global_registry, local_registry,
         runtime_context,
+        local_declarations ? &local_declarations->name_classifier : NULL,
         local_declarations);
     return ps_decl_bind_initializer_for_var_in(
         ps_parser_runtime_arena(runtime_context),
@@ -203,6 +204,7 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
       psx_expr_assign_in_contexts(
           semantic_context, global_registry, local_registry,
           runtime_context,
+          local_declarations ? &local_declarations->name_classifier : NULL,
           local_declarations),
       PSX_DECL_INIT_EXPR, init_tok);
 }

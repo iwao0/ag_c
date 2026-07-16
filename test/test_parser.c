@@ -1227,6 +1227,20 @@ static void test_parser_name_classifier_boundary() {
                   ag_compilation_session_tokenizer(test_suite_session)) ==
               tokens->next);
   ps_dispose_decl_specifier_syntax(&specifier);
+
+  classifier_context.call_count = 0;
+  tk_tokenize((char *)"sizeof(Alias)");
+  node_t *sizeof_alias = psx_expr_expr_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      &classifier, NULL);
+  ASSERT_TRUE(sizeof_alias != NULL);
+  ASSERT_EQ(ND_SIZEOF_QUERY, sizeof_alias->kind);
+  ASSERT_TRUE(((node_sizeof_query_t *)sizeof_alias)->is_type_name);
+  ASSERT_TRUE(classifier_context.call_count > 0);
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
+      test_semantic_context(), (char *)"Alias", 5, NULL));
 }
 
 static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
@@ -1254,16 +1268,22 @@ static void parse_test_runtime_declarator_expressions(
 
 static void prepare_test_constant_declarator_expressions(
     psx_parsed_declarator_t *declarator) {
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(test_semantic_context());
   ps_prepare_constant_declarator_expressions_in_context(
       declarator,
-      ag_compilation_session_semantic_context(test_suite_session));
+      ag_compilation_session_semantic_context(test_suite_session),
+      &name_classifier);
 }
 
 static void prepare_test_decl_specifier_alignments(
     psx_parsed_decl_specifier_t *specifier) {
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(test_semantic_context());
   ps_prepare_decl_specifier_alignments_in_context(
       specifier,
-      ag_compilation_session_semantic_context(test_suite_session));
+      ag_compilation_session_semantic_context(test_suite_session),
+      &name_classifier);
 }
 
 static node_t *analyze_test_expression(
@@ -1418,12 +1438,15 @@ static void apply_test_parsed_declarator(
 
 static void parse_test_initializer_syntax_value(
     psx_parsed_initializer_t *initializer, token_t *assign_tok) {
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(test_semantic_context());
   psx_parse_initializer_syntax_value_in_contexts(
       initializer, assign_tok,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
+      &name_classifier,
       NULL);
 }
 
@@ -6526,6 +6549,8 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(12, ps_type_sizeof_id_for_target(
                     types, pointer_array_identity.type_id, &wasm));
   psx_semantic_context_t *semantic_context = test_semantic_context();
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(semantic_context);
   token_t *pointer_type_tokens = tk_tokenize((char *)"int *)");
   token_t *pointer_type_end = pointer_type_tokens;
   while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
@@ -6535,13 +6560,13 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
   ASSERT_EQ(4, ps_ctx_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, pointer_type_tokens,
+                   semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
   ps_ctx_bind_target_info(semantic_context, &host);
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
   ASSERT_EQ(8, ps_ctx_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, pointer_type_tokens,
+                   semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
   ag_target_info_t split_layout_target = wasm;
   split_layout_target.pointer_alignment = 8;
@@ -6560,10 +6585,10 @@ static void test_target_type_layout_boundary() {
     long_alignas_end = long_alignas_end->next;
   ASSERT_TRUE(long_alignas_end != NULL);
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, long_alignas_tokens,
+                   semantic_context, &name_classifier, long_alignas_tokens,
                    long_alignas_end));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, pointer_type_tokens,
+                   semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
   token_t *sizeof_long_tokens = tk_tokenize((char *)"sizeof(long)");
   token_t *sizeof_long_end = sizeof_long_tokens;
@@ -6571,7 +6596,7 @@ static void test_target_type_layout_boundary() {
     sizeof_long_end = sizeof_long_end->next;
   ASSERT_TRUE(sizeof_long_end != NULL);
   ASSERT_EQ(12, psx_eval_parsed_enum_const_expr_in_context(
-                    semantic_context, sizeof_long_tokens,
+                    semantic_context, &name_classifier, sizeof_long_tokens,
                     sizeof_long_end));
   token_t *alignof_long_tokens = tk_tokenize((char *)"_Alignof(long)");
   token_t *alignof_long_end = alignof_long_tokens;
@@ -6579,7 +6604,7 @@ static void test_target_type_layout_boundary() {
     alignof_long_end = alignof_long_end->next;
   ASSERT_TRUE(alignof_long_end != NULL);
   ASSERT_EQ(4, psx_eval_parsed_enum_const_expr_in_context(
-                   semantic_context, alignof_long_tokens,
+                   semantic_context, &name_classifier, alignof_long_tokens,
                    alignof_long_end));
   ps_ctx_bind_target_info(semantic_context, &host);
   psx_record_decl_t *record = arena_alloc_in(
@@ -21691,7 +21716,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   tk_set_current_token_ctx(&wasm.tokenizer, &wasm_statement);
   node_t *wasm_null_statement = psx_stmt_stmt_in_contexts(
       wasm.semantic_context, wasm.global_registry, wasm.local_registry,
-      wasm.parser_runtime_context, NULL);
+      wasm.parser_runtime_context, NULL, NULL);
   ASSERT_TRUE(wasm_null_statement != NULL);
   ASSERT_EQ(ND_NUM, wasm_null_statement->kind);
   ASSERT_TRUE(tk_at_eof_ctx(&wasm.tokenizer));

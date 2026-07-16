@@ -250,7 +250,8 @@ static int parse_type_name_syntax_at(
       options->local_registry, options->runtime_context);
   if (prepare_constant_bounds)
     ps_prepare_constant_declarator_expressions_in_context(
-        &out->declarator, options->semantic_context);
+        &out->declarator, options->semantic_context,
+        options->name_classifier);
   out->end = current_token(runtime_context);
   tk_set_current_token_ctx(tk_ctx, saved);
   return 1;
@@ -618,6 +619,7 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
     expression->node = psx_expr_assign_in_contexts(
         semantic_context, global_registry, local_registry,
         runtime_context,
+        local_declarations ? &local_declarations->name_classifier : NULL,
         local_declarations);
     if (current_token(runtime_context) != expression->end) {
       ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
@@ -639,7 +641,8 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
 
 void ps_prepare_constant_declarator_expressions_in_context(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context) {
+    psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier) {
   if (!declarator) return;
   for (int i = 0; i < declarator->array_bound_count; i++) {
     psx_parsed_const_expr_t *expression =
@@ -647,7 +650,8 @@ void ps_prepare_constant_declarator_expressions_in_context(
     if (expression->has_constant_value) continue;
     expression->constant_value =
         psx_eval_parsed_enum_const_expr_in_context(
-            semantic_context, expression->start, expression->end);
+            semantic_context, name_classifier,
+            expression->start, expression->end);
     expression->has_constant_value = 1;
   }
   if (declarator->has_bitfield &&
@@ -656,14 +660,16 @@ void ps_prepare_constant_declarator_expressions_in_context(
         &declarator->bit_width_expression;
     expression->constant_value =
         psx_eval_parsed_enum_const_expr_in_context(
-            semantic_context, expression->start, expression->end);
+            semantic_context, name_classifier,
+            expression->start, expression->end);
     expression->has_constant_value = 1;
   }
 }
 
 void ps_prepare_decl_specifier_alignments_in_context(
     psx_parsed_decl_specifier_t *specifier,
-    psx_semantic_context_t *semantic_context) {
+    psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier) {
   if (!specifier) return;
   for (int i = 0; i < specifier->alignas_expression_count; i++) {
     psx_parsed_const_expr_t *expression =
@@ -671,7 +677,8 @@ void ps_prepare_decl_specifier_alignments_in_context(
     if (expression->has_constant_value) continue;
     expression->constant_value =
         psx_eval_parsed_alignas_value_in_context(
-            semantic_context, expression->start, expression->end);
+            semantic_context, name_classifier,
+            expression->start, expression->end);
     expression->has_constant_value = 1;
   }
 }
@@ -710,7 +717,8 @@ static void parse_tag_specifier(
                      "enum body allocation failed");
       }
       psx_parse_enum_body_in_contexts(
-          action->enum_body, options->semantic_context, tk_ctx);
+          action->enum_body, options->semantic_context,
+          options->name_classifier, tk_ctx);
     } else {
       action->aggregate_body = calloc(1, sizeof(*action->aggregate_body));
       if (!action->aggregate_body) {
@@ -748,6 +756,7 @@ int psx_try_parse_decl_specifier_syntax_ex(
       &(psx_type_spec_syntax_t){
           .context = options->context,
           .tokenizer_context = tk_ctx,
+          .name_classifier = options->name_classifier,
           .consume_alignas_context = &alignas_context,
           .consume_alignas = consume_declaration_alignas,
           .diagnose_complex_requires_float =

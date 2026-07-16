@@ -175,7 +175,8 @@ static void skip_cv_qualifiers_into_ex(
                 DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
       int av = psx_parse_alignas_value_in_contexts(
-          semantic_context, tokenizer_context);
+          semantic_context, syntax ? syntax->name_classifier : NULL,
+          tokenizer_context);
       if (av > out->alignas_value) out->alignas_value = av;
       continue;
     }
@@ -357,6 +358,9 @@ int ps_parse_next_toplevel_item(
           semantic_context, stream->global_registry,
           stream->local_registry,
           stream->runtime_context,
+          stream->toplevel_declarations
+              ? &stream->toplevel_declarations->name_classifier
+              : NULL,
           NULL);
       return 1;
     }
@@ -747,6 +751,7 @@ static node_block_t *parse_funcdef_body_block(
     body->body[i] = psx_stmt_stmt_in_contexts(
         semantic_context, global_registry, local_registry,
         runtime_context,
+        local_declarations ? &local_declarations->name_classifier : NULL,
         local_declarations);
     psx_decl_end_lvar_usage_region_in(local_registry, region);
     if (ps_parser_has_recoverable_syntax_error_in(runtime_context)) {
@@ -825,6 +830,7 @@ node_t *ps_expr_in_contexts(
   node_t *node = psx_expr_expr_in_contexts(
       semantic_context, global_registry, local_registry,
       runtime_context,
+      local_declarations ? &local_declarations->name_classifier : NULL,
       local_declarations);
   if (previous_runtime_tokenizer) {
     ps_parser_runtime_bind_tokenizer(

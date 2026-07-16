@@ -148,10 +148,12 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
     const psx_local_declaration_callbacks_t *local_declarations);
 void ps_prepare_constant_declarator_expressions_in_context(
     psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context);
+    psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier);
 void ps_prepare_decl_specifier_alignments_in_context(
     psx_parsed_decl_specifier_t *specifier,
-    psx_semantic_context_t *semantic_context);
+    psx_semantic_context_t *semantic_context,
+    const psx_name_classifier_t *name_classifier);
 void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
 void psx_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);

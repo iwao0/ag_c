@@ -45,6 +45,7 @@ void psx_parse_initializer_syntax_value_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!out || !semantic_context || !global_registry || !local_registry ||
       !runtime_context)
@@ -61,10 +62,12 @@ void psx_parse_initializer_syntax_value_in_contexts(
                    ? psx_parse_initializer_syntax_list_in_contexts(
                          semantic_context, global_registry, local_registry,
                          runtime_context,
+                         name_classifier,
                          local_declarations)
                    : psx_expr_assign_in_contexts(
                          semantic_context, global_registry, local_registry,
                          runtime_context,
+                         name_classifier,
                          local_declarations);
 }
 
@@ -73,6 +76,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
@@ -149,6 +153,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
           node_t *index_expr = psx_expr_assign_in_contexts(
               semantic_context, global_registry, local_registry,
               runtime_context,
+              name_classifier,
               local_declarations);
           node_t *range_end_expr = NULL;
           int is_range = 0;
@@ -161,6 +166,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
             range_end_expr = psx_expr_assign_in_contexts(
                 semantic_context, global_registry, local_registry,
                 runtime_context,
+                name_classifier,
                 local_declarations);
             is_range = 1;
           }
@@ -182,11 +188,13 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
                                 semantic_context, global_registry,
                                 local_registry,
                                 runtime_context,
+                                name_classifier,
                                 local_declarations)
                           : psx_expr_assign_in_contexts(
                                 semantic_context, global_registry,
                                 local_registry,
                                 runtime_context,
+                                name_classifier,
                                 local_declarations);
       entries[count++] = (psx_initializer_entry_t){
           .value = value,

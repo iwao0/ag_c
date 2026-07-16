@@ -63,6 +63,7 @@ static expr_parse_ctx_t expr_parse_ctx_default(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = {
       .semantic_context = semantic_context,
@@ -73,10 +74,7 @@ static expr_parse_ctx_t expr_parse_ctx_default(
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
       .name_classifier =
-          local_declarations &&
-                  local_declarations->name_classifier.is_typedef_name
-              ? local_declarations->name_classifier
-              : ps_ctx_name_classifier(semantic_context),
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
   };
   return ctx;
 }
@@ -214,6 +212,7 @@ static node_t *parse_compound_literal_from_type(
   node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
       ctx->semantic_context, ctx->global_registry, ctx->local_registry,
       ctx->runtime_context,
+      &ctx->name_classifier,
       ctx->local_declarations);
   node_t *syntax = psx_node_new_compound_literal_in(
       ctx->arena_context, type_name, initializer, initializer_tok,
@@ -349,13 +348,14 @@ node_t *psx_expr_expr_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
       semantic_context, global_registry, local_registry, runtime_context,
-      local_declarations);
+      name_classifier, local_declarations);
   return expr_internal_ctx(&ctx);
 }
 
@@ -364,13 +364,14 @@ node_t *psx_expr_assign_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
       semantic_context, global_registry, local_registry, runtime_context,
-      local_declarations);
+      name_classifier, local_declarations);
   return assign_ctx(&ctx);
 }
 
@@ -1200,7 +1201,7 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
       curtok(ctx)->next->kind == TK_LBRACE) {
     return psx_parse_statement_expression_in_contexts(
         ctx->semantic_context, ctx->global_registry, ctx->local_registry,
-        ctx->runtime_context,
+        ctx->runtime_context, &ctx->name_classifier,
         ctx->local_declarations);
   }
 

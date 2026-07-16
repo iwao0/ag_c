@@ -2,6 +2,7 @@
 #define PARSER_STATIC_ASSERT_DECLARATION_H
 
 #include "ast.h"
+#include "name_classifier.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -21,6 +22,7 @@ void psx_parse_static_assert_syntax_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations);
 
 #endif

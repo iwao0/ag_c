@@ -4,6 +4,7 @@
 /* core.h は AST node 型を使わない (token_kind_t と bool のみ)。
  * Phase C1-2: ast.h ではなく token.h を直接 include する。 */
 #include "../tokenizer/token.h"
+#include "name_classifier.h"
 #include <stdbool.h>
 
 #define PS_MAX_DECLARATOR_COUNT 1024
@@ -31,6 +32,7 @@ typedef struct {
 typedef struct {
   void *context;
   tokenizer_context_t *tokenizer_context;
+  const psx_name_classifier_t *name_classifier;
   void *consume_alignas_context;
   void (*consume_alignas)(void *context, psx_type_spec_result_t *result);
   void (*diagnose_complex_requires_float)(void *context, token_t *token);

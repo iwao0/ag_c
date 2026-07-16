@@ -82,7 +82,7 @@ static int parse_declarator_head(
           declarator, semantic_context, global_registry, local_registry,
           runtime_context, name_classifier)) return 0;
   ps_prepare_constant_declarator_expressions_in_context(
-      declarator, semantic_context);
+      declarator, semantic_context, name_classifier);
   require_declarator_name(declarator, runtime_context);
   return 1;
 }
@@ -123,7 +123,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     return 0;
   }
   ps_prepare_decl_specifier_alignments_in_context(
-      &declaration->specifier, semantic_context);
+      &declaration->specifier, semantic_context, name_classifier);
   declaration->is_extern = declaration->specifier.type_spec.is_extern;
   declaration->is_static = declaration->specifier.type_spec.is_static;
   declaration->is_thread_local =
@@ -204,7 +204,8 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
       tk_expect_ctx(tk_ctx, '=');
       psx_parse_initializer_syntax_value_in_contexts(
           initializer, assign_tok, semantic_context,
-          global_registry, local_registry, runtime_context, NULL);
+          global_registry, local_registry, runtime_context,
+          callbacks ? &callbacks->name_classifier : NULL, NULL);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
