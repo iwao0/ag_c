@@ -11,13 +11,11 @@
 #include "syntax_node.h"
 #include "tag_public.h"
 #include "../target_info.h"
-#include "../semantic/resolved_node.h"
 
 struct lvar_t;
 struct global_var_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-void ps_node_bind_symbol_decl_type_if_missing(node_t *node);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
@@ -102,8 +100,6 @@ node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
 node_t *ps_node_new_subscript_deref_for_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     node_t *base, node_t *base_addr, node_t *scaled_offset);
-node_t *ps_node_clone_lvalue_with_lhs_in(
-    arena_context_t *arena_context, node_t *target, node_t *lhs);
 node_t *ps_node_new_assign_in(arena_context_t *arena_context,
                               node_t *lhs, node_t *rhs);
 node_t *psx_node_new_raw_decl_initializer_in(

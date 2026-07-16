@@ -462,7 +462,7 @@ static int build_special_children(
     hir_materializer_t *builder, hir_children_t *children,
     const node_t *source, int *include_common_children) {
   *include_common_children = 1;
-  switch (source->kind) {
+  switch (psx_resolved_object_ref_node_kind(source)) {
     case ND_BLOCK: {
       const node_block_t *block = (const node_block_t *)source;
       *include_common_children = 0;
@@ -557,7 +557,7 @@ static int derive_structural_expression_type(
     const hir_children_t *children, psx_qual_type_t *qual_type) {
   psx_qual_type_t derived = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  switch (source->kind) {
+  switch (psx_resolved_object_ref_node_kind(source)) {
     case ND_COMMA:
       derived = child_qual_type(
           builder, children, PSX_HIR_EDGE_RHS);
@@ -633,7 +633,7 @@ static int attach_global_symbol(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_symbol_spec_t *symbol, int *has_symbol) {
   if (has_symbol) *has_symbol = 0;
-  if (source->kind != ND_GVAR) return 1;
+  if (psx_resolved_object_ref_node_kind(source) != ND_GVAR) return 1;
   const global_var_t *global =
       psx_resolved_object_ref_global(source);
   if (!resolved_global_symbol_spec(
@@ -1034,7 +1034,7 @@ static psx_semantic_node_t *materialize_source_cast(
 static int copy_payload(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
-  switch (source->kind) {
+  switch (psx_resolved_object_ref_node_kind(source)) {
     case ND_ASSIGN:
       if (source->is_source_compound_assignment) {
         psx_hir_compound_operator_t op = PSX_HIR_COMPOUND_ADD;
@@ -1199,7 +1199,7 @@ static int copy_vla_payload(
       spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
     return 1;
   }
-  if (source->kind != ND_LVAR) return 1;
+  if (psx_resolved_object_ref_node_kind(source) != ND_LVAR) return 1;
   const lvar_t *var = psx_resolved_object_ref_local(source);
   if (!var || !ps_lvar_is_vla(var)) return 1;
   spec->vla_stride_frame_offset =
@@ -1236,7 +1236,7 @@ static psx_semantic_node_t *materialize_typed_leaf(
   if (handled) *handled = 0;
   if (!source || !handled) return NULL;
   psx_hir_node_kind_t kind;
-  switch (source->kind) {
+  switch (psx_resolved_object_ref_node_kind(source)) {
     case ND_NUM: kind = PSX_HIR_NUMBER; break;
     case ND_STRING: kind = PSX_HIR_STRING; break;
     case ND_LVAR: kind = PSX_HIR_LOCAL; break;
@@ -1253,7 +1253,7 @@ static psx_semantic_node_t *materialize_typed_leaf(
   if (!copy_payload(builder, source, &spec) ||
       !copy_vla_payload(builder, source, &spec))
     return NULL;
-  if (source->kind == ND_LVAR) {
+  if (psx_resolved_object_ref_node_kind(source) == ND_LVAR) {
     int bit_width = 0;
     int bit_offset = 0;
     int bit_is_signed = 0;
@@ -1318,14 +1318,16 @@ static psx_semantic_node_t *build_node(
         builder, (const node_source_cast_t *)source);
   }
   psx_hir_node_spec_t spec = {0};
+  psx_work_node_kind_t resolved_kind =
+      psx_resolved_object_ref_node_kind(source);
   psx_qual_type_t qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   spec.attached_qual_type = qual_type;
-  if (!map_kind(source->kind, &spec.kind)) {
+  if (!map_kind(resolved_kind, &spec.kind)) {
     set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return NULL;
   }
-  if (source->kind == ND_ASSIGN &&
+  if (resolved_kind == ND_ASSIGN &&
       source->is_source_compound_assignment)
     spec.kind = PSX_HIR_COMPOUND_ASSIGN;
   int is_expression = psx_hir_kind_is_expression(spec.kind);

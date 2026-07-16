@@ -8,6 +8,7 @@
 #include "generic_selection_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "resolved_node_kind.h"
+#include "resolved_node.h"
 #include "resolved_object_ref.h"
 #include "vla_runtime_plan.h"
 #include "source_cast_resolution.h"

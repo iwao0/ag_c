@@ -13,6 +13,8 @@
 #include "../semantic/initializer_resolution.h"
 #include "../semantic/literal_resolution.h"
 #include "../semantic/member_access_resolution.h"
+#include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_object_ref.h"
 #include "../semantic/static_initializer_resolution.h"
 #include "../tokenizer/literals.h"
 #include "../type_layout.h"
@@ -839,10 +841,9 @@ static int lower_static_scalar_expression(
     return 1;
   }
   if (initializer->kind == ND_FUNCREF) {
-    node_funcref_t *function = (node_funcref_t *)initializer;
-    global->init_symbol = function->funcname;
-    global->init_symbol_len = function->funcname_len;
-    return 1;
+    global->init_symbol = psx_resolved_object_ref_name(
+        initializer, &global->init_symbol_len);
+    return global->init_symbol != NULL;
   }
   return 0;
 }

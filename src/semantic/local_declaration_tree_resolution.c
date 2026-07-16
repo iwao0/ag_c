@@ -3,6 +3,7 @@
 #include "../semantic/declaration_application.h"
 #include "../semantic/declaration_registration.h"
 #include "../semantic/resolved_function.h"
+#include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"

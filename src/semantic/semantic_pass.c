@@ -27,6 +27,9 @@
 #include "type_query_resolution.h"
 #include "vla_runtime_plan.h"
 #include "resolved_node_kind.h"
+#include "resolved_node.h"
+#include "resolved_lvalue.h"
+#include "resolved_object_ref.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -488,12 +491,12 @@ static void semantic_resolve_member_access(
 
 static void semantic_resolve_function_reference(
     psx_semantic_context_t *semantic_context,
-    node_funcref_t *reference,
+    node_t *reference,
     const token_t *fallback_diag_tok) {
   if (!reference) return;
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(semantic_context);
-  const psx_type_t *source_type = ps_node_get_type((node_t *)reference);
+  const psx_type_t *source_type = ps_node_get_type(reference);
   const psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
       ? psx_resolve_function_reference_type(
             semantic_context, source_type)
@@ -502,12 +505,12 @@ static void semantic_resolve_function_reference(
     type = ps_type_clone_in(
         ps_ctx_arena(semantic_context), source_type);
   if (!type) {
-    ps_diag_ctx_in(diagnostics, reference->base.tok
-                    ? reference->base.tok
+    ps_diag_ctx_in(diagnostics, reference->tok
+                    ? reference->tok
                     : (token_t *)fallback_diag_tok,
                 "funcref", "canonical function type is not bound");
   }
-  semantic_bind_result_type((node_t *)reference, type);
+  semantic_bind_result_type(reference, type);
 }
 
 static node_t *semantic_normalize_call_deref_chain(
@@ -751,7 +754,7 @@ static void semantic_resolve_generic_selection(
 static void semantic_mark_usage_evaluated(node_t *node) {
   if (!node) return;
   if (node->records_lvar_usage) node->lvar_usage_unevaluated = 0;
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;
            body && *body; body++) {
@@ -881,7 +884,7 @@ static void semantic_transform_node(
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(traversal->semantic_context);
 
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_STATIC_ASSERT: {
       node_static_assert_t *assertion =
           (node_static_assert_t *)node;
@@ -1005,8 +1008,7 @@ static void semantic_transform_node(
     }
     case ND_FUNCREF:
       semantic_resolve_function_reference(
-          traversal->semantic_context,
-          (node_funcref_t *)node, fallback_diag_tok);
+          traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_VA_ARG_AREA:
       if (!ps_node_get_type(node))

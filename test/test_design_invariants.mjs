@@ -3098,16 +3098,17 @@ if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     "IR lowering must materialize global layout and string size before backend codegen",
   );
 }
-if (!/struct node_gvar_t\s*\{[\s\S]*?struct global_var_t\s*\*symbol\s*;/.test(
-      resolvedGlobalAstSource,
-    ) ||
+if (/\bnode_gvar_t\b/.test(resolvedGlobalAstSource) ||
     /\bps_find_global_var\s*\(/.test(constantExpressionSource) ||
     /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
-    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*,\s*ctx->semantic_types\s*,\s*ctx->record_decls\s*,\s*ctx->record_layouts\s*,\s*ctx->target\s*\)/.test(
+    !/global_var_t\s*\*global\s*=\s*psx_resolved_object_ref_global\s*\(\s*node\s*\)/.test(
+      irBuilderSource,
+    ) ||
+    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*global\s*,\s*ctx->semantic_types\s*,\s*ctx->record_decls\s*,\s*ctx->record_layouts\s*,\s*ctx->target\s*\)/.test(
       irBuilderSource,
     )) {
   throw new Error(
-    "resolved global references must retain symbol identity without active-registry lookup",
+    "resolved global references must retain symbol identity in resolution state without active-registry lookup or specialized node payloads",
   );
 }
 if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test(
@@ -3279,12 +3280,10 @@ if (/\b(?:\.|->)resolution_state\b/.test(
   );
 }
 if (/\bnode_(?:lvar|funcref|gvar|vla_alloc)_t\b/.test(astSource) ||
-    !/struct\s+node_lvar_t\s*\{/.test(resolvedNodeHeader) ||
-    !/struct\s+node_funcref_t\s*\{/.test(resolvedNodeHeader) ||
-    !/struct\s+node_gvar_t\s*\{/.test(resolvedNodeHeader) ||
+    /\bnode_(?:lvar|funcref|gvar)_t\b/.test(resolvedNodeHeader) ||
     !/\}\s*node_vla_alloc_t\s*;/.test(resolvedNodeHeader)) {
   throw new Error(
-    "resolver-created storage, function, global, and VLA nodes must live outside Syntax AST",
+    "resolved references must use resolution state without specialized payload structs, and VLA work nodes must live outside Syntax AST",
   );
 }
 const resolvedOnlyNodeKinds = [
@@ -3931,15 +3930,29 @@ for (const factory of resolvedObjectRefFactories) {
   }
 }
 if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
-    !/base\.kind\s*=\s*ND_LVAR/.test(resolvedObjectRefSource) ||
-    !/base\.kind\s*=\s*ND_GVAR/.test(resolvedObjectRefSource) ||
+    !/node->kind\s*=\s*ND_LVAR/.test(resolvedObjectRefSource) ||
+    !/node->kind\s*=\s*ND_GVAR/.test(resolvedObjectRefSource) ||
     /(?:base\.)?kind\s*=\s*ND_(?:FUNCREF|VA_ARG_AREA)/.test(
       identifierBindingSource,
     ) ||
-    !/base\.kind\s*=\s*ND_FUNCREF/.test(resolvedObjectRefSource) ||
+    !/reference->kind\s*=\s*ND_FUNCREF/.test(resolvedObjectRefSource) ||
     !/kind\s*=\s*ND_VA_ARG_AREA/.test(resolvedObjectRefSource)) {
   throw new Error(
     "resolved object and function references must be constructed only by the semantic factory",
+  );
+}
+const resolvedReferencePayloadPattern =
+  /\bnode_(?:lvar|gvar|funcref)_t\b/;
+if (resolvedReferencePayloadPattern.test(resolvedObjectRefSource) ||
+    resolvedReferencePayloadPattern.test(irBuilderSource) ||
+    /resolved_node\.h/.test(nodeUtilsHeaderSource) ||
+    !/typedef\s+struct\s*\{[^]*?psx_resolved_reference_kind_t\s+kind\s*;[^]*?\}\s*psx_resolved_reference_state_t\s*;/.test(
+      earlyNodeResolutionState,
+    ) ||
+    !/psx_resolved_object_ref_storage_offset\s*\(/.test(irBuilderSource) ||
+    !/psx_resolved_object_ref_name\s*\(/.test(irBuilderSource)) {
+  throw new Error(
+    "resolved reference payload must be owned by resolution state and consumed through semantic accessors",
   );
 }
 const classifiedInitializerVisitor = nodeUtilsSource.match(

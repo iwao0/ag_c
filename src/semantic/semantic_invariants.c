@@ -8,6 +8,7 @@
 #include "../parser/semantic_ctx.h"
 #include "function_call_resolution.h"
 #include "resolved_node_kind.h"
+#include "resolved_object_ref.h"
 #include "resolved_function.h"
 #include "tree_walk.h"
 #include "type_identity_pass.h"
@@ -102,7 +103,9 @@ static int validate_node(const node_t *node, void *user) {
       validation->semantic_context;
   psx_semantic_invariant_failure_t *failure = validation->failure;
   int allow_initializer_syntax = validation->allow_initializer_syntax;
-  node_semantic_role_t role = semantic_role(node->kind);
+  psx_work_node_kind_t resolved_kind =
+      psx_resolved_object_ref_node_kind(node);
+  node_semantic_role_t role = semantic_role(resolved_kind);
   if (role == NODE_SEMANTIC_ROLE_INVALID)
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, node);
   if (role == NODE_SEMANTIC_ROLE_RAW_EXPRESSION)
@@ -129,7 +132,7 @@ static int validate_node(const node_t *node, void *user) {
           failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT, node);
     }
   }
-  if (node->kind == ND_FUNCREF &&
+  if (resolved_kind == ND_FUNCREF &&
       (node_type->kind != PSX_TYPE_POINTER || !node_type->base ||
        node_type->base->kind != PSX_TYPE_FUNCTION)) {
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);

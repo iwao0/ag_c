@@ -1,5 +1,8 @@
 #include "node_utils.h"
 #include "../semantic/resolution_state.h"
+#include "../semantic/resolved_node.h"
+#include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_object_ref.h"
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
@@ -37,13 +40,6 @@ static int node_scalar_ptr_member_lvalue(node_t *node);
 static void *resolution_node_alloc_in(
     arena_context_t *arena_context, size_t size) {
   return psx_resolution_node_alloc_in(arena_context, size);
-}
-
-static int is_lvalue_clone_kind(psx_work_node_kind_t kind) {
-  return kind == ND_LVAR || kind == ND_GVAR || kind == ND_UNARY_DEREF ||
-         kind == ND_SUBSCRIPT ||
-         kind == ND_DEREF ||
-         kind == ND_STRING;
 }
 
 static int tag_scope_depth_from_p1(int scope_depth_p1) {
@@ -2904,72 +2900,6 @@ node_t *ps_node_new_subscript_deref_for_in(
   return result;
 }
 
-void ps_node_bind_symbol_decl_type_if_missing(node_t *node) {
-  if (!node || ps_node_get_type(node)) return;
-  if (node->kind == ND_LVAR) {
-    lvar_t *var = ((node_lvar_t *)node)->var;
-    const psx_type_t *type = ps_lvar_get_decl_type(var);
-    if (type)
-      ps_node_bind_qual_type(
-          node, type, ps_lvar_decl_qual_type(var));
-    return;
-  }
-  if (node->kind == ND_GVAR) {
-    global_var_t *var = ((node_gvar_t *)node)->symbol;
-    const psx_type_t *type = ps_gvar_get_decl_type(var);
-    if (type)
-      ps_node_bind_qual_type(
-          node, type, ps_gvar_decl_qual_type(var));
-  }
-}
-
-node_t *ps_node_clone_lvalue_with_lhs_in(
-    arena_context_t *arena_context, node_t *target, node_t *lhs) {
-  if (!target || !is_lvalue_clone_kind(target->kind)) return target;
-  switch (target->kind) {
-    case ND_LVAR: {
-      node_lvar_t *clone = resolution_node_alloc_in(
-          arena_context, sizeof(node_lvar_t));
-      *clone = *(node_lvar_t *)target;
-      ps_node_copy_resolution_state_in(
-          arena_context, (node_t *)clone, target);
-      clone->base.lhs = lhs;
-      return (node_t *)clone;
-    }
-    case ND_GVAR: {
-      node_gvar_t *clone = resolution_node_alloc_in(
-          arena_context, sizeof(node_gvar_t));
-      *clone = *(node_gvar_t *)target;
-      ps_node_copy_resolution_state_in(
-          arena_context, (node_t *)clone, target);
-      clone->base.lhs = lhs;
-      return (node_t *)clone;
-    }
-    case ND_STRING: {
-      node_string_t *clone = resolution_node_alloc_in(
-          arena_context, sizeof(node_string_t));
-      *clone = *(node_string_t *)target;
-      ps_node_copy_resolution_state_in(
-          arena_context, (node_t *)clone, target);
-      clone->base.lhs = lhs;
-      return (node_t *)clone;
-    }
-    case ND_UNARY_DEREF:
-    case ND_DEREF:
-    {
-      node_t *clone = resolution_node_alloc_in(
-          arena_context, sizeof(node_t));
-      *clone = *target;
-      ps_node_copy_resolution_state_in(
-          arena_context, clone, target);
-      clone->lhs = lhs;
-      return clone;
-    }
-    default:
-      return target;
-  }
-}
-
 static int node_scalar_ptr_member_lvalue(node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   if (type && type->kind != PSX_TYPE_POINTER) return 0;
@@ -3035,7 +2965,9 @@ int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
 
 int ps_node_value_is_pointer_like(node_t *node) {
   if (!node) return 0;
-  if (node->kind == ND_ADDR || node->kind == ND_FUNCREF) return 1;
+  if (node->kind == ND_ADDR ||
+      psx_resolved_object_ref_node_kind(node) == ND_FUNCREF)
+    return 1;
   if (ps_type_is_pointer_like(ps_node_get_type(node))) return 1;
   if (ps_node_scalar_ptr_member_lvalue(node)) return 1;
   return 0;
@@ -3198,7 +3130,9 @@ void ps_node_reject_const_assign_at_in(
     }
     return;
   }
-  if (node->kind == ND_LVAR || node->kind == ND_GVAR ||
+  psx_work_node_kind_t resolved_kind =
+      psx_resolved_object_ref_node_kind(node);
+  if (resolved_kind == ND_LVAR || resolved_kind == ND_GVAR ||
       node->kind == ND_MEMBER_ACCESS ||
       node->kind == ND_UNARY_DEREF || node->kind == ND_DEREF) {
     /* 各再帰型ノードの qualifier はそのノード自身を修飾する。
@@ -3219,7 +3153,9 @@ void ps_node_reject_const_qual_discard_at_in(
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     token_t *tok) {
   if (!lhs || !rhs) return;
-  if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
+  psx_work_node_kind_t lhs_kind =
+      psx_resolved_object_ref_node_kind(lhs);
+  if (lhs_kind != ND_LVAR && lhs_kind != ND_GVAR) return;
   if (!ps_node_value_is_pointer_like(lhs)) return;
   if (ps_type_derived_function(ps_node_get_type(lhs)) &&
       ps_type_derived_function(ps_node_get_type(rhs))) {
@@ -3251,11 +3187,13 @@ void ps_node_expect_lvalue_at_in(
       return;
     }
   }
-  if (!node || (node->kind != ND_LVAR &&
-                node->kind != ND_MEMBER_ACCESS &&
-                node->kind != ND_UNARY_DEREF &&
-                node->kind != ND_SUBSCRIPT &&
-                node->kind != ND_DEREF && node->kind != ND_GVAR)) {
+  psx_work_node_kind_t resolved_kind =
+      psx_resolved_object_ref_node_kind(node);
+  if (!node || (resolved_kind != ND_LVAR &&
+                resolved_kind != ND_MEMBER_ACCESS &&
+                resolved_kind != ND_UNARY_DEREF &&
+                resolved_kind != ND_SUBSCRIPT &&
+                resolved_kind != ND_DEREF && resolved_kind != ND_GVAR)) {
     diag_emit_tokf_in(
         diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
         diag_message_for_in(diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),

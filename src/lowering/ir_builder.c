@@ -31,6 +31,7 @@
 #include "../parser/vla_runtime.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node.h"
+#include "../semantic/resolved_object_ref.h"
 #include "../semantic/resolved_function.h"
 #include "../semantic/function_call_resolution.h"
 #include "../semantic/case_label_resolution.h"
@@ -426,13 +427,13 @@ static ir_type_t scalar_value_type(int type_size, int is_pointer) {
 }
 
 static ir_type_t lvar_value_type(
-    const ir_build_ctx_t *ctx, node_lvar_t *lv) {
-  tk_float_kind_t fpk = ps_node_value_fp_kind((node_t *)lv);
+    const ir_build_ctx_t *ctx, node_t *local) {
+  tk_float_kind_t fpk = ps_node_value_fp_kind(local);
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  int elem = ir_node_type_size(ctx, (node_t *)lv);
+  int elem = ir_node_type_size(ctx, local);
   if (elem <= 0) elem = 4;
-  return scalar_value_type(elem, ps_node_value_is_pointer_like((node_t *)lv));
+  return scalar_value_type(elem, ps_node_value_is_pointer_like(local));
 }
 
 static int is_fp_type(ir_type_t t) {
@@ -678,19 +679,23 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
  * 典型は libc の `__stderrp` 等) は @PAGE/@PAGEOFF 直参照ではリンカに「does not have
  * address」と言われるため、関数アドレスと同じく GOT 経由 (@GOTPAGE/@GOTPAGEOFF) で解決する。
  * 同名のグローバル宣言が extern なら is_got_funcref を立てる。 */
-static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
+static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_t *node) {
+  global_var_t *global = psx_resolved_object_ref_global(node);
+  int name_len = 0;
+  char *name = psx_resolved_object_ref_name(node, &name_len);
   ir_symbol_t *resolved =
       lower_ir_global_symbol(
-          ctx->m, gv->symbol, ctx->semantic_types,
+          ctx->m, global, ctx->semantic_types,
           ctx->record_decls, ctx->record_layouts, ctx->target);
   int v_addr = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new((resolved ? resolved->is_thread_local
-                                         : gv->is_thread_local)
+                                         : psx_resolved_object_ref_is_thread_local(
+                                               node))
                                    ? IR_LOAD_TLV_ADDR
                                    : IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-  sym->sym = gv->name;
-  sym->sym_len = gv->name_len;
+  sym->sym = name;
+  sym->sym_len = name_len;
   if (resolved && resolved->is_extern) {
     sym->is_got_funcref = 1;
   }
@@ -699,8 +704,8 @@ static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
 }
 
 /* グローバル変数 (ND_GVAR) のアドレスをシンボルロードで得て vreg を返す (互換 API)。 */
-static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
-  return emit_load_sym_for_gvar(ctx, gv);
+static int address_of_gvar(ir_build_ctx_t *ctx, node_t *node) {
+  return emit_load_sym_for_gvar(ctx, node);
 }
 
 static int aggregate_size_from_type_id(
@@ -914,7 +919,8 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
   }
   /* LVAR / DEREF / GVAR: src のアドレスを得て 2*half バイト memcpy */
   if (node->kind == ND_LVAR) {
-    int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node)->offset);
+    int src_ptr = address_of_lvar(
+        ctx, psx_resolved_object_ref_storage_offset(node));
     if (src_ptr < 0) return;
     ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
     cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
@@ -946,8 +952,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     return;
   }
   if (node->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)node;
-    int v_addr = emit_load_sym_for_gvar(ctx, gv);
+    int v_addr = emit_load_sym_for_gvar(ctx, node);
     ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
     cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
     cp->src2 = ir_val_vreg(v_addr, IR_TY_PTR);
@@ -1168,8 +1173,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   /* グローバル変数 (スカラ): _<name>@PAGE/@PAGEOFF でアドレスを取って load。
    * 配列 / 構造体のグローバル変数は parser が ND_ADDR(ND_GVAR) で包む。
    * thread_local の場合は @TLVPPAGE 経由で動的にアドレス解決する。 */
-  node_gvar_t *gv = (node_gvar_t *)node;
-  int v_addr = emit_load_sym_for_gvar(ctx, gv);
+  int v_addr = emit_load_sym_for_gvar(ctx, node);
   /* load (型は node の fp_kind / type_size から判定) */
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
@@ -1216,9 +1220,9 @@ static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
-  node_lvar_t *lv = (node_lvar_t *)node;
-  ir_type_t vty = lvar_value_type(ctx, lv);
-  int ptr_vreg = address_of_lvar(ctx, lv->offset);
+  ir_type_t vty = lvar_value_type(ctx, node);
+  int ptr_vreg = address_of_lvar(
+      ctx, psx_resolved_object_ref_storage_offset(node));
   if (ptr_vreg < 0) return ir_val_none();
   /* bitfield 読み出し:
    *   v_load   = *ptr  (storage unit、通常 i32)
@@ -1383,14 +1387,14 @@ static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
   int dst_ptr_vreg = -1;
   if (node->lhs->kind == ND_LVAR) {
-    dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+    dst_ptr_vreg = address_of_lvar(
+        ctx, psx_resolved_object_ref_storage_offset(node->lhs));
   } else if (node->lhs->kind == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
   } else if (node->lhs->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)node->lhs;
-    dst_ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
+    dst_ptr_vreg = emit_load_sym_for_gvar(ctx, node->lhs);
   } else {
     fail(ctx, "complex assign dst not LVAR/DEREF/GVAR");
     return ir_val_none();
@@ -1410,13 +1414,14 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     assign_size = aggregate_size_from_node(ctx, node->rhs);
   int dst_ptr_vreg = -1;
   if (node->lhs->kind == ND_LVAR) {
-    dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+    dst_ptr_vreg = address_of_lvar(
+        ctx, psx_resolved_object_ref_storage_offset(node->lhs));
   } else if (node->lhs->kind == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
   } else if (node->lhs->kind == ND_GVAR) {
-    dst_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)node->lhs);
+    dst_ptr_vreg = address_of_gvar(ctx, node->lhs);
   } else {
     fail(ctx, "struct assign dst not LVAR/DEREF/GVAR");
     return ir_val_none();
@@ -1444,10 +1449,11 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
 static int aggregate_source_address(ir_build_ctx_t *ctx, node_t *src) {
   if (!src) return -1;
   if (src->kind == ND_LVAR) {
-    return address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
+    return address_of_lvar(
+        ctx, psx_resolved_object_ref_storage_offset(src));
   }
   if (src->kind == ND_GVAR) {
-    return address_of_gvar(ctx, (node_gvar_t *)src);
+    return address_of_gvar(ctx, src);
   }
   if (src->kind == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, src->lhs);
@@ -1534,9 +1540,9 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
 }
 
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
-  node_lvar_t *lv = (node_lvar_t *)node->lhs;
-  ir_type_t vty = lvar_value_type(ctx, lv);
-  int ptr_vreg = address_of_lvar(ctx, lv->offset);
+  ir_type_t vty = lvar_value_type(ctx, node->lhs);
+  int ptr_vreg = address_of_lvar(
+      ctx, psx_resolved_object_ref_storage_offset(node->lhs));
   if (ptr_vreg < 0) return ir_val_none();
   ir_val_t rhs = build_expr_with_callable_type(
       ctx, node->rhs, ps_node_qual_type(node->lhs).type_id);
@@ -1576,14 +1582,13 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
-  node_gvar_t *gv = (node_gvar_t *)node->lhs;
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
     int sz = ir_node_type_size(ctx, node->lhs);
     if (sz <= 0) sz = 4;
     vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
-  int v_addr = emit_load_sym_for_gvar(ctx, gv);
+  int v_addr = emit_load_sym_for_gvar(ctx, node->lhs);
   ir_val_t rhs = build_expr_with_callable_type(
       ctx, node->rhs, ps_node_qual_type(node->lhs).type_id);
   if (ctx->failed) return ir_val_none();
@@ -1644,16 +1649,15 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   }
   /* &gvar: グローバル変数のアドレス (= LOAD_SYM のみ、load しない) */
   if (node->lhs && node->lhs->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)node->lhs;
-    int v = emit_load_sym_for_gvar(ctx, gv);
+    int v = emit_load_sym_for_gvar(ctx, node->lhs);
     return ir_val_vreg(v, IR_TY_PTR);
   }
   if (!node->lhs || node->lhs->kind != ND_LVAR) {
     fail(ctx, "& of non-lvar (Phase 4b unsupported)");
     return ir_val_none();
   }
-  node_lvar_t *lv = (node_lvar_t *)node->lhs;
-  int ptr_vreg = address_of_lvar(ctx, lv->offset);
+  int ptr_vreg = address_of_lvar(
+      ctx, psx_resolved_object_ref_storage_offset(node->lhs));
   if (ptr_vreg < 0) return ir_val_none();
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
@@ -1693,7 +1697,8 @@ static psx_type_id_t function_callable_return_type_id(
 
 static ir_val_t build_node_funcref_with_type(
     ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id) {
-  node_funcref_t *fr = (node_funcref_t *)node;
+  int name_len = 0;
+  char *name = psx_resolved_object_ref_name(node, &name_len);
   psx_type_id_t callable_type_id =
       ir_type_id_derives_function(ctx, expected_type_id)
           ? expected_type_id
@@ -1701,8 +1706,8 @@ static ir_val_t build_node_funcref_with_type(
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
-  sym->sym = fr->funcname;
-  sym->sym_len = fr->funcname_len;
+  sym->sym = name;
+  sym->sym_len = name_len;
   sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
   sym->is_function_symbol = 1;
   attach_callable_type(ctx, sym, callable_type_id);
@@ -2083,8 +2088,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
        * struct 引数として扱う。これをしないと先頭 8B を値ロードして渡し、9-16B
        * struct の x1 分 (= 後半メンバ) が落ちていた。 */
       if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
-        node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
-        lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
+        lvar_t *owner_cl = find_owning_lvar(
+            ctx, psx_resolved_object_ref_storage_offset(arg->rhs));
         int cl_sz = owner_cl ? ir_lvar_storage_size(ctx, owner_cl, 0)
                              : ir_node_type_size(ctx, arg->rhs);
         if (aggregate_size_from_node(ctx, arg->rhs) > 0 &&
@@ -2138,11 +2143,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
        * させるためのフラグ。 */
       int struct_needs_ptr = 0;
       if (arg && arg->kind == ND_LVAR) {
-        node_lvar_t *lv = (node_lvar_t *)arg;
         /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
         if (!ps_node_value_is_pointer_like(arg)) {
-          lvar_t *owner = find_owning_lvar(ctx, lv->offset);
+          lvar_t *owner = find_owning_lvar(
+              ctx, psx_resolved_object_ref_storage_offset(arg));
           if (owner) arg_full_size = ir_lvar_storage_size(ctx, owner, 0);
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
           if (arg_full_size == 0) arg_full_size = ir_node_type_size(ctx, arg);
@@ -2218,9 +2223,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
         } else if (arg->kind == ND_GVAR) {
-          src_ptr = address_of_gvar(ctx, (node_gvar_t *)arg);
+          src_ptr = address_of_gvar(ctx, arg);
         } else {
-          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+          src_ptr = address_of_lvar(
+              ctx, psx_resolved_object_ref_storage_offset(arg));
         }
         if (src_ptr < 0) return ir_val_none();
         int chunk = ir_func_new_vreg(ctx->f);
@@ -2250,9 +2256,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
         } else if (arg->kind == ND_GVAR) {
-          src_ptr = address_of_gvar(ctx, (node_gvar_t *)arg);
+          src_ptr = address_of_gvar(ctx, arg);
         } else {
-          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+          src_ptr = address_of_lvar(
+              ctx, psx_resolved_object_ref_storage_offset(arg));
         }
         if (src_ptr < 0) return ir_val_none();
         int tmp_vreg = ir_func_new_vreg(ctx->f);
@@ -2733,9 +2740,9 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   int ptr_vreg = -1;
   ir_type_t vty = IR_TY_I32;
   if (target->kind == ND_LVAR) {
-    node_lvar_t *lv = (node_lvar_t *)target;
-    vty = lvar_value_type(ctx, lv);
-    ptr_vreg = address_of_lvar(ctx, lv->offset);
+    vty = lvar_value_type(ctx, target);
+    ptr_vreg = address_of_lvar(
+        ctx, psx_resolved_object_ref_storage_offset(target));
   } else if (target->kind == ND_DEREF) {
     ir_val_t p = build_expr(ctx, target->lhs);
     if (ctx->failed) return ir_val_none();
@@ -2747,14 +2754,13 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
                               ps_node_value_is_pointer_like(target));
     }
   } else if (target->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
       int sz = ir_node_type_size(ctx, target);
       if (sz <= 0) sz = 4;
       vty = scalar_value_type(sz, ps_node_value_is_pointer_like(target));
     }
-    ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
+    ptr_vreg = emit_load_sym_for_gvar(ctx, target);
   } else {
     fail(ctx, "inc/dec target not LVAR/DEREF/GVAR");
     return ir_val_none();
@@ -3572,8 +3578,8 @@ static int setup_function_params(
       fail(ctx, "non-lvar parameter (Phase 4a unsupported)");
       return 0;
     }
-    node_lvar_t *lv = (node_lvar_t *)arg;
-    lvar_t *owner = find_owning_lvar(ctx, lv->offset);
+    int local_offset = psx_resolved_object_ref_storage_offset(arg);
+    lvar_t *owner = find_owning_lvar(ctx, local_offset);
     int param_full_size = owner
                               ? ir_lvar_storage_size(
                                     ctx, owner, ir_node_type_size(ctx, arg))
@@ -3603,7 +3609,7 @@ static int setup_function_params(
               param_full_size >= 2 ? 2 : 1) < 0) {
         return 0;
       }
-      int slot_vreg = address_of_lvar(ctx, lv->offset);
+      int slot_vreg = address_of_lvar(ctx, local_offset);
       if (slot_vreg < 0) return 0;
       ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
       cp->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
@@ -3618,7 +3624,7 @@ static int setup_function_params(
       ir_type_t pty = param_type->floating_kind == PSX_FLOATING_KIND_FLOAT
                           ? IR_TY_F32 : IR_TY_F64;
       int half = (pty == IR_TY_F32) ? 4 : 8;
-      int base_ptr = address_of_lvar(ctx, lv->offset);
+      int base_ptr = address_of_lvar(ctx, local_offset);
       if (base_ptr < 0) return 0;
       for (int part = 0; part < 2; part++) {
         int pv = ir_func_new_vreg(ctx->f);
@@ -3644,7 +3650,7 @@ static int setup_function_params(
       }
       continue;
     }
-    ir_type_t vty = lvar_value_type(ctx, lv);
+    ir_type_t vty = lvar_value_type(ctx, arg);
     int reg_idx = is_fp_type(vty) ? fp_arg_idx++ : int_arg_idx++;
     int param_vreg = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
@@ -3656,13 +3662,12 @@ static int setup_function_params(
           ctx, ps_node_qual_type(arg).type_id);
       int is_pointer =
           ps_node_value_is_pointer_like(arg) ||
-          ps_node_value_is_pointer_like((node_t *)lv) ||
           ps_lvar_value_is_pointer_like(owner);
       ir_type_t abi_type = is_pointer ? IR_TY_PTR : param.type;
       if (abi_type == IR_TY_VOID) abi_type = vty;
       ctx->f->param_abi_types[abi_idx++] = abi_type;
     }
-    int ptr_vreg = address_of_lvar(ctx, lv->offset);
+    int ptr_vreg = address_of_lvar(ctx, local_offset);
     if (ptr_vreg < 0) return 0;
     ir_inst_t *st = ir_inst_new(IR_STORE);
     st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);

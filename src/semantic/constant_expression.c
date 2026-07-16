@@ -3,6 +3,8 @@
 #include "alignof_query_resolution.h"
 #include "generic_selection_resolution.h"
 #include "literal_resolution.h"
+#include "resolved_node_kind.h"
+#include "resolved_object_ref.h"
 #include "sizeof_query_resolution.h"
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
@@ -49,7 +51,7 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     if (ok) *ok = 0;
     return 0;
   }
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_NUM:
       return ((node_num_t *)node)->val;
     case ND_CAST: {
@@ -110,10 +112,11 @@ long long psx_eval_const_int(node_t *node, int *ok) {
       return psx_eval_const_int(selected, ok);
     }
     case ND_GVAR: {
-      node_gvar_t *ref = (node_gvar_t *)node;
-      global_var_t *global = ref->symbol;
-      if (global && global->name_len == ref->name_len &&
-          memcmp(global->name, ref->name, (size_t)global->name_len) == 0) {
+      global_var_t *global = psx_resolved_object_ref_global(node);
+      int name_len = 0;
+      char *name = psx_resolved_object_ref_name(node, &name_len);
+      if (global && name && global->name_len == name_len &&
+          memcmp(global->name, name, (size_t)global->name_len) == 0) {
         const psx_type_t *type = ps_gvar_get_decl_type(global);
         if (global->has_init && !global->init_symbol &&
             !global->init_values && !global->init_fvalues && type &&
@@ -170,7 +173,7 @@ long long psx_eval_const_int(node_t *node, int *ok) {
   long long left = psx_eval_const_int(node->lhs, ok);
   if (ok && !*ok) return 0;
   long long right = psx_eval_const_int(node->rhs, ok);
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_ADD: return left + right;
     case ND_SUB: return left - right;
     case ND_MUL: return left * right;
@@ -198,7 +201,7 @@ double psx_eval_const_fp(node_t *node, int *ok) {
     if (ok) *ok = 0;
     return 0.0;
   }
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_NUM: {
       node_num_t *number = (node_num_t *)node;
       return ps_node_value_fp_kind(node) != TK_FLOAT_KIND_NONE
@@ -257,9 +260,9 @@ int psx_resolve_static_address_constant(
   switch (node->kind) {
     case ND_ADDR:
       if (node->lhs && node->lhs->kind == ND_GVAR) {
-        node_gvar_t *global = (node_gvar_t *)node->lhs;
-        *symbol = global->name;
-        *symbol_len = global->name_len;
+        *symbol = psx_resolved_object_ref_name(
+            node->lhs, symbol_len);
+        if (!*symbol) return 0;
         return 1;
       }
       if (node->lhs && node->lhs->kind == ND_DEREF) {
@@ -272,16 +275,12 @@ int psx_resolve_static_address_constant(
           node->lhs, symbol, symbol_len, offset);
     }
     case ND_FUNCREF: {
-      node_funcref_t *function = (node_funcref_t *)node;
-      *symbol = function->funcname;
-      *symbol_len = function->funcname_len;
-      return 1;
+      *symbol = psx_resolved_object_ref_name(node, symbol_len);
+      return *symbol != NULL;
     }
     case ND_GVAR: {
-      node_gvar_t *global = (node_gvar_t *)node;
-      *symbol = global->name;
-      *symbol_len = global->name_len;
-      return 1;
+      *symbol = psx_resolved_object_ref_name(node, symbol_len);
+      return *symbol != NULL;
     }
     case ND_STRING: {
       node_string_t *string = (node_string_t *)node;

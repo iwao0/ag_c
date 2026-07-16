@@ -10,7 +10,9 @@
 #include "../parser/semantic_ctx.h"
 #include "../semantic/generic_selection_resolution.h"
 #include "../semantic/resolved_function.h"
+#include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_object_ref.h"
 #include "../semantic/sizeof_query_resolution.h"
 #include "../semantic/source_cast_resolution.h"
 #include "../semantic/vla_runtime_plan.h"
@@ -115,7 +117,7 @@ static node_t *lower_tree(
     const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return NULL;
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_STATIC_ASSERT: {
       node_static_assert_t *assertion =
           (node_static_assert_t *)node;

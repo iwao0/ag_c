@@ -10,6 +10,7 @@
 #include "../parser/local_declaration_syntax.h"
 #include "../parser/node_utils.h"
 #include "resolution_work_tree_internal.h"
+#include "resolved_node.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
 #include "semantic_tree_internal.h"
@@ -45,12 +46,12 @@ static size_t node_storage_size(const node_t *node) {
     case ND_STATIC_ASSERT: return sizeof(node_static_assert_t);
     case ND_VLA_ALLOC: return sizeof(node_vla_alloc_t);
     case ND_NUM: return sizeof(node_num_t);
-    case ND_LVAR: return sizeof(node_lvar_t);
+    case ND_LVAR: return sizeof(node_t);
     case ND_STRING: return sizeof(node_string_t);
     case ND_BLOCK: return sizeof(node_block_t);
     case ND_FUNCDEF: return sizeof(node_function_definition_t);
     case ND_FUNCALL: return sizeof(node_function_call_t);
-    case ND_FUNCREF: return sizeof(node_funcref_t);
+    case ND_FUNCREF: return sizeof(node_t);
     case ND_IF:
     case ND_WHILE:
     case ND_DO_WHILE:
@@ -63,7 +64,7 @@ static size_t node_storage_size(const node_t *node) {
     case ND_GOTO:
     case ND_LABEL:
       return sizeof(node_jump_t);
-    case ND_GVAR: return sizeof(node_gvar_t);
+    case ND_GVAR: return sizeof(node_t);
     default: return sizeof(node_t);
   }
 }

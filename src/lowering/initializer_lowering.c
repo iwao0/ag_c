@@ -9,6 +9,7 @@
 #include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
 #include "../type_layout.h"
 #include "../tokenizer/literals.h"
@@ -260,10 +261,11 @@ static lvar_t *array_copy_source_local(
   if (value->kind == ND_COMMA && value->rhs &&
       value->rhs->kind == ND_ADDR && value->rhs->lhs &&
       value->rhs->lhs->kind == ND_LVAR) {
-    node_lvar_t *source = (node_lvar_t *)value->rhs->lhs;
-    if (source_offset) *source_offset = source->offset;
+    node_t *source = value->rhs->lhs;
+    if (source_offset)
+      *source_offset = psx_resolved_object_ref_storage_offset(source);
     if (initialization) *initialization = value->lhs;
-    return source->var;
+    return psx_resolved_object_ref_local(source);
   }
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(value);
@@ -1018,9 +1020,9 @@ static node_t *try_lower_typed_array_copy(
   lvar_t *source = NULL;
   if (value->kind == ND_ADDR && value->lhs &&
       value->lhs->kind == ND_LVAR) {
-    node_lvar_t *source_node = (node_lvar_t *)value->lhs;
-    source = source_node->var;
-    source_offset = source_node->offset;
+    source = psx_resolved_object_ref_local(value->lhs);
+    source_offset =
+        psx_resolved_object_ref_storage_offset(value->lhs);
   } else {
     source = array_copy_source_local(
         value, &source_offset, &source_initialization);

@@ -1,10 +1,12 @@
 #include "assignment_validation.h"
+#include "resolved_node_kind.h"
 
 #include "../parser/ast.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "function_call_resolution.h"
+#include "resolved_object_ref.h"
 
 void psx_validate_assignment_in_context(
     psx_semantic_context_t *semantic_context, const node_t *node,
@@ -64,7 +66,7 @@ void psx_validate_assignment_in_context(
 
   if (!node->is_source_assignment &&
       !node->is_source_compound_assignment) return;
-  if (node->lhs->kind == ND_FUNCREF) {
+  if (psx_resolved_object_ref_node_kind(node->lhs) == ND_FUNCREF) {
     ps_diag_ctx_in(
         diagnostics, tok, "assign",
         "関数識別子に代入することはできません (C11 6.5.16p2)");

@@ -7,7 +7,6 @@
 #include "../parser/node_vla_public.h"
 #include "../parser/symtab.h"
 #include "../parser/type_builder.h"
-#include "resolved_node.h"
 #include "resolved_node_kind.h"
 #include "resolved_node_type.h"
 #include "resolution_state.h"
@@ -18,34 +17,111 @@ static psx_resolved_reference_state_t *reference_state(node_t *node) {
   return state ? &state->reference : NULL;
 }
 
-static node_lvar_t *new_lvar_symbol_node(
-    arena_context_t *arena_context, int offset, lvar_t *var,
-    const psx_type_t *type) {
-  node_lvar_t *node = psx_resolution_node_alloc_in(
-      arena_context, sizeof(*node));
-  if (!node) return NULL;
-  node->base.kind = ND_LVAR;
+int psx_bind_local_reference_in(
+    arena_context_t *arena_context, node_t *node, lvar_t *var,
+    int storage_offset, const psx_type_t *type) {
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(arena_context, node))
+    return 0;
   if (var && type == ps_lvar_get_decl_type(var)) {
     ps_node_bind_qual_type(
-        (node_t *)node, type, ps_lvar_decl_qual_type(var));
+        node, type, ps_lvar_decl_qual_type(var));
   } else {
-    ps_node_bind_type((node_t *)node, type);
+    ps_node_bind_type(node, type);
   }
-  node->offset = offset;
-  node->var = var;
-  psx_resolved_reference_state_t *reference =
-      reference_state((node_t *)node);
-  if (reference) {
-    reference->kind = PSX_RESOLVED_REFERENCE_LOCAL;
-    reference->local = var;
-    reference->storage_offset = offset;
-  }
+  psx_resolved_reference_state_t *reference = reference_state(node);
+  if (!reference) return 0;
+  *reference = (psx_resolved_reference_state_t){
+      .local = var,
+      .storage_offset = storage_offset,
+      .kind = PSX_RESOLVED_REFERENCE_LOCAL,
+  };
   if (var) {
     ps_node_set_vla_runtime_view(
-        (node_t *)node, ps_lvar_vla_row_stride_frame_off(var),
+        node, ps_lvar_vla_row_stride_frame_off(var),
         ps_lvar_vla_strides_remaining(var));
   }
-  return node;
+  return 1;
+}
+
+int psx_bind_global_reference_in(
+    arena_context_t *arena_context, node_t *node,
+    global_var_t *global, char *name, int name_len,
+    const psx_type_t *type, psx_qual_type_t qual_type,
+    int is_thread_local) {
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(arena_context, node))
+    return 0;
+  ps_node_bind_qual_type(node, type, qual_type);
+  psx_resolved_reference_state_t *reference = reference_state(node);
+  if (!reference) return 0;
+  *reference = (psx_resolved_reference_state_t){
+      .global = global,
+      .name = name,
+      .name_len = name_len,
+      .kind = PSX_RESOLVED_REFERENCE_GLOBAL,
+      .is_thread_local = is_thread_local ? 1 : 0,
+  };
+  return 1;
+}
+
+int psx_bind_function_reference_in(
+    arena_context_t *arena_context, node_t *node,
+    char *name, int name_len, const psx_type_t *function_type) {
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(arena_context, node))
+    return 0;
+  ps_node_bind_type(
+      node, function_type
+                ? ps_type_clone_in(arena_context, function_type)
+                : NULL);
+  psx_resolved_reference_state_t *reference = reference_state(node);
+  if (!reference) return 0;
+  *reference = (psx_resolved_reference_state_t){
+      .name = name,
+      .name_len = name_len,
+      .kind = PSX_RESOLVED_REFERENCE_FUNCTION,
+  };
+  return 1;
+}
+
+int psx_bind_va_arg_area_reference_in(
+    arena_context_t *arena_context, node_t *node) {
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(arena_context, node))
+    return 0;
+  psx_resolved_reference_state_t *reference = reference_state(node);
+  if (!reference) return 0;
+  *reference = (psx_resolved_reference_state_t){
+      .kind = PSX_RESOLVED_REFERENCE_VA_ARG_AREA,
+  };
+  return 1;
+}
+
+psx_work_node_kind_t psx_resolved_object_ref_node_kind(
+    const node_t *node) {
+  if (!node || node->kind != ND_IDENTIFIER)
+    return node ? node->kind : (psx_work_node_kind_t)0;
+  switch (psx_resolved_object_ref_kind(node)) {
+    case PSX_RESOLVED_OBJECT_REF_LOCAL: return ND_LVAR;
+    case PSX_RESOLVED_OBJECT_REF_GLOBAL: return ND_GVAR;
+    case PSX_RESOLVED_OBJECT_REF_FUNCTION: return ND_FUNCREF;
+    case PSX_RESOLVED_OBJECT_REF_VA_ARG_AREA: return ND_VA_ARG_AREA;
+    case PSX_RESOLVED_OBJECT_REF_NONE: return ND_IDENTIFIER;
+  }
+  return ND_IDENTIFIER;
+}
+
+static node_t *new_lvar_symbol_node(
+    arena_context_t *arena_context, int offset, lvar_t *var,
+    const psx_type_t *type) {
+  node_t *node = psx_resolution_node_alloc_in(
+      arena_context, sizeof(*node));
+  if (!node) return NULL;
+  node->kind = ND_LVAR;
+  return psx_bind_local_reference_in(
+             arena_context, node, var, offset, type)
+             ? node : NULL;
 }
 
 static psx_integer_kind_t integer_kind_for_storage_size(int size) {
@@ -298,38 +374,34 @@ node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     member_type = ps_type_new_integer_kind_in(
         arena_context, PSX_INTEGER_KIND_INT, 0, 0);
   }
-  node_lvar_t *node = new_lvar_symbol_node(
+  node_t *node = new_lvar_symbol_node(
       arena_context, (owner ? owner->offset : 0) + member_offset,
       owner, member_type);
   if (!node) return NULL;
   ps_node_set_bitfield_info(
-      (node_t *)node, bit_width, bit_offset, bit_is_signed);
-  return (node_t *)node;
+      node, bit_width, bit_offset, bit_is_signed);
+  return node;
 }
 
-static node_gvar_t *new_global_symbol_node(
+static node_t *new_global_symbol_node(
     arena_context_t *arena_context) {
-  node_gvar_t *node = psx_resolution_node_alloc_in(
+  node_t *node = psx_resolution_node_alloc_in(
       arena_context, sizeof(*node));
-  if (node) node->base.kind = ND_GVAR;
+  if (node) node->kind = ND_GVAR;
   return node;
 }
 
 node_t *ps_node_new_gvar_for_in(
     arena_context_t *arena_context, global_var_t *global) {
-  node_gvar_t *node = new_global_symbol_node(arena_context);
+  node_t *node = new_global_symbol_node(arena_context);
   if (!node) return NULL;
   if (global) {
-    node->symbol = global;
     ps_node_bind_qual_type(
-        (node_t *)node, ps_gvar_get_decl_type(global),
+        node, ps_gvar_get_decl_type(global),
         ps_gvar_decl_qual_type(global));
-    node->name = global->name;
-    node->name_len = global->name_len;
-    node->is_thread_local = global->is_thread_local ? 1 : 0;
   }
   psx_resolved_reference_state_t *reference =
-      reference_state((node_t *)node);
+      reference_state(node);
   if (reference) {
     reference->kind = PSX_RESOLVED_REFERENCE_GLOBAL;
     reference->global = global;
@@ -338,7 +410,7 @@ node_t *ps_node_new_gvar_for_in(
     reference->is_thread_local =
         global && global->is_thread_local ? 1 : 0;
   }
-  return (node_t *)node;
+  return node;
 }
 
 node_t *psx_node_new_gvar_array_base_for_in(
@@ -348,59 +420,54 @@ node_t *psx_node_new_gvar_array_base_for_in(
 
 node_t *psx_node_new_static_local_gvar_for_in(
     arena_context_t *arena_context, lvar_t *var) {
-  node_gvar_t *node = new_global_symbol_node(arena_context);
+  node_t *node = new_global_symbol_node(arena_context);
   if (!node) return NULL;
   if (var) {
-    node->symbol = var->static_global;
     const psx_type_t *type = var->static_global
                                  ? ps_gvar_get_decl_type(
                                        var->static_global)
                                  : NULL;
     if (type && var->static_global) {
       ps_node_bind_qual_type(
-          (node_t *)node, type,
+          node, type,
           ps_gvar_decl_qual_type(var->static_global));
     } else {
       type = ps_lvar_get_decl_type(var);
       ps_node_bind_qual_type(
-          (node_t *)node, type, ps_lvar_decl_qual_type(var));
+          node, type, ps_lvar_decl_qual_type(var));
     }
-    node->name = var->static_global_name;
-    node->name_len = var->static_global_name_len;
   }
   psx_resolved_reference_state_t *reference =
-      reference_state((node_t *)node);
+      reference_state(node);
   if (reference) {
     reference->kind = PSX_RESOLVED_REFERENCE_GLOBAL;
     reference->global = var ? var->static_global : NULL;
     reference->name = var ? var->static_global_name : NULL;
     reference->name_len = var ? var->static_global_name_len : 0;
   }
-  return (node_t *)node;
+  return node;
 }
 
 node_t *psx_node_new_function_reference_in(
     arena_context_t *arena_context, char *name, int name_len,
     const psx_type_t *function_type) {
-  node_funcref_t *reference = psx_resolution_node_alloc_in(
+  node_t *reference = psx_resolution_node_alloc_in(
       arena_context, sizeof(*reference));
   if (!reference) return NULL;
-  reference->base.kind = ND_FUNCREF;
+  reference->kind = ND_FUNCREF;
   ps_node_bind_type(
-      (node_t *)reference,
+      reference,
       function_type
           ? ps_type_clone_in(arena_context, function_type)
           : NULL);
-  reference->funcname = name;
-  reference->funcname_len = name_len;
   psx_resolved_reference_state_t *state =
-      reference_state((node_t *)reference);
+      reference_state(reference);
   if (state) {
     state->kind = PSX_RESOLVED_REFERENCE_FUNCTION;
     state->name = name;
     state->name_len = name_len;
   }
-  return (node_t *)reference;
+  return reference;
 }
 
 node_t *psx_node_new_va_arg_area_reference_in(

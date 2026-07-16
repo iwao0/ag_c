@@ -180,15 +180,21 @@ static void source_compare_operands(
 
 static int nodes_identity_equal(node_t *lhs, node_t *rhs) {
   if (!lhs || !rhs || lhs->kind != rhs->kind) return 0;
-  if (lhs->kind == ND_LVAR) {
-    lvar_t *var = ps_node_lvar_symbol(lhs);
-    return var && var == ps_node_lvar_symbol(rhs);
+  psx_resolved_object_ref_kind_t reference_kind =
+      psx_resolved_object_ref_kind(lhs);
+  if (reference_kind != psx_resolved_object_ref_kind(rhs)) return 0;
+  if (reference_kind == PSX_RESOLVED_OBJECT_REF_LOCAL) {
+    lvar_t *var = psx_resolved_object_ref_local(lhs);
+    return var && var == psx_resolved_object_ref_local(rhs);
   }
-  if (lhs->kind == ND_GVAR) {
-    node_gvar_t *a = (node_gvar_t *)lhs;
-    node_gvar_t *b = (node_gvar_t *)rhs;
-    return a->name_len == b->name_len &&
-           memcmp(a->name, b->name, (size_t)a->name_len) == 0;
+  if (reference_kind == PSX_RESOLVED_OBJECT_REF_GLOBAL ||
+      reference_kind == PSX_RESOLVED_OBJECT_REF_FUNCTION) {
+    int lhs_len = 0;
+    int rhs_len = 0;
+    char *lhs_name = psx_resolved_object_ref_name(lhs, &lhs_len);
+    char *rhs_name = psx_resolved_object_ref_name(rhs, &rhs_len);
+    return lhs_name && rhs_name && lhs_len == rhs_len &&
+           memcmp(lhs_name, rhs_name, (size_t)lhs_len) == 0;
   }
   if (lhs->kind == ND_NUM) {
     return ((node_num_t *)lhs)->val == ((node_num_t *)rhs)->val &&

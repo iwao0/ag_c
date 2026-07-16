@@ -4,6 +4,8 @@
 #include "../parser/arena.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
+#include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_object_ref.h"
 
 static int count_items(const node_t *node) {
   if (!node) return 0;
@@ -26,16 +28,18 @@ static int local_ref_from_node(
     const psx_lowering_context_t *lowering_context,
     const node_t *node, psx_runtime_initializer_local_ref_t *ref) {
   if (!node || node->kind != ND_LVAR || !ref) return 0;
-  const node_lvar_t *local = (const node_lvar_t *)node;
-  if (!local->var) return 0;
+  lvar_t *local = psx_resolved_object_ref_local(node);
+  if (!local) return 0;
   int bit_width = 0;
   int bit_offset = 0;
   int bit_is_signed = 0;
   ps_node_bitfield_info(
       (node_t *)node, &bit_width, &bit_offset, &bit_is_signed);
   *ref = (psx_runtime_initializer_local_ref_t){
-      .local = local->var,
-      .relative_offset = local->offset - ps_lvar_offset(local->var),
+      .local = local,
+      .relative_offset =
+          psx_resolved_object_ref_storage_offset(node) -
+          ps_lvar_offset(local),
       .qual_type = resolved_node_qual_type(lowering_context, node),
       .bit_width = (unsigned char)(bit_width > 0 ? bit_width : 0),
       .bit_offset = (unsigned char)(bit_offset > 0 ? bit_offset : 0),

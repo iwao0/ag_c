@@ -1,4 +1,5 @@
 #include "member_access_resolution.h"
+#include "resolved_node_kind.h"
 
 #include "../parser/node_utils.h"
 

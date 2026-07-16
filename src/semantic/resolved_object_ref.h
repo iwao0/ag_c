@@ -2,6 +2,7 @@
 #define SEMANTIC_RESOLVED_OBJECT_REF_H
 
 #include "../parser/core.h"
+#include "../parser/syntax_node_kind.h"
 #include "../parser/type.h"
 #include "../type_system/type_ids.h"
 
@@ -17,6 +18,22 @@ typedef enum {
   PSX_RESOLVED_OBJECT_REF_FUNCTION,
   PSX_RESOLVED_OBJECT_REF_VA_ARG_AREA,
 } psx_resolved_object_ref_kind_t;
+
+int psx_bind_local_reference_in(
+    arena_context_t *arena_context, node_t *node, lvar_t *var,
+    int storage_offset, const psx_type_t *type);
+int psx_bind_global_reference_in(
+    arena_context_t *arena_context, node_t *node,
+    global_var_t *global, char *name, int name_len,
+    const psx_type_t *type, psx_qual_type_t qual_type,
+    int is_thread_local);
+int psx_bind_function_reference_in(
+    arena_context_t *arena_context, node_t *node,
+    char *name, int name_len, const psx_type_t *function_type);
+int psx_bind_va_arg_area_reference_in(
+    arena_context_t *arena_context, node_t *node);
+psx_work_node_kind_t psx_resolved_object_ref_node_kind(
+    const node_t *node);
 
 node_t *psx_node_new_lvar_in(
     arena_context_t *arena_context, int offset);
