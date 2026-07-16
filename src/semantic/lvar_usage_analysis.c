@@ -211,15 +211,6 @@ void psx_collect_lvar_usage_events_in(
       return;
     }
     case ND_CAST:
-      if (node->is_source_cast) {
-        node_t *lowered = psx_source_cast_lowered_value(
-            (node_source_cast_t *)node);
-        if (lowered) {
-          psx_collect_lvar_usage_events_in(
-              local_registry, lowered, region);
-          return;
-        }
-      }
       psx_collect_lvar_usage_events_in(
           local_registry, node->lhs, region);
       return;

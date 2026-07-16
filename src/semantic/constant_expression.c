@@ -1,11 +1,45 @@
 #include "constant_expression.h"
 
 #include "generic_selection_resolution.h"
-#include "source_cast_resolution.h"
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
+#include <stdint.h>
 #include <string.h>
+
+static int integer_cast_width(const psx_type_t *type) {
+  if (!type || type->kind != PSX_TYPE_INTEGER) return 0;
+  switch (type->integer_kind) {
+    case PSX_INTEGER_KIND_CHAR: return 1;
+    case PSX_INTEGER_KIND_SHORT: return 2;
+    case PSX_INTEGER_KIND_INT:
+    case PSX_INTEGER_KIND_ENUM:
+      return 4;
+    case PSX_INTEGER_KIND_LONG_LONG: return 8;
+    case PSX_INTEGER_KIND_LONG:
+    case PSX_INTEGER_KIND_NONE:
+    default:
+      return 0;
+  }
+}
+
+static long long normalize_integer_cast(
+    long long value, const psx_type_t *target) {
+  int byte_width = integer_cast_width(target);
+  int bits = byte_width * 8;
+  if (bits <= 0 || bits >= 64) return value;
+  uint64_t mask = (UINT64_C(1) << bits) - 1;
+  uint64_t normalized = (uint64_t)value & mask;
+  if (!ps_type_is_unsigned(target) &&
+      (normalized & (UINT64_C(1) << (bits - 1))))
+    normalized |= ~mask;
+  return (long long)normalized;
+}
+
+static int type_uses_floating_value(const psx_type_t *type) {
+  return type && (type->kind == PSX_TYPE_FLOAT ||
+                  type->kind == PSX_TYPE_COMPLEX);
+}
 
 long long psx_eval_const_int(node_t *node, int *ok) {
   if (!node) {
@@ -16,15 +50,25 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     case ND_NUM:
       return ((node_num_t *)node)->val;
     case ND_CAST: {
-      node_t *value = node->is_source_cast
-                          ? psx_source_cast_lowered_value(
-                                (node_source_cast_t *)node)
-                          : NULL;
       if (ps_node_value_is_void(node)) {
         if (ok) *ok = 0;
         return 0;
       }
-      return psx_eval_const_int(value ? value : node->lhs, ok);
+      if (!node->is_source_cast)
+        return psx_eval_const_int(node->lhs, ok);
+      const psx_type_t *target = ps_node_get_type(node);
+      const psx_type_t *source = ps_node_get_type(node->lhs);
+      long long result = type_uses_floating_value(source)
+                             ? (long long)psx_eval_const_fp(node->lhs, ok)
+                             : psx_eval_const_int(node->lhs, ok);
+      if (ok && !*ok) return 0;
+      if (target && target->kind == PSX_TYPE_BOOL)
+        return result != 0;
+      if (target && target->kind == PSX_TYPE_INTEGER)
+        return normalize_integer_cast(result, target);
+      if (target && target->kind == PSX_TYPE_FLOAT)
+        return (long long)psx_eval_const_fp(node->lhs, ok);
+      return result;
     }
     case ND_UNARY_NEGATE: {
       long long value = psx_eval_const_int(node->lhs, ok);
@@ -154,11 +198,13 @@ double psx_eval_const_fp(node_t *node, int *ok) {
                  ? number->fval : (double)number->val;
     }
     case ND_CAST: {
-      node_t *value = node->is_source_cast
-                          ? psx_source_cast_lowered_value(
-                                (node_source_cast_t *)node)
-                          : NULL;
-      return psx_eval_const_fp(value ? value : node->lhs, ok);
+      if (!node->is_source_cast)
+        return psx_eval_const_fp(node->lhs, ok);
+      const psx_type_t *target = ps_node_get_type(node);
+      if (target && (target->kind == PSX_TYPE_BOOL ||
+                     target->kind == PSX_TYPE_INTEGER))
+        return (double)psx_eval_const_int(node, ok);
+      return psx_eval_const_fp(node->lhs, ok);
     }
     case ND_UNARY_NEGATE: {
       double value = psx_eval_const_fp(node->lhs, ok);
@@ -215,12 +261,8 @@ int psx_resolve_static_address_constant(
       }
       return 0;
     case ND_CAST: {
-      node_t *value = node->is_source_cast
-                          ? psx_source_cast_lowered_value(
-                                (node_source_cast_t *)node)
-                          : NULL;
       return psx_resolve_static_address_constant(
-          value ? value : node->lhs, symbol, symbol_len, offset);
+          node->lhs, symbol, symbol_len, offset);
     }
     case ND_FUNCREF: {
       node_funcref_t *function = (node_funcref_t *)node;

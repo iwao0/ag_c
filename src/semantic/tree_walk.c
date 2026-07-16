@@ -1,7 +1,6 @@
 #include "tree_walk.h"
 
 #include "generic_selection_resolution.h"
-#include "source_cast_resolution.h"
 #include "../parser/node_resolution_state.h"
 
 static int walk_node(
@@ -63,12 +62,6 @@ static int walk_node(
           visitor, user);
     }
     case ND_CAST:
-      if (node->is_source_cast) {
-        const node_t *lowered =
-            psx_source_cast_lowered_value_const(
-                (const node_source_cast_t *)node);
-        if (lowered) return walk_node(lowered, visitor, user);
-      }
       break;
     case ND_SIZEOF_QUERY: {
       const node_sizeof_query_t *query =

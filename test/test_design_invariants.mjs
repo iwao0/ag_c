@@ -3357,13 +3357,16 @@ const explicitDiagnosticCastLoweringSource = await readFile(
 const explicitWidthShiftConstructor = nodeUtilsSource.match(
   /node_t\s*\*ps_node_new_shift_trunc_extend_for_width_in\s*\([^]*?\n\}/,
 );
+const explicitHirCastCoercion = hirIrBuilder.match(
+  /static\s+ir_val_t\s+coerce_explicit_cast_value\s*\([^]*?\n\}/,
+);
 if (!explicitWidthShiftConstructor ||
     /\bps_type_(?:size|align)of\s*\(/.test(
       explicitWidthShiftConstructor[0],
     ) ||
-    !/ps_node_new_shift_trunc_extend_for_width_in\s*\([^;]*\bsource_width\s*\/\s*8\s*,/s.test(
-      explicitDiagnosticCastLoweringSource,
-    )) {
+    !explicitHirCastCoercion ||
+    /\bps_type_(?:size|align)of\s*\(/.test(explicitHirCastCoercion[0]) ||
+    !/\btarget\.source_size\b/.test(explicitHirCastCoercion[0])) {
   throw new Error(
     "shift truncation must consume a width already resolved against the active target",
   );
@@ -3920,7 +3923,7 @@ if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t
     )) {
   throw new Error("source casts must use their own arena allocation size");
 }
-if (!/\bint\s+psx_plan_source_cast_expression\s*\(/.test(
+if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
       castLoweringHeader,
     ) ||
     /\blower_source_cast_expression\s*\(/.test(
@@ -3929,18 +3932,35 @@ if (!/\bint\s+psx_plan_source_cast_expression\s*\(/.test(
     /\bnode->is_source_cast\s*=\s*0\s*;/.test(
       castLoweringSource,
     ) ||
-    !/source->kind\s*==\s*ND_CAST\s*&&\s*source->is_source_cast/.test(
+    !/\bmaterialize_source_cast\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/psx_source_cast_lowered_value_const\s*\(/.test(
+    !/PSX_HIR_CAST/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/resolution->lowered_value/.test(sourceCastResolutionHeader) ||
+    !/PSX_SOURCE_CAST_DIRECT_HIR/.test(nodeResolutionStateSource) ||
+    !/PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/PSX_SOURCE_CAST_AGGREGATE_TEMPORARY/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /aggregate_value|lowered_value|is_lowered/.test(
+      `${sourceCastResolutionHeader}\n${nodeResolutionStateSource}`,
+    ) ||
+    /\bps_node_new_/.test(castLoweringSource) ||
+    !/\bmaterialize_aggregate_temporary_parts\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/PSX_HIR_ASSIGN/.test(resolvedTreeMaterialization) ||
+    !/resolution->kind\s*=\s*PSX_SOURCE_CAST_DIRECT_HIR/.test(
+      semanticLoweringPassSource,
+    ) ||
     /\*\s*\(\s*node_num_t\s*\*\s*\)\s*node\s*=/.test(
       castLoweringSource,
     )) {
   throw new Error(
-    "source cast lowering must preserve Syntax AST and materialize its separate semantic value directly into Typed HIR",
+    "source casts must materialize directly from structured resolution metadata without generated semantic AST",
   );
 }
 if (/\blower_aggregate_address_expression\s*\(/.test(

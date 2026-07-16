@@ -80,15 +80,27 @@ static void lower_source_cast_node(
     return;
   psx_source_cast_resolution_t *resolution =
       &node->resolution_state->source_cast;
-  if (resolution->is_lowered) return;
-  psx_source_cast_lowering_plan_t plan;
-  if (!psx_plan_source_cast_expression(
+  if (resolution->kind != PSX_SOURCE_CAST_UNRESOLVED) return;
+  if (!ps_type_is_tag_aggregate(ps_node_get_type(node))) {
+    resolution->kind = PSX_SOURCE_CAST_DIRECT_HIR;
+    return;
+  }
+  psx_aggregate_source_cast_plan_t plan;
+  if (!psx_plan_aggregate_source_cast(
           context->lowering_context, context->local_registry,
           (node_source_cast_t *)node, (token_t *)fallback_diag_tok,
           context->options, &plan))
     return;
-  resolution->lowered_value = plan.value;
-  resolution->is_lowered = 1;
+  resolution->aggregate_temporary = plan.temporary;
+  resolution->aggregate_member_qual_type = plan.member_qual_type;
+  resolution->aggregate_member_offset = plan.member_offset;
+  resolution->aggregate_member_bit_width = plan.member_bit_width;
+  resolution->aggregate_member_bit_offset = plan.member_bit_offset;
+  resolution->aggregate_member_bit_is_signed =
+      plan.member_bit_is_signed;
+  resolution->kind = plan.temporary
+                         ? PSX_SOURCE_CAST_AGGREGATE_TEMPORARY
+                         : PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR;
 }
 
 static node_t *lower_tree(

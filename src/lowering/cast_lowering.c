@@ -1,75 +1,24 @@
 #include "cast_lowering.h"
 #include "local_storage.h"
 #include "runtime_context.h"
+
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_utils.h"
+#include "../parser/node_type_public.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
-#include "../semantic/source_cast_resolution.h"
+#include "../parser/type.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static node_t *annotate(node_t *node, const psx_type_t *type) {
-  if (node && type) ps_node_bind_type(node, type);
-  return node;
-}
-
-static node_t *fp_to_int(
-    psx_lowering_context_t *lowering_context,
-    node_t *operand, const psx_type_t *type) {
-  if (!operand || ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE)
-    return operand;
-  if (!type)
-    type = ps_type_new_integer_kind_in(
-        ps_lowering_arena(lowering_context),
-        PSX_INTEGER_KIND_INT, 0, 0);
-  return ps_node_new_fp_to_int_cast_in(
-      ps_lowering_arena(lowering_context), operand, type);
-}
-
-static node_t *lower_value_to_fp(arena_context_t *arena_context,
-                                 node_t *operand,
-                                 const psx_type_t *target_type) {
-  if (!operand) return NULL;
-  if (!target_type) return operand;
-  tk_float_kind_t source = ps_node_value_fp_kind(operand);
-  if (source == ps_type_floating_token_kind(target_type) &&
-      ps_type_shape_matches(ps_node_get_type(operand), target_type))
-    return operand;
-  return ps_node_new_int_to_fp_cast_in(
-      arena_context, operand, target_type);
-}
-
 typedef struct {
   const psx_type_t *target;
   const psx_type_t *value;
-  token_kind_t kind;
   token_kind_t tag_kind;
-  int is_pointer;
   int elem_size;
-  int is_unsigned;
-  int is_plain_char;
-} cast_target_view_t;
-
-static token_kind_t integer_token_kind(const psx_type_t *type) {
-  if (!type) return TK_EOF;
-  switch (type->integer_kind) {
-    case PSX_INTEGER_KIND_BOOL: return TK_BOOL;
-    case PSX_INTEGER_KIND_CHAR: return TK_CHAR;
-    case PSX_INTEGER_KIND_SHORT: return TK_SHORT;
-    case PSX_INTEGER_KIND_INT: return TK_INT;
-    case PSX_INTEGER_KIND_LONG:
-    case PSX_INTEGER_KIND_LONG_LONG:
-      return TK_LONG;
-    case PSX_INTEGER_KIND_ENUM: return TK_ENUM;
-    case PSX_INTEGER_KIND_NONE:
-    default:
-      return TK_EOF;
-  }
-}
+} aggregate_cast_target_t;
 
 static const psx_type_t *target_value_type(const psx_type_t *type) {
   const psx_type_t *value = type;
@@ -80,156 +29,155 @@ static const psx_type_t *target_value_type(const psx_type_t *type) {
   return value;
 }
 
-static cast_target_view_t target_view(
+static aggregate_cast_target_t aggregate_target(
     const psx_lowering_context_t *lowering_context,
     const psx_type_t *target) {
-  cast_target_view_t view = {0};
-  view.target = target;
-  view.value = target_value_type(target);
-  view.kind = integer_token_kind(view.value);
-  view.tag_kind = ps_type_tag_token_kind(view.value);
-  view.is_pointer = ps_type_is_pointer(target);
-  view.elem_size = ps_lowering_type_size(lowering_context, view.value);
-  view.is_unsigned = view.value ? ps_type_is_unsigned(view.value) : 0;
-  view.is_plain_char = view.value ? view.value->is_plain_char : 0;
-  if (view.value) {
-    if (view.value->kind == PSX_TYPE_VOID) view.kind = TK_VOID;
-    else if (view.value->kind == PSX_TYPE_BOOL) view.kind = TK_BOOL;
-    else if (view.value->kind == PSX_TYPE_FLOAT ||
-             view.value->kind == PSX_TYPE_COMPLEX)
-      view.kind = view.value->floating_kind == PSX_FLOATING_KIND_FLOAT
-                      ? TK_FLOAT : TK_DOUBLE;
-    else if (ps_type_is_tag_aggregate(view.value))
-      view.kind = ps_type_tag_token_kind(view.value);
-  }
-  return view;
+  const psx_type_t *value = target_value_type(target);
+  return (aggregate_cast_target_t){
+      .target = target,
+      .value = value,
+      .tag_kind = ps_type_tag_token_kind(value),
+      .elem_size = ps_lowering_type_size(lowering_context, value),
+  };
 }
 
-static int same_tag_value(node_t *expr, const cast_target_view_t *view) {
-  if (!expr || !view || !view->value) return 0;
+static int same_tag_value(
+    node_t *expr, const aggregate_cast_target_t *target) {
+  if (!expr || !target || !target->value) return 0;
   node_t *value = expr;
   while (value && value->kind == ND_COMMA) value = value->rhs;
   if (!value) return 0;
   if (value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
-    return same_tag_value(ternary->base.rhs, view) &&
-           same_tag_value(ternary->els, view);
+    return same_tag_value(ternary->base.rhs, target) &&
+           same_tag_value(ternary->els, target);
   }
   const psx_type_t *value_type = ps_node_get_type(value);
   return ps_type_is_tag_aggregate(value_type) &&
-         ps_type_tag_identity_matches(value_type, view->value);
+         ps_type_tag_identity_matches(value_type, target->value);
 }
 
 static int size_compatible_tag_value(
     const psx_lowering_context_t *lowering_context, node_t *expr,
-    const cast_target_view_t *view) {
-  if (!expr || !view) return 0;
+    const aggregate_cast_target_t *target) {
+  if (!expr || !target) return 0;
   node_t *value = expr;
   while (value && value->kind == ND_COMMA) value = value->rhs;
   if (!value) return 0;
   if (value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
     return size_compatible_tag_value(
-               lowering_context, ternary->base.rhs, view) &&
+               lowering_context, ternary->base.rhs, target) &&
            size_compatible_tag_value(
-               lowering_context, ternary->els, view);
+               lowering_context, ternary->els, target);
   }
   const psx_type_t *value_type = ps_node_get_type(value);
   int value_size = ps_lowering_type_size(lowering_context, value_type);
   return ps_type_is_tag_aggregate(value_type) &&
-         ps_type_tag_token_kind(value_type) == view->tag_kind &&
-         value_size > 0 && view->elem_size > 0 &&
-         value_size == view->elem_size;
+         ps_type_tag_token_kind(value_type) == target->tag_kind &&
+         value_size > 0 && target->elem_size > 0 &&
+         value_size == target->elem_size;
 }
 
 static char *new_aggregate_temp_name(
     psx_lowering_context_t *lowering_context) {
-  int seq = lowering_context->aggregate_cast_temp_sequence++;
-  int len = snprintf(NULL, 0, "__aggregate_cast_%d", seq);
-  char *name = calloc((size_t)len + 1, 1);
-  snprintf(name, (size_t)len + 1, "__aggregate_cast_%d", seq);
+  int sequence = lowering_context->aggregate_cast_temp_sequence++;
+  int length = snprintf(
+      NULL, 0, "__aggregate_cast_%d", sequence);
+  char *name = calloc((size_t)length + 1, 1);
+  if (!name) return NULL;
+  snprintf(
+      name, (size_t)length + 1,
+      "__aggregate_cast_%d", sequence);
   return name;
 }
 
-static node_t *lower_aggregate_cast(
+int psx_plan_aggregate_source_cast(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
-    node_t *operand, cast_target_view_t view,
-    token_t *diag_tok,
-    const ag_compilation_options_t *options) {
-  if (same_tag_value(operand, &view) ||
+    node_source_cast_t *cast, token_t *fallback_diag_tok,
+    const ag_compilation_options_t *options,
+    psx_aggregate_source_cast_plan_t *plan) {
+  if (plan) *plan = (psx_aggregate_source_cast_plan_t){0};
+  node_t *node = cast ? &cast->base : NULL;
+  if (!lowering_context || !local_registry || !node ||
+      node->kind != ND_CAST || !node->is_source_cast || !options ||
+      !plan)
+    return 0;
+  const psx_type_t *target_type = ps_node_get_type(node);
+  if (!ps_type_is_tag_aggregate(target_type)) return 0;
+  aggregate_cast_target_t target =
+      aggregate_target(lowering_context, target_type);
+  node_t *operand = node->lhs;
+  if (same_tag_value(operand, &target) ||
       (options->enable_size_compatible_nonscalar_cast &&
-       size_compatible_tag_value(lowering_context, operand, &view))) {
-    return ps_node_new_aggregate_cast_result_in(
-        ps_lowering_arena(lowering_context), operand, view.target);
+       size_compatible_tag_value(
+           lowering_context, operand, &target))) {
+    return 1;
   }
-  if (!lowering_context || !local_registry) return operand;
+
+  token_t *diag_tok = node->tok ? node->tok : fallback_diag_tok;
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(lowering_context);
-
   const psx_type_t *operand_type = ps_node_get_type(operand);
   if (ps_type_is_tag_aggregate(operand_type)) {
     ps_diag_ctx_in(
         diagnostics, diag_tok, "cast",
         diag_message_for_in(
             diagnostics,
-                     DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
-        ps_ctx_tag_kind_spelling(view.tag_kind));
+            DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
+        ps_ctx_tag_kind_spelling(target.tag_kind));
   }
-
-  if (view.tag_kind == TK_STRUCT &&
+  if (target.tag_kind == TK_STRUCT &&
       !options->enable_struct_scalar_pointer_cast) {
     ps_diag_ctx_in(
         diagnostics, diag_tok, "cast", "%s",
         diag_message_for_in(
             diagnostics,
-                     DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
+            DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
   }
-  if (view.tag_kind == TK_UNION &&
+  if (target.tag_kind == TK_UNION &&
       !options->enable_union_scalar_pointer_cast) {
     ps_diag_ctx_in(
         diagnostics, diag_tok, "cast", "%s",
         diag_message_for_in(
             diagnostics,
-                     DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
+            DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
   }
-  if (view.tag_kind != TK_STRUCT && view.tag_kind != TK_UNION) {
+  if (target.tag_kind != TK_STRUCT && target.tag_kind != TK_UNION) {
     ps_diag_ctx_in(
         diagnostics, diag_tok, "cast",
         diag_message_for_in(
             diagnostics,
-                     DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
-        ps_ctx_tag_kind_spelling(view.tag_kind));
+            DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+        ps_ctx_tag_kind_spelling(target.tag_kind));
   }
 
   const psx_record_member_decl_t *member = NULL;
   int member_index = -1;
-  int member_found = 0;
   const psx_record_decl_t *record = psx_record_decl_table_lookup(
       ps_lowering_record_decls(lowering_context),
-      ps_type_record_id(view.value));
+      ps_type_record_id(target.value));
   if (record) {
     for (int i = 0; i < record->member_count; i++) {
       if (record->members[i].len <= 0) continue;
       member = &record->members[i];
       member_index = i;
-      member_found = 1;
       break;
     }
   }
-  if (!member_found) {
+  if (!member) {
     ps_diag_ctx_in(
         diagnostics, diag_tok, "cast", "%s",
         diag_message_for_in(
             diagnostics,
-                     DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+            DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
-  int object_size = view.elem_size > 0 ? view.elem_size : 8;
   const psx_record_layout_t *record_layout =
       psx_record_layout_table_lookup(
           ps_lowering_record_layouts(lowering_context),
-          ps_type_record_id(view.value),
+          ps_type_record_id(target.value),
           ps_lowering_target(lowering_context));
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(record_layout, member_index);
@@ -240,222 +188,30 @@ static node_t *lower_aggregate_cast(
             diagnostics,
             DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
-  char *temp_name = new_aggregate_temp_name(lowering_context);
+
+  int object_size = target.elem_size > 0 ? target.elem_size : 8;
+  char *temporary_name =
+      new_aggregate_temp_name(lowering_context);
   int offset = local_storage_allocate(
       lowering_context, object_size, object_size);
-  lvar_t *temp = ps_local_registry_create_storage_object_in(
-      local_registry, temp_name, (int)strlen(temp_name), offset,
-      object_size, object_size, view.target, diag_tok);
+  lvar_t *temporary =
+      temporary_name
+          ? ps_local_registry_create_storage_object_in(
+                local_registry, temporary_name,
+                (int)strlen(temporary_name), offset,
+                object_size, object_size, target.target, diag_tok)
+          : NULL;
+  if (!temporary) return 0;
 
-  node_t *member_ref =
-      ps_node_new_tag_member_lvar_ref_with_layout_for_in(
-          ps_lowering_arena(lowering_context),
-          temp, member_layout->offset,
-          psx_record_member_decl_type(member), member->bit_is_signed,
-          member->bit_width, member_layout->bit_offset);
-  node_t *assign = ps_node_new_assign_in(
-      ps_lowering_arena(lowering_context), member_ref, operand);
-  node_t *result = ps_node_new_lvar_expr_ref_for_in(
-      ps_lowering_arena(lowering_context), temp);
-  return ps_node_new_binary_for_target_in(
-      ps_lowering_arena(lowering_context),
-      ps_lowering_target(lowering_context), ND_COMMA, assign, result);
-}
-
-static node_t *pointer_result(arena_context_t *arena_context,
-                              node_t *operand, cast_target_view_t view) {
-  return ps_node_new_pointer_cast_result_in(
-      arena_context, operand, view.target);
-}
-
-static node_t *integer_result(arena_context_t *arena_context,
-                              node_t *operand, cast_target_view_t view) {
-  return ps_node_new_integer_cast_result_in(
-      arena_context, operand, view.target);
-}
-
-static node_t *integer_result_ex(arena_context_t *arena_context,
-                                 node_t *operand, cast_target_view_t view,
-                                 int widen_zext_i64) {
-  return ps_node_new_integer_cast_result_ex_in(
-      arena_context, operand, view.target, widen_zext_i64);
-}
-
-static node_t *lower_cast(
-    psx_lowering_context_t *lowering_context,
-    psx_local_registry_t *local_registry,
-    node_t *operand, cast_target_view_t view,
-    token_t *diag_tok,
-    const ag_compilation_options_t *options) {
-  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
-  if (!view.is_pointer && ps_ctx_is_tag_aggregate_kind(view.tag_kind))
-    return lower_aggregate_cast(
-        lowering_context, local_registry, operand, view, diag_tok, options);
-
-  if (operand && operand->kind == ND_NUM &&
-      ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE &&
-      !view.is_pointer &&
-      (view.kind == TK_INT || view.kind == TK_LONG ||
-       view.kind == TK_SHORT || view.kind == TK_CHAR ||
-       view.kind == TK_ENUM || view.kind == TK_SIGNED ||
-       view.kind == TK_UNSIGNED || view.kind == TK_BOOL)) {
-    operand = ps_node_new_num_in(
-        arena_context, (long long)((node_num_t *)operand)->fval);
-  }
-
-  if (view.is_pointer || view.kind == TK_LONG) {
-    operand = fp_to_int(
-        lowering_context, operand,
-        view.is_pointer ? NULL : view.target);
-    if (!view.is_pointer && view.kind == TK_LONG) {
-      if (operand->kind == ND_NUM) {
-        return annotate(operand, view.target);
-      }
-      if (!ps_node_value_is_pointer_like(operand)) {
-        int operand_size = ps_lowering_type_size(
-            lowering_context, ps_node_get_type(operand));
-        int zext = ps_node_integer_value_is_unsigned(operand) &&
-                   operand_size >= 1 && operand_size < 8;
-        return integer_result_ex(arena_context, operand, view, zext);
-      }
-    }
-    const psx_type_t *operand_pointee =
-        ps_type_pointee_value_type(ps_node_get_type(operand));
-    if (view.is_pointer &&
-        (ps_ctx_is_tag_aggregate_kind(view.tag_kind) ||
-         view.kind == TK_FLOAT || view.kind == TK_DOUBLE ||
-         (operand_pointee && operand_pointee->kind == PSX_TYPE_VOID)))
-      return pointer_result(arena_context, operand, view);
-
-    if (view.is_pointer && view.elem_size > 0 &&
-        ps_node_value_is_pointer_like(operand) &&
-        ps_type_pointer_depth(
-            ps_node_get_type(operand)) <= 1)
-      return pointer_result(arena_context, operand, view);
-    if (!view.is_pointer && view.kind == TK_LONG &&
-        ps_node_value_is_pointer_like(operand))
-      return integer_result(arena_context, operand, view);
-    if (view.is_pointer)
-      return pointer_result(arena_context, operand, view);
-    return annotate(operand, view.target);
-  }
-
-  if (view.kind == TK_FLOAT)
-    return lower_value_to_fp(arena_context, operand, view.target);
-  if (view.kind == TK_DOUBLE)
-    return lower_value_to_fp(arena_context, operand, view.target);
-
-  if (view.kind == TK_INT || view.kind == TK_ENUM ||
-      view.kind == TK_SIGNED || view.kind == TK_UNSIGNED) {
-    operand = fp_to_int(lowering_context, operand, view.target);
-    int target_unsigned = view.kind != TK_ENUM &&
-                          (view.is_unsigned || view.kind == TK_UNSIGNED);
-    if (operand->kind == ND_NUM) {
-      long long value = ((node_num_t *)operand)->val;
-      node_t *number = ps_node_new_num_in(
-          arena_context,
-          target_unsigned ? (long long)(unsigned)value
-                          : (long long)(int)value);
-      return annotate(number, view.target);
-    }
-    int size = ps_lowering_type_size(
-        lowering_context, ps_node_get_type(operand));
-    if (size > 4 && !ps_node_value_is_pointer_like(operand))
-      return ps_node_new_i64_to_i32_trunc_cast_in(
-          arena_context, operand, view.target);
-    if (target_unsigned && size >= 1 && size < 4 &&
-        ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
-        !ps_node_value_is_pointer_like(operand)) {
-      node_t *masked = ps_node_new_binary_for_target_in(
-          arena_context, ps_lowering_target(lowering_context),
-          ND_BITAND, operand,
-          ps_node_new_num_in(arena_context, 0xffffffffLL));
-      return integer_result(arena_context, masked, view);
-    }
-    return integer_result(arena_context, operand, view);
-  }
-
-  if (view.kind == TK_BOOL)
-    return annotate(ps_node_new_binary_for_target_in(
-                        arena_context, ps_lowering_target(lowering_context),
-                        ND_NE, operand,
-                        ps_node_new_num_in(arena_context, 0)),
-                    view.target);
-  if (view.kind == TK_VOID)
-    return ps_node_new_void_cast_result_in(
-        arena_context, operand, view.target);
-
-  if (view.kind == TK_SHORT || view.kind == TK_CHAR) {
-    operand = fp_to_int(lowering_context, operand, view.target);
-    int width = view.kind == TK_SHORT ? 16 : 8;
-    long long mask = view.kind == TK_SHORT ? 0xffffLL : 0xffLL;
-    if (operand->kind == ND_NUM) {
-      long long value = ((node_num_t *)operand)->val;
-      long long truncated = view.kind == TK_SHORT
-          ? (view.is_unsigned ? (long long)(unsigned short)value
-                              : (long long)(short)value)
-          : (view.is_unsigned ? (long long)(unsigned char)value
-                              : (long long)(signed char)value);
-      node_t *number = ps_node_new_num_in(arena_context, truncated);
-      return annotate(number, view.target);
-    }
-    if (view.is_unsigned) {
-      node_t *masked = ps_node_new_binary_for_target_in(
-          arena_context, ps_lowering_target(lowering_context),
-          ND_BITAND, operand,
-          ps_node_new_num_in(arena_context, mask));
-      return integer_result(arena_context, masked, view);
-    }
-    int source_width =
-        ps_lowering_type_size(lowering_context, ps_node_get_type(operand)) >= 8
-            ? 64
-            : 32;
-    node_t *truncated = ps_node_new_shift_trunc_extend_for_width_in(
-        arena_context, operand, source_width - width,
-        source_width / 8, 0);
-    return integer_result_ex(arena_context, truncated, view, 0);
-  }
-
-  ps_diag_ctx_in(
-      ps_lowering_diagnostics(lowering_context), diag_tok, "cast", "%s",
-      diag_message_for_in(
-          ps_lowering_diagnostics(lowering_context),
-                   DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED));
-  return annotate(operand, view.target);
-}
-
-int psx_plan_source_cast_expression(
-    psx_lowering_context_t *lowering_context,
-    psx_local_registry_t *local_registry,
-    node_source_cast_t *cast, token_t *fallback_diag_tok,
-    const ag_compilation_options_t *options,
-    psx_source_cast_lowering_plan_t *plan) {
-  if (plan) *plan = (psx_source_cast_lowering_plan_t){0};
-  node_t *node = cast ? &cast->base : NULL;
-  if (!lowering_context || !local_registry || !node ||
-      node->kind != ND_CAST || !node->is_source_cast || !options ||
-      !plan)
-    return 0;
-  const psx_type_t *target = ps_node_get_type(node);
-  node_t *operand = node->lhs;
-  if (operand && operand->kind == ND_CAST &&
-      operand->is_source_cast) {
-    node_t *lowered_operand = psx_source_cast_lowered_value(
-        (node_source_cast_t *)operand);
-    if (lowered_operand) operand = lowered_operand;
-  }
-  node_t *lowered = lower_cast(
-      lowering_context, local_registry, operand,
-      target_view(lowering_context, target),
-      node->tok ? node->tok : fallback_diag_tok, options);
-  if (!lowered) return 0;
-  if (lowered == operand && lowered->kind != ND_NUM) {
-    lowered = ps_node_new_semantic_cast_result_in(
-        ps_lowering_arena(lowering_context), operand, target);
-  }
-  if (!lowered) return 0;
-  lowered->tok = node->tok;
-  lowered->is_source_cast = 0;
-  plan->value = lowered;
+  plan->temporary = temporary;
+  plan->member_qual_type = member->decl_qual_type;
+  plan->member_offset = member_layout->offset;
+  plan->member_bit_width =
+      (unsigned char)(member->bit_width > 0 ? member->bit_width : 0);
+  plan->member_bit_offset =
+      (unsigned char)(member_layout->bit_offset > 0
+                          ? member_layout->bit_offset : 0);
+  plan->member_bit_is_signed =
+      member->bit_is_signed ? 1 : 0;
   return 1;
 }

@@ -31,9 +31,21 @@ typedef struct {
   unsigned char is_resolved;
 } psx_generic_selection_resolution_state_t;
 
+typedef enum {
+  PSX_SOURCE_CAST_UNRESOLVED = 0,
+  PSX_SOURCE_CAST_DIRECT_HIR,
+  PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR,
+  PSX_SOURCE_CAST_AGGREGATE_TEMPORARY,
+} psx_source_cast_resolution_kind_t;
+
 typedef struct {
-  struct node_t *lowered_value;
-  unsigned char is_lowered;
+  struct lvar_t *aggregate_temporary;
+  psx_qual_type_t aggregate_member_qual_type;
+  int aggregate_member_offset;
+  unsigned char aggregate_member_bit_width;
+  unsigned char aggregate_member_bit_offset;
+  unsigned char aggregate_member_bit_is_signed;
+  psx_source_cast_resolution_kind_t kind;
 } psx_source_cast_resolution_t;
 
 typedef struct psx_node_resolution_state_t {

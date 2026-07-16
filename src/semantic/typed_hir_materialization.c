@@ -598,6 +598,37 @@ static psx_resolved_hir_node_t *materialize_local_object_reference(
       builder, &spec, qual_type, NULL, NULL, source);
 }
 
+static psx_resolved_hir_node_t *materialize_local_subobject_reference(
+    hir_materializer_t *builder, const lvar_t *local,
+    int relative_offset, psx_qual_type_t qual_type,
+    int bit_width, int bit_offset, int bit_is_signed,
+    const node_t *source) {
+  if (!local) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
+    return NULL;
+  }
+  if (!canonical_type_exists(builder, qual_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_LOCAL,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .storage_offset = ps_lvar_offset(local) + relative_offset,
+      .object_offset = ps_lvar_offset(local),
+      .object_size = ps_lvar_frame_storage_size(local),
+      .object_align = ps_lvar_align_bytes(local),
+      .bit_width = (unsigned char)(bit_width > 0 ? bit_width : 0),
+      .bit_offset = (unsigned char)(bit_offset > 0 ? bit_offset : 0),
+      .bit_is_signed = bit_is_signed ? 1 : 0,
+  };
+  return materialize_expression_spec(
+      builder, &spec, qual_type, NULL, NULL, source);
+}
+
 static psx_resolved_hir_node_t *materialize_global_object_reference(
     hir_materializer_t *builder, const global_var_t *global,
     const node_t *source) {
@@ -676,24 +707,120 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
       builder, initialization, value, result_type, source);
 }
 
-static const node_t *lowered_source_cast_value(
-    const node_t *source) {
-  if (!source || source->kind != ND_CAST || !source->is_source_cast)
-    return source;
-  const node_t *lowered = psx_source_cast_lowered_value_const(
-      (const node_source_cast_t *)source);
-  return lowered ? lowered : source;
+static int source_cast_is_aggregate(
+    const node_source_cast_t *cast) {
+  psx_source_cast_resolution_kind_t kind =
+      psx_source_cast_resolution_kind(cast);
+  return kind == PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR ||
+         kind == PSX_SOURCE_CAST_AGGREGATE_TEMPORARY;
 }
 
 static int address_requires_typed_hir_lowering(
     const node_t *source) {
-  if (!source || source->kind != ND_ADDR || !source->lhs) return 0;
-  const node_t *value = lowered_source_cast_value(source->lhs);
-  if (value->kind == ND_CAST && value->lhs) {
-    const psx_type_t *value_type = ps_node_get_type((node_t *)value);
-    if (value_type && ps_type_is_tag_aggregate(value_type)) return 1;
+  return source && source->kind == ND_ADDR && source->lhs &&
+         source->lhs->kind == ND_CAST &&
+         source->lhs->is_source_cast &&
+         source_cast_is_aggregate(
+             (const node_source_cast_t *)source->lhs);
+}
+
+static psx_resolved_hir_node_t *materialize_cast_expression(
+    hir_materializer_t *builder, const node_t *source,
+    psx_resolved_hir_node_t *operand, psx_qual_type_t qual_type) {
+  psx_resolved_hir_node_t *items[] = {operand};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  hir_children_t children = {
+      .items = items,
+      .edges = edges,
+      .count = 1,
+      .capacity = 1,
+  };
+  return materialize_expression(
+      builder, PSX_HIR_CAST, qual_type, &children, source);
+}
+
+static int materialize_aggregate_temporary_parts(
+    hir_materializer_t *builder, const node_source_cast_t *cast,
+    psx_resolved_hir_node_t **initialization,
+    psx_resolved_hir_node_t **object) {
+  const node_t *source = &cast->base;
+  const psx_source_cast_resolution_t *resolution =
+      psx_source_cast_resolution_state(cast);
+  if (!resolution ||
+      resolution->kind != PSX_SOURCE_CAST_AGGREGATE_TEMPORARY ||
+      !resolution->aggregate_temporary ||
+      !initialization || !object)
+    return 0;
+  psx_resolved_hir_node_t *target =
+      materialize_local_subobject_reference(
+          builder, resolution->aggregate_temporary,
+          resolution->aggregate_member_offset,
+          resolution->aggregate_member_qual_type,
+          resolution->aggregate_member_bit_width,
+          resolution->aggregate_member_bit_offset,
+          resolution->aggregate_member_bit_is_signed,
+          source);
+  psx_resolved_hir_node_t *value =
+      build_node(builder, source->lhs);
+  *object = materialize_local_object_reference(
+      builder, resolution->aggregate_temporary, source);
+  if (!target || !value || !*object) return 0;
+  psx_resolved_hir_node_t *items[] = {target, value};
+  psx_hir_edge_kind_t edges[] = {
+      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+  hir_children_t children = {
+      .items = items,
+      .edges = edges,
+      .count = 2,
+      .capacity = 2,
+  };
+  *initialization = materialize_expression(
+      builder, PSX_HIR_ASSIGN,
+      resolution->aggregate_member_qual_type, &children, source);
+  return *initialization != NULL;
+}
+
+static psx_resolved_hir_node_t *materialize_aggregate_cast_address(
+    hir_materializer_t *builder, const node_source_cast_t *cast,
+    psx_qual_type_t result_type, const node_t *address_source) {
+  psx_source_cast_resolution_kind_t kind =
+      psx_source_cast_resolution_kind(cast);
+  if (kind == PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR) {
+    if (cast->base.lhs &&
+        cast->base.lhs->kind == ND_CAST &&
+        cast->base.lhs->is_source_cast &&
+        source_cast_is_aggregate(
+            (const node_source_cast_t *)cast->base.lhs)) {
+      return materialize_aggregate_cast_address(
+          builder, (const node_source_cast_t *)cast->base.lhs,
+          result_type, address_source);
+    }
+    psx_resolved_hir_node_t *object =
+        build_node(builder, cast->base.lhs);
+    return object
+               ? materialize_address_of_object(
+                     builder, object, result_type, address_source)
+               : NULL;
   }
-  return value->kind == ND_COMMA && value->rhs;
+  if (kind == PSX_SOURCE_CAST_AGGREGATE_TEMPORARY) {
+    psx_resolved_hir_node_t *initialization = NULL;
+    psx_resolved_hir_node_t *object = NULL;
+    if (!materialize_aggregate_temporary_parts(
+            builder, cast, &initialization, &object))
+      return NULL;
+    psx_resolved_hir_node_t *address =
+        materialize_address_of_object(
+            builder, object, result_type, address_source);
+    return address
+               ? materialize_comma(
+                     builder, initialization, address,
+                     result_type, address_source)
+               : NULL;
+  }
+  set_failure(
+      builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS,
+      address_source);
+  return NULL;
 }
 
 static psx_resolved_hir_node_t *materialize_address_expression(
@@ -704,35 +831,44 @@ static psx_resolved_hir_node_t *materialize_address_expression(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
-  const node_t *value = lowered_source_cast_value(source->lhs);
-  if (value->kind == ND_CAST && value->lhs) {
-    const psx_type_t *value_type = ps_node_get_type((node_t *)value);
-    if (value_type && ps_type_is_tag_aggregate(value_type)) {
-      psx_resolved_hir_node_t *object =
-          build_node(builder, value->lhs);
-      return object
-                 ? materialize_address_of_object(
-                       builder, object, result_type, source)
-                 : NULL;
-    }
+  return materialize_aggregate_cast_address(
+      builder, (const node_source_cast_t *)source->lhs,
+      result_type, source);
+}
+
+static psx_resolved_hir_node_t *materialize_source_cast(
+    hir_materializer_t *builder, const node_source_cast_t *cast) {
+  const node_t *source = &cast->base;
+  psx_qual_type_t qual_type = ps_node_qual_type(source);
+  if (!canonical_type_exists(builder, qual_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
   }
-  if (value->kind == ND_COMMA && value->lhs && value->rhs) {
-    psx_resolved_hir_node_t *prefix =
-        build_node(builder, value->lhs);
-    psx_resolved_hir_node_t *object =
-        build_node(builder, value->rhs);
-    psx_resolved_hir_node_t *address =
-        object ? materialize_address_of_object(
-                     builder, object, result_type, source)
-               : NULL;
-    return prefix && address
-               ? materialize_comma(
-                     builder, prefix, address, result_type, source)
-               : NULL;
+  psx_source_cast_resolution_kind_t resolution_kind =
+      psx_source_cast_resolution_kind(cast);
+  if (!source->lhs ||
+      (resolution_kind != PSX_SOURCE_CAST_DIRECT_HIR &&
+       resolution_kind != PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR &&
+       resolution_kind != PSX_SOURCE_CAST_AGGREGATE_TEMPORARY)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
   }
-  set_failure(
-      builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
-  return NULL;
+  if (resolution_kind == PSX_SOURCE_CAST_AGGREGATE_TEMPORARY) {
+    psx_resolved_hir_node_t *initialization = NULL;
+    psx_resolved_hir_node_t *object = NULL;
+    if (!materialize_aggregate_temporary_parts(
+            builder, cast, &initialization, &object))
+      return NULL;
+    return materialize_comma(
+        builder, initialization, object, qual_type, source);
+  }
+  psx_resolved_hir_node_t *operand =
+      build_node(builder, source->lhs);
+  if (!operand) return NULL;
+  return materialize_cast_expression(
+      builder, source, operand, qual_type);
 }
 
 static int copy_payload(
@@ -948,20 +1084,8 @@ static psx_resolved_hir_node_t *build_node(
     return build_node(builder, selected);
   }
   if (source && source->kind == ND_CAST && source->is_source_cast) {
-    psx_qual_type_t qual_type = ps_node_qual_type(source);
-    const node_t *lowered = psx_source_cast_lowered_value_const(
-        (const node_source_cast_t *)source);
-    if (!canonical_type_exists(builder, qual_type)) {
-      set_failure(
-          builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
-      return NULL;
-    }
-    if (!lowered) {
-      set_failure(
-          builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
-      return NULL;
-    }
-    return build_node(builder, lowered);
+    return materialize_source_cast(
+        builder, (const node_source_cast_t *)source);
   }
   psx_hir_node_spec_t spec = {0};
   psx_qual_type_t qual_type = {

@@ -8,7 +8,6 @@
 #include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../semantic/constant_expression.h"
-#include "../semantic/source_cast_resolution.h"
 #include "../semantic/initializer_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 #include "../tokenizer/literals.h"
@@ -144,12 +143,8 @@ static int resolve_static_address_constant(
       return 1;
     }
     case ND_CAST: {
-      node_t *value = node->is_source_cast
-                          ? psx_source_cast_lowered_value(
-                                (node_source_cast_t *)node)
-                          : NULL;
       return resolve_static_address_constant(
-          lowering_context, value ? value : node->lhs,
+          lowering_context, node->lhs,
           symbol, symbol_len, offset);
     }
     case ND_ADD: {
@@ -240,12 +235,8 @@ static long long eval_static_const_int(
     }
   }
   if (node->kind == ND_CAST) {
-    node_t *value = node->is_source_cast
-                        ? psx_source_cast_lowered_value(
-                              (node_source_cast_t *)node)
-                        : NULL;
     return eval_static_const_int(
-        lowering_context, value ? value : node->lhs, ok);
+        lowering_context, node->lhs, ok);
   }
   if (node->kind == ND_UNARY_NEGATE) {
     long long value =

@@ -1869,6 +1869,51 @@ static ir_val_t emit_integer_binary(
   return instruction->dst;
 }
 
+static ir_val_t coerce_explicit_cast_value(
+    hir_ir_context_t *context, ir_val_t value,
+    ir_abi_param_info_t source, ir_abi_param_info_t target,
+    psx_qual_type_t target_qual_type) {
+  const psx_type_t *semantic_target =
+      psx_semantic_type_table_lookup(
+          context->options->semantic_types,
+          target_qual_type.type_id);
+  if (!semantic_target)
+    return unsupported_expr(context);
+  if (semantic_target->kind == PSX_TYPE_BOOL) {
+    return coerce_direct_value_to_qual_type(
+        context, value, source, target, target_qual_type);
+  }
+  if (semantic_target->kind != PSX_TYPE_INTEGER ||
+      target.source_size >= 4)
+    return coerce_direct_value(context, value, source, target);
+
+  ir_abi_param_info_t promoted_target = target;
+  promoted_target.type = IR_TY_I32;
+  promoted_target.param_class = IR_ABI_PARAM_INTEGER;
+  promoted_target.source_size = 4;
+  value = coerce_direct_value(
+      context, value, source, promoted_target);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (value.id == IR_VAL_IMM) {
+    value.imm = normalize_integer_immediate(
+        value.imm, target.source_size, target.is_unsigned);
+    value.type = integer_storage_type(target);
+    return value;
+  }
+
+  int shift = 32 - target.source_size * 8;
+  ir_val_t shifted = emit_integer_binary(
+      context, IR_SHL, value,
+      ir_val_imm(IR_TY_I32, shift), IR_TY_I32);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  shifted = emit_integer_binary(
+      context, target.is_unsigned ? IR_LSR : IR_SHR, shifted,
+      ir_val_imm(IR_TY_I32, shift), IR_TY_I32);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return emit_integer_width_conversion(
+      context, shifted, integer_storage_type(target), 0);
+}
+
 static ir_val_t bitfield_constant(
     hir_ir_context_t *context, ir_type_t type, uint64_t value) {
   if (type != IR_TY_I64)
@@ -3559,8 +3604,14 @@ static ir_val_t build_expr(
     if (!operand) return unsupported_expr(context);
     ir_val_t value = build_expr(context, operand);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    return coerce_direct_value(
-        context, value, classify_node_type(context, operand), type);
+    ir_abi_param_info_t source_type =
+        classify_node_type(context, operand);
+    return psx_hir_node_kind(node) == PSX_HIR_CAST
+               ? coerce_explicit_cast_value(
+                     context, value, source_type, type,
+                     psx_hir_node_qual_type(node))
+               : coerce_direct_value(
+                     context, value, source_type, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_NEGATE)
