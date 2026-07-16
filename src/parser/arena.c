@@ -5,6 +5,7 @@
 #define ARENA_BLOCK_SIZE (64 * 1024) // 64KB per block
 
 typedef struct arena_block_t arena_block_t;
+typedef struct arena_cleanup_t arena_cleanup_t;
 struct arena_block_t {
   arena_block_t *next;
   size_t capacity;
@@ -12,12 +13,30 @@ struct arena_block_t {
   char data[];
 };
 
+struct arena_cleanup_t {
+  arena_cleanup_fn cleanup;
+  void *data;
+  arena_cleanup_t *next;
+};
+
 struct arena_context_t {
   arena_block_t *head;
   arena_block_t *current;
+  arena_cleanup_t *cleanups;
   size_t reserved_bytes;
   size_t peak_bytes;
 };
+
+static void arena_run_cleanups_until(
+    arena_context_t *context, arena_cleanup_t *saved) {
+  while (context && context->cleanups != saved) {
+    arena_cleanup_t *entry = context->cleanups;
+    if (!entry) break;
+    context->cleanups = entry->next;
+    entry->cleanup(entry->data);
+    free(entry);
+  }
+}
 
 static char *arena_block_data(arena_block_t *block) {
   return (char *)(block + 1);
@@ -68,10 +87,25 @@ void *arena_alloc_in(arena_context_t *context, size_t size) {
   return ptr;
 }
 
+int arena_register_cleanup_in(
+    arena_context_t *context, arena_cleanup_fn cleanup, void *data) {
+  if (!context || !cleanup) return 0;
+  arena_cleanup_t *entry = malloc(sizeof(*entry));
+  if (!entry) return 0;
+  *entry = (arena_cleanup_t){
+      .cleanup = cleanup,
+      .data = data,
+      .next = context->cleanups,
+  };
+  context->cleanups = entry;
+  return 1;
+}
+
 arena_checkpoint_t arena_checkpoint_in(arena_context_t *context) {
   return (arena_checkpoint_t){
       .context = context,
       .block = context ? context->current : NULL,
+      .cleanup = context ? context->cleanups : NULL,
       .used = context && context->current ? context->current->used : 0,
   };
 }
@@ -84,6 +118,9 @@ void arena_rollback_in(
     arena_free_all_in(context);
     return;
   }
+
+  arena_run_cleanups_until(
+      context, (arena_cleanup_t *)checkpoint.cleanup);
 
   arena_block_t *block = saved->next;
   saved->next = NULL;
@@ -99,6 +136,7 @@ void arena_rollback_in(
 
 void arena_free_all_in(arena_context_t *context) {
   if (!context) return;
+  arena_run_cleanups_until(context, NULL);
   arena_block_t *block = context->head;
   while (block) {
     arena_block_t *next = block->next;

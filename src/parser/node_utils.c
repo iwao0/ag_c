@@ -2994,12 +2994,7 @@ node_t *ps_node_new_explicit_addr_value_for_in(
   if (!operand || operand->kind != ND_ADDR) return operand;
   node_t *cp = resolution_node_alloc_in(
       arena_context, sizeof(node_t));
-  unsigned int is_resolution_work_node =
-      cp->is_resolution_work_node;
   *cp = *operand;
-  cp->is_resolution_work_node =
-      is_resolution_work_node;
-  cp->has_external_resolution_state = 0;
   ps_node_copy_resolution_state_in(
       arena_context, cp, operand);
   ps_node_clear_expr_type_state(cp);
@@ -3250,12 +3245,7 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_LVAR: {
       node_lvar_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_lvar_t));
-      unsigned int is_resolution_work_node =
-          clone->base.is_resolution_work_node;
       *clone = *(node_lvar_t *)target;
-      clone->base.is_resolution_work_node =
-          is_resolution_work_node;
-      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3264,12 +3254,7 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_GVAR: {
       node_gvar_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_gvar_t));
-      unsigned int is_resolution_work_node =
-          clone->base.is_resolution_work_node;
       *clone = *(node_gvar_t *)target;
-      clone->base.is_resolution_work_node =
-          is_resolution_work_node;
-      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3278,12 +3263,7 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_STRING: {
       node_string_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_string_t));
-      unsigned int is_resolution_work_node =
-          clone->base.is_resolution_work_node;
       *clone = *(node_string_t *)target;
-      clone->base.is_resolution_work_node =
-          is_resolution_work_node;
-      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3294,12 +3274,7 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     {
       node_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_t));
-      unsigned int is_resolution_work_node =
-          clone->is_resolution_work_node;
       *clone = *target;
-      clone->is_resolution_work_node =
-          is_resolution_work_node;
-      clone->has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, clone, target);
       clone->lhs = lhs;

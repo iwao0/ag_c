@@ -1,24 +1,18 @@
 #include "resolved_node_type.h"
 
 #include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
 
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "resolution_state.h"
 
-static const uint64_t PSX_RESOLUTION_NODE_PREFIX_MAGIC =
-    UINT64_C(0x5053585245534f4c);
-
-typedef union {
-  max_align_t alignment;
-  struct {
-    uint64_t magic;
-    size_t node_size;
-    psx_node_resolution_state_t state;
-  } payload;
-} psx_resolution_node_prefix_t;
+typedef struct psx_work_resolution_state_binding_t {
+  const node_t *node;
+  psx_node_resolution_state_t *state;
+  size_t node_size;
+  struct psx_work_resolution_state_binding_t *next;
+} psx_work_resolution_state_binding_t;
 
 typedef struct psx_external_resolution_state_binding_t {
   const node_t *node;
@@ -31,16 +25,67 @@ typedef struct psx_external_resolution_state_binding_t {
  * Stack-backed nodes only exist in compatibility tests and a few isolated
  * semantic helpers. Resolution work nodes use the inline prefix below.
  */
+enum { PSX_WORK_RESOLUTION_BUCKET_COUNT = 4096 };
+
+static _Thread_local psx_work_resolution_state_binding_t
+    *work_resolution_states[PSX_WORK_RESOLUTION_BUCKET_COUNT];
 static _Thread_local psx_external_resolution_state_binding_t
     *external_resolution_states;
 
-static psx_resolution_node_prefix_t *resolution_node_prefix(
+static size_t work_resolution_bucket(
     const node_t *node) {
-  if (!node || !node->is_resolution_work_node) return NULL;
-  psx_resolution_node_prefix_t *prefix =
-      (psx_resolution_node_prefix_t *)node - 1;
-  return prefix->payload.magic == PSX_RESOLUTION_NODE_PREFIX_MAGIC
-             ? prefix : NULL;
+  size_t value = (size_t)node;
+  value ^= value >> 17;
+  value ^= value >> 9;
+  return value % PSX_WORK_RESOLUTION_BUCKET_COUNT;
+}
+
+static psx_work_resolution_state_binding_t *work_resolution_binding(
+    const node_t *node) {
+  if (!node) return NULL;
+  for (psx_work_resolution_state_binding_t *binding =
+           work_resolution_states[work_resolution_bucket(node)];
+       binding; binding = binding->next) {
+    if (binding->node == node) return binding;
+  }
+  return NULL;
+}
+
+static void remove_work_resolution_binding(void *data) {
+  psx_work_resolution_state_binding_t *binding = data;
+  if (!binding) return;
+  size_t bucket = work_resolution_bucket(binding->node);
+  psx_work_resolution_state_binding_t **slot =
+      &work_resolution_states[bucket];
+  while (*slot && *slot != binding) slot = &(*slot)->next;
+  if (*slot) *slot = binding->next;
+  free(binding);
+}
+
+static int register_work_resolution_state(
+    arena_context_t *arena_context, node_t *node,
+    size_t node_size) {
+  psx_node_resolution_state_t *state = arena_alloc_in(
+      arena_context, sizeof(*state));
+  psx_work_resolution_state_binding_t *binding = malloc(
+      sizeof(*binding));
+  if (!state || !binding) {
+    free(binding);
+    return 0;
+  }
+  *binding = (psx_work_resolution_state_binding_t){
+      .node = node,
+      .state = state,
+      .node_size = node_size,
+      .next = work_resolution_states[work_resolution_bucket(node)],
+  };
+  if (!arena_register_cleanup_in(
+          arena_context, remove_work_resolution_binding, binding)) {
+    free(binding);
+    return 0;
+  }
+  work_resolution_states[work_resolution_bucket(node)] = binding;
+  return 1;
 }
 
 static psx_node_resolution_state_t *external_resolution_state(
@@ -63,24 +108,30 @@ external_resolution_binding(const node_t *node) {
   return NULL;
 }
 
+static void remove_external_resolution_binding(void *data) {
+  psx_external_resolution_state_binding_t *binding = data;
+  if (!binding) return;
+  psx_external_resolution_state_binding_t **slot =
+      &external_resolution_states;
+  while (*slot && *slot != binding) slot = &(*slot)->next;
+  if (*slot) *slot = binding->next;
+  free(binding);
+}
+
 void *psx_resolution_node_alloc_in(
     arena_context_t *arena_context, size_t node_size) {
   if (!arena_context || node_size < sizeof(node_t)) return NULL;
-  psx_resolution_node_prefix_t *prefix = arena_alloc_in(
-      arena_context, sizeof(*prefix) + node_size);
-  if (!prefix) return NULL;
-  prefix->payload.magic = PSX_RESOLUTION_NODE_PREFIX_MAGIC;
-  prefix->payload.node_size = node_size;
-  node_t *node = (node_t *)(prefix + 1);
-  node->is_resolution_work_node = 1;
-  return node;
+  node_t *node = arena_alloc_in(arena_context, node_size);
+  return node && register_work_resolution_state(
+                     arena_context, node, node_size)
+             ? node : NULL;
 }
 
 psx_node_resolution_state_t *ps_node_resolution_state(node_t *node) {
-  psx_resolution_node_prefix_t *prefix = resolution_node_prefix(node);
-  if (prefix) return &prefix->payload.state;
-  return node && node->has_external_resolution_state
-             ? external_resolution_state(node) : NULL;
+  psx_work_resolution_state_binding_t *work =
+      work_resolution_binding(node);
+  if (work) return work->state;
+  return external_resolution_state(node);
 }
 
 const psx_node_resolution_state_t *ps_node_resolution_state_const(
@@ -93,12 +144,11 @@ int ps_node_has_resolution_state(const node_t *node) {
 }
 
 size_t psx_resolution_node_storage_size(const node_t *node) {
-  psx_resolution_node_prefix_t *prefix =
-      resolution_node_prefix(node);
-  if (prefix) return prefix->payload.node_size;
+  psx_work_resolution_state_binding_t *work =
+      work_resolution_binding(node);
+  if (work) return work->node_size;
   psx_external_resolution_state_binding_t *binding =
-      node && node->has_external_resolution_state
-          ? external_resolution_binding(node) : NULL;
+      external_resolution_binding(node);
   return binding ? binding->node_size : 0;
 }
 
@@ -126,16 +176,15 @@ int ps_node_prepare_resolution_state_for_size_in(
     arena_context_t *arena_context, node_t *node, size_t node_size) {
   if (!node || !arena_context) return 0;
   if (node_size < sizeof(*node)) return 0;
-  psx_resolution_node_prefix_t *prefix =
-      resolution_node_prefix(node);
-  if (prefix) {
-    if (node_size > prefix->payload.node_size)
-      prefix->payload.node_size = node_size;
+  psx_work_resolution_state_binding_t *work =
+      work_resolution_binding(node);
+  if (work) {
+    if (node_size > work->node_size)
+      work->node_size = node_size;
     return 1;
   }
   psx_external_resolution_state_binding_t *existing =
-      node->has_external_resolution_state
-          ? external_resolution_binding(node) : NULL;
+      external_resolution_binding(node);
   if (existing) {
     if (node_size > existing->node_size)
       existing->node_size = node_size;
@@ -153,8 +202,13 @@ int ps_node_prepare_resolution_state_for_size_in(
   binding->state = state;
   binding->node_size = node_size;
   binding->next = external_resolution_states;
+  if (!arena_register_cleanup_in(
+          arena_context, remove_external_resolution_binding,
+          binding)) {
+    free(binding);
+    return 0;
+  }
   external_resolution_states = binding;
-  node->has_external_resolution_state = 1;
   return 1;
 }
 

@@ -70,6 +70,7 @@
 #include "../src/semantic/type_name_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
+#include "../src/semantic/local_declaration_tree_resolution.h"
 #include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
@@ -2061,9 +2062,8 @@ static void test_typed_hir_ownership_and_type_boundary() {
           test_arena_context(), (node_t *)&typed_number);
   ASSERT_TRUE(typed_work_tree != NULL);
   node_t *typed_root =
-      psx_semantic_tree_compatibility_root_mut(
-          psx_resolution_work_tree_semantic_tree_mut(
-              typed_work_tree));
+      psx_resolution_work_tree_compatibility_root_mut(
+          typed_work_tree);
   ASSERT_TRUE(typed_root != NULL);
   ASSERT_TRUE(typed_root != (node_t *)&typed_number);
   const psx_type_t *int_type =
@@ -21309,20 +21309,59 @@ static void test_recursive_declarator_capacity_boundary() {
   psx_dispose_declarator_syntax(&function_syntax);
 }
 
+static void count_arena_cleanup(void *data) {
+  int *count = data;
+  (*count)++;
+}
+
 static void test_arena_checkpoint_rollback() {
   printf("test_arena_checkpoint_rollback...\n");
   arena_context_t *arena_context = test_arena_context();
   arena_free_all_in(arena_context);
   int *retained = arena_alloc_in(arena_context, sizeof(*retained));
   *retained = 41;
+  int retained_cleanup_count = 0;
+  ASSERT_TRUE(arena_register_cleanup_in(
+      arena_context, count_arena_cleanup,
+      &retained_cleanup_count));
   arena_checkpoint_t checkpoint = arena_checkpoint_in(arena_context);
   int *discarded = arena_alloc_in(arena_context, sizeof(*discarded));
   *discarded = 99;
+  int discarded_cleanup_count = 0;
+  ASSERT_TRUE(arena_register_cleanup_in(
+      arena_context, count_arena_cleanup,
+      &discarded_cleanup_count));
   arena_rollback_in(arena_context, checkpoint);
+  ASSERT_EQ(0, retained_cleanup_count);
+  ASSERT_EQ(1, discarded_cleanup_count);
   int *reused = arena_alloc_in(arena_context, sizeof(*reused));
   ASSERT_TRUE(reused == discarded);
   ASSERT_EQ(41, *retained);
+  arena_checkpoint_t resolution_checkpoint =
+      arena_checkpoint_in(arena_context);
+  node_t *resolution_node = psx_resolution_node_alloc_in(
+      arena_context, sizeof(*resolution_node));
+  ASSERT_TRUE(resolution_node != NULL);
+  ASSERT_TRUE(ps_node_has_resolution_state(resolution_node));
+  arena_rollback_in(arena_context, resolution_checkpoint);
+  node_t *plain_replacement = arena_alloc_in(
+      arena_context, sizeof(*plain_replacement));
+  ASSERT_TRUE(plain_replacement == resolution_node);
+  ASSERT_TRUE(!ps_node_has_resolution_state(plain_replacement));
+  arena_checkpoint_t external_checkpoint =
+      arena_checkpoint_in(arena_context);
+  node_t *external_node = arena_alloc_in(
+      arena_context, sizeof(*external_node));
+  ASSERT_TRUE(ps_node_prepare_resolution_state_in(
+      arena_context, external_node));
+  ASSERT_TRUE(ps_node_has_resolution_state(external_node));
+  arena_rollback_in(arena_context, external_checkpoint);
+  node_t *external_replacement = arena_alloc_in(
+      arena_context, sizeof(*external_replacement));
+  ASSERT_TRUE(external_replacement == external_node);
+  ASSERT_TRUE(!ps_node_has_resolution_state(external_replacement));
   arena_free_all_in(arena_context);
+  ASSERT_EQ(1, retained_cleanup_count);
 }
 
 static void test_semantic_type_identity() {

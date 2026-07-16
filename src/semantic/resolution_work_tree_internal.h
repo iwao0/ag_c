@@ -10,10 +10,12 @@ typedef struct psx_resolved_hir_build_failure_t
 
 psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root);
-psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree_mut(
+node_t *psx_resolution_work_tree_compatibility_root_mut(
     psx_resolution_work_tree_t *tree);
-const psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree(
+const node_t *psx_resolution_work_tree_compatibility_root(
     const psx_resolution_work_tree_t *tree);
+int psx_resolution_work_tree_replace_compatibility_root(
+    psx_resolution_work_tree_t *tree, node_t *root);
 node_t *psx_resolution_work_tree_export_compatibility_ast(
     psx_resolution_work_tree_t *tree);
 int psx_resolution_work_tree_advance(

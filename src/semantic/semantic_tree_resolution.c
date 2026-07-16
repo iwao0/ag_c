@@ -1,11 +1,11 @@
 #include "semantic_tree_resolution.h"
 
-#include "../frontend/local_declaration.h"
 #include "../lowering/semantic_lowering_pass.h"
 #include "../parser/decl.h"
 #include "../parser/semantic_ctx.h"
 #include "control_flow_validation.h"
 #include "identifier_binding.h"
+#include "local_declaration_tree_resolution.h"
 #include "lowered_tree_validation.h"
 #include "lvar_usage_analysis.h"
 #include "resolution_work_tree_internal.h"
@@ -18,19 +18,15 @@
 
 static node_t *mutable_compatibility_root(
     psx_resolution_work_tree_t *work_tree) {
-  return psx_semantic_tree_compatibility_root_mut(
-      psx_resolution_work_tree_semantic_tree_mut(work_tree));
+  return psx_resolution_work_tree_compatibility_root_mut(work_tree);
 }
 
 static int advance_with_compatibility_root(
     psx_resolution_work_tree_t *work_tree,
     psx_resolution_work_phase_t expected,
     psx_resolution_work_phase_t next, node_t *root) {
-  psx_semantic_tree_t *semantic_tree =
-      psx_resolution_work_tree_semantic_tree_mut(work_tree);
-  return semantic_tree &&
-         psx_semantic_tree_replace_compatibility_root(
-             semantic_tree, root) &&
+  return psx_resolution_work_tree_replace_compatibility_root(
+             work_tree, root) &&
          psx_resolution_work_tree_advance(
              work_tree, expected, next);
 }

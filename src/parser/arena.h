@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 typedef struct arena_context_t arena_context_t;
+typedef void (*arena_cleanup_fn)(void *data);
 
 arena_context_t *arena_context_create(void);
 void arena_context_destroy(arena_context_t *context);
@@ -11,11 +12,14 @@ void arena_context_destroy(arena_context_t *context);
 typedef struct {
   arena_context_t *context;
   void *block;
+  void *cleanup;
   size_t used;
 } arena_checkpoint_t;
 
 // ゼロクリア済みメモリを返すアリーナアロケータ
 void *arena_alloc_in(arena_context_t *context, size_t size);
+int arena_register_cleanup_in(
+    arena_context_t *context, arena_cleanup_fn cleanup, void *data);
 
 arena_checkpoint_t arena_checkpoint_in(arena_context_t *context);
 void arena_rollback_in(

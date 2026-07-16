@@ -3,11 +3,11 @@
 #include "legacy_ast_api.h"
 
 #include "../diag/diag.h"
-#include "../lowering/static_data_initializer.h"
 #include "../parser/semantic_ctx.h"
 #include "../semantic/resolution_work_tree_internal.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/semantic_tree_resolution.h"
+#include "../semantic/static_initializer_materialization.h"
 #include "../semantic/typed_hir_materialization.h"
 
 static psx_hir_node_id_t build_session_hir(
@@ -276,13 +276,7 @@ int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
       resolve_initializer_work_tree_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax, fallback_diag_tok);
-  node_t *initializer = work_tree
-                            ? psx_resolution_work_tree_export_compatibility_ast(
-                                  work_tree)
-                            : NULL;
-  if (!initializer || initializer->kind != ND_INIT_LIST) return 0;
-  return psx_build_static_aggregate_initializer_plan(
-      global_registry, lowering_context, type,
-      (node_init_list_t *)initializer,
+  return psx_materialize_static_aggregate_initializer_plan(
+      work_tree, global_registry, lowering_context, type,
       (token_t *)fallback_diag_tok, plan);
 }

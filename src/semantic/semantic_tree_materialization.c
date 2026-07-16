@@ -1413,17 +1413,16 @@ static psx_semantic_node_t *build_node(
 
 int psx_semantic_tree_materialize(
     psx_semantic_tree_t *semantic_tree,
+    const node_t *resolution_root,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
   if (psx_semantic_tree_root(semantic_tree)) return 1;
-  const node_t *semantic_root =
-      psx_semantic_tree_compatibility_root(semantic_tree);
-  if (!semantic_tree || !semantic_context || !semantic_root) {
+  if (!semantic_tree || !semantic_context || !resolution_root) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
-      failure->source_node_kind = semantic_root
-                                      ? (int)semantic_root->kind : -1;
+      failure->source_node_kind = resolution_root
+                                      ? (int)resolution_root->kind : -1;
     }
     return 0;
   }
@@ -1432,7 +1431,7 @@ int psx_semantic_tree_materialize(
       .semantic_context = semantic_context,
       .failure = failure,
   };
-  psx_semantic_node_t *root = build_node(&builder, semantic_root);
+  psx_semantic_node_t *root = build_node(&builder, resolution_root);
   if (!root) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
       failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;

@@ -76,8 +76,6 @@ struct node_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
   unsigned int is_source_compound_assignment : 1;
-  unsigned int is_resolution_work_node : 1;
-  unsigned int has_external_resolution_state : 1;
 };
 
 typedef struct {

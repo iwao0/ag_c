@@ -18,6 +18,7 @@
 #include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {
+  node_t *compatibility_root;
   psx_semantic_tree_t *semantic_tree;
   psx_typed_hir_tree_t *typed_hir;
   psx_resolution_work_phase_t phase;
@@ -441,12 +442,7 @@ static node_t *clone_node(
   node_t *copy = psx_resolution_node_alloc_in(
       arena_context, size);
   if (!copy) return NULL;
-  unsigned int is_resolution_work_node =
-      copy->is_resolution_work_node;
   memcpy(copy, source, size);
-  copy->is_resolution_work_node =
-      is_resolution_work_node;
-  copy->has_external_resolution_state = 0;
   if (!ps_node_copy_resolution_state_in(
           arena_context, copy, source))
     return NULL;
@@ -631,35 +627,34 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
   psx_resolution_work_tree_t *tree = arena_alloc_in(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
-  tree->semantic_tree = psx_semantic_tree_create_from_syntax(
-      arena_context, syntax_root);
-  if (!tree->semantic_tree) return NULL;
+  tree->compatibility_root = clone_node(arena_context, syntax_root);
+  tree->semantic_tree = psx_semantic_tree_create(arena_context);
+  if (!tree->compatibility_root || !tree->semantic_tree) return NULL;
   tree->typed_hir = NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
 }
 
-psx_semantic_tree_t *psx_semantic_tree_create_from_syntax(
-    arena_context_t *arena_context, const node_t *syntax_root) {
-  if (!arena_context || !syntax_root) return NULL;
-  node_t *compatibility_root =
-      clone_node(arena_context, syntax_root);
-  return compatibility_root
-             ? psx_semantic_tree_create_with_compatibility_root(
-                   arena_context, compatibility_root)
-             : NULL;
-}
-
-psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree_mut(
+node_t *psx_resolution_work_tree_compatibility_root_mut(
     psx_resolution_work_tree_t *tree) {
-  return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED &&
-                 tree->phase < PSX_RESOLUTION_WORK_FINALIZED
-             ? tree->semantic_tree : NULL;
+  return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED
+             ? tree->compatibility_root : NULL;
 }
 
-const psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree(
+const node_t *psx_resolution_work_tree_compatibility_root(
     const psx_resolution_work_tree_t *tree) {
-  return tree ? tree->semantic_tree : NULL;
+  return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED
+             ? tree->compatibility_root : NULL;
+}
+
+int psx_resolution_work_tree_replace_compatibility_root(
+    psx_resolution_work_tree_t *tree, node_t *root) {
+  if (!tree || !root ||
+      tree->phase < PSX_RESOLUTION_WORK_CLONED ||
+      tree->phase >= PSX_RESOLUTION_WORK_HIR_READY)
+    return 0;
+  tree->compatibility_root = root;
+  return 1;
 }
 
 const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
@@ -671,8 +666,7 @@ const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
 node_t *psx_resolution_work_tree_export_compatibility_ast(
     psx_resolution_work_tree_t *tree) {
   return tree && tree->phase >= PSX_RESOLUTION_WORK_FINALIZED
-             ? psx_semantic_tree_compatibility_root_mut(
-                   tree->semantic_tree)
+             ? tree->compatibility_root
              : NULL;
 }
 
@@ -715,9 +709,7 @@ int psx_resolution_work_tree_build_typed_hir(
     };
   }
   const node_t *compatibility_root =
-      tree ? psx_semantic_tree_compatibility_root(
-                 tree->semantic_tree)
-           : NULL;
+      psx_resolution_work_tree_compatibility_root(tree);
   if (!tree || !semantic_context || !tree->semantic_tree ||
       !compatibility_root) {
     if (failure) {
@@ -736,7 +728,8 @@ int psx_resolution_work_tree_build_typed_hir(
     return 0;
   }
   if (!psx_semantic_tree_materialize(
-          tree->semantic_tree, semantic_context, failure))
+          tree->semantic_tree, compatibility_root,
+          semantic_context, failure))
     return 0;
   psx_typed_hir_tree_t *typed_hir =
       psx_materialize_typed_hir_tree(

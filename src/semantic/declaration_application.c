@@ -19,7 +19,7 @@
 #include "function_parameter_resolution.h"
 #include "identifier_binding.h"
 #include "semantic_pass.h"
-#include "semantic_tree_internal.h"
+#include "resolution_work_tree_internal.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 
@@ -413,12 +413,13 @@ static void apply_runtime_parsed_declarator(
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "declarator-resolution",
                    "runtime array bound syntax was not prepared");
     }
-    psx_semantic_tree_t *expression_tree =
-        psx_semantic_tree_create_from_syntax(
+    psx_resolution_work_tree_t *expression_work_tree =
+        psx_resolution_work_tree_create_from_syntax(
             ps_ctx_arena(semantic_context), syntax_expression);
     node_t *expression =
-        psx_semantic_tree_compatibility_root_mut(expression_tree);
-    if (!expression_tree || !expression) {
+        psx_resolution_work_tree_compatibility_root_mut(
+            expression_work_tree);
+    if (!expression_work_tree || !expression) {
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
           parsed->expression.start, "declarator-resolution",
