@@ -676,6 +676,65 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
       builder, initialization, value, result_type, source);
 }
 
+static const node_t *lowered_source_cast_value(
+    const node_t *source) {
+  if (!source || source->kind != ND_CAST || !source->is_source_cast)
+    return source;
+  const node_t *lowered = psx_source_cast_lowered_value_const(
+      (const node_source_cast_t *)source);
+  return lowered ? lowered : source;
+}
+
+static int address_requires_typed_hir_lowering(
+    const node_t *source) {
+  if (!source || source->kind != ND_ADDR || !source->lhs) return 0;
+  const node_t *value = lowered_source_cast_value(source->lhs);
+  if (value->kind == ND_CAST && value->lhs) {
+    const psx_type_t *value_type = ps_node_get_type((node_t *)value);
+    if (value_type && ps_type_is_tag_aggregate(value_type)) return 1;
+  }
+  return value->kind == ND_COMMA && value->rhs;
+}
+
+static psx_resolved_hir_node_t *materialize_address_expression(
+    hir_materializer_t *builder, const node_t *source) {
+  psx_qual_type_t result_type = ps_node_qual_type(source);
+  if (!canonical_type_exists(builder, result_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
+  }
+  const node_t *value = lowered_source_cast_value(source->lhs);
+  if (value->kind == ND_CAST && value->lhs) {
+    const psx_type_t *value_type = ps_node_get_type((node_t *)value);
+    if (value_type && ps_type_is_tag_aggregate(value_type)) {
+      psx_resolved_hir_node_t *object =
+          build_node(builder, value->lhs);
+      return object
+                 ? materialize_address_of_object(
+                       builder, object, result_type, source)
+                 : NULL;
+    }
+  }
+  if (value->kind == ND_COMMA && value->lhs && value->rhs) {
+    psx_resolved_hir_node_t *prefix =
+        build_node(builder, value->lhs);
+    psx_resolved_hir_node_t *object =
+        build_node(builder, value->rhs);
+    psx_resolved_hir_node_t *address =
+        object ? materialize_address_of_object(
+                     builder, object, result_type, source)
+               : NULL;
+    return prefix && address
+               ? materialize_comma(
+                     builder, prefix, address, result_type, source)
+               : NULL;
+  }
+  set_failure(
+      builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+  return NULL;
+}
+
 static int copy_payload(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
@@ -860,6 +919,8 @@ static int copy_vla_payload(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  if (address_requires_typed_hir_lowering(source))
+    return materialize_address_expression(builder, source);
   if (source && source->kind == ND_COMPOUND_LITERAL) {
     return materialize_compound_literal(
         builder, (const node_compound_literal_t *)source);
@@ -997,7 +1058,7 @@ psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
   const node_t *semantic_root =
-      psx_resolution_work_tree_root(work_tree);
+      psx_resolution_work_tree_semantic_root(work_tree);
   if (!work_tree || !semantic_context || !semantic_root) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;

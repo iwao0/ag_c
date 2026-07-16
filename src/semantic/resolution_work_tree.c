@@ -10,7 +10,8 @@
 #include "../parser/node_utils.h"
 
 struct psx_resolution_work_tree_t {
-  node_t *root;
+  const node_t *syntax_root;
+  node_t *semantic_root;
   psx_resolution_work_phase_t phase;
 };
 
@@ -508,26 +509,32 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
   psx_resolution_work_tree_t *tree = arena_alloc_in(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
-  tree->root = clone_node(arena_context, syntax_root);
-  if (!tree->root) return NULL;
+  tree->syntax_root = syntax_root;
+  tree->semantic_root = clone_node(arena_context, syntax_root);
+  if (!tree->semantic_root) return NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
 }
 
-node_t *psx_resolution_work_tree_mutable_root(
-    psx_resolution_work_tree_t *tree) {
-  return tree ? tree->root : NULL;
+const node_t *psx_resolution_work_tree_syntax_root(
+    const psx_resolution_work_tree_t *tree) {
+  return tree ? tree->syntax_root : NULL;
 }
 
-const node_t *psx_resolution_work_tree_root(
+node_t *psx_resolution_work_tree_mutable_semantic_root(
+    psx_resolution_work_tree_t *tree) {
+  return tree ? tree->semantic_root : NULL;
+}
+
+const node_t *psx_resolution_work_tree_semantic_root(
     const psx_resolution_work_tree_t *tree) {
-  return tree ? tree->root : NULL;
+  return tree ? tree->semantic_root : NULL;
 }
 
 node_t *psx_resolution_work_tree_legacy_root(
     psx_resolution_work_tree_t *tree) {
   return tree && tree->phase >= PSX_RESOLUTION_WORK_FINALIZED
-             ? tree->root : NULL;
+             ? tree->semantic_root : NULL;
 }
 
 psx_resolution_work_phase_t psx_resolution_work_tree_phase(
@@ -540,9 +547,10 @@ int psx_resolution_work_tree_advance_with_root(
     psx_resolution_work_phase_t expected,
     psx_resolution_work_phase_t next, node_t *root) {
   if (!tree || !root || tree->phase != expected ||
+      root == tree->syntax_root ||
       next != (psx_resolution_work_phase_t)(expected + 1))
     return 0;
-  tree->root = root;
+  tree->semantic_root = root;
   tree->phase = next;
   return 1;
 }

@@ -258,7 +258,6 @@ node_t **psx_frontend_program_in_session(
     program[count++] = function;
   }
   program[count] = NULL;
-  psx_frontend_analyze_program_in_session(session, program);
   if (!psx_frontend_stream_end(&stream)) {
     free(program);
     return NULL;

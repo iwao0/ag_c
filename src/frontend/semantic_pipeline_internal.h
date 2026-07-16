@@ -33,14 +33,5 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const node_t *syntax, const token_t *fallback_diag_tok);
-void psx_frontend_analyze_program_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    node_t **program);
-void psx_frontend_analyze_program_in_session(
-    ag_compilation_session_t *session, node_t **program);
 
 #endif

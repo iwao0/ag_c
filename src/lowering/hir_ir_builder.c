@@ -48,6 +48,7 @@ typedef struct {
   ir_func_t *function;
   ir_hir_build_status_t status;
   ir_abi_param_info_t return_info;
+  psx_qual_type_t return_qual_type;
   int returns_void;
   hir_local_slot_t local_slots[512];
   size_t local_slot_count;
@@ -656,6 +657,27 @@ static ir_val_t coerce_direct_value(
     return conversion->dst;
   }
   return coerce_scalar(context, value, source, target);
+}
+
+static ir_val_t coerce_direct_value_to_qual_type(
+    hir_ir_context_t *context, ir_val_t value,
+    ir_abi_param_info_t source, ir_abi_param_info_t target,
+    psx_qual_type_t target_qual_type) {
+  const psx_type_t *semantic_target =
+      psx_semantic_type_table_lookup(
+          context->options->semantic_types,
+          target_qual_type.type_id);
+  if (semantic_target && semantic_target->kind == PSX_TYPE_BOOL) {
+    value = scalar_truth_value(context, value);
+    source = (ir_abi_param_info_t){
+        .type = IR_TY_I32,
+        .param_class = IR_ABI_PARAM_INTEGER,
+        .source_size = 4,
+        .is_unsigned = 1,
+    };
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return coerce_direct_value(context, value, source, target);
 }
 
 static int setup_scalar_parameters(
@@ -3100,9 +3122,14 @@ static ir_val_t build_scalar_or_void_call(
     }
     ir_val_t value = build_expr(context, argument);
     if (context->status == IR_HIR_BUILD_OK) {
-      value = coerce_direct_value(
+      value = coerce_direct_value_to_qual_type(
           context, value, argument_type,
-          parameter_type);
+          parameter_type,
+          i < signature.param_count
+              ? psx_semantic_type_table_parameter(
+                    context->options->semantic_types,
+                    callable_type.type_id, (int)i)
+              : psx_hir_node_qual_type(argument));
     }
     if (context->status != IR_HIR_BUILD_OK) {
       free(arguments);
@@ -3563,8 +3590,9 @@ static ir_val_t build_expr(
     ir_val_t value = build_expr(context, value_node);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     ir_abi_param_info_t target_type = classify_node_type(context, target);
-    value = coerce_direct_value(
-        context, value, classify_node_type(context, value_node), target_type);
+    value = coerce_direct_value_to_qual_type(
+        context, value, classify_node_type(context, value_node),
+        target_type, psx_hir_node_qual_type(target));
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     ir_val_t pointer = lvalue_address(context, target);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
@@ -3942,8 +3970,9 @@ static int build_statement(
       ir_val_t result = build_expr(context, value);
       if (context->status != IR_HIR_BUILD_OK) return 0;
       ir_abi_param_info_t value_type = classify_node_type(context, value);
-      result = coerce_direct_value(
-          context, result, value_type, context->return_info);
+      result = coerce_direct_value_to_qual_type(
+          context, result, value_type, context->return_info,
+          context->return_qual_type);
       if (context->status != IR_HIR_BUILD_OK) return 0;
       ir_inst_t *ret = ir_inst_new(IR_RET);
       if (!ret) {
@@ -4178,6 +4207,10 @@ ir_module_t *ir_build_function_module_from_hir(
       .options = options,
       .status = IR_HIR_BUILD_OK,
       .return_info = return_info,
+      .return_qual_type = {
+          .type_id = result_type_id,
+          .qualifiers = PSX_TYPE_QUALIFIER_NONE,
+      },
       .returns_void = returns_void,
   };
   context.module = ir_module_new();

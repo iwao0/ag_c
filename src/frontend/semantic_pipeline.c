@@ -61,7 +61,7 @@ static int analyze_function_in_contexts(
     psx_resolution_work_tree_t *work_tree,
     const token_t *fallback_diag_tok) {
   node_t *function =
-      psx_resolution_work_tree_mutable_root(work_tree);
+      psx_resolution_work_tree_mutable_semantic_root(work_tree);
   if (!semantic_context || !local_registry ||
       !function || function->kind != ND_FUNCDEF) return 0;
   function = psx_bind_identifier_tree_in_contexts(
@@ -101,9 +101,6 @@ static int analyze_function_in_contexts(
       fallback_diag_tok);
   psx_emit_unreachable_warnings(
       semantic_context, function, fallback_diag_tok);
-  psx_lower_implicit_conversions(
-      lowering_context, function, current_function,
-      fallback_diag_tok, options);
   psx_require_semantic_tree_has_interned_expression_types(
       semantic_context, ps_ctx_diagnostics(semantic_context), function,
       fallback_diag_tok);
@@ -187,7 +184,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     return NULL;
   }
   node_t *expression =
-      psx_resolution_work_tree_mutable_root(work_tree);
+      psx_resolution_work_tree_mutable_semantic_root(work_tree);
   expression = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, fallback_diag_tok);
@@ -215,8 +212,6 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     return NULL;
   psx_validate_lowered_tree_in_context(
       semantic_context, expression, fallback_diag_tok);
-  psx_lower_implicit_conversions(
-      lowering_context, expression, NULL, fallback_diag_tok, options);
   psx_require_semantic_tree_has_interned_expression_types(
       semantic_context, ps_ctx_diagnostics(semantic_context), expression,
       fallback_diag_tok);
@@ -266,7 +261,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     return NULL;
   }
   node_t *initializer =
-      psx_resolution_work_tree_mutable_root(work_tree);
+      psx_resolution_work_tree_mutable_semantic_root(work_tree);
   initializer = psx_bind_identifier_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       initializer, fallback_diag_tok);
@@ -304,50 +299,4 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
           PSX_RESOLUTION_WORK_FINALIZED, initializer))
     return NULL;
   return psx_resolution_work_tree_legacy_root(work_tree);
-}
-
-void psx_frontend_analyze_program_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    node_t **program) {
-  if (!program) return;
-  for (int i = 0; program[i]; i++) {
-    if (program[i]->kind == ND_FUNCDEF) continue;
-    program[i] = psx_bind_identifier_tree_in_contexts(
-        semantic_context, global_registry, local_registry,
-        program[i], program[i]->tok);
-    psx_semantic_resolve_tree_in_contexts(
-        semantic_context, global_registry, local_registry,
-        program[i], NULL, program[i]->tok);
-    psx_require_available_semantic_tree_types_interned(
-        semantic_context, ps_ctx_diagnostics(semantic_context), program[i],
-        program[i]->tok);
-    program[i] = psx_lower_semantic_tree_in_contexts(
-        semantic_context, global_registry, local_registry,
-        lowering_context, options,
-        program[i], program[i]->tok);
-    psx_validate_lowered_tree_in_context(
-        semantic_context, program[i], program[i]->tok);
-    psx_lower_implicit_conversions(
-        lowering_context, program[i], NULL, program[i]->tok, options);
-    psx_require_semantic_tree_has_interned_expression_types(
-        semantic_context, ps_ctx_diagnostics(semantic_context), program[i],
-        program[i]->tok);
-    psx_require_semantic_tree_has_canonical_expression_types(
-        ps_ctx_diagnostics(semantic_context), program[i], program[i]->tok);
-  }
-}
-
-void psx_frontend_analyze_program_in_session(
-    ag_compilation_session_t *session, node_t **program) {
-  if (!ag_compilation_session_is_complete(session)) return;
-  psx_frontend_analyze_program_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
-      ag_compilation_session_lowering_context(session),
-      ag_compilation_session_options_view(session), program);
 }

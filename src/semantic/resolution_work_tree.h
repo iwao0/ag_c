@@ -17,9 +17,11 @@ typedef enum {
 
 psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root);
-node_t *psx_resolution_work_tree_mutable_root(
+const node_t *psx_resolution_work_tree_syntax_root(
+    const psx_resolution_work_tree_t *tree);
+node_t *psx_resolution_work_tree_mutable_semantic_root(
     psx_resolution_work_tree_t *tree);
-const node_t *psx_resolution_work_tree_root(
+const node_t *psx_resolution_work_tree_semantic_root(
     const psx_resolution_work_tree_t *tree);
 node_t *psx_resolution_work_tree_legacy_root(
     psx_resolution_work_tree_t *tree);

@@ -1865,9 +1865,12 @@ static void test_typed_hir_ownership_and_type_boundary() {
       psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), (node_t *)&typed_number);
   ASSERT_TRUE(typed_work_tree != NULL);
+  ASSERT_TRUE(psx_resolution_work_tree_syntax_root(
+                  typed_work_tree) == (node_t *)&typed_number);
   node_t *typed_root =
-      psx_resolution_work_tree_mutable_root(typed_work_tree);
+      psx_resolution_work_tree_mutable_semantic_root(typed_work_tree);
   ASSERT_TRUE(typed_root != NULL);
+  ASSERT_TRUE(typed_root != (node_t *)&typed_number);
   const psx_type_t *int_type =
       ps_type_new_integer(TK_INT, 4, 0);
   psx_qual_type_t int_qual_type =
@@ -6307,10 +6310,41 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   ASSERT_EQ(2, record->member_count);
   ASSERT_EQ(1, record->members[0].len);
   ASSERT_TRUE(strncmp(record->members[0].name, "x", 1) == 0);
+
+  program = parse_program_input(
+      "int __typed_hir_aggregate_address(void) { "
+      "struct S { int x; }; return (&((struct S)7))->x; }");
+  ASSERT_TRUE(program != NULL);
+  fn = as_function_definition(program[0]);
+  node_block_t *body = as_block(fn->base.rhs);
+  int return_index = 0;
+  while (body->body[return_index + 1]) return_index++;
+  ASSERT_EQ(ND_RETURN, body->body[return_index]->kind);
+  node_t *member = body->body[return_index]->lhs;
+  ASSERT_EQ(ND_MEMBER_ACCESS, member->kind);
+  ASSERT_TRUE(((node_member_access_t *)member)->from_pointer);
+  node_t *address = member->lhs;
+  ASSERT_EQ(ND_ADDR, address->kind);
+  ASSERT_EQ(ND_CAST, address->lhs->kind);
+  ASSERT_TRUE(address->lhs->is_source_cast);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_typed_address = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_ADDRESS) {
+      found_typed_address = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_typed_address);
 }
 
-static void test_implicit_conversion_semantic_lowering_boundary() {
-  printf("test_implicit_conversion_semantic_lowering_boundary...\n");
+static void test_implicit_conversion_hir_boundary() {
+  printf("test_implicit_conversion_hir_boundary...\n");
   node_t **program = parse_program_input(
       "double id(double x) { return x; } "
       "double retconv(int x) { return x; } "
@@ -6319,7 +6353,7 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
 
   node_block_t *retconv_body = as_block(as_function_definition(program[1])->base.rhs);
   ASSERT_EQ(ND_RETURN, retconv_body->body[0]->kind);
-  ASSERT_EQ(ND_INT_TO_FP, retconv_body->body[0]->lhs->kind);
+  ASSERT_EQ(ND_LVAR, retconv_body->body[0]->lhs->kind);
 
   node_block_t *same_body =
       as_block(as_function_definition(program[2])->base.rhs);
@@ -6334,12 +6368,12 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
   node_t *decl_init = main_body->body[1];
   ASSERT_EQ(ND_ASSIGN, decl_init->kind);
   ASSERT_TRUE(decl_init->is_decl_initializer);
-  ASSERT_EQ(ND_INT_TO_FP, decl_init->rhs->kind);
+  ASSERT_EQ(ND_LVAR, decl_init->rhs->kind);
 
   node_t *source_assign = main_body->body[2];
   ASSERT_EQ(ND_ASSIGN, source_assign->kind);
   ASSERT_TRUE(source_assign->is_source_assignment);
-  ASSERT_EQ(ND_INT_TO_FP, source_assign->rhs->kind);
+  ASSERT_EQ(ND_LVAR, source_assign->rhs->kind);
 
   node_t *ret = main_body->body[3];
   ASSERT_EQ(ND_RETURN, ret->kind);
@@ -6356,7 +6390,7 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
   ASSERT_EQ(ND_FUNCALL, return_value->lhs->kind);
   node_function_call_t *call = as_function_call(return_value->lhs);
   ASSERT_EQ(1, call->argument_count);
-  ASSERT_EQ(ND_INT_TO_FP, call->arguments[0]->kind);
+  ASSERT_EQ(ND_LVAR, call->arguments[0]->kind);
 }
 
 static void test_compound_assignment_semantic_lowering_boundary() {
@@ -6844,8 +6878,8 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
   ASSERT_TRUE(raw->lhs->is_decl_initializer);
   ASSERT_TRUE(raw->rhs->is_decl_initializer);
-  ASSERT_EQ(ND_INT_TO_FP, raw->lhs->rhs->kind);
-  ASSERT_EQ(ND_INT_TO_FP, raw->rhs->rhs->kind);
+  ASSERT_EQ(ND_NUM, raw->lhs->rhs->kind);
+  ASSERT_EQ(ND_NUM, raw->rhs->rhs->kind);
 
   lvar_t *float_value = register_test_storage_fixture((char *)"f", 1, 8, 8, 0);
   psx_type_t *float_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
@@ -11927,18 +11961,13 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("_Bool flag(void) { return 200; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NE, ret->lhs->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->rhs->kind);
-  ASSERT_EQ(0, as_num(ret->lhs->rhs)->val);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(200, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("char narrow(int x) { return x; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
-  ASSERT_EQ(ND_SHR, ret->lhs->lhs->kind);
-  ASSERT_EQ(ND_SHL, ret->lhs->lhs->lhs->kind);
-  ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(ret->lhs->lhs->lhs));
-  ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(ret->lhs->lhs));
+  ASSERT_EQ(ND_LVAR, ret->lhs->kind);
 
   parsed_code = parse_program_input("int cast_unsigned_local(void) { unsigned u; return (int)u; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
@@ -11992,10 +12021,7 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
-  ASSERT_EQ(ND_BITAND, ret->lhs->lhs->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->lhs->rhs->kind);
-  ASSERT_EQ(0xff, as_num(ret->lhs->lhs->rhs)->val);
+  ASSERT_EQ(ND_LVAR, ret->lhs->kind);
 
   parsed_code = parse_program_input(
       "struct __ret_meta_s { int a; int b; } __ret_meta_struct(void) { "
@@ -12115,9 +12141,8 @@ static void test_expr_member_access() {
     }
   }
   ASSERT_TRUE(ret != NULL);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
-  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->lhs->kind);
-  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(ret->lhs->lhs));
+  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->kind);
+  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(ret->lhs));
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
@@ -14081,7 +14106,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(ND_NUM, typed_bool_assign->rhs->kind);
   typed_bool_assign =
       analyze_test_expression(typed_bool_assign, NULL);
-  ASSERT_EQ(ND_NE, typed_bool_assign->rhs->kind);
+  ASSERT_EQ(ND_NUM, typed_bool_assign->rhs->kind);
 
   node_t typed_stale_bool_lhs_mem = {0};
   typed_stale_bool_lhs_mem.kind = ND_LVAR;
@@ -22553,7 +22578,7 @@ int main() {
   test_function_call_type_binding_boundary();
   test_cast_semantic_lowering_boundary();
   test_aggregate_cast_semantic_lowering_boundary();
-  test_implicit_conversion_semantic_lowering_boundary();
+  test_implicit_conversion_hir_boundary();
   test_compound_assignment_semantic_lowering_boundary();
   test_translation_unit_frontend_boundary();
   test_toplevel_static_assert_frontend_boundary();
