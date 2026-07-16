@@ -166,17 +166,15 @@ static psx_hir_node_id_t build_statement_expression_prefix(
   }
   psx_hir_node_spec_t spec = {
       .kind = PSX_HIR_BLOCK,
-      .role = PSX_HIR_ROLE_STATEMENT,
-      .qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .children = children.items,
       .child_edges = children.edges,
       .child_count = children.count,
   };
-  psx_hir_node_id_t result = psx_hir_module_add_node(
-      builder->module, &spec);
+  psx_hir_statement_spec_t statement = {.node = spec};
+  psx_hir_node_id_t result = psx_hir_module_add_statement(
+      builder->module, &statement);
   free(children.items);
   free(children.edges);
   if (result == PSX_HIR_NODE_ID_INVALID)
@@ -282,7 +280,7 @@ static psx_qual_type_t child_qual_type(
 
 static int derive_structural_expression_type(
     hir_builder_t *builder, const node_t *source,
-    const hir_children_t *children, psx_hir_node_spec_t *spec) {
+    const hir_children_t *children, psx_qual_type_t *qual_type) {
   psx_qual_type_t derived = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   switch (source->kind) {
@@ -302,7 +300,7 @@ static int derive_structural_expression_type(
         builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return 0;
   }
-  spec->qual_type = derived;
+  *qual_type = derived;
   return 1;
 }
 
@@ -513,16 +511,17 @@ static void free_vla_payload(psx_hir_node_spec_t *spec) {
 static psx_hir_node_id_t build_node(
     hir_builder_t *builder, const node_t *source) {
   psx_hir_node_spec_t spec = {0};
-  spec.qual_type = (psx_qual_type_t){
+  psx_hir_node_role_t role = PSX_HIR_ROLE_STATEMENT;
+  psx_qual_type_t qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  spec.attached_qual_type = spec.qual_type;
-  if (!map_kind(source->kind, &spec.kind, &spec.role)) {
+  spec.attached_qual_type = qual_type;
+  if (!map_kind(source->kind, &spec.kind, &role)) {
     set_failure(builder, PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return PSX_HIR_NODE_ID_INVALID;
   }
-  if (spec.role == PSX_HIR_ROLE_EXPRESSION) {
-    spec.qual_type = ps_node_qual_type(source);
-    if (!canonical_type_exists(builder, spec.qual_type)) {
+  if (role == PSX_HIR_ROLE_EXPRESSION) {
+    qual_type = ps_node_qual_type(source);
+    if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
           builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
       return PSX_HIR_NODE_ID_INVALID;
@@ -577,16 +576,27 @@ static psx_hir_node_id_t build_node(
   spec.children = children.items;
   spec.child_edges = children.edges;
   spec.child_count = children.count;
-  if (spec.role == PSX_HIR_ROLE_EXPRESSION &&
+  if (role == PSX_HIR_ROLE_EXPRESSION &&
       !derive_structural_expression_type(
-          builder, source, &children, &spec)) {
+          builder, source, &children, &qual_type)) {
     free(children.items);
     free(children.edges);
     free_vla_payload(&spec);
     return PSX_HIR_NODE_ID_INVALID;
   }
-  psx_hir_node_id_t result = psx_hir_module_add_node(
-      builder->module, &spec);
+  psx_hir_node_id_t result = PSX_HIR_NODE_ID_INVALID;
+  if (role == PSX_HIR_ROLE_EXPRESSION) {
+    psx_hir_expression_spec_t expression = {
+        .node = spec,
+        .qual_type = qual_type,
+    };
+    result = psx_hir_module_add_expression(
+        builder->module, &expression);
+  } else {
+    psx_hir_statement_spec_t statement = {.node = spec};
+    result = psx_hir_module_add_statement(
+        builder->module, &statement);
+  }
   free(children.items);
   free(children.edges);
   free_vla_payload(&spec);

@@ -250,19 +250,64 @@ psx_hir_symbol_id_t psx_hir_module_intern_symbol(
   return (psx_hir_symbol_id_t)module->symbol_count;
 }
 
-psx_hir_node_id_t psx_hir_module_add_node(
-    psx_hir_module_t *module, const psx_hir_node_spec_t *spec) {
+static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
+  switch (kind) {
+    case PSX_HIR_ADD:
+    case PSX_HIR_SUB:
+    case PSX_HIR_MUL:
+    case PSX_HIR_DIV:
+    case PSX_HIR_MOD:
+    case PSX_HIR_EQ:
+    case PSX_HIR_NE:
+    case PSX_HIR_LT:
+    case PSX_HIR_LE:
+    case PSX_HIR_BITAND:
+    case PSX_HIR_BITXOR:
+    case PSX_HIR_BITOR:
+    case PSX_HIR_SHL:
+    case PSX_HIR_SHR:
+    case PSX_HIR_LOGAND:
+    case PSX_HIR_LOGOR:
+    case PSX_HIR_TERNARY:
+    case PSX_HIR_COMMA:
+    case PSX_HIR_ASSIGN:
+    case PSX_HIR_LOCAL:
+    case PSX_HIR_PRE_INC:
+    case PSX_HIR_PRE_DEC:
+    case PSX_HIR_POST_INC:
+    case PSX_HIR_POST_DEC:
+    case PSX_HIR_CALL:
+    case PSX_HIR_FUNCTION_REF:
+    case PSX_HIR_DEREF:
+    case PSX_HIR_ADDRESS:
+    case PSX_HIR_STRING:
+    case PSX_HIR_NUMBER:
+    case PSX_HIR_GLOBAL:
+    case PSX_HIR_FP_TO_INT:
+    case PSX_HIR_INT_TO_FP:
+    case PSX_HIR_FNEG:
+    case PSX_HIR_VA_ARG_AREA:
+    case PSX_HIR_CAST:
+    case PSX_HIR_CREAL:
+    case PSX_HIR_CIMAG:
+    case PSX_HIR_STMT_EXPR:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static psx_hir_node_id_t add_node(
+    psx_hir_module_t *module, const psx_hir_node_spec_t *spec,
+    psx_hir_node_role_t role, psx_qual_type_t qual_type) {
   if (!module || !spec) return PSX_HIR_NODE_ID_INVALID;
-  if ((spec->role == PSX_HIR_ROLE_EXPRESSION) !=
-      (spec->qual_type.type_id != PSX_TYPE_ID_INVALID))
-    return PSX_HIR_NODE_ID_INVALID;
   if (!reserve_nodes(module, module->node_count + 1))
     return PSX_HIR_NODE_ID_INVALID;
   psx_hir_node_t *node = calloc(1, sizeof(*node));
   if (!node) return PSX_HIR_NODE_ID_INVALID;
   node->kind = spec->kind;
-  node->role = spec->role;
-  node->qual_type = spec->qual_type;
+  node->role = role;
+  node->qual_type = qual_type;
   node->attached_qual_type = spec->attached_qual_type;
   node->child_count = spec->child_count;
   node->name_length = spec->name_length;
@@ -330,6 +375,27 @@ psx_hir_node_id_t psx_hir_module_add_node(
   }
   module->nodes[module->node_count++] = node;
   return (psx_hir_node_id_t)module->node_count;
+}
+
+psx_hir_node_id_t psx_hir_module_add_expression(
+    psx_hir_module_t *module,
+    const psx_hir_expression_spec_t *spec) {
+  if (!spec || !hir_kind_is_expression(spec->node.kind) ||
+      spec->qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return PSX_HIR_NODE_ID_INVALID;
+  return add_node(
+      module, &spec->node, PSX_HIR_ROLE_EXPRESSION,
+      spec->qual_type);
+}
+
+psx_hir_node_id_t psx_hir_module_add_statement(
+    psx_hir_module_t *module,
+    const psx_hir_statement_spec_t *spec) {
+  if (!spec || hir_kind_is_expression(spec->node.kind))
+    return PSX_HIR_NODE_ID_INVALID;
+  return add_node(
+      module, &spec->node, PSX_HIR_ROLE_STATEMENT,
+      invalid_qual_type());
 }
 
 int psx_hir_module_add_root(

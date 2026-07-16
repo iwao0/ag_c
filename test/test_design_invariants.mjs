@@ -75,6 +75,10 @@ function callBodies(source, functionName) {
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
 const hirHeader = await readFile("src/hir/hir.h", "utf8");
 const hirImplementation = await readFile("src/hir/hir.c", "utf8");
+const hirInternalHeader = await readFile(
+  "src/hir/hir_internal.h",
+  "utf8",
+);
 const typedHirBuilder = await readFile(
   "src/semantic/typed_hir_builder.c",
   "utf8",
@@ -5489,8 +5493,23 @@ if (/parser\/ast\.h|\bnode_t\b|\bnode_kind_t\b|\bpsx_type_t\b/.test(
     "public Typed HIR must not expose parser AST or mutable type objects",
   );
 }
+const hirCommonNodeSpec = hirInternalHeader.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_hir_node_spec_t\s*;/,
+)?.[1] ?? "";
 if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
-    !/spec->role\s*==\s*PSX_HIR_ROLE_EXPRESSION[^]*?spec->qual_type\.type_id\s*!=\s*PSX_TYPE_ID_INVALID/.test(
+    !/typedef\s+struct\s*\{\s*psx_hir_node_spec_t\s+node\s*;\s*psx_qual_type_t\s+qual_type\s*;\s*\}\s*psx_hir_expression_spec_t\s*;/.test(
+      hirInternalHeader,
+    ) ||
+    !/typedef\s+struct\s*\{\s*psx_hir_node_spec_t\s+node\s*;\s*\}\s*psx_hir_statement_spec_t\s*;/.test(
+      hirInternalHeader,
+    ) ||
+    /psx_hir_node_role_t\s+role\s*;|psx_qual_type_t\s+qual_type\s*;/.test(
+      hirCommonNodeSpec,
+    ) ||
+    /\bpsx_hir_module_add_node\b/.test(hirInternalHeader) ||
+    !/\bpsx_hir_module_add_expression\b/.test(hirInternalHeader) ||
+    !/\bpsx_hir_module_add_statement\b/.test(hirInternalHeader) ||
+    !/spec->qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       hirImplementation,
     )) {
   throw new Error(

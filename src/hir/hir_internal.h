@@ -5,8 +5,6 @@
 
 typedef struct {
   psx_hir_node_kind_t kind;
-  psx_hir_node_role_t role;
-  psx_qual_type_t qual_type;
   psx_qual_type_t attached_qual_type;
   const psx_hir_node_id_t *children;
   const psx_hir_edge_kind_t *child_edges;
@@ -37,6 +35,15 @@ typedef struct {
 } psx_hir_node_spec_t;
 
 typedef struct {
+  psx_hir_node_spec_t node;
+  psx_qual_type_t qual_type;
+} psx_hir_expression_spec_t;
+
+typedef struct {
+  psx_hir_node_spec_t node;
+} psx_hir_statement_spec_t;
+
+typedef struct {
   const char *name;
   size_t name_length;
   psx_qual_type_t qual_type;
@@ -52,8 +59,12 @@ size_t psx_hir_module_symbol_checkpoint(const psx_hir_module_t *module);
 void psx_hir_module_rollback(
     psx_hir_module_t *module, size_t node_checkpoint,
     size_t root_checkpoint, size_t symbol_checkpoint);
-psx_hir_node_id_t psx_hir_module_add_node(
-    psx_hir_module_t *module, const psx_hir_node_spec_t *spec);
+psx_hir_node_id_t psx_hir_module_add_expression(
+    psx_hir_module_t *module,
+    const psx_hir_expression_spec_t *spec);
+psx_hir_node_id_t psx_hir_module_add_statement(
+    psx_hir_module_t *module,
+    const psx_hir_statement_spec_t *spec);
 int psx_hir_module_add_root(
     psx_hir_module_t *module, psx_hir_node_id_t root);
 psx_hir_symbol_id_t psx_hir_module_intern_symbol(
