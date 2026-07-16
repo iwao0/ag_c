@@ -83,8 +83,20 @@ const typedHirBuilder = await readFile(
   "src/semantic/typed_hir_builder.c",
   "utf8",
 );
+const typedHirBuilderHeader = await readFile(
+  "src/semantic/typed_hir_builder.h",
+  "utf8",
+);
 const resolutionWorkTree = await readFile(
   "src/semantic/resolution_work_tree.c",
+  "utf8",
+);
+const resolutionWorkTreeHeader = await readFile(
+  "src/semantic/resolution_work_tree.h",
+  "utf8",
+);
+const resolvedTreeHeader = await readFile(
+  "src/semantic/resolved_tree.h",
   "utf8",
 );
 const hirIrBuilder = `${await readFile(
@@ -1572,7 +1584,7 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_function_to_hir_in_session/.test(
       semanticPipelineHeader,
     ) ||
-    !/psx_frontend_resolve_function_work_tree_in_session/.test(
+    !/psx_frontend_resolve_function_tree_in_session/.test(
       semanticPipelineInternalHeader,
     ) ||
     /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
@@ -1582,6 +1594,14 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
 }
 const semanticPassSource = await readFile(
   "src/semantic/semantic_pass.c",
+  "utf8",
+);
+const loweredTreeValidationSource = await readFile(
+  "src/semantic/lowered_tree_validation.c",
+  "utf8",
+);
+const assignmentValidationSource = await readFile(
+  "src/semantic/assignment_validation.c",
   "utf8",
 );
 const identifierBindingSource = await readFile(
@@ -1700,7 +1720,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       parserStreamHeader,
     ) ||
     !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
-    !/psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
+    !/psx_frontend_resolve_function_tree_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -2273,10 +2293,10 @@ if (!semanticQualifierDiagnosticSection ||
       memberNodeUtilsHeader,
     ) ||
     !/ps_node_reject_const_assign_at_in\s*\(\s*semantic_context\s*,/.test(
-      semanticPassSource,
+      assignmentValidationSource,
     ) ||
     !/ps_node_reject_const_qual_discard_at_in\s*\(\s*semantic_context\s*,/.test(
-      semanticPassSource,
+      assignmentValidationSource,
     )) {
   throw new Error(
     "semantic qualifier diagnostics must read self and pointee qualifiers through QualType relations",
@@ -3597,7 +3617,7 @@ if (completeSemanticBoundaryCheckCount !== 3 ||
 const semanticPipelineContracts = [
   [
     "function",
-    /static\s+node_t\s*\*analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /static\s+int\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
@@ -5527,7 +5547,7 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
   throw new Error("CompilationSession must own the Typed HIR module");
 }
 const functionResolutionBoundary = semanticPipelineSource.match(
-  /node_t\s*\*psx_frontend_resolve_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /psx_resolved_tree_t\s*\*psx_frontend_resolve_function_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const expressionResolutionBoundary = semanticPipelineSource.match(
   /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
@@ -5535,29 +5555,116 @@ const expressionResolutionBoundary = semanticPipelineSource.match(
 const initializerResolutionBoundary = semanticPipelineSource.match(
   /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
+const programResolutionBoundary = semanticPipelineSource.match(
+  /void\s+psx_frontend_analyze_program_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
 if (!functionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
-    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
+    !programResolutionBoundary ||
+    !/psx_resolved_tree_create_from_syntax\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
       functionResolutionBoundary[1],
     ) ||
     !/const\s+node_t\s*\*syntax_expression/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?psx_bind_identifier_tree_in_contexts\s*\(/.test(
+    !/psx_resolved_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_tree_in_contexts\s*\(/.test(
       expressionResolutionBoundary[1],
     ) ||
     !/const\s+node_t\s*\*syntax\s*,\s*const\s+token_t\s*\*fallback_diag_tok/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?psx_bind_identifier_initializer_tree_in_contexts\s*\(/.test(
+    !/psx_resolved_tree_create_from_syntax\s*\([^]*?psx_bind_identifier_initializer_tree_in_contexts\s*\(/.test(
       initializerResolutionBoundary[1],
     ) ||
-    !/psx_clone_syntax_tree_for_resolution\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+    !/psx_resolved_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+      resolutionWorkTreeHeader,
+    ) ||
+    !/struct\s+psx_resolved_tree_t\s*\{[^]*?node_t\s*\*root\s*;[^]*?psx_resolved_tree_phase_t\s+phase\s*;[^]*?\};/.test(
+      resolutionWorkTree,
+    ) ||
+    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHeader) ||
+    !/typedef\s+struct\s+psx_resolved_tree_t\s+psx_resolved_tree_t\s*;/.test(
+      resolvedTreeHeader,
+    ) ||
+    /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(typedHirBuilderHeader) ||
+    !/const\s+psx_resolved_tree_t\s*\*resolved_tree/.test(
+      typedHirBuilderHeader,
+    ) ||
+    !/PSX_TYPED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
+      typedHirBuilderHeader,
+    ) ||
+    !/psx_resolved_tree_phase\s*\(\s*resolved_tree\s*\)\s*!=\s*PSX_RESOLVED_TREE_FINALIZED/.test(
+      typedHirBuilder,
+    ) ||
+    !/next\s*!=\s*\(psx_resolved_tree_phase_t\)\(expected\s*\+\s*1\)/.test(
+      resolutionWorkTree,
+    ) ||
+    !/tree\s*&&\s*tree->phase\s*==\s*PSX_RESOLVED_TREE_FINALIZED[^]*?\?\s*tree->root\s*:\s*NULL/.test(
       resolutionWorkTree,
     )) {
   throw new Error(
-    "frontend resolvers must analyze private working trees and leave parser syntax nodes unchanged",
+    "frontend resolvers must own ordered resolved-tree phases and leave parser syntax nodes unchanged",
+  );
+}
+const functionAnalysisBoundary = semanticPipelineSource.match(
+  /static\s+int\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
+const resolveThenValidate = (
+  body,
+  resolveCall,
+  lowerCall,
+) => {
+  const resolveMatches = body.match(resolveCall) ?? [];
+  const lowerIndex = body.search(lowerCall);
+  const validationIndex = body.search(
+    /\bpsx_validate_lowered_tree_in_context\s*\(/,
+  );
+  return resolveMatches.length === 1 &&
+         lowerIndex >= 0 &&
+         validationIndex > lowerIndex &&
+         !new RegExp(
+           `${lowerCall.source}[^]*${resolveCall.source}`,
+         ).test(body);
+};
+if (!functionAnalysisBoundary ||
+    !resolveThenValidate(
+      functionAnalysisBoundary[1],
+      /\bpsx_semantic_resolve_tree_in_contexts\s*\(/g,
+      /\bpsx_lower_semantic_tree_in_contexts\s*\(/,
+    ) ||
+    !resolveThenValidate(
+      expressionResolutionBoundary[1],
+      /\bpsx_semantic_resolve_tree_in_contexts\s*\(/g,
+      /\bpsx_lower_semantic_tree_in_contexts\s*\(/,
+    ) ||
+    !resolveThenValidate(
+      initializerResolutionBoundary[1],
+      /\bpsx_semantic_resolve_initializer_tree_in_contexts\s*\(/g,
+      /\bpsx_lower_semantic_initializer_syntax_in_contexts\s*\(/,
+    ) ||
+    !resolveThenValidate(
+      programResolutionBoundary[1],
+      /\bpsx_semantic_resolve_tree_in_contexts\s*\(/g,
+      /\bpsx_lower_semantic_tree_in_contexts\s*\(/,
+    ) ||
+    !/psx_walk_semantic_tree\s*\(\s*root\s*,\s*validate_lowered_node/.test(
+      loweredTreeValidationSource,
+    ) ||
+    /psx_walk_semantic_tree_mut\s*\(\s*root\s*,\s*validate_lowered_node/.test(
+      loweredTreeValidationSource,
+    ) ||
+    /static\s+void\s+semantic_validate_assignment/.test(
+      semanticPassSource,
+    ) ||
+    !/void\s+psx_validate_assignment_in_context\s*\([^]*?const\s+node_t\s*\*node/.test(
+      assignmentValidationSource,
+    ) ||
+    !/materialize_ternary_rvalue\s*\([^]*?ps_node_bind_type\s*\(\s*\(node_t\s*\*\)select\s*,\s*ps_node_get_type\(base\)\s*\)/.test(
+      memberAccessLoweringSource,
+    )) {
+  throw new Error(
+    "semantic pipeline must resolve once before lowering and use read-only validation afterward",
   );
 }
 if (!/int\s+psx_frontend_resolve_function_to_hir_in_session\s*\([^)]*psx_hir_node_id_t\s*\*hir_root/.test(

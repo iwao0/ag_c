@@ -7,6 +7,11 @@
 #include "../parser/ast.h"
 #include "../parser/node_utils.h"
 
+struct psx_resolved_tree_t {
+  node_t *root;
+  psx_resolved_tree_phase_t phase;
+};
+
 static size_t node_storage_size(const node_t *node) {
   switch (node->kind) {
     case ND_IDENTIFIER: return sizeof(node_identifier_t);
@@ -283,8 +288,43 @@ static node_t *clone_node(
   return copy;
 }
 
-node_t *psx_clone_syntax_tree_for_resolution(
+psx_resolved_tree_t *psx_resolved_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root) {
-  return arena_context && syntax_root
-             ? clone_node(arena_context, syntax_root) : NULL;
+  if (!arena_context || !syntax_root) return NULL;
+  psx_resolved_tree_t *tree = arena_alloc_in(
+      arena_context, sizeof(*tree));
+  if (!tree) return NULL;
+  tree->root = clone_node(arena_context, syntax_root);
+  if (!tree->root) return NULL;
+  tree->phase = PSX_RESOLVED_TREE_CLONED;
+  return tree;
+}
+
+node_t *psx_resolved_tree_mutable_root(psx_resolved_tree_t *tree) {
+  return tree ? tree->root : NULL;
+}
+
+const node_t *psx_resolved_tree_root(const psx_resolved_tree_t *tree) {
+  return tree ? tree->root : NULL;
+}
+
+node_t *psx_resolved_tree_legacy_root(psx_resolved_tree_t *tree) {
+  return tree && tree->phase == PSX_RESOLVED_TREE_FINALIZED
+             ? tree->root : NULL;
+}
+
+psx_resolved_tree_phase_t psx_resolved_tree_phase(
+    const psx_resolved_tree_t *tree) {
+  return tree ? tree->phase : PSX_RESOLVED_TREE_INVALID;
+}
+
+int psx_resolved_tree_advance_with_root(
+    psx_resolved_tree_t *tree, psx_resolved_tree_phase_t expected,
+    psx_resolved_tree_phase_t next, node_t *root) {
+  if (!tree || !root || tree->phase != expected ||
+      next != (psx_resolved_tree_phase_t)(expected + 1))
+    return 0;
+  tree->root = root;
+  tree->phase = next;
+  return 1;
 }

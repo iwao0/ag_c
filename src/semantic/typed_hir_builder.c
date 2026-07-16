@@ -11,6 +11,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
+#include "resolution_work_tree.h"
 
 typedef struct {
   psx_hir_module_t *module;
@@ -608,14 +609,23 @@ static psx_hir_node_id_t build_node(
 int psx_build_typed_hir_root(
     psx_hir_module_t *module,
     const psx_semantic_context_t *semantic_context,
-    const node_t *semantic_root,
+    const psx_resolved_tree_t *resolved_tree,
     psx_typed_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
+  const node_t *semantic_root = psx_resolved_tree_root(resolved_tree);
   if (!module || !semantic_context || !semantic_root) {
     if (failure) {
       failure->status = PSX_TYPED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind = semantic_root
                                       ? (int)semantic_root->kind : -1;
+    }
+    return 0;
+  }
+  if (psx_resolved_tree_phase(resolved_tree) !=
+      PSX_RESOLVED_TREE_FINALIZED) {
+    if (failure) {
+      failure->status = PSX_TYPED_HIR_BUILD_UNFINALIZED_RESOLUTION;
+      failure->source_node_kind = (int)semantic_root->kind;
     }
     return 0;
   }

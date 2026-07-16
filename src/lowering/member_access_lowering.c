@@ -116,6 +116,9 @@ static node_t *materialize_ternary_rvalue(
       ps_node_new_lvar_expr_ref_for_in(
           ps_lowering_arena(lowering_context), temporary),
       ternary->els);
+  select->base.tok = ternary->base.tok;
+  ps_node_bind_type(
+      (node_t *)select, ps_node_get_type(base));
   return ps_node_new_binary_for_target_in(
       ps_lowering_arena(lowering_context),
       ps_lowering_target(lowering_context), ND_COMMA, (node_t *)select,

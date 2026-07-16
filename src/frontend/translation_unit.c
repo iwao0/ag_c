@@ -6,6 +6,7 @@
 #include "../lowering/runtime_context.h"
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
+#include "../semantic/resolution_work_tree.h"
 #include "function_definition.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
@@ -103,9 +104,9 @@ int psx_frontend_stream_begin(
 
 static int frontend_next_function_internal(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result,
-    node_t **resolved_function) {
+    psx_resolved_tree_t **resolved_tree) {
   if (result) result->hir_root = PSX_HIR_NODE_ID_INVALID;
-  if (resolved_function) *resolved_function = NULL;
+  if (resolved_tree) *resolved_tree = NULL;
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
       !ag_compilation_session_is_active(stream->session) || !result) {
@@ -178,11 +179,11 @@ static int frontend_next_function_internal(
       }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      node_t *resolved =
-          psx_frontend_resolve_function_work_tree_in_session(
+      psx_resolved_tree_t *resolved =
+          psx_frontend_resolve_function_tree_in_session(
               session, function, function->tok, &result->hir_root);
       if (!resolved) return 0;
-      if (resolved_function) *resolved_function = resolved;
+      if (resolved_tree) *resolved_tree = resolved;
       return 1;
     }
   }
@@ -233,9 +234,11 @@ node_t **psx_frontend_program_in_session(
     return NULL;
   }
   psx_frontend_function_t frontend_function;
-  node_t *function = NULL;
+  psx_resolved_tree_t *resolved_tree = NULL;
   while (frontend_next_function_internal(
-      &stream, &frontend_function, &function)) {
+      &stream, &frontend_function, &resolved_tree)) {
+    node_t *function =
+        psx_resolved_tree_legacy_root(resolved_tree);
     if (!function) {
       free(program);
       psx_frontend_stream_end(&stream);
