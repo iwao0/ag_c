@@ -5745,6 +5745,22 @@ if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
     "resolved generic selection must materialize only its selected expression directly into Typed HIR",
   );
 }
+if (!/MAP_EXPR\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/node_alignof_query_t[^]*?resolved_alignment/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /\blower_alignof_query_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/alignof_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "resolved alignof queries must materialize directly as Typed HIR numbers",
+  );
+}
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
       compilationSession,
     )) {

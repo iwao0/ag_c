@@ -117,6 +117,7 @@ static int map_kind(
     MAP_EXPR(ND_FUNCREF, PSX_HIR_FUNCTION_REF);
     MAP_EXPR(ND_UNARY_DEREF, PSX_HIR_DEREF);
     MAP_EXPR(ND_DEREF, PSX_HIR_DEREF);
+    MAP_EXPR(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
     MAP_EXPR(ND_ADDR, PSX_HIR_ADDRESS);
     MAP_EXPR(ND_STRING, PSX_HIR_STRING);
     MAP_EXPR(ND_NUM, PSX_HIR_NUMBER);
@@ -406,6 +407,10 @@ static int attach_global_symbol(
 static void copy_payload(
     const node_t *source, psx_hir_node_spec_t *spec) {
   switch (source->kind) {
+    case ND_ALIGNOF_QUERY:
+      spec->integer_value =
+          ((const node_alignof_query_t *)source)->resolved_alignment;
+      break;
     case ND_NUM: {
       const node_num_t *number = (const node_num_t *)source;
       spec->integer_value = number->val;

@@ -1,7 +1,6 @@
 #include "semantic_lowering_pass.h"
 
 #include "assignment_lowering.h"
-#include "alignof_lowering.h"
 #include "cast_lowering.h"
 #include "compound_literal_lowering.h"
 #include "expr_lowering.h"
@@ -151,9 +150,7 @@ static node_t *lower_tree(
           fallback_diag_tok);
     }
     case ND_ALIGNOF_QUERY:
-      return lower_alignof_query_expression(
-          context->lowering_context,
-          (node_alignof_query_t *)node);
+      break;
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
       node->lhs = lower_tree(

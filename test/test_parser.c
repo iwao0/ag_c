@@ -3850,6 +3850,27 @@ static void assert_selected_generic_number(
   ASSERT_EQ(ND_NUM, selected->kind);
   ASSERT_EQ(expected, as_num(selected)->val);
 }
+
+static node_t *find_binary_tree_node_kind(
+    node_t *node, psx_work_node_kind_t kind) {
+  if (!node) return NULL;
+  if (node->kind == kind) return node;
+  node_t *found = find_binary_tree_node_kind(node->lhs, kind);
+  return found ? found : find_binary_tree_node_kind(node->rhs, kind);
+}
+
+static void assert_typed_alignof(
+    node_t *node, int expected_alignment) {
+  ASSERT_TRUE(node != NULL);
+  node_t *query_node =
+      find_binary_tree_node_kind(node, ND_ALIGNOF_QUERY);
+  ASSERT_TRUE(query_node != NULL);
+  node_alignof_query_t *query =
+      (node_alignof_query_t *)query_node;
+  ASSERT_EQ(expected_alignment, query->resolved_alignment);
+  ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
+              PSX_TYPE_ID_INVALID);
+}
 static node_lvar_t *as_lvar(node_t *n) { return (node_lvar_t *)n; }
 static node_function_definition_t *as_function_definition(node_t *n) {
   ASSERT_TRUE(n != NULL);
@@ -5717,10 +5738,32 @@ static void test_sizeof_semantic_lowering_boundary() {
   resolve_test_alignof_query(align_query);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
   ASSERT_EQ(4, align_query->resolved_alignment);
-  node_t *lowered_align = analyze_test_expression(raw_align, NULL);
+  node_t *typed_align = analyze_test_expression(raw_align, NULL);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
-  ASSERT_EQ(ND_NUM, lowered_align->kind);
-  ASSERT_EQ(4, as_num(lowered_align)->val);
+  assert_typed_alignof(typed_align, 4);
+
+  node_t **program = parse_program_input(
+      "unsigned long __typed_hir_alignof(void) { "
+      "return _Alignof(void *); }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  assert_typed_alignof(body->body[0]->lhs, 8);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_alignment_literal = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_NUMBER &&
+        psx_hir_node_integer_value(hir_node) == 8) {
+      found_alignment_literal = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_alignment_literal);
 }
 
 static void test_expression_type_materialization_boundary() {
@@ -10972,42 +11015,33 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, as_num(n5)->val);
 
     node_t *a1 = parse_expr_input("_Alignof(int)");
-  ASSERT_EQ(ND_NUM, a1->kind);
-  ASSERT_EQ(4, as_num(a1)->val);
+  assert_typed_alignof(a1, 4);
 
     node_t *a2 = parse_expr_input("_Alignof(int*)");
-  ASSERT_EQ(ND_NUM, a2->kind);
-  ASSERT_EQ(8, as_num(a2)->val);
+  assert_typed_alignof(a2, 8);
 
     node_t *a2q1 = parse_expr_input("_Alignof(int * const)");
-  ASSERT_EQ(ND_NUM, a2q1->kind);
-  ASSERT_EQ(8, as_num(a2q1)->val);
+  assert_typed_alignof(a2q1, 8);
 
     node_t *a2q2 = parse_expr_input("_Alignof(int * volatile)");
-  ASSERT_EQ(ND_NUM, a2q2->kind);
-  ASSERT_EQ(8, as_num(a2q2)->val);
+  assert_typed_alignof(a2q2, 8);
 
     node_t *a2q3 = parse_expr_input("_Alignof(int * restrict)");
-  ASSERT_EQ(ND_NUM, a2q3->kind);
-  ASSERT_EQ(8, as_num(a2q3)->val);
+  assert_typed_alignof(a2q3, 8);
 
     node_t *a2a = parse_expr_input("_Alignof(int[10])");
-  ASSERT_EQ(ND_NUM, a2a->kind);
   /* 配列のアラインメントは要素のアラインメント (= 4)。sizeof (40) ではない。 */
-  ASSERT_EQ(4, as_num(a2a)->val);
+  assert_typed_alignof(a2a, 4);
 
     node_t *a2b = parse_expr_input("_Alignof(int (*)[3])");
-  ASSERT_EQ(ND_NUM, a2b->kind);
-  ASSERT_EQ(8, as_num(a2b)->val);
+  assert_typed_alignof(a2b, 8);
 
     node_t *a2c = parse_expr_input("_Alignof((int[3]))");
-  ASSERT_EQ(ND_NUM, a2c->kind);
   /* 配列のアラインメントは要素のアラインメント (= 4)、sizeof (12) ではない。 */
-  ASSERT_EQ(4, as_num(a2c)->val);
+  assert_typed_alignof(a2c, 4);
 
   node_t *a3 = parse_expr_input("_Alignof(_Imaginary double)");
-  ASSERT_EQ(ND_NUM, a3->kind);
-  ASSERT_EQ(8, as_num(a3)->val);
+  assert_typed_alignof(a3, 8);
 
   parsed_code = parse_program_input("int main() { int x; return sizeof(x); }");
   node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
@@ -11039,8 +11073,7 @@ static void test_expr_sizeof() {
   parsed_code = parse_program_input("int main() { struct S { int x; }; return _Alignof(struct S); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(4, as_num(ret->lhs)->val);
+  assert_typed_alignof(ret->lhs, 4);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
