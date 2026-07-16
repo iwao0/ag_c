@@ -352,10 +352,16 @@ static void copy_payload(
       spec->label_id = jump->label_id;
       break;
     }
-    case ND_VLA_ALLOC:
+    case ND_VLA_ALLOC: {
+      const node_vla_alloc_t *allocation =
+          (const node_vla_alloc_t *)source;
       spec->storage_offset =
-          ((const node_vla_alloc_t *)source)->descriptor_frame_off;
+          allocation->descriptor_frame_off;
+      spec->vla_stride_frame_offset =
+          allocation->row_stride_frame_off;
+      spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
       break;
+    }
     default:
       break;
   }

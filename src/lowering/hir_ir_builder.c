@@ -317,6 +317,11 @@ static int is_register_aggregate_abi_type(ir_abi_param_info_t type) {
          (type.type == IR_TY_I32 || type.type == IR_TY_I64);
 }
 
+static int is_indirect_aggregate_abi_type(ir_abi_param_info_t type) {
+  return type.param_class == IR_ABI_PARAM_AGGREGATE &&
+         type.source_size > 0 && type.type == IR_TY_PTR;
+}
+
 static int is_direct_value_abi_type(ir_abi_param_info_t type) {
   return is_scalar_value_abi_type(type) ||
          is_register_aggregate_abi_type(type);
@@ -587,7 +592,9 @@ static int setup_scalar_parameters(
     }
     ir_abi_param_info_t type = classify_node_type(context, parameter);
     if ((!is_scalar_value_abi_type(type) &&
-         !is_complex_abi_type(type)) ||
+         !is_complex_abi_type(type) &&
+         !is_register_aggregate_abi_type(type) &&
+         !is_indirect_aggregate_abi_type(type)) ||
         signature->params[i] != type.type) {
       context->status = IR_HIR_BUILD_UNSUPPORTED;
       return 0;
@@ -625,6 +632,38 @@ static int setup_scalar_parameters(
           return 0;
         context->function->param_abi_types[abi_index++] = type.type;
       }
+      continue;
+    }
+    if (is_indirect_aggregate_abi_type(type)) {
+      int source_vreg = new_vreg(context);
+      if (source_vreg < 0) return 0;
+      ir_inst_t *input = ir_inst_new(IR_PARAM);
+      if (!input) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return 0;
+      }
+      input->dst = ir_val_vreg(source_vreg, IR_TY_PTR);
+      int parameter_index =
+          ag_target_info_call_abi(context->options->target) ==
+                  AG_TARGET_CALL_ABI_AAPCS64
+              ? integer_index++
+              : abi_index;
+      input->src1 = ir_val_imm(IR_TY_I32, parameter_index);
+      if (!append_instruction(context, input)) return 0;
+      ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+      if (!copy) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return 0;
+      }
+      copy->src1 = ir_val_vreg(pointer, IR_TY_PTR);
+      copy->src2 = input->dst;
+      copy->alloca_size = type.source_size;
+      if (!append_instruction(context, copy)) return 0;
+      if (abi_index >= 32) {
+        context->status = IR_HIR_BUILD_UNSUPPORTED;
+        return 0;
+      }
+      context->function->param_abi_types[abi_index++] = IR_TY_PTR;
       continue;
     }
     int value_vreg = new_vreg(context);
@@ -807,8 +846,86 @@ static int build_statement(
 static ir_val_t emit_integer_binary(
     hir_ir_context_t *context, ir_op_t op, ir_val_t left,
     ir_val_t right, ir_type_t type);
+static ir_val_t emit_integer_width_conversion(
+    hir_ir_context_t *context, ir_val_t value, ir_type_t target,
+    int sign_extend);
 static int allocate_scalar_temp(
     hir_ir_context_t *context, int size, int alignment);
+
+static ir_val_t build_vla_allocation(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  const psx_hir_node_t *size_or_outer = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *row_stride_expr = child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  int descriptor_offset = psx_hir_node_storage_offset(node);
+  int row_stride_offset =
+      psx_hir_node_vla_stride_frame_offset(node);
+  int slot_size = psx_hir_node_vla_stride_slot_size(node);
+  if (!size_or_outer || descriptor_offset <= 0 || slot_size < 8 ||
+      ((row_stride_offset != 0) != (row_stride_expr != NULL)))
+    return unsupported_expr(context);
+
+  ir_val_t total_size;
+  if (row_stride_expr) {
+    ir_val_t row_stride = build_expr(context, row_stride_expr);
+    ir_val_t outer_count = build_expr(context, size_or_outer);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !is_integer_ir_type(row_stride.type) ||
+        !is_integer_ir_type(outer_count.type))
+      return unsupported_expr(context);
+    total_size = emit_integer_binary(
+        context, IR_MUL, outer_count, row_stride, IR_TY_I32);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    ir_val_t wide_stride = emit_integer_width_conversion(
+        context, row_stride, IR_TY_I64, 0);
+    int row_stride_slot = local_storage_address(
+        context, row_stride_offset, slot_size, 8);
+    if (context->status != IR_HIR_BUILD_OK ||
+        row_stride_slot < 0 ||
+        !store_direct_value(
+            context, ir_val_vreg(row_stride_slot, IR_TY_PTR),
+            wide_stride))
+      return ir_val_none();
+  } else {
+    total_size = build_expr(context, size_or_outer);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !is_integer_ir_type(total_size.type))
+      return unsupported_expr(context);
+  }
+
+  total_size = emit_integer_width_conversion(
+      context, total_size, IR_TY_I32, 0);
+  ir_val_t wide_size = emit_integer_width_conversion(
+      context, total_size, IR_TY_I64, 0);
+  int size_slot = local_storage_address(
+      context, descriptor_offset + slot_size, slot_size, 8);
+  if (context->status != IR_HIR_BUILD_OK || size_slot < 0 ||
+      !store_direct_value(
+          context, ir_val_vreg(size_slot, IR_TY_PTR), wide_size))
+    return ir_val_none();
+
+  int base_vreg = new_vreg(context);
+  if (base_vreg < 0) return ir_val_none();
+  ir_inst_t *allocation = ir_inst_new(IR_VLA_ALLOC);
+  if (!allocation) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  allocation->dst = ir_val_vreg(base_vreg, IR_TY_PTR);
+  allocation->src1 = total_size;
+  if (!append_instruction(context, allocation))
+    return ir_val_none();
+
+  int base_slot = local_storage_address(
+      context, descriptor_offset, slot_size, 8);
+  if (base_slot < 0 ||
+      !store_direct_value(
+          context, ir_val_vreg(base_slot, IR_TY_PTR),
+          allocation->dst))
+    return ir_val_none();
+  return ir_val_imm(IR_TY_I32, 0);
+}
 
 static const psx_hir_symbol_t *resolved_global_symbol(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
@@ -1574,7 +1691,8 @@ static ir_val_t build_inc_dec(
        psx_hir_node_kind(target) != PSX_HIR_GLOBAL))
     return unsupported_expr(context);
   if (type.param_class != IR_ABI_PARAM_INTEGER &&
-      type.param_class != IR_ABI_PARAM_POINTER)
+      type.param_class != IR_ABI_PARAM_POINTER &&
+      !is_float_abi_type(type))
     return unsupported_expr(context);
 
   ir_val_t pointer = lvalue_address(context, target);
@@ -1640,11 +1758,28 @@ static ir_val_t build_inc_dec(
   }
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   int is_increment = kind == PSX_HIR_PRE_INC || kind == PSX_HIR_POST_INC;
-  ir_val_t new_value = emit_integer_binary(
-      context, is_increment ? IR_ADD : IR_SUB, old_value,
-      step_value.id == IR_VAL_NONE
-          ? ir_val_imm(value_type, step) : step_value,
-      value_type);
+  ir_val_t new_value;
+  if (is_float_abi_type(type)) {
+    int one_vreg = new_vreg(context);
+    if (one_vreg < 0) return ir_val_none();
+    ir_inst_t *one = ir_inst_new(IR_LOAD_FP_IMM);
+    if (!one) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    one->dst = ir_val_vreg(one_vreg, value_type);
+    one->src1 = ir_val_fp_imm(value_type, 1.0);
+    if (!append_instruction(context, one)) return ir_val_none();
+    new_value = emit_float_binary(
+        context, is_increment ? IR_FADD : IR_FSUB,
+        old_value, one->dst, value_type);
+  } else {
+    new_value = emit_integer_binary(
+        context, is_increment ? IR_ADD : IR_SUB, old_value,
+        step_value.id == IR_VAL_NONE
+            ? ir_val_imm(value_type, step) : step_value,
+        value_type);
+  }
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   if (is_bitfield) {
     (void)emit_bitfield_store(
@@ -1983,6 +2118,71 @@ static ir_val_t build_atomic_call(
 
 static ir_val_t build_scalar_or_void_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t result_type);
+
+static ir_val_t aggregate_value_address(
+    hir_ir_context_t *context, const psx_hir_node_t *node);
+
+static ir_val_t build_aggregate_assignment(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t target_type) {
+  const psx_hir_node_t *target = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *source_node = child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  ir_abi_param_info_t source_type = classify_node_type(
+      context, source_node);
+  if (!target || !source_node ||
+      target_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      source_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      target_type.source_size <= 0 ||
+      source_type.source_size != target_type.source_size)
+    return unsupported_expr(context);
+  ir_val_t destination = lvalue_address(context, target);
+  ir_val_t source = aggregate_value_address(context, source_node);
+  if (context->status != IR_HIR_BUILD_OK ||
+      destination.type != IR_TY_PTR || source.type != IR_TY_PTR)
+    return ir_val_none();
+  ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+  if (!copy) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  copy->src1 = destination;
+  copy->src2 = source;
+  copy->alloca_size = target_type.source_size;
+  if (!append_instruction(context, copy)) return ir_val_none();
+  return destination;
+}
+
+static ir_val_t aggregate_value_address(
+    hir_ir_context_t *context, const psx_hir_node_t *node) {
+  if (!node) return unsupported_expr(context);
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL ||
+      kind == PSX_HIR_DEREF)
+    return lvalue_address(context, node);
+  if (kind == PSX_HIR_CALL)
+    return build_scalar_or_void_call(
+        context, node, classify_node_type(context, node));
+  if (kind == PSX_HIR_ASSIGN)
+    return build_aggregate_assignment(
+        context, node, classify_node_type(context, node));
+  if (kind == PSX_HIR_COMMA) {
+    const psx_hir_node_t *left = child_for_edge(
+        context, node, PSX_HIR_EDGE_LHS, 0);
+    const psx_hir_node_t *right = child_for_edge(
+        context, node, PSX_HIR_EDGE_RHS, 0);
+    if (!left || !right) return unsupported_expr(context);
+    (void)build_expr(context, left);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    return aggregate_value_address(context, right);
+  }
+  return unsupported_expr(context);
+}
+
+static ir_val_t build_scalar_or_void_call(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_abi_param_info_t result_type) {
   size_t name_length = 0;
   const char *name = psx_hir_node_name(node, &name_length);
@@ -2009,6 +2209,8 @@ static ir_val_t build_scalar_or_void_call(
   int is_void_result =
       node_type_kind(context, node) == PSX_TYPE_VOID;
   int is_complex_result = is_complex_abi_type(result_type);
+  int is_indirect_aggregate_result =
+      is_indirect_aggregate_abi_type(result_type);
   if (callable_type.type_id == PSX_TYPE_ID_INVALID ||
       !ir_abi_callable_sig_from_type_id(
           &abi, callable_type.type_id, &signature) ||
@@ -2019,6 +2221,7 @@ static ir_val_t build_scalar_or_void_call(
       (signature.is_variadic && signature.param_count > 8) ||
       signature.result != (is_void_result ? IR_TY_VOID : result_type.type) ||
       (!is_void_result && !is_complex_result &&
+       !is_indirect_aggregate_result &&
        !is_direct_value_abi_type(result_type)))
     return unsupported_expr(context);
 
@@ -2110,12 +2313,51 @@ static ir_val_t build_scalar_or_void_call(
       emitted_fixed_count = emitted_count;
       continue;
     }
+    if (i < signature.param_count &&
+        is_indirect_aggregate_abi_type(parameter_type)) {
+      if (argument_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+          argument_type.source_size != parameter_type.source_size ||
+          emitted_count >= argument_capacity) {
+        free(arguments);
+        free(argument_abi_types);
+        return unsupported_expr(context);
+      }
+      ir_val_t source = aggregate_value_address(context, argument);
+      int temporary = allocate_scalar_temp(
+          context, parameter_type.source_size, 8);
+      if (context->status != IR_HIR_BUILD_OK ||
+          source.type != IR_TY_PTR || temporary < 0) {
+        free(arguments);
+        free(argument_abi_types);
+        return ir_val_none();
+      }
+      ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+      if (!copy) {
+        free(arguments);
+        free(argument_abi_types);
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return ir_val_none();
+      }
+      copy->src1 = ir_val_vreg(temporary, IR_TY_PTR);
+      copy->src2 = source;
+      copy->alloca_size = parameter_type.source_size;
+      if (!append_instruction(context, copy)) {
+        free(arguments);
+        free(argument_abi_types);
+        return ir_val_none();
+      }
+      arguments[emitted_count] =
+          ir_val_vreg(temporary, IR_TY_PTR);
+      argument_abi_types[emitted_count++] = IR_TY_PTR;
+      emitted_fixed_count = emitted_count;
+      continue;
+    }
     if (i >= signature.param_count && is_float_abi_type(argument_type) &&
         argument_type.type == IR_TY_F32) {
       parameter_type.type = IR_TY_F64;
       parameter_type.source_size = 8;
     }
-    if (!argument || !is_scalar_value_abi_type(parameter_type) ||
+    if (!argument || !is_direct_value_abi_type(parameter_type) ||
         (i < signature.param_count &&
          signature.params[i] != parameter_type.type)) {
       free(arguments);
@@ -2168,6 +2410,19 @@ static ir_val_t build_scalar_or_void_call(
     call->dst = ir_val_vreg(slot, IR_TY_PTR);
     call->ret_complex_half =
         (unsigned char)ir_type_size(result_type.type);
+  } else if (is_indirect_aggregate_result) {
+    int result_area = allocate_scalar_temp(
+        context, result_type.source_size, 8);
+    if (result_area < 0) {
+      free(arguments);
+      free(argument_abi_types);
+      free(call);
+      return ir_val_none();
+    }
+    call->dst = ir_val_vreg(result_vreg, IR_TY_PTR);
+    call->ret_struct_size = result_type.source_size;
+    call->ret_struct_area =
+        ir_val_vreg(result_area, IR_TY_PTR);
   } else if (!is_void_result) {
     call->dst = ir_val_vreg(result_vreg, result_type.type);
   }
@@ -2201,6 +2456,8 @@ static ir_val_t build_scalar_or_void_call(
   if (!append_instruction(context, call)) return ir_val_none();
   if (is_void_result) return ir_val_none();
   if (is_complex_result) return call->dst;
+  if (is_indirect_aggregate_result)
+    return call->ret_struct_area;
   return ir_val_vreg(result_vreg, result_type.type);
 }
 
@@ -2261,6 +2518,8 @@ static ir_val_t build_expr(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node || context->status != IR_HIR_BUILD_OK)
     return ir_val_none();
+  if (psx_hir_node_kind(node) == PSX_HIR_VLA_ALLOC)
+    return build_vla_allocation(context, node);
   ir_abi_param_info_t type = classify_node_type(context, node);
   int is_void = node_type_kind(context, node) == PSX_TYPE_VOID;
   if (psx_hir_node_kind(node) == PSX_HIR_CALL && is_void)
@@ -2304,6 +2563,14 @@ static ir_val_t build_expr(
     }
     return unsupported_expr(context);
   }
+  if (is_indirect_aggregate_abi_type(type)) {
+    psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+    if (kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL ||
+        kind == PSX_HIR_DEREF || kind == PSX_HIR_CALL ||
+        kind == PSX_HIR_ASSIGN || kind == PSX_HIR_COMMA)
+      return aggregate_value_address(context, node);
+    return unsupported_expr(context);
+  }
   if (!is_direct_value_abi_type(type)) {
     return unsupported_expr(context);
   }
@@ -2333,6 +2600,20 @@ static ir_val_t build_expr(
     return build_string_reference(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_FUNCTION_REF)
     return build_function_reference(context, node);
+  if (psx_hir_node_kind(node) == PSX_HIR_VA_ARG_AREA) {
+    if (type.param_class != IR_ABI_PARAM_POINTER)
+      return unsupported_expr(context);
+    int result = new_vreg(context);
+    if (result < 0) return ir_val_none();
+    ir_inst_t *area = ir_inst_new(IR_VA_ARG_AREA);
+    if (!area) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    area->dst = ir_val_vreg(result, IR_TY_PTR);
+    if (!append_instruction(context, area)) return ir_val_none();
+    return area->dst;
+  }
   if (psx_hir_node_kind(node) == PSX_HIR_LOGAND)
     return build_short_circuit(context, node, 1);
   if (psx_hir_node_kind(node) == PSX_HIR_LOGOR)
@@ -2842,6 +3123,34 @@ static int build_statement(
             (unsigned char)ir_type_size(context->return_info.type);
         return append_instruction(context, ret);
       }
+      if (is_indirect_aggregate_abi_type(context->return_info)) {
+        ir_abi_param_info_t value_type = classify_node_type(
+            context, value);
+        ir_val_t source = aggregate_value_address(context, value);
+        if (context->status != IR_HIR_BUILD_OK ||
+            value_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+            value_type.source_size != context->return_info.source_size ||
+            source.type != IR_TY_PTR ||
+            context->function->ret_area_vreg < 0)
+          return 0;
+        ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+        if (!copy) {
+          context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+          return 0;
+        }
+        copy->src1 = ir_val_vreg(
+            context->function->ret_area_vreg, IR_TY_PTR);
+        copy->src2 = source;
+        copy->alloca_size = context->return_info.source_size;
+        if (!append_instruction(context, copy)) return 0;
+        ir_inst_t *ret = ir_inst_new(IR_RET);
+        if (!ret) {
+          context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+          return 0;
+        }
+        ret->src1 = ir_val_none();
+        return append_instruction(context, ret);
+      }
       if (context->returns_void) {
         context->status = IR_HIR_BUILD_INVALID;
         return 0;
@@ -2861,6 +3170,9 @@ static int build_statement(
       if (!append_instruction(context, ret)) return 0;
       return 1;
     }
+    case PSX_HIR_VLA_ALLOC:
+      (void)build_vla_allocation(context, node);
+      return context->status == IR_HIR_BUILD_OK;
     case PSX_HIR_IF: {
       const psx_hir_node_t *condition = child_for_edge(
           context, node, PSX_HIR_EDGE_LHS, 0);
@@ -3064,6 +3376,7 @@ ir_module_t *ir_build_function_module_from_hir(
   int returns_void = result_type && result_type->kind == PSX_TYPE_VOID;
   if (!ir_abi_callable_sig_from_type_id(&abi, signature_id, &signature) ||
       (!returns_void && !is_complex_abi_type(return_info) &&
+       !is_indirect_aggregate_abi_type(return_info) &&
        !is_direct_value_abi_type(return_info)) ||
       signature.result != (returns_void ? IR_TY_VOID : return_info.type)) {
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
@@ -3099,6 +3412,29 @@ ir_module_t *ir_build_function_module_from_hir(
   if (is_complex_abi_type(return_info))
     context.function->ret_complex_half =
         ir_type_size(return_info.type);
+  if (is_indirect_aggregate_abi_type(return_info)) {
+    context.function->ret_struct_size = return_info.source_size;
+    int return_area = new_vreg(&context);
+    if (return_area < 0) {
+      ir_module_free(context.module);
+      if (status) *status = context.status;
+      return NULL;
+    }
+    ir_inst_t *parameter = ir_inst_new(IR_PARAM);
+    if (!parameter) {
+      ir_module_free(context.module);
+      if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return NULL;
+    }
+    parameter->dst = ir_val_vreg(return_area, IR_TY_PTR);
+    parameter->src1 = ir_val_imm(IR_TY_I32, -1);
+    if (!append_instruction(&context, parameter)) {
+      ir_module_free(context.module);
+      if (status) *status = context.status;
+      return NULL;
+    }
+    context.function->ret_area_vreg = return_area;
+  }
   context.function->is_variadic = signature.is_variadic;
   context.function->nargs_fixed = signature.param_count;
   const psx_type_t *function_type = psx_semantic_type_table_lookup(
