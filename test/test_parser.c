@@ -1980,6 +1980,89 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   reset_test_translation_unit_state();
 }
 
+static void test_typed_hir_atomic_lowering_without_ast() {
+  printf("test_typed_hir_atomic_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "long __ag_atomic_load(void *obj); "
+      "long __ag_atomic_store(void *obj, long value); "
+      "long __ag_atomic_fetch_add(void *obj, long value); "
+      "int __ag_atomic_cas(void *obj, void *expected, long desired); "
+      "int __ag_atomic_fence(void); "
+      "long run(void) { "
+      "_Atomic unsigned char small = 1; "
+      "_Atomic long long wide = 2; "
+      "long long expected = 2; "
+      "long result = __ag_atomic_load(&small); "
+      "__ag_atomic_store(&small, 3); "
+      "result = result + __ag_atomic_fetch_add(&wide, 4); "
+      "result = result + __ag_atomic_cas(&wide, &expected, 9); "
+      "__ag_atomic_fence(); "
+      "return result; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(5, count_ir_op(ir->funcs, IR_ATOMIC));
+  int saw_unsigned_byte_load = 0;
+  int saw_byte_store = 0;
+  int saw_wide_rmw = 0;
+  int saw_wide_cas = 0;
+  int saw_fence = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_ATOMIC) continue;
+      if (instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->atomic_width == 1 &&
+          instruction->is_unsigned) {
+        saw_unsigned_byte_load = 1;
+      } else if (instruction->atomic_kind == IR_ATOMIC_STORE &&
+                 instruction->atomic_width == 1) {
+        saw_byte_store = 1;
+      } else if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+                 instruction->atomic_width == 8 &&
+                 instruction->atomic_rmw_op == IR_ARMW_ADD) {
+        saw_wide_rmw = 1;
+      } else if (instruction->atomic_kind == IR_ATOMIC_CAS &&
+                 instruction->atomic_width == 8) {
+        saw_wide_cas = 1;
+      } else if (instruction->atomic_kind == IR_ATOMIC_FENCE) {
+        saw_fence = 1;
+      }
+    }
+  }
+  ASSERT_TRUE(saw_unsigned_byte_load);
+  ASSERT_TRUE(saw_byte_store);
+  ASSERT_TRUE(saw_wide_rmw);
+  ASSERT_TRUE(saw_wide_cas);
+  ASSERT_TRUE(saw_fence);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
 static void test_typed_hir_register_aggregate_lowering_without_ast() {
   printf("test_typed_hir_register_aggregate_lowering_without_ast...\n");
   reset_test_translation_unit_state();
@@ -20778,6 +20861,7 @@ int main() {
   test_typed_hir_post_inc_lowering_without_ast();
   test_typed_hir_vla_parameter_metadata_without_ast();
   test_typed_hir_direct_call_lowering_without_ast();
+  test_typed_hir_atomic_lowering_without_ast();
   test_typed_hir_register_aggregate_lowering_without_ast();
   test_typed_hir_aggregate_member_storage_without_ast();
   test_typed_hir_floating_lowering_without_ast();
