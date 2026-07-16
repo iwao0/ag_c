@@ -28,4 +28,11 @@ void psx_resolve_generic_selection_in_contexts(
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution);
 
+int psx_generic_selection_selected_index(
+    const node_generic_selection_t *selection);
+node_t *psx_generic_selection_selected_expression(
+    node_generic_selection_t *selection);
+const node_t *psx_generic_selection_selected_expression_const(
+    const node_generic_selection_t *selection);
+
 #endif

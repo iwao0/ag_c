@@ -7,6 +7,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../semantic/source_cast_resolution.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -482,30 +483,40 @@ node_t *lower_implicit_value_conversion(
       lowering_context, NULL, operand, view, fallback_diag_tok, options);
 }
 
-node_t *lower_source_cast_expression(
+int psx_plan_source_cast_expression(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
-    node_t *node, token_t *fallback_diag_tok,
-    const ag_compilation_options_t *options) {
+    node_source_cast_t *cast, token_t *fallback_diag_tok,
+    const ag_compilation_options_t *options,
+    psx_source_cast_lowering_plan_t *plan) {
+  if (plan) *plan = (psx_source_cast_lowering_plan_t){0};
+  node_t *node = cast ? &cast->base : NULL;
   if (!lowering_context || !local_registry || !node ||
-      node->kind != ND_CAST || !node->is_source_cast || !options)
-    return node;
+      node->kind != ND_CAST || !node->is_source_cast || !options ||
+      !plan)
+    return 0;
   const psx_type_t *target = ps_node_get_type(node);
   node_t *operand = node->lhs;
+  if (operand && operand->kind == ND_CAST &&
+      operand->is_source_cast) {
+    node_t *lowered_operand = psx_source_cast_lowered_value(
+        (node_source_cast_t *)operand);
+    if (lowered_operand) operand = lowered_operand;
+  }
   node_t *lowered = lower_cast(
       lowering_context, local_registry, operand,
       target_view(lowering_context, target),
       node->tok ? node->tok : fallback_diag_tok, options);
-  if (!lowered) return node;
-  token_t *source_tok = node->tok;
+  if (!lowered) return 0;
   if (lowered == operand && lowered->kind != ND_NUM) {
-    node->is_source_cast = 0;
-    ps_node_bind_type(node, target);
-    return node;
+    lowered = ps_node_new_semantic_cast_result_in(
+        ps_lowering_arena(lowering_context), operand, target);
   }
-  lowered->tok = source_tok;
+  if (!lowered) return 0;
+  lowered->tok = node->tok;
   lowered->is_source_cast = 0;
-  return lowered;
+  plan->value = lowered;
+  return 1;
 }
 
 node_t *lower_aggregate_address_expression(
@@ -513,6 +524,12 @@ node_t *lower_aggregate_address_expression(
   if (!node || node->kind != ND_ADDR || !node->lhs) return node;
   node_t *value = node->lhs;
   token_t *source_tok = node->tok;
+
+  if (value->kind == ND_CAST && value->is_source_cast) {
+    node_t *lowered = psx_source_cast_lowered_value(
+        (node_source_cast_t *)value);
+    if (lowered) value = lowered;
+  }
 
   const psx_type_t *value_type = ps_node_get_type(value);
   if (value->kind == ND_CAST && value_type &&

@@ -25,11 +25,24 @@ typedef struct {
   unsigned char is_planned;
 } psx_compound_literal_resolution_t;
 
+typedef struct {
+  struct node_t *selected_expression;
+  int selected_index;
+  unsigned char is_resolved;
+} psx_generic_selection_resolution_state_t;
+
+typedef struct {
+  struct node_t *lowered_value;
+  unsigned char is_lowered;
+} psx_source_cast_resolution_t;
+
 typedef struct psx_node_resolution_state_t {
   const psx_type_t *type;
   psx_qual_type_t qual_type;
   psx_expr_type_state_t expr;
   psx_compound_literal_resolution_t compound_literal;
+  psx_generic_selection_resolution_state_t generic_selection;
+  psx_source_cast_resolution_t source_cast;
 } psx_node_resolution_state_t;
 
 #endif

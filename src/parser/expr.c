@@ -902,7 +902,6 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
   selection->control = control;
   selection->associations = associations;
   selection->association_count = count;
-  selection->selected_index = -1;
   return (node_t *)selection;
 }
 

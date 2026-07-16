@@ -3,6 +3,7 @@
 #include "runtime_context.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
+#include "../semantic/generic_selection_resolution.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,13 +38,11 @@ static node_t *materialize_lvalue_address_once(
     psx_local_registry_t *local_registry,
     node_t *target, node_t **prefix) {
   if (target && target->kind == ND_GENERIC_SELECTION) {
-    node_generic_selection_t *selection =
-        (node_generic_selection_t *)target;
-    int selected = selection->selected_index;
-    if (selected >= 0 && selected < selection->association_count) {
+    node_t *selected = psx_generic_selection_selected_expression(
+        (node_generic_selection_t *)target);
+    if (selected) {
       return materialize_lvalue_address_once(
-          lowering_context, local_registry,
-          selection->associations[selected].expression, prefix);
+          lowering_context, local_registry, selected, prefix);
     }
   }
   if (!target ||

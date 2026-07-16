@@ -5,6 +5,8 @@
 
 #include "../parser/arena.h"
 #include "../parser/ast.h"
+#include "../parser/declaration_syntax.h"
+#include "../parser/function_parameter_syntax.h"
 #include "../parser/node_utils.h"
 
 struct psx_resolution_work_tree_t {
@@ -52,6 +54,187 @@ static size_t node_storage_size(const node_t *node) {
 
 static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source);
+
+static int clone_parsed_declarator(
+    arena_context_t *arena_context,
+    psx_parsed_declarator_t *destination,
+    const psx_parsed_declarator_t *source);
+
+static int clone_parsed_const_expr(
+    arena_context_t *arena_context,
+    psx_parsed_const_expr_t *destination,
+    const psx_parsed_const_expr_t *source) {
+  *destination = *source;
+  destination->node = clone_node(arena_context, source->node);
+  return !source->node || destination->node;
+}
+
+static int clone_decl_specifier(
+    arena_context_t *arena_context,
+    psx_parsed_decl_specifier_t *destination,
+    const psx_parsed_decl_specifier_t *source) {
+  *destination = *source;
+  for (int i = 0; i < source->alignas_expression_count; i++) {
+    if (!clone_parsed_const_expr(
+            arena_context, &destination->alignas_expressions[i],
+            &source->alignas_expressions[i]))
+      return 0;
+  }
+  return 1;
+}
+
+static int clone_declarator_shape(
+    arena_context_t *arena_context,
+    psx_declarator_shape_t *destination,
+    const psx_declarator_shape_t *source) {
+  *destination = *source;
+  destination->ops = NULL;
+  destination->capacity = source->count;
+  if (!source->ops || source->count <= 0) return 1;
+  destination->ops = arena_alloc_in(
+      arena_context, (size_t)source->count * sizeof(*destination->ops));
+  if (!destination->ops) return 0;
+  memcpy(
+      destination->ops, source->ops,
+      (size_t)source->count * sizeof(*destination->ops));
+  for (int i = 0; i < source->count; i++) {
+    const psx_declarator_op_t *source_op = &source->ops[i];
+    psx_declarator_op_t *op = &destination->ops[i];
+    if (!source_op->function_param_types ||
+        source_op->function_param_count <= 0) {
+      op->function_param_types = NULL;
+      continue;
+    }
+    op->function_param_types = arena_alloc_in(
+        arena_context,
+        (size_t)source_op->function_param_count *
+            sizeof(*op->function_param_types));
+    if (!op->function_param_types) return 0;
+    memcpy(
+        op->function_param_types, source_op->function_param_types,
+        (size_t)source_op->function_param_count *
+            sizeof(*op->function_param_types));
+  }
+  return 1;
+}
+
+static psx_parsed_function_parameters_t *clone_function_parameters(
+    arena_context_t *arena_context,
+    const psx_parsed_function_parameters_t *source) {
+  if (!source) return NULL;
+  psx_parsed_function_parameters_t *destination = arena_alloc_in(
+      arena_context, sizeof(*destination));
+  if (!destination) return NULL;
+  *destination = *source;
+  destination->items = NULL;
+  destination->capacity = source->count;
+  if (!source->items || source->count <= 0) return destination;
+  destination->items = arena_alloc_in(
+      arena_context,
+      (size_t)source->count * sizeof(*destination->items));
+  if (!destination->items) return NULL;
+  for (int i = 0; i < source->count; i++) {
+    const psx_parsed_function_parameter_t *source_parameter =
+        &source->items[i];
+    psx_parsed_function_parameter_t *parameter =
+        &destination->items[i];
+    if (!clone_decl_specifier(
+            arena_context, &parameter->specifier,
+            &source_parameter->specifier) ||
+        !clone_parsed_declarator(
+            arena_context, &parameter->declarator,
+            &source_parameter->declarator))
+      return NULL;
+  }
+  return destination;
+}
+
+static int clone_parsed_declarator(
+    arena_context_t *arena_context,
+    psx_parsed_declarator_t *destination,
+    const psx_parsed_declarator_t *source) {
+  *destination = *source;
+  if (!clone_declarator_shape(
+          arena_context, &destination->declarator_shape,
+          &source->declarator_shape) ||
+      !clone_parsed_const_expr(
+          arena_context, &destination->bit_width_expression,
+          &source->bit_width_expression))
+    return 0;
+
+  destination->array_bounds = NULL;
+  destination->array_bound_capacity = source->array_bound_count;
+  if (source->array_bounds && source->array_bound_count > 0) {
+    destination->array_bounds = arena_alloc_in(
+        arena_context,
+        (size_t)source->array_bound_count *
+            sizeof(*destination->array_bounds));
+    if (!destination->array_bounds) return 0;
+    for (int i = 0; i < source->array_bound_count; i++) {
+      destination->array_bounds[i] = source->array_bounds[i];
+      if (!clone_parsed_const_expr(
+              arena_context,
+              &destination->array_bounds[i].expression,
+              &source->array_bounds[i].expression))
+        return 0;
+    }
+  }
+
+  destination->function_suffixes = NULL;
+  destination->function_suffix_capacity = source->function_suffix_count;
+  if (source->function_suffixes && source->function_suffix_count > 0) {
+    destination->function_suffixes = arena_alloc_in(
+        arena_context,
+        (size_t)source->function_suffix_count *
+            sizeof(*destination->function_suffixes));
+    if (!destination->function_suffixes) return 0;
+    for (int i = 0; i < source->function_suffix_count; i++) {
+      destination->function_suffixes[i] =
+          source->function_suffixes[i];
+      destination->function_suffixes[i].parameters =
+          clone_function_parameters(
+              arena_context,
+              source->function_suffixes[i].parameters);
+      if (source->function_suffixes[i].parameters &&
+          !destination->function_suffixes[i].parameters)
+        return 0;
+    }
+  }
+  return 1;
+}
+
+static psx_parsed_type_name_t *clone_type_name_syntax(
+    arena_context_t *arena_context,
+    const psx_parsed_type_name_t *source) {
+  if (!source) return NULL;
+  psx_parsed_type_name_t *destination = arena_alloc_in(
+      arena_context, sizeof(*destination));
+  if (!destination) return NULL;
+  *destination = *source;
+  destination->atomic_inner = clone_type_name_syntax(
+      arena_context, source->atomic_inner);
+  if ((source->atomic_inner && !destination->atomic_inner) ||
+      !clone_decl_specifier(
+          arena_context, &destination->specifier,
+          &source->specifier) ||
+      !clone_parsed_declarator(
+          arena_context, &destination->declarator,
+          &source->declarator))
+    return NULL;
+  return destination;
+}
+
+static int clone_type_name_ref(
+    arena_context_t *arena_context,
+    psx_type_name_ref_t *destination,
+    const psx_type_name_ref_t *source) {
+  *destination = *source;
+  destination->syntax = clone_type_name_syntax(
+      arena_context, source->syntax);
+  destination->bound_base_type = NULL;
+  destination->resolved_type = NULL;
+  return !source->syntax || destination->syntax;
+}
 
 static node_t **clone_node_array(
     arena_context_t *arena_context, node_t *const *source,
@@ -143,6 +326,11 @@ static int clone_generic_selection(
   memcpy(destination->associations, source->associations,
          count * sizeof(*destination->associations));
   for (size_t i = 0; i < count; i++) {
+    if (!clone_type_name_ref(
+            arena_context,
+            &destination->associations[i].type_name,
+            &source->associations[i].type_name))
+      return 0;
     destination->associations[i].expression = clone_node(
         arena_context, source->associations[i].expression);
     if (source->associations[i].expression &&
@@ -177,6 +365,21 @@ static node_t *clone_node(
     return NULL;
 
   switch (source->kind) {
+    case ND_COMPOUND_LITERAL:
+      if (!clone_type_name_ref(
+              arena_context,
+              &((node_compound_literal_t *)copy)->type_name,
+              &((const node_compound_literal_t *)source)->type_name))
+        return NULL;
+      break;
+    case ND_CAST:
+      if (source->is_source_cast &&
+          !clone_type_name_ref(
+              arena_context,
+              &((node_source_cast_t *)copy)->type_name,
+              &((const node_source_cast_t *)source)->type_name))
+        return NULL;
+      break;
     case ND_BLOCK: {
       const node_block_t *source_block = (const node_block_t *)source;
       node_block_t *block = (node_block_t *)copy;
@@ -266,6 +469,10 @@ static node_t *clone_node(
       const node_sizeof_query_t *source_query =
           (const node_sizeof_query_t *)source;
       node_sizeof_query_t *query = (node_sizeof_query_t *)copy;
+      if (!clone_type_name_ref(
+              arena_context, &query->type_name,
+              &source_query->type_name))
+        return NULL;
       query->operand = clone_node(arena_context, source_query->operand);
       query->runtime_size_expr = clone_node(
           arena_context, source_query->runtime_size_expr);
@@ -275,6 +482,13 @@ static node_t *clone_node(
       }
       break;
     }
+    case ND_ALIGNOF_QUERY:
+      if (!clone_type_name_ref(
+              arena_context,
+              &((node_alignof_query_t *)copy)->type_name,
+              &((const node_alignof_query_t *)source)->type_name))
+        return NULL;
+      break;
     case ND_INIT_LIST:
       if (!clone_initializer_entries(
               arena_context, (node_init_list_t *)copy,

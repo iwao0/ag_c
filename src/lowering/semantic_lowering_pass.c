@@ -9,6 +9,8 @@
 #include "complex_part_lowering.h"
 #include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
+#include "../semantic/generic_selection_resolution.h"
+#include "../semantic/source_cast_resolution.h"
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -88,13 +90,23 @@ static void lower_sizeof_vla_indices(
       context, operand->rhs, fallback_diag_tok);
 }
 
-static node_t *lower_source_cast_node(
+static void lower_source_cast_node(
     const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast) return node;
-  return lower_source_cast_expression(
-      context->lowering_context, context->local_registry,
-      node, (token_t *)fallback_diag_tok, context->options);
+  if (!node || node->kind != ND_CAST || !node->is_source_cast ||
+      !node->resolution_state)
+    return;
+  psx_source_cast_resolution_t *resolution =
+      &node->resolution_state->source_cast;
+  if (resolution->is_lowered) return;
+  psx_source_cast_lowering_plan_t plan;
+  if (!psx_plan_source_cast_expression(
+          context->lowering_context, context->local_registry,
+          (node_source_cast_t *)node, (token_t *)fallback_diag_tok,
+          context->options, &plan))
+    return;
+  resolution->lowered_value = plan.value;
+  resolution->is_lowered = 1;
 }
 
 static node_t *lower_tree(
@@ -141,11 +153,12 @@ static node_t *lower_tree(
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      int selected = selection->selected_index;
-      if (selected >= 0 && selected < selection->association_count) {
-        selection->associations[selected].expression = lower_tree(
-            context, selection->associations[selected].expression,
-            fallback_diag_tok);
+      node_t *selected =
+          psx_generic_selection_selected_expression(selection);
+      if (selected) {
+        selection->base.resolution_state->generic_selection
+            .selected_expression = lower_tree(
+                context, selected, fallback_diag_tok);
       }
       break;
     }
@@ -251,7 +264,7 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       node->rhs = lower_tree(
           context, node->rhs, fallback_diag_tok);
-      node = lower_source_cast_node(context, node, fallback_diag_tok);
+      lower_source_cast_node(context, node, fallback_diag_tok);
       node = lower_aggregate_address_expression(
           context->lowering_context, node);
       node = lower_additive_expression_node(context, node);
@@ -394,15 +407,28 @@ void psx_lower_implicit_conversions(
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      int selected = selection->selected_index;
-      if (selected >= 0 && selected < selection->association_count) {
+      node_t *selected =
+          psx_generic_selection_selected_expression(selection);
+      if (selected) {
         psx_lower_implicit_conversions(
-            lowering_context,
-            selection->associations[selected].expression,
+            lowering_context, selected,
             current_func, fallback_diag_tok, options);
       }
       break;
     }
+    case ND_CAST:
+      if (node->is_source_cast) {
+        node_t *lowered = psx_source_cast_lowered_value(
+            (node_source_cast_t *)node);
+        psx_lower_implicit_conversions(
+            lowering_context, lowered, current_func,
+            fallback_diag_tok, options);
+        break;
+      }
+      psx_lower_implicit_conversions(
+          lowering_context, node->lhs, current_func,
+          fallback_diag_tok, options);
+      break;
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       psx_lower_implicit_conversions(

@@ -2244,6 +2244,19 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
   return selected;
 }
 
+static node_t *generic_selection_semantic_expression(
+    node_generic_selection_t *selection) {
+  if (!selection) return NULL;
+  const psx_generic_selection_resolution_state_t *resolution =
+      selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  if (resolution && resolution->is_resolved)
+    return resolution->selected_expression;
+  int selected = ps_node_generic_selection_index(selection);
+  return selected >= 0 && selected < selection->association_count
+             ? selection->associations[selected].expression : NULL;
+}
+
 const psx_type_t *ps_node_get_type(const node_t *node) {
   return node && node->resolution_state
              ? node->resolution_state->type : NULL;
@@ -2883,6 +2896,16 @@ node_t *ps_node_new_int_to_fp_cast_in(arena_context_t *arena_context,
   return annotate_explicit_type(node, cast_type);
 }
 
+node_t *ps_node_new_semantic_cast_result_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type) {
+  node_t *wrap = resolution_node_alloc_in(
+      arena_context, sizeof(node_t));
+  wrap->kind = ND_CAST;
+  wrap->lhs = operand;
+  return annotate_explicit_type(wrap, cast_type);
+}
+
 node_t *ps_node_new_integer_cast_result_in(
     arena_context_t *arena_context, node_t *operand,
     const psx_type_t *cast_type) {
@@ -2914,31 +2937,22 @@ node_t *ps_node_new_i64_to_i32_trunc_cast_in(
 node_t *ps_node_new_pointer_cast_result_in(
     arena_context_t *arena_context, node_t *operand,
     const psx_type_t *cast_type) {
-  node_t *wrap = resolution_node_alloc_in(
-      arena_context, sizeof(node_t));
-  wrap->kind = ND_CAST;
-  wrap->lhs = operand;
-  return annotate_explicit_type(wrap, cast_type);
+  return ps_node_new_semantic_cast_result_in(
+      arena_context, operand, cast_type);
 }
 
 node_t *ps_node_new_aggregate_cast_result_in(
     arena_context_t *arena_context, node_t *operand,
     const psx_type_t *cast_type) {
-  node_t *wrap = resolution_node_alloc_in(
-      arena_context, sizeof(node_t));
-  wrap->kind = ND_CAST;
-  wrap->lhs = operand;
-  return annotate_explicit_type(wrap, cast_type);
+  return ps_node_new_semantic_cast_result_in(
+      arena_context, operand, cast_type);
 }
 
 node_t *ps_node_new_void_cast_result_in(arena_context_t *arena_context,
                                         node_t *operand,
                                         const psx_type_t *cast_type) {
-  node_t *wrap = resolution_node_alloc_in(
-      arena_context, sizeof(node_t));
-  wrap->kind = ND_CAST;
-  wrap->lhs = operand;
-  return annotate_explicit_type(wrap, cast_type);
+  return ps_node_new_semantic_cast_result_in(
+      arena_context, operand, cast_type);
 }
 
 node_t *psx_node_new_source_cast_in(
@@ -3521,14 +3535,11 @@ void ps_node_reject_const_assign_at_in(
   if (node->kind == ND_GENERIC_SELECTION) {
     node_generic_selection_t *selection =
         (node_generic_selection_t *)node;
-    int selected = selection->selected_index >= 0
-                       ? selection->selected_index
-                       : ps_node_generic_selection_index(selection);
-    if (selected >= 0 && selected < selection->association_count) {
+    node_t *selected =
+        generic_selection_semantic_expression(selection);
+    if (selected) {
       ps_node_reject_const_assign_at_in(
-          semantic_context, diagnostics,
-          selection->associations[selected].expression,
-          op, tok);
+          semantic_context, diagnostics, selected, op, tok);
     }
     return;
   }
@@ -3577,13 +3588,11 @@ void ps_node_expect_lvalue_at_in(
   if (node && node->kind == ND_GENERIC_SELECTION) {
     node_generic_selection_t *selection =
         (node_generic_selection_t *)node;
-    int selected = selection->selected_index >= 0
-                       ? selection->selected_index
-                       : ps_node_generic_selection_index(selection);
-    if (selected >= 0 && selected < selection->association_count) {
+    node_t *selected =
+        generic_selection_semantic_expression(selection);
+    if (selected) {
       ps_node_expect_lvalue_at_in(
-          diagnostics, selection->associations[selected].expression,
-          op, tok);
+          diagnostics, selected, op, tok);
       return;
     }
   }

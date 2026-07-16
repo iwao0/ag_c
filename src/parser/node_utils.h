@@ -116,6 +116,9 @@ node_t *ps_node_new_fp_to_int_cast_in(arena_context_t *arena_context,
 node_t *ps_node_new_int_to_fp_cast_in(arena_context_t *arena_context,
                                        node_t *operand,
                                        const psx_type_t *cast_type);
+node_t *ps_node_new_semantic_cast_result_in(
+    arena_context_t *arena_context, node_t *operand,
+    const psx_type_t *cast_type);
 node_t *ps_node_new_integer_cast_result_in(
     arena_context_t *arena_context, node_t *operand,
     const psx_type_t *cast_type);

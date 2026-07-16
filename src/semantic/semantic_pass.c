@@ -4,6 +4,7 @@
 #include "../parser/diag.h"
 #include "../parser/arena.h"
 #include "../parser/global_registry.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/local_registry.h"
@@ -605,13 +606,14 @@ static void semantic_resolve_source_cast(
     psx_local_registry_t *local_registry,
     node_source_cast_t *cast) {
   if (!cast || !cast->base.is_source_cast) return;
+  psx_type_name_ref_t type_name = cast->type_name;
   semantic_bind_result_type(
       (node_t *)cast,
       ps_type_clone_in(
           ps_ctx_arena(semantic_context),
           semantic_resolve_type_name_ref(
-          semantic_context, global_registry, local_registry,
-          &cast->type_name)));
+              semantic_context, global_registry, local_registry,
+              &type_name)));
 }
 
 static void semantic_resolve_compound_literal(
@@ -660,6 +662,15 @@ static void semantic_resolve_generic_selection(
   token_t *tok = selection->base.tok
                      ? selection->base.tok
                      : (token_t *)fallback_diag_tok;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), (node_t *)selection))
+    return;
+  psx_generic_selection_resolution_state_t *selection_resolution =
+      &selection->base.resolution_state->generic_selection;
+  *selection_resolution =
+      (psx_generic_selection_resolution_state_t){
+          .selected_index = -1,
+      };
   ps_node_clear_type((node_t *)selection);
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_in_contexts(
@@ -691,12 +702,15 @@ static void semantic_resolve_generic_selection(
     case PSX_GENERIC_SELECTION_RESOLUTION_OK:
       break;
   }
-  selection->selected_index = resolution.selected_index;
+  selection_resolution->selected_index = resolution.selected_index;
+  selection_resolution->selected_expression =
+      selection->associations[resolution.selected_index].expression;
+  selection_resolution->is_resolved = 1;
   semantic_bind_result_type(
       (node_t *)selection,
       ps_type_clone_in(
           ps_ctx_arena(semantic_context), ps_node_get_type(
-          selection->associations[resolution.selected_index].expression)));
+              selection_resolution->selected_expression)));
 }
 
 static void semantic_mark_usage_evaluated(node_t *node) {
@@ -719,11 +733,8 @@ static void semantic_mark_usage_evaluated(node_t *node) {
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      int selected = selection->selected_index;
-      if (selected >= 0 && selected < selection->association_count) {
-        semantic_mark_usage_evaluated(
-            selection->associations[selected].expression);
-      }
+      semantic_mark_usage_evaluated(
+          psx_generic_selection_selected_expression(selection));
       return;
     }
     case ND_IF:

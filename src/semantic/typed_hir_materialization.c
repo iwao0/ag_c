@@ -14,7 +14,9 @@
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
 #include "typed_hir_node_internal.h"
+#include "generic_selection_resolution.h"
 #include "resolved_node_kind.h"
+#include "source_cast_resolution.h"
 #include "typed_hir_tree_internal.h"
 #include "resolution_work_tree.h"
 
@@ -851,20 +853,35 @@ static psx_resolved_hir_node_t *build_node(
     const node_generic_selection_t *selection =
         (const node_generic_selection_t *)source;
     psx_qual_type_t qual_type = ps_node_qual_type(source);
-    int selected = selection->selected_index;
+    const node_t *selected =
+        psx_generic_selection_selected_expression_const(selection);
     if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
           builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
       return NULL;
     }
-    if (selected < 0 || selected >= selection->association_count ||
-        !selection->associations[selected].expression) {
+    if (!selected) {
       set_failure(
           builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
       return NULL;
     }
-    return build_node(
-        builder, selection->associations[selected].expression);
+    return build_node(builder, selected);
+  }
+  if (source && source->kind == ND_CAST && source->is_source_cast) {
+    psx_qual_type_t qual_type = ps_node_qual_type(source);
+    const node_t *lowered = psx_source_cast_lowered_value_const(
+        (const node_source_cast_t *)source);
+    if (!canonical_type_exists(builder, qual_type)) {
+      set_failure(
+          builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+      return NULL;
+    }
+    if (!lowered) {
+      set_failure(
+          builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+      return NULL;
+    }
+    return build_node(builder, lowered);
   }
   psx_hir_node_spec_t spec = {0};
   psx_hir_node_role_t role = PSX_HIR_ROLE_STATEMENT;

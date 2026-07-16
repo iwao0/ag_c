@@ -135,7 +135,6 @@ typedef struct {
   node_t *control;
   psx_generic_association_t *associations;
   int association_count;
-  int selected_index;
 } node_generic_selection_t;
 
 typedef struct {

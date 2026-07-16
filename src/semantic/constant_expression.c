@@ -1,5 +1,7 @@
 #include "constant_expression.h"
 
+#include "generic_selection_resolution.h"
+#include "source_cast_resolution.h"
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
@@ -13,12 +15,17 @@ long long psx_eval_const_int(node_t *node, int *ok) {
   switch (node->kind) {
     case ND_NUM:
       return ((node_num_t *)node)->val;
-    case ND_CAST:
+    case ND_CAST: {
+      node_t *value = node->is_source_cast
+                          ? psx_source_cast_lowered_value(
+                                (node_source_cast_t *)node)
+                          : NULL;
       if (ps_node_value_is_void(node)) {
         if (ok) *ok = 0;
         return 0;
       }
-      return psx_eval_const_int(node->lhs, ok);
+      return psx_eval_const_int(value ? value : node->lhs, ok);
+    }
     case ND_UNARY_NEGATE: {
       long long value = psx_eval_const_int(node->lhs, ok);
       return !ok || *ok ? -value : 0;
@@ -43,14 +50,13 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      if (selection->selected_index < 0 ||
-          selection->selected_index >= selection->association_count) {
+      node_t *selected =
+          psx_generic_selection_selected_expression(selection);
+      if (!selected) {
         if (ok) *ok = 0;
         return 0;
       }
-      return psx_eval_const_int(
-          selection->associations[selection->selected_index].expression,
-          ok);
+      return psx_eval_const_int(selected, ok);
     }
     case ND_GVAR: {
       node_gvar_t *ref = (node_gvar_t *)node;
@@ -147,8 +153,13 @@ double psx_eval_const_fp(node_t *node, int *ok) {
       return ps_node_value_fp_kind(node) != TK_FLOAT_KIND_NONE
                  ? number->fval : (double)number->val;
     }
-    case ND_CAST:
-      return psx_eval_const_fp(node->lhs, ok);
+    case ND_CAST: {
+      node_t *value = node->is_source_cast
+                          ? psx_source_cast_lowered_value(
+                                (node_source_cast_t *)node)
+                          : NULL;
+      return psx_eval_const_fp(value ? value : node->lhs, ok);
+    }
     case ND_UNARY_NEGATE: {
       double value = psx_eval_const_fp(node->lhs, ok);
       return !ok || *ok ? -value : 0.0;
@@ -203,9 +214,14 @@ int psx_resolve_static_address_constant(
             node->lhs->lhs, symbol, symbol_len, offset);
       }
       return 0;
-    case ND_CAST:
+    case ND_CAST: {
+      node_t *value = node->is_source_cast
+                          ? psx_source_cast_lowered_value(
+                                (node_source_cast_t *)node)
+                          : NULL;
       return psx_resolve_static_address_constant(
-          node->lhs, symbol, symbol_len, offset);
+          value ? value : node->lhs, symbol, symbol_len, offset);
+    }
     case ND_FUNCREF: {
       node_funcref_t *function = (node_funcref_t *)node;
       *symbol = function->funcname;

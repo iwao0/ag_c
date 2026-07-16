@@ -54,6 +54,7 @@
 #include "../src/semantic/identifier_binding.h"
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_pass.h"
+#include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/type_name_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
@@ -1720,6 +1721,14 @@ static void assert_semantic_tree_invariants(node_t *root) {
   exit(1);
 }
 
+static node_t *test_effective_semantic_expression(node_t *node) {
+  if (!node || node->kind != ND_CAST || !node->is_source_cast)
+    return node;
+  node_t *lowered = psx_source_cast_lowered_value(
+      (node_source_cast_t *)node);
+  return lowered ? lowered : node;
+}
+
 static node_t *parse_expr_input(const char *input) {
   reset_test_locals();
   preregister_test_locals();
@@ -1731,7 +1740,7 @@ static node_t *parse_expr_input(const char *input) {
   node_t *expr = parse_test_expression_from(head);
   node_t *analyzed = analyze_test_expression(expr, head);
   assert_semantic_tree_invariants(analyzed);
-  return analyzed;
+  return test_effective_semantic_expression(analyzed);
 }
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
@@ -1746,7 +1755,7 @@ static node_t *parse_analyzed_expr_input_with_existing_locals(
   node_t *analyzed =
       analyze_test_expression(expr, expr ? expr->tok : NULL);
   assert_semantic_tree_invariants(analyzed);
-  return analyzed;
+  return test_effective_semantic_expression(analyzed);
 }
 
 static void test_syntax_literal_type_boundary() {
@@ -3891,12 +3900,8 @@ static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
 static node_t *selected_generic_expression(node_t *node) {
   if (!node || node->kind != ND_GENERIC_SELECTION) return node;
-  node_generic_selection_t *selection =
-      (node_generic_selection_t *)node;
-  int selected = selection->selected_index;
-  if (selected < 0 || selected >= selection->association_count)
-    return NULL;
-  return selection->associations[selected].expression;
+  return psx_generic_selection_selected_expression(
+      (node_generic_selection_t *)node);
 }
 
 static void assert_selected_generic_number(
@@ -5709,7 +5714,6 @@ static void test_generic_selection_semantic_lowering_boundary() {
       .control = &control,
       .associations = associations,
       .association_count = 2,
-      .selected_index = -1,
   };
   psx_generic_selection_resolution_t resolution;
   resolve_test_generic_selection(&direct_selection, &resolution);
@@ -5760,7 +5764,10 @@ static void test_generic_selection_semantic_lowering_boundary() {
   node_generic_selection_t *selection =
       (node_generic_selection_t *)raw;
   ASSERT_EQ(2, selection->association_count);
-  ASSERT_EQ(-1, selection->selected_index);
+  ASSERT_TRUE(selection->base.resolution_state == NULL);
+  ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
+  ASSERT_TRUE(
+      psx_generic_selection_selected_expression(selection) == NULL);
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
   ASSERT_TRUE(!selection->control->records_lvar_usage);
   ASSERT_TRUE(selection->control->lvar_usage_unevaluated);
@@ -5774,16 +5781,17 @@ static void test_generic_selection_semantic_lowering_boundary() {
   node_t *typed = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(typed != raw);
   ASSERT_TRUE(selection->associations[0].type_name.resolved_type == NULL);
-  ASSERT_EQ(-1, selection->selected_index);
+  ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
   ASSERT_TRUE(ps_node_get_type((node_t *)selection) == NULL);
   ASSERT_TRUE(ps_node_get_type(selection->associations[0].expression) == NULL);
   ASSERT_EQ(ND_GENERIC_SELECTION, typed->kind);
   node_generic_selection_t *typed_selection =
       (node_generic_selection_t *)typed;
-  ASSERT_EQ(0, typed_selection->selected_index);
+  ASSERT_EQ(0, psx_generic_selection_selected_index(typed_selection));
   ASSERT_TRUE(ps_node_get_type(typed) != NULL);
   node_t *selected_expression =
-      typed_selection->associations[0].expression;
+      psx_generic_selection_selected_expression(typed_selection);
+  ASSERT_TRUE(selected_expression != NULL);
   ASSERT_EQ(ND_ADD, selected_expression->kind);
   ASSERT_TRUE(ps_node_get_type(selected_expression) != NULL);
   ASSERT_EQ(1, as_num(selected_expression->rhs)->val);
@@ -5798,7 +5806,9 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_EQ(ND_GENERIC_SELECTION, body->body[0]->lhs->kind);
   node_generic_selection_t *work_selection =
       (node_generic_selection_t *)body->body[0]->lhs;
-  ASSERT_EQ(0, work_selection->selected_index);
+  ASSERT_EQ(0, psx_generic_selection_selected_index(work_selection));
+  ASSERT_TRUE(
+      psx_generic_selection_selected_expression(work_selection) != NULL);
   ASSERT_TRUE(ps_node_get_type((node_t *)work_selection) != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -5889,9 +5899,58 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM,
             type_query->type_name.syntax->declarator
                 .array_bounds[0].expression.node->kind);
+  psx_parsed_type_name_t *raw_type_syntax =
+      type_query->type_name.syntax;
+  psx_declarator_op_t *raw_type_ops =
+      raw_type_syntax->declarator.declarator_shape.ops;
+  node_t *raw_type_bound =
+      raw_type_syntax->declarator.array_bounds[0].expression.node;
   node_t *typed_type = analyze_test_expression(raw_type, NULL);
   ASSERT_TRUE(type_query->type_name.resolved_type == NULL);
+  node_sizeof_query_t *typed_type_query =
+      (node_sizeof_query_t *)typed_type;
+  ASSERT_TRUE(
+      typed_type_query->type_name.syntax != raw_type_syntax);
+  ASSERT_TRUE(
+      typed_type_query->type_name.syntax->declarator
+          .declarator_shape.ops != raw_type_ops);
+  ASSERT_TRUE(
+      typed_type_query->type_name.syntax->declarator
+          .array_bounds[0].expression.node != raw_type_bound);
+  ASSERT_TRUE(raw_type_bound->resolution_state == NULL);
+  ASSERT_TRUE(
+      typed_type_query->type_name.syntax->declarator
+          .array_bounds[0].expression.node->resolution_state != NULL);
   assert_typed_sizeof(typed_type, 12);
+
+  lvar_t *runtime_bound = register_test_storage_fixture(
+      (char *)"n", 1, 4, 4, 0);
+  set_test_storage_fixture_type(
+      runtime_bound, ps_type_new_integer(TK_INT, 4, 0));
+  node_t *raw_vla_type =
+      parse_expr_input_with_existing_locals("sizeof(int[n])");
+  node_sizeof_query_t *raw_vla_query =
+      (node_sizeof_query_t *)raw_vla_type;
+  psx_parsed_type_name_t *raw_vla_syntax =
+      raw_vla_query->type_name.syntax;
+  node_t *raw_vla_bound =
+      raw_vla_syntax->declarator.array_bounds[0].expression.node;
+  ASSERT_EQ(ND_IDENTIFIER, raw_vla_bound->kind);
+  node_t *typed_vla_type =
+      analyze_test_expression(raw_vla_type, NULL);
+  node_sizeof_query_t *typed_vla_query =
+      (node_sizeof_query_t *)typed_vla_type;
+  node_t *typed_vla_bound =
+      typed_vla_query->type_name.syntax->declarator
+          .array_bounds[0].expression.node;
+  ASSERT_TRUE(
+      typed_vla_query->type_name.syntax != raw_vla_syntax);
+  ASSERT_TRUE(typed_vla_bound != raw_vla_bound);
+  ASSERT_EQ(ND_IDENTIFIER, raw_vla_bound->kind);
+  ASSERT_TRUE(raw_vla_bound->resolution_state == NULL);
+  ASSERT_EQ(ND_LVAR, typed_vla_bound->kind);
+  ASSERT_TRUE(typed_vla_bound->resolution_state != NULL);
+  ASSERT_TRUE(typed_vla_query->runtime_size_expr != NULL);
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
@@ -6193,11 +6252,33 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(inner->type_name.bound_base_type == NULL);
   ASSERT_TRUE(inner->type_name.resolved_type == NULL);
 
-  node = analyze_test_expression(node, NULL);
+  node_t *syntax = node;
+  node = analyze_test_expression(syntax, NULL);
+  ASSERT_TRUE(node != syntax);
+  ASSERT_EQ(ND_CAST, syntax->kind);
+  ASSERT_TRUE(syntax->is_source_cast);
+  ASSERT_TRUE(syntax->resolution_state == NULL);
+  ASSERT_TRUE(outer->type_name.bound_base_type == NULL);
+  ASSERT_TRUE(outer->type_name.resolved_type == NULL);
+
   ASSERT_EQ(ND_CAST, node->kind);
-  ASSERT_TRUE(!node->is_source_cast);
-  ASSERT_EQ(ND_SHR, node->lhs->kind);
-  ASSERT_EQ(ND_SHL, node->lhs->lhs->kind);
+  ASSERT_TRUE(node->is_source_cast);
+  node_source_cast_t *typed_outer = (node_source_cast_t *)node;
+  ASSERT_TRUE(typed_outer->type_name.bound_base_type == NULL);
+  ASSERT_TRUE(typed_outer->type_name.resolved_type == NULL);
+  node_t *outer_value =
+      psx_source_cast_lowered_value(typed_outer);
+  ASSERT_TRUE(outer_value != NULL);
+  ASSERT_EQ(ND_CAST, outer_value->kind);
+  ASSERT_TRUE(!outer_value->is_source_cast);
+  ASSERT_EQ(ND_SHR, outer_value->lhs->kind);
+  ASSERT_EQ(ND_SHL, outer_value->lhs->lhs->kind);
+
+  ASSERT_EQ(ND_CAST, node->lhs->kind);
+  ASSERT_TRUE(node->lhs->is_source_cast);
+  node_source_cast_t *typed_inner =
+      (node_source_cast_t *)node->lhs;
+  ASSERT_TRUE(psx_source_cast_lowered_value(typed_inner) != NULL);
 }
 
 static void test_aggregate_cast_semantic_lowering_boundary() {
@@ -6264,8 +6345,15 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
 
   node_t *ret = main_body->body[3];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  node_t *return_value = ret->lhs->kind == ND_CAST
-                             ? ret->lhs->lhs : ret->lhs;
+  node_t *return_value =
+      ret->lhs->kind == ND_CAST && ret->lhs->is_source_cast
+          ? psx_source_cast_lowered_value(
+                (node_source_cast_t *)ret->lhs)
+          : (ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs);
+  ASSERT_TRUE(return_value != NULL);
+  if (return_value->kind == ND_CAST &&
+      !return_value->is_source_cast)
+    return_value = return_value->lhs;
   ASSERT_EQ(ND_FP_TO_INT, return_value->kind);
   ASSERT_EQ(ND_FUNCALL, return_value->lhs->kind);
   node_function_call_t *call = as_function_call(return_value->lhs);
@@ -16254,7 +16342,8 @@ static void test_type_metadata_bridge() {
   body = as_block(fn->base.rhs);
   node_t *fp_to_unsigned_ret = body->body[0];
   ASSERT_EQ(ND_RETURN, fp_to_unsigned_ret->kind);
-  node_t *fp_to_unsigned_result = fp_to_unsigned_ret->lhs;
+  node_t *fp_to_unsigned_result =
+      test_effective_semantic_expression(fp_to_unsigned_ret->lhs);
   ASSERT_TRUE(ps_node_is_unsigned_type(fp_to_unsigned_result));
   node_t *fp_to_unsigned_inner =
       fp_to_unsigned_result->kind == ND_CAST

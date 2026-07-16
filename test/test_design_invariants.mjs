@@ -73,6 +73,7 @@ function callBodies(source, functionName) {
 }
 
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const astHeader = await readFile("src/parser/ast.h", "utf8");
 const hirHeader = await readFile("src/hir/hir.h", "utf8");
 const hirImplementation = await readFile("src/hir/hir.c", "utf8");
 const hirInternalHeader = await readFile(
@@ -103,6 +104,31 @@ const resolutionWorkTreeHeader = await readFile(
   "src/semantic/resolution_work_tree.h",
   "utf8",
 );
+if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
+    !/\bclone_type_name_syntax\s*\(/.test(resolutionWorkTree) ||
+    !/\bclone_parsed_declarator\s*\(/.test(resolutionWorkTree) ||
+    !/destination->bound_base_type\s*=\s*NULL/.test(
+      resolutionWorkTree,
+    ) ||
+    !/destination->resolved_type\s*=\s*NULL/.test(
+      resolutionWorkTree,
+    ) ||
+    !/case\s+ND_COMPOUND_LITERAL:[^]*?clone_type_name_ref/.test(
+      resolutionWorkTree,
+    ) ||
+    !/case\s+ND_CAST:[^]*?clone_type_name_ref/.test(
+      resolutionWorkTree,
+    ) ||
+    !/case\s+ND_SIZEOF_QUERY:[^]*?clone_type_name_ref/.test(
+      resolutionWorkTree,
+    ) ||
+    !/case\s+ND_ALIGNOF_QUERY:[^]*?clone_type_name_ref/.test(
+      resolutionWorkTree,
+    )) {
+  throw new Error(
+    "resolution work trees must own mutable type-name syntax and embedded bound expressions",
+  );
+}
 const resolvedTreeHeader = await readFile(
   "src/semantic/typed_hir_tree.h",
   "utf8",
@@ -3866,6 +3892,10 @@ const castLoweringHeader = await readFile(
   "src/lowering/cast_lowering.h",
   "utf8",
 );
+const sourceCastResolutionHeader = await readFile(
+  "src/semantic/source_cast_resolution.h",
+  "utf8",
+);
 const compoundLiteralLoweringSource = await readFile(
   "src/lowering/compound_literal_lowering.c",
   "utf8",
@@ -3886,14 +3916,27 @@ if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t
     )) {
   throw new Error("source casts must use their own arena allocation size");
 }
-if (!/\bnode_t\s*\*\s*lower_source_cast_expression\s*\(/.test(
+if (!/\bint\s+psx_plan_source_cast_expression\s*\(/.test(
       castLoweringHeader,
     ) ||
+    /\blower_source_cast_expression\s*\(/.test(
+      castLoweringSource,
+    ) ||
+    /\bnode->is_source_cast\s*=\s*0\s*;/.test(
+      castLoweringSource,
+    ) ||
+    !/source->kind\s*==\s*ND_CAST\s*&&\s*source->is_source_cast/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_source_cast_lowered_value_const\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/resolution->lowered_value/.test(sourceCastResolutionHeader) ||
     /\*\s*\(\s*node_num_t\s*\*\s*\)\s*node\s*=/.test(
       castLoweringSource,
     )) {
   throw new Error(
-    "source cast lowering must return a replacement node without cross-struct overwrite",
+    "source cast lowering must preserve Syntax AST and materialize its separate semantic value directly into Typed HIR",
   );
 }
 if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
@@ -5809,8 +5852,14 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
 if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/selection->associations\[selected\]\.expression/.test(
+    !/psx_generic_selection_selected_expression_const\s*\(/.test(
       resolvedTreeMaterialization,
+    ) ||
+    /typedef\s+struct\s*\{[^}]*\bselected_index\b[^}]*\}\s*node_generic_selection_t\s*;/.test(
+      astHeader,
+    ) ||
+    /selection->associations\[selected\]\.expression\s*=\s*lower_tree/.test(
+      semanticLoweringPassSource,
     ) ||
     /\blower_generic_selection_expression\s*\(/.test(
       semanticLoweringPassSource,
@@ -5820,7 +5869,7 @@ if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
         /src\/lowering\/generic_selection_lowering\.[ch]$/.test(path),
     )) {
   throw new Error(
-    "resolved generic selection must materialize only its selected expression directly into Typed HIR",
+    "generic selection resolution must stay outside Syntax AST and materialize its selected expression directly into Typed HIR",
   );
 }
 if (!/MAP_EXPR\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(

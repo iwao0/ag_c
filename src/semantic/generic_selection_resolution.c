@@ -3,6 +3,7 @@
 #include "type_name_resolution.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
@@ -106,4 +107,31 @@ void psx_resolve_generic_selection_in_contexts(
   }
   resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_OK;
   resolution->selected_index = selected;
+}
+
+int psx_generic_selection_selected_index(
+    const node_generic_selection_t *selection) {
+  const psx_generic_selection_resolution_state_t *resolution =
+      selection && selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  return resolution && resolution->is_resolved
+             ? resolution->selected_index : -1;
+}
+
+node_t *psx_generic_selection_selected_expression(
+    node_generic_selection_t *selection) {
+  psx_generic_selection_resolution_state_t *resolution =
+      selection && selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  return resolution && resolution->is_resolved
+             ? resolution->selected_expression : NULL;
+}
+
+const node_t *psx_generic_selection_selected_expression_const(
+    const node_generic_selection_t *selection) {
+  const psx_generic_selection_resolution_state_t *resolution =
+      selection && selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  return resolution && resolution->is_resolved
+             ? resolution->selected_expression : NULL;
 }

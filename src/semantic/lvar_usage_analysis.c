@@ -5,6 +5,8 @@
 #include "../parser/local_registry.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
+#include "generic_selection_resolution.h"
+#include "source_cast_resolution.h"
 
 static int is_aggregate_lvar(node_t *node) {
   return node && node->kind == ND_LVAR &&
@@ -203,14 +205,24 @@ void psx_collect_lvar_usage_events_in(
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      int selected = selection->selected_index;
-      if (selected >= 0 && selected < selection->association_count) {
-        psx_collect_lvar_usage_events_in(
-            local_registry,
-            selection->associations[selected].expression, region);
-      }
+      psx_collect_lvar_usage_events_in(
+          local_registry,
+          psx_generic_selection_selected_expression(selection), region);
       return;
     }
+    case ND_CAST:
+      if (node->is_source_cast) {
+        node_t *lowered = psx_source_cast_lowered_value(
+            (node_source_cast_t *)node);
+        if (lowered) {
+          psx_collect_lvar_usage_events_in(
+              local_registry, lowered, region);
+          return;
+        }
+      }
+      psx_collect_lvar_usage_events_in(
+          local_registry, node->lhs, region);
+      return;
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       psx_collect_lvar_usage_events_in(

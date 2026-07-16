@@ -382,7 +382,6 @@ static node_t *bind_node(
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      if (selection->selected_index >= 0) return node;
       bind_slot(&selection->control, context);
       for (int i = 0; i < selection->association_count; i++) {
         if (!selection->associations[i].is_default)

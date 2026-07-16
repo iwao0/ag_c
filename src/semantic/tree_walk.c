@@ -1,5 +1,7 @@
 #include "tree_walk.h"
 
+#include "generic_selection_resolution.h"
+#include "source_cast_resolution.h"
 #include "../parser/node_resolution_state.h"
 
 static int walk_node(
@@ -56,14 +58,18 @@ static int walk_node(
     case ND_GENERIC_SELECTION: {
       const node_generic_selection_t *selection =
           (const node_generic_selection_t *)node;
-      int selected = selection->selected_index;
-      if (selected >= 0 && selected < selection->association_count) {
-        return walk_node(
-            selection->associations[selected].expression,
-            visitor, user);
-      }
-      return 1;
+      return walk_node(
+          psx_generic_selection_selected_expression_const(selection),
+          visitor, user);
     }
+    case ND_CAST:
+      if (node->is_source_cast) {
+        const node_t *lowered =
+            psx_source_cast_lowered_value_const(
+                (const node_source_cast_t *)node);
+        if (lowered) return walk_node(lowered, visitor, user);
+      }
+      break;
     case ND_SIZEOF_QUERY: {
       const node_sizeof_query_t *query =
           (const node_sizeof_query_t *)node;
