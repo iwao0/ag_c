@@ -7,6 +7,7 @@
 
 #include "abi_lowering.h"
 #include "ir_builder.h"
+#include "../diag/diag.h"
 #include "../parser/type.h"
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
@@ -134,6 +135,7 @@ static void set_callable_signature(
 
 static int is_integer_ir_type(ir_type_t type);
 static int is_float_ir_type(ir_type_t type);
+static int is_direct_value_abi_type(ir_abi_param_info_t type);
 static ir_val_t scalar_truth_value(
     hir_ir_context_t *context, ir_val_t value);
 static ir_val_t pointer_with_offset(
@@ -146,6 +148,39 @@ static int current_block_is_terminated(const hir_ir_context_t *context) {
       !context->function->cur_block->tail) return 0;
   ir_op_t op = context->function->cur_block->tail->op;
   return op == IR_BR || op == IR_BR_COND || op == IR_RET;
+}
+
+static int append_implicit_return(
+    hir_ir_context_t *context, const char *name, size_t name_length) {
+  if (current_block_is_terminated(context)) return 1;
+  int is_main = name_length == 4 && memcmp(name, "main", 4) == 0;
+  ir_inst_t *ret = ir_inst_new(IR_RET);
+  if (!ret) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  if (context->returns_void) {
+    ret->src1 = ir_val_none();
+  } else if (is_direct_value_abi_type(context->return_info)) {
+    ret->src1 = is_float_ir_type(context->return_info.type)
+                    ? ir_val_fp_imm(context->return_info.type, 0.0)
+                    : ir_val_imm(context->return_info.type, 0);
+  } else {
+    free(ret);
+    context->status = IR_HIR_BUILD_UNSUPPORTED;
+    return 0;
+  }
+  if (!is_main && !context->returns_void &&
+      context->options->diagnostic_context) {
+    diag_warn_tokf_in(
+        context->options->diagnostic_context,
+        DIAG_WARN_PARSER_MISSING_RETURN, NULL,
+        diag_warn_message_for_in(
+            context->options->diagnostic_context,
+            DIAG_WARN_PARSER_MISSING_RETURN),
+        (int)name_length, name);
+  }
+  return append_instruction(context, ret);
 }
 
 static int block_has_predecessor(
@@ -3562,19 +3597,10 @@ ir_module_t *ir_build_function_module_from_hir(
     if (status) *status = context.status;
     return NULL;
   }
-  if (returns_void && !current_block_is_terminated(&context)) {
-    ir_inst_t *ret = ir_inst_new(IR_RET);
-    if (!ret) {
-      ir_module_free(context.module);
-      if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return NULL;
-    }
-    ret->src1 = ir_val_none();
-    if (!append_instruction(&context, ret)) {
-      ir_module_free(context.module);
-      if (status) *status = context.status;
-      return NULL;
-    }
+  if (!append_implicit_return(&context, name, name_length)) {
+    ir_module_free(context.module);
+    if (status) *status = context.status;
+    return NULL;
   }
   if (!context.function->cur_block || !context.function->cur_block->tail ||
       (!current_block_is_terminated(&context) &&
