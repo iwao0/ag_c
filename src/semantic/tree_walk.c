@@ -3,6 +3,8 @@
 #include "compound_literal_resolution.h"
 #include "generic_selection_resolution.h"
 #include "resolved_node_kind.h"
+#include "resolved_node.h"
+#include "resolved_function.h"
 #include "sizeof_query_resolution.h"
 #include "vla_runtime_plan.h"
 #include "../parser/node_resolution_state.h"

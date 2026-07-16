@@ -2954,7 +2954,10 @@ if (wasmObjFunctionCodegenViolations.length ||
 }
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
-const resolvedGlobalAstSource = await readFile("src/parser/ast.h", "utf8");
+const resolvedGlobalAstSource = await readFile(
+  "src/semantic/resolved_node.h",
+  "utf8",
+);
 const constantExpressionSource = await readFile(
   "src/semantic/constant_expression.c",
   "utf8",
@@ -3051,6 +3054,18 @@ const resolvedNodeKindHeader = await readFile(
   "src/semantic/resolved_node_kind.h",
   "utf8",
 );
+const resolvedNodeHeader = await readFile(
+  "src/semantic/resolved_node.h",
+  "utf8",
+);
+const resolvedFunctionHeader = await readFile(
+  "src/semantic/resolved_function.h",
+  "utf8",
+);
+const resolvedFunctionSource = await readFile(
+  "src/semantic/resolved_function.c",
+  "utf8",
+);
 const nodeResolutionStateSource = await readFile(
   "src/parser/node_resolution_state.h",
   "utf8",
@@ -3068,7 +3083,17 @@ if (!nodeStruct ||
     "syntax node_t must keep semantic type identity in separate resolution state",
   );
 }
+if (/\bnode_(?:lvar|funcref|gvar|vla_alloc)_t\b/.test(astSource) ||
+    !/struct\s+node_lvar_t\s*\{/.test(resolvedNodeHeader) ||
+    !/struct\s+node_funcref_t\s*\{/.test(resolvedNodeHeader) ||
+    !/struct\s+node_gvar_t\s*\{/.test(resolvedNodeHeader) ||
+    !/\}\s*node_vla_alloc_t\s*;/.test(resolvedNodeHeader)) {
+  throw new Error(
+    "resolver-created storage, function, global, and VLA nodes must live outside Syntax AST",
+  );
+}
 const resolvedOnlyNodeKinds = [
+  "ND_FUNCDEF",
   "ND_LVAR",
   "ND_FUNCREF",
   "ND_DEREF",
@@ -3360,13 +3385,16 @@ if (!numberNodeStruct ||
     "node_num_t must derive integer identity and width from its canonical type",
   );
 }
-const functionDefinitionStruct = astSource.match(
+const functionDefinitionStruct = resolvedFunctionHeader.match(
   /struct node_function_definition_t\s*\{([^{}]*)\};/,
 );
 const functionCallStruct = astSource.match(
   /struct node_function_call_t\s*\{([^{}]*)\};/,
 );
 if (/\bnode_func_t\b/.test(astSource) ||
+    /\bnode_function_definition_t\b/.test(astSource) ||
+    /\bND_FUNCDEF\b/.test(syntaxNodeKindHeader) ||
+    !/\bND_FUNCDEF\b/.test(resolvedNodeKindHeader) ||
     !functionDefinitionStruct ||
     !/\bnode_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionStruct[1],
@@ -3393,7 +3421,7 @@ if (/\bnode_func_t\b/.test(astSource) ||
       functionCallStruct[1],
     )) {
   throw new Error(
-    "function definitions and calls must use disjoint canonical AST records",
+    "resolved function definitions must live outside Syntax AST while calls remain syntax records",
   );
 }
 const classifyCallParam = irBuilderSource.match(
@@ -4188,10 +4216,18 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
 const functionNodeBinding = declarationPipelineSource.match(
   /if\s*\(request->function_node\)\s*\{([^{}]*)\}/,
 );
-if (!/\bps_function_definition_return_type\s*\(/.test(
+if (/\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
       nodeTypePublicSource,
     ) ||
-    !/return\s+function->signature->base\s*;/.test(nodeUtilsSource) ||
+    /\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
+      nodeUtilsSource,
+    ) ||
+    !/\bps_function_definition_return_type\s*\(/.test(
+      resolvedFunctionHeader,
+    ) ||
+    !/return\s+function->signature->base\s*;/.test(
+      resolvedFunctionSource,
+    ) ||
     !functionNodeBinding ||
     /ps_node_bind_type\s*\(/.test(functionNodeBinding[1]) ||
     !/node_type\s*!=\s*NULL/.test(semanticInvariantsSource)) {

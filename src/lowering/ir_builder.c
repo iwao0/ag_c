@@ -30,6 +30,8 @@
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
 #include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_node.h"
+#include "../semantic/resolved_function.h"
 #include "../diag/diag.h"
 #include "../diag/warning_catalog.h"
 #include <stdio.h>

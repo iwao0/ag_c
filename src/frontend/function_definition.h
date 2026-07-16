@@ -2,7 +2,7 @@
 #define FRONTEND_FUNCTION_DEFINITION_H
 
 #include "../parser/function_definition_syntax.h"
-#include "../parser/ast.h"
+#include "../semantic/resolved_function.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;

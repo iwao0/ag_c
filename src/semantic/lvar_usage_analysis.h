@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 #include "../parser/decl.h"
 #include "../tokenizer/token.h"
+#include "resolved_function.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 

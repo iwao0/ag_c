@@ -10,6 +10,8 @@
 #include "../parser/local_declaration_syntax.h"
 #include "../parser/node_utils.h"
 #include "resolution_work_tree_internal.h"
+#include "resolved_function.h"
+#include "resolved_node_kind.h"
 #include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {

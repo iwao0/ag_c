@@ -20,6 +20,8 @@
 #include "generic_selection_resolution.h"
 #include "member_access_resolution.h"
 #include "resolved_node_kind.h"
+#include "resolved_node.h"
+#include "resolved_function.h"
 #include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
 #include "typed_hir_tree_internal.h"

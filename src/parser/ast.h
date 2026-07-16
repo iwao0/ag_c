@@ -160,11 +160,6 @@ typedef struct {
   node_t *condition;
 } node_static_assert_t;
 
-typedef struct {
-  node_t base;
-  struct psx_vla_runtime_plan_t *runtime_plan;
-} node_vla_alloc_t;
-
 // 数値ノード
 typedef struct node_num_t node_num_t;
 struct node_num_t {
@@ -173,14 +168,6 @@ struct node_num_t {
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
   tk_float_suffix_kind_t float_suffix_kind;
-};
-
-// ローカル変数ノード
-typedef struct node_lvar_t node_lvar_t;
-struct node_lvar_t {
-  node_t base;
-  int offset;       // フレームオフセット
-  struct lvar_t *var; // 宣言元シンボル。semantic pass の symbol identity 判定に使う。
 };
 
 // 文字列リテラルノード
@@ -203,23 +190,6 @@ struct node_block_t {
   node_t **body;    // ブロック内の文（NULL終端の動的配列）
 };
 
-// 関数定義ノード
-typedef struct node_function_definition_t node_function_definition_t;
-struct node_function_definition_t {
-  node_t base;
-  node_t **parameters;
-  int parameter_count;
-  const psx_type_t *signature;
-  psx_qual_type_t signature_qual_type;
-  char *name;
-  int name_len;
-  int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
-  // 関数定義のローカル変数連結リスト (next_all で辿る)。
-  // 関数解析完了時に保存し、IR builder 等が後段で参照する。
-  // 既存 AST 直 codegen には影響しない (未参照のまま動く)。
-  struct lvar_t *lvars;
-};
-
 // 関数呼び出しノード
 typedef struct node_function_call_t node_function_call_t;
 struct node_function_call_t {
@@ -231,14 +201,6 @@ struct node_function_call_t {
   psx_qual_type_t callee_qual_type;
   char *direct_name;
   int direct_name_len;
-};
-
-// 関数シンボル参照ノード
-typedef struct node_funcref_t node_funcref_t;
-struct node_funcref_t {
-  node_t base;
-  char *funcname;
-  int funcname_len;
 };
 
 // 制御構造ノード
@@ -273,16 +235,6 @@ struct node_jump_t {
   char *name;
   int name_len;
   int label_id;     // codegenで解決されるラベル番号
-};
-
-// グローバル変数参照ノード
-typedef struct node_gvar_t node_gvar_t;
-struct node_gvar_t {
-  node_t base;
-  struct global_var_t *symbol;
-  char *name;
-  int name_len;
-  unsigned int is_thread_local : 1;
 };
 
 /* global_var_t / string_lit_t / float_lit_t は symtab.h に移動 (Phase C1)。 */

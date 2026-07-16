@@ -9,6 +9,8 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../semantic/generic_selection_resolution.h"
+#include "../semantic/resolved_function.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../semantic/sizeof_query_resolution.h"
 #include "../semantic/source_cast_resolution.h"
 #include "../semantic/vla_runtime_plan.h"

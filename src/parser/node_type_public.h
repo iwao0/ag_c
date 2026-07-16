@@ -9,12 +9,8 @@ typedef struct psx_type_t psx_type_t;
 
 const psx_type_t *ps_node_get_type(const node_t *node);
 psx_qual_type_t ps_node_qual_type(const node_t *node);
-psx_qual_type_t ps_function_definition_signature_qual_type(
-    const node_function_definition_t *function);
 psx_qual_type_t ps_function_call_callee_qual_type(
     const node_function_call_t *call);
-const psx_type_t *ps_function_definition_return_type(
-    const node_function_definition_t *function);
 int ps_node_conversion_value_is_unsigned(node_t *n);
 int ps_node_shift_operation_is_unsigned(node_t *n);
 tk_float_kind_t ps_node_value_fp_kind(node_t *node);

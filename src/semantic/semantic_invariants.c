@@ -7,6 +7,7 @@
 #include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
 #include "resolved_node_kind.h"
+#include "resolved_function.h"
 #include "tree_walk.h"
 #include "type_identity_pass.h"
 

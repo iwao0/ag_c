@@ -6,7 +6,8 @@
  * Syntax AST range so accidental cross-phase construction is easy to detect.
  */
 typedef enum {
-  ND_LVAR = 0x1000,
+  ND_FUNCDEF = 0x1000,
+  ND_LVAR,
   ND_FUNCREF,
   ND_DEREF,
   ND_GVAR,

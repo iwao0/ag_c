@@ -1,6 +1,7 @@
 #include "function_definition.h"
 
 #include "../semantic/declaration_application.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"

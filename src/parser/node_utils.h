@@ -11,7 +11,7 @@
 #include "syntax_node.h"
 #include "tag_public.h"
 #include "../target_info.h"
-#include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_node.h"
 
 struct lvar_t;
 struct global_var_t;

@@ -4,6 +4,7 @@
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "resolved_node_kind.h"
 
 #include <stdio.h>
 #include <string.h>

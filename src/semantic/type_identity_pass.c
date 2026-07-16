@@ -2,6 +2,8 @@
 
 #include "../parser/node_utils.h"
 #include "tree_walk.h"
+#include "resolved_function.h"
+#include "resolved_node_kind.h"
 #include "../parser/semantic_ctx.h"
 
 typedef struct {

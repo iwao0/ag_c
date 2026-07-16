@@ -6,6 +6,8 @@
 #include "../parser/dynarray.h"
 #include "../parser/semantic_ctx.h"
 #include "tree_walk.h"
+#include "resolved_function.h"
+#include "resolved_node_kind.h"
 
 #include <stdlib.h>
 #include <string.h>

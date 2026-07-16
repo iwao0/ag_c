@@ -15,6 +15,8 @@
 #include "../semantic/semantic_invariants.h"
 #include "../semantic/semantic_pass.h"
 #include "../semantic/resolution_work_tree_internal.h"
+#include "../semantic/resolved_function.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../semantic/typed_hir_materialization.h"
 
 static psx_hir_node_id_t build_session_hir(

@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "../tokenizer/token.h"
+#include "resolved_function.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 

@@ -24,6 +24,7 @@
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 #include "vla_runtime_plan.h"
+#include "resolved_node_kind.h"
 
 #include <stdio.h>
 #include <stdlib.h>
