@@ -6,6 +6,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "resolved_node_kind.h"
+#include "resolved_object_ref.h"
 
 #include <stdio.h>
 #include <string.h>

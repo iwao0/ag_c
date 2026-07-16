@@ -156,18 +156,6 @@ int ps_lvar_is_tag_aggregate(const lvar_t *var) {
   return ps_lvar_is_struct_aggregate(var) || ps_lvar_is_union_aggregate(var);
 }
 
-static int lvar_self_is_const_qualified(const lvar_t *var) {
-  const psx_type_t *type = lvar_decl_type_view(var);
-  const psx_type_t *value_type = ps_type_array_leaf_type(type);
-  return ps_type_has_qualifier(value_type, PSX_TYPE_QUALIFIER_CONST);
-}
-
-static int lvar_self_is_volatile_qualified(const lvar_t *var) {
-  const psx_type_t *type = lvar_decl_type_view(var);
-  const psx_type_t *value_type = ps_type_array_leaf_type(type);
-  return ps_type_has_qualifier(value_type, PSX_TYPE_QUALIFIER_VOLATILE);
-}
-
 const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
@@ -2421,15 +2409,6 @@ static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag
   }
 }
 
-static global_var_t *static_local_backing_gvar(const lvar_t *var) {
-  return var ? var->static_global : NULL;
-}
-
-static const psx_type_t *static_local_backing_decl_type(const lvar_t *var) {
-  global_var_t *backing = static_local_backing_gvar(var);
-  return backing ? ps_gvar_get_decl_type(backing) : NULL;
-}
-
 static const psx_type_t *node_pointee_value_type(node_t *node) {
   return node ? ps_type_pointee_value_type(ps_node_get_type(node)) : NULL;
 }
@@ -2664,176 +2643,6 @@ node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
   return node;
 }
 
-static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,
-                                         int offset, lvar_t *var,
-                                         const psx_type_t *type) {
-  node_lvar_t *node = resolution_node_alloc_in(
-      arena_context, sizeof(node_lvar_t));
-  if (!node) return NULL;
-  node->base.kind = ND_LVAR;
-  if (var && type == ps_lvar_get_decl_type(var)) {
-    ps_node_bind_qual_type(
-        (node_t *)node, type, ps_lvar_decl_qual_type(var));
-  } else {
-    ps_node_bind_type((node_t *)node, type);
-  }
-  node->offset = offset;
-  node->var = var;
-  if (var) {
-    ps_node_set_vla_runtime_view(
-        (node_t *)node, ps_lvar_vla_row_stride_frame_off(var),
-        ps_lvar_vla_strides_remaining(var));
-  }
-  return node;
-}
-
-static psx_integer_kind_t integer_kind_for_storage_size(int size) {
-  if (size <= 1) return PSX_INTEGER_KIND_CHAR;
-  if (size == 2) return PSX_INTEGER_KIND_SHORT;
-  if (size >= 8) return PSX_INTEGER_KIND_LONG;
-  return PSX_INTEGER_KIND_INT;
-}
-
-node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset) {
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, NULL,
-      ps_type_new_integer_kind_in(
-          arena_context, PSX_INTEGER_KIND_LONG, 0, 0));
-}
-
-node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
-                                  int offset, int type_size) {
-  int size = type_size > 0 ? type_size : 8;
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, NULL,
-      ps_type_new_integer_kind_in(
-          arena_context, integer_kind_for_storage_size(size), 0, 0));
-}
-
-node_t *ps_node_new_lvar_storage_slot_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    int type_size) {
-  const psx_type_t *type = ps_type_new_integer_kind_in(
-      arena_context,
-      integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
-      0, 0);
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, owner, type);
-}
-
-node_t *ps_node_new_lvar_type_at_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    const psx_type_t *type) {
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, owner, type);
-}
-
-node_t *psx_node_new_lvar_scalar_slot_at_in(
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind, int is_bool) {
-  psx_type_t *type = floating_kind != PSX_FLOATING_KIND_NONE
-                         ? ps_type_new_floating_in(
-                               arena_context, floating_kind, 0)
-                     : is_bool
-                         ? ps_type_new_integer_kind_in(
-                               arena_context, PSX_INTEGER_KIND_BOOL,
-                               1, 0)
-                         : ps_type_new_integer_kind_in(
-                               arena_context,
-                               integer_kind_for_storage_size(type_size),
-                               0, 0);
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, NULL, type);
-}
-
-node_t *psx_node_new_lvar_fp_slot_at_in(
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind) {
-  return psx_node_new_lvar_scalar_slot_at_in(
-      arena_context, offset, type_size, floating_kind, 0);
-}
-
-node_t *ps_node_new_lvar_fp_slot_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    int type_size) {
-  const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
-  const psx_type_t *leaf = ps_type_array_leaf_type(owner_type);
-  psx_floating_kind_t floating_kind =
-      leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX)
-          ? leaf->floating_kind
-          : PSX_FLOATING_KIND_NONE;
-  psx_type_t *type = floating_kind != PSX_FLOATING_KIND_NONE
-                         ? ps_type_new_floating_in(
-                               arena_context, floating_kind, 0)
-                         : ps_type_new_integer_kind_in(
-                               arena_context,
-                               integer_kind_for_storage_size(type_size),
-                               0, 0);
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, owner, type);
-}
-
-node_t *ps_node_new_param_placeholder_in(
-    arena_context_t *arena_context, const psx_type_t *type) {
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, 0, NULL, type);
-}
-
-node_t *ps_node_new_unsigned_lvar_typed_in(
-    arena_context_t *arena_context, int offset, int type_size) {
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, NULL,
-      ps_type_new_integer_kind_in(
-          arena_context, integer_kind_for_storage_size(type_size),
-          1, 0));
-}
-
-node_t *psx_node_new_lvar_for_in(arena_context_t *arena_context,
-                                 lvar_t *var) {
-  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, var ? var->offset : 0, var, type);
-}
-
-node_t *psx_node_new_lvar_object_ref_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  return psx_node_new_lvar_for_in(arena_context, var);
-}
-
-node_t *ps_node_new_lvar_expr_ref_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, var ? var->offset : 0, var, decl_type);
-}
-
-node_t *psx_node_new_lvar_identifier_ref_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  if (var && var->is_static_local && var->static_global_name) {
-    return psx_node_new_static_local_gvar_for_in(arena_context, var);
-  }
-
-  return psx_node_new_lvar_for_in(arena_context, var);
-}
-
-node_t *psx_node_new_vla_decay_ref_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_type_t *decay_type = ps_type_decay_array_in(
-      arena_context, array_type);
-  if (!decay_type)
-    return psx_node_new_lvar_identifier_ref_for_in(arena_context, var);
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, var->offset, var, decay_type);
-}
-
-node_t *ps_node_new_param_lvar_for_in(arena_context_t *arena_context,
-                                      lvar_t *var) {
-  const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, var ? var->offset : 0, var, decl_type);
-}
-
 static node_t *annotate_explicit_type(node_t *node,
                                       const psx_type_t *type) {
   if (node && type) ps_node_bind_type(node, type);
@@ -2937,46 +2746,6 @@ static node_t *new_addr_node(arena_context_t *arena_context,
       arena_context, sizeof(node_t));
   addr->kind = ND_ADDR;
   addr->lhs = base;
-  return addr;
-}
-
-static void init_array_addr_canonical_type(
-                                           arena_context_t *arena_context,
-                                           node_t *addr,
-                                           const psx_type_t *array_type) {
-  if (!addr || !array_type) return;
-  ps_node_bind_type(
-      addr, array_type->kind == PSX_TYPE_ARRAY
-                ? ps_type_decay_array_in(arena_context, array_type)
-                : (type_is_pointer_view_type(array_type) ? array_type : NULL));
-}
-
-node_t *ps_node_new_gvar_array_addr_for_in(
-    arena_context_t *arena_context, global_var_t *gv) {
-  node_t *addr = new_addr_node(
-      arena_context,
-      psx_node_new_gvar_array_base_for_in(arena_context, gv));
-  init_array_addr_canonical_type(
-      arena_context, addr, ps_gvar_get_decl_type(gv));
-  return addr;
-}
-
-node_t *psx_node_new_static_local_array_addr_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  node_t *addr = new_addr_node(
-      arena_context,
-      psx_node_new_static_local_gvar_for_in(arena_context, var));
-  init_array_addr_canonical_type(
-      arena_context, addr, static_local_backing_decl_type(var));
-  return addr;
-}
-
-node_t *ps_node_new_lvar_array_addr_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  node_t *addr = new_addr_node(
-      arena_context, psx_node_new_lvar_for_in(arena_context, var));
-  init_array_addr_canonical_type(
-      arena_context, addr, ps_lvar_get_decl_type(var));
   return addr;
 }
 
@@ -3133,90 +2902,6 @@ node_t *ps_node_new_subscript_deref_for_in(
     init_subscript_expr_state(result);
   }
   return result;
-}
-
-node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int member_offset,
-    const psx_type_t *member_type, int bit_is_signed,
-    int bit_width, int bit_offset) {
-  if (member_type) {
-    int owner_is_const = lvar_self_is_const_qualified(owner);
-    int owner_is_volatile = lvar_self_is_volatile_qualified(owner);
-    member_type = type_with_self_qualifiers_in(
-        arena_context, member_type,
-        owner_is_const, owner_is_volatile);
-  }
-  if (!member_type)
-    member_type = ps_type_new_integer_kind_in(
-        arena_context, PSX_INTEGER_KIND_INT, 0, 0);
-  node_lvar_t *node = new_lvar_symbol_node(
-      arena_context, (owner ? owner->offset : 0) + member_offset,
-      owner, member_type);
-  ps_node_set_bitfield_info(
-      (node_t *)node, bit_width, bit_offset, bit_is_signed);
-  return (node_t *)node;
-}
-
-node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
-                                global_var_t *gv) {
-  node_gvar_t *node = resolution_node_alloc_in(
-      arena_context, sizeof(node_gvar_t));
-  node->base.kind = ND_GVAR;
-  if (gv) {
-    node->symbol = gv;
-    ps_node_bind_qual_type(
-        (node_t *)node, ps_gvar_get_decl_type(gv),
-        ps_gvar_decl_qual_type(gv));
-    node->name = gv->name;
-    node->name_len = gv->name_len;
-    node->is_thread_local = gv->is_thread_local ? 1 : 0;
-  }
-  return (node_t *)node;
-}
-
-node_t *psx_node_new_gvar_array_base_for_in(
-    arena_context_t *arena_context, global_var_t *gv) {
-  node_gvar_t *node = resolution_node_alloc_in(
-      arena_context, sizeof(node_gvar_t));
-  node->base.kind = ND_GVAR;
-  if (gv) {
-    node->symbol = gv;
-    ps_node_bind_qual_type(
-        (node_t *)node, ps_gvar_get_decl_type(gv),
-        ps_gvar_decl_qual_type(gv));
-    node->name = gv->name;
-    node->name_len = gv->name_len;
-    node->is_thread_local = gv->is_thread_local ? 1 : 0;
-  }
-  return (node_t *)node;
-}
-
-node_t *psx_node_new_static_local_gvar_for_in(
-    arena_context_t *arena_context, lvar_t *var) {
-  node_gvar_t *node = resolution_node_alloc_in(
-      arena_context, sizeof(node_gvar_t));
-  node->base.kind = ND_GVAR;
-  if (var) {
-    node->symbol = var->static_global;
-    const psx_type_t *type = static_local_backing_decl_type(var);
-    if (type && var->static_global) {
-      ps_node_bind_qual_type(
-          (node_t *)node, type,
-          ps_gvar_decl_qual_type(var->static_global));
-    } else {
-      type = ps_lvar_get_decl_type(var);
-      ps_node_bind_qual_type(
-          (node_t *)node, type, ps_lvar_decl_qual_type(var));
-    }
-    node->name = var->static_global_name;
-    node->name_len = var->static_global_name_len;
-  }
-  return (node_t *)node;
-}
-
-lvar_t *ps_node_lvar_symbol(node_t *node) {
-  if (!node || node->kind != ND_LVAR) return NULL;
-  return ((node_lvar_t *)node)->var;
 }
 
 void ps_node_bind_symbol_decl_type_if_missing(node_t *node) {

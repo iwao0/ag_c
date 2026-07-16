@@ -20,6 +20,7 @@
 #include "../src/parser/local_registry.h"
 #include "../src/parser/name_environment.h"
 #include "../src/semantic/resolved_node_type.h"
+#include "../src/semantic/resolved_object_ref.h"
 #include "../src/semantic/resolution_state.h"
 #include "../src/parser/node_utils.h"
 #include "../src/parser/node_vla_public.h"
@@ -2041,7 +2042,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_TRUE(isolated_hir != NULL);
   psx_resolved_hir_build_failure_t failure = {0};
   ASSERT_TRUE(!psx_resolution_work_tree_build_typed_hir(
-      unfinalized, test_semantic_context(), &failure));
+      unfinalized, &failure));
   ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
             failure.status);
   failure = (psx_resolved_hir_build_failure_t){0};
@@ -2085,8 +2086,12 @@ static void test_typed_hir_ownership_and_type_boundary() {
       typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
       PSX_RESOLUTION_WORK_FINALIZED));
   failure = (psx_resolved_hir_build_failure_t){0};
-  ASSERT_TRUE(psx_resolution_work_tree_build_typed_hir(
+  ASSERT_TRUE(psx_resolution_work_tree_materialize_semantic(
       typed_work_tree, test_semantic_context(), &failure));
+  ASSERT_EQ(PSX_RESOLUTION_WORK_SEMANTIC_READY,
+            psx_resolution_work_tree_phase(typed_work_tree));
+  ASSERT_TRUE(psx_resolution_work_tree_build_typed_hir(
+      typed_work_tree, &failure));
   const psx_typed_hir_tree_t *typed_tree =
       psx_resolution_work_tree_typed_hir(typed_work_tree);
   ASSERT_TRUE(typed_tree != NULL);
@@ -14587,11 +14592,15 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_is_unsigned_type(&typed_unsigned_mem));
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(&typed_unsigned_mem));
 
-  node_t typed_bool_lhs_mem = {0};
-  typed_bool_lhs_mem.kind = ND_LVAR;
-  test_bind_node_type(&typed_bool_lhs_mem, ps_type_new(PSX_TYPE_BOOL));
+  lvar_t typed_bool_lhs_var = {0};
+  typed_bool_lhs_var.size = 1;
+  typed_bool_lhs_var.align_bytes = 1;
+  set_test_storage_fixture_type(
+      &typed_bool_lhs_var, ps_type_new(PSX_TYPE_BOOL));
+  node_t *typed_bool_lhs =
+      psx_node_new_lvar_for(&typed_bool_lhs_var);
   node_t *typed_bool_assign =
-      ps_node_new_assign(&typed_bool_lhs_mem, ps_node_new_num(3));
+      ps_node_new_assign(typed_bool_lhs, ps_node_new_num(3));
   ASSERT_TRUE(typed_bool_assign->rhs != NULL);
   ASSERT_EQ(ND_NUM, typed_bool_assign->rhs->kind);
   typed_bool_assign =
@@ -16533,15 +16542,25 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(&typed_stmt_expr) == NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(&typed_stmt_expr));
 
-  node_t typed_stmt_tag_ptr_rhs = {0};
-  typed_stmt_tag_ptr_rhs.kind = ND_LVAR;
   psx_type_t *typed_stmt_tag =
       ps_type_new_tag(TK_STRUCT, "StmtTag", 7, 4, 16);
   typed_stmt_tag->record_id = 0x57a7u;
-  test_bind_node_type(&typed_stmt_tag_ptr_rhs, ps_type_new_pointer(typed_stmt_tag));
+  lvar_t typed_stmt_tag_ptr_var = {0};
+  typed_stmt_tag_ptr_var.size = 8;
+  typed_stmt_tag_ptr_var.align_bytes = 8;
+  set_test_storage_fixture_type(
+      &typed_stmt_tag_ptr_var, ps_type_new_pointer(typed_stmt_tag));
+  node_t *typed_stmt_tag_ptr_rhs =
+      psx_node_new_lvar_for(&typed_stmt_tag_ptr_var);
+  node_t *typed_stmt_tag_ptr_body[] = {
+      typed_stmt_tag_ptr_rhs, NULL};
+  node_block_t typed_stmt_tag_ptr_block = {0};
+  typed_stmt_tag_ptr_block.base.kind = ND_BLOCK;
+  typed_stmt_tag_ptr_block.body = typed_stmt_tag_ptr_body;
   node_t typed_stmt_tag_ptr = {0};
   typed_stmt_tag_ptr.kind = ND_STMT_EXPR;
-  typed_stmt_tag_ptr.rhs = &typed_stmt_tag_ptr_rhs;
+  typed_stmt_tag_ptr.lhs = &typed_stmt_tag_ptr_block.base;
+  typed_stmt_tag_ptr.rhs = typed_stmt_tag_ptr_rhs;
   ASSERT_TRUE(ps_node_get_type(&typed_stmt_tag_ptr) == NULL);
   ASSERT_EQ(0, ps_node_value_is_pointer_like(&typed_stmt_tag_ptr));
   ASSERT_EQ(0, ps_node_deref_size(&typed_stmt_tag_ptr));
@@ -16564,12 +16583,24 @@ static void test_type_metadata_bridge() {
                       "StmtTag", 7) == 0);
   ASSERT_EQ(4, typed_stmt_tag_ptr_type->base->tag_scope_depth_p1);
 
-  node_t typed_stmt_fp_ptr_rhs = {0};
-  typed_stmt_fp_ptr_rhs.kind = ND_LVAR;
-  test_bind_node_type(&typed_stmt_fp_ptr_rhs, ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
+  lvar_t typed_stmt_fp_ptr_var = {0};
+  typed_stmt_fp_ptr_var.size = 8;
+  typed_stmt_fp_ptr_var.align_bytes = 8;
+  set_test_storage_fixture_type(
+      &typed_stmt_fp_ptr_var,
+      ps_type_new_pointer(
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
+  node_t *typed_stmt_fp_ptr_rhs =
+      psx_node_new_lvar_for(&typed_stmt_fp_ptr_var);
+  node_t *typed_stmt_fp_ptr_body[] = {
+      typed_stmt_fp_ptr_rhs, NULL};
+  node_block_t typed_stmt_fp_ptr_block = {0};
+  typed_stmt_fp_ptr_block.base.kind = ND_BLOCK;
+  typed_stmt_fp_ptr_block.body = typed_stmt_fp_ptr_body;
   node_t typed_stmt_fp_ptr = {0};
   typed_stmt_fp_ptr.kind = ND_STMT_EXPR;
-  typed_stmt_fp_ptr.rhs = &typed_stmt_fp_ptr_rhs;
+  typed_stmt_fp_ptr.lhs = &typed_stmt_fp_ptr_block.base;
+  typed_stmt_fp_ptr.rhs = typed_stmt_fp_ptr_rhs;
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             canonical_node_pointee_fp_kind(&typed_stmt_fp_ptr));
   node_t *resolved_stmt_fp_ptr =

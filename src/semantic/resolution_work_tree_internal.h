@@ -22,12 +22,15 @@ int psx_resolution_work_tree_advance(
     psx_resolution_work_tree_t *tree,
     psx_resolution_work_phase_t expected,
     psx_resolution_work_phase_t next);
+int psx_resolution_work_tree_materialize_semantic(
+    psx_resolution_work_tree_t *tree,
+    const struct psx_semantic_context_t *semantic_context,
+    psx_resolved_hir_build_failure_t *failure);
 int psx_resolution_work_tree_attach_typed_hir(
     psx_resolution_work_tree_t *tree,
     psx_typed_hir_tree_t *typed_hir);
 int psx_resolution_work_tree_build_typed_hir(
     psx_resolution_work_tree_t *tree,
-    const struct psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure);
 
 #endif

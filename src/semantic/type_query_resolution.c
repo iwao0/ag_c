@@ -6,6 +6,7 @@
 #include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "type_name_resolution.h"
+#include "resolved_object_ref.h"
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
 #include "../parser/global_registry.h"

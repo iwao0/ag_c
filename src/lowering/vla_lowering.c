@@ -11,6 +11,7 @@
 #include "../parser/type_builder.h"
 #include "../diag/diag.h"
 #include "../semantic/vla_runtime_plan.h"
+#include "../semantic/resolved_object_ref.h"
 #include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>

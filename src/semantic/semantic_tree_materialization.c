@@ -24,17 +24,15 @@
 #include "member_access_resolution.h"
 #include "resolved_node_kind.h"
 #include "resolved_node.h"
+#include "resolved_object_ref.h"
 #include "resolved_function.h"
 #include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
+#include "semantic_node_builder.h"
 #include "semantic_tree_internal.h"
 #include "vla_runtime_plan.h"
 
-typedef struct {
-  arena_context_t *arena_context;
-  const psx_semantic_context_t *semantic_context;
-  psx_resolved_hir_build_failure_t *failure;
-} hir_materializer_t;
+typedef psx_semantic_node_builder_t hir_materializer_t;
 
 typedef struct {
   psx_semantic_node_t **items;
@@ -46,11 +44,8 @@ typedef struct {
 static void set_failure(
     hir_materializer_t *builder, psx_resolved_hir_build_status_t status,
     const node_t *source) {
-  if (!builder->failure ||
-      builder->failure->status != PSX_RESOLVED_HIR_BUILD_OK)
-    return;
-  builder->failure->status = status;
-  builder->failure->source_node_kind = source ? (int)source->kind : -1;
+  psx_semantic_node_builder_fail(
+      builder, status, source ? (int)source->kind : -1);
 }
 
 static int append_child(
@@ -105,7 +100,6 @@ static int map_kind(
     MAP(ND_TERNARY, PSX_HIR_TERNARY);
     MAP(ND_COMMA, PSX_HIR_COMMA);
     MAP(ND_ASSIGN, PSX_HIR_ASSIGN);
-    MAP(ND_LVAR, PSX_HIR_LOCAL);
     MAP(ND_IF, PSX_HIR_IF);
     MAP(ND_WHILE, PSX_HIR_WHILE);
     MAP(ND_DO_WHILE, PSX_HIR_DO_WHILE);
@@ -126,7 +120,6 @@ static int map_kind(
     MAP(ND_BLOCK, PSX_HIR_BLOCK);
     MAP(ND_FUNCDEF, PSX_HIR_FUNCTION);
     MAP(ND_FUNCALL, PSX_HIR_CALL);
-    MAP(ND_FUNCREF, PSX_HIR_FUNCTION_REF);
     MAP(ND_UNARY_NEGATE, PSX_HIR_NEGATE);
     MAP(ND_UNARY_DEREF, PSX_HIR_DEREF);
     MAP(ND_DEREF, PSX_HIR_DEREF);
@@ -134,9 +127,6 @@ static int map_kind(
     MAP(ND_MEMBER_ACCESS, PSX_HIR_MEMBER_ACCESS);
     MAP(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
     MAP(ND_ADDR, PSX_HIR_ADDRESS);
-    MAP(ND_STRING, PSX_HIR_STRING);
-    MAP(ND_NUM, PSX_HIR_NUMBER);
-    MAP(ND_GVAR, PSX_HIR_GLOBAL);
     MAP(ND_VLA_ALLOC, PSX_HIR_VLA_ALLOC);
     MAP(ND_FP_TO_INT, PSX_HIR_FP_TO_INT);
     MAP(ND_INT_TO_FP, PSX_HIR_INT_TO_FP);
@@ -171,11 +161,6 @@ static int compound_operator(
 
 static psx_semantic_node_t *build_node(
     hir_materializer_t *builder, const node_t *source);
-static psx_semantic_node_t *materialize_node_record(
-    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
-    const hir_children_t *children,
-    const psx_hir_symbol_spec_t *symbol,
-    const node_t *source, size_t storage_size);
 static int canonical_type_exists(
     const hir_materializer_t *builder, psx_qual_type_t type);
 static psx_qual_type_t resolved_expression_type(
@@ -261,13 +246,12 @@ static psx_semantic_node_t *materialize_expression_spec(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
     psx_qual_type_t qual_type, const hir_children_t *children,
     const psx_hir_symbol_spec_t *symbol, const node_t *source) {
-  psx_semantic_expression_t *expression =
-      (psx_semantic_expression_t *)materialize_node_record(
-          builder, spec, children, symbol, source,
-          sizeof(*expression));
-  if (!expression) return NULL;
-  expression->qual_type = qual_type;
-  return &expression->node;
+  return psx_semantic_node_builder_expression(
+      builder, spec, qual_type,
+      children ? children->items : NULL,
+      children ? children->edges : NULL,
+      children ? children->count : 0,
+      symbol, source ? (int)source->kind : -1);
 }
 
 static psx_semantic_node_t *materialize_expression(
@@ -286,11 +270,12 @@ static psx_semantic_node_t *materialize_expression(
 static psx_semantic_node_t *materialize_statement(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
     const hir_children_t *children, const node_t *source) {
-  psx_semantic_statement_t *statement =
-      (psx_semantic_statement_t *)materialize_node_record(
-          builder, spec, children, NULL, source,
-          sizeof(*statement));
-  return statement ? &statement->node : NULL;
+  return psx_semantic_node_builder_statement(
+      builder, spec,
+      children ? children->items : NULL,
+      children ? children->edges : NULL,
+      children ? children->count : 0,
+      source ? (int)source->kind : -1);
 }
 
 static psx_semantic_node_t *materialize_comma(
@@ -428,52 +413,9 @@ static int is_statement_expression_value(
          candidate->tok == value->tok;
 }
 
-static psx_semantic_node_t *materialize_node_record(
-    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
-    const hir_children_t *children,
-    const psx_hir_symbol_spec_t *symbol,
-    const node_t *source, size_t storage_size) {
-  psx_semantic_node_t *node = arena_alloc_in(
-      builder->arena_context, storage_size);
-  if (!node) {
-    set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
-    return NULL;
-  }
-  node->spec = *spec;
-  node->source_node_kind = source ? (int)source->kind : -1;
-  node->spec.children = NULL;
-  node->spec.child_edges = NULL;
-  node->spec.child_count = children ? children->count : 0;
-  if (children && children->count) {
-    node->children = arena_alloc_in(
-        builder->arena_context,
-        children->count * sizeof(*node->children));
-    node->child_edges = arena_alloc_in(
-        builder->arena_context,
-        children->count * sizeof(*node->child_edges));
-    if (!node->children || !node->child_edges) {
-      set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
-      return NULL;
-    }
-    memcpy(node->children, children->items,
-           children->count * sizeof(*node->children));
-    memcpy(node->child_edges, children->edges,
-           children->count * sizeof(*node->child_edges));
-  }
-  if (symbol) {
-    node->symbol = *symbol;
-    node->has_symbol = 1;
-  }
-  return node;
-}
-
 static psx_qual_type_t resolved_expression_type(
     const psx_semantic_node_t *node) {
-  if (!node || !psx_hir_kind_is_expression(node->spec.kind)) {
-    return (psx_qual_type_t){
-        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  }
-  return ((const psx_semantic_expression_t *)node)->qual_type;
+  return psx_semantic_node_expression_qual_type(node);
 }
 
 static psx_semantic_node_t *build_statement_expression_prefix(
@@ -590,8 +532,8 @@ static int build_special_children(
 
 static int canonical_type_exists(
     const hir_materializer_t *builder, psx_qual_type_t type) {
-  return type.type_id != PSX_TYPE_ID_INVALID &&
-         ps_ctx_type_by_id_in(builder->semantic_context, type.type_id) != NULL;
+  return psx_semantic_node_builder_has_canonical_type(
+      builder, type);
 }
 
 static psx_qual_type_t child_qual_type(
@@ -692,7 +634,8 @@ static int attach_global_symbol(
     psx_hir_symbol_spec_t *symbol, int *has_symbol) {
   if (has_symbol) *has_symbol = 0;
   if (source->kind != ND_GVAR) return 1;
-  const global_var_t *global = ((const node_gvar_t *)source)->symbol;
+  const global_var_t *global =
+      psx_resolved_object_ref_global(source);
   if (!resolved_global_symbol_spec(
           builder, global, source, symbol))
     return 0;
@@ -1111,14 +1054,17 @@ static int copy_payload(
       break;
     }
     case ND_LVAR: {
-      const node_lvar_t *local = (const node_lvar_t *)source;
-      spec->storage_offset = local->offset;
-      if (local->var) {
-        spec->object_offset = ps_lvar_offset(local->var);
-        spec->object_size = ps_lvar_frame_storage_size(local->var);
-        spec->object_align = ps_lvar_align_bytes(local->var);
+      const lvar_t *local =
+          psx_resolved_object_ref_local(source);
+      int storage_offset =
+          psx_resolved_object_ref_storage_offset(source);
+      spec->storage_offset = storage_offset;
+      if (local) {
+        spec->object_offset = ps_lvar_offset(local);
+        spec->object_size = ps_lvar_frame_storage_size(local);
+        spec->object_align = ps_lvar_align_bytes(local);
       } else {
-        spec->object_offset = local->offset;
+        spec->object_offset = storage_offset;
       }
       break;
     }
@@ -1192,17 +1138,17 @@ static int copy_payload(
       break;
     }
     case ND_FUNCREF: {
-      const node_funcref_t *function = (const node_funcref_t *)source;
-      spec->name = function->funcname;
-      spec->name_length = function->funcname_len > 0
-                              ? (size_t)function->funcname_len : 0;
+      int name_len = 0;
+      spec->name = psx_resolved_object_ref_name(
+          source, &name_len);
+      spec->name_length = name_len > 0 ? (size_t)name_len : 0;
       break;
     }
     case ND_GVAR: {
-      const node_gvar_t *global = (const node_gvar_t *)source;
-      spec->name = global->name;
-      spec->name_length = global->name_len > 0
-                              ? (size_t)global->name_len : 0;
+      int name_len = 0;
+      spec->name = psx_resolved_object_ref_name(
+          source, &name_len);
+      spec->name_length = name_len > 0 ? (size_t)name_len : 0;
       break;
     }
     case ND_CASE: {
@@ -1254,7 +1200,7 @@ static int copy_vla_payload(
     return 1;
   }
   if (source->kind != ND_LVAR) return 1;
-  const lvar_t *var = ((const node_lvar_t *)source)->var;
+  const lvar_t *var = psx_resolved_object_ref_local(source);
   if (!var || !ps_lvar_is_vla(var)) return 1;
   spec->vla_stride_frame_offset =
       ps_lvar_vla_row_stride_frame_off(var);
@@ -1284,8 +1230,57 @@ static int copy_vla_payload(
   return 1;
 }
 
+static psx_semantic_node_t *materialize_typed_leaf(
+    hir_materializer_t *builder, const node_t *source,
+    int *handled) {
+  if (handled) *handled = 0;
+  if (!source || !handled) return NULL;
+  psx_hir_node_kind_t kind;
+  switch (source->kind) {
+    case ND_NUM: kind = PSX_HIR_NUMBER; break;
+    case ND_STRING: kind = PSX_HIR_STRING; break;
+    case ND_LVAR: kind = PSX_HIR_LOCAL; break;
+    case ND_GVAR: kind = PSX_HIR_GLOBAL; break;
+    case ND_FUNCREF: kind = PSX_HIR_FUNCTION_REF; break;
+    default: return NULL;
+  }
+  *handled = 1;
+  psx_hir_node_spec_t spec = {
+      .kind = kind,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  if (!copy_payload(builder, source, &spec) ||
+      !copy_vla_payload(builder, source, &spec))
+    return NULL;
+  if (source->kind == ND_LVAR) {
+    int bit_width = 0;
+    int bit_offset = 0;
+    int bit_is_signed = 0;
+    if (ps_node_bitfield_info(
+            (node_t *)source, &bit_width, &bit_offset,
+            &bit_is_signed)) {
+      spec.bit_width = (unsigned char)bit_width;
+      spec.bit_offset = (unsigned char)bit_offset;
+      spec.bit_is_signed = bit_is_signed ? 1 : 0;
+    }
+  }
+  psx_hir_symbol_spec_t symbol = {0};
+  int has_symbol = 0;
+  if (!attach_global_symbol(
+          builder, source, &symbol, &has_symbol))
+    return NULL;
+  return psx_semantic_node_builder_leaf_expression(
+      builder, &spec, ps_node_qual_type(source),
+      has_symbol ? &symbol : NULL, (int)source->kind);
+}
+
 static psx_semantic_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  int handled_typed_leaf = 0;
+  psx_semantic_node_t *typed_leaf = materialize_typed_leaf(
+      builder, source, &handled_typed_leaf);
+  if (handled_typed_leaf) return typed_leaf;
   if (source && source->kind == ND_VLA_ALLOC) {
     return materialize_vla_runtime(
         builder, (const node_vla_alloc_t *)source);
@@ -1426,11 +1421,10 @@ int psx_semantic_tree_materialize(
     }
     return 0;
   }
-  hir_materializer_t builder = {
-      .arena_context = ps_ctx_arena(semantic_context),
-      .semantic_context = semantic_context,
-      .failure = failure,
-  };
+  hir_materializer_t builder;
+  psx_semantic_node_builder_init(
+      &builder, ps_ctx_arena(semantic_context),
+      semantic_context, failure);
   psx_semantic_node_t *root = build_node(&builder, resolution_root);
   if (!root) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)

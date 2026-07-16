@@ -9,6 +9,7 @@
 #include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
+#include "../semantic/resolved_object_ref.h"
 #include "../type_layout.h"
 #include "../tokenizer/literals.h"
 #include <stdlib.h>

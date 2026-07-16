@@ -8,6 +8,7 @@
 #include "vla_runtime_plan.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
+#include "resolved_object_ref.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/diag.h"
@@ -87,29 +88,20 @@ static node_t *materialize_function(
     const psx_identifier_binding_context_t *context) {
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution->function);
-  node_funcref_t *reference = psx_resolution_node_alloc_in(
-      ps_ctx_arena(context->semantic_context), sizeof(*reference));
+  node_t *reference = psx_node_new_function_reference_in(
+      ps_ctx_arena(context->semantic_context),
+      identifier->name, identifier->name_len, function_type);
   if (!reference) return NULL;
-  reference->base.kind = ND_FUNCREF;
-  ps_node_bind_type(
-      (node_t *)reference,
-      function_type
-          ? ps_type_clone_in(
-                ps_ctx_arena(context->semantic_context), function_type)
-          : NULL);
-  reference->funcname = identifier->name;
-  reference->funcname_len = identifier->name_len;
-  copy_identifier_source_state((node_t *)reference, identifier);
-  return (node_t *)reference;
+  copy_identifier_source_state(reference, identifier);
+  return reference;
 }
 
 static node_t *materialize_builtin_va_arg_area(
     const node_identifier_t *identifier,
     const psx_identifier_binding_context_t *context) {
-  node_t *node = psx_resolution_node_alloc_in(
-      ps_ctx_arena(context->semantic_context), sizeof(*node));
+  node_t *node = psx_node_new_va_arg_area_reference_in(
+      ps_ctx_arena(context->semantic_context));
   if (!node) return NULL;
-  node->kind = ND_VA_ARG_AREA;
   copy_identifier_source_state(node, identifier);
   return node;
 }

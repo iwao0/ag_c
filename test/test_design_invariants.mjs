@@ -100,6 +100,22 @@ const resolvedHirNodeInternalHeader = await readFile(
   "src/semantic/semantic_node_internal.h",
   "utf8",
 );
+const semanticNodeBuilderHeader = await readFile(
+  "src/semantic/semantic_node_builder.h",
+  "utf8",
+);
+const semanticNodeBuilderSource = await readFile(
+  "src/semantic/semantic_node_builder.c",
+  "utf8",
+);
+const resolvedObjectRefHeader = await readFile(
+  "src/semantic/resolved_object_ref.h",
+  "utf8",
+);
+const resolvedObjectRefSource = await readFile(
+  "src/semantic/resolved_object_ref.c",
+  "utf8",
+);
 const resolutionWorkTree = await readFile(
   "src/semantic/resolution_work_tree.c",
   "utf8",
@@ -3317,7 +3333,12 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
     !/memcmp\s*\(\s*identifier->name\s*,\s*"__va_arg_area"/.test(
       identifierBindingSource,
     ) ||
-    !/node->kind\s*=\s*ND_VA_ARG_AREA/.test(identifierBindingSource)) {
+    !/psx_node_new_va_arg_area_reference_in\s*\(/.test(
+      identifierBindingSource,
+    ) ||
+    !/node->kind\s*=\s*ND_VA_ARG_AREA/.test(
+      resolvedObjectRefSource,
+    )) {
   throw new Error(
     "__va_arg_area must parse as identifier syntax and materialize during identifier binding",
   );
@@ -3713,6 +3734,10 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const nodeUtilsHeaderSource = await readFile(
+  "src/parser/node_utils.h",
+  "utf8",
+);
 if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     allSourceFiles.includes("src/parser/node_resolution_state.h") ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_node_get_type\s*\(/.test(
@@ -3847,7 +3872,7 @@ for (const removedApi of [
     );
   }
 }
-const storageSlotConstructor = nodeUtilsSource.match(
+const storageSlotConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*ps_node_new_lvar_storage_slot_for_in\s*\([^]*?\n\}/,
 );
 if (!storageSlotConstructor ||
@@ -3862,6 +3887,59 @@ if (!storageSlotConstructor ||
     )) {
   throw new Error(
     "local initializer lowering must pass semantic element types directly and label byte-wise zero fill as storage slots",
+  );
+}
+const resolvedObjectRefFactories = [
+  "psx_node_new_lvar_in",
+  "ps_node_new_lvar_typed_in",
+  "ps_node_new_lvar_storage_slot_for_in",
+  "ps_node_new_lvar_type_at_for_in",
+  "psx_node_new_lvar_scalar_slot_at_in",
+  "psx_node_new_lvar_fp_slot_at_in",
+  "ps_node_new_lvar_fp_slot_for_in",
+  "ps_node_new_param_placeholder_in",
+  "ps_node_new_unsigned_lvar_typed_in",
+  "psx_node_new_lvar_for_in",
+  "psx_node_new_lvar_object_ref_for_in",
+  "ps_node_new_lvar_expr_ref_for_in",
+  "psx_node_new_lvar_identifier_ref_for_in",
+  "psx_node_new_vla_decay_ref_for_in",
+  "ps_node_new_param_lvar_for_in",
+  "ps_node_new_gvar_array_addr_for_in",
+  "psx_node_new_static_local_array_addr_for_in",
+  "ps_node_new_lvar_array_addr_for_in",
+  "ps_node_new_tag_member_lvar_ref_with_layout_for_in",
+  "ps_node_new_gvar_for_in",
+  "psx_node_new_gvar_array_base_for_in",
+  "psx_node_new_static_local_gvar_for_in",
+  "psx_node_new_function_reference_in",
+  "psx_node_new_va_arg_area_reference_in",
+  "ps_node_lvar_symbol",
+];
+for (const factory of resolvedObjectRefFactories) {
+  const declaration = new RegExp(`\\b${factory}\\s*\\(`);
+  const definition = new RegExp(
+    `\\b(?:node_t|lvar_t)\\s*\\*\\s*${factory}\\s*\\(`,
+  );
+  if (definition.test(nodeUtilsSource) ||
+      declaration.test(nodeUtilsHeaderSource) ||
+      !definition.test(resolvedObjectRefSource) ||
+      !declaration.test(resolvedObjectRefHeader)) {
+    throw new Error(
+      `resolved object reference factory ${factory} must be owned by the semantic layer`,
+    );
+  }
+}
+if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
+    !/base\.kind\s*=\s*ND_LVAR/.test(resolvedObjectRefSource) ||
+    !/base\.kind\s*=\s*ND_GVAR/.test(resolvedObjectRefSource) ||
+    /(?:base\.)?kind\s*=\s*ND_(?:FUNCREF|VA_ARG_AREA)/.test(
+      identifierBindingSource,
+    ) ||
+    !/base\.kind\s*=\s*ND_FUNCREF/.test(resolvedObjectRefSource) ||
+    !/kind\s*=\s*ND_VA_ARG_AREA/.test(resolvedObjectRefSource)) {
+  throw new Error(
+    "resolved object and function references must be constructed only by the semantic factory",
   );
 }
 const classifiedInitializerVisitor = nodeUtilsSource.match(
@@ -4701,6 +4779,7 @@ const typeBuilderUsers = new Set([
   "src/declaration_pipeline.c",
   "src/semantic/declaration_resolution.c",
   "src/semantic/parameter_declaration_resolution.c",
+  "src/semantic/resolved_object_ref.c",
   "src/semantic/declaration_application.c",
   "src/semantic/type_name_resolution.c",
   "src/semantic/semantic_pass.c",
@@ -4861,10 +4940,6 @@ const tagPublicSource = await readFile(
 );
 const semanticContextHeaderSource = await readFile(
   "src/parser/semantic_ctx.h",
-  "utf8",
-);
-const nodeUtilsHeaderSource = await readFile(
-  "src/parser/node_utils.h",
   "utf8",
 );
 const tagFlatCoverSource = await readFile(
@@ -6463,6 +6538,36 @@ if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
     !/\bpsx_hir_module_add_statement\b/.test(hirInternalHeader) ||
     !/spec->qual_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       hirImplementation,
+    ) ||
+    !/psx_semantic_node_builder_expression\s*\(/.test(
+      semanticNodeBuilderHeader,
+    ) ||
+    !/psx_semantic_node_builder_has_canonical_type\s*\([^]*?qual_type/.test(
+      semanticNodeBuilderSource,
+    ) ||
+    !/PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE/.test(
+      semanticNodeBuilderSource,
+    ) ||
+    !/expression->qual_type\s*=\s*qual_type/.test(
+      semanticNodeBuilderSource,
+    ) ||
+    !/psx_semantic_node_builder_expression\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_semantic_node_builder_statement\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/materialize_typed_leaf\s*\([^]*?case\s+ND_NUM[^]*?case\s+ND_STRING[^]*?case\s+ND_LVAR[^]*?case\s+ND_GVAR[^]*?case\s+ND_FUNCREF[^]*?psx_semantic_node_builder_leaf_expression\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /MAP\s*\(\s*ND_(?:NUM|STRING|LVAR|GVAR|FUNCREF)\s*,/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/build_node\s*\([^]*?materialize_typed_leaf\s*\([^]*?handled_typed_leaf[^]*?if\s*\(\s*handled_typed_leaf\s*\)\s*return\s+typed_leaf/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /psx_semantic_expression_t\s*\*|->qual_type\s*=/.test(
+      resolvedTreeMaterialization,
     )) {
   throw new Error(
     "Typed HIR construction must structurally require canonical QualType for expressions",
@@ -6684,6 +6789,19 @@ const expressionResolutionBoundary = semanticPipelineSource.match(
 const initializerResolutionBoundary = semanticPipelineSource.match(
   /static\s+psx_resolution_work_tree_t\s*\*\s*resolve_initializer_work_tree_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
+const semanticMaterializationBoundary = resolutionWorkTree.match(
+  /int\s+psx_resolution_work_tree_materialize_semantic\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+)?.[1] ?? "";
+const typedHirBuildBoundary = resolutionWorkTree.match(
+  /int\s+psx_resolution_work_tree_build_typed_hir\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+)?.[1] ?? "";
+const typedHirBuildDeclaration = resolutionWorkTreeInternalHeader.match(
+  /int\s+psx_resolution_work_tree_build_typed_hir\s*\(([^]*?)\);/,
+)?.[1] ?? "";
+const semanticMaterializationCalls =
+  semanticTreeResolutionSource.match(
+    /\bmaterialize_resolved_tree\s*\(/g,
+  ) ?? [];
 if (!functionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
@@ -6721,6 +6839,32 @@ if (!functionResolutionBoundary ||
     ) ||
     !/psx_resolution_work_tree_attach_typed_hir\s*\(/.test(
       resolutionWorkTreeInternalHeader,
+    ) ||
+    !/PSX_RESOLUTION_WORK_SEMANTIC_READY/.test(
+      resolutionWorkTreeHeader,
+    ) ||
+    !/tree->phase\s*!=\s*PSX_RESOLUTION_WORK_FINALIZED/.test(
+      semanticMaterializationBoundary,
+    ) ||
+    !/psx_semantic_tree_materialize\s*\(\s*tree->semantic_tree/.test(
+      semanticMaterializationBoundary,
+    ) ||
+    !/tree->phase\s*=\s*PSX_RESOLUTION_WORK_SEMANTIC_READY/.test(
+      semanticMaterializationBoundary,
+    ) ||
+    !/tree->phase\s*!=\s*PSX_RESOLUTION_WORK_SEMANTIC_READY/.test(
+      typedHirBuildBoundary,
+    ) ||
+    !/psx_materialize_typed_hir_tree\s*\(\s*tree->semantic_tree/.test(
+      typedHirBuildBoundary,
+    ) ||
+    /compatibility_root|psx_semantic_tree_materialize|psx_semantic_context_t/.test(
+      typedHirBuildBoundary,
+    ) ||
+    /psx_semantic_context_t/.test(typedHirBuildDeclaration) ||
+    semanticMaterializationCalls.length !== 3 ||
+    !/if\s*\(\s*is_initializer\s*\)\s*return\s+1\s*;\s*return\s+materialize_resolved_tree/.test(
+      semanticTreeResolutionSource,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_typed_hir\s*\(/.test(
       resolutionWorkTreeHeader,

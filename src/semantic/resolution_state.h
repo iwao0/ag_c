@@ -94,6 +94,24 @@ typedef struct {
   char *string_label;
 } psx_literal_resolution_state_t;
 
+typedef enum {
+  PSX_RESOLVED_REFERENCE_NONE = 0,
+  PSX_RESOLVED_REFERENCE_LOCAL,
+  PSX_RESOLVED_REFERENCE_GLOBAL,
+  PSX_RESOLVED_REFERENCE_FUNCTION,
+  PSX_RESOLVED_REFERENCE_VA_ARG_AREA,
+} psx_resolved_reference_kind_t;
+
+typedef struct {
+  struct lvar_t *local;
+  struct global_var_t *global;
+  char *name;
+  int name_len;
+  int storage_offset;
+  psx_resolved_reference_kind_t kind;
+  unsigned char is_thread_local;
+} psx_resolved_reference_state_t;
+
 typedef struct psx_type_name_resolution_state_t {
   const psx_type_t *bound_base_type;
   const psx_type_t *resolved_type;
@@ -112,6 +130,7 @@ typedef struct psx_node_resolution_state_t {
   psx_function_call_resolution_state_t function_call;
   psx_case_label_resolution_state_t case_label;
   psx_literal_resolution_state_t literal;
+  psx_resolved_reference_state_t reference;
   psx_type_name_resolution_state_t type_name;
 } psx_node_resolution_state_t;
 

@@ -14,7 +14,7 @@ int psx_materialize_static_aggregate_initializer_plan(
   const node_t *root =
       psx_resolution_work_tree_compatibility_root(work_tree);
   if (!work_tree ||
-      psx_resolution_work_tree_phase(work_tree) !=
+      psx_resolution_work_tree_phase(work_tree) <
           PSX_RESOLUTION_WORK_FINALIZED ||
       !global_registry || !lowering_context || !type || !plan ||
       !root || root->kind != ND_INIT_LIST)

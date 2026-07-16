@@ -18,9 +18,7 @@ static psx_hir_node_id_t build_session_hir(
   psx_resolved_hir_build_failure_t failure;
   psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
   if (psx_resolution_work_tree_build_typed_hir(
-          work_tree,
-          ag_compilation_session_semantic_context(session),
-          &failure)) {
+          work_tree, &failure)) {
     const psx_typed_hir_tree_t *typed_tree =
         psx_resolution_work_tree_typed_hir(work_tree);
     hir_root = psx_typed_hir_tree_emit(
@@ -171,7 +169,7 @@ int psx_frontend_resolve_expression_to_hir_in_contexts(
 
   psx_resolved_hir_build_failure_t failure;
   if (!psx_resolution_work_tree_build_typed_hir(
-          work_tree, semantic_context, &failure)) {
+          work_tree, &failure)) {
     diagnose_typed_expression_hir_failure(
         semantic_context, fallback_diag_tok, &failure);
     return 0;

@@ -59,40 +59,6 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
     int execution_size, int is_unsigned);
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
-node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset);
-node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
-                                  int offset, int type_size);
-node_t *ps_node_new_lvar_storage_slot_for_in(
-    arena_context_t *arena_context, struct lvar_t *owner, int offset,
-    int type_size);
-node_t *ps_node_new_lvar_type_at_for_in(
-    arena_context_t *arena_context, struct lvar_t *owner, int offset,
-    const psx_type_t *type);
-node_t *psx_node_new_lvar_scalar_slot_at_in(
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind, int is_bool);
-node_t *psx_node_new_lvar_fp_slot_at_in(
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind);
-node_t *ps_node_new_lvar_fp_slot_for_in(
-    arena_context_t *arena_context, struct lvar_t *owner, int offset,
-    int type_size);
-node_t *ps_node_new_param_placeholder_in(
-    arena_context_t *arena_context, const psx_type_t *type);
-node_t *ps_node_new_unsigned_lvar_typed_in(
-    arena_context_t *arena_context, int offset, int type_size);
-node_t *psx_node_new_lvar_for_in(arena_context_t *arena_context,
-                                 struct lvar_t *var);
-node_t *psx_node_new_lvar_object_ref_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-node_t *ps_node_new_lvar_expr_ref_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-node_t *psx_node_new_lvar_identifier_ref_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-node_t *psx_node_new_vla_decay_ref_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-node_t *ps_node_new_param_lvar_for_in(arena_context_t *arena_context,
-                                      struct lvar_t *var);
 node_t *ps_node_new_fp_to_int_cast_in(arena_context_t *arena_context,
                                        node_t *operand,
                                        const psx_type_t *cast_type);
@@ -120,12 +86,6 @@ node_t *ps_node_new_aggregate_cast_result_in(
 node_t *ps_node_new_void_cast_result_in(arena_context_t *arena_context,
                                         node_t *operand,
                                         const psx_type_t *cast_type);
-node_t *ps_node_new_gvar_array_addr_for_in(
-    arena_context_t *arena_context, struct global_var_t *gv);
-node_t *psx_node_new_static_local_array_addr_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-node_t *ps_node_new_lvar_array_addr_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
 node_t *ps_node_new_addr_value_for_in(arena_context_t *arena_context,
                                       node_t *operand);
 node_t *ps_node_new_explicit_addr_value_for_in(
@@ -142,17 +102,6 @@ node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
 node_t *ps_node_new_subscript_deref_for_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     node_t *base, node_t *base_addr, node_t *scaled_offset);
-node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
-    arena_context_t *arena_context, struct lvar_t *owner,
-    int member_offset, const psx_type_t *member_type,
-    int bit_is_signed, int bit_width, int bit_offset);
-node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
-                                struct global_var_t *gv);
-node_t *psx_node_new_gvar_array_base_for_in(
-    arena_context_t *arena_context, struct global_var_t *gv);
-node_t *psx_node_new_static_local_gvar_for_in(
-    arena_context_t *arena_context, struct lvar_t *var);
-struct lvar_t *ps_node_lvar_symbol(node_t *node);
 node_t *ps_node_clone_lvalue_with_lhs_in(
     arena_context_t *arena_context, node_t *target, node_t *lhs);
 node_t *ps_node_new_assign_in(arena_context_t *arena_context,
