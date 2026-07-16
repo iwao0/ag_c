@@ -1196,6 +1196,11 @@ static int copy_payload(
     }
     case ND_CASE: {
       const node_case_t *case_node = (const node_case_t *)source;
+      if (!case_node->has_resolved_value || source->lhs) {
+        set_failure(
+            builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+        return 0;
+      }
       spec->integer_value = case_node->val;
       spec->label_id = case_node->label_id;
       break;

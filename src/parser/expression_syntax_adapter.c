@@ -156,3 +156,27 @@ node_t *psx_expr_assign_in_contexts(
       expression_syntax_context(&adapter);
   return psx_expr_assign_syntax(&syntax_context);
 }
+
+node_t *psx_expr_conditional_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return NULL;
+  psx_legacy_expression_syntax_adapter_t adapter = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .runtime_context = runtime_context,
+      .local_declarations = local_declarations,
+      .name_classifier =
+          name_classifier ? *name_classifier : (psx_name_classifier_t){0},
+  };
+  psx_expression_syntax_context_t syntax_context =
+      expression_syntax_context(&adapter);
+  return psx_expr_conditional_syntax(&syntax_context);
+}

@@ -1,7 +1,6 @@
 #include "stmt_legacy.h"
 
 #include "decl.h"
-#include "enum_const.h"
 #include "expr.h"
 #include "local_registry.h"
 #include "runtime_context.h"
@@ -31,11 +30,12 @@ static node_t *parse_local_declaration(void *context) {
       adapter->local_declarations);
 }
 
-static long long parse_case_constant(void *context) {
+static node_t *parse_case_expression(void *context) {
   psx_legacy_statement_syntax_adapter_t *adapter = context;
-  return psx_parse_case_const_expr_in_contexts(
-      adapter->semantic_context, &adapter->name_classifier,
-      ps_parser_runtime_tokenizer(adapter->runtime_context));
+  return psx_expr_conditional_in_contexts(
+      adapter->semantic_context, adapter->global_registry,
+      adapter->local_registry, adapter->runtime_context,
+      &adapter->name_classifier, adapter->local_declarations);
 }
 
 static void enter_block_scope(void *context) {
@@ -69,20 +69,6 @@ static void end_usage_region(
   psx_decl_end_lvar_usage_region_in(adapter->local_registry, region);
 }
 
-static void register_goto(
-    void *context, char *name, int name_len, token_t *token) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
-  psx_ctx_register_goto_ref_in(
-      adapter->semantic_context, name, name_len, token);
-}
-
-static void register_label(
-    void *context, char *name, int name_len, token_t *token) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
-  psx_ctx_register_label_def_in(
-      adapter->semantic_context, name, name_len, token);
-}
-
 static psx_statement_syntax_context_t statement_syntax_context(
     psx_legacy_statement_syntax_adapter_t *adapter) {
   return (psx_statement_syntax_context_t){
@@ -91,15 +77,13 @@ static psx_statement_syntax_context_t statement_syntax_context(
       .name_classifier = adapter->name_classifier,
       .parse_expression = parse_expression,
       .parse_local_declaration = parse_local_declaration,
-      .parse_case_constant = parse_case_constant,
+      .parse_case_expression = parse_case_expression,
       .enter_block_scope = enter_block_scope,
       .leave_block_scope = leave_block_scope,
       .enter_local_scope = enter_local_scope,
       .leave_local_scope = leave_local_scope,
       .begin_usage_region = begin_usage_region,
       .end_usage_region = end_usage_region,
-      .register_goto = register_goto,
-      .register_label = register_label,
   };
 }
 

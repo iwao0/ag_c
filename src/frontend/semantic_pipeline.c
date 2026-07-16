@@ -78,11 +78,11 @@ static int analyze_function_in_contexts(
     return 0;
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
-  psx_validate_control_flow(
-      semantic_context, function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       function, current_function, fallback_diag_tok);
+  psx_validate_control_flow(
+      semantic_context, function, fallback_diag_tok);
   psx_require_available_semantic_tree_types_interned(
       semantic_context, ps_ctx_diagnostics(semantic_context), function,
       fallback_diag_tok);

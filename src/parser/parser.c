@@ -729,7 +729,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 /* 関数本体の `{ ... }` を 1 つの node_block_t にパースする。
- * 既に opening `{` は呼出側が consume 済みの前提。block scope を enter / leave し、
+ * 既に opening `{` は呼出側が consume 済みの前提。
  * 後段 semantic pass 用に各 statement の診断 token / usage region を保持する。
  * pragma pack マーカーは透過に消費する。 */
 static node_block_t *parse_funcdef_body_block(
@@ -739,7 +739,6 @@ static node_block_t *parse_funcdef_body_block(
     psx_parser_runtime_context_t *runtime_context,
     tokenizer_context_t *tokenizer_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  ps_ctx_enter_block_scope_in(semantic_context);
   ps_parser_enter_recovery_block_in(runtime_context);
   node_block_t *body = arena_alloc_in(
       ps_parser_runtime_arena(runtime_context), sizeof(node_block_t));
@@ -770,7 +769,6 @@ static node_block_t *parse_funcdef_body_block(
     if (ps_parser_has_recoverable_syntax_error_in(runtime_context)) {
       body->body[i] = NULL;
       ps_parser_leave_recovery_block_in(runtime_context);
-      ps_ctx_leave_block_scope_in(semantic_context);
       return NULL;
     }
     if (body->body[i]) {
@@ -781,7 +779,6 @@ static node_block_t *parse_funcdef_body_block(
   }
   body->body[i] = NULL;
   ps_parser_leave_recovery_block_in(runtime_context);
-  ps_ctx_leave_block_scope_in(semantic_context);
   return body;
 }
 
@@ -818,7 +815,6 @@ node_t *ps_parse_function_definition_body(
     runtime->recovery_block_depth = 0;
     return NULL;
   }
-  psx_ctx_validate_goto_refs_in(semantic_context);
   function->lvars = ps_decl_get_locals_in(stream->local_registry);
   ps_decl_set_current_funcname_in(stream->local_registry, NULL, 0);
   return (node_t *)function;

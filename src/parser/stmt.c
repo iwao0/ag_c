@@ -374,11 +374,11 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
       context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
-  if (!context->syntax.parse_case_constant) {
-    require_syntax_service(context, "parse_case_constant");
+  if (!context->syntax.parse_case_expression) {
+    require_syntax_service(context, "parse_case_expression");
     return NULL;
   }
-  node->val = context->syntax.parse_case_constant(
+  node->base.lhs = context->syntax.parse_case_expression(
       context->syntax.context);
   tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
@@ -428,11 +428,9 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   node_jump_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_jump_t));
   node->base.kind = ND_GOTO;
+  node->base.tok = goto_tok;
   node->name = ident->str;
   node->name_len = ident->len;
-  if (context->syntax.register_goto)
-    context->syntax.register_goto(
-        context->syntax.context, ident->str, ident->len, goto_tok);
   tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
 }
@@ -443,12 +441,9 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
   node_jump_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_jump_t));
   node->base.kind = ND_LABEL;
+  node->base.tok = (token_t *)ident;
   node->name = ident->str;
   node->name_len = ident->len;
-  if (context->syntax.register_label)
-    context->syntax.register_label(
-        context->syntax.context, ident->str, ident->len,
-        curtok(context));
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }

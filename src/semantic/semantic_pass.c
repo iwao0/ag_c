@@ -941,6 +941,27 @@ static void semantic_transform_node(
           diagnostics, node, current_func, fallback_diag_tok);
       semantic_transform_node(node->lhs, traversal);
       break;
+    case ND_CASE: {
+      node_case_t *case_node = (node_case_t *)node;
+      semantic_transform_node(node->lhs, traversal);
+      int is_constant = 1;
+      long long value = psx_eval_const_int(node->lhs, &is_constant);
+      if (!is_constant) {
+        ps_diag_ctx_in(
+            diagnostics,
+            node->tok ? node->tok : (token_t *)fallback_diag_tok,
+            "case",
+            diag_message_for_in(
+                diagnostics,
+                DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+            "case label");
+      }
+      case_node->val = value;
+      case_node->has_resolved_value = 1;
+      node->lhs = NULL;
+      semantic_transform_node(node->rhs, traversal);
+      break;
+    }
     case ND_BLOCK:
       semantic_transform_node_array(
           ((node_block_t *)node)->body, traversal);

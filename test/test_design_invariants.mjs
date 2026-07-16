@@ -2604,6 +2604,10 @@ if (!/ps_find_global_var_in\s*\(/.test(
 }
 const parserSource = await readFile("src/parser/parser.c", "utf8");
 const statementParserSource = await readFile("src/parser/stmt.c", "utf8");
+const statementControlFlowValidationSource = await readFile(
+  "src/semantic/control_flow_validation.c",
+  "utf8",
+);
 const expressionParserSource = await readFile("src/parser/expr.c", "utf8");
 const initializerSyntaxSource = await readFile(
   "src/parser/initializer_syntax.c",
@@ -3055,6 +3059,7 @@ if (!/psx_expression_syntax_context_t\s+syntax\s*;/.test(
     ) ||
     !/\bpsx_expr_expr_syntax\s*\(/.test(parserExpressionSource) ||
     !/\bpsx_expr_assign_syntax\s*\(/.test(parserExpressionSource) ||
+    !/\bpsx_expr_conditional_syntax\s*\(/.test(parserExpressionSource) ||
     !/psx_name_classifier_t\s+name_classifier\s*;/.test(
       expressionSyntaxContextSource,
     ) ||
@@ -3062,6 +3067,9 @@ if (!/psx_expression_syntax_context_t\s+syntax\s*;/.test(
       expressionSyntaxAdapterSource,
     ) ||
     !/psx_expr_assign_syntax\s*\(\s*&syntax_context\s*\)/.test(
+      expressionSyntaxAdapterSource,
+    ) ||
+    !/psx_expr_conditional_syntax\s*\(\s*&syntax_context\s*\)/.test(
       expressionSyntaxAdapterSource,
     )) {
   throw new Error(
@@ -3098,11 +3106,38 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
     ) ||
     !/syntax\.parse_expression/.test(statementParserSource) ||
     !/syntax\.parse_local_declaration/.test(statementParserSource) ||
-    !/syntax\.parse_case_constant/.test(statementParserSource) ||
-    !/syntax\.register_goto/.test(statementParserSource) ||
-    !/syntax\.register_label/.test(statementParserSource)) {
+    !/syntax\.parse_case_expression/.test(statementParserSource) ||
+    /syntax\.parse_case_constant/.test(statementParserSource) ||
+    /\bpsx_parse_case_const_expr_in_contexts\s*\(/.test(
+      statementSyntaxAdapterSource,
+    ) ||
+    /#include\s+"enum_const\.h"/.test(statementSyntaxAdapterSource) ||
+    /syntax\.register_goto/.test(statementParserSource) ||
+    /syntax\.register_label/.test(statementParserSource) ||
+    /\bpsx_ctx_(?:register_goto_ref|register_label_def)\s*\(/.test(
+      statementSyntaxAdapterSource,
+    )) {
   throw new Error(
     "statement parser core must receive a syntax-only context with NameClassifier while semantic registries remain isolated in the compatibility adapter",
+  );
+}
+if (/\bps_ctx_(?:enter|leave)_block_scope_in\s*\(/.test(parserSource) ||
+    /\bpsx_ctx_validate_goto_refs_in\s*\(/.test(parserSource) ||
+    !/\bvalidate_function_jumps\s*\(/.test(
+      statementControlFlowValidationSource,
+    )) {
+  throw new Error(
+    "function-body parsing must not mutate semantic scopes or jump registries",
+  );
+}
+if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?has_resolved_value\s*=\s*1[^]*?node->lhs\s*=\s*NULL/.test(
+      semanticPassSource,
+    ) ||
+    !/case\s+ND_CASE:[^]*?!case_node->has_resolved_value[^]*?PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
+      resolvedTreeMaterialization,
+    )) {
+  throw new Error(
+    "case labels must remain Syntax expressions until semantic resolution and enter Typed HIR only as resolved constants",
   );
 }
 if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(

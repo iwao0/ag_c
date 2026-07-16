@@ -46,6 +46,19 @@ typedef struct {
   psx_automatic_local_declaration_pipeline_result_t automatic_result;
 } psx_local_declaration_application_t;
 
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
+  const ag_compilation_options_t *options;
+} psx_local_declaration_resolver_t;
+
+static int resolve_local_declarations_in_slot(
+    psx_local_declaration_resolver_t *resolver, node_t **slot);
+static int resolve_initializer_declarations(
+    psx_local_declaration_resolver_t *resolver, node_t **slot);
+
 static ag_diagnostic_context_t *application_diagnostics(
     const psx_local_declaration_application_t *application) {
   return ps_ctx_diagnostics(application->semantic_context);
@@ -275,13 +288,14 @@ static void abort_declaration(void *declaration_context) {
   free(declaration_context);
 }
 
-node_t *psx_apply_local_declaration_syntax_in_contexts(
+static node_t *apply_local_declaration_syntax(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_parsed_local_declaration_t *declaration) {
+    psx_parsed_local_declaration_t *declaration,
+    psx_local_declaration_resolver_t *resolver) {
   if (!semantic_context || !global_registry || !local_registry ||
       !lowering_context || !options || !declaration)
     return NULL;
@@ -308,22 +322,29 @@ node_t *psx_apply_local_declaration_syntax_in_contexts(
     begin_declarator(
         application, &declaration->declarators[i],
         &declaration->initializers[i]);
+    if (resolver && declaration->initializers[i].has_initializer &&
+        !resolve_initializer_declarations(
+            resolver, &declaration->initializers[i].value)) {
+      abort_declaration(application);
+      return NULL;
+    }
     finish_declarator(
         application, &declaration->initializers[i]);
   }
   return finish_declaration(application);
 }
 
-typedef struct {
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
-  psx_lowering_context_t *lowering_context;
-  const ag_compilation_options_t *options;
-} psx_local_declaration_resolver_t;
-
-static int resolve_local_declarations_in_slot(
-    psx_local_declaration_resolver_t *resolver, node_t **slot);
+node_t *psx_apply_local_declaration_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    psx_parsed_local_declaration_t *declaration) {
+  return apply_local_declaration_syntax(
+      semantic_context, global_registry, local_registry,
+      lowering_context, options, declaration, NULL);
+}
 
 static int resolve_type_name_declarations(
     psx_local_declaration_resolver_t *resolver,
@@ -448,13 +469,14 @@ static int resolve_local_declarations_in_slot(
         ps_local_registry_set_current_usage_region_in(
             resolver->local_registry, node->usage_region);
     node_t *replacement =
-        psx_apply_local_declaration_syntax_in_contexts(
+        apply_local_declaration_syntax(
             resolver->semantic_context,
             resolver->global_registry,
             resolver->local_registry,
             resolver->lowering_context,
             resolver->options,
-            ((node_local_declaration_t *)node)->declaration);
+            ((node_local_declaration_t *)node)->declaration,
+            resolver);
     ps_local_registry_set_current_usage_region_in(
         resolver->local_registry, previous_usage_region);
     if (!replacement) return 0;

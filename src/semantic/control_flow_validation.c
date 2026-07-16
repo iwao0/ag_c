@@ -5,8 +5,10 @@
 #include "../parser/diag.h"
 #include "../parser/dynarray.h"
 #include "../parser/semantic_ctx.h"
+#include "tree_walk.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
   long long *case_values;
@@ -14,6 +16,109 @@ typedef struct {
   int capacity;
   int has_default;
 } switch_label_context_t;
+
+typedef struct {
+  ag_diagnostic_context_t *diagnostics;
+  const token_t *fallback;
+  const node_jump_t **labels;
+  int label_count;
+  int label_capacity;
+  const node_jump_t **gotos;
+  int goto_count;
+  int goto_capacity;
+} function_jump_context_t;
+
+static int append_jump(
+    ag_diagnostic_context_t *diagnostics,
+    const node_jump_t ***items, int *count, int *capacity,
+    const node_jump_t *jump) {
+  if (*count >= *capacity) {
+    *capacity = pda_next_cap_in(
+        diagnostics, *capacity, *count + 1);
+    *items = pda_xreallocarray_in(
+        diagnostics, (void *)*items, (size_t)*capacity,
+        sizeof(**items));
+  }
+  (*items)[(*count)++] = jump;
+  return 1;
+}
+
+static int collect_function_jump(
+    const node_t *node, void *user) {
+  function_jump_context_t *context = user;
+  if (node->kind == ND_LABEL) {
+    const node_jump_t *label = (const node_jump_t *)node;
+    for (int i = 0; i < context->label_count; i++) {
+      const node_jump_t *existing = context->labels[i];
+      if (existing->name_len == label->name_len &&
+          memcmp(
+              existing->name, label->name,
+              (size_t)label->name_len) == 0) {
+        ps_diag_duplicate_with_name_in(
+            context->diagnostics,
+            label->base.tok
+                ? label->base.tok
+                : (token_t *)context->fallback,
+            diag_text_for_in(
+                context->diagnostics, DIAG_TEXT_LABEL),
+            label->name, label->name_len);
+      }
+    }
+    return append_jump(
+        context->diagnostics, &context->labels,
+        &context->label_count, &context->label_capacity, label);
+  }
+  if (node->kind == ND_GOTO) {
+    return append_jump(
+        context->diagnostics, &context->gotos,
+        &context->goto_count, &context->goto_capacity,
+        (const node_jump_t *)node);
+  }
+  return 1;
+}
+
+static void validate_function_jumps(
+    ag_diagnostic_context_t *diagnostics, const node_t *function,
+    const token_t *fallback) {
+  function_jump_context_t context = {
+      .diagnostics = diagnostics,
+      .fallback = fallback,
+  };
+  if (!psx_walk_semantic_tree(
+          function, collect_function_jump, &context)) {
+    free(context.labels);
+    free(context.gotos);
+    return;
+  }
+  for (int i = 0; i < context.goto_count; i++) {
+    const node_jump_t *jump = context.gotos[i];
+    int found = 0;
+    for (int j = 0; j < context.label_count; j++) {
+      const node_jump_t *label = context.labels[j];
+      if (label->name_len == jump->name_len &&
+          memcmp(
+              label->name, jump->name,
+              (size_t)jump->name_len) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      ps_diag_ctx_in(
+          diagnostics,
+          jump->base.tok
+              ? jump->base.tok
+              : (token_t *)fallback,
+          "goto",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
+          jump->name_len, jump->name);
+    }
+  }
+  free(context.labels);
+  free(context.gotos);
+}
 
 static void validate_node(
     ag_diagnostic_context_t *diagnostics, node_t *node,
@@ -270,7 +375,12 @@ static void validate_node(
 void psx_validate_control_flow(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
-  validate_node(ps_ctx_diagnostics(semantic_context), node,
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  if (node && node->kind == ND_FUNCDEF)
+    validate_function_jumps(
+        diagnostics, node, fallback_diag_tok);
+  validate_node(diagnostics, node,
                 fallback_diag_tok, 0, 0);
 }
 

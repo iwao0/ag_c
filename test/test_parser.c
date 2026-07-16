@@ -44,6 +44,7 @@
 #include "../src/semantic/alignof_query_resolution.h"
 #include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/constant_expression.h"
+#include "../src/semantic/control_flow_validation.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
 #include "../src/semantic/function_declaration_resolution.h"
@@ -6697,6 +6698,61 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(analyzed_body->body[1]->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, analyzed_body->body[1]->source_op);
   ASSERT_EQ(ND_NUM, analyzed_body->body[1]->rhs->kind);
+}
+
+static void test_case_label_syntax_hir_boundary() {
+  printf("test_case_label_syntax_hir_boundary...\n");
+  const char *source =
+      "int __case_label_boundary(void) { "
+      "enum E { A = 2 }; "
+      "switch (4) { case A * 2: return 4; default: return 0; } }";
+
+  reset_test_translation_unit_state();
+  psx_parser_stream_t stream = {0};
+  begin_test_parser_stream(
+      &stream, NULL, tk_tokenize((char *)source), NULL);
+  psx_parsed_toplevel_item_t item;
+  ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
+  ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
+  node_t *syntax_function = parse_raw_function_item(&stream, &item);
+  ASSERT_TRUE(syntax_function != NULL);
+  node_block_t *syntax_body =
+      as_block(as_function_definition(syntax_function)->base.rhs);
+  ASSERT_EQ(ND_LOCAL_DECLARATION, syntax_body->body[0]->kind);
+  ASSERT_EQ(ND_SWITCH, syntax_body->body[1]->kind);
+  node_block_t *switch_body = as_block(syntax_body->body[1]->rhs);
+  node_case_t *syntax_case = as_case(switch_body->body[0]);
+  node_t *syntax_expression = syntax_case->base.lhs;
+  ASSERT_TRUE(syntax_expression != NULL);
+  ASSERT_EQ(ND_MUL, syntax_expression->kind);
+  ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
+  ASSERT_EQ(0, syntax_case->has_resolved_value);
+  ASSERT_TRUE(syntax_expression->resolution_state == NULL);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  size_t checkpoint = psx_hir_module_node_count(hir);
+  psx_hir_node_id_t hir_root =
+      resolve_test_function_to_hir(
+          syntax_function, syntax_function->tok);
+  ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(syntax_case->base.lhs == syntax_expression);
+  ASSERT_EQ(ND_MUL, syntax_expression->kind);
+  ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
+  ASSERT_EQ(0, syntax_case->has_resolved_value);
+  ASSERT_TRUE(syntax_expression->resolution_state == NULL);
+
+  int found_resolved_case = 0;
+  for (size_t i = checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (node && psx_hir_node_kind(node) == PSX_HIR_CASE &&
+        psx_hir_node_integer_value(node) == 4)
+      found_resolved_case = 1;
+  }
+  ASSERT_TRUE(found_resolved_case);
+  ps_parser_stream_end(&stream);
 }
 
 static void test_toplevel_static_assert_frontend_boundary() {
@@ -21819,7 +21875,6 @@ static void test_semantic_context_isolation() {
       first, enum_name, 12, &value));
   ASSERT_EQ(11, value);
 
-  char streamed_label_name[] = "streamed_label";
   ps_ctx_reset_function_scope_in(second);
   psx_typedef_declaration_resolution_t streamed_typedef_resolution;
   psx_resolve_typedef_declaration(
@@ -21834,15 +21889,13 @@ static void test_semantic_context_isolation() {
       &streamed_typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
             streamed_typedef_resolution.status);
-  psx_ctx_register_goto_ref_in(
-      second, streamed_label_name, 14, NULL);
   psx_parser_stream_t parser_stream = {0};
   ps_parser_stream_begin_in_contexts(
       &parser_stream, second, test_global_registry(),
       test_local_registry(),
       ag_compilation_session_parser_runtime_context(test_suite_session), NULL,
       tk_tokenize((char *)
-          "{ StreamType value = 0; "
+          "{ StreamType value = 0; goto streamed_label; "
           "{ streamed_label: return value; } }"),
       NULL);
   node_function_definition_t parsed_function = {0};
@@ -21880,7 +21933,8 @@ static void test_semantic_context_isolation() {
   parsed_function.lvars =
       ps_decl_get_locals_in(test_local_registry());
   ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
-  psx_ctx_validate_goto_refs_in(second);
+  psx_validate_control_flow(
+      second, parsed_function_syntax, NULL);
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
   ps_parser_stream_end(&parser_stream);
@@ -22806,6 +22860,7 @@ int main() {
   test_implicit_conversion_hir_boundary();
   test_compound_assignment_semantic_lowering_boundary();
   test_translation_unit_frontend_boundary();
+  test_case_label_syntax_hir_boundary();
   test_toplevel_static_assert_frontend_boundary();
   test_block_static_assert_syntax_hir_boundary();
   test_toplevel_declaration_frontend_boundary();

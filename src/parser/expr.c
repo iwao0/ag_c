@@ -312,6 +312,14 @@ node_t *psx_expr_assign_syntax(
   return assign_ctx(&ctx);
 }
 
+node_t *psx_expr_conditional_syntax(
+    const psx_expression_syntax_context_t *syntax_context) {
+  if (!syntax_context || !syntax_context->runtime_context)
+    return NULL;
+  expr_parse_ctx_t ctx = expr_parse_ctx_default(syntax_context);
+  return conditional_ctx(&ctx);
+}
+
 static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
   enter_expr_nest_or_die(ctx);
   node_t *node = assign_ctx(ctx);

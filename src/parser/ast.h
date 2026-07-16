@@ -254,7 +254,8 @@ struct node_ctrl_t {
 typedef struct node_case_t node_case_t;
 struct node_case_t {
   node_t base;
-  long long val;    // case 値
+  long long val;    // semantic pass で解決した case 値
+  int has_resolved_value;
   int label_id;     // codegenで使うラベル番号
 };
 

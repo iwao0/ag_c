@@ -1,5 +1,6 @@
 #include "local_declaration_syntax.h"
 
+#include "aggregate_member_syntax.h"
 #include "arena.h"
 #include "diag.h"
 #include "function_parameter_syntax.h"
@@ -91,6 +92,31 @@ static int append_declarator_slot(
 
 static void record_decl_specifier_binding_events(
     const psx_parsed_decl_specifier_t *specifier,
+    const psx_name_classifier_t *name_classifier);
+
+static void record_declarator_resolution_events(
+    const psx_parsed_declarator_t *declarator,
+    const psx_name_classifier_t *name_classifier);
+
+static void record_aggregate_body_binding_events(
+    const psx_parsed_aggregate_body_t *body,
+    const psx_name_classifier_t *name_classifier) {
+  for (int i = 0; body && i < body->item_count; i++) {
+    const psx_parsed_aggregate_item_t *item = &body->items[i];
+    if (item->kind != PSX_PARSED_AGGREGATE_MEMBER_DECLARATION)
+      continue;
+    const psx_parsed_aggregate_member_declaration_t *declaration =
+        &item->value.member_declaration;
+    record_decl_specifier_binding_events(
+        &declaration->specifier, name_classifier);
+    for (int d = 0; d < declaration->declarator_count; d++)
+      record_declarator_resolution_events(
+          &declaration->declarators[d], name_classifier);
+  }
+}
+
+static void record_decl_specifier_binding_events(
+    const psx_parsed_decl_specifier_t *specifier,
     const psx_name_classifier_t *name_classifier) {
   if (!specifier ||
       specifier->source != PSX_PARSED_DECL_TYPE_TAG ||
@@ -99,8 +125,12 @@ static void record_decl_specifier_binding_events(
   ps_name_classifier_record_binding_event(name_classifier);
   if (specifier->tag_action.kind != TK_ENUM ||
       specifier->tag_action.action != PSX_PARSED_TAG_DEFINITION ||
-      !specifier->tag_action.enum_body)
+      !specifier->tag_action.enum_body) {
+    if (specifier->tag_action.action == PSX_PARSED_TAG_DEFINITION)
+      record_aggregate_body_binding_events(
+          specifier->tag_action.aggregate_body, name_classifier);
     return;
+  }
   for (int i = 0;
        i < specifier->tag_action.enum_body->member_count; i++)
     ps_name_classifier_record_binding_event(name_classifier);
