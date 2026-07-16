@@ -12,6 +12,10 @@ static ir_abi_param_info_t abi_param_unknown(void) {
   };
 }
 
+static int aggregate_has_direct_integer_width(int size) {
+  return size == 1 || size == 2 || size == 4 || size == 8;
+}
+
 ir_abi_param_info_t ir_abi_classify_builtin_param(
     const ir_abi_type_context_t *context,
     const char *name, int name_len, int param_idx) {
@@ -70,10 +74,9 @@ ir_abi_param_info_t ir_abi_classify_type_id(
       return info;
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      info.type = info.source_size > 0 && info.source_size <= 4
-                      ? IR_TY_I32
-                  : info.source_size == 8 ? IR_TY_I64
-                                          : IR_TY_PTR;
+      info.type = aggregate_has_direct_integer_width(info.source_size)
+                      ? (info.source_size == 8 ? IR_TY_I64 : IR_TY_I32)
+                      : IR_TY_PTR;
       info.param_class = IR_ABI_PARAM_AGGREGATE;
       return info;
     case PSX_TYPE_FLOAT:

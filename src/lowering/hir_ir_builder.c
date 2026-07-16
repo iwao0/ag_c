@@ -2155,6 +2155,71 @@ static ir_val_t build_aggregate_assignment(
   return destination;
 }
 
+static int copy_aggregate_value_to(
+    hir_ir_context_t *context, const psx_hir_node_t *source_node,
+    ir_val_t destination, ir_abi_param_info_t result_type) {
+  ir_abi_param_info_t source_type = classify_node_type(
+      context, source_node);
+  if (destination.type != IR_TY_PTR ||
+      result_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      source_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      result_type.source_size <= 0 ||
+      source_type.source_size != result_type.source_size) {
+    unsupported_expr(context);
+    return 0;
+  }
+  ir_val_t source = aggregate_value_address(context, source_node);
+  if (context->status != IR_HIR_BUILD_OK || source.type != IR_TY_PTR)
+    return 0;
+  ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+  if (!copy) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  copy->src1 = destination;
+  copy->src2 = source;
+  copy->alloca_size = result_type.source_size;
+  return append_instruction(context, copy);
+}
+
+static ir_val_t build_aggregate_ternary_address(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t result_type) {
+  const psx_hir_node_t *condition = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *if_true = child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  const psx_hir_node_t *if_false = child_for_edge(
+      context, node, PSX_HIR_EDGE_ELSE, 0);
+  if (!condition || !if_true || !if_false ||
+      !is_indirect_aggregate_abi_type(result_type))
+    return unsupported_expr(context);
+  int temporary = allocate_scalar_temp(
+      context, result_type.source_size,
+      result_type.source_size >= 8 ? 8 : 4);
+  if (temporary < 0) return ir_val_none();
+  ir_val_t destination = ir_val_vreg(temporary, IR_TY_PTR);
+  ir_val_t condition_value = build_expr(context, condition);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_block_t *true_block = new_block(context);
+  ir_block_t *false_block = new_block(context);
+  ir_block_t *merge_block = new_block(context);
+  if (!true_block || !false_block || !merge_block ||
+      !emit_conditional_branch(
+          context, condition_value, true_block, false_block) ||
+      !switch_to_block(context, true_block) ||
+      !copy_aggregate_value_to(
+          context, if_true, destination, result_type) ||
+      !emit_branch(context, merge_block) ||
+      !switch_to_block(context, false_block) ||
+      !copy_aggregate_value_to(
+          context, if_false, destination, result_type) ||
+      !emit_branch(context, merge_block) ||
+      !switch_to_block(context, merge_block))
+    return ir_val_none();
+  return destination;
+}
+
 static ir_val_t aggregate_value_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node) return unsupported_expr(context);
@@ -2167,6 +2232,9 @@ static ir_val_t aggregate_value_address(
         context, node, classify_node_type(context, node));
   if (kind == PSX_HIR_ASSIGN)
     return build_aggregate_assignment(
+        context, node, classify_node_type(context, node));
+  if (kind == PSX_HIR_TERNARY)
+    return build_aggregate_ternary_address(
         context, node, classify_node_type(context, node));
   if (kind == PSX_HIR_COMMA) {
     const psx_hir_node_t *left = child_for_edge(
@@ -2567,7 +2635,8 @@ static ir_val_t build_expr(
     psx_hir_node_kind_t kind = psx_hir_node_kind(node);
     if (kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL ||
         kind == PSX_HIR_DEREF || kind == PSX_HIR_CALL ||
-        kind == PSX_HIR_ASSIGN || kind == PSX_HIR_COMMA)
+        kind == PSX_HIR_ASSIGN || kind == PSX_HIR_COMMA ||
+        kind == PSX_HIR_TERNARY)
       return aggregate_value_address(context, node);
     return unsupported_expr(context);
   }

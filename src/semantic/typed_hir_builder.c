@@ -205,6 +205,49 @@ static int canonical_type_exists(
          ps_ctx_type_by_id_in(builder->semantic_context, type.type_id) != NULL;
 }
 
+static psx_qual_type_t child_qual_type(
+    const hir_builder_t *builder, const hir_children_t *children,
+    psx_hir_edge_kind_t edge) {
+  if (!builder || !children) {
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  for (size_t i = 0; i < children->count; i++) {
+    if (children->edges[i] != edge) continue;
+    const psx_hir_node_t *child = psx_hir_module_lookup(
+        builder->module, children->items[i]);
+    if (child) return psx_hir_node_qual_type(child);
+  }
+  return (psx_qual_type_t){
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+}
+
+static int derive_structural_expression_type(
+    hir_builder_t *builder, const node_t *source,
+    const hir_children_t *children, psx_hir_node_spec_t *spec) {
+  psx_qual_type_t derived = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  switch (source->kind) {
+    case ND_COMMA:
+      derived = child_qual_type(
+          builder, children, PSX_HIR_EDGE_RHS);
+      break;
+    case ND_ASSIGN:
+      derived = child_qual_type(
+          builder, children, PSX_HIR_EDGE_LHS);
+      break;
+    default:
+      return 1;
+  }
+  if (!canonical_type_exists(builder, derived)) {
+    set_failure(
+        builder, PSX_TYPED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return 0;
+  }
+  spec->qual_type = derived;
+  return 1;
+}
+
 static int attach_global_symbol(
     hir_builder_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
@@ -476,6 +519,14 @@ static psx_hir_node_id_t build_node(
   spec.children = children.items;
   spec.child_edges = children.edges;
   spec.child_count = children.count;
+  if (spec.role == PSX_HIR_ROLE_EXPRESSION &&
+      !derive_structural_expression_type(
+          builder, source, &children, &spec)) {
+    free(children.items);
+    free(children.edges);
+    free_vla_payload(&spec);
+    return PSX_HIR_NODE_ID_INVALID;
+  }
   psx_hir_node_id_t result = psx_hir_module_add_node(
       builder->module, &spec);
   free(children.items);
