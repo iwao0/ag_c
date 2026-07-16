@@ -490,7 +490,7 @@ node_t *lower_source_cast_expression(
   if (!lowering_context || !local_registry || !node ||
       node->kind != ND_CAST || !node->is_source_cast || !options)
     return node;
-  const psx_type_t *target = node->type;
+  const psx_type_t *target = ps_node_get_type(node);
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
       lowering_context, local_registry, operand,
@@ -514,11 +514,13 @@ node_t *lower_aggregate_address_expression(
   node_t *value = node->lhs;
   token_t *source_tok = node->tok;
 
-  if (value->kind == ND_CAST && value->type &&
-      ps_type_is_tag_aggregate(value->type) && value->lhs) {
+  const psx_type_t *value_type = ps_node_get_type(value);
+  if (value->kind == ND_CAST && value_type &&
+      ps_type_is_tag_aggregate(value_type) && value->lhs) {
     node_t *address = ps_node_new_unary_addr_for_in(
         ps_lowering_arena(lowering_context), value->lhs);
-    if (node->type) ps_node_bind_type(address, node->type);
+    const psx_type_t *address_type = ps_node_get_type(node);
+    if (address_type) ps_node_bind_type(address, address_type);
     if (!address->tok) address->tok = source_tok;
     return address;
   }

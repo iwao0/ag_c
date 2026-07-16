@@ -190,6 +190,13 @@ if (/#include\s+"\.\.\/parser\/(?:tag_public|tag_member_public)\.h"/.test(
     "semantic, lowering, and frontend layers must not depend on parser member compatibility headers",
   );
 }
+if (/\b(?:node|source|src|value|literal|selection|query|callee)->(?:type|qual_type|type_state)\b|->base\.(?:type|qual_type|type_state)\b/.test(
+      nonParserTypeConsumerSource,
+    )) {
+  throw new Error(
+    "semantic, lowering, and frontend layers must access node type state through node APIs",
+  );
+}
 const removedContextFreeSemanticApis = [
   "psx_build_decl_specifier_type",
   "psx_resolve_decl_specifier_syntax",
@@ -2845,13 +2852,30 @@ if (legacyRecursiveTypeMetadata.length) {
 }
 
 const astSource = await readFile("src/parser/ast.h", "utf8");
+const nodeResolutionStateSource = await readFile(
+  "src/parser/node_resolution_state.h",
+  "utf8",
+);
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
-    !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
-    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(nodeStruct[1]) ||
+    !/\bstruct\s+psx_node_resolution_state_t\s*\*\s*resolution_state\s*;/.test(
+      nodeStruct[1],
+    ) ||
+    /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
+    /\bpsx_qual_type_t\s+qual_type\s*;/.test(nodeStruct[1]) ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
-    "node_t value identity must retain both its canonical type view and QualType",
+    "syntax node_t must keep semantic type identity in separate resolution state",
+  );
+}
+if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(
+      nodeResolutionStateSource,
+    )) {
+  throw new Error(
+    "node resolution state must retain both its canonical type view and QualType",
   );
 }
 const numberNodeStruct = astSource.match(
@@ -3616,13 +3640,13 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bpsx_walk_semantic_tree_mut\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/node->qual_type\s*=\s*type\s*;/.test(
+    !/\bps_node_set_qual_type_identity\s*\(\s*node\s*,\s*type\s*\)/.test(
       semanticTypeIdentityPassSource,
     ) ||
     !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       semanticInvariantsSource,
     ) ||
-    !/node->type\s*!=\s*ps_ctx_type_by_id_in\s*\(/.test(
+    !/node_type\s*!=\s*ps_ctx_type_by_id_in\s*\(/.test(
       semanticInvariantsSource,
     ) ||
     !/\bpsx_finalize_semantic_tree_types\s*\(/.test(
@@ -3645,7 +3669,7 @@ if (!/\bps_function_definition_return_type\s*\(/.test(
     !/return\s+function->signature->base\s*;/.test(nodeUtilsSource) ||
     !functionNodeBinding ||
     /ps_node_bind_type\s*\(/.test(functionNodeBinding[1]) ||
-    !/node->type\s*!=\s*NULL/.test(semanticInvariantsSource)) {
+    !/node_type\s*!=\s*NULL/.test(semanticInvariantsSource)) {
   throw new Error(
     "function definition return types must be owned only by the canonical signature",
   );

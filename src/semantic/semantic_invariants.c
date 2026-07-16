@@ -4,6 +4,7 @@
 
 #include "../diag/diag.h"
 #include "../parser/node_type_public.h"
+#include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
 #include "tree_walk.h"
 #include "type_identity_pass.h"
@@ -107,25 +108,26 @@ static int validate_node(const node_t *node, void *user) {
     return fail(
         failure,
         PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX, node);
-  if (role == NODE_SEMANTIC_ROLE_TYPED_EXPRESSION && !node->type)
+  const psx_type_t *node_type = ps_node_get_type(node);
+  if (role == NODE_SEMANTIC_ROLE_TYPED_EXPRESSION && !node_type)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
-  if (node->type && !ps_type_is_well_formed(node->type))
+  if (node_type && !ps_type_is_well_formed(node_type))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
-  if (semantic_context && node->type) {
+  if (semantic_context && node_type) {
     psx_qual_type_t actual = ps_node_qual_type(node);
     if (actual.type_id == PSX_TYPE_ID_INVALID) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
     }
-    if (node->type != ps_ctx_type_by_id_in(
-                          semantic_context, actual.type_id)) {
+    if (node_type != ps_ctx_type_by_id_in(
+                         semantic_context, actual.type_id)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT, node);
     }
   }
   if (node->kind == ND_FUNCREF &&
-      (node->type->kind != PSX_TYPE_POINTER || !node->type->base ||
-       node->type->base->kind != PSX_TYPE_FUNCTION)) {
+      (node_type->kind != PSX_TYPE_POINTER || !node_type->base ||
+       node_type->base->kind != PSX_TYPE_FUNCTION)) {
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
   }
   if (node->kind == ND_FUNCDEF) {
@@ -134,7 +136,7 @@ static int validate_node(const node_t *node, void *user) {
     if (!function->signature ||
         function->signature->kind != PSX_TYPE_FUNCTION ||
         !ps_type_is_well_formed(function->signature) ||
-        node->type != NULL) {
+        node_type != NULL) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
@@ -157,15 +159,17 @@ static int validate_node(const node_t *node, void *user) {
   if (node->kind == ND_FUNCALL) {
     const node_function_call_t *call =
         (const node_function_call_t *)node;
+    const psx_type_t *callee_type =
+        call->callee ? ps_node_get_type(call->callee) : NULL;
     if (call->callee &&
-        !ps_type_callable_function(call->callee->type)) {
+        !ps_type_callable_function(callee_type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
     if (call->callee_type) {
       if (call->callee_type->kind != PSX_TYPE_FUNCTION ||
           !ps_type_is_well_formed(call->callee_type) ||
-          node->type != call->callee_type->base) {
+          node_type != call->callee_type->base) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
@@ -185,18 +189,18 @@ static int validate_node(const node_t *node, void *user) {
         }
       }
     } else if (!node->is_implicit_func_decl ||
-               !is_implicit_function_result_type(node->type)) {
+               !is_implicit_function_result_type(node_type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
   }
-  int runtime_stride_off =
-      node->type_state.vla_runtime.row_stride_frame_off;
-  int runtime_strides_remaining =
-      node->type_state.vla_runtime.strides_remaining;
+  psx_vla_runtime_view_t runtime_view =
+      ps_node_vla_runtime_view(node);
+  int runtime_stride_off = runtime_view.row_stride_frame_off;
+  int runtime_strides_remaining = runtime_view.strides_remaining;
   if ((runtime_stride_off != 0 &&
-       (runtime_stride_off < 0 || !node->type ||
-        !ps_type_contains_vla_array(node->type))) ||
+       (runtime_stride_off < 0 || !node_type ||
+        !ps_type_contains_vla_array(node_type))) ||
       (runtime_stride_off == 0 && runtime_strides_remaining != 0) ||
       runtime_strides_remaining < 0) {
     return fail(

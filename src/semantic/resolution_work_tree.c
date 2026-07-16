@@ -5,6 +5,7 @@
 
 #include "../parser/arena.h"
 #include "../parser/ast.h"
+#include "../parser/node_utils.h"
 
 static size_t node_storage_size(const node_t *node) {
   switch (node->kind) {
@@ -154,6 +155,14 @@ static node_t *clone_node(
   node_t *copy = arena_alloc_in(arena_context, size);
   if (!copy) return NULL;
   memcpy(copy, source, size);
+  copy->resolution_state = NULL;
+  if (!ps_node_prepare_resolution_state_in(
+          arena_context, copy))
+    return NULL;
+  if (source->resolution_state &&
+      !ps_node_copy_resolution_state_in(
+          arena_context, copy, source))
+    return NULL;
   copy->lhs = clone_node(arena_context, source->lhs);
   copy->rhs = source->kind == ND_STMT_EXPR
                   ? NULL

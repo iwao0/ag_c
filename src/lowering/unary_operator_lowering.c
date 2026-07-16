@@ -11,7 +11,7 @@ node_t *lower_unary_negate_expression(
     node_t *negated = ps_node_new_binary_for_target_in(
         ps_lowering_arena(lowering_context),
         ps_lowering_target(lowering_context), ND_FNEG, node->lhs, NULL);
-    ps_node_bind_type(negated, node->type);
+    ps_node_bind_type(negated, ps_node_get_type(node));
     return negated;
   }
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
@@ -19,7 +19,7 @@ node_t *lower_unary_negate_expression(
       arena_context, ps_lowering_target(lowering_context), ND_SUB,
       ps_node_new_num_in(arena_context, 0),
       node->lhs);
-  ps_node_bind_type(negated, node->type);
+  ps_node_bind_type(negated, ps_node_get_type(node));
   return negated;
 }
 
@@ -35,5 +35,6 @@ node_t *lower_complex_part_expression(
   if (operand_type->kind == PSX_TYPE_FLOAT) return node;
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   return ps_node_new_integer_cast_result_in(
-      arena_context, ps_node_new_num_in(arena_context, 0), node->type);
+      arena_context, ps_node_new_num_in(arena_context, 0),
+      ps_node_get_type(node));
 }

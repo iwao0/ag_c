@@ -1,5 +1,6 @@
 #include "type_identity_pass.h"
 
+#include "../parser/node_utils.h"
 #include "tree_walk.h"
 #include "../parser/semantic_ctx.h"
 
@@ -32,21 +33,22 @@ static int intern_available_type(node_t *node, void *user) {
       return 0;
     }
   }
-  if (!node->type) {
-    node->qual_type = (psx_qual_type_t){
-        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  const psx_type_t *node_type = ps_node_get_type(node);
+  if (!node_type) {
+    ps_node_clear_type(node);
     return 1;
   }
-  if (node->qual_type.type_id != PSX_TYPE_ID_INVALID &&
-      node->type == ps_ctx_type_by_id_in(
-                        pass->semantic_context,
-                        node->qual_type.type_id)) {
+  psx_qual_type_t node_qual_type = ps_node_qual_type(node);
+  if (node_qual_type.type_id != PSX_TYPE_ID_INVALID &&
+      node_type == ps_ctx_type_by_id_in(
+                       pass->semantic_context,
+                       node_qual_type.type_id)) {
     return 1;
   }
   psx_qual_type_t type =
-      ps_ctx_intern_qual_type_in(pass->semantic_context, node->type);
+      ps_ctx_intern_qual_type_in(pass->semantic_context, node_type);
   if (type.type_id != PSX_TYPE_ID_INVALID) {
-    node->qual_type = type;
+    ps_node_set_qual_type_identity(node, type);
     return 1;
   }
   pass->failed_node = node;
@@ -75,10 +77,14 @@ static int materialize_interned_type(node_t *node, void *user) {
       }
     }
   }
-  if (!node->type) return 1;
-  node->type = ps_ctx_type_by_id_in(
-      pass->semantic_context, node->qual_type.type_id);
-  if (node->type) return 1;
+  if (!ps_node_get_type(node)) return 1;
+  psx_qual_type_t qual_type = ps_node_qual_type(node);
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      pass->semantic_context, qual_type.type_id);
+  if (canonical) {
+    ps_node_bind_qual_type(node, canonical, qual_type);
+    return 1;
+  }
   pass->failed_node = node;
   return 0;
 }

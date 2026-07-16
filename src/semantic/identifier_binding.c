@@ -82,6 +82,10 @@ static node_t *materialize_function(
       ps_function_symbol_type(resolution->function);
   node_funcref_t *reference = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*reference));
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(context->semantic_context),
+          (node_t *)reference))
+    return NULL;
   reference->base.kind = ND_FUNCREF;
   ps_node_bind_type(
       (node_t *)reference,

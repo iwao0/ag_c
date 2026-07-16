@@ -71,7 +71,8 @@ static void semantic_resolve_number_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     node_num_t *literal) {
-  if (!semantic_context || !literal || literal->base.type) return;
+  if (!semantic_context || !literal ||
+      ps_node_get_type((node_t *)literal)) return;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   token_t *tok = literal->base.tok;
   const psx_type_t *type = NULL;
@@ -118,7 +119,8 @@ static void semantic_resolve_string_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     node_string_t *literal) {
-  if (!semantic_context || !literal || literal->base.type) return;
+  if (!semantic_context || !literal ||
+      ps_node_get_type((node_t *)literal)) return;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   int element_width = literal->char_width
                           ? (int)literal->char_width
@@ -159,7 +161,7 @@ static void semantic_resolve_string_literal(
 
 static void semantic_bind_size_query_result_type(
     psx_semantic_context_t *semantic_context, node_t *query) {
-  if (!semantic_context || !query || query->type) return;
+  if (!semantic_context || !query || ps_node_get_type(query)) return;
   semantic_bind_canonical_result_type(
       semantic_context, query,
       ps_type_new_integer_kind_in(
@@ -416,7 +418,7 @@ static void semantic_resolve_arithmetic_unary(
   semantic_bind_result_type(
       node, psx_resolve_arithmetic_unary_result_type(
                 semantic_context, node->kind, node->lhs));
-  if (node->type) return;
+  if (ps_node_get_type(node)) return;
   ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
               "unary", "%s のオペランドは算術型でなければなりません",
               operator_name);
@@ -515,11 +517,9 @@ static void semantic_resolve_member_access(
     access->base_address_qual_type = ps_ctx_intern_qual_type_in(
         semantic_context, address_type);
   }
-  access->base.type_state.bit_width =
-      (unsigned char)access->resolved_member->bit_width;
-  access->base.type_state.bit_offset = 0;
-  access->base.type_state.bit_is_signed =
-      access->resolved_member->bit_is_signed ? 1 : 0;
+  ps_node_set_bitfield_info(
+      (node_t *)access, access->resolved_member->bit_width, 0,
+      access->resolved_member->bit_is_signed);
 }
 
 static void semantic_resolve_function_reference(
@@ -686,9 +686,15 @@ static void semantic_resolve_compound_literal(
   }
   const psx_type_t *result = ps_type_clone_in(
       ps_ctx_arena(semantic_context), object_type);
-  if (compound->requires_addressable_object)
+  if (compound->requires_addressable_object) {
+    node_t operand = {0};
+    if (!ps_node_prepare_resolution_state_in(
+            ps_ctx_arena(semantic_context), &operand))
+      return;
+    ps_node_bind_type(&operand, result);
     result = psx_resolve_address_result_type(
-        semantic_context, &(node_t){.type = result});
+        semantic_context, &operand);
+  }
   semantic_bind_result_type((node_t *)compound, result);
 }
 
@@ -706,7 +712,7 @@ static void semantic_resolve_generic_selection(
   token_t *tok = selection->base.tok
                      ? selection->base.tok
                      : (token_t *)fallback_diag_tok;
-  selection->base.type = NULL;
+  ps_node_clear_type((node_t *)selection);
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -872,6 +878,10 @@ static void semantic_resolve_sizeof_query(
 static void semantic_transform_node(
     node_t *node, const psx_semantic_traversal_t *traversal) {
   if (!node) return;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(traversal->semantic_context), node))
+    return;
+  ps_node_bind_symbol_decl_type_if_missing(node);
   node_function_definition_t *current_func = traversal->current_func;
   const token_t *fallback_diag_tok = traversal->fallback_diag_tok;
   ag_diagnostic_context_t *diagnostics =
@@ -946,7 +956,7 @@ static void semantic_transform_node(
           (node_funcref_t *)node, fallback_diag_tok);
       break;
     case ND_VA_ARG_AREA:
-      if (!node->type)
+      if (!ps_node_get_type(node))
         semantic_bind_result_type(
             node, ps_type_new_pointer_in(
                       ps_ctx_arena(traversal->semantic_context),
@@ -1038,7 +1048,7 @@ static void semantic_transform_node(
       semantic_transform_node(node->lhs, traversal);
       if (!semantic_bind_address_result_type(
               traversal->semantic_context, node, node->lhs) &&
-          !node->type)
+          !ps_node_get_type(node))
         semantic_bind_result_type(
             node, psx_resolve_address_result_type(
                       traversal->semantic_context, node->lhs));

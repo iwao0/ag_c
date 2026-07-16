@@ -100,6 +100,10 @@ static node_t *materialize_ternary_rvalue(
       lowering_context, local_registry, access, fallback_diag_tok);
   node_ctrl_t *select = arena_alloc_in(
       ps_lowering_arena(lowering_context), sizeof(*select));
+  if (!ps_node_prepare_resolution_state_in(
+          ps_lowering_arena(lowering_context),
+          (node_t *)select))
+    return NULL;
   select->base.kind = ND_TERNARY;
   select->base.lhs = ternary->base.lhs;
   select->base.rhs = ps_node_new_assign_in(

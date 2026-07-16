@@ -14,7 +14,7 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     case ND_NUM:
       return ((node_num_t *)node)->val;
     case ND_CAST:
-      if (node->type && node->type->kind == PSX_TYPE_VOID) {
+      if (ps_node_value_is_void(node)) {
         if (ok) *ok = 0;
         return 0;
       }
