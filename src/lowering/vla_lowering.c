@@ -39,6 +39,18 @@ static lvar_t *create_vla_storage(
       diagnostic_token);
 }
 
+static lvar_t *create_internal_vla_storage(
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    char *name, int name_len, int storage_size,
+    const psx_type_t *type) {
+  if (!local_registry || !lowering_context || !type) return NULL;
+  int offset = local_storage_allocate(
+      lowering_context, storage_size, 0);
+  return ps_local_registry_create_internal_storage_object_in(
+      local_registry, name, name_len, offset, storage_size, 0, type);
+}
+
 psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
@@ -248,12 +260,11 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     int stride_name_len = 0;
     char *stride_name = parameter_stride_storage_name(
         request->name, request->name_len, &stride_name_len);
-    result.stride_storage = create_vla_storage(
+    result.stride_storage = create_internal_vla_storage(
         request->local_registry, request->lowering_context,
         stride_name, stride_name_len,
-        PSX_VLA_RUNTIME_SLOT_SIZE * count, 0,
-        request->stride_storage_type,
-        request->diag_tok);
+        PSX_VLA_RUNTIME_SLOT_SIZE * count,
+        request->stride_storage_type);
     if (!result.stride_storage) return result;
 
     int *constants = calloc((size_t)count, sizeof(*constants));

@@ -362,7 +362,7 @@ static int append_definition_parameter(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
-    psx_parsed_function_parameter_t *parameter) {
+    const psx_parsed_function_parameter_t *parameter) {
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
       semantic_context, global_registry, local_registry,
       &parameter->specifier);
@@ -374,17 +374,11 @@ static int append_definition_parameter(
   }
   psx_local_lookup_point_t parameter_lookup_point =
       ps_local_registry_capture_lookup_point_in(local_registry);
-  for (int b = 0; b < parameter->declarator.array_bound_count; b++) {
-    psx_parsed_const_expr_t *bound =
-        &parameter->declarator.array_bounds[b].expression;
-    bound->node = psx_bind_identifier_tree_at_lookup_point_in_contexts(
-        semantic_context, global_registry, local_registry,
-        parameter_lookup_point, bound->node, bound->start);
-  }
   psx_runtime_declarator_application_t applied;
-  psx_apply_runtime_parsed_declarator_in_contexts(
+  psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
       semantic_context, global_registry, local_registry,
-      &parameter->declarator, &applied);
+      &parameter->declarator, &applied, -1,
+      parameter_lookup_point);
   token_ident_t *name = parameter->declarator.identifier;
   int has_pointer = ps_declarator_shape_count_ops(
       &applied.shape, PSX_DECL_OP_POINTER) > 0;
@@ -474,8 +468,10 @@ int psx_begin_function_definition_pipeline(
       !request->declarator->identifier ||
       request->declarator->function_suffix_count <= 0 || !state) return 0;
 
-  psx_parsed_function_suffix_t *primary_suffix =
-      &request->declarator->function_suffixes[0];
+  const psx_parsed_function_suffix_t *primary_suffix =
+      psx_declarator_outermost_function_suffix(
+          request->declarator);
+  if (!primary_suffix) return 0;
   psx_apply_runtime_parsed_declarator_ex_in_contexts(
       request->semantic_context, request->global_registry,
       request->local_registry,
@@ -505,7 +501,7 @@ int psx_begin_function_definition_pipeline(
 
 int psx_apply_function_definition_parameter_pipeline(
     psx_function_definition_pipeline_state_t *state,
-    psx_parsed_function_parameter_t *parameter) {
+    const psx_parsed_function_parameter_t *parameter) {
   if (!state || !state->result || !parameter) return 0;
   int applied = append_definition_parameter(
       state->semantic_context, state->global_registry,

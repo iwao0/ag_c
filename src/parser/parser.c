@@ -775,23 +775,23 @@ static node_block_t *parse_funcdef_body_block(
   return body;
 }
 
-node_t *ps_parse_function_definition_body(
-    psx_parser_stream_t *stream, node_function_definition_t *function,
+int ps_parse_function_definition_body(
+    psx_parser_stream_t *stream,
+    psx_parsed_function_definition_t *definition,
     const psx_statement_syntax_context_t *statement_syntax) {
-  if (!stream || !stream->runtime_context || !function ||
+  if (!stream || !stream->runtime_context || !definition ||
       !statement_syntax ||
       statement_syntax->runtime_context != stream->runtime_context)
-    return NULL;
+    return 0;
   psx_parser_runtime_context_t *runtime = stream->runtime_context;
   tokenizer_context_t *tokenizer_context = stream->tk_ctx;
-  if (!tokenizer_context) return NULL;
+  if (!tokenizer_context) return 0;
   runtime->recoverable_syntax_error = 0;
   runtime->recovery_block_depth = 0;
   tk_expect_ctx(tokenizer_context, '{');
-  function->base.rhs =
-      (node_t *)parse_funcdef_body_block(
-          stream->runtime_context, tokenizer_context,
-          statement_syntax);
+  definition->body = (node_t *)parse_funcdef_body_block(
+      stream->runtime_context, tokenizer_context,
+      statement_syntax);
   if (runtime->recoverable_syntax_error) {
     int depth = runtime->recovery_block_depth > 0
         ? runtime->recovery_block_depth : 1;
@@ -803,9 +803,10 @@ node_t *ps_parse_function_definition_body(
     }
     runtime->recoverable_syntax_error = 0;
     runtime->recovery_block_depth = 0;
-    return NULL;
+    definition->body = NULL;
+    return 0;
   }
-  return (node_t *)function;
+  return definition->body != NULL;
 }
 
 node_t *ps_expr_in_contexts(

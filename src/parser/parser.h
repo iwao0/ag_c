@@ -63,8 +63,9 @@ void ps_parser_stream_begin_with_syntax(
     const psx_parser_syntax_services_t *syntax);
 int ps_parse_next_toplevel_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item);
-node_t *ps_parse_function_definition_body(
-    psx_parser_stream_t *stream, node_function_definition_t *function,
+int ps_parse_function_definition_body(
+    psx_parser_stream_t *stream,
+    psx_parsed_function_definition_t *definition,
     const psx_statement_syntax_context_t *statement_syntax);
 void ps_parser_stream_end(psx_parser_stream_t *stream);
 

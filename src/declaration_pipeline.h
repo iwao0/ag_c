@@ -65,7 +65,7 @@ typedef struct {
   psx_local_registry_t *local_registry;
   psx_lowering_context_t *lowering_context;
   const psx_type_t *base_type;
-  psx_parsed_declarator_t *declarator;
+  const psx_parsed_declarator_t *declarator;
 } psx_function_definition_pipeline_request_t;
 
 typedef struct {
@@ -94,7 +94,7 @@ int psx_begin_function_definition_pipeline(
     psx_function_definition_pipeline_state_t *state);
 int psx_apply_function_definition_parameter_pipeline(
     psx_function_definition_pipeline_state_t *state,
-    psx_parsed_function_parameter_t *parameter);
+    const psx_parsed_function_parameter_t *parameter);
 int psx_finish_function_definition_pipeline(
     psx_function_definition_pipeline_state_t *state);
 

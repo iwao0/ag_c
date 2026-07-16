@@ -255,6 +255,34 @@ lvar_t *ps_local_registry_create_storage_object_in(
   return var;
 }
 
+lvar_t *ps_local_registry_create_internal_storage_object_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, const psx_type_t *decl_type) {
+  if (!registry || !decl_type) return NULL;
+  const psx_type_t *canonical_type = NULL;
+  psx_qual_type_t qual_type = {0};
+  if (!resolve_local_decl_type(
+          registry, decl_type, &canonical_type, &qual_type))
+    return NULL;
+  lvar_t *var = calloc(1, sizeof(*var));
+  if (!var) return NULL;
+  var->name = name;
+  var->len = name_len;
+  var->offset = offset;
+  var->size = storage_size;
+  var->align_bytes = alignment;
+  var->decl_type_table = registry->semantic_types;
+  var->decl_type = canonical_type;
+  var->decl_qual_type = qual_type;
+  var->next_all = registry->all_locals;
+  registry->all_locals = var;
+  unsigned bucket = offset_hash(offset);
+  var->next_offhash = registry->lvars_by_offset[bucket];
+  registry->lvars_by_offset[bucket] = var;
+  return var;
+}
+
 lvar_t *ps_local_registry_create_type_binding_in(
     psx_local_registry_t *registry,
     char *name, int name_len, const psx_type_t *type,

@@ -2,6 +2,7 @@
 
 #include "aggregate_member_syntax.h"
 #include "arena.h"
+#include "declaration_binding_events.h"
 #include "diag.h"
 #include "function_parameter_syntax.h"
 #include "node_utils.h"
@@ -92,75 +93,6 @@ static int append_declarator_slot(
   return 1;
 }
 
-static void record_decl_specifier_binding_events(
-    const psx_parsed_decl_specifier_t *specifier,
-    const psx_name_classifier_t *name_classifier);
-
-static void record_declarator_resolution_events(
-    const psx_parsed_declarator_t *declarator,
-    const psx_name_classifier_t *name_classifier);
-
-static void record_aggregate_body_binding_events(
-    const psx_parsed_aggregate_body_t *body,
-    const psx_name_classifier_t *name_classifier) {
-  for (int i = 0; body && i < body->item_count; i++) {
-    const psx_parsed_aggregate_item_t *item = &body->items[i];
-    if (item->kind != PSX_PARSED_AGGREGATE_MEMBER_DECLARATION)
-      continue;
-    const psx_parsed_aggregate_member_declaration_t *declaration =
-        &item->value.member_declaration;
-    record_decl_specifier_binding_events(
-        &declaration->specifier, name_classifier);
-    for (int d = 0; d < declaration->declarator_count; d++)
-      record_declarator_resolution_events(
-          &declaration->declarators[d], name_classifier);
-  }
-}
-
-static void record_decl_specifier_binding_events(
-    const psx_parsed_decl_specifier_t *specifier,
-    const psx_name_classifier_t *name_classifier) {
-  if (!specifier ||
-      specifier->source != PSX_PARSED_DECL_TYPE_TAG ||
-      specifier->tag_action.action == PSX_PARSED_TAG_NONE)
-    return;
-  ps_name_classifier_record_binding_event(name_classifier);
-  if (specifier->tag_action.kind != TK_ENUM ||
-      specifier->tag_action.action != PSX_PARSED_TAG_DEFINITION ||
-      !specifier->tag_action.enum_body) {
-    if (specifier->tag_action.action == PSX_PARSED_TAG_DEFINITION)
-      record_aggregate_body_binding_events(
-          specifier->tag_action.aggregate_body, name_classifier);
-    return;
-  }
-  for (int i = 0;
-       i < specifier->tag_action.enum_body->member_count; i++)
-    ps_name_classifier_record_binding_event(name_classifier);
-}
-
-static void record_declarator_resolution_events(
-    const psx_parsed_declarator_t *declarator,
-    const psx_name_classifier_t *name_classifier) {
-  if (!declarator) return;
-  for (int i = 0; i < declarator->function_suffix_count; i++) {
-    const psx_parsed_function_parameters_t *parameters =
-        declarator->function_suffixes[i].parameters;
-    if (!parameters) continue;
-    ps_name_classifier_reserve_scope(name_classifier);
-    for (int p = 0; p < parameters->count; p++) {
-      const psx_parsed_function_parameter_t *parameter =
-          &parameters->items[p];
-      record_decl_specifier_binding_events(
-          &parameter->specifier, name_classifier);
-      record_declarator_resolution_events(
-          &parameter->declarator, name_classifier);
-      if (parameter->declarator.identifier)
-        ps_name_classifier_record_binding_event(
-            name_classifier);
-    }
-  }
-}
-
 node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks_are_complete(callbacks)) return NULL;
@@ -193,7 +125,7 @@ node_t *psx_parse_local_declaration_syntax(
       declaration->specifier.type_spec.is_extern ? 1 : 0;
   declaration->is_static =
       declaration->specifier.type_spec.is_static ? 1 : 0;
-  record_decl_specifier_binding_events(
+  psx_record_decl_specifier_binding_events(
       &declaration->specifier, &callbacks->name_classifier);
   declaration->is_standalone_tag =
       declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
@@ -212,7 +144,7 @@ node_t *psx_parse_local_declaration_syntax(
         callbacks->context, declarator);
     callbacks->parse_runtime_declarator_expressions(
         callbacks->context, declarator);
-    record_declarator_resolution_events(
+    psx_record_declarator_binding_events(
         declarator, &callbacks->name_classifier);
     if (!declarator->identifier) {
       ps_diag_ctx_in(diagnostics(callbacks), curtok(callbacks), "decl", "%s",

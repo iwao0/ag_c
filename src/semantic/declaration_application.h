@@ -5,6 +5,7 @@
 #include "../parser/aggregate_member_syntax.h"
 #include "../parser/ast.h"
 #include "../parser/declarator_shape.h"
+#include "../parser/local_registry.h"
 #include "declaration_resolution.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -71,11 +72,19 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index);
+void psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application,
+    int skipped_function_op_index,
+    psx_local_lookup_point_t lookup_point);
 void psx_apply_parsed_function_parameters_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    psx_parsed_function_parameters_t *parameters,
+    const psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 
 int psx_apply_parsed_enum_body_in_contexts(

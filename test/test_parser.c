@@ -7,6 +7,7 @@
 #include "../src/parser/arena.h"
 #include "../src/parser/alignas_value.h"
 #include "../src/parser/decl.h"
+#include "../src/parser/declaration_binding_events.h"
 #include "../src/parser/declarator_shape_builder.h"
 #include "../src/parser/lvar_internal.h"
 #include "../src/parser/expr.h"
@@ -1675,9 +1676,9 @@ static node_t *bind_test_identifier_tree(
       test_suite_session, node, fallback_diag_tok);
 }
 
-static node_function_definition_t *apply_test_function_definition_header(
+static node_function_definition_t *apply_test_function_definition(
     psx_parsed_function_definition_t *definition) {
-  return psx_apply_function_definition_header_in_contexts(
+  return psx_apply_function_definition_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
@@ -4081,31 +4082,50 @@ static const psx_type_t *resolve_tag_base_for_test(
 static node_t *parse_raw_function_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
-  node_function_definition_t *header =
-      apply_test_function_definition_header(
-      &item->value.function_header);
+  ps_decl_reset_locals_in(test_local_registry());
+  local_storage_reset(test_lowering_context());
+  ps_ctx_reset_function_scope_in(test_semantic_context());
+  token_ident_t *function_name =
+      item->value.function_header.declarator.identifier;
+  ps_decl_set_current_funcname_in(
+      test_local_registry(),
+      function_name ? function_name->str : NULL,
+      function_name ? function_name->len : 0);
   psx_frontend_local_declaration_syntax_adapter_t
       local_declaration_adapter;
   psx_local_declaration_callbacks_t local_declarations;
   init_test_local_declaration_callbacks(
       &local_declaration_adapter, &local_declarations);
   psx_parser_name_environment_t name_environment;
-  psx_local_lookup_point_t initial_lookup_point =
-      ps_local_registry_capture_lookup_point_in(
-          test_local_registry());
   ps_parser_name_environment_init(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()));
   ps_parser_name_environment_reset_at(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()),
-      initial_lookup_point.scope_seq,
-      ps_local_registry_next_scope_seq_in(
-          test_local_registry()),
-      initial_lookup_point.declaration_seq);
+      0, 0, 0);
   local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
           &name_environment);
+  const psx_parsed_function_suffix_t *primary_suffix =
+      psx_declarator_outermost_function_suffix(
+          &item->value.function_header.declarator);
+  ASSERT_TRUE(primary_suffix != NULL);
+  for (int i = 0;
+       primary_suffix->parameters &&
+       i < primary_suffix->parameters->count; i++) {
+    const psx_parsed_declarator_t *parameter =
+        &primary_suffix->parameters->items[i].declarator;
+    for (int b = 0; b < parameter->array_bound_count; b++) {
+      ASSERT_TRUE(parameter->array_bounds[b].expression.node != NULL);
+      ASSERT_TRUE(
+          parameter->array_bounds[b].expression.node->resolution_state ==
+          NULL);
+    }
+  }
+  psx_record_function_definition_declarator_binding_events(
+      &item->value.function_header.declarator,
+      &local_declarations.name_classifier);
   psx_legacy_statement_syntax_adapter_t statement_adapter;
   ASSERT_TRUE(psx_legacy_statement_syntax_adapter_init(
       &statement_adapter, test_semantic_context(),
@@ -4117,18 +4137,32 @@ static node_t *parse_raw_function_item(
   psx_statement_syntax_context_t statement_syntax =
       psx_legacy_statement_syntax_context(
           &statement_adapter);
-  node_t *function = ps_parse_function_definition_body(
-      stream, header, &statement_syntax);
-  if (function) {
-    header->lvars = ps_decl_get_locals_in(
-        test_local_registry());
-    ps_decl_set_current_funcname_in(
-        test_local_registry(), NULL, 0);
-  }
+  int parsed = ps_parse_function_definition_body(
+      stream, &item->value.function_header, &statement_syntax);
+  ps_decl_set_current_funcname_in(
+      test_local_registry(), NULL, 0);
   ps_parser_name_environment_dispose(&name_environment);
-  ps_dispose_function_definition_header_syntax(
+  node_function_definition_t *function =
+      parsed ? apply_test_function_definition(
+                   &item->value.function_header)
+             : NULL;
+  if (function) {
+    ASSERT_TRUE(
+        function->base.rhs == item->value.function_header.body);
+    for (int i = 0;
+         primary_suffix->parameters &&
+         i < primary_suffix->parameters->count; i++) {
+      const psx_parsed_declarator_t *parameter =
+          &primary_suffix->parameters->items[i].declarator;
+      for (int b = 0; b < parameter->array_bound_count; b++)
+        ASSERT_TRUE(
+            parameter->array_bounds[b].expression.node
+                ->resolution_state == NULL);
+    }
+  }
+  ps_dispose_function_definition_syntax(
       &item->value.function_header);
-  return function;
+  return function ? &function->base : NULL;
 }
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
@@ -4554,6 +4588,25 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_EQ(n->offset,
             ps_lvar_vla_param_inner_dim_src_offset(t, 9));
   ASSERT_EQ(0, ps_lvar_vla_param_inner_dim_const(t, 10));
+
+  parsed_code = parse_program_input(
+      "int __parameter_vla_scopes(int n, int m, int g[n][m]) { "
+      "int sum = 0; "
+      "for (int i = 0; i < n; i++) "
+      "for (int j = 0; j < m; j++) sum += g[i][j]; "
+      "return sum; }");
+  function = as_function_definition(parsed_code[0]);
+  ASSERT_TRUE(find_func_lvar(function, "g") != NULL);
+  ASSERT_TRUE(find_func_lvar(function, "i") != NULL);
+  ASSERT_TRUE(find_func_lvar(function, "j") != NULL);
+
+  parsed_code = parse_program_input(
+      "int __function_pointer_target(int c, int b) { return c - b; } "
+      "int (*__function_pointer_factory(int a, int b))(int c, int b) { "
+      "if (a != b) return __function_pointer_target; return 0; }");
+  function = as_function_definition(parsed_code[1]);
+  ASSERT_TRUE(find_func_lvar(function, "a") != NULL);
+  ASSERT_TRUE(find_func_lvar(function, "b") != NULL);
 }
 
 static void assert_identifier_resolution_kind(
@@ -7123,7 +7176,7 @@ static void assert_toplevel_syntax_kind(
     ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
   } else if (item.kind == PSX_TOPLEVEL_ITEM_FUNCTION_HEADER) {
     ASSERT_TRUE(item.value.function_header.declarator.identifier != NULL);
-    ps_dispose_function_definition_header_syntax(
+    ps_dispose_function_definition_syntax(
         &item.value.function_header);
   }
   ps_parser_stream_end(&stream);
@@ -8179,8 +8232,14 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(8, ps_lvar_storage_size(parameter_result.var, 0));
   ASSERT_EQ(24, ps_lvar_storage_size(
                     parameter_result.stride_storage, 0));
-  ASSERT_EQ(parameter_result.stride_storage,
-            ps_decl_find_lvar_in(test_local_registry(), (char *)"__rs_tensor", 11));
+  ASSERT_TRUE(
+      ps_decl_find_lvar_in(
+          test_local_registry(), (char *)"__rs_tensor", 11) == NULL);
+  ASSERT_EQ(
+      parameter_result.stride_storage,
+      psx_decl_find_lvar_by_offset_in(
+          test_local_registry(),
+          parameter_result.stride_storage->offset));
   ASSERT_EQ(parameter_result.stride_storage->offset,
             ps_lvar_vla_row_stride_frame_off(parameter_result.var));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(
@@ -22036,8 +22095,10 @@ static void test_semantic_context_isolation() {
           "{ StreamType value = 0; goto streamed_label; "
           "{ streamed_label: return value; } }"),
       &parser_syntax);
-  node_function_definition_t parsed_function = {0};
-  parsed_function.base.kind = ND_FUNCDEF;
+  psx_parsed_function_definition_t parsed_syntax = {0};
+  node_function_definition_t parsed_function = {
+      .base.kind = ND_FUNCDEF,
+  };
   psx_lowering_context_t *second_lowering_context =
       ps_lowering_context_create(arena_context, diagnostics);
   ASSERT_TRUE(second_lowering_context != NULL);
@@ -22070,10 +22131,9 @@ static void test_semantic_context_isolation() {
   psx_statement_syntax_context_t statement_syntax =
       psx_legacy_statement_syntax_context(
           &statement_adapter);
-  node_t *parsed_function_syntax =
-      ps_parse_function_definition_body(
-          &parser_stream, &parsed_function,
-          &statement_syntax);
+  ASSERT_TRUE(ps_parse_function_definition_body(
+      &parser_stream, &parsed_syntax, &statement_syntax));
+  node_t *parsed_function_syntax = parsed_syntax.body;
   ASSERT_TRUE(parsed_function_syntax != NULL);
   ASSERT_TRUE(
       psx_resolve_local_declaration_syntax_tree_in_contexts(
@@ -22082,9 +22142,10 @@ static void test_semantic_context_isolation() {
           &parsed_function_syntax));
   parsed_function.lvars =
       ps_decl_get_locals_in(test_local_registry());
+  parsed_function.base.rhs = parsed_function_syntax;
   ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
   psx_validate_control_flow(
-      second, parsed_function_syntax, NULL);
+      second, &parsed_function.base, NULL);
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
   ps_parser_stream_end(&parser_stream);

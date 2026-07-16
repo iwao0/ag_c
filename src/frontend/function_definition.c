@@ -7,38 +7,21 @@
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
-#include "../parser/expr.h"
 #include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/runtime_context.h"
 
-typedef struct {
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
-  psx_parser_runtime_context_t *runtime_context;
-  psx_name_classifier_t name_classifier;
-} psx_function_definition_expression_adapter_t;
-
-static node_t *parse_function_definition_assignment_expression(
-    void *context) {
-  psx_function_definition_expression_adapter_t *adapter = context;
-  return psx_expr_assign_in_contexts(
-      adapter->semantic_context, adapter->global_registry,
-      adapter->local_registry, adapter->runtime_context,
-      &adapter->name_classifier, NULL);
-}
-
-node_function_definition_t *psx_apply_function_definition_header_in_contexts(
+node_function_definition_t *psx_apply_function_definition_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
-    psx_parsed_function_definition_t *definition) {
-  if (!definition || !semantic_context || !global_registry ||
+    const psx_parsed_function_definition_t *definition) {
+  if (!definition || !definition->body ||
+      !semantic_context || !global_registry ||
       !local_registry || !runtime_context || !lowering_context)
     return NULL;
   ag_diagnostic_context_t *diagnostics =
@@ -55,23 +38,6 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
         diagnostics, definition->diagnostic_token, "funcdef",
         "canonical function return base type resolution failed");
   }
-  psx_function_definition_expression_adapter_t expression_adapter = {
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
-      .runtime_context = runtime_context,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
-  };
-  ps_parse_runtime_declarator_expressions_with_options(
-      &definition->declarator,
-      &(psx_decl_specifier_syntax_options_t){
-          .name_classifier = &expression_adapter.name_classifier,
-          .expression_context = &expression_adapter,
-          .parse_assignment_expression =
-              parse_function_definition_assignment_expression,
-          .semantic_context = semantic_context,
-          .runtime_context = runtime_context,
-      });
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
@@ -88,12 +54,13 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
         diagnostics, definition->declarator.diagnostic_token,
         "funcdef", "function definition pipeline setup failed");
   }
-  psx_parsed_function_suffix_t *primary_suffix =
-      &definition->declarator.function_suffixes[0];
-  psx_parsed_function_parameters_t *parameters =
-      primary_suffix->parameters;
+  const psx_parsed_function_suffix_t *primary_suffix =
+      psx_declarator_outermost_function_suffix(
+          &definition->declarator);
+  const psx_parsed_function_parameters_t *parameters =
+      primary_suffix ? primary_suffix->parameters : NULL;
   for (int i = 0; parameters && i < parameters->count; i++) {
-    psx_parsed_function_parameter_t *parameter =
+    const psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
     if (!psx_apply_function_definition_parameter_pipeline(
             &pipeline, parameter)) {
@@ -126,6 +93,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   node->base.tok = (token_t *)name;
   node->base.is_implicit_int_return =
       definition->has_implicit_int_return ? 1 : 0;
+  node->base.rhs = definition->body;
   node->name = name->str;
   node->name_len = name->len;
   node->is_static = definition->is_static;
@@ -153,5 +121,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
       local_registry, name->str, name->len);
   if (node->signature->is_variadic_function)
     local_storage_reserve_prefix(lowering_context, 64);
+  node->lvars = ps_decl_get_locals_in(local_registry);
+  ps_decl_set_current_funcname_in(local_registry, NULL, 0);
   return node;
 }

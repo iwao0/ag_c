@@ -13,6 +13,7 @@
 #include "semantic_pipeline_internal.h"
 #include "toplevel_declaration.h"
 #include "../parser/arena.h"
+#include "../parser/declaration_binding_events.h"
 #include "../parser/decl.h"
 #include "../parser/expr.h"
 #include "../parser/global_registry.h"
@@ -243,29 +244,24 @@ static int frontend_next_function_internal(
               ag_compilation_session_arena_context(session));
       token_ident_t *function_name =
           item.value.function_header.declarator.identifier;
-      psx_function_registration_checkpoint_t checkpoint;
-      ps_ctx_checkpoint_function_registration_in(
-          semantic_context,
+      ps_decl_reset_locals_in(local_registry);
+      local_storage_reset(
+          ag_compilation_session_lowering_context(session));
+      ps_ctx_reset_function_scope_in(semantic_context);
+      ps_decl_set_current_funcname_in(
+          local_registry,
           function_name ? function_name->str : NULL,
-          function_name ? function_name->len : 0, &checkpoint);
-      node_function_definition_t *header =
-          psx_apply_function_definition_header_in_contexts(
-              semantic_context, global_registry, local_registry,
-              ag_compilation_session_parser_runtime_context(session),
-              ag_compilation_session_lowering_context(session),
-              &item.value.function_header);
-      psx_local_lookup_point_t initial_lookup_point =
-          ps_local_registry_capture_lookup_point_in(
-              local_registry);
+          function_name ? function_name->len : 0);
       ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
           ps_ctx_name_classifier(semantic_context),
-          initial_lookup_point.scope_seq,
-          ps_local_registry_next_scope_seq_in(local_registry),
-          initial_lookup_point.declaration_seq);
+          0, 0, 0);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(
               &stream->local_name_environment);
+      psx_record_function_definition_declarator_binding_events(
+          &item.value.function_header.declarator,
+          &stream->local_declarations.name_classifier);
       psx_legacy_statement_syntax_adapter_t statement_adapter;
       if (!psx_legacy_statement_syntax_adapter_init(
               &statement_adapter, semantic_context,
@@ -277,21 +273,16 @@ static int frontend_next_function_internal(
       psx_statement_syntax_context_t statement_syntax =
           psx_legacy_statement_syntax_context(
               &statement_adapter);
-      node_t *function = ps_parse_function_definition_body(
-          &stream->parser, header,
-          &statement_syntax);
-      if (!function) {
-        ps_ctx_rollback_function_registration_in(
-            semantic_context,
-            function_name ? function_name->str : NULL,
-            function_name ? function_name->len : 0, &checkpoint);
+      if (!ps_parse_function_definition_body(
+              &stream->parser, &item.value.function_header,
+              &statement_syntax)) {
         ps_decl_reset_locals_in(local_registry);
         ps_decl_set_current_funcname_in(
             local_registry, NULL, 0);
         local_storage_reset(
             ag_compilation_session_lowering_context(session));
         ps_ctx_reset_function_scope_in(semantic_context);
-        ps_dispose_function_definition_header_syntax(
+        ps_dispose_function_definition_syntax(
             &item.value.function_header);
         arena_rollback_in(
             ag_compilation_session_arena_context(session), arena_mark);
@@ -300,13 +291,35 @@ static int frontend_next_function_internal(
           return 0;
         continue;
       }
-      header->lvars = ps_decl_get_locals_in(local_registry);
       ps_decl_set_current_funcname_in(local_registry, NULL, 0);
-      ps_dispose_function_definition_header_syntax(
+      psx_function_registration_checkpoint_t checkpoint;
+      ps_ctx_checkpoint_function_registration_in(
+          semantic_context,
+          function_name ? function_name->str : NULL,
+          function_name ? function_name->len : 0, &checkpoint);
+      node_function_definition_t *function =
+          psx_apply_function_definition_in_contexts(
+              semantic_context, global_registry, local_registry,
+              ag_compilation_session_parser_runtime_context(session),
+              ag_compilation_session_lowering_context(session),
+              &item.value.function_header);
+      if (!function) {
+        ps_ctx_rollback_function_registration_in(
+            semantic_context,
+            function_name ? function_name->str : NULL,
+            function_name ? function_name->len : 0, &checkpoint);
+        ps_dispose_function_definition_syntax(
+            &item.value.function_header);
+        arena_rollback_in(
+            ag_compilation_session_arena_context(session), arena_mark);
+        return 0;
+      }
+      ps_dispose_function_definition_syntax(
           &item.value.function_header);
       psx_resolution_work_tree_t *resolved =
           psx_frontend_resolve_function_work_tree_in_session(
-              session, function, function->tok, &result->hir_root);
+              session, &function->base, function->base.tok,
+              &result->hir_root);
       if (!resolved) return 0;
       if (work_tree) *work_tree = resolved;
       return 1;

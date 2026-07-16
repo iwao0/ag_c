@@ -23,7 +23,7 @@ void psx_move_toplevel_declaration_head_to_function_definition(
   *declaration = (psx_parsed_toplevel_declaration_t){0};
 }
 
-void ps_dispose_function_definition_header_syntax(
+void ps_dispose_function_definition_syntax(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return;
   psx_dispose_declarator_syntax(&definition->declarator);

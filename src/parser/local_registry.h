@@ -54,6 +54,10 @@ lvar_t *ps_local_registry_create_storage_object_in(
     char *name, int name_len, int offset, int storage_size,
     int alignment, const psx_type_t *decl_type,
     token_t *diagnostic_token);
+lvar_t *ps_local_registry_create_internal_storage_object_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, const psx_type_t *decl_type);
 lvar_t *ps_local_registry_create_type_binding_in(
     psx_local_registry_t *registry,
     char *name, int name_len, const psx_type_t *type,

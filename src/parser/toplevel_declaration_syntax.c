@@ -77,6 +77,8 @@ static int parse_declarator_head(
       &declaration->declarators[declaration->declarator_count - 1];
   if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
           declarator, options)) return 0;
+  ps_parse_runtime_declarator_expressions_with_options(
+      declarator, options);
   ps_prepare_constant_declarator_expressions_in_context(
       declarator, options->semantic_context,
       options->name_classifier);
@@ -187,16 +189,6 @@ int psx_finish_toplevel_declaration_syntax_with_context(
         &declaration->declarators[declaration->declarator_count - 1];
     psx_parsed_initializer_t *initializer =
         &declaration->initializers[declaration->declarator_count - 1];
-    ps_parse_runtime_declarator_expressions_with_options(
-        declarator,
-        &(psx_decl_specifier_syntax_options_t){
-            .name_classifier = &context->name_classifier,
-            .expression_context = context->context,
-            .parse_assignment_expression =
-                context->parse_assignment_expression,
-            .semantic_context = semantic_context,
-            .runtime_context = runtime_context,
-        });
     psx_prepare_optional_initializer_syntax(
         initializer, runtime_context);
     if (initializer_value_is_missing(initializer)) {

@@ -624,11 +624,18 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
   tree->syntax_root = syntax_root;
-  tree->semantic_root = clone_node(arena_context, syntax_root);
+  tree->semantic_root = psx_clone_syntax_tree_for_resolution(
+      arena_context, syntax_root);
   if (!tree->semantic_root) return NULL;
   tree->typed_hir = NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
+}
+
+node_t *psx_clone_syntax_tree_for_resolution(
+    arena_context_t *arena_context, const node_t *syntax_root) {
+  if (!arena_context || !syntax_root) return NULL;
+  return clone_node(arena_context, syntax_root);
 }
 
 const node_t *psx_resolution_work_tree_syntax_root(

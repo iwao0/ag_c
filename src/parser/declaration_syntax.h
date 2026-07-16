@@ -122,6 +122,9 @@ psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
     const psx_decl_specifier_syntax_options_t *options);
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
     const psx_decl_specifier_syntax_options_t *options);
+const psx_parsed_function_suffix_t *
+psx_declarator_outermost_function_suffix(
+    const psx_parsed_declarator_t *declarator);
 void ps_parse_runtime_declarator_expressions_with_options(
     psx_parsed_declarator_t *declarator,
     const psx_decl_specifier_syntax_options_t *options);

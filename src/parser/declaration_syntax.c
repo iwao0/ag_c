@@ -568,6 +568,22 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
   return declarator;
 }
 
+const psx_parsed_function_suffix_t *
+psx_declarator_outermost_function_suffix(
+    const psx_parsed_declarator_t *declarator) {
+  if (!declarator || declarator->declarator_shape.count <= 0 ||
+      !declarator->declarator_shape.ops ||
+      declarator->declarator_shape.ops[0].kind !=
+          PSX_DECL_OP_FUNCTION)
+    return NULL;
+  for (int i = 0; i < declarator->function_suffix_count; i++) {
+    const psx_parsed_function_suffix_t *suffix =
+        &declarator->function_suffixes[i];
+    if (suffix->declarator_op_index == 0) return suffix;
+  }
+  return NULL;
+}
+
 void ps_parse_runtime_declarator_expressions_with_options(
     psx_parsed_declarator_t *declarator,
     const psx_decl_specifier_syntax_options_t *options) {

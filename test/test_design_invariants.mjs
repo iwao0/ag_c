@@ -210,6 +210,7 @@ const removedContextFreeFrontendApis = [
   "psx_frontend_analyze_initializer_syntax",
   "psx_frontend_analyze_program",
   "psx_apply_function_definition_header",
+  "psx_apply_function_definition",
   "psx_frontend_local_declaration_callbacks",
   "psx_apply_toplevel_declaration",
   "psx_frontend_toplevel_declaration_callbacks",
@@ -1711,6 +1712,14 @@ const toplevelDeclarationSyntaxSource = await readFile(
   "src/parser/toplevel_declaration_syntax.c",
   "utf8",
 );
+const functionDefinitionSyntaxHeader = await readFile(
+  "src/parser/function_definition_syntax.h",
+  "utf8",
+);
+const declarationBindingEventsSource = await readFile(
+  "src/parser/declaration_binding_events.c",
+  "utf8",
+);
 const localObjectLoweringSource = await readFile(
   "src/lowering/local_object_lowering.c",
   "utf8",
@@ -1751,7 +1760,7 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
   );
 }
 const ambiguousFrontendContextApis =
-  /psx_(?:frontend_analyze_(?:function|expression|initializer_syntax|program)|apply_function_definition_header|apply_toplevel_declaration|frontend_init_(?:toplevel|local)_declaration_callbacks)_in_context\s*\(/;
+  /psx_(?:frontend_analyze_(?:function|expression|initializer_syntax|program)|apply_function_definition(?:_header)?|apply_toplevel_declaration|frontend_init_(?:toplevel|local)_declaration_callbacks)_in_context\s*\(/;
 if (ambiguousFrontendContextApis.test(
       `${semanticPipelineSource}\n${frontendFunctionDefinitionSource}\n${toplevelDeclarationFrontendSource}\n${localDeclarationFrontendSource}`,
     )) {
@@ -3229,6 +3238,95 @@ if (/\bps_ctx_(?:enter|leave)_block_scope_in\s*\(/.test(parserSource) ||
     )) {
   throw new Error(
     "function-body parsing must not mutate semantic scopes or jump registries",
+  );
+}
+const functionBodyParseIndex = frontendTranslationUnitSource.indexOf(
+  "ps_parse_function_definition_body(",
+);
+const functionSemanticApplyIndex = frontendTranslationUnitSource.indexOf(
+  "psx_apply_function_definition_in_contexts(",
+);
+const parameterBindingSeedIndex = frontendTranslationUnitSource.indexOf(
+  "psx_record_function_definition_declarator_binding_events(",
+);
+const internalStorageRegistration = localRegistrySource.match(
+  /lvar_t\s*\*ps_local_registry_create_internal_storage_object_in\s*\([^]*?\n\}/,
+)?.[0] ?? "";
+if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
+    !/int\s+ps_parse_function_definition_body\s*\(\s*psx_parser_stream_t\s*\*stream\s*,\s*psx_parsed_function_definition_t\s*\*definition\s*,/.test(
+      parserStreamHeader,
+    ) ||
+    /ps_parse_function_definition_body\s*\([^;]*node_function_definition_t/.test(
+      parserStreamHeader,
+    ) ||
+    !/definition->body\s*=\s*\(node_t\s*\*\)parse_funcdef_body_block/.test(
+      parserStreamSource,
+    ) ||
+    !/!definition->body/.test(frontendFunctionDefinitionSource) ||
+    !/const\s+psx_parsed_function_definition_t\s*\*definition/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    !/node->base\.rhs\s*=\s*definition->body/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    /ps_parse_runtime_declarator_expressions_with_options\s*\(/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    !/ps_parse_runtime_declarator_expressions_with_options\s*\(\s*declarator\s*,\s*options\s*\)/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    /\bbound->node\s*=/.test(
+      `${localDeclarationPipelineSource}\n${declarationApplicationSource}`,
+    ) ||
+    !/psx_clone_syntax_tree_for_resolution\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/node_t\s*\*psx_clone_syntax_tree_for_resolution\s*\(/.test(
+      resolutionWorkTreeInternalHeader,
+    ) ||
+    !/tree->semantic_root\s*=\s*psx_clone_syntax_tree_for_resolution\s*\(/.test(
+      resolutionWorkTree,
+    ) ||
+    parameterBindingSeedIndex < 0 ||
+    functionBodyParseIndex < 0 ||
+    functionSemanticApplyIndex < 0 ||
+    parameterBindingSeedIndex > functionBodyParseIndex ||
+    functionBodyParseIndex > functionSemanticApplyIndex ||
+    !/ps_name_classifier_declare\s*\(/.test(
+      declarationBindingEventsSource,
+    ) ||
+    !/psx_declarator_outermost_function_suffix\s*\(/.test(
+      declarationBindingEventsSource,
+    ) ||
+    !/suffix\s*==\s*primary/.test(
+      declarationBindingEventsSource,
+    ) ||
+    !/ps_name_classifier_reserve_scope\s*\(/.test(
+      declarationBindingEventsSource,
+    ) ||
+    /function_suffixes\s*\[\s*0\s*\]/.test(
+      `${frontendTranslationUnitSource}\n${frontendFunctionDefinitionSource}\n${localDeclarationPipelineSource}`,
+    ) ||
+    !/psx_record_decl_specifier_binding_events\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/psx_record_declarator_binding_events\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+      vlaLoweringSource,
+    ) ||
+    !/registry->all_locals\s*=\s*var/.test(
+      internalStorageRegistration,
+    ) ||
+    !/registry->lvars_by_offset\[bucket\]\s*=\s*var/.test(
+      internalStorageRegistration,
+    ) ||
+    /register_binding_event|all_bindings|lvars_by_bucket|registry->locals\s*=/.test(
+      internalStorageRegistration,
+    )) {
+  throw new Error(
+    "function definitions must be completed as syntax before semantic function construction",
   );
 }
 if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?has_resolved_value\s*=\s*1[^]*?node->lhs\s*=\s*NULL/.test(
