@@ -285,7 +285,7 @@ static int hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_GLOBAL:
     case PSX_HIR_FP_TO_INT:
     case PSX_HIR_INT_TO_FP:
-    case PSX_HIR_FNEG:
+    case PSX_HIR_NEGATE:
     case PSX_HIR_VA_ARG_AREA:
     case PSX_HIR_CAST:
     case PSX_HIR_CREAL:

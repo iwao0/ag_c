@@ -1,7 +1,7 @@
 // 負値の浮動小数点グローバル初期化子は IEEE ビットパターン (符号ビット込み) を
-// .data に出力する必要がある。`-1.0f` は ND_FNEG(1.0f) だが psx_eval_const_fp が
-// ND_FNEG を扱わず定数畳み込みに失敗し、スカラは has_init が立たず .comm(BSS=0)、
-// 配列要素は ND_NUM 以外として 0 のままになっていた。ND_FNEG を畳み込み、fp 配列の
+// .data に出力する必要がある。`-1.0f` は型付きの単項否定だが psx_eval_const_fp が
+// これを扱わず定数畳み込みに失敗し、スカラは has_init が立たず .comm(BSS=0)、
+// 配列要素は数値リテラル以外として 0 のままになっていた。単項否定を畳み込み、fp 配列の
 // 非 ND_NUM 要素も psx_eval_const_fp で評価して修正。
 #include <assert.h>
 

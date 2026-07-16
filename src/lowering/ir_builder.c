@@ -756,7 +756,6 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node);
-static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
@@ -1063,7 +1062,6 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       return build_node_binop(ctx, node);
     case ND_FP_TO_INT: return build_node_fp_to_int(ctx, node);
     case ND_INT_TO_FP: return build_node_int_to_fp(ctx, node);
-    case ND_FNEG: return build_node_fneg(ctx, node);
     case ND_PRE_INC:
     case ND_PRE_DEC:
     case ND_POST_INC:
@@ -2686,22 +2684,6 @@ static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node) {
   ld->src1 = ir_val_vreg(part_ptr, IR_TY_PTR);
   ir_func_append_inst(ctx->f, ld);
   return ir_val_vreg(v, fp_ty);
-}
-
-/* 浮動小数の単項マイナス `-x` — 符号ビット反転 (IR_FNEG)。`0.0 - x` (IR_FSUB) では
- * x が +0.0 のとき +0.0 になり -0.0 を生成できないため専用に lowering する。 */
-static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node) {
-  ir_val_t v = build_expr(ctx, node->lhs);
-  if (ctx->failed) return ir_val_none();
-  ir_type_t ty =
-      (ps_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-  v = coerce_to_type(ctx, v, ty);
-  int dst = ir_func_new_vreg(ctx->f);
-  ir_inst_t *inst = ir_inst_new(IR_FNEG);
-  inst->dst = ir_val_vreg(dst, ty);
-  inst->src1 = v;
-  ir_func_append_inst(ctx->f, inst);
-  return inst->dst;
 }
 
 /* `(double)i` / `(float)x` — 整数または別幅FPを目的のFP型へ変換する。

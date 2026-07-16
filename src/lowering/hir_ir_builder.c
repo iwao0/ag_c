@@ -1467,6 +1467,61 @@ static ir_val_t build_complex_binary(
   return destination;
 }
 
+static ir_val_t emit_float_negate(
+    hir_ir_context_t *context, ir_val_t value, ir_type_t type) {
+  int result = new_vreg(context);
+  if (result < 0) return ir_val_none();
+  ir_inst_t *negate = ir_inst_new(IR_FNEG);
+  if (!negate) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  negate->dst = ir_val_vreg(result, type);
+  negate->src1 = value;
+  if (!append_instruction(context, negate)) return ir_val_none();
+  return negate->dst;
+}
+
+static ir_val_t build_complex_negate(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t type) {
+  const psx_hir_node_t *operand = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand || !is_complex_abi_type(type))
+    return unsupported_expr(context);
+  ir_val_t source = materialize_complex_operand(
+      context, operand, type);
+  if (context->status != IR_HIR_BUILD_OK ||
+      source.type != IR_TY_PTR)
+    return unsupported_expr(context);
+  int half = ir_type_size(type.type);
+  ir_val_t imaginary_source = pointer_with_offset(
+      context, source, half);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t real = load_direct_value(
+      context, source, type.type);
+  ir_val_t imaginary = load_direct_value(
+      context, imaginary_source, type.type);
+  if (context->status == IR_HIR_BUILD_OK)
+    real = emit_float_negate(context, real, type.type);
+  if (context->status == IR_HIR_BUILD_OK)
+    imaginary = emit_float_negate(
+        context, imaginary, type.type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int slot = allocate_scalar_temp(
+      context, type.source_size, half >= 8 ? 8 : 4);
+  if (slot < 0) return ir_val_none();
+  ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
+  ir_val_t imaginary_destination = pointer_with_offset(
+      context, destination, half);
+  if (context->status != IR_HIR_BUILD_OK ||
+      !store_direct_value(context, destination, real) ||
+      !store_direct_value(
+          context, imaginary_destination, imaginary))
+    return ir_val_none();
+  return destination;
+}
+
 static ir_val_t build_complex_component(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_abi_param_info_t result_type) {
@@ -1508,6 +1563,26 @@ static ir_val_t build_complex_component(
         context, value, ir_type_size(result_type.type));
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   return load_direct_value(context, value, result_type.type);
+}
+
+static ir_val_t build_scalar_negate(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t type) {
+  const psx_hir_node_t *operand = child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand || !is_direct_value_abi_type(type))
+    return unsupported_expr(context);
+  ir_val_t value = build_expr(context, operand);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  value = coerce_direct_value(
+      context, value, classify_node_type(context, operand), type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (is_float_abi_type(type))
+    return emit_float_negate(context, value, type.type);
+  if (type.param_class != IR_ABI_PARAM_INTEGER)
+    return unsupported_expr(context);
+  return emit_integer_binary(
+      context, IR_SUB, ir_val_imm(type.type, 0), value, type.type);
 }
 
 static ir_val_t emit_integer_width_conversion(
@@ -2786,6 +2861,8 @@ static ir_val_t build_expr(
     }
     if (kind == PSX_HIR_ASSIGN)
       return build_complex_assignment(context, node, type);
+    if (kind == PSX_HIR_NEGATE)
+      return build_complex_negate(context, node, type);
     if (kind == PSX_HIR_ADD || kind == PSX_HIR_SUB ||
         kind == PSX_HIR_MUL || kind == PSX_HIR_DIV)
       return build_complex_binary(context, node, type);
@@ -2972,28 +3049,8 @@ static ir_val_t build_expr(
         context, value, classify_node_type(context, operand), type);
   }
 
-  if (psx_hir_node_kind(node) == PSX_HIR_FNEG) {
-    const psx_hir_node_t *operand = child_for_edge(
-        context, node, PSX_HIR_EDGE_LHS, 0);
-    if (!operand || !is_float_abi_type(type))
-      return unsupported_expr(context);
-    ir_val_t value = build_expr(context, operand);
-    if (context->status == IR_HIR_BUILD_OK)
-      value = coerce_direct_value(
-          context, value, classify_node_type(context, operand), type);
-    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    int result = new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *negate = ir_inst_new(IR_FNEG);
-    if (!negate) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    negate->dst = ir_val_vreg(result, type.type);
-    negate->src1 = value;
-    if (!append_instruction(context, negate)) return ir_val_none();
-    return negate->dst;
-  }
+  if (psx_hir_node_kind(node) == PSX_HIR_NEGATE)
+    return build_scalar_negate(context, node, type);
 
   if (psx_hir_node_kind(node) == PSX_HIR_COMMA) {
     const psx_hir_node_t *left = child_for_edge(

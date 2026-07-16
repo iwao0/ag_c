@@ -13,7 +13,6 @@ typedef enum {
   ND_VLA_ALLOC,
   ND_FP_TO_INT,
   ND_INT_TO_FP,
-  ND_FNEG,
   ND_VA_ARG_AREA,
 } psx_resolved_node_kind_t;
 

@@ -2939,7 +2939,6 @@ const resolvedOnlyNodeKinds = [
   "ND_VLA_ALLOC",
   "ND_FP_TO_INT",
   "ND_INT_TO_FP",
-  "ND_FNEG",
   "ND_VA_ARG_AREA",
 ];
 const resolvedOnlyNodeKindPattern = new RegExp(
@@ -5725,6 +5724,28 @@ if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
     )) {
   throw new Error(
     "typed unary dereference must materialize directly into Typed HIR without parser-shaped lowering",
+  );
+}
+if (!/MAP_EXPR\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/\bPSX_HIR_NEGATE\b/.test(hirHeader) ||
+    !/kind\s*==\s*PSX_HIR_NEGATE[^]*?build_complex_negate\s*\(/.test(
+      hirIrBuilder,
+    ) ||
+    !/psx_hir_node_kind\s*\(\s*node\s*\)\s*==\s*PSX_HIR_NEGATE[^]*?build_scalar_negate\s*\(/.test(
+      hirIrBuilder,
+    ) ||
+    /\blower_unary_negate_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    /\bND_FNEG\b/.test(resolvedNodeKindHeader) ||
+    allSourceFiles.some(
+      (path) =>
+        /src\/lowering\/unary_operator_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "typed unary negate must remain distinct from syntax lowering and materialize as PSX_HIR_NEGATE",
   );
 }
 if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(

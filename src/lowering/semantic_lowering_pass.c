@@ -8,7 +8,7 @@
 #include "member_access_lowering.h"
 #include "runtime_context.h"
 #include "subscript_lowering.h"
-#include "unary_operator_lowering.h"
+#include "complex_part_lowering.h"
 #include "../parser/node_utils.h"
 
 typedef struct {
@@ -197,10 +197,7 @@ static node_t *lower_tree(
     case ND_UNARY_NEGATE:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      return lower_tree(
-          context, lower_unary_negate_expression(
-                       context->lowering_context, node),
-          fallback_diag_tok);
+      break;
     case ND_CREAL:
     case ND_CIMAG: {
       node->lhs = lower_tree(

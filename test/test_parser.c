@@ -5474,19 +5474,27 @@ static void test_unary_operator_semantic_lowering_boundary() {
   ASSERT_EQ(ND_UNARY_NEGATE, raw_integer->kind);
   ASSERT_TRUE(ps_node_get_type(raw_integer) == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_integer) == NULL);
-  node_t *lowered_integer =
+  node_t *typed_integer =
       analyze_test_expression(raw_integer, NULL);
-  ASSERT_EQ(ND_SUB, lowered_integer->kind);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_integer)->kind);
+  ASSERT_EQ(ND_UNARY_NEGATE, typed_integer->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(typed_integer)->kind);
 
   node_t *raw_floating = parse_expr_input_with_existing_locals("-d");
   ASSERT_EQ(ND_UNARY_NEGATE, raw_floating->kind);
   ASSERT_TRUE(ps_node_get_type(raw_floating) == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_floating) == NULL);
-  node_t *lowered_floating =
+  node_t *typed_floating =
       analyze_test_expression(raw_floating, NULL);
-  ASSERT_EQ(ND_FNEG, lowered_floating->kind);
-  ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(lowered_floating)->kind);
+  ASSERT_EQ(ND_UNARY_NEGATE, typed_floating->kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(typed_floating)->kind);
+
+  node_t *raw_complex = parse_expr_input_with_existing_locals("-z");
+  ASSERT_EQ(ND_UNARY_NEGATE, raw_complex->kind);
+  ASSERT_TRUE(ps_node_get_type(raw_complex) == NULL);
+  node_t *typed_complex =
+      analyze_test_expression(raw_complex, NULL);
+  ASSERT_EQ(ND_UNARY_NEGATE, typed_complex->kind);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, ps_node_get_type(typed_complex)->kind);
 
   node_t *raw_real = parse_expr_input_with_existing_locals("__real__ z");
   ASSERT_EQ(ND_CREAL, raw_real->kind);
@@ -5504,6 +5512,40 @@ static void test_unary_operator_semantic_lowering_boundary() {
       analyze_test_expression(raw_integer_imag, NULL);
   ASSERT_EQ(ND_CAST, lowered_integer_imag->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_integer_imag)->kind);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  node_t **program = parse_program_input(
+      "int __typed_hir_neg_i(int x) { return -x; } "
+      "double __typed_hir_neg_d(double x) { return -x; } "
+      "double _Complex __typed_hir_neg_z(double _Complex x) { "
+      "return -x; }");
+  ASSERT_TRUE(program != NULL);
+  int found_integer_negate = 0;
+  int found_float_negate = 0;
+  int found_complex_negate = 0;
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node ||
+        psx_hir_node_kind(hir_node) != PSX_HIR_NEGATE)
+      continue;
+    const psx_type_t *type = ps_ctx_type_by_id_in(
+        test_semantic_context(),
+        psx_hir_node_qual_type(hir_node).type_id);
+    if (!type) continue;
+    if (type->kind == PSX_TYPE_INTEGER)
+      found_integer_negate = 1;
+    else if (type->kind == PSX_TYPE_FLOAT)
+      found_float_negate = 1;
+    else if (type->kind == PSX_TYPE_COMPLEX)
+      found_complex_negate = 1;
+  }
+  ASSERT_TRUE(found_integer_negate);
+  ASSERT_TRUE(found_float_negate);
+  ASSERT_TRUE(found_complex_negate);
 }
 
 static void test_generic_selection_semantic_lowering_boundary() {
@@ -10419,11 +10461,10 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(42, as_num(pos)->val);
 
     node_t *neg = parse_expr_input("-42");
-  ASSERT_EQ(ND_SUB, neg->kind);
+  ASSERT_EQ(ND_UNARY_NEGATE, neg->kind);
   ASSERT_EQ(ND_NUM, neg->lhs->kind);
-  ASSERT_EQ(0, as_num(neg->lhs)->val);
-  ASSERT_EQ(ND_NUM, neg->rhs->kind);
-  ASSERT_EQ(42, as_num(neg->rhs)->val);
+  ASSERT_EQ(42, as_num(neg->lhs)->val);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(neg)->kind);
 
     node_t *not0 = parse_expr_input("!0");
   ASSERT_EQ(ND_EQ, not0->kind);

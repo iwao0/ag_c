@@ -181,10 +181,6 @@ double psx_eval_const_fp(node_t *node, int *ok) {
       }
       return left / right;
     }
-    case ND_FNEG: {
-      double value = psx_eval_const_fp(node->lhs, ok);
-      return !ok || *ok ? -value : 0.0;
-    }
     default:
       if (ok) *ok = 0;
       return 0.0;
