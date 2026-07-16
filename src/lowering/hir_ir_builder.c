@@ -144,6 +144,9 @@ static ir_val_t pointer_with_offset(
     hir_ir_context_t *context, ir_val_t base, int offset);
 static int store_direct_value(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value);
+static ir_val_t materialize_complex_operand(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_abi_param_info_t target_type);
 
 static int current_block_is_terminated(const hir_ir_context_t *context) {
   if (!context->function->cur_block ||
@@ -1110,10 +1113,8 @@ static ir_val_t build_complex_assignment(
   ir_abi_param_info_t source_type = classify_node_type(
       context, source_node);
   if (is_complex_abi_type(source_type)) {
-    if (source_type.type != target_type.type ||
-        source_type.source_size != target_type.source_size)
-      return unsupported_expr(context);
-    ir_val_t source = build_expr(context, source_node);
+    ir_val_t source = materialize_complex_operand(
+        context, source_node, target_type);
     if (context->status != IR_HIR_BUILD_OK || source.type != IR_TY_PTR)
       return unsupported_expr(context);
     ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
@@ -2338,6 +2339,7 @@ static ir_val_t build_scalar_or_void_call(
   ir_callable_sig_t signature;
   size_t argument_count = child_count_for_edge(
       node, PSX_HIR_EDGE_ARGUMENT);
+  int accepts_unprototyped_arguments = 0;
   int is_void_result =
       node_type_kind(context, node) == PSX_TYPE_VOID;
   int is_complex_result = is_complex_abi_type(result_type);
@@ -2349,13 +2351,17 @@ static ir_val_t build_scalar_or_void_call(
       argument_count > INT_MAX ||
       (signature.is_variadic
            ? argument_count < signature.param_count
-           : argument_count != signature.param_count) ||
+           : argument_count != signature.param_count &&
+                 !(signature.param_count == 0 && argument_count > 0)) ||
       (signature.is_variadic && signature.param_count > 8) ||
       signature.result != (is_void_result ? IR_TY_VOID : result_type.type) ||
       (!is_void_result && !is_complex_result &&
        !is_indirect_aggregate_result &&
        !is_direct_value_abi_type(result_type)))
     return unsupported_expr(context);
+  accepts_unprototyped_arguments =
+      !signature.is_variadic && signature.param_count == 0 &&
+      argument_count > 0;
 
   ir_val_t callee_value = ir_val_none();
   if (callee) {
@@ -2509,7 +2515,7 @@ static ir_val_t build_scalar_or_void_call(
     }
     arguments[emitted_count] = value;
     argument_abi_types[emitted_count++] = parameter_type.type;
-    if (i < signature.param_count)
+    if (i < signature.param_count || accepts_unprototyped_arguments)
       emitted_fixed_count = emitted_count;
   }
 
