@@ -199,19 +199,26 @@ int psx_finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
+      psx_frontend_expression_hir_t expression_hir = {
+          .root = PSX_HIR_NODE_ID_INVALID,
+      };
+      psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
       if (initializer_resolution.is_aggregate_initializer) {
-        initializer_resolution.initializer =
-            psx_frontend_analyze_initializer_syntax_in_contexts(
+        if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
                 request->lowering_context,
                 request->options,
+                initializer_resolution.type,
                 initializer_resolution.initializer,
-                request->initializer->value_tok);
+                request->initializer->value_tok,
+                &aggregate_plan)) {
+          return 0;
+        }
+        initializer_resolution.aggregate_plan = &aggregate_plan;
       } else {
-        initializer_resolution.initializer =
-            psx_frontend_analyze_expression_in_contexts(
+        if (!psx_frontend_resolve_expression_to_hir_in_contexts(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
@@ -220,12 +227,21 @@ int psx_finish_global_declaration_pipeline(
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
                     ? initializer_resolution.initializer->tok
-                    : request->initializer->value_tok);
+                    : request->initializer->value_tok,
+                &expression_hir)) {
+          return 0;
+        }
+        initializer_resolution.initializer_hir =
+            expression_hir.module;
+        initializer_resolution.initializer_hir_root =
+            expression_hir.root;
       }
-      if (!lower_resolved_global_declaration_initializer(
-              request->global_registry, request->lowering_context, global,
-              &initializer_resolution,
-              request->initializer->value_tok)) {
+      int lowered = lower_resolved_global_declaration_initializer(
+          request->global_registry, request->lowering_context, global,
+          &initializer_resolution,
+          request->initializer->value_tok);
+      psx_frontend_expression_hir_dispose(&expression_hir);
+      if (!lowered) {
         ps_diag_ctx_in(
             ps_ctx_diagnostics(request->semantic_context),
             request->initializer->value_tok, "static-init", "%s",
@@ -673,27 +689,40 @@ int psx_finish_static_local_declaration_pipeline(
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
   }
+  psx_frontend_expression_hir_t expression_hir = {
+      .root = PSX_HIR_NODE_ID_INVALID,
+  };
+  psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
   if (resolution.is_aggregate_initializer) {
-    resolution.initializer = psx_frontend_analyze_initializer_syntax_in_contexts(
-        request->semantic_context, request->global_registry,
-        request->local_registry, request->lowering_context,
-        request->options,
-        resolution.initializer, request->initializer->value_tok);
+    if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
+            request->semantic_context, request->global_registry,
+            request->local_registry, request->lowering_context,
+            request->options, resolution.type,
+            resolution.initializer, request->initializer->value_tok,
+            &aggregate_plan)) {
+      return 0;
+    }
+    resolution.aggregate_plan = &aggregate_plan;
   } else {
-    resolution.initializer = psx_frontend_analyze_expression_in_contexts(
-        request->semantic_context, request->global_registry,
-        request->local_registry, request->lowering_context,
-        request->options,
-        resolution.initializer,
-        resolution.initializer->tok
-            ? resolution.initializer->tok
-            : request->initializer->value_tok);
+    if (!psx_frontend_resolve_expression_to_hir_in_contexts(
+            request->semantic_context, request->global_registry,
+            request->local_registry, request->lowering_context,
+            request->options, resolution.initializer,
+            resolution.initializer->tok
+                ? resolution.initializer->tok
+                : request->initializer->value_tok,
+            &expression_hir)) {
+      return 0;
+    }
+    resolution.initializer_hir = expression_hir.module;
+    resolution.initializer_hir_root = expression_hir.root;
   }
-  if (!lower_static_local_declaration_initializer(
-          request->global_registry, request->lowering_context,
-          result->global,
-          &resolution, request->initializer->value_tok,
-          &result->type_completed)) {
+  int lowered = lower_static_local_declaration_initializer(
+      request->global_registry, request->lowering_context,
+      result->global, &resolution, request->initializer->value_tok,
+      &result->type_completed);
+  psx_frontend_expression_hir_dispose(&expression_hir);
+  if (!lowered) {
     return 0;
   }
   if (result->type_completed &&

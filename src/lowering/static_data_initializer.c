@@ -1,4 +1,5 @@
 #include "static_data_initializer.h"
+#include "static_hir_initializer.h"
 #include "runtime_context.h"
 
 #include "../diag/diag.h"
@@ -726,6 +727,52 @@ int lower_static_scalar_array_initializer(
       lowering_context, global, type, initializer, fallback_tok);
 }
 
+int psx_build_static_aggregate_initializer_plan(
+    psx_global_registry_t *global_registry,
+    psx_lowering_context_t *lowering_context,
+    const psx_type_t *type, node_init_list_t *initializer,
+    token_t *fallback_tok,
+    psx_static_aggregate_initializer_plan_t *plan) {
+  if (plan) *plan = (psx_static_aggregate_initializer_plan_t){0};
+  if (!global_registry || !lowering_context || !type ||
+      !initializer || !plan)
+    return 0;
+  global_var_t temporary = {0};
+  if (!ps_global_registry_bind_decl_type(
+          global_registry, &temporary, type) ||
+      !lower_static_object_initializer(
+          lowering_context, &temporary, type,
+          initializer, fallback_tok))
+    return 0;
+  *plan = (psx_static_aggregate_initializer_plan_t){
+      .values = temporary.init_values,
+      .floating_values = temporary.init_fvalues,
+      .symbols = temporary.init_value_symbols,
+      .symbol_lengths = temporary.init_value_symbol_lens,
+      .union_ordinals = temporary.init_union_ordinals,
+      .value_count = temporary.init_count,
+      .union_ordinal = temporary.union_init_ordinal,
+  };
+  return plan->value_count > 0;
+}
+
+int psx_apply_static_aggregate_initializer_plan(
+    global_var_t *global,
+    const psx_static_aggregate_initializer_plan_t *plan) {
+  if (!global || !plan || plan->value_count <= 0 ||
+      !plan->values || !plan->symbols ||
+      !plan->symbol_lengths || !plan->union_ordinals)
+    return 0;
+  global->init_values = plan->values;
+  global->init_fvalues = plan->floating_values;
+  global->init_value_symbols = plan->symbols;
+  global->init_value_symbol_lens = plan->symbol_lengths;
+  global->init_union_ordinals = plan->union_ordinals;
+  global->init_count = plan->value_count;
+  global->union_init_ordinal = plan->union_ordinal;
+  return 1;
+}
+
 static int lower_static_string_expression(
     psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type, node_string_t *string) {
@@ -819,17 +866,31 @@ int lower_resolved_static_initializer(
   }
 
   if (resolution->is_aggregate_initializer) {
-    if (!lower_static_object_initializer(
-            lowering_context, global, type,
-            (node_init_list_t *)resolution->initializer, tok))
+    if (resolution->aggregate_plan) {
+      if (!psx_apply_static_aggregate_initializer_plan(
+              global, resolution->aggregate_plan))
+        return 0;
+    } else if (!lower_static_object_initializer(
+                   lowering_context, global, type,
+                   (node_init_list_t *)resolution->initializer, tok)) {
       return 0;
+    }
     global->has_init = 1;
     if (result) result->initialized = 1;
     return 1;
   }
 
-  if (!lower_static_scalar_expression(
-          lowering_context, global, type, resolution->initializer)) return 0;
+  if (resolution->initializer_hir) {
+    if (!psx_lower_static_scalar_hir_initializer(
+            global_registry, lowering_context, global, type,
+            resolution->initializer_hir,
+            resolution->initializer_hir_root))
+      return 0;
+  } else if (!lower_static_scalar_expression(
+                 lowering_context, global, type,
+                 resolution->initializer)) {
+    return 0;
+  }
   global->has_init = 1;
   if (result) result->initialized = 1;
   return 1;

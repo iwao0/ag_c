@@ -3,8 +3,11 @@
 
 #include "../parser/ast.h"
 #include "../parser/type.h"
+#include "../hir/hir.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_static_aggregate_initializer_plan_t
+    psx_static_aggregate_initializer_plan_t;
 
 typedef enum {
   PSX_STATIC_INITIALIZER_OK = 0,
@@ -28,6 +31,9 @@ typedef struct {
   const psx_type_t *type;
   psx_decl_init_kind_t kind;
   node_t *initializer;
+  const psx_hir_module_t *initializer_hir;
+  psx_hir_node_id_t initializer_hir_root;
+  const psx_static_aggregate_initializer_plan_t *aggregate_plan;
   int is_aggregate_initializer;
   int type_completed;
 } psx_static_initializer_resolution_t;

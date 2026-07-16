@@ -4,6 +4,7 @@
 
 #include "../diag/diag.h"
 #include "../lowering/semantic_lowering_pass.h"
+#include "../lowering/static_data_initializer.h"
 #include "../parser/decl.h"
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
@@ -169,7 +170,7 @@ int psx_frontend_resolve_function_to_hir_in_session(
              ? 1 : 0;
 }
 
-node_t *psx_frontend_analyze_expression_in_contexts(
+static psx_resolution_work_tree_t *resolve_expression_work_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
@@ -233,6 +234,100 @@ node_t *psx_frontend_analyze_expression_in_contexts(
           work_tree, PSX_RESOLUTION_WORK_LOWERED,
           PSX_RESOLUTION_WORK_FINALIZED, expression))
     return NULL;
+  return work_tree;
+}
+
+static void diagnose_typed_expression_hir_failure(
+    psx_semantic_context_t *semantic_context,
+    const token_t *fallback_diag_tok,
+    const psx_resolved_hir_build_failure_t *failure) {
+  if (!semantic_context || !failure) return;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  if (fallback_diag_tok) {
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        fallback_diag_tok,
+        "%s: expression Typed HIR build failed (status %d, node kind %d)",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+        (int)failure->status, failure->source_node_kind);
+  }
+  diag_emit_internalf_in(
+      diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+      "%s: expression Typed HIR build failed (status %d, node kind %d)",
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+      (int)failure->status, failure->source_node_kind);
+}
+
+int psx_frontend_resolve_expression_to_hir_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_expression,
+    const token_t *fallback_diag_tok,
+    psx_frontend_expression_hir_t *result) {
+  if (result) {
+    *result = (psx_frontend_expression_hir_t){
+        .root = PSX_HIR_NODE_ID_INVALID,
+    };
+  }
+  if (!result) return 0;
+  psx_resolution_work_tree_t *work_tree =
+      resolve_expression_work_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_expression,
+          fallback_diag_tok);
+  if (!work_tree) return 0;
+
+  psx_resolved_hir_build_failure_t failure;
+  if (!psx_resolution_work_tree_build_typed_hir(
+          work_tree, semantic_context, &failure)) {
+    diagnose_typed_expression_hir_failure(
+        semantic_context, fallback_diag_tok, &failure);
+    return 0;
+  }
+  psx_hir_module_t *module = psx_hir_module_create();
+  if (!module) return 0;
+  psx_hir_node_id_t root = psx_typed_hir_tree_emit(
+      module, psx_resolution_work_tree_typed_hir(work_tree), &failure);
+  if (root == PSX_HIR_NODE_ID_INVALID) {
+    diagnose_typed_expression_hir_failure(
+        semantic_context, fallback_diag_tok, &failure);
+    psx_hir_module_destroy(module);
+    return 0;
+  }
+  result->module = module;
+  result->root = root;
+  return 1;
+}
+
+void psx_frontend_expression_hir_dispose(
+    psx_frontend_expression_hir_t *expression) {
+  if (!expression) return;
+  psx_hir_module_destroy(expression->module);
+  *expression = (psx_frontend_expression_hir_t){
+      .root = PSX_HIR_NODE_ID_INVALID,
+  };
+}
+
+node_t *psx_frontend_analyze_expression_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_expression,
+    const token_t *fallback_diag_tok) {
+  psx_resolution_work_tree_t *work_tree =
+      resolve_expression_work_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_expression,
+          fallback_diag_tok);
+  if (!work_tree) return NULL;
   return psx_resolution_work_tree_legacy_root(work_tree);
 }
 
@@ -251,7 +346,8 @@ node_t *psx_frontend_analyze_expression_in_session(
       syntax_expression, fallback_diag_tok);
 }
 
-node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
+static psx_resolution_work_tree_t *
+resolve_initializer_work_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
@@ -314,5 +410,45 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
           work_tree, PSX_RESOLUTION_WORK_LOWERED,
           PSX_RESOLUTION_WORK_FINALIZED, initializer))
     return NULL;
+  return work_tree;
+}
+
+int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const psx_type_t *type, const node_t *syntax,
+    const token_t *fallback_diag_tok,
+    psx_static_aggregate_initializer_plan_t *plan) {
+  if (plan) *plan = (psx_static_aggregate_initializer_plan_t){0};
+  if (!type || !plan) return 0;
+  psx_resolution_work_tree_t *work_tree =
+      resolve_initializer_work_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax, fallback_diag_tok);
+  node_t *initializer = work_tree
+                            ? psx_resolution_work_tree_legacy_root(work_tree)
+                            : NULL;
+  if (!initializer || initializer->kind != ND_INIT_LIST) return 0;
+  return psx_build_static_aggregate_initializer_plan(
+      global_registry, lowering_context, type,
+      (node_init_list_t *)initializer,
+      (token_t *)fallback_diag_tok, plan);
+}
+
+node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax, const token_t *fallback_diag_tok) {
+  psx_resolution_work_tree_t *work_tree =
+      resolve_initializer_work_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax, fallback_diag_tok);
+  if (!work_tree) return NULL;
   return psx_resolution_work_tree_legacy_root(work_tree);
 }

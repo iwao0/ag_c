@@ -1752,6 +1752,10 @@ const localDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
 );
+const staticHirInitializerSource = await readFile(
+  "src/lowering/static_hir_initializer.c",
+  "utf8",
+);
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       localDeclarationPipelineSource,
     )) {
@@ -2064,14 +2068,30 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     "local declaration syntax must receive only runtime, NameClassifier, and syntax services while semantic application and lowering use frontend-owned registries",
   );
 }
-if (!/psx_frontend_analyze_initializer_syntax_in_contexts\s*\([\s\S]*?request->local_registry/.test(
+if (!/psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts\s*\([\s\S]*?request->local_registry/.test(
       localDeclarationPipelineSource,
     ) ||
-    !/psx_frontend_analyze_expression_in_contexts\s*\([\s\S]*?request->local_registry/.test(
+    !/psx_frontend_resolve_expression_to_hir_in_contexts\s*\([\s\S]*?request->local_registry/.test(
+      localDeclarationPipelineSource,
+    ) ||
+    /psx_frontend_analyze_(?:expression|initializer_syntax)_in_contexts\s*\(/.test(
       localDeclarationPipelineSource,
     )) {
   throw new Error(
-    "static local initializer semantics must use the declaration registry",
+    "static local initializers must resolve to Typed HIR or an aggregate data plan with the declaration registry",
+  );
+}
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h|resolution_state/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/psx_hir_module_lookup\s*\(/.test(staticHirInitializerSource) ||
+    !/psx_hir_node_qual_type\s*\(/.test(staticHirInitializerSource) ||
+    !/initializer_hir/.test(localDeclarationPipelineSource) ||
+    !/psx_frontend_expression_hir_dispose\s*\(/.test(
+      localDeclarationPipelineSource,
+    )) {
+  throw new Error(
+    "scalar static initializer lowering must consume owned Typed HIR without reading semantic AST nodes",
   );
 }
 const identifierResolutionSource = await readFile(
@@ -4223,14 +4243,14 @@ const semanticPipelineContracts = [
   ],
   [
     "expression",
-    /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /static\s+psx_resolution_work_tree_t\s*\*resolve_expression_work_tree_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
   ],
   [
     "initializer",
-    /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /static\s+psx_resolution_work_tree_t\s*\*\s*resolve_initializer_work_tree_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
     /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_initializer_syntax_in_contexts\s*\(/,
@@ -6536,10 +6556,10 @@ const functionResolutionBoundary = semanticPipelineSource.match(
   /psx_resolution_work_tree_t\s*\*\s*psx_frontend_resolve_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const expressionResolutionBoundary = semanticPipelineSource.match(
-  /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /static\s+psx_resolution_work_tree_t\s*\*resolve_expression_work_tree_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const initializerResolutionBoundary = semanticPipelineSource.match(
-  /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /static\s+psx_resolution_work_tree_t\s*\*\s*resolve_initializer_work_tree_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 if (!functionResolutionBoundary ||
     !expressionResolutionBoundary ||
