@@ -2,7 +2,7 @@
 #define SEMANTIC_SOURCE_CAST_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 
 static inline psx_source_cast_resolution_kind_t
 psx_source_cast_resolution_kind(

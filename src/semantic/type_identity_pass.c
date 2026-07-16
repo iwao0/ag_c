@@ -1,6 +1,7 @@
 #include "type_identity_pass.h"
 
 #include "../parser/node_utils.h"
+#include "function_call_resolution.h"
 #include "tree_walk.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
@@ -24,13 +25,16 @@ static int intern_available_type(node_t *node, void *user) {
     }
   } else if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
-    call->callee_qual_type = call->callee_type
+    const psx_type_t *callee_type = psx_function_call_type(call);
+    psx_qual_type_t callee_qual_type = callee_type
         ? ps_ctx_intern_qual_type_in(
-              pass->semantic_context, call->callee_type)
+              pass->semantic_context, callee_type)
         : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                             PSX_TYPE_QUALIFIER_NONE};
-    if (call->callee_type &&
-        call->callee_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    psx_function_call_bind_qual_type(
+        call, callee_type, callee_qual_type);
+    if (callee_type &&
+        callee_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       pass->failed_node = node;
       return 0;
     }
@@ -70,10 +74,15 @@ static int materialize_interned_type(node_t *node, void *user) {
     }
   } else if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
-    if (call->callee_type) {
-      call->callee_type = ps_ctx_type_by_id_in(
-          pass->semantic_context, call->callee_qual_type.type_id);
-      if (!call->callee_type) {
+    const psx_type_t *callee_type = psx_function_call_type(call);
+    if (callee_type) {
+      psx_qual_type_t callee_qual_type =
+          psx_function_call_qual_type(call);
+      callee_type = ps_ctx_type_by_id_in(
+          pass->semantic_context, callee_qual_type.type_id);
+      psx_function_call_bind_qual_type(
+          call, callee_type, callee_qual_type);
+      if (!callee_type) {
         pass->failed_node = node;
         return 0;
       }

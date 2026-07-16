@@ -75,7 +75,6 @@ struct node_t {
   unsigned int is_source_assignment : 1;
   unsigned int is_decl_initializer : 1;
   unsigned int has_empty_body : 1;
-  unsigned int is_implicit_func_decl : 1;
   unsigned int is_implicit_int_return : 1;
   unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
@@ -166,7 +165,6 @@ struct node_num_t {
   node_t base;
   long long val;    // 整数値
   double fval;      // 浮動小数点値
-  int fval_id;      // 浮動小数点リテラルのID
   tk_float_suffix_kind_t float_suffix_kind;
 };
 
@@ -174,7 +172,6 @@ struct node_num_t {
 typedef struct node_string_t node_string_t;
 struct node_string_t {
   node_t base;
-  char *string_label; // 文字列リテラルのデータラベル
   char *literal_contents; // エスケープを含むソース由来の文字列内容。
   int literal_length;     // literal_contents の raw バイト長。
   tk_char_width_t char_width;
@@ -197,10 +194,6 @@ struct node_function_call_t {
   node_t **arguments;
   int argument_count;
   node_t *callee;
-  const psx_type_t *callee_type;
-  psx_qual_type_t callee_qual_type;
-  char *direct_name;
-  int direct_name_len;
 };
 
 // 制御構造ノード
@@ -216,16 +209,12 @@ struct node_ctrl_t {
 typedef struct node_case_t node_case_t;
 struct node_case_t {
   node_t base;
-  long long val;    // semantic pass で解決した case 値
-  int has_resolved_value;
-  int label_id;     // codegenで使うラベル番号
 };
 
 // default ラベルノード
 typedef struct node_default_t node_default_t;
 struct node_default_t {
   node_t base;
-  int label_id;     // codegenで使うラベル番号
 };
 
 // goto / label ノード
@@ -234,7 +223,6 @@ struct node_jump_t {
   node_t base;
   char *name;
   int name_len;
-  int label_id;     // codegenで解決されるラベル番号
 };
 
 /* global_var_t / string_lit_t / float_lit_t は symtab.h に移動 (Phase C1)。 */

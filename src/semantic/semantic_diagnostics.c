@@ -1,4 +1,5 @@
 #include "semantic_diagnostics.h"
+#include "function_call_resolution.h"
 
 #include "../diag/diag.h"
 #include "../parser/lvar_public.h"
@@ -392,15 +393,19 @@ static void warn_arithmetic(
 static void warn_function(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
-  if (node->kind == ND_FUNCALL && node->is_implicit_func_decl) {
+  if (node->kind == ND_FUNCALL &&
+      psx_function_call_is_implicit_declaration(
+          (node_function_call_t *)node)) {
     node_function_call_t *call = (node_function_call_t *)node;
-    if (call->direct_name) {
+    const char *direct_name =
+        psx_function_call_direct_name(call);
+    if (direct_name) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL,
           node->tok ? node->tok : fallback,
           diag_warn_message_for_in(
               diagnostics, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
-          call->direct_name_len, call->direct_name);
+          psx_function_call_direct_name_length(call), direct_name);
     }
   } else if (node->kind == ND_FUNCDEF && node->is_implicit_int_return) {
     diag_warn_tokf_in(diagnostics,

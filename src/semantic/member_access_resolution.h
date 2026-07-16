@@ -2,7 +2,7 @@
 #define SEMANTIC_MEMBER_ACCESS_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 #include "../parser/semantic_ctx.h"
 
 typedef enum {

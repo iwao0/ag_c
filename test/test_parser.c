@@ -19,8 +19,8 @@
 #include "../src/parser/lvar_public.h"
 #include "../src/parser/local_registry.h"
 #include "../src/parser/name_environment.h"
-#include "../src/parser/node_type_public.h"
-#include "../src/parser/node_resolution_state.h"
+#include "../src/semantic/resolved_node_type.h"
+#include "../src/semantic/resolution_state.h"
 #include "../src/parser/node_utils.h"
 #include "../src/parser/node_vla_public.h"
 #include "../src/parser/tag_public.h"
@@ -44,6 +44,7 @@
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/alignof_query_resolution.h"
+#include "../src/semantic/case_label_resolution.h"
 #include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/constant_expression.h"
 #include "../src/semantic/control_flow_validation.h"
@@ -53,6 +54,7 @@
 #include "../src/semantic/function_parameter_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
 #include "../src/semantic/identifier_resolution.h"
+#include "../src/semantic/literal_resolution.h"
 #include "../src/semantic/member_access_resolution.h"
 #include "../src/semantic/expression_operand_resolution.h"
 #include "../src/semantic/function_call_resolution.h"
@@ -1877,6 +1879,11 @@ static void find_long_double_float_literal(float_lit_t *lit, void *user) {
   if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) *found = true;
 }
 
+static void count_float_literal(float_lit_t *lit, void *user) {
+  (void)lit;
+  (*(int *)user)++;
+}
+
 /* parse_expr_input は単体式パースのため、main 関数の宣言ブロックを通らない。
  * ag_c は未宣言識別子をエラー扱いするので、テストで多用する短い名前を
  * あらかじめローカル変数として登録しておく。 */
@@ -1955,13 +1962,19 @@ static void test_syntax_literal_type_boundary() {
       parse_expr_input_with_existing_locals("1.0f");
   ASSERT_EQ(ND_NUM, floating->kind);
   ASSERT_TRUE(ps_node_get_type(floating) == NULL);
-  ASSERT_EQ(-1, ((node_num_t *)floating)->fval_id);
+  int float_literal_count_before = 0;
+  iter_test_float_literals(
+      count_float_literal, &float_literal_count_before);
   node_t *resolved_floating =
       analyze_test_expression(floating, floating->tok);
   ASSERT_TRUE(resolved_floating != floating);
   ASSERT_TRUE(ps_node_get_type(floating) == NULL);
-  ASSERT_EQ(-1, ((node_num_t *)floating)->fval_id);
-  ASSERT_TRUE(((node_num_t *)resolved_floating)->fval_id >= 0);
+  int float_literal_count_after = 0;
+  iter_test_float_literals(
+      count_float_literal, &float_literal_count_after);
+  ASSERT_EQ(
+      float_literal_count_before + 1,
+      float_literal_count_after);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
             ps_node_value_fp_kind(resolved_floating));
   ASSERT_TRUE(ps_node_qual_type(resolved_floating).type_id !=
@@ -1971,14 +1984,17 @@ static void test_syntax_literal_type_boundary() {
       parse_expr_input_with_existing_locals("\"syntax\"");
   ASSERT_EQ(ND_STRING, string->kind);
   ASSERT_TRUE(ps_node_get_type(string) == NULL);
-  ASSERT_TRUE(((node_string_t *)string)->string_label == NULL);
+  ASSERT_TRUE(
+      psx_string_literal_label((node_string_t *)string) == NULL);
   node_t *resolved_string =
       analyze_test_expression(string, string->tok);
   ASSERT_TRUE(resolved_string != string);
   ASSERT_TRUE(ps_node_get_type(string) == NULL);
-  ASSERT_TRUE(((node_string_t *)string)->string_label == NULL);
   ASSERT_TRUE(
-      ((node_string_t *)resolved_string)->string_label != NULL);
+      psx_string_literal_label((node_string_t *)string) == NULL);
+  ASSERT_TRUE(
+      psx_string_literal_label(
+          (node_string_t *)resolved_string) != NULL);
   ASSERT_TRUE(ps_node_get_type(resolved_string) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(resolved_string)->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
@@ -6487,16 +6503,18 @@ static void test_function_call_type_binding_boundary() {
       "__call_type_boundary(3)");
   ASSERT_EQ(ND_FUNCALL, direct->kind);
   node_function_call_t *direct_call = (node_function_call_t *)direct;
-  ASSERT_TRUE(direct_call->callee_type == NULL);
+  ASSERT_TRUE(psx_function_call_type(direct_call) == NULL);
   ASSERT_TRUE(direct_call->callee != NULL);
   ASSERT_EQ(ND_IDENTIFIER, direct_call->callee->kind);
   ASSERT_TRUE(ps_node_get_type(direct) == NULL);
   direct = analyze_test_expression(direct, NULL);
   direct_call = (node_function_call_t *)direct;
-  ASSERT_TRUE(direct_call->callee_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, direct_call->callee_type->kind);
+  const psx_type_t *direct_callee_type =
+      psx_function_call_type(direct_call);
+  ASSERT_TRUE(direct_callee_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, direct_callee_type->kind);
   ASSERT_TRUE(ps_node_get_type(direct) != NULL);
-  ASSERT_TRUE(ps_node_get_type(direct) == direct_call->callee_type->base);
+  ASSERT_TRUE(ps_node_get_type(direct) == direct_callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(direct)->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ps_node_get_type(direct)->floating_kind);
 
@@ -6519,14 +6537,16 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_EQ(ND_FUNCALL, indirect->kind);
   node_function_call_t *indirect_call = (node_function_call_t *)indirect;
   ASSERT_TRUE(indirect_call->callee != NULL);
-  ASSERT_TRUE(indirect_call->callee_type == NULL);
+  ASSERT_TRUE(psx_function_call_type(indirect_call) == NULL);
   ASSERT_TRUE(ps_node_get_type(indirect) == NULL);
   indirect = analyze_test_expression(indirect, NULL);
   indirect_call = (node_function_call_t *)indirect;
-  ASSERT_TRUE(indirect_call->callee_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_call->callee_type->kind);
+  const psx_type_t *indirect_callee_type =
+      psx_function_call_type(indirect_call);
+  ASSERT_TRUE(indirect_callee_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_callee_type->kind);
   ASSERT_TRUE(ps_node_get_type(indirect) != NULL);
-  ASSERT_TRUE(ps_node_get_type(indirect) == indirect_call->callee_type->base);
+  ASSERT_TRUE(ps_node_get_type(indirect) == indirect_callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(indirect)->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ps_node_get_type(indirect)->floating_kind);
 
@@ -6535,12 +6555,12 @@ static void test_function_call_type_binding_boundary() {
       "__implicit_call_type_boundary(5)");
   ASSERT_EQ(ND_FUNCALL, implicit->kind);
   node_function_call_t *implicit_call = (node_function_call_t *)implicit;
-  ASSERT_TRUE(implicit_call->callee_type == NULL);
+  ASSERT_TRUE(psx_function_call_type(implicit_call) == NULL);
   ASSERT_TRUE(ps_node_get_type(implicit) == NULL);
   implicit = analyze_test_expression(implicit, NULL);
   implicit_call = (node_function_call_t *)implicit;
-  ASSERT_TRUE(implicit_call->base.is_implicit_func_decl);
-  ASSERT_TRUE(implicit_call->callee_type == NULL);
+  ASSERT_TRUE(psx_function_call_is_implicit_declaration(implicit_call));
+  ASSERT_TRUE(psx_function_call_type(implicit_call) == NULL);
   ASSERT_TRUE(ps_node_get_type(implicit) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(implicit)->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, ps_node_get_type(implicit)->integer_kind);
@@ -6691,8 +6711,11 @@ static void test_implicit_conversion_hir_boundary() {
   ASSERT_EQ(ND_FUNCALL, same_body->body[0]->rhs->kind);
   node_function_call_t *same_call =
       as_function_call(same_body->body[0]->rhs);
+  const psx_type_t *same_callee_type =
+      psx_function_call_type(same_call);
+  ASSERT_TRUE(same_callee_type != NULL);
   ASSERT_TRUE(ps_node_get_type((node_t *)same_call) ==
-              same_call->callee_type->base);
+              same_callee_type->base);
 
   node_block_t *main_body = as_block(as_function_definition(program[3])->base.rhs);
   node_t *decl_init = main_body->body[1];
@@ -6914,7 +6937,7 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_expression != NULL);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_EQ(0, syntax_case->has_resolved_value);
+  ASSERT_TRUE(!psx_case_label_is_resolved(syntax_case));
   ASSERT_TRUE(syntax_expression->resolution_state == NULL);
 
   psx_hir_module_t *hir =
@@ -6927,7 +6950,7 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_case->base.lhs == syntax_expression);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_EQ(0, syntax_case->has_resolved_value);
+  ASSERT_TRUE(!psx_case_label_is_resolved(syntax_case));
   ASSERT_TRUE(syntax_expression->resolution_state == NULL);
 
   int found_resolved_case = 0;
@@ -10925,7 +10948,10 @@ static void test_static_data_initializer_boundary() {
       ps_gvar_get_decl_type(&pointer_array_global);
   node_string_t string = {0};
   string.base.kind = ND_STRING;
-  string.string_label = (char *)".Lboundary";
+  ASSERT_TRUE(ps_node_prepare_resolution_state_in(
+      test_arena_context(), (node_t *)&string));
+  char *string_label = (char *)".Lboundary";
+  psx_string_literal_bind_label(&string, string_label);
   string.char_width = TK_CHAR_WIDTH_CHAR;
   psx_initializer_entry_t pointer_entry = {
       .value = (node_t *)&string,
@@ -10954,7 +10980,7 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(1, pointer_array_global.init_count);
   psx_gvar_init_slot_t pointer_slot =
       ps_gvar_init_slot_view(&pointer_array_global, 0);
-  ASSERT_TRUE(pointer_slot.symbol == string.string_label);
+  ASSERT_TRUE(pointer_slot.symbol == string_label);
   ASSERT_EQ(-1, pointer_slot.symbol_len);
 
   reset_test_global_registry_translation_unit();
@@ -12363,7 +12389,9 @@ static void test_stmt_switch_case_default() {
   ASSERT_EQ(ND_LVAR, sw->lhs->kind);
   ASSERT_EQ(ND_BLOCK, sw->rhs->kind);
   ASSERT_EQ(ND_CASE, as_block(sw->rhs)->body[0]->kind);
-  ASSERT_EQ(1, as_case(as_block(sw->rhs)->body[0])->val);
+  ASSERT_EQ(
+      1, psx_case_label_value(
+             as_case(as_block(sw->rhs)->body[0])));
   ASSERT_EQ(ND_BREAK, as_block(sw->rhs)->body[1]->kind);
   ASSERT_EQ(ND_DEFAULT, as_block(sw->rhs)->body[2]->kind);
 }
@@ -12699,7 +12727,7 @@ static void test_expr_string() {
     node_t *node = parse_expr_input("\"hello\"");
 
   ASSERT_EQ(ND_STRING, node->kind);
-  ASSERT_TRUE(as_string(node)->string_label != NULL);
+  ASSERT_TRUE(psx_string_literal_label(as_string(node)) != NULL);
   ASSERT_TRUE(ps_node_get_type(node) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(node)->kind);
   ASSERT_TRUE(ps_node_get_type(node)->base != NULL);
@@ -12710,7 +12738,7 @@ static void test_expr_string() {
   ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
   string_lit_t *lit = ps_find_string_lit_by_label_in(
       ag_compilation_session_global_registry(test_suite_session),
-      string->string_label);
+      psx_string_literal_label(string));
   ASSERT_TRUE(lit != NULL);
   ASSERT_EQ(5, lit->len);
   ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
@@ -18265,14 +18293,18 @@ static void test_type_metadata_bridge() {
     if (n->kind == ND_ADD && !ps_node_value_is_pointer_like(n) && ps_node_type_size(n) == 8) long_add = n;
     if (n->kind == ND_FUNCALL) {
       node_function_call_t *call = as_function_call(n);
-      if (call->direct_name_len == 7 &&
-          strncmp(call->direct_name, "__tm_lf", 7) == 0) long_call = n;
-      if (call->direct_name_len == 7 &&
-          strncmp(call->direct_name, "__tm_ip", 7) == 0) ptr_call = n;
-      if (call->direct_name_len == 7 &&
-          strncmp(call->direct_name, "__tm_pp", 7) == 0) ptrptr_call = n;
-      if (call->direct_name_len == 7 &&
-          strncmp(call->direct_name, "__tm_dp", 7) == 0)
+      const char *direct_name =
+          psx_function_call_direct_name(call);
+      int direct_name_len =
+          psx_function_call_direct_name_length(call);
+      if (direct_name_len == 7 &&
+          strncmp(direct_name, "__tm_lf", 7) == 0) long_call = n;
+      if (direct_name_len == 7 &&
+          strncmp(direct_name, "__tm_ip", 7) == 0) ptr_call = n;
+      if (direct_name_len == 7 &&
+          strncmp(direct_name, "__tm_pp", 7) == 0) ptrptr_call = n;
+      if (direct_name_len == 7 &&
+          strncmp(direct_name, "__tm_dp", 7) == 0)
         double_ptr_to_array_call = n;
       if (call->callee && call->callee->kind == ND_LVAR) {
         lvar_t *callee_lvar = ps_node_lvar_symbol(call->callee);
@@ -19988,8 +20020,10 @@ static void test_type_metadata_bridge() {
     node_t *n = body->body[i];
     if (n->kind != ND_FUNCALL) continue;
     node_function_call_t *call = as_function_call(n);
-    if (call->direct_name_len == 7 &&
-        strncmp(call->direct_name, "__tm_cq", 7) == 0) {
+    if (psx_function_call_direct_name_length(call) == 7 &&
+        strncmp(
+            psx_function_call_direct_name(call),
+            "__tm_cq", 7) == 0) {
       const_struct_ptr_call = n;
       break;
     }
@@ -20068,11 +20102,13 @@ static void test_type_metadata_bridge() {
       pick_def->signature, "p<f64(f64)>()");
   assert_canonical_type_signature(
       pick_def->signature->base, "p<f64(f64)>");
+  node_identifier_t pick_identifier = {0};
+  pick_identifier.base.kind = ND_IDENTIFIER;
+  pick_identifier.name = "__tm698_pick";
+  pick_identifier.name_len = 12;
   node_function_call_t pick_call = {0};
   pick_call.base.kind = ND_FUNCALL;
-  pick_call.direct_name = "__tm698_pick";
-  pick_call.direct_name_len = 12;
-  pick_call.callee_type = ps_type_clone(pick_def->signature);
+  pick_call.callee = (node_t *)&pick_identifier;
   ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
   node_t *resolved_pick_call =
       analyze_test_expression((node_t *)&pick_call, NULL);
@@ -20080,9 +20116,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
   const psx_type_t *pick_call_type =
       ps_node_get_type(resolved_pick_call);
+  const psx_type_t *pick_callee_type =
+      psx_function_call_type(
+          (node_function_call_t *)resolved_pick_call);
   ASSERT_TRUE(pick_call_type != NULL);
+  ASSERT_TRUE(pick_callee_type != NULL);
   ASSERT_TRUE(ps_type_shape_matches(
-      pick_call_type, pick_call.callee_type->base));
+      pick_call_type, pick_callee_type->base));
   ASSERT_TRUE(ps_node_value_is_pointer_like(resolved_pick_call));
   assert_canonical_type_signature(pick_call_type, "p<f64(f64)>");
   const psx_type_t *pick_ctx_return =
@@ -21048,8 +21088,10 @@ static void test_semantic_canonical_type_invariant() {
   test_bind_node_type(
       (node_t *)&invalid_function_call,
       ps_type_new_integer(TK_INT, 4, 0));
-  invalid_function_call.callee_type = ps_type_new_function(
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  psx_function_call_bind_type(
+      &invalid_function_call,
+      ps_type_new_function(
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -21069,7 +21111,8 @@ static void test_semantic_canonical_type_invariant() {
       (node_t *)&invalid_indirect_function_call,
       ps_type_new_integer(TK_INT, 4, 0));
   invalid_indirect_function_call.callee = &non_callable_callee;
-  invalid_indirect_function_call.callee_type = callee_function;
+  psx_function_call_bind_type(
+      &invalid_indirect_function_call, callee_function);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_indirect_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -21082,7 +21125,8 @@ static void test_semantic_canonical_type_invariant() {
   test_bind_node_type(
       (node_t *)&invalid_implicit_function_call,
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
-  invalid_implicit_function_call.base.is_implicit_func_decl = 1;
+  psx_function_call_set_implicit_declaration(
+      &invalid_implicit_function_call, 1);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_implicit_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -21095,7 +21139,8 @@ static void test_semantic_canonical_type_invariant() {
   test_bind_node_type(
       (node_t *)&valid_implicit_function_call,
       ps_type_new_integer(TK_INT, 4, 0));
-  valid_implicit_function_call.base.is_implicit_func_decl = 1;
+  psx_function_call_set_implicit_declaration(
+      &valid_implicit_function_call, 1);
   ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&valid_implicit_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
@@ -21686,13 +21731,13 @@ static void test_semantic_type_identity() {
   node_function_call_t typed_call = {0};
   typed_call.base.kind = ND_FUNCALL;
   test_bind_node_type((node_t *)&typed_call, function_type->base);
-  typed_call.callee_type = function_type;
+  psx_function_call_bind_type(&typed_call, function_type);
   ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
       context, (node_t *)&typed_call, &failure, 0));
   psx_qual_type_t callee_identity =
-      ps_function_call_callee_qual_type(&typed_call);
+      psx_function_call_qual_type(&typed_call);
   ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
-  ASSERT_TRUE(typed_call.callee_type ==
+  ASSERT_TRUE(psx_function_call_type(&typed_call) ==
               ps_ctx_type_by_id_in(context, callee_identity.type_id));
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_call) ==
               ps_ctx_type_by_id_in(

@@ -7,8 +7,8 @@
 #include "../parser/ast.h"
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
-#include "../parser/node_resolution_state.h"
-#include "../parser/node_type_public.h"
+#include "resolution_state.h"
+#include "resolved_node_type.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
@@ -16,8 +16,11 @@
 #include "../lowering/runtime_initializer_plan.h"
 #include "compound_literal_resolution.h"
 #include "alignof_query_resolution.h"
+#include "case_label_resolution.h"
+#include "function_call_resolution.h"
 #include "typed_hir_node_internal.h"
 #include "generic_selection_resolution.h"
+#include "literal_resolution.h"
 #include "member_access_resolution.h"
 #include "resolved_node_kind.h"
 #include "resolved_node.h"
@@ -557,6 +560,10 @@ static int build_special_children(
       }
       return 1;
     }
+    case ND_CASE:
+      *include_common_children = 0;
+      return build_and_append(
+          builder, children, source->rhs, PSX_HIR_EDGE_RHS);
     case ND_STMT_EXPR:
       *include_common_children = 0;
       return append_child(
@@ -1150,9 +1157,9 @@ static int copy_payload(
     }
     case ND_STRING: {
       const node_string_t *string = (const node_string_t *)source;
-      spec->name = string->string_label;
-      spec->name_length = string->string_label
-                              ? strlen(string->string_label) : 0;
+      char *string_label = psx_string_literal_label(string);
+      spec->name = string_label;
+      spec->name_length = string_label ? strlen(string_label) : 0;
       spec->literal_contents = string->literal_contents;
       spec->literal_length = string->literal_length > 0
                                  ? (size_t)string->literal_length : 0;
@@ -1176,10 +1183,12 @@ static int copy_payload(
     case ND_FUNCALL: {
       const node_function_call_t *call =
           (const node_function_call_t *)source;
-      spec->name = call->direct_name;
-      spec->name_length = call->direct_name_len > 0
-                              ? (size_t)call->direct_name_len : 0;
-      spec->attached_qual_type = ps_function_call_callee_qual_type(call);
+      int direct_name_len =
+          psx_function_call_direct_name_length(call);
+      spec->name = psx_function_call_direct_name(call);
+      spec->name_length = direct_name_len > 0
+                              ? (size_t)direct_name_len : 0;
+      spec->attached_qual_type = psx_function_call_qual_type(call);
       break;
     }
     case ND_FUNCREF: {
@@ -1198,17 +1207,15 @@ static int copy_payload(
     }
     case ND_CASE: {
       const node_case_t *case_node = (const node_case_t *)source;
-      if (!case_node->has_resolved_value || source->lhs) {
+      if (!psx_case_label_is_resolved(case_node)) {
         set_failure(
             builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
         return 0;
       }
-      spec->integer_value = case_node->val;
-      spec->label_id = case_node->label_id;
+      spec->integer_value = psx_case_label_value(case_node);
       break;
     }
     case ND_DEFAULT:
-      spec->label_id = ((const node_default_t *)source)->label_id;
       break;
     case ND_GOTO:
     case ND_LABEL: {
@@ -1216,7 +1223,6 @@ static int copy_payload(
       spec->name = jump->name;
       spec->name_length = jump->name_len > 0
                               ? (size_t)jump->name_len : 0;
-      spec->label_id = jump->label_id;
       break;
     }
     case ND_VLA_ALLOC: {

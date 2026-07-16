@@ -2,7 +2,7 @@
 #define PSX_TYPE_NAME_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;

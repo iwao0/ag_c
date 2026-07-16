@@ -2,7 +2,7 @@
 #include "runtime_context.h"
 
 #include "../parser/lvar_public.h"
-#include "../parser/node_resolution_state.h"
+#include "../semantic/resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/diag.h"
 #include "../diag/diag.h"

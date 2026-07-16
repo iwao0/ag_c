@@ -6,7 +6,7 @@
 #include "ast.h"
 #include "init_slot.h"
 #include "gvar_public.h"
-#include "node_type_public.h"
+#include "../semantic/resolved_node_type.h"
 #include "node_vla_public.h"
 #include "syntax_node.h"
 #include "tag_public.h"
@@ -17,23 +17,6 @@ struct lvar_t;
 struct global_var_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-void ps_node_bind_type(node_t *node, const psx_type_t *type);
-void ps_node_bind_qual_type(
-    node_t *node, const psx_type_t *canonical_type,
-    psx_qual_type_t qual_type);
-int ps_node_prepare_resolution_state_in(
-    arena_context_t *arena_context, node_t *node);
-int ps_node_copy_resolution_state_in(
-    arena_context_t *arena_context, node_t *destination,
-    const node_t *source);
-void ps_node_clear_type(node_t *node);
-void ps_node_clear_expr_type_state(node_t *node);
-void ps_node_set_qual_type_identity(
-    node_t *node, psx_qual_type_t qual_type);
-void ps_node_set_bitfield_info(
-    node_t *node, int bit_width, int bit_offset, int bit_is_signed);
-void ps_node_set_scalar_ptr_member_lvalue(node_t *node, int enabled);
-void ps_node_set_subscript_uses_base_address(node_t *node, int enabled);
 void ps_node_bind_symbol_decl_type_if_missing(node_t *node);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);

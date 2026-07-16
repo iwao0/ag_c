@@ -3,7 +3,7 @@
 #include "type_name_resolution.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"

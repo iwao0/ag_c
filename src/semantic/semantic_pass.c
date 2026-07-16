@@ -4,7 +4,7 @@
 #include "../parser/diag.h"
 #include "../parser/arena.h"
 #include "../parser/global_registry.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/local_registry.h"
@@ -13,11 +13,13 @@
 #include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "assignment_validation.h"
+#include "case_label_resolution.h"
 #include "constant_expression.h"
 #include "expression_operand_resolution.h"
 #include "function_call_resolution.h"
 #include "generic_selection_resolution.h"
 #include "lvar_usage_analysis.h"
+#include "literal_resolution.h"
 #include "member_access_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "static_assert_resolution.h"
@@ -92,7 +94,7 @@ static void semantic_resolve_number_literal(
         arena_context,
         semantic_literal_floating_kind(fp_kind),
         0);
-    if (global_registry && literal->fval_id < 0) {
+    if (global_registry) {
       float_lit_t *registered = calloc(1, sizeof(float_lit_t));
       registered->id = ps_global_registry_next_float_literal_id(
           global_registry);
@@ -101,7 +103,6 @@ static void semantic_resolve_number_literal(
       registered->float_suffix_kind =
           literal->float_suffix_kind;
       psx_register_float_lit_in(global_registry, registered);
-      literal->fval_id = registered->id;
     }
   } else {
     tk_int_size_t int_size = TK_INT_SIZE_INT;
@@ -146,17 +147,18 @@ static void semantic_resolve_string_literal(
   const psx_type_t *element_type = ps_type_new_integer_kind_in(
       arena_context, element_kind, element_is_unsigned,
       element_width == TK_CHAR_WIDTH_CHAR);
-  if (global_registry && !literal->string_label) {
+  if (global_registry) {
     int id = ps_global_registry_next_string_literal_id(
         global_registry);
     int label_length = snprintf(NULL, 0, ".LC%d", id);
-    literal->string_label = calloc(
+    char *string_label = calloc(
         (size_t)label_length + 1, 1);
     snprintf(
-        literal->string_label, (size_t)label_length + 1,
+        string_label, (size_t)label_length + 1,
         ".LC%d", id);
+    psx_string_literal_bind_label(literal, string_label);
     string_lit_t *registered = calloc(1, sizeof(string_lit_t));
-    registered->label = literal->string_label;
+    registered->label = string_label;
     registered->str = literal->literal_contents;
     registered->len = literal->literal_length;
     registered->char_width = literal->char_width;
@@ -544,11 +546,15 @@ static void semantic_resolve_function_call(
   if (!call) return;
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(semantic_context);
+  const psx_type_t *bound_call_type =
+      psx_function_call_type(call);
+  int is_implicit_declaration =
+      psx_function_call_is_implicit_declaration(call);
   psx_function_call_resolution_t resolution;
   psx_resolve_function_call_type(
-      call->callee_type,
+      bound_call_type,
       call->callee ? ps_node_get_type(call->callee) : NULL,
-      call->base.is_implicit_func_decl, &resolution);
+      is_implicit_declaration, &resolution);
   if (resolution.status == PSX_FUNCTION_CALL_RESOLUTION_OK) {
     if (resolution.function_type) {
       const psx_semantic_type_table_t *types =
@@ -560,7 +566,7 @@ static void semantic_resolve_function_call(
         callee_type = ps_ctx_intern_qual_type_in(
             semantic_context,
             call->callee ? ps_node_get_type(call->callee)
-                         : call->callee_type);
+                         : bound_call_type);
       }
       psx_qual_type_t function_type =
           psx_semantic_type_table_callable_function(types, callee_type);
@@ -572,7 +578,8 @@ static void semantic_resolve_function_call(
           psx_semantic_type_table_lookup(types, function_type.type_id);
       if (canonical_function &&
           canonical_function->kind == PSX_TYPE_FUNCTION) {
-        call->callee_type = canonical_function;
+        psx_function_call_bind_type(call, canonical_function);
+        bound_call_type = canonical_function;
       }
       psx_qual_type_t return_type = psx_semantic_type_table_base(
           types, function_type.type_id);
@@ -584,11 +591,11 @@ static void semantic_resolve_function_call(
       } else {
         semantic_bind_result_type(
             (node_t *)call,
-            ps_type_function_return_type(call->callee_type));
+            ps_type_function_return_type(bound_call_type));
       }
       return;
     }
-    if (call->base.is_implicit_func_decl) {
+    if (is_implicit_declaration) {
       semantic_bind_result_type(
           (node_t *)call,
           ps_type_new_integer_kind_in(
@@ -957,9 +964,7 @@ static void semantic_transform_node(
                 DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
             "case label");
       }
-      case_node->val = value;
-      case_node->has_resolved_value = 1;
-      node->lhs = NULL;
+      psx_case_label_bind_value(case_node, value);
       semantic_transform_node(node->rhs, traversal);
       break;
     }

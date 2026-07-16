@@ -5,6 +5,7 @@
 #include "../parser/diag.h"
 #include "../parser/dynarray.h"
 #include "../parser/semantic_ctx.h"
+#include "case_label_resolution.h"
 #include "tree_walk.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
@@ -152,13 +153,14 @@ static void register_case(
   const token_t *tok = case_node->base.tok
                            ? case_node->base.tok
                            : fallback;
+  long long value = psx_case_label_value(case_node);
   for (int i = 0; i < context->count; i++) {
-    if (context->case_values[i] == case_node->val) {
+    if (context->case_values[i] == value) {
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE, tok,
           diag_message_for_in(
               diagnostics, DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE),
-          case_node->val);
+          value);
     }
   }
   if (context->count >= context->capacity) {
@@ -168,7 +170,7 @@ static void register_case(
         diagnostics, context->case_values, (size_t)context->capacity,
         sizeof(long long));
   }
-  context->case_values[context->count++] = case_node->val;
+  context->case_values[context->count++] = value;
 }
 
 static void register_default(

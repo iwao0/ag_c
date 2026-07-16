@@ -3,7 +3,7 @@
 
 #include "../compilation_options.h"
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "../semantic/resolution_state.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;

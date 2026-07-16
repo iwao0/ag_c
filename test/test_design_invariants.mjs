@@ -109,7 +109,7 @@ const resolutionWorkTreeInternalHeader = await readFile(
   "utf8",
 );
 const earlyNodeResolutionState = await readFile(
-  "src/parser/node_resolution_state.h",
+  "src/semantic/resolution_state.h",
   "utf8",
 );
 const earlyTypeQueryResolutionSource = await readFile(
@@ -2284,7 +2284,7 @@ const memberAccessAstHeader = await readFile(
   "utf8",
 );
 const memberAccessStateHeader = await readFile(
-  "src/parser/node_resolution_state.h",
+  "src/semantic/resolution_state.h",
   "utf8",
 );
 const memberNodeUtilsSource = await readFile(
@@ -3066,8 +3066,40 @@ const resolvedFunctionSource = await readFile(
   "src/semantic/resolved_function.c",
   "utf8",
 );
+const functionCallResolutionHeader = await readFile(
+  "src/semantic/function_call_resolution.h",
+  "utf8",
+);
+const functionCallResolutionSource = await readFile(
+  "src/semantic/function_call_resolution.c",
+  "utf8",
+);
+const caseLabelResolutionHeader = await readFile(
+  "src/semantic/case_label_resolution.h",
+  "utf8",
+);
+const caseLabelResolutionSource = await readFile(
+  "src/semantic/case_label_resolution.c",
+  "utf8",
+);
+const literalResolutionHeader = await readFile(
+  "src/semantic/literal_resolution.h",
+  "utf8",
+);
+const literalResolutionSource = await readFile(
+  "src/semantic/literal_resolution.c",
+  "utf8",
+);
+const nodeTypePublicSource = await readFile(
+  "src/semantic/resolved_node_type.h",
+  "utf8",
+);
+const resolvedNodeTypeSource = await readFile(
+  "src/semantic/resolved_node_type.c",
+  "utf8",
+);
 const nodeResolutionStateSource = await readFile(
-  "src/parser/node_resolution_state.h",
+  "src/semantic/resolution_state.h",
   "utf8",
 );
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
@@ -3354,14 +3386,35 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     "function definitions must be completed as syntax before semantic function construction",
   );
 }
-if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?has_resolved_value\s*=\s*1[^]*?node->lhs\s*=\s*NULL/.test(
+const caseNodeStruct = astSource.match(
+  /struct node_case_t\s*\{([^{}]*)\};/,
+);
+if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\s*\(/.test(
       semanticPassSource,
     ) ||
-    !/case\s+ND_CASE:[^]*?!case_node->has_resolved_value[^]*?PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
+    /case\s+ND_CASE:[^]*?node->lhs\s*=\s*NULL/.test(
+      semanticPassSource,
+    ) ||
+    !/case\s+ND_CASE:[^]*?!psx_case_label_is_resolved\s*\([^]*?PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/case\s+ND_CASE:[^]*?include_common_children\s*=\s*0[^]*?source->rhs/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !caseNodeStruct ||
+    /\b(?:val|has_resolved_value|label_id)\b/.test(caseNodeStruct[1]) ||
+    /\blabel_id\b/.test(astSource) ||
+    !/\bpsx_case_label_resolution_state_t\s+case_label\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_case_label_bind_value\s*\(/.test(
+      caseLabelResolutionHeader,
+    ) ||
+    !/\bcase_node->base\.resolution_state->case_label\b/.test(
+      caseLabelResolutionSource,
     )) {
   throw new Error(
-    "case labels must remain Syntax expressions until semantic resolution and enter Typed HIR only as resolved constants",
+    "case label expressions must remain Syntax while resolved values live in semantic state and Typed HIR",
   );
 }
 if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
@@ -3411,17 +3464,36 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !functionCallStruct ||
     !/\bnode_t\s*\*\*\s*arguments\s*;/.test(functionCallStruct[1]) ||
     !/\bnode_t\s*\*\s*callee\s*;/.test(functionCallStruct[1]) ||
-    !/\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
+    /\b(?:callee_type|callee_qual_type|direct_name|is_implicit_declaration|parameters|signature|lvars|is_static)\b/.test(
       functionCallStruct[1],
+    ) ||
+    /\bis_implicit_func_decl\b/.test(astSource) ||
+    !/\bpsx_function_call_resolution_state_t\s+function_call\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
+      nodeResolutionStateSource,
     ) ||
     !/\bpsx_qual_type_t\s+callee_qual_type\s*;/.test(
-      functionCallStruct[1],
+      nodeResolutionStateSource,
     ) ||
-    /\b(?:parameters|signature|lvars|is_static)\b/.test(
-      functionCallStruct[1],
+    !/\bchar\s*\*\s*direct_name\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bunsigned\s+char\s+is_implicit_declaration\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\bps_function_call_callee_qual_type\s*\(/.test(
+      nodeTypePublicSource,
+    ) ||
+    !/\bpsx_function_call_qual_type\s*\(/.test(
+      functionCallResolutionHeader,
+    ) ||
+    !/\bcall->base\.resolution_state->function_call\b/.test(
+      functionCallResolutionSource,
     )) {
   throw new Error(
-    "resolved function definitions must live outside Syntax AST while calls remain syntax records",
+    "function definitions and resolved call metadata must live outside Syntax AST",
   );
 }
 const classifyCallParam = irBuilderSource.match(
@@ -3431,7 +3503,7 @@ const attachCallableFromCallee = irBuilderSource.match(
   /static\s+void\s+attach_callable_type_from_callee\s*\([^]*?\n\}/,
 );
 if (!classifyCallParam ||
-    !/ps_function_call_callee_qual_type\s*\(/.test(classifyCallParam[0]) ||
+    !/psx_function_call_qual_type\s*\(/.test(classifyCallParam[0]) ||
     !/psx_semantic_type_table_parameter\s*\(/.test(classifyCallParam[0]) ||
     /(?:callee_type|param_types)\s*(?:->|\[)/.test(classifyCallParam[0]) ||
     !attachCallableFromCallee ||
@@ -3491,6 +3563,21 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+if (allSourceFiles.includes("src/parser/node_type_public.h") ||
+    allSourceFiles.includes("src/parser/node_resolution_state.h") ||
+    !/\bconst\s+psx_type_t\s*\*\s*ps_node_get_type\s*\(/.test(
+      resolvedNodeTypeSource,
+    ) ||
+    !/\bint\s+ps_node_prepare_resolution_state_in\s*\(/.test(
+      resolvedNodeTypeSource,
+    ) ||
+    /^(?:const\s+psx_type_t\s*\*|psx_qual_type_t|int)\s+(?:ps_node_get_type|ps_node_qual_type|ps_node_prepare_resolution_state_in|ps_node_copy_resolution_state_in)\s*\(/m.test(
+      nodeUtilsSource,
+    )) {
+  throw new Error(
+    "resolved node type state and its core API must be owned by the semantic layer",
+  );
+}
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
       nodeUtilsSource,
     ) ||
@@ -3768,10 +3855,6 @@ const explicitDiagnosticInitializerLoweringSource = await readFile(
 );
 const explicitDiagnosticStaticDataInitializerSource = await readFile(
   "src/lowering/static_data_initializer.c",
-  "utf8",
-);
-const nodeTypePublicSource = await readFile(
-  "src/parser/node_type_public.h",
   "utf8",
 );
 const declarationPipelineSource = await readFile(
@@ -6123,6 +6206,9 @@ const parsedNumberLiteral = parserExpressionSource.match(
 const parsedStringLiteral = parserExpressionSource.match(
   /static\s+node_string_t\s*\*make_string_lit_node\s*\([^]*?\n\}\n\n\/\/ C11/,
 );
+const stringNodeStruct = astSource.match(
+  /struct node_string_t\s*\{([^{}]*)\};/,
+);
 const syntaxIntConstructor = nodeUtilsSource.match(
   /node_t\s*\*psx_node_new_syntax_int_in\s*\([^]*?\n\}\n\nnode_t\s*\*ps_node_new_num_in/,
 );
@@ -6148,9 +6234,27 @@ if (!parsedNumberLiteral ||
     ) ||
     !/case\s+ND_STRING\s*:[^]*?semantic_resolve_string_literal\s*\(/.test(
       semanticPassSource,
+    ) ||
+    /\bfval_id\b/.test(numberNodeStruct?.[1] ?? "") ||
+    !stringNodeStruct ||
+    /\bstring_label\b/.test(stringNodeStruct[1]) ||
+    !/\bpsx_literal_resolution_state_t\s+literal\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_string_literal_bind_label\s*\(/.test(
+      literalResolutionHeader,
+    ) ||
+    !/\bbase\.resolution_state->literal\.string_label\b/.test(
+      literalResolutionSource,
+    ) ||
+    !/\bpsx_string_literal_bind_label\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    /\bliteral->(?:fval_id|string_label)\b/.test(
+      semanticPassSource,
     )) {
   throw new Error(
-    "parser literals must remain typeless syntax and receive canonical types only in semantic resolution",
+    "parser literals must remain typeless syntax while registry metadata lives in semantic resolution state",
   );
 }
 if (/\bps_type_new_[a-z0-9_]*\s*\(|\bps_node_bind_(?:type|qual_type)\s*\(|(?:->|\.)base\.type\s*=/.test(

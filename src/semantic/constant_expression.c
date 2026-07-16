@@ -2,6 +2,7 @@
 
 #include "alignof_query_resolution.h"
 #include "generic_selection_resolution.h"
+#include "literal_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
@@ -284,7 +285,7 @@ int psx_resolve_static_address_constant(
     }
     case ND_STRING: {
       node_string_t *string = (node_string_t *)node;
-      *symbol = string->string_label;
+      *symbol = psx_string_literal_label(string);
       *symbol_len = -1;
       return 1;
     }

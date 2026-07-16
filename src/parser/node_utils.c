@@ -1,5 +1,5 @@
 #include "node_utils.h"
-#include "node_resolution_state.h"
+#include "../semantic/resolution_state.h"
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
@@ -2264,26 +2264,6 @@ static node_t *generic_selection_semantic_expression(
              ? selection->associations[selected].expression : NULL;
 }
 
-const psx_type_t *ps_node_get_type(const node_t *node) {
-  return node && node->resolution_state
-             ? node->resolution_state->type : NULL;
-}
-
-psx_qual_type_t ps_node_qual_type(const node_t *node) {
-  return node && node->resolution_state
-             ? node->resolution_state->qual_type
-              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                  PSX_TYPE_QUALIFIER_NONE};
-}
-
-psx_qual_type_t ps_function_call_callee_qual_type(
-    const node_function_call_t *call) {
-  return call
-             ? call->callee_qual_type
-             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
-}
-
 static int node_type_accepts_vla_runtime_view(const node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   return type && ps_type_is_well_formed(type) &&
@@ -2329,32 +2309,6 @@ void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
       row_stride_frame_off;
   node->resolution_state->expr.vla_runtime.strides_remaining =
       strides_remaining > 0 ? strides_remaining : 0;
-}
-
-int ps_node_prepare_resolution_state_in(
-    arena_context_t *arena_context, node_t *node) {
-  if (!node || !arena_context) return 0;
-  if (node->resolution_state) return 1;
-  node->resolution_state = arena_alloc_in(
-      arena_context, sizeof(*node->resolution_state));
-  return node->resolution_state != NULL;
-}
-
-int ps_node_copy_resolution_state_in(
-    arena_context_t *arena_context, node_t *destination,
-    const node_t *source) {
-  if (!destination) return 0;
-  if (!source || !source->resolution_state) {
-    if (destination->resolution_state)
-      *destination->resolution_state =
-          (psx_node_resolution_state_t){0};
-    return 1;
-  }
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, destination))
-    return 0;
-  *destination->resolution_state = *source->resolution_state;
-  return 1;
 }
 
 void ps_node_bind_type(node_t *node, const psx_type_t *type) {

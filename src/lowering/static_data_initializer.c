@@ -5,11 +5,12 @@
 #include "../parser/diag.h"
 #include "../parser/decl.h"
 #include "../parser/global_registry.h"
-#include "../parser/node_resolution_state.h"
+#include "../semantic/resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
+#include "../semantic/literal_resolution.h"
 #include "../semantic/member_access_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 #include "../tokenizer/literals.h"
@@ -730,7 +731,7 @@ static int lower_static_string_expression(
     global_var_t *global, const psx_type_t *type, node_string_t *string) {
   if (!global || !type || !string) return 0;
   if (type->kind == PSX_TYPE_POINTER) {
-    global->init_symbol = string->string_label;
+    global->init_symbol = psx_string_literal_label(string);
     global->init_symbol_len = -1;
     return 1;
   }

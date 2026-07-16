@@ -25,13 +25,16 @@
 #include "ir_symbol_lowering.h"
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
-#include "../parser/node_type_public.h"
+#include "../semantic/resolved_node_type.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_function.h"
+#include "../semantic/function_call_resolution.h"
+#include "../semantic/case_label_resolution.h"
+#include "../semantic/literal_resolution.h"
 #include "../diag/diag.h"
 #include "../diag/warning_catalog.h"
 #include <stdio.h>
@@ -240,20 +243,23 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
   }
   if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
-    if (name_matches(call->direct_name, call->direct_name_len,
+    const char *direct_name = psx_function_call_direct_name(call);
+    int direct_name_len =
+        psx_function_call_direct_name_length(call);
+    if (name_matches(direct_name, direct_name_len,
                      scan->options->frame_condition)) {
       scan->condition_call_count++;
       if (!is_exact_int_void_function_id(
               scan->semantic_types,
-              ps_function_call_callee_qual_type(call).type_id)) {
+              psx_function_call_qual_type(call).type_id)) {
         scan->invalid_node = node;
         scan->invalid_reason =
             DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE;
         return;
       }
     }
-    if (name_matches(call->direct_name, call->direct_name_len, "alloca") ||
-        name_matches(call->direct_name, call->direct_name_len,
+    if (name_matches(direct_name, direct_name_len, "alloca") ||
+        name_matches(direct_name, direct_name_len,
                      "__builtin_alloca")) {
       if (!scan->frame_invalid_node) {
         scan->frame_invalid_node = node;
@@ -269,7 +275,9 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
   if (node->kind == ND_WHILE && node->lhs &&
       node->lhs->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node->lhs;
-    if (name_matches(call->direct_name, call->direct_name_len,
+    if (name_matches(
+            psx_function_call_direct_name(call),
+            psx_function_call_direct_name_length(call),
                      scan->options->frame_condition)) {
       scan->frame_while = node;
       scan->frame_while_count++;
@@ -370,7 +378,7 @@ static ir_abi_param_info_t classify_call_param(
     const ir_build_ctx_t *ctx,
     const node_function_call_t *call, int param_idx) {
   psx_type_id_t function_type_id =
-      ps_function_call_callee_qual_type(call).type_id;
+      psx_function_call_qual_type(call).type_id;
   psx_qual_type_t param_type = psx_semantic_type_table_parameter(
       ctx ? ctx->semantic_types : NULL, function_type_id, param_idx);
   if (param_type.type_id != PSX_TYPE_ID_INVALID) {
@@ -378,8 +386,11 @@ static ir_abi_param_info_t classify_call_param(
   }
   if (call && !call->callee) {
     ir_abi_type_context_t abi = abi_type_context(ctx);
+    const char *direct_name =
+        psx_function_call_direct_name(call);
     return ir_abi_classify_builtin_param(
-        &abi, call->direct_name, call->direct_name_len, param_idx);
+        &abi, direct_name,
+        psx_function_call_direct_name_length(call), param_idx);
   }
   return (ir_abi_param_info_t){0};
 }
@@ -1142,11 +1153,12 @@ static ir_val_t build_expr_with_callable_type(
 static ir_val_t build_node_string(ir_build_ctx_t *ctx, node_t *node) {
   /* 文字列リテラル: コンパイル時に登録された .LC<id> ラベルのアドレスを返す。 */
   node_string_t *s = (node_string_t *)node;
+  char *string_label = psx_string_literal_label(s);
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_LOAD_STR);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
-  inst->sym = s->string_label;
-  inst->sym_len = s->string_label ? (int)strlen(s->string_label) : 0;
+  inst->sym = string_label;
+  inst->sym_len = string_label ? (int)strlen(string_label) : 0;
   inst->object_size = (s->byte_len + 1) * (int)s->char_width;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
@@ -1935,8 +1947,10 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
  * 幅は target layout、符号は canonical pointee type から取る。全操作 seq_cst 強度。 */
 static ir_val_t build_node_atomic_intrinsic(
     ir_build_ctx_t *ctx, node_function_call_t *call) {
-  const char *suf = call->direct_name + 12;    /* "__ag_atomic_" の後ろ */
-  int sl = call->direct_name_len - 12;
+  const char *direct_name =
+      psx_function_call_direct_name(call);
+  const char *suf = direct_name + 12;    /* "__ag_atomic_" の後ろ */
+  int sl = psx_function_call_direct_name_length(call) - 12;
 
   if (sl == 5 && memcmp(suf, "fence", 5) == 0) {
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
@@ -2012,9 +2026,13 @@ static ir_val_t build_node_atomic_intrinsic(
 
 static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   node_function_call_t *call_node = (node_function_call_t *)node;
-  if (!call_node->callee && call_node->direct_name &&
-      call_node->direct_name_len > 12 &&
-      memcmp(call_node->direct_name, "__ag_atomic_", 12) == 0) {
+  char *direct_name =
+      psx_function_call_direct_name(call_node);
+  int direct_name_len =
+      psx_function_call_direct_name_length(call_node);
+  if (!call_node->callee && direct_name &&
+      direct_name_len > 12 &&
+      memcmp(direct_name, "__ag_atomic_", 12) == 0) {
     return build_node_atomic_intrinsic(ctx, call_node);
   }
   /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
@@ -2033,7 +2051,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   int nargs_fixed = call_node->argument_count;
   const psx_type_t *function = psx_semantic_type_table_lookup(
       ctx->semantic_types,
-      ps_function_call_callee_qual_type(call_node).type_id);
+      psx_function_call_qual_type(call_node).type_id);
   if (function && function->is_variadic_function &&
       function->param_count < call_node->argument_count) {
     is_variadic_call = 1;
@@ -2326,14 +2344,15 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     call->sym = NULL;
     call->sym_len = 0;
   } else {
-    call->sym = call_node->direct_name;
-    call->sym_len = call_node->direct_name_len;
+    call->sym = direct_name;
+    call->sym_len = direct_name_len;
   }
   call->args = cargs;
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
-  call->is_implicit_call = call_node->base.is_implicit_func_decl ? 1 : 0;
+  call->is_implicit_call =
+      psx_function_call_is_implicit_declaration(call_node) ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   if (call_node->callee)
     attach_callable_type_from_callee(ctx, call, call_node->callee);
@@ -3444,7 +3463,8 @@ static void build_stmt_switch(ir_build_ctx_t *ctx, node_t *node) {
     ir_inst_t *eq = ir_inst_new(IR_EQ);
     eq->dst = ir_val_vreg(v_cmp, IR_TY_I32);
     eq->src1 = control;
-    eq->src2 = ir_val_imm(IR_TY_I32, cases[i]->val);
+    eq->src2 = ir_val_imm(
+        IR_TY_I32, psx_case_label_value(cases[i]));
     ir_func_append_inst(ctx->f, eq);
     ir_block_t *case_b = find_case_block(ctx, cases[i]);
     ir_block_t *next_b = ir_block_new(ctx->f);

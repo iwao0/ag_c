@@ -3,9 +3,10 @@
 #include <string.h>
 
 #include "../diag/diag.h"
-#include "../parser/node_type_public.h"
+#include "resolved_node_type.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
+#include "function_call_resolution.h"
 #include "resolved_node_kind.h"
 #include "resolved_function.h"
 #include "tree_walk.h"
@@ -169,29 +170,32 @@ static int validate_node(const node_t *node, void *user) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
-    if (call->callee_type) {
-      if (call->callee_type->kind != PSX_TYPE_FUNCTION ||
-          !ps_type_is_well_formed(call->callee_type) ||
-          node_type != call->callee_type->base) {
+    const psx_type_t *resolved_callee_type =
+        psx_function_call_type(call);
+    if (resolved_callee_type) {
+      if (resolved_callee_type->kind != PSX_TYPE_FUNCTION ||
+          !ps_type_is_well_formed(resolved_callee_type) ||
+          node_type != resolved_callee_type->base) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
       if (semantic_context) {
         psx_qual_type_t actual =
-            ps_function_call_callee_qual_type(call);
+            psx_function_call_qual_type(call);
         if (actual.type_id == PSX_TYPE_ID_INVALID) {
           return fail(
               failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
               node);
         }
-        if (call->callee_type != ps_ctx_type_by_id_in(
-                                     semantic_context, actual.type_id)) {
+        if (resolved_callee_type != ps_ctx_type_by_id_in(
+                                        semantic_context,
+                                        actual.type_id)) {
           return fail(
               failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT,
               node);
         }
       }
-    } else if (!node->is_implicit_func_decl ||
+    } else if (!psx_function_call_is_implicit_declaration(call) ||
                !is_implicit_function_result_type(node_type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);

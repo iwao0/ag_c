@@ -5,7 +5,7 @@
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_type_public.h"
+#include "../semantic/resolved_node_type.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
 

@@ -7,7 +7,7 @@
 #include "resolved_function.h"
 #include "sizeof_query_resolution.h"
 #include "vla_runtime_plan.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 
 static int walk_node(
     const node_t *node, psx_semantic_tree_visitor_t visitor, void *user);

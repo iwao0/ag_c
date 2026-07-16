@@ -2,7 +2,7 @@
 #define SEMANTIC_COMPOUND_LITERAL_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 
 static inline psx_compound_literal_resolution_kind_t
 psx_compound_literal_resolution_kind(

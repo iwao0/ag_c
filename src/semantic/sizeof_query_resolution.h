@@ -2,7 +2,7 @@
 #define SEMANTIC_SIZEOF_QUERY_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 
 typedef struct psx_sizeof_runtime_plan_t {
   node_t **runtime_bounds;

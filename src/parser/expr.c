@@ -925,7 +925,6 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
   } else {
     node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
     node->fval = tk_as_num_float(tok)->fval;
-    node->fval_id = -1;
   }
   set_curtok(ctx, curtok(ctx)->next);
   return (node_t *)node;

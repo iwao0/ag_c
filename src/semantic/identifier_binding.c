@@ -2,6 +2,7 @@
 
 #include "identifier_resolution.h"
 #include "alignof_query_resolution.h"
+#include "function_call_resolution.h"
 #include "sizeof_query_resolution.h"
 #include "type_name_resolution.h"
 #include "vla_runtime_plan.h"
@@ -274,21 +275,21 @@ static void bind_direct_call(
   }
 
   call->callee = NULL;
-  call->direct_name = identifier->name;
-  call->direct_name_len = identifier->name_len;
+  psx_function_call_bind_direct_name(
+      call, identifier->name, identifier->name_len);
   call->base.tok = identifier->base.tok;
   if (resolution.kind == PSX_IDENTIFIER_UNDECLARED_CALL) {
-    call->base.is_implicit_func_decl = 1;
+    psx_function_call_set_implicit_declaration(call, 1);
     return;
   }
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution.function);
-  call->callee_type = function_type
+  const psx_type_t *callee_type = function_type
       ? ps_type_clone_in(
             ps_ctx_arena(context->semantic_context), function_type)
       : NULL;
-  if (!call->callee_type ||
-      call->callee_type->kind != PSX_TYPE_FUNCTION) {
+  psx_function_call_bind_type(call, callee_type);
+  if (!callee_type || callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(context->semantic_context),
         identifier->base.tok
@@ -296,9 +297,10 @@ static void bind_direct_call(
             : (token_t *)context->fallback_diag_tok,
         "funcall", "canonical function type is missing for '%.*s'",
         identifier->name_len, identifier->name);
+    return;
   }
-  int expected = call->callee_type->param_count;
-  int is_variadic = call->callee_type->is_variadic_function;
+  int expected = callee_type->param_count;
+  int is_variadic = callee_type->is_variadic_function;
   int mismatch = is_variadic
       ? call->argument_count < expected
       : call->argument_count != expected;

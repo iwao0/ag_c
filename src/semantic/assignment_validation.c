@@ -4,6 +4,7 @@
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "function_call_resolution.h"
 
 void psx_validate_assignment_in_context(
     psx_semantic_context_t *semantic_context, const node_t *node,
@@ -17,11 +18,13 @@ void psx_validate_assignment_in_context(
     if (node->rhs->kind == ND_FUNCALL) {
       node_function_call_t *call =
           (node_function_call_t *)node->rhs;
-      if (!call->callee && call->direct_name) {
+      const char *direct_name =
+          psx_function_call_direct_name(call);
+      if (!call->callee && direct_name) {
         ps_diag_ctx_in(
             diagnostics, tok, "assign",
             "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
-            call->direct_name_len, call->direct_name);
+            psx_function_call_direct_name_length(call), direct_name);
       }
     }
     ps_diag_ctx_in(

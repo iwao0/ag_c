@@ -1,6 +1,6 @@
 #include "lvar_usage_analysis.h"
 
-#include "../parser/node_resolution_state.h"
+#include "resolution_state.h"
 #include "../diag/diag.h"
 #include "../parser/local_registry.h"
 #include "../parser/lvar_public.h"

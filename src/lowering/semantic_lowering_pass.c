@@ -5,7 +5,7 @@
 #include "initializer_lowering.h"
 #include "runtime_initializer_plan.h"
 #include "runtime_context.h"
-#include "../parser/node_resolution_state.h"
+#include "../semantic/resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../semantic/generic_selection_resolution.h"

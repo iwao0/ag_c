@@ -1,8 +1,8 @@
-#ifndef PARSER_NODE_RESOLUTION_STATE_H
-#define PARSER_NODE_RESOLUTION_STATE_H
+#ifndef SEMANTIC_RESOLUTION_STATE_H
+#define SEMANTIC_RESOLUTION_STATE_H
 
-#include "type.h"
-#include "vla_runtime.h"
+#include "../parser/type.h"
+#include "../parser/vla_runtime.h"
 
 struct global_var_t;
 struct lvar_t;
@@ -77,6 +77,23 @@ typedef struct {
   unsigned char is_resolved;
 } psx_member_access_state_t;
 
+typedef struct {
+  const psx_type_t *callee_type;
+  psx_qual_type_t callee_qual_type;
+  char *direct_name;
+  int direct_name_len;
+  unsigned char is_implicit_declaration;
+} psx_function_call_resolution_state_t;
+
+typedef struct {
+  long long value;
+  unsigned char is_resolved;
+} psx_case_label_resolution_state_t;
+
+typedef struct {
+  char *string_label;
+} psx_literal_resolution_state_t;
+
 typedef struct psx_type_name_resolution_state_t {
   const psx_type_t *bound_base_type;
   const psx_type_t *resolved_type;
@@ -92,6 +109,9 @@ typedef struct psx_node_resolution_state_t {
   psx_alignof_query_resolution_state_t alignof_query;
   psx_source_cast_resolution_t source_cast;
   psx_member_access_state_t member_access;
+  psx_function_call_resolution_state_t function_call;
+  psx_case_label_resolution_state_t case_label;
+  psx_literal_resolution_state_t literal;
   psx_type_name_resolution_state_t type_name;
 } psx_node_resolution_state_t;
 
