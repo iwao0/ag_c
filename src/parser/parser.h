@@ -4,24 +4,39 @@
 #include "ast.h"
 #include "function_definition_syntax.h"
 #include "local_declaration_syntax.h"
+#include "name_environment.h"
+#include "statement_syntax_context.h"
 #include "static_assert_declaration.h"
 #include "toplevel_declaration_syntax.h"
 #include "../tokenizer/token.h"
 #include "../tokenizer/tokenizer.h"
 
-typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
-typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
+
+typedef struct {
+  void *context;
+  psx_parser_runtime_context_t *runtime_context;
+  psx_name_classifier_t name_classifier;
+  int (*parse_static_assert)(
+      void *context,
+      psx_parsed_static_assert_declaration_t *assertion,
+      const psx_name_classifier_t *name_classifier);
+  int (*parse_toplevel_declaration_head)(
+      void *context,
+      psx_parsed_toplevel_declaration_t *declaration,
+      const psx_name_classifier_t *name_classifier);
+  int (*finish_toplevel_declaration)(
+      void *context,
+      psx_parsed_toplevel_declaration_t *declaration,
+      const psx_name_classifier_t *name_classifier);
+} psx_parser_syntax_services_t;
 
 typedef struct {
   tokenizer_context_t *tk_ctx;
   tokenizer_context_t *previous_runtime_tokenizer_context;
-  psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
-  const psx_toplevel_declaration_callbacks_t *toplevel_declarations;
+  psx_parser_syntax_services_t syntax;
+  psx_parser_name_environment_t name_environment;
 } psx_parser_stream_t;
 
 typedef enum {
@@ -42,27 +57,15 @@ typedef struct {
 
 // トップレベル項目のストリーミングパース。frontendはitemを逐次適用する。
 // 1 関数ぶんの AST だけを保持して codegen→解放できるので、AST のピークメモリを抑える。
-void ps_parser_stream_begin_in_contexts(
+void ps_parser_stream_begin_with_syntax(
     psx_parser_stream_t *stream,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
     tokenizer_context_t *tk_ctx, token_t *start,
-    const psx_toplevel_declaration_callbacks_t *toplevel_declarations);
+    const psx_parser_syntax_services_t *syntax);
 int ps_parse_next_toplevel_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item);
 node_t *ps_parse_function_definition_body(
     psx_parser_stream_t *stream, node_function_definition_t *function,
-    const psx_local_declaration_callbacks_t *local_declarations);
+    const psx_statement_syntax_context_t *statement_syntax);
 void ps_parser_stream_end(psx_parser_stream_t *stream);
-
-node_t *ps_expr_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    tokenizer_context_t *tk_ctx, token_t *start);
 
 #endif

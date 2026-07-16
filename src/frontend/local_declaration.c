@@ -414,11 +414,17 @@ static int resolve_block_declarations(
   ps_decl_enter_scope_in(resolver->local_registry);
   int ok = 1;
   for (int i = 0; block && block->body && block->body[i]; i++) {
+    psx_lvar_usage_region_t *region =
+        psx_decl_begin_lvar_usage_region_in(
+            resolver->local_registry);
+    block->body[i]->usage_region = region;
     if (!resolve_local_declarations_in_slot(
             resolver, &block->body[i])) {
       ok = 0;
-      break;
     }
+    psx_decl_end_lvar_usage_region_in(
+        resolver->local_registry, region);
+    if (!ok) break;
   }
   ps_decl_leave_scope_in(resolver->local_registry);
   ps_ctx_leave_block_scope_in(resolver->semantic_context);
@@ -436,11 +442,17 @@ static int resolve_function_body_declarations(
   node_block_t *body = (node_block_t *)*body_slot;
   int ok = 1;
   for (int i = 0; body->body && body->body[i]; i++) {
+    psx_lvar_usage_region_t *region =
+        psx_decl_begin_lvar_usage_region_in(
+            resolver->local_registry);
+    body->body[i]->usage_region = region;
     if (!resolve_local_declarations_in_slot(
             resolver, &body->body[i])) {
       ok = 0;
-      break;
     }
+    psx_decl_end_lvar_usage_region_in(
+        resolver->local_registry, region);
+    if (!ok) break;
   }
   ps_ctx_leave_block_scope_in(resolver->semantic_context);
   return ok;

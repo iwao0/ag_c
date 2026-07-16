@@ -8,8 +8,6 @@
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 
-#include <stdlib.h>
-
 typedef enum {
   PSX_TOPLEVEL_APPLY_NONE = 0,
   PSX_TOPLEVEL_APPLY_TYPEDEF,
@@ -58,35 +56,32 @@ static void apply_function_prototype(
   }
 }
 
-static void *begin_declaration(
-    void *context, psx_parsed_toplevel_declaration_t *declaration) {
-  const psx_toplevel_declaration_callbacks_t *callbacks = context;
-  if (!callbacks || !callbacks->semantic_context ||
-      !callbacks->global_registry || !callbacks->local_registry ||
-      !callbacks->runtime_context || !callbacks->lowering_context ||
-      !callbacks->options) {
-    return NULL;
-  }
-  psx_toplevel_declaration_application_t *application =
-      calloc(1, sizeof(*application));
-  if (!application) {
-    ps_diag_ctx_in(
-        ps_ctx_diagnostics(callbacks->semantic_context),
-        declaration ? declaration->diagnostic_token : NULL,
-        "decl", "top-level declaration allocation failed");
-  }
-  application->semantic_context = callbacks->semantic_context;
-  application->global_registry = callbacks->global_registry;
-  application->local_registry = callbacks->local_registry;
-  application->lowering_context = callbacks->lowering_context;
-  application->options = callbacks->options;
+static int begin_declaration(
+    psx_toplevel_declaration_application_t *application,
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    psx_parsed_toplevel_declaration_t *declaration) {
+  if (!application || !semantic_context || !global_registry ||
+      !local_registry || !lowering_context || !options ||
+      !declaration)
+    return 0;
+  *application = (psx_toplevel_declaration_application_t){
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .lowering_context = lowering_context,
+      .options = options,
+  };
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
     psx_apply_parsed_standalone_tag_in_contexts(
         application->semantic_context, application->global_registry,
         application->local_registry,
         &declaration->specifier);
-    return application;
+    return 1;
   }
 
   application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
@@ -99,14 +94,13 @@ static void *begin_declaration(
         declaration->diagnostic_token, "decl",
         "canonical top-level base type resolution failed");
   }
-  return application;
+  return 1;
 }
 
 static void begin_declarator(
-    void *declaration_context,
+    psx_toplevel_declaration_application_t *application,
     psx_parsed_declarator_t *declarator,
     psx_parsed_initializer_t *initializer) {
-  psx_toplevel_declaration_application_t *application = declaration_context;
   psx_parsed_toplevel_declaration_t *declaration = application->declaration;
   token_ident_t *name = declarator->identifier;
   application->current_kind = PSX_TOPLEVEL_APPLY_NONE;
@@ -180,9 +174,8 @@ static void begin_declarator(
 }
 
 static void finish_declarator(
-    void *declaration_context,
+    psx_toplevel_declaration_application_t *application,
     psx_parsed_initializer_t *initializer) {
-  psx_toplevel_declaration_application_t *application = declaration_context;
   if (application->current_kind != PSX_TOPLEVEL_APPLY_GLOBAL) return;
   application->current_initializer = *initializer;
   if (initializer->has_initializer &&
@@ -202,40 +195,6 @@ static void finish_declarator(
   }
 }
 
-static void finish_declaration(void *declaration_context) {
-  free(declaration_context);
-}
-
-void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
-    psx_toplevel_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options) {
-  if (!callbacks) return;
-  *callbacks = (psx_toplevel_declaration_callbacks_t){0};
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context || !lowering_context || !options)
-    return;
-  *callbacks = (psx_toplevel_declaration_callbacks_t){
-      .context = callbacks,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
-      .runtime_context = runtime_context,
-      .lowering_context = lowering_context,
-      .options = options,
-      .begin_declaration = begin_declaration,
-      .begin_declarator = begin_declarator,
-      .finish_declarator = finish_declarator,
-      .finish_declaration = finish_declaration,
-      .abort_declaration = finish_declaration,
-  };
-}
-
 void psx_apply_toplevel_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -246,19 +205,17 @@ void psx_apply_toplevel_declaration_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context || !lowering_context || !options ||
-      !declaration || declaration->applied_during_parse) return;
-  psx_toplevel_declaration_callbacks_t callbacks;
-  psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
-      &callbacks, semantic_context, global_registry, local_registry,
-      runtime_context, lowering_context, options);
-  void *application = callbacks.begin_declaration(
-      callbacks.context, declaration);
+      !declaration) return;
+  psx_toplevel_declaration_application_t application;
+  if (!begin_declaration(
+          &application, semantic_context, global_registry,
+          local_registry, lowering_context, options, declaration))
+    return;
   for (int i = 0; i < declaration->declarator_count; i++) {
-    callbacks.begin_declarator(
-        application, &declaration->declarators[i],
+    begin_declarator(
+        &application, &declaration->declarators[i],
         &declaration->initializers[i]);
-    callbacks.finish_declarator(
-        application, &declaration->initializers[i]);
+    finish_declarator(
+        &application, &declaration->initializers[i]);
   }
-  callbacks.finish_declaration(application);
 }

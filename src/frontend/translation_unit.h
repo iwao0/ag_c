@@ -9,10 +9,10 @@
 
 typedef struct {
   psx_parser_stream_t parser;
-  psx_toplevel_declaration_callbacks_t toplevel_declarations;
   psx_frontend_local_declaration_syntax_adapter_t
       local_declaration_adapter;
   psx_local_declaration_callbacks_t local_declarations;
+  psx_parser_syntax_services_t parser_syntax;
   psx_parser_name_environment_t local_name_environment;
   ag_compilation_session_t *session;
   unsigned char is_started;

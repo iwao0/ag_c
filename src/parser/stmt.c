@@ -170,15 +170,7 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
           sizeof(node_t *));
     }
     token_t *stmt_tok = curtok(context);
-    psx_lvar_usage_region_t *region =
-        context->syntax.begin_usage_region
-            ? context->syntax.begin_usage_region(
-                  context->syntax.context)
-            : NULL;
     node->body[i] = block_item(context);
-    if (context->syntax.end_usage_region)
-      context->syntax.end_usage_region(
-          context->syntax.context, region);
     if (ps_parser_has_recoverable_syntax_error_in(
             context->runtime_context)) {
       node->body[i] = NULL;
@@ -187,10 +179,7 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
         context->syntax.leave_block_scope(context->syntax.context);
       return NULL;
     }
-    if (node->body[i]) {
-      node->body[i]->tok = stmt_tok;
-      node->body[i]->usage_region = region;
-    }
+    if (node->body[i]) node->body[i]->tok = stmt_tok;
     i++;
   }
   node->body[i] = NULL;

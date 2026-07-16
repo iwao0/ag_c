@@ -23,8 +23,8 @@ typedef struct {
   int source_node_kind;
 } psx_resolved_hir_build_failure_t;
 
-psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
-    const psx_resolution_work_tree_t *work_tree,
+int psx_resolution_work_tree_build_typed_hir(
+    psx_resolution_work_tree_t *work_tree,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure);
 psx_hir_node_id_t psx_typed_hir_tree_emit(

@@ -3,12 +3,34 @@
 
 #include "local_declaration_syntax.h"
 #include "name_classifier.h"
+#include "statement_syntax_context.h"
 
 typedef struct node_t node_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
+  const psx_local_declaration_callbacks_t *local_declarations;
+  psx_name_classifier_t name_classifier;
+} psx_legacy_statement_syntax_adapter_t;
+
+int psx_legacy_statement_syntax_adapter_init(
+    psx_legacy_statement_syntax_adapter_t *adapter,
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
+    const psx_local_declaration_callbacks_t *local_declarations);
+psx_statement_syntax_context_t
+psx_legacy_statement_syntax_context(
+    psx_legacy_statement_syntax_adapter_t *adapter);
 
 node_t *psx_stmt_stmt_in_contexts(
     psx_semantic_context_t *semantic_context,

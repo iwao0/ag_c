@@ -9,11 +9,13 @@
 #include "../parser/function_parameter_syntax.h"
 #include "../parser/local_declaration_syntax.h"
 #include "../parser/node_utils.h"
+#include "resolution_work_tree_internal.h"
 #include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {
   const node_t *syntax_root;
   node_t *semantic_root;
+  psx_typed_hir_tree_t *typed_hir;
   psx_resolution_work_phase_t phase;
 };
 
@@ -624,6 +626,7 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
   tree->syntax_root = syntax_root;
   tree->semantic_root = clone_node(arena_context, syntax_root);
   if (!tree->semantic_root) return NULL;
+  tree->typed_hir = NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
 }
@@ -635,12 +638,20 @@ const node_t *psx_resolution_work_tree_syntax_root(
 
 node_t *psx_resolution_work_tree_mutable_semantic_root(
     psx_resolution_work_tree_t *tree) {
-  return tree ? tree->semantic_root : NULL;
+  return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED &&
+                 tree->phase < PSX_RESOLUTION_WORK_FINALIZED
+             ? tree->semantic_root : NULL;
 }
 
 const node_t *psx_resolution_work_tree_semantic_root(
     const psx_resolution_work_tree_t *tree) {
   return tree ? tree->semantic_root : NULL;
+}
+
+const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
+    const psx_resolution_work_tree_t *tree) {
+  return tree && tree->phase == PSX_RESOLUTION_WORK_HIR_READY
+             ? tree->typed_hir : NULL;
 }
 
 node_t *psx_resolution_work_tree_legacy_root(
@@ -660,9 +671,22 @@ int psx_resolution_work_tree_advance_with_root(
     psx_resolution_work_phase_t next, node_t *root) {
   if (!tree || !root || tree->phase != expected ||
       root == tree->syntax_root ||
+      next > PSX_RESOLUTION_WORK_FINALIZED ||
       next != (psx_resolution_work_phase_t)(expected + 1))
     return 0;
   tree->semantic_root = root;
   tree->phase = next;
+  return 1;
+}
+
+int psx_resolution_work_tree_attach_typed_hir(
+    psx_resolution_work_tree_t *tree,
+    psx_typed_hir_tree_t *typed_hir) {
+  if (!tree || !typed_hir ||
+      tree->phase != PSX_RESOLUTION_WORK_FINALIZED ||
+      tree->typed_hir)
+    return 0;
+  tree->typed_hir = typed_hir;
+  tree->phase = PSX_RESOLUTION_WORK_HIR_READY;
   return 1;
 }

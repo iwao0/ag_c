@@ -23,7 +23,7 @@
 #include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
 #include "typed_hir_tree_internal.h"
-#include "resolution_work_tree.h"
+#include "resolution_work_tree_internal.h"
 #include "vla_runtime_plan.h"
 
 typedef struct {
@@ -1403,8 +1403,8 @@ static psx_resolved_hir_node_t *build_node(
   return result;
 }
 
-psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
-    const psx_resolution_work_tree_t *work_tree,
+int psx_resolution_work_tree_build_typed_hir(
+    psx_resolution_work_tree_t *work_tree,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
@@ -1416,7 +1416,7 @@ psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
       failure->source_node_kind = semantic_root
                                       ? (int)semantic_root->kind : -1;
     }
-    return NULL;
+    return 0;
   }
   psx_resolution_work_phase_t phase =
       psx_resolution_work_tree_phase(work_tree);
@@ -1425,7 +1425,7 @@ psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
       failure->status = PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION;
       failure->source_node_kind = (int)semantic_root->kind;
     }
-    return NULL;
+    return 0;
   }
   hir_materializer_t builder = {
       .arena_context = ps_ctx_arena(semantic_context),
@@ -1436,15 +1436,21 @@ psx_typed_hir_tree_t *psx_resolution_work_tree_materialize_hir(
   if (!root) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
       failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
-    return NULL;
+    return 0;
   }
   psx_typed_hir_tree_t *typed_tree = arena_alloc_in(
       builder.arena_context, sizeof(*typed_tree));
   if (!typed_tree) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
       failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
-    return NULL;
+    return 0;
   }
   typed_tree->root = root;
-  return typed_tree;
+  if (!psx_resolution_work_tree_attach_typed_hir(
+          work_tree, typed_tree)) {
+    if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
+      failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
+    return 0;
+  }
+  return 1;
 }

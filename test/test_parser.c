@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/parser/parser_legacy.h"
 #include "../src/compilation_session_internal.h"
 #include "../src/type_layout.h"
 #include "../src/codegen_emit.h"
@@ -68,7 +69,7 @@
 #include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
-#include "../src/semantic/resolution_work_tree.h"
+#include "../src/semantic/resolution_work_tree_internal.h"
 #include "../src/semantic/typed_hir_materialization.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
@@ -1176,17 +1177,90 @@ static node_t *parse_test_declaration_assignment_expression(
       service->name_classifier, NULL);
 }
 
+static node_t *parse_test_toplevel_assignment_expression(
+    void *context) {
+  psx_parser_stream_t *stream = context;
+  return psx_expr_assign_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(),
+      ag_compilation_session_parser_runtime_context(
+          test_suite_session),
+      stream ? &stream->syntax.name_classifier : NULL, NULL);
+}
+
+static int parse_test_toplevel_static_assert(
+    void *context,
+    psx_parsed_static_assert_declaration_t *assertion,
+    const psx_name_classifier_t *name_classifier) {
+  (void)name_classifier;
+  psx_parse_static_assert_syntax_with_context(
+      assertion,
+      &(psx_static_assert_syntax_context_t){
+          .context = context,
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(
+                  test_suite_session),
+          .parse_assignment_expression =
+              parse_test_toplevel_assignment_expression,
+      });
+  return 1;
+}
+
+static int parse_test_toplevel_declaration_head(
+    void *context,
+    psx_parsed_toplevel_declaration_t *declaration,
+    const psx_name_classifier_t *name_classifier) {
+  return psx_parse_toplevel_declaration_head_syntax_with_context(
+      declaration,
+      &(psx_toplevel_declaration_syntax_context_t){
+          .context = context,
+          .name_classifier = *name_classifier,
+          .semantic_context = test_semantic_context(),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(
+                  test_suite_session),
+          .parse_assignment_expression =
+              parse_test_toplevel_assignment_expression,
+      });
+}
+
+static int finish_test_toplevel_declaration(
+    void *context,
+    psx_parsed_toplevel_declaration_t *declaration,
+    const psx_name_classifier_t *name_classifier) {
+  return psx_finish_toplevel_declaration_syntax_with_context(
+      declaration,
+      &(psx_toplevel_declaration_syntax_context_t){
+          .context = context,
+          .name_classifier = *name_classifier,
+          .semantic_context = test_semantic_context(),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(
+                  test_suite_session),
+          .parse_assignment_expression =
+              parse_test_toplevel_assignment_expression,
+      });
+}
+
 static void begin_test_parser_stream(
     psx_parser_stream_t *stream,
-    tokenizer_context_t *tokenizer_context, token_t *start,
-    const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
-  ps_parser_stream_begin_in_contexts(
-      stream,
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      tokenizer_context, start, toplevel_declarations);
+    tokenizer_context_t *tokenizer_context, token_t *start) {
+  psx_parser_syntax_services_t syntax = {
+      .context = stream,
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(
+              test_suite_session),
+      .name_classifier = ps_ctx_name_classifier(
+          test_semantic_context()),
+      .parse_static_assert =
+          parse_test_toplevel_static_assert,
+      .parse_toplevel_declaration_head =
+          parse_test_toplevel_declaration_head,
+      .finish_toplevel_declaration =
+          finish_test_toplevel_declaration,
+  };
+  ps_parser_stream_begin_with_syntax(
+      stream, tokenizer_context, start, &syntax);
 }
 
 static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
@@ -1214,14 +1288,34 @@ static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
 }
 
 static int parse_test_toplevel_declaration_syntax(
-    psx_parsed_toplevel_declaration_t *declaration,
-    const psx_toplevel_declaration_callbacks_t *callbacks) {
-  return psx_parse_toplevel_declaration_syntax_in_contexts(
-      declaration, callbacks,
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session));
+    psx_parsed_toplevel_declaration_t *declaration) {
+  psx_parser_name_environment_t name_environment;
+  ps_parser_name_environment_init(
+      &name_environment,
+      ps_ctx_name_classifier(test_semantic_context()));
+  psx_name_classifier_t name_classifier =
+      ps_parser_name_environment_classifier(&name_environment);
+  test_declaration_expression_service_t expression_service = {
+      .semantic_context = test_semantic_context(),
+      .global_registry = test_global_registry(),
+      .local_registry = test_local_registry(),
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(
+              test_suite_session),
+      .name_classifier = &name_classifier,
+  };
+  int parsed = psx_parse_toplevel_declaration_syntax_with_context(
+      declaration,
+      &(psx_toplevel_declaration_syntax_context_t){
+          .context = &expression_service,
+          .name_classifier = name_classifier,
+          .semantic_context = test_semantic_context(),
+          .runtime_context = expression_service.runtime_context,
+          .parse_assignment_expression =
+              parse_test_declaration_assignment_expression,
+      });
+  ps_parser_name_environment_dispose(&name_environment);
+  return parsed;
 }
 
 static void parse_test_decl_specifier_syntax(
@@ -1339,8 +1433,6 @@ typedef struct {
   int block_scope_depth;
   int block_enter_count;
   int block_leave_count;
-  int usage_begin_count;
-  int usage_end_count;
 } test_statement_syntax_services_t;
 
 static int test_expression_parse_type_name(
@@ -1373,20 +1465,6 @@ static void test_statement_leave_block_scope(void *context) {
   test_statement_syntax_services_t *services = context;
   services->block_scope_depth--;
   services->block_leave_count++;
-}
-
-static psx_lvar_usage_region_t *test_statement_begin_usage_region(
-    void *context) {
-  test_statement_syntax_services_t *services = context;
-  services->usage_begin_count++;
-  return (psx_lvar_usage_region_t *)services;
-}
-
-static void test_statement_end_usage_region(
-    void *context, psx_lvar_usage_region_t *region) {
-  test_statement_syntax_services_t *services = context;
-  ASSERT_TRUE(region == (psx_lvar_usage_region_t *)services);
-  services->usage_end_count++;
 }
 
 static void test_parser_name_classifier_boundary() {
@@ -1497,8 +1575,6 @@ static void test_parser_name_classifier_boundary() {
       .parse_expression = test_statement_parse_expression,
       .enter_block_scope = test_statement_enter_block_scope,
       .leave_block_scope = test_statement_leave_block_scope,
-      .begin_usage_region = test_statement_begin_usage_region,
-      .end_usage_region = test_statement_end_usage_region,
   };
   node_t *standalone_statement =
       psx_stmt_stmt_syntax(&statement_syntax);
@@ -1515,11 +1591,10 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_NUM, standalone_block->body[0]->lhs->kind);
   ASSERT_TRUE(
       standalone_block->body[0]->lhs->resolution_state == NULL);
+  ASSERT_TRUE(standalone_block->body[0]->usage_region == NULL);
   ASSERT_EQ(0, statement_services.block_scope_depth);
   ASSERT_EQ(1, statement_services.block_enter_count);
   ASSERT_EQ(1, statement_services.block_leave_count);
-  ASSERT_EQ(1, statement_services.usage_begin_count);
-  ASSERT_EQ(1, statement_services.usage_end_count);
 }
 
 static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
@@ -1633,18 +1708,6 @@ static void init_test_local_declaration_callbacks(
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session));
-}
-
-static void init_test_toplevel_declaration_callbacks(
-    psx_toplevel_declaration_callbacks_t *callbacks) {
-  psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
-      callbacks,
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session),
-      test_lowering_context(),
-      ag_compilation_session_options_view(test_suite_session));
 }
 
 static const psx_type_t *resolve_test_decl_specifier_syntax(
@@ -1951,7 +2014,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   psx_hir_module_t *isolated_hir = psx_hir_module_create();
   ASSERT_TRUE(isolated_hir != NULL);
   psx_resolved_hir_build_failure_t failure = {0};
-  ASSERT_TRUE(!psx_resolution_work_tree_materialize_hir(
+  ASSERT_TRUE(!psx_resolution_work_tree_build_typed_hir(
       unfinalized, test_semantic_context(), &failure));
   ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
             failure.status);
@@ -1997,11 +2060,12 @@ static void test_typed_hir_ownership_and_type_boundary() {
       typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
       PSX_RESOLUTION_WORK_FINALIZED, typed_root));
   failure = (psx_resolved_hir_build_failure_t){0};
-  psx_typed_hir_tree_t *typed_tree =
-      psx_resolution_work_tree_materialize_hir(
-          typed_work_tree, test_semantic_context(), &failure);
+  ASSERT_TRUE(psx_resolution_work_tree_build_typed_hir(
+      typed_work_tree, test_semantic_context(), &failure));
+  const psx_typed_hir_tree_t *typed_tree =
+      psx_resolution_work_tree_typed_hir(typed_work_tree);
   ASSERT_TRUE(typed_tree != NULL);
-  ASSERT_EQ(PSX_RESOLUTION_WORK_FINALIZED,
+  ASSERT_EQ(PSX_RESOLUTION_WORK_HIR_READY,
             psx_resolution_work_tree_phase(typed_work_tree));
   isolated_hir = psx_hir_module_create();
   ASSERT_TRUE(isolated_hir != NULL);
@@ -4042,8 +4106,25 @@ static node_t *parse_raw_function_item(
   local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
           &name_environment);
+  psx_legacy_statement_syntax_adapter_t statement_adapter;
+  ASSERT_TRUE(psx_legacy_statement_syntax_adapter_init(
+      &statement_adapter, test_semantic_context(),
+      test_global_registry(), test_local_registry(),
+      ag_compilation_session_parser_runtime_context(
+          test_suite_session),
+      &local_declarations.name_classifier,
+      &local_declarations));
+  psx_statement_syntax_context_t statement_syntax =
+      psx_legacy_statement_syntax_context(
+          &statement_adapter);
   node_t *function = ps_parse_function_definition_body(
-      stream, header, &local_declarations);
+      stream, header, &statement_syntax);
+  if (function) {
+    header->lvars = ps_decl_get_locals_in(
+        test_local_registry());
+    ps_decl_set_current_funcname_in(
+        test_local_registry(), NULL, 0);
+  }
   ps_parser_name_environment_dispose(&name_environment);
   ps_dispose_function_definition_header_syntax(
       &item->value.function_header);
@@ -6689,7 +6770,7 @@ static void test_translation_unit_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -6764,7 +6845,7 @@ static void test_case_label_syntax_hir_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -6818,7 +6899,7 @@ static void test_toplevel_static_assert_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
 
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -6843,7 +6924,7 @@ static void test_block_static_assert_syntax_hir_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -6894,7 +6975,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -6963,12 +7044,12 @@ static void test_toplevel_callback_context_boundary() {
   reset_test_translation_unit_state();
   tk_tokenize((char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
-  psx_toplevel_declaration_callbacks_t callbacks;
-  init_test_toplevel_declaration_callbacks(&callbacks);
-  ASSERT_TRUE(parse_test_toplevel_declaration_syntax(
-      &declaration, &callbacks));
-  ASSERT_TRUE(declaration.applied_during_parse);
+  ASSERT_TRUE(parse_test_toplevel_declaration_syntax(&declaration));
   global_var_t *global = find_test_global_var(
+      (char *)"__callback_global", 17);
+  ASSERT_TRUE(global == NULL);
+  apply_test_toplevel_declaration(&declaration);
+  global = find_test_global_var(
       (char *)"__callback_global", 17);
   ASSERT_TRUE(global != NULL);
   ASSERT_TRUE(global->has_init);
@@ -6985,7 +7066,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
@@ -7032,7 +7113,7 @@ static void assert_toplevel_syntax_kind(
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source), NULL);
+      &stream, NULL, tk_tokenize((char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(expected_kind, item.kind);
@@ -7080,7 +7161,7 @@ static void test_frontend_stream_lifecycle_boundary() {
 
   psx_parser_stream_t parser_stream = {0};
   begin_test_parser_stream(
-      &parser_stream, NULL, tk_tokenize((char *)""), NULL);
+      &parser_stream, NULL, tk_tokenize((char *)""));
   ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__stream_previous", 17) != NULL);
   ps_parser_stream_end(&parser_stream);
@@ -21944,14 +22025,17 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
             streamed_typedef_resolution.status);
   psx_parser_stream_t parser_stream = {0};
-  ps_parser_stream_begin_in_contexts(
-      &parser_stream, second, test_global_registry(),
-      test_local_registry(),
-      ag_compilation_session_parser_runtime_context(test_suite_session), NULL,
+  psx_parser_syntax_services_t parser_syntax = {
+      .runtime_context =
+          ag_compilation_session_parser_runtime_context(
+              test_suite_session),
+  };
+  ps_parser_stream_begin_with_syntax(
+      &parser_stream, NULL,
       tk_tokenize((char *)
           "{ StreamType value = 0; goto streamed_label; "
           "{ streamed_label: return value; } }"),
-      NULL);
+      &parser_syntax);
   node_function_definition_t parsed_function = {0};
   parsed_function.base.kind = ND_FUNCDEF;
   psx_lowering_context_t *second_lowering_context =
@@ -21975,10 +22059,21 @@ static void test_semantic_context_isolation() {
       &local_declarations, second, test_global_registry(),
       test_local_registry(),
       ag_compilation_session_parser_runtime_context(test_suite_session));
+  psx_legacy_statement_syntax_adapter_t statement_adapter;
+  ASSERT_TRUE(psx_legacy_statement_syntax_adapter_init(
+      &statement_adapter, second, test_global_registry(),
+      test_local_registry(),
+      ag_compilation_session_parser_runtime_context(
+          test_suite_session),
+      &local_declarations.name_classifier,
+      &local_declarations));
+  psx_statement_syntax_context_t statement_syntax =
+      psx_legacy_statement_syntax_context(
+          &statement_adapter);
   node_t *parsed_function_syntax =
       ps_parse_function_definition_body(
           &parser_stream, &parsed_function,
-          &local_declarations);
+          &statement_syntax);
   ASSERT_TRUE(parsed_function_syntax != NULL);
   ASSERT_TRUE(
       psx_resolve_local_declaration_syntax_tree_in_contexts(

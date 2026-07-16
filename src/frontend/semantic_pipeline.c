@@ -14,24 +14,25 @@
 #include "../semantic/semantic_diagnostics.h"
 #include "../semantic/semantic_invariants.h"
 #include "../semantic/semantic_pass.h"
-#include "../semantic/resolution_work_tree.h"
+#include "../semantic/resolution_work_tree_internal.h"
 #include "../semantic/typed_hir_materialization.h"
 
 static psx_hir_node_id_t build_session_hir(
     ag_compilation_session_t *session,
-    const psx_resolution_work_tree_t *work_tree,
+    psx_resolution_work_tree_t *work_tree,
     const token_t *fallback_diag_tok) {
   psx_hir_module_t *hir = ag_compilation_session_hir_module(session);
   psx_resolved_hir_build_failure_t failure;
   psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
-  psx_typed_hir_tree_t *typed_tree =
-      psx_resolution_work_tree_materialize_hir(
+  if (psx_resolution_work_tree_build_typed_hir(
           work_tree,
           ag_compilation_session_semantic_context(session),
-          &failure);
-  if (typed_tree)
+          &failure)) {
+    const psx_typed_hir_tree_t *typed_tree =
+        psx_resolution_work_tree_typed_hir(work_tree);
     hir_root = psx_typed_hir_tree_emit(
         hir, typed_tree, &failure);
+  }
   if (hir_root != PSX_HIR_NODE_ID_INVALID) return hir_root;
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);

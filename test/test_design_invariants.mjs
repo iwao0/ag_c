@@ -104,6 +104,10 @@ const resolutionWorkTreeHeader = await readFile(
   "src/semantic/resolution_work_tree.h",
   "utf8",
 );
+const resolutionWorkTreeInternalHeader = await readFile(
+  "src/semantic/resolution_work_tree_internal.h",
+  "utf8",
+);
 const earlyNodeResolutionState = await readFile(
   "src/parser/node_resolution_state.h",
   "utf8",
@@ -1621,6 +1625,13 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
 }
 const parserStreamHeader = await readFile("src/parser/parser.h", "utf8");
 const parserStreamSource = await readFile("src/parser/parser.c", "utf8");
+const parserLegacyHeader = await readFile(
+  "src/parser/parser_legacy.h",
+  "utf8",
+);
+const parserStreamDefinition = parserStreamHeader.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_parser_stream_t\s*;/,
+)?.[1] ?? "";
 const semanticPipelineSource = await readFile(
   "src/frontend/semantic_pipeline.c",
   "utf8",
@@ -1773,10 +1784,26 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
     !/ps_global_registry_reset_diag_state_in\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+    /psx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
+      parserStreamDefinition,
+    ) ||
+    /\bpsx_(?:semantic_context|global_registry|local_registry)_t\b/.test(
       parserStreamHeader,
     ) ||
-    !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
+    /\bps_expr_in_contexts\s*\(/.test(parserStreamHeader) ||
+    !/\bps_expr_in_contexts\s*\(/.test(parserLegacyHeader) ||
+    !/psx_parser_syntax_services_t\s+syntax\s*;/.test(
+      parserStreamDefinition,
+    ) ||
+    !/psx_parser_runtime_context_t\s*\*runtime_context\s*;/.test(
+      parserStreamDefinition,
+    ) ||
+    !/ps_parser_stream_begin_with_syntax\s*\(/.test(
+      parserStreamSource,
+    ) ||
+    /stream->(?:semantic_context|global_registry|local_registry)/.test(
+      parserStreamSource,
+    ) ||
     !/psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
@@ -1910,33 +1937,40 @@ for (const { core, source, names } of contextFreeApiDeclarations) {
     }
   }
 }
-const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(
-  toplevelDeclarationFrontendSource.indexOf("static void *begin_declaration("),
-  toplevelDeclarationFrontendSource.indexOf(
-    "const psx_toplevel_declaration_callbacks_t *",
-  ),
-);
-if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
-      toplevelCallbackCore,
+const toplevelSyntaxContextDefinition =
+  toplevelDeclarationHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_toplevel_declaration_syntax_context_t\s*;/,
+  )?.[1] ?? "";
+if (/\bpsx_(?:global_registry|local_registry|lowering_context)_t\s*\*/.test(
+      toplevelSyntaxContextDefinition,
     ) ||
-    /callbacks\s*\?\s*callbacks->(?:semantic_context|global_registry|local_registry)/.test(
-      toplevelCallbackCore,
+    /\bag_compilation_options_t\s*\*/.test(
+      toplevelSyntaxContextDefinition,
     ) ||
-    /callbacks\s*&&\s*callbacks->context\s*\?\s*callbacks->context/.test(
+    /\b(?:begin_declaration|begin_declarator|finish_declarator|finish_declaration|abort_declaration)\b/.test(
+      toplevelSyntaxContextDefinition,
+    ) ||
+    /\bapplied_during_parse\b/.test(
+      `${toplevelDeclarationHeader}\n${toplevelDeclarationSyntaxSource}`,
+    ) ||
+    /\bpsx_apply_(?:toplevel_declaration|parsed_decl_specifier|parsed_declarator)[a-z_]*\s*\(/.test(
       toplevelDeclarationSyntaxSource,
     )) {
   throw new Error(
-    "declaration callback core must use its explicit registry ownership",
+    "top-level syntax parsing must not own semantic application state",
   );
 }
-if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
-      toplevelDeclarationHeader,
+if (!/psx_name_classifier_t\s+name_classifier\s*;/.test(
+      toplevelSyntaxContextDefinition,
     ) ||
-    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
-      toplevelDeclarationHeader,
+    !/psx_parser_runtime_context_t\s*\*runtime_context\s*;/.test(
+      toplevelSyntaxContextDefinition,
     ) ||
-    !/\.context\s*=\s*callbacks/.test(
-      toplevelDeclarationFrontendSource,
+    !/parse_assignment_expression/.test(
+      toplevelSyntaxContextDefinition,
+    ) ||
+    !/ps_name_classifier_declare\s*\(\s*&context->name_classifier/.test(
+      toplevelDeclarationSyntaxSource,
     ) ||
     !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
       toplevelDeclarationFrontendSource,
@@ -1944,14 +1978,14 @@ if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
     !/psx_apply_parsed_declarator_type_in_contexts\s*\(/.test(
       toplevelDeclarationFrontendSource,
     ) ||
-    !/psx_frontend_init_toplevel_declaration_callbacks_in_contexts\s*\(/.test(
-      frontendTranslationUnitSource,
+    /psx_frontend_init_toplevel_declaration_callbacks_in_contexts\s*\(/.test(
+      `${toplevelDeclarationFrontendSource}\n${frontendTranslationUnitSource}`,
     ) ||
     !/psx_apply_toplevel_declaration_in_contexts\s*\(/.test(
       frontendTranslationUnitSource,
     )) {
   throw new Error(
-    "top-level declaration callbacks must carry all compilation registries",
+    "top-level declarations must update syntax names during parse and apply semantics afterward",
   );
 }
 const explicitLocalDeclarationLowering = [
@@ -2703,10 +2737,13 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     /stream\s*&&\s*stream->semantic_context\s*\?[^;]*ps_ctx_active\s*\(\)/s.test(
       parserSource,
     ) ||
-    !/ps_parser_stream_begin_in_contexts\s*\(/.test(
+    !/ps_parser_stream_begin_with_syntax\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    !/psx_stmt_stmt_in_contexts\s*\(/.test(parserSource) ||
+    /psx_stmt_stmt_in_contexts\s*\(/.test(parserSource) ||
+    !/psx_stmt_stmt_syntax\s*\(\s*statement_syntax\s*\)/.test(
+      parserSource,
+    ) ||
     !/ps_name_classifier_is_typedef_name\s*\(/.test(
       statementParserSource,
     ) ||
@@ -3149,6 +3186,18 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
     ) ||
     !/psx_name_classifier_t\s+name_classifier\s*;/.test(
       statementSyntaxContextSource,
+    ) ||
+    /\b(?:begin_usage_region|end_usage_region)\b/.test(
+      `${statementSyntaxContextSource}\n${statementParserSource}\n${statementSyntaxAdapterSource}`,
+    ) ||
+    /\bpsx_decl_(?:begin|end)_lvar_usage_region_in\s*\(/.test(
+      `${statementParserSource}\n${parserSource}`,
+    ) ||
+    !/psx_decl_begin_lvar_usage_region_in\s*\(\s*resolver->local_registry\s*\)/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    !/block->body\[i\]->usage_region\s*=\s*region/.test(
+      localDeclarationFrontendSource,
     ) ||
     !/psx_stmt_stmt_syntax\s*\(\s*&syntax\s*\)/.test(
       statementSyntaxAdapterSource,
@@ -6273,22 +6322,37 @@ if (!functionResolutionBoundary ||
       initializerResolutionBoundary[1],
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
-      resolutionWorkTreeHeader,
+      resolutionWorkTreeInternalHeader,
     ) ||
-    !/struct\s+psx_resolution_work_tree_t\s*\{[^]*?const\s+node_t\s*\*syntax_root\s*;[^]*?node_t\s*\*semantic_root\s*;[^]*?psx_resolution_work_phase_t\s+phase\s*;[^]*?\};/.test(
+    !/struct\s+psx_resolution_work_tree_t\s*\{[^]*?const\s+node_t\s*\*syntax_root\s*;[^]*?node_t\s*\*semantic_root\s*;[^]*?psx_typed_hir_tree_t\s*\*typed_hir\s*;[^]*?psx_resolution_work_phase_t\s+phase\s*;[^]*?\};/.test(
       resolutionWorkTree,
     ) ||
     !/psx_resolution_work_tree_syntax_root\s*\(/.test(
       resolutionWorkTreeHeader,
     ) ||
-    !/psx_resolution_work_tree_mutable_semantic_root\s*\(/.test(
+    /psx_resolution_work_tree_(?:create_from_syntax|mutable_semantic_root|semantic_root|legacy_root|advance_with_root|attach_typed_hir)\s*\(/.test(
       resolutionWorkTreeHeader,
+    ) ||
+    !/psx_resolution_work_tree_mutable_semantic_root\s*\(/.test(
+      resolutionWorkTreeInternalHeader,
     ) ||
     !/psx_resolution_work_tree_semantic_root\s*\(/.test(
+      resolutionWorkTreeInternalHeader,
+    ) ||
+    !/psx_resolution_work_tree_advance_with_root\s*\(/.test(
+      resolutionWorkTreeInternalHeader,
+    ) ||
+    !/psx_resolution_work_tree_attach_typed_hir\s*\(/.test(
+      resolutionWorkTreeInternalHeader,
+    ) ||
+    !/const\s+psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_typed_hir\s*\(/.test(
       resolutionWorkTreeHeader,
     ) ||
+    !/tree->phase\s*==\s*PSX_RESOLUTION_WORK_HIR_READY[^]*?\?\s*tree->typed_hir\s*:\s*NULL/.test(
+      resolutionWorkTree,
+    ) ||
     /psx_resolution_work_tree_(?:mutable_)?root\s*\(/.test(
-      `${resolutionWorkTreeHeader}\n${resolutionWorkTree}`,
+      `${resolutionWorkTreeHeader}\n${resolutionWorkTreeInternalHeader}\n${resolutionWorkTree}`,
     ) ||
     /hir_root|psx_resolved_hir_node_t/.test(resolutionWorkTree) ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b/.test(resolvedTreeHeader) ||
@@ -6301,7 +6365,7 @@ if (!functionResolutionBoundary ||
     /parser\/|\bnode_t\b|\bnode_kind_t\b|\bpsx_semantic_context_t\b/.test(
       resolvedTreeHir,
     ) ||
-    !/const\s+psx_resolution_work_tree_t\s*\*work_tree/.test(
+    !/psx_resolution_work_tree_t\s*\*work_tree/.test(
       resolvedTreeHirHeader,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*typed_tree/.test(
@@ -6310,7 +6374,7 @@ if (!functionResolutionBoundary ||
     !/PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
       resolvedTreeHirHeader,
     ) ||
-    !/psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_materialize_hir\s*\(/.test(
+    !/int\s+psx_resolution_work_tree_build_typed_hir\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
     !/psx_resolution_work_tree_phase\s*\(\s*work_tree\s*\)/.test(
@@ -6318,6 +6382,15 @@ if (!functionResolutionBoundary ||
     ) ||
     !/phase\s*!=\s*PSX_RESOLUTION_WORK_FINALIZED/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/psx_resolution_work_tree_attach_typed_hir\s*\(\s*work_tree\s*,\s*typed_tree\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/tree->phase\s*!=\s*PSX_RESOLUTION_WORK_FINALIZED/.test(
+      resolutionWorkTree,
+    ) ||
+    !/tree->phase\s*=\s*PSX_RESOLUTION_WORK_HIR_READY/.test(
+      resolutionWorkTree,
     ) ||
     !/struct\s+psx_typed_hir_tree_t\s*\{\s*psx_resolved_hir_node_t\s*\*root\s*;\s*\}/.test(
       resolvedTreeInternalHeader,
@@ -6333,7 +6406,10 @@ if (!functionResolutionBoundary ||
       resolvedTreeHir,
     ) ||
     /ps_node_|ND_[A-Z0-9_]+/.test(resolvedTreeHir) ||
-    !/psx_resolution_work_tree_materialize_hir\s*\(/.test(
+    !/psx_resolution_work_tree_build_typed_hir\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_resolution_work_tree_typed_hir\s*\(/.test(
       semanticPipelineSource,
     ) ||
     !/psx_typed_hir_tree_emit\s*\(/.test(semanticPipelineSource) ||
