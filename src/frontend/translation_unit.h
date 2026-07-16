@@ -10,7 +10,6 @@ typedef struct {
   psx_toplevel_declaration_callbacks_t toplevel_declarations;
   psx_local_declaration_callbacks_t local_declarations;
   ag_compilation_session_t *session;
-  void *compatibility_function;
   unsigned char is_started;
   unsigned char owns_session_activation;
 } psx_frontend_stream_t;

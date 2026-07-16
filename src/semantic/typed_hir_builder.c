@@ -134,6 +134,56 @@ static int map_kind(
 static psx_hir_node_id_t build_node(
     hir_builder_t *builder, const node_t *source);
 
+static int is_statement_expression_value(
+    const node_t *statement_expression, const node_t *candidate) {
+  const node_t *value = statement_expression
+                            ? statement_expression->rhs : NULL;
+  if (!value || !candidate) return 0;
+  if (candidate == value) return 1;
+  return candidate->kind == value->kind && candidate->tok &&
+         candidate->tok == value->tok;
+}
+
+static psx_hir_node_id_t build_statement_expression_prefix(
+    hir_builder_t *builder, const node_t *source) {
+  const node_block_t *block =
+      source && source->lhs && source->lhs->kind == ND_BLOCK
+          ? (const node_block_t *)source->lhs : NULL;
+  if (!block) {
+    set_failure(builder, PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return PSX_HIR_NODE_ID_INVALID;
+  }
+  hir_children_t children = {0};
+  for (int i = 0; block->body && block->body[i]; i++) {
+    if (is_statement_expression_value(source, block->body[i])) continue;
+    if (!append_child(
+            builder, &children, build_node(builder, block->body[i]),
+            PSX_HIR_EDGE_BLOCK_ITEM, block->body[i])) {
+      free(children.items);
+      free(children.edges);
+      return PSX_HIR_NODE_ID_INVALID;
+    }
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_BLOCK,
+      .role = PSX_HIR_ROLE_STATEMENT,
+      .qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .children = children.items,
+      .child_edges = children.edges,
+      .child_count = children.count,
+  };
+  psx_hir_node_id_t result = psx_hir_module_add_node(
+      builder->module, &spec);
+  free(children.items);
+  free(children.edges);
+  if (result == PSX_HIR_NODE_ID_INVALID)
+    set_failure(builder, PSX_TYPED_HIR_BUILD_OUT_OF_MEMORY, source);
+  return result;
+}
+
 static int build_and_append(
     hir_builder_t *builder, hir_children_t *children,
     const node_t *source, psx_hir_edge_kind_t edge) {
@@ -182,6 +232,14 @@ static int build_special_children(
       }
       return 1;
     }
+    case ND_STMT_EXPR:
+      *include_common_children = 0;
+      return append_child(
+                 builder, children,
+                 build_statement_expression_prefix(builder, source),
+                 PSX_HIR_EDGE_LHS, source) &&
+             build_and_append(
+                 builder, children, source->rhs, PSX_HIR_EDGE_RHS);
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {

@@ -31,6 +31,7 @@
 #include "../src/frontend/function_definition.h"
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/semantic_pipeline.h"
+#include "../src/frontend/semantic_pipeline_internal.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
 #include "../src/hir/hir.h"
@@ -1271,10 +1272,13 @@ static node_t *analyze_test_expression(
       test_suite_session, expression, fallback_diag_tok);
 }
 
-static node_t *analyze_test_function(
+static psx_hir_node_id_t resolve_test_function_to_hir(
     const node_t *function, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_function_in_session(
-      test_suite_session, function, fallback_diag_tok);
+  psx_hir_node_id_t root = PSX_HIR_NODE_ID_INVALID;
+  if (!psx_frontend_resolve_function_to_hir_in_session(
+          test_suite_session, function, fallback_diag_tok, &root))
+    return PSX_HIR_NODE_ID_INVALID;
+  return root;
 }
 
 static node_t *bind_test_identifier_tree(
@@ -1763,6 +1767,56 @@ static void test_typed_hir_local_lowering_without_ast() {
   reset_test_translation_unit_state();
 }
 
+static void test_typed_hir_overaligned_local_without_ast() {
+  printf("test_typed_hir_overaligned_local_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int aligned_local(void) { "
+      "_Alignas(64) int value = 7; "
+      "return value + ((unsigned long)&value % 64); }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_ALIGN_PTR));
+  int found_overaligned_alloca = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ALLOCA &&
+          instruction->alloca_align == 64 &&
+          instruction->alloca_size >= 68) {
+        found_overaligned_alloca = 1;
+      }
+    }
+  }
+  ASSERT_TRUE(found_overaligned_alloca);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
 static void test_typed_hir_parameter_lowering_without_ast() {
   printf("test_typed_hir_parameter_lowering_without_ast...\n");
   reset_test_translation_unit_state();
@@ -2094,6 +2148,62 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_TRUE(recursive_call->has_callable_sig);
   ASSERT_EQ(IR_TY_I32, recursive_call->callable_sig.result);
   ASSERT_EQ(1, recursive_call->callable_sig.param_count);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_variadic_aggregate_call_without_ast() {
+  printf("test_typed_hir_variadic_aggregate_call_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "struct Payload { char bytes[9]; }; "
+      "int sink(int marker, ...); "
+      "int invoke_sink(void) { "
+      "struct Payload payload; return sink(1, payload); }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  const ir_inst_t *call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(call != NULL);
+  ASSERT_TRUE(call->is_variadic_call);
+  ASSERT_EQ(1, call->nargs_fixed);
+  ASSERT_EQ(3, call->nargs);
+  ASSERT_EQ(IR_TY_I32, call->arg_abi_types[0]);
+  ASSERT_EQ(IR_TY_I64, call->arg_abi_types[1]);
+  ASSERT_EQ(IR_TY_I64, call->arg_abi_types[2]);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
   reset_test_translation_unit_state();
 }
@@ -2858,6 +2968,73 @@ static void test_typed_hir_complex_width_conversion_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_F2F) >= 6);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_statement_expression_without_ast() {
+  printf("test_typed_hir_statement_expression_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int statement_value(void) { "
+      "int x = 1; "
+      "return ({ x = x + 2; x = x * 3; x; }); }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+
+  const psx_hir_node_t *statement_expression = NULL;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (node && psx_hir_node_kind(node) == PSX_HIR_STMT_EXPR) {
+      statement_expression = node;
+      break;
+    }
+  }
+  ASSERT_TRUE(statement_expression != NULL);
+  const psx_hir_node_t *prefix = NULL;
+  const psx_hir_node_t *value = NULL;
+  for (size_t i = 0;
+       i < psx_hir_node_child_count(statement_expression); i++) {
+    const psx_hir_node_t *child = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(statement_expression, i));
+    if (psx_hir_node_child_edge_at(statement_expression, i) ==
+        PSX_HIR_EDGE_LHS)
+      prefix = child;
+    if (psx_hir_node_child_edge_at(statement_expression, i) ==
+        PSX_HIR_EDGE_RHS)
+      value = child;
+  }
+  ASSERT_TRUE(prefix != NULL);
+  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(prefix));
+  ASSERT_EQ(2, psx_hir_node_child_count(prefix));
+  ASSERT_TRUE(value != NULL);
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
+
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(3, count_ir_op(ir->funcs, IR_STORE));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state();
@@ -5530,24 +5707,42 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_EQ(ND_NUM, raw_compound_assignment->rhs->kind);
   ASSERT_TRUE(raw_compound_assignment->rhs->type == NULL);
   node_t *raw_literal = raw_compound_assignment->rhs;
-  node_t *resolved = analyze_test_function(parsed, parsed->tok);
-  ASSERT_TRUE(resolved != NULL);
-  ASSERT_TRUE(resolved != parsed);
+  psx_hir_node_id_t hir_root =
+      resolve_test_function_to_hir(parsed, parsed->tok);
+  ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
   ASSERT_EQ(ND_ASSIGN, raw_compound_assignment->kind);
   ASSERT_TRUE(raw_compound_assignment->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
   ASSERT_TRUE(parsed_body->body[1] == raw_compound_assignment);
   ASSERT_TRUE(raw_compound_assignment->rhs == raw_literal);
   ASSERT_TRUE(raw_literal->type == NULL);
-  node_block_t *resolved_body =
-      as_block(as_function_definition(resolved)->base.rhs);
-  ASSERT_TRUE(resolved_body != parsed_body);
-  ASSERT_EQ(ND_ASSIGN, resolved_body->body[1]->kind);
-  ASSERT_TRUE(!resolved_body->body[1]->is_source_compound_assignment);
-  ASSERT_EQ(ND_ADD, resolved_body->body[1]->rhs->kind);
-  ASSERT_TRUE(resolved_body->body[1]->rhs->rhs->type != NULL);
-  ASSERT_TRUE(resolved_body->body[1]->rhs->rhs->qual_type.type_id !=
-              PSX_TYPE_ID_INVALID);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *hir_function =
+      psx_hir_module_lookup(hir, hir_root);
+  ASSERT_TRUE(hir_function != NULL);
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(hir_function));
+  int found_lowered_compound_assignment = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!node || psx_hir_node_kind(node) != PSX_HIR_ASSIGN)
+      continue;
+    for (size_t child = 0;
+         child < psx_hir_node_child_count(node); child++) {
+      if (psx_hir_node_child_edge_at(node, child) !=
+          PSX_HIR_EDGE_RHS)
+        continue;
+      const psx_hir_node_t *rhs = psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(node, child));
+      if (rhs && psx_hir_node_kind(rhs) == PSX_HIR_ADD &&
+          psx_hir_node_qual_type(rhs).type_id !=
+              PSX_TYPE_ID_INVALID) {
+        found_lowered_compound_assignment = 1;
+      }
+    }
+  }
+  ASSERT_TRUE(found_lowered_compound_assignment);
   ps_parser_stream_end(&stream);
 
   reset_test_translation_unit_state();
@@ -11139,7 +11334,6 @@ static void test_stmt_return() {
   ASSERT_EQ(0, ps_type_sizeof(ret_meta_type));
   ASSERT_EQ(8, ps_ctx_type_sizeof_in(
                    test_semantic_context(), ret_meta_type));
-  analyze_test_function((node_t *)ret_meta_fn, NULL);
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type ==
               ps_function_definition_return_type(ret_meta_fn));
@@ -11154,7 +11348,6 @@ static void test_stmt_return() {
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ret_meta_type->floating_kind);
-  analyze_test_function((node_t *)ret_meta_fn, NULL);
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type ==
               ps_function_definition_return_type(ret_meta_fn));
@@ -21671,12 +21864,14 @@ int main() {
   test_parser_name_classifier_boundary();
   test_typed_hir_ownership_and_type_boundary();
   test_typed_hir_local_lowering_without_ast();
+  test_typed_hir_overaligned_local_without_ast();
   test_typed_hir_parameter_lowering_without_ast();
   test_typed_hir_pointer_lowering_without_ast();
   test_typed_hir_post_inc_lowering_without_ast();
   test_typed_hir_vla_parameter_metadata_without_ast();
   test_typed_hir_vla_allocation_without_ast();
   test_typed_hir_direct_call_lowering_without_ast();
+  test_typed_hir_variadic_aggregate_call_without_ast();
   test_typed_hir_atomic_lowering_without_ast();
   test_typed_hir_va_arg_area_lowering_without_ast();
   test_typed_hir_register_aggregate_lowering_without_ast();
@@ -21690,6 +21885,7 @@ int main() {
   test_typed_hir_structural_sequence_types_without_ast();
   test_typed_hir_complex_copy_comparison_without_ast();
   test_typed_hir_complex_width_conversion_without_ast();
+  test_typed_hir_statement_expression_without_ast();
   test_typed_hir_indirect_call_lowering_without_ast();
   test_typed_hir_unprototyped_indirect_call_without_ast();
   test_typed_hir_void_function_lowering_without_ast();

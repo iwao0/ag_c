@@ -1,4 +1,5 @@
 #include "semantic_pipeline.h"
+#include "semantic_pipeline_internal.h"
 
 #include "../diag/diag.h"
 #include "../lowering/semantic_lowering_pass.h"
@@ -14,15 +15,19 @@
 #include "../semantic/typed_hir_builder.h"
 #include "../semantic/resolution_work_tree.h"
 
-static void build_session_hir(
+static psx_hir_node_id_t build_session_hir(
     ag_compilation_session_t *session, const node_t *root,
     const token_t *fallback_diag_tok) {
+  psx_hir_module_t *hir = ag_compilation_session_hir_module(session);
+  size_t roots_before = psx_hir_module_root_count(hir);
   psx_typed_hir_build_failure_t failure;
   if (psx_build_typed_hir_root(
-          ag_compilation_session_hir_module(session),
+          hir,
           ag_compilation_session_semantic_context(session),
           root, &failure)) {
-    return;
+    if (psx_hir_module_root_count(hir) == roots_before + 1)
+      return psx_hir_module_root_at(hir, roots_before);
+    return PSX_HIR_NODE_ID_INVALID;
   }
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);
@@ -41,6 +46,7 @@ static void build_session_hir(
       diag_message_for_in(
           diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
       (int)failure.status, failure.source_node_kind);
+  return PSX_HIR_NODE_ID_INVALID;
 }
 
 static node_t *analyze_function_in_contexts(
@@ -92,11 +98,14 @@ static node_t *analyze_function_in_contexts(
   return function;
 }
 
-node_t *psx_frontend_analyze_function_in_session(
+node_t *psx_frontend_resolve_function_work_tree_in_session(
     ag_compilation_session_t *session,
-    const node_t *syntax_function, const token_t *fallback_diag_tok) {
+    const node_t *syntax_function, const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
   if (!ag_compilation_session_is_complete(session) ||
-      !syntax_function || syntax_function->kind != ND_FUNCDEF) {
+      !syntax_function || syntax_function->kind != ND_FUNCDEF ||
+      !hir_root) {
     return NULL;
   }
   node_t *function = psx_clone_syntax_tree_for_resolution(
@@ -119,8 +128,19 @@ node_t *psx_frontend_analyze_function_in_session(
       ag_compilation_session_options_view(session),
       function, fallback_diag_tok);
   if (!function) return NULL;
-  build_session_hir(session, function, fallback_diag_tok);
+  *hir_root = build_session_hir(
+      session, function, fallback_diag_tok);
+  if (*hir_root == PSX_HIR_NODE_ID_INVALID) return NULL;
   return function;
+}
+
+int psx_frontend_resolve_function_to_hir_in_session(
+    ag_compilation_session_t *session,
+    const node_t *syntax_function, const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root) {
+  return psx_frontend_resolve_function_work_tree_in_session(
+             session, syntax_function, fallback_diag_tok, hir_root)
+             ? 1 : 0;
 }
 
 node_t *psx_frontend_analyze_expression_in_contexts(

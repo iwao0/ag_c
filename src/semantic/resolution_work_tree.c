@@ -155,8 +155,11 @@ static node_t *clone_node(
   if (!copy) return NULL;
   memcpy(copy, source, size);
   copy->lhs = clone_node(arena_context, source->lhs);
-  copy->rhs = clone_node(arena_context, source->rhs);
-  if ((source->lhs && !copy->lhs) || (source->rhs && !copy->rhs))
+  copy->rhs = source->kind == ND_STMT_EXPR
+                  ? NULL
+                  : clone_node(arena_context, source->rhs);
+  if ((source->lhs && !copy->lhs) ||
+      (source->kind != ND_STMT_EXPR && source->rhs && !copy->rhs))
     return NULL;
 
   switch (source->kind) {
@@ -168,6 +171,27 @@ static node_t *clone_node(
       block->body = clone_node_array(
           arena_context, source_block->body, count, 1);
       if (source_block->body && !block->body) return NULL;
+      break;
+    }
+    case ND_STMT_EXPR: {
+      const node_block_t *source_block =
+          source->lhs && source->lhs->kind == ND_BLOCK
+              ? (const node_block_t *)source->lhs : NULL;
+      node_block_t *block =
+          copy->lhs && copy->lhs->kind == ND_BLOCK
+              ? (node_block_t *)copy->lhs : NULL;
+      if (source_block && block) {
+        for (size_t i = 0;
+             source_block->body && source_block->body[i]; i++) {
+          if (source_block->body[i] == source->rhs) {
+            copy->rhs = block->body[i];
+            break;
+          }
+        }
+      }
+      if (!copy->rhs)
+        copy->rhs = clone_node(arena_context, source->rhs);
+      if (source->rhs && !copy->rhs) return NULL;
       break;
     }
     case ND_FUNCDEF: {

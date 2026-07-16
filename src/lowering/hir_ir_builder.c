@@ -413,10 +413,13 @@ static int local_storage_address(
     context->status = IR_HIR_BUILD_UNSUPPORTED;
     return -1;
   }
-  if (size <= 0 || align <= 0 || align > 16) {
+  if (size <= 0 || align <= 0 ||
+      (align > 16 && size > INT_MAX - align)) {
     context->status = IR_HIR_BUILD_UNSUPPORTED;
     return -1;
   }
+  int over_aligned = align > 16;
+  int allocation_size = over_aligned ? size + align : size;
   int pointer = new_vreg(context);
   if (pointer < 0) return -1;
   ir_inst_t *alloca = ir_inst_new(IR_ALLOCA);
@@ -425,9 +428,23 @@ static int local_storage_address(
     return -1;
   }
   alloca->dst = ir_val_vreg(pointer, IR_TY_PTR);
-  alloca->alloca_size = size;
+  alloca->alloca_size = allocation_size;
   alloca->alloca_align = align;
   if (!append_instruction(context, alloca)) return -1;
+  if (over_aligned) {
+    int aligned_pointer = new_vreg(context);
+    if (aligned_pointer < 0) return -1;
+    ir_inst_t *align_pointer = ir_inst_new(IR_ALIGN_PTR);
+    if (!align_pointer) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return -1;
+    }
+    align_pointer->dst = ir_val_vreg(aligned_pointer, IR_TY_PTR);
+    align_pointer->src1 = ir_val_vreg(pointer, IR_TY_PTR);
+    align_pointer->alloca_align = align;
+    if (!append_instruction(context, align_pointer)) return -1;
+    pointer = aligned_pointer;
+  }
   context->local_slots[context->local_slot_count++] =
       (hir_local_slot_t){object_offset, pointer};
   return pointer;
@@ -2375,9 +2392,26 @@ static ir_val_t build_scalar_or_void_call(
 
   ir_val_t *arguments = NULL;
   ir_type_t *argument_abi_types = NULL;
-  size_t argument_capacity = argument_count * 2;
+  size_t argument_capacity = 0;
   size_t emitted_count = 0;
   size_t emitted_fixed_count = 0;
+  for (size_t i = 0; i < argument_count; i++) {
+    const psx_hir_node_t *argument = child_for_edge(
+        context, node, PSX_HIR_EDGE_ARGUMENT, i);
+    ir_abi_param_info_t argument_type = classify_node_type(
+        context, argument);
+    size_t slots = is_complex_abi_type(argument_type) ? 2 : 1;
+    if (i >= signature.param_count &&
+        argument_type.param_class == IR_ABI_PARAM_AGGREGATE) {
+      if (argument_type.source_size <= 0 ||
+          argument_type.source_size > INT_MAX - 7)
+        return unsupported_expr(context);
+      slots = (size_t)((argument_type.source_size + 7) / 8);
+    }
+    if (slots > SIZE_MAX - argument_capacity)
+      return unsupported_expr(context);
+    argument_capacity += slots;
+  }
   if (argument_count) {
     arguments = calloc(argument_capacity, sizeof(*arguments));
     argument_abi_types = calloc(
@@ -2416,6 +2450,56 @@ static ir_val_t build_scalar_or_void_call(
             ps_type_integer_promotion_is_unsigned_for_target(
                 semantic_type, context->options->target);
       }
+    }
+    if (i >= signature.param_count &&
+        argument_type.param_class == IR_ABI_PARAM_AGGREGATE) {
+      int rounded_size =
+          ((argument_type.source_size + 7) / 8) * 8;
+      size_t chunk_count = (size_t)(rounded_size / 8);
+      if (emitted_count > argument_capacity - chunk_count) {
+        free(arguments);
+        free(argument_abi_types);
+        return unsupported_expr(context);
+      }
+      ir_val_t source = aggregate_value_address(context, argument);
+      int temporary = allocate_scalar_temp(context, rounded_size, 8);
+      if (context->status != IR_HIR_BUILD_OK ||
+          source.type != IR_TY_PTR || temporary < 0) {
+        free(arguments);
+        free(argument_abi_types);
+        return ir_val_none();
+      }
+      ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+      if (!copy) {
+        free(arguments);
+        free(argument_abi_types);
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return ir_val_none();
+      }
+      copy->src1 = ir_val_vreg(temporary, IR_TY_PTR);
+      copy->src2 = source;
+      copy->alloca_size = argument_type.source_size;
+      if (!append_instruction(context, copy)) {
+        free(arguments);
+        free(argument_abi_types);
+        return ir_val_none();
+      }
+      for (int offset = 0; offset < rounded_size; offset += 8) {
+        ir_val_t chunk_pointer = ir_val_vreg(temporary, IR_TY_PTR);
+        if (offset > 0)
+          chunk_pointer = pointer_with_offset(
+              context, chunk_pointer, offset);
+        ir_val_t chunk = load_direct_value(
+            context, chunk_pointer, IR_TY_I64);
+        if (context->status != IR_HIR_BUILD_OK) {
+          free(arguments);
+          free(argument_abi_types);
+          return ir_val_none();
+        }
+        arguments[emitted_count] = chunk;
+        argument_abi_types[emitted_count++] = IR_TY_I64;
+      }
+      continue;
     }
     if (i < signature.param_count &&
         is_complex_abi_type(parameter_type)) {
@@ -2572,6 +2656,12 @@ static ir_val_t build_scalar_or_void_call(
   }
   call->args = arguments;
   call->arg_abi_types = argument_abi_types;
+  if (emitted_count > INT_MAX) {
+    free(arguments);
+    free(argument_abi_types);
+    free(call);
+    return unsupported_expr(context);
+  }
   call->nargs = (int)emitted_count;
   call->nargs_fixed = (short)emitted_fixed_count;
   call->is_variadic_call =
@@ -2658,6 +2748,16 @@ static ir_val_t build_expr(
     return ir_val_none();
   if (psx_hir_node_kind(node) == PSX_HIR_VLA_ALLOC)
     return build_vla_allocation(context, node);
+  if (psx_hir_node_kind(node) == PSX_HIR_STMT_EXPR) {
+    const psx_hir_node_t *prefix = child_for_edge(
+        context, node, PSX_HIR_EDGE_LHS, 0);
+    const psx_hir_node_t *value = child_for_edge(
+        context, node, PSX_HIR_EDGE_RHS, 0);
+    if (!prefix || psx_hir_node_kind(prefix) != PSX_HIR_BLOCK ||
+        !value || !build_statement(context, prefix))
+      return unsupported_expr(context);
+    return build_expr(context, value);
+  }
   ir_abi_param_info_t type = classify_node_type(context, node);
   int is_void = node_type_kind(context, node) == PSX_TYPE_VOID;
   if (psx_hir_node_kind(node) == PSX_HIR_CALL && is_void)

@@ -926,7 +926,7 @@ if (sessionContextAccessorNames.some((name) =>
     !/static\s+ag_compilation_session_t\s*\*wasm_adapter_session\s*;/.test(
       compilerMainSource,
     ) ||
-    !/ir_build_(?:function_module|emit_function)_with_options\s*\(/.test(
+    !/ir_build_function_module_from_hir\s*\(/.test(
       compilerMainSource,
     ) ||
     !/psx_frontend_free_processed_ast_in_session\s*\(/.test(
@@ -1527,10 +1527,6 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
-const frontendLegacyAstHeader = await readFile(
-  "src/frontend/translation_unit_legacy_ast.h",
-  "utf8",
-);
 if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_frontend_function_t\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -1540,9 +1536,11 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
     /node_t\s*\*\s*psx_frontend_next_function/.test(
       frontendTranslationUnitHeader,
     ) ||
-    !/psx_frontend_legacy_ast_function/.test(frontendLegacyAstHeader)) {
+    /compatibility_function|legacy_ast/.test(
+      frontendTranslationUnitHeader,
+    )) {
   throw new Error(
-    "frontend function iteration must return Typed HIR roots and isolate the legacy AST bridge",
+    "frontend function iteration must expose only Typed HIR roots",
   );
 }
 const parserStreamHeader = await readFile("src/parser/parser.h", "utf8");
@@ -1551,6 +1549,26 @@ const semanticPipelineSource = await readFile(
   "src/frontend/semantic_pipeline.c",
   "utf8",
 );
+const semanticPipelineHeader = await readFile(
+  "src/frontend/semantic_pipeline.h",
+  "utf8",
+);
+const semanticPipelineInternalHeader = await readFile(
+  "src/frontend/semantic_pipeline_internal.h",
+  "utf8",
+);
+if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
+    !/psx_frontend_resolve_function_to_hir_in_session/.test(
+      semanticPipelineHeader,
+    ) ||
+    !/psx_frontend_resolve_function_work_tree_in_session/.test(
+      semanticPipelineInternalHeader,
+    ) ||
+    /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
+  throw new Error(
+    "public semantic pipeline APIs must expose Typed HIR while work-tree APIs remain internal",
+  );
+}
 const semanticPassSource = await readFile(
   "src/semantic/semantic_pass.c",
   "utf8",
@@ -1671,7 +1689,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       parserStreamHeader,
     ) ||
     !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
-    !/psx_frontend_analyze_function_in_session\s*\(/.test(
+    !/psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -5459,7 +5477,7 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
   throw new Error("CompilationSession must own the Typed HIR module");
 }
 const functionResolutionBoundary = semanticPipelineSource.match(
-  /node_t\s*\*psx_frontend_analyze_function_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /node_t\s*\*psx_frontend_resolve_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const expressionResolutionBoundary = semanticPipelineSource.match(
   /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
@@ -5492,6 +5510,16 @@ if (!functionResolutionBoundary ||
     "frontend resolvers must analyze private working trees and leave parser syntax nodes unchanged",
   );
 }
+if (!/int\s+psx_frontend_resolve_function_to_hir_in_session\s*\([^)]*psx_hir_node_id_t\s*\*hir_root/.test(
+      semanticPipelineSource,
+    ) ||
+    /node_t\s*\*psx_frontend_analyze_function_in_session/.test(
+      semanticPipelineSource,
+    )) {
+  throw new Error(
+    "public function resolution must return a Typed HIR root instead of a semantic node tree",
+  );
+}
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(hirIrBuilder) ||
     !/ir_build_function_module_from_hir\s*\(/.test(hirIrBuilder)) {
   throw new Error(
@@ -5499,11 +5527,11 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(hirIrBuilder) ||
   );
 }
 if (!/ir_build_function_module_from_hir\s*\(/.test(compilerMainSource) ||
-    !/if\s*\(status\s*!=\s*IR_HIR_BUILD_UNSUPPORTED\)\s*return\s+NULL\s*;[^]*?ir_build_function_module_with_options\s*\(/.test(
+    /ir_build_function_module_with_options\s*\(|AG_(?:DISABLE|REQUIRE)_TYPED_HIR|translation_unit_legacy_ast/.test(
       compilerMainSource,
     )) {
   throw new Error(
-    "compiler must prefer Typed HIR lowering and only use AST compatibility fallback for unsupported HIR shapes",
+    "compiler function lowering must consume Typed HIR without an AST fallback",
   );
 }
 

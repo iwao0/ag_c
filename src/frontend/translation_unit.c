@@ -1,5 +1,4 @@
 #include "translation_unit.h"
-#include "translation_unit_legacy_ast.h"
 
 #include "../diag/diag.h"
 #include "../declaration_pipeline.h"
@@ -10,6 +9,7 @@
 #include "function_definition.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
+#include "semantic_pipeline_internal.h"
 #include "toplevel_declaration.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
@@ -101,15 +101,16 @@ int psx_frontend_stream_begin(
   return 1;
 }
 
-int psx_frontend_next_function(
-    psx_frontend_stream_t *stream, psx_frontend_function_t *result) {
+static int frontend_next_function_internal(
+    psx_frontend_stream_t *stream, psx_frontend_function_t *result,
+    node_t **resolved_function) {
   if (result) result->hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (resolved_function) *resolved_function = NULL;
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
       !ag_compilation_session_is_active(stream->session) || !result) {
     return 0;
   }
-  stream->compatibility_function = NULL;
   ag_compilation_session_t *session = stream->session;
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(session);
@@ -177,25 +178,20 @@ int psx_frontend_next_function(
       }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      psx_hir_module_t *hir =
-          ag_compilation_session_hir_module(session);
-      size_t roots_before = psx_hir_module_root_count(hir);
-      node_t *resolved = psx_frontend_analyze_function_in_session(
-          session, function, function->tok);
+      node_t *resolved =
+          psx_frontend_resolve_function_work_tree_in_session(
+              session, function, function->tok, &result->hir_root);
       if (!resolved) return 0;
-      if (psx_hir_module_root_count(hir) != roots_before + 1)
-        return 0;
-      result->hir_root = psx_hir_module_root_at(hir, roots_before);
-      stream->compatibility_function = resolved;
+      if (resolved_function) *resolved_function = resolved;
       return 1;
     }
   }
   return 0;
 }
 
-node_t *psx_frontend_legacy_ast_function(
-    const psx_frontend_stream_t *stream) {
-  return stream ? (node_t *)stream->compatibility_function : NULL;
+int psx_frontend_next_function(
+    psx_frontend_stream_t *stream, psx_frontend_function_t *result) {
+  return frontend_next_function_internal(stream, result, NULL);
 }
 
 int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
@@ -237,8 +233,9 @@ node_t **psx_frontend_program_in_session(
     return NULL;
   }
   psx_frontend_function_t frontend_function;
-  while (psx_frontend_next_function(&stream, &frontend_function)) {
-    node_t *function = psx_frontend_legacy_ast_function(&stream);
+  node_t *function = NULL;
+  while (frontend_next_function_internal(
+      &stream, &frontend_function, &function)) {
     if (!function) {
       free(program);
       psx_frontend_stream_end(&stream);

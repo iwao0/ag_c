@@ -12,7 +12,7 @@
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
 #include "semantic/declaration_application.h"
-#include "frontend/semantic_pipeline.h"
+#include "frontend/semantic_pipeline_internal.h"
 #include "parser/dynarray.h"
 #include "parser/node_utils.h"
 #include "parser/semantic_ctx.h"

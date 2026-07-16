@@ -6,7 +6,6 @@
 #include "parser/semantic_ctx.h"
 #include "parser/arena.h"
 #include "frontend/translation_unit.h"
-#include "frontend/translation_unit_legacy_ast.h"
 #include "tokenizer/tokenizer.h"
 #include "tokenizer/allocator.h"
 #include "preprocess/preprocess.h"
@@ -116,22 +115,13 @@ static ir_module_t *build_resolved_function_module(
     const ir_build_options_t *options) {
   if (!stream || !stream->session || !function ||
       function->hir_root == PSX_HIR_NODE_ID_INVALID) return NULL;
-  if (getenv("AG_DISABLE_TYPED_HIR")) {
-    return ir_build_function_module_with_options(
-        psx_frontend_legacy_ast_function(stream), options);
-  }
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(stream->session);
   ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
-  ir_module_t *module = ir_build_function_module_from_hir(
+  return ir_build_function_module_from_hir(
       hir,
       function->hir_root,
       options, &status);
-  if (module) return module;
-  if (status != IR_HIR_BUILD_UNSUPPORTED) return NULL;
-  if (getenv("AG_REQUIRE_TYPED_HIR")) return NULL;
-  return ir_build_function_module_with_options(
-      psx_frontend_legacy_ast_function(stream), options);
 }
 
 static int wasm_emit_function_direct(
