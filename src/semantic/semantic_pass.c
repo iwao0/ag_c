@@ -23,6 +23,7 @@
 #include "static_assert_resolution.h"
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
+#include "vla_runtime_plan.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -881,6 +882,13 @@ static void semantic_transform_node(
             diag_message_for_in(
                 diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
       }
+      break;
+    }
+    case ND_VLA_ALLOC: {
+      psx_vla_runtime_plan_t *plan =
+          ((node_vla_alloc_t *)node)->runtime_plan;
+      for (int i = 0; plan && i < plan->dimension_count; i++)
+        semantic_transform_node(plan->dimensions[i], traversal);
       break;
     }
     case ND_NUM:

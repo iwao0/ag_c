@@ -27,6 +27,9 @@ struct psx_hir_node_t {
   int *vla_dimension_constants;
   int *vla_dimension_source_offsets;
   size_t vla_dimension_count;
+  int *vla_runtime_store_offsets;
+  int *vla_runtime_store_dimensions;
+  size_t vla_runtime_store_count;
   int label_id;
   psx_hir_symbol_id_t symbol_id;
   unsigned char bit_width;
@@ -86,6 +89,8 @@ static void destroy_node(psx_hir_node_t *node) {
   free(node->literal_contents);
   free(node->vla_dimension_constants);
   free(node->vla_dimension_source_offsets);
+  free(node->vla_runtime_store_offsets);
+  free(node->vla_runtime_store_dimensions);
   free(node);
 }
 
@@ -330,6 +335,7 @@ static psx_hir_node_id_t add_node(
   node->vla_stride_element_size = spec->vla_stride_element_size;
   node->vla_stride_slot_size = spec->vla_stride_slot_size;
   node->vla_dimension_count = spec->vla_dimension_count;
+  node->vla_runtime_store_count = spec->vla_runtime_store_count;
   node->label_id = spec->label_id;
   node->symbol_id = spec->symbol_id;
   node->bit_width = spec->bit_width;
@@ -372,6 +378,31 @@ static psx_hir_node_id_t add_node(
            spec->vla_dimension_source_offsets,
            spec->vla_dimension_count *
                sizeof(*node->vla_dimension_source_offsets));
+  }
+  if (spec->vla_runtime_store_count) {
+    node->vla_runtime_store_offsets = malloc(
+        spec->vla_runtime_store_count *
+        sizeof(*node->vla_runtime_store_offsets));
+    node->vla_runtime_store_dimensions = malloc(
+        spec->vla_runtime_store_count *
+        sizeof(*node->vla_runtime_store_dimensions));
+    if (!node->vla_runtime_store_offsets ||
+        !node->vla_runtime_store_dimensions ||
+        !spec->vla_runtime_store_offsets ||
+        !spec->vla_runtime_store_dimensions) {
+      destroy_node(node);
+      return PSX_HIR_NODE_ID_INVALID;
+    }
+    memcpy(
+        node->vla_runtime_store_offsets,
+        spec->vla_runtime_store_offsets,
+        spec->vla_runtime_store_count *
+            sizeof(*node->vla_runtime_store_offsets));
+    memcpy(
+        node->vla_runtime_store_dimensions,
+        spec->vla_runtime_store_dimensions,
+        spec->vla_runtime_store_count *
+            sizeof(*node->vla_runtime_store_dimensions));
   }
   node->name = copy_text(spec->name, spec->name_length);
   node->literal_contents = copy_text(
@@ -536,6 +567,23 @@ int psx_hir_node_vla_dimension_source_offset(
     const psx_hir_node_t *node, size_t index) {
   return node && index < node->vla_dimension_count
              ? node->vla_dimension_source_offsets[index] : 0;
+}
+
+size_t psx_hir_node_vla_runtime_store_count(
+    const psx_hir_node_t *node) {
+  return node ? node->vla_runtime_store_count : 0;
+}
+
+int psx_hir_node_vla_runtime_store_offset(
+    const psx_hir_node_t *node, size_t index) {
+  return node && index < node->vla_runtime_store_count
+             ? node->vla_runtime_store_offsets[index] : 0;
+}
+
+int psx_hir_node_vla_runtime_store_dimension(
+    const psx_hir_node_t *node, size_t index) {
+  return node && index < node->vla_runtime_store_count
+             ? node->vla_runtime_store_dimensions[index] : -1;
 }
 
 int psx_hir_node_label_id(const psx_hir_node_t *node) {

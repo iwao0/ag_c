@@ -562,6 +562,7 @@ type_decl/complex_ne.c
 type_decl/complex_sub.c
 type_decl/typedef_ret_proto.c
 vla/basic_elem.c
+vla/bound_evaluated_once.c
 vla/loop_fill.c
 vla/param_size.c
 vla/sizeof_vla.c

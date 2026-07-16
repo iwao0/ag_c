@@ -23,6 +23,7 @@
 #include "source_cast_resolution.h"
 #include "typed_hir_tree_internal.h"
 #include "resolution_work_tree.h"
+#include "vla_runtime_plan.h"
 
 typedef struct {
   arena_context_t *arena_context;
@@ -177,6 +178,79 @@ static psx_qual_type_t resolved_expression_type(
 static psx_resolved_hir_node_t *materialize_cast_expression(
     hir_materializer_t *builder, const node_t *source,
     psx_resolved_hir_node_t *operand, psx_qual_type_t qual_type);
+static psx_resolved_hir_node_t *materialize_statement(
+    hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
+    const hir_children_t *children, const node_t *source);
+
+static psx_resolved_hir_node_t *materialize_vla_runtime(
+    hir_materializer_t *builder,
+    const node_vla_alloc_t *allocation) {
+  const node_t *source = allocation
+                             ? &allocation->base : NULL;
+  const psx_vla_runtime_plan_t *plan =
+      allocation ? allocation->runtime_plan : NULL;
+  if (!plan || plan->dimension_count <= 0 ||
+      !plan->dimensions || plan->element_size <= 0 ||
+      (plan->performs_allocation &&
+       plan->descriptor_frame_offset <= 0) ||
+      (!plan->performs_allocation &&
+       plan->descriptor_frame_offset != 0) ||
+      plan->stride_store_count < 0 ||
+      (plan->stride_store_count > 0 &&
+       (!plan->stride_store_offsets ||
+        !plan->stride_start_dimensions))) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
+  }
+
+  hir_children_t children = {0};
+  for (int i = 0; i < plan->dimension_count; i++) {
+    if (!plan->dimensions[i] ||
+        !append_child(
+            builder, &children,
+            build_node(builder, plan->dimensions[i]),
+            PSX_HIR_EDGE_VLA_DIMENSION, plan->dimensions[i])) {
+      free(children.items);
+      free(children.edges);
+      return NULL;
+    }
+  }
+  for (int i = 0; i < plan->stride_store_count; i++) {
+    if (plan->stride_store_offsets[i] <= 0 ||
+        plan->stride_start_dimensions[i] < 0 ||
+        plan->stride_start_dimensions[i] >=
+            plan->dimension_count) {
+      set_failure(
+          builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+      free(children.items);
+      free(children.edges);
+      return NULL;
+    }
+  }
+
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_VLA_ALLOC,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .storage_offset = plan->descriptor_frame_offset,
+      .vla_stride_frame_offset =
+          plan->row_stride_frame_offset,
+      .vla_stride_element_size = plan->element_size,
+      .vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE,
+      .vla_runtime_store_offsets =
+          plan->stride_store_offsets,
+      .vla_runtime_store_dimensions =
+          plan->stride_start_dimensions,
+      .vla_runtime_store_count =
+          (size_t)plan->stride_store_count,
+  };
+  psx_resolved_hir_node_t *result = materialize_statement(
+      builder, &spec, &children, source);
+  free(children.items);
+  free(children.edges);
+  return result;
+}
 
 static psx_resolved_hir_node_t *materialize_expression_spec(
     hir_materializer_t *builder, const psx_hir_node_spec_t *spec,
@@ -1131,12 +1205,14 @@ static int copy_payload(
       break;
     }
     case ND_VLA_ALLOC: {
-      const node_vla_alloc_t *allocation =
-          (const node_vla_alloc_t *)source;
+      const psx_vla_runtime_plan_t *plan =
+          ((const node_vla_alloc_t *)source)->runtime_plan;
+      if (!plan) return 0;
       spec->storage_offset =
-          allocation->descriptor_frame_off;
+          plan->descriptor_frame_offset;
       spec->vla_stride_frame_offset =
-          allocation->row_stride_frame_off;
+          plan->row_stride_frame_offset;
+      spec->vla_stride_element_size = plan->element_size;
       spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
       break;
     }
@@ -1189,6 +1265,10 @@ static int copy_vla_payload(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  if (source && source->kind == ND_VLA_ALLOC) {
+    return materialize_vla_runtime(
+        builder, (const node_vla_alloc_t *)source);
+  }
   if (address_requires_typed_hir_lowering(source))
     return materialize_address_expression(builder, source);
   if (source && source->kind == ND_COMPOUND_LITERAL) {

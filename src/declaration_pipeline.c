@@ -843,9 +843,6 @@ int psx_begin_automatic_local_declaration_pipeline(
       lowering.dimensions = arena_alloc_in(
           ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.dimensions));
-      lowering.const_values = arena_alloc_in(
-          ps_lowering_arena(request->lowering_context),
-          (size_t)resolution.dimension_count * sizeof(*lowering.const_values));
       lowering.is_const = arena_alloc_in(
           ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.is_const));
@@ -854,8 +851,6 @@ int psx_begin_automatic_local_declaration_pipeline(
             request->semantic_context,
             resolution.dimensions[i].expression_id);
         if (!lowering.dimensions[i]) return 0;
-        lowering.const_values[i] =
-            resolution.dimensions[i].constant_value;
         lowering.is_const[i] = resolution.dimensions[i].is_constant;
       }
       vla = lower_vla_declaration(&lowering);

@@ -162,8 +162,7 @@ typedef struct {
 
 typedef struct {
   node_t base;
-  int descriptor_frame_off;
-  int row_stride_frame_off;
+  struct psx_vla_runtime_plan_t *runtime_plan;
 } node_vla_alloc_t;
 
 // 数値ノード

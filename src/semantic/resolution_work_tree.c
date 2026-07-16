@@ -8,6 +8,7 @@
 #include "../parser/declaration_syntax.h"
 #include "../parser/function_parameter_syntax.h"
 #include "../parser/node_utils.h"
+#include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {
   const node_t *syntax_root;
@@ -56,6 +57,49 @@ static size_t node_storage_size(const node_t *node) {
 
 static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source);
+
+static psx_vla_runtime_plan_t *clone_vla_runtime_plan(
+    arena_context_t *arena_context,
+    const psx_vla_runtime_plan_t *source) {
+  if (!source) return NULL;
+  psx_vla_runtime_plan_t *copy = arena_alloc_in(
+      arena_context, sizeof(*copy));
+  if (!copy) return NULL;
+  *copy = *source;
+  copy->dimensions = NULL;
+  copy->stride_store_offsets = NULL;
+  copy->stride_start_dimensions = NULL;
+  if (source->dimension_count > 0) {
+    copy->dimensions = arena_alloc_in(
+        arena_context,
+        (size_t)source->dimension_count * sizeof(*copy->dimensions));
+    if (!copy->dimensions) return NULL;
+    for (int i = 0; i < source->dimension_count; i++) {
+      copy->dimensions[i] = clone_node(
+          arena_context, source->dimensions[i]);
+      if (source->dimensions[i] && !copy->dimensions[i])
+        return NULL;
+    }
+  }
+  if (source->stride_store_count > 0) {
+    size_t bytes =
+        (size_t)source->stride_store_count * sizeof(int);
+    copy->stride_store_offsets = arena_alloc_in(
+        arena_context, bytes);
+    copy->stride_start_dimensions = arena_alloc_in(
+        arena_context, bytes);
+    if (!copy->stride_store_offsets ||
+        !copy->stride_start_dimensions)
+      return NULL;
+    memcpy(
+        copy->stride_store_offsets,
+        source->stride_store_offsets, bytes);
+    memcpy(
+        copy->stride_start_dimensions,
+        source->stride_start_dimensions, bytes);
+  }
+  return copy;
+}
 
 static int clone_parsed_declarator(
     arena_context_t *arena_context,
@@ -381,6 +425,17 @@ static node_t *clone_node(
       assertion->condition = clone_node(
           arena_context, source_assertion->condition);
       if (source_assertion->condition && !assertion->condition)
+        return NULL;
+      break;
+    }
+    case ND_VLA_ALLOC: {
+      node_vla_alloc_t *allocation = (node_vla_alloc_t *)copy;
+      const node_vla_alloc_t *source_allocation =
+          (const node_vla_alloc_t *)source;
+      allocation->runtime_plan = clone_vla_runtime_plan(
+          arena_context, source_allocation->runtime_plan);
+      if (source_allocation->runtime_plan &&
+          !allocation->runtime_plan)
         return NULL;
       break;
     }

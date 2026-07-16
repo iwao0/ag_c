@@ -10,20 +10,10 @@
 #include "../parser/type.h"
 #include "../parser/type_builder.h"
 #include "../diag/diag.h"
+#include "../semantic/vla_runtime_plan.h"
 #include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>
-
-static node_t *append_init(
-    psx_lowering_context_t *lowering_context,
-    node_t *chain, node_t *node) {
-  return chain
-             ? ps_node_new_binary_for_target_in(
-                   ps_lowering_arena(lowering_context),
-                   ps_lowering_target(lowering_context),
-                   ND_COMMA, chain, node)
-             : node;
-}
 
 static int type_size(
     const psx_lowering_context_t *lowering_context,
@@ -61,8 +51,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
       ps_type_pointee_value_type(request->type));
   if (!request->local_registry ||
       !request->type || count <= 0 ||
-      element_size <= 0 || !request->dimensions || !request->const_values ||
-      !request->is_const) {
+      element_size <= 0 || !request->dimensions || !request->is_const) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
         diag_message_for_in(
@@ -74,13 +63,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
   int row_stride_offset = 0;
-  int outer_stride = 0;
   int remaining_strides = 0;
-  if (count == 1) {
-    outer_stride = element_size;
-  } else if (count == 2 && request->is_const[1]) {
-    outer_stride = (int)request->const_values[1] * element_size;
-  }
 
   result.var = create_vla_storage(
       request->local_registry, request->lowering_context,
@@ -95,50 +78,48 @@ psx_vla_lowering_result_t lower_vla_declaration(
   ps_local_registry_set_vla_descriptor(
       result.var, row_stride_offset, remaining_strides, 0, 0);
 
-  node_t *alloc_lhs = NULL;
-  node_t *alloc_rhs = NULL;
-  if (count == 1) {
-    alloc_lhs = ps_node_new_binary_for_target_in(
-        arena_context, ps_lowering_target(request->lowering_context),
-        ND_MUL, request->dimensions[0],
-        ps_node_new_num_in(arena_context, element_size));
-  } else if (count == 2 && request->is_const[1]) {
-    alloc_lhs = ps_node_new_binary_for_target_in(
-        arena_context, ps_lowering_target(request->lowering_context),
-        ND_MUL, request->dimensions[0],
-        ps_node_new_num_in(arena_context, outer_stride));
-  } else if (count == 2) {
-    alloc_lhs = request->dimensions[0];
-    alloc_rhs = ps_node_new_binary_for_target_in(
-        arena_context, ps_lowering_target(request->lowering_context),
-        ND_MUL, request->dimensions[1],
-        ps_node_new_num_in(arena_context, element_size));
-  } else {
-    node_t *outer = ps_node_new_num_in(arena_context, element_size);
-    for (int i = count - 1; i >= 1; i--)
-      outer = ps_node_new_binary_for_target_in(
-          arena_context, ps_lowering_target(request->lowering_context),
-          ND_MUL, outer, request->dimensions[i]);
-    alloc_lhs = request->dimensions[0];
-    alloc_rhs = outer;
-  }
-  result.init = ps_node_new_vla_alloc_in(
-      arena_context, var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
+  psx_vla_runtime_plan_t *plan = arena_alloc_in(
+      arena_context, sizeof(*plan));
+  if (!plan) return result;
+  plan->dimensions = arena_alloc_in(
+      arena_context, (size_t)count * sizeof(*plan->dimensions));
+  if (!plan->dimensions) return result;
+  memcpy(
+      plan->dimensions, request->dimensions,
+      (size_t)count * sizeof(*plan->dimensions));
+  plan->dimension_count = count;
+  plan->descriptor_frame_offset = var_offset;
+  plan->row_stride_frame_offset = row_stride_offset;
+  plan->element_size = element_size;
+  plan->performs_allocation = 1;
 
-  for (int level = 1; level < count - 1; level++) {
-    node_t *stride = ps_node_new_num_in(arena_context, element_size);
-    for (int i = count - 1; i >= level + 1; i--)
-      stride = ps_node_new_binary_for_target_in(
-          arena_context, ps_lowering_target(request->lowering_context),
-          ND_MUL, stride, request->dimensions[i]);
-    node_t *slot = ps_node_new_lvar_typed_in(
+  plan->stride_store_count =
+      (row_stride_offset > 0 ? 1 : 0) + remaining_strides;
+  if (plan->stride_store_count > 0) {
+    plan->stride_store_offsets = arena_alloc_in(
         arena_context,
-        frame_layout_vla_stride_offset(var_offset, level),
-        PSX_VLA_RUNTIME_SLOT_SIZE);
-    result.init = append_init(
-        request->lowering_context, result.init,
-        ps_node_new_assign_in(arena_context, slot, stride));
+        (size_t)plan->stride_store_count *
+            sizeof(*plan->stride_store_offsets));
+    plan->stride_start_dimensions = arena_alloc_in(
+        arena_context,
+        (size_t)plan->stride_store_count *
+            sizeof(*plan->stride_start_dimensions));
+    if (!plan->stride_store_offsets ||
+        !plan->stride_start_dimensions)
+      return result;
   }
+  int store_index = 0;
+  if (row_stride_offset > 0) {
+    plan->stride_store_offsets[store_index] = row_stride_offset;
+    plan->stride_start_dimensions[store_index++] = 1;
+  }
+  for (int level = 1; level < count - 1; level++) {
+    plan->stride_store_offsets[store_index] =
+        frame_layout_vla_stride_offset(var_offset, level);
+    plan->stride_start_dimensions[store_index++] = level + 1;
+  }
+  result.runtime_plan = plan;
+  result.init = ps_node_new_vla_runtime_in(arena_context, plan);
   return result;
 }
 
@@ -175,13 +156,27 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
 
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
-  node_t *slot = ps_node_new_lvar_typed_in(
-      arena_context, row_stride_offset, PSX_VLA_RUNTIME_SLOT_SIZE);
-  node_t *stride = ps_node_new_binary_for_target_in(
-      arena_context, ps_lowering_target(request->lowering_context),
-      ND_MUL, request->row_dimension,
-      ps_node_new_num_in(arena_context, element_size));
-  result.init = ps_node_new_assign_in(arena_context, slot, stride);
+  psx_vla_runtime_plan_t *plan = arena_alloc_in(
+      arena_context, sizeof(*plan));
+  if (!plan) return result;
+  plan->dimensions = arena_alloc_in(
+      arena_context, sizeof(*plan->dimensions));
+  plan->stride_store_offsets = arena_alloc_in(
+      arena_context, sizeof(*plan->stride_store_offsets));
+  plan->stride_start_dimensions = arena_alloc_in(
+      arena_context, sizeof(*plan->stride_start_dimensions));
+  if (!plan->dimensions || !plan->stride_store_offsets ||
+      !plan->stride_start_dimensions)
+    return result;
+  plan->dimensions[0] = request->row_dimension;
+  plan->stride_store_offsets[0] = row_stride_offset;
+  plan->stride_start_dimensions[0] = 0;
+  plan->dimension_count = 1;
+  plan->stride_store_count = 1;
+  plan->row_stride_frame_offset = row_stride_offset;
+  plan->element_size = element_size;
+  result.runtime_plan = plan;
+  result.init = ps_node_new_vla_runtime_in(arena_context, plan);
   return result;
 }
 

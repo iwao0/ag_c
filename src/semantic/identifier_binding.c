@@ -3,6 +3,7 @@
 #include "identifier_resolution.h"
 #include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
+#include "vla_runtime_plan.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/diag.h"
@@ -371,6 +372,13 @@ static node_t *bind_node(
       node_static_assert_t *assertion =
           (node_static_assert_t *)node;
       bind_slot(&assertion->condition, context);
+      return node;
+    }
+    case ND_VLA_ALLOC: {
+      psx_vla_runtime_plan_t *plan =
+          ((node_vla_alloc_t *)node)->runtime_plan;
+      for (int i = 0; plan && i < plan->dimension_count; i++)
+        bind_slot(&plan->dimensions[i], context);
       return node;
     }
     case ND_COMPOUND_LITERAL: {

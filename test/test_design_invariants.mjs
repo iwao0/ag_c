@@ -469,7 +469,7 @@ const implicitArenaNodeConstructorRe = new RegExp(
       "psx_node_new_subscript_syntax_for",
       "ps_node_new_subscript_deref_for",
       "ps_node_clone_lvalue_with_lhs",
-      "ps_node_new_vla_alloc",
+      "ps_node_new_vla_runtime",
       "ps_node_new_assign",
       "psx_node_new_raw_assign",
       "psx_node_new_raw_decl_initializer",
@@ -1705,6 +1705,10 @@ const vlaLoweringSource = await readFile(
 );
 const vlaRuntimeHeaderSource = await readFile(
   "src/parser/vla_runtime.h",
+  "utf8",
+);
+const vlaRuntimePlanHeaderSource = await readFile(
+  "src/semantic/vla_runtime_plan.h",
   "utf8",
 );
 const frameLayoutSource = await readFile(
@@ -5170,6 +5174,34 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     /ps_decl_find_lvar_in\s*\(/.test(parameterVlaLoweringFunction[0])) {
   throw new Error(
     "parameter VLA bounds must cross semantic/lowering by expression identity and use target layout",
+  );
+}
+const vlaGeneratedSemanticNodeRe =
+  /\bps_(?:node_new_binary_for_target_in|node_new_num_in|node_new_assign_in|node_new_lvar_typed_in)\s*\(/;
+if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?\bnode_t\s*\*\*\s*dimensions\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
+      vlaRuntimePlanHeaderSource,
+    ) ||
+    vlaGeneratedSemanticNodeRe.test(vlaLoweringSource) ||
+    !/\bps_node_new_vla_runtime_in\s*\(/.test(vlaLoweringSource) ||
+    !/case\s+ND_VLA_ALLOC:[^]*?clone_vla_runtime_plan/.test(
+      resolutionWorkTree,
+    ) ||
+    !/PSX_HIR_EDGE_VLA_DIMENSION/.test(hirHeader) ||
+    !/vla_runtime_store_offsets/.test(hirInternalHeader) ||
+    !/materialize_vla_runtime\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION[^]*?vla_runtime_store_offsets/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/child_count_for_edge\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION/.test(
+      hirIrBuilder,
+    ) ||
+    !/psx_hir_node_vla_runtime_store_dimension\s*\(/.test(
+      hirIrBuilder,
+    ) ||
+    !/for\s*\(size_t\s+i\s*=\s*0;\s*i\s*<\s*dimension_count;\s*i\+\+\)[^]*?build_expr\s*\(/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "VLA declarations must lower through an immutable runtime plan and Typed HIR without generated semantic arithmetic or assignment AST",
   );
 }
 if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(

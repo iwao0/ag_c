@@ -59,6 +59,7 @@
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
+#include "../src/semantic/vla_runtime_plan.h"
 #include "../src/semantic/type_name_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
@@ -411,8 +412,8 @@ static int test_type_alignof_for_target(
   psx_node_new_static_local_gvar_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_clone_lvalue_with_lhs(...) \
   ps_node_clone_lvalue_with_lhs_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_new_vla_alloc(...) \
-  ps_node_new_vla_alloc_in(test_arena_context(), __VA_ARGS__)
+#define ps_node_new_vla_runtime(...) \
+  ps_node_new_vla_runtime_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_assign(...) \
   ps_node_new_assign_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_raw_assign(...) \
@@ -2308,15 +2309,38 @@ static void test_typed_hir_vla_allocation_without_ast() {
   printf("test_typed_hir_vla_allocation_without_ast...\n");
   reset_test_translation_unit_state();
   node_t **program = parse_program_input(
-      "int first(int count) { "
-      "int values[count]; "
-      "values[0] = 42; "
-      "return values[0]; }");
+      "int first(int outer, int middle, int inner) { "
+      "int values[outer][middle][inner]; "
+      "values[0][0][0] = 42; "
+      "return values[0][0][0]; }");
   ASSERT_TRUE(program != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  const psx_hir_node_t *vla_runtime = NULL;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *candidate =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (candidate &&
+        psx_hir_node_kind(candidate) == PSX_HIR_VLA_ALLOC) {
+      vla_runtime = candidate;
+      break;
+    }
+  }
+  ASSERT_TRUE(vla_runtime != NULL);
+  ASSERT_EQ(3, psx_hir_node_child_count(vla_runtime));
+  for (size_t i = 0; i < 3; i++) {
+    ASSERT_EQ(
+        PSX_HIR_EDGE_VLA_DIMENSION,
+        psx_hir_node_child_edge_at(vla_runtime, i));
+  }
+  ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_runtime));
+  ASSERT_EQ(2, psx_hir_node_vla_runtime_store_count(vla_runtime));
+  ASSERT_EQ(1, psx_hir_node_vla_runtime_store_dimension(
+                   vla_runtime, 0));
+  ASSERT_EQ(2, psx_hir_node_vla_runtime_store_dimension(
+                   vla_runtime, 1));
   free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -2338,8 +2362,9 @@ static void test_typed_hir_vla_allocation_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_VLA_ALLOC));
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 3);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 1);
-  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 5);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state();
@@ -7586,7 +7611,6 @@ static void test_target_type_layout_boundary() {
                   test_semantic_context(), record_vla_type).type_id !=
               PSX_TYPE_ID_INVALID);
   node_t *record_vla_dimensions[1] = {ps_node_new_num(3)};
-  long long record_vla_constants[1] = {0};
   unsigned char record_vla_is_constant[1] = {0};
   psx_vla_lowering_request_t record_vla_request = {
       .local_registry = test_local_registry(),
@@ -7594,7 +7618,6 @@ static void test_target_type_layout_boundary() {
       .name = (char *)"target_vla",
       .name_len = 10,
       .dimensions = record_vla_dimensions,
-      .const_values = record_vla_constants,
       .is_const = record_vla_is_constant,
       .dimension_count = 1,
       .type = record_vla_type,
@@ -7605,8 +7628,11 @@ static void test_target_type_layout_boundary() {
       &record_vla_request);
   ASSERT_TRUE(wasm_record_vla.var != NULL);
   ASSERT_EQ(ND_VLA_ALLOC, wasm_record_vla.init->kind);
-  ASSERT_EQ(ND_MUL, wasm_record_vla.init->lhs->kind);
-  ASSERT_EQ(8, as_num(wasm_record_vla.init->lhs->rhs)->val);
+  ASSERT_TRUE(wasm_record_vla.runtime_plan != NULL);
+  ASSERT_EQ(1, wasm_record_vla.runtime_plan->dimension_count);
+  ASSERT_EQ(record_vla_dimensions[0],
+            wasm_record_vla.runtime_plan->dimensions[0]);
+  ASSERT_EQ(8, wasm_record_vla.runtime_plan->element_size);
 
   reset_test_locals();
   lvar_t *wasm_dimension = register_test_storage_fixture(
@@ -7649,8 +7675,8 @@ static void test_target_type_layout_boundary() {
       &record_vla_request);
   ASSERT_TRUE(host_record_vla.var != NULL);
   ASSERT_EQ(ND_VLA_ALLOC, host_record_vla.init->kind);
-  ASSERT_EQ(ND_MUL, host_record_vla.init->lhs->kind);
-  ASSERT_EQ(16, as_num(host_record_vla.init->lhs->rhs)->val);
+  ASSERT_TRUE(host_record_vla.runtime_plan != NULL);
+  ASSERT_EQ(16, host_record_vla.runtime_plan->element_size);
   ps_lowering_context_bind_record_layouts(
       lowering, session_record_layouts);
   psx_record_layout_table_destroy(record_layouts);
@@ -7728,13 +7754,11 @@ static void test_vla_lowering_request_boundary() {
   psx_type_t *vla_type = ps_type_new_array(integer, 0, 0, 1);
   ASSERT_TRUE(intern_test_type_id(vla_type) != PSX_TYPE_ID_INVALID);
   node_t *request_dimensions[3] = {0};
-  long long request_const_values[3] = {0};
   unsigned char request_is_const[3] = {0};
   psx_vla_lowering_request_t request = {
       .local_registry = test_local_registry(),
       .lowering_context = test_lowering_context(),
       .dimensions = request_dimensions,
-      .const_values = request_const_values,
       .is_const = request_is_const,
   };
   request.name = (char *)"v";
@@ -7747,6 +7771,12 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(result.var != NULL);
   ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_TRUE(result.runtime_plan != NULL);
+  ASSERT_EQ(1, result.runtime_plan->dimension_count);
+  ASSERT_EQ(request.dimensions[0],
+            result.runtime_plan->dimensions[0]);
+  ASSERT_EQ(4, result.runtime_plan->element_size);
+  ASSERT_TRUE(result.runtime_plan->performs_allocation);
   ASSERT_EQ(4, ps_lvar_array_scalar_element_size(result.var));
   ASSERT_EQ(0, ps_lvar_offset(result.var) % 16);
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(result.var)->kind);
@@ -7764,8 +7794,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(result.var != NULL);
   ASSERT_EQ(8, ps_type_pointee_value_size(request.type));
   ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
-  ASSERT_EQ(ND_MUL, result.init->lhs->kind);
-  ASSERT_EQ(8, as_num(result.init->lhs->rhs)->val);
+  ASSERT_EQ(8, result.runtime_plan->element_size);
 
   reset_test_locals();
   request.name = (char *)"m";
@@ -7782,9 +7811,12 @@ static void test_vla_lowering_request_boundary() {
   request.requested_alignment = 0;
   result = lower_vla_declaration(&request);
   ASSERT_EQ(32, ps_lvar_storage_size(result.var, 0));
-  ASSERT_EQ(ND_COMMA, result.init->kind);
-  ASSERT_EQ(ND_VLA_ALLOC, result.init->lhs->kind);
-  ASSERT_EQ(ND_ASSIGN, result.init->rhs->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_TRUE(result.runtime_plan != NULL);
+  ASSERT_EQ(3, result.runtime_plan->dimension_count);
+  ASSERT_EQ(2, result.runtime_plan->stride_store_count);
+  ASSERT_EQ(1, result.runtime_plan->stride_start_dimensions[0]);
+  ASSERT_EQ(2, result.runtime_plan->stride_start_dimensions[1]);
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(result.var)->kind);
   ASSERT_EQ(PSX_TYPE_ARRAY,
             ps_lvar_get_decl_type(result.var)->base->kind);
@@ -7820,12 +7852,16 @@ static void test_vla_lowering_request_boundary() {
   node_t *detached_type_ref = ps_node_new_param_placeholder(
       ps_type_clone(ps_lvar_get_decl_type(result.var)));
   ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(detached_type_ref));
-  ASSERT_EQ(ND_ASSIGN, result.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_TRUE(result.runtime_plan != NULL);
+  ASSERT_TRUE(!result.runtime_plan->performs_allocation);
+  ASSERT_EQ(1, result.runtime_plan->dimension_count);
+  ASSERT_EQ(row_dimension, result.runtime_plan->dimensions[0]);
+  ASSERT_EQ(1, result.runtime_plan->stride_store_count);
   ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(result.var),
-            as_lvar(result.init->lhs)->offset);
-  ASSERT_EQ(ND_MUL, result.init->rhs->kind);
-  ASSERT_EQ(row_dimension, result.init->rhs->lhs);
-  ASSERT_EQ(4, as_num(result.init->rhs->rhs)->val);
+            result.runtime_plan->stride_store_offsets[0]);
+  ASSERT_EQ(0, result.runtime_plan->stride_start_dimensions[0]);
+  ASSERT_EQ(4, result.runtime_plan->element_size);
 
   reset_test_locals();
   lvar_t *n = register_test_storage_fixture(
@@ -15502,7 +15538,13 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(flat_rows_int_row)->kind);
   ASSERT_TRUE(ps_node_subscript_deref_uses_base_address(flat_rows_int_row));
 
-  node_t *vla_alloc = ps_node_new_vla_alloc(64, 80, ps_node_new_num(3), ps_node_new_num(12));
+  psx_vla_runtime_plan_t vla_plan = {
+      .descriptor_frame_offset = 64,
+      .row_stride_frame_offset = 80,
+      .element_size = 4,
+      .performs_allocation = 1,
+  };
+  node_t *vla_alloc = ps_node_new_vla_runtime(&vla_plan);
   int vla_desc_off = 0;
   int vla_row_off = 0;
   ASSERT_TRUE(ps_node_vla_alloc_descriptor_info(vla_alloc, &vla_desc_off, &vla_row_off));

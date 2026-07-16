@@ -784,6 +784,7 @@ static const test_case_t test_cases[] = {
 
     // VLA (Variable Length Array)
     {"vla", "basic_elem", CASE_ASSERT_FILE, "test/fixtures/vla/basic_elem.c", 0, 0},
+    {"vla", "bound_evaluated_once", CASE_ASSERT_FILE, "test/fixtures/vla/bound_evaluated_once.c", 0, 0},
     {"vla", "loop_fill", CASE_ASSERT_FILE, "test/fixtures/vla/loop_fill.c", 0, 0},
     {"vla", "param_size", CASE_ASSERT_FILE, "test/fixtures/vla/param_size.c", 0, 0},
     {"vla", "sizeof_vla", CASE_ASSERT_FILE, "test/fixtures/vla/sizeof_vla.c", 0, 0},

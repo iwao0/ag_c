@@ -13,7 +13,6 @@ typedef struct {
   char *name;
   int name_len;
   node_t **dimensions;
-  long long *const_values;
   unsigned char *is_const;
   int dimension_count;
   const psx_type_t *type;
@@ -24,6 +23,7 @@ typedef struct {
 typedef struct {
   lvar_t *var;
   node_t *init;
+  struct psx_vla_runtime_plan_t *runtime_plan;
 } psx_vla_lowering_result_t;
 
 psx_vla_lowering_result_t lower_vla_declaration(

@@ -68,10 +68,10 @@ node_t *ps_node_new_binary_for_target_in(
     psx_work_node_kind_t kind, node_t *lhs, node_t *rhs);
 int ps_node_binary_type_op(
     psx_work_node_kind_t kind, psx_type_binary_op_t *op);
-node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
-                                  int descriptor_frame_off,
-                                  int row_stride_frame_off,
-                                  node_t *lhs, node_t *rhs);
+struct psx_vla_runtime_plan_t;
+node_t *ps_node_new_vla_runtime_in(
+    arena_context_t *arena_context,
+    struct psx_vla_runtime_plan_t *runtime_plan);
 node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
     int execution_size, int is_unsigned);

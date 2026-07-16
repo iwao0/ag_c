@@ -968,78 +968,123 @@ static ir_val_t emit_integer_width_conversion(
 static int allocate_scalar_temp(
     hir_ir_context_t *context, int size, int alignment);
 
+static int store_vla_runtime_value(
+    hir_ir_context_t *context, int frame_offset, int slot_size,
+    ir_val_t value) {
+  ir_val_t wide = emit_integer_width_conversion(
+      context, value, IR_TY_I64, 0);
+  int slot = local_storage_address(
+      context, frame_offset, slot_size, 8);
+  return context->status == IR_HIR_BUILD_OK && slot >= 0 &&
+         store_direct_value(
+             context, ir_val_vreg(slot, IR_TY_PTR), wide);
+}
+
 static ir_val_t build_vla_allocation(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
-  const psx_hir_node_t *size_or_outer = child_for_edge(
-      context, node, PSX_HIR_EDGE_LHS, 0);
-  const psx_hir_node_t *row_stride_expr = child_for_edge(
-      context, node, PSX_HIR_EDGE_RHS, 0);
+  size_t dimension_count = child_count_for_edge(
+      node, PSX_HIR_EDGE_VLA_DIMENSION);
+  size_t store_count =
+      psx_hir_node_vla_runtime_store_count(node);
   int descriptor_offset = psx_hir_node_storage_offset(node);
-  int row_stride_offset =
-      psx_hir_node_vla_stride_frame_offset(node);
+  int element_size =
+      psx_hir_node_vla_stride_element_size(node);
   int slot_size = psx_hir_node_vla_stride_slot_size(node);
-  if (!size_or_outer || descriptor_offset <= 0 || slot_size < 8 ||
-      ((row_stride_offset != 0) != (row_stride_expr != NULL)))
+  if (dimension_count == 0 || element_size <= 0 ||
+      slot_size < 8 || (descriptor_offset <= 0 && store_count == 0))
     return unsupported_expr(context);
 
-  ir_val_t total_size;
-  if (row_stride_expr) {
-    ir_val_t row_stride = build_expr(context, row_stride_expr);
-    ir_val_t outer_count = build_expr(context, size_or_outer);
-    if (context->status != IR_HIR_BUILD_OK ||
-        !is_integer_ir_type(row_stride.type) ||
-        !is_integer_ir_type(outer_count.type))
+  ir_val_t *suffix_sizes = calloc(
+      dimension_count, sizeof(*suffix_sizes));
+  if (!suffix_sizes) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  for (size_t i = 0; i < dimension_count; i++) {
+    const psx_hir_node_t *dimension = child_for_edge(
+        context, node, PSX_HIR_EDGE_VLA_DIMENSION, i);
+    suffix_sizes[i] = build_expr(context, dimension);
+    if (!dimension || context->status != IR_HIR_BUILD_OK ||
+        !is_integer_ir_type(suffix_sizes[i].type)) {
+      free(suffix_sizes);
       return unsupported_expr(context);
-    total_size = emit_integer_binary(
-        context, IR_MUL, outer_count, row_stride, IR_TY_I32);
-    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    ir_val_t wide_stride = emit_integer_width_conversion(
-        context, row_stride, IR_TY_I64, 0);
-    int row_stride_slot = local_storage_address(
-        context, row_stride_offset, slot_size, 8);
-    if (context->status != IR_HIR_BUILD_OK ||
-        row_stride_slot < 0 ||
-        !store_direct_value(
-            context, ir_val_vreg(row_stride_slot, IR_TY_PTR),
-            wide_stride))
+    }
+    suffix_sizes[i] = emit_integer_width_conversion(
+        context, suffix_sizes[i], IR_TY_I32, 0);
+    if (context->status != IR_HIR_BUILD_OK) {
+      free(suffix_sizes);
       return ir_val_none();
-  } else {
-    total_size = build_expr(context, size_or_outer);
-    if (context->status != IR_HIR_BUILD_OK ||
-        !is_integer_ir_type(total_size.type))
-      return unsupported_expr(context);
+    }
   }
 
-  total_size = emit_integer_width_conversion(
-      context, total_size, IR_TY_I32, 0);
-  ir_val_t wide_size = emit_integer_width_conversion(
-      context, total_size, IR_TY_I64, 0);
-  int size_slot = local_storage_address(
-      context, descriptor_offset + slot_size, slot_size, 8);
-  if (context->status != IR_HIR_BUILD_OK || size_slot < 0 ||
-      !store_direct_value(
-          context, ir_val_vreg(size_slot, IR_TY_PTR), wide_size))
+  ir_val_t suffix = ir_val_imm(IR_TY_I32, element_size);
+  for (size_t reverse = dimension_count; reverse > 0; reverse--) {
+    size_t i = reverse - 1;
+    suffix = emit_integer_binary(
+        context, IR_MUL, suffix_sizes[i], suffix, IR_TY_I32);
+    if (context->status != IR_HIR_BUILD_OK) {
+      free(suffix_sizes);
+      return ir_val_none();
+    }
+    suffix_sizes[i] = suffix;
+  }
+
+  for (size_t i = 0; i < store_count; i++) {
+    int frame_offset =
+        psx_hir_node_vla_runtime_store_offset(node, i);
+    int start_dimension =
+        psx_hir_node_vla_runtime_store_dimension(node, i);
+    if (frame_offset <= 0 || start_dimension < 0 ||
+        (size_t)start_dimension >= dimension_count ||
+        !store_vla_runtime_value(
+            context, frame_offset, slot_size,
+            suffix_sizes[start_dimension])) {
+      free(suffix_sizes);
+      return unsupported_expr(context);
+    }
+  }
+
+  if (descriptor_offset <= 0) {
+    free(suffix_sizes);
+    return ir_val_imm(IR_TY_I32, 0);
+  }
+
+  ir_val_t total_size = suffix_sizes[0];
+  if (!store_vla_runtime_value(
+          context, descriptor_offset + slot_size,
+          slot_size, total_size)) {
+    free(suffix_sizes);
     return ir_val_none();
+  }
 
   int base_vreg = new_vreg(context);
-  if (base_vreg < 0) return ir_val_none();
+  if (base_vreg < 0) {
+    free(suffix_sizes);
+    return ir_val_none();
+  }
   ir_inst_t *allocation = ir_inst_new(IR_VLA_ALLOC);
   if (!allocation) {
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    free(suffix_sizes);
     return ir_val_none();
   }
   allocation->dst = ir_val_vreg(base_vreg, IR_TY_PTR);
   allocation->src1 = total_size;
-  if (!append_instruction(context, allocation))
+  if (!append_instruction(context, allocation)) {
+    free(suffix_sizes);
     return ir_val_none();
+  }
 
   int base_slot = local_storage_address(
       context, descriptor_offset, slot_size, 8);
   if (base_slot < 0 ||
       !store_direct_value(
           context, ir_val_vreg(base_slot, IR_TY_PTR),
-          allocation->dst))
+          allocation->dst)) {
+    free(suffix_sizes);
     return ir_val_none();
+  }
+  free(suffix_sizes);
   return ir_val_imm(IR_TY_I32, 0);
 }
 

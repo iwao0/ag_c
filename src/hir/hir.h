@@ -101,6 +101,7 @@ typedef enum {
   PSX_HIR_EDGE_INIT,
   PSX_HIR_EDGE_INCREMENT,
   PSX_HIR_EDGE_ELSE,
+  PSX_HIR_EDGE_VLA_DIMENSION,
 } psx_hir_edge_kind_t;
 
 typedef struct psx_hir_node_t psx_hir_node_t;
@@ -153,6 +154,12 @@ size_t psx_hir_node_vla_dimension_count(const psx_hir_node_t *node);
 int psx_hir_node_vla_dimension_constant(
     const psx_hir_node_t *node, size_t index);
 int psx_hir_node_vla_dimension_source_offset(
+    const psx_hir_node_t *node, size_t index);
+size_t psx_hir_node_vla_runtime_store_count(
+    const psx_hir_node_t *node);
+int psx_hir_node_vla_runtime_store_offset(
+    const psx_hir_node_t *node, size_t index);
+int psx_hir_node_vla_runtime_store_dimension(
     const psx_hir_node_t *node, size_t index);
 int psx_hir_node_label_id(const psx_hir_node_t *node);
 int psx_hir_node_is_static_function(const psx_hir_node_t *node);

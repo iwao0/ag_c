@@ -9,6 +9,7 @@
 #include "../diag/diag.h"
 #include "../semantic/initializer_resolution.h"
 #include "../semantic/record_decl_table.h"
+#include "../semantic/vla_runtime_plan.h"
 #include "../type_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
@@ -3406,23 +3407,25 @@ int ps_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
   if (descriptor_frame_off) *descriptor_frame_off = 0;
   if (row_stride_frame_off) *row_stride_frame_off = 0;
   if (!node || node->kind != ND_VLA_ALLOC) return 0;
-  node_vla_alloc_t *alloc = (node_vla_alloc_t *)node;
-  if (descriptor_frame_off) *descriptor_frame_off = alloc->descriptor_frame_off;
-  if (row_stride_frame_off) *row_stride_frame_off = alloc->row_stride_frame_off;
-  return alloc->descriptor_frame_off > 0;
+  const psx_vla_runtime_plan_t *plan =
+      ((node_vla_alloc_t *)node)->runtime_plan;
+  if (!plan) return 0;
+  if (descriptor_frame_off)
+    *descriptor_frame_off = plan->descriptor_frame_offset;
+  if (row_stride_frame_off)
+    *row_stride_frame_off = plan->row_stride_frame_offset;
+  return plan->descriptor_frame_offset > 0;
 }
 
-node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
-                                  int descriptor_frame_off,
-                                  int row_stride_frame_off,
-                                  node_t *lhs, node_t *rhs) {
+node_t *ps_node_new_vla_runtime_in(
+    arena_context_t *arena_context,
+    psx_vla_runtime_plan_t *runtime_plan) {
+  if (!arena_context || !runtime_plan) return NULL;
   node_vla_alloc_t *node = resolution_node_alloc_in(
       arena_context, sizeof(node_vla_alloc_t));
+  if (!node) return NULL;
   node->base.kind = ND_VLA_ALLOC;
-  node->base.lhs = lhs;
-  node->base.rhs = rhs;
-  node->descriptor_frame_off = descriptor_frame_off;
-  node->row_stride_frame_off = row_stride_frame_off;
+  node->runtime_plan = runtime_plan;
   return (node_t *)node;
 }
 

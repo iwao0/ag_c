@@ -11,6 +11,7 @@
 #include "../semantic/generic_selection_resolution.h"
 #include "../semantic/sizeof_query_resolution.h"
 #include "../semantic/source_cast_resolution.h"
+#include "../semantic/vla_runtime_plan.h"
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -116,6 +117,15 @@ static node_t *lower_tree(
           (node_static_assert_t *)node;
       assertion->condition = lower_tree(
           context, assertion->condition, fallback_diag_tok);
+      return node;
+    }
+    case ND_VLA_ALLOC: {
+      psx_vla_runtime_plan_t *plan =
+          ((node_vla_alloc_t *)node)->runtime_plan;
+      for (int i = 0; plan && i < plan->dimension_count; i++) {
+        plan->dimensions[i] = lower_tree(
+            context, plan->dimensions[i], fallback_diag_tok);
+      }
       return node;
     }
     case ND_COMPOUND_LITERAL: {
