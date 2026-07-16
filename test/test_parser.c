@@ -37,6 +37,7 @@
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/semantic_pipeline_internal.h"
+#include "../src/frontend/legacy_ast_api.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
 #include "../src/hir/hir.h"
@@ -73,6 +74,7 @@
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/resolution_work_tree_internal.h"
+#include "../src/semantic/semantic_tree_internal.h"
 #include "../src/semantic/typed_hir_materialization.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
@@ -1156,7 +1158,7 @@ static void reset_test_translation_unit_state(void) {
 }
 
 static node_t **parse_test_program_from(token_t *start) {
-  return psx_frontend_program_in_session(
+  return psx_frontend_legacy_program_ast_in_session(
       test_suite_session, NULL, start);
 }
 
@@ -1665,7 +1667,7 @@ static void prepare_test_decl_specifier_alignments(
 
 static node_t *analyze_test_expression(
     node_t *expression, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_expression_in_session(
+  return psx_frontend_legacy_analyze_expression_ast_in_session(
       test_suite_session, expression, fallback_diag_tok);
 }
 
@@ -2058,10 +2060,10 @@ static void test_typed_hir_ownership_and_type_boundary() {
       psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), (node_t *)&typed_number);
   ASSERT_TRUE(typed_work_tree != NULL);
-  ASSERT_TRUE(psx_resolution_work_tree_syntax_root(
-                  typed_work_tree) == (node_t *)&typed_number);
   node_t *typed_root =
-      psx_resolution_work_tree_mutable_semantic_root(typed_work_tree);
+      psx_semantic_tree_compatibility_root_mut(
+          psx_resolution_work_tree_semantic_tree_mut(
+              typed_work_tree));
   ASSERT_TRUE(typed_root != NULL);
   ASSERT_TRUE(typed_root != (node_t *)&typed_number);
   const psx_type_t *int_type =
@@ -2070,18 +2072,18 @@ static void test_typed_hir_ownership_and_type_boundary() {
       intern_test_qual_type(int_type);
   ASSERT_TRUE(int_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ps_node_bind_qual_type(typed_root, int_type, int_qual_type);
-  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
       typed_work_tree, PSX_RESOLUTION_WORK_CLONED,
-      PSX_RESOLUTION_WORK_BOUND, typed_root));
-  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      PSX_RESOLUTION_WORK_BOUND));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
       typed_work_tree, PSX_RESOLUTION_WORK_BOUND,
-      PSX_RESOLUTION_WORK_TYPED, typed_root));
-  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      PSX_RESOLUTION_WORK_TYPED));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
       typed_work_tree, PSX_RESOLUTION_WORK_TYPED,
-      PSX_RESOLUTION_WORK_LOWERED, typed_root));
-  ASSERT_TRUE(psx_resolution_work_tree_advance_with_root(
+      PSX_RESOLUTION_WORK_LOWERED));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
       typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
-      PSX_RESOLUTION_WORK_FINALIZED, typed_root));
+      PSX_RESOLUTION_WORK_FINALIZED));
   failure = (psx_resolved_hir_build_failure_t){0};
   ASSERT_TRUE(psx_resolution_work_tree_build_typed_hir(
       typed_work_tree, test_semantic_context(), &failure));

@@ -12,11 +12,13 @@
 #include "resolution_work_tree_internal.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
+#include "semantic_tree_internal.h"
+#include "semantic_tree_materialization.h"
+#include "typed_hir_materialization.h"
 #include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {
-  const node_t *syntax_root;
-  node_t *semantic_root;
+  psx_semantic_tree_t *semantic_tree;
   psx_typed_hir_tree_t *typed_hir;
   psx_resolution_work_phase_t phase;
 };
@@ -629,36 +631,35 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
   psx_resolution_work_tree_t *tree = arena_alloc_in(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
-  tree->syntax_root = syntax_root;
-  tree->semantic_root = psx_clone_syntax_tree_for_resolution(
+  tree->semantic_tree = psx_semantic_tree_create_from_syntax(
       arena_context, syntax_root);
-  if (!tree->semantic_root) return NULL;
+  if (!tree->semantic_tree) return NULL;
   tree->typed_hir = NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
 }
 
-node_t *psx_clone_syntax_tree_for_resolution(
+psx_semantic_tree_t *psx_semantic_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root) {
   if (!arena_context || !syntax_root) return NULL;
-  return clone_node(arena_context, syntax_root);
+  node_t *compatibility_root =
+      clone_node(arena_context, syntax_root);
+  return compatibility_root
+             ? psx_semantic_tree_create_with_compatibility_root(
+                   arena_context, compatibility_root)
+             : NULL;
 }
 
-const node_t *psx_resolution_work_tree_syntax_root(
-    const psx_resolution_work_tree_t *tree) {
-  return tree ? tree->syntax_root : NULL;
-}
-
-node_t *psx_resolution_work_tree_mutable_semantic_root(
+psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree_mut(
     psx_resolution_work_tree_t *tree) {
   return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED &&
                  tree->phase < PSX_RESOLUTION_WORK_FINALIZED
-             ? tree->semantic_root : NULL;
+             ? tree->semantic_tree : NULL;
 }
 
-const node_t *psx_resolution_work_tree_semantic_root(
+const psx_semantic_tree_t *psx_resolution_work_tree_semantic_tree(
     const psx_resolution_work_tree_t *tree) {
-  return tree ? tree->semantic_root : NULL;
+  return tree ? tree->semantic_tree : NULL;
 }
 
 const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
@@ -667,10 +668,12 @@ const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
              ? tree->typed_hir : NULL;
 }
 
-node_t *psx_resolution_work_tree_legacy_root(
+node_t *psx_resolution_work_tree_export_compatibility_ast(
     psx_resolution_work_tree_t *tree) {
   return tree && tree->phase >= PSX_RESOLUTION_WORK_FINALIZED
-             ? tree->semantic_root : NULL;
+             ? psx_semantic_tree_compatibility_root_mut(
+                   tree->semantic_tree)
+             : NULL;
 }
 
 psx_resolution_work_phase_t psx_resolution_work_tree_phase(
@@ -678,16 +681,14 @@ psx_resolution_work_phase_t psx_resolution_work_tree_phase(
   return tree ? tree->phase : PSX_RESOLUTION_WORK_INVALID;
 }
 
-int psx_resolution_work_tree_advance_with_root(
+int psx_resolution_work_tree_advance(
     psx_resolution_work_tree_t *tree,
     psx_resolution_work_phase_t expected,
-    psx_resolution_work_phase_t next, node_t *root) {
-  if (!tree || !root || tree->phase != expected ||
-      root == tree->syntax_root ||
+    psx_resolution_work_phase_t next) {
+  if (!tree || !tree->semantic_tree || tree->phase != expected ||
       next > PSX_RESOLUTION_WORK_FINALIZED ||
       next != (psx_resolution_work_phase_t)(expected + 1))
     return 0;
-  tree->semantic_root = root;
   tree->phase = next;
   return 1;
 }
@@ -702,4 +703,46 @@ int psx_resolution_work_tree_attach_typed_hir(
   tree->typed_hir = typed_hir;
   tree->phase = PSX_RESOLUTION_WORK_HIR_READY;
   return 1;
+}
+
+int psx_resolution_work_tree_build_typed_hir(
+    psx_resolution_work_tree_t *tree,
+    const psx_semantic_context_t *semantic_context,
+    psx_resolved_hir_build_failure_t *failure) {
+  if (failure) {
+    *failure = (psx_resolved_hir_build_failure_t){
+        .source_node_kind = -1,
+    };
+  }
+  const node_t *compatibility_root =
+      tree ? psx_semantic_tree_compatibility_root(
+                 tree->semantic_tree)
+           : NULL;
+  if (!tree || !semantic_context || !tree->semantic_tree ||
+      !compatibility_root) {
+    if (failure) {
+      failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
+      failure->source_node_kind =
+          compatibility_root ? (int)compatibility_root->kind : -1;
+    }
+    return 0;
+  }
+  if (tree->phase != PSX_RESOLUTION_WORK_FINALIZED) {
+    if (failure) {
+      failure->status =
+          PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION;
+      failure->source_node_kind = (int)compatibility_root->kind;
+    }
+    return 0;
+  }
+  if (!psx_semantic_tree_materialize(
+          tree->semantic_tree, semantic_context, failure))
+    return 0;
+  psx_typed_hir_tree_t *typed_hir =
+      psx_materialize_typed_hir_tree(
+          tree->semantic_tree, failure);
+  return typed_hir
+             ? psx_resolution_work_tree_attach_typed_hir(
+                   tree, typed_hir)
+             : 0;
 }

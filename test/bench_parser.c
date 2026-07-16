@@ -1,6 +1,7 @@
 #include "../src/parser/parser.h"
 #include "../src/compilation_session.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/frontend/legacy_ast_api.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -58,7 +59,7 @@ static void run_case(
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
-  node_t **code = psx_frontend_program_in_session(
+  node_t **code = psx_frontend_legacy_program_ast_in_session(
       session, NULL, tk_get_current_token());
   clock_gettime(CLOCK_MONOTONIC, &t_par1);
 

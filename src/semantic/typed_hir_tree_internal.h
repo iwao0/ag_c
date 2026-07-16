@@ -3,10 +3,10 @@
 
 #include "typed_hir_tree.h"
 
-typedef struct psx_resolved_hir_node_t psx_resolved_hir_node_t;
+typedef struct psx_semantic_node_t psx_semantic_node_t;
 
 struct psx_typed_hir_tree_t {
-  psx_resolved_hir_node_t *root;
+  const psx_semantic_node_t *root;
 };
 
 #endif

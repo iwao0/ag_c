@@ -1,4 +1,5 @@
 #include "translation_unit.h"
+#include "legacy_ast_api.h"
 
 #include "../diag/diag.h"
 #include "../declaration_pipeline.h"
@@ -358,7 +359,7 @@ int psx_frontend_free_processed_ast_in_session(
   return 1;
 }
 
-node_t **psx_frontend_program_in_session(
+node_t **psx_frontend_legacy_program_ast_in_session(
     ag_compilation_session_t *session,
     tokenizer_context_t *tk_ctx, token_t *start) {
   psx_frontend_stream_t stream = {0};
@@ -378,7 +379,7 @@ node_t **psx_frontend_program_in_session(
   while (frontend_next_function_internal(
       &stream, &frontend_function, &work_tree)) {
     node_t *function =
-        psx_resolution_work_tree_legacy_root(work_tree);
+        psx_resolution_work_tree_export_compatibility_ast(work_tree);
     if (!function) {
       free(program);
       psx_frontend_stream_end(&stream);

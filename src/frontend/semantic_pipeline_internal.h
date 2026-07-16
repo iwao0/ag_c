@@ -41,24 +41,4 @@ int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
     const psx_type_t *type, const node_t *syntax,
     const token_t *fallback_diag_tok,
     psx_static_aggregate_initializer_plan_t *plan);
-node_t *psx_frontend_analyze_expression_in_session(
-    ag_compilation_session_t *session,
-    const node_t *syntax_expression,
-    const token_t *fallback_diag_tok);
-node_t *psx_frontend_analyze_expression_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax_expression,
-    const token_t *fallback_diag_tok);
-node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax, const token_t *fallback_diag_tok);
-
 #endif

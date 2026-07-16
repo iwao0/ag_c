@@ -1,9 +1,6 @@
 #ifndef SEMANTIC_RESOLUTION_WORK_TREE_H
 #define SEMANTIC_RESOLUTION_WORK_TREE_H
 
-#include "../parser/node_fwd.h"
-
-typedef struct arena_context_t arena_context_t;
 typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
 typedef struct psx_typed_hir_tree_t psx_typed_hir_tree_t;
 
@@ -17,8 +14,6 @@ typedef enum {
   PSX_RESOLUTION_WORK_HIR_READY,
 } psx_resolution_work_phase_t;
 
-const node_t *psx_resolution_work_tree_syntax_root(
-    const psx_resolution_work_tree_t *tree);
 const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
     const psx_resolution_work_tree_t *tree);
 psx_resolution_work_phase_t psx_resolution_work_tree_phase(

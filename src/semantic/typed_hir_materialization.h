@@ -2,10 +2,8 @@
 #define SEMANTIC_TYPED_HIR_MATERIALIZATION_H
 
 #include "../hir/hir.h"
-#include "resolution_work_tree.h"
+#include "semantic_tree.h"
 #include "typed_hir_tree.h"
-
-typedef struct psx_semantic_context_t psx_semantic_context_t;
 
 typedef enum {
   PSX_RESOLVED_HIR_BUILD_OK = 0,
@@ -18,14 +16,13 @@ typedef enum {
   PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
 } psx_resolved_hir_build_status_t;
 
-typedef struct {
+typedef struct psx_resolved_hir_build_failure_t {
   psx_resolved_hir_build_status_t status;
   int source_node_kind;
 } psx_resolved_hir_build_failure_t;
 
-int psx_resolution_work_tree_build_typed_hir(
-    psx_resolution_work_tree_t *work_tree,
-    const psx_semantic_context_t *semantic_context,
+psx_typed_hir_tree_t *psx_materialize_typed_hir_tree(
+    const psx_semantic_tree_t *semantic_tree,
     psx_resolved_hir_build_failure_t *failure);
 psx_hir_node_id_t psx_typed_hir_tree_emit(
     psx_hir_module_t *module,

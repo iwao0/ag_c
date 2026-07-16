@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "../hir/hir_internal.h"
-#include "typed_hir_node_internal.h"
+#include "semantic_node_internal.h"
 #include "typed_hir_tree_internal.h"
 
 typedef struct {
@@ -14,7 +14,7 @@ typedef struct {
 
 static void set_failure(
     hir_emitter_t *emitter, psx_resolved_hir_build_status_t status,
-    const psx_resolved_hir_node_t *source) {
+    const psx_semantic_node_t *source) {
   if (!emitter->failure ||
       emitter->failure->status != PSX_RESOLVED_HIR_BUILD_OK)
     return;
@@ -24,7 +24,7 @@ static void set_failure(
 }
 
 static psx_hir_node_id_t emit_node(
-    hir_emitter_t *emitter, const psx_resolved_hir_node_t *source) {
+    hir_emitter_t *emitter, const psx_semantic_node_t *source) {
   if (!source) {
     set_failure(emitter, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT, NULL);
     return PSX_HIR_NODE_ID_INVALID;
@@ -66,8 +66,8 @@ static psx_hir_node_id_t emit_node(
   int is_expression =
       psx_hir_kind_is_expression(source->spec.kind);
   if (is_expression) {
-    const psx_resolved_hir_expression_t *typed_expression =
-        (const psx_resolved_hir_expression_t *)source;
+    const psx_semantic_expression_t *typed_expression =
+        (const psx_semantic_expression_t *)source;
     psx_hir_expression_spec_t expression = {
         .node = spec,
         .qual_type = typed_expression->qual_type,
@@ -103,7 +103,7 @@ psx_hir_node_id_t psx_typed_hir_tree_emit(
     }
     return PSX_HIR_NODE_ID_INVALID;
   }
-  const psx_resolved_hir_node_t *source = typed_tree->root;
+  const psx_semantic_node_t *source = typed_tree->root;
   if (!source) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_UNMATERIALIZED;

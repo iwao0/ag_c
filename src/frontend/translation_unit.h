@@ -34,8 +34,5 @@ int psx_frontend_next_function(
 int psx_frontend_stream_end(psx_frontend_stream_t *stream);
 int psx_frontend_free_processed_ast_in_session(
     ag_compilation_session_t *session);
-node_t **psx_frontend_program_in_session(
-    ag_compilation_session_t *session,
-    tokenizer_context_t *tk_ctx, token_t *start);
 
 #endif
