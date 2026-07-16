@@ -7,6 +7,7 @@
 #include "../parser/ast.h"
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_type_public.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/semantic_ctx.h"
@@ -484,12 +485,9 @@ static int derive_structural_expression_type(
   return 1;
 }
 
-static int attach_global_symbol(
-    hir_materializer_t *builder, const node_t *source,
-    psx_hir_symbol_spec_t *symbol, int *has_symbol) {
-  if (has_symbol) *has_symbol = 0;
-  if (source->kind != ND_GVAR) return 1;
-  const global_var_t *global = ((const node_gvar_t *)source)->symbol;
+static int resolved_global_symbol_spec(
+    hir_materializer_t *builder, const global_var_t *global,
+    const node_t *source, psx_hir_symbol_spec_t *symbol) {
   if (!global) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
@@ -535,8 +533,126 @@ static int attach_global_symbol(
       .is_static = ps_gvar_is_static_storage(global) ? 1 : 0,
       .is_thread_local = ps_gvar_is_thread_local(global) ? 1 : 0,
   };
+  return 1;
+}
+
+static int attach_global_symbol(
+    hir_materializer_t *builder, const node_t *source,
+    psx_hir_symbol_spec_t *symbol, int *has_symbol) {
+  if (has_symbol) *has_symbol = 0;
+  if (source->kind != ND_GVAR) return 1;
+  const global_var_t *global = ((const node_gvar_t *)source)->symbol;
+  if (!resolved_global_symbol_spec(
+          builder, global, source, symbol))
+    return 0;
   if (has_symbol) *has_symbol = 1;
   return 1;
+}
+
+static psx_resolved_hir_node_t *materialize_local_object_reference(
+    hir_materializer_t *builder, const lvar_t *local,
+    const node_t *source) {
+  if (!local) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL, source);
+    return NULL;
+  }
+  psx_qual_type_t qual_type = ps_lvar_decl_qual_type(local);
+  if (!canonical_type_exists(builder, qual_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_LOCAL,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .storage_offset = ps_lvar_offset(local),
+      .object_offset = ps_lvar_offset(local),
+      .object_size = ps_lvar_frame_storage_size(local),
+      .object_align = ps_lvar_align_bytes(local),
+  };
+  return materialize_node_record(
+      builder, &spec, PSX_HIR_ROLE_EXPRESSION, qual_type,
+      NULL, NULL, source);
+}
+
+static psx_resolved_hir_node_t *materialize_global_object_reference(
+    hir_materializer_t *builder, const global_var_t *global,
+    const node_t *source) {
+  psx_hir_symbol_spec_t symbol = {0};
+  if (!resolved_global_symbol_spec(
+          builder, global, source, &symbol))
+    return NULL;
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_GLOBAL,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .name = ps_gvar_name(global),
+      .name_length = ps_gvar_name_len(global) > 0
+                         ? (size_t)ps_gvar_name_len(global) : 0,
+  };
+  return materialize_node_record(
+      builder, &spec, PSX_HIR_ROLE_EXPRESSION,
+      ps_gvar_decl_qual_type(global), NULL, &symbol, source);
+}
+
+static psx_resolved_hir_node_t *materialize_address_of_object(
+    hir_materializer_t *builder,
+    psx_resolved_hir_node_t *object,
+    psx_qual_type_t result_type, const node_t *source) {
+  psx_resolved_hir_node_t *items[] = {object};
+  psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+  hir_children_t children = {
+      .items = items,
+      .edges = edges,
+      .count = 1,
+      .capacity = 1,
+  };
+  return materialize_expression(
+      builder, PSX_HIR_ADDRESS, result_type, &children, source);
+}
+
+static psx_resolved_hir_node_t *materialize_compound_literal(
+    hir_materializer_t *builder,
+    const node_compound_literal_t *compound) {
+  const node_t *source = &compound->base;
+  const psx_compound_literal_resolution_t *resolution =
+      source->resolution_state
+          ? &source->resolution_state->compound_literal : NULL;
+  psx_qual_type_t result_type = ps_node_qual_type(source);
+  if (!resolution || !resolution->is_planned) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+    return NULL;
+  }
+  if (!canonical_type_exists(builder, result_type)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
+    return NULL;
+  }
+  if (resolution->direct_value)
+    return build_node(builder, resolution->direct_value);
+
+  psx_resolved_hir_node_t *object =
+      resolution->local_object
+          ? materialize_local_object_reference(
+                builder, resolution->local_object, source)
+          : materialize_global_object_reference(
+                builder, resolution->global_object, source);
+  if (!object) return NULL;
+  psx_resolved_hir_node_t *value =
+      compound->requires_addressable_object
+          ? materialize_address_of_object(
+                builder, object, result_type, source)
+          : object;
+  if (!value) return NULL;
+  if (!resolution->runtime_initialization) return value;
+  psx_resolved_hir_node_t *initialization =
+      build_node(builder, resolution->runtime_initialization);
+  if (!initialization) return NULL;
+  return materialize_comma(
+      builder, initialization, value, result_type, source);
 }
 
 static int copy_payload(
@@ -723,6 +839,10 @@ static int copy_vla_payload(
 
 static psx_resolved_hir_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
+  if (source && source->kind == ND_COMPOUND_LITERAL) {
+    return materialize_compound_literal(
+        builder, (const node_compound_literal_t *)source);
+  }
   if (source && source->kind == ND_SIZEOF_QUERY) {
     return materialize_sizeof_query(
         builder, (const node_sizeof_query_t *)source);

@@ -7,6 +7,7 @@
 #include "initializer_lowering.h"
 #include "runtime_context.h"
 #include "complex_part_lowering.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 
 typedef struct {
@@ -101,18 +102,42 @@ static node_t *lower_tree(
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return NULL;
   switch (node->kind) {
-    case ND_COMPOUND_LITERAL:
+    case ND_COMPOUND_LITERAL: {
+      node_compound_literal_t *compound =
+          (node_compound_literal_t *)node;
+      psx_compound_literal_resolution_t *resolution =
+          node->resolution_state
+              ? &node->resolution_state->compound_literal : NULL;
+      if (resolution && resolution->is_planned) return node;
       node->rhs = lower_initializer(
           context, node->rhs, fallback_diag_tok);
-      node = lower_compound_literal_expression_in_contexts(
+      psx_compound_literal_storage_plan_t plan;
+      if (!psx_plan_compound_literal_storage_in_contexts(
           context->semantic_context, context->global_registry,
           context->local_registry, context->lowering_context,
-          context->options,
-          node, fallback_diag_tok);
-      return node->kind == ND_COMPOUND_LITERAL
-                 ? node
-                 : lower_tree(
-                       context, node, fallback_diag_tok);
+          context->options, compound, fallback_diag_tok, &plan) ||
+          !resolution) {
+        return node;
+      }
+      if (plan.runtime_initialization) {
+        plan.runtime_initialization = lower_tree(
+            context, plan.runtime_initialization, fallback_diag_tok);
+      }
+      resolution->local_object = plan.local_object;
+      resolution->global_object = plan.global_object;
+      resolution->runtime_initialization =
+          plan.runtime_initialization;
+      resolution->direct_value = plan.direct_value;
+      resolution->is_planned = 1;
+      const psx_type_t *result_type = plan.object_type;
+      if (compound->requires_addressable_object && result_type) {
+        result_type = ps_type_address_result_in(
+            ps_lowering_arena(context->lowering_context), result_type);
+      }
+      if (result_type) ps_node_bind_type(node, result_type);
+      node->rhs = NULL;
+      return node;
+    }
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
@@ -320,6 +345,19 @@ void psx_lower_implicit_conversions(
     const ag_compilation_options_t *options) {
   if (!node) return;
   switch (node->kind) {
+    case ND_COMPOUND_LITERAL: {
+      psx_compound_literal_resolution_t *resolution =
+          node->resolution_state
+              ? &node->resolution_state->compound_literal : NULL;
+      if (!resolution) break;
+      psx_lower_implicit_conversions(
+          lowering_context, resolution->runtime_initialization,
+          current_func, fallback_diag_tok, options);
+      psx_lower_implicit_conversions(
+          lowering_context, resolution->direct_value,
+          current_func, fallback_diag_tok, options);
+      break;
+    }
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;
            body && *body; body++) {

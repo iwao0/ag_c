@@ -26,14 +26,15 @@ static char *new_compound_object_name(
   return name;
 }
 
-static node_t *lower_file_scope_compound_literal(
+static int plan_file_scope_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     node_compound_literal_t *compound,
-    const token_t *fallback_diag_tok) {
+    const token_t *fallback_diag_tok,
+    psx_compound_literal_storage_plan_t *plan) {
   const psx_type_t *type = compound->type_name.resolved_type;
   node_t *initializer = compound->base.rhs;
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
@@ -46,7 +47,9 @@ static node_t *lower_file_scope_compound_literal(
       list->entries[0].designator_count == 0 &&
       list->entries[0].value &&
       list->entries[0].value->kind == ND_NUM) {
-    return list->entries[0].value;
+    plan->direct_value = list->entries[0].value;
+    plan->object_type = ps_node_get_type(plan->direct_value);
+    return 1;
   }
 
   psx_parsed_initializer_t parsed = {
@@ -83,27 +86,19 @@ static node_t *lower_file_scope_compound_literal(
             ps_lowering_diagnostics(lowering_context),
                     DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
-  node_t *reference = is_array
-                          ? ps_node_new_gvar_array_addr_for_in(
-                                ps_lowering_arena(lowering_context),
-                                object.global)
-                          : ps_node_new_gvar_for_in(
-                                ps_lowering_arena(lowering_context),
-                                object.global);
-  if (!compound->requires_addressable_object) return reference;
-  return is_array
-             ? ps_node_new_explicit_addr_value_for_in(
-                   ps_lowering_arena(lowering_context), reference)
-             : ps_node_new_unary_addr_for_in(
-                   ps_lowering_arena(lowering_context), reference);
+  if (!object.global) return 0;
+  plan->global_object = object.global;
+  plan->object_type = ps_gvar_get_decl_type(object.global);
+  return plan->object_type != NULL;
 }
 
-static node_t *lower_local_compound_literal(
+static int plan_local_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     node_compound_literal_t *compound,
-    const token_t *fallback_diag_tok) {
+    const token_t *fallback_diag_tok,
+    psx_compound_literal_storage_plan_t *plan) {
   const psx_type_t *type = compound->type_name.resolved_type;
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
@@ -136,49 +131,32 @@ static node_t *lower_local_compound_literal(
         "compound-literal",
         "compound literal local storage lowering failed");
   }
-  int is_array = type && type->kind == PSX_TYPE_ARRAY;
-  node_t *reference = is_array
-                          ? ps_node_new_lvar_array_addr_for_in(
-                                ps_lowering_arena(lowering_context),
-                                object.var)
-                          : ps_node_new_lvar_expr_ref_for_in(
-                                ps_lowering_arena(lowering_context),
-                                object.var);
-  if (compound->requires_addressable_object) {
-    reference = is_array
-                    ? ps_node_new_explicit_addr_value_for_in(
-                          ps_lowering_arena(lowering_context), reference)
-                    : ps_node_new_unary_addr_for_in(
-                          ps_lowering_arena(lowering_context), reference);
-  }
-  return ps_node_new_binary_for_target_in(
-      ps_lowering_arena(lowering_context),
-      ps_lowering_target(lowering_context), ND_COMMA,
-      object.initialization, reference);
+  if (!object.var) return 0;
+  plan->local_object = object.var;
+  plan->runtime_initialization = object.initialization;
+  plan->object_type = ps_lvar_get_decl_type(object.var);
+  return plan->object_type != NULL;
 }
 
-node_t *lower_compound_literal_expression_in_contexts(
+int psx_plan_compound_literal_storage_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    node_t *node, const token_t *fallback_diag_tok) {
+    node_compound_literal_t *compound,
+    const token_t *fallback_diag_tok,
+    psx_compound_literal_storage_plan_t *plan) {
+  if (plan) *plan = (psx_compound_literal_storage_plan_t){0};
   if (!semantic_context || !global_registry || !local_registry ||
-      !lowering_context || !options)
-    return node;
-  if (!node || node->kind != ND_COMPOUND_LITERAL) return node;
-  node_compound_literal_t *compound = (node_compound_literal_t *)node;
-  node_t *lowered = compound->has_file_scope_storage
-                        ? lower_file_scope_compound_literal(
-                              semantic_context, global_registry,
-                              local_registry, lowering_context, options,
-                              compound, fallback_diag_tok)
-                        : lower_local_compound_literal(
-                              semantic_context, local_registry,
-                              lowering_context,
-                              compound, fallback_diag_tok);
-  if (!lowered) return node;
-  if (!lowered->tok) lowered->tok = node->tok;
-  return lowered;
+      !lowering_context || !options || !compound || !plan)
+    return 0;
+  return compound->has_file_scope_storage
+             ? plan_file_scope_compound_literal(
+                   semantic_context, global_registry, local_registry,
+                   lowering_context, options, compound,
+                   fallback_diag_tok, plan)
+             : plan_local_compound_literal(
+                   semantic_context, local_registry, lowering_context,
+                   compound, fallback_diag_tok, plan);
 }

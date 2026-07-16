@@ -1,5 +1,6 @@
 #include "lvar_usage_analysis.h"
 
+#include "../parser/node_resolution_state.h"
 #include "../diag/diag.h"
 #include "../parser/local_registry.h"
 #include "../parser/lvar_public.h"
@@ -153,6 +154,21 @@ void psx_collect_lvar_usage_events_in(
         region);
   }
   switch (node->kind) {
+    case ND_COMPOUND_LITERAL: {
+      psx_compound_literal_resolution_t *resolution =
+          node->resolution_state
+              ? &node->resolution_state->compound_literal : NULL;
+      if (!resolution || !resolution->is_planned) {
+        psx_collect_lvar_usage_events_in(
+            local_registry, node->rhs, region);
+        return;
+      }
+      psx_collect_lvar_usage_events_in(
+          local_registry, resolution->runtime_initialization, region);
+      psx_collect_lvar_usage_events_in(
+          local_registry, resolution->direct_value, region);
+      return;
+    }
     case ND_ASSIGN:
       record_initialized(local_registry, node->lhs, region);
       psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);

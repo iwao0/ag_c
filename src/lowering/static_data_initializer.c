@@ -5,6 +5,7 @@
 #include "../parser/diag.h"
 #include "../parser/decl.h"
 #include "../parser/global_registry.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
@@ -65,6 +66,17 @@ static int resolve_static_address_constant(
   if (!lowering_context || !node || !symbol || !symbol_len || !offset)
     return 0;
   switch (node->kind) {
+    case ND_COMPOUND_LITERAL: {
+      const psx_compound_literal_resolution_t *resolution =
+          node->resolution_state
+              ? &node->resolution_state->compound_literal : NULL;
+      if (!resolution || !resolution->is_planned ||
+          !resolution->global_object)
+        return 0;
+      *symbol = ps_gvar_name(resolution->global_object);
+      *symbol_len = ps_gvar_name_len(resolution->global_object);
+      return *symbol != NULL && *symbol_len > 0;
+    }
     case ND_ADDR:
       if (node->lhs &&
           (node->lhs->kind == ND_SUBSCRIPT ||
@@ -174,6 +186,16 @@ static long long eval_static_const_int(
   if (!node) {
     if (ok) *ok = 0;
     return 0;
+  }
+  if (node->kind == ND_COMPOUND_LITERAL) {
+    const psx_compound_literal_resolution_t *resolution =
+        node->resolution_state
+            ? &node->resolution_state->compound_literal : NULL;
+    if (resolution && resolution->is_planned &&
+        resolution->direct_value) {
+      return eval_static_const_int(
+          lowering_context, resolution->direct_value, ok);
+    }
   }
   if (node->kind == ND_CAST)
     return eval_static_const_int(lowering_context, node->lhs, ok);

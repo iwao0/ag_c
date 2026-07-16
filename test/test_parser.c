@@ -853,6 +853,24 @@ static node_t *test_node_new_array_elem_lvar_for(
 
 static int test_node_compound_literal_array_size(node_t *node) {
   if (!node) return 0;
+  if (node->kind == ND_COMPOUND_LITERAL) {
+    const psx_compound_literal_resolution_t *resolution =
+        node->resolution_state
+            ? &node->resolution_state->compound_literal : NULL;
+    const psx_type_t *object_type = NULL;
+    if (resolution && resolution->is_planned) {
+      if (resolution->local_object) {
+        object_type = ps_lvar_get_decl_type(resolution->local_object);
+      } else if (resolution->global_object) {
+        object_type = ps_gvar_get_decl_type(resolution->global_object);
+      }
+    }
+    return object_type && object_type->kind == PSX_TYPE_ARRAY
+               ? ps_type_sizeof_for_target(
+                     object_type,
+                     ps_ctx_target_info(test_semantic_context()))
+               : 0;
+  }
   if (node->kind == ND_COMMA) {
     return test_node_compound_literal_array_size(node->rhs);
   }
@@ -865,6 +883,15 @@ static int test_node_compound_literal_array_size(node_t *node) {
                    object_type,
                    ps_ctx_target_info(test_semantic_context()))
              : 0;
+}
+
+static lvar_t *test_compound_literal_local_object(node_t *node) {
+  if (!node || node->kind != ND_COMPOUND_LITERAL ||
+      !node->resolution_state)
+    return NULL;
+  psx_compound_literal_resolution_t *resolution =
+      &node->resolution_state->compound_literal;
+  return resolution->is_planned ? resolution->local_object : NULL;
 }
 
 static int plan_test_local_storage(
@@ -5157,34 +5184,73 @@ static void test_expr_compound_literal() {
   ASSERT_TRUE(compound->type_name.resolved_type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
-  ASSERT_EQ(ND_COMMA, lowered->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, lowered->kind);
+  ASSERT_TRUE(lowered->rhs == NULL);
+  ASSERT_TRUE(lowered->resolution_state != NULL);
+  const psx_compound_literal_resolution_t *resolution =
+      &lowered->resolution_state->compound_literal;
+  ASSERT_TRUE(resolution->is_planned);
+  ASSERT_TRUE(resolution->local_object != NULL);
+  ASSERT_TRUE(resolution->global_object == NULL);
+  ASSERT_TRUE(resolution->runtime_initialization != NULL);
+  ASSERT_TRUE(resolution->direct_value == NULL);
 
   node_t *node = parse_expr_input("(int){3}");
-  ASSERT_EQ(ND_COMMA, node->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, node->kind);
+
+  node_t **program = parse_program_input(
+      "int __typed_hir_compound_literal(void) { return (int){3}; }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, body->body[0]->lhs->kind);
+  int found_compound_sequence = 0;
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node ||
+        psx_hir_node_kind(hir_node) != PSX_HIR_COMMA)
+      continue;
+    for (size_t child = 0;
+         child < psx_hir_node_child_count(hir_node); child++) {
+      if (psx_hir_node_child_edge_at(hir_node, child) !=
+          PSX_HIR_EDGE_RHS)
+        continue;
+      const psx_hir_node_t *value = psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(hir_node, child));
+      if (value && psx_hir_node_kind(value) == PSX_HIR_LOCAL) {
+        found_compound_sequence = 1;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(found_compound_sequence);
 }
 
 static void test_expr_compound_literal_array_subscript() {
   printf("test_expr_compound_literal_array_subscript...\n");
   node_t *array_literal = parse_expr_input("(int[3]){1,2,3}");
-  ASSERT_EQ(ND_COMMA, array_literal->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, array_literal->kind);
   ASSERT_EQ(12, ps_node_compound_literal_array_size(array_literal));
-  ASSERT_EQ(ND_ADDR, array_literal->rhs->kind);
-  ASSERT_EQ(12, ps_node_compound_literal_array_size(array_literal));
+  ASSERT_TRUE(array_literal->rhs == NULL);
 
   // 配列型複合リテラルへの添字アクセス: ((int[2]){1,2})[1]
   node_t *node = parse_expr_input("((int[2]){1,2})[1]");
   ASSERT_EQ(ND_SUBSCRIPT, node->kind);
 
   node_t *inferred = parse_expr_input("(int[]){1,2,3}");
-  ASSERT_EQ(ND_COMMA, inferred->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, inferred->kind);
   ASSERT_EQ(12, ps_node_compound_literal_array_size(inferred));
 
   node_t *string_inferred = parse_expr_input("(char[]){\"abc\"}");
-  ASSERT_EQ(ND_COMMA, string_inferred->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, string_inferred->kind);
   ASSERT_EQ(4, ps_node_compound_literal_array_size(string_inferred));
 
   node_t *pointer_inferred = parse_expr_input("(int *[]){0,0}");
-  ASSERT_EQ(ND_COMMA, pointer_inferred->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, pointer_inferred->kind);
   ASSERT_EQ(16, ps_node_compound_literal_array_size(pointer_inferred));
 }
 
@@ -17534,12 +17600,9 @@ static void test_type_metadata_bridge() {
             block_declared_function->param_types[0]->kind);
 
   node_t *compound_lit_expr = parse_expr_input("(int[3]){1,2,3}");
-  ASSERT_EQ(ND_COMMA, compound_lit_expr->kind);
-  ASSERT_TRUE(compound_lit_expr->rhs != NULL);
-  ASSERT_EQ(ND_ADDR, compound_lit_expr->rhs->kind);
-  ASSERT_TRUE(compound_lit_expr->rhs->lhs != NULL);
-  ASSERT_EQ(ND_LVAR, compound_lit_expr->rhs->lhs->kind);
-  lvar_t *compound_lit_local = as_lvar(compound_lit_expr->rhs->lhs)->var;
+  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_lit_expr->kind);
+  lvar_t *compound_lit_local =
+      test_compound_literal_local_object(compound_lit_expr);
   ASSERT_TRUE(compound_lit_local != NULL);
   ASSERT_TRUE(compound_lit_local->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, compound_lit_local->decl_type->kind);
@@ -17553,11 +17616,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(compound_lit_stale_addr));
 
   node_t *compound_unsigned_expr = parse_expr_input("(unsigned char[2]){1,2}");
-  ASSERT_EQ(ND_COMMA, compound_unsigned_expr->kind);
-  ASSERT_TRUE(compound_unsigned_expr->rhs != NULL);
-  ASSERT_EQ(ND_ADDR, compound_unsigned_expr->rhs->kind);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_unsigned_expr->kind);
   lvar_t *compound_unsigned_local =
-      as_lvar(compound_unsigned_expr->rhs->lhs)->var;
+      test_compound_literal_local_object(compound_unsigned_expr);
   ASSERT_TRUE(compound_unsigned_local != NULL);
   ASSERT_TRUE(compound_unsigned_local->decl_type != NULL);
   node_t *compound_unsigned_addr =
@@ -17565,10 +17626,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(compound_unsigned_addr));
 
   node_t *compound_bool_expr = parse_expr_input("(_Bool[2]){0,1}");
-  ASSERT_EQ(ND_COMMA, compound_bool_expr->kind);
-  ASSERT_TRUE(compound_bool_expr->rhs != NULL);
-  ASSERT_EQ(ND_ADDR, compound_bool_expr->rhs->kind);
-  lvar_t *compound_bool_local = as_lvar(compound_bool_expr->rhs->lhs)->var;
+  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_bool_expr->kind);
+  lvar_t *compound_bool_local =
+      test_compound_literal_local_object(compound_bool_expr);
   ASSERT_TRUE(compound_bool_local != NULL);
   ASSERT_TRUE(compound_bool_local->decl_type != NULL);
   node_t *compound_bool_addr =

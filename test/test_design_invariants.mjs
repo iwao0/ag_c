@@ -2548,7 +2548,7 @@ if (!/ps_find_global_var_in\s*\(/.test(
     !/psx_lower_semantic_initializer_syntax_in_contexts\s*\(/.test(
       semanticPipelineSource,
     ) ||
-    !/lower_compound_literal_expression_in_contexts\s*\(/.test(
+    !/psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       semanticLoweringPassSource,
     ) ||
     !/\.global_registry\s*=\s*global_registry/.test(
@@ -3874,6 +3874,10 @@ const compoundLiteralLoweringHeader = await readFile(
   "src/lowering/compound_literal_lowering.h",
   "utf8",
 );
+const typedHirMaterializationSource = await readFile(
+  "src/semantic/typed_hir_materialization.c",
+  "utf8",
+);
 if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t\s*\)\s*\)/.test(
       nodeUtilsSource,
     ) ||
@@ -3892,8 +3896,17 @@ if (!/\bnode_t\s*\*\s*lower_source_cast_expression\s*\(/.test(
     "source cast lowering must return a replacement node without cross-struct overwrite",
   );
 }
-if (!/\bnode_t\s*\*\s*lower_compound_literal_expression_in_contexts\s*\(/.test(
+if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       compoundLiteralLoweringHeader,
+    ) ||
+    /\blower_compound_literal_expression_in_contexts\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/\bmaterialize_compound_literal\s*\(/.test(
+      typedHirMaterializationSource,
+    ) ||
+    !/source\s*&&\s*source->kind\s*==\s*ND_COMPOUND_LITERAL/.test(
+      typedHirMaterializationSource,
     ) ||
     /_Static_assert\s*\(\s*sizeof\s*\(\s*node_compound_literal_t\s*\)/.test(
       compoundLiteralLoweringSource,
@@ -3902,7 +3915,7 @@ if (!/\bnode_t\s*\*\s*lower_compound_literal_expression_in_contexts\s*\(/.test(
       compoundLiteralLoweringSource,
     )) {
   throw new Error(
-    "compound literal lowering must return a replacement node without size coupling or cross-struct overwrite",
+    "compound literals must use a storage plan and materialize directly into Typed HIR without AST replacement",
   );
 }
 

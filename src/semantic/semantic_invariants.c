@@ -38,7 +38,6 @@ static node_semantic_role_t semantic_role(psx_work_node_kind_t kind) {
       return NODE_SEMANTIC_ROLE_NON_EXPRESSION;
 
     case ND_IDENTIFIER:
-    case ND_COMPOUND_LITERAL:
       return NODE_SEMANTIC_ROLE_RAW_EXPRESSION;
 
     case ND_INIT_LIST:
@@ -54,6 +53,7 @@ static node_semantic_role_t semantic_role(psx_work_node_kind_t kind) {
     case ND_POST_INC: case ND_POST_DEC:
     case ND_FUNCALL: case ND_FUNCREF:
     case ND_GENERIC_SELECTION:
+    case ND_COMPOUND_LITERAL:
     case ND_ALIGNOF_QUERY:
     case ND_SIZEOF_QUERY:
     case ND_UNARY_NEGATE:

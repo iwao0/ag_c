@@ -2,6 +2,7 @@
 #include "runtime_context.h"
 
 #include "../parser/lvar_public.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/diag.h"
 #include "../diag/diag.h"
@@ -249,6 +250,33 @@ static node_t *lower_array_string_initializer(
       context, var, string, 0, array_len, array_len, NULL, NULL, tok);
 }
 
+static lvar_t *array_copy_source_local(
+    node_t *value, int *source_offset, node_t **initialization) {
+  if (source_offset) *source_offset = 0;
+  if (initialization) *initialization = NULL;
+  if (!value) return NULL;
+  if (value->kind == ND_COMMA && value->rhs &&
+      value->rhs->kind == ND_ADDR && value->rhs->lhs &&
+      value->rhs->lhs->kind == ND_LVAR) {
+    node_lvar_t *source = (node_lvar_t *)value->rhs->lhs;
+    if (source_offset) *source_offset = source->offset;
+    if (initialization) *initialization = value->lhs;
+    return source->var;
+  }
+  if (value->kind != ND_COMPOUND_LITERAL ||
+      !value->resolution_state)
+    return NULL;
+  psx_compound_literal_resolution_t *resolution =
+      &value->resolution_state->compound_literal;
+  if (!resolution->is_planned || !resolution->local_object)
+    return NULL;
+  if (source_offset)
+    *source_offset = ps_lvar_offset(resolution->local_object);
+  if (initialization)
+    *initialization = resolution->runtime_initialization;
+  return resolution->local_object;
+}
+
 static node_t *lower_array_expr_initializer(
     const initializer_lowering_context_t *context,
     node_t *target, node_t *value, token_t *tok) {
@@ -269,11 +297,11 @@ static node_t *lower_array_expr_initializer(
     }
   }
 
-  if (array_len > 0 && value->kind == ND_COMMA && value->rhs &&
-      value->rhs->kind == ND_ADDR && value->rhs->lhs &&
-      value->rhs->lhs->kind == ND_LVAR) {
-    node_lvar_t *source = (node_lvar_t *)value->rhs->lhs;
-    node_t *chain = value->lhs;
+  int source_offset = 0;
+  node_t *chain = NULL;
+  lvar_t *source = array_copy_source_local(
+      value, &source_offset, &chain);
+  if (array_len > 0 && source) {
     for (int i = 0; i < array_len; i++) {
       const psx_type_t *element =
           ps_type_array_leaf_type(ps_lvar_get_decl_type(var));
@@ -281,8 +309,8 @@ static node_t *lower_array_expr_initializer(
           context->arena_context, var,
           ps_lvar_offset(var) + i * elem_size, element);
       node_t *src = ps_node_new_lvar_type_at_for_in(
-          context->arena_context, source->var,
-          source->offset + i * elem_size, element);
+          context->arena_context, source,
+          source_offset + i * elem_size, element);
       chain = append_init(
           context, chain,
           ps_node_new_assign_in(context->arena_context, dst, src));
@@ -979,14 +1007,25 @@ static node_t *try_lower_typed_array_copy(
     lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
     int relative_offset,
     node_t *value, node_t *chain) {
-  if (!var || !type || type->kind != PSX_TYPE_ARRAY || !value ||
-      value->kind != ND_ADDR || !value->lhs ||
-      value->lhs->kind != ND_LVAR) return NULL;
-  node_lvar_t *source = (node_lvar_t *)value->lhs;
-  const psx_type_t *source_type = ps_node_get_type(value->lhs);
-  if (!source->var || !source_type ||
-      type_size_id(context, ps_lvar_decl_type_id(source->var)) <
+  if (!var || !type || type->kind != PSX_TYPE_ARRAY || !value)
+    return NULL;
+  int source_offset = 0;
+  node_t *source_initialization = NULL;
+  lvar_t *source = NULL;
+  if (value->kind == ND_ADDR && value->lhs &&
+      value->lhs->kind == ND_LVAR) {
+    node_lvar_t *source_node = (node_lvar_t *)value->lhs;
+    source = source_node->var;
+    source_offset = source_node->offset;
+  } else {
+    source = array_copy_source_local(
+        value, &source_offset, &source_initialization);
+  }
+  if (!source ||
+      type_size_id(context, ps_lvar_decl_type_id(source)) <
           type_size_id(context, type_id)) return NULL;
+  if (source_initialization)
+    chain = append_init(context, chain, source_initialization);
 
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
@@ -998,10 +1037,10 @@ static node_t *try_lower_typed_array_copy(
   }
   for (int i = 0; i < leaves.count; i++) {
     const typed_scalar_leaf_t *leaf = &leaves.items[i];
-    int source_offset = source->offset +
-                        (leaf->relative_offset - relative_offset);
+    int leaf_source_offset =
+        source_offset + (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_type_at_for_in(
-        context->arena_context, source->var, source_offset, leaf->type);
+        context->arena_context, source, leaf_source_offset, leaf->type);
     node_t *dst = leaf->member_ref.declaration
                       ? new_initializer_member_lvar_ref(
                             context, var, leaf->relative_offset,
