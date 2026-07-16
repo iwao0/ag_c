@@ -3,6 +3,7 @@
 static const ag_target_info_t standard_target = {
     .pointer_size = 8,
     .pointer_alignment = 8,
+    .call_abi = AG_TARGET_CALL_ABI_AAPCS64,
     .scalar = {
         [AG_TARGET_SCALAR_CHAR] = {1, 1},
         [AG_TARGET_SCALAR_SHORT] = {2, 2},
@@ -26,6 +27,7 @@ ag_target_info_t ag_target_info_wasm32(void) {
   ag_target_info_t target = standard_target;
   target.pointer_size = 4;
   target.pointer_alignment = 4;
+  target.call_abi = AG_TARGET_CALL_ABI_WASM32;
   return target;
 }
 
@@ -39,6 +41,11 @@ int ag_target_info_pointer_alignment(const ag_target_info_t *target) {
   return target && target->pointer_alignment > 0
              ? target->pointer_alignment
              : ag_target_info_pointer_size(target);
+}
+
+ag_target_call_abi_t ag_target_info_call_abi(
+    const ag_target_info_t *target) {
+  return target ? target->call_abi : standard_target.call_abi;
 }
 
 int ag_target_info_scalar_size(
@@ -61,7 +68,8 @@ int ag_target_info_equal(
     const ag_target_info_t *lhs, const ag_target_info_t *rhs) {
   if (ag_target_info_pointer_size(lhs) != ag_target_info_pointer_size(rhs) ||
       ag_target_info_pointer_alignment(lhs) !=
-          ag_target_info_pointer_alignment(rhs))
+          ag_target_info_pointer_alignment(rhs) ||
+      ag_target_info_call_abi(lhs) != ag_target_info_call_abi(rhs))
     return 0;
   for (int kind = 0; kind < AG_TARGET_SCALAR_COUNT; ++kind) {
     if (ag_target_info_scalar_size(lhs, (ag_target_scalar_kind_t)kind) !=

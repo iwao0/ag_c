@@ -9,6 +9,7 @@
 #include "diag/diag.h"
 #include "tokenizer/allocator.h"
 #include "lowering/runtime_context.h"
+#include "hir/hir.h"
 #include "codegen_emit.h"
 #include <string.h>
 #include <stdlib.h>
@@ -61,6 +62,7 @@ int ag_compilation_session_init(
       &session->tokenizer, session->diagnostic_context);
   session->arena_context = arena_context_create();
   session->semantic_context = ps_ctx_create(session->arena_context);
+  session->hir_module = psx_hir_module_create();
   session->global_registry = ps_global_registry_create();
   ps_global_registry_bind_semantic_types(
       session->global_registry,
@@ -100,7 +102,9 @@ int ag_compilation_session_init(
       !session->local_registry || !session->preprocessor_context ||
       !session->arena_context || !session->diagnostic_context ||
       !session->token_allocator_context || !session->parser_runtime_context ||
-      !session->lowering_context || !session->codegen_emit_context) {
+      !session->lowering_context || !session->hir_module ||
+      !session->codegen_emit_context) {
+    psx_hir_module_destroy(session->hir_module);
     ps_ctx_destroy(session->semantic_context);
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
@@ -125,6 +129,7 @@ int ag_compilation_session_is_complete(
          session->diagnostic_context && session->token_allocator_context &&
          session->parser_runtime_context &&
          session->lowering_context &&
+         session->hir_module &&
          ps_lowering_semantic_types(session->lowering_context) &&
          ps_lowering_record_decls(session->lowering_context) &&
          ps_lowering_record_layouts(session->lowering_context) &&
@@ -166,6 +171,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (!session) return 0;
   if (session->is_active && !ag_compilation_session_deactivate(session))
     return 0;
+  psx_hir_module_destroy(session->hir_module);
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);
   ps_local_registry_destroy(session->local_registry);
@@ -264,6 +270,12 @@ psx_lowering_context_t *ag_compilation_session_lowering_context(
   return ag_compilation_session_is_complete(session)
              ? session->lowering_context
              : NULL;
+}
+
+psx_hir_module_t *ag_compilation_session_hir_module(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->hir_module : NULL;
 }
 
 ag_compilation_options_t *ag_compilation_session_options(

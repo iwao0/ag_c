@@ -33,6 +33,7 @@ typedef struct {
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
   const psx_local_declaration_callbacks_t *local_declarations;
+  psx_name_classifier_t name_classifier;
   int unevaluated_operand_depth;
   int expr_nest_depth;
   int paren_nest_depth;
@@ -71,6 +72,11 @@ static expr_parse_ctx_t expr_parse_ctx_default(
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
+      .name_classifier =
+          local_declarations &&
+                  local_declarations->name_classifier.is_typedef_name
+              ? local_declarations->name_classifier
+              : ps_ctx_name_classifier(semantic_context),
   };
   return ctx;
 }
@@ -151,13 +157,9 @@ static int is_type_name_start_token(
   if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
   if (t->kind == TK_STRUCT || t->kind == TK_UNION || t->kind == TK_ENUM) return 1;
   if (psx_ctx_is_type_token(t->kind)) return 1;
-  if (psx_ctx_is_typedef_name_token_in(
-          ctx ? ctx->semantic_context : NULL, t)) return 1;
+  if (ctx && ps_name_classifier_is_typedef_name(
+                 &ctx->name_classifier, t)) return 1;
   return 0;
-}
-
-static int expr_type_name_is_typedef(token_t *token, void *context) {
-  return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static void diagnose_type_name_complex_requires_float(
@@ -249,7 +251,7 @@ static int parenthesized_type_name_is_compound_literal(
   if (!psx_parse_type_name_syntax_at(
           tok->next,
           &(psx_decl_specifier_syntax_options_t){
-              .is_typedef_name = expr_type_name_is_typedef,
+              .name_classifier = &ctx->name_classifier,
               .diagnose_complex_requires_float =
                   diagnose_type_name_complex_requires_float,
               .context = ctx->semantic_context,
@@ -278,7 +280,7 @@ static int capture_type_name_ref_at(
                    ? psx_parse_runtime_type_name_syntax_at(
                          start,
                          &(psx_decl_specifier_syntax_options_t){
-                             .is_typedef_name = expr_type_name_is_typedef,
+                             .name_classifier = &ctx->name_classifier,
                              .diagnose_complex_requires_float =
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,
@@ -291,7 +293,7 @@ static int capture_type_name_ref_at(
                    : psx_parse_type_name_syntax_at(
                          start,
                          &(psx_decl_specifier_syntax_options_t){
-                             .is_typedef_name = expr_type_name_is_typedef,
+                             .name_classifier = &ctx->name_classifier,
                              .diagnose_complex_requires_float =
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,

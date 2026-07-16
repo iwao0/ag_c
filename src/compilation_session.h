@@ -16,6 +16,7 @@ typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
+typedef struct psx_hir_module_t psx_hir_module_t;
 typedef struct ag_compilation_session_t ag_compilation_session_t;
 typedef void (*ag_session_backend_callback_t)(void *context);
 
@@ -49,6 +50,8 @@ ag_codegen_emit_context_t *ag_compilation_session_codegen_emit_context(
 psx_parser_runtime_context_t *ag_compilation_session_parser_runtime_context(
     const ag_compilation_session_t *session);
 psx_lowering_context_t *ag_compilation_session_lowering_context(
+    const ag_compilation_session_t *session);
+psx_hir_module_t *ag_compilation_session_hir_module(
     const ag_compilation_session_t *session);
 ag_compilation_options_t *ag_compilation_session_options(
     ag_compilation_session_t *session);

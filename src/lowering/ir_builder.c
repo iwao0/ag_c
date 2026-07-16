@@ -627,7 +627,9 @@ static ir_val_t emit_truthiness(ir_build_ctx_t *ctx, ir_val_t val) {
 static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   lvar_t *owner = find_owning_lvar(ctx, offset);
   if (!owner) {
-    fail(ctx, "lvar not found");
+    char message[64];
+    snprintf(message, sizeof(message), "lvar not found at offset %d", offset);
+    fail(ctx, message);
     return -1;
   }
   int base_vreg = alloca_for_owner(ctx, owner);
@@ -687,6 +689,7 @@ static int aggregate_size_from_type_id(
 
 static int aggregate_size_from_node(
     const ir_build_ctx_t *ctx, node_t *node) {
+  if (!node || ps_node_value_is_pointer_like(node)) return 0;
   return aggregate_size_from_type_id(
       ctx, ps_node_qual_type(node).type_id);
 }
@@ -2161,6 +2164,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       }
       if (arg_full_size == 8 &&
           aggregate_size_from_node(ctx, arg) > 0) {
+        if (arg->kind == ND_FUNCALL) {
+          ir_val_t value = build_expr(ctx, arg);
+          if (ctx->failed) return ir_val_none();
+          cargs[argc++] = ir_val_vreg(value.id, IR_TY_I64);
+          continue;
+        }
         int src_ptr;
         if (arg->kind == ND_TERNARY) {
           src_ptr = ir_func_new_vreg(ctx->f);

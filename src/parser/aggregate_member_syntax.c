@@ -108,8 +108,7 @@ void psx_parse_aggregate_body_with_options(
           options ? options->global_registry : NULL,
           options ? options->local_registry : NULL,
           options ? options->runtime_context : NULL,
-          options ? options->is_typedef_name : NULL,
-          options ? options->context : NULL);
+          options ? options->name_classifier : NULL);
       int has_comma = tk_consume_ctx(tk_ctx, ',');
       if (!declarator->identifier && !declarator->has_bitfield && has_comma)
         ps_diag_missing_in(diagnostics(runtime_context),

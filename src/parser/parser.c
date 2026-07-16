@@ -363,7 +363,10 @@ int ps_parse_next_toplevel_item(
     psx_parsed_toplevel_declaration_t declaration = {0};
     if (!psx_parse_toplevel_declaration_head_syntax_in_contexts(
             &declaration, semantic_context, stream->global_registry,
-            stream->local_registry, stream->runtime_context)) {
+            stream->local_registry, stream->runtime_context,
+            stream->toplevel_declarations
+                ? &stream->toplevel_declarations->name_classifier
+                : NULL)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
       psx_synchronize_toplevel_declaration(tokenizer_context);
       if (diag_limit_kind_in(diagnostics(semantic_context))) break;

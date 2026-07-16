@@ -4,6 +4,7 @@
 #include "core.h"
 #include "function_public.h"
 #include "local_registry.h"
+#include "name_classifier.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
 #include "../semantic/record_decl_table.h"
@@ -260,6 +261,8 @@ bool psx_ctx_find_typedef_layout_in(
     char *name, int len, int *out_size, int *out_alignment);
 bool psx_ctx_is_typedef_name_token_in(
     psx_semantic_context_t *context, token_t *tok);
+psx_name_classifier_t ps_ctx_name_classifier(
+    psx_semantic_context_t *context);
 struct psx_function_registration_checkpoint_t {
   const psx_type_t *function_type;
   int existed;

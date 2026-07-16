@@ -117,7 +117,7 @@ int ir_abi_callable_sig_from_type_id(
                     : result.type;
   int count = function->param_count;
   if (count < 0) count = 0;
-  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
+  if (count > IR_CALLABLE_MAX_PARAMS) return 0;
   out->param_count = (unsigned char)count;
   out->is_variadic = function->is_variadic_function ? 1 : 0;
   for (int i = 0; i < count; i++) {

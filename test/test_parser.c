@@ -33,6 +33,7 @@
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/hir/hir.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
@@ -63,6 +64,7 @@
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
 #include "../src/lowering/abi_lowering.h"
+#include "../src/lowering/hir_ir_builder.h"
 #include "../src/lowering/expr_lowering.h"
 #include "../src/lowering/subscript_lowering.h"
 #include "../src/lowering/runtime_context.h"
@@ -1173,6 +1175,59 @@ static int parse_test_type_name_syntax_at(
       type_name);
 }
 
+typedef struct {
+  const char *name;
+  int name_len;
+  int call_count;
+} test_name_classifier_context_t;
+
+static int test_name_classifier_is_typedef(
+    void *context, const token_t *token) {
+  test_name_classifier_context_t *classifier_context = context;
+  classifier_context->call_count++;
+  if (!token || token->kind != TK_IDENT) return 0;
+  const token_ident_t *identifier = (const token_ident_t *)token;
+  return identifier->len == classifier_context->name_len &&
+         strncmp(identifier->str, classifier_context->name,
+                 (size_t)identifier->len) == 0;
+}
+
+static void test_parser_name_classifier_boundary() {
+  printf("test_parser_name_classifier_boundary...\n");
+  reset_test_translation_unit_state();
+  token_t *tokens = tk_tokenize((char *)"Alias value;");
+  test_name_classifier_context_t classifier_context = {
+      .name = "Alias",
+      .name_len = 5,
+  };
+  psx_name_classifier_t classifier = {
+      .context = &classifier_context,
+      .is_typedef_name = test_name_classifier_is_typedef,
+  };
+  psx_parsed_decl_specifier_t specifier;
+  ASSERT_TRUE(psx_try_parse_decl_specifier_syntax_ex(
+      &specifier,
+      &(psx_decl_specifier_syntax_options_t){
+          .name_classifier = &classifier,
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(
+                  test_suite_session),
+      }));
+  ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME, specifier.source);
+  ASSERT_TRUE(specifier.typedef_name != NULL);
+  ASSERT_EQ(5, specifier.typedef_name->len);
+  ASSERT_EQ(1, classifier_context.call_count);
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
+      test_semantic_context(), (char *)"Alias", 5, NULL));
+  ASSERT_TRUE(tk_get_current_token_ctx(
+                  ag_compilation_session_tokenizer(test_suite_session)) ==
+              tokens->next);
+  ps_dispose_decl_specifier_syntax(&specifier);
+}
+
 static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
   psx_parsed_declarator_t declarator;
   psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
@@ -1181,7 +1236,7 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
-      NULL, NULL);
+      NULL);
   return declarator;
 }
 
@@ -1216,9 +1271,9 @@ static node_t *analyze_test_expression(
       test_suite_session, expression, fallback_diag_tok);
 }
 
-static void analyze_test_function(
-    node_t *function, const token_t *fallback_diag_tok) {
-  psx_frontend_analyze_function_in_session(
+static node_t *analyze_test_function(
+    const node_t *function, const token_t *fallback_diag_tok) {
+  return psx_frontend_analyze_function_in_session(
       test_suite_session, function, fallback_diag_tok);
 }
 
@@ -1483,6 +1538,1118 @@ static node_t **parse_program_input(const char *input) {
   for (int i = 0; program && program[i]; i++)
     assert_semantic_tree_invariants(program[i]);
   return program;
+}
+
+static void test_typed_hir_ownership_and_type_boundary() {
+  printf("test_typed_hir_ownership_and_type_boundary...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int main(void) { return 1+2; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  ASSERT_TRUE(psx_hir_module_node_count(hir) > 0);
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_ROLE_STATEMENT, psx_hir_node_role(root));
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_hir_node_qual_type(root).type_id);
+  ASSERT_TRUE(
+      psx_hir_node_attached_qual_type(root).type_id !=
+      PSX_TYPE_ID_INVALID);
+  size_t name_length = 0;
+  ASSERT_TRUE(strcmp(psx_hir_node_name(root, &name_length), "main") == 0);
+  ASSERT_EQ(4, name_length);
+  int found_function_body = 0;
+  for (size_t i = 0; i < psx_hir_node_child_count(root); i++) {
+    if (psx_hir_node_child_edge_at(root, i) ==
+        PSX_HIR_EDGE_FUNCTION_BODY) {
+      found_function_body = 1;
+    }
+  }
+  ASSERT_TRUE(found_function_body);
+
+  int found_two = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    ASSERT_TRUE(node != NULL);
+    psx_qual_type_t type = psx_hir_node_qual_type(node);
+    if (psx_hir_node_role(node) == PSX_HIR_ROLE_EXPRESSION) {
+      ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
+      ASSERT_TRUE(ps_ctx_type_by_id_in(
+                      test_semantic_context(), type.type_id) != NULL);
+    } else {
+      ASSERT_EQ(PSX_TYPE_ID_INVALID, type.type_id);
+    }
+    if (psx_hir_node_kind(node) == PSX_HIR_NUMBER &&
+        psx_hir_node_integer_value(node) == 2) {
+      found_two = 1;
+    }
+  }
+  ASSERT_TRUE(found_two);
+
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  root = psx_hir_module_lookup(hir, root_id);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(root));
+  ASSERT_TRUE(strcmp(psx_hir_node_name(root, &name_length), "main") == 0);
+  ASSERT_TRUE(psx_hir_module_node_count(hir) > 0);
+
+  ir_build_options_t ir_options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t hir_ir_status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &ir_options, &hir_ir_status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, hir_ir_status);
+  ASSERT_TRUE(ir != NULL);
+  ASSERT_TRUE(ir->funcs != NULL);
+  ASSERT_TRUE(strcmp(ir->funcs->name, "main") == 0);
+  ASSERT_EQ(IR_TY_I32, ir->funcs->ret_type);
+  ASSERT_TRUE(ir->funcs->entry != NULL);
+  ASSERT_TRUE(ir->funcs->entry->head != NULL);
+  ASSERT_EQ(IR_ADD, ir->funcs->entry->head->op);
+  ASSERT_TRUE(ir->funcs->entry->head->next != NULL);
+  ASSERT_EQ(IR_RET, ir->funcs->entry->head->next->op);
+  ir_module_free(ir);
+
+  reset_test_translation_unit_state();
+  ASSERT_EQ(0, psx_hir_module_node_count(hir));
+  ASSERT_EQ(0, psx_hir_module_root_count(hir));
+}
+
+static int count_ir_op(const ir_func_t *function, ir_op_t op) {
+  int count = 0;
+  for (const ir_block_t *block = function ? function->entry : NULL;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == op) count++;
+    }
+  }
+  return count;
+}
+
+static void test_typed_hir_local_lowering_without_ast() {
+  printf("test_typed_hir_local_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int main(void) { int x = 3; int before = ++x; --x; "
+      "x = x + 4; return before + x; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 5);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 5);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ADD) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_SUB) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_parameter_lowering_without_ast() {
+  printf("test_typed_hir_parameter_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int add(int left, short right) { return left + right; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM));
+  ASSERT_EQ(2, ir->funcs->param_abi_count);
+  ASSERT_EQ(IR_TY_I32, ir->funcs->param_abi_types[0]);
+  ASSERT_EQ(IR_TY_I32, ir->funcs->param_abi_types[1]);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 2);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_pointer_lowering_without_ast() {
+  printf("test_typed_hir_pointer_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int *touch(int *p) { int x = *p; int *q = &x; "
+      "int *before = ++q; --q; *before = x + 1; "
+      "long address = (long)q; q = (int *)address; "
+      "*p = *q; return p; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(IR_TY_PTR, ir->funcs->ret_type);
+  ASSERT_EQ(1, ir->funcs->param_abi_count);
+  ASSERT_EQ(IR_TY_PTR, ir->funcs->param_abi_types[0]);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 4);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 8);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 8);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ADD) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_SUB) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_post_inc_lowering_without_ast() {
+  printf("test_typed_hir_post_inc_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int assign_once(int *dst, int *index) { "
+      "dst[(*index)++] = 7; return *index; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(2, ir->funcs->param_abi_count);
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_ADD));
+  ASSERT_EQ(4, count_ir_op(ir->funcs, IR_STORE));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_vla_parameter_metadata_without_ast() {
+  printf("test_typed_hir_vla_parameter_metadata_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int rstride(int n, int a[n][n]) { "
+      "return a[1][0] + a[2][1]; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
+  ASSERT_TRUE(root != NULL);
+  const psx_hir_node_t *vla_parameter = NULL;
+  for (size_t i = 0; i < psx_hir_node_child_count(root); i++) {
+    if (psx_hir_node_child_edge_at(root, i) !=
+        PSX_HIR_EDGE_PARAMETER)
+      continue;
+    const psx_hir_node_t *parameter = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(root, i));
+    if (psx_hir_node_vla_dimension_count(parameter) > 0)
+      vla_parameter = parameter;
+  }
+  ASSERT_TRUE(vla_parameter != NULL);
+  ASSERT_TRUE(psx_hir_node_vla_stride_frame_offset(vla_parameter) != 0);
+  ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_parameter));
+  ASSERT_EQ(8, psx_hir_node_vla_stride_slot_size(vla_parameter));
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_parameter));
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_parameter));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_direct_call_lowering_without_ast() {
+  printf("test_typed_hir_direct_call_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int add(int left, int right) { return left + right; } "
+      "int sink(int tag, ...) { return tag; } "
+      "int twice(int value) { "
+      "return add(value, value) + sink(1, (char)value); } "
+      "int recur(int value) { "
+      "return value ? recur(value - 1) : 0; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(4, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t variadic_root_id = psx_hir_module_root_at(hir, 1);
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 2);
+  psx_hir_node_id_t recursive_root_id = psx_hir_module_root_at(hir, 3);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_CALL));
+  const ir_inst_t *call = NULL;
+  const ir_inst_t *variadic_call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL && instruction->sym_len == 3 &&
+          strncmp(instruction->sym, "add", 3) == 0) {
+        call = instruction;
+      } else if (instruction->op == IR_CALL &&
+                 instruction->sym_len == 4 &&
+                 strncmp(instruction->sym, "sink", 4) == 0) {
+        variadic_call = instruction;
+      }
+    }
+  }
+  ASSERT_TRUE(call != NULL);
+  ASSERT_EQ(3, call->sym_len);
+  ASSERT_TRUE(strncmp(call->sym, "add", 3) == 0);
+  ASSERT_EQ(2, call->nargs);
+  ASSERT_EQ(2, call->nargs_fixed);
+  ASSERT_TRUE(call->has_callable_sig);
+  ASSERT_EQ(IR_TY_I32, call->callable_sig.result);
+  ASSERT_EQ(IR_TY_I32, call->arg_abi_types[0]);
+  ASSERT_EQ(IR_TY_I32, call->arg_abi_types[1]);
+  ASSERT_TRUE(variadic_call != NULL);
+  ASSERT_EQ(2, variadic_call->nargs);
+  ASSERT_EQ(1, variadic_call->nargs_fixed);
+  ASSERT_TRUE(variadic_call->is_variadic_call);
+  ASSERT_TRUE(variadic_call->has_callable_sig);
+  ASSERT_TRUE(variadic_call->callable_sig.is_variadic);
+  ASSERT_EQ(IR_TY_I32, variadic_call->arg_abi_types[0]);
+  ASSERT_EQ(IR_TY_I32, variadic_call->arg_abi_types[1]);
+  ir_module_free(ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, variadic_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(ir->funcs->is_variadic);
+  ASSERT_EQ(1, ir->funcs->nargs_fixed);
+  ASSERT_EQ(1, ir->funcs->param_abi_count);
+  ASSERT_EQ(IR_TY_I32, ir->funcs->param_abi_types[0]);
+  ir_module_free(ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, recursive_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  const ir_inst_t *recursive_call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !recursive_call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        recursive_call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(recursive_call != NULL);
+  ASSERT_EQ(5, recursive_call->sym_len);
+  ASSERT_TRUE(strncmp(recursive_call->sym, "recur", 5) == 0);
+  ASSERT_TRUE(recursive_call->has_callable_sig);
+  ASSERT_EQ(IR_TY_I32, recursive_call->callable_sig.result);
+  ASSERT_EQ(1, recursive_call->callable_sig.param_count);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_register_aggregate_lowering_without_ast() {
+  printf("test_typed_hir_register_aggregate_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "struct Pair { int left; int right; }; "
+      "struct Pair make_pair(int left, int right) { "
+      "struct Pair pair; pair.left = left; pair.right = right; "
+      "return pair; } "
+      "int read_left(void) { return make_pair(3, 4).left; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t make_root_id = psx_hir_module_root_at(hir, 0);
+  psx_hir_node_id_t read_root_id = psx_hir_module_root_at(hir, 1);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, make_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(IR_TY_I64, ir->funcs->ret_type);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, read_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_aggregate_member_storage_without_ast() {
+  printf("test_typed_hir_aggregate_member_storage_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "struct S { int x; int y; int z; }; "
+      "int main(void) { "
+      "struct S value = {1, 2, 3}; struct S *pointer = &value; "
+      "return pointer->x + pointer->y * 10 + pointer->z * 100; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_ALLOCA));
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LEA) >= 4);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 4);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_floating_lowering_without_ast() {
+  printf("test_typed_hir_floating_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int convert(double input, int increment) { "
+      "double value = input + (double)increment + 1.5; "
+      "if (value) return (int)-value; "
+      "return 0; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM));
+  int saw_integer_parameter = 0;
+  int saw_float_parameter = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_PARAM) continue;
+      ASSERT_EQ(IR_VAL_IMM, instruction->src1.id);
+      ASSERT_EQ(0, instruction->src1.imm);
+      if (instruction->dst.type == IR_TY_I32)
+        saw_integer_parameter = 1;
+      if (instruction->dst.type == IR_TY_F64)
+        saw_float_parameter = 1;
+    }
+  }
+  ASSERT_TRUE(saw_integer_parameter);
+  ASSERT_TRUE(saw_float_parameter);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_FP_IMM) >= 2);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_I2F));
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_FADD));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_FNE));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_FNEG));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_F2I));
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+
+  ag_target_info_t wasm_target = ag_target_info_wasm32();
+  options.target = &wasm_target;
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  int saw_wasm_integer_parameter = 0;
+  int saw_wasm_float_parameter = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op != IR_PARAM) continue;
+      if (instruction->dst.type == IR_TY_F64 &&
+          instruction->src1.imm == 0)
+        saw_wasm_float_parameter = 1;
+      if (instruction->dst.type == IR_TY_I32 &&
+          instruction->src1.imm == 1)
+        saw_wasm_integer_parameter = 1;
+    }
+  }
+  ASSERT_TRUE(saw_wasm_integer_parameter);
+  ASSERT_TRUE(saw_wasm_float_parameter);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_complex_copy_comparison_without_ast() {
+  printf("test_typed_hir_complex_copy_comparison_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int compare(void) { "
+      "_Complex double first = 3.0; "
+      "_Complex double copy = first; "
+      "_Complex double sum = copy + 1.0; "
+      "_Complex double expected = 4.0; "
+      "return sum == expected; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(6, count_ir_op(ir->funcs, IR_ALLOCA));
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_MEMCPY));
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_FADD));
+  ASSERT_EQ(2, count_ir_op(ir->funcs, IR_FEQ));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_AND));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_indirect_call_lowering_without_ast() {
+  printf("test_typed_hir_indirect_call_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int apply(int (*callback)(int), int value) { "
+      "return callback(value); }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  const ir_inst_t *call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(call != NULL);
+  ASSERT_TRUE(call->sym == NULL);
+  ASSERT_TRUE(call->callee.id >= 0);
+  ASSERT_EQ(IR_TY_PTR, call->callee.type);
+  ASSERT_TRUE(call->has_callable_sig);
+  ASSERT_EQ(1, call->callable_sig.param_count);
+  ASSERT_EQ(IR_TY_I32, call->callable_sig.params[0]);
+  ASSERT_EQ(IR_TY_I32, call->callable_sig.result);
+  ASSERT_EQ(1, call->nargs);
+  ASSERT_EQ(IR_TY_I32, call->arg_abi_types[0]);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_void_function_lowering_without_ast() {
+  printf("test_typed_hir_void_function_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "void assign(int *pointer, int value) { *pointer = value; return; } "
+      "void clear(int *pointer) { *pointer = 0; } "
+      "int run(void) { int value = 1; assign(&value, 7); "
+      "clear(&value); return value; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(3, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t assign_root = psx_hir_module_root_at(hir, 0);
+  psx_hir_node_id_t clear_root = psx_hir_module_root_at(hir, 1);
+  psx_hir_node_id_t run_root = psx_hir_module_root_at(hir, 2);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *assign_ir = ir_build_function_module_from_hir(
+      hir, assign_root, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(assign_ir != NULL && assign_ir->funcs != NULL);
+  ASSERT_EQ(IR_TY_VOID, assign_ir->funcs->ret_type);
+  ASSERT_EQ(1, count_ir_op(assign_ir->funcs, IR_RET));
+  ir_module_free(assign_ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir_module_t *clear_ir = ir_build_function_module_from_hir(
+      hir, clear_root, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(clear_ir != NULL && clear_ir->funcs != NULL);
+  ASSERT_EQ(IR_TY_VOID, clear_ir->funcs->ret_type);
+  ASSERT_EQ(1, count_ir_op(clear_ir->funcs, IR_RET));
+  ir_module_free(clear_ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir_module_t *run_ir = ir_build_function_module_from_hir(
+      hir, run_root, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(run_ir != NULL && run_ir->funcs != NULL);
+  ASSERT_EQ(2, count_ir_op(run_ir->funcs, IR_CALL));
+  int void_call_count = 0;
+  for (const ir_block_t *block = run_ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL && instruction->is_void_call &&
+          instruction->dst.id == IR_VAL_NONE &&
+          instruction->dst.type == IR_TY_VOID)
+        void_call_count++;
+    }
+  }
+  ASSERT_EQ(2, void_call_count);
+  ASSERT_EQ(1, count_ir_op(run_ir->funcs, IR_RET));
+  ir_module_free(run_ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_symbol_reference_lowering_without_ast() {
+  printf("test_typed_hir_symbol_reference_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int consume(const char *text, int (*callback)(int)); "
+      "int increment(int value) { return value + 1; } "
+      "int run(void) { return consume(\"x\", increment); }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 1);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_LOAD_STR));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_LOAD_SYM));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  const ir_inst_t *function_reference = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !function_reference; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_LOAD_SYM) {
+        function_reference = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(function_reference != NULL);
+  ASSERT_TRUE(function_reference->is_function_symbol);
+  ASSERT_TRUE(function_reference->is_got_funcref);
+  ASSERT_TRUE(function_reference->has_callable_sig);
+  ASSERT_EQ(1, function_reference->callable_sig.param_count);
+  ASSERT_EQ(IR_TY_I32, function_reference->callable_sig.result);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_global_symbol_lowering_without_ast() {
+  printf("test_typed_hir_global_symbol_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "extern int external_value; static int internal_value; "
+      "_Thread_local int tls_value; "
+      "int use_globals(int value) { internal_value = value; "
+      "tls_value = internal_value; return external_value + tls_value; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  ASSERT_EQ(3, psx_hir_module_symbol_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  const psx_hir_symbol_t *external = NULL;
+  const psx_hir_symbol_t *internal = NULL;
+  const psx_hir_symbol_t *tls = NULL;
+  for (size_t i = 1; i <= psx_hir_module_symbol_count(hir); i++) {
+    const psx_hir_symbol_t *symbol = psx_hir_module_symbol_lookup(
+        hir, (psx_hir_symbol_id_t)i);
+    size_t name_length = 0;
+    const char *name = psx_hir_symbol_name(symbol, &name_length);
+    ASSERT_TRUE(name != NULL);
+    if (name_length == strlen("external_value") &&
+        strncmp(name, "external_value", name_length) == 0)
+      external = symbol;
+    if (name_length == strlen("internal_value") &&
+        strncmp(name, "internal_value", name_length) == 0)
+      internal = symbol;
+    if (name_length == strlen("tls_value") &&
+        strncmp(name, "tls_value", name_length) == 0)
+      tls = symbol;
+  }
+  ASSERT_TRUE(external != NULL && internal != NULL && tls != NULL);
+  ASSERT_TRUE(psx_hir_symbol_is_extern(external));
+  ASSERT_TRUE(!psx_hir_symbol_is_static(external));
+  ASSERT_TRUE(psx_hir_symbol_is_static(internal));
+  ASSERT_TRUE(!psx_hir_symbol_is_extern(internal));
+  ASSERT_TRUE(psx_hir_symbol_is_thread_local(tls));
+  ASSERT_EQ(4, psx_hir_symbol_byte_size(external));
+  ASSERT_EQ(4, psx_hir_symbol_alignment(external));
+  ASSERT_TRUE(
+      psx_hir_symbol_qual_type(external).type_id != PSX_TYPE_ID_INVALID);
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_SYM) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_TLV_ADDR) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 3);
+  ASSERT_TRUE(ir_module_find_symbol(ir, "external_value", 14) != NULL);
+  ASSERT_TRUE(ir_module_find_symbol(ir, "internal_value", 14) != NULL);
+  ASSERT_TRUE(ir_module_find_symbol(ir, "tls_value", 9) != NULL);
+  ASSERT_TRUE(
+      ir_module_find_symbol(ir, "external_value", 14)->is_extern);
+  ASSERT_TRUE(
+      ir_module_find_symbol(ir, "internal_value", 14)->is_static);
+  ASSERT_TRUE(
+      ir_module_find_symbol(ir, "tls_value", 9)->is_thread_local);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+  ASSERT_EQ(0, psx_hir_module_symbol_count(hir));
+}
+
+static void test_typed_hir_bitfield_lowering_without_ast() {
+  printf("test_typed_hir_bitfield_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "struct Bits { unsigned int a:3; int b:5; }; "
+      "struct Bits bits = {3, -2}; "
+      "int set_bits(int value) { bits.a = value; "
+      "return bits.a * 10 + bits.b; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  ASSERT_EQ(1, psx_hir_module_symbol_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  int bitfield_count = 0;
+  int signed_count = 0;
+  const psx_hir_node_t *signed_bitfield = NULL;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node = psx_hir_module_lookup(
+        hir, (psx_hir_node_id_t)i);
+    int bit_width = 0;
+    int bit_offset = 0;
+    int bit_is_signed = 0;
+    if (!psx_hir_node_bitfield_info(
+            node, &bit_width, &bit_offset, &bit_is_signed))
+      continue;
+    ASSERT_TRUE(bit_width > 0);
+    ASSERT_TRUE(bit_offset >= 0);
+    bitfield_count++;
+    if (bit_is_signed) {
+      signed_count++;
+      signed_bitfield = node;
+    }
+  }
+  ASSERT_TRUE(bitfield_count >= 3);
+  ASSERT_TRUE(signed_count >= 1);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+  ASSERT_TRUE(psx_hir_node_bitfield_info(
+      signed_bitfield, NULL, NULL, NULL));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_SYM) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 3);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_AND) >= 4);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_SHR) >= 1);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_XOR) >= 1);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_conditional_expr_lowering_without_ast() {
+  printf("test_typed_hir_conditional_expr_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "void fail(void); "
+      "int select(int *pointer, int condition) { "
+      "int a = condition && ((*pointer = *pointer + 1) != 0); "
+      "int b = condition || ((*pointer = *pointer + 2) != 0); "
+      "condition ? (void)0 : fail(); "
+      "return condition ? a : b; }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 4);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR) >= 5);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LABEL) >= 9);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 7);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 9);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 7);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
+}
+
+static void test_typed_hir_control_flow_lowering_without_ast() {
+  printf("test_typed_hir_control_flow_lowering_without_ast...\n");
+  reset_test_translation_unit_state();
+  node_t **program = parse_program_input(
+      "int sum(int n) { int r = 0; int branch; "
+      "if (n > 10) branch = 1; else branch = 2; r = r + branch; "
+      "goto start; r = 99; start: "
+      "while (n > 0) {"
+      "if (n == 2) { n = n - 1; continue; }"
+      "r = r + n; n = n - 1; } "
+      "again: if (n > 3) { n = n - 1; goto again; } "
+      "switch (n) { case 0: r = r + 10; "
+      "case 1: r = r + 1; break; default: r = 99; } return r; } "
+      "int terminal_switch(int n) { switch (n) { "
+      "case 1: return 10; case 2: return 20; default: return 99; } }");
+  ASSERT_TRUE(program != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  psx_hir_node_id_t terminal_root_id = psx_hir_module_root_at(hir, 1);
+  free(program);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 4);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR) >= 12);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LABEL) >= 12);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_EQ) >= 3);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  for (const ir_block_t *block = ir->funcs->entry->next;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next)
+      ASSERT_TRUE(instruction->op != IR_ALLOCA);
+  }
+  ir_module_free(ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, terminal_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  ASSERT_EQ(3, count_ir_op(ir->funcs, IR_RET));
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 2);
+  ir_module_free(ir);
+  reset_test_translation_unit_state();
 }
 
 static const psx_type_t *resolve_tag_base_for_test(
@@ -2769,6 +3936,13 @@ static void test_additive_semantic_lowering_boundary() {
       ps_type_new_integer(TK_LONG, 8, 0));
   ASSERT_EQ(8, ps_type_sizeof(conditional_result));
   ASSERT_TRUE(!ps_type_is_unsigned(conditional_result));
+  const psx_type_t *void_type = ps_type_new(PSX_TYPE_VOID);
+  const psx_type_t *void_conditional = ps_type_conditional_result(
+      void_type, void_type);
+  ASSERT_TRUE(void_conditional != NULL);
+  ASSERT_EQ(PSX_TYPE_VOID, void_conditional->kind);
+  ASSERT_TRUE(ps_type_conditional_result(
+                  void_type, ps_type_new_integer(TK_INT, 4, 0)) == NULL);
 }
 
 static void test_subscript_semantic_lowering_boundary() {
@@ -3490,6 +4664,20 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_EQ(ND_ASSIGN, parsed_body->body[1]->kind);
   ASSERT_TRUE(parsed_body->body[1]->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
+  node_t *raw_compound_assignment = parsed_body->body[1];
+  node_t *resolved = analyze_test_function(parsed, parsed->tok);
+  ASSERT_TRUE(resolved != NULL);
+  ASSERT_TRUE(resolved != parsed);
+  ASSERT_EQ(ND_ASSIGN, raw_compound_assignment->kind);
+  ASSERT_TRUE(raw_compound_assignment->is_source_compound_assignment);
+  ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
+  ASSERT_TRUE(parsed_body->body[1] == raw_compound_assignment);
+  node_block_t *resolved_body =
+      as_block(as_function_definition(resolved)->base.rhs);
+  ASSERT_TRUE(resolved_body != parsed_body);
+  ASSERT_EQ(ND_ASSIGN, resolved_body->body[1]->kind);
+  ASSERT_TRUE(!resolved_body->body[1]->is_source_compound_assignment);
+  ASSERT_EQ(ND_ADD, resolved_body->body[1]->rhs->kind);
   ps_parser_stream_end(&stream);
 
   reset_test_translation_unit_state();
@@ -3740,7 +4928,9 @@ static void test_frontend_stream_lifecycle_boundary() {
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
       &frontend_stream, NULL, NULL, tk_tokenize((char *)"")));
-  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
+  psx_frontend_function_t frontend_function;
+  ASSERT_TRUE(!psx_frontend_next_function(
+      &frontend_stream, &frontend_function));
   psx_frontend_stream_end(&frontend_stream);
 
   ag_diagnostic_context_t *session_diagnostic_context =
@@ -3763,7 +4953,12 @@ static void test_frontend_stream_lifecycle_boundary() {
           "int __stream_explicit(void) { return 0; }")));
   ASSERT_TRUE(ag_compilation_session_is_active(&session_context));
   ASSERT_TRUE(frontend_stream.owns_session_activation);
-  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) != NULL);
+  ASSERT_TRUE(psx_frontend_next_function(
+      &frontend_stream, &frontend_function));
+  ASSERT_TRUE(frontend_function.hir_root != PSX_HIR_NODE_ID_INVALID);
+  ASSERT_TRUE(psx_hir_module_lookup(
+                  ag_compilation_session_hir_module(&session_context),
+                  frontend_function.hir_root) != NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
                   session_context.semantic_context,
                   (char *)"__stream_explicit", 17) != NULL);
@@ -3783,7 +4978,8 @@ static void test_frontend_stream_lifecycle_boundary() {
   ASSERT_TRUE(psx_frontend_stream_end(&frontend_stream));
   ASSERT_TRUE(ag_compilation_session_is_active(outer_session));
   ASSERT_TRUE(!frontend_stream.owns_session_activation);
-  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
+  ASSERT_TRUE(!psx_frontend_next_function(
+      &frontend_stream, &frontend_function));
   ASSERT_TRUE(ag_compilation_session_dispose(&nested_context));
   ASSERT_TRUE(ag_compilation_session_dispose(&session_context));
 }
@@ -11081,6 +12277,13 @@ static void test_type_metadata_bridge() {
       ps_type_new_tag(TK_STRUCT, "Incomplete", 10, 0, 0);
   ASSERT_EQ(0, ps_node_storage_type_size(&typed_incomplete_size_mem));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(&typed_mem));
+  node_t type_free_address = {0};
+  type_free_address.kind = ND_ADDR;
+  ASSERT_TRUE(ps_node_value_is_pointer_like(&type_free_address));
+  node_t type_free_function_reference = {0};
+  type_free_function_reference.kind = ND_FUNCREF;
+  ASSERT_TRUE(ps_node_value_is_pointer_like(
+      &type_free_function_reference));
   ASSERT_EQ(0, ps_node_deref_size(&typed_mem));
   ASSERT_TRUE(!ps_node_is_unsigned_type(&typed_mem));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(&typed_mem));
@@ -19567,6 +20770,25 @@ int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
+  test_parser_name_classifier_boundary();
+  test_typed_hir_ownership_and_type_boundary();
+  test_typed_hir_local_lowering_without_ast();
+  test_typed_hir_parameter_lowering_without_ast();
+  test_typed_hir_pointer_lowering_without_ast();
+  test_typed_hir_post_inc_lowering_without_ast();
+  test_typed_hir_vla_parameter_metadata_without_ast();
+  test_typed_hir_direct_call_lowering_without_ast();
+  test_typed_hir_register_aggregate_lowering_without_ast();
+  test_typed_hir_aggregate_member_storage_without_ast();
+  test_typed_hir_floating_lowering_without_ast();
+  test_typed_hir_complex_copy_comparison_without_ast();
+  test_typed_hir_indirect_call_lowering_without_ast();
+  test_typed_hir_void_function_lowering_without_ast();
+  test_typed_hir_symbol_reference_lowering_without_ast();
+  test_typed_hir_global_symbol_lowering_without_ast();
+  test_typed_hir_bitfield_lowering_without_ast();
+  test_typed_hir_conditional_expr_lowering_without_ast();
+  test_typed_hir_control_flow_lowering_without_ast();
   test_semantic_type_identity();
   test_semantic_context_isolation();
   test_compilation_session_owns_target_and_tokenizer();

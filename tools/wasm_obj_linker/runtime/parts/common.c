@@ -26,6 +26,10 @@ static char *ag_rt_ptr(long addr) {
   return (char *)addr;
 }
 
+static void ag_rt_store_pointer(long destination_addr, void *value) {
+  if (destination_addr) *(void **)ag_rt_ptr(destination_addr) = value;
+}
+
 static long ag_rt_heap = 8 * 1024 * 1024;
 static long ag_rt_memory_limit_bytes = 64L * 1024L * 1024L;
 static char ag_rt_locale_c[] = "C";

@@ -26,6 +26,7 @@ typedef struct {
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
   const psx_local_declaration_callbacks_t *local_declarations;
+  psx_name_classifier_t name_classifier;
 } psx_statement_parse_context_t;
 
 static inline token_t *curtok(psx_statement_parse_context_t *context) {
@@ -60,8 +61,8 @@ static int is_decl_like_start_stmt(
   if (curtok(context)->kind == TK_STATIC_ASSERT) return 1;
   if (psx_ctx_is_type_token(curtok(context)->kind) ||
       psx_is_decl_prefix_token(curtok(context)->kind) ||
-      psx_ctx_is_typedef_name_token_in(
-          context->semantic_context, curtok(context))) return 1;
+      ps_name_classifier_is_typedef_name(
+          &context->name_classifier, curtok(context))) return 1;
   if (psx_ctx_is_tag_keyword(curtok(context)->kind)) return 1;
   return 0;
 }
@@ -219,6 +220,11 @@ node_t *psx_parse_statement_expression_in_contexts(
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
+      .name_classifier =
+          local_declarations &&
+                  local_declarations->name_classifier.is_typedef_name
+              ? local_declarations->name_classifier
+              : ps_ctx_name_classifier(semantic_context),
   };
   if (!context.tokenizer_context) return NULL;
   tk_expect_ctx(context.tokenizer_context, '(');
@@ -469,6 +475,11 @@ node_t *psx_stmt_stmt_in_contexts(
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
+      .name_classifier =
+          local_declarations &&
+                  local_declarations->name_classifier.is_typedef_name
+              ? local_declarations->name_classifier
+              : ps_ctx_name_classifier(semantic_context),
   };
   if (!context.tokenizer_context) return NULL;
   node_t *result = stmt_internal(&context);

@@ -177,7 +177,7 @@ long __agc_runtime_wcspbrk(long s_addr, long accept_addr) {
 
 long __agc_runtime_wcstok(long s_addr, long delim_addr, long saveptr_addr) {
   int *delim = (int *)ag_rt_ptr(delim_addr);
-  long *saveptr = (long *)ag_rt_ptr(saveptr_addr);
+  int *saveptr = (int *)ag_rt_ptr(saveptr_addr);
   int *s = s_addr ? (int *)ag_rt_ptr(s_addr) : (int *)ag_rt_ptr(*saveptr);
   int *tok;
   if (!s) return 0;
@@ -274,10 +274,7 @@ static long ag_rt_wide_copy_ascii(int *src) {
 }
 
 static void ag_rt_wide_store_end(long endptr_addr, int *end) {
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)end;
-  }
+  ag_rt_store_pointer(endptr_addr, end);
 }
 
 static int ag_rt_wide_digit_value(int ch) {

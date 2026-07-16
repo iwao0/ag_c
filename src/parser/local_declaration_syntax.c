@@ -29,10 +29,6 @@ static ag_diagnostic_context_t *diagnostics(
              : NULL;
 }
 
-static int is_local_typedef_name(token_t *token, void *context) {
-  return psx_ctx_is_typedef_name_token_in(context, token);
-}
-
 static int callbacks_are_complete(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks || !callbacks->apply_static_assert ||
@@ -40,7 +36,8 @@ static int callbacks_are_complete(
       !callbacks->finish_declarator || !callbacks->finish_declaration ||
       !callbacks->semantic_context || !callbacks->global_registry ||
       !callbacks->local_registry || !callbacks->runtime_context ||
-      !callbacks->options || !tokenizer(callbacks)) {
+      !callbacks->options ||
+      !callbacks->name_classifier.is_typedef_name || !tokenizer(callbacks)) {
     return 0;
   }
   return 1;
@@ -71,8 +68,7 @@ node_t *psx_parse_local_declaration_syntax(
   if (!psx_try_parse_decl_specifier_syntax_ex(
           &specifier,
           &(psx_decl_specifier_syntax_options_t){
-              .is_typedef_name = is_local_typedef_name,
-              .context = callbacks->semantic_context,
+              .name_classifier = &callbacks->name_classifier,
               .semantic_context = callbacks->semantic_context,
               .global_registry = callbacks->global_registry,
               .local_registry = callbacks->local_registry,
@@ -114,8 +110,7 @@ node_t *psx_parse_local_declaration_syntax(
         &declarator, callbacks->semantic_context,
         callbacks->global_registry,
         callbacks->local_registry, callbacks->runtime_context,
-        is_local_typedef_name,
-        callbacks->semantic_context);
+        &callbacks->name_classifier);
     ps_parse_runtime_declarator_expressions_in_contexts(
         &declarator, callbacks->semantic_context,
         callbacks->global_registry,

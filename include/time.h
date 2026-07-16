@@ -16,6 +16,10 @@ struct tm {
   int tm_wday;
   int tm_yday;
   int tm_isdst;
+#ifndef __wasm32__
+  long tm_gmtoff;
+  char *tm_zone;
+#endif
 };
 
 struct timespec {

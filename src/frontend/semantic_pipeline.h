@@ -10,9 +10,9 @@ typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 
-void psx_frontend_analyze_function_in_session(
+node_t *psx_frontend_analyze_function_in_session(
     ag_compilation_session_t *session,
-    node_t *function, const token_t *fallback_diag_tok);
+    const node_t *syntax_function, const token_t *fallback_diag_tok);
 node_t *psx_frontend_analyze_expression_in_session(
     ag_compilation_session_t *session,
     node_t *expression, const token_t *fallback_diag_tok);

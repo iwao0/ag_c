@@ -4605,10 +4605,10 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $any_digit)) (then\n");
-    wasm_emitf(6, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $s)))))\n");
+    wasm_emitf(6, "(if (local.get $endptr) (then (i32.store (local.get $endptr) (local.get $s))))\n");
     wasm_emitf(6, "(return (i64.const 0))\n");
     wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(if (local.get $endptr) (then (i64.store (local.get $endptr) (i64.extend_i32_u (local.get $p)))))\n");
+    wasm_emitf(4, "(if (local.get $endptr) (then (i32.store (local.get $endptr) (local.get $p))))\n");
     wasm_emitf(4, "(if (result i64) (local.get $neg) (then (i64.sub (i64.const 0) (local.get $n))) (else (local.get $n)))\n");
     wasm_emitf(2, ")\n");
   }
@@ -6793,7 +6793,10 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("logl", 4)) {
     wasm_emitf(2, "(func $logl (param $x f64) (result f64) (call $log (local.get $x)))\n");
   }
-  if (has_undefined_function("hypot", 5)) {
+  if (has_undefined_function("hypot", 5) ||
+      ((has_undefined_function("hypotf", 6) ||
+        has_undefined_function("hypotl", 6)) &&
+       !has_defined_function("hypot", 5))) {
     wasm_emitf(2, "(func $hypot (param $x f64) (param $y f64) (result f64)\n");
     wasm_emitf(4, "(if (i32.or (f64.eq (f64.abs (local.get $x)) (f64.const inf)) (f64.eq (f64.abs (local.get $y)) (f64.const inf))) (then (return (f64.const inf))))\n");
     wasm_emitf(4, "(if (f64.ne (local.get $x) (local.get $x)) (then (return (local.get $x))))\n");

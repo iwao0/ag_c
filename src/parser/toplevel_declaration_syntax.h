@@ -27,6 +27,7 @@ typedef struct {
 
 typedef struct {
   void *context;
+  psx_name_classifier_t name_classifier;
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
@@ -58,7 +59,8 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context);
+    psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier);
 int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,

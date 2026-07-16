@@ -21,9 +21,15 @@ typedef struct ag_target_scalar_layout_t {
   int alignment;
 } ag_target_scalar_layout_t;
 
+typedef enum ag_target_call_abi_t {
+  AG_TARGET_CALL_ABI_AAPCS64,
+  AG_TARGET_CALL_ABI_WASM32,
+} ag_target_call_abi_t;
+
 typedef struct ag_target_info_t {
   int pointer_size;
   int pointer_alignment;
+  ag_target_call_abi_t call_abi;
   ag_target_scalar_layout_t scalar[AG_TARGET_SCALAR_COUNT];
 } ag_target_info_t;
 
@@ -32,6 +38,8 @@ ag_target_info_t ag_target_info_host(void);
 ag_target_info_t ag_target_info_wasm32(void);
 int ag_target_info_pointer_size(const ag_target_info_t *target);
 int ag_target_info_pointer_alignment(const ag_target_info_t *target);
+ag_target_call_abi_t ag_target_info_call_abi(
+    const ag_target_info_t *target);
 int ag_target_info_scalar_size(
     const ag_target_info_t *target, ag_target_scalar_kind_t kind);
 int ag_target_info_scalar_alignment(

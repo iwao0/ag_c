@@ -6,12 +6,15 @@
 #include "parser/semantic_ctx.h"
 #include "parser/arena.h"
 #include "frontend/translation_unit.h"
+#include "frontend/translation_unit_legacy_ast.h"
 #include "tokenizer/tokenizer.h"
 #include "tokenizer/allocator.h"
 #include "preprocess/preprocess.h"
 #include "diag/diag.h"
 #include "ir/ir.h"
+#include "hir/hir.h"
 #include "lowering/ir_builder.h"
+#include "lowering/hir_ir_builder.h"
 #include "lowering/translation_unit_data_lowering.h"
 #include "arch/arm64_apple/arm64_apple_ir.h"
 #include "arch/wasm32/wasm32_ir.h"
@@ -97,21 +100,48 @@ static void clear_output_callback(
   gen_set_output_callback_in(emit_context, NULL, NULL);
 }
 
-static int wasm_emit_function_direct(
-    node_t *fn, int object_mode, const ir_build_options_t *options) {
-  ir_module_t *m = ir_build_function_module_with_options(fn, options);
-  if (!m) return 0;
-  {
-    const char *dump_ir = getenv("AG_DUMP_IR");
-    if (dump_ir && strcmp(dump_ir, "1") == 0) {
-      char *buf = malloc(1 << 16);
-      if (buf) {
-        ir_print_module_to_buf(m, buf, 1 << 16);
-        fprintf(stderr, "%s", buf);
-        free(buf);
-      }
-    }
+static void dump_ir_if_requested(ir_module_t *module) {
+  const char *dump_ir = getenv("AG_DUMP_IR");
+  if (!module || !dump_ir || strcmp(dump_ir, "1") != 0) return;
+  char *buf = malloc(1 << 16);
+  if (!buf) return;
+  ir_print_module_to_buf(module, buf, 1 << 16);
+  fprintf(stderr, "%s", buf);
+  free(buf);
+}
+
+static ir_module_t *build_resolved_function_module(
+    const psx_frontend_stream_t *stream,
+    const psx_frontend_function_t *function,
+    const ir_build_options_t *options) {
+  if (!stream || !stream->session || !function ||
+      function->hir_root == PSX_HIR_NODE_ID_INVALID) return NULL;
+  if (getenv("AG_DISABLE_TYPED_HIR")) {
+    return ir_build_function_module_with_options(
+        psx_frontend_legacy_ast_function(stream), options);
   }
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(stream->session);
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *module = ir_build_function_module_from_hir(
+      hir,
+      function->hir_root,
+      options, &status);
+  if (module) return module;
+  if (status != IR_HIR_BUILD_UNSUPPORTED) return NULL;
+  if (getenv("AG_REQUIRE_TYPED_HIR")) return NULL;
+  return ir_build_function_module_with_options(
+      psx_frontend_legacy_ast_function(stream), options);
+}
+
+static int wasm_emit_function_direct(
+    const psx_frontend_stream_t *stream,
+    const psx_frontend_function_t *function,
+    int object_mode, const ir_build_options_t *options) {
+  ir_module_t *m = build_resolved_function_module(
+      stream, function, options);
+  if (!m) return 0;
+  dump_ir_if_requested(m);
   if (object_mode) {
     wasm32_obj_gen_ir_module(m);
   } else {
@@ -348,8 +378,10 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),
   };
-  for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
-    if (!wasm_emit_function_direct(fn, object_mode, &ir_options)) {
+  psx_frontend_function_t function;
+  while (psx_frontend_next_function(&stream, &function)) {
+    if (!wasm_emit_function_direct(
+            &stream, &function, object_mode, &ir_options)) {
       clear_output_callback(emit_context);
       gen_set_simple_formatter_in(emit_context, 0);
       if (pps) pp_stream_close(pps);
@@ -638,12 +670,15 @@ int main(int argc, char **argv) {
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),
   };
-  for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
+  psx_frontend_function_t function;
+  while (psx_frontend_next_function(&stream, &function)) {
 #ifdef AGC_TARGET_WASM32
-    if (!wasm_emit_function_direct(fn, wasm_object_mode, &ir_options)) {
+    if (!wasm_emit_function_direct(
+            &stream, &function, wasm_object_mode, &ir_options)) {
 #else
-    if (!ir_build_emit_function_with_options_in(
-            fn, &ir_options, arm64_emit_ir_module, emit_context)) {
+    ir_module_t *function_module = build_resolved_function_module(
+        &stream, &function, &ir_options);
+    if (!function_module) {
 #endif
       diag_emit_internalf_in(
           diagnostics, DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
@@ -654,6 +689,11 @@ int main(int argc, char **argv) {
       free(source);
       return 1;
     }
+#ifndef AGC_TARGET_WASM32
+    dump_ir_if_requested(function_module);
+    arm64_emit_ir_module(function_module, emit_context);
+    ir_module_free(function_module);
+#endif
     psx_frontend_free_processed_ast_in_session(session);
   }
   psx_frontend_stream_end(&stream);

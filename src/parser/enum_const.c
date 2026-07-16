@@ -15,6 +15,7 @@ typedef struct {
    * 経路は従来どおり整数 token の期待処理で int に制約する。 */
   int allow_wide_const;
   psx_semantic_context_t *semantic_context;
+  psx_name_classifier_t name_classifier;
   tokenizer_context_t *tokenizer_context;
 } enum_const_eval_ctx_t;
 
@@ -51,6 +52,7 @@ long long psx_parse_enum_const_expr_in_contexts(
     tokenizer_context_t *tokenizer_context) {
   enum_const_eval_ctx_t ctx = {
       .semantic_context = semantic_context,
+      .name_classifier = ps_ctx_name_classifier(semantic_context),
       .tokenizer_context = tokenizer_context,
   };
   return parse_conditional_ctx(&ctx);
@@ -62,6 +64,7 @@ long long psx_parse_case_const_expr_in_contexts(
   enum_const_eval_ctx_t ctx = {
       .allow_wide_const = 1,
       .semantic_context = semantic_context,
+      .name_classifier = ps_ctx_name_classifier(semantic_context),
       .tokenizer_context = tokenizer_context,
   };
   return parse_conditional_ctx(&ctx);
@@ -244,8 +247,8 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
       int alignment = 1;
       if (psx_ctx_is_type_token(curtok(ctx)->kind) ||
           psx_ctx_is_tag_keyword(curtok(ctx)->kind) ||
-          psx_ctx_is_typedef_name_token_in(
-              ctx->semantic_context, curtok(ctx))) {
+          ps_name_classifier_is_typedef_name(
+              &ctx->name_classifier, curtok(ctx))) {
         psx_ctx_get_type_token_layout_in(
             ctx->semantic_context, curtok(ctx)->kind,
             &size, &alignment);
@@ -262,8 +265,8 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
             alignment = ps_ctx_get_tag_align_in(
                 ctx->semantic_context, tk, tag->str, tag->len);
           }
-        } else if (psx_ctx_is_typedef_name_token_in(
-                       ctx->semantic_context, curtok(ctx))) {
+        } else if (ps_name_classifier_is_typedef_name(
+                       &ctx->name_classifier, curtok(ctx))) {
           token_ident_t *id = (token_ident_t *)curtok(ctx);
           psx_ctx_find_typedef_layout_in(
               ctx->semantic_context,

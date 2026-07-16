@@ -221,6 +221,7 @@ void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
     return;
   *callbacks = (psx_toplevel_declaration_callbacks_t){
       .context = callbacks,
+      .name_classifier = ps_ctx_name_classifier(semantic_context),
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,

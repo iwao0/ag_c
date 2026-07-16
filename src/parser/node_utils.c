@@ -3184,6 +3184,7 @@ int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
 
 int ps_node_value_is_pointer_like(node_t *node) {
   if (!node) return 0;
+  if (node->kind == ND_ADDR || node->kind == ND_FUNCREF) return 1;
   if (ps_type_is_pointer_like(ps_node_get_type(node))) return 1;
   if (ps_node_scalar_ptr_member_lvalue(node)) return 1;
   return 0;

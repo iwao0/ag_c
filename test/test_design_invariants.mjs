@@ -14,6 +14,24 @@ async function sourceFilesUnder(directory) {
 }
 
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const hirHeader = await readFile("src/hir/hir.h", "utf8");
+const hirImplementation = await readFile("src/hir/hir.c", "utf8");
+const typedHirBuilder = await readFile(
+  "src/semantic/typed_hir_builder.c",
+  "utf8",
+);
+const resolutionWorkTree = await readFile(
+  "src/semantic/resolution_work_tree.c",
+  "utf8",
+);
+const hirIrBuilder = `${await readFile(
+  "src/lowering/hir_ir_builder.h",
+  "utf8",
+)}\n${await readFile("src/lowering/hir_ir_builder.c", "utf8")}`;
+const compilationSession = await readFile(
+  "src/compilation_session.c",
+  "utf8",
+);
 const semanticIntegerConstructionSource = (
   await Promise.all(
     allSourceFiles
@@ -1134,9 +1152,13 @@ if (explicitCodegenEmitSources.some((source) =>
       /\bdiag_(?:emit_internalf|message_for)\s*\(/.test(source)
     ) ||
     !/gen_ir_module_in\s*\(/.test(arm64IrEmitSource) ||
-    !/ir_build_emit_function_with_options_in\s*\(/.test(
+    (!/ir_build_emit_function_with_options_in\s*\(/.test(
       compilerMainSource,
-    ) ||
+    ) &&
+      (!/ir_build_function_module_from_hir\s*\(/.test(
+        compilerMainSource,
+      ) ||
+        !/gen_ir_module_in\s*\(/.test(compilerMainSource))) ||
     !/gen_(?:string_literals|float_literals|global_vars)_in\s*\(/.test(
       compilerMainSource,
     )) {
@@ -1446,6 +1468,24 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
+const frontendLegacyAstHeader = await readFile(
+  "src/frontend/translation_unit_legacy_ast.h",
+  "utf8",
+);
+if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_frontend_function_t\s*;/.test(
+      frontendTranslationUnitHeader,
+    ) ||
+    !/int\s+psx_frontend_next_function\s*\(\s*psx_frontend_stream_t\s*\*stream\s*,\s*psx_frontend_function_t\s*\*function\s*\)/.test(
+      frontendTranslationUnitHeader,
+    ) ||
+    /node_t\s*\*\s*psx_frontend_next_function/.test(
+      frontendTranslationUnitHeader,
+    ) ||
+    !/psx_frontend_legacy_ast_function/.test(frontendLegacyAstHeader)) {
+  throw new Error(
+    "frontend function iteration must return Typed HIR roots and isolate the legacy AST bridge",
+  );
+}
 const parserStreamHeader = await readFile("src/parser/parser.h", "utf8");
 const parserStreamSource = await readFile("src/parser/parser.c", "utf8");
 const semanticPipelineSource = await readFile(
@@ -2451,7 +2491,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
       frontendTranslationUnitSource,
     ) ||
     !/psx_stmt_stmt_in_contexts\s*\(/.test(parserSource) ||
-    !/psx_ctx_is_typedef_name_token_in\s*\(/.test(
+    !/ps_name_classifier_is_typedef_name\s*\(/.test(
       statementParserSource,
     ) ||
     /active_local_declarations/.test(statementParserSource) ||
@@ -3371,7 +3411,7 @@ if (completeSemanticBoundaryCheckCount !== 3 ||
 const semanticPipelineContracts = [
   [
     "function",
-    /static\s+void\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /static\s+node_t\s*\*analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
@@ -5150,6 +5190,107 @@ if (!typedInitializerSection ||
     )) {
   throw new Error(
     "typed local initializer lowering must traverse declaration, base, and member TypeIds without type pointer reverse lookup",
+  );
+}
+
+const nameClassifierHeader = await readFile(
+  "src/parser/name_classifier.h",
+  "utf8",
+);
+const declarationSyntaxHeader = await readFile(
+  "src/parser/declaration_syntax.h",
+  "utf8",
+);
+const nameClassifierUsers = [
+  "src/parser/declaration_syntax.c",
+  "src/parser/function_parameter_syntax.c",
+  "src/parser/aggregate_member_syntax.c",
+  "src/parser/local_declaration_syntax.c",
+  "src/parser/toplevel_declaration_syntax.c",
+  "src/parser/expr.c",
+  "src/parser/stmt.c",
+  "src/parser/enum_const.c",
+  "src/parser/alignas_value.c",
+];
+const directTypedefLookupUsers = [];
+for (const file of nameClassifierUsers) {
+  const source = await readFile(file, "utf8");
+  if (/\bpsx_ctx_is_typedef_name_token_in\s*\(/.test(source)) {
+    directTypedefLookupUsers.push(file);
+  }
+}
+if (!/typedef\s+struct\s*\{[^]*?void\s*\*context\s*;[^]*?psx_typedef_name_classifier_fn\s+is_typedef_name\s*;[^]*?\}\s*psx_name_classifier_t\s*;/.test(
+      nameClassifierHeader,
+    ) ||
+    !/ps_name_classifier_is_typedef_name\s*\(\s*const\s+psx_name_classifier_t\s*\*classifier\s*,\s*const\s+token_t\s*\*token\s*\)/.test(
+      nameClassifierHeader,
+    ) ||
+    !/\bconst\s+psx_name_classifier_t\s*\*name_classifier\s*;/.test(
+      declarationSyntaxHeader,
+    ) ||
+    /\bpsx_decl_typedef_name_predicate_t\b/.test(
+      `${declarationSyntaxHeader}\n${nameClassifierHeader}`,
+    ) ||
+    directTypedefLookupUsers.length > 0) {
+  throw new Error(
+    "parser typedef ambiguity must be isolated behind the NameClassifier interface" +
+      (directTypedefLookupUsers.length
+        ? `:\n${directTypedefLookupUsers.join("\n")}`
+        : ""),
+  );
+}
+
+if (/parser\/ast\.h|\bnode_t\b|\bnode_kind_t\b|\bpsx_type_t\b/.test(
+      hirHeader,
+    )) {
+  throw new Error(
+    "public Typed HIR must not expose parser AST or mutable type objects",
+  );
+}
+if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
+    !/spec->role\s*==\s*PSX_HIR_ROLE_EXPRESSION[^]*?spec->qual_type\.type_id\s*!=\s*PSX_TYPE_ID_INVALID/.test(
+      hirImplementation,
+    )) {
+  throw new Error(
+    "Typed HIR construction must structurally require canonical QualType for expressions",
+  );
+}
+if (!/PSX_TYPED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(typedHirBuilder)) {
+  throw new Error(
+    "Typed HIR builder must reject unresolved syntax node kinds",
+  );
+}
+if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
+      compilationSession,
+    )) {
+  throw new Error("CompilationSession must own the Typed HIR module");
+}
+const functionResolutionBoundary = semanticPipelineSource.match(
+  /node_t\s*\*psx_frontend_analyze_function_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
+if (!functionResolutionBoundary ||
+    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
+      functionResolutionBoundary[1],
+    ) ||
+    !/psx_clone_syntax_tree_for_resolution\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+      resolutionWorkTree,
+    )) {
+  throw new Error(
+    "function resolver must analyze a private working tree and leave parser syntax nodes unchanged",
+  );
+}
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(hirIrBuilder) ||
+    !/ir_build_function_module_from_hir\s*\(/.test(hirIrBuilder)) {
+  throw new Error(
+    "direct Typed HIR IR lowering must not depend on parser AST nodes",
+  );
+}
+if (!/ir_build_function_module_from_hir\s*\(/.test(compilerMainSource) ||
+    !/if\s*\(status\s*!=\s*IR_HIR_BUILD_UNSUPPORTED\)\s*return\s+NULL\s*;[^]*?ir_build_function_module_with_options\s*\(/.test(
+      compilerMainSource,
+    )) {
+  throw new Error(
+    "compiler must prefer Typed HIR lowering and only use AST compatibility fallback for unsupported HIR shapes",
   );
 }
 

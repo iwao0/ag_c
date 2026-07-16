@@ -426,6 +426,12 @@ const psx_type_t *ps_type_binary_result_for_target_in(
 const psx_type_t *ps_type_conditional_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *then_type, const psx_type_t *else_type) {
+  int then_is_void = then_type && then_type->kind == PSX_TYPE_VOID;
+  int else_is_void = else_type && else_type->kind == PSX_TYPE_VOID;
+  if (then_is_void || else_is_void) {
+    if (!then_is_void || !else_is_void) return NULL;
+    return ps_type_clone_in(arena_context, then_type);
+  }
   if (ps_type_is_pointer_like(then_type))
     return then_type->kind == PSX_TYPE_ARRAY
                ? ps_type_decay_array_in(arena_context, then_type)

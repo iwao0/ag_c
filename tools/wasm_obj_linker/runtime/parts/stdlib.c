@@ -58,10 +58,7 @@ long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
   char *s = orig;
   if (!__agc_runtime_int_base_ok(base)) {
     __agc_runtime_set_errno(22);
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)orig;
-    }
+    ag_rt_store_pointer(endptr_addr, orig);
     return 0;
   }
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
@@ -90,10 +87,7 @@ long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
     }
     s++;
   }
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)(s == digits ? orig : s);
-  }
+  ag_rt_store_pointer(endptr_addr, s == digits ? orig : s);
   if (s == digits) return 0;
   if (overflow) {
     __agc_runtime_set_errno(34);
@@ -291,20 +285,14 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
 
   double special = 0.0;
   if (__agc_runtime_parse_special_float(&s, sign, &special)) {
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)s;
-    }
+    ag_rt_store_pointer(endptr_addr, s);
     return special;
   }
 
   double hex = 0.0;
   int nonzero = 0;
   if (__agc_runtime_parse_hex_float(&s, &hex, &nonzero)) {
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)s;
-    }
+    ag_rt_store_pointer(endptr_addr, s);
     return __agc_runtime_finish_strtod(hex, sign, nonzero, 0);
   }
 
@@ -338,10 +326,7 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
     }
   }
   if (!have_digit) {
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)orig;
-    }
+    ag_rt_store_pointer(endptr_addr, orig);
     return 0.0;
   }
   if (*s == 'e' || *s == 'E') {
@@ -387,10 +372,7 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
       s = exp_start;
     }
   }
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)s;
-  }
+  ag_rt_store_pointer(endptr_addr, s);
   return __agc_runtime_finish_strtod(acc, sign, nonzero, range_dir);
 }
 
@@ -411,10 +393,7 @@ unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
   char *s = orig;
   if (!__agc_runtime_int_base_ok(base)) {
     __agc_runtime_set_errno(22);
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)orig;
-    }
+    ag_rt_store_pointer(endptr_addr, orig);
     return 0;
   }
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
@@ -442,10 +421,7 @@ unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
     }
     s++;
   }
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)(s == digits ? orig : s);
-  }
+  ag_rt_store_pointer(endptr_addr, s == digits ? orig : s);
   if (s == digits) return 0;
   if (overflow) {
     __agc_runtime_set_errno(34);

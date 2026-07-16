@@ -4,6 +4,7 @@
 #include "core.h"
 #include "declarator_shape.h"
 #include "enum_const.h"
+#include "name_classifier.h"
 
 typedef struct psx_parsed_aggregate_body_t psx_parsed_aggregate_body_t;
 typedef struct psx_parsed_function_parameters_t
@@ -50,11 +51,8 @@ typedef enum {
   PSX_PARSED_DECL_TYPE_IMPLICIT_INT,
 } psx_parsed_decl_type_source_t;
 
-typedef int (*psx_decl_typedef_name_predicate_t)(
-    token_t *token, void *context);
-
 typedef struct {
-  psx_decl_typedef_name_predicate_t is_typedef_name;
+  const psx_name_classifier_t *name_classifier;
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
   void *context;
   psx_semantic_context_t *semantic_context;
@@ -122,16 +120,14 @@ void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
-    psx_decl_typedef_name_predicate_t is_typedef_name,
-    void *typedef_name_context);
+    const psx_name_classifier_t *name_classifier);
 int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
-    psx_decl_typedef_name_predicate_t is_typedef_name,
-    void *typedef_name_context);
+    const psx_name_classifier_t *name_classifier);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -142,7 +138,7 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
-    psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
+    const psx_name_classifier_t *name_classifier);
 void ps_parse_runtime_declarator_expressions_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,

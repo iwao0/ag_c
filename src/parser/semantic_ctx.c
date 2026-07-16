@@ -1694,6 +1694,20 @@ bool psx_ctx_is_typedef_name_token_in(
       context, id->str, id->len, NULL);
 }
 
+static int semantic_context_classifies_typedef_name(
+    void *context, const token_t *token) {
+  return psx_ctx_is_typedef_name_token_in(
+      context, (token_t *)token);
+}
+
+psx_name_classifier_t ps_ctx_name_classifier(
+    psx_semantic_context_t *context) {
+  return (psx_name_classifier_t){
+      .context = context,
+      .is_typedef_name = semantic_context_classifies_typedef_name,
+  };
+}
+
 // 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
 const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
     psx_semantic_context_t *context, char *name, int len) {

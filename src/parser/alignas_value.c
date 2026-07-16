@@ -17,11 +17,13 @@ int psx_parse_alignas_value_in_contexts(
     psx_semantic_context_t *semantic_context,
     tokenizer_context_t *tokenizer_context) {
   if (!semantic_context || !tokenizer_context) return 1;
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(semantic_context);
   tk_expect_ctx(tokenizer_context, '(');
   int val = 1;
   if (psx_ctx_is_type_token(curtok(tokenizer_context)->kind) ||
-      psx_ctx_is_typedef_name_token_in(
-          semantic_context, curtok(tokenizer_context))) {
+      ps_name_classifier_is_typedef_name(
+          &name_classifier, curtok(tokenizer_context))) {
     int alignment = 1;
     if (curtok(tokenizer_context)->kind == TK_IDENT) {
       token_ident_t *identifier =
@@ -57,10 +59,12 @@ int psx_eval_parsed_alignas_value_in_context(
     psx_semantic_context_t *semantic_context,
     token_t *start, token_t *end) {
   if (!start || !end) return 1;
+  psx_name_classifier_t name_classifier =
+      ps_ctx_name_classifier(semantic_context);
   int value = 1;
   if (psx_ctx_is_type_token(start->kind) ||
-      psx_ctx_is_typedef_name_token_in(
-          semantic_context, start)) {
+      ps_name_classifier_is_typedef_name(
+          &name_classifier, start)) {
     int alignment = 1;
     if (start->kind == TK_IDENT) {
       token_ident_t *identifier = (token_ident_t *)start;

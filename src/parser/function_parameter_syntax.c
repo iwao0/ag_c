@@ -72,8 +72,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
-    psx_decl_typedef_name_predicate_t is_typedef_name,
-    void *typedef_name_context) {
+    const psx_name_classifier_t *name_classifier) {
   if (!parameters || !semantic_context || !global_registry ||
       !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
@@ -91,10 +90,9 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters, runtime_context);
     psx_decl_specifier_syntax_options_t specifier_options = {
-        .is_typedef_name =
+        .name_classifier =
             type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
-                ? NULL : is_typedef_name,
-        .context = typedef_name_context,
+                ? NULL : name_classifier,
         .semantic_context = semantic_context,
         .global_registry = global_registry,
         .local_registry = local_registry,
@@ -116,8 +114,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree_in_contexts(
             semantic_context, global_registry, local_registry,
-            runtime_context,
-            is_typedef_name, typedef_name_context);
+            runtime_context, name_classifier);
     if (tk_consume_ctx(tk_ctx, ',')) continue;
     tk_expect_ctx(tk_ctx, ')');
     return 1;

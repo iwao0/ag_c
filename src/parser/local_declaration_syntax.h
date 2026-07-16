@@ -13,6 +13,7 @@ typedef struct ag_compilation_options_t ag_compilation_options_t;
 
 typedef struct psx_local_declaration_callbacks_t {
   void *context;
+  psx_name_classifier_t name_classifier;
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
