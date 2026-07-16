@@ -3,12 +3,14 @@
 
 #include "../compilation_session.h"
 #include "../hir/hir.h"
+#include "../parser/name_environment.h"
 #include "../parser/parser.h"
 
 typedef struct {
   psx_parser_stream_t parser;
   psx_toplevel_declaration_callbacks_t toplevel_declarations;
   psx_local_declaration_callbacks_t local_declarations;
+  psx_parser_name_environment_t local_name_environment;
   ag_compilation_session_t *session;
   unsigned char is_started;
   unsigned char owns_session_activation;

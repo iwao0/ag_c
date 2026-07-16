@@ -18,6 +18,7 @@
 #include "alignof_query_resolution.h"
 #include "typed_hir_node_internal.h"
 #include "generic_selection_resolution.h"
+#include "member_access_resolution.h"
 #include "resolved_node_kind.h"
 #include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
@@ -1115,26 +1116,33 @@ static int copy_payload(
     case ND_MEMBER_ACCESS: {
       const node_member_access_t *access =
           (const node_member_access_t *)source;
+      const psx_member_access_state_t *state =
+          psx_member_access_state(access);
+      if (!state || !state->is_resolved) {
+        set_failure(
+            builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
+        return 0;
+      }
       const psx_record_layout_t *layout =
           psx_record_layout_table_lookup(
               ps_ctx_record_layout_table_in(builder->semantic_context),
-              access->resolved_record_id,
+              state->record_id,
               ps_ctx_target_info(builder->semantic_context));
       const psx_record_member_layout_t *member =
-          psx_record_layout_member(layout, access->resolved_member_index);
-      if (!access->resolved_member || !member) {
+          psx_record_layout_member(layout, state->member_index);
+      if (!member) {
         set_failure(
             builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
         return 0;
       }
       spec->member_offset = member->offset;
       spec->member_from_pointer = access->from_pointer ? 1 : 0;
-      if (access->resolved_member->bit_width > 0) {
+      if (state->declaration.bit_width > 0) {
         spec->bit_width =
-            (unsigned char)access->resolved_member->bit_width;
+            (unsigned char)state->declaration.bit_width;
         spec->bit_offset = (unsigned char)member->bit_offset;
         spec->bit_is_signed =
-            access->resolved_member->bit_is_signed ? 1 : 0;
+            state->declaration.bit_is_signed ? 1 : 0;
       }
       break;
     }

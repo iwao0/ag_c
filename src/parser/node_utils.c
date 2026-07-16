@@ -2234,8 +2234,14 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
     free(defaults);
     return -1;
   }
+  const psx_generic_selection_resolution_state_t *resolution =
+      selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
   for (int i = 0; i < count; i++) {
-    types[i] = selection->associations[i].type_name.resolved_type;
+    types[i] = resolution && resolution->association_type_names &&
+                       i < resolution->association_type_name_count
+                   ? resolution->association_type_names[i].resolved_type
+                   : NULL;
     defaults[i] = selection->associations[i].is_default;
   }
   int selected = ps_type_generic_select_index(

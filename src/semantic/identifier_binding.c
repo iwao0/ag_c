@@ -3,6 +3,7 @@
 #include "identifier_resolution.h"
 #include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
+#include "type_name_resolution.h"
 #include "vla_runtime_plan.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
@@ -415,7 +416,8 @@ static node_t *bind_node(
       if (psx_sizeof_query_resolved_size(query) > 0 ||
           psx_sizeof_query_runtime_size_slot(query) != 0 ||
           psx_sizeof_query_runtime_plan(query) ||
-          (query->is_type_name && query->type_name.resolved_type))
+          (query->is_type_name &&
+           psx_node_resolved_type_name(&query->base)))
         return node;
       bind_type_name(&query->type_name, context);
       bind_slot(&query->operand, context);

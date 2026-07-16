@@ -16,6 +16,7 @@
 #include "../src/parser/literal_public.h"
 #include "../src/parser/lvar_public.h"
 #include "../src/parser/local_registry.h"
+#include "../src/parser/name_environment.h"
 #include "../src/parser/node_type_public.h"
 #include "../src/parser/node_resolution_state.h"
 #include "../src/parser/node_utils.h"
@@ -163,6 +164,7 @@ static const psx_type_t *ps_tag_member_decl_tag_type(
 }
 
 static node_t **parsed_code;
+static node_t **parse_program_input(const char *input);
 static ag_compilation_session_t *test_suite_session;
 
 static ag_diagnostic_context_t *test_diagnostics(void) {
@@ -1243,6 +1245,56 @@ static int test_name_classifier_is_typedef(
   return identifier->len == classifier_context->name_len &&
          strncmp(identifier->str, classifier_context->name,
                  (size_t)identifier->len) == 0;
+}
+
+static void test_parser_name_environment_boundary() {
+  printf("test_parser_name_environment_boundary...\n");
+  test_name_classifier_context_t outer_context = {
+      .name = "Alias",
+      .name_len = 5,
+  };
+  psx_name_classifier_t outer = {
+      .context = &outer_context,
+      .is_typedef_name = test_name_classifier_is_typedef,
+  };
+  psx_parser_name_environment_t environment;
+  ps_parser_name_environment_init(&environment, outer);
+  psx_name_classifier_t classifier =
+      ps_parser_name_environment_classifier(&environment);
+
+  token_t *alias = tk_tokenize((char *)"Alias");
+  token_t *local = tk_tokenize((char *)"Local");
+  ASSERT_TRUE(ps_name_classifier_is_typedef_name(
+      &classifier, alias));
+
+  ps_name_classifier_declare(&classifier, alias, 0);
+  ASSERT_TRUE(!ps_name_classifier_is_typedef_name(
+      &classifier, alias));
+
+  ps_name_classifier_enter_scope(&classifier);
+  ps_name_classifier_declare(&classifier, alias, 1);
+  ps_name_classifier_declare(&classifier, local, 1);
+  ASSERT_TRUE(ps_name_classifier_is_typedef_name(
+      &classifier, alias));
+  ASSERT_TRUE(ps_name_classifier_is_typedef_name(
+      &classifier, local));
+  ps_name_classifier_leave_scope(&classifier);
+
+  ASSERT_TRUE(!ps_name_classifier_is_typedef_name(
+      &classifier, alias));
+  ASSERT_TRUE(!ps_name_classifier_is_typedef_name(
+      &classifier, local));
+  ps_parser_name_environment_reset(&environment, outer);
+  ASSERT_TRUE(ps_name_classifier_is_typedef_name(
+      &classifier, alias));
+  ps_parser_name_environment_dispose(&environment);
+
+  parsed_code = parse_program_input(
+      "typedef int T; int main(void) { "
+      "int T = 3; "
+      "{ typedef int T; T value = 4; if (value != 4) return 1; } "
+      "return T == 3 ? 0 : 2; }");
+  ASSERT_TRUE(parsed_code != NULL);
 }
 
 typedef struct {
@@ -4654,20 +4706,23 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(!member_syntax->from_pointer);
   ASSERT_EQ(5, member_syntax->member_name_len);
   ASSERT_TRUE(strncmp(member_syntax->member_name, "value", 5) == 0);
-  ASSERT_TRUE(member_syntax->resolved_member == NULL);
+  ASSERT_TRUE(member_syntax->base.resolution_state == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_access) == NULL);
   node_t *lowered_access = analyze_test_expression(
       raw_access, raw_access->tok);
   ASSERT_TRUE(lowered_access != raw_access);
   ASSERT_EQ(ND_MEMBER_ACCESS, lowered_access->kind);
-  ASSERT_TRUE(member_syntax->resolved_member == NULL);
+  ASSERT_TRUE(member_syntax->base.resolution_state == NULL);
   ASSERT_TRUE(ps_node_get_type(member_syntax->base.lhs) == NULL);
   node_member_access_t *resolved_access =
       (node_member_access_t *)lowered_access;
-  ASSERT_TRUE(resolved_access->resolved_member != NULL);
+  const psx_member_access_state_t *member_state =
+      psx_member_access_state(resolved_access);
+  ASSERT_TRUE(member_state != NULL);
+  ASSERT_TRUE(member_state->is_resolved);
   ASSERT_EQ(member_record->record_id,
-            resolved_access->resolved_record_id);
-  ASSERT_EQ(1, resolved_access->resolved_member_index);
+            member_state->record_id);
+  ASSERT_EQ(1, member_state->member_index);
   ASSERT_TRUE(ps_node_get_type(lowered_access) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_access)->kind);
   ASSERT_EQ(4, ps_type_sizeof(ps_node_get_type(lowered_access)));
@@ -5211,13 +5266,12 @@ static void test_expr_compound_literal() {
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_TRUE(compound->type_name.syntax != NULL);
-  ASSERT_TRUE(compound->type_name.bound_base_type == NULL);
-  ASSERT_TRUE(compound->type_name.resolved_type == NULL);
+  ASSERT_TRUE(compound->base.resolution_state == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   node_t *lowered = analyze_test_expression(raw, raw->tok);
   ASSERT_TRUE(lowered != raw);
-  ASSERT_TRUE(compound->type_name.resolved_type == NULL);
+  ASSERT_TRUE(compound->base.resolution_state == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   ASSERT_EQ(ND_COMPOUND_LITERAL, lowered->kind);
@@ -5732,10 +5786,18 @@ static void test_generic_selection_semantic_lowering_boundary() {
       &integer_result, ps_type_new_integer(TK_INT, 4, 0));
   test_bind_node_type(
       &float_result, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  psx_parsed_type_name_t direct_integer_type = {
+      .specifier = {
+          .source = PSX_PARSED_DECL_TYPE_BUILTIN,
+          .type_spec = {.kind = TK_INT},
+      },
+  };
+  ps_declarator_shape_init(
+      &direct_integer_type.declarator.declarator_shape);
   psx_generic_association_t associations[2] = {
       {
           .type_name = {
-              .resolved_type = ps_type_new_integer(TK_INT, 4, 0),
+              .syntax = &direct_integer_type,
           },
           .expression = &integer_result,
       },
@@ -5767,8 +5829,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
 
   associations[0].is_default = 0;
   associations[1].is_default = 0;
-  associations[1].type_name.resolved_type =
-      ps_type_new_integer(TK_INT, 4, 0);
+  associations[1].type_name.syntax = &direct_integer_type;
   resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE,
             resolution.status);
@@ -5807,7 +5868,8 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(!selection->control->records_lvar_usage);
   ASSERT_TRUE(selection->control->lvar_usage_unevaluated);
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
-  ASSERT_TRUE(selection->associations[0].type_name.resolved_type == NULL);
+  ASSERT_TRUE(
+      psx_generic_selection_type_name_state(selection, 0) == NULL);
   ASSERT_EQ(ND_ADD, selection->associations[0].expression->kind);
   ASSERT_TRUE(selection->associations[1].is_default);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
@@ -5815,7 +5877,8 @@ static void test_generic_selection_semantic_lowering_boundary() {
 
   node_t *typed = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(typed != raw);
-  ASSERT_TRUE(selection->associations[0].type_name.resolved_type == NULL);
+  ASSERT_TRUE(
+      psx_generic_selection_type_name_state(selection, 0) == NULL);
   ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
   ASSERT_TRUE(ps_node_get_type((node_t *)selection) == NULL);
   ASSERT_TRUE(ps_node_get_type(selection->associations[0].expression) == NULL);
@@ -5897,9 +5960,11 @@ static void test_sizeof_semantic_lowering_boundary() {
       (node_sizeof_query_t *)direct_type_raw;
   resolve_test_sizeof_query(direct_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
-  ASSERT_TRUE(direct_type_query->type_name.resolved_type != NULL);
+  const psx_type_t *direct_type =
+      psx_node_resolved_type_name(&direct_type_query->base);
+  ASSERT_TRUE(direct_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY,
-            direct_type_query->type_name.resolved_type->kind);
+            direct_type->kind);
   ASSERT_EQ(12, psx_sizeof_query_resolved_size(direct_type_query));
 
   node_sizeof_query_t *negative_type_query =
@@ -5928,7 +5993,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_sizeof_query_t *type_query = (node_sizeof_query_t *)raw_type;
   ASSERT_TRUE(type_query->is_type_name);
   ASSERT_TRUE(type_query->type_name.syntax != NULL);
-  ASSERT_TRUE(type_query->type_name.resolved_type == NULL);
+  ASSERT_TRUE(type_query->base.resolution_state == NULL);
   ASSERT_EQ(1, type_query->type_name.syntax->declarator.declarator_shape.count);
   ASSERT_EQ(1, type_query->type_name.syntax->declarator.array_bound_count);
   ASSERT_EQ(ND_NUM,
@@ -5941,7 +6006,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_t *raw_type_bound =
       raw_type_syntax->declarator.array_bounds[0].expression.node;
   node_t *typed_type = analyze_test_expression(raw_type, NULL);
-  ASSERT_TRUE(type_query->type_name.resolved_type == NULL);
+  ASSERT_TRUE(type_query->base.resolution_state == NULL);
   node_sizeof_query_t *typed_type_query =
       (node_sizeof_query_t *)typed_type;
   ASSERT_TRUE(
@@ -6077,12 +6142,14 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(raw_align) == NULL);
   node_alignof_query_t *align_query = (node_alignof_query_t *)raw_align;
   ASSERT_TRUE(align_query->type_name.syntax != NULL);
-  ASSERT_TRUE(align_query->type_name.resolved_type == NULL);
+  ASSERT_TRUE(align_query->base.resolution_state == NULL);
   resolve_test_alignof_query(align_query);
-  ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
+  ASSERT_TRUE(
+      psx_node_resolved_type_name(&align_query->base) != NULL);
   ASSERT_EQ(4, psx_alignof_query_resolved_alignment(align_query));
   node_t *typed_align = analyze_test_expression(raw_align, NULL);
-  ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
+  ASSERT_TRUE(
+      psx_node_resolved_type_name(&align_query->base) != NULL);
   assert_typed_alignof(typed_align, 4);
 
   node_t **program = parse_program_input(
@@ -6283,16 +6350,14 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(node->is_source_cast);
   node_source_cast_t *outer = (node_source_cast_t *)node;
   ASSERT_TRUE(outer->type_name.syntax != NULL);
-  ASSERT_TRUE(outer->type_name.bound_base_type == NULL);
-  ASSERT_TRUE(outer->type_name.resolved_type == NULL);
+  ASSERT_TRUE(outer->base.resolution_state == NULL);
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_EQ(ND_CAST, node->lhs->kind);
   ASSERT_TRUE(node->lhs->is_source_cast);
   node_source_cast_t *inner = (node_source_cast_t *)node->lhs;
   ASSERT_TRUE(inner->type_name.syntax != NULL);
-  ASSERT_TRUE(inner->type_name.bound_base_type == NULL);
-  ASSERT_TRUE(inner->type_name.resolved_type == NULL);
+  ASSERT_TRUE(inner->base.resolution_state == NULL);
 
   node_t *syntax = node;
   node = analyze_test_expression(syntax, NULL);
@@ -6300,14 +6365,12 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_EQ(ND_CAST, syntax->kind);
   ASSERT_TRUE(syntax->is_source_cast);
   ASSERT_TRUE(syntax->resolution_state == NULL);
-  ASSERT_TRUE(outer->type_name.bound_base_type == NULL);
-  ASSERT_TRUE(outer->type_name.resolved_type == NULL);
 
   ASSERT_EQ(ND_CAST, node->kind);
   ASSERT_TRUE(node->is_source_cast);
   node_source_cast_t *typed_outer = (node_source_cast_t *)node;
-  ASSERT_TRUE(typed_outer->type_name.bound_base_type == NULL);
-  ASSERT_TRUE(typed_outer->type_name.resolved_type == NULL);
+  ASSERT_TRUE(
+      psx_node_resolved_type_name(&typed_outer->base) != NULL);
   ASSERT_EQ(
       PSX_SOURCE_CAST_DIRECT_HIR,
       psx_source_cast_resolution_kind(typed_outer));
@@ -20873,9 +20936,11 @@ static void test_recursive_declarator_capacity_boundary() {
             deep_sizeof_resolution.status);
   ASSERT_EQ(1, deep_sizeof_resolution.zero_length_bound_count);
   ASSERT_EQ(39, deep_sizeof_resolution.zero_length_bound_indices[0]);
-  ASSERT_TRUE(deep_sizeof_query->type_name.resolved_type != NULL);
+  const psx_type_t *deep_sizeof_type =
+      psx_node_resolved_type_name(&deep_sizeof_query->base);
+  ASSERT_TRUE(deep_sizeof_type != NULL);
   ASSERT_EQ(40, ps_type_array_rank(
-                    deep_sizeof_query->type_name.resolved_type));
+                    deep_sizeof_type));
 
   char function_declarator[2048] = {0};
   used = 0;
@@ -21642,7 +21707,9 @@ static void test_semantic_context_isolation() {
   psx_semantic_resolve_tree_in_contexts(
       second, test_global_registry(), test_local_registry(),
       (node_t *)&detached_access, NULL, NULL);
-  ASSERT_TRUE(detached_access.resolved_member != NULL);
+  ASSERT_TRUE(psx_member_access_state(&detached_access) != NULL);
+  ASSERT_TRUE(
+      psx_member_access_state(&detached_access)->is_resolved);
   ASSERT_EQ(4, ps_type_sizeof(
                    ps_node_get_type((node_t *)&detached_access)));
 
@@ -22083,11 +22150,12 @@ static void test_compilation_session_registry_isolation() {
       .scope_seq = first_namespace_point.scope_seq,
       .declaration_seq = first_namespace_point.declaration_seq,
   };
+  psx_type_name_resolution_state_t isolated_type_name_state = {0};
   const psx_type_t *isolated_resolved_type =
       psx_resolve_bound_type_name_ref_in_contexts(
           first.semantic_context, first.global_registry,
           first.local_registry,
-          &isolated_type_name);
+          &isolated_type_name, &isolated_type_name_state);
   ASSERT_TRUE(isolated_resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, isolated_resolved_type->kind);
   ASSERT_EQ(4, ps_ctx_type_sizeof_in(
@@ -22649,6 +22717,7 @@ int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
+  test_parser_name_environment_boundary();
   test_parser_name_classifier_boundary();
   test_typed_hir_ownership_and_type_boundary();
   test_typed_hir_local_lowering_without_ast();

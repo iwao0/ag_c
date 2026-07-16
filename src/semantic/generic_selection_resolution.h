@@ -2,6 +2,7 @@
 #define SEMANTIC_GENERIC_SELECTION_RESOLUTION_H
 
 #include "../parser/ast.h"
+#include "../parser/node_resolution_state.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -34,5 +35,11 @@ node_t *psx_generic_selection_selected_expression(
     node_generic_selection_t *selection);
 const node_t *psx_generic_selection_selected_expression_const(
     const node_generic_selection_t *selection);
+psx_type_name_resolution_state_t *
+psx_generic_selection_type_name_state_mut(
+    node_generic_selection_t *selection, int association_index);
+const psx_type_name_resolution_state_t *
+psx_generic_selection_type_name_state(
+    const node_generic_selection_t *selection, int association_index);
 
 #endif

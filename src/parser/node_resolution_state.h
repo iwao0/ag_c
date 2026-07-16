@@ -36,6 +36,8 @@ typedef struct {
 
 typedef struct {
   int selected_index;
+  struct psx_type_name_resolution_state_t *association_type_names;
+  int association_type_name_count;
   unsigned char is_resolved;
 } psx_generic_selection_resolution_state_t;
 
@@ -67,6 +69,19 @@ typedef struct {
   psx_source_cast_resolution_kind_t kind;
 } psx_source_cast_resolution_t;
 
+typedef struct {
+  psx_record_member_decl_t declaration;
+  psx_record_id_t record_id;
+  psx_qual_type_t base_address_qual_type;
+  int member_index;
+  unsigned char is_resolved;
+} psx_member_access_state_t;
+
+typedef struct psx_type_name_resolution_state_t {
+  const psx_type_t *bound_base_type;
+  const psx_type_t *resolved_type;
+} psx_type_name_resolution_state_t;
+
 typedef struct psx_node_resolution_state_t {
   const psx_type_t *type;
   psx_qual_type_t qual_type;
@@ -76,6 +91,8 @@ typedef struct psx_node_resolution_state_t {
   psx_sizeof_query_resolution_state_t sizeof_query;
   psx_alignof_query_resolution_state_t alignof_query;
   psx_source_cast_resolution_t source_cast;
+  psx_member_access_state_t member_access;
+  psx_type_name_resolution_state_t type_name;
 } psx_node_resolution_state_t;
 
 #endif

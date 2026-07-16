@@ -18,8 +18,6 @@ struct psx_node_resolution_state_t;
 typedef struct node_t node_t;
 typedef struct {
   struct psx_parsed_type_name_t *syntax;
-  const psx_type_t *bound_base_type;
-  const psx_type_t *resolved_type;
   unsigned scope_seq;
   unsigned declaration_seq;
 } psx_type_name_ref_t;
@@ -116,10 +114,6 @@ typedef struct {
   node_t base;
   char *member_name;
   int member_name_len;
-  psx_record_member_decl_t *resolved_member;
-  psx_record_id_t resolved_record_id;
-  int resolved_member_index;
-  psx_qual_type_t base_address_qual_type;
   unsigned char from_pointer;
 } node_member_access_t;
 

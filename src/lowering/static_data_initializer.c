@@ -10,6 +10,7 @@
 #include "../semantic/compound_literal_resolution.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
+#include "../semantic/member_access_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 #include "../tokenizer/literals.h"
 #include "../type_layout.h"
@@ -46,16 +47,19 @@ static int type_size(
 static int resolved_member_offset(
     psx_lowering_context_t *lowering_context,
     const node_member_access_t *access, int *offset) {
+  const psx_member_access_state_t *state =
+      psx_member_access_state(access);
   if (!lowering_context || !access || !offset ||
-      access->resolved_record_id == PSX_RECORD_ID_INVALID ||
-      access->resolved_member_index < 0)
+      !state || !state->is_resolved ||
+      state->record_id == PSX_RECORD_ID_INVALID ||
+      state->member_index < 0)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(lowering_context),
-      access->resolved_record_id,
+      state->record_id,
       ps_lowering_target(lowering_context));
   const psx_record_member_layout_t *layout_member =
-      psx_record_layout_member(layout, access->resolved_member_index);
+      psx_record_layout_member(layout, state->member_index);
   if (!layout_member) return 0;
   *offset = layout_member->offset;
   return 1;

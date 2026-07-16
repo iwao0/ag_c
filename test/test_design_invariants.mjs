@@ -104,14 +104,23 @@ const resolutionWorkTreeHeader = await readFile(
   "src/semantic/resolution_work_tree.h",
   "utf8",
 );
+const earlyNodeResolutionState = await readFile(
+  "src/parser/node_resolution_state.h",
+  "utf8",
+);
+const earlyTypeQueryResolutionSource = await readFile(
+  "src/semantic/type_query_resolution.c",
+  "utf8",
+);
 if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
     !/\bclone_type_name_syntax\s*\(/.test(resolutionWorkTree) ||
     !/\bclone_parsed_declarator\s*\(/.test(resolutionWorkTree) ||
-    !/destination->bound_base_type\s*=\s*NULL/.test(
-      resolutionWorkTree,
+    /\b(?:bound_base_type|resolved_type)\s*;/.test(astHeader) ||
+    !/\bpsx_type_name_resolution_state_t\s+type_name\s*;/.test(
+      earlyNodeResolutionState,
     ) ||
-    !/destination->resolved_type\s*=\s*NULL/.test(
-      resolutionWorkTree,
+    !/\bps_declarator_shape_copy_in\s*\(/.test(
+      earlyTypeQueryResolutionSource,
     ) ||
     !/case\s+ND_COMPOUND_LITERAL:[^]*?clone_type_name_ref/.test(
       resolutionWorkTree,
@@ -126,7 +135,7 @@ if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
       resolutionWorkTree,
     )) {
   throw new Error(
-    "resolution work trees must own mutable type-name syntax and embedded bound expressions",
+    "type-name syntax must remain typeless and immutable while resolution state owns semantic types",
   );
 }
 const resolvedTreeHeader = await readFile(
@@ -2210,6 +2219,10 @@ const memberAccessAstHeader = await readFile(
   "src/parser/ast.h",
   "utf8",
 );
+const memberAccessStateHeader = await readFile(
+  "src/parser/node_resolution_state.h",
+  "utf8",
+);
 const memberNodeUtilsSource = await readFile(
   "src/parser/node_utils.c",
   "utf8",
@@ -2252,11 +2265,17 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
     /\btag_member_info_t\s+member\s*;/.test(
       memberAccessResolutionHeader,
     ) ||
-    !/\bpsx_record_member_decl_t\s*\*\s*resolved_member\s*;/.test(
+    /\bpsx_record_member_decl_t\s*\*\s*resolved_member\s*;/.test(
       memberAccessAstHeader,
     ) ||
     /\btag_member_info_t\s*\*\s*resolved_member\s*;/.test(
       memberAccessAstHeader,
+    ) ||
+    !/\bpsx_record_member_decl_t\s+declaration\s*;/.test(
+      memberAccessStateHeader,
+    ) ||
+    !/\bpsx_member_access_state_t\s+member_access\s*;/.test(
+      memberAccessStateHeader,
     ) ||
     /resolution->declaration\.(?:offset|bit_offset)\b/.test(
       memberAccessResolutionSource,
@@ -3176,11 +3195,17 @@ const alignofQueryNode = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*node_alignof_query_t\s*;/,
 );
 if (!typeNameRef ||
-    !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
+    /\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
       typeNameRef[1],
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
+    /\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
       typeNameRef[1],
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
+      nodeResolutionStateSource,
     ) ||
     !compoundLiteralNode ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
@@ -3199,7 +3224,7 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(alignofQueryNode[1]) ||
     /\bresolved_alignment\b/.test(alignofQueryNode[1])) {
   throw new Error(
-    "type-name expressions must keep resolved types only in their type-name reference",
+    "type-name expressions must keep semantic types only in resolution state",
   );
 }
 

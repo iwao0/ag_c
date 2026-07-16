@@ -2,6 +2,7 @@
 #define SEMANTIC_MEMBER_ACCESS_RESOLUTION_H
 
 #include "../parser/ast.h"
+#include "../parser/node_resolution_state.h"
 #include "../parser/semantic_ctx.h"
 
 typedef enum {
@@ -30,5 +31,19 @@ typedef struct {
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution);
+
+static inline const psx_member_access_state_t *
+psx_member_access_state(const node_member_access_t *access) {
+  return access && access->base.resolution_state
+             ? &access->base.resolution_state->member_access
+             : NULL;
+}
+
+static inline psx_member_access_state_t *
+psx_member_access_state_mut(node_member_access_t *access) {
+  return access && access->base.resolution_state
+             ? &access->base.resolution_state->member_access
+             : NULL;
+}
 
 #endif

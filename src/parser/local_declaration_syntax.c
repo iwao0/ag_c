@@ -145,6 +145,9 @@ node_t *psx_parse_local_declaration_syntax(
     }
     callbacks->begin_declarator(
         declaration_context, &declarator, &initializer);
+    ps_name_classifier_declare(
+        &callbacks->name_classifier,
+        (token_t *)declarator.identifier, is_typedef);
     if (initializer.has_initializer) {
       token_t *assign_tok = initializer.assign_tok;
       tk_expect_ctx(tk_ctx, '=');

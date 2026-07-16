@@ -70,16 +70,25 @@ static void resolve_sizeof_type_name(
   psx_parsed_type_name_t *syntax =
       query ? query->type_name.syntax : NULL;
   if (!query || !query->is_type_name || !syntax) return;
+  psx_type_name_resolution_state_t *type_name_state =
+      psx_node_type_name_state_mut(&query->base);
   if (!psx_bind_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
-          &query->type_name) ||
-      !query->type_name.bound_base_type) {
+          &query->type_name, type_name_state) ||
+      !type_name_state || !type_name_state->bound_base_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
 
-  const psx_type_t *base_type = query->type_name.bound_base_type;
-  psx_declarator_shape_t *shape = &syntax->declarator.declarator_shape;
+  const psx_type_t *base_type = type_name_state->bound_base_type;
+  psx_declarator_shape_t shape_storage;
+  if (!ps_declarator_shape_copy_in(
+          ps_ctx_arena(semantic_context), &shape_storage,
+          &syntax->declarator.declarator_shape)) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
+  psx_declarator_shape_t *shape = &shape_storage;
   if (syntax->declarator.array_bound_count > 0) {
     resolution->zero_length_bound_indices = arena_alloc_in(
         ps_ctx_arena(semantic_context),
@@ -121,8 +130,8 @@ static void resolve_sizeof_type_name(
       });
   ps_ctx_bind_record_ids_in(
       semantic_context, resolved_type);
-  query->type_name.resolved_type = resolved_type;
-  if (!query->type_name.resolved_type) {
+  type_name_state->resolved_type = resolved_type;
+  if (!type_name_state->resolved_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -179,12 +188,16 @@ static const psx_type_t *sizeof_operand_type(
     psx_semantic_context_t *semantic_context,
     node_sizeof_query_t *query) {
   if (!query) return NULL;
-  if (query->is_type_name) return query->type_name.resolved_type;
+  if (query->is_type_name)
+    return psx_node_resolved_type_name(&query->base);
   node_t *operand = query->operand;
   if (!operand) return NULL;
   if (operand->kind == ND_COMPOUND_LITERAL) {
     node_compound_literal_t *compound = (node_compound_literal_t *)operand;
-    const psx_type_t *object_type = compound->type_name.resolved_type;
+    psx_type_name_resolution_state_t *compound_type_name =
+        psx_node_type_name_state_mut(&compound->base);
+    const psx_type_t *object_type =
+        compound_type_name ? compound_type_name->resolved_type : NULL;
     if (object_type && object_type->kind == PSX_TYPE_ARRAY &&
         object_type->array_len <= 0 && compound->base.rhs) {
       psx_type_t *completed = ps_type_clone_in(
@@ -193,7 +206,7 @@ static const psx_type_t *sizeof_operand_type(
                            semantic_context, completed,
                            PSX_DECL_INIT_LIST,
                            compound->base.rhs)) {
-        compound->type_name.resolved_type = completed;
+        compound_type_name->resolved_type = completed;
         object_type = completed;
       }
     }
@@ -317,7 +330,8 @@ void psx_resolve_alignof_query_in_contexts(
   const psx_type_t *type =
       psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
-          &query->type_name);
+          &query->type_name,
+          psx_node_type_name_state_mut(&query->base));
   int alignment = query_type_alignment(semantic_context, type);
   psx_alignof_query_resolution_state_t *resolution =
       psx_alignof_query_resolution_state(query);

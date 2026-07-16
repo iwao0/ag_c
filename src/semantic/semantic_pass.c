@@ -436,14 +436,20 @@ static void semantic_resolve_member_access(
                 access->member_name_len, access->member_name);
   }
 
-  access->resolved_member = arena_alloc_in(
-      ps_ctx_arena(semantic_context), sizeof(*access->resolved_member));
-  *access->resolved_member = resolution.declaration;
-  access->resolved_record_id = resolution.record_id;
-  access->resolved_member_index = resolution.member_index;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), (node_t *)access))
+    return;
+  psx_member_access_state_t *state =
+      psx_member_access_state_mut(access);
+  *state = (psx_member_access_state_t){
+      .declaration = resolution.declaration,
+      .record_id = resolution.record_id,
+      .member_index = resolution.member_index,
+      .is_resolved = 1,
+  };
 
   const psx_type_t *decl_type =
-      psx_record_member_decl_type(access->resolved_member);
+      psx_record_member_decl_type(&state->declaration);
   psx_type_t *access_type = decl_type
                                 ? ps_type_clone_in(
                                       ps_ctx_arena(semantic_context),
@@ -459,20 +465,21 @@ static void semantic_resolve_member_access(
   ps_node_bind_type((node_t *)access, access_type);
   const psx_type_t *base_type = ps_node_get_type(access->base.lhs);
   if (access->from_pointer) {
-    access->base_address_qual_type = ps_node_qual_type(access->base.lhs);
-    if (access->base_address_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      access->base_address_qual_type = ps_ctx_intern_qual_type_in(
+    state->base_address_qual_type =
+        ps_node_qual_type(access->base.lhs);
+    if (state->base_address_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      state->base_address_qual_type = ps_ctx_intern_qual_type_in(
           semantic_context, base_type);
     }
   } else {
     const psx_type_t *address_type = ps_type_address_result_in(
         ps_ctx_arena(semantic_context), base_type);
-    access->base_address_qual_type = ps_ctx_intern_qual_type_in(
+    state->base_address_qual_type = ps_ctx_intern_qual_type_in(
         semantic_context, address_type);
   }
   ps_node_set_bitfield_info(
-      (node_t *)access, access->resolved_member->bit_width, 0,
-      access->resolved_member->bit_is_signed);
+      (node_t *)access, state->declaration.bit_width, 0,
+      state->declaration.bit_is_signed);
 }
 
 static void semantic_resolve_function_reference(
@@ -599,9 +606,11 @@ static const psx_type_t *semantic_resolve_type_name_ref(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    psx_type_name_ref_t *type_name) {
+    const psx_type_name_ref_t *type_name,
+    psx_type_name_resolution_state_t *state) {
   return psx_resolve_bound_type_name_ref_in_contexts(
-      semantic_context, global_registry, local_registry, type_name);
+      semantic_context, global_registry, local_registry,
+      type_name, state);
 }
 
 static void semantic_resolve_source_cast(
@@ -610,32 +619,40 @@ static void semantic_resolve_source_cast(
     psx_local_registry_t *local_registry,
     node_source_cast_t *cast) {
   if (!cast || !cast->base.is_source_cast) return;
-  psx_type_name_ref_t type_name = cast->type_name;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), (node_t *)cast))
+    return;
   semantic_bind_result_type(
       (node_t *)cast,
       ps_type_clone_in(
           ps_ctx_arena(semantic_context),
           semantic_resolve_type_name_ref(
               semantic_context, global_registry, local_registry,
-              &type_name)));
+              &cast->type_name,
+              psx_node_type_name_state_mut(&cast->base))));
 }
 
 static void semantic_resolve_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
+  psx_local_registry_t *local_registry,
     node_compound_literal_t *compound) {
   if (!compound) return;
-  const psx_type_t *object_type = compound->type_name.resolved_type;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), (node_t *)compound))
+    return;
+  psx_type_name_resolution_state_t *type_name_state =
+      psx_node_type_name_state_mut(&compound->base);
+  const psx_type_t *object_type = type_name_state->resolved_type;
   if (!object_type) {
     psx_type_t *resolved = ps_type_clone_in(
         ps_ctx_arena(semantic_context),
         semantic_resolve_type_name_ref(
             semantic_context, global_registry, local_registry,
-            &compound->type_name));
+            &compound->type_name, type_name_state));
     ps_ctx_bind_record_ids_in(
         semantic_context, resolved);
-    compound->type_name.resolved_type = resolved;
+    type_name_state->resolved_type = resolved;
     object_type = resolved;
   }
   const psx_type_t *result = ps_type_clone_in(

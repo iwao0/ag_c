@@ -7,6 +7,7 @@
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
+#include "../semantic/type_name_resolution.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +36,8 @@ static int plan_file_scope_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
-  const psx_type_t *type = compound->type_name.resolved_type;
+  const psx_type_t *type =
+      psx_node_resolved_type_name(&compound->base);
   node_t *initializer = compound->base.rhs;
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
@@ -101,7 +103,8 @@ static int plan_local_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
-  const psx_type_t *type = compound->type_name.resolved_type;
+  const psx_type_t *type =
+      psx_node_resolved_type_name(&compound->base);
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,

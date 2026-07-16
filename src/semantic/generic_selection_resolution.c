@@ -25,6 +25,26 @@ void psx_resolve_generic_selection_in_contexts(
       !selection || !selection->control ||
       selection->association_count <= 0)
     return;
+  if (!ps_node_prepare_resolution_state_in(
+          ps_ctx_arena(semantic_context), (node_t *)selection))
+    return;
+  psx_generic_selection_resolution_state_t *selection_state =
+      &selection->base.resolution_state->generic_selection;
+  if (!selection_state->association_type_names ||
+      selection_state->association_type_name_count !=
+          selection->association_count) {
+    selection_state->association_type_names = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
+        (size_t)selection->association_count *
+            sizeof(*selection_state->association_type_names));
+    if (!selection_state->association_type_names) return;
+    memset(
+        selection_state->association_type_names, 0,
+        (size_t)selection->association_count *
+            sizeof(*selection_state->association_type_names));
+    selection_state->association_type_name_count =
+        selection->association_count;
+  }
 
   int default_index = -1;
   psx_qual_type_t *association_types = arena_alloc_in(
@@ -49,12 +69,14 @@ void psx_resolve_generic_selection_in_contexts(
     const psx_type_t *resolved =
         psx_resolve_bound_type_name_ref_in_contexts(
             semantic_context, global_registry, local_registry,
-            &association->type_name);
+            &association->type_name,
+            &selection_state->association_type_names[i]);
     if (resolved) {
       psx_type_t *normalized = ps_type_clone_in(
           ps_ctx_arena(semantic_context), resolved);
       ps_type_normalize_scalar_identity(normalized);
-      association->type_name.resolved_type = normalized;
+      selection_state->association_type_names[i].resolved_type =
+          normalized;
       resolved = normalized;
     }
     if (!resolved) {
@@ -132,4 +154,30 @@ const node_t *psx_generic_selection_selected_expression_const(
   return selection && selected >= 0 &&
                  selected < selection->association_count
              ? selection->associations[selected].expression : NULL;
+}
+
+psx_type_name_resolution_state_t *
+psx_generic_selection_type_name_state_mut(
+    node_generic_selection_t *selection, int association_index) {
+  psx_generic_selection_resolution_state_t *state =
+      selection && selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  return state && state->association_type_names &&
+                 association_index >= 0 &&
+                 association_index <
+                     state->association_type_name_count
+             ? &state->association_type_names[association_index] : NULL;
+}
+
+const psx_type_name_resolution_state_t *
+psx_generic_selection_type_name_state(
+    const node_generic_selection_t *selection, int association_index) {
+  const psx_generic_selection_resolution_state_t *state =
+      selection && selection->base.resolution_state
+          ? &selection->base.resolution_state->generic_selection : NULL;
+  return state && state->association_type_names &&
+                 association_index >= 0 &&
+                 association_index <
+                     state->association_type_name_count
+             ? &state->association_type_names[association_index] : NULL;
 }

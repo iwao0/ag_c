@@ -277,8 +277,6 @@ static int clone_type_name_ref(
   *destination = *source;
   destination->syntax = clone_type_name_syntax(
       arena_context, source->syntax);
-  destination->bound_base_type = NULL;
-  destination->resolved_type = NULL;
   return !source->syntax || destination->syntax;
 }
 

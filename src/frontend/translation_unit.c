@@ -93,6 +93,12 @@ int psx_frontend_stream_begin(
       &stream->local_declarations, semantic_context,
       global_registry, local_registry, runtime_context,
       lowering_context, options);
+  ps_parser_name_environment_init(
+      &stream->local_name_environment,
+      ps_ctx_name_classifier(semantic_context));
+  stream->local_declarations.name_classifier =
+      ps_parser_name_environment_classifier(
+          &stream->local_name_environment);
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context, global_registry, local_registry,
       runtime_context,
@@ -156,6 +162,12 @@ static int frontend_next_function_internal(
               ag_compilation_session_parser_runtime_context(session),
               ag_compilation_session_lowering_context(session),
               &item.value.function_header);
+      ps_parser_name_environment_reset(
+          &stream->local_name_environment,
+          ps_ctx_name_classifier(semantic_context));
+      stream->local_declarations.name_classifier =
+          ps_parser_name_environment_classifier(
+              &stream->local_name_environment);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,
           &stream->local_declarations);
@@ -203,6 +215,8 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   ps_ctx_emit_deferred_parser_warnings_in(
       ag_compilation_session_semantic_context(stream->session));
   ps_parser_stream_end(&stream->parser);
+  ps_parser_name_environment_dispose(
+      &stream->local_name_environment);
   stream->is_started = 0;
   if (stream->owns_session_activation) {
     if (!ag_compilation_session_deactivate(stream->session)) return 0;
