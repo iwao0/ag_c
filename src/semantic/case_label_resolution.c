@@ -2,17 +2,20 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 
 static psx_case_label_resolution_state_t *case_state(
     node_case_t *case_node) {
-  return case_node && case_node->base.resolution_state
-             ? &case_node->base.resolution_state->case_label : NULL;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(case_node ? &case_node->base : NULL);
+  return state ? &state->case_label : NULL;
 }
 
 static const psx_case_label_resolution_state_t *case_state_const(
     const node_case_t *case_node) {
-  return case_node && case_node->base.resolution_state
-             ? &case_node->base.resolution_state->case_label : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(case_node ? &case_node->base : NULL);
+  return state ? &state->case_label : NULL;
 }
 
 void psx_case_label_bind_value(

@@ -2,15 +2,12 @@
 #define AST_H
 
 #include "../tokenizer/token.h"
-#include "../type_system/type_ids.h"
 #include "core.h"
 #include "syntax_node_kind.h"
-#include "type.h"
 struct lvar_t;
 struct psx_lvar_usage_region_t;
 struct psx_parsed_type_name_t;
 struct psx_parsed_local_declaration_t;
-struct psx_node_resolution_state_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
  * symtab 型を使うファイルは symtab.h を個別に include すること。 */
@@ -79,10 +76,8 @@ struct node_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
   unsigned int is_source_compound_assignment : 1;
-
-  /* Parser-created syntax nodes leave this NULL. Resolution working trees
-   * attach separately owned semantic state. */
-  struct psx_node_resolution_state_t *resolution_state;
+  unsigned int is_resolution_work_node : 1;
+  unsigned int has_external_resolution_state : 1;
 };
 
 typedef struct {

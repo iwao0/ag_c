@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -23,14 +24,16 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
 
 static inline psx_type_name_resolution_state_t *
 psx_node_type_name_state_mut(node_t *node) {
-  return node && node->resolution_state
-             ? &node->resolution_state->type_name : NULL;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  return state ? &state->type_name : NULL;
 }
 
 static inline const psx_type_name_resolution_state_t *
 psx_node_type_name_state(const node_t *node) {
-  return node && node->resolution_state
-             ? &node->resolution_state->type_name : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state ? &state->type_name : NULL;
 }
 
 static inline const psx_type_t *psx_node_resolved_type_name(

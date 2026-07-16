@@ -10,20 +10,22 @@
 
 static psx_function_call_resolution_state_t *call_state(
     node_function_call_t *call) {
-  return call && call->base.resolution_state
-             ? &call->base.resolution_state->function_call : NULL;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(call ? &call->base : NULL);
+  return state ? &state->function_call : NULL;
 }
 
 static const psx_function_call_resolution_state_t *call_state_const(
     const node_function_call_t *call) {
-  return call && call->base.resolution_state
-             ? &call->base.resolution_state->function_call : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(call ? &call->base : NULL);
+  return state ? &state->function_call : NULL;
 }
 
 int psx_function_call_prepare_resolution_in(
     arena_context_t *arena_context, node_function_call_t *call) {
-  return call && ps_node_prepare_resolution_state_in(
-                     arena_context, (node_t *)call);
+  return call && ps_node_prepare_resolution_state_for_size_in(
+                     arena_context, (node_t *)call, sizeof(*call));
 }
 
 void psx_function_call_bind_direct_name(

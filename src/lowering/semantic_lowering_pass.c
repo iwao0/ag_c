@@ -81,11 +81,13 @@ static void lower_sizeof_vla_indices(
 static void lower_source_cast_node(
     const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
   if (!node || node->kind != ND_CAST || !node->is_source_cast ||
-      !node->resolution_state)
+      !state)
     return;
   psx_source_cast_resolution_t *resolution =
-      &node->resolution_state->source_cast;
+      &state->source_cast;
   if (resolution->kind != PSX_SOURCE_CAST_UNRESOLVED) return;
   if (!ps_type_is_tag_aggregate(ps_node_get_type(node))) {
     resolution->kind = PSX_SOURCE_CAST_DIRECT_HIR;
@@ -133,9 +135,10 @@ static node_t *lower_tree(
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *compound =
           (node_compound_literal_t *)node;
+      psx_node_resolution_state_t *state =
+          ps_node_resolution_state(node);
       psx_compound_literal_resolution_t *resolution =
-          node->resolution_state
-              ? &node->resolution_state->compound_literal : NULL;
+          state ? &state->compound_literal : NULL;
       if (resolution &&
           resolution->kind != PSX_COMPOUND_LITERAL_UNPLANNED)
         return node;

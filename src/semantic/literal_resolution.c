@@ -2,15 +2,17 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 
 void psx_string_literal_bind_label(
     node_string_t *literal, char *label) {
-  if (!literal || !literal->base.resolution_state) return;
-  literal->base.resolution_state->literal.string_label = label;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(literal ? &literal->base : NULL);
+  if (state) state->literal.string_label = label;
 }
 
 char *psx_string_literal_label(const node_string_t *literal) {
-  return literal && literal->base.resolution_state
-             ? literal->base.resolution_state->literal.string_label
-             : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(literal ? &literal->base : NULL);
+  return state ? state->literal.string_label : NULL;
 }

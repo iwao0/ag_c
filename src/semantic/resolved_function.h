@@ -2,6 +2,8 @@
 #define SEMANTIC_RESOLVED_FUNCTION_H
 
 #include "../parser/ast.h"
+#include "../parser/type.h"
+#include "../type_system/type_ids.h"
 
 typedef struct node_function_definition_t node_function_definition_t;
 

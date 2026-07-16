@@ -3,13 +3,15 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 
 static inline psx_compound_literal_resolution_kind_t
 psx_compound_literal_resolution_kind(
     const node_compound_literal_t *compound) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(compound ? &compound->base : NULL);
   const psx_compound_literal_resolution_t *resolution =
-      compound && compound->base.resolution_state
-          ? &compound->base.resolution_state->compound_literal : NULL;
+      state ? &state->compound_literal : NULL;
   return resolution ? resolution->kind
                     : PSX_COMPOUND_LITERAL_UNPLANNED;
 }
@@ -22,9 +24,10 @@ static inline int psx_compound_literal_is_planned(
 
 static inline node_t *psx_compound_literal_direct_initializer(
     node_compound_literal_t *compound) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(compound ? &compound->base : NULL);
   const psx_compound_literal_resolution_t *resolution =
-      compound && compound->base.resolution_state
-          ? &compound->base.resolution_state->compound_literal : NULL;
+      state ? &state->compound_literal : NULL;
   node_init_list_t *list =
       compound && compound->base.rhs &&
               compound->base.rhs->kind == ND_INIT_LIST
@@ -40,9 +43,10 @@ static inline node_t *psx_compound_literal_direct_initializer(
 static inline const node_t *
 psx_compound_literal_direct_initializer_const(
     const node_compound_literal_t *compound) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(compound ? &compound->base : NULL);
   const psx_compound_literal_resolution_t *resolution =
-      compound && compound->base.resolution_state
-          ? &compound->base.resolution_state->compound_literal : NULL;
+      state ? &state->compound_literal : NULL;
   const node_init_list_t *list =
       compound && compound->base.rhs &&
               compound->base.rhs->kind == ND_INIT_LIST

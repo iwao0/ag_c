@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "../compilation_options.h"
+#include "../type_system/type_ids.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;

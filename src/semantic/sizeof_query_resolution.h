@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 
 typedef struct psx_sizeof_runtime_plan_t {
   node_t **runtime_bounds;
@@ -12,15 +13,17 @@ typedef struct psx_sizeof_runtime_plan_t {
 
 static inline psx_sizeof_query_resolution_state_t *
 psx_sizeof_query_resolution_state(node_sizeof_query_t *query) {
-  return query && query->base.resolution_state
-             ? &query->base.resolution_state->sizeof_query : NULL;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(query ? &query->base : NULL);
+  return state ? &state->sizeof_query : NULL;
 }
 
 static inline const psx_sizeof_query_resolution_state_t *
 psx_sizeof_query_resolution_state_const(
     const node_sizeof_query_t *query) {
-  return query && query->base.resolution_state
-             ? &query->base.resolution_state->sizeof_query : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(query ? &query->base : NULL);
+  return state ? &state->sizeof_query : NULL;
 }
 
 static inline int psx_sizeof_query_resolved_size(

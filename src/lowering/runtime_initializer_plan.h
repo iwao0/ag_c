@@ -2,6 +2,7 @@
 #define LOWERING_RUNTIME_INITIALIZER_PLAN_H
 
 #include "../parser/ast.h"
+#include "../type_system/type_ids.h"
 
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 

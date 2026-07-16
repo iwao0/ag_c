@@ -91,9 +91,10 @@ static int resolve_static_address_constant(
     return 0;
   switch (node->kind) {
     case ND_COMPOUND_LITERAL: {
+      const psx_node_resolution_state_t *state =
+          ps_node_resolution_state_const(node);
       const psx_compound_literal_resolution_t *resolution =
-          node->resolution_state
-              ? &node->resolution_state->compound_literal : NULL;
+          state ? &state->compound_literal : NULL;
       if (!resolution ||
           resolution->kind != PSX_COMPOUND_LITERAL_GLOBAL_OBJECT ||
           !resolution->global_object)

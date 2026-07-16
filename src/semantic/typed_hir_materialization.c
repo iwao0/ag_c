@@ -883,9 +883,10 @@ static psx_resolved_hir_node_t *materialize_compound_literal(
     hir_materializer_t *builder,
     const node_compound_literal_t *compound) {
   const node_t *source = &compound->base;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(source);
   const psx_compound_literal_resolution_t *resolution =
-      source->resolution_state
-          ? &source->resolution_state->compound_literal : NULL;
+      state ? &state->compound_literal : NULL;
   psx_qual_type_t result_type = ps_node_qual_type(source);
   if (!resolution ||
       resolution->kind == PSX_COMPOUND_LITERAL_UNPLANNED) {

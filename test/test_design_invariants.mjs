@@ -3125,14 +3125,42 @@ const nodeResolutionStateSource = await readFile(
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
     !/\bpsx_work_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
-    !/\bstruct\s+psx_node_resolution_state_t\s*\*\s*resolution_state\s*;/.test(
-      nodeStruct[1],
-    ) ||
+    /\bresolution_state\b/.test(nodeStruct[1]) ||
     /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
     /\bpsx_qual_type_t\s+qual_type\s*;/.test(nodeStruct[1]) ||
+    /(?:type_system\/type_ids|parser\/type|["<]type\.h[">])/.test(
+      astSource,
+    ) ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
-    "syntax node_t must keep semantic type identity in separate resolution state",
+    "syntax node_t must be typeless and must not own semantic resolution state",
+  );
+}
+if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
+      resolvedNodeTypeSource,
+    ) ||
+    !/\bps_node_resolution_state_const\s*\(/.test(
+      resolvedNodeTypeSource,
+    ) ||
+    !/\bpsx_resolution_node_storage_size\s*\(/.test(
+      resolutionWorkTree,
+    )) {
+  throw new Error(
+    "semantic node metadata must be owned by semantic sidecars and accessed through semantic APIs",
+  );
+}
+const semanticMetadataAccessSource = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) => path !== "src/semantic/resolution_state.h")
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\b(?:\.|->)resolution_state\b/.test(
+      semanticMetadataAccessSource,
+    )) {
+  throw new Error(
+    "semantic resolution state must not be stored or accessed through Syntax AST fields",
   );
 }
 if (/\bnode_(?:lvar|funcref|gvar|vla_alloc)_t\b/.test(astSource) ||
@@ -3430,7 +3458,7 @@ if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\
     !/\bpsx_case_label_bind_value\s*\(/.test(
       caseLabelResolutionHeader,
     ) ||
-    !/\bcase_node->base\.resolution_state->case_label\b/.test(
+    !/\bps_node_resolution_state(?:_const)?\s*\(/.test(
       caseLabelResolutionSource,
     )) {
   throw new Error(
@@ -3509,7 +3537,7 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bpsx_function_call_qual_type\s*\(/.test(
       functionCallResolutionHeader,
     ) ||
-    !/\bcall->base\.resolution_state->function_call\b/.test(
+    !/\bps_node_resolution_state(?:_const)?\s*\(/.test(
       functionCallResolutionSource,
     )) {
   throw new Error(
@@ -6264,7 +6292,7 @@ if (!parsedNumberLiteral ||
     !/\bpsx_string_literal_bind_label\s*\(/.test(
       literalResolutionHeader,
     ) ||
-    !/\bbase\.resolution_state->literal\.string_label\b/.test(
+    !/\bps_node_resolution_state(?:_const)?\s*\(/.test(
       literalResolutionSource,
     ) ||
     !/\bpsx_string_literal_bind_label\s*\(/.test(

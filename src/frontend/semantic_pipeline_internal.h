@@ -9,6 +9,7 @@ typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
+typedef struct psx_type_t psx_type_t;
 
 typedef struct {
   psx_hir_module_t *module;

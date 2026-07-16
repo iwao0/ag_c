@@ -36,11 +36,7 @@ static int node_scalar_ptr_member_lvalue(node_t *node);
 
 static void *resolution_node_alloc_in(
     arena_context_t *arena_context, size_t size) {
-  node_t *node = arena_alloc_in(arena_context, size);
-  if (!node ||
-      !ps_node_prepare_resolution_state_in(arena_context, node))
-    return NULL;
-  return node;
+  return psx_resolution_node_alloc_in(arena_context, size);
 }
 
 static int is_lvalue_clone_kind(psx_work_node_kind_t kind) {
@@ -2234,9 +2230,10 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
     free(defaults);
     return -1;
   }
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(&selection->base);
   const psx_generic_selection_resolution_state_t *resolution =
-      selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
+      state ? &state->generic_selection : NULL;
   for (int i = 0; i < count; i++) {
     types[i] = resolution && resolution->association_type_names &&
                        i < resolution->association_type_name_count
@@ -2254,9 +2251,10 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
 static node_t *generic_selection_semantic_expression(
     node_generic_selection_t *selection) {
   if (!selection) return NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(&selection->base);
   const psx_generic_selection_resolution_state_t *resolution =
-      selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
+      state ? &state->generic_selection : NULL;
   int selected = resolution && resolution->is_resolved
                      ? resolution->selected_index
                      : ps_node_generic_selection_index(selection);
@@ -2299,25 +2297,29 @@ static node_t *bound_node_vla_runtime_source(node_t *node) {
 
 void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
                                   int strides_remaining) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->expr.vla_runtime =
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->expr.vla_runtime =
       (psx_vla_runtime_view_t){0};
   if (!node_type_accepts_vla_runtime_view(node) ||
       row_stride_frame_off <= 0)
     return;
-  node->resolution_state->expr.vla_runtime.row_stride_frame_off =
+  state->expr.vla_runtime.row_stride_frame_off =
       row_stride_frame_off;
-  node->resolution_state->expr.vla_runtime.strides_remaining =
+  state->expr.vla_runtime.strides_remaining =
       strides_remaining > 0 ? strides_remaining : 0;
 }
 
 void ps_node_bind_type(node_t *node, const psx_type_t *type) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->type = type;
-  node->resolution_state->qual_type = (psx_qual_type_t){
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->type = type;
+  state->qual_type = (psx_qual_type_t){
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (!node_type_accepts_vla_runtime_view(node)) {
-    node->resolution_state->expr.vla_runtime =
+    state->expr.vla_runtime =
         (psx_vla_runtime_view_t){0};
     return;
   }
@@ -2341,49 +2343,61 @@ void ps_node_bind_qual_type(
   if (!node || !canonical_type) return;
   ps_node_bind_type(node, canonical_type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID) return;
-  node->resolution_state->qual_type = qual_type;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->qual_type = qual_type;
 }
 
 void ps_node_clear_type(node_t *node) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->type = NULL;
-  node->resolution_state->qual_type = (psx_qual_type_t){
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->type = NULL;
+  state->qual_type = (psx_qual_type_t){
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  node->resolution_state->expr.vla_runtime =
+  state->expr.vla_runtime =
       (psx_vla_runtime_view_t){0};
 }
 
 void ps_node_clear_expr_type_state(node_t *node) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->expr = (psx_expr_type_state_t){0};
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->expr = (psx_expr_type_state_t){0};
 }
 
 void ps_node_set_qual_type_identity(
     node_t *node, psx_qual_type_t qual_type) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->qual_type = qual_type;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->qual_type = qual_type;
 }
 
 void ps_node_set_bitfield_info(
     node_t *node, int bit_width, int bit_offset, int bit_is_signed) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->expr.bit_width =
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->expr.bit_width =
       bit_width > 0 ? (unsigned char)bit_width : 0;
-  node->resolution_state->expr.bit_offset =
+  state->expr.bit_offset =
       bit_width > 0 && bit_offset > 0 ? (unsigned char)bit_offset : 0;
-  node->resolution_state->expr.bit_is_signed =
+  state->expr.bit_is_signed =
       bit_width > 0 && bit_is_signed ? 1 : 0;
 }
 
 void ps_node_set_scalar_ptr_member_lvalue(node_t *node, int enabled) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->expr.is_scalar_ptr_member_lvalue =
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->expr.is_scalar_ptr_member_lvalue =
       enabled ? 1 : 0;
 }
 
 void ps_node_set_subscript_uses_base_address(node_t *node, int enabled) {
-  if (!node || !node->resolution_state) return;
-  node->resolution_state->expr.subscript_uses_base_address =
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->expr.subscript_uses_base_address =
       enabled ? 1 : 0;
 }
 
@@ -2468,25 +2482,25 @@ int ps_node_is_long_double_type(node_t *node) {
 
 /* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロット (実行時値) のフレームオフセット。 */
 int ps_node_vla_row_stride_frame_off(node_t *node) {
+  psx_vla_runtime_view_t runtime =
+      ps_node_vla_runtime_view(node);
   return node_type_accepts_vla_runtime_view(node)
-             ? node->resolution_state->expr.vla_runtime
-                   .row_stride_frame_off
-             : 0;
+             ? runtime.row_stride_frame_off : 0;
 }
 
 int ps_node_vla_strides_remaining(node_t *node) {
+  psx_vla_runtime_view_t runtime =
+      ps_node_vla_runtime_view(node);
   return node_type_accepts_vla_runtime_view(node) &&
-                 node->resolution_state->expr.vla_runtime
-                         .strides_remaining > 0
-             ? node->resolution_state->expr.vla_runtime
-                   .strides_remaining
-             : 0;
+                 runtime.strides_remaining > 0
+             ? runtime.strides_remaining : 0;
 }
 
 psx_vla_runtime_view_t ps_node_vla_runtime_view(const node_t *node) {
-  return node && node->resolution_state
-             ? node->resolution_state->expr.vla_runtime
-              : (psx_vla_runtime_view_t){0};
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state ? state->expr.vla_runtime
+               : (psx_vla_runtime_view_t){0};
 }
 
 static int node_is_unsigned(node_t *node) {
@@ -2575,11 +2589,12 @@ int ps_node_binary_type_op(
 node_t *ps_node_new_binary_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     psx_work_node_kind_t kind, node_t *lhs, node_t *rhs) {
-  node_t *node = psx_node_new_raw_binary_in(
-      arena_context, kind, lhs, rhs);
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, node))
-    return NULL;
+  node_t *node = resolution_node_alloc_in(
+      arena_context, sizeof(*node));
+  if (!node) return NULL;
+  node->kind = kind;
+  node->lhs = lhs;
+  node->rhs = rhs;
   psx_type_binary_op_t op;
   const psx_type_t *type = ps_node_binary_type_op(kind, &op)
                                ? ps_type_binary_result_for_target_in(
@@ -2606,19 +2621,21 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
                             : PSX_INTEGER_KIND_INT;
   psx_type_t *execution_type = ps_type_new_integer_kind_in(
       arena_context, execution_kind, is_unsigned ? 1 : 0, 0);
-  node_t *shl = psx_node_new_raw_binary_in(
-      arena_context, ND_SHL, operand,
-      ps_node_new_num_in(arena_context, left_shift));
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, shl))
-    return NULL;
+  node_t *shl = resolution_node_alloc_in(
+      arena_context, sizeof(*shl));
+  if (!shl) return NULL;
+  shl->kind = ND_SHL;
+  shl->lhs = operand;
+  shl->rhs = ps_node_new_num_in(
+      arena_context, left_shift);
   ps_node_bind_type(shl, execution_type);
-  node_t *shr = psx_node_new_raw_binary_in(
-      arena_context, ND_SHR, shl,
-      ps_node_new_num_in(arena_context, left_shift));
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, shr))
-    return NULL;
+  node_t *shr = resolution_node_alloc_in(
+      arena_context, sizeof(*shr));
+  if (!shr) return NULL;
+  shr->kind = ND_SHR;
+  shr->lhs = shl;
+  shr->rhs = ps_node_new_num_in(
+      arena_context, left_shift);
   ps_node_bind_type(shr, execution_type);
   return shr;
 }
@@ -2634,11 +2651,13 @@ node_t *psx_node_new_syntax_int_in(
 }
 
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
-  node_t *node = psx_node_new_syntax_int_in(
-      arena_context, val, NULL);
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, node))
-    return NULL;
+  node_num_t *number = resolution_node_alloc_in(
+      arena_context, sizeof(*number));
+  if (!number) return NULL;
+  number->base.kind = ND_NUM;
+  number->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+  number->val = val;
+  node_t *node = &number->base;
   ps_node_bind_type(
       node, ps_type_new_integer_kind_in(
                 arena_context, PSX_INTEGER_KIND_INT, 0, 0));
@@ -2975,9 +2994,14 @@ node_t *ps_node_new_explicit_addr_value_for_in(
   if (!operand || operand->kind != ND_ADDR) return operand;
   node_t *cp = resolution_node_alloc_in(
       arena_context, sizeof(node_t));
-  psx_node_resolution_state_t *state = cp->resolution_state;
+  unsigned int is_resolution_work_node =
+      cp->is_resolution_work_node;
   *cp = *operand;
-  cp->resolution_state = state;
+  cp->is_resolution_work_node =
+      is_resolution_work_node;
+  cp->has_external_resolution_state = 0;
+  ps_node_copy_resolution_state_in(
+      arena_context, cp, operand);
   ps_node_clear_expr_type_state(cp);
   ps_node_bind_type(
       cp, ps_type_address_result_in(
@@ -3226,10 +3250,12 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_LVAR: {
       node_lvar_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_lvar_t));
-      psx_node_resolution_state_t *state =
-          clone->base.resolution_state;
+      unsigned int is_resolution_work_node =
+          clone->base.is_resolution_work_node;
       *clone = *(node_lvar_t *)target;
-      clone->base.resolution_state = state;
+      clone->base.is_resolution_work_node =
+          is_resolution_work_node;
+      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3238,10 +3264,12 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_GVAR: {
       node_gvar_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_gvar_t));
-      psx_node_resolution_state_t *state =
-          clone->base.resolution_state;
+      unsigned int is_resolution_work_node =
+          clone->base.is_resolution_work_node;
       *clone = *(node_gvar_t *)target;
-      clone->base.resolution_state = state;
+      clone->base.is_resolution_work_node =
+          is_resolution_work_node;
+      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3250,10 +3278,12 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     case ND_STRING: {
       node_string_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_string_t));
-      psx_node_resolution_state_t *state =
-          clone->base.resolution_state;
+      unsigned int is_resolution_work_node =
+          clone->base.is_resolution_work_node;
       *clone = *(node_string_t *)target;
-      clone->base.resolution_state = state;
+      clone->base.is_resolution_work_node =
+          is_resolution_work_node;
+      clone->base.has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, (node_t *)clone, target);
       clone->base.lhs = lhs;
@@ -3264,10 +3294,12 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
     {
       node_t *clone = resolution_node_alloc_in(
           arena_context, sizeof(node_t));
-      psx_node_resolution_state_t *state =
-          clone->resolution_state;
+      unsigned int is_resolution_work_node =
+          clone->is_resolution_work_node;
       *clone = *target;
-      clone->resolution_state = state;
+      clone->is_resolution_work_node =
+          is_resolution_work_node;
+      clone->has_external_resolution_state = 0;
       ps_node_copy_resolution_state_in(
           arena_context, clone, target);
       clone->lhs = lhs;
@@ -3281,9 +3313,10 @@ node_t *ps_node_clone_lvalue_with_lhs_in(
 static int node_scalar_ptr_member_lvalue(node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   if (type && type->kind != PSX_TYPE_POINTER) return 0;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
   return node && node->kind == ND_DEREF &&
-         node->resolution_state &&
-         node->resolution_state->expr.is_scalar_ptr_member_lvalue;
+         state && state->expr.is_scalar_ptr_member_lvalue;
 }
 
 int ps_node_scalar_ptr_member_lvalue(node_t *node) {
@@ -3294,8 +3327,9 @@ int ps_node_subscript_deref_uses_base_address(node_t *node) {
   if (!node || node->kind != ND_DEREF) return 0;
   const psx_type_t *type = ps_node_get_type(node);
   if (type && type->kind == PSX_TYPE_ARRAY) return 1;
-  return node->resolution_state &&
-         node->resolution_state->expr.subscript_uses_base_address;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state && state->expr.subscript_uses_base_address;
 }
 
 int ps_node_deref_decays_to_address(node_t *node) {
@@ -3318,21 +3352,22 @@ const psx_type_t *ps_node_array_decay_pointer_arith_type_in(
 }
 
 int ps_node_bitfield_width(node_t *node) {
-  return node && node->resolution_state
-             ? node->resolution_state->expr.bit_width : 0;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state ? state->expr.bit_width : 0;
 }
 
 int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed) {
-  if (node && node->resolution_state &&
-      node->resolution_state->expr.bit_width > 0) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  if (state && state->expr.bit_width > 0) {
     if (bit_width)
-      *bit_width = node->resolution_state->expr.bit_width;
+      *bit_width = state->expr.bit_width;
     if (bit_offset)
-      *bit_offset = node->resolution_state->expr.bit_offset;
+      *bit_offset = state->expr.bit_offset;
     if (bit_is_signed)
-      *bit_is_signed =
-          node->resolution_state->expr.bit_is_signed;
+      *bit_is_signed = state->expr.bit_is_signed;
     return 1;
   }
   return 0;
@@ -3395,10 +3430,12 @@ node_t *psx_node_new_static_assert_syntax_in(
 
 node_t *ps_node_new_assign_in(arena_context_t *arena_context,
                               node_t *lhs, node_t *rhs) {
-  node_t *node = psx_node_new_raw_assign_in(arena_context, lhs, rhs);
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, node))
-    return NULL;
+  node_t *node = resolution_node_alloc_in(
+      arena_context, sizeof(*node));
+  if (!node) return NULL;
+  node->kind = ND_ASSIGN;
+  node->lhs = lhs;
+  node->rhs = rhs;
   ps_node_bind_type(node, ps_node_get_type(lhs));
   return node;
 }

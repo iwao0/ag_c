@@ -22,6 +22,9 @@ struct psx_resolution_work_tree_t {
 };
 
 static size_t node_storage_size(const node_t *node) {
+  size_t resolution_size =
+      psx_resolution_node_storage_size(node);
+  if (resolution_size) return resolution_size;
   switch (node->kind) {
     case ND_IDENTIFIER: return sizeof(node_identifier_t);
     case ND_COMPOUND_LITERAL: return sizeof(node_compound_literal_t);
@@ -433,15 +436,16 @@ static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source) {
   if (!source) return NULL;
   size_t size = node_storage_size(source);
-  node_t *copy = arena_alloc_in(arena_context, size);
+  node_t *copy = psx_resolution_node_alloc_in(
+      arena_context, size);
   if (!copy) return NULL;
+  unsigned int is_resolution_work_node =
+      copy->is_resolution_work_node;
   memcpy(copy, source, size);
-  copy->resolution_state = NULL;
-  if (!ps_node_prepare_resolution_state_in(
-          arena_context, copy))
-    return NULL;
-  if (source->resolution_state &&
-      !ps_node_copy_resolution_state_in(
+  copy->is_resolution_work_node =
+      is_resolution_work_node;
+  copy->has_external_resolution_state = 0;
+  if (!ps_node_copy_resolution_state_in(
           arena_context, copy, source))
     return NULL;
   copy->lhs = clone_node(arena_context, source->lhs);

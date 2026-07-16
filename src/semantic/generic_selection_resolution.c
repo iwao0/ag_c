@@ -25,11 +25,15 @@ void psx_resolve_generic_selection_in_contexts(
       !selection || !selection->control ||
       selection->association_count <= 0)
     return;
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), (node_t *)selection))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), (node_t *)selection,
+          sizeof(*selection)))
     return;
+  psx_node_resolution_state_t *node_state =
+      ps_node_resolution_state(&selection->base);
+  if (!node_state) return;
   psx_generic_selection_resolution_state_t *selection_state =
-      &selection->base.resolution_state->generic_selection;
+      &node_state->generic_selection;
   if (!selection_state->association_type_names ||
       selection_state->association_type_name_count !=
           selection->association_count) {
@@ -133,9 +137,11 @@ void psx_resolve_generic_selection_in_contexts(
 
 int psx_generic_selection_selected_index(
     const node_generic_selection_t *selection) {
+  const psx_node_resolution_state_t *node_state =
+      ps_node_resolution_state_const(
+          selection ? &selection->base : NULL);
   const psx_generic_selection_resolution_state_t *resolution =
-      selection && selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
+      node_state ? &node_state->generic_selection : NULL;
   return resolution && resolution->is_resolved
              ? resolution->selected_index : -1;
 }
@@ -159,9 +165,10 @@ const node_t *psx_generic_selection_selected_expression_const(
 psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state_mut(
     node_generic_selection_t *selection, int association_index) {
+  psx_node_resolution_state_t *node_state =
+      ps_node_resolution_state(selection ? &selection->base : NULL);
   psx_generic_selection_resolution_state_t *state =
-      selection && selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
+      node_state ? &node_state->generic_selection : NULL;
   return state && state->association_type_names &&
                  association_index >= 0 &&
                  association_index <
@@ -172,9 +179,11 @@ psx_generic_selection_type_name_state_mut(
 const psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state(
     const node_generic_selection_t *selection, int association_index) {
+  const psx_node_resolution_state_t *node_state =
+      ps_node_resolution_state_const(
+          selection ? &selection->base : NULL);
   const psx_generic_selection_resolution_state_t *state =
-      selection && selection->base.resolution_state
-          ? &selection->base.resolution_state->generic_selection : NULL;
+      node_state ? &node_state->generic_selection : NULL;
   return state && state->association_type_names &&
                  association_index >= 0 &&
                  association_index <

@@ -244,8 +244,9 @@ void psx_resolve_sizeof_query_in_contexts(
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), &query->base)) {
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), &query->base,
+          sizeof(*query))) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -324,8 +325,9 @@ void psx_resolve_alignof_query_in_contexts(
     node_alignof_query_t *query) {
   if (!semantic_context || !global_registry || !local_registry || !query)
     return;
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), &query->base))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), &query->base,
+          sizeof(*query)))
     return;
   const psx_type_t *type =
       psx_resolve_bound_type_name_ref_in_contexts(

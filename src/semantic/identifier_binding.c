@@ -87,12 +87,9 @@ static node_t *materialize_function(
     const psx_identifier_binding_context_t *context) {
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution->function);
-  node_funcref_t *reference = arena_alloc_in(
+  node_funcref_t *reference = psx_resolution_node_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*reference));
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(context->semantic_context),
-          (node_t *)reference))
-    return NULL;
+  if (!reference) return NULL;
   reference->base.kind = ND_FUNCREF;
   ps_node_bind_type(
       (node_t *)reference,
@@ -109,12 +106,9 @@ static node_t *materialize_function(
 static node_t *materialize_builtin_va_arg_area(
     const node_identifier_t *identifier,
     const psx_identifier_binding_context_t *context) {
-  node_t *node = arena_alloc_in(
+  node_t *node = psx_resolution_node_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*node));
-  if (!node ||
-      !ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(context->semantic_context), node))
-    return NULL;
+  if (!node) return NULL;
   node->kind = ND_VA_ARG_AREA;
   copy_identifier_source_state(node, identifier);
   return node;

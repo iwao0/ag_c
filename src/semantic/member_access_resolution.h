@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "resolved_node_type.h"
 #include "../parser/semantic_ctx.h"
 
 typedef enum {
@@ -34,16 +35,16 @@ void psx_resolve_member_access(
 
 static inline const psx_member_access_state_t *
 psx_member_access_state(const node_member_access_t *access) {
-  return access && access->base.resolution_state
-             ? &access->base.resolution_state->member_access
-             : NULL;
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(access ? &access->base : NULL);
+  return state ? &state->member_access : NULL;
 }
 
 static inline psx_member_access_state_t *
 psx_member_access_state_mut(node_member_access_t *access) {
-  return access && access->base.resolution_state
-             ? &access->base.resolution_state->member_access
-             : NULL;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(access ? &access->base : NULL);
+  return state ? &state->member_access : NULL;
 }
 
 #endif

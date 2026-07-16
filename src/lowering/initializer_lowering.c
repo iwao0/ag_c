@@ -264,11 +264,12 @@ static lvar_t *array_copy_source_local(
     if (initialization) *initialization = value->lhs;
     return source->var;
   }
-  if (value->kind != ND_COMPOUND_LITERAL ||
-      !value->resolution_state)
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(value);
+  if (value->kind != ND_COMPOUND_LITERAL || !state)
     return NULL;
   psx_compound_literal_resolution_t *resolution =
-      &value->resolution_state->compound_literal;
+      &state->compound_literal;
   if (resolution->kind != PSX_COMPOUND_LITERAL_LOCAL_OBJECT ||
       !resolution->local_object)
     return NULL;

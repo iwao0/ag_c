@@ -1,21 +1,33 @@
 #ifndef SEMANTIC_RESOLVED_NODE_TYPE_H
 #define SEMANTIC_RESOLVED_NODE_TYPE_H
 
+#include <stddef.h>
+
 #include "../tokenizer/token.h"
 #include "../type_system/type_ids.h"
 #include "../parser/node_fwd.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_type_t psx_type_t;
+typedef struct psx_node_resolution_state_t psx_node_resolution_state_t;
 
 const psx_type_t *ps_node_get_type(const node_t *node);
 psx_qual_type_t ps_node_qual_type(const node_t *node);
+psx_node_resolution_state_t *ps_node_resolution_state(node_t *node);
+const psx_node_resolution_state_t *ps_node_resolution_state_const(
+    const node_t *node);
+int ps_node_has_resolution_state(const node_t *node);
+size_t psx_resolution_node_storage_size(const node_t *node);
+void *psx_resolution_node_alloc_in(
+    arena_context_t *arena_context, size_t node_size);
 void ps_node_bind_type(node_t *node, const psx_type_t *type);
 void ps_node_bind_qual_type(
     node_t *node, const psx_type_t *canonical_type,
     psx_qual_type_t qual_type);
 int ps_node_prepare_resolution_state_in(
     arena_context_t *arena_context, node_t *node);
+int ps_node_prepare_resolution_state_for_size_in(
+    arena_context_t *arena_context, node_t *node, size_t node_size);
 int ps_node_copy_resolution_state_in(
     arena_context_t *arena_context, node_t *destination,
     const node_t *source);

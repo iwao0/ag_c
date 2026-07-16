@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_DEREF_OPERAND_OK = 0,

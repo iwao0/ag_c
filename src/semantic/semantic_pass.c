@@ -439,8 +439,9 @@ static void semantic_resolve_member_access(
                 access->member_name_len, access->member_name);
   }
 
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), (node_t *)access))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), (node_t *)access,
+          sizeof(*access)))
     return;
   psx_member_access_state_t *state =
       psx_member_access_state_mut(access);
@@ -627,8 +628,9 @@ static void semantic_resolve_source_cast(
     psx_local_registry_t *local_registry,
     node_source_cast_t *cast) {
   if (!cast || !cast->base.is_source_cast) return;
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), (node_t *)cast))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), (node_t *)cast,
+          sizeof(*cast)))
     return;
   semantic_bind_result_type(
       (node_t *)cast,
@@ -646,8 +648,9 @@ static void semantic_resolve_compound_literal(
   psx_local_registry_t *local_registry,
     node_compound_literal_t *compound) {
   if (!compound) return;
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), (node_t *)compound))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), (node_t *)compound,
+          sizeof(*compound)))
     return;
   psx_type_name_resolution_state_t *type_name_state =
       psx_node_type_name_state_mut(&compound->base);
@@ -666,13 +669,12 @@ static void semantic_resolve_compound_literal(
   const psx_type_t *result = ps_type_clone_in(
       ps_ctx_arena(semantic_context), object_type);
   if (compound->requires_addressable_object) {
-    node_t operand = {0};
-    if (!ps_node_prepare_resolution_state_in(
-            ps_ctx_arena(semantic_context), &operand))
-      return;
-    ps_node_bind_type(&operand, result);
+    node_t *operand = psx_resolution_node_alloc_in(
+        ps_ctx_arena(semantic_context), sizeof(*operand));
+    if (!operand) return;
+    ps_node_bind_type(operand, result);
     result = psx_resolve_address_result_type(
-        semantic_context, &operand);
+        semantic_context, operand);
   }
   semantic_bind_result_type((node_t *)compound, result);
 }
@@ -691,11 +693,15 @@ static void semantic_resolve_generic_selection(
   token_t *tok = selection->base.tok
                      ? selection->base.tok
                      : (token_t *)fallback_diag_tok;
-  if (!ps_node_prepare_resolution_state_in(
-          ps_ctx_arena(semantic_context), (node_t *)selection))
+  if (!ps_node_prepare_resolution_state_for_size_in(
+          ps_ctx_arena(semantic_context), (node_t *)selection,
+          sizeof(*selection)))
     return;
+  psx_node_resolution_state_t *node_state =
+      ps_node_resolution_state(&selection->base);
+  if (!node_state) return;
   psx_generic_selection_resolution_state_t *selection_resolution =
-      &selection->base.resolution_state->generic_selection;
+      &node_state->generic_selection;
   *selection_resolution =
       (psx_generic_selection_resolution_state_t){
           .selected_index = -1,
