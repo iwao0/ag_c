@@ -5715,6 +5715,19 @@ if (!/PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS/.test(
     "resolved-tree HIR emission must reject unresolved syntax node kinds",
   );
 }
+if (!/MAP_EXPR\s*\(\s*ND_UNARY_DEREF\s*,\s*PSX_HIR_DEREF\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /\blower_unary_deref_expression\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    allSourceFiles.some(
+      (path) => /src\/lowering\/unary_deref_lowering\.[ch]$/.test(path),
+    )) {
+  throw new Error(
+    "typed unary dereference must materialize directly into Typed HIR without parser-shaped lowering",
+  );
+}
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
       compilationSession,
     )) {

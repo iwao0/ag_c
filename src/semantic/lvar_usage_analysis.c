@@ -10,6 +10,12 @@ static int is_aggregate_lvar(node_t *node) {
          ps_type_is_tag_aggregate(ps_node_get_type(node));
 }
 
+static int is_dereference(const node_t *node) {
+  return node &&
+         (node->kind == ND_UNARY_DEREF ||
+          node->kind == ND_DEREF);
+}
+
 static node_t *assigned_aggregate_lvar_from_member_base(node_t *base);
 
 static node_t *assigned_aggregate_lvar_from_member_address(node_t *address) {
@@ -28,7 +34,7 @@ static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
   if (is_aggregate_lvar(base)) return base;
   if (base->kind == ND_COMMA && base->rhs)
     return assigned_aggregate_lvar_from_member_base(base->rhs);
-  if (base->kind == ND_DEREF && base->lhs)
+  if (is_dereference(base) && base->lhs)
     return assigned_aggregate_lvar_from_member_address(base->lhs);
   return NULL;
 }
@@ -36,11 +42,11 @@ static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
 static node_t *assigned_lvar_from_target(node_t *target) {
   if (!target) return NULL;
   if (target->kind == ND_LVAR) return target;
-  if (target->kind == ND_DEREF && target->lhs &&
+  if (is_dereference(target) && target->lhs &&
       target->lhs->kind == ND_ADDR && target->lhs->lhs &&
       target->lhs->lhs->kind == ND_LVAR)
     return target->lhs->lhs;
-  if (target->kind == ND_DEREF)
+  if (is_dereference(target))
     return assigned_aggregate_lvar_from_member_address(target->lhs);
   return NULL;
 }
@@ -80,7 +86,7 @@ static void record_address_taken(
     record_address_taken(local_registry, operand->lhs, region);
     return;
   }
-  if (operand->kind == ND_DEREF) {
+  if (is_dereference(operand)) {
     node_t *lvar =
         assigned_aggregate_lvar_from_member_address(operand->lhs);
     lvar_t *var = ps_node_lvar_symbol(lvar);

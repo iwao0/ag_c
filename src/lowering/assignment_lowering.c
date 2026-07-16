@@ -36,7 +36,11 @@ static node_t *materialize_lvalue_address_once(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     node_t *target, node_t **prefix) {
-  if (!target || target->kind != ND_DEREF || !target->lhs) return target;
+  if (!target ||
+      (target->kind != ND_UNARY_DEREF &&
+       target->kind != ND_DEREF) ||
+      !target->lhs)
+    return target;
   node_t *address = target->lhs;
   const psx_type_t *address_type = ps_node_get_type(address);
   if (!address_type) return target;

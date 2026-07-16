@@ -9,7 +9,9 @@ static int is_pointer_arithmetic_operand(
     const psx_lowering_context_t *lowering_context, node_t *node) {
   if (ps_node_value_is_pointer_like(node)) return 1;
 
-  if ((node->kind == ND_DEREF || node->kind == ND_ADDR) &&
+  if ((node->kind == ND_UNARY_DEREF ||
+       node->kind == ND_DEREF ||
+       node->kind == ND_ADDR) &&
       !ps_node_value_is_pointer_like(node)) {
     const psx_type_t *type = ps_node_get_type(node);
     int deref_size = ps_lowering_type_deref_size(lowering_context, type);

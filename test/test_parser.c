@@ -5337,8 +5337,8 @@ static void test_unary_deref_semantic_lowering_boundary() {
   node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != deref_syntax);
   ASSERT_EQ(ND_UNARY_DEREF, deref_syntax->kind);
-  ASSERT_EQ(ND_DEREF, node->kind);
-  ASSERT_EQ(ND_DEREF, node->lhs->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, node->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, node->lhs->kind);
   ASSERT_TRUE(ps_node_get_type(node) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(node)->kind);
 
@@ -5348,7 +5348,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(assignment) == NULL);
   ASSERT_TRUE(ps_node_get_type(assignment->lhs) == NULL);
   assignment = analyze_test_expression(assignment, NULL);
-  ASSERT_EQ(ND_DEREF, assignment->lhs->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, assignment->lhs->kind);
   ASSERT_TRUE(ps_node_get_type(assignment) != NULL);
 
   node_t *subscript_address =
@@ -5364,6 +5364,30 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(subscript_address)->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(subscript_address)->base->kind);
   ASSERT_EQ(4, ps_type_deref_size(ps_node_get_type(subscript_address)));
+
+  node_t **program = parse_program_input(
+      "int __typed_hir_deref(int *value) { return *value; }");
+  ASSERT_TRUE(program != NULL);
+  node_block_t *body =
+      as_block(as_function_definition(program[0])->base.rhs);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, body->body[0]->lhs->kind);
+  ASSERT_TRUE(ps_node_get_type(body->body[0]->lhs) != NULL);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  int found_typed_hir_deref = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (hir_node &&
+        psx_hir_node_kind(hir_node) == PSX_HIR_DEREF &&
+        psx_hir_node_qual_type(hir_node).type_id !=
+            PSX_TYPE_ID_INVALID) {
+      found_typed_hir_deref = 1;
+      break;
+    }
+  }
+  ASSERT_TRUE(found_typed_hir_deref);
 }
 
 static void test_unary_operator_semantic_lowering_boundary() {
@@ -11563,7 +11587,7 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("int deref_intptr_cast(long addr) { return *(int *)addr; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_DEREF, ret->lhs->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, ret->lhs->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->lhs->kind);
   ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
   ASSERT_EQ(4, ps_node_deref_size(ret->lhs->lhs));
@@ -11663,7 +11687,7 @@ static void test_expr_deref_addr() {
   node_t *deref = parse_expr_input_with_existing_locals("*a");
   ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
   deref = analyze_test_expression(deref, NULL);
-  ASSERT_EQ(ND_DEREF, deref->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
   ASSERT_EQ(ND_LVAR, deref->lhs->kind);
 }
 
@@ -12103,8 +12127,8 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
-  ASSERT_EQ(ND_DEREF, body->body[3]->lhs->kind);
-  ASSERT_EQ(ND_DEREF, body->body[3]->lhs->lhs->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, body->body[3]->lhs->kind);
+  ASSERT_EQ(ND_UNARY_DEREF, body->body[3]->lhs->lhs->kind);
   ASSERT_TRUE(ps_node_value_is_pointer_like(body->body[3]->lhs->lhs));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(body->body[3]->lhs));
   ASSERT_EQ(8, ps_node_storage_type_size(body->body[3]->lhs->lhs));

@@ -11,7 +11,6 @@
 #include "runtime_context.h"
 #include "sizeof_lowering.h"
 #include "subscript_lowering.h"
-#include "unary_deref_lowering.h"
 #include "unary_operator_lowering.h"
 #include "../parser/node_utils.h"
 
@@ -205,8 +204,7 @@ static node_t *lower_tree(
     case ND_UNARY_DEREF:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      return lower_unary_deref_expression(
-          context->lowering_context, node);
+      break;
     case ND_UNARY_NEGATE:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
