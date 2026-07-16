@@ -321,6 +321,7 @@ int main(void) {
     exports: ["main"],
     useStdlib: false,
     continuation: { entry: "main", frameCondition: "frame_gate" },
+    diagnosticLocale: "en",
   });
   throw new Error("unsupported continuation condition unexpectedly compiled");
 } catch (err) {
@@ -589,6 +590,7 @@ const warningLinked = toolchain.compileLinkedWasmWithDiagnostics([
 ], {
   exports: ["first", "second"],
   useStdlib: false,
+  diagnosticLocale: "en",
 });
 if (warningLinked.wasm[0] !== 0x00 || warningLinked.wasm[1] !== 0x61 ||
     warningLinked.wasm[2] !== 0x73 || warningLinked.wasm[3] !== 0x6d) {
@@ -602,7 +604,11 @@ if (warningLinked.sourceDiagnostics.length !== 2 ||
   throw new Error(`source warnings were not retained separately: ${JSON.stringify(warningLinked.sourceDiagnostics)}`);
 }
 if (warningLinked.diagnostics.length !== 2 ||
-    warningLinked.diagnostics[0].sourceId !== 0 || warningLinked.diagnostics[1].sourceId !== 1) {
+    warningLinked.diagnostics[0].sourceId !== 0 ||
+    warningLinked.diagnostics[1].sourceId !== 1 ||
+    warningLinked.diagnostics.some((diagnostic) =>
+      !diagnostic.message.includes("floating-point") ||
+      diagnostic.message.includes("浮動小数点"))) {
   throw new Error(`flattened diagnostic order is unstable: ${JSON.stringify(warningLinked.diagnostics)}`);
 }
 if (!Object.isFrozen(warningLinked.diagnostics) ||
@@ -614,6 +620,20 @@ const linkedWarningSnapshot = JSON.stringify(warningLinked);
 toolchain.compileObject("int after_warnings(void) { return 0; }\n");
 if (JSON.stringify(warningLinked) !== linkedWarningSnapshot) {
   throw new Error("a later toolchain compile changed linked diagnostic snapshots");
+}
+const japaneseWarningLinked = toolchain.compileLinkedWasmWithDiagnostics(
+  [{ name: "japanese.c", source: "int japanese(void) { int x = 1.5; return x; }\n" }],
+  {
+    exports: ["japanese"],
+    useStdlib: false,
+    diagnosticLocale: "ja",
+  },
+);
+if (!japaneseWarningLinked.diagnostics[0]?.message.includes("浮動小数点") ||
+    japaneseWarningLinked.diagnostics[0]?.message.includes("floating-point")) {
+  throw new Error(
+    `toolchain diagnostic locale was not forwarded: ${JSON.stringify(japaneseWarningLinked.diagnostics)}`,
+  );
 }
 
 try {

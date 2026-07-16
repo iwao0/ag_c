@@ -6,7 +6,7 @@ ASAN_SANITIZERS:=address
 else
 ASAN_SANITIZERS:=address,leak
 endif
-DIAG_LANG?=ja
+DIAG_LANG?=all
 OBJROOT=build/obj/$(DIAG_LANG)
 DIAG_COMMON_SRCS=$(filter-out src/diag/messages_ja.c src/diag/messages_en.c src/diag/messages_all.c,$(wildcard src/diag/*.c))
 ifeq ($(DIAG_LANG),all)

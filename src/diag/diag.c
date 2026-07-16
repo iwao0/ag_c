@@ -512,7 +512,7 @@ static void diag_vfprint_escaped(FILE *out, const char *fmt, va_list ap) {
   free(tmp);
 }
 
-#if defined(DIAG_LANG_ALL)
+#if !defined(DIAG_LANG_JA) && !defined(DIAG_LANG_EN)
 static int diag_locale_is_en(
     const ag_diagnostic_context_t *context) {
   return strcmp(diag_context_get_locale(context), "en") == 0;

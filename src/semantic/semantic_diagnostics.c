@@ -5,6 +5,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static int fp_literal_fractional_part_known(double value) {
@@ -29,18 +30,19 @@ static tk_float_kind_t node_fp_kind(node_t *node) {
 
 static void warn_float_to_int(
     ag_diagnostic_context_t *diagnostics, node_t *value,
-    const token_t *tok,
-    const char *literal_fmt, const char *value_msg) {
+    const token_t *tok) {
   if (!value || node_fp_kind(value) == TK_FLOAT_KIND_NONE) return;
+  char detail[64] = "";
   if (value->kind == ND_NUM) {
     double f = ((node_num_t *)value)->fval;
-    if (fp_literal_fractional_part_known(f))
-      diag_warn_tokf_in(diagnostics,
-          DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, tok, literal_fmt, f);
-    return;
+    if (!fp_literal_fractional_part_known(f)) return;
+    snprintf(detail, sizeof(detail), " (%g)", f);
   }
   diag_warn_tokf_in(diagnostics,
-      DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, tok, "%s", value_msg);
+      DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, tok,
+      diag_warn_message_for_in(
+          diagnostics, DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING),
+      detail);
 }
 
 static void warn_decl_initializer_overflow(
@@ -74,7 +76,8 @@ static void warn_decl_initializer_overflow(
   if (out_of_range) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_CONSTANT_OVERFLOW, tok,
-        "整数リテラル %lld は %d バイト型に収まりません (値が切り詰められます)",
+        diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_CONSTANT_OVERFLOW),
         value, type_size);
   }
 }
@@ -94,21 +97,16 @@ static void warn_assignment(
       ps_node_lvar_symbol(lhs) == ps_node_lvar_symbol(rhs)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_SELF_ASSIGN, tok,
-        "変数を自身に代入しています (タイプミスの可能性)");
+        "%s", diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_SELF_ASSIGN));
   }
   if (lhs && rhs && !ps_node_value_is_pointer_like(lhs) &&
       node_fp_kind(lhs) == TK_FLOAT_KIND_NONE &&
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
     if (node->is_decl_initializer) {
-      warn_float_to_int(
-          diagnostics, rhs, tok,
-          "整数変数を浮動小数点リテラル %g で初期化しています (小数部が切り捨てられます)",
-          "整数変数を浮動小数点値で初期化しています (小数部が切り捨てられます)");
+      warn_float_to_int(diagnostics, rhs, tok);
     } else {
-      warn_float_to_int(
-          diagnostics, rhs, tok,
-          "整数変数に浮動小数点リテラル %g を代入しています (小数部が切り捨てられます)",
-          "整数変数に浮動小数点値を代入しています (小数部が切り捨てられます)");
+      warn_float_to_int(diagnostics, rhs, tok);
     }
   }
   if (node->is_decl_initializer)
@@ -130,10 +128,7 @@ static void warn_return(
   const token_t *tok = node->tok ? node->tok : fallback;
   if (node_fp_kind(node->lhs) != TK_FLOAT_KIND_NONE &&
       ret_fp == TK_FLOAT_KIND_NONE && !ret_pointer && !ret_void) {
-    warn_float_to_int(
-        diagnostics, node->lhs, tok,
-        "整数戻り型の関数から浮動小数点リテラル %g を return しています (小数部が切り捨てられます)",
-        "整数戻り型の関数から浮動小数点値を return しています (小数部が切り捨てられます)");
+    warn_float_to_int(diagnostics, node->lhs, tok);
   }
   if (ret_pointer && node->lhs->kind == ND_ADDR && node->lhs->lhs &&
       node->lhs->lhs->kind == ND_LVAR) {
@@ -141,7 +136,8 @@ static void warn_return(
     if (src && !ps_lvar_is_static_local(src)) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_RETURN_STACK_ADDRESS, tok,
-          "ローカル変数 '%.*s' のアドレスを返しています (dangling pointer になります)",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_RETURN_STACK_ADDRESS),
           ps_lvar_name_len(src), ps_lvar_name(src));
     }
   }
@@ -208,7 +204,9 @@ static void warn_identical_logical(
   diag_warn_tokf_in(diagnostics,
       DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS,
       node->tok ? node->tok : fallback,
-      "'%s' の両辺が同じ式です (常に同じ結果、タイプミスの可能性)", op);
+      diag_warn_message_for_in(
+          diagnostics, DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS),
+      op);
 }
 
 static void warn_sign_compare(
@@ -232,7 +230,8 @@ static void warn_sign_compare(
   }
   diag_warn_tokf_in(diagnostics,
       DIAG_WARN_PARSER_SIGN_COMPARE, tok,
-      "符号付きと符号なしの整数を比較しています ('%s' / 負値が大きな正の値として扱われる可能性)",
+      diag_warn_message_for_in(
+          diagnostics, DIAG_WARN_PARSER_SIGN_COMPARE),
       op);
 }
 
@@ -248,18 +247,26 @@ static void warn_unsigned_zero(
   if (ps_node_integer_value_is_unsigned(lhs) && is_zero_literal(rhs)) {
     if (strcmp(op, ">=") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
-                     "符号なし整数は常に 0 以上です: '%s 0' は常に真", op);
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO),
+          op, 1);
     else if (strcmp(op, "<") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
-                     "符号なし整数は常に 0 以上です: '%s 0' は常に偽", op);
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO),
+          op, 0);
   }
   if (is_zero_literal(lhs) && ps_node_integer_value_is_unsigned(rhs)) {
     if (strcmp(op, "<=") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
-                     "符号なし整数は常に 0 以上です: '0 %s' は常に真", op);
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO),
+          op, 1);
     else if (strcmp(op, ">") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
-                     "符号なし整数は常に 0 以上です: '0 %s' は常に偽", op);
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO),
+          op, 0);
   }
 }
 
@@ -280,13 +287,15 @@ static void warn_comparison(
     if (lhs && lhs->from_logical_not) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES, tok,
-          "'%s' の左辺が単項 '!' で、'!' の優先順位が '%s' より高いため "
-          "'(!x) %s y' と解釈されます ('!(x %s y)' を意図していませんか)",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES),
           op, op, op, op);
     }
     if (nodes_identity_equal(lhs, rhs))
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_SELF_COMPARE, tok,
-                     "自己比較 (常に同じ値): '%s'", op);
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_SELF_COMPARE),
+          op);
     warn_sign_compare(
         semantic_context, diagnostics, lhs, rhs, op, tok);
     node_t *pointer = NULL;
@@ -303,7 +312,8 @@ static void warn_comparison(
     if (pointer && ((node_num_t *)number)->val != 0) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE, tok,
-          "ポインタを非ゼロ整数定数 (%lld) と '%s' で比較しています (C11 6.5.16.1)",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE),
           ((node_num_t *)number)->val, op);
     }
   } else {
@@ -344,7 +354,8 @@ static void warn_arithmetic(
     if (result < -2147483648LL || result > 2147483647LL) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_INTEGER_OVERFLOW, tok,
-          "整数定数式 %lld %s %lld = %lld は int の範囲を超えています (C11 6.5p5 未定義動作)",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_INTEGER_OVERFLOW),
           lhs, source_op_text(node->source_op), rhs, result);
     }
   }
@@ -360,7 +371,8 @@ static void warn_arithmetic(
     if (amount < 0 || amount >= width) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE, tok,
-          "シフト量 %lld が型の幅 (%d ビット) を超えています (C11 6.5.7p3 未定義動作): %s",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE),
           amount, width, source_op_text(node->source_op));
     }
   }
@@ -370,9 +382,9 @@ static void warn_arithmetic(
       ((node_num_t *)node->rhs)->val == 0) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_DIVIDE_BY_ZERO, tok,
-        node->source_op == TK_DIV
-            ? "0 による除算 (C11 6.5.5p5 未定義動作)"
-            : "0 による剰余 (C11 6.5.5p5 未定義動作)");
+        diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_DIVIDE_BY_ZERO),
+        source_op_text(node->source_op));
   }
 }
 
@@ -385,7 +397,8 @@ static void warn_function(
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL,
           node->tok ? node->tok : fallback,
-          "関数 '%.*s' は宣言されていません (C99/C11 で implicit declaration は不可)",
+          diag_warn_message_for_in(
+              diagnostics, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
           call->direct_name_len, call->direct_name);
     }
   } else if (node->kind == ND_FUNCDEF && node->is_implicit_int_return) {
@@ -400,20 +413,25 @@ static void warn_condition(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || (node->kind != ND_IF && node->kind != ND_WHILE)) return;
-  const char *context = node->kind == ND_IF ? "if 文" : "while 文";
+  const char *context = node->kind == ND_IF ? "if" : "while";
   const token_t *tok = node->tok ? node->tok : fallback;
   if (node->lhs && node->lhs->kind == ND_ASSIGN) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_ASSIGN_IN_CONDITION, tok,
-        "%s の条件に代入式を使っています ('==' のタイプミスの可能性)", context);
+        diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_ASSIGN_IN_CONDITION),
+        context);
   } else if (node->lhs && node->lhs->kind == ND_COMMA) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_COMMA_IN_CONDITION, tok,
-        "%s の条件にカンマ演算子を使っています ('&&' のタイプミスの可能性)", context);
+        diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_COMMA_IN_CONDITION),
+        context);
   }
   if (node->kind == ND_IF && node->has_empty_body)
     diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_EMPTY_BODY, tok,
-                   "if 文の本体が空です (タイプミスの可能性)");
+        "%s", diag_warn_message_for_in(
+            diagnostics, DIAG_WARN_PARSER_EMPTY_BODY));
 }
 
 static void emit_node_warning(

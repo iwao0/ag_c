@@ -182,6 +182,7 @@ export async function createToolchain(options) {
       headers,
       headerLimits,
       continuation,
+      diagnosticLocale,
       limits: limitOverrides,
       maxOutputBytes: _ignoredMaxOutputBytes,
       ...linkerOptions
@@ -190,6 +191,7 @@ export async function createToolchain(options) {
     const compileOptions = {
       limits: compileResourceLimits,
       ...(continuation === undefined ? {} : { continuation }),
+      ...(diagnosticLocale === undefined ? {} : { diagnosticLocale }),
       ...(headers === undefined && headerLimits === undefined
         ? {}
         : { headers: headers ?? {}, headerLimits }),

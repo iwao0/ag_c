@@ -23,6 +23,11 @@ static int test_object_layout(void) {
   frame_layout_reserve_prefix(&layout, 64);
   frame_layout_reserve_prefix(&layout, 32);
   ASSERT_EQ(64, frame_layout_allocate(&layout, 8, 8));
+
+  frame_layout_reset(&layout);
+  frame_layout_reserve_prefix(&layout, 172);
+  ASSERT_EQ(176, frame_layout_allocate(&layout, 20, 8));
+  ASSERT_EQ(196, layout.next_offset);
   return 0;
 }
 

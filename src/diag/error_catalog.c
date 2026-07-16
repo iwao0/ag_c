@@ -176,6 +176,13 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED, "E3086", "parser.initializer_element_limit_exceeded"},
     {DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN, "E3087", "parser.void_object_forbidden"},
     {DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, "E3088", "parser.implicit_int_forbidden"},
+    {DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE, "E3089", "parser.continuation_entry_type"},
+    {DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE, "E3090", "parser.continuation_frame_condition_type"},
+    {DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES, "E3091", "parser.continuation_goto_label_across_frames"},
+    {DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES, "E3092", "parser.continuation_vla_across_frames"},
+    {DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES, "E3093", "parser.continuation_alloca_across_frames"},
+    {DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED, "E3094", "parser.continuation_frame_loop_required"},
+    {DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT, "E3095", "parser.continuation_frame_condition_call_count"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},
@@ -185,6 +192,10 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED, "E4006", "codegen.goto_label_undefined"},
     {DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "E4007", "codegen.ir_build_emit_failed"},
     {DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP, "E4008", "codegen.unsupported_ir_op"},
+    {DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED, "E4009", "codegen.wasm_object_open_failed"},
+    {DIAG_ERR_CODEGEN_WASM_OBJECT_ADDRESSABLE_SIZE_EXCEEDED, "E4010", "codegen.wasm_object_addressable_size_exceeded"},
+    {DIAG_ERR_CODEGEN_WASM_OBJECT_WRITE_FAILED, "E4011", "codegen.wasm_object_write_failed"},
+    {DIAG_ERR_CODEGEN_WASM_OBJECT_OUTPUT_SINK_MISSING, "E4012", "codegen.wasm_object_output_sink_missing"},
 };
 
 /**

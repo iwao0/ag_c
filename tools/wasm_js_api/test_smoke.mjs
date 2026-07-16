@@ -167,6 +167,99 @@ if (!stderrChunks.join("").includes("W3010") || !stderrChunks.join("").includes(
   throw new Error("structured warning was not also emitted through onStderr");
 }
 
+const localizedWarningSource = {
+  name: "localized-warning.c",
+  source: 'int main(void) { return printf("Hello\\n"); }\n',
+};
+function compileLocalizedWarning(locale) {
+  const result = compiler.compileObjectWithDiagnostics(
+    localizedWarningSource, { diagnosticLocale: locale },
+  );
+  const diagnostic = result.diagnostics.find(({ code }) => code === "W3016");
+  if (!diagnostic) {
+    throw new Error(
+      `localized W3016 was not emitted for ${locale}: ${JSON.stringify(result.diagnostics)}`,
+    );
+  }
+  return diagnostic;
+}
+const englishImplicitFunction = compileLocalizedWarning("en");
+const japaneseImplicitFunction = compileLocalizedWarning("ja");
+const englishImplicitFunctionAgain = compileLocalizedWarning("en");
+if (!englishImplicitFunction.message.includes("function 'printf' is not declared") ||
+    englishImplicitFunction.message.includes("関数") ||
+    !japaneseImplicitFunction.message.includes("関数 'printf' は宣言されていません") ||
+    japaneseImplicitFunction.message.includes("function is not declared") ||
+    !englishImplicitFunctionAgain.message.includes("function 'printf' is not declared")) {
+  throw new Error(
+    `diagnostic locale leaked across compiles: ${JSON.stringify({
+      englishImplicitFunction,
+      japaneseImplicitFunction,
+      englishImplicitFunctionAgain,
+    })}`,
+  );
+}
+for (const diagnostic of [
+  japaneseImplicitFunction,
+  englishImplicitFunctionAgain,
+]) {
+  if (diagnostic.code !== englishImplicitFunction.code ||
+      diagnostic.severity !== englishImplicitFunction.severity ||
+      diagnostic.sourceName !== englishImplicitFunction.sourceName ||
+      JSON.stringify(diagnostic.start) !== JSON.stringify(englishImplicitFunction.start) ||
+      JSON.stringify(diagnostic.end) !== JSON.stringify(englishImplicitFunction.end)) {
+    throw new Error("diagnostic locale changed code, severity, source, or coordinates");
+  }
+}
+const declaredPrintf = compiler.compileObjectWithDiagnostics({
+  name: "declared-printf.c",
+  source: '#include <stdio.h>\nint main(void) { return printf("Hello\\n"); }\n',
+}, {
+  diagnosticLocale: "en",
+  headers: {
+    "stdio.h": "int printf(const char *, ...);\n",
+  },
+});
+if (declaredPrintf.diagnostics.some(({ code }) => code === "W3016")) {
+  throw new Error(
+    `declared printf unexpectedly emitted W3016: ${JSON.stringify(declaredPrintf.diagnostics)}`,
+  );
+}
+try {
+  compiler.compileObject(localizedWarningSource, { diagnosticLocale: "fr" });
+  throw new Error("unsupported diagnostic locale unexpectedly compiled");
+} catch (err) {
+  if (err.message === "unsupported diagnostic locale unexpectedly compiled") throw err;
+  if (!(err instanceof RangeError) || !err.message.includes("diagnosticLocale")) throw err;
+}
+
+function expectContinuationDiagnostic(source, expectedCode) {
+  try {
+    compiler.compileObject(source, {
+      continuation: { entry: "main", frameCondition: "frame_gate" },
+      diagnosticLocale: "en",
+    });
+  } catch (err) {
+    const diagnostic = err.diagnostics?.find(({ code }) => code === expectedCode);
+    if (diagnostic) return diagnostic;
+    throw new Error(
+      `expected ${expectedCode}, got ${JSON.stringify(err.diagnostics)}`,
+    );
+  }
+  throw new Error(`${expectedCode} continuation source unexpectedly compiled`);
+}
+for (const [expectedCode, source] of [
+  ["E3089", "int frame_gate(void); void main(void) {}\n"],
+  ["E3090", "void frame_gate(void); int main(void) { while (frame_gate()) {} return 0; }\n"],
+  ["E3091", "int frame_gate(void); int main(void) { while (frame_gate()) { goto done; } done: return 0; }\n"],
+  ["E3092", "int frame_gate(void); int main(void) { int n = 2; int a[n]; while (frame_gate()) { a[0] = 1; } return a[0]; }\n"],
+  ["E3093", "int frame_gate(void); void *alloca(unsigned long); int main(void) { while (frame_gate()) { alloca(4); } return 0; }\n"],
+  ["E3094", "int frame_gate(void); int main(void) { int enabled = 1; while (frame_gate() && enabled) enabled = 0; return 0; }\n"],
+  ["E3095", "int frame_gate(void); int main(void) { while (frame_gate()) { frame_gate(); } return 0; }\n"],
+]) {
+  expectContinuationDiagnostic(source, expectedCode);
+}
+
 let errorDiagnostics;
 try {
   compiler.compileObject({

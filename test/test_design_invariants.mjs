@@ -13,6 +13,65 @@ async function sourceFilesUnder(directory) {
   return files;
 }
 
+function callBodies(source, functionName) {
+  const bodies = [];
+  const needle = `${functionName}(`;
+  let searchFrom = 0;
+  while (true) {
+    const start = source.indexOf(needle, searchFrom);
+    if (start < 0) return bodies;
+    let depth = 1;
+    let quote = "";
+    let lineComment = false;
+    let blockComment = false;
+    let escaped = false;
+    let end = start + needle.length;
+    for (; end < source.length && depth > 0; end++) {
+      const ch = source[end];
+      const next = source[end + 1];
+      if (lineComment) {
+        if (ch === "\n") lineComment = false;
+        continue;
+      }
+      if (blockComment) {
+        if (ch === "*" && next === "/") {
+          blockComment = false;
+          end++;
+        }
+        continue;
+      }
+      if (quote) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === quote) {
+          quote = "";
+        }
+        continue;
+      }
+      if (ch === "/" && next === "/") {
+        lineComment = true;
+        end++;
+      } else if (ch === "/" && next === "*") {
+        blockComment = true;
+        end++;
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
+        depth--;
+      }
+    }
+    if (depth !== 0) {
+      throw new Error(`unterminated ${functionName} call in design invariant source`);
+    }
+    bodies.push(source.slice(start, end));
+    searchFrom = end;
+  }
+}
+
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
 const hirHeader = await readFile("src/hir/hir.h", "utf8");
 const hirImplementation = await readFile("src/hir/hir.c", "utf8");
@@ -3211,6 +3270,71 @@ const semanticDiagnosticsSource = await readFile(
   "src/semantic/semantic_diagnostics.c",
   "utf8",
 );
+const semanticWarningCalls = callBodies(
+  semanticDiagnosticsSource, "diag_warn_tokf_in",
+);
+const irWarningCalls = callBodies(irBuilderSource, "diag_warn_tokf_in");
+const continuationValidationSource = irBuilderSource.slice(
+  irBuilderSource.indexOf("static int prepare_continuation_entry("),
+  irBuilderSource.indexOf("\nstatic void fail(", irBuilderSource.indexOf(
+    "static int prepare_continuation_entry(",
+  )),
+);
+const continuationDiagnosticCalls = callBodies(
+  continuationValidationSource, "diag_emit_tokf_in",
+);
+const wasmObjectOutputSource = wasmObjSource.slice(
+  wasmObjSource.indexOf("void wasm32_obj_end("),
+);
+const wasmObjectDiagnosticCalls = callBodies(
+  wasmObjectOutputSource, "diag_emit_internalf_in",
+);
+const diagnosticLocaleAdapterSource = await readFile(
+  "tools/wasm_js_api/agc-wasm.js",
+  "utf8",
+);
+const diagnosticLocaleToolchainSource = await readFile(
+  "tools/wasm_js_api/agc-toolchain.js",
+  "utf8",
+);
+const selfHostBuildSource = await readFile(
+  "scripts/build_wasm_selfhost_api.sh",
+  "utf8",
+);
+const makefileSource = await readFile("Makefile", "utf8");
+if (semanticWarningCalls.length === 0 ||
+    semanticWarningCalls.some((body) =>
+      !body.includes("diag_warn_message_for_in(")) ||
+    !irWarningCalls.some((body) =>
+      body.includes("DIAG_WARN_PARSER_MISSING_RETURN") &&
+      body.includes("diag_warn_message_for_in(")) ||
+    continuationDiagnosticCalls.length !== 4 ||
+    continuationDiagnosticCalls.some((body) =>
+      !body.includes("diag_message_for_in(")) ||
+    wasmObjectDiagnosticCalls.length !== 3 ||
+    wasmObjectDiagnosticCalls.some((body) =>
+      !body.includes("diag_message_for_in(")) ||
+    !/DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED[\s\S]*?diag_emit_internalf_in\s*\([\s\S]*?diag_message_for_in\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    /continuation entry (?:must|does|requires|permits)|continuation frame condition must/.test(
+      irBuilderSource,
+    ) ||
+    /failed to (?:open|write) Wasm object output|missing Wasm object output sink/.test(
+      `${compilerMainSource}\n${wasmObjSource}`,
+    ) ||
+    !/agc_wasm_set_diagnostic_locale\s*\(/.test(compilerMainSource) ||
+    !/agc_wasm_set_diagnostic_locale/.test(diagnosticLocaleAdapterSource) ||
+    !/\{ diagnosticLocale \}/.test(diagnosticLocaleToolchainSource) ||
+    !/--export=agc_wasm_set_diagnostic_locale/.test(selfHostBuildSource) ||
+    !/src\/diag\/messages_ja\.c\|src\/diag\/messages_en\.c/.test(
+      selfHostBuildSource,
+    ) ||
+    !/^DIAG_LANG\?=all$/m.test(makefileSource)) {
+  throw new Error(
+    "user-facing diagnostics must come from per-context locale catalogs across native and Wasm paths",
+  );
+}
 const expressionOperandResolutionSource = await readFile(
   "src/semantic/expression_operand_resolution.c",
   "utf8",

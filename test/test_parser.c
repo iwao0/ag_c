@@ -1645,6 +1645,20 @@ static int count_ir_op(const ir_func_t *function, ir_op_t op) {
   return count;
 }
 
+static int max_ir_alloca_size(const ir_func_t *function) {
+  int maximum = 0;
+  for (const ir_block_t *block = function ? function->entry : NULL;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_ALLOCA &&
+          instruction->alloca_size > maximum)
+        maximum = instruction->alloca_size;
+    }
+  }
+  return maximum;
+}
+
 static void test_typed_hir_local_lowering_without_ast() {
   printf("test_typed_hir_local_lowering_without_ast...\n");
   reset_test_translation_unit_state();
@@ -2248,6 +2262,7 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ASSERT_EQ(IR_TY_PTR, ir->funcs->param_abi_types[0]);
+  ASSERT_TRUE(max_ir_alloca_size(ir->funcs) >= 12);
   ir_module_free(ir);
 
   status = IR_HIR_BUILD_INVALID;
@@ -4241,6 +4256,152 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
   ASSERT_EQ(0, WEXITSTATUS(status));
   ASSERT_TRUE(strstr(buf, needle) != NULL);
 }
+
+#if defined(DIAG_LANG_ALL)
+static void collect_printf_signature(
+    const char *format, char *signature, size_t capacity) {
+  size_t used = 0;
+  for (const char *p = format; p && *p; p++) {
+    if (*p != '%') continue;
+    if (p[1] == '%') {
+      p++;
+      continue;
+    }
+    const char *start = p++;
+    while (*p && !strchr("diouxXfFeEgGaAcspn", *p)) p++;
+    ASSERT_TRUE(*p != '\0');
+    size_t length = (size_t)(p - start + 1);
+    ASSERT_TRUE(used + length + 1 < capacity);
+    memcpy(signature + used, start, length);
+    used += length;
+    signature[used++] = '|';
+  }
+  ASSERT_TRUE(used < capacity);
+  signature[used] = '\0';
+}
+
+static void assert_catalog_format_parity(
+    const char *ja_format, const char *en_format) {
+  char ja_signature[128];
+  char en_signature[128];
+  ASSERT_TRUE(ja_format != NULL);
+  ASSERT_TRUE(en_format != NULL);
+  collect_printf_signature(
+      ja_format, ja_signature, sizeof(ja_signature));
+  collect_printf_signature(
+      en_format, en_signature, sizeof(en_signature));
+  ASSERT_TRUE(strcmp(ja_signature, en_signature) == 0);
+}
+
+static void test_diagnostic_catalog_localization(void) {
+  static const diag_warn_id_t warning_ids[] = {
+      DIAG_WARN_PARSER_MISSING_RETURN,
+      DIAG_WARN_PARSER_RETURN_STACK_ADDRESS,
+      DIAG_WARN_PARSER_ASSIGN_IN_CONDITION,
+      DIAG_WARN_PARSER_COMMA_IN_CONDITION,
+      DIAG_WARN_PARSER_EMPTY_BODY,
+      DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING,
+      DIAG_WARN_PARSER_CONSTANT_OVERFLOW,
+      DIAG_WARN_PARSER_SELF_ASSIGN,
+      DIAG_WARN_PARSER_SELF_COMPARE,
+      DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE,
+      DIAG_WARN_PARSER_DIVIDE_BY_ZERO,
+      DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL,
+      DIAG_WARN_PARSER_SIGN_COMPARE,
+      DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO,
+      DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS,
+      DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES,
+      DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE,
+      DIAG_WARN_PARSER_INTEGER_OVERFLOW,
+  };
+  static const diag_error_id_t localized_error_ids[] = {
+      DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE,
+      DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE,
+      DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES,
+      DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES,
+      DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES,
+      DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED,
+      DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT,
+      DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED,
+      DIAG_ERR_CODEGEN_WASM_OBJECT_ADDRESSABLE_SIZE_EXCEEDED,
+      DIAG_ERR_CODEGEN_WASM_OBJECT_WRITE_FAILED,
+      DIAG_ERR_CODEGEN_WASM_OBJECT_OUTPUT_SINK_MISSING,
+  };
+
+  for (size_t i = 0;
+       i < sizeof(warning_ids) / sizeof(warning_ids[0]); i++) {
+    ASSERT_TRUE(strcmp(
+        diag_warn_message_ja(warning_ids[i]),
+        diag_warn_key(warning_ids[i])) != 0);
+    ASSERT_TRUE(strcmp(
+        diag_warn_message_en(warning_ids[i]),
+        diag_warn_key(warning_ids[i])) != 0);
+    assert_catalog_format_parity(
+        diag_warn_message_ja(warning_ids[i]),
+        diag_warn_message_en(warning_ids[i]));
+  }
+  for (size_t i = 0;
+       i < sizeof(localized_error_ids) / sizeof(localized_error_ids[0]);
+       i++) {
+    ASSERT_TRUE(strcmp(
+        diag_message_ja(localized_error_ids[i]),
+        diag_error_key(localized_error_ids[i])) != 0);
+    ASSERT_TRUE(strcmp(
+        diag_message_en(localized_error_ids[i]),
+        diag_error_key(localized_error_ids[i])) != 0);
+    assert_catalog_format_parity(
+        diag_message_ja(localized_error_ids[i]),
+        diag_message_en(localized_error_ids[i]));
+  }
+
+  ag_diagnostic_context_t *en = diag_context_create();
+  ag_diagnostic_context_t *ja = diag_context_create();
+  ASSERT_TRUE(en != NULL);
+  ASSERT_TRUE(ja != NULL);
+  diag_context_set_locale(en, "en");
+  diag_context_set_locale(ja, "ja");
+
+  const char *en_format = diag_warn_message_for_in(
+      en, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL);
+  const char *ja_format = diag_warn_message_for_in(
+      ja, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL);
+  char en_message[256];
+  char ja_message[256];
+  snprintf(en_message, sizeof(en_message), en_format, 6, "printf");
+  snprintf(ja_message, sizeof(ja_message), ja_format, 6, "printf");
+  ASSERT_TRUE(strstr(en_message, "printf") != NULL);
+  ASSERT_TRUE(strstr(en_message, "not declared") != NULL);
+  ASSERT_TRUE(strstr(en_message, "関数") == NULL);
+  ASSERT_TRUE(strstr(ja_message, "printf") != NULL);
+  ASSERT_TRUE(strstr(ja_message, "関数") != NULL);
+  ASSERT_TRUE(strstr(ja_message, "not declared") == NULL);
+
+  diag_context_set_locale(en, "ja");
+  ASSERT_TRUE(strstr(
+      diag_warn_message_for_in(
+          en, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
+      "関数") != NULL);
+  diag_context_set_locale(en, "en");
+  ASSERT_TRUE(strstr(
+      diag_warn_message_for_in(
+          en, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
+      "not declared") != NULL);
+  ASSERT_TRUE(strstr(
+      diag_warn_message_for_in(
+          ja, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
+      "関数") != NULL);
+
+  diag_context_destroy(en);
+  diag_context_destroy(ja);
+
+  diag_context_set_locale(test_diagnostics(), "en");
+  expect_parse_ok_with_message(
+      "int main(void){ return printf(); }", "function 'printf'");
+  diag_context_set_locale(test_diagnostics(), "ja");
+  expect_parse_ok_with_message(
+      "int main(void){ return printf(); }", "関数 'printf'");
+}
+#endif
 
 static void test_expr_number() {
   printf("test_expr_number...\n");
@@ -21338,6 +21499,9 @@ int main() {
   test_typed_hir_control_flow_lowering_without_ast();
   test_semantic_type_identity();
   test_semantic_context_isolation();
+#if defined(DIAG_LANG_ALL)
+  test_diagnostic_catalog_localization();
+#endif
   test_compilation_session_owns_target_and_tokenizer();
   test_compilation_session_registry_isolation();
   test_expr_number();

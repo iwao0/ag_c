@@ -177,6 +177,13 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "初期化子要素数が多すぎます（上限 %d）";
     case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "void 型のオブジェクトは宣言できません: '%.*s'";
     case DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN: return "型指定子のない宣言はC11では使用できません";
+    case DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE: return "continuation entry は int(void) 型である必要があります";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE: return "continuation のフレーム条件は int(void) 型である必要があります";
+    case DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ goto またはラベルを使用できません";
+    case DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ VLA を使用できません";
+    case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ alloca を使用できません";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "continuation entry には while(frame_condition()) の直接ループが1つ必要です";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "continuation entry 内のフレーム条件呼び出しは1回だけ許可されます";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -186,6 +193,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
     case DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED: return "IR の構築または出力に失敗しました";
     case DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP: return "未対応の IR 命令です: %s";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED: return "Wasm オブジェクト出力を開けませんでした: %s";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_ADDRESSABLE_SIZE_EXCEEDED: return "Wasm オブジェクト出力がアドレス可能なサイズを超えました";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_WRITE_FAILED: return "Wasm オブジェクト出力の書き込みに失敗しました";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_OUTPUT_SINK_MISSING: return "Wasm オブジェクト出力先が設定されていません";
   }
   return NULL;
 }
@@ -196,25 +207,25 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "到達不能なコードです";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "未使用の変数 '%.*s'";
     case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "初期化されていない変数 '%.*s' が使用されています";
-    case DIAG_WARN_PARSER_MISSING_RETURN: return "非 void 関数が値を返さずに終端します (C11 6.9.1p12)";
-    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "ローカル変数のアドレスを返しています (dangling pointer)";
-    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "条件式に代入を使っています ('==' のタイプミスの可能性)";
-    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "条件式にカンマ演算子を使っています ('&&' のタイプミスの可能性)";
-    case DIAG_WARN_PARSER_EMPTY_BODY: return "制御文の本体が空です (タイプミスの可能性)";
-    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "整数変数を浮動小数点リテラルで初期化しています (小数部が切り捨てられます)";
-    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "整数リテラルが型に収まりません (値が切り詰められます)";
+    case DIAG_WARN_PARSER_MISSING_RETURN: return "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)";
+    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "ローカル変数 '%.*s' のアドレスを返しています (dangling pointer になります)";
+    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "'%s' 文の条件に代入式を使っています ('==' のタイプミスの可能性)";
+    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "'%s' 文の条件にカンマ演算子を使っています ('&&' のタイプミスの可能性)";
+    case DIAG_WARN_PARSER_EMPTY_BODY: return "'if' 文の本体が空です (タイプミスの可能性)";
+    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "浮動小数点値%sを整数へ変換しています (小数部が切り捨てられます)";
+    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "整数リテラル %lld は %d バイト型に収まりません (値が切り詰められます)";
     case DIAG_WARN_PARSER_SELF_ASSIGN: return "変数を自身に代入しています (タイプミスの可能性)";
-    case DIAG_WARN_PARSER_SELF_COMPARE: return "同じ式同士を比較しています (結果が常に同じ)";
-    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "シフト量が型の幅を超えています (C11 6.5.7p3 未定義動作)";
-    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "0 による除算 / 剰余 (C11 6.5.5p5 未定義動作)";
-    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "関数が宣言されていません (C99/C11 で暗黙宣言は不可)";
+    case DIAG_WARN_PARSER_SELF_COMPARE: return "自己比較 (両辺が同じ値): '%s'";
+    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "シフト量 %lld が型の幅 (%d ビット) を超えています (C11 6.5.7p3 未定義動作): %s";
+    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "'%s' の右辺が 0 です (C11 6.5.5p5 未定義動作)";
+    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "関数 '%.*s' は宣言されていません (C99/C11 では暗黙の関数宣言は使用できません)";
     case DIAG_WARN_PARSER_SWITCH_FALLTHROUGH: return "switch の case が break / return 等で終端せず、次の case に到達します";
-    case DIAG_WARN_PARSER_SIGN_COMPARE: return "符号付きと符号なしの比較です (負値が大きな正の値として扱われる可能性)";
-    case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "符号なし整数と 0 の比較が常に同じ結果になります";
-    case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "論理演算子 (&& / ||) の両辺が同じ式です";
-    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' の優先順位が '==' より高いため '!x == y' は '(!x) == y' になります";
-    case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "ポインタを非ゼロ整数定数と比較しています (C11 6.5.16.1: NULL ポインタ定数 0 のみ整数比較可能)";
-    case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "整数定数式が int の範囲を超えています (C11 6.5p5 未定義動作)";
+    case DIAG_WARN_PARSER_SIGN_COMPARE: return "'%s' で符号付きと符号なしの整数を比較しています (負値が大きな正の値として扱われる可能性)";
+    case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "符号なし整数を使う '%s' の比較結果は常に %d です (符号なし整数は 0 以上です)";
+    case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "'%s' の両辺が同じ式です (常に同じ結果、タイプミスの可能性)";
+    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'%s' の左辺が単項 '!' で、'!' の優先順位が '%s' より高いため '(!x) %s y' と解釈されます ('!(x %s y)' を意図していませんか)";
+    case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "ポインタを非ゼロ整数定数 %lld と '%s' で比較しています (C11 6.5.16.1)";
+    case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "整数定数式 %lld %s %lld = %lld は int の範囲を超えています (C11 6.5p5 未定義動作)";
     case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張はこのコンパイラでは使用できません。読み飛ばします";
   }
   return NULL;

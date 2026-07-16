@@ -389,21 +389,31 @@ static int local_storage_address(
   return pointer;
 }
 
-static int local_owner_address(
-    hir_ir_context_t *context, const psx_hir_node_t *local) {
+static int local_owner_address_with_minimum(
+    hir_ir_context_t *context, const psx_hir_node_t *local,
+    int minimum_size, int minimum_align) {
   int object_offset = psx_hir_node_object_offset(local);
   ir_abi_param_info_t type = classify_node_type(context, local);
   int size = psx_hir_node_object_size(local);
   if (size <= 0) size = type.source_size;
+  if (minimum_size > size) size = minimum_size;
   int align = psx_hir_node_object_align(local);
   if (align <= 0)
     align = size >= 8 ? 8 : size >= 4 ? 4 : size >= 2 ? 2 : 1;
+  if (minimum_align > align) align = minimum_align;
   return local_storage_address(context, object_offset, size, align);
 }
 
-static int local_address(
+static int local_owner_address(
     hir_ir_context_t *context, const psx_hir_node_t *local) {
-  int base = local_owner_address(context, local);
+  return local_owner_address_with_minimum(context, local, 0, 0);
+}
+
+static int local_address_with_minimum(
+    hir_ir_context_t *context, const psx_hir_node_t *local,
+    int minimum_size, int minimum_align) {
+  int base = local_owner_address_with_minimum(
+      context, local, minimum_size, minimum_align);
   if (base < 0) return -1;
   int storage_offset = psx_hir_node_storage_offset(local);
   int object_offset = psx_hir_node_object_offset(local);
@@ -426,6 +436,11 @@ static int local_address(
   lea->src2 = ir_val_imm(IR_TY_I64, delta);
   if (!append_instruction(context, lea)) return -1;
   return pointer;
+}
+
+static int local_address(
+    hir_ir_context_t *context, const psx_hir_node_t *local) {
+  return local_address_with_minimum(context, local, 0, 0);
 }
 
 static int preallocate_local_storage(
@@ -599,7 +614,15 @@ static int setup_scalar_parameters(
       context->status = IR_HIR_BUILD_UNSUPPORTED;
       return 0;
     }
-    int pointer = local_address(context, parameter);
+    int minimum_size =
+        is_indirect_aggregate_abi_type(type) ? type.source_size : 0;
+    int minimum_align =
+        minimum_size >= 8 ? 8 :
+        minimum_size >= 4 ? 4 :
+        minimum_size >= 2 ? 2 :
+        minimum_size > 0 ? 1 : 0;
+    int pointer = local_address_with_minimum(
+        context, parameter, minimum_size, minimum_align);
     if (pointer < 0) return 0;
     if (is_complex_abi_type(type)) {
       int half = ir_type_size(type.type);

@@ -212,9 +212,9 @@ typedef struct {
   int frame_while_count;
   int condition_call_count;
   node_t *invalid_node;
-  const char *invalid_reason;
+  diag_error_id_t invalid_reason;
   node_t *frame_invalid_node;
-  const char *frame_invalid_reason;
+  diag_error_id_t frame_invalid_reason;
 } continuation_scan_t;
 
 static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
@@ -223,7 +223,7 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
     if (!scan->frame_invalid_node) {
       scan->frame_invalid_node = node;
       scan->frame_invalid_reason =
-          "continuation entry does not support goto or labels across frames";
+          DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES;
     }
     return;
   }
@@ -231,7 +231,7 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
     if (!scan->frame_invalid_node) {
       scan->frame_invalid_node = node;
       scan->frame_invalid_reason =
-          "continuation entry does not support VLA across frames";
+          DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES;
     }
     return;
   }
@@ -245,7 +245,7 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
               ps_function_call_callee_qual_type(call).type_id)) {
         scan->invalid_node = node;
         scan->invalid_reason =
-            "continuation frame condition must have type int(void)";
+            DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE;
         return;
       }
     }
@@ -255,7 +255,7 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
       if (!scan->frame_invalid_node) {
         scan->frame_invalid_node = node;
         scan->frame_invalid_reason =
-            "continuation entry does not support alloca across frames";
+            DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES;
       }
     }
     scan_continuation_node(call->callee, scan);
@@ -302,10 +302,10 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
   if (!is_exact_int_void_function_id(
           ctx->semantic_types,
           ps_function_definition_signature_qual_type(fn).type_id)) {
+    diag_error_id_t id = DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE;
     diag_emit_tokf_in(
-        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
-        fn->base.tok, "%s",
-        "continuation entry must have type int(void)");
+        ctx->diagnostic_context, id, fn->base.tok, "%s",
+        diag_message_for_in(ctx->diagnostic_context, id));
     return 0;
   }
   continuation_scan_t scan = {
@@ -315,8 +315,9 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
   scan_continuation_node(fn->base.rhs, &scan);
   if (scan.invalid_node) {
     diag_emit_tokf_in(
-        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
-        scan.invalid_node->tok, "%s", scan.invalid_reason);
+        ctx->diagnostic_context, scan.invalid_reason,
+        scan.invalid_node->tok, "%s",
+        diag_message_for_in(ctx->diagnostic_context, scan.invalid_reason));
     return 0;
   }
   int is_synchronous =
@@ -324,18 +325,21 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
   int is_frame_continuation =
       scan.frame_while_count == 1 && scan.condition_call_count == 1;
   if (!is_synchronous && !is_frame_continuation) {
-    diag_emit_tokf_in(
-        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
-        fn->base.tok, "%s",
+    diag_error_id_t id =
         scan.frame_while_count == 0
-            ? "continuation entry requires one direct while(frame_condition()) loop"
-            : "continuation entry permits exactly one frame condition call");
+            ? DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED
+            : DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT;
+    diag_emit_tokf_in(
+        ctx->diagnostic_context, id, fn->base.tok, "%s",
+        diag_message_for_in(ctx->diagnostic_context, id));
     return 0;
   }
   if (is_frame_continuation && scan.frame_invalid_node) {
     diag_emit_tokf_in(
-        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
-        scan.frame_invalid_node->tok, "%s", scan.frame_invalid_reason);
+        ctx->diagnostic_context, scan.frame_invalid_reason,
+        scan.frame_invalid_node->tok, "%s",
+        diag_message_for_in(ctx->diagnostic_context,
+                            scan.frame_invalid_reason));
     return 0;
   }
   ctx->continuation = options;
@@ -447,8 +451,11 @@ static ir_type_t ir_type_from_node(node_t *node) {
 }
 
 /* owner (= lvar_t の親) に対して ALLOCA を 1 回だけ確保し、その vreg を返す。
- * 同じ owner offset で再度呼ばれたら既存 vreg を返す。 */
-static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
+ * ABI lowering が宣言型より大きい保存領域を要求する場合は minimum_size /
+ * minimum_align を指定する。同じ owner offset で再度呼ばれたら既存 vreg を返す。 */
+static int alloca_for_owner_with_minimum(
+    ir_build_ctx_t *ctx, lvar_t *var,
+    int minimum_size, int minimum_align) {
   if (!var) {
     fail(ctx, "owning lvar not found");
     return -1;
@@ -461,6 +468,7 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     return -1;
   }
   int size = ir_lvar_storage_size(ctx, var, 4);
+  if (minimum_size > size) size = minimum_size;
   int elem = ir_lvar_element_size(ctx, var, 4);
   int align_bytes = ps_lvar_align_bytes(var);
   int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
@@ -468,11 +476,12 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   if (size >= 8 && align < 8) align = 8;
   /* _Alignas(N) で明示指定された align は natural より強い (大きい) ものを尊重。 */
   if (align_bytes > align) align = align_bytes;
+  if (minimum_align > align) align = minimum_align;
   /* 過剰整列ローカル (_Alignas(>16))。x29 は 16 整列のみで `x29 + 固定オフセット`
    * では >16 整列にできない。予備領域 (size + A) を確保し、実行時にアドレスを A へ
    * 丸めた vreg を base にする (IR_ALIGN_PTR)。16 以下は従来どおり。 */
-  int over_aligned = (align_bytes > 16);
-  int alloc_size = over_aligned ? size + align_bytes : size;
+  int over_aligned = (align > 16);
+  int alloc_size = over_aligned ? size + align : size;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_ALLOCA);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -485,7 +494,7 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     ir_inst_t *ap = ir_inst_new(IR_ALIGN_PTR);
     ap->dst = ir_val_vreg(av, IR_TY_PTR);
     ap->src1 = ir_val_vreg(v, IR_TY_PTR);
-    ap->alloca_align = align_bytes;  /* 丸め先アライメント A */
+    ap->alloca_align = align;  /* 丸め先アライメント A */
     ir_func_append_inst(ctx->f, ap);
     base = av;  /* lvar の base は丸め後アドレス */
   }
@@ -493,6 +502,10 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   ctx->lvar_vreg[ctx->lvar_count] = base;
   ctx->lvar_count++;
   return base;
+}
+
+static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
+  return alloca_for_owner_with_minimum(ctx, var, 0, 0);
 }
 
 /* v を target_ty に変換した vreg を返す。型が同じならそのまま。
@@ -3575,6 +3588,14 @@ static int setup_function_params(
       p->src1 = ir_val_imm(IR_TY_I32, int_arg_idx++);
       ir_func_append_inst(ctx->f, p);
       if (abi_idx < 32) ctx->f->param_abi_types[abi_idx++] = IR_TY_PTR;
+      if (!owner ||
+          alloca_for_owner_with_minimum(
+              ctx, owner, param_full_size,
+              param_full_size >= 8 ? 8 :
+              param_full_size >= 4 ? 4 :
+              param_full_size >= 2 ? 2 : 1) < 0) {
+        return 0;
+      }
       int slot_vreg = address_of_lvar(ctx, lv->offset);
       if (slot_vreg < 0) return 0;
       ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
@@ -3758,7 +3779,8 @@ static void emit_implicit_return_if_missing(
     if (!is_main && !returns_void) {
       diag_warn_tokf_in(
           ctx->diagnostic_context, DIAG_WARN_PARSER_MISSING_RETURN, NULL,
-          "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
+          diag_warn_message_for_in(
+              ctx->diagnostic_context, DIAG_WARN_PARSER_MISSING_RETURN),
           fn->name_len, fn->name);
     }
     ir_inst_t *r = ir_inst_new(IR_RET);

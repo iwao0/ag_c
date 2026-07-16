@@ -202,6 +202,22 @@ typedef struct {
   int enabled;
 } wasm_pending_continuation_t;
 static wasm_pending_continuation_t wasm_pending_continuation;
+static char wasm_pending_diagnostic_locale[3] = "ja";
+
+int agc_wasm_set_diagnostic_locale(int locale_code) {
+  switch (locale_code) {
+    case 0:
+      memcpy(wasm_pending_diagnostic_locale, "ja",
+             sizeof(wasm_pending_diagnostic_locale));
+      return 0;
+    case 1:
+      memcpy(wasm_pending_diagnostic_locale, "en",
+             sizeof(wasm_pending_diagnostic_locale));
+      return 0;
+    default:
+      return -1;
+  }
+}
 
 static int copy_wasm_option_string(char out[128], int address,
                                    const char *fallback) {
@@ -284,6 +300,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   wasm_adapter_session = session;
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);
+  diag_context_set_locale(
+      diagnostics, wasm_pending_diagnostic_locale);
   diag_reset_records_in(diagnostics);
   if (!source_addr || !out_addr || out_cap <= 0) {
     wasm_publish_and_destroy_session(session);
@@ -620,9 +638,10 @@ int main(int argc, char **argv) {
   if (wasm_object_mode) {
     wasm_obj_out = fopen(output_path, "wb");
     if (!wasm_obj_out) {
+      diag_error_id_t id = DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED;
       diag_emit_internalf_in(
-          diagnostics, DIAG_ERR_INTERNAL_USAGE, "%s",
-          "failed to open Wasm object output");
+          diagnostics, id, diag_message_for_in(diagnostics, id),
+          diag_display_path(output_path));
       if (pps) pp_stream_close(pps);
       ag_compilation_session_destroy(session);
       free(source);

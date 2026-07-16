@@ -290,6 +290,7 @@ export async function createCompiler(wasmSource, options = {}) {
   const compileObjectNamedExport = instance.exports.agc_wasm_compile_object_named;
   const compileWatVirtualExport = instance.exports.agc_wasm_compile_wat_virtual;
   const compileObjectVirtualExport = instance.exports.agc_wasm_compile_object_virtual;
+  const diagnosticLocaleExport = instance.exports.agc_wasm_set_diagnostic_locale;
   const continuationOptionsExport = instance.exports.agc_wasm_set_continuation_options;
   const diagnosticExports = {
     apiVersion: instance.exports.agc_wasm_diagnostic_api_version,
@@ -409,6 +410,23 @@ export async function createCompiler(wasmSource, options = {}) {
       callNumberFunc(continuationOptionsExport, [0, 0, 0, 0, 0, 0]);
       for (const ptr of allocations) callVoidPtrFunc(free, ptr);
     };
+  }
+
+  function configureDiagnosticLocale(input) {
+    const locale = input ?? "ja";
+    if (locale !== "ja" && locale !== "en") {
+      throw new RangeError('diagnosticLocale must be "ja" or "en"');
+    }
+    if (typeof diagnosticLocaleExport !== "function") {
+      if (locale !== "ja") {
+        throw new Error("ag_c wasm module does not support diagnostic locale selection");
+      }
+      return;
+    }
+    const localeCode = locale === "en" ? 1 : 0;
+    if (callPtrFunc(diagnosticLocaleExport, localeCode) !== 0) {
+      throw new Error("ag_c wasm rejected diagnostic locale");
+    }
   }
 
   function configureDiagnosticLimits(resourceLimits) {
@@ -762,6 +780,7 @@ export async function createCompiler(wasmSource, options = {}) {
   }
 
   function compileWat(source, options = {}) {
+    configureDiagnosticLocale(options.diagnosticLocale);
     const prepared = prepareCompile(
       source, options, compileWatExport, compileWatNamedExport, compileWatVirtualExport,
     );
@@ -783,6 +802,7 @@ export async function createCompiler(wasmSource, options = {}) {
     if (typeof compileObjectExport !== "function") {
       throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
     }
+    configureDiagnosticLocale(options.diagnosticLocale);
     const resetContinuation = configureContinuation(options.continuation);
     try {
       const prepared = prepareCompile(

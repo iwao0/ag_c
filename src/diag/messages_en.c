@@ -177,6 +177,13 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "Too many initializer elements (limit %d)";
     case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "Cannot declare an object of type void: '%.*s'";
     case DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN: return "Declarations without a type specifier are not allowed in C11";
+    case DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE: return "Continuation entry must have type int(void)";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE: return "Continuation frame condition must have type int(void)";
+    case DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES: return "Continuation entry does not support goto or labels across frames";
+    case DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES: return "Continuation entry does not support VLA across frames";
+    case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "Continuation entry does not support alloca across frames";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "Continuation entry requires one direct while(frame_condition()) loop";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "Continuation entry permits exactly one frame condition call";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
@@ -186,6 +193,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
     case DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED: return "Failed to build or emit IR";
     case DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP: return "Unsupported IR instruction: %s";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED: return "Failed to open Wasm object output: %s";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_ADDRESSABLE_SIZE_EXCEEDED: return "Wasm object output exceeds addressable size";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_WRITE_FAILED: return "Failed to write Wasm object output";
+    case DIAG_ERR_CODEGEN_WASM_OBJECT_OUTPUT_SINK_MISSING: return "Missing Wasm object output sink";
   }
   return NULL;
 }
@@ -196,25 +207,25 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "unreachable code";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "unused variable '%.*s'";
     case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "variable '%.*s' is used uninitialized";
-    case DIAG_WARN_PARSER_MISSING_RETURN: return "non-void function falls off without returning a value (C11 6.9.1p12)";
-    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "returning address of a local variable (dangling pointer)";
-    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "assignment used as a condition (possible '==' typo)";
-    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "comma operator used as a condition (possible '&&' typo)";
-    case DIAG_WARN_PARSER_EMPTY_BODY: return "control statement body is empty (possible typo)";
-    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "initializing an integer variable from a floating-point literal (fractional part will be truncated)";
-    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "integer literal does not fit in target type (value will be truncated)";
+    case DIAG_WARN_PARSER_MISSING_RETURN: return "function '%.*s' falls off without returning a value (C11 6.9.1p12)";
+    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "returning address of local variable '%.*s' (the pointer will dangle)";
+    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "'%s' condition contains an assignment (possible '==' typo)";
+    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "'%s' condition contains a comma operator (possible '&&' typo)";
+    case DIAG_WARN_PARSER_EMPTY_BODY: return "'if' statement body is empty (possible typo)";
+    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "floating-point value%s is converted to integer (fractional part will be truncated)";
+    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "integer literal %lld does not fit in a %d-byte type (value will be truncated)";
     case DIAG_WARN_PARSER_SELF_ASSIGN: return "variable assigned to itself (possible typo)";
-    case DIAG_WARN_PARSER_SELF_COMPARE: return "comparing identical expressions (result is always the same)";
-    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "shift amount exceeds type width (C11 6.5.7p3 undefined behavior)";
-    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "division/modulo by zero (C11 6.5.5p5 undefined behavior)";
-    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "function is not declared (implicit declaration is invalid in C99/C11)";
+    case DIAG_WARN_PARSER_SELF_COMPARE: return "self-comparison (both operands are the same): '%s'";
+    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "shift amount %lld exceeds the %d-bit type width (C11 6.5.7p3 undefined behavior): %s";
+    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "right operand of '%s' is zero (C11 6.5.5p5 undefined behavior)";
+    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "function '%.*s' is not declared (implicit declaration is invalid in C99/C11)";
     case DIAG_WARN_PARSER_SWITCH_FALLTHROUGH: return "switch case does not terminate (break/return/etc.) and falls through to the next case";
-    case DIAG_WARN_PARSER_SIGN_COMPARE: return "comparison between signed and unsigned (negative value may be treated as a large positive)";
-    case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "comparison of unsigned integer with 0 has a constant result";
-    case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "logical operator (&& / ||) has identical operands";
-    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' has higher precedence than '==' so '!x == y' is parsed as '(!x) == y'";
-    case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "comparing pointer with non-zero integer constant (only the NULL pointer constant 0 is allowed)";
-    case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "integer constant expression overflows int (C11 6.5p5 undefined behavior)";
+    case DIAG_WARN_PARSER_SIGN_COMPARE: return "comparison '%s' mixes signed and unsigned integers (a negative value may be treated as a large positive)";
+    case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "unsigned comparison using '%s' has the constant result %d because unsigned integers are non-negative";
+    case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "both operands of '%s' are the same expression (constant result, possible typo)";
+    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "left operand of '%s' is unary '!' and '!' has higher precedence than '%s', so '(!x) %s y' is parsed instead of '!(x %s y)'";
+    case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "pointer is compared with non-zero integer constant %lld using '%s' (C11 6.5.16.1)";
+    case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "integer constant expression %lld %s %lld = %lld exceeds the range of int (C11 6.5p5 undefined behavior)";
     case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported by this compiler; skipping it";
   }
   return NULL;

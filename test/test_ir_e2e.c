@@ -170,6 +170,8 @@ int main(void) {
               "struct P { int a; int b; int c; }; int sum(struct P p) { return p.a + p.b + p.c; } int main(void) { struct P p; p.a = 10; p.b = 12; p.c = 20; return sum(p); }\n", 42);
   run_ir_case("struct_arg_16B",
               "struct Q { int a; int b; int c; int d; }; int sum(struct Q q) { return q.a + q.b + q.c + q.d; } int main(void) { struct Q q; q.a = 10; q.b = 10; q.c = 10; q.d = 12; return sum(q); }\n", 42);
+  run_ir_case("struct_arg_20B",
+              "struct Q { int a; int b; int c; int d; int e; }; int sum(struct Q q) { return q.a + q.b + q.c + q.d + q.e; } int main(void) { struct Q q; q.a = 8; q.b = 8; q.c = 8; q.d = 8; q.e = 10; return sum(q); }\n", 42);
   run_ir_case("struct_arg_24B",
               "struct R { int a; int b; int c; int d; int e; int f; }; int sum(struct R r) { return r.a + r.b + r.c + r.d + r.e + r.f; } int main(void) { struct R r; r.a = 7; r.b = 7; r.c = 7; r.d = 7; r.e = 7; r.f = 7; return sum(r); }\n", 42);
 

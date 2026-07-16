@@ -2773,18 +2773,29 @@ void wasm32_obj_end(void) {
       g_obj_capture_limit_exceeded = 1;
       return;
     }
-    diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "Wasm object output exceeds addressable size");
+    diag_error_id_t id =
+        DIAG_ERR_CODEGEN_WASM_OBJECT_ADDRESSABLE_SIZE_EXCEEDED;
+    diag_emit_internalf_in(
+        wasm32_obj_diagnostics(), id, "%s",
+        diag_message_for_in(wasm32_obj_diagnostics(), id));
   }
 
   if (g_obj.out && fwrite(out.data, 1, out.len, g_obj.out) != out.len) {
-    diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "failed to write Wasm object output");
+    diag_error_id_t id = DIAG_ERR_CODEGEN_WASM_OBJECT_WRITE_FAILED;
+    diag_emit_internalf_in(
+        wasm32_obj_diagnostics(), id, "%s",
+        diag_message_for_in(wasm32_obj_diagnostics(), id));
   }
   if (g_obj.capture_output) {
     free(g_obj_capture.data);
     g_obj_capture = out;
   } else {
     if (!g_obj.out) {
-      diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_USAGE, "%s", "missing Wasm object output sink");
+      diag_error_id_t id =
+          DIAG_ERR_CODEGEN_WASM_OBJECT_OUTPUT_SINK_MISSING;
+      diag_emit_internalf_in(
+          wasm32_obj_diagnostics(), id, "%s",
+          diag_message_for_in(wasm32_obj_diagnostics(), id));
     }
     free(out.data);
   }

@@ -24,7 +24,7 @@ mkdir -p "$(dirname "$runtime_obj")"
 sources=()
 while IFS= read -r src; do
   case "$src" in
-    src/diag/messages_all.c|src/diag/messages_en.c) continue ;;
+    src/diag/messages_ja.c|src/diag/messages_en.c) continue ;;
   esac
   sources+=("$src")
 done < <(cd "$root" && find src -name '*.c' -type f | sort)
@@ -50,6 +50,7 @@ AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
   --export=agc_wasm_compile_object_named \
   --export=agc_wasm_compile_wat_virtual \
   --export=agc_wasm_compile_object_virtual \
+  --export=agc_wasm_set_diagnostic_locale \
   --export=agc_wasm_set_continuation_options \
   --export=agc_wasm_diagnostic_api_version \
   --export=agc_wasm_diagnostic_set_limits \

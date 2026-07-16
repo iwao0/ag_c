@@ -17,6 +17,7 @@
 #include "arm64_apple_emit.h"
 #include "../../ir/ir.h"
 #include "../../diag/diag.h"
+#include "../../lowering/frame_layout.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,19 +43,20 @@ static int round_up(int v, int a) {
   return (v + a - 1) / a * a;
 }
 
-static int scan_alloca_total(ir_func_t *f) {
-  int total = 0;
+static int scan_alloca_end(ir_func_t *f, int start_offset) {
+  frame_layout_t layout;
+  frame_layout_reset(&layout);
+  frame_layout_reserve_prefix(&layout, start_offset);
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       if (i->op == IR_ALLOCA) {
         int sz = i->alloca_size > 0 ? i->alloca_size : 8;
         int al = i->alloca_align > 0 ? i->alloca_align : 8;
-        total = round_up(total, al);
-        total += sz;
+        (void)frame_layout_allocate(&layout, sz, al);
       }
     }
   }
-  return total;
+  return layout.next_offset;
 }
 
 static void scan_used_regs(gen_ctx_t *ctx) {
@@ -88,8 +90,7 @@ static void layout_frame(gen_ctx_t *ctx) {
   ctx->alloca_base = vreg_base + nvregs * 8;
   ctx->alloca_next = ctx->alloca_base;
   ctx->alloca_region_off = calloc((size_t)(nvregs > 0 ? nvregs : 1), sizeof(int));
-  int alloca_total = scan_alloca_total(ctx->f);
-  int raw = ctx->alloca_base + alloca_total;
+  int raw = scan_alloca_end(ctx->f, ctx->alloca_base);
   ctx->total_size = round_up(raw, 16);
   if (ctx->total_size < 32) ctx->total_size = 32;
 }
@@ -544,9 +545,9 @@ static void gen_inst_f2f(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_alloca(gen_ctx_t *ctx, ir_inst_t *inst) {
       int sz = inst->alloca_size > 0 ? inst->alloca_size : 8;
       int al = inst->alloca_align > 0 ? inst->alloca_align : 8;
-      ctx->alloca_next = round_up(ctx->alloca_next, al);
-      int off = ctx->alloca_next;
-      ctx->alloca_next += sz;
+      frame_layout_t layout = {.next_offset = ctx->alloca_next};
+      int off = frame_layout_allocate(&layout, sz, al);
+      ctx->alloca_next = layout.next_offset;
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
         ctx->alloca_region_off[inst->dst.id] = off;
       }
