@@ -57,8 +57,8 @@ node_t *psx_parse_local_declaration_syntax(
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
         assertion.diagnostic_token);
-    return ps_node_new_num_in(
-        ps_parser_runtime_arena(callbacks->runtime_context), 0);
+    return psx_node_new_syntax_int_in(
+        ps_parser_runtime_arena(callbacks->runtime_context), 0, NULL);
   }
 
   int is_typedef = curtok(callbacks)->kind == TK_TYPEDEF;

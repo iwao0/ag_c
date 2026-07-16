@@ -5364,6 +5364,59 @@ if (!/typedef\s+struct\s*\{[^]*?void\s*\*context\s*;[^]*?psx_typedef_name_classi
   );
 }
 
+const parsedNumberLiteral = parserExpressionSource.match(
+  /static\s+node_t\s*\*parse_num_literal\s*\([^]*?\n\}\n\n\/\/ 内容文字列/,
+);
+const parsedStringLiteral = parserExpressionSource.match(
+  /static\s+node_string_t\s*\*make_string_lit_node\s*\([^]*?\n\}\n\n\/\/ C11/,
+);
+const syntaxIntConstructor = nodeUtilsSource.match(
+  /node_t\s*\*psx_node_new_syntax_int_in\s*\([^]*?\n\}\n\nnode_t\s*\*ps_node_new_num_in/,
+);
+const syntaxLiteralParserSource = [
+  parserExpressionSource,
+  parserStatementSource,
+  parserLocalDeclarationSource,
+].join("\n");
+if (!parsedNumberLiteral ||
+    !parsedStringLiteral ||
+    !syntaxIntConstructor ||
+    /\bps_(?:type_new|node_bind_type)|->base\.type\s*=/.test(
+      `${parsedNumberLiteral?.[0] ?? ""}\n${parsedStringLiteral?.[0] ?? ""}`,
+    ) ||
+    /\bps_(?:type_new|node_bind_type)/.test(
+      syntaxIntConstructor?.[0] ?? "",
+    ) ||
+    /\bps_node_new_num_in\s*\(/.test(syntaxLiteralParserSource) ||
+    !/\bsemantic_resolve_number_literal\s*\(/.test(semanticPassSource) ||
+    !/\bsemantic_resolve_string_literal\s*\(/.test(semanticPassSource) ||
+    !/case\s+ND_NUM\s*:[^]*?semantic_resolve_number_literal\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/case\s+ND_STRING\s*:[^]*?semantic_resolve_string_literal\s*\(/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "parser literals must remain typeless syntax and receive canonical types only in semantic resolution",
+  );
+}
+if (/\bps_type_new_[a-z0-9_]*\s*\(|\bps_node_bind_(?:type|qual_type)\s*\(|(?:->|\.)base\.type\s*=/.test(
+      parserExpressionSource,
+    ) ||
+    /\bps_global_registry_next_(?:string|float)_literal_id\s*\(|\bpsx_register_(?:string|float)_lit_in\s*\(/.test(
+      parserExpressionSource,
+    ) ||
+    !/\bsemantic_resolve_number_literal\s*\([^]*?\bpsx_register_float_lit_in\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/\bsemantic_resolve_string_literal\s*\([^]*?\bpsx_register_string_lit_in\s*\(/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "expression parser must build typeless Syntax AST nodes without canonical type or literal-pool registration",
+  );
+}
+
 if (/parser\/ast\.h|\bnode_t\b|\bnode_kind_t\b|\bpsx_type_t\b/.test(
       hirHeader,
     )) {
@@ -5392,15 +5445,35 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
 const functionResolutionBoundary = semanticPipelineSource.match(
   /node_t\s*\*psx_frontend_analyze_function_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
+const expressionResolutionBoundary = semanticPipelineSource.match(
+  /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
+const initializerResolutionBoundary = semanticPipelineSource.match(
+  /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
 if (!functionResolutionBoundary ||
+    !expressionResolutionBoundary ||
+    !initializerResolutionBoundary ||
     !/psx_clone_syntax_tree_for_resolution\s*\([^]*?analyze_function_in_contexts\s*\(/.test(
       functionResolutionBoundary[1],
+    ) ||
+    !/const\s+node_t\s*\*syntax_expression/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?psx_bind_identifier_tree_in_contexts\s*\(/.test(
+      expressionResolutionBoundary[1],
+    ) ||
+    !/const\s+node_t\s*\*syntax\s*,\s*const\s+token_t\s*\*fallback_diag_tok/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_clone_syntax_tree_for_resolution\s*\([^]*?psx_bind_identifier_initializer_tree_in_contexts\s*\(/.test(
+      initializerResolutionBoundary[1],
     ) ||
     !/psx_clone_syntax_tree_for_resolution\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
       resolutionWorkTree,
     )) {
   throw new Error(
-    "function resolver must analyze a private working tree and leave parser syntax nodes unchanged",
+    "frontend resolvers must analyze private working trees and leave parser syntax nodes unchanged",
   );
 }
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(hirIrBuilder) ||

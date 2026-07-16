@@ -2561,13 +2561,23 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
   return shr;
 }
 
-node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
+node_t *psx_node_new_syntax_int_in(
+    arena_context_t *arena_context, long long val, token_t *tok) {
   node_num_t *node = arena_alloc_in(arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
-  node->base.type = ps_type_new_integer_kind_in(
-      arena_context, PSX_INTEGER_KIND_INT, 0, 0);
+  node->base.tok = tok;
+  node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   node->val = val;
   return (node_t *)node;
+}
+
+node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
+  node_t *node = psx_node_new_syntax_int_in(
+      arena_context, val, NULL);
+  ps_node_bind_type(
+      node, ps_type_new_integer_kind_in(
+                arena_context, PSX_INTEGER_KIND_INT, 0, 0));
+  return node;
 }
 
 static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,

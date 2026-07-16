@@ -63,6 +63,20 @@ static node_t **clone_node_array(
   return copy;
 }
 
+static node_t *cloned_designator_expression_alias(
+    const psx_initializer_entry_t *source,
+    psx_initializer_entry_t *destination,
+    const node_t *expression) {
+  if (!source || !destination || !expression) return NULL;
+  for (int d = 0; d < source->designator_count; d++) {
+    if (source->designators[d].index_expr == expression)
+      return destination->designators[d].index_expr;
+    if (source->designators[d].range_end_expr == expression)
+      return destination->designators[d].range_end_expr;
+  }
+  return NULL;
+}
+
 static int clone_initializer_entries(
     arena_context_t *arena_context, node_init_list_t *destination,
     const node_init_list_t *source) {
@@ -94,8 +108,11 @@ static int clone_initializer_entries(
       }
     }
     for (int d = 0; d < source_entry->index_expr_count; d++) {
-      entry->index_exprs[d] = clone_node(
-          arena_context, source_entry->index_exprs[d]);
+      entry->index_exprs[d] = cloned_designator_expression_alias(
+          source_entry, entry, source_entry->index_exprs[d]);
+      if (!entry->index_exprs[d])
+        entry->index_exprs[d] = clone_node(
+            arena_context, source_entry->index_exprs[d]);
       if (source_entry->index_exprs[d] && !entry->index_exprs[d])
         return 0;
     }

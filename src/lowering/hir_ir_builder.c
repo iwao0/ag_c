@@ -136,6 +136,8 @@ static void set_callable_signature(
 static int is_integer_ir_type(ir_type_t type);
 static int is_float_ir_type(ir_type_t type);
 static int is_direct_value_abi_type(ir_abi_param_info_t type);
+static int block_has_predecessor(
+    const ir_func_t *function, const ir_block_t *target);
 static ir_val_t scalar_truth_value(
     hir_ir_context_t *context, ir_val_t value);
 static ir_val_t pointer_with_offset(
@@ -153,6 +155,10 @@ static int current_block_is_terminated(const hir_ir_context_t *context) {
 static int append_implicit_return(
     hir_ir_context_t *context, const char *name, size_t name_length) {
   if (current_block_is_terminated(context)) return 1;
+  if (context->function->cur_block != context->function->entry &&
+      !block_has_predecessor(
+          context->function, context->function->cur_block))
+    return 1;
   int is_main = name_length == 4 && memcmp(name, "main", 4) == 0;
   ir_inst_t *ret = ir_inst_new(IR_RET);
   if (!ret) {

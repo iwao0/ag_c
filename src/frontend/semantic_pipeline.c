@@ -129,7 +129,21 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    node_t *expression, const token_t *fallback_diag_tok) {
+    const node_t *syntax_expression,
+    const token_t *fallback_diag_tok) {
+  if (!semantic_context || !syntax_expression) return NULL;
+  node_t *expression = psx_clone_syntax_tree_for_resolution(
+      ps_ctx_arena(semantic_context), syntax_expression);
+  if (!expression) {
+    ag_diagnostic_context_t *diagnostics =
+        ps_ctx_diagnostics(semantic_context);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        "%s: could not create expression resolver working tree",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED));
+    return NULL;
+  }
   expression = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, fallback_diag_tok);
@@ -158,15 +172,17 @@ node_t *psx_frontend_analyze_expression_in_contexts(
 
 node_t *psx_frontend_analyze_expression_in_session(
     ag_compilation_session_t *session,
-    node_t *expression, const token_t *fallback_diag_tok) {
-  if (!ag_compilation_session_is_complete(session)) return expression;
+    const node_t *syntax_expression,
+    const token_t *fallback_diag_tok) {
+  if (!ag_compilation_session_is_complete(session))
+    return (node_t *)syntax_expression;
   return psx_frontend_analyze_expression_in_contexts(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
       ag_compilation_session_lowering_context(session),
       ag_compilation_session_options_view(session),
-      expression, fallback_diag_tok);
+      syntax_expression, fallback_diag_tok);
 }
 
 node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
@@ -175,29 +191,42 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  syntax = psx_bind_identifier_initializer_tree_in_contexts(
+    const node_t *syntax, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !syntax) return NULL;
+  node_t *initializer = psx_clone_syntax_tree_for_resolution(
+      ps_ctx_arena(semantic_context), syntax);
+  if (!initializer) {
+    ag_diagnostic_context_t *diagnostics =
+        ps_ctx_diagnostics(semantic_context);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        "%s: could not create initializer resolver working tree",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED));
+    return NULL;
+  }
+  initializer = psx_bind_identifier_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
-      syntax, fallback_diag_tok);
+      initializer, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
-      syntax, NULL, fallback_diag_tok);
+      initializer, NULL, fallback_diag_tok);
   psx_require_available_semantic_tree_types_interned(
-      semantic_context, ps_ctx_diagnostics(semantic_context), syntax,
+      semantic_context, ps_ctx_diagnostics(semantic_context), initializer,
       fallback_diag_tok);
-  syntax = psx_lower_semantic_initializer_syntax_in_contexts(
+  initializer = psx_lower_semantic_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
       lowering_context, options,
-      syntax, fallback_diag_tok);
+      initializer, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
-      syntax, NULL, fallback_diag_tok);
+      initializer, NULL, fallback_diag_tok);
   psx_require_semantic_initializer_has_interned_expression_types(
-      semantic_context, ps_ctx_diagnostics(semantic_context), syntax,
+      semantic_context, ps_ctx_diagnostics(semantic_context), initializer,
       fallback_diag_tok);
   psx_require_semantic_initializer_has_canonical_expression_types(
-      ps_ctx_diagnostics(semantic_context), syntax, fallback_diag_tok);
-  return syntax;
+      ps_ctx_diagnostics(semantic_context), initializer, fallback_diag_tok);
+  return initializer;
 }
 
 void psx_frontend_analyze_program_in_contexts(

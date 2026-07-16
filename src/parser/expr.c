@@ -629,8 +629,6 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
       ctx->arena_context, sizeof(node_sizeof_query_t));
   query->base.kind = ND_SIZEOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer_kind_in(
-      ctx->arena_context, PSX_INTEGER_KIND_LONG, 1, 0);
 
   if (curtok(ctx)->kind == TK_LPAREN) {
     psx_type_name_ref_t captured = {0};
@@ -676,8 +674,6 @@ static node_t *parse_alignof_type_name(
       ctx->arena_context, sizeof(node_alignof_query_t));
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer_kind_in(
-      ctx->arena_context, PSX_INTEGER_KIND_LONG, 1, 0);
 
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
@@ -816,7 +812,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     set_curtok(ctx, curtok(ctx)->next);
     node_t *eq = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_EQ, cast_ctx(ctx),
-        ps_node_new_num_in(ctx->arena_context, 0));
+        psx_node_new_syntax_int_in(ctx->arena_context, 0, NULL));
     eq->from_logical_not = 1;  /* `!p == 0` の precedence-trap 警告に使う */
     return eq;
   }
@@ -824,10 +820,11 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     set_curtok(ctx, curtok(ctx)->next);
     node_t *neg = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_SUB,
-        ps_node_new_num_in(ctx->arena_context, 0), cast_ctx(ctx));
+        psx_node_new_syntax_int_in(
+            ctx->arena_context, 0, NULL), cast_ctx(ctx));
     return psx_node_new_raw_binary_in(
         ctx->arena_context, ND_SUB, neg,
-        ps_node_new_num_in(ctx->arena_context, 1));
+        psx_node_new_syntax_int_in(ctx->arena_context, 1, NULL));
   }
   if (k == TK_MUL) {
     token_t *op_tok = curtok(ctx);
@@ -1032,43 +1029,20 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
   token_num_t *num = (token_num_t *)tok;
   node_num_t *node = arena_alloc_in(ctx->arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
+  node->base.tok = tok;
   if (num->num_kind == TK_NUM_KIND_INT) {
     node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
     node->val = tk_as_num_int(tok)->val;
-    /* long / long long サフィックス付き整数リテラルは値が 32bit に収まっても
-     * canonical typeをi64幅にする。unsignedも型に保持する。 */
-    int is_long = tk_as_num_int(tok)->int_size != TK_INT_SIZE_INT;
-    int is_long_long =
-        tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG;
-    int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
-    psx_integer_kind_t literal_kind =
-        is_long_long ? PSX_INTEGER_KIND_LONG_LONG
-        : is_long ? PSX_INTEGER_KIND_LONG
-                  : PSX_INTEGER_KIND_INT;
-    psx_type_t *literal_type = ps_type_new_integer_kind_in(
-        ctx->arena_context, literal_kind, is_unsigned, 0);
-    ps_node_bind_type((node_t *)node, literal_type);
   } else {
-    tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;
     node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
     node->fval = tk_as_num_float(tok)->fval;
-    ps_node_bind_type((node_t *)node,
-                      ps_type_new_float_in(ctx->arena_context, fp_kind));
-    float_lit_t *lit = calloc(1, sizeof(float_lit_t));
-    lit->id = ps_global_registry_next_float_literal_id(
-        ctx->global_registry);
-    lit->fval = node->fval;
-    lit->fp_kind = fp_kind;
-    lit->float_suffix_kind = node->float_suffix_kind;
-    psx_register_float_lit_in(ctx->global_registry, lit);
-    node->fval_id = lit->id;
+    node->fval_id = -1;
   }
   set_curtok(ctx, curtok(ctx)->next);
   return (node_t *)node;
 }
 
-// 内容文字列・幅・プレフィックスから ND_STRING ノードと .LC ラベルを生成する。
-// str はコピーせず lit->str に直接渡されるので、呼び出し側で alloc 済みであること。
+// 内容文字列・幅・プレフィックスから型なし ND_STRING syntaxを生成する。
 static node_string_t *make_string_lit_node(
                                            expr_parse_ctx_t *ctx,
                                            char *str, int len,
@@ -1077,36 +1051,12 @@ static node_string_t *make_string_lit_node(
   node_string_t *snode = arena_alloc_in(
       ctx->arena_context, sizeof(node_string_t));
   snode->base.kind = ND_STRING;
-  int id = ps_global_registry_next_string_literal_id(
-      ctx->global_registry);
-  int label_len = snprintf(NULL, 0, ".LC%d", id);
-  snode->string_label = calloc((size_t)label_len + 1, 1);
-  snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);
   snode->literal_contents = str;
   snode->literal_length = len;
-  string_lit_t *lit = calloc(1, sizeof(string_lit_t));
-  lit->label = snode->string_label;
-  lit->str = str;
-  lit->len = len;
-  lit->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
-  lit->str_prefix_kind = prefix_kind;
-  psx_register_string_lit_in(ctx->global_registry, lit);
   /* 文字列リテラルは char (または wchar) 配列で、式中ではポインタに decay する。
    * `"abc"[1]` の subscript チェックや (ptr + n) のスケーリングに使う。 */
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   snode->str_prefix_kind = prefix_kind;
-  int elem_width = snode->char_width;
-  int elem_is_unsigned = prefix_kind == TK_STR_PREFIX_u ||
-                         prefix_kind == TK_STR_PREFIX_U;
-  psx_integer_kind_t elem_kind = elem_width == TK_CHAR_WIDTH_CHAR
-                                     ? PSX_INTEGER_KIND_CHAR
-                                 : elem_width == 2
-                                     ? PSX_INTEGER_KIND_SHORT
-                                     : PSX_INTEGER_KIND_INT;
-  psx_type_t *elem_type = ps_type_new_integer_kind_in(
-      ctx->arena_context, elem_kind, elem_is_unsigned,
-      elem_width == TK_CHAR_WIDTH_CHAR);
-  snode->base.type = ps_type_new_pointer_in(ctx->arena_context, elem_type);
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */

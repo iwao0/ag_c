@@ -17,6 +17,9 @@
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
@@ -36,6 +39,132 @@ static void semantic_transform_node(
 static void semantic_bind_result_type(
     node_t *node, const psx_type_t *type) {
   ps_node_bind_type(node, type);
+}
+
+static void semantic_bind_canonical_result_type(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, const psx_type_t *type) {
+  psx_qual_type_t qual_type =
+      ps_ctx_intern_qual_type_in(semantic_context, type);
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      semantic_context, qual_type.type_id);
+  if (canonical)
+    ps_node_bind_qual_type(node, canonical, qual_type);
+}
+
+static psx_floating_kind_t semantic_literal_floating_kind(
+    tk_float_kind_t token_kind) {
+  switch (token_kind) {
+    case TK_FLOAT_KIND_FLOAT:
+      return PSX_FLOATING_KIND_FLOAT;
+    case TK_FLOAT_KIND_LONG_DOUBLE:
+      return PSX_FLOATING_KIND_LONG_DOUBLE;
+    case TK_FLOAT_KIND_DOUBLE:
+      return PSX_FLOATING_KIND_DOUBLE;
+    case TK_FLOAT_KIND_NONE:
+      return PSX_FLOATING_KIND_NONE;
+  }
+  return PSX_FLOATING_KIND_NONE;
+}
+
+static void semantic_resolve_number_literal(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    node_num_t *literal) {
+  if (!semantic_context || !literal || literal->base.type) return;
+  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
+  token_t *tok = literal->base.tok;
+  const psx_type_t *type = NULL;
+  if (tok && tok->kind == TK_NUM &&
+      tk_as_num(tok)->num_kind == TK_NUM_KIND_FLOAT) {
+    tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;
+    type = ps_type_new_floating_in(
+        arena_context,
+        semantic_literal_floating_kind(fp_kind),
+        0);
+    if (global_registry && literal->fval_id < 0) {
+      float_lit_t *registered = calloc(1, sizeof(float_lit_t));
+      registered->id = ps_global_registry_next_float_literal_id(
+          global_registry);
+      registered->fval = literal->fval;
+      registered->fp_kind = fp_kind;
+      registered->float_suffix_kind =
+          literal->float_suffix_kind;
+      psx_register_float_lit_in(global_registry, registered);
+      literal->fval_id = registered->id;
+    }
+  } else {
+    tk_int_size_t int_size = TK_INT_SIZE_INT;
+    int is_unsigned = 0;
+    if (tok && tok->kind == TK_NUM &&
+        tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
+      int_size = tk_as_num_int(tok)->int_size;
+      is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
+    }
+    psx_integer_kind_t integer_kind =
+        int_size == TK_INT_SIZE_LONG_LONG
+            ? PSX_INTEGER_KIND_LONG_LONG
+        : int_size == TK_INT_SIZE_LONG
+            ? PSX_INTEGER_KIND_LONG
+            : PSX_INTEGER_KIND_INT;
+    type = ps_type_new_integer_kind_in(
+        arena_context, integer_kind, is_unsigned, 0);
+  }
+  semantic_bind_canonical_result_type(
+      semantic_context, (node_t *)literal, type);
+}
+
+static void semantic_resolve_string_literal(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    node_string_t *literal) {
+  if (!semantic_context || !literal || literal->base.type) return;
+  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
+  int element_width = literal->char_width
+                          ? (int)literal->char_width
+                          : TK_CHAR_WIDTH_CHAR;
+  int element_is_unsigned =
+      literal->str_prefix_kind == TK_STR_PREFIX_u ||
+      literal->str_prefix_kind == TK_STR_PREFIX_U;
+  psx_integer_kind_t element_kind =
+      element_width == TK_CHAR_WIDTH_CHAR
+          ? PSX_INTEGER_KIND_CHAR
+      : element_width == TK_CHAR_WIDTH_CHAR16
+          ? PSX_INTEGER_KIND_SHORT
+          : PSX_INTEGER_KIND_INT;
+  const psx_type_t *element_type = ps_type_new_integer_kind_in(
+      arena_context, element_kind, element_is_unsigned,
+      element_width == TK_CHAR_WIDTH_CHAR);
+  if (global_registry && !literal->string_label) {
+    int id = ps_global_registry_next_string_literal_id(
+        global_registry);
+    int label_length = snprintf(NULL, 0, ".LC%d", id);
+    literal->string_label = calloc(
+        (size_t)label_length + 1, 1);
+    snprintf(
+        literal->string_label, (size_t)label_length + 1,
+        ".LC%d", id);
+    string_lit_t *registered = calloc(1, sizeof(string_lit_t));
+    registered->label = literal->string_label;
+    registered->str = literal->literal_contents;
+    registered->len = literal->literal_length;
+    registered->char_width = literal->char_width;
+    registered->str_prefix_kind = literal->str_prefix_kind;
+    psx_register_string_lit_in(global_registry, registered);
+  }
+  semantic_bind_canonical_result_type(
+      semantic_context, (node_t *)literal,
+      ps_type_new_pointer_in(arena_context, element_type));
+}
+
+static void semantic_bind_size_query_result_type(
+    psx_semantic_context_t *semantic_context, node_t *query) {
+  if (!semantic_context || !query || query->type) return;
+  semantic_bind_canonical_result_type(
+      semantic_context, query,
+      ps_type_new_integer_kind_in(
+          ps_ctx_arena(semantic_context),
+          PSX_INTEGER_KIND_LONG, 1, 0));
 }
 
 static int semantic_bind_indirection_result_type(
@@ -749,6 +878,16 @@ static void semantic_transform_node(
       semantic_diagnostics(traversal->semantic_context);
 
   switch (node->kind) {
+    case ND_NUM:
+      semantic_resolve_number_literal(
+          traversal->semantic_context, traversal->global_registry,
+          (node_num_t *)node);
+      break;
+    case ND_STRING:
+      semantic_resolve_string_literal(
+          traversal->semantic_context, traversal->global_registry,
+          (node_string_t *)node);
+      break;
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
       semantic_transform_node(node->lhs, traversal);
@@ -868,6 +1007,8 @@ static void semantic_transform_node(
         semantic_transform_node(
             query->operand, traversal);
       semantic_resolve_sizeof_query(query, traversal);
+      semantic_bind_size_query_result_type(
+          traversal->semantic_context, node);
       break;
     }
     case ND_ALIGNOF_QUERY:
@@ -875,6 +1016,8 @@ static void semantic_transform_node(
           traversal->semantic_context, traversal->global_registry,
           traversal->local_registry,
           (node_alignof_query_t *)node);
+      semantic_bind_size_query_result_type(
+          traversal->semantic_context, node);
       break;
     case ND_CAST:
       semantic_transform_node(node->lhs, traversal);

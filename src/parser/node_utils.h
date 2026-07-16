@@ -62,6 +62,8 @@ node_t *ps_node_new_vla_alloc_in(arena_context_t *arena_context,
 node_t *ps_node_new_shift_trunc_extend_for_width_in(
     arena_context_t *arena_context, node_t *operand, int left_shift,
     int execution_size, int is_unsigned);
+node_t *psx_node_new_syntax_int_in(
+    arena_context_t *arena_context, long long val, token_t *tok);
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset);
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
