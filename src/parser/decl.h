@@ -50,17 +50,4 @@ void ps_decl_get_current_funcname_in(
     const psx_local_registry_t *registry,
     char **out_name, int *out_len);
 
-node_t *psx_decl_parse_initializer_for_var_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    lvar_t *var);
-node_t *ps_decl_bind_initializer_for_var_in(
-    arena_context_t *arena_context,
-    lvar_t *var, node_t *initializer,
-    psx_decl_init_kind_t initializer_kind, token_t *init_tok);
-
-
 #endif

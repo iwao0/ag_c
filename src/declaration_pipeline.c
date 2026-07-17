@@ -27,6 +27,7 @@
 #include "semantic/initializer_resolution.h"
 #include "semantic/identifier_binding.h"
 #include "semantic/local_declaration_resolution.h"
+#include "semantic/local_initializer_binding.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/parameter_declaration_resolution.h"
 
@@ -983,7 +984,7 @@ int psx_finish_automatic_local_declaration_pipeline(
   }
 
   if (request->initializer->has_initializer) {
-    node_t *initializer = ps_decl_bind_initializer_for_var_in(
+    node_t *initializer = psx_bind_local_initializer_target_in(
         ps_lowering_arena(request->lowering_context),
         result->var, request->initializer->value,
         request->initializer->kind,

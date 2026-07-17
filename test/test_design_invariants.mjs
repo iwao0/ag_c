@@ -924,6 +924,15 @@ const parserPragmaPackSource = await readFile(
   "utf8",
 );
 const parserDeclSource = await readFile("src/parser/decl.c", "utf8");
+const parserDeclHeader = await readFile("src/parser/decl.h", "utf8");
+const localInitializerBindingHeader = await readFile(
+  "src/semantic/local_initializer_binding.h",
+  "utf8",
+);
+const localInitializerBindingSource = await readFile(
+  "src/semantic/local_initializer_binding.c",
+  "utf8",
+);
 const loweringRuntimeHeader = await readFile(
   "src/lowering/runtime_context.h",
   "utf8",
@@ -1910,7 +1919,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
     /stream->(?:semantic_context|global_registry|local_registry)/.test(
       parserStreamSource,
     ) ||
-    !/psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
+    !/psx_frontend_resolve_parsed_function_work_tree_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -3499,8 +3508,8 @@ if (/\bps_ctx_(?:enter|leave)_block_scope_in\s*\(/.test(parserSource) ||
 const functionBodyParseIndex = frontendTranslationUnitSource.indexOf(
   "ps_parse_function_definition_body(",
 );
-const functionSemanticApplyIndex = frontendTranslationUnitSource.indexOf(
-  "psx_apply_function_definition_in_contexts(",
+const functionSemanticResolveIndex = frontendTranslationUnitSource.indexOf(
+  "psx_frontend_resolve_parsed_function_work_tree_in_session(",
 );
 const parameterBindingSeedIndex = frontendTranslationUnitSource.indexOf(
   "psx_record_function_definition_declarator_binding_events(",
@@ -3540,7 +3549,10 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     /\bpsx_clone_syntax_tree_for_resolution\s*\(/.test(
       `${declarationApplicationSource}\n${resolutionWorkTreeInternalHeader}`,
     ) ||
-    !/tree->compatibility_root\s*=\s*clone_node\s*\(/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?create_work_tree\s*\([^]*?clone_node\s*\(/.test(
+      resolutionWorkTree,
+    ) ||
+    !/tree->compatibility_root\s*=\s*compatibility_root/.test(
       resolutionWorkTree,
     ) ||
     !/tree->semantic_tree\s*=\s*psx_semantic_tree_create\s*\(/.test(
@@ -3548,9 +3560,12 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     ) ||
     parameterBindingSeedIndex < 0 ||
     functionBodyParseIndex < 0 ||
-    functionSemanticApplyIndex < 0 ||
+    functionSemanticResolveIndex < 0 ||
     parameterBindingSeedIndex > functionBodyParseIndex ||
-    functionBodyParseIndex > functionSemanticApplyIndex ||
+    functionBodyParseIndex > functionSemanticResolveIndex ||
+    /psx_apply_function_definition_in_contexts\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
     !/ps_name_classifier_declare\s*\(/.test(
       declarationBindingEventsSource,
     ) ||
@@ -5429,6 +5444,28 @@ if (!automaticLocalPipeline ||
     "local and parameter declaration types must be interned before layout-dependent planning and lowering",
   );
 }
+if (/\bpsx_decl_parse_initializer_for_var_in_contexts\s*\(/.test(
+      `${parserDeclHeader}\n${parserDeclSource}`,
+    ) ||
+    /\bps_decl_bind_initializer_for_var_in\s*\(/.test(
+      `${parserDeclHeader}\n${parserDeclSource}`,
+    ) ||
+    /\bpsx_node_new_raw_decl_initializer_in\s*\(/.test(
+      parserDeclSource,
+    ) ||
+    !/\bpsx_bind_local_initializer_target_in\s*\(/.test(
+      localInitializerBindingHeader,
+    ) ||
+    !/\bpsx_bind_local_initializer_target_in\s*\([^]*?psx_node_new_raw_decl_initializer_in\s*\(/.test(
+      localInitializerBindingSource,
+    ) ||
+    !/\bpsx_bind_local_initializer_target_in\s*\(/.test(
+      declarationPipelineSource,
+    )) {
+  throw new Error(
+    "parser declarations must leave local initializer target binding to the semantic declaration pipeline",
+  );
+}
 if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       loweringRuntimeHeader,
     ) ||
@@ -6837,6 +6874,9 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
 const functionResolutionBoundary = semanticPipelineSource.match(
   /psx_resolution_work_tree_t\s*\*\s*psx_frontend_resolve_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
+const parsedFunctionResolutionBoundary = semanticPipelineSource.match(
+  /psx_resolution_work_tree_t\s*\*\s*psx_frontend_resolve_parsed_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
 const expressionResolutionBoundary = semanticPipelineSource.match(
   /static\s+psx_resolution_work_tree_t\s*\*resolve_expression_work_tree_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
@@ -6857,9 +6897,22 @@ const semanticMaterializationCalls =
     /\bmaterialize_resolved_tree\s*\(/g,
   ) ?? [];
 if (!functionResolutionBoundary ||
+    !parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
-    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?psx_resolve_function_semantic_tree_in_contexts\s*\(/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?syntax_function->body[^]*?work_definition\.body\s*=\s*body[^]*?psx_apply_function_definition_in_contexts\s*\([^]*?psx_resolution_work_tree_replace_compatibility_root\s*\(/.test(
+      parsedFunctionResolutionBoundary[1],
+    ) ||
+    /psx_resolution_work_tree_create_from_function_seed\s*\(/.test(
+      parsedFunctionResolutionBoundary[1],
+    ) ||
+    !/psx_frontend_resolve_parsed_function_work_tree_in_session\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    /psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_resolution_work_tree_create_from_function_seed\s*\([^]*?psx_resolve_function_semantic_tree_in_contexts\s*\(/.test(
       functionResolutionBoundary[1],
     ) ||
     !/const\s+node_t\s*\*syntax_expression/.test(
@@ -6875,6 +6928,9 @@ if (!functionResolutionBoundary ||
       initializerResolutionBoundary[1],
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+      resolutionWorkTreeInternalHeader,
+    ) ||
+    !/psx_resolution_work_tree_create_from_function_seed\s*\([^,]+,\s*const\s+node_function_definition_t\s*\*function_seed\s*\)/.test(
       resolutionWorkTreeInternalHeader,
     ) ||
     !/struct\s+psx_resolution_work_tree_t\s*\{[^]*?node_t\s*\*compatibility_root\s*;[^]*?psx_semantic_tree_t\s*\*semantic_tree\s*;[^]*?psx_typed_hir_tree_t\s*\*typed_hir\s*;[^]*?psx_resolution_work_phase_t\s+phase\s*;[^]*?\};/.test(

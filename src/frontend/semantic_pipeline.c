@@ -1,6 +1,7 @@
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"
 #include "legacy_ast_api.h"
+#include "function_definition.h"
 
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
@@ -43,6 +44,65 @@ static psx_hir_node_id_t build_session_hir(
           diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
       (int)failure.status, failure.source_node_kind);
   return PSX_HIR_NODE_ID_INVALID;
+}
+
+psx_resolution_work_tree_t *
+psx_frontend_resolve_parsed_function_work_tree_in_session(
+    ag_compilation_session_t *session,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (!ag_compilation_session_is_complete(session) ||
+      !syntax_function || !syntax_function->body || !hir_root) {
+    return NULL;
+  }
+  psx_resolution_work_tree_t *work_tree =
+      psx_resolution_work_tree_create_from_syntax(
+          ag_compilation_session_arena_context(session),
+          syntax_function->body);
+  node_t *body =
+      psx_resolution_work_tree_compatibility_root_mut(work_tree);
+  if (!work_tree || !body) return NULL;
+
+  psx_parsed_function_definition_t work_definition =
+      *syntax_function;
+  work_definition.body = body;
+  node_function_definition_t *function =
+      psx_apply_function_definition_in_contexts(
+          ag_compilation_session_semantic_context(session),
+          ag_compilation_session_global_registry(session),
+          ag_compilation_session_local_registry(session),
+          ag_compilation_session_parser_runtime_context(session),
+          ag_compilation_session_lowering_context(session),
+          &work_definition);
+  if (!function ||
+      !psx_resolution_work_tree_replace_compatibility_root(
+          work_tree, &function->base)) {
+    return NULL;
+  }
+  if (!psx_resolve_function_semantic_tree_in_contexts(
+          ag_compilation_session_semantic_context(session),
+          ag_compilation_session_global_registry(session),
+          ag_compilation_session_local_registry(session),
+          ag_compilation_session_lowering_context(session),
+          ag_compilation_session_options_view(session),
+          work_tree, fallback_diag_tok)) {
+    return NULL;
+  }
+  *hir_root = build_session_hir(
+      session, work_tree, fallback_diag_tok);
+  return *hir_root != PSX_HIR_NODE_ID_INVALID ? work_tree : NULL;
+}
+
+int psx_frontend_resolve_parsed_function_to_hir_in_session(
+    ag_compilation_session_t *session,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root) {
+  return psx_frontend_resolve_parsed_function_work_tree_in_session(
+             session, syntax_function, fallback_diag_tok, hir_root)
+             ? 1 : 0;
 }
 
 psx_resolution_work_tree_t *

@@ -17,6 +17,12 @@ typedef struct {
 } psx_frontend_expression_hir_t;
 
 psx_resolution_work_tree_t *
+psx_frontend_resolve_parsed_function_work_tree_in_session(
+    ag_compilation_session_t *session,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root);
+psx_resolution_work_tree_t *
 psx_frontend_resolve_function_work_tree_in_session(
     ag_compilation_session_t *session,
     const node_t *syntax_function, const token_t *fallback_diag_tok,

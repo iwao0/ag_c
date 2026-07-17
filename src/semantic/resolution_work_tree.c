@@ -26,9 +26,6 @@ struct psx_resolution_work_tree_t {
 };
 
 static size_t node_storage_size(const node_t *node) {
-  size_t resolution_size =
-      psx_resolution_node_storage_size(node);
-  if (resolution_size) return resolution_size;
   switch (node->kind) {
     case ND_IDENTIFIER: return sizeof(node_identifier_t);
     case ND_COMPOUND_LITERAL: return sizeof(node_compound_literal_t);
@@ -65,8 +62,11 @@ static size_t node_storage_size(const node_t *node) {
     case ND_LABEL:
       return sizeof(node_jump_t);
     case ND_GVAR: return sizeof(node_t);
-    default: return sizeof(node_t);
+    default: break;
   }
+  size_t resolution_size =
+      psx_resolution_node_storage_size(node);
+  return resolution_size ? resolution_size : sizeof(node_t);
 }
 
 static node_t *clone_node(

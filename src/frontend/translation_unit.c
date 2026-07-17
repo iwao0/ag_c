@@ -298,13 +298,11 @@ static int frontend_next_function_internal(
           semantic_context,
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0, &checkpoint);
-      node_function_definition_t *function =
-          psx_apply_function_definition_in_contexts(
-              semantic_context, global_registry, local_registry,
-              ag_compilation_session_parser_runtime_context(session),
-              ag_compilation_session_lowering_context(session),
-              &item.value.function_header);
-      if (!function) {
+      psx_resolution_work_tree_t *resolved =
+          psx_frontend_resolve_parsed_function_work_tree_in_session(
+              session, &item.value.function_header,
+              (token_t *)function_name, &result->hir_root);
+      if (!resolved) {
         ps_ctx_rollback_function_registration_in(
             semantic_context,
             function_name ? function_name->str : NULL,
@@ -317,11 +315,6 @@ static int frontend_next_function_internal(
       }
       ps_dispose_function_definition_syntax(
           &item.value.function_header);
-      psx_resolution_work_tree_t *resolved =
-          psx_frontend_resolve_function_work_tree_in_session(
-              session, &function->base, function->base.tok,
-              &result->hir_root);
-      if (!resolved) return 0;
       if (work_tree) *work_tree = resolved;
       return 1;
     }
