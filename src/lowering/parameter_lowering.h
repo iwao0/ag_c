@@ -4,6 +4,7 @@
 #include "../parser/lvar_public.h"
 #include "../semantic/parameter_declaration_plan.h"
 #include "../semantic/parameter_declaration_resolution.h"
+#include "../semantic/typed_hir_tree.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
@@ -26,7 +27,7 @@ typedef struct {
   char *name;
   int name_len;
   const psx_parameter_declaration_resolution_t *resolution;
-  node_t *const *inner_dimension_expressions;
+  const psx_typed_hir_tree_t *const *inner_dimension_expressions;
   token_t *diag_tok;
 } psx_resolved_parameter_lowering_request_t;
 

@@ -35,8 +35,9 @@ void ps_ctx_bind_target_info(
 const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context);
 psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
-    psx_semantic_context_t *context, node_t *expression);
-node_t *ps_ctx_semantic_expression_in(
+    psx_semantic_context_t *context,
+    const psx_typed_hir_tree_t *expression);
+const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
     const psx_semantic_context_t *context,
     psx_semantic_expr_id_t expression_id);
 psx_qual_type_t ps_ctx_intern_qual_type_in(

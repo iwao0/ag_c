@@ -8,7 +8,6 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
-typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
 typedef struct psx_type_t psx_type_t;
 
 typedef struct {
@@ -16,12 +15,6 @@ typedef struct {
   psx_hir_node_id_t root;
 } psx_frontend_expression_hir_t;
 
-psx_resolution_work_tree_t *
-psx_frontend_resolve_parsed_function_work_tree_in_session(
-    ag_compilation_session_t *session,
-    const psx_parsed_function_definition_t *syntax_function,
-    const token_t *fallback_diag_tok,
-    psx_hir_node_id_t *hir_root);
 int psx_frontend_resolve_expression_to_hir_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

@@ -422,13 +422,8 @@ static node_t *bind_node(
       bind_slot(&assertion->condition, context);
       return node;
     }
-    case ND_VLA_ALLOC: {
-      psx_vla_runtime_plan_t *plan =
-          ((node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++)
-        bind_slot(&plan->dimensions[i], context);
+    case ND_VLA_ALLOC:
       return node;
-    }
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *literal =
           (node_compound_literal_t *)node;

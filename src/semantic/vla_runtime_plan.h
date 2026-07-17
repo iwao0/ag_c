@@ -1,10 +1,10 @@
 #ifndef SEMANTIC_VLA_RUNTIME_PLAN_H
 #define SEMANTIC_VLA_RUNTIME_PLAN_H
 
-#include "../parser/node_fwd.h"
+#include "typed_hir_tree.h"
 
 typedef struct psx_vla_runtime_plan_t {
-  node_t **dimensions;
+  const psx_typed_hir_tree_t **dimensions;
   int *stride_store_offsets;
   int *stride_start_dimensions;
   int dimension_count;

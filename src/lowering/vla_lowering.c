@@ -283,7 +283,14 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
       constants[i] = dimension->is_constant
                          ? (int)dimension->constant_value : 0;
       if (dimension->is_constant) continue;
-      lvar_t *source = ps_node_lvar_symbol(dimension->expression);
+      int source_offset =
+          psx_typed_hir_tree_root_kind(dimension->expression) ==
+                  PSX_HIR_LOCAL
+              ? psx_typed_hir_tree_root_storage_offset(
+                    dimension->expression)
+              : 0;
+      lvar_t *source = psx_decl_find_lvar_by_offset_in(
+          request->local_registry, source_offset);
       if (!source || !ps_lvar_is_param(source)) {
         const char *source_name = source ? ps_lvar_name(source)
                                          : "<expression>";

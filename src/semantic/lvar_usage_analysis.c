@@ -200,15 +200,8 @@ void psx_collect_lvar_usage_events_in(
       return;
     case ND_STATIC_ASSERT:
       return;
-    case ND_VLA_ALLOC: {
-      const psx_vla_runtime_plan_t *plan =
-          ((node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++) {
-        psx_collect_lvar_usage_events_in(
-            local_registry, plan->dimensions[i], region);
-      }
+    case ND_VLA_ALLOC:
       return;
-    }
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;

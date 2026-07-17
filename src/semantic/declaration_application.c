@@ -14,12 +14,9 @@
 #include "../parser/type_builder.h"
 #include "aggregate_member_resolution.h"
 #include "declaration_resolution.h"
+#include "declarator_bound_resolution.h"
 #include "enum_constant_resolution.h"
-#include "constant_expression.h"
 #include "function_parameter_resolution.h"
-#include "identifier_binding.h"
-#include "semantic_pass.h"
-#include "resolution_work_tree_internal.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 
@@ -413,33 +410,18 @@ static void apply_runtime_parsed_declarator(
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "declarator-resolution",
                    "runtime array bound syntax was not prepared");
     }
-    psx_resolution_work_tree_t *expression_work_tree =
-        psx_resolution_work_tree_create_from_syntax(
-            ps_ctx_arena(semantic_context), syntax_expression);
-    node_t *expression =
-        psx_resolution_work_tree_compatibility_root_mut(
-            expression_work_tree);
-    if (!expression_work_tree || !expression) {
+    psx_declarator_bound_resolution_t bound_resolution;
+    if (!psx_resolve_declarator_bound_in_contexts(
+            semantic_context, global_registry, local_registry,
+            syntax_expression, lookup_point,
+            parsed->expression.start, &bound_resolution)) {
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
           parsed->expression.start, "declarator-resolution",
-          "runtime array bound syntax clone failed");
+          "runtime array bound resolution failed");
     }
-    if (lookup_point) {
-      expression =
-          psx_bind_identifier_tree_at_lookup_point_in_contexts(
-              semantic_context, global_registry, local_registry,
-              *lookup_point, expression, parsed->expression.start);
-    } else {
-      expression = psx_bind_identifier_tree_in_contexts(
-          semantic_context, global_registry, local_registry,
-          expression, parsed->expression.start);
-    }
-    psx_semantic_resolve_tree_in_contexts(
-        semantic_context, global_registry, local_registry,
-        expression, NULL, parsed->expression.start);
-    int is_constant = 1;
-    long long value = psx_eval_const_int(expression, &is_constant);
+    int is_constant = bound_resolution.is_constant;
+    long long value = bound_resolution.constant_value;
     if (is_constant && value < 0) {
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parsed->expression.start, "decl", "%s",
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context),
@@ -460,7 +442,7 @@ static void apply_runtime_parsed_declarator(
         (psx_runtime_array_bound_t){
             .declarator_op_index = parsed->declarator_op_index,
             .expression_id = ps_ctx_register_semantic_expression_in(
-                semantic_context, expression),
+                semantic_context, bound_resolution.typed_expression),
             .constant_value = is_constant ? value : 0,
             .is_constant = is_constant,
         };

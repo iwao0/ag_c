@@ -43,15 +43,8 @@ static int walk_node(
       return walk_node(
           ((const node_static_assert_t *)node)->condition,
           visitor, user);
-    case ND_VLA_ALLOC: {
-      const psx_vla_runtime_plan_t *plan =
-          ((const node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++) {
-        if (!walk_node(plan->dimensions[i], visitor, user))
-          return 0;
-      }
+    case ND_VLA_ALLOC:
       return 1;
-    }
     case ND_FUNCDEF: {
       const node_function_definition_t *function =
           (const node_function_definition_t *)node;

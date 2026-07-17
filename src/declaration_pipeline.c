@@ -462,7 +462,7 @@ static int append_definition_parameter(
     return 1;
   }
 
-  node_t **inner_dimension_expressions = NULL;
+  const psx_typed_hir_tree_t **inner_dimension_expressions = NULL;
   if (resolution.inner_dimension_count > 0) {
     inner_dimension_expressions = arena_alloc_in(
         ps_ctx_arena(semantic_context),
@@ -917,7 +917,8 @@ int psx_begin_automatic_local_declaration_pipeline(
       break;
     }
     case PSX_LOCAL_STORAGE_POINTER_TO_VLA: {
-      node_t *row_dimension = ps_ctx_semantic_expression_in(
+      const psx_typed_hir_tree_t *row_dimension =
+          ps_ctx_semantic_expression_in(
           request->semantic_context,
           resolution.pointer_row_dimension_id);
       if (!row_dimension) return 0;

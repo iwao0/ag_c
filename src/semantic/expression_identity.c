@@ -6,7 +6,7 @@
 #include <string.h>
 
 struct psx_semantic_expression_table_t {
-  node_t **expressions;
+  const psx_typed_hir_tree_t **expressions;
   size_t capacity;
   psx_semantic_expr_id_t next_id;
 };
@@ -30,7 +30,8 @@ void psx_semantic_expression_table_reset(
 }
 
 psx_semantic_expr_id_t psx_semantic_expression_table_register(
-    psx_semantic_expression_table_t *table, node_t *expression) {
+    psx_semantic_expression_table_t *table,
+    const psx_typed_hir_tree_t *expression) {
   if (!table || !expression) return PSX_SEMANTIC_EXPR_ID_INVALID;
   for (psx_semantic_expr_id_t id = 1; id <= table->next_id; id++) {
     if (table->expressions[id] == expression) return id;
@@ -44,7 +45,7 @@ psx_semantic_expr_id_t psx_semantic_expression_table_register(
         return PSX_SEMANTIC_EXPR_ID_INVALID;
       capacity *= 2;
     }
-    node_t **expressions = realloc(
+    const psx_typed_hir_tree_t **expressions = realloc(
         table->expressions, capacity * sizeof(*expressions));
     if (!expressions) return PSX_SEMANTIC_EXPR_ID_INVALID;
     memset(expressions + table->capacity, 0,
@@ -57,7 +58,7 @@ psx_semantic_expr_id_t psx_semantic_expression_table_register(
   return id;
 }
 
-node_t *psx_semantic_expression_table_lookup(
+const psx_typed_hir_tree_t *psx_semantic_expression_table_lookup(
     const psx_semantic_expression_table_t *table,
     psx_semantic_expr_id_t expression_id) {
   if (!table || expression_id == PSX_SEMANTIC_EXPR_ID_INVALID ||

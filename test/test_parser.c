@@ -42,7 +42,6 @@
 #include "../src/frontend/semantic_pipeline_internal.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
-#include "../src/frontend/translation_unit_internal.h"
 #include "../src/hir/hir.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
@@ -65,6 +64,7 @@
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/identifier_binding.h"
 #include "../src/semantic/semantic_invariants.h"
+#include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/semantic_tree_resolution.h"
 #include "../src/semantic/semantic_tree_resolution_internal.h"
@@ -82,6 +82,7 @@
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/resolution_work_tree_internal.h"
 #include "../src/semantic/typed_hir_materialization.h"
+#include "../src/semantic/typed_hir_tree_internal.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
 #include "../src/semantic/tag_declaration_resolution.h"
@@ -111,6 +112,7 @@
 #include <string.h>
 
 #include "test_common.h"
+#include "support/parser_compatibility_test_hook.h"
 
 typedef struct {
   char *name;
@@ -1190,11 +1192,9 @@ static node_t **parse_test_program_from(token_t *start) {
     return NULL;
   }
   psx_frontend_function_t frontend_function;
-  psx_resolution_work_tree_t *work_tree = NULL;
-  while (psx_frontend_next_function_work_tree(
-      &stream, &frontend_function, &work_tree)) {
-    node_t *function =
-        psx_resolution_work_tree_compatibility_root_mut(work_tree);
+  node_t *function = NULL;
+  while (psx_test_frontend_next_function_compatibility_tree(
+      &stream, &frontend_function, &function)) {
     if (!function) {
       free(program);
       psx_frontend_stream_end(&stream);
@@ -1738,6 +1738,52 @@ static node_t *analyze_test_expression(
           work_tree, fallback_diag_tok))
     return NULL;
   return psx_resolution_work_tree_compatibility_root_mut(work_tree);
+}
+
+static const psx_typed_hir_tree_t *build_test_typed_leaf(
+    psx_hir_node_kind_t kind, psx_qual_type_t qual_type,
+    int storage_offset, long long integer_value) {
+  psx_resolved_hir_build_failure_t failure = {0};
+  psx_semantic_node_builder_t builder;
+  psx_semantic_node_builder_init(
+      &builder, test_arena_context(), test_semantic_context(), &failure);
+  psx_hir_node_spec_t spec = {
+      .kind = kind,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .storage_offset = storage_offset,
+      .object_offset = storage_offset,
+      .integer_value = integer_value,
+  };
+  psx_semantic_node_t *root =
+      psx_semantic_node_builder_leaf_expression(
+          &builder, &spec, qual_type, NULL,
+          kind == PSX_HIR_LOCAL ? ND_LVAR : ND_NUM);
+  if (!root) return NULL;
+  psx_typed_hir_tree_t *tree = arena_alloc_in(
+      test_arena_context(), sizeof(*tree));
+  if (!tree) return NULL;
+  tree->root = root;
+  return tree;
+}
+
+static const psx_typed_hir_tree_t *build_test_typed_number(
+    long long value) {
+  psx_qual_type_t qual_type = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), ps_type_new_integer(TK_INT, 4, 0));
+  return build_test_typed_leaf(
+      PSX_HIR_NUMBER, qual_type, 0, value);
+}
+
+static const psx_typed_hir_tree_t *build_test_typed_local(
+    lvar_t *local) {
+  psx_qual_type_t qual_type = ps_lvar_decl_qual_type(local);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    qual_type = ps_ctx_intern_qual_type_in(
+        test_semantic_context(), ps_lvar_get_decl_type(local));
+  }
+  return build_test_typed_leaf(
+      PSX_HIR_LOCAL, qual_type, ps_lvar_offset(local), 0);
 }
 
 static node_t *lower_test_semantic_tree(node_t *expression) {
@@ -8209,7 +8255,9 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
                   test_semantic_context(), record_vla_type).type_id !=
               PSX_TYPE_ID_INVALID);
-  node_t *record_vla_dimensions[1] = {ps_node_new_num(3)};
+  const psx_typed_hir_tree_t *record_vla_dimensions[1] = {
+      build_test_typed_number(3)};
+  ASSERT_TRUE(record_vla_dimensions[0] != NULL);
   unsigned char record_vla_is_constant[1] = {0};
   psx_vla_lowering_request_t record_vla_request = {
       .local_registry = test_local_registry(),
@@ -8246,9 +8294,9 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(intern_test_type_id(wasm_stride_storage_type) !=
               PSX_TYPE_ID_INVALID);
   psx_parameter_vla_dimension_t wasm_parameter_dimension = {
-      .expression =
-          psx_node_new_lvar_identifier_ref_for(wasm_dimension),
+      .expression = build_test_typed_local(wasm_dimension),
   };
+  ASSERT_TRUE(wasm_parameter_dimension.expression != NULL);
   psx_parameter_vla_lowering_result_t wasm_parameter_vla =
       lower_parameter_vla_declaration(
           &(psx_parameter_vla_lowering_request_t){
@@ -8352,7 +8400,7 @@ static void test_vla_lowering_request_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *vla_type = ps_type_new_array(integer, 0, 0, 1);
   ASSERT_TRUE(intern_test_type_id(vla_type) != PSX_TYPE_ID_INVALID);
-  node_t *request_dimensions[3] = {0};
+  const psx_typed_hir_tree_t *request_dimensions[3] = {0};
   unsigned char request_is_const[3] = {0};
   psx_vla_lowering_request_t request = {
       .local_registry = test_local_registry(),
@@ -8362,7 +8410,8 @@ static void test_vla_lowering_request_boundary() {
   };
   request.name = (char *)"v";
   request.name_len = 1;
-  request.dimensions[0] = ps_node_new_num(3);
+  request_dimensions[0] = build_test_typed_number(3);
+  ASSERT_TRUE(request_dimensions[0] != NULL);
   request.dimension_count = 1;
   request.type = vla_type;
   request.requested_alignment = 16;
@@ -8384,7 +8433,8 @@ static void test_vla_lowering_request_boundary() {
   reset_test_locals();
   request.name = (char *)"vp";
   request.name_len = 2;
-  request.dimensions[0] = ps_node_new_num(3);
+  request_dimensions[0] = build_test_typed_number(3);
+  ASSERT_TRUE(request_dimensions[0] != NULL);
   request.dimension_count = 1;
   request.type = ps_type_new_array(
       ps_type_new_pointer(ps_type_clone(integer)), 0, 0, 1);
@@ -8398,9 +8448,12 @@ static void test_vla_lowering_request_boundary() {
   reset_test_locals();
   request.name = (char *)"m";
   request.name_len = 1;
-  request.dimensions[0] = ps_node_new_num(2);
-  request.dimensions[1] = ps_node_new_num(3);
-  request.dimensions[2] = ps_node_new_num(4);
+  request_dimensions[0] = build_test_typed_number(2);
+  request_dimensions[1] = build_test_typed_number(3);
+  request_dimensions[2] = build_test_typed_number(4);
+  ASSERT_TRUE(request_dimensions[0] != NULL);
+  ASSERT_TRUE(request_dimensions[1] != NULL);
+  ASSERT_TRUE(request_dimensions[2] != NULL);
   request.dimension_count = 3;
   request.type = ps_type_new_array(
       ps_type_new_array(
@@ -8424,7 +8477,9 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(result.var) > 0);
 
   reset_test_locals();
-  node_t *row_dimension = ps_node_new_num(5);
+  const psx_typed_hir_tree_t *row_dimension =
+      build_test_typed_number(5);
+  ASSERT_TRUE(row_dimension != NULL);
   psx_type_t *row_type = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
   ASSERT_TRUE(intern_test_type_id(pointer_type) != PSX_TYPE_ID_INVALID);
@@ -8488,11 +8543,13 @@ static void test_vla_lowering_request_boundary() {
           test_semantic_context(), stride_storage_type_id),
   };
   parameter_request.inner_dimensions[0].expression =
-      psx_node_new_lvar_identifier_ref_for(n);
+      build_test_typed_local(n);
   parameter_request.inner_dimensions[1].constant_value = 3;
   parameter_request.inner_dimensions[1].is_constant = 1;
   parameter_request.inner_dimensions[2].expression =
-      psx_node_new_lvar_identifier_ref_for(k);
+      build_test_typed_local(k);
+  ASSERT_TRUE(parameter_request.inner_dimensions[0].expression != NULL);
+  ASSERT_TRUE(parameter_request.inner_dimensions[2].expression != NULL);
   psx_parameter_vla_lowering_result_t parameter_result =
       lower_parameter_vla_declaration(&parameter_request);
   ASSERT_TRUE(parameter_result.var != NULL);
@@ -8607,11 +8664,12 @@ static void test_parameter_declaration_storage_plan_boundary() {
   lvar_t *dimension = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
   dimension->is_param = 1;
-  node_t *dimension_expression =
-      psx_node_new_lvar_identifier_ref_for(dimension);
+  const psx_typed_hir_tree_t *typed_dimension_expression =
+      build_test_typed_local(dimension);
+  ASSERT_TRUE(typed_dimension_expression != NULL);
   parameter_dimensions[0].expression_id =
       ps_ctx_register_semantic_expression_in(
-          test_semantic_context(), dimension_expression);
+          test_semantic_context(), typed_dimension_expression);
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
           .semantic_context = test_semantic_context(),
@@ -8644,7 +8702,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
             ps_ctx_type_sizeof_in(
                 test_semantic_context(), runtime_stride_slot));
 
-  node_t *inner_dimension_expressions[1] = {dimension_expression};
+  const psx_typed_hir_tree_t *inner_dimension_expressions[1] = {
+      typed_dimension_expression};
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
           .local_registry = test_local_registry(),
@@ -9774,7 +9833,9 @@ static void test_local_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY,
             resolution.storage_kind);
 
-  node_t *runtime_bound = ps_node_new_num(7);
+  const psx_typed_hir_tree_t *runtime_bound =
+      build_test_typed_number(7);
+  ASSERT_TRUE(runtime_bound != NULL);
   psx_semantic_expr_id_t runtime_bound_id =
       ps_ctx_register_semantic_expression_in(
           test_semantic_context(), runtime_bound);
@@ -22413,13 +22474,13 @@ static void test_semantic_context_isolation() {
       second, direct_label_name, 12, NULL);
   psx_ctx_validate_goto_refs_in(second);
 
-  node_t *semantic_expression = ps_node_new_num(9);
+  psx_typed_hir_tree_t semantic_expression = {0};
   psx_semantic_expr_id_t semantic_expression_id =
       ps_ctx_register_semantic_expression_in(
-          second, semantic_expression);
+          second, &semantic_expression);
   ASSERT_TRUE(semantic_expression_id != PSX_SEMANTIC_EXPR_ID_INVALID);
   ASSERT_TRUE(ps_ctx_semantic_expression_in(
-                  second, semantic_expression_id) == semantic_expression);
+                  second, semantic_expression_id) == &semantic_expression);
   ASSERT_TRUE(ps_ctx_semantic_expression_in(
                   first, semantic_expression_id) == NULL);
 

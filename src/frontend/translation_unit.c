@@ -1,4 +1,5 @@
-#include "translation_unit_internal.h"
+#include "translation_unit.h"
+#include "translation_unit_resolver.h"
 
 #include "../diag/diag.h"
 #include "../declaration_pipeline.h"
@@ -6,10 +7,8 @@
 #include "../lowering/runtime_context.h"
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
-#include "../semantic/resolution_work_tree_internal.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
-#include "semantic_pipeline_internal.h"
 #include "toplevel_declaration.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_binding_events.h"
@@ -199,14 +198,15 @@ int psx_frontend_stream_begin(
   return 1;
 }
 
-int psx_frontend_next_function_work_tree(
+int psx_frontend_next_function_with_resolver(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result,
-    psx_resolution_work_tree_t **work_tree) {
+    psx_frontend_function_resolver_t resolver,
+    void *resolver_context) {
   if (result) result->hir_root = PSX_HIR_NODE_ID_INVALID;
-  if (work_tree) *work_tree = NULL;
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
-      !ag_compilation_session_is_active(stream->session) || !result) {
+      !ag_compilation_session_is_active(stream->session) ||
+      !result || !resolver) {
     return 0;
   }
   ag_compilation_session_t *session = stream->session;
@@ -295,11 +295,10 @@ int psx_frontend_next_function_work_tree(
           semantic_context,
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0, &checkpoint);
-      psx_resolution_work_tree_t *resolved =
-          psx_frontend_resolve_parsed_function_work_tree_in_session(
-              session, &item.value.function_header,
-              (token_t *)function_name, &result->hir_root);
-      if (!resolved) {
+      if (!resolver(
+              resolver_context, session,
+              &item.value.function_header,
+              (token_t *)function_name, &result->hir_root)) {
         ps_ctx_rollback_function_registration_in(
             semantic_context,
             function_name ? function_name->str : NULL,
@@ -312,17 +311,26 @@ int psx_frontend_next_function_work_tree(
       }
       ps_dispose_function_definition_syntax(
           &item.value.function_header);
-      if (work_tree) *work_tree = resolved;
       return 1;
     }
   }
   return 0;
 }
 
+static int resolve_function_to_hir(
+    void *context, ag_compilation_session_t *session,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok,
+    psx_hir_node_id_t *hir_root) {
+  (void)context;
+  return psx_frontend_resolve_parsed_function_to_hir_in_session(
+      session, syntax_function, fallback_diag_tok, hir_root);
+}
+
 int psx_frontend_next_function(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result) {
-  return psx_frontend_next_function_work_tree(
-      stream, result, NULL);
+  return psx_frontend_next_function_with_resolver(
+      stream, result, resolve_function_to_hir, NULL);
 }
 
 int psx_frontend_stream_end(psx_frontend_stream_t *stream) {

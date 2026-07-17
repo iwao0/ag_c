@@ -265,8 +265,7 @@ static int resolve_function_work_tree_in_contexts(
       semantic_context, work_tree, fallback_diag_tok);
 }
 
-psx_resolution_work_tree_t *
-psx_resolve_parsed_function_semantic_tree_in_contexts(
+int psx_resolve_parsed_function_internal_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
@@ -274,16 +273,18 @@ psx_resolve_parsed_function_semantic_tree_in_contexts(
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const psx_parsed_function_definition_t *syntax_function,
-    const token_t *fallback_diag_tok) {
+    const token_t *fallback_diag_tok,
+    psx_function_resolution_internal_result_t *result) {
+  if (result) *result = (psx_function_resolution_internal_result_t){0};
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context || !lowering_context || !options ||
-      !syntax_function || !syntax_function->body)
-    return NULL;
+      !syntax_function || !syntax_function->body || !result)
+    return 0;
   psx_resolution_work_tree_t *work_tree =
       psx_resolution_work_tree_create_from_syntax(
           ps_ctx_arena(semantic_context), syntax_function->body);
   node_t *body = mutable_compatibility_root(work_tree);
-  if (!work_tree || !body) return NULL;
+  if (!work_tree || !body) return 0;
   psx_parsed_function_definition_t work_definition =
       *syntax_function;
   work_definition.body = body;
@@ -298,8 +299,28 @@ psx_resolve_parsed_function_semantic_tree_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, work_tree,
           fallback_diag_tok))
-    return NULL;
-  return work_tree;
+    return 0;
+  result->typed_hir = psx_resolution_work_tree_typed_hir(work_tree);
+  result->compatibility_root = mutable_compatibility_root(work_tree);
+  return result->typed_hir && result->compatibility_root;
+}
+
+const psx_typed_hir_tree_t *
+psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok) {
+  psx_function_resolution_internal_result_t result;
+  return psx_resolve_parsed_function_internal_in_contexts(
+             semantic_context, global_registry, local_registry,
+             runtime_context, lowering_context, options,
+             syntax_function, fallback_diag_tok, &result)
+             ? result.typed_hir : NULL;
 }
 
 static const psx_typed_hir_tree_t *

@@ -920,13 +920,8 @@ static void semantic_transform_node(
       }
       break;
     }
-    case ND_VLA_ALLOC: {
-      psx_vla_runtime_plan_t *plan =
-          ((node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++)
-        semantic_transform_node(plan->dimensions[i], traversal);
+    case ND_VLA_ALLOC:
       break;
-    }
     case ND_NUM:
       semantic_resolve_number_literal(
           traversal->semantic_context, traversal->global_registry,

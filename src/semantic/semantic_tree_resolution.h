@@ -8,14 +8,13 @@ typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct psx_parsed_function_definition_t
     psx_parsed_function_definition_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
-typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_typed_hir_tree_t psx_typed_hir_tree_t;
 typedef struct node_t node_t;
 typedef struct token_t token_t;
 
-psx_resolution_work_tree_t *
-psx_resolve_parsed_function_semantic_tree_in_contexts(
+const psx_typed_hir_tree_t *
+psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,

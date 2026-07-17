@@ -1661,8 +1661,12 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
-const frontendTranslationUnitInternalHeader = await readFile(
-  "src/frontend/translation_unit_internal.h",
+const frontendTranslationUnitResolverHeader = await readFile(
+  "src/frontend/translation_unit_resolver.h",
+  "utf8",
+);
+const parserCompatibilityTestHook = await readFile(
+  "test/support/parser_compatibility_test_hook.c",
   "utf8",
 );
 if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_frontend_function_t\s*;/.test(
@@ -1680,13 +1684,24 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
     /node_t\s*\*\*\s*psx_frontend_/.test(
       frontendTranslationUnitHeader,
     ) ||
-    !/psx_frontend_next_function_work_tree\s*\(/.test(
-      frontendTranslationUnitInternalHeader,
+    !/psx_frontend_next_function_with_resolver\s*\(/.test(
+      frontendTranslationUnitResolverHeader,
+    ) ||
+    /\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
+      `${frontendTranslationUnitSource}\n${frontendTranslationUnitHeader}\n${frontendTranslationUnitResolverHeader}`,
+    ) ||
+    /\bnode_t\b/.test(frontendTranslationUnitResolverHeader) ||
+    !/psx_resolve_parsed_function_internal_in_contexts\s*\(/.test(
+      parserCompatibilityTestHook,
+    ) ||
+    !/resolution\.compatibility_root/.test(
+      parserCompatibilityTestHook,
     ) ||
     /psx_frontend_legacy_(?:program_ast|analyze_expression_ast)_in_session/.test(
       frontendTranslationUnitSource,
     ) ||
     allSourceFiles.includes("src/frontend/legacy_ast_api.h") ||
+    allSourceFiles.includes("src/frontend/translation_unit_internal.h") ||
     /legacy_ast_api\.h/.test(compilerMainSource)) {
   throw new Error(
     "production frontend APIs must expose only Typed HIR roots",
@@ -1721,8 +1736,11 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
     ) ||
-    !/psx_frontend_resolve_parsed_function_work_tree_in_session/.test(
-      semanticPipelineInternalHeader,
+    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts/.test(
+      semanticPipelineSource,
+    ) ||
+    /\bpsx_resolution_work_tree_t\b|psx_resolution_work_tree_/.test(
+      `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}`,
     ) ||
     /psx_frontend_resolve_function_(?:to_hir|work_tree)_in_session/.test(
       `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}`,
@@ -1732,7 +1750,7 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     ) ||
     /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
   throw new Error(
-    "public semantic pipeline APIs must expose Typed HIR while work-tree APIs remain internal",
+    "frontend semantic pipeline APIs must consume Typed HIR without exposing work-tree state",
   );
 }
 const semanticPassSource = await readFile(
@@ -1915,7 +1933,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
     /stream->(?:semantic_context|global_registry|local_registry)/.test(
       parserStreamSource,
     ) ||
-    !/psx_frontend_resolve_parsed_function_work_tree_in_session\s*\(/.test(
+    !/psx_frontend_resolve_parsed_function_to_hir_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -2352,6 +2370,10 @@ if (!aggregateMemberResolutionType ||
 }
 const declarationApplicationSource = await readFile(
   "src/semantic/declaration_application.c",
+  "utf8",
+);
+const declaratorBoundResolutionSource = await readFile(
+  "src/semantic/declarator_bound_resolution.c",
   "utf8",
 );
 const splitDeclarationApplicationApi =
@@ -3570,7 +3592,7 @@ const functionBodyParseIndex = frontendTranslationUnitSource.indexOf(
   "ps_parse_function_definition_body(",
 );
 const functionSemanticResolveIndex = frontendTranslationUnitSource.indexOf(
-  "psx_frontend_resolve_parsed_function_work_tree_in_session(",
+  "if (!resolver(",
 );
 const parameterBindingSeedIndex = frontendTranslationUnitSource.indexOf(
   "psx_record_function_definition_declarator_binding_events(",
@@ -3604,11 +3626,14 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     /\bbound->node\s*=/.test(
       `${localDeclarationPipelineSource}\n${declarationApplicationSource}`,
     ) ||
-    !/psx_resolution_work_tree_create_from_syntax\s*\(/.test(
+    !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
+    !/psx_resolution_work_tree_create_from_syntax\s*\(/.test(
+      declaratorBoundResolutionSource,
+    ) ||
     /\bpsx_clone_syntax_tree_for_resolution\s*\(/.test(
-      `${declarationApplicationSource}\n${resolutionWorkTreeInternalHeader}`,
+      `${declaratorBoundResolutionSource}\n${resolutionWorkTreeInternalHeader}`,
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?create_work_tree\s*\([^]*?clone_node\s*\(/.test(
       resolutionWorkTree,
@@ -5908,6 +5933,14 @@ const parameterVlaDimensionStruct =
   parameterDeclarationResolutionHeader.match(
     /typedef\s+struct\s*\{([^]*?)\}\s*psx_parameter_dimension_t\s*;/,
   );
+const expressionIdentityHeaderSource = await readFile(
+  "src/semantic/expression_identity.h",
+  "utf8",
+);
+const expressionIdentitySource = await readFile(
+  "src/semantic/expression_identity.c",
+  "utf8",
+);
 if (!runtimeArrayBoundStruct ||
     !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
       runtimeArrayBoundStruct[1],
@@ -5931,9 +5964,34 @@ if (!runtimeArrayBoundStruct ||
     /\bnode_t\s*\*\s*pointer_row_dimension\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
+    !/const\s+psx_typed_hir_tree_t\s*\*expression/.test(
+      expressionIdentityHeaderSource,
+    ) ||
+    /\bnode_t\b/.test(expressionIdentityHeaderSource) ||
+    !/const\s+psx_typed_hir_tree_t\s*\*\*expressions/.test(
+      expressionIdentitySource,
+    ) ||
+    !/const\s+psx_typed_hir_tree_t\s*\*expression/.test(
+      semanticContextHeaderSource,
+    ) ||
+    /ps_ctx_(?:register_)?semantic_expression_in\s*\([^;]*\bnode_t\b/.test(
+      semanticContextHeaderSource,
+    ) ||
+    !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    /psx_resolution_work_tree_|psx_bind_identifier_tree_|psx_semantic_resolve_tree_in_contexts/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_typed_hir_tree_materialize\s*\(/.test(
+      declaratorBoundResolutionSource,
+    ) ||
+    !/ps_ctx_register_semantic_expression_in\s*\([^]*?bound_resolution\.typed_expression/.test(
+      declarationApplicationSource,
+    ) ||
     /\bpsx_semantic_expr_id_t\b/.test(canonicalTypeStruct[1])) {
   throw new Error(
-    "VLA runtime bounds must use semantic expression IDs outside canonical types",
+    "VLA runtime bounds must use semantic expression IDs backed by Typed HIR outside canonical types",
   );
 }
 const parameterVlaLoweringFunction = vlaLoweringSource.match(
@@ -5958,7 +6016,7 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
 }
 const vlaGeneratedSemanticNodeRe =
   /\bps_(?:node_new_binary_for_target_in|node_new_num_in|node_new_assign_in|node_new_lvar_typed_in)\s*\(/;
-if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?\bnode_t\s*\*\*\s*dimensions\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
+if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\*\s*dimensions\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
       vlaRuntimePlanHeaderSource,
     ) ||
     vlaGeneratedSemanticNodeRe.test(vlaLoweringSource) ||
@@ -5974,6 +6032,14 @@ if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?\bnode_t\s*\*\*\s*dimen
     !/materialize_vla_runtime\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION[^]*?vla_runtime_store_offsets/.test(
       resolvedTreeMaterialization,
     ) ||
+    /build_node\s*\(\s*builder\s*,\s*plan->dimensions/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/dimension->root/.test(resolvedTreeMaterialization) ||
+    /plan->dimensions/.test(semanticPassSource) ||
+    /plan->dimensions/.test(identifierBindingSource) ||
+    /plan->dimensions/.test(semanticLoweringPassSource) ||
+    /plan->dimensions/.test(lvarUsageAnalysisSource) ||
     !/child_count_for_edge\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION/.test(
       hirIrBuilder,
     ) ||
@@ -6948,7 +7014,7 @@ if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
   throw new Error("CompilationSession must own the Typed HIR module");
 }
 const parsedFunctionResolutionBoundary = semanticPipelineSource.match(
-  /psx_resolution_work_tree_t\s*\*\s*psx_frontend_resolve_parsed_function_work_tree_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+  /int\s+psx_frontend_resolve_parsed_function_to_hir_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const expressionResolutionBoundary = semanticPipelineSource.match(
   /int\s+psx_frontend_resolve_expression_to_hir_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
@@ -6969,26 +7035,20 @@ const semanticMaterializationCalls =
 if (!parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
-    !/psx_resolve_parsed_function_semantic_tree_in_contexts\s*\(/.test(
+    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\(/.test(
       parsedFunctionResolutionBoundary[1],
     ) ||
-    /psx_resolution_work_tree_(?:create_from_syntax|compatibility_root_mut|replace_compatibility_root)\s*\(|\bnode_t\b/.test(
+    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
       parsedFunctionResolutionBoundary[1],
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?syntax_function->body[^]*?work_definition\.body\s*=\s*body[^]*?psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?psx_resolution_work_tree_replace_compatibility_root\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
-    /psx_resolution_work_tree_create_from_function_seed\s*\(/.test(
-      parsedFunctionResolutionBoundary[1],
-    ) ||
-    !/psx_frontend_resolve_parsed_function_work_tree_in_session\s*\(/.test(
+    !/psx_frontend_next_function_with_resolver\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    /psx_frontend_resolve_function_work_tree_in_session\s*\(/.test(
-      frontendTranslationUnitSource,
-    ) ||
-    /psx_frontend_resolve_function_(?:to_hir|work_tree)_in_session|psx_resolution_work_tree_create_from_function_seed/.test(
-      `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}\n${resolutionWorkTree}\n${resolutionWorkTreeInternalHeader}`,
+    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
+      `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}\n${frontendTranslationUnitSource}\n${frontendTranslationUnitResolverHeader}`,
     ) ||
     !/psx_resolve_expression_typed_hir_from_syntax_in_contexts\s*\(/.test(
       expressionResolutionBoundary[1],
@@ -7114,9 +7174,6 @@ if (!parsedFunctionResolutionBoundary ||
     ) ||
     /ps_node_|ND_[A-Z0-9_]+/.test(resolvedTreeHir) ||
     /psx_resolution_work_tree_build_typed_hir\s*\(/.test(
-      semanticPipelineSource,
-    ) ||
-    !/psx_resolution_work_tree_typed_hir\s*\(/.test(
       semanticPipelineSource,
     ) ||
     !/psx_typed_hir_tree_emit\s*\(/.test(semanticPipelineSource) ||

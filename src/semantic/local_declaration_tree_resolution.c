@@ -654,16 +654,8 @@ static int resolve_local_declarations_in_slot(
              resolve_local_declarations_in_slot(
                  resolver, &control->els);
     }
-    case ND_VLA_ALLOC: {
-      psx_vla_runtime_plan_t *plan =
-          ((node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++) {
-        if (!resolve_local_declarations_in_slot(
-                resolver, &plan->dimensions[i]))
-          return 0;
-      }
+    case ND_VLA_ALLOC:
       return 1;
-    }
     default:
       return resolve_local_declarations_in_slot(
                  resolver, &node->lhs) &&

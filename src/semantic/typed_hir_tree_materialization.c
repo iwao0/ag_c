@@ -196,11 +196,12 @@ static psx_semantic_node_t *materialize_vla_runtime(
 
   hir_children_t children = {0};
   for (int i = 0; i < plan->dimension_count; i++) {
-    if (!plan->dimensions[i] ||
+    const psx_typed_hir_tree_t *dimension = plan->dimensions[i];
+    if (!dimension || !dimension->root ||
         !append_child(
             builder, &children,
-            build_node(builder, plan->dimensions[i]),
-            PSX_HIR_EDGE_VLA_DIMENSION, plan->dimensions[i])) {
+            (psx_semantic_node_t *)dimension->root,
+            PSX_HIR_EDGE_VLA_DIMENSION, source)) {
       free(children.items);
       free(children.edges);
       return NULL;

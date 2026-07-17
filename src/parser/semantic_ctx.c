@@ -312,14 +312,15 @@ static void ctx_release_all(psx_semantic_context_t *context) {
 }
 
 psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
-    psx_semantic_context_t *context, node_t *expression) {
+    psx_semantic_context_t *context,
+    const psx_typed_hir_tree_t *expression) {
   return context
              ? psx_semantic_expression_table_register(
                    context->semantic_expressions, expression)
              : PSX_SEMANTIC_EXPR_ID_INVALID;
 }
 
-node_t *ps_ctx_semantic_expression_in(
+const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
     const psx_semantic_context_t *context,
     psx_semantic_expr_id_t expression_id) {
   return context

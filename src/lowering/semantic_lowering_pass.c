@@ -125,15 +125,8 @@ static node_t *lower_tree(
           context, assertion->condition, fallback_diag_tok);
       return node;
     }
-    case ND_VLA_ALLOC: {
-      psx_vla_runtime_plan_t *plan =
-          ((node_vla_alloc_t *)node)->runtime_plan;
-      for (int i = 0; plan && i < plan->dimension_count; i++) {
-        plan->dimensions[i] = lower_tree(
-            context, plan->dimensions[i], fallback_diag_tok);
-      }
+    case ND_VLA_ALLOC:
       return node;
-    }
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *compound =
           (node_compound_literal_t *)node;
