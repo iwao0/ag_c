@@ -16,12 +16,14 @@ static psx_hir_node_id_t build_session_hir(
     psx_resolution_work_tree_t *work_tree,
     const token_t *fallback_diag_tok) {
   psx_hir_module_t *hir = ag_compilation_session_hir_module(session);
-  psx_resolved_hir_build_failure_t failure;
+  psx_resolved_hir_build_failure_t failure = {
+      .status = PSX_RESOLVED_HIR_BUILD_UNMATERIALIZED,
+      .source_node_kind = -1,
+  };
   psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
-  if (psx_resolution_work_tree_build_typed_hir(
-          work_tree, &failure)) {
-    const psx_typed_hir_tree_t *typed_tree =
-        psx_resolution_work_tree_typed_hir(work_tree);
+  const psx_typed_hir_tree_t *typed_tree =
+      psx_resolution_work_tree_typed_hir(work_tree);
+  if (typed_tree) {
     hir_root = psx_typed_hir_tree_emit(
         hir, typed_tree, &failure);
   }
@@ -105,54 +107,6 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
              ? 1 : 0;
 }
 
-psx_resolution_work_tree_t *
-psx_frontend_resolve_function_work_tree_in_session(
-    ag_compilation_session_t *session,
-    const node_t *syntax_function, const token_t *fallback_diag_tok,
-    psx_hir_node_id_t *hir_root) {
-  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
-  if (!ag_compilation_session_is_complete(session) ||
-      !syntax_function || syntax_function->kind != ND_FUNCDEF ||
-      !hir_root) {
-    return NULL;
-  }
-  psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_function_seed(
-          ag_compilation_session_arena_context(session),
-          (const node_function_definition_t *)syntax_function);
-  if (!work_tree) {
-    ag_diagnostic_context_t *diagnostics =
-        ag_compilation_session_diagnostic_context(session);
-    diag_emit_internalf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        "%s: could not create resolver working tree",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED));
-    return NULL;
-  }
-  if (!psx_resolve_function_semantic_tree_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
-      ag_compilation_session_lowering_context(session),
-      ag_compilation_session_options_view(session),
-      work_tree, fallback_diag_tok))
-    return NULL;
-  *hir_root = build_session_hir(
-      session, work_tree, fallback_diag_tok);
-  if (*hir_root == PSX_HIR_NODE_ID_INVALID) return NULL;
-  return work_tree;
-}
-
-int psx_frontend_resolve_function_to_hir_in_session(
-    ag_compilation_session_t *session,
-    const node_t *syntax_function, const token_t *fallback_diag_tok,
-    psx_hir_node_id_t *hir_root) {
-  return psx_frontend_resolve_function_work_tree_in_session(
-             session, syntax_function, fallback_diag_tok, hir_root)
-             ? 1 : 0;
-}
-
 static psx_resolution_work_tree_t *resolve_expression_work_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -229,16 +183,13 @@ int psx_frontend_resolve_expression_to_hir_in_contexts(
   if (!work_tree) return 0;
 
   psx_resolved_hir_build_failure_t failure;
-  if (!psx_resolution_work_tree_build_typed_hir(
-          work_tree, &failure)) {
-    diagnose_typed_expression_hir_failure(
-        semantic_context, fallback_diag_tok, &failure);
-    return 0;
-  }
+  const psx_typed_hir_tree_t *typed_tree =
+      psx_resolution_work_tree_typed_hir(work_tree);
+  if (!typed_tree) return 0;
   psx_hir_module_t *module = psx_hir_module_create();
   if (!module) return 0;
   psx_hir_node_id_t root = psx_typed_hir_tree_emit(
-      module, psx_resolution_work_tree_typed_hir(work_tree), &failure);
+      module, typed_tree, &failure);
   if (root == PSX_HIR_NODE_ID_INVALID) {
     diagnose_typed_expression_hir_failure(
         semantic_context, fallback_diag_tok, &failure);

@@ -15,7 +15,6 @@
 #include "semantic_diagnostics.h"
 #include "semantic_invariants.h"
 #include "semantic_pass.h"
-#include "semantic_tree_internal.h"
 #include "typed_hir_materialization.h"
 
 static node_t *mutable_compatibility_root(
@@ -38,7 +37,7 @@ static int materialize_resolved_tree(
     psx_resolution_work_tree_t *work_tree,
     const token_t *fallback_diag_tok) {
   psx_resolved_hir_build_failure_t failure;
-  if (psx_resolution_work_tree_materialize_semantic(
+  if (psx_resolution_work_tree_materialize_typed_hir(
           work_tree, semantic_context, &failure))
     return 1;
   ag_diagnostic_context_t *diagnostics =

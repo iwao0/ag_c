@@ -13,9 +13,4 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
     const token_t *fallback_diag_tok,
     psx_hir_node_id_t *hir_root);
 
-int psx_frontend_resolve_function_to_hir_in_session(
-    ag_compilation_session_t *session,
-    const node_t *syntax_function, const token_t *fallback_diag_tok,
-    psx_hir_node_id_t *hir_root);
-
 #endif

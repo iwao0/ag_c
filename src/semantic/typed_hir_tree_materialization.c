@@ -1,4 +1,4 @@
-#include "semantic_tree_materialization.h"
+#include "typed_hir_tree_materialization.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +29,7 @@
 #include "sizeof_query_resolution.h"
 #include "source_cast_resolution.h"
 #include "semantic_node_builder.h"
-#include "semantic_tree_internal.h"
+#include "typed_hir_tree_internal.h"
 #include "vla_runtime_plan.h"
 
 typedef psx_semantic_node_builder_t hir_materializer_t;
@@ -1408,20 +1408,18 @@ static psx_semantic_node_t *build_node(
   return result;
 }
 
-int psx_semantic_tree_materialize(
-    psx_semantic_tree_t *semantic_tree,
+psx_typed_hir_tree_t *psx_typed_hir_tree_materialize(
     const node_t *resolution_root,
     const psx_semantic_context_t *semantic_context,
     psx_resolved_hir_build_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  if (psx_semantic_tree_root(semantic_tree)) return 1;
-  if (!semantic_tree || !semantic_context || !resolution_root) {
+  if (!semantic_context || !resolution_root) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind = resolution_root
                                       ? (int)resolution_root->kind : -1;
     }
-    return 0;
+    return NULL;
   }
   hir_materializer_t builder;
   psx_semantic_node_builder_init(
@@ -1431,12 +1429,15 @@ int psx_semantic_tree_materialize(
   if (!root) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
       failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
-    return 0;
+    return NULL;
   }
-  if (!psx_semantic_tree_set_root(semantic_tree, root)) {
+  psx_typed_hir_tree_t *tree = arena_alloc_in(
+      ps_ctx_arena(semantic_context), sizeof(*tree));
+  if (!tree) {
     if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
-      failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
-    return 0;
+      failure->status = PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY;
+    return NULL;
   }
-  return 1;
+  tree->root = root;
+  return tree;
 }

@@ -80,7 +80,6 @@
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/resolution_work_tree_internal.h"
-#include "../src/semantic/semantic_tree_internal.h"
 #include "../src/semantic/typed_hir_materialization.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
@@ -2047,8 +2046,8 @@ static void test_typed_hir_ownership_and_type_boundary() {
   psx_hir_module_t *isolated_hir = psx_hir_module_create();
   ASSERT_TRUE(isolated_hir != NULL);
   psx_resolved_hir_build_failure_t failure = {0};
-  ASSERT_TRUE(!psx_resolution_work_tree_build_typed_hir(
-      unfinalized, &failure));
+  ASSERT_TRUE(!psx_resolution_work_tree_materialize_typed_hir(
+      unfinalized, test_semantic_context(), &failure));
   ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
             failure.status);
   failure = (psx_resolved_hir_build_failure_t){0};
@@ -2115,12 +2114,8 @@ static void test_typed_hir_ownership_and_type_boundary() {
       typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
       PSX_RESOLUTION_WORK_FINALIZED));
   failure = (psx_resolved_hir_build_failure_t){0};
-  ASSERT_TRUE(psx_resolution_work_tree_materialize_semantic(
+  ASSERT_TRUE(psx_resolution_work_tree_materialize_typed_hir(
       typed_work_tree, test_semantic_context(), &failure));
-  ASSERT_EQ(PSX_RESOLUTION_WORK_SEMANTIC_READY,
-            psx_resolution_work_tree_phase(typed_work_tree));
-  ASSERT_TRUE(psx_resolution_work_tree_build_typed_hir(
-      typed_work_tree, &failure));
   const psx_typed_hir_tree_t *typed_tree =
       psx_resolution_work_tree_typed_hir(typed_work_tree);
   ASSERT_TRUE(typed_tree != NULL);
