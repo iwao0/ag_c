@@ -9,6 +9,7 @@
 #include "resolved_function.h"
 #include "resolved_node.h"
 #include "resolved_node_kind.h"
+#include "resolved_node_type.h"
 #include "resolved_object_ref.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
@@ -106,8 +107,7 @@ static node_t *materialize_local(
             var ? ps_lvar_get_decl_type(var) : NULL))
       return NULL;
   }
-  node->usage_lvar = var;
-  node->records_lvar_usage = 1;
+  ps_node_record_lvar_usage(node, var);
   return node;
 }
 
@@ -198,7 +198,8 @@ static node_t *materialize_identifier(
       node_t *node = ps_node_new_num_in(
           ps_ctx_arena(context->semantic_context), resolution.enum_value);
       node->tok = identifier->base.tok;
-      node->usage_region = identifier->base.usage_region;
+      ps_node_set_lvar_usage_region(
+          node, ps_node_lvar_usage_region(&identifier->base));
       node->lvar_usage_unevaluated =
           identifier->base.lvar_usage_unevaluated;
       return node;
@@ -244,8 +245,7 @@ static node_t *materialize_address_operand(
       return materialize_identifier(
           identifier, 0, context, NULL);
     }
-    node->usage_lvar = var;
-    node->records_lvar_usage = 1;
+    ps_node_record_lvar_usage(node, var);
     return node;
   }
   if (resolution.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&

@@ -1180,7 +1180,7 @@ static node_t **parse_test_program_from(token_t *start) {
   while (psx_frontend_next_function_work_tree(
       &stream, &frontend_function, &work_tree)) {
     node_t *function =
-        psx_resolution_work_tree_export_compatibility_ast(work_tree);
+        psx_resolution_work_tree_compatibility_root_mut(work_tree);
     if (!function) {
       free(program);
       psx_frontend_stream_end(&stream);
@@ -1647,7 +1647,8 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_NUM, standalone_block->body[0]->lhs->kind);
   ASSERT_TRUE(
       !ps_node_has_resolution_state(standalone_block->body[0]->lhs));
-  ASSERT_TRUE(standalone_block->body[0]->usage_region == NULL);
+  ASSERT_TRUE(
+      ps_node_lvar_usage_region(standalone_block->body[0]) == NULL);
   ASSERT_EQ(0, statement_services.block_scope_depth);
   ASSERT_EQ(1, statement_services.block_enter_count);
   ASSERT_EQ(1, statement_services.block_leave_count);
@@ -1722,8 +1723,7 @@ static node_t *analyze_test_expression(
           ag_compilation_session_options_view(test_suite_session),
           work_tree, fallback_diag_tok))
     return NULL;
-  return psx_resolution_work_tree_export_compatibility_ast(
-      work_tree);
+  return psx_resolution_work_tree_compatibility_root_mut(work_tree);
 }
 
 static node_t *lower_test_semantic_tree(node_t *expression) {
@@ -6175,7 +6175,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(
       psx_generic_selection_selected_expression(selection) == NULL);
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
-  ASSERT_TRUE(!selection->control->records_lvar_usage);
+  ASSERT_TRUE(!ps_node_records_lvar_usage(selection->control));
   ASSERT_TRUE(selection->control->lvar_usage_unevaluated);
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
   ASSERT_TRUE(
@@ -6254,7 +6254,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, expr_query->operand->kind);
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(expr_query->operand));
-  ASSERT_TRUE(expr_query->operand->records_lvar_usage);
+  ASSERT_TRUE(ps_node_records_lvar_usage(expr_query->operand));
   ASSERT_TRUE(expr_query->operand->lvar_usage_unevaluated);
   psx_sizeof_query_resolution_t direct_resolution;
   resolve_test_sizeof_query(expr_query, &direct_resolution);

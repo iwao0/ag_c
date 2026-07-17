@@ -5,6 +5,7 @@
 #include "../semantic/resolved_function.h"
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolved_node_type.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../parser/decl.h"
@@ -420,7 +421,7 @@ static int resolve_block_declarations(
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(
             resolver->local_registry);
-    block->body[i]->usage_region = region;
+    ps_node_set_lvar_usage_region(block->body[i], region);
     if (!resolve_local_declarations_in_slot(
             resolver, &block->body[i])) {
       ok = 0;
@@ -448,7 +449,7 @@ static int resolve_function_body_declarations(
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(
             resolver->local_registry);
-    body->body[i]->usage_region = region;
+    ps_node_set_lvar_usage_region(body->body[i], region);
     if (!resolve_local_declarations_in_slot(
             resolver, &body->body[i])) {
       ok = 0;
@@ -494,7 +495,8 @@ static int resolve_local_declarations_in_slot(
   if (node->kind == ND_LOCAL_DECLARATION) {
     psx_lvar_usage_region_t *previous_usage_region =
         ps_local_registry_set_current_usage_region_in(
-            resolver->local_registry, node->usage_region);
+            resolver->local_registry,
+            ps_node_lvar_usage_region(node));
     node_t *replacement =
         apply_local_declaration_syntax(
             resolver->semantic_context,
@@ -508,8 +510,9 @@ static int resolve_local_declarations_in_slot(
         resolver->local_registry, previous_usage_region);
     if (!replacement) return 0;
     if (!replacement->tok) replacement->tok = node->tok;
-    if (!replacement->usage_region)
-      replacement->usage_region = node->usage_region;
+    if (!ps_node_lvar_usage_region(replacement))
+      ps_node_set_lvar_usage_region(
+          replacement, ps_node_lvar_usage_region(node));
     *slot = replacement;
     return 1;
   }

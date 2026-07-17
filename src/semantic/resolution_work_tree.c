@@ -663,13 +663,6 @@ const psx_typed_hir_tree_t *psx_resolution_work_tree_typed_hir(
              ? tree->typed_hir : NULL;
 }
 
-node_t *psx_resolution_work_tree_export_compatibility_ast(
-    psx_resolution_work_tree_t *tree) {
-  return tree && tree->phase >= PSX_RESOLUTION_WORK_FINALIZED
-             ? tree->compatibility_root
-             : NULL;
-}
-
 psx_resolution_work_phase_t psx_resolution_work_tree_phase(
     const psx_resolution_work_tree_t *tree) {
   return tree ? tree->phase : PSX_RESOLUTION_WORK_INVALID;

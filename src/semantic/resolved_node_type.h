@@ -10,6 +10,8 @@
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_node_resolution_state_t psx_node_resolution_state_t;
+typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
+typedef struct lvar_t lvar_t;
 
 const psx_type_t *ps_node_get_type(const node_t *node);
 psx_qual_type_t ps_node_qual_type(const node_t *node);
@@ -49,5 +51,12 @@ int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
 int ps_node_value_is_pointer_like(node_t *node);
 int ps_node_is_unsigned_type(node_t *node);
 int ps_node_deref_decays_to_address(node_t *node);
+psx_lvar_usage_region_t *ps_node_lvar_usage_region(
+    const node_t *node);
+void ps_node_set_lvar_usage_region(
+    node_t *node, psx_lvar_usage_region_t *region);
+lvar_t *ps_node_lvar_usage_symbol(const node_t *node);
+int ps_node_records_lvar_usage(const node_t *node);
+void ps_node_record_lvar_usage(node_t *node, lvar_t *local);
 
 #endif

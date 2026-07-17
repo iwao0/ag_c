@@ -28,6 +28,7 @@
 #include "vla_runtime_plan.h"
 #include "resolved_node_kind.h"
 #include "resolved_node.h"
+#include "resolved_node_type.h"
 #include "resolved_lvalue.h"
 #include "resolved_object_ref.h"
 
@@ -753,7 +754,8 @@ static void semantic_resolve_generic_selection(
 
 static void semantic_mark_usage_evaluated(node_t *node) {
   if (!node) return;
-  if (node->records_lvar_usage) node->lvar_usage_unevaluated = 0;
+  if (ps_node_records_lvar_usage(node))
+    node->lvar_usage_unevaluated = 0;
   switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;

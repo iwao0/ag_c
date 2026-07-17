@@ -7,6 +7,7 @@
 struct global_var_t;
 struct lvar_t;
 struct node_t;
+struct psx_lvar_usage_region_t;
 struct psx_runtime_initializer_plan_t;
 struct psx_sizeof_runtime_plan_t;
 
@@ -94,6 +95,12 @@ typedef struct {
   char *string_label;
 } psx_literal_resolution_state_t;
 
+typedef struct {
+  struct psx_lvar_usage_region_t *region;
+  struct lvar_t *local;
+  unsigned char records_usage;
+} psx_lvar_usage_resolution_state_t;
+
 typedef enum {
   PSX_RESOLVED_REFERENCE_NONE = 0,
   PSX_RESOLVED_REFERENCE_LOCAL,
@@ -130,6 +137,7 @@ typedef struct psx_node_resolution_state_t {
   psx_function_call_resolution_state_t function_call;
   psx_case_label_resolution_state_t case_label;
   psx_literal_resolution_state_t literal;
+  psx_lvar_usage_resolution_state_t lvar_usage;
   psx_resolved_reference_state_t reference;
   psx_type_name_resolution_state_t type_name;
 } psx_node_resolution_state_t;

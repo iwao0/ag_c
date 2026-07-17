@@ -9,6 +9,7 @@
 #include "sizeof_query_resolution.h"
 #include "resolved_node_kind.h"
 #include "resolved_node.h"
+#include "resolved_node_type.h"
 #include "resolved_object_ref.h"
 #include "vla_runtime_plan.h"
 #include "source_cast_resolution.h"
@@ -155,10 +156,12 @@ void psx_collect_lvar_usage_events_in(
     node_t *node, psx_lvar_usage_region_t *inherited_region) {
   if (!local_registry || !node) return;
   psx_lvar_usage_region_t *region =
-      node->usage_region ? node->usage_region : inherited_region;
-  if (node->records_lvar_usage && node->usage_lvar) {
+      ps_node_lvar_usage_region(node)
+          ? ps_node_lvar_usage_region(node) : inherited_region;
+  lvar_t *usage_lvar = ps_node_lvar_usage_symbol(node);
+  if (ps_node_records_lvar_usage(node) && usage_lvar) {
     ps_decl_record_lvar_usage_in_region_in(
-        local_registry, node->usage_lvar,
+        local_registry, usage_lvar,
         node->lvar_usage_unevaluated
             ? PSX_LVAR_USAGE_UNEVALUATED
             : PSX_LVAR_USAGE_EVALUATED,

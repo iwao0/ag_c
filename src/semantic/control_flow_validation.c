@@ -9,6 +9,7 @@
 #include "tree_walk.h"
 #include "resolved_function.h"
 #include "resolved_node_kind.h"
+#include "resolved_node_type.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -437,7 +438,8 @@ static int is_switch_label(node_t *node) {
 
 static void suppress_lvar_regions(node_t *node) {
   if (!node) return;
-  ps_decl_suppress_lvar_usage_region(node->usage_region);
+  ps_decl_suppress_lvar_usage_region(
+      ps_node_lvar_usage_region(node));
   switch (node->kind) {
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;

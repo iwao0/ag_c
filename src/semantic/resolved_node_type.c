@@ -143,6 +143,40 @@ int ps_node_has_resolution_state(const node_t *node) {
   return ps_node_resolution_state_const(node) != NULL;
 }
 
+psx_lvar_usage_region_t *ps_node_lvar_usage_region(
+    const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state ? state->lvar_usage.region : NULL;
+}
+
+void ps_node_set_lvar_usage_region(
+    node_t *node, psx_lvar_usage_region_t *region) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->lvar_usage.region = region;
+}
+
+lvar_t *ps_node_lvar_usage_symbol(const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state ? state->lvar_usage.local : NULL;
+}
+
+int ps_node_records_lvar_usage(const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state && state->lvar_usage.records_usage;
+}
+
+void ps_node_record_lvar_usage(node_t *node, lvar_t *local) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (!state) return;
+  state->lvar_usage.local = local;
+  state->lvar_usage.records_usage = local ? 1 : 0;
+}
+
 size_t psx_resolution_node_storage_size(const node_t *node) {
   psx_work_resolution_state_binding_t *work =
       work_resolution_binding(node);

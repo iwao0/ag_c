@@ -145,6 +145,15 @@ if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
     /psx_resolution_work_tree_create_from_function_seed/.test(
       `${resolutionWorkTree}\n${resolutionWorkTreeInternalHeader}`,
     ) ||
+    /psx_resolution_work_tree_export_compatibility_ast/.test(
+      `${resolutionWorkTree}\n${resolutionWorkTreeInternalHeader}`,
+    ) ||
+    /\b(?:usage_region|usage_lvar|records_lvar_usage)\b/.test(
+      astHeader,
+    ) ||
+    !/psx_lvar_usage_resolution_state_t\s+lvar_usage\s*;/.test(
+      earlyNodeResolutionState,
+    ) ||
     /\b(?:bound_base_type|resolved_type)\s*;/.test(astHeader) ||
     !/\bpsx_type_name_resolution_state_t\s+type_name\s*;/.test(
       earlyNodeResolutionState,
@@ -3454,7 +3463,7 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
     !/psx_decl_begin_lvar_usage_region_in\s*\(\s*resolver->local_registry\s*\)/.test(
       localDeclarationTreeResolutionSource,
     ) ||
-    !/block->body\[i\]->usage_region\s*=\s*region/.test(
+    !/ps_node_set_lvar_usage_region\s*\(\s*block->body\[i\]\s*,\s*region\s*\)/.test(
       localDeclarationTreeResolutionSource,
     ) ||
     !/psx_stmt_stmt_syntax\s*\(\s*&syntax\s*\)/.test(

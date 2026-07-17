@@ -15,8 +15,6 @@ const node_t *psx_resolution_work_tree_compatibility_root(
     const psx_resolution_work_tree_t *tree);
 int psx_resolution_work_tree_replace_compatibility_root(
     psx_resolution_work_tree_t *tree, node_t *root);
-node_t *psx_resolution_work_tree_export_compatibility_ast(
-    psx_resolution_work_tree_t *tree);
 int psx_resolution_work_tree_advance(
     psx_resolution_work_tree_t *tree,
     psx_resolution_work_phase_t expected,

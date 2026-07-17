@@ -4,8 +4,6 @@
 #include "../tokenizer/token.h"
 #include "core.h"
 #include "syntax_node_kind.h"
-struct lvar_t;
-struct psx_lvar_usage_region_t;
 struct psx_parsed_type_name_t;
 struct psx_parsed_local_declaration_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
@@ -60,13 +58,10 @@ struct node_t {
   node_t *lhs;      // 左辺 / 条件式
   node_t *rhs;      // 右辺 / then節 / ループ本体
   token_t *tok;     // statement/expression start token for post-parse diagnostics
-  struct psx_lvar_usage_region_t *usage_region;
-  struct lvar_t *usage_lvar;
   token_kind_t source_op;
 
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
-  unsigned int records_lvar_usage : 1;
   unsigned int lvar_usage_unevaluated : 1;
   unsigned int is_explicit_addr_expr : 1;
   unsigned int is_source_assignment : 1;
