@@ -3290,6 +3290,10 @@ const hirSymbolResolutionSource = await readFile(
   "src/semantic/hir_symbol_resolution.c",
   "utf8",
 );
+const hirLocalResolutionSource = await readFile(
+  "src/semantic/hir_local_resolution.c",
+  "utf8",
+);
 const nodeTypePublicSource = await readFile(
   "src/semantic/resolved_node_type.h",
   "utf8",
@@ -6775,6 +6779,16 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/PSX_HIR_GLOBAL/.test(syntaxTypedHirResolutionSource) ||
     !/PSX_HIR_FUNCTION_REF/.test(syntaxTypedHirResolutionSource) ||
     !/PSX_HIR_ADDRESS/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_DEREF/.test(syntaxTypedHirResolutionSource) ||
+    !/psx_resolve_deref_operand_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_indirection_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_address_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/psx_semantic_node_expression_qual_type\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -6829,6 +6843,15 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
     !/\bint\s+decays_function_to_pointer\s*;/.test(
       identifierResolutionHeader,
     ) ||
+    !/\bglobal_var_t\s*\*\s*static_storage_global\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/\bint\s+local_has_static_storage\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/\bint\s+local_is_vla\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
     !/ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
       identifierResolutionSource,
     ) ||
@@ -6849,7 +6872,51 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
   );
 }
 
+const compatibilityLocalHirSpecCalls =
+  resolvedTreeMaterialization.match(
+    /\bpsx_resolve_local_hir_node_spec_in\s*\(/g,
+  ) ?? [];
+const directTreeWrapIndex = syntaxTypedHirResolutionSource.indexOf(
+  "wrap_typed_root(",
+  syntaxTypedHirResolutionSource.indexOf(
+    "psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts",
+  ),
+);
+const directUsageRecordIndex = syntaxTypedHirResolutionSource.indexOf(
+  "record_direct_identifier_usage(&context)",
+);
+if (!/ps_lvar_static_storage_global\s*\(/.test(
+      identifierResolutionSource,
+    ) ||
+    /->static_(?:global|global_name)\b/.test(
+      `${identifierResolutionSource}\n${syntaxTypedHirResolutionSource}`,
+    ) ||
+    !/psx_resolve_local_hir_node_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    compatibilityLocalHirSpecCalls.length < 2 ||
+    !/\bPSX_HIR_LOCAL\b/.test(hirLocalResolutionSource) ||
+    !/ps_lvar_frame_storage_size\s*\(/.test(
+      hirLocalResolutionSource,
+    ) ||
+    !/ps_lvar_vla_row_stride_frame_off\s*\(/.test(
+      hirLocalResolutionSource,
+    ) ||
+    !/ps_lvar_vla_param_inner_dim_count\s*\(/.test(
+      hirLocalResolutionSource,
+    ) ||
+    !/ps_decl_record_lvar_usage_in_region_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    directTreeWrapIndex < 0 || directUsageRecordIndex < directTreeWrapIndex) {
+  throw new Error(
+    "local, VLA, and static-local identifier resolution must share canonical HIR storage metadata and record usage only after direct resolution succeeds",
+  );
+}
+
 const sharedOperandTypeRuleCores = [
+  "resolve_indirection_result_type_value",
+  "resolve_address_result_type_value",
   "resolve_arithmetic_unary_result_type_value",
   "resolve_binary_result_type_value",
   "resolve_conditional_result_type_value",

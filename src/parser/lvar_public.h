@@ -5,6 +5,7 @@
 #include "../semantic/type_identity.h"
 
 typedef struct lvar_t lvar_t;
+typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 
@@ -37,6 +38,7 @@ int ps_lvar_frame_storage_size(const lvar_t *var);
 int ps_lvar_align_bytes(const lvar_t *var);
 int ps_lvar_is_param(const lvar_t *var);
 int ps_lvar_is_static_local(const lvar_t *var);
+global_var_t *ps_lvar_static_storage_global(const lvar_t *var);
 int ps_lvar_is_vla(const lvar_t *var);
 int ps_lvar_is_array(const lvar_t *var);
 int ps_lvar_array_flat_element_count(const lvar_t *var);

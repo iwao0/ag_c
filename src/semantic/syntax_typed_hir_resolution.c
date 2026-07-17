@@ -4,13 +4,31 @@
 
 #include "../parser/arena.h"
 #include "../parser/ast.h"
+#include "../parser/decl.h"
+#include "../parser/lvar_public.h"
 #include "../parser/semantic_ctx.h"
 #include "expression_operand_resolution.h"
+#include "hir_local_resolution.h"
 #include "hir_symbol_resolution.h"
 #include "identifier_resolution.h"
 #include "literal_resolution.h"
 #include "semantic_node_builder.h"
 #include "typed_hir_tree_internal.h"
+
+typedef struct direct_identifier_binding_t
+    direct_identifier_binding_t;
+
+enum {
+  DIRECT_IDENTIFIER_USAGE_EVALUATED = 1u << 0,
+  DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN = 1u << 1,
+};
+
+struct direct_identifier_binding_t {
+  const node_identifier_t *syntax;
+  psx_identifier_expression_resolution_t resolution;
+  unsigned usage_flags;
+  direct_identifier_binding_t *next;
+};
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -18,7 +36,16 @@ typedef struct {
   psx_local_registry_t *local_registry;
   psx_semantic_node_builder_t builder;
   psx_resolved_hir_build_failure_t *failure;
+  direct_identifier_binding_t *identifier_bindings;
+  int preflight_failed;
 } direct_resolution_context_t;
+
+static int preflight_direct_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t *qual_type);
+static psx_semantic_node_t *build_direct_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
 
 static void set_failure(
     psx_resolved_hir_build_failure_t *failure,
@@ -47,10 +74,17 @@ static psx_typed_hir_tree_t *wrap_typed_root(
 }
 
 static int resolve_direct_identifier(
-    const direct_resolution_context_t *context,
+    direct_resolution_context_t *context,
     const node_identifier_t *identifier,
     psx_identifier_expression_resolution_t *resolution) {
   if (!context || !identifier) return 0;
+  for (direct_identifier_binding_t *binding =
+           context->identifier_bindings;
+       binding; binding = binding->next) {
+    if (binding->syntax != identifier) continue;
+    if (resolution) *resolution = binding->resolution;
+    return 1;
+  }
   psx_identifier_expression_resolution_t resolved;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
@@ -68,18 +102,85 @@ static int resolve_direct_identifier(
       &resolved);
   switch (resolved.symbol.kind) {
     case PSX_IDENTIFIER_ENUM_CONSTANT:
+    case PSX_IDENTIFIER_LOCAL:
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
     case PSX_IDENTIFIER_FUNCTION:
       break;
-    case PSX_IDENTIFIER_LOCAL:
     case PSX_IDENTIFIER_UNDECLARED_CALL:
     case PSX_IDENTIFIER_UNDEFINED:
       return 0;
   }
   if (resolved.expression_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  if (resolved.local_has_static_storage &&
+      !resolved.static_storage_global)
+    return 0;
+  direct_identifier_binding_t *binding = arena_alloc_in(
+      ps_ctx_arena(context->semantic_context), sizeof(*binding));
+  if (!binding) {
+    context->preflight_failed = 1;
+    set_failure(
+        context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        &identifier->base);
+    return 0;
+  }
+  *binding = (direct_identifier_binding_t){
+      .syntax = identifier,
+      .resolution = resolved,
+      .usage_flags = DIRECT_IDENTIFIER_USAGE_EVALUATED,
+      .next = context->identifier_bindings,
+  };
+  context->identifier_bindings = binding;
   if (resolution) *resolution = resolved;
   return 1;
+}
+
+static direct_identifier_binding_t *direct_identifier_binding(
+    direct_resolution_context_t *context,
+    const node_identifier_t *identifier) {
+  if (!context || !identifier) return NULL;
+  for (direct_identifier_binding_t *binding =
+           context->identifier_bindings;
+       binding; binding = binding->next) {
+    if (binding->syntax == identifier) return binding;
+  }
+  return NULL;
+}
+
+static int preflight_direct_lvalue(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t *qual_type) {
+  if (qual_type)
+    *qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!context || !syntax) return 0;
+  if (syntax->kind == ND_IDENTIFIER) {
+    psx_identifier_expression_resolution_t resolution;
+    if (!resolve_direct_identifier(
+            context, (const node_identifier_t *)syntax,
+            &resolution) ||
+        resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT ||
+        resolution.local_is_vla)
+      return 0;
+    if (qual_type) *qual_type = resolution.declaration_qual_type;
+    return 1;
+  }
+  if (syntax->kind == ND_UNARY_DEREF) {
+    psx_qual_type_t operand_type;
+    if (!preflight_direct_expression(
+            context, syntax->lhs, &operand_type) ||
+        psx_resolve_deref_operand_qual_type_in(
+            context->semantic_context, operand_type) !=
+            PSX_DEREF_OPERAND_OK)
+      return 0;
+    psx_qual_type_t result =
+        psx_resolve_indirection_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+    if (qual_type) *qual_type = result;
+    return 1;
+  }
+  return 0;
 }
 
 static int direct_binary_kind(
@@ -111,7 +212,7 @@ static int direct_binary_kind(
 }
 
 static int preflight_direct_expression(
-    const direct_resolution_context_t *context,
+    direct_resolution_context_t *context,
     const node_t *syntax,
     psx_qual_type_t *qual_type) {
   if (qual_type)
@@ -134,6 +235,44 @@ static int preflight_direct_expression(
             &resolution))
       return 0;
     if (qual_type) *qual_type = resolution.expression_qual_type;
+    return 1;
+  }
+  if (syntax->kind == ND_UNARY_DEREF) {
+    psx_qual_type_t operand_type;
+    if (!preflight_direct_expression(
+            context, syntax->lhs, &operand_type) ||
+        psx_resolve_deref_operand_qual_type_in(
+            context->semantic_context, operand_type) !=
+            PSX_DEREF_OPERAND_OK)
+      return 0;
+    psx_qual_type_t result =
+        psx_resolve_indirection_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+    if (qual_type) *qual_type = result;
+    return 1;
+  }
+  if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
+    psx_qual_type_t operand_type;
+    if (!preflight_direct_lvalue(
+            context, syntax->lhs, &operand_type))
+      return 0;
+    psx_qual_type_t result =
+        psx_resolve_address_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+    if (syntax->lhs->kind == ND_IDENTIFIER) {
+      direct_identifier_binding_t *binding =
+          direct_identifier_binding(
+              context,
+              (const node_identifier_t *)syntax->lhs);
+      if (binding &&
+          binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL) {
+        binding->usage_flags |=
+            DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN;
+      }
+    }
+    if (qual_type) *qual_type = result;
     return 1;
   }
   if (syntax->kind == ND_UNARY_NEGATE) {
@@ -240,7 +379,8 @@ static psx_semantic_node_t *build_direct_literal(
 
 static psx_semantic_node_t *build_direct_identifier(
     direct_resolution_context_t *context,
-    const node_identifier_t *identifier) {
+    const node_identifier_t *identifier,
+    int suppress_array_decay) {
   psx_identifier_expression_resolution_t resolution;
   if (!resolve_direct_identifier(context, identifier, &resolution))
     return NULL;
@@ -253,38 +393,69 @@ static psx_semantic_node_t *build_direct_identifier(
   }
 
   psx_hir_node_spec_t spec = {
-      .kind = resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION
-                  ? PSX_HIR_FUNCTION_REF : PSX_HIR_GLOBAL,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
       .name = identifier->name,
       .name_length = identifier->name_len > 0
                          ? (size_t)identifier->name_len : 0,
   };
-  if (resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION)
+  if (resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION) {
+    spec.kind = PSX_HIR_FUNCTION_REF;
     return psx_semantic_node_builder_leaf_expression(
         &context->builder, &spec,
         resolution.expression_qual_type, NULL,
         identifier->base.kind);
+  }
 
-  psx_hir_symbol_spec_t symbol;
-  if (!psx_resolve_global_hir_symbol_spec_in(
-          context->semantic_context,
-          resolution.symbol.global, &symbol)) {
+  psx_semantic_node_t *object = NULL;
+  global_var_t *storage_global =
+      resolution.symbol.kind == PSX_IDENTIFIER_GLOBAL_OBJECT
+          ? resolution.symbol.global
+          : resolution.static_storage_global;
+  if (storage_global) {
+    psx_hir_symbol_spec_t symbol;
+    if (!psx_resolve_global_hir_symbol_spec_in(
+            context->semantic_context, storage_global, &symbol)) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL,
+          &identifier->base);
+      return NULL;
+    }
+    spec.kind = PSX_HIR_GLOBAL;
+    spec.name = symbol.name;
+    spec.name_length = symbol.name_length;
+    object = psx_semantic_node_builder_leaf_expression(
+        &context->builder, &spec,
+        resolution.declaration_qual_type, &symbol,
+        identifier->base.kind);
+  } else if (resolution.symbol.kind == PSX_IDENTIFIER_LOCAL &&
+             resolution.symbol.local) {
+    if (!psx_resolve_local_hir_node_spec_in(
+            context->semantic_context, resolution.symbol.local,
+            ps_lvar_offset(resolution.symbol.local), &spec)) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          &identifier->base);
+      return NULL;
+    }
+    psx_qual_type_t object_type = resolution.local_is_vla &&
+                                      !suppress_array_decay
+                                      ? resolution.expression_qual_type
+                                      : resolution.declaration_qual_type;
+    object = psx_semantic_node_builder_leaf_expression(
+        &context->builder, &spec, object_type, NULL,
+        identifier->base.kind);
+  } else {
     set_failure(
         context->failure,
         PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL,
         &identifier->base);
     return NULL;
   }
-  spec.name = symbol.name;
-  spec.name_length = symbol.name_length;
-  psx_semantic_node_t *object =
-      psx_semantic_node_builder_leaf_expression(
-          &context->builder, &spec,
-          resolution.declaration_qual_type, &symbol,
-          identifier->base.kind);
-  if (!object || !resolution.decays_array_to_address)
+  if (!object || suppress_array_decay ||
+      !resolution.decays_array_to_address)
     return object;
 
   psx_semantic_node_t *children[] = {object};
@@ -301,6 +472,40 @@ static psx_semantic_node_t *build_direct_identifier(
       identifier->base.kind);
 }
 
+static void record_direct_identifier_usage(
+    direct_resolution_context_t *context) {
+  if (!context || !context->local_registry) return;
+  for (direct_identifier_binding_t *binding =
+           context->identifier_bindings;
+       binding; binding = binding->next) {
+    lvar_t *local = binding->resolution.symbol.local;
+    if (binding->resolution.symbol.kind != PSX_IDENTIFIER_LOCAL ||
+        !local)
+      continue;
+    ps_decl_record_lvar_usage_in_region_in(
+        context->local_registry, local,
+        PSX_LVAR_USAGE_EVALUATED, NULL);
+    if (binding->usage_flags &
+        DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN) {
+      ps_decl_record_lvar_usage_in_region_in(
+          context->local_registry, local,
+          PSX_LVAR_USAGE_ADDRESS_TAKEN, NULL);
+    }
+  }
+}
+
+static psx_semantic_node_t *build_direct_lvalue(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  if (!context || !syntax) return NULL;
+  if (syntax->kind == ND_IDENTIFIER)
+    return build_direct_identifier(
+        context, (const node_identifier_t *)syntax, 1);
+  if (syntax->kind == ND_UNARY_DEREF)
+    return build_direct_expression(context, syntax);
+  return NULL;
+}
+
 static psx_semantic_node_t *build_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax) {
@@ -308,7 +513,71 @@ static psx_semantic_node_t *build_direct_expression(
     return build_direct_literal(context, syntax);
   if (syntax->kind == ND_IDENTIFIER)
     return build_direct_identifier(
-        context, (const node_identifier_t *)syntax);
+        context, (const node_identifier_t *)syntax, 0);
+
+  if (syntax->kind == ND_UNARY_DEREF) {
+    psx_semantic_node_t *operand =
+        build_direct_expression(context, syntax->lhs);
+    if (!operand) return NULL;
+    psx_qual_type_t result_qual_type =
+        psx_resolve_indirection_result_qual_type_in(
+            context->semantic_context,
+            psx_semantic_node_expression_qual_type(operand));
+    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+      return NULL;
+    }
+    psx_semantic_node_t *children[] = {operand};
+    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_DEREF,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+    };
+    return psx_semantic_node_builder_expression(
+        &context->builder, &spec, result_qual_type,
+        children, edges, 1, NULL, syntax->kind);
+  }
+
+  if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
+    if (syntax->lhs && syntax->lhs->kind == ND_IDENTIFIER) {
+      psx_identifier_expression_resolution_t resolution;
+      if (resolve_direct_identifier(
+              context,
+              (const node_identifier_t *)syntax->lhs,
+              &resolution) &&
+          resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION) {
+        return build_direct_identifier(
+            context,
+            (const node_identifier_t *)syntax->lhs, 0);
+      }
+    }
+    psx_semantic_node_t *operand =
+        build_direct_lvalue(context, syntax->lhs);
+    if (!operand) return NULL;
+    psx_qual_type_t result_qual_type =
+        psx_resolve_address_result_qual_type_in(
+            context->semantic_context,
+            psx_semantic_node_expression_qual_type(operand));
+    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+      return NULL;
+    }
+    psx_semantic_node_t *children[] = {operand};
+    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_ADDRESS,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+    };
+    return psx_semantic_node_builder_expression(
+        &context->builder, &spec, result_qual_type,
+        children, edges, 1, NULL, syntax->kind);
+  }
 
   if (syntax->kind == ND_UNARY_NEGATE) {
     psx_semantic_node_t *operand =
@@ -441,14 +710,18 @@ psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
   } else {
     psx_qual_type_t preflight_type;
     if (!preflight_direct_expression(
-            &context, syntax_expression, &preflight_type))
-      return PSX_SYNTAX_TYPED_HIR_NOT_HANDLED;
+            &context, syntax_expression, &preflight_type)) {
+      return context.preflight_failed
+                 ? PSX_SYNTAX_TYPED_HIR_FAILED
+                 : PSX_SYNTAX_TYPED_HIR_NOT_HANDLED;
+    }
     root = build_direct_expression(&context, syntax_expression);
   }
 
   psx_typed_hir_tree_t *tree = wrap_typed_root(
       semantic_context, root, syntax_expression, failure);
   if (!tree) return PSX_SYNTAX_TYPED_HIR_FAILED;
+  record_direct_identifier_usage(&context);
   *typed_hir = tree;
   return PSX_SYNTAX_TYPED_HIR_RESOLVED;
 }

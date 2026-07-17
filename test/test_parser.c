@@ -2476,16 +2476,337 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       direct_local, ps_type_new_integer(TK_INT, 4, 0));
   node_t *local_syntax =
       parse_expr_input_with_existing_locals("DirectLocal");
-  const psx_typed_hir_tree_t *local_unhandled = NULL;
+  const psx_typed_hir_tree_t *typed_local = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), local_syntax,
+          &typed_local, &failure));
+  ASSERT_TRUE(typed_local != NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(local_syntax));
+  ASSERT_TRUE(ps_node_get_type(local_syntax) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t local_id = psx_typed_hir_tree_emit(
+      hir, typed_local, &failure);
+  const psx_hir_node_t *local_hir =
+      psx_hir_module_lookup(hir, local_id);
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(local_hir));
+  ASSERT_EQ(ps_lvar_offset(direct_local),
+            psx_hir_node_storage_offset(local_hir));
+  ASSERT_EQ(ps_lvar_offset(direct_local),
+            psx_hir_node_object_offset(local_hir));
+  ASSERT_EQ(ps_lvar_frame_storage_size(direct_local),
+            psx_hir_node_object_size(local_hir));
+  ASSERT_EQ(ps_lvar_align_bytes(direct_local),
+            psx_hir_node_object_align(local_hir));
+  const psx_type_t *local_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(local_hir).type_id);
+  ASSERT_TRUE(local_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, local_type->kind);
+  psx_hir_module_destroy(hir);
+
+  lvar_t *direct_local_array = register_test_storage_fixture(
+      (char *)"DirectLocalArray", 16, 12, 4, 1);
+  node_t *local_array_syntax =
+      parse_expr_input_with_existing_locals("DirectLocalArray");
+  const psx_typed_hir_tree_t *typed_local_array = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), local_array_syntax,
+          &typed_local_array, &failure));
+  ASSERT_TRUE(!ps_node_has_resolution_state(local_array_syntax));
+  ASSERT_TRUE(ps_node_get_type(local_array_syntax) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t local_array_id = psx_typed_hir_tree_emit(
+      hir, typed_local_array, &failure);
+  const psx_hir_node_t *local_array_hir =
+      psx_hir_module_lookup(hir, local_array_id);
+  ASSERT_EQ(PSX_HIR_ADDRESS,
+            psx_hir_node_kind(local_array_hir));
+  const psx_hir_node_t *local_array_object_hir =
+      psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(local_array_hir, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(local_array_object_hir));
+  ASSERT_EQ(ps_lvar_offset(direct_local_array),
+            psx_hir_node_storage_offset(local_array_object_hir));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(local_array_hir).type_id)->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(
+                    local_array_object_hir).type_id)->kind);
+  psx_hir_module_destroy(hir);
+
+  psx_type_t *direct_vla_type = ps_type_new_array(
+      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 1);
+  lvar_t *direct_vla = register_test_typed_storage_fixture(
+      (char *)"DirectVLA", 9, 8, 8, direct_vla_type);
+  ASSERT_TRUE(direct_vla != NULL);
+  ps_local_registry_set_vla_descriptor(
+      direct_vla, 96, 2, 104, 4);
+  int direct_vla_inner_constants[1] = {3};
+  int direct_vla_inner_offsets[1] = {112};
+  ps_local_registry_set_vla_param_inner_dims(
+      test_local_registry(), direct_vla,
+      direct_vla_inner_constants, direct_vla_inner_offsets,
+      1, NULL);
+  node_t *vla_syntax =
+      parse_expr_input_with_existing_locals("DirectVLA");
+  const psx_typed_hir_tree_t *typed_vla = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), vla_syntax,
+          &typed_vla, &failure));
+  ASSERT_TRUE(!ps_node_has_resolution_state(vla_syntax));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t vla_id = psx_typed_hir_tree_emit(
+      hir, typed_vla, &failure);
+  const psx_hir_node_t *vla_hir =
+      psx_hir_module_lookup(hir, vla_id);
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(vla_hir));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(vla_hir).type_id)->kind);
+  ASSERT_EQ(96, psx_hir_node_vla_stride_frame_offset(vla_hir));
+  ASSERT_EQ(104, psx_hir_node_vla_stride_source_offset(vla_hir));
+  ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_hir));
+  ASSERT_EQ(PSX_VLA_RUNTIME_SLOT_SIZE,
+            psx_hir_node_vla_stride_slot_size(vla_hir));
+  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_hir));
+  ASSERT_EQ(3, psx_hir_node_vla_dimension_constant(vla_hir, 0));
+  ASSERT_EQ(112,
+            psx_hir_node_vla_dimension_source_offset(vla_hir, 0));
+  psx_hir_module_destroy(hir);
+
+  psx_static_local_declaration_result_t direct_static = {0};
+  psx_type_t *direct_static_type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  ASSERT_TRUE(lower_static_local_declaration_storage(
+      &(psx_static_local_declaration_request_t){
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .lowering_context = test_lowering_context(),
+          .kind = PSX_STATIC_LOCAL_SCALAR,
+          .function_name = (char *)"direct",
+          .function_name_len = 6,
+          .name = (char *)"DirectStatic",
+          .name_len = 12,
+          .type = direct_static_type,
+      },
+      &direct_static));
+  ASSERT_TRUE(direct_static.global != NULL);
+  ASSERT_TRUE(direct_static.alias != NULL);
+  node_t *static_syntax =
+      parse_expr_input_with_existing_locals("DirectStatic");
+  const psx_typed_hir_tree_t *typed_static = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), static_syntax,
+          &typed_static, &failure));
+  ASSERT_TRUE(!ps_node_has_resolution_state(static_syntax));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t static_id = psx_typed_hir_tree_emit(
+      hir, typed_static, &failure);
+  const psx_hir_node_t *static_hir =
+      psx_hir_module_lookup(hir, static_id);
+  ASSERT_EQ(PSX_HIR_GLOBAL, psx_hir_node_kind(static_hir));
+  psx_hir_symbol_id_t static_symbol_id =
+      psx_hir_node_symbol_id(static_hir);
+  const psx_hir_symbol_t *static_symbol =
+      psx_hir_module_symbol_lookup(hir, static_symbol_id);
+  ASSERT_TRUE(static_symbol != NULL);
+  ASSERT_TRUE(psx_hir_symbol_is_static(static_symbol));
+  size_t static_name_length = 0;
+  const char *static_name =
+      psx_hir_symbol_name(static_symbol, &static_name_length);
+  ASSERT_EQ(direct_static.global->name_len, static_name_length);
+  ASSERT_TRUE(strncmp(
+      static_name, direct_static.global->name,
+      static_name_length) == 0);
+  psx_hir_module_destroy(hir);
+
+  lvar_t *direct_address_only = register_test_storage_fixture(
+      (char *)"DirectAddressOnly", 17, 4, 4, 0);
+  set_test_storage_fixture_type(
+      direct_address_only, ps_type_new_integer(TK_INT, 4, 0));
+  node_t *address_syntax =
+      parse_expr_input_with_existing_locals("&DirectAddressOnly");
+  ASSERT_EQ(ND_ADDR, address_syntax->kind);
+  ASSERT_TRUE(address_syntax->is_explicit_addr_expr);
+  const psx_typed_hir_tree_t *typed_address = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), address_syntax,
+          &typed_address, &failure));
+  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax->lhs));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t address_id = psx_typed_hir_tree_emit(
+      hir, typed_address, &failure);
+  const psx_hir_node_t *address_hir =
+      psx_hir_module_lookup(hir, address_id);
+  ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(address_hir));
+  const psx_hir_node_t *address_object_hir =
+      psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(address_hir, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(address_object_hir));
+  const psx_type_t *address_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(address_hir).type_id);
+  ASSERT_TRUE(address_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, address_type->kind);
+  ASSERT_TRUE(address_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, address_type->base->kind);
+  psx_hir_module_destroy(hir);
+
+  node_t *array_address_syntax =
+      parse_expr_input_with_existing_locals("&DirectLocalArray");
+  const psx_typed_hir_tree_t *typed_array_address = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), array_address_syntax,
+          &typed_array_address, &failure));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t array_address_id = psx_typed_hir_tree_emit(
+      hir, typed_array_address, &failure);
+  const psx_hir_node_t *array_address_hir =
+      psx_hir_module_lookup(hir, array_address_id);
+  ASSERT_EQ(PSX_HIR_ADDRESS,
+            psx_hir_node_kind(array_address_hir));
+  const psx_type_t *array_address_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(array_address_hir).type_id);
+  ASSERT_TRUE(array_address_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, array_address_type->kind);
+  ASSERT_TRUE(array_address_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_address_type->base->kind);
+  const psx_hir_node_t *explicit_array_object_hir =
+      psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(array_address_hir, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(explicit_array_object_hir));
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(
+                    explicit_array_object_hir).type_id)->kind);
+  psx_hir_module_destroy(hir);
+
+  psx_type_t *direct_pointer_type = ps_type_new_pointer(
+      ps_type_new_integer(TK_INT, 4, 0));
+  lvar_t *direct_pointer = register_test_typed_storage_fixture(
+      (char *)"DirectPointer", 13, 8, 8,
+      direct_pointer_type);
+  ASSERT_TRUE(direct_pointer != NULL);
+  node_t *deref_syntax =
+      parse_expr_input_with_existing_locals("*DirectPointer");
+  ASSERT_EQ(ND_UNARY_DEREF, deref_syntax->kind);
+  const psx_typed_hir_tree_t *typed_deref = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), deref_syntax,
+          &typed_deref, &failure));
+  ASSERT_TRUE(!ps_node_has_resolution_state(deref_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(deref_syntax->lhs));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t deref_id = psx_typed_hir_tree_emit(
+      hir, typed_deref, &failure);
+  const psx_hir_node_t *deref_hir =
+      psx_hir_module_lookup(hir, deref_id);
+  ASSERT_EQ(PSX_HIR_DEREF, psx_hir_node_kind(deref_hir));
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(deref_hir).type_id)->kind);
+  const psx_hir_node_t *deref_pointer_hir =
+      psx_hir_module_lookup(
+          hir, psx_hir_node_child_at(deref_hir, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(deref_pointer_hir));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(
+                    deref_pointer_hir).type_id)->kind);
+  psx_hir_module_destroy(hir);
+
+  node_t *function_address_syntax =
+      parse_expr_input_with_existing_locals("&DirectFunction");
+  const psx_typed_hir_tree_t *typed_function_address = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), function_address_syntax,
+          &typed_function_address, &failure));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t function_address_id =
+      psx_typed_hir_tree_emit(
+          hir, typed_function_address, &failure);
+  const psx_hir_node_t *function_address_hir =
+      psx_hir_module_lookup(hir, function_address_id);
+  ASSERT_EQ(PSX_HIR_FUNCTION_REF,
+            psx_hir_node_kind(function_address_hir));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                psx_hir_node_qual_type(
+                    function_address_hir).type_id)->kind);
+  psx_hir_module_destroy(hir);
+
+  node_t *invalid_deref_syntax =
+      parse_expr_input_with_existing_locals("*DirectLocal");
+  const psx_typed_hir_tree_t *invalid_deref_hir = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_NOT_HANDLED,
       psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
           test_semantic_context(), test_global_registry(),
-          test_local_registry(), local_syntax,
-          &local_unhandled, &failure));
-  ASSERT_TRUE(local_unhandled == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(local_syntax));
-  ASSERT_TRUE(ps_node_get_type(local_syntax) == NULL);
+          test_local_registry(), invalid_deref_syntax,
+          &invalid_deref_hir, &failure));
+  ASSERT_TRUE(invalid_deref_hir == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(invalid_deref_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(
+      invalid_deref_syntax->lhs));
+
+  ps_decl_replay_lvar_usage_events_in(
+      test_local_registry(),
+      ps_decl_get_locals_in(test_local_registry()));
+  ASSERT_TRUE(ps_lvar_registry_view(direct_local).is_used);
+  ASSERT_TRUE(ps_lvar_registry_view(direct_local_array).is_used);
+  ASSERT_TRUE(ps_lvar_registry_view(direct_vla).is_used);
+  ASSERT_TRUE(ps_lvar_registry_view(direct_static.alias).is_used);
+  ASSERT_TRUE(ps_lvar_registry_view(direct_pointer).is_used);
+  ASSERT_TRUE(
+      ps_lvar_registry_view(direct_address_only).is_address_taken);
+  ASSERT_TRUE(!ps_lvar_registry_view(direct_address_only).is_used);
   reset_test_translation_unit_state();
 }
 

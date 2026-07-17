@@ -20,6 +20,7 @@
 #include "function_call_resolution.h"
 #include "semantic_node_internal.h"
 #include "generic_selection_resolution.h"
+#include "hir_local_resolution.h"
 #include "hir_symbol_resolution.h"
 #include "literal_resolution.h"
 #include "member_access_resolution.h"
@@ -625,15 +626,14 @@ static psx_semantic_node_t *materialize_local_object_reference(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
-  psx_hir_node_spec_t spec = {
-      .kind = PSX_HIR_LOCAL,
-      .attached_qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .storage_offset = ps_lvar_offset(local),
-      .object_offset = ps_lvar_offset(local),
-      .object_size = ps_lvar_frame_storage_size(local),
-      .object_align = ps_lvar_align_bytes(local),
-  };
+  psx_hir_node_spec_t spec = {0};
+  if (!psx_resolve_local_hir_node_spec_in(
+          builder->semantic_context, local,
+          ps_lvar_offset(local), &spec)) {
+    set_failure(
+        builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+    return NULL;
+  }
   return materialize_expression_spec(
       builder, &spec, qual_type, NULL, NULL, source);
 }
@@ -1026,12 +1026,16 @@ static int copy_payload(
           psx_resolved_object_ref_local(source);
       int storage_offset =
           psx_resolved_object_ref_storage_offset(source);
-      spec->storage_offset = storage_offset;
       if (local) {
-        spec->object_offset = ps_lvar_offset(local);
-        spec->object_size = ps_lvar_frame_storage_size(local);
-        spec->object_align = ps_lvar_align_bytes(local);
+        if (!psx_resolve_local_hir_node_spec_in(
+                builder->semantic_context, local,
+                storage_offset, spec)) {
+          set_failure(
+              builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
+          return 0;
+        }
       } else {
+        spec->storage_offset = storage_offset;
         spec->object_offset = storage_offset;
       }
       break;
@@ -1158,8 +1162,7 @@ static int copy_payload(
 }
 
 static int copy_vla_payload(
-    hir_materializer_t *builder, const node_t *source,
-    psx_hir_node_spec_t *spec) {
+    const node_t *source, psx_hir_node_spec_t *spec) {
   if (source->kind == ND_SUBSCRIPT) {
     spec->vla_stride_frame_offset =
         ps_node_vla_row_stride_frame_off((node_t *)source);
@@ -1167,34 +1170,6 @@ static int copy_vla_payload(
       spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
     return 1;
   }
-  if (psx_resolved_object_ref_node_kind(source) != ND_LVAR) return 1;
-  const lvar_t *var = psx_resolved_object_ref_local(source);
-  if (!var || !ps_lvar_is_vla(var)) return 1;
-  spec->vla_stride_frame_offset =
-      ps_lvar_vla_row_stride_frame_off(var);
-  spec->vla_stride_source_offset =
-      ps_lvar_vla_row_stride_src_offset(var);
-  spec->vla_stride_element_size =
-      ps_lvar_vla_row_stride_elem_size(var);
-  spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
-  int count = ps_lvar_vla_param_inner_dim_count(var);
-  if (count <= 0) return 1;
-  int *constants = arena_alloc_in(
-      builder->arena_context, (size_t)count * sizeof(*constants));
-  int *source_offsets = arena_alloc_in(
-      builder->arena_context, (size_t)count * sizeof(*source_offsets));
-  if (!constants || !source_offsets) {
-    set_failure(builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY, source);
-    return 0;
-  }
-  for (int i = 0; i < count; i++) {
-    constants[i] = ps_lvar_vla_param_inner_dim_const(var, i);
-    source_offsets[i] =
-        ps_lvar_vla_param_inner_dim_src_offset(var, i);
-  }
-  spec->vla_dimension_constants = constants;
-  spec->vla_dimension_source_offsets = source_offsets;
-  spec->vla_dimension_count = (size_t)count;
   return 1;
 }
 
@@ -1219,7 +1194,7 @@ static psx_semantic_node_t *materialize_typed_leaf(
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
   if (!copy_payload(builder, source, &spec) ||
-      !copy_vla_payload(builder, source, &spec))
+      !copy_vla_payload(source, &spec))
     return NULL;
   if (psx_resolved_object_ref_node_kind(source) == ND_LVAR) {
     int bit_width = 0;
@@ -1447,7 +1422,7 @@ static psx_semantic_node_t *build_node(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
-  if (!copy_vla_payload(builder, source, &spec))
+  if (!copy_vla_payload(source, &spec))
     return NULL;
 
   hir_children_t children = {0};

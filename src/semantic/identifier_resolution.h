@@ -41,8 +41,11 @@ typedef struct {
   psx_identifier_resolution_t symbol;
   psx_qual_type_t declaration_qual_type;
   psx_qual_type_t expression_qual_type;
+  global_var_t *static_storage_global;
   int decays_array_to_address;
   int decays_function_to_pointer;
+  int local_has_static_storage;
+  int local_is_vla;
 } psx_identifier_expression_resolution_t;
 
 void psx_resolve_identifier(

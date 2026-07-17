@@ -113,6 +113,12 @@ void psx_resolve_identifier_expression(
     case PSX_IDENTIFIER_LOCAL:
       resolution->declaration_qual_type =
           ps_lvar_decl_qual_type(resolution->symbol.local);
+      resolution->static_storage_global =
+          ps_lvar_static_storage_global(resolution->symbol.local);
+      resolution->local_has_static_storage =
+          ps_lvar_is_static_local(resolution->symbol.local);
+      resolution->local_is_vla =
+          ps_lvar_is_vla(resolution->symbol.local);
       break;
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
       resolution->declaration_qual_type =
@@ -151,7 +157,8 @@ void psx_resolve_identifier_expression(
     resolution->expression_qual_type =
         ps_ctx_intern_pointer_to_qual_type_in(
             semantic_context, element);
-    resolution->decays_array_to_address = 1;
+    resolution->decays_array_to_address =
+        !resolution->local_is_vla;
     return;
   }
   resolution->expression_qual_type = declared;

@@ -137,6 +137,74 @@ int psx_qual_type_is_scalar_in(
              ps_ctx_type_by_id_in(semantic_context, type.type_id));
 }
 
+static const psx_type_t *resolve_indirection_result_type_value(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *operand_type) {
+  if (!semantic_context || !operand_type || !operand_type->base ||
+      (operand_type->kind != PSX_TYPE_POINTER &&
+       operand_type->kind != PSX_TYPE_ARRAY))
+    return NULL;
+  return ps_type_clone_in(
+      ps_ctx_arena(semantic_context), operand_type->base);
+}
+
+static const psx_type_t *resolve_address_result_type_value(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *operand_type) {
+  if (!semantic_context || !operand_type) return NULL;
+  const psx_type_t *base = ps_type_clone_in(
+      ps_ctx_arena(semantic_context), operand_type);
+  return ps_type_new_pointer_in(
+      ps_ctx_arena(semantic_context), base);
+}
+
+psx_deref_operand_status_t psx_resolve_deref_operand_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  if (!semantic_context || operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return PSX_DEREF_OPERAND_NOT_POINTER;
+  const psx_type_t *type = ps_ctx_type_by_id_in(
+      semantic_context, operand_type.type_id);
+  if (!type || !ps_type_is_pointer_like(type))
+    return PSX_DEREF_OPERAND_NOT_POINTER;
+  psx_qual_type_t pointee = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      operand_type.type_id);
+  const psx_type_t *pointee_type = ps_ctx_type_by_id_in(
+      semantic_context, pointee.type_id);
+  return pointee_type && pointee_type->kind == PSX_TYPE_VOID
+             ? PSX_DEREF_OPERAND_VOID_POINTER
+             : PSX_DEREF_OPERAND_OK;
+}
+
+psx_qual_type_t psx_resolve_indirection_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  if (!semantic_context ||
+      operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return invalid_qual_type();
+  return intern_result_type(
+      semantic_context,
+      resolve_indirection_result_type_value(
+          semantic_context,
+          ps_ctx_type_by_id_in(
+              semantic_context, operand_type.type_id)));
+}
+
+psx_qual_type_t psx_resolve_address_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  if (!semantic_context ||
+      operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return invalid_qual_type();
+  return intern_result_type(
+      semantic_context,
+      resolve_address_result_type_value(
+          semantic_context,
+          ps_ctx_type_by_id_in(
+              semantic_context, operand_type.type_id)));
+}
+
 psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
   if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
   const psx_type_t *type = ps_node_get_type(operand);
@@ -149,11 +217,8 @@ psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
 
 const psx_type_t *psx_resolve_indirection_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand) {
-  const psx_type_t *type = ps_node_get_type(operand);
-  if (!type || !type->base ||
-      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))
-    return NULL;
-  return ps_type_clone_in(ps_ctx_arena(semantic_context), type->base);
+  return resolve_indirection_result_type_value(
+      semantic_context, ps_node_get_type(operand));
 }
 
 const psx_type_t *psx_resolve_arithmetic_unary_result_type(
@@ -187,11 +252,8 @@ const psx_type_t *psx_resolve_sequence_result_type(
 
 const psx_type_t *psx_resolve_address_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand) {
-  const psx_type_t *operand_type = ps_node_get_type(operand);
-  if (!operand_type) return NULL;
-  psx_type_t *base = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), operand_type);
-  return ps_type_new_pointer_in(ps_ctx_arena(semantic_context), base);
+  return resolve_address_result_type_value(
+      semantic_context, ps_node_get_type(operand));
 }
 
 const psx_type_t *psx_resolve_incdec_result_type(

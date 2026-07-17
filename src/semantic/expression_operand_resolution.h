@@ -15,6 +15,9 @@ typedef enum {
 } psx_deref_operand_status_t;
 
 psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand);
+psx_deref_operand_status_t psx_resolve_deref_operand_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type);
 const psx_type_t *psx_resolve_indirection_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand);
 const psx_type_t *psx_resolve_arithmetic_unary_result_type(
@@ -46,6 +49,12 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t then_type,
     psx_qual_type_t else_type);
+psx_qual_type_t psx_resolve_indirection_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type);
+psx_qual_type_t psx_resolve_address_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type);
 int psx_qual_type_is_scalar_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t type);

@@ -80,6 +80,10 @@ int ps_lvar_is_static_local(const lvar_t *var) {
   return (var && var->is_static_local) ? 1 : 0;
 }
 
+global_var_t *ps_lvar_static_storage_global(const lvar_t *var) {
+  return var && var->is_static_local ? var->static_global : NULL;
+}
+
 int ps_lvar_is_vla(const lvar_t *var) {
   const psx_type_t *type = lvar_public_decl_type(var);
   return ps_type_contains_vla_array(type) ||
