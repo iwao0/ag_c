@@ -570,12 +570,6 @@ node_t *psx_resolution_work_tree_compatibility_root_mut(
              ? tree->compatibility_root : NULL;
 }
 
-const node_t *psx_resolution_work_tree_compatibility_root(
-    const psx_resolution_work_tree_t *tree) {
-  return tree && tree->phase >= PSX_RESOLUTION_WORK_CLONED
-             ? tree->compatibility_root : NULL;
-}
-
 int psx_resolution_work_tree_replace_compatibility_root(
     psx_resolution_work_tree_t *tree, node_t *root) {
   if (!tree || !root ||

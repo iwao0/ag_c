@@ -1276,6 +1276,109 @@ static psx_semantic_node_t *materialize_typed_leaf(
       psx_resolution_node_kind(source));
 }
 
+static psx_semantic_node_t *materialize_initializer_designator(
+    hir_materializer_t *builder,
+    const psx_initializer_designator_t *designator,
+    const node_t *source) {
+  if (!designator || !source) return NULL;
+  psx_hir_node_spec_t spec = {
+      .kind = designator->kind == PSX_INIT_DESIGNATOR_MEMBER
+                  ? PSX_HIR_MEMBER_DESIGNATOR
+                  : PSX_HIR_INDEX_DESIGNATOR,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .integer_value = designator->is_range ? 1 : 0,
+  };
+  hir_children_t children = {0};
+  if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
+    spec.name = designator->member_name;
+    spec.name_length = designator->member_len > 0
+                           ? (size_t)designator->member_len : 0;
+  } else if (!designator->index_expr ||
+             !append_child(
+                 builder, &children,
+                 build_node(builder, designator->index_expr),
+                 PSX_HIR_EDGE_DESIGNATOR_INDEX, source) ||
+             (designator->range_end_expr &&
+              !append_child(
+                  builder, &children,
+                  build_node(builder, designator->range_end_expr),
+                  PSX_HIR_EDGE_DESIGNATOR_RANGE_END, source))) {
+    free(children.items);
+    free(children.edges);
+    return NULL;
+  }
+  psx_semantic_node_t *result = materialize_statement(
+      builder, &spec, &children, source);
+  free(children.items);
+  free(children.edges);
+  return result;
+}
+
+static psx_semantic_node_t *materialize_initializer_entry(
+    hir_materializer_t *builder,
+    const psx_initializer_entry_t *entry,
+    const node_t *source) {
+  if (!entry || !entry->value || !source) return NULL;
+  hir_children_t children = {0};
+  for (int i = 0; i < entry->designator_count; i++) {
+    if (!append_child(
+            builder, &children,
+            materialize_initializer_designator(
+                builder, &entry->designators[i], source),
+            PSX_HIR_EDGE_DESIGNATOR, source)) {
+      free(children.items);
+      free(children.edges);
+      return NULL;
+    }
+  }
+  if (!append_child(
+          builder, &children, build_node(builder, entry->value),
+          PSX_HIR_EDGE_INITIALIZER_VALUE, source)) {
+    free(children.items);
+    free(children.edges);
+    return NULL;
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_INITIALIZER_ENTRY,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  psx_semantic_node_t *result = materialize_statement(
+      builder, &spec, &children, source);
+  free(children.items);
+  free(children.edges);
+  return result;
+}
+
+static psx_semantic_node_t *materialize_initializer_list(
+    hir_materializer_t *builder, const node_init_list_t *list) {
+  if (!list) return NULL;
+  const node_t *source = &list->base;
+  hir_children_t children = {0};
+  for (int i = 0; i < list->entry_count; i++) {
+    if (!append_child(
+            builder, &children,
+            materialize_initializer_entry(
+                builder, &list->entries[i], source),
+            PSX_HIR_EDGE_INITIALIZER_ENTRY, source)) {
+      free(children.items);
+      free(children.edges);
+      return NULL;
+    }
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_INITIALIZER_LIST,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  psx_semantic_node_t *result = materialize_statement(
+      builder, &spec, &children, source);
+  free(children.items);
+  free(children.edges);
+  return result;
+}
+
 static psx_semantic_node_t *build_node(
     hir_materializer_t *builder, const node_t *source) {
   int handled_typed_leaf = 0;
@@ -1284,6 +1387,10 @@ static psx_semantic_node_t *build_node(
   if (handled_typed_leaf) return typed_leaf;
   psx_resolution_node_kind_t resolved_kind =
       psx_resolution_node_kind(source);
+  if (resolved_kind == ND_INIT_LIST) {
+    return materialize_initializer_list(
+        builder, (const node_init_list_t *)source);
+  }
   if (resolved_kind == ND_VLA_ALLOC) {
     return materialize_vla_runtime(
         builder, (const node_vla_alloc_t *)source);

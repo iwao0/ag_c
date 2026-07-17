@@ -11,8 +11,6 @@ psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root);
 node_t *psx_resolution_work_tree_compatibility_root_mut(
     psx_resolution_work_tree_t *tree);
-const node_t *psx_resolution_work_tree_compatibility_root(
-    const psx_resolution_work_tree_t *tree);
 int psx_resolution_work_tree_replace_compatibility_root(
     psx_resolution_work_tree_t *tree, node_t *root);
 int psx_resolution_work_tree_advance(

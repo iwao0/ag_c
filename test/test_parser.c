@@ -37,7 +37,6 @@
 #include "../src/parser/aggregate_member_syntax.h"
 #include "../src/semantic/declaration_application.h"
 #include "../src/semantic/declaration_registration.h"
-#include "../src/frontend/function_definition.h"
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/semantic_pipeline_internal.h"
@@ -68,6 +67,7 @@
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/semantic_tree_resolution.h"
+#include "../src/semantic/semantic_tree_resolution_internal.h"
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
@@ -1731,7 +1731,7 @@ static node_t *analyze_test_expression(
       psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), expression);
   if (!work_tree ||
-      !psx_resolve_expression_semantic_tree_in_contexts(
+      !psx_resolve_expression_compatibility_work_tree_in_contexts(
           test_semantic_context(), test_global_registry(),
           test_local_registry(), test_lowering_context(),
           ag_compilation_session_options_view(test_suite_session),
@@ -2197,6 +2197,106 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_EQ(11, psx_hir_node_integer_value(typed_hir_root));
   ASSERT_EQ(int_qual_type.type_id,
             psx_hir_node_qual_type(typed_hir_root).type_id);
+  psx_hir_module_destroy(isolated_hir);
+
+  node_num_t syntax_initializer_value = {
+      .base = {.kind = ND_NUM},
+      .val = 23,
+  };
+  node_num_t syntax_designator_index = {
+      .base = {.kind = ND_NUM},
+      .val = 1,
+  };
+  psx_initializer_entry_t syntax_entry = {
+      .value = &syntax_initializer_value.base,
+      .designators = {{
+          .kind = PSX_INIT_DESIGNATOR_INDEX,
+          .index_expr = &syntax_designator_index.base,
+      }},
+      .designator_count = 1,
+  };
+  node_init_list_t syntax_initializer_list = {
+      .base = {.kind = ND_INIT_LIST},
+      .entries = &syntax_entry,
+      .entry_count = 1,
+  };
+  psx_resolution_work_tree_t *initializer_work_tree =
+      psx_resolution_work_tree_create_from_syntax(
+          test_arena_context(), &syntax_initializer_list.base);
+  ASSERT_TRUE(initializer_work_tree != NULL);
+  node_init_list_t *initializer_root = (node_init_list_t *)
+      psx_resolution_work_tree_compatibility_root_mut(
+          initializer_work_tree);
+  ASSERT_TRUE(initializer_root != NULL);
+  ASSERT_TRUE(initializer_root->entries[0].value !=
+              syntax_entry.value);
+  ps_node_bind_qual_type(
+      initializer_root->entries[0].value, int_type, int_qual_type);
+  ps_node_bind_qual_type(
+      initializer_root->entries[0].designators[0].index_expr,
+      int_type, int_qual_type);
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
+      initializer_work_tree, PSX_RESOLUTION_WORK_CLONED,
+      PSX_RESOLUTION_WORK_BOUND));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
+      initializer_work_tree, PSX_RESOLUTION_WORK_BOUND,
+      PSX_RESOLUTION_WORK_TYPED));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
+      initializer_work_tree, PSX_RESOLUTION_WORK_TYPED,
+      PSX_RESOLUTION_WORK_LOWERED));
+  ASSERT_TRUE(psx_resolution_work_tree_advance(
+      initializer_work_tree, PSX_RESOLUTION_WORK_LOWERED,
+      PSX_RESOLUTION_WORK_FINALIZED));
+  ASSERT_TRUE(psx_resolution_work_tree_materialize_typed_hir(
+      initializer_work_tree, test_semantic_context(), &failure));
+  isolated_hir = psx_hir_module_create();
+  ASSERT_TRUE(isolated_hir != NULL);
+  psx_hir_node_id_t initializer_root_id = psx_typed_hir_tree_emit(
+      isolated_hir,
+      psx_resolution_work_tree_typed_hir(initializer_work_tree),
+      &failure);
+  ASSERT_TRUE(initializer_root_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *initializer_hir_root =
+      psx_hir_module_lookup(isolated_hir, initializer_root_id);
+  ASSERT_EQ(PSX_HIR_INITIALIZER_LIST,
+            psx_hir_node_kind(initializer_hir_root));
+  ASSERT_EQ(1, psx_hir_node_child_count(initializer_hir_root));
+  ASSERT_EQ(PSX_HIR_EDGE_INITIALIZER_ENTRY,
+            psx_hir_node_child_edge_at(initializer_hir_root, 0));
+  const psx_hir_node_t *initializer_hir_entry =
+      psx_hir_module_lookup(
+          isolated_hir,
+          psx_hir_node_child_at(initializer_hir_root, 0));
+  ASSERT_EQ(PSX_HIR_INITIALIZER_ENTRY,
+            psx_hir_node_kind(initializer_hir_entry));
+  ASSERT_EQ(2, psx_hir_node_child_count(initializer_hir_entry));
+  const psx_hir_node_t *initializer_hir_designator =
+      psx_hir_module_lookup(
+          isolated_hir,
+          psx_hir_node_child_at(initializer_hir_entry, 0));
+  const psx_hir_node_t *initializer_hir_value =
+      psx_hir_module_lookup(
+          isolated_hir,
+          psx_hir_node_child_at(initializer_hir_entry, 1));
+  ASSERT_EQ(PSX_HIR_INDEX_DESIGNATOR,
+            psx_hir_node_kind(initializer_hir_designator));
+  ASSERT_EQ(PSX_HIR_EDGE_DESIGNATOR_INDEX,
+            psx_hir_node_child_edge_at(
+                initializer_hir_designator, 0));
+  const psx_hir_node_t *initializer_hir_index =
+      psx_hir_module_lookup(
+          isolated_hir,
+          psx_hir_node_child_at(initializer_hir_designator, 0));
+  ASSERT_EQ(PSX_HIR_NUMBER,
+            psx_hir_node_kind(initializer_hir_index));
+  ASSERT_EQ(int_qual_type.type_id,
+            psx_hir_node_qual_type(initializer_hir_index).type_id);
+  ASSERT_EQ(PSX_HIR_EDGE_INITIALIZER_VALUE,
+            psx_hir_node_child_edge_at(initializer_hir_entry, 1));
+  ASSERT_EQ(PSX_HIR_NUMBER,
+            psx_hir_node_kind(initializer_hir_value));
+  ASSERT_EQ(int_qual_type.type_id,
+            psx_hir_node_qual_type(initializer_hir_value).type_id);
   psx_hir_module_destroy(isolated_hir);
 
   node_t **program = parse_program_input(

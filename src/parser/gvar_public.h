@@ -2,6 +2,7 @@
 #define PARSER_GVAR_PUBLIC_H
 
 #include "core.h"
+#include "init_slot.h"
 #include "type.h"
 #include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"
@@ -13,6 +14,34 @@ typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 typedef struct ag_target_info_t ag_target_info_t;
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
+
+psx_gvar_init_slot_t ps_gvar_init_slot_view(
+    const global_var_t *gv, int idx);
+tk_float_kind_t ps_gvar_init_slot_fp_kind(
+    const global_var_t *gv, int idx);
+int ps_gvar_init_slot_is_plain_zero(
+    const global_var_t *gv, int idx);
+int ps_gvar_union_init_slot_fp_size(
+    const global_var_t *gv, int idx);
+int ps_gvar_union_init_slot_ordinal(
+    const global_var_t *gv, int idx);
+void ps_gvar_init_slots_alloc(
+    global_var_t *gv, int cap, int with_fvalues);
+void psx_gvar_init_slots_ensure_capacity(
+    global_var_t *gv, int *cap, int min_cap);
+void psx_gvar_init_slots_pad_zeros(
+    global_var_t *gv, int *cap, int total_slots);
+int ps_gvar_init_slots_write_string_units(
+    global_var_t *gv, int start_idx, const char *str, int len,
+    int elem_size, int max_slots);
+void ps_gvar_init_slot_clear(global_var_t *gv, int idx);
+void ps_gvar_init_slot_write(
+    global_var_t *gv, int idx, long long value,
+    double fvalue, char *symbol, int symbol_len);
+void ps_gvar_init_slot_write_fp_sentinel(
+    global_var_t *gv, int idx, tk_float_kind_t fp_kind, int fp_size);
+void ps_gvar_init_slot_set_ordinal(
+    global_var_t *gv, int idx, int ordinal);
 
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,

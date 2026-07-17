@@ -5,33 +5,42 @@ typedef struct ag_compilation_options_t ag_compilation_options_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct psx_parsed_function_definition_t
+    psx_parsed_function_definition_t;
+typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_resolution_work_tree_t psx_resolution_work_tree_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_typed_hir_tree_t psx_typed_hir_tree_t;
+typedef struct node_t node_t;
 typedef struct token_t token_t;
 
-int psx_resolve_function_semantic_tree_in_contexts(
+psx_resolution_work_tree_t *
+psx_resolve_parsed_function_semantic_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
+    const psx_parsed_function_definition_t *syntax_function,
     const token_t *fallback_diag_tok);
-int psx_resolve_expression_semantic_tree_in_contexts(
+const psx_typed_hir_tree_t *
+psx_resolve_expression_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
+    const node_t *syntax_expression,
     const token_t *fallback_diag_tok);
-int psx_resolve_initializer_semantic_tree_in_contexts(
+const psx_typed_hir_tree_t *
+psx_resolve_initializer_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
+    const node_t *syntax_initializer,
     const token_t *fallback_diag_tok);
 
 #endif

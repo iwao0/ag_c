@@ -18,23 +18,6 @@ struct global_var_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
-psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);
-tk_float_kind_t ps_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
-int ps_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);
-int ps_gvar_union_init_slot_fp_size(const struct global_var_t *gv, int idx);
-int ps_gvar_union_init_slot_ordinal(const struct global_var_t *gv, int idx);
-void ps_gvar_init_slots_alloc(struct global_var_t *gv, int cap, int with_fvalues);
-void psx_gvar_init_slots_ensure_capacity(struct global_var_t *gv, int *cap, int min_cap);
-void psx_gvar_init_slots_pad_zeros(struct global_var_t *gv, int *cap, int total_slots);
-int ps_gvar_init_slots_write_string_units(struct global_var_t *gv, int start_idx,
-                                           const char *str, int len,
-                                           int elem_size, int max_slots);
-void ps_gvar_init_slot_clear(struct global_var_t *gv, int idx);
-void ps_gvar_init_slot_write(struct global_var_t *gv, int idx, long long value,
-                              double fvalue, char *symbol, int symbol_len);
-void ps_gvar_init_slot_write_fp_sentinel(struct global_var_t *gv, int idx,
-                                          tk_float_kind_t fp_kind, int fp_size);
-void ps_gvar_init_slot_set_ordinal(struct global_var_t *gv, int idx, int ordinal);
 int ps_node_is_long_long_type(node_t *node);
 int ps_node_is_plain_char_type(node_t *node);
 int ps_node_is_long_double_type(node_t *node);

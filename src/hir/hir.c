@@ -73,7 +73,7 @@ static psx_qual_type_t invalid_qual_type(void) {
 }
 
 static char *copy_text(const char *text, size_t length) {
-  if (!text || length == 0) return NULL;
+  if (!text) return NULL;
   char *copy = malloc(length + 1);
   if (!copy) return NULL;
   memcpy(copy, text, length);

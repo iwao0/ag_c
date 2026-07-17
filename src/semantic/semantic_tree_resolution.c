@@ -1,10 +1,13 @@
 #include "semantic_tree_resolution.h"
+#include "semantic_tree_resolution_internal.h"
 
 #include "../diag/diag.h"
 #include "../lowering/semantic_lowering_pass.h"
 #include "../parser/decl.h"
+#include "../parser/function_definition_syntax.h"
 #include "../parser/semantic_ctx.h"
 #include "control_flow_validation.h"
+#include "function_definition_resolution.h"
 #include "identifier_binding.h"
 #include "local_declaration_tree_resolution.h"
 #include "lowered_tree_validation.h"
@@ -157,7 +160,6 @@ static int finalize_expression_tree(
           work_tree, PSX_RESOLUTION_WORK_LOWERED,
           PSX_RESOLUTION_WORK_FINALIZED, root))
     return 0;
-  if (is_initializer) return 1;
   return materialize_resolved_tree(
       semantic_context, work_tree, fallback_diag_tok);
 }
@@ -193,7 +195,21 @@ static int resolve_nonfunction_tree(
              is_initializer, root);
 }
 
-int psx_resolve_function_semantic_tree_in_contexts(
+int psx_resolve_expression_compatibility_work_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    psx_resolution_work_tree_t *work_tree,
+    const token_t *fallback_diag_tok) {
+  return resolve_nonfunction_tree(
+      semantic_context, global_registry, local_registry,
+      lowering_context, options, work_tree,
+      fallback_diag_tok, 0);
+}
+
+static int resolve_function_work_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
@@ -249,28 +265,101 @@ int psx_resolve_function_semantic_tree_in_contexts(
       semantic_context, work_tree, fallback_diag_tok);
 }
 
-int psx_resolve_expression_semantic_tree_in_contexts(
+psx_resolution_work_tree_t *
+psx_resolve_parsed_function_semantic_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
+    const psx_parsed_function_definition_t *syntax_function,
     const token_t *fallback_diag_tok) {
-  return resolve_nonfunction_tree(
-      semantic_context, global_registry, local_registry,
-      lowering_context, options, work_tree, fallback_diag_tok, 0);
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context || !lowering_context || !options ||
+      !syntax_function || !syntax_function->body)
+    return NULL;
+  psx_resolution_work_tree_t *work_tree =
+      psx_resolution_work_tree_create_from_syntax(
+          ps_ctx_arena(semantic_context), syntax_function->body);
+  node_t *body = mutable_compatibility_root(work_tree);
+  if (!work_tree || !body) return NULL;
+  psx_parsed_function_definition_t work_definition =
+      *syntax_function;
+  work_definition.body = body;
+  node_function_definition_t *function =
+      psx_prepare_function_definition_resolution_in_contexts(
+          semantic_context, global_registry, local_registry,
+          runtime_context, lowering_context, &work_definition);
+  if (!function ||
+      !psx_resolution_work_tree_replace_compatibility_root(
+          work_tree, &function->base) ||
+      !resolve_function_work_tree_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, work_tree,
+          fallback_diag_tok))
+    return NULL;
+  return work_tree;
 }
 
-int psx_resolve_initializer_semantic_tree_in_contexts(
+static const psx_typed_hir_tree_t *
+resolve_nonfunction_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
+    const node_t *syntax, const token_t *fallback_diag_tok,
+    int is_initializer) {
+  if (!semantic_context || !syntax) return NULL;
+  psx_resolution_work_tree_t *work_tree =
+      psx_resolution_work_tree_create_from_syntax(
+          ps_ctx_arena(semantic_context), syntax);
+  if (!work_tree) {
+    ag_diagnostic_context_t *diagnostics =
+        ps_ctx_diagnostics(semantic_context);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        "%s: could not create %s resolver working tree",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+        is_initializer ? "initializer" : "expression");
+    return NULL;
+  }
+  if (!resolve_nonfunction_tree(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, work_tree,
+          fallback_diag_tok, is_initializer))
+    return NULL;
+  return psx_resolution_work_tree_typed_hir(work_tree);
+}
+
+const psx_typed_hir_tree_t *
+psx_resolve_expression_typed_hir_from_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_expression,
     const token_t *fallback_diag_tok) {
-  return resolve_nonfunction_tree(
+  return resolve_nonfunction_typed_hir_from_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, work_tree, fallback_diag_tok, 1);
+      lowering_context, options, syntax_expression,
+      fallback_diag_tok, 0);
+}
+
+const psx_typed_hir_tree_t *
+psx_resolve_initializer_typed_hir_from_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const node_t *syntax_initializer,
+    const token_t *fallback_diag_tok) {
+  return resolve_nonfunction_typed_hir_from_syntax_in_contexts(
+      semantic_context, global_registry, local_registry,
+      lowering_context, options, syntax_initializer,
+      fallback_diag_tok, 1);
 }

@@ -6,12 +6,21 @@
 typedef struct global_var_t global_var_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct psx_static_aggregate_initializer_plan_t
+    psx_static_aggregate_initializer_plan_t;
 typedef struct psx_type_t psx_type_t;
+typedef struct token_t token_t;
 
 int psx_lower_static_scalar_hir_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type,
     const psx_hir_module_t *hir, psx_hir_node_id_t root);
+int psx_build_static_aggregate_hir_initializer_plan(
+    psx_global_registry_t *global_registry,
+    psx_lowering_context_t *lowering_context,
+    const psx_type_t *type, const psx_hir_module_t *hir,
+    psx_hir_node_id_t root, token_t *fallback_tok,
+    psx_static_aggregate_initializer_plan_t *plan);
 
 #endif

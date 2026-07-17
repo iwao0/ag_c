@@ -1,11 +1,9 @@
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"
-#include "function_definition.h"
 
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
-#include "../semantic/resolution_work_tree_internal.h"
-#include "../semantic/resolved_node_kind.h"
+#include "../semantic/resolution_work_tree.h"
 #include "../semantic/semantic_tree_resolution.h"
 #include "../semantic/static_initializer_materialization.h"
 #include "../semantic/typed_hir_materialization.h"
@@ -59,38 +57,15 @@ psx_frontend_resolve_parsed_function_work_tree_in_session(
     return NULL;
   }
   psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          ag_compilation_session_arena_context(session),
-          syntax_function->body);
-  node_t *body =
-      psx_resolution_work_tree_compatibility_root_mut(work_tree);
-  if (!work_tree || !body) return NULL;
-
-  psx_parsed_function_definition_t work_definition =
-      *syntax_function;
-  work_definition.body = body;
-  node_function_definition_t *function =
-      psx_apply_function_definition_in_contexts(
+      psx_resolve_parsed_function_semantic_tree_in_contexts(
           ag_compilation_session_semantic_context(session),
           ag_compilation_session_global_registry(session),
           ag_compilation_session_local_registry(session),
           ag_compilation_session_parser_runtime_context(session),
           ag_compilation_session_lowering_context(session),
-          &work_definition);
-  if (!function ||
-      !psx_resolution_work_tree_replace_compatibility_root(
-          work_tree, &function->base)) {
-    return NULL;
-  }
-  if (!psx_resolve_function_semantic_tree_in_contexts(
-          ag_compilation_session_semantic_context(session),
-          ag_compilation_session_global_registry(session),
-          ag_compilation_session_local_registry(session),
-          ag_compilation_session_lowering_context(session),
           ag_compilation_session_options_view(session),
-          work_tree, fallback_diag_tok)) {
-    return NULL;
-  }
+          syntax_function, fallback_diag_tok);
+  if (!work_tree) return NULL;
   *hir_root = build_session_hir(
       session, work_tree, fallback_diag_tok);
   return *hir_root != PSX_HIR_NODE_ID_INVALID ? work_tree : NULL;
@@ -104,35 +79,6 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
   return psx_frontend_resolve_parsed_function_work_tree_in_session(
              session, syntax_function, fallback_diag_tok, hir_root)
              ? 1 : 0;
-}
-
-static psx_resolution_work_tree_t *resolve_expression_work_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax_expression,
-    const token_t *fallback_diag_tok) {
-  if (!semantic_context || !syntax_expression) return NULL;
-  psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          ps_ctx_arena(semantic_context), syntax_expression);
-  if (!work_tree) {
-    ag_diagnostic_context_t *diagnostics =
-        ps_ctx_diagnostics(semantic_context);
-    diag_emit_internalf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        "%s: could not create expression resolver working tree",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED));
-    return NULL;
-  }
-  return psx_resolve_expression_semantic_tree_in_contexts(
-             semantic_context, global_registry, local_registry,
-             lowering_context, options, work_tree,
-             fallback_diag_tok)
-             ? work_tree : NULL;
 }
 
 static void diagnose_typed_expression_hir_failure(
@@ -174,17 +120,13 @@ int psx_frontend_resolve_expression_to_hir_in_contexts(
     };
   }
   if (!result) return 0;
-  psx_resolution_work_tree_t *work_tree =
-      resolve_expression_work_tree_in_contexts(
+  const psx_typed_hir_tree_t *typed_tree =
+      psx_resolve_expression_typed_hir_from_syntax_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax_expression,
           fallback_diag_tok);
-  if (!work_tree) return 0;
-
-  psx_resolved_hir_build_failure_t failure;
-  const psx_typed_hir_tree_t *typed_tree =
-      psx_resolution_work_tree_typed_hir(work_tree);
   if (!typed_tree) return 0;
+  psx_resolved_hir_build_failure_t failure;
   psx_hir_module_t *module = psx_hir_module_create();
   if (!module) return 0;
   psx_hir_node_id_t root = psx_typed_hir_tree_emit(
@@ -209,35 +151,6 @@ void psx_frontend_expression_hir_dispose(
   };
 }
 
-static psx_resolution_work_tree_t *
-resolve_initializer_work_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !syntax) return NULL;
-  psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          ps_ctx_arena(semantic_context), syntax);
-  if (!work_tree) {
-    ag_diagnostic_context_t *diagnostics =
-        ps_ctx_diagnostics(semantic_context);
-    diag_emit_internalf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        "%s: could not create initializer resolver working tree",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED));
-    return NULL;
-  }
-  return psx_resolve_initializer_semantic_tree_in_contexts(
-             semantic_context, global_registry, local_registry,
-             lowering_context, options, work_tree,
-             fallback_diag_tok)
-             ? work_tree : NULL;
-}
-
 int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -249,11 +162,11 @@ int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
     psx_static_aggregate_initializer_plan_t *plan) {
   if (plan) *plan = (psx_static_aggregate_initializer_plan_t){0};
   if (!type || !plan) return 0;
-  psx_resolution_work_tree_t *work_tree =
-      resolve_initializer_work_tree_in_contexts(
+  const psx_typed_hir_tree_t *typed_tree =
+      psx_resolve_initializer_typed_hir_from_syntax_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax, fallback_diag_tok);
   return psx_materialize_static_aggregate_initializer_plan(
-      work_tree, global_registry, lowering_context, type,
+      typed_tree, global_registry, lowering_context, type,
       (token_t *)fallback_diag_tok, plan);
 }

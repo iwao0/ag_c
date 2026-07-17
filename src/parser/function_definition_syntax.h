@@ -4,7 +4,7 @@
 #include "declaration_syntax.h"
 #include "toplevel_declaration_syntax.h"
 
-typedef struct {
+typedef struct psx_parsed_function_definition_t {
   psx_parsed_decl_specifier_t return_specifier;
   psx_parsed_declarator_t declarator;
   node_t *body;

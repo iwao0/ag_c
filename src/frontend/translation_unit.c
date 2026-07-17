@@ -7,7 +7,6 @@
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
 #include "../semantic/resolution_work_tree_internal.h"
-#include "function_definition.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"

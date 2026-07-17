@@ -1,29 +1,31 @@
-#include "function_definition.h"
+#include "function_definition_resolution.h"
 
-#include "../semantic/declaration_application.h"
-#include "../semantic/resolved_node_kind.h"
+#include "declaration_application.h"
+#include "resolved_node_kind.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/function_definition_syntax.h"
 #include "../parser/global_registry.h"
-#include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
-#include "../parser/semantic_ctx.h"
+#include "../parser/node_utils.h"
 #include "../parser/runtime_context.h"
+#include "../parser/semantic_ctx.h"
 
-node_function_definition_t *psx_apply_function_definition_in_contexts(
+node_function_definition_t *
+psx_prepare_function_definition_resolution_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
     const psx_parsed_function_definition_t *definition) {
-  if (!definition || !definition->body ||
-      !semantic_context || !global_registry ||
-      !local_registry || !runtime_context || !lowering_context)
+  if (!definition || !definition->body || !semantic_context ||
+      !global_registry || !local_registry || !runtime_context ||
+      !lowering_context)
     return NULL;
   ag_diagnostic_context_t *diagnostics =
       ps_parser_runtime_diagnostics(runtime_context);
@@ -31,9 +33,10 @@ node_function_definition_t *psx_apply_function_definition_in_contexts(
   local_storage_reset(lowering_context);
   ps_ctx_reset_function_scope_in(semantic_context);
 
-  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, global_registry, local_registry,
-      &definition->return_specifier);
+  const psx_type_t *base_type =
+      psx_apply_parsed_decl_specifier_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &definition->return_specifier);
   if (!base_type) {
     ps_diag_ctx_in(
         diagnostics, definition->diagnostic_token, "funcdef",
@@ -105,17 +108,17 @@ node_function_definition_t *psx_apply_function_definition_in_contexts(
   node->parameter_count = applied.nargs;
 
   int registered = psx_apply_function_declaration_pipeline(
-          &(psx_function_declaration_pipeline_request_t){
-              .semantic_context = semantic_context,
-              .global_registry = global_registry,
-              .name = name->str,
-              .name_len = name->len,
-              .function_type = applied.function_type,
-              .is_definition = 1,
-              .function_node = node,
-              .diag_context = "funcdef",
-              .diag_tok = (token_t *)name,
-          });
+      &(psx_function_declaration_pipeline_request_t){
+          .semantic_context = semantic_context,
+          .global_registry = global_registry,
+          .name = name->str,
+          .name_len = name->len,
+          .function_type = applied.function_type,
+          .is_definition = 1,
+          .function_node = node,
+          .diag_context = "funcdef",
+          .diag_tok = (token_t *)name,
+      });
   if (!registered) {
     ps_diag_ctx_in(
         diagnostics, (token_t *)name, "funcdef",
