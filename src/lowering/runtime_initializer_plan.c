@@ -27,7 +27,8 @@ static psx_qual_type_t resolved_node_qual_type(
 static int local_ref_from_node(
     const psx_lowering_context_t *lowering_context,
     const node_t *node, psx_runtime_initializer_local_ref_t *ref) {
-  if (!node || node->kind != ND_LVAR || !ref) return 0;
+  if (!node || psx_resolved_object_ref_node_kind(node) != ND_LVAR || !ref)
+    return 0;
   lvar_t *local = psx_resolved_object_ref_local(node);
   if (!local) return 0;
   int bit_width = 0;
@@ -58,7 +59,7 @@ static int value_from_node(
           resolved_node_qual_type(lowering_context, node),
       .expression = node,
   };
-  if (node->kind == ND_LVAR &&
+  if (psx_resolved_object_ref_node_kind(node) == ND_LVAR &&
       local_ref_from_node(lowering_context, node, &value->local)) {
     value->kind = PSX_RUNTIME_INITIALIZER_VALUE_LOCAL;
     value->resolved_qual_type = value->local.qual_type;

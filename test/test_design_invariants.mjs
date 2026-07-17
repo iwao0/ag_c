@@ -3332,14 +3332,28 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
     !/memcmp\s*\(\s*identifier->name\s*,\s*"__va_arg_area"/.test(
       identifierBindingSource,
     ) ||
-    !/psx_node_new_va_arg_area_reference_in\s*\(/.test(
+    !/psx_bind_va_arg_area_reference_in\s*\(/.test(
       identifierBindingSource,
     ) ||
-    !/node->kind\s*=\s*ND_VA_ARG_AREA/.test(
+    !/case\s+PSX_RESOLVED_OBJECT_REF_VA_ARG_AREA\s*:\s*return\s+ND_VA_ARG_AREA/.test(
       resolvedObjectRefSource,
     )) {
   throw new Error(
-    "__va_arg_area must parse as identifier syntax and materialize during identifier binding",
+    "__va_arg_area must remain identifier syntax while binding records its semantic reference in a sidecar",
+  );
+}
+if (!/psx_bind_local_reference_in\s*\(/.test(identifierBindingSource) ||
+    !/psx_bind_global_reference_in\s*\(/.test(identifierBindingSource) ||
+    !/psx_bind_function_reference_in\s*\(/.test(identifierBindingSource) ||
+    /psx_node_new_(?:lvar|gvar|function_reference|va_arg_area_reference)_in\s*\(/.test(
+      identifierBindingSource,
+    ) ||
+    /identifier->base\.kind\s*=/.test(identifierBindingSource) ||
+    !/node->kind\s*!=\s*ND_IDENTIFIER[^]*?psx_resolved_object_ref_kind\s*\(\s*node\s*\)/.test(
+      resolvedObjectRefSource,
+    )) {
+  throw new Error(
+    "identifier binding must preserve ND_IDENTIFIER and derive semantic reference kinds only from resolution state",
   );
 }
 if (!/\bND_STATIC_ASSERT\b/.test(syntaxNodeKindHeader) ||
@@ -6657,7 +6671,7 @@ if (!/MAP\s*\(\s*ND_MEMBER_ACCESS\s*,\s*PSX_HIR_MEMBER_ACCESS\s*\)/.test(
   );
 }
 if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
-    !/source->kind\s*==\s*ND_ASSIGN[^]*?is_source_compound_assignment[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
+    !/resolved_kind\s*==\s*ND_ASSIGN[^]*?is_source_compound_assignment[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
       resolvedTreeMaterialization,
     ) ||
     !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder) ||

@@ -840,7 +840,7 @@ static int lower_static_scalar_expression(
     global->init_symbol_offset = offset;
     return 1;
   }
-  if (initializer->kind == ND_FUNCREF) {
+  if (psx_resolved_object_ref_node_kind(initializer) == ND_FUNCREF) {
     global->init_symbol = psx_resolved_object_ref_name(
         initializer, &global->init_symbol_len);
     return global->init_symbol != NULL;

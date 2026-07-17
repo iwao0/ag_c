@@ -13,8 +13,12 @@
 #include "vla_runtime_plan.h"
 #include "source_cast_resolution.h"
 
+static psx_work_node_kind_t resolved_node_kind(const node_t *node) {
+  return psx_resolved_object_ref_node_kind(node);
+}
+
 static int is_aggregate_lvar(node_t *node) {
-  return node && node->kind == ND_LVAR &&
+  return node && resolved_node_kind(node) == ND_LVAR &&
          ps_type_is_tag_aggregate(ps_node_get_type(node));
 }
 
@@ -55,7 +59,7 @@ static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
 
 static node_t *assigned_lvar_from_target(node_t *target) {
   if (!target) return NULL;
-  if (target->kind == ND_LVAR) return target;
+  if (resolved_node_kind(target) == ND_LVAR) return target;
   if (target->kind == ND_MEMBER_ACCESS) {
     node_member_access_t *access = (node_member_access_t *)target;
     return access->from_pointer
@@ -64,7 +68,7 @@ static node_t *assigned_lvar_from_target(node_t *target) {
   }
   if (is_dereference(target) && target->lhs &&
       target->lhs->kind == ND_ADDR && target->lhs->lhs &&
-      target->lhs->lhs->kind == ND_LVAR)
+      resolved_node_kind(target->lhs->lhs) == ND_LVAR)
     return target->lhs->lhs;
   if (is_dereference(target))
     return assigned_aggregate_lvar_from_member_address(target->lhs);
@@ -88,7 +92,7 @@ static void record_address_taken(
     record_address_taken(local_registry, operand->rhs, region);
     return;
   }
-  if (operand->kind == ND_LVAR) {
+  if (resolved_node_kind(operand) == ND_LVAR) {
     lvar_t *var = ps_node_lvar_symbol(operand);
     if (var)
       ps_decl_record_lvar_usage_in_region_in(
@@ -108,7 +112,7 @@ static void record_address_taken(
     return;
   }
   if (operand->kind == ND_ADDR && operand->lhs) {
-    if (operand->lhs->kind == ND_LVAR) {
+    if (resolved_node_kind(operand->lhs) == ND_LVAR) {
       lvar_t *var = ps_node_lvar_symbol(operand->lhs);
       if (var)
         ps_decl_record_lvar_usage_in_region_in(

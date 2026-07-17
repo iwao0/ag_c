@@ -31,6 +31,10 @@ static tk_float_kind_t node_fp_kind(node_t *node) {
               : TK_FLOAT_KIND_NONE;
 }
 
+static psx_work_node_kind_t resolved_node_kind(const node_t *node) {
+  return psx_resolved_object_ref_node_kind(node);
+}
+
 static void warn_float_to_int(
     ag_diagnostic_context_t *diagnostics, node_t *value,
     const token_t *tok) {
@@ -52,7 +56,9 @@ static void warn_decl_initializer_overflow(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const token_t *tok) {
-  if (!lhs || !rhs || lhs->kind != ND_LVAR || rhs->kind != ND_NUM) return;
+  if (!lhs || !rhs || resolved_node_kind(lhs) != ND_LVAR ||
+      rhs->kind != ND_NUM)
+    return;
   if (node_fp_kind(lhs) != TK_FLOAT_KIND_NONE ||
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE ||
       ps_node_value_is_pointer_like(lhs) ||
@@ -95,8 +101,9 @@ static void warn_assignment(
   node_t *lhs = node->lhs;
   node_t *rhs = node->rhs;
   const token_t *tok = node->tok ? node->tok : fallback;
-  if (node->is_source_assignment && lhs && lhs->kind == ND_LVAR && rhs &&
-      rhs->kind == ND_LVAR && ps_node_lvar_symbol(lhs) &&
+  if (node->is_source_assignment && lhs &&
+      resolved_node_kind(lhs) == ND_LVAR && rhs &&
+      resolved_node_kind(rhs) == ND_LVAR && ps_node_lvar_symbol(lhs) &&
       ps_node_lvar_symbol(lhs) == ps_node_lvar_symbol(rhs)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_SELF_ASSIGN, tok,
@@ -134,7 +141,7 @@ static void warn_return(
     warn_float_to_int(diagnostics, node->lhs, tok);
   }
   if (ret_pointer && node->lhs->kind == ND_ADDR && node->lhs->lhs &&
-      node->lhs->lhs->kind == ND_LVAR) {
+      resolved_node_kind(node->lhs->lhs) == ND_LVAR) {
     lvar_t *src = ps_node_lvar_symbol(node->lhs->lhs);
     if (src && !ps_lvar_is_static_local(src)) {
       diag_warn_tokf_in(diagnostics,
@@ -179,7 +186,8 @@ static void source_compare_operands(
 }
 
 static int nodes_identity_equal(node_t *lhs, node_t *rhs) {
-  if (!lhs || !rhs || lhs->kind != rhs->kind) return 0;
+  if (!lhs || !rhs || resolved_node_kind(lhs) != resolved_node_kind(rhs))
+    return 0;
   psx_resolved_object_ref_kind_t reference_kind =
       psx_resolved_object_ref_kind(lhs);
   if (reference_kind != psx_resolved_object_ref_kind(rhs)) return 0;

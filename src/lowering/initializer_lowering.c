@@ -260,7 +260,7 @@ static lvar_t *array_copy_source_local(
   if (!value) return NULL;
   if (value->kind == ND_COMMA && value->rhs &&
       value->rhs->kind == ND_ADDR && value->rhs->lhs &&
-      value->rhs->lhs->kind == ND_LVAR) {
+      psx_resolved_object_ref_node_kind(value->rhs->lhs) == ND_LVAR) {
     node_t *source = value->rhs->lhs;
     if (source_offset)
       *source_offset = psx_resolved_object_ref_storage_offset(source);
@@ -1019,7 +1019,7 @@ static node_t *try_lower_typed_array_copy(
   node_t *source_initialization = NULL;
   lvar_t *source = NULL;
   if (value->kind == ND_ADDR && value->lhs &&
-      value->lhs->kind == ND_LVAR) {
+      psx_resolved_object_ref_node_kind(value->lhs) == ND_LVAR) {
     source = psx_resolved_object_ref_local(value->lhs);
     source_offset =
         psx_resolved_object_ref_storage_offset(value->lhs);

@@ -18387,7 +18387,8 @@ static void test_type_metadata_bridge() {
       if (direct_name_len == 7 &&
           strncmp(direct_name, "__tm_dp", 7) == 0)
         double_ptr_to_array_call = n;
-      if (call->callee && call->callee->kind == ND_LVAR) {
+      if (call->callee &&
+          psx_resolved_object_ref_node_kind(call->callee) == ND_LVAR) {
         lvar_t *callee_lvar = ps_node_lvar_symbol(call->callee);
         if (callee_lvar && callee_lvar->len == 3 &&
             strncmp(callee_lvar->name, "dpa", 3) == 0) {
@@ -20077,7 +20078,9 @@ static void test_type_metadata_bridge() {
     node_t *n = body->body[i];
     if (n->kind != ND_FUNCALL) continue;
     node_function_call_t *call = as_function_call(n);
-    if (!call->callee || call->callee->kind != ND_LVAR) continue;
+    if (!call->callee ||
+        psx_resolved_object_ref_node_kind(call->callee) != ND_LVAR)
+      continue;
     lvar_t *callee_lvar = ps_node_lvar_symbol(call->callee);
     if (callee_lvar && callee_lvar->len == 2 && strncmp(callee_lvar->name, "df", 2) == 0)
       indirect_double_call = n;

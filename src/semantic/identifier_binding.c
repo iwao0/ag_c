@@ -90,10 +90,12 @@ static node_t *materialize_local(
     node = wrap_array_decay(
         arena_context, node, ps_lvar_get_decl_type(var));
   } else if (ps_lvar_is_vla(var)) {
+    const psx_type_t *decl_type = ps_lvar_get_decl_type(var);
+    const psx_type_t *decay_type = ps_type_decay_array_in(
+        arena_context, decl_type);
     if (!psx_bind_local_reference_in(
             arena_context, node, var, var->offset,
-            ps_type_decay_array_in(
-                arena_context, ps_lvar_get_decl_type(var))))
+            decay_type ? decay_type : decl_type))
       return NULL;
   } else if (var && var->is_static_local && var->static_global_name) {
     if (!bind_static_local_reference(arena_context, node, var))
