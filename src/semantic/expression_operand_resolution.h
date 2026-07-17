@@ -46,6 +46,9 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t then_type,
     psx_qual_type_t else_type);
+int psx_qual_type_is_scalar_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type);
 
 typedef enum {
   PSX_SUBSCRIPT_OPERANDS_OK = 0,

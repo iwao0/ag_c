@@ -2252,6 +2252,10 @@ const identifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",
   "utf8",
 );
+const identifierResolutionHeader = await readFile(
+  "src/semantic/identifier_resolution.h",
+  "utf8",
+);
 const functionDeclarationResolutionSource = await readFile(
   "src/semantic/function_declaration_resolution.c",
   "utf8",
@@ -3280,6 +3284,10 @@ const syntaxTypedHirResolutionHeader = await readFile(
 );
 const syntaxTypedHirResolutionSource = await readFile(
   "src/semantic/syntax_typed_hir_resolution.c",
+  "utf8",
+);
+const hirSymbolResolutionSource = await readFile(
+  "src/semantic/hir_symbol_resolution.c",
   "utf8",
 );
 const nodeTypePublicSource = await readFile(
@@ -6749,9 +6757,24 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/psx_semantic_node_builder_leaf_expression\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/can_resolve_integer_expression_directly\s*\(/.test(
+    !/preflight_direct_expression\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/psx_resolve_identifier_expression\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /\bpsx_resolve_identifier\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_global_hir_symbol_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_qual_type_is_scalar_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_HIR_GLOBAL/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_FUNCTION_REF/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_ADDRESS/.test(syntaxTypedHirResolutionSource) ||
     !/psx_semantic_node_expression_qual_type\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -6791,6 +6814,38 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     )) {
   throw new Error(
     "literal semantics must be a Syntax-preserving value result shared by direct Typed HIR and compatibility resolution",
+  );
+}
+
+if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/\bpsx_qual_type_t\s+expression_qual_type\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/\bint\s+decays_array_to_address\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/\bint\s+decays_function_to_pointer\s*;/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      identifierResolutionSource,
+    ) ||
+    !/psx_resolve_global_hir_symbol_spec_in\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /ps_type_(?:sizeof|alignof)_id_with_records\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/ps_type_sizeof_id_with_records\s*\(/.test(
+      hirSymbolResolutionSource,
+    ) ||
+    !/ps_type_alignof_id_with_records\s*\(/.test(
+      hirSymbolResolutionSource,
+    )) {
+  throw new Error(
+    "identifier decay and global HIR layout must be canonical semantic values shared by direct and compatibility materialization",
   );
 }
 

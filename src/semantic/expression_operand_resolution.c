@@ -129,6 +129,14 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
           semantic_context, then_value, else_value));
 }
 
+int psx_qual_type_is_scalar_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type) {
+  return semantic_context && type.type_id != PSX_TYPE_ID_INVALID &&
+         ps_type_is_scalar(
+             ps_ctx_type_by_id_in(semantic_context, type.type_id));
+}
+
 psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
   if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
   const psx_type_t *type = ps_node_get_type(operand);

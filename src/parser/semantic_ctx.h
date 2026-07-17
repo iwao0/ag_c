@@ -42,6 +42,10 @@ const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
     psx_semantic_expr_id_t expression_id);
 psx_qual_type_t ps_ctx_intern_qual_type_in(
     psx_semantic_context_t *context, const psx_type_t *type);
+psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
+    psx_semantic_context_t *context,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee);
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(

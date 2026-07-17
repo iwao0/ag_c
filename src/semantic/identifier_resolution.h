@@ -4,6 +4,7 @@
 #include "../parser/function_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/symtab.h"
+#include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -36,9 +37,20 @@ typedef struct {
   long long enum_value;
 } psx_identifier_resolution_t;
 
+typedef struct {
+  psx_identifier_resolution_t symbol;
+  psx_qual_type_t declaration_qual_type;
+  psx_qual_type_t expression_qual_type;
+  int decays_array_to_address;
+  int decays_function_to_pointer;
+} psx_identifier_expression_resolution_t;
+
 void psx_resolve_identifier(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution);
+void psx_resolve_identifier_expression(
+    const psx_identifier_resolution_request_t *request,
+    psx_identifier_expression_resolution_t *resolution);
 global_var_t *psx_resolve_global_object_symbol_in(
     psx_global_registry_t *global_registry,
     char *name, int name_len);

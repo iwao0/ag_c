@@ -338,6 +338,20 @@ psx_qual_type_t ps_ctx_intern_qual_type_in(
   return psx_semantic_type_table_intern(context->semantic_types, type);
 }
 
+psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
+    psx_semantic_context_t *context,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char) {
+  if (!context) {
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  }
+  const psx_type_t *type = ps_type_new_integer_kind_in(
+      context->arena_context, integer_kind, is_unsigned,
+      is_plain_char);
+  return ps_ctx_intern_qual_type_in(context, type);
+}
+
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee) {
   return context
