@@ -14,7 +14,7 @@ typedef struct {
 
 static int intern_available_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
-  if (node->kind == ND_FUNCDEF) {
+  if (psx_resolution_node_kind(node) == ND_FUNCDEF) {
     node_function_definition_t *function =
         (node_function_definition_t *)node;
     function->signature_qual_type = ps_ctx_intern_qual_type_in(
@@ -63,7 +63,7 @@ static int intern_available_type(node_t *node, void *user) {
 
 static int materialize_interned_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
-  if (node->kind == ND_FUNCDEF) {
+  if (psx_resolution_node_kind(node) == ND_FUNCDEF) {
     node_function_definition_t *function =
         (node_function_definition_t *)node;
     function->signature = ps_ctx_type_by_id_in(

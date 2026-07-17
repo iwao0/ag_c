@@ -234,7 +234,7 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
     }
     return;
   }
-  if (node->kind == ND_VLA_ALLOC) {
+  if (psx_resolution_node_kind(node) == ND_VLA_ALLOC) {
     if (!scan->frame_invalid_node) {
       scan->frame_invalid_node = node;
       scan->frame_invalid_reason =
@@ -918,7 +918,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     return;
   }
   /* LVAR / DEREF / GVAR: src のアドレスを得て 2*half バイト memcpy */
-  if (node->kind == ND_LVAR) {
+  if (psx_resolution_node_kind(node) == ND_LVAR) {
     int src_ptr = address_of_lvar(
         ctx, psx_resolved_object_ref_storage_offset(node));
     if (src_ptr < 0) return;
@@ -929,7 +929,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     ir_func_append_inst(ctx->f, cp);
     return;
   }
-  if (node->kind == ND_DEREF) {
+  if (psx_resolution_node_kind(node) == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs);
     if (ctx->failed) return;
     ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
@@ -951,7 +951,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     ir_func_append_inst(ctx->f, cp);
     return;
   }
-  if (node->kind == ND_GVAR) {
+  if (psx_resolution_node_kind(node) == ND_GVAR) {
     int v_addr = emit_load_sym_for_gvar(ctx, node);
     ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
     cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
@@ -1064,7 +1064,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
 /* 式を IR にビルドし、結果値 (vreg or immediate) を返す。 */
 static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
   if (!node || ctx->failed) return ir_val_none();
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_STRING: return build_node_string(ctx, node);
     case ND_GVAR: return build_node_gvar(ctx, node);
     case ND_NUM: return build_node_num(ctx, node);
@@ -1118,16 +1118,16 @@ static ir_val_t build_expr_with_callable_type(
   if (!node || ctx->failed) return ir_val_none();
   if (!ir_type_id_derives_function(ctx, expected_type_id))
     return build_expr(ctx, node);
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_FUNCREF:
       return build_node_funcref_with_type(ctx, node, expected_type_id);
     case ND_ADDR:
-      if (node->lhs && node->lhs->kind == ND_FUNCREF)
+      if (node->lhs && psx_resolution_node_kind(node->lhs) == ND_FUNCREF)
         return build_node_funcref_with_type(
             ctx, node->lhs, expected_type_id);
       return build_expr(ctx, node);
     case ND_CAST:
-      if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
+      if (node->lhs && (psx_resolution_node_kind(node->lhs) == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
                         node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
         return build_expr_with_callable_type(
             ctx, node->lhs, expected_type_id);
@@ -1257,7 +1257,7 @@ static int cg_size_needs_indirect_struct(int sz) {
  * sub-int 代入結果の再ロードでアドレス式を再評価してよいか判定するのに使う。 */
 static int expr_side_effect_free(node_t *n) {
   if (!n) return 1;
-  switch (n->kind) {
+  switch (psx_resolution_node_kind(n)) {
     case ND_ASSIGN:
     case ND_PRE_INC: case ND_PRE_DEC:
     case ND_POST_INC: case ND_POST_DEC:
@@ -1283,7 +1283,7 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
        aggregate_size_from_node(ctx, node->rhs) > 0) ||
       cg_size_needs_indirect_struct(aggregate_size_from_node(ctx, node)))
     return build_assign_struct(ctx, node);
-  switch (node->lhs->kind) {
+  switch (psx_resolution_node_kind(node->lhs)) {
     case ND_LVAR:  return build_assign_to_lvar(ctx, node);
     case ND_GVAR:  return build_assign_to_gvar(ctx, node);
     case ND_DEREF: return build_assign_to_deref(ctx, node);
@@ -1386,14 +1386,14 @@ static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t fp_ty = ir_type_from_node(node);
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
   int dst_ptr_vreg = -1;
-  if (node->lhs->kind == ND_LVAR) {
+  if (psx_resolution_node_kind(node->lhs) == ND_LVAR) {
     dst_ptr_vreg = address_of_lvar(
         ctx, psx_resolved_object_ref_storage_offset(node->lhs));
-  } else if (node->lhs->kind == ND_DEREF) {
+  } else if (psx_resolution_node_kind(node->lhs) == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
-  } else if (node->lhs->kind == ND_GVAR) {
+  } else if (psx_resolution_node_kind(node->lhs) == ND_GVAR) {
     dst_ptr_vreg = emit_load_sym_for_gvar(ctx, node->lhs);
   } else {
     fail(ctx, "complex assign dst not LVAR/DEREF/GVAR");
@@ -1413,14 +1413,14 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   if (assign_size <= 0)
     assign_size = aggregate_size_from_node(ctx, node->rhs);
   int dst_ptr_vreg = -1;
-  if (node->lhs->kind == ND_LVAR) {
+  if (psx_resolution_node_kind(node->lhs) == ND_LVAR) {
     dst_ptr_vreg = address_of_lvar(
         ctx, psx_resolved_object_ref_storage_offset(node->lhs));
-  } else if (node->lhs->kind == ND_DEREF) {
+  } else if (psx_resolution_node_kind(node->lhs) == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
-  } else if (node->lhs->kind == ND_GVAR) {
+  } else if (psx_resolution_node_kind(node->lhs) == ND_GVAR) {
     dst_ptr_vreg = address_of_gvar(ctx, node->lhs);
   } else {
     fail(ctx, "struct assign dst not LVAR/DEREF/GVAR");
@@ -1448,14 +1448,14 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
 
 static int aggregate_source_address(ir_build_ctx_t *ctx, node_t *src) {
   if (!src) return -1;
-  if (src->kind == ND_LVAR) {
+  if (psx_resolution_node_kind(src) == ND_LVAR) {
     return address_of_lvar(
         ctx, psx_resolved_object_ref_storage_offset(src));
   }
-  if (src->kind == ND_GVAR) {
+  if (psx_resolution_node_kind(src) == ND_GVAR) {
     return address_of_gvar(ctx, src);
   }
-  if (src->kind == ND_DEREF) {
+  if (psx_resolution_node_kind(src) == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, src->lhs);
     if (ctx->failed) return -1;
     return ptr.id;
@@ -1644,15 +1644,15 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   /* &*x = x */
-  if (node->lhs && node->lhs->kind == ND_DEREF) {
+  if (node->lhs && psx_resolution_node_kind(node->lhs) == ND_DEREF) {
     return build_expr(ctx, node->lhs->lhs);
   }
   /* &gvar: グローバル変数のアドレス (= LOAD_SYM のみ、load しない) */
-  if (node->lhs && node->lhs->kind == ND_GVAR) {
+  if (node->lhs && psx_resolution_node_kind(node->lhs) == ND_GVAR) {
     int v = emit_load_sym_for_gvar(ctx, node->lhs);
     return ir_val_vreg(v, IR_TY_PTR);
   }
-  if (!node->lhs || node->lhs->kind != ND_LVAR) {
+  if (!node->lhs || psx_resolution_node_kind(node->lhs) != ND_LVAR) {
     fail(ctx, "& of non-lvar (Phase 4b unsupported)");
     return ir_val_none();
   }
@@ -1847,7 +1847,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
       ps_node_get_type(node->lhs), ps_node_get_type(node->rhs),
       ctx->target);
   ir_op_t op = IR_ADD;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
     case ND_SUB: op = is_fp ? IR_FSUB : IR_SUB; break;
     case ND_MUL: op = is_fp ? IR_FMUL : IR_MUL; break;
@@ -2087,7 +2087,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
        * struct 値引数のときは init (要素ストア) を先に評価してから temp lvar を
        * struct 引数として扱う。これをしないと先頭 8B を値ロードして渡し、9-16B
        * struct の x1 分 (= 後半メンバ) が落ちていた。 */
-      if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
+      if (arg && arg->kind == ND_COMMA && arg->rhs && psx_resolution_node_kind(arg->rhs) == ND_LVAR) {
         lvar_t *owner_cl = find_owning_lvar(
             ctx, psx_resolved_object_ref_storage_offset(arg->rhs));
         int cl_sz = owner_cl ? ir_lvar_storage_size(ctx, owner_cl, 0)
@@ -2142,7 +2142,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
        * (`{char;short;uchar}` の 6B が 1B 扱い)。これを >8B と同様にアドレス渡し
        * させるためのフラグ。 */
       int struct_needs_ptr = 0;
-      if (arg && arg->kind == ND_LVAR) {
+      if (arg && psx_resolution_node_kind(arg) == ND_LVAR) {
         /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
         if (!ps_node_value_is_pointer_like(arg)) {
@@ -2160,14 +2160,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         } else {
           arg_full_size = ir_node_type_size(ctx, arg);
         }
-      } else if (arg && arg->kind == ND_GVAR) {
+      } else if (arg && psx_resolution_node_kind(arg) == ND_GVAR) {
         arg_full_size = aggregate_size_from_node(ctx, arg);
         if (arg_full_size > 0) {
           if (cg_size_needs_indirect_struct(arg_full_size)) {
             struct_needs_ptr = 1;
           }
         }
-      } else if (arg && arg->kind == ND_DEREF) {
+      } else if (arg && psx_resolution_node_kind(arg) == ND_DEREF) {
         /* struct 値の subscript / メンバアクセス (`arr[i]`, `s.member`) は ND_DEREF。
          * tag を持ち >8B ならアドレス渡しの struct 引数として扱う。 */
         arg_full_size = aggregate_size_from_node(ctx, arg);
@@ -2218,11 +2218,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           ir_func_append_inst(ctx->f, ia);
           materialize_aggregate_expr_to(ctx, arg, src_ptr, arg_full_size);
           if (ctx->failed) return ir_val_none();
-        } else if (arg->kind == ND_DEREF) {
+        } else if (psx_resolution_node_kind(arg) == ND_DEREF) {
           ir_val_t a = build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
-        } else if (arg->kind == ND_GVAR) {
+        } else if (psx_resolution_node_kind(arg) == ND_GVAR) {
           src_ptr = address_of_gvar(ctx, arg);
         } else {
           src_ptr = address_of_lvar(
@@ -2251,11 +2251,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           ir_func_append_inst(ctx->f, ia);
           materialize_aggregate_expr_to(ctx, arg, src_ptr, arg_full_size);
           if (ctx->failed) return ir_val_none();
-        } else if (arg->kind == ND_DEREF) {
+        } else if (psx_resolution_node_kind(arg) == ND_DEREF) {
           ir_val_t a = build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
-        } else if (arg->kind == ND_GVAR) {
+        } else if (psx_resolution_node_kind(arg) == ND_GVAR) {
           src_ptr = address_of_gvar(ctx, arg);
         } else {
           src_ptr = address_of_lvar(
@@ -2552,8 +2552,8 @@ static ir_val_t build_node_ternary_with_type(
    * 明示的に判定に加える (`(c ? &a : &b)->m` が 8 バイトで扱われるように)。 */
   if (res_ty == IR_TY_I32 &&
       (ps_node_value_is_pointer_like(node->rhs) || ps_node_value_is_pointer_like(c->els) ||
-       node->rhs->kind == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
-       (c->els && (c->els->kind == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
+       psx_resolution_node_kind(node->rhs) == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
+       (c->els && (psx_resolution_node_kind(c->els) == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
     res_ty = IR_TY_PTR;
     slot_size = 8;
   }
@@ -2739,11 +2739,11 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   }
   int ptr_vreg = -1;
   ir_type_t vty = IR_TY_I32;
-  if (target->kind == ND_LVAR) {
+  if (psx_resolution_node_kind(target) == ND_LVAR) {
     vty = lvar_value_type(ctx, target);
     ptr_vreg = address_of_lvar(
         ctx, psx_resolved_object_ref_storage_offset(target));
-  } else if (target->kind == ND_DEREF) {
+  } else if (psx_resolution_node_kind(target) == ND_DEREF) {
     ir_val_t p = build_expr(ctx, target->lhs);
     if (ctx->failed) return ir_val_none();
     ptr_vreg = p.id;
@@ -2753,7 +2753,7 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
       vty = scalar_value_type(ir_node_type_size(ctx, target),
                               ps_node_value_is_pointer_like(target));
     }
-  } else if (target->kind == ND_GVAR) {
+  } else if (psx_resolution_node_kind(target) == ND_GVAR) {
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
       int sz = ir_node_type_size(ctx, target);
@@ -3179,7 +3179,7 @@ static void collect_labels(ir_build_ctx_t *ctx, node_t *body) {
 
 static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
   if (!node || ctx->failed) return;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_BLOCK:    build_stmt_block(ctx, node); return;
     case ND_RETURN:   build_stmt_return(ctx, node); return;
     case ND_NUM:      /* 副作用のない単独式 (宣言由来のプレースホルダ等) */ return;
@@ -3574,7 +3574,7 @@ static int setup_function_params(
   int abi_idx = ctx->continuation ? 1 : 0;
   for (int i = 0; i < fn->parameter_count; i++) {
     node_t *arg = fn->parameters[i];
-    if (!arg || arg->kind != ND_LVAR) {
+    if (!arg || psx_resolution_node_kind(arg) != ND_LVAR) {
       fail(ctx, "non-lvar parameter (Phase 4a unsupported)");
       return 0;
     }
@@ -3980,7 +3980,7 @@ ir_module_t *ir_build_module_with_options(
   if (!code) return ctx.m;
   for (int i = 0; code[i]; i++) {
     node_t *n = code[i];
-    if (n->kind != ND_FUNCDEF) {
+    if (psx_resolution_node_kind(n) != ND_FUNCDEF) {
       fail(&ctx, "top-level node is not a function definition");
       return NULL;
     }
@@ -4057,7 +4057,7 @@ int ir_build_emit_function_with_options(
 int ir_build_emit_function_with_options_in(
     node_t *fn, const ir_build_options_t *options,
     ir_emit_module_in_fn emit_module, void *emit_context) {
-  if (!fn || fn->kind != ND_FUNCDEF) return 0;
+  if (!fn || psx_resolution_node_kind(fn) != ND_FUNCDEF) return 0;
   ir_module_t *m = ir_build_function_module_with_options(fn, options);
   if (!m) {
     return 0;
@@ -4086,7 +4086,7 @@ ir_module_t *ir_build_function_module_for_target(
 
 ir_module_t *ir_build_function_module_with_options(
     node_t *fn, const ir_build_options_t *options) {
-  if (!fn || fn->kind != ND_FUNCDEF) return NULL;
+  if (!fn || psx_resolution_node_kind(fn) != ND_FUNCDEF) return NULL;
   ir_build_ctx_t ctx = {0};
   ctx.target = options ? options->target : NULL;
   ctx.semantic_types = options ? options->semantic_types : NULL;

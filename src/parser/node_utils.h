@@ -7,6 +7,7 @@
 #include "init_slot.h"
 #include "gvar_public.h"
 #include "../semantic/resolved_node_type.h"
+#include "../semantic/resolved_node_kind.h"
 #include "node_vla_public.h"
 #include "syntax_node.h"
 #include "tag_public.h"
@@ -46,9 +47,9 @@ int ps_node_bitfield_width(node_t *node);
 
 node_t *ps_node_new_binary_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
-    psx_work_node_kind_t kind, node_t *lhs, node_t *rhs);
+    psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs);
 int ps_node_binary_type_op(
-    psx_work_node_kind_t kind, psx_type_binary_op_t *op);
+    psx_resolution_node_kind_t kind, psx_type_binary_op_t *op);
 struct psx_vla_runtime_plan_t;
 node_t *ps_node_new_vla_runtime_in(
     arena_context_t *arena_context,

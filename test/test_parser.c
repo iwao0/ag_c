@@ -200,6 +200,19 @@ static void test_bind_node_type_sized(
 #define test_bind_node_type(node, type) \
   test_bind_node_type_sized((node), sizeof(*(node)), (type))
 
+static void test_set_resolved_node_kind_sized(
+    void *storage, size_t storage_size,
+    psx_resolved_node_kind_t kind) {
+  node_t *node = storage;
+  ASSERT_TRUE(ps_node_prepare_resolution_state_for_size_in(
+      test_arena_context(), node, storage_size));
+  ASSERT_TRUE(psx_resolution_node_set_kind(node, kind));
+}
+
+#define test_set_resolved_node_kind(node, kind) \
+  test_set_resolved_node_kind_sized(              \
+      (node), sizeof(*(node)), (kind))
+
 static void test_set_invalid_vla_runtime_view(
     node_t *node, int row_stride_frame_off) {
   ASSERT_TRUE(ps_node_prepare_resolution_state_in(
@@ -2125,15 +2138,14 @@ static void test_typed_hir_ownership_and_type_boundary() {
   psx_resolution_work_tree_t *rebound_identifier_tree =
       psx_resolution_work_tree_create_from_syntax(
           test_arena_context(), &rebound_syntax_identifier.base);
-  ASSERT_TRUE(rebound_identifier_tree != NULL);
-  node_identifier_t *cloned_identifier =
-      (node_identifier_t *)psx_resolution_work_tree_compatibility_root_mut(
-          rebound_identifier_tree);
-  ASSERT_TRUE(cloned_identifier != NULL);
-  ASSERT_EQ(ND_IDENTIFIER, cloned_identifier->base.kind);
-  ASSERT_EQ(1, cloned_identifier->name_len);
-  ASSERT_TRUE(cloned_identifier->name == rebound_syntax_identifier.name);
-  ASSERT_TRUE(ps_node_get_type(&cloned_identifier->base) == NULL);
+  ASSERT_TRUE(rebound_identifier_tree == NULL);
+
+  node_t resolved_only = {0};
+  test_set_resolved_node_kind(&resolved_only, ND_DEREF);
+  ASSERT_EQ(PSX_SYNTAX_NODE_INVALID, resolved_only.kind);
+  ASSERT_EQ(ND_DEREF, psx_resolution_node_kind(&resolved_only));
+  ASSERT_TRUE(psx_resolution_work_tree_create_from_syntax(
+                  test_arena_context(), &resolved_only) == NULL);
 
   node_num_t typed_number = {0};
   typed_number.base.kind = ND_NUM;
@@ -4277,7 +4289,7 @@ static void assert_selected_generic_number(
 }
 
 static node_t *find_binary_tree_node_kind(
-    node_t *node, psx_work_node_kind_t kind) {
+    node_t *node, psx_resolution_node_kind_t kind) {
   if (!node) return NULL;
   if (node->kind == kind) return node;
   node_t *found = find_binary_tree_node_kind(node->lhs, kind);
@@ -4319,7 +4331,7 @@ static node_t *as_lvar(node_t *n) {
 }
 static node_function_definition_t *as_function_definition(node_t *n) {
   ASSERT_TRUE(n != NULL);
-  ASSERT_EQ(ND_FUNCDEF, n->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(n));
   return (node_function_definition_t *)n;
 }
 static node_function_call_t *as_function_call(node_t *n) {
@@ -5770,13 +5782,15 @@ static void test_additive_semantic_lowering_boundary() {
       array_type, pointer_type);
   ASSERT_EQ(PSX_TYPE_POINTER, array_conditional->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, array_conditional->base->kind);
-  node_t array_operand = {.kind = ND_LVAR};
+  node_t array_operand = {0};
+  test_set_resolved_node_kind(&array_operand, ND_LVAR);
   test_bind_node_type(&array_operand, array_type);
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
             psx_resolve_deref_operand(&array_operand));
   ASSERT_TRUE(psx_resolve_incdec_result_type(
                   test_semantic_context(), &array_operand) == NULL);
-  node_t pointer_operand = {.kind = ND_LVAR};
+  node_t pointer_operand = {0};
+  test_set_resolved_node_kind(&pointer_operand, ND_LVAR);
   test_bind_node_type(&pointer_operand, pointer_type);
   ASSERT_TRUE(psx_resolve_incdec_result_type(
                   test_semantic_context(), &pointer_operand) != NULL);
@@ -6716,7 +6730,7 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
       "return ((struct S)7).x; }");
   ASSERT_TRUE(program != NULL);
   ASSERT_TRUE(program[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, program[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(program[0]));
 
   node_function_definition_t *fn = as_function_definition(program[0]);
   lvar_t *temp = NULL;
@@ -8112,7 +8126,7 @@ static void test_target_type_layout_boundary() {
   psx_vla_lowering_result_t wasm_record_vla = lower_vla_declaration(
       &record_vla_request);
   ASSERT_TRUE(wasm_record_vla.var != NULL);
-  ASSERT_EQ(ND_VLA_ALLOC, wasm_record_vla.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(wasm_record_vla.init));
   ASSERT_TRUE(wasm_record_vla.runtime_plan != NULL);
   ASSERT_EQ(1, wasm_record_vla.runtime_plan->dimension_count);
   ASSERT_EQ(record_vla_dimensions[0],
@@ -8159,7 +8173,7 @@ static void test_target_type_layout_boundary() {
   psx_vla_lowering_result_t host_record_vla = lower_vla_declaration(
       &record_vla_request);
   ASSERT_TRUE(host_record_vla.var != NULL);
-  ASSERT_EQ(ND_VLA_ALLOC, host_record_vla.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(host_record_vla.init));
   ASSERT_TRUE(host_record_vla.runtime_plan != NULL);
   ASSERT_EQ(16, host_record_vla.runtime_plan->element_size);
   ps_lowering_context_bind_record_layouts(
@@ -8255,7 +8269,7 @@ static void test_vla_lowering_request_boundary() {
   psx_vla_lowering_result_t result = lower_vla_declaration(&request);
   ASSERT_TRUE(result.var != NULL);
   ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
-  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_TRUE(result.runtime_plan != NULL);
   ASSERT_EQ(1, result.runtime_plan->dimension_count);
   ASSERT_EQ(request.dimensions[0],
@@ -8278,7 +8292,7 @@ static void test_vla_lowering_request_boundary() {
   result = lower_vla_declaration(&request);
   ASSERT_TRUE(result.var != NULL);
   ASSERT_EQ(8, ps_type_pointee_value_size(request.type));
-  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_EQ(8, result.runtime_plan->element_size);
 
   reset_test_locals();
@@ -8296,7 +8310,7 @@ static void test_vla_lowering_request_boundary() {
   request.requested_alignment = 0;
   result = lower_vla_declaration(&request);
   ASSERT_EQ(32, ps_lvar_storage_size(result.var, 0));
-  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_TRUE(result.runtime_plan != NULL);
   ASSERT_EQ(3, result.runtime_plan->dimension_count);
   ASSERT_EQ(2, result.runtime_plan->stride_store_count);
@@ -8337,7 +8351,7 @@ static void test_vla_lowering_request_boundary() {
   node_t *detached_type_ref = ps_node_new_param_placeholder(
       ps_type_clone(ps_lvar_get_decl_type(result.var)));
   ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(detached_type_ref));
-  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_TRUE(result.runtime_plan != NULL);
   ASSERT_TRUE(!result.runtime_plan->performs_allocation);
   ASSERT_EQ(1, result.runtime_plan->dimension_count);
@@ -11581,23 +11595,23 @@ static void test_expr_unary_ops() {
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U a={.x=1}, b={.x=2}; int c=1; union U t=(union U)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 }
 
 static void test_expr_generic() {
@@ -12339,7 +12353,7 @@ static void test_program_funcdef() {
   parsed_code = parse_program_input("int main(void) { int a=1; int b=2; a+b; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
 
   node_t *body = as_function_definition(parsed_code[0])->base.rhs;
@@ -12407,7 +12421,7 @@ static void test_funcdef_with_params() {
   printf("test_funcdef_with_params...\n");
   parsed_code = parse_program_input("int add(int a, int b) { return a+b; }");
 
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
   ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
                          as_function_definition(parsed_code[0])->parameters[0]));
@@ -12415,24 +12429,24 @@ static void test_funcdef_with_params() {
                          as_function_definition(parsed_code[0])->parameters[1]));
 
   parsed_code = parse_program_input("int apply(int (*fp)(int), int x) { return x; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input(
       "int sum_variadic(int first, ...) { return first; }");
   node_function_definition_t *variadic = as_function_definition(parsed_code[0]);
-  ASSERT_EQ(ND_FUNCDEF, variadic->base.kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(&variadic->base));
   ASSERT_TRUE(variadic->signature != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, variadic->signature->kind);
   ASSERT_TRUE(variadic->signature->is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
   parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input(
@@ -12995,15 +13009,15 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("typedef int (*fp_t)(int); int f(int x){ return x+1; } int main() { fp_t p; return 0; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
 
   parsed_code = parse_program_input("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } int main() { fp_t p; return 0; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
 
   parsed_code = parse_program_input("extern int a[]; int main(){ return 0; }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   {
     global_var_t *gv = find_test_global_var("a", 1);
     ASSERT_TRUE(gv != NULL);
@@ -13045,8 +13059,8 @@ static void test_type_decl() {
   parsed_code = parse_program_input(
       "int sumq(const const int a, volatile volatile int b, int *restrict restrict p){ return a+b+(p==0); }"
       "int main(){ return sumq(3,4,0); }");
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
 
   parsed_code = parse_program_input("int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
@@ -13469,7 +13483,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_UNSIGNED, 1, 1);
   psx_type_t *unsigned_pointer = ps_type_new_pointer(unsigned_pointer_leaf);
   node_t unsigned_pointer_pointer = {0};
-  unsigned_pointer_pointer.kind = ND_LVAR;
+  test_set_resolved_node_kind(&unsigned_pointer_pointer, ND_LVAR);
   test_bind_node_type(&unsigned_pointer_pointer, ps_type_new_pointer(unsigned_pointer));
   ASSERT_EQ(PSX_TYPE_POINTER,
             ps_type_pointee_value_type(ps_node_get_type(&unsigned_pointer_pointer))->kind);
@@ -13599,7 +13613,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *typed_atomic_int = ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_atomic_int, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t typed_atomic_ptr_mem = {0};
-  typed_atomic_ptr_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_atomic_ptr_mem, ND_DEREF);
   test_bind_node_type(&typed_atomic_ptr_mem, ps_type_new_pointer(typed_atomic_int));
   node_t *typed_atomic_deref =
       ps_node_new_unary_deref_for(&typed_atomic_ptr_mem);
@@ -14493,7 +14507,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(
                     test_semantic_context(), byref_s_type));
   node_t *byref_s_node = psx_node_new_lvar_identifier_ref_for(byref_s);
-  ASSERT_EQ(ND_LVAR, byref_s_node->kind);
+  ASSERT_EQ(ND_LVAR, psx_resolution_node_kind(byref_s_node));
   ASSERT_TRUE(ps_node_get_type(byref_s_node) == byref_s_type);
   ASSERT_EQ(0, ps_node_type_size(byref_s_node));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(byref_s_node));
@@ -14655,7 +14669,7 @@ static void test_type_metadata_bridge() {
             ps_node_get_type(tmp_complex_slot)->floating_kind);
 
   node_t typed_complex_ptr_mem = {0};
-  typed_complex_ptr_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_complex_ptr_mem, ND_DEREF);
   test_bind_node_type(&typed_complex_ptr_mem, ps_type_new_pointer(tmp_complex_type));
   node_t *typed_complex_deref =
       ps_node_new_unary_deref_for(&typed_complex_ptr_mem);
@@ -14664,18 +14678,18 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(typed_complex_deref));
 
   node_t typed_mem = {0};
-  typed_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_mem, ND_LVAR);
   psx_type_t *typed_mem_type = ps_type_new_integer(TK_LONG, 8, 0);
   test_bind_node_type(&typed_mem, typed_mem_type);
   ASSERT_TRUE(ps_node_get_type(&typed_mem) == typed_mem_type);
   ASSERT_EQ(8, ps_node_type_size(&typed_mem));
   node_t typed_stale_scalar_size_mem = {0};
-  typed_stale_scalar_size_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_scalar_size_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_scalar_size_mem, ps_type_new_integer(TK_UNSIGNED, 1, 1));
   ASSERT_EQ(4, ps_node_type_size(&typed_stale_scalar_size_mem));
   ASSERT_EQ(4, ps_node_storage_type_size(&typed_stale_scalar_size_mem));
   node_t typed_incomplete_size_mem = {0};
-  typed_incomplete_size_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_incomplete_size_mem, ND_LVAR);
   test_bind_node_type(&typed_incomplete_size_mem, ps_type_new_tag(TK_STRUCT, "Incomplete", 10, 0, 0));
   ASSERT_EQ(0, ps_node_storage_type_size(&typed_incomplete_size_mem));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(&typed_mem));
@@ -14683,7 +14697,7 @@ static void test_type_metadata_bridge() {
   type_free_address.kind = ND_ADDR;
   ASSERT_TRUE(ps_node_value_is_pointer_like(&type_free_address));
   node_t type_free_function_reference = {0};
-  type_free_function_reference.kind = ND_FUNCREF;
+  test_set_resolved_node_kind(&type_free_function_reference, ND_FUNCREF);
   ASSERT_TRUE(ps_node_value_is_pointer_like(
       &type_free_function_reference));
   ASSERT_EQ(0, ps_node_deref_size(&typed_mem));
@@ -14701,26 +14715,26 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(&typed_mem));
 
   node_t typed_stale_value_flags_mem = {0};
-  typed_stale_value_flags_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_value_flags_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_value_flags_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             ps_node_value_fp_kind(&typed_stale_value_flags_mem));
   ASSERT_TRUE(!ps_node_value_is_complex(&typed_stale_value_flags_mem));
 
   node_t typed_stale_pointee_flags_mem = {0};
-  typed_stale_pointee_flags_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_pointee_flags_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_pointee_flags_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(&typed_stale_pointee_flags_mem));
   ASSERT_TRUE(!canonical_node_pointee_is_bool(&typed_stale_pointee_flags_mem));
   ASSERT_TRUE(!canonical_node_pointee_is_void(&typed_stale_pointee_flags_mem));
 
   node_t typed_default_int_mem = {0};
-  typed_default_int_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_default_int_mem, ND_LVAR);
   test_bind_node_type(&typed_default_int_mem, ps_type_new(PSX_TYPE_INTEGER));
   ASSERT_EQ(4, ps_node_type_size(&typed_default_int_mem));
 
   node_t typed_unsigned_mem = {0};
-  typed_unsigned_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_unsigned_mem, ND_LVAR);
   test_bind_node_type(&typed_unsigned_mem, ps_type_new_integer(TK_UNSIGNED, 4, 1));
   ASSERT_TRUE(ps_node_is_unsigned_type(&typed_unsigned_mem));
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(&typed_unsigned_mem));
@@ -14743,7 +14757,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(ND_NUM, typed_bool_assign->rhs->kind);
 
   node_t typed_stale_bool_lhs_mem = {0};
-  typed_stale_bool_lhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_bool_lhs_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_bool_lhs_mem, ps_type_new_integer(TK_INT, 4, 0));
   node_t *typed_stale_bool_assign =
       ps_node_new_assign(&typed_stale_bool_lhs_mem, ps_node_new_num(3));
@@ -14751,7 +14765,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(ND_NUM, typed_stale_bool_assign->rhs->kind);
 
   node_t typed_assign_ptr_lhs_mem = {0};
-  typed_assign_ptr_lhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_assign_ptr_lhs_mem, ND_LVAR);
   test_bind_node_type(&typed_assign_ptr_lhs_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *typed_assign_ptr =
       ps_node_new_assign(&typed_assign_ptr_lhs_mem, ps_node_new_num(0));
@@ -14763,7 +14777,7 @@ static void test_type_metadata_bridge() {
               ps_node_get_type(&typed_assign_ptr_lhs_mem));
 
   node_t typed_assign_complex_lhs_mem = {0};
-  typed_assign_complex_lhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_assign_complex_lhs_mem, ND_LVAR);
   psx_type_t *typed_assign_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   typed_assign_complex_type->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   test_bind_node_type(&typed_assign_complex_lhs_mem, typed_assign_complex_type);
@@ -14776,7 +14790,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_value_is_complex(typed_assign_complex));
 
   node_t typed_assign_atomic_lhs_mem = {0};
-  typed_assign_atomic_lhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_assign_atomic_lhs_mem, ND_LVAR);
   psx_type_t *typed_assign_atomic_type =
       ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_assign_atomic_type, PSX_TYPE_QUALIFIER_ATOMIC);
@@ -14789,7 +14803,7 @@ static void test_type_metadata_bridge() {
       ps_node_get_type(typed_assign_atomic), PSX_TYPE_QUALIFIER_ATOMIC));
 
   node_t typed_addr_ptr_operand_mem = {0};
-  typed_addr_ptr_operand_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_addr_ptr_operand_mem, ND_LVAR);
   psx_type_t *typed_addr_ptr_operand_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   ps_type_add_qualifiers(typed_addr_ptr_operand_type, PSX_TYPE_QUALIFIER_CONST);
@@ -14806,14 +14820,14 @@ static void test_type_metadata_bridge() {
               ps_node_get_type(&typed_addr_ptr_operand_mem));
 
   node_t typed_addr_unsigned_operand_mem = {0};
-  typed_addr_unsigned_operand_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_addr_unsigned_operand_mem, ND_LVAR);
   test_bind_node_type(&typed_addr_unsigned_operand_mem, ps_type_new_integer(TK_UNSIGNED, 1, 1));
   node_t *typed_addr_unsigned =
       ps_node_new_unary_addr_for(&typed_addr_unsigned_operand_mem);
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(typed_addr_unsigned));
 
   node_t typed_addr_bool_operand_mem = {0};
-  typed_addr_bool_operand_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_addr_bool_operand_mem, ND_LVAR);
   psx_type_t *typed_addr_bool_operand_type = ps_type_new(PSX_TYPE_BOOL);
   test_bind_node_type(&typed_addr_bool_operand_mem, typed_addr_bool_operand_type);
   node_t *typed_addr_bool =
@@ -14821,7 +14835,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_bool(typed_addr_bool));
 
   node_t typed_deref_ptrptr_operand_mem = {0};
-  typed_deref_ptrptr_operand_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_deref_ptrptr_operand_mem, ND_DEREF);
   psx_type_t *typed_deref_inner_ptr =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   psx_type_t *typed_deref_outer_ptr =
@@ -14837,7 +14851,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(typed_deref_ptr) == typed_deref_inner_ptr);
 
   node_t typed_deref_flat_ptrptr_operand_mem = {0};
-  typed_deref_flat_ptrptr_operand_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_deref_flat_ptrptr_operand_mem, ND_DEREF);
   psx_type_t *typed_deref_flat_ptrptr =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   test_bind_node_type(&typed_deref_flat_ptrptr_operand_mem, typed_deref_flat_ptrptr);
@@ -14851,7 +14865,7 @@ static void test_type_metadata_bridge() {
               typed_deref_flat_ptrptr->base);
 
   node_t typed_nested_ptr_stale_quals_mem = {0};
-  typed_nested_ptr_stale_quals_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_nested_ptr_stale_quals_mem, ND_LVAR);
   psx_type_t *typed_nested_ptr_inner =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   ps_type_add_qualifiers(typed_nested_ptr_inner, PSX_TYPE_QUALIFIER_CONST);
@@ -14866,7 +14880,7 @@ static void test_type_metadata_bridge() {
       &typed_nested_ptr_stale_quals_mem, "11", "01");
 
   node_t canonical_nested_ptr = {0};
-  canonical_nested_ptr.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_nested_ptr, ND_DEREF);
   psx_type_t *raw_nested_ptr_inner = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0));
   ps_type_add_qualifiers(raw_nested_ptr_inner, PSX_TYPE_QUALIFIER_CONST);
@@ -14893,7 +14907,7 @@ static void test_type_metadata_bridge() {
                    ps_node_get_type(&canonical_nested_ptr)));
 
   node_t typed_ptr_mem = {0};
-  typed_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_ptr_mem, ND_LVAR);
   psx_type_t *typed_ptr_base = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   ps_type_add_qualifiers(typed_ptr_base, PSX_TYPE_QUALIFIER_CONST);
   psx_type_t *typed_ptr_row = ps_type_new_array(
@@ -14922,7 +14936,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(32, ps_node_vla_row_stride_frame_off(typed_vla_sub));
 
   node_t typed_plain_ptr_stale_ptr_array = {0};
-  typed_plain_ptr_stale_ptr_array.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_plain_ptr_stale_ptr_array, ND_LVAR);
   test_bind_node_type(&typed_plain_ptr_stale_ptr_array, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_node_value_is_pointer_like(&typed_plain_ptr_stale_ptr_array));
@@ -14931,7 +14945,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
                    &typed_plain_ptr_stale_ptr_array, 0));
   node_t typed_scalar_array_stale_stride = {0};
-  typed_scalar_array_stale_stride.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_scalar_array_stale_stride, ND_LVAR);
   test_bind_node_type(&typed_scalar_array_stale_stride, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0));
   ASSERT_EQ(4, canonical_node_array_subscript_stride_bytes(
@@ -14943,7 +14957,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
                    &typed_addr_stale_mem_stride, 0));
   node_t typed_deref_stale_mem_stride = typed_addr_stale_mem_stride;
-  typed_deref_stale_mem_stride.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_deref_stale_mem_stride, ND_DEREF);
   test_bind_node_type(&typed_deref_stale_mem_stride, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0));
   ASSERT_EQ(4, canonical_node_array_subscript_stride_bytes(
@@ -14957,12 +14971,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_void(&typed_ptr_mem));
 
   node_t typed_ptr_stale_base_deref_mem = {0};
-  typed_ptr_stale_base_deref_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_ptr_stale_base_deref_mem, ND_LVAR);
   test_bind_node_type(&typed_ptr_stale_base_deref_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(4, canonical_node_base_deref_size(&typed_ptr_stale_base_deref_mem));
 
   node_t typed_ptrarr_stale_base_deref_mem = {0};
-  typed_ptrarr_stale_base_deref_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_ptrarr_stale_base_deref_mem, ND_LVAR);
   psx_type_t *typed_ptrarr_stale_base =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
   test_bind_node_type(&typed_ptrarr_stale_base_deref_mem, ps_type_new_pointer(typed_ptrarr_stale_base));
@@ -14971,7 +14985,7 @@ static void test_type_metadata_bridge() {
                     &typed_ptrarr_stale_base_deref_mem));
 
   node_t typed_signed_ptr_stale_unsigned_mem = {0};
-  typed_signed_ptr_stale_unsigned_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_signed_ptr_stale_unsigned_mem, ND_LVAR);
   test_bind_node_type(&typed_signed_ptr_stale_unsigned_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *typed_signed_ptr_sub = ps_node_new_subscript_deref_for(
       &typed_signed_ptr_stale_unsigned_mem, ps_node_new_num(0),
@@ -14979,7 +14993,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_node_is_unsigned_type(typed_signed_ptr_sub));
 
   node_t typed_ptr_stale_pointee_scalar_ptr_mem = {0};
-  typed_ptr_stale_pointee_scalar_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_ptr_stale_pointee_scalar_ptr_mem, ND_LVAR);
   test_bind_node_type(&typed_ptr_stale_pointee_scalar_ptr_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *typed_ptr_stale_pointee_scalar_sub =
       ps_node_new_subscript_deref_for(
@@ -14989,7 +15003,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_deref_size(typed_ptr_stale_pointee_scalar_sub));
 
   node_t typed_deref_stale_scalar_ptr_member = {0};
-  typed_deref_stale_scalar_ptr_member.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_deref_stale_scalar_ptr_member, ND_DEREF);
   test_bind_node_type(&typed_deref_stale_scalar_ptr_member, ps_type_new_pointer(
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
   ASSERT_TRUE(!ps_node_scalar_ptr_member_lvalue(
@@ -15001,7 +15015,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, canonical_node_base_deref_size(typed_deref_sub));
 
   node_t subscript_row_lvalue = {0};
-  subscript_row_lvalue.kind = ND_DEREF;
+  test_set_resolved_node_kind(&subscript_row_lvalue, ND_DEREF);
   test_bind_node_type(&subscript_row_lvalue, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ps_node_set_subscript_uses_base_address(&subscript_row_lvalue, 1);
@@ -15009,7 +15023,7 @@ static void test_type_metadata_bridge() {
       &subscript_row_lvalue));
 
   node_t typed_row_array = {0};
-  typed_row_array.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_row_array, ND_DEREF);
   psx_type_t *typed_row_base = ps_type_new_integer(TK_INT, 4, 0);
   test_bind_node_type(&typed_row_array, ps_type_new_array(typed_row_base, 4, 16, 0));
   const psx_type_t *typed_row_decay =
@@ -15023,38 +15037,38 @@ static void test_type_metadata_bridge() {
                    typed_row_decay));
 
   node_t typed_nonarray_stale_row = {0};
-  typed_nonarray_stale_row.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_nonarray_stale_row, ND_DEREF);
   test_bind_node_type(&typed_nonarray_stale_row, ps_type_new_integer(TK_INT, 16, 0));
   ASSERT_TRUE(ps_node_row_decay_pointer_arith_type(
                   &typed_nonarray_stale_row) == NULL);
 
   node_t typed_decay_array = {0};
-  typed_decay_array.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_decay_array, ND_DEREF);
   test_bind_node_type(&typed_decay_array, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 2, 8, 0));
   ASSERT_TRUE(ps_node_deref_decays_to_address(&typed_decay_array));
 
   node_t typed_ptr_stale_array_decay = {0};
-  typed_ptr_stale_array_decay.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_ptr_stale_array_decay, ND_DEREF);
   test_bind_node_type(&typed_ptr_stale_array_decay, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(!ps_node_deref_decays_to_address(
       &typed_ptr_stale_array_decay));
 
   node_t canonical_decay_array = {0};
-  canonical_decay_array.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_decay_array, ND_DEREF);
   test_bind_node_type(&canonical_decay_array, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 2, 8, 0));
   ASSERT_TRUE(ps_node_deref_decays_to_address(&canonical_decay_array));
 
   node_t canonical_loaded_pointer = {0};
-  canonical_loaded_pointer.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_loaded_pointer, ND_DEREF);
   test_bind_node_type(&canonical_loaded_pointer, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(!ps_node_deref_decays_to_address(&canonical_loaded_pointer));
 
   node_t canonical_struct_scalar = {0};
-  canonical_struct_scalar.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_struct_scalar, ND_DEREF);
   test_bind_node_type(&canonical_struct_scalar, ps_type_new_tag(
       TK_STRUCT, "ScalarStruct", 12, 0, 32));
   ASSERT_TRUE(!ps_node_deref_decays_to_address(&canonical_struct_scalar));
@@ -16072,28 +16086,28 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, vla_row_off);
 
   node_t typed_funcptr_sig = {0};
-  typed_funcptr_sig.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_funcptr_sig, ND_LVAR);
   test_bind_node_type(&typed_funcptr_sig, test_function_pointer(
       ps_type_new_integer(TK_LONG, 8, 0), NULL, 0, 0));
   assert_canonical_type_signature(
       ps_node_get_type(&typed_funcptr_sig), "p<l64()>");
 
   node_t typed_data_ptr_stale_funcptr_sig = {0};
-  typed_data_ptr_stale_funcptr_sig.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_data_ptr_stale_funcptr_sig, ND_LVAR);
   test_bind_node_type(&typed_data_ptr_stale_funcptr_sig, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(&typed_data_ptr_stale_funcptr_sig)) == NULL);
 
   node_t canonical_funcptr = {0};
-  canonical_funcptr.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_funcptr, ND_DEREF);
   test_bind_node_type(&canonical_funcptr, test_function_pointer(
       ps_type_new_integer(TK_INT, 4, 0), NULL, 0, 0));
   assert_canonical_type_signature(
       ps_node_get_type(&canonical_funcptr), "p<i32()>");
 
   node_t compound_lit_object = {0};
-  compound_lit_object.kind = ND_LVAR;
+  test_set_resolved_node_kind(&compound_lit_object, ND_LVAR);
   test_bind_node_type(&compound_lit_object, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0));
   node_t compound_lit_addr = {0};
@@ -16105,7 +16119,7 @@ static void test_type_metadata_bridge() {
   compound_lit_comma.rhs = &compound_lit_addr;
   ASSERT_EQ(12, ps_node_compound_literal_array_size(&compound_lit_comma));
   node_t compound_lit_nonaddr = {0};
-  compound_lit_nonaddr.kind = ND_DEREF;
+  test_set_resolved_node_kind(&compound_lit_nonaddr, ND_DEREF);
   test_bind_node_type(&compound_lit_nonaddr, ps_node_get_type(&compound_lit_object));
   ASSERT_EQ(0, ps_node_compound_literal_array_size(&compound_lit_nonaddr));
   node_t typed_noncompound_addr = {0};
@@ -16116,7 +16130,7 @@ static void test_type_metadata_bridge() {
       &typed_noncompound_addr));
 
   node_t bitfield_deref = {0};
-  bitfield_deref.kind = ND_DEREF;
+  test_set_resolved_node_kind(&bitfield_deref, ND_DEREF);
   ASSERT_TRUE(ps_node_prepare_resolution_state_in(
       test_arena_context(), &bitfield_deref));
   ps_node_set_bitfield_info(&bitfield_deref, 3, 5, 1);
@@ -16130,7 +16144,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(5, bf_offset);
   ASSERT_EQ(1, bf_is_signed);
   node_t typed_nonbitfield = {0};
-  typed_nonbitfield.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_nonbitfield, ND_DEREF);
   test_bind_node_type(&typed_nonbitfield, ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_EQ(0, ps_node_bitfield_width(&typed_nonbitfield));
   ASSERT_TRUE(!ps_node_bitfield_info(&typed_nonbitfield,
@@ -16141,14 +16155,14 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_node_bitfield_info(&non_mem_num, NULL, NULL, NULL));
 
   node_t typed_nonptr_stale_pointer_like = {0};
-  typed_nonptr_stale_pointer_like.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_nonptr_stale_pointer_like, ND_DEREF);
   test_bind_node_type(&typed_nonptr_stale_pointer_like, ps_type_new_integer(TK_INT, 8, 0));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(
       &typed_nonptr_stale_pointer_like));
   ASSERT_EQ(4, ps_node_storage_type_size(&typed_nonptr_stale_pointer_like));
 
   node_t typed_ptr_no_mem_pointer_like = {0};
-  typed_ptr_no_mem_pointer_like.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_ptr_no_mem_pointer_like, ND_DEREF);
   test_bind_node_type(&typed_ptr_no_mem_pointer_like, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_node_value_is_pointer_like(&typed_ptr_no_mem_pointer_like));
@@ -16166,7 +16180,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_pointer_qual_levels(ptrarr_ret->lhs));
 
   node_t typed_deref_stale_tag_mem = {0};
-  typed_deref_stale_tag_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_deref_stale_tag_mem, ND_DEREF);
   psx_type_t *typed_deref_stale_tag_inner =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   test_bind_node_type(&typed_deref_stale_tag_mem, ps_type_new_pointer(typed_deref_stale_tag_inner));
@@ -16175,7 +16189,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_deref_size(typed_deref_unary));
 
   node_t typed_tag_array_ptr = {0};
-  typed_tag_array_ptr.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_tag_array_ptr, ND_LVAR);
   psx_type_t *typed_array_tag =
       ps_type_new_tag(TK_STRUCT, "TMFlatTag", 9, 0, 4);
   psx_type_t *typed_tag_array =
@@ -16191,14 +16205,14 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_type_deref_size(typed_tag_array_deref_type));
 
   node_t typed_missing_ptr_mem = {0};
-  typed_missing_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_missing_ptr_mem, ND_LVAR);
   test_bind_node_type(&typed_missing_ptr_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(4, canonical_node_base_deref_size(&typed_missing_ptr_mem));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(&typed_missing_ptr_mem));
   ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(&typed_missing_ptr_mem));
 
   node_t typed_unsigned_ptr_mem = {0};
-  typed_unsigned_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_unsigned_ptr_mem, ND_LVAR);
   test_bind_node_type(&typed_unsigned_ptr_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 1)));
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(&typed_unsigned_ptr_mem));
   int atomic_width = 0;
@@ -16210,7 +16224,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, atomic_is_unsigned);
 
   node_t typed_unsigned_ptrptr_mem = {0};
-  typed_unsigned_ptrptr_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_unsigned_ptrptr_mem, ND_DEREF);
   psx_type_t *typed_unsigned_char =
       ps_type_new_integer(TK_UNSIGNED, 1, 1);
   test_bind_node_type(&typed_unsigned_ptrptr_mem, ps_type_new_pointer(
@@ -16257,7 +16271,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_integer_value_is_unsigned(unsigned_pp_cell));
 
   node_t canonical_atomic_ptr = {0};
-  canonical_atomic_ptr.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_atomic_ptr, ND_DEREF);
   test_bind_node_type(&canonical_atomic_ptr, ps_type_new_pointer(
       ps_type_new_integer(TK_UNSIGNED, 4, 1)));
   ASSERT_TRUE(test_node_atomic_pointer_info(
@@ -16267,7 +16281,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, atomic_is_unsigned);
 
   node_t unsigned_atomic_target_mem = {0};
-  unsigned_atomic_target_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&unsigned_atomic_target_mem, ND_LVAR);
   test_bind_node_type(&unsigned_atomic_target_mem, ps_type_new_integer(TK_UNSIGNED, 1, 1));
   node_t *unsigned_atomic_addr =
       ps_node_new_unary_addr_for(&unsigned_atomic_target_mem);
@@ -16278,18 +16292,18 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, atomic_is_unsigned);
 
   node_t typed_bool_ptr_mem = {0};
-  typed_bool_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_bool_ptr_mem, ND_LVAR);
   psx_type_t *typed_bool_type = ps_type_new(PSX_TYPE_BOOL);
   test_bind_node_type(&typed_bool_ptr_mem, ps_type_new_pointer(typed_bool_type));
   ASSERT_TRUE(canonical_node_pointee_is_bool(&typed_bool_ptr_mem));
 
   node_t typed_void_ptr_mem = {0};
-  typed_void_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_void_ptr_mem, ND_LVAR);
   test_bind_node_type(&typed_void_ptr_mem, ps_type_new_pointer(ps_type_new(PSX_TYPE_VOID)));
   ASSERT_TRUE(canonical_node_pointee_is_void(&typed_void_ptr_mem));
 
   node_t typed_void_ptr_ptr_mem = {0};
-  typed_void_ptr_ptr_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_void_ptr_ptr_mem, ND_LVAR);
   test_bind_node_type(&typed_void_ptr_ptr_mem, ps_type_new_pointer(
       ps_type_new_pointer(ps_type_new(PSX_TYPE_VOID))));
   ASSERT_TRUE(!canonical_node_pointee_is_void(&typed_void_ptr_ptr_mem));
@@ -16298,7 +16312,7 @@ static void test_type_metadata_bridge() {
       "*out = (void *)0; return 0; }");
 
   node_t typed_const_view_mem = {0};
-  typed_const_view_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_const_view_mem, ND_LVAR);
   test_bind_node_type(&typed_const_view_mem, ps_type_new_tag(TK_STRUCT, "TypedView", 9, 1, 4));
   ASSERT_EQ(0, ps_node_aggregate_value_size(&typed_const_view_mem));
   ASSERT_EQ(0, canonical_node_pointer_qual_levels(&typed_const_view_mem));
@@ -16312,12 +16326,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_void(&typed_const_view_mem));
 
   node_t typed_stale_self_const_mem = {0};
-  typed_stale_self_const_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_self_const_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_self_const_mem, ps_type_new_integer(TK_INT, 4, 0));
   expect_const_assign_ok_for_node(&typed_stale_self_const_mem);
 
   node_t typed_scalar_canonical_const_mem = {0};
-  typed_scalar_canonical_const_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_scalar_canonical_const_mem, ND_LVAR);
   psx_type_t *typed_scalar_canonical_const_type =
       ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_scalar_canonical_const_type, PSX_TYPE_QUALIFIER_CONST);
@@ -16326,7 +16340,7 @@ static void test_type_metadata_bridge() {
       &typed_scalar_canonical_const_mem);
 
   node_t typed_ptr_canonical_self_const_mem = {0};
-  typed_ptr_canonical_self_const_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_ptr_canonical_self_const_mem, ND_LVAR);
   psx_type_t *typed_ptr_canonical_self_const_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   ps_type_add_qualifiers(typed_ptr_canonical_self_const_type, PSX_TYPE_QUALIFIER_CONST);
@@ -16335,10 +16349,10 @@ static void test_type_metadata_bridge() {
       &typed_ptr_canonical_self_const_mem);
 
   node_t typed_nonconst_ptr_lhs_mem = {0};
-  typed_nonconst_ptr_lhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_nonconst_ptr_lhs_mem, ND_LVAR);
   test_bind_node_type(&typed_nonconst_ptr_lhs_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t typed_const_ptr_rhs_mem = {0};
-  typed_const_ptr_rhs_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_const_ptr_rhs_mem, ND_LVAR);
   psx_type_t *typed_const_rhs_base = ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_const_rhs_base, PSX_TYPE_QUALIFIER_CONST);
   test_bind_node_type(&typed_const_ptr_rhs_mem, ps_type_new_pointer(typed_const_rhs_base));
@@ -16346,7 +16360,7 @@ static void test_type_metadata_bridge() {
                                            &typed_const_ptr_rhs_mem);
 
   node_t typed_funcptr_view_mem = {0};
-  typed_funcptr_view_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_funcptr_view_mem, ND_LVAR);
   psx_type_t *typed_funcptr_view_param =
       ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4);
   const psx_type_t *typed_funcptr_view_params[] = {
@@ -16367,7 +16381,7 @@ static void test_type_metadata_bridge() {
             typed_funcptr_view_function->base->floating_kind);
 
   node_t typed_funcptr_array_mem = {0};
-  typed_funcptr_array_mem.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_funcptr_array_mem, ND_DEREF);
   psx_type_t *typed_funcptr_array_param =
       ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4);
   const psx_type_t *typed_funcptr_array_params[] = {
@@ -16390,7 +16404,7 @@ static void test_type_metadata_bridge() {
             typed_funcptr_array_function->param_types[0]->kind);
 
   node_t typed_funcptr_callee_mem = {0};
-  typed_funcptr_callee_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_funcptr_callee_mem, ND_LVAR);
   test_bind_node_type(&typed_funcptr_callee_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_function_call_t typed_indirect_call = {0};
   typed_indirect_call.base.kind = ND_FUNCALL;
@@ -16398,7 +16412,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_indirect_call) == NULL);
 
   node_t typed_stale_funcptr_callee_mem = {0};
-  typed_stale_funcptr_callee_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_stale_funcptr_callee_mem, ND_LVAR);
   test_bind_node_type(&typed_stale_funcptr_callee_mem, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_function_call_t typed_stale_indirect_call = {0};
   typed_stale_indirect_call.base.kind = ND_FUNCALL;
@@ -16406,7 +16420,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_stale_indirect_call) == NULL);
 
   node_t typed_tag_ret_funcptr_callee_mem = {0};
-  typed_tag_ret_funcptr_callee_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_tag_ret_funcptr_callee_mem, ND_LVAR);
   psx_type_t *typed_tag_ret = ps_type_new_tag(TK_STRUCT, "Ret", 3, 7, 4);
   test_bind_node_type(&typed_tag_ret_funcptr_callee_mem, ps_type_new_pointer(typed_tag_ret));
   node_function_call_t typed_tag_ret_indirect_call = {0};
@@ -16534,7 +16548,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_node_value_is_complex(&typed_cached_pointer_stale_complex));
 
   node_t typed_double_ret_callee = {0};
-  typed_double_ret_callee.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_double_ret_callee, ND_LVAR);
   test_bind_node_type(&typed_double_ret_callee, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_function_call_t typed_double_ret_call = {0};
   typed_double_ret_call.base.kind = ND_FUNCALL;
@@ -16623,7 +16637,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_is_long_long_type((node_t *)&typed_cached_ternary));
 
   node_t typed_stale_scalar_flags_branch = {0};
-  typed_stale_scalar_flags_branch.kind = ND_DEREF;
+  test_set_resolved_node_kind(&typed_stale_scalar_flags_branch, ND_DEREF);
   node_ctrl_t typed_cached_int_ternary = {0};
   typed_cached_int_ternary.base.kind = ND_TERNARY;
   typed_cached_int_ternary.base.rhs = &typed_stale_scalar_flags_branch;
@@ -16822,7 +16836,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, cached_ptr_to_array_next);
 
   node_t cached_stale_array_subscript_base = {0};
-  cached_stale_array_subscript_base.kind = ND_LVAR;
+  test_set_resolved_node_kind(&cached_stale_array_subscript_base, ND_LVAR);
   psx_type_t *cached_stale_subscript_leaf =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0);
   psx_type_t *cached_stale_subscript_row =
@@ -16888,7 +16902,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(5, cached_tag_type->base->tag_scope_depth_p1);
 
   node_t typed_tag_mem = {0};
-  typed_tag_mem.kind = ND_LVAR;
+  test_set_resolved_node_kind(&typed_tag_mem, ND_LVAR);
   psx_type_t *typed_tag = ps_type_new_tag(TK_STRUCT, "Typed", 5, 3, 4);
   test_bind_node_type(&typed_tag_mem, ps_type_new_pointer(typed_tag));
   const psx_type_t *typed_tag_ptr_type = ps_node_get_type(&typed_tag_mem);
@@ -16902,7 +16916,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_aggregate_value_size(&typed_tag_mem));
 
   node_t canonical_aggregate = {0};
-  canonical_aggregate.kind = ND_DEREF;
+  test_set_resolved_node_kind(&canonical_aggregate, ND_DEREF);
   test_bind_node_type(&canonical_aggregate, ps_type_new_tag(
       TK_STRUCT, "CanonicalAgg", 12, 0, 6));
   ASSERT_EQ(0, ps_node_aggregate_value_size(&canonical_aggregate));
@@ -19340,7 +19354,7 @@ static void test_type_metadata_bridge() {
             dp_info.decl_type->base->floating_kind);
   ASSERT_TRUE(ps_type_derived_function(dp_info.decl_type) == NULL);
   node_t canonical_int_ptr = {0};
-  canonical_int_ptr.kind = ND_LVAR;
+  test_set_resolved_node_kind(&canonical_int_ptr, ND_LVAR);
   test_bind_node_type(&canonical_int_ptr, ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, canonical_node_pointee_fp_kind(&canonical_int_ptr));
 
@@ -20338,14 +20352,14 @@ static void test_translation_unit_reset_static_local_state() {
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
 
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
   reset_test_translation_unit_state();
@@ -20401,24 +20415,24 @@ static void test_multiple_funcdefs() {
       "int foo(void) { 1; } int bar(void) { 2; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "foo", 3) == 0);
 
   ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "bar", 3) == 0);
 
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("int add(int a, int b); int add(int a, int b) { return a+b; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("int log(const char *fmt, ...); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
@@ -20455,57 +20469,57 @@ static void test_multiple_funcdefs() {
 
   parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "variadic", 8) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "f", 1) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("struct S { int x; }; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("struct S { int x; } *gp; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("int g=1; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("_Noreturn void die() { return; } int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "die", 3) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("_Static_assert(1, \"ok\"); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
   ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
@@ -20513,7 +20527,7 @@ static void test_multiple_funcdefs() {
       "struct SA { _Static_assert(sizeof(int)==4, \"ok\"); int x; }; "
       "int main(void) { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
 }
 
 static void test_parse_invalid() {
@@ -21184,7 +21198,8 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
 
   node_function_definition_t duplicated_return_type = {0};
-  duplicated_return_type.base.kind = ND_FUNCDEF;
+  test_set_resolved_node_kind(
+      &duplicated_return_type, ND_FUNCDEF);
   duplicated_return_type.signature = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
   test_bind_node_type(
@@ -21220,13 +21235,14 @@ static void test_semantic_canonical_type_invariant() {
             failure.status);
   ASSERT_TRUE(failure.node == &raw_initializer);
 
-  node_t invalid_node_kind = {.kind = (psx_work_node_kind_t)999};
+  node_t invalid_node_kind = {.kind = (psx_syntax_node_kind_t)999};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &invalid_node_kind, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, failure.status);
   ASSERT_TRUE(failure.node == &invalid_node_kind);
 
-  node_t invalid_vla_view = {.kind = ND_LVAR};
+  node_t invalid_vla_view = {0};
+  test_set_resolved_node_kind(&invalid_vla_view, ND_LVAR);
   test_bind_node_type(
       &invalid_vla_view,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
@@ -21265,7 +21281,8 @@ static void test_semantic_canonical_type_invariant() {
 
   psx_type_t *callee_function = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
-  node_t non_callable_callee = {.kind = ND_LVAR};
+  node_t non_callable_callee = {0};
+  test_set_resolved_node_kind(&non_callable_callee, ND_LVAR);
   test_bind_node_type(
       &non_callable_callee,
       ps_type_new_pointer(
@@ -21358,7 +21375,8 @@ static void test_recursive_declarator_capacity_boundary() {
   ASSERT_EQ('k', deep_pointer_signature[0]);
   ASSERT_EQ('p', deep_pointer_signature[1]);
   ASSERT_EQ('>', deep_pointer_signature[293]);
-  node_t deep_pointer_node = {.kind = ND_LVAR};
+  node_t deep_pointer_node = {0};
+  test_set_resolved_node_kind(&deep_pointer_node, ND_LVAR);
   test_bind_node_type(&deep_pointer_node, deep_pointer_type);
   psx_semantic_invariant_failure_t invariant_failure;
   ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
@@ -21370,7 +21388,8 @@ static void test_recursive_declarator_capacity_boundary() {
   ASSERT_EQ(-1, ps_type_format_canonical_signature(
                     cyclic_pointer, deep_pointer_signature,
                     sizeof(deep_pointer_signature)));
-  node_t cyclic_pointer_node = {.kind = ND_LVAR};
+  node_t cyclic_pointer_node = {0};
+  test_set_resolved_node_kind(&cyclic_pointer_node, ND_LVAR);
   test_bind_node_type(&cyclic_pointer_node, cyclic_pointer);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &cyclic_pointer_node, &invariant_failure));
@@ -21919,7 +21938,7 @@ static void test_semantic_type_identity() {
             ps_node_qual_type(&typed_expression).qualifiers);
 
   node_function_definition_t typed_function = {0};
-  typed_function.base.kind = ND_FUNCDEF;
+  test_set_resolved_node_kind(&typed_function, ND_FUNCDEF);
   typed_function.signature = function_type;
   ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
       context, (node_t *)&typed_function, &failure, 0));
@@ -22179,7 +22198,8 @@ static void test_semantic_context_isolation() {
   psx_type_t *detached_tag_type = ps_type_new_tag(
       TK_STRUCT, direct_tag_name, 9, 1, 4);
   ASSERT_EQ(PSX_RECORD_ID_INVALID, ps_type_record_id(detached_tag_type));
-  node_t detached_base = {.kind = ND_LVAR};
+  node_t detached_base = {0};
+  test_set_resolved_node_kind(&detached_base, ND_LVAR);
   test_bind_node_type(&detached_base, detached_tag_type);
   psx_member_access_resolution_t detached_resolution;
   psx_resolve_member_access(
@@ -22202,7 +22222,8 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, detached_resolution.status);
   ASSERT_EQ(PSX_RECORD_ID_INVALID, detached_resolution.record_id);
 
-  node_t canonical_base = {.kind = ND_LVAR};
+  node_t canonical_base = {0};
+  test_set_resolved_node_kind(&canonical_base, ND_LVAR);
   test_bind_node_type(&canonical_base, direct_tag_type);
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
@@ -22345,9 +22366,8 @@ static void test_semantic_context_isolation() {
           "{ streamed_label: return value; } }"),
       &parser_syntax);
   psx_parsed_function_definition_t parsed_syntax = {0};
-  node_function_definition_t parsed_function = {
-      .base.kind = ND_FUNCDEF,
-  };
+  node_function_definition_t parsed_function = {0};
+  test_set_resolved_node_kind(&parsed_function, ND_FUNCDEF);
   psx_lowering_context_t *second_lowering_context =
       ps_lowering_context_create(arena_context, diagnostics);
   ASSERT_TRUE(second_lowering_context != NULL);

@@ -362,7 +362,7 @@ static void bind_direct_call(
 static node_t *bind_node(
     node_t *node, const psx_identifier_binding_context_t *context) {
   if (!node) return NULL;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_IDENTIFIER:
       return materialize_identifier(
           (node_identifier_t *)node, 0, context, NULL);

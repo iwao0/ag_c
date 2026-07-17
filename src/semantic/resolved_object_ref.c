@@ -98,10 +98,10 @@ int psx_bind_va_arg_area_reference_in(
   return 1;
 }
 
-psx_work_node_kind_t psx_resolved_object_ref_node_kind(
+psx_resolution_node_kind_t psx_resolved_object_ref_node_kind(
     const node_t *node) {
   if (!node || node->kind != ND_IDENTIFIER)
-    return node ? node->kind : (psx_work_node_kind_t)0;
+    return psx_resolution_node_kind(node);
   switch (psx_resolved_object_ref_kind(node)) {
     case PSX_RESOLVED_OBJECT_REF_LOCAL: return ND_LVAR;
     case PSX_RESOLVED_OBJECT_REF_GLOBAL: return ND_GVAR;
@@ -117,8 +117,9 @@ static node_t *new_lvar_symbol_node(
     const psx_type_t *type) {
   node_t *node = psx_resolution_node_alloc_in(
       arena_context, sizeof(*node));
-  if (!node) return NULL;
-  node->kind = ND_LVAR;
+  if (!node ||
+      !psx_resolution_node_set_kind(node, ND_LVAR))
+    return NULL;
   return psx_bind_local_reference_in(
              arena_context, node, var, offset, type)
              ? node : NULL;
@@ -387,7 +388,8 @@ static node_t *new_global_symbol_node(
     arena_context_t *arena_context) {
   node_t *node = psx_resolution_node_alloc_in(
       arena_context, sizeof(*node));
-  if (node) node->kind = ND_GVAR;
+  if (node && !psx_resolution_node_set_kind(node, ND_GVAR))
+    return NULL;
   return node;
 }
 
@@ -453,8 +455,9 @@ node_t *psx_node_new_function_reference_in(
     const psx_type_t *function_type) {
   node_t *reference = psx_resolution_node_alloc_in(
       arena_context, sizeof(*reference));
-  if (!reference) return NULL;
-  reference->kind = ND_FUNCREF;
+  if (!reference ||
+      !psx_resolution_node_set_kind(reference, ND_FUNCREF))
+    return NULL;
   ps_node_bind_type(
       reference,
       function_type
@@ -475,7 +478,8 @@ node_t *psx_node_new_va_arg_area_reference_in(
   node_t *node = psx_resolution_node_alloc_in(
       arena_context, sizeof(*node));
   if (node) {
-    node->kind = ND_VA_ARG_AREA;
+    if (!psx_resolution_node_set_kind(node, ND_VA_ARG_AREA))
+      return NULL;
     psx_resolved_reference_state_t *state =
         reference_state(node);
     if (state)

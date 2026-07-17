@@ -45,7 +45,7 @@ static void set_failure(
     hir_materializer_t *builder, psx_resolved_hir_build_status_t status,
     const node_t *source) {
   psx_semantic_node_builder_fail(
-      builder, status, source ? (int)source->kind : -1);
+      builder, status, psx_resolution_node_kind(source));
 }
 
 static int append_child(
@@ -77,7 +77,7 @@ static int append_child(
 }
 
 static int map_kind(
-    psx_work_node_kind_t source, psx_hir_node_kind_t *kind) {
+    psx_resolution_node_kind_t source, psx_hir_node_kind_t *kind) {
 #define MAP(source_kind, hir_kind) \
   case source_kind: *kind = hir_kind; return 1
   switch (source) {
@@ -251,7 +251,7 @@ static psx_semantic_node_t *materialize_expression_spec(
       children ? children->items : NULL,
       children ? children->edges : NULL,
       children ? children->count : 0,
-      symbol, source ? (int)source->kind : -1);
+      symbol, psx_resolution_node_kind(source));
 }
 
 static psx_semantic_node_t *materialize_expression(
@@ -275,7 +275,7 @@ static psx_semantic_node_t *materialize_statement(
       children ? children->items : NULL,
       children ? children->edges : NULL,
       children ? children->count : 0,
-      source ? (int)source->kind : -1);
+      psx_resolution_node_kind(source));
 }
 
 static psx_semantic_node_t *materialize_comma(
@@ -1272,7 +1272,8 @@ static psx_semantic_node_t *materialize_typed_leaf(
     return NULL;
   return psx_semantic_node_builder_leaf_expression(
       builder, &spec, ps_node_qual_type(source),
-      has_symbol ? &symbol : NULL, (int)source->kind);
+      has_symbol ? &symbol : NULL,
+      psx_resolution_node_kind(source));
 }
 
 static psx_semantic_node_t *build_node(
@@ -1281,21 +1282,23 @@ static psx_semantic_node_t *build_node(
   psx_semantic_node_t *typed_leaf = materialize_typed_leaf(
       builder, source, &handled_typed_leaf);
   if (handled_typed_leaf) return typed_leaf;
-  if (source && source->kind == ND_VLA_ALLOC) {
+  psx_resolution_node_kind_t resolved_kind =
+      psx_resolution_node_kind(source);
+  if (resolved_kind == ND_VLA_ALLOC) {
     return materialize_vla_runtime(
         builder, (const node_vla_alloc_t *)source);
   }
   if (address_requires_typed_hir_lowering(source))
     return materialize_address_expression(builder, source);
-  if (source && source->kind == ND_COMPOUND_LITERAL) {
+  if (resolved_kind == ND_COMPOUND_LITERAL) {
     return materialize_compound_literal(
         builder, (const node_compound_literal_t *)source);
   }
-  if (source && source->kind == ND_SIZEOF_QUERY) {
+  if (resolved_kind == ND_SIZEOF_QUERY) {
     return materialize_sizeof_query(
         builder, (const node_sizeof_query_t *)source);
   }
-  if (source && source->kind == ND_GENERIC_SELECTION) {
+  if (resolved_kind == ND_GENERIC_SELECTION) {
     const node_generic_selection_t *selection =
         (const node_generic_selection_t *)source;
     psx_qual_type_t qual_type = ps_node_qual_type(source);
@@ -1313,13 +1316,11 @@ static psx_semantic_node_t *build_node(
     }
     return build_node(builder, selected);
   }
-  if (source && source->kind == ND_CAST && source->is_source_cast) {
+  if (resolved_kind == ND_CAST && source->is_source_cast) {
     return materialize_source_cast(
         builder, (const node_source_cast_t *)source);
   }
   psx_hir_node_spec_t spec = {0};
-  psx_work_node_kind_t resolved_kind =
-      psx_resolved_object_ref_node_kind(source);
   psx_qual_type_t qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   spec.attached_qual_type = qual_type;
@@ -1345,7 +1346,7 @@ static psx_semantic_node_t *build_node(
     int bit_width = 0;
     int bit_offset = 0;
     int bit_is_signed = 0;
-    if (source->kind != ND_MEMBER_ACCESS &&
+    if (resolved_kind != ND_MEMBER_ACCESS &&
         ps_node_bitfield_info(
             (node_t *)source, &bit_width, &bit_offset,
             &bit_is_signed)) {
@@ -1359,7 +1360,7 @@ static psx_semantic_node_t *build_node(
   if (!attach_global_symbol(
           builder, source, &symbol, &has_symbol))
     return NULL;
-  if (source->kind == ND_FUNCDEF &&
+  if (resolved_kind == ND_FUNCDEF &&
       !canonical_type_exists(builder, spec.attached_qual_type)) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
@@ -1383,7 +1384,7 @@ static psx_semantic_node_t *build_node(
             builder, &children, source->lhs, PSX_HIR_EDGE_LHS) ||
         !build_and_append(
             builder, &children, source->rhs,
-            source->kind == ND_FUNCDEF
+            resolved_kind == ND_FUNCDEF
                 ? PSX_HIR_EDGE_FUNCTION_BODY : PSX_HIR_EDGE_RHS)))) {
     free(children.items);
     free(children.edges);
@@ -1416,8 +1417,8 @@ psx_typed_hir_tree_t *psx_typed_hir_tree_materialize(
   if (!semantic_context || !resolution_root) {
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
-      failure->source_node_kind = resolution_root
-                                      ? (int)resolution_root->kind : -1;
+      failure->source_node_kind =
+          psx_resolution_node_kind(resolution_root);
     }
     return NULL;
   }

@@ -207,7 +207,7 @@ static void collect_switch_labels(
     switch_label_context_t *context,
     const token_t *fallback) {
   if (!node) return;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_SWITCH:
       return;
     case ND_CASE:
@@ -262,7 +262,7 @@ static void validate_node(
     int switch_depth) {
   if (!node) return;
   const token_t *tok = node->tok ? node->tok : fallback;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_BREAK:
       if (loop_depth == 0 && switch_depth == 0)
         ps_diag_only_in_context(
@@ -382,7 +382,7 @@ void psx_validate_control_flow(
     node_t *node, const token_t *fallback_diag_tok) {
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
-  if (node && node->kind == ND_FUNCDEF)
+  if (node && psx_resolution_node_kind(node) == ND_FUNCDEF)
     validate_function_jumps(
         diagnostics, node, fallback_diag_tok);
   validate_node(diagnostics, node,
@@ -391,7 +391,7 @@ void psx_validate_control_flow(
 
 static int statement_tail_terminates(node_t *node) {
   if (!node) return 0;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_RETURN:
     case ND_BREAK:
     case ND_CONTINUE:
@@ -413,7 +413,7 @@ static int statement_tail_terminates(node_t *node) {
 
 static int statement_direct_terminates(node_t *node) {
   if (!node) return 0;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_RETURN:
     case ND_BREAK:
     case ND_CONTINUE:
@@ -440,7 +440,7 @@ static void suppress_lvar_regions(node_t *node) {
   if (!node) return;
   ps_decl_suppress_lvar_usage_region(
       ps_node_lvar_usage_region(node));
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;
            body && *body; body++)
@@ -523,7 +523,7 @@ static void emit_unreachable_node(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node) return;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_BLOCK:
       emit_unreachable_block(
           diagnostics, (node_block_t *)node, fallback);

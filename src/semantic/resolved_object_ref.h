@@ -5,6 +5,7 @@
 #include "../parser/syntax_node_kind.h"
 #include "../parser/type.h"
 #include "../type_system/type_ids.h"
+#include "resolved_node_kind.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct global_var_t global_var_t;
@@ -32,7 +33,7 @@ int psx_bind_function_reference_in(
     char *name, int name_len, const psx_type_t *function_type);
 int psx_bind_va_arg_area_reference_in(
     arena_context_t *arena_context, node_t *node);
-psx_work_node_kind_t psx_resolved_object_ref_node_kind(
+psx_resolution_node_kind_t psx_resolved_object_ref_node_kind(
     const node_t *node);
 
 node_t *psx_node_new_lvar_in(

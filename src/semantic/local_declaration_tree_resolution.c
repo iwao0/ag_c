@@ -517,7 +517,7 @@ static int resolve_local_declarations_in_slot(
     return 1;
   }
 
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_BLOCK:
       return resolve_block_declarations(
           resolver, (node_block_t *)node);

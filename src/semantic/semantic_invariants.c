@@ -21,7 +21,7 @@ typedef enum {
   NODE_SEMANTIC_ROLE_TYPED_EXPRESSION,
 } node_semantic_role_t;
 
-static node_semantic_role_t semantic_role(psx_work_node_kind_t kind) {
+static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
   switch (kind) {
     case ND_IF:
     case ND_WHILE:
@@ -103,7 +103,7 @@ static int validate_node(const node_t *node, void *user) {
       validation->semantic_context;
   psx_semantic_invariant_failure_t *failure = validation->failure;
   int allow_initializer_syntax = validation->allow_initializer_syntax;
-  psx_work_node_kind_t resolved_kind =
+  psx_resolution_node_kind_t resolved_kind =
       psx_resolved_object_ref_node_kind(node);
   node_semantic_role_t role = semantic_role(resolved_kind);
   if (role == NODE_SEMANTIC_ROLE_INVALID)
@@ -137,7 +137,7 @@ static int validate_node(const node_t *node, void *user) {
        node_type->base->kind != PSX_TYPE_FUNCTION)) {
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
   }
-  if (node->kind == ND_FUNCDEF) {
+  if (resolved_kind == ND_FUNCDEF) {
     const node_function_definition_t *function =
         (const node_function_definition_t *)node;
     if (!function->signature ||
@@ -298,14 +298,14 @@ static void emit_semantic_invariant_failure(
         "%s: %s (node kind %d)",
         diag_message_for_in(diagnostics,
                             DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
-        node ? (int)node->kind : -1);
+        psx_resolution_node_kind(node));
   }
   diag_emit_internalf_in(
       diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
       "%s: %s (node kind %d)",
       diag_message_for_in(diagnostics,
                           DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
-      node ? (int)node->kind : -1);
+      psx_resolution_node_kind(node));
 }
 
 void psx_require_semantic_tree_has_canonical_expression_types(

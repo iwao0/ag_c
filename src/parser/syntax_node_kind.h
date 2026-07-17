@@ -8,7 +8,8 @@
  * conversions, and other semantic nodes live in semantic/resolved_node_kind.h.
  */
 typedef enum {
-  ND_ADD,    // +
+  PSX_SYNTAX_NODE_INVALID = -1,
+  ND_ADD = 0, // +
   ND_SUB,    // -
   ND_MUL,    // *
   ND_DIV,    // /
@@ -67,10 +68,9 @@ typedef enum {
   ND_STMT_EXPR,
 } psx_syntax_node_kind_t;
 
-/*
- * Transitional semantic working trees clone Syntax AST nodes and may replace
- * them with resolved node kinds before materializing parser-free Typed HIR.
- */
-typedef int psx_work_node_kind_t;
+static inline int psx_syntax_node_kind_is_valid(
+    psx_syntax_node_kind_t kind) {
+  return kind >= ND_ADD && kind <= ND_STMT_EXPR;
+}
 
 #endif

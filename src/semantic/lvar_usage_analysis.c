@@ -14,7 +14,7 @@
 #include "vla_runtime_plan.h"
 #include "source_cast_resolution.h"
 
-static psx_work_node_kind_t resolved_node_kind(const node_t *node) {
+static psx_resolution_node_kind_t resolved_node_kind(const node_t *node) {
   return psx_resolved_object_ref_node_kind(node);
 }
 
@@ -26,7 +26,7 @@ static int is_aggregate_lvar(node_t *node) {
 static int is_dereference(const node_t *node) {
   return node &&
          (node->kind == ND_UNARY_DEREF ||
-          node->kind == ND_DEREF);
+          psx_resolution_node_kind(node) == ND_DEREF);
 }
 
 static node_t *assigned_aggregate_lvar_from_member_base(node_t *base);
@@ -167,7 +167,7 @@ void psx_collect_lvar_usage_events_in(
             : PSX_LVAR_USAGE_EVALUATED,
         region);
   }
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_COMPOUND_LITERAL: {
       psx_collect_lvar_usage_events_in(
           local_registry, node->rhs, region);

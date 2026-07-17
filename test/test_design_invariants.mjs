@@ -3198,6 +3198,10 @@ const resolvedNodeKindHeader = await readFile(
   "src/semantic/resolved_node_kind.h",
   "utf8",
 );
+const resolvedNodeKindImplementation = await readFile(
+  "src/semantic/resolved_node_kind.c",
+  "utf8",
+);
 const resolvedNodeHeader = await readFile(
   "src/semantic/resolved_node.h",
   "utf8",
@@ -3248,7 +3252,10 @@ const nodeResolutionStateSource = await readFile(
 );
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
-    !/\bpsx_work_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
+    !/\bpsx_syntax_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
+    /\bpsx_(?:work|resolution)_node_kind_t\s+kind\s*;/.test(
+      nodeStruct[1],
+    ) ||
     /\bresolution_state\b/.test(nodeStruct[1]) ||
     /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
     /\bpsx_qual_type_t\s+qual_type\s*;/.test(nodeStruct[1]) ||
@@ -3261,6 +3268,50 @@ if (!nodeStruct ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
     "syntax node_t must be typeless and must not own semantic resolution state",
+  );
+}
+if (!/\bpsx_resolved_node_kind_t\s+node_kind\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_resolution_node_kind\s*\(/.test(
+      resolvedNodeKindHeader,
+    ) ||
+    !/\bpsx_resolution_node_set_kind\s*\(/.test(
+      resolvedNodeKindHeader,
+    ) ||
+    !/state->node_kind\s*=\s*kind/.test(
+      resolvedNodeKindImplementation,
+    ) ||
+    !/node->kind\s*=\s*PSX_SYNTAX_NODE_INVALID/.test(
+      resolvedNodeKindImplementation,
+    ) ||
+    !/psx_resolution_node_set_kind\s*\(\s*&node->base,\s*ND_FUNCDEF\s*\)/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    /node->base\.kind\s*=\s*ND_FUNCDEF/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    !/psx_syntax_node_kind_is_valid\s*\(\s*source->kind\s*\)[^]*?ps_node_get_type\s*\(\s*source\s*\)[^]*?ps_node_qual_type\s*\(\s*source\s*\)\.type_id\s*!=\s*PSX_TYPE_ID_INVALID[^]*?psx_resolution_node_kind\s*\(\s*source\s*\)/.test(
+      resolutionWorkTree,
+    ) ||
+    /\bND_(?:FUNCDEF|LVAR|FUNCREF|DEREF|GVAR|VLA_ALLOC|FP_TO_INT|INT_TO_FP|VA_ARG_AREA)\b/.test(
+      resolutionWorkTree,
+    )) {
+  throw new Error(
+    "Syntax node kinds must stay in Syntax AST while resolver-created kinds live in semantic sidecars",
+  );
+}
+const directResolvedKindFieldAccess =
+  /(?:->|\.)kind\s*(?:==|!=|=)\s*ND_(?:FUNCDEF|LVAR|FUNCREF|DEREF|GVAR|VLA_ALLOC|FP_TO_INT|INT_TO_FP|VA_ARG_AREA)\b/;
+const directResolvedKindFieldFiles = [];
+for (const path of allSourceFiles) {
+  if (directResolvedKindFieldAccess.test(await readFile(path, "utf8")))
+    directResolvedKindFieldFiles.push(path);
+}
+if (directResolvedKindFieldFiles.length) {
+  throw new Error(
+    "resolved node kinds must not be read from or written to Syntax node_t.kind:\n" +
+      directResolvedKindFieldFiles.join("\n"),
   );
 }
 if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
@@ -3974,13 +4025,24 @@ for (const factory of resolvedObjectRefFactories) {
   }
 }
 if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
-    !/node->kind\s*=\s*ND_LVAR/.test(resolvedObjectRefSource) ||
-    !/node->kind\s*=\s*ND_GVAR/.test(resolvedObjectRefSource) ||
+    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_LVAR\s*\)/.test(
+      resolvedObjectRefSource,
+    ) ||
+    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_GVAR\s*\)/.test(
+      resolvedObjectRefSource,
+    ) ||
     /(?:base\.)?kind\s*=\s*ND_(?:FUNCREF|VA_ARG_AREA)/.test(
       identifierBindingSource,
     ) ||
-    !/reference->kind\s*=\s*ND_FUNCREF/.test(resolvedObjectRefSource) ||
-    !/kind\s*=\s*ND_VA_ARG_AREA/.test(resolvedObjectRefSource)) {
+    !/psx_resolution_node_set_kind\s*\(\s*reference,\s*ND_FUNCREF\s*\)/.test(
+      resolvedObjectRefSource,
+    ) ||
+    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_VA_ARG_AREA\s*\)/.test(
+      resolvedObjectRefSource,
+    ) ||
+    /(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR|FUNCREF|VA_ARG_AREA)/.test(
+      resolvedObjectRefSource,
+    )) {
   throw new Error(
     "resolved object and function references must be constructed only by the semantic factory",
   );
@@ -4717,7 +4779,7 @@ if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
     !/\bmaterialize_compound_literal\s*\(/.test(
       typedHirMaterializationSource,
     ) ||
-    !/source\s*&&\s*source->kind\s*==\s*ND_COMPOUND_LITERAL/.test(
+    !/resolved_kind\s*==\s*ND_COMPOUND_LITERAL/.test(
       typedHirMaterializationSource,
     ) ||
     /selected_expression|direct_value/.test(nodeResolutionStateSource) ||
@@ -5887,7 +5949,10 @@ if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?\bnode_t\s*\*\*\s*dimen
     ) ||
     vlaGeneratedSemanticNodeRe.test(vlaLoweringSource) ||
     !/\bps_node_new_vla_runtime_in\s*\(/.test(vlaLoweringSource) ||
-    !/case\s+ND_VLA_ALLOC:[^]*?clone_vla_runtime_plan/.test(
+    !/psx_syntax_node_kind_is_valid\s*\(\s*source->kind\s*\)/.test(
+      resolutionWorkTree,
+    ) ||
+    /\b(?:ND_VLA_ALLOC|clone_vla_runtime_plan)\b/.test(
       resolutionWorkTree,
     ) ||
     !/PSX_HIR_EDGE_VLA_DIMENSION/.test(hirHeader) ||
@@ -6790,7 +6855,7 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
     "resolved real/imag operators must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
-if (!/source->kind\s*==\s*ND_GENERIC_SELECTION/.test(
+if (!/resolved_kind\s*==\s*ND_GENERIC_SELECTION/.test(
       resolvedTreeMaterialization,
     ) ||
     !/psx_generic_selection_selected_expression_const\s*\(/.test(
@@ -6829,7 +6894,7 @@ if (!/MAP\s*\(\s*ND_ALIGNOF_QUERY\s*,\s*PSX_HIR_NUMBER\s*\)/.test(
     "resolved alignof queries must materialize directly as Typed HIR numbers",
   );
 }
-if (!/source\s*&&\s*source->kind\s*==\s*ND_SIZEOF_QUERY/.test(
+if (!/resolved_kind\s*==\s*ND_SIZEOF_QUERY/.test(
       resolvedTreeMaterialization,
     ) ||
     !/materialize_sizeof_value\s*\(/.test(

@@ -25,7 +25,7 @@ static int walk_node(
   if (!node) return 1;
   if (visitor && !visitor(node, user)) return 0;
 
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(node)) {
     case ND_COMPOUND_LITERAL: {
       const node_compound_literal_t *compound =
           (const node_compound_literal_t *)node;

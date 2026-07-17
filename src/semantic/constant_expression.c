@@ -266,7 +266,8 @@ int psx_resolve_static_address_constant(
         if (!*symbol) return 0;
         return 1;
       }
-      if (node->lhs && node->lhs->kind == ND_DEREF) {
+      if (node->lhs &&
+          psx_resolution_node_kind(node->lhs) == ND_DEREF) {
         return psx_resolve_static_address_constant(
             node->lhs->lhs, symbol, symbol_len, offset);
       }

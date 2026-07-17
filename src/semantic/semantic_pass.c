@@ -520,7 +520,7 @@ static node_t *semantic_normalize_call_deref_chain(
   node_t *bottom = callee;
   while (bottom &&
          (bottom->kind == ND_UNARY_DEREF ||
-          bottom->kind == ND_DEREF)) {
+          psx_resolution_node_kind(bottom) == ND_DEREF)) {
     deref_count++;
     bottom = bottom->lhs;
   }

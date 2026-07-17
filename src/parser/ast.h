@@ -52,7 +52,7 @@ typedef struct {
   unsigned char has_member;
 } psx_initializer_entry_t;
 struct node_t {
-  psx_work_node_kind_t kind;
+  psx_syntax_node_kind_t kind;
 
   // ツリー構造用
   node_t *lhs;      // 左辺 / 条件式

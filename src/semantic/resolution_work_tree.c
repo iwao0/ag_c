@@ -11,10 +11,7 @@
 #include "../parser/node_utils.h"
 #include "resolution_work_tree_internal.h"
 #include "resolved_node.h"
-#include "resolved_function.h"
-#include "resolved_node_kind.h"
 #include "typed_hir_tree_materialization.h"
-#include "vla_runtime_plan.h"
 
 struct psx_resolution_work_tree_t {
   node_t *compatibility_root;
@@ -38,14 +35,10 @@ static size_t node_storage_size(const node_t *node) {
     case ND_LOCAL_DECLARATION:
       return sizeof(node_local_declaration_t);
     case ND_STATIC_ASSERT: return sizeof(node_static_assert_t);
-    case ND_VLA_ALLOC: return sizeof(node_vla_alloc_t);
     case ND_NUM: return sizeof(node_num_t);
-    case ND_LVAR: return sizeof(node_t);
     case ND_STRING: return sizeof(node_string_t);
     case ND_BLOCK: return sizeof(node_block_t);
-    case ND_FUNCDEF: return sizeof(node_function_definition_t);
     case ND_FUNCALL: return sizeof(node_function_call_t);
-    case ND_FUNCREF: return sizeof(node_t);
     case ND_IF:
     case ND_WHILE:
     case ND_DO_WHILE:
@@ -58,7 +51,6 @@ static size_t node_storage_size(const node_t *node) {
     case ND_GOTO:
     case ND_LABEL:
       return sizeof(node_jump_t);
-    case ND_GVAR: return sizeof(node_t);
     default: break;
   }
   size_t resolution_size =
@@ -68,49 +60,6 @@ static size_t node_storage_size(const node_t *node) {
 
 static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source);
-
-static psx_vla_runtime_plan_t *clone_vla_runtime_plan(
-    arena_context_t *arena_context,
-    const psx_vla_runtime_plan_t *source) {
-  if (!source) return NULL;
-  psx_vla_runtime_plan_t *copy = arena_alloc_in(
-      arena_context, sizeof(*copy));
-  if (!copy) return NULL;
-  *copy = *source;
-  copy->dimensions = NULL;
-  copy->stride_store_offsets = NULL;
-  copy->stride_start_dimensions = NULL;
-  if (source->dimension_count > 0) {
-    copy->dimensions = arena_alloc_in(
-        arena_context,
-        (size_t)source->dimension_count * sizeof(*copy->dimensions));
-    if (!copy->dimensions) return NULL;
-    for (int i = 0; i < source->dimension_count; i++) {
-      copy->dimensions[i] = clone_node(
-          arena_context, source->dimensions[i]);
-      if (source->dimensions[i] && !copy->dimensions[i])
-        return NULL;
-    }
-  }
-  if (source->stride_store_count > 0) {
-    size_t bytes =
-        (size_t)source->stride_store_count * sizeof(int);
-    copy->stride_store_offsets = arena_alloc_in(
-        arena_context, bytes);
-    copy->stride_start_dimensions = arena_alloc_in(
-        arena_context, bytes);
-    if (!copy->stride_store_offsets ||
-        !copy->stride_start_dimensions)
-      return NULL;
-    memcpy(
-        copy->stride_store_offsets,
-        source->stride_store_offsets, bytes);
-    memcpy(
-        copy->stride_start_dimensions,
-        source->stride_start_dimensions, bytes);
-  }
-  return copy;
-}
 
 static int clone_parsed_declarator(
     arena_context_t *arena_context,
@@ -436,6 +385,12 @@ static psx_parsed_local_declaration_t *clone_local_declaration(
 static node_t *clone_node(
     arena_context_t *arena_context, const node_t *source) {
   if (!source) return NULL;
+  if (!psx_syntax_node_kind_is_valid(source->kind) ||
+      ps_node_get_type(source) ||
+      ps_node_qual_type(source).type_id != PSX_TYPE_ID_INVALID ||
+      psx_resolution_node_kind(source) !=
+          (psx_resolution_node_kind_t)source->kind)
+    return NULL;
   size_t size = node_storage_size(source);
   node_t *copy = psx_resolution_node_alloc_in(
       arena_context, size);
@@ -464,17 +419,6 @@ static node_t *clone_node(
       assertion->condition = clone_node(
           arena_context, source_assertion->condition);
       if (source_assertion->condition && !assertion->condition)
-        return NULL;
-      break;
-    }
-    case ND_VLA_ALLOC: {
-      node_vla_alloc_t *allocation = (node_vla_alloc_t *)copy;
-      const node_vla_alloc_t *source_allocation =
-          (const node_vla_alloc_t *)source;
-      allocation->runtime_plan = clone_vla_runtime_plan(
-          arena_context, source_allocation->runtime_plan);
-      if (source_allocation->runtime_plan &&
-          !allocation->runtime_plan)
         return NULL;
       break;
     }
@@ -515,21 +459,6 @@ static node_t *clone_node(
       if (!copy->rhs)
         copy->rhs = clone_node(arena_context, source->rhs);
       if (source->rhs && !copy->rhs) return NULL;
-      break;
-    }
-    case ND_FUNCDEF: {
-      const node_function_definition_t *source_function =
-          (const node_function_definition_t *)source;
-      node_function_definition_t *function =
-          (node_function_definition_t *)copy;
-      function->parameters = clone_node_array(
-          arena_context, source_function->parameters,
-          source_function->parameter_count > 0
-              ? (size_t)source_function->parameter_count : 0,
-          1);
-      if (source_function->parameter_count > 0 &&
-          !function->parameters)
-        return NULL;
       break;
     }
     case ND_FUNCALL: {

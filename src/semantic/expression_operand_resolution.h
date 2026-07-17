@@ -2,6 +2,7 @@
 #define SEMANTIC_EXPRESSION_OPERAND_RESOLUTION_H
 
 #include "../parser/ast.h"
+#include "resolved_node_kind.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_type_t psx_type_t;
@@ -17,10 +18,10 @@ const psx_type_t *psx_resolve_indirection_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand);
 const psx_type_t *psx_resolve_arithmetic_unary_result_type(
     psx_semantic_context_t *semantic_context,
-    psx_work_node_kind_t kind, node_t *operand);
+    psx_resolution_node_kind_t kind, node_t *operand);
 const psx_type_t *psx_resolve_binary_result_type(
     psx_semantic_context_t *semantic_context,
-    psx_work_node_kind_t kind, node_t *lhs, node_t *rhs);
+    psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs);
 const psx_type_t *psx_resolve_conditional_result_type(
     psx_semantic_context_t *semantic_context,
     node_t *then_expr, node_t *else_expr);

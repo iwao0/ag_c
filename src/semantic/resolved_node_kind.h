@@ -1,11 +1,15 @@
 #ifndef SEMANTIC_RESOLVED_NODE_KIND_H
 #define SEMANTIC_RESOLVED_NODE_KIND_H
 
+#include "../parser/node_fwd.h"
+#include "../parser/syntax_node_kind.h"
+
 /*
  * Resolver/lowering-created working node kinds. Values are kept outside the
  * Syntax AST range so accidental cross-phase construction is easy to detect.
  */
 typedef enum {
+  PSX_RESOLVED_NODE_INVALID = 0,
   ND_FUNCDEF = 0x1000,
   ND_LVAR,
   ND_FUNCREF,
@@ -16,5 +20,12 @@ typedef enum {
   ND_INT_TO_FP,
   ND_VA_ARG_AREA,
 } psx_resolved_node_kind_t;
+
+typedef int psx_resolution_node_kind_t;
+
+psx_resolution_node_kind_t psx_resolution_node_kind(
+    const node_t *node);
+int psx_resolution_node_set_kind(
+    node_t *node, psx_resolved_node_kind_t kind);
 
 #endif

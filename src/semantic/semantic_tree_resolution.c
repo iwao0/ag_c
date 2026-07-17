@@ -206,7 +206,7 @@ int psx_resolve_function_semantic_tree_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, work_tree, fallback_diag_tok,
           0, &function) ||
-      function->kind != ND_FUNCDEF)
+      psx_resolution_node_kind(function) != ND_FUNCDEF)
     return 0;
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;

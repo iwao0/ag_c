@@ -31,7 +31,7 @@ static tk_float_kind_t node_fp_kind(node_t *node) {
               : TK_FLOAT_KIND_NONE;
 }
 
-static psx_work_node_kind_t resolved_node_kind(const node_t *node) {
+static psx_resolution_node_kind_t resolved_node_kind(const node_t *node) {
   return psx_resolved_object_ref_node_kind(node);
 }
 
@@ -423,7 +423,7 @@ static void warn_function(
               diagnostics, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
           psx_function_call_direct_name_length(call), direct_name);
     }
-  } else if (node->kind == ND_FUNCDEF &&
+  } else if (resolved_node_kind(node) == ND_FUNCDEF &&
              ps_node_is_implicit_int_return(node)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_IMPLICIT_INT_RETURN,
@@ -463,7 +463,7 @@ static void emit_node_warning(
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
-  switch (node->kind) {
+  switch (resolved_node_kind(node)) {
     case ND_ASSIGN:
       warn_assignment(
           semantic_context, diagnostics, node, fallback_diag_tok);
@@ -532,7 +532,7 @@ static void emit_warning_tree(
   emit_node_warning(
       semantic_context, diagnostics, node, current_func,
       fallback_diag_tok);
-  switch (node->kind) {
+  switch (resolved_node_kind(node)) {
     case ND_BLOCK:
       emit_warning_array(
           semantic_context, diagnostics, ((node_block_t *)node)->body,

@@ -8,7 +8,8 @@
 static int node_is_single_tag_array_view(node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   return node &&
-         (node->kind == ND_UNARY_DEREF || node->kind == ND_DEREF) && type &&
+         (node->kind == ND_UNARY_DEREF ||
+          psx_resolution_node_kind(node) == ND_DEREF) && type &&
          type->kind == PSX_TYPE_ARRAY && type->base &&
          ps_type_is_tag_aggregate(type->base);
 }
@@ -78,7 +79,7 @@ void psx_resolve_member_access(
   if (!request->from_pointer && base_is_pointer &&
       (node_is_single_tag_array_view(request->base) ||
        request->base->kind == ND_UNARY_DEREF ||
-       request->base->kind == ND_DEREF)) {
+       psx_resolution_node_kind(request->base) == ND_DEREF)) {
     base_is_pointer = 0;
   }
   if (!object_type ||

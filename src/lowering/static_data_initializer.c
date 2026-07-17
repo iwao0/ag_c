@@ -109,10 +109,11 @@ static int resolve_static_address_constant(
       if (node->lhs &&
           (node->lhs->kind == ND_SUBSCRIPT ||
            node->lhs->kind == ND_MEMBER_ACCESS ||
-           node->lhs->kind == ND_DEREF))
+           psx_resolution_node_kind(node->lhs) == ND_DEREF))
         return resolve_static_address_constant(
             lowering_context,
-            node->lhs->kind == ND_DEREF ? node->lhs->lhs : node->lhs,
+            psx_resolution_node_kind(node->lhs) == ND_DEREF
+                ? node->lhs->lhs : node->lhs,
             symbol, symbol_len, offset);
       break;
     case ND_SUBSCRIPT: {

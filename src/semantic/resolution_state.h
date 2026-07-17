@@ -3,6 +3,7 @@
 
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
+#include "resolved_node_kind.h"
 
 struct global_var_t;
 struct lvar_t;
@@ -131,6 +132,7 @@ typedef struct psx_type_name_resolution_state_t {
 } psx_type_name_resolution_state_t;
 
 typedef struct psx_node_resolution_state_t {
+  psx_resolved_node_kind_t node_kind;
   const psx_type_t *type;
   psx_qual_type_t qual_type;
   psx_expr_type_state_t expr;
