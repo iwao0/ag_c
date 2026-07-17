@@ -257,9 +257,10 @@ double psx_eval_const_fp(node_t *node, int *ok) {
 int psx_resolve_static_address_constant(
     node_t *node, char **symbol, int *symbol_len, long long *offset) {
   if (!node || !symbol || !symbol_len || !offset) return 0;
-  switch (node->kind) {
+  switch (psx_resolved_object_ref_node_kind(node)) {
     case ND_ADDR:
-      if (node->lhs && node->lhs->kind == ND_GVAR) {
+      if (node->lhs &&
+          psx_resolved_object_ref_node_kind(node->lhs) == ND_GVAR) {
         *symbol = psx_resolved_object_ref_name(
             node->lhs, symbol_len);
         if (!*symbol) return 0;

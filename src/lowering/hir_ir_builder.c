@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include "abi_lowering.h"
-#include "ir_builder.h"
 #include "../diag/diag.h"
 #include "../parser/type.h"
 #include "../semantic/type_identity.h"

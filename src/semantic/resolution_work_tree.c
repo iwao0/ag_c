@@ -444,9 +444,6 @@ static node_t *clone_node(
       arena_context, size);
   if (!copy) return NULL;
   memcpy(copy, source, size);
-  if (!ps_node_copy_resolution_state_in(
-          arena_context, copy, source))
-    return NULL;
   copy->lhs = clone_node(arena_context, source->lhs);
   copy->rhs = source->kind == ND_STMT_EXPR
                   ? NULL
@@ -622,18 +619,45 @@ static node_t *clone_node(
   return copy;
 }
 
-psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
-    arena_context_t *arena_context, const node_t *syntax_root) {
-  if (!arena_context || !syntax_root) return NULL;
+static psx_resolution_work_tree_t *create_work_tree(
+    arena_context_t *arena_context, node_t *compatibility_root) {
+  if (!arena_context || !compatibility_root) return NULL;
   psx_resolution_work_tree_t *tree = arena_alloc_in(
       arena_context, sizeof(*tree));
   if (!tree) return NULL;
-  tree->compatibility_root = clone_node(arena_context, syntax_root);
+  tree->compatibility_root = compatibility_root;
   tree->semantic_tree = psx_semantic_tree_create(arena_context);
-  if (!tree->compatibility_root || !tree->semantic_tree) return NULL;
+  if (!tree->semantic_tree) return NULL;
   tree->typed_hir = NULL;
   tree->phase = PSX_RESOLUTION_WORK_CLONED;
   return tree;
+}
+
+psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
+    arena_context_t *arena_context, const node_t *syntax_root) {
+  if (!arena_context || !syntax_root) return NULL;
+  return create_work_tree(
+      arena_context, clone_node(arena_context, syntax_root));
+}
+
+psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_function_seed(
+    arena_context_t *arena_context,
+    const node_function_definition_t *function_seed) {
+  if (!arena_context || !function_seed ||
+      function_seed->base.kind != ND_FUNCDEF)
+    return NULL;
+  node_function_definition_t *copy =
+      (node_function_definition_t *)clone_node(
+          arena_context, &function_seed->base);
+  if (!copy) return NULL;
+  for (int i = 0; i < function_seed->parameter_count; i++) {
+    if (!function_seed->parameters[i] || !copy->parameters[i] ||
+        !ps_node_copy_resolution_state_in(
+            arena_context, copy->parameters[i],
+            function_seed->parameters[i]))
+      return NULL;
+  }
+  return create_work_tree(arena_context, &copy->base);
 }
 
 node_t *psx_resolution_work_tree_compatibility_root_mut(

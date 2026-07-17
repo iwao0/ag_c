@@ -38,10 +38,16 @@ typedef struct {
 int psx_apply_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result);
+int psx_apply_resolved_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result);
 int psx_begin_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result);
 int psx_finish_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result);
+int psx_finish_resolved_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result);
 

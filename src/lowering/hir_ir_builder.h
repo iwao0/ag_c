@@ -3,7 +3,7 @@
 
 #include "../hir/hir.h"
 #include "../ir/ir.h"
-#include "ir_builder.h"
+#include "ir_build_options.h"
 
 typedef enum {
   IR_HIR_BUILD_OK = 0,

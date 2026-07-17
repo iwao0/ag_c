@@ -148,9 +148,23 @@ const earlyTypeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
 );
+const syntaxWorkTreeFactory = resolutionWorkTree.match(
+  /psx_resolution_work_tree_t\s*\*psx_resolution_work_tree_create_from_syntax\s*\([^]*?\n\}/,
+);
+const functionSeedWorkTreeFactory = resolutionWorkTree.match(
+  /psx_resolution_work_tree_t\s*\*psx_resolution_work_tree_create_from_function_seed\s*\([^]*?\n\}/,
+);
 if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
     !/\bclone_type_name_syntax\s*\(/.test(resolutionWorkTree) ||
     !/\bclone_parsed_declarator\s*\(/.test(resolutionWorkTree) ||
+    !syntaxWorkTreeFactory ||
+    /\bps_node_copy_resolution_state_in\s*\(/.test(
+      syntaxWorkTreeFactory[0],
+    ) ||
+    !functionSeedWorkTreeFactory ||
+    !/function_seed->parameters\s*\[i\][^]*?ps_node_copy_resolution_state_in\s*\([^]*?copy->parameters\s*\[i\]/.test(
+      functionSeedWorkTreeFactory[0],
+    ) ||
     /\b(?:bound_base_type|resolved_type)\s*;/.test(astHeader) ||
     !/\bpsx_type_name_resolution_state_t\s+type_name\s*;/.test(
       earlyNodeResolutionState,
@@ -934,6 +948,10 @@ const irBuilderHeader = await readFile(
   "src/lowering/ir_builder.h",
   "utf8",
 );
+const irBuildOptionsHeader = await readFile(
+  "src/lowering/ir_build_options.h",
+  "utf8",
+);
 if (/\bps_node_atomic_pointer_info\s*\(/.test(
       `${parserLayerSource}\n${loweringLayerSource}`,
     ) ||
@@ -1156,7 +1174,7 @@ const irTargetOnlyEntryBodies = [
   ),
 ];
 if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
-      irBuilderHeader,
+      irBuildOptionsHeader,
     ) ||
     !/ctx->configured_continuation/.test(irBuilderSource) ||
     !/ctx->continuation\s*=\s*NULL\s*;[\s\S]*?ctx->continuation_while\s*=\s*NULL\s*;/.test(
@@ -4672,6 +4690,15 @@ if (/\blower_aggregate_address_expression\s*\(/.test(
 if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       compoundLiteralLoweringHeader,
     ) ||
+    !/\bpsx_apply_resolved_global_declaration_pipeline\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    /\bpsx_apply_global_declaration_pipeline\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/initializer_is_resolved\s*\?\s*psx_build_static_aggregate_initializer_plan\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
     /\blower_compound_literal_expression_in_contexts\s*\(/.test(
       compoundLiteralLoweringSource,
     ) ||
@@ -6356,10 +6383,10 @@ if (!aggregateWalkerLayoutSection ||
       /ctx\.record_decls\s*=\s*options\s*\?\s*options->record_decls\s*:\s*NULL\s*;/g,
     ) ?? []).length !== 2 ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*semantic_types\s*;/.test(
-      irBuilderHeader,
+      irBuildOptionsHeader,
     ) ||
     !/\bconst\s+psx_record_decl_table_t\s*\*record_decls\s*;/.test(
-      irBuilderHeader,
+      irBuildOptionsHeader,
     ) ||
     !/\.semantic_types\s*=\s*ps_ctx_semantic_type_table_in\s*\(/.test(
       compilerMainSource,
@@ -7055,15 +7082,21 @@ if (!/int\s+psx_frontend_resolve_function_to_hir_in_session\s*\([^)]*psx_hir_nod
     "public function resolution must return a Typed HIR root instead of a semantic node tree",
   );
 }
-if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(hirIrBuilder) ||
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h|#include\s+"ir_builder\.h"/.test(hirIrBuilder) ||
     !/ir_build_function_module_from_hir\s*\(/.test(hirIrBuilder)) {
   throw new Error(
     "direct Typed HIR IR lowering must not depend on parser AST nodes",
   );
 }
 if (!/ir_build_function_module_from_hir\s*\(/.test(compilerMainSource) ||
-    /ir_build_function_module_with_options\s*\(|AG_(?:DISABLE|REQUIRE)_TYPED_HIR|translation_unit_legacy_ast/.test(
+    /ir_build_function_module_with_options\s*\(|#include\s+"lowering\/ir_builder\.h"|AG_(?:DISABLE|REQUIRE)_TYPED_HIR|translation_unit_legacy_ast/.test(
       compilerMainSource,
+    ) ||
+    !/COMPAT_AST_IR_SRCS\s*=\s*src\/lowering\/ir_builder\.c/.test(
+      makefileSource,
+    ) ||
+    !/LOWERING_SRCS\s*=\s*\$\(filter-out\s+\$\(COMPAT_AST_IR_SRCS\)/.test(
+      makefileSource,
     )) {
   throw new Error(
     "compiler function lowering must consume Typed HIR without an AST fallback",

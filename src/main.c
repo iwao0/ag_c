@@ -12,7 +12,6 @@
 #include "diag/diag.h"
 #include "ir/ir.h"
 #include "hir/hir.h"
-#include "lowering/ir_builder.h"
 #include "lowering/hir_ir_builder.h"
 #include "lowering/translation_unit_data_lowering.h"
 #include "arch/arm64_apple/arm64_apple_ir.h"

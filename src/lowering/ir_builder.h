@@ -11,25 +11,11 @@
 #ifndef AG_IR_BUILDER_H
 #define AG_IR_BUILDER_H
 
-#include "../continuation_options.h"
 #include "../ir/ir.h"
-#include "../target_info.h"
+#include "ir_build_options.h"
 
 struct node_t;
-typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
-typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
-typedef struct psx_record_decl_table_t psx_record_decl_table_t;
-typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 typedef void (*ir_emit_module_in_fn)(ir_module_t *module, void *context);
-
-typedef struct {
-  const ag_target_info_t *target;
-  const psx_semantic_type_table_t *semantic_types;
-  const psx_record_decl_table_t *record_decls;
-  const psx_record_layout_table_t *record_layouts;
-  const ag_continuation_options_t *continuation;
-  ag_diagnostic_context_t *diagnostic_context;
-} ir_build_options_t;
 
 /* AST 列 (NULL 終端) を IR モジュールに変換する。
  * 変換不可なら NULL を返す。エラーメッセージは stderr に出す。

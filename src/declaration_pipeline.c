@@ -3,6 +3,7 @@
 #include "diag/diag.h"
 #include "lowering/global_object_lowering.h"
 #include "lowering/local_object_lowering.h"
+#include "lowering/static_data_initializer.h"
 #include "lowering/static_local_lowering.h"
 #include "lowering/vla_lowering.h"
 #include "parser/decl.h"
@@ -171,9 +172,10 @@ int psx_begin_global_declaration_pipeline(
   return 1;
 }
 
-int psx_finish_global_declaration_pipeline(
+static int finish_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
-    psx_global_declaration_pipeline_result_t *result) {
+    psx_global_declaration_pipeline_result_t *result,
+    int initializer_is_resolved) {
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
       !request->lowering_context || !request->options ||
@@ -205,20 +207,30 @@ int psx_finish_global_declaration_pipeline(
       };
       psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
       if (initializer_resolution.is_aggregate_initializer) {
-        if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
-                request->semantic_context,
-                request->global_registry,
-                request->local_registry,
-                request->lowering_context,
-                request->options,
-                initializer_resolution.type,
-                initializer_resolution.initializer,
-                request->initializer->value_tok,
-                &aggregate_plan)) {
+        int planned = initializer_is_resolved
+                          ? psx_build_static_aggregate_initializer_plan(
+                                request->global_registry,
+                                request->lowering_context,
+                                initializer_resolution.type,
+                                (node_init_list_t *)
+                                    initializer_resolution.initializer,
+                                request->initializer->value_tok,
+                                &aggregate_plan)
+                          : psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
+                                request->semantic_context,
+                                request->global_registry,
+                                request->local_registry,
+                                request->lowering_context,
+                                request->options,
+                                initializer_resolution.type,
+                                initializer_resolution.initializer,
+                                request->initializer->value_tok,
+                                &aggregate_plan);
+        if (!planned) {
           return 0;
         }
         initializer_resolution.aggregate_plan = &aggregate_plan;
-      } else {
+      } else if (!initializer_is_resolved) {
         if (!psx_frontend_resolve_expression_to_hir_in_contexts(
                 request->semantic_context,
                 request->global_registry,
@@ -256,11 +268,30 @@ int psx_finish_global_declaration_pipeline(
   return 1;
 }
 
+int psx_finish_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result) {
+  return finish_global_declaration_pipeline(request, result, 0);
+}
+
+int psx_finish_resolved_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result) {
+  return finish_global_declaration_pipeline(request, result, 1);
+}
+
 int psx_apply_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result) {
   if (!psx_begin_global_declaration_pipeline(request, result)) return 0;
   return psx_finish_global_declaration_pipeline(request, result);
+}
+
+int psx_apply_resolved_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result) {
+  if (!psx_begin_global_declaration_pipeline(request, result)) return 0;
+  return psx_finish_resolved_global_declaration_pipeline(request, result);
 }
 
 static void diagnose_function_declaration(

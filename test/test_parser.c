@@ -428,8 +428,6 @@ static int test_type_alignof_for_target(
   psx_node_new_gvar_array_base_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_static_local_gvar_for(...) \
   psx_node_new_static_local_gvar_for_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_clone_lvalue_with_lhs(...) \
-  ps_node_clone_lvalue_with_lhs_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_vla_runtime(...) \
   ps_node_new_vla_runtime_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_assign(...) \

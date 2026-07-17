@@ -7,9 +7,13 @@
 
 typedef struct psx_resolved_hir_build_failure_t
     psx_resolved_hir_build_failure_t;
+typedef struct node_function_definition_t node_function_definition_t;
 
 psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
     arena_context_t *arena_context, const node_t *syntax_root);
+psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_function_seed(
+    arena_context_t *arena_context,
+    const node_function_definition_t *function_seed);
 node_t *psx_resolution_work_tree_compatibility_root_mut(
     psx_resolution_work_tree_t *tree);
 const node_t *psx_resolution_work_tree_compatibility_root(

@@ -57,8 +57,9 @@ psx_frontend_resolve_function_work_tree_in_session(
     return NULL;
   }
   psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-      ag_compilation_session_arena_context(session), syntax_function);
+      psx_resolution_work_tree_create_from_function_seed(
+          ag_compilation_session_arena_context(session),
+          (const node_function_definition_t *)syntax_function);
   if (!work_tree) {
     ag_diagnostic_context_t *diagnostics =
         ag_compilation_session_diagnostic_context(session);
