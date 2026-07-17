@@ -68,6 +68,7 @@
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/semantic_tree_resolution.h"
 #include "../src/semantic/semantic_tree_resolution_internal.h"
+#include "../src/semantic/syntax_typed_hir_resolution.h"
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
@@ -2131,6 +2132,209 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(ND_EQ, logical_not->kind);
   ASSERT_EQ(ND_NUM, logical_not->rhs->kind);
   ASSERT_TRUE(ps_node_get_type(logical_not->rhs) == NULL);
+}
+
+static void test_direct_literal_typed_hir_resolution_boundary() {
+  printf("test_direct_literal_typed_hir_resolution_boundary...\n");
+  reset_test_translation_unit_state();
+
+  node_t *integer =
+      parse_expr_input_with_existing_locals("17UL");
+  ASSERT_EQ(ND_NUM, integer->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(integer));
+  const psx_typed_hir_tree_t *typed_integer = NULL;
+  psx_resolved_hir_build_failure_t failure = {0};
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), integer,
+          &typed_integer, &failure));
+  ASSERT_TRUE(typed_integer != NULL);
+  ASSERT_EQ(ND_NUM, integer->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(integer));
+  ASSERT_TRUE(ps_node_get_type(integer) == NULL);
+
+  psx_hir_module_t *hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t integer_id = psx_typed_hir_tree_emit(
+      hir, typed_integer, &failure);
+  ASSERT_TRUE(integer_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *integer_hir =
+      psx_hir_module_lookup(hir, integer_id);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(integer_hir));
+  ASSERT_EQ(17, psx_hir_node_integer_value(integer_hir));
+  psx_qual_type_t integer_type =
+      psx_hir_node_qual_type(integer_hir);
+  ASSERT_TRUE(integer_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_type_by_id_in(
+                  test_semantic_context(), integer_type.type_id) != NULL);
+  psx_hir_module_destroy(hir);
+
+  node_t *string =
+      parse_expr_input_with_existing_locals("\"direct\"");
+  ASSERT_EQ(ND_STRING, string->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(string));
+  ASSERT_TRUE(psx_string_literal_label(
+                  (const node_string_t *)string) == NULL);
+  const psx_typed_hir_tree_t *typed_string = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), string,
+          &typed_string, &failure));
+  ASSERT_TRUE(typed_string != NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(string));
+  ASSERT_TRUE(ps_node_get_type(string) == NULL);
+  ASSERT_TRUE(psx_string_literal_label(
+                  (const node_string_t *)string) == NULL);
+
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t string_id = psx_typed_hir_tree_emit(
+      hir, typed_string, &failure);
+  ASSERT_TRUE(string_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *string_hir =
+      psx_hir_module_lookup(hir, string_id);
+  ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(string_hir));
+  size_t label_length = 0;
+  ASSERT_TRUE(psx_hir_node_name(
+                  string_hir, &label_length) != NULL);
+  ASSERT_TRUE(label_length > 0);
+  size_t literal_length = 0;
+  ASSERT_TRUE(psx_hir_node_literal_contents(
+                  string_hir, &literal_length) != NULL);
+  ASSERT_EQ(6, literal_length);
+  ASSERT_TRUE(psx_hir_node_qual_type(string_hir).type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_hir_module_destroy(hir);
+
+  node_t *addition =
+      parse_expr_input_with_existing_locals("1 + 2 * 3");
+  const psx_typed_hir_tree_t *typed_addition = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), addition,
+          &typed_addition, &failure));
+  ASSERT_TRUE(typed_addition != NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(addition));
+  ASSERT_TRUE(ps_node_get_type(addition) == NULL);
+  ASSERT_TRUE(ps_node_get_type(addition->lhs) == NULL);
+  ASSERT_TRUE(ps_node_get_type(addition->rhs) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t addition_id = psx_typed_hir_tree_emit(
+      hir, typed_addition, &failure);
+  ASSERT_TRUE(addition_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *addition_hir =
+      psx_hir_module_lookup(hir, addition_id);
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(addition_hir));
+  ASSERT_EQ(2, psx_hir_node_child_count(addition_hir));
+  const psx_hir_node_t *product_hir = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(addition_hir, 1));
+  ASSERT_EQ(PSX_HIR_MUL, psx_hir_node_kind(product_hir));
+  ASSERT_TRUE(psx_hir_node_qual_type(addition_hir).type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_hir_module_destroy(hir);
+
+  node_t *conditional =
+      parse_expr_input_with_existing_locals(
+          "-(1 + 2) ? 4L : 5");
+  ASSERT_EQ(ND_TERNARY, conditional->kind);
+  node_ctrl_t *conditional_syntax =
+      (node_ctrl_t *)conditional;
+  const psx_typed_hir_tree_t *typed_conditional = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), conditional,
+          &typed_conditional, &failure));
+  ASSERT_TRUE(typed_conditional != NULL);
+  ASSERT_EQ(ND_TERNARY, conditional->kind);
+  ASSERT_EQ(ND_UNARY_NEGATE, conditional->lhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(conditional));
+  ASSERT_TRUE(ps_node_get_type(conditional) == NULL);
+  ASSERT_TRUE(ps_node_get_type(conditional->lhs) == NULL);
+  ASSERT_TRUE(ps_node_get_type(conditional->rhs) == NULL);
+  ASSERT_TRUE(ps_node_get_type(conditional_syntax->els) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t conditional_id = psx_typed_hir_tree_emit(
+      hir, typed_conditional, &failure);
+  ASSERT_TRUE(conditional_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *conditional_hir =
+      psx_hir_module_lookup(hir, conditional_id);
+  ASSERT_EQ(PSX_HIR_TERNARY,
+            psx_hir_node_kind(conditional_hir));
+  ASSERT_EQ(3, psx_hir_node_child_count(conditional_hir));
+  ASSERT_EQ(PSX_HIR_EDGE_LHS,
+            psx_hir_node_child_edge_at(conditional_hir, 0));
+  ASSERT_EQ(PSX_HIR_EDGE_RHS,
+            psx_hir_node_child_edge_at(conditional_hir, 1));
+  ASSERT_EQ(PSX_HIR_EDGE_ELSE,
+            psx_hir_node_child_edge_at(conditional_hir, 2));
+  const psx_hir_node_t *negate_hir = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(conditional_hir, 0));
+  ASSERT_EQ(PSX_HIR_NEGATE, psx_hir_node_kind(negate_hir));
+  psx_qual_type_t conditional_type =
+      psx_hir_node_qual_type(conditional_hir);
+  ASSERT_TRUE(conditional_type.type_id != PSX_TYPE_ID_INVALID);
+  const psx_type_t *canonical_conditional =
+      ps_ctx_type_by_id_in(
+          test_semantic_context(), conditional_type.type_id);
+  ASSERT_TRUE(canonical_conditional != NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            canonical_conditional->integer_kind);
+  psx_hir_module_destroy(hir);
+
+  node_t *mixed =
+      parse_expr_input_with_existing_locals("\"value\" + 1");
+  const psx_typed_hir_tree_t *unhandled = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_NOT_HANDLED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), mixed,
+          &unhandled, &failure));
+  ASSERT_TRUE(unhandled == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(mixed));
+
+  char enum_name[] = "DirectTypedEnum";
+  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      enum_name, 15, 41, NULL));
+  node_t *enum_syntax =
+      parse_expr_input_with_existing_locals(enum_name);
+  ASSERT_EQ(ND_IDENTIFIER, enum_syntax->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(enum_syntax));
+  const psx_typed_hir_tree_t *typed_enum = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), enum_syntax,
+          &typed_enum, &failure));
+  ASSERT_TRUE(typed_enum != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, enum_syntax->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(enum_syntax));
+  ASSERT_TRUE(ps_node_get_type(enum_syntax) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t enum_id = psx_typed_hir_tree_emit(
+      hir, typed_enum, &failure);
+  ASSERT_TRUE(enum_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *enum_hir =
+      psx_hir_module_lookup(hir, enum_id);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(enum_hir));
+  ASSERT_EQ(41, psx_hir_node_integer_value(enum_hir));
+  ASSERT_TRUE(psx_hir_node_qual_type(enum_hir).type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_hir_module_destroy(hir);
+  reset_test_translation_unit_state();
 }
 
 static node_t **parse_program_input(const char *input) {
@@ -23495,6 +23699,7 @@ int main() {
   test_compilation_session_owns_target_and_tokenizer();
   test_compilation_session_registry_isolation();
   test_syntax_literal_type_boundary();
+  test_direct_literal_typed_hir_resolution_boundary();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

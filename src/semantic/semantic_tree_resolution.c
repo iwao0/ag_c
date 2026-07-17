@@ -18,6 +18,7 @@
 #include "semantic_diagnostics.h"
 #include "semantic_invariants.h"
 #include "semantic_pass.h"
+#include "syntax_typed_hir_resolution.h"
 #include "typed_hir_materialization.h"
 
 static node_t *mutable_compatibility_root(
@@ -333,6 +334,29 @@ resolve_nonfunction_typed_hir_from_syntax_in_contexts(
     const node_t *syntax, const token_t *fallback_diag_tok,
     int is_initializer) {
   if (!semantic_context || !syntax) return NULL;
+  if (!is_initializer) {
+    const psx_typed_hir_tree_t *direct_typed_hir = NULL;
+    psx_resolved_hir_build_failure_t direct_failure;
+    psx_syntax_typed_hir_resolution_status_t direct_status =
+        psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+            semantic_context, global_registry, local_registry, syntax,
+            &direct_typed_hir, &direct_failure);
+    if (direct_status == PSX_SYNTAX_TYPED_HIR_RESOLVED)
+      return direct_typed_hir;
+    if (direct_status == PSX_SYNTAX_TYPED_HIR_FAILED) {
+      ag_diagnostic_context_t *diagnostics =
+          ps_ctx_diagnostics(semantic_context);
+      diag_emit_internalf_in(
+          diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+          "%s: direct Syntax to Typed HIR resolution failed "
+          "(status %d, node kind %d)",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+          (int)direct_failure.status,
+          direct_failure.source_node_kind);
+      return NULL;
+    }
+  }
   psx_resolution_work_tree_t *work_tree =
       psx_resolution_work_tree_create_from_syntax(
           ps_ctx_arena(semantic_context), syntax);

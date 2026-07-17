@@ -3274,6 +3274,14 @@ const literalResolutionSource = await readFile(
   "src/semantic/literal_resolution.c",
   "utf8",
 );
+const syntaxTypedHirResolutionHeader = await readFile(
+  "src/semantic/syntax_typed_hir_resolution.h",
+  "utf8",
+);
+const syntaxTypedHirResolutionSource = await readFile(
+  "src/semantic/syntax_typed_hir_resolution.c",
+  "utf8",
+);
 const nodeTypePublicSource = await readFile(
   "src/semantic/resolved_node_type.h",
   "utf8",
@@ -4950,6 +4958,7 @@ const typeBuilderUsers = new Set([
   "src/semantic/declaration_application.c",
   "src/semantic/type_name_resolution.c",
   "src/semantic/semantic_pass.c",
+  "src/semantic/literal_resolution.c",
   "src/semantic/generic_selection_resolution.c",
   "src/semantic/static_initializer_resolution.c",
   "src/semantic/type_query_resolution.c",
@@ -6714,14 +6723,102 @@ if (/\bps_type_new_[a-z0-9_]*\s*\(|\bps_node_bind_(?:type|qual_type)\s*\(|(?:->|
     /\bps_global_registry_next_(?:string|float)_literal_id\s*\(|\bpsx_register_(?:string|float)_lit_in\s*\(/.test(
       parserExpressionSource,
     ) ||
-    !/\bsemantic_resolve_number_literal\s*\([^]*?\bpsx_register_float_lit_in\s*\(/.test(
-      semanticPassSource,
+    !/\bpsx_resolve_number_literal_semantics_in_contexts\s*\([^]*?\bpsx_register_float_lit_in\s*\(/.test(
+      literalResolutionSource,
     ) ||
-    !/\bsemantic_resolve_string_literal\s*\([^]*?\bpsx_register_string_lit_in\s*\(/.test(
-      semanticPassSource,
+    !/\bpsx_resolve_string_literal_semantics_in_contexts\s*\([^]*?\bpsx_register_string_lit_in\s*\(/.test(
+      literalResolutionSource,
     )) {
   throw new Error(
     "expression parser must build typeless Syntax AST nodes without canonical type or literal-pool registration",
+  );
+}
+
+if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_resolve_string_literal_semantics_in_contexts\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_string_literal_semantics_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_builder_leaf_expression\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/can_resolve_integer_expression_directly\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_expression_qual_type\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_arithmetic_unary_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_binary_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_conditional_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /ps_type_(?:binary|conditional)_result_for_target_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_builder_expression\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_NOT_HANDLED/.test(
+      syntaxTypedHirResolutionHeader,
+    ) ||
+    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|ps_node_bind_|ps_node_resolution_state|ps_node_get_type|ps_node_qual_type/.test(
+      `${syntaxTypedHirResolutionHeader}\n${syntaxTypedHirResolutionSource}`,
+    ) ||
+    /\bsyntax(?:_expression)?->(?:kind|lhs|rhs|tok)\s*=(?!=)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_node_resolution_state|ps_node_bind_/.test(
+      literalResolutionSource.match(
+        /int\s+psx_resolve_number_literal_semantics_in_contexts\s*\([^]*?\n\}/,
+      )?.[0] ?? "",
+    ) ||
+    /psx_node_resolution_state|ps_node_bind_/.test(
+      literalResolutionSource.match(
+        /int\s+psx_resolve_string_literal_semantics_in_contexts\s*\([^]*?\n\}/,
+      )?.[0] ?? "",
+    )) {
+  throw new Error(
+    "literal semantics must be a Syntax-preserving value result shared by direct Typed HIR and compatibility resolution",
+  );
+}
+
+const sharedOperandTypeRuleCores = [
+  "resolve_arithmetic_unary_result_type_value",
+  "resolve_binary_result_type_value",
+  "resolve_conditional_result_type_value",
+];
+for (const core of sharedOperandTypeRuleCores) {
+  const calls = expressionOperandResolutionSource.match(
+    new RegExp(`\\b${core}\\s*\\(`, "g"),
+  ) ?? [];
+  if (calls.length !== 3) {
+    throw new Error(
+      `${core} must be the single type-rule core shared by QualType and compatibility-node adapters`,
+    );
+  }
+}
+const binaryTargetRuleCalls = expressionOperandResolutionSource.match(
+  /\bps_type_binary_result_for_target_in\s*\(/g,
+) ?? [];
+const conditionalTargetRuleCalls = expressionOperandResolutionSource.match(
+  /\bps_type_conditional_result_for_target_in\s*\(/g,
+) ?? [];
+if (binaryTargetRuleCalls.length !== 1 ||
+    conditionalTargetRuleCalls.length !== 1) {
+  throw new Error(
+    "operand result rules must be implemented once below the QualType and compatibility adapters",
   );
 }
 
@@ -7032,6 +7129,28 @@ const semanticMaterializationCalls =
   semanticTreeResolutionSource.match(
     /\bmaterialize_resolved_tree\s*\(/g,
   ) ?? [];
+const nonfunctionTypedResolutionStart =
+  semanticTreeResolutionSource.indexOf(
+    "resolve_nonfunction_typed_hir_from_syntax_in_contexts",
+  );
+const directSyntaxTypedHirDispatch =
+  semanticTreeResolutionSource.indexOf(
+    "psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts",
+    nonfunctionTypedResolutionStart,
+  );
+const compatibilityWorkTreeFallback =
+  semanticTreeResolutionSource.indexOf(
+    "psx_resolution_work_tree_create_from_syntax",
+    nonfunctionTypedResolutionStart,
+  );
+if (nonfunctionTypedResolutionStart < 0 ||
+    directSyntaxTypedHirDispatch < nonfunctionTypedResolutionStart ||
+    compatibilityWorkTreeFallback < 0 ||
+    directSyntaxTypedHirDispatch > compatibilityWorkTreeFallback) {
+  throw new Error(
+    "expression resolution must attempt direct Syntax to Typed HIR before the compatibility work-tree fallback",
+  );
+}
 if (!parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||

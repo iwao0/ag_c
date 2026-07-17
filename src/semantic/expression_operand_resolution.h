@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "resolved_node_kind.h"
+#include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_type_t psx_type_t;
@@ -31,6 +32,20 @@ const psx_type_t *psx_resolve_address_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand);
 const psx_type_t *psx_resolve_incdec_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand);
+
+psx_qual_type_t psx_resolve_arithmetic_unary_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_resolution_node_kind_t kind,
+    psx_qual_type_t operand_type);
+psx_qual_type_t psx_resolve_binary_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_resolution_node_kind_t kind,
+    psx_qual_type_t lhs_type,
+    psx_qual_type_t rhs_type);
+psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t then_type,
+    psx_qual_type_t else_type);
 
 typedef enum {
   PSX_SUBSCRIPT_OPERANDS_OK = 0,
