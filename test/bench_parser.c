@@ -1,7 +1,5 @@
-#include "../src/parser/parser.h"
 #include "../src/compilation_session.h"
 #include "../src/frontend/translation_unit.h"
-#include "../src/frontend/legacy_ast_api.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -37,13 +35,6 @@ static double elapsed_sec(struct timespec start, struct timespec end) {
   return s + ns;
 }
 
-static size_t count_funcs(node_t **nodes) {
-  size_t n = 0;
-  if (!nodes) return 0;
-  while (nodes[n]) n++;
-  return n;
-}
-
 static void run_case(
     ag_compilation_session_t *session, const char *name,
     const char *pattern, size_t bytes) {
@@ -59,11 +50,24 @@ static void run_case(
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
-  node_t **code = psx_frontend_legacy_program_ast_in_session(
-      session, NULL, tk_get_current_token());
+  psx_frontend_stream_t stream = {0};
+  size_t funcs = 0;
+  if (!psx_frontend_reset_translation_unit_state_in_session(session) ||
+      !psx_frontend_stream_begin(
+          &stream, session, NULL, tk_get_current_token())) {
+    fprintf(stderr, "failed to start frontend benchmark\n");
+    free(input);
+    exit(1);
+  }
+  psx_frontend_function_t function;
+  while (psx_frontend_next_function(&stream, &function)) funcs++;
+  if (!psx_frontend_stream_end(&stream)) {
+    fprintf(stderr, "failed to finish frontend benchmark\n");
+    free(input);
+    exit(1);
+  }
   clock_gettime(CLOCK_MONOTONIC, &t_par1);
 
-  size_t funcs = count_funcs(code);
   double tok_sec = elapsed_sec(t_tok0, t_tok1);
   double par_sec = elapsed_sec(t_par0, t_par1);
   double par_mbps = par_sec > 0.0 ? ((double)strlen(input) / (1024.0 * 1024.0)) / par_sec : 0.0;

@@ -1,5 +1,4 @@
-#include "translation_unit.h"
-#include "legacy_ast_api.h"
+#include "translation_unit_internal.h"
 
 #include "../diag/diag.h"
 #include "../declaration_pipeline.h"
@@ -22,7 +21,6 @@
 #include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/stmt_legacy.h"
-#include <stdlib.h>
 #include <string.h>
 
 static int frontend_session_is_complete(
@@ -202,7 +200,7 @@ int psx_frontend_stream_begin(
   return 1;
 }
 
-static int frontend_next_function_internal(
+int psx_frontend_next_function_work_tree(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result,
     psx_resolution_work_tree_t **work_tree) {
   if (result) result->hir_root = PSX_HIR_NODE_ID_INVALID;
@@ -324,7 +322,8 @@ static int frontend_next_function_internal(
 
 int psx_frontend_next_function(
     psx_frontend_stream_t *stream, psx_frontend_function_t *result) {
-  return frontend_next_function_internal(stream, result, NULL);
+  return psx_frontend_next_function_work_tree(
+      stream, result, NULL);
 }
 
 int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
@@ -350,51 +349,4 @@ int psx_frontend_free_processed_ast_in_session(
   if (!frontend_session_is_complete(session)) return 0;
   arena_free_all_in(ag_compilation_session_arena_context(session));
   return 1;
-}
-
-node_t **psx_frontend_legacy_program_ast_in_session(
-    ag_compilation_session_t *session,
-    tokenizer_context_t *tk_ctx, token_t *start) {
-  psx_frontend_stream_t stream = {0};
-  if (!psx_frontend_stream_begin(
-          &stream, session, tk_ctx, start)) {
-    return NULL;
-  }
-  int capacity = 16;
-  int count = 0;
-  node_t **program = calloc((size_t)capacity, sizeof(*program));
-  if (!program) {
-    psx_frontend_stream_end(&stream);
-    return NULL;
-  }
-  psx_frontend_function_t frontend_function;
-  psx_resolution_work_tree_t *work_tree = NULL;
-  while (frontend_next_function_internal(
-      &stream, &frontend_function, &work_tree)) {
-    node_t *function =
-        psx_resolution_work_tree_export_compatibility_ast(work_tree);
-    if (!function) {
-      free(program);
-      psx_frontend_stream_end(&stream);
-      return NULL;
-    }
-    if (count >= capacity - 1) {
-      capacity *= 2;
-      node_t **grown = realloc(
-          program, (size_t)capacity * sizeof(*program));
-      if (!grown) {
-        free(program);
-        psx_frontend_stream_end(&stream);
-        return NULL;
-      }
-      program = grown;
-    }
-    program[count++] = function;
-  }
-  program[count] = NULL;
-  if (!psx_frontend_stream_end(&stream)) {
-    free(program);
-    return NULL;
-  }
-  return program;
 }

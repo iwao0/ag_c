@@ -41,9 +41,9 @@
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/semantic_pipeline_internal.h"
-#include "../src/frontend/legacy_ast_api.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/frontend/translation_unit_internal.h"
 #include "../src/hir/hir.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
@@ -67,6 +67,7 @@
 #include "../src/semantic/identifier_binding.h"
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_pass.h"
+#include "../src/semantic/semantic_tree_resolution.h"
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
@@ -1162,8 +1163,48 @@ static void reset_test_translation_unit_state(void) {
 }
 
 static node_t **parse_test_program_from(token_t *start) {
-  return psx_frontend_legacy_program_ast_in_session(
-      test_suite_session, NULL, start);
+  psx_frontend_stream_t stream = {0};
+  if (!psx_frontend_stream_begin(
+          &stream, test_suite_session, NULL, start))
+    return NULL;
+  int capacity = 16;
+  int count = 0;
+  node_t **program = calloc(
+      (size_t)capacity, sizeof(*program));
+  if (!program) {
+    psx_frontend_stream_end(&stream);
+    return NULL;
+  }
+  psx_frontend_function_t frontend_function;
+  psx_resolution_work_tree_t *work_tree = NULL;
+  while (psx_frontend_next_function_work_tree(
+      &stream, &frontend_function, &work_tree)) {
+    node_t *function =
+        psx_resolution_work_tree_export_compatibility_ast(work_tree);
+    if (!function) {
+      free(program);
+      psx_frontend_stream_end(&stream);
+      return NULL;
+    }
+    if (count >= capacity - 1) {
+      capacity *= 2;
+      node_t **grown = realloc(
+          program, (size_t)capacity * sizeof(*program));
+      if (!grown) {
+        free(program);
+        psx_frontend_stream_end(&stream);
+        return NULL;
+      }
+      program = grown;
+    }
+    program[count++] = function;
+  }
+  program[count] = NULL;
+  if (!psx_frontend_stream_end(&stream)) {
+    free(program);
+    return NULL;
+  }
+  return program;
 }
 
 static node_t *parse_test_expression_from(token_t *start) {
@@ -1671,8 +1712,18 @@ static void prepare_test_decl_specifier_alignments(
 
 static node_t *analyze_test_expression(
     node_t *expression, const token_t *fallback_diag_tok) {
-  return psx_frontend_legacy_analyze_expression_ast_in_session(
-      test_suite_session, expression, fallback_diag_tok);
+  psx_resolution_work_tree_t *work_tree =
+      psx_resolution_work_tree_create_from_syntax(
+          test_arena_context(), expression);
+  if (!work_tree ||
+      !psx_resolve_expression_semantic_tree_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), test_lowering_context(),
+          ag_compilation_session_options_view(test_suite_session),
+          work_tree, fallback_diag_tok))
+    return NULL;
+  return psx_resolution_work_tree_export_compatibility_ast(
+      work_tree);
 }
 
 static node_t *lower_test_semantic_tree(node_t *expression) {

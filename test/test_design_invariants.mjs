@@ -1649,8 +1649,8 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
-const frontendLegacyAstHeader = await readFile(
-  "src/frontend/legacy_ast_api.h",
+const frontendTranslationUnitInternalHeader = await readFile(
+  "src/frontend/translation_unit_internal.h",
   "utf8",
 );
 if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_frontend_function_t\s*;/.test(
@@ -1668,15 +1668,16 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
     /node_t\s*\*\*\s*psx_frontend_/.test(
       frontendTranslationUnitHeader,
     ) ||
-    !/psx_frontend_legacy_program_ast_in_session/.test(
-      frontendLegacyAstHeader,
+    !/psx_frontend_next_function_work_tree\s*\(/.test(
+      frontendTranslationUnitInternalHeader,
     ) ||
-    !/psx_frontend_legacy_analyze_expression_ast_in_session/.test(
-      frontendLegacyAstHeader,
+    /psx_frontend_legacy_(?:program_ast|analyze_expression_ast)_in_session/.test(
+      frontendTranslationUnitSource,
     ) ||
+    allSourceFiles.includes("src/frontend/legacy_ast_api.h") ||
     /legacy_ast_api\.h/.test(compilerMainSource)) {
   throw new Error(
-    "frontend function iteration must expose only Typed HIR roots while AST-returning compatibility APIs stay isolated",
+    "production frontend APIs must expose only Typed HIR roots",
   );
 }
 const parserStreamHeader = await readFile("src/parser/parser.h", "utf8");
@@ -1715,7 +1716,7 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
       `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}`,
     ) ||
     /psx_frontend_legacy_|node_t\s*\*\s*psx_frontend_/.test(
-      semanticPipelineInternalHeader,
+      `${semanticPipelineSource}\n${semanticPipelineInternalHeader}`,
     ) ||
     /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
   throw new Error(

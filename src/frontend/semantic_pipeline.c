@@ -1,6 +1,5 @@
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"
-#include "legacy_ast_api.h"
 #include "function_definition.h"
 
 #include "../diag/diag.h"
@@ -208,38 +207,6 @@ void psx_frontend_expression_hir_dispose(
   *expression = (psx_frontend_expression_hir_t){
       .root = PSX_HIR_NODE_ID_INVALID,
   };
-}
-
-static node_t *analyze_expression_compatibility_ast_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax_expression,
-    const token_t *fallback_diag_tok) {
-  psx_resolution_work_tree_t *work_tree =
-      resolve_expression_work_tree_in_contexts(
-          semantic_context, global_registry, local_registry,
-          lowering_context, options, syntax_expression,
-          fallback_diag_tok);
-  if (!work_tree) return NULL;
-  return psx_resolution_work_tree_export_compatibility_ast(work_tree);
-}
-
-node_t *psx_frontend_legacy_analyze_expression_ast_in_session(
-    ag_compilation_session_t *session,
-    const node_t *syntax_expression,
-    const token_t *fallback_diag_tok) {
-  if (!ag_compilation_session_is_complete(session))
-    return (node_t *)syntax_expression;
-  return analyze_expression_compatibility_ast_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
-      ag_compilation_session_lowering_context(session),
-      ag_compilation_session_options_view(session),
-      syntax_expression, fallback_diag_tok);
 }
 
 static psx_resolution_work_tree_t *
