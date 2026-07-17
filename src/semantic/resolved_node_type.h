@@ -58,5 +58,11 @@ void ps_node_set_lvar_usage_region(
 lvar_t *ps_node_lvar_usage_symbol(const node_t *node);
 int ps_node_records_lvar_usage(const node_t *node);
 void ps_node_record_lvar_usage(node_t *node, lvar_t *local);
+int ps_node_is_decl_initializer(const node_t *node);
+void ps_node_set_decl_initializer(node_t *node, int enabled);
+int ps_node_is_implicit_int_return(const node_t *node);
+void ps_node_set_implicit_int_return(node_t *node, int enabled);
+int ps_node_widen_zext_i64(const node_t *node);
+void ps_node_set_widen_zext_i64(node_t *node, int enabled);
 
 #endif

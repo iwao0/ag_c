@@ -1433,7 +1433,7 @@ static node_t *new_decl_initializer_assign(
     node_t *target, node_t *value, token_t *tok) {
   node_t *assign = ps_node_new_assign_in(
       context->arena_context, target, value);
-  assign->is_decl_initializer = 1;
+  ps_node_set_decl_initializer(assign, 1);
   assign->tok = tok;
   return assign;
 }

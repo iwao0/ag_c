@@ -88,12 +88,13 @@ node_function_definition_t *psx_apply_function_definition_in_contexts(
 
   token_ident_t *name = definition->declarator.identifier;
   node_function_definition_t *node =
-      arena_alloc_in(ps_parser_runtime_arena(runtime_context),
-                     sizeof(node_function_definition_t));
+      psx_resolution_node_alloc_in(
+          ps_parser_runtime_arena(runtime_context),
+          sizeof(node_function_definition_t));
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)name;
-  node->base.is_implicit_int_return =
-      definition->has_implicit_int_return ? 1 : 0;
+  ps_node_set_implicit_int_return(
+      &node->base, definition->has_implicit_int_return);
   node->base.rhs = definition->body;
   node->name = name->str;
   node->name_len = name->len;

@@ -65,10 +65,7 @@ struct node_t {
   unsigned int lvar_usage_unevaluated : 1;
   unsigned int is_explicit_addr_expr : 1;
   unsigned int is_source_assignment : 1;
-  unsigned int is_decl_initializer : 1;
   unsigned int has_empty_body : 1;
-  unsigned int is_implicit_int_return : 1;
-  unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
   unsigned int is_source_compound_assignment : 1;
 };

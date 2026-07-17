@@ -101,6 +101,12 @@ typedef struct {
   unsigned char records_usage;
 } psx_lvar_usage_resolution_state_t;
 
+typedef struct {
+  unsigned char is_decl_initializer;
+  unsigned char is_implicit_int_return;
+  unsigned char widen_zext_i64;
+} psx_node_semantic_flags_t;
+
 typedef enum {
   PSX_RESOLVED_REFERENCE_NONE = 0,
   PSX_RESOLVED_REFERENCE_LOCAL,
@@ -138,6 +144,7 @@ typedef struct psx_node_resolution_state_t {
   psx_case_label_resolution_state_t case_label;
   psx_literal_resolution_state_t literal;
   psx_lvar_usage_resolution_state_t lvar_usage;
+  psx_node_semantic_flags_t flags;
   psx_resolved_reference_state_t reference;
   psx_type_name_resolution_state_t type_name;
 } psx_node_resolution_state_t;

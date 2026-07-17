@@ -96,7 +96,8 @@ static void warn_assignment(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || node->kind != ND_ASSIGN ||
-      (!node->is_source_assignment && !node->is_decl_initializer))
+      (!node->is_source_assignment &&
+       !ps_node_is_decl_initializer(node)))
     return;
   node_t *lhs = node->lhs;
   node_t *rhs = node->rhs;
@@ -113,13 +114,13 @@ static void warn_assignment(
   if (lhs && rhs && !ps_node_value_is_pointer_like(lhs) &&
       node_fp_kind(lhs) == TK_FLOAT_KIND_NONE &&
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
-    if (node->is_decl_initializer) {
+    if (ps_node_is_decl_initializer(node)) {
       warn_float_to_int(diagnostics, rhs, tok);
     } else {
       warn_float_to_int(diagnostics, rhs, tok);
     }
   }
-  if (node->is_decl_initializer)
+  if (ps_node_is_decl_initializer(node))
     warn_decl_initializer_overflow(
         semantic_context, diagnostics, lhs, rhs, tok);
 }
@@ -422,7 +423,8 @@ static void warn_function(
               diagnostics, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
           psx_function_call_direct_name_length(call), direct_name);
     }
-  } else if (node->kind == ND_FUNCDEF && node->is_implicit_int_return) {
+  } else if (node->kind == ND_FUNCDEF &&
+             ps_node_is_implicit_int_return(node)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_IMPLICIT_INT_RETURN,
         node->tok ? node->tok : fallback, "%s",

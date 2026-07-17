@@ -177,6 +177,42 @@ void ps_node_record_lvar_usage(node_t *node, lvar_t *local) {
   state->lvar_usage.records_usage = local ? 1 : 0;
 }
 
+int ps_node_is_decl_initializer(const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state && state->flags.is_decl_initializer;
+}
+
+void ps_node_set_decl_initializer(node_t *node, int enabled) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->flags.is_decl_initializer = enabled ? 1 : 0;
+}
+
+int ps_node_is_implicit_int_return(const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state && state->flags.is_implicit_int_return;
+}
+
+void ps_node_set_implicit_int_return(node_t *node, int enabled) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->flags.is_implicit_int_return = enabled ? 1 : 0;
+}
+
+int ps_node_widen_zext_i64(const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(node);
+  return state && state->flags.widen_zext_i64;
+}
+
+void ps_node_set_widen_zext_i64(node_t *node, int enabled) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(node);
+  if (state) state->flags.widen_zext_i64 = enabled ? 1 : 0;
+}
+
 size_t psx_resolution_node_storage_size(const node_t *node) {
   psx_work_resolution_state_binding_t *work =
       work_resolution_binding(node);

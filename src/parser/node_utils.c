@@ -2689,7 +2689,7 @@ node_t *ps_node_new_integer_cast_result_ex_in(
       arena_context, sizeof(node_t));
   wrap->kind = ND_CAST;
   wrap->lhs = operand;
-  wrap->widen_zext_i64 = widen_zext_i64 ? 1 : 0;
+  ps_node_set_widen_zext_i64(wrap, widen_zext_i64);
   return annotate_explicit_type(wrap, cast_type);
 }
 

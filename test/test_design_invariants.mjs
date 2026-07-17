@@ -148,10 +148,13 @@ if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
     /psx_resolution_work_tree_export_compatibility_ast/.test(
       `${resolutionWorkTree}\n${resolutionWorkTreeInternalHeader}`,
     ) ||
-    /\b(?:usage_region|usage_lvar|records_lvar_usage)\b/.test(
+    /\b(?:usage_region|usage_lvar|records_lvar_usage|widen_zext_i64|is_decl_initializer|is_implicit_int_return)\b/.test(
       astHeader,
     ) ||
     !/psx_lvar_usage_resolution_state_t\s+lvar_usage\s*;/.test(
+      earlyNodeResolutionState,
+    ) ||
+    !/psx_node_semantic_flags_t\s+flags\s*;/.test(
       earlyNodeResolutionState,
     ) ||
     /\b(?:bound_base_type|resolved_type)\s*;/.test(astHeader) ||

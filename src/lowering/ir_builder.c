@@ -2837,7 +2837,7 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   if (node_type && node_type->kind == PSX_TYPE_VOID) return ir_val_none();
   if (node_type && ps_type_is_tag_aggregate(node_type)) return v;
   int target_size = ir_node_type_size(ctx, node);
-  int widen_zext_i64 = node->widen_zext_i64 ? 1 : 0;
+  int widen_zext_i64 = ps_node_widen_zext_i64(node);
   int needs_i64_extend =
       !ps_node_value_is_pointer_like(node) && target_size >= 8;
   /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。

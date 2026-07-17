@@ -738,7 +738,8 @@ static int test_node_cast_i64_extension_info(
   if (!node) return 0;
   int size = test_node_type_size(node);
   if (target_size) *target_size = size;
-  if (widen_zext_i64) *widen_zext_i64 = node->widen_zext_i64 ? 1 : 0;
+  if (widen_zext_i64)
+    *widen_zext_i64 = ps_node_widen_zext_i64(node);
   if (needs_i64_extend) {
     *needs_i64_extend =
         !ps_node_value_is_pointer_like(node) && size >= 8;
@@ -6819,7 +6820,7 @@ static void test_implicit_conversion_hir_boundary() {
   node_block_t *main_body = as_block(as_function_definition(program[3])->base.rhs);
   node_t *decl_init = main_body->body[1];
   ASSERT_EQ(ND_ASSIGN, decl_init->kind);
-  ASSERT_TRUE(decl_init->is_decl_initializer);
+  ASSERT_TRUE(ps_node_is_decl_initializer(decl_init));
   ASSERT_EQ(ND_IDENTIFIER, decl_init->rhs->kind);
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(decl_init->rhs));
@@ -7460,8 +7461,8 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
-  ASSERT_TRUE(raw->lhs->is_decl_initializer);
-  ASSERT_TRUE(raw->rhs->is_decl_initializer);
+  ASSERT_TRUE(ps_node_is_decl_initializer(raw->lhs));
+  ASSERT_TRUE(ps_node_is_decl_initializer(raw->rhs));
   ASSERT_EQ(ND_NUM, raw->lhs->rhs->kind);
   ASSERT_EQ(ND_NUM, raw->rhs->rhs->kind);
 
@@ -10816,7 +10817,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, raw->rhs->kind);
   raw = resolve_and_lower_test_initializer(raw);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
-  ASSERT_TRUE(raw->is_decl_initializer);
+  ASSERT_TRUE(ps_node_is_decl_initializer(raw));
 
   psx_record_member_decl_t union_members[1] = {
       {.name = (char *)"value", .len = 5,
@@ -10855,7 +10856,7 @@ static void test_local_initializer_parse_lowering_boundary() {
             ((node_decl_init_t *)raw)->init_kind);
   raw = resolve_and_lower_test_initializer(raw);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
-  ASSERT_TRUE(raw->is_decl_initializer);
+  ASSERT_TRUE(ps_node_is_decl_initializer(raw));
   ASSERT_EQ(9, as_num(raw->rhs)->val);
 
   lvar_t *scalar = register_test_storage_fixture(

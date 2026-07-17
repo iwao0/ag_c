@@ -34,7 +34,7 @@ void psx_validate_assignment_in_context(
         "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
   }
 
-  if (node->is_decl_initializer) {
+  if (ps_node_is_decl_initializer(node)) {
     const psx_type_t *lhs_type = ps_node_get_type(node->lhs);
     int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
     ps_node_reject_const_qual_discard_at_in(
