@@ -1,6 +1,7 @@
 #include "wasm32_obj.h"
 #include "../../diag/diag.h"
 #include "../../lowering/abi_lowering.h"
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,6 +142,7 @@ struct wasm32_obj_context_t {
   unsigned char *emit_local_unsigned;
   int emit_local_count;
   const ir_abi_module_t *abi;
+  const ir_abi_data_module_t *data_abi;
 };
 
 static wasm32_obj_context_t default_wasm32_obj_context;
@@ -217,6 +219,7 @@ wasm32_obj_context_t *wasm32_obj_context_active(void) {
   (wasm32_obj_context_active()->emit_local_unsigned)
 #define g_emit_local_count (wasm32_obj_context_active()->emit_local_count)
 #define g_obj_abi (wasm32_obj_context_active()->abi)
+#define g_obj_data_abi (wasm32_obj_context_active()->data_abi)
 
 static ag_diagnostic_context_t *wasm32_obj_diagnostics(void) {
   return wasm32_obj_context_active()->diagnostic_context;
@@ -230,6 +233,11 @@ static const ir_abi_signature_t *obj_function_abi(
 static const ir_abi_signature_t *obj_call_abi(
     const ir_inst_t *call) {
   return ir_abi_call_signature(g_obj_abi, call);
+}
+
+static const ir_abi_signature_t *obj_reference_abi(
+    const ir_inst_t *reference) {
+  return ir_abi_reference_signature(g_obj_abi, reference);
 }
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
@@ -754,19 +762,20 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
   }
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_RESULT_AREA &&
+          i->dst.id >= 0 && i->dst.id < ntypes) {
+        force_vreg_i32(types, forced_i32, ntypes, i->dst);
+        continue;
+      }
       if (i->op != IR_PARAM || i->dst.id < 0 || i->dst.id >= ntypes ||
           i->src1.id != IR_VAL_IMM) {
         continue;
       }
-      if (i->src1.imm < 0) {
+      int ordinal = func_param_ordinal_for_inst(f, i);
+      ir_type_t pty = func_param_type_from_decl(f, ordinal, i->dst.type);
+      types[i->dst.id] = wasm_ir_type(pty);
+      if (pty == IR_TY_PTR) {
         force_vreg_i32(types, forced_i32, ntypes, i->dst);
-      } else {
-        int ordinal = func_param_ordinal_for_inst(f, i);
-        ir_type_t pty = func_param_type_from_decl(f, ordinal, i->dst.type);
-        types[i->dst.id] = wasm_ir_type(pty);
-        if (pty == IR_TY_PTR) {
-          force_vreg_i32(types, forced_i32, ntypes, i->dst);
-        }
       }
     }
   }
@@ -1159,7 +1168,7 @@ static int func_has_ret_area(ir_func_t *f) {
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
   const ir_abi_signature_t *abi = obj_function_abi(f);
   if (abi && idx >= 0 && (size_t)idx < abi->param_count) {
-    return abi->param_types[idx];
+    return abi->param_pieces[idx].type;
   }
   if (raw == IR_TY_PTR) return IR_TY_PTR;
   return raw;
@@ -1171,29 +1180,27 @@ static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_t
   return raw;
 }
 
-static obj_sig_t func_sig_from_callable_sig(
-    const ir_callable_sig_t *callable) {
-  if (!callable)
-    obj_unsupported_msg("missing IR function-pointer signature in Wasm object mode");
+static obj_sig_t func_sig_from_reference_abi(
+    const ir_abi_signature_t *abi) {
+  if (!abi || abi->param_count > INT_MAX)
+    obj_unsupported_msg("missing function-reference ABI in Wasm object mode");
   obj_sig_t sig = {
-      .result = wasm_ir_type(callable->result),
-      .nparams = callable->param_count,
+      .result = wasm_ir_type(abi->result.type),
+      .nparams = (int)abi->param_count,
   };
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
     for (int i = 0; i < sig.nparams; i++)
-      sig.params[i] = wasm_ir_type(callable->params[i]);
+      sig.params[i] = wasm_ir_type(abi->param_pieces[i].type);
   }
   return sig;
 }
 
 static obj_sig_t func_sig_from_ir_callable(const ir_inst_t *inst,
                                            const char *name, int name_len) {
-  if (!inst || !inst->has_callable_sig)
-    obj_unsupported_msg("missing IR function-pointer signature in Wasm object mode");
   (void)name;
   (void)name_len;
-  return func_sig_from_callable_sig(&inst->callable_sig);
+  return func_sig_from_reference_abi(obj_reference_abi(inst));
 }
 
 static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
@@ -1262,7 +1269,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       sig.params = xrealloc(
           NULL, (size_t)sig.nparams * sizeof(*sig.params));
       for (int a = 0; a < sig.nparams; a++)
-        sig.params[a] = wasm_ir_type(abi->param_types[a]);
+        sig.params[a] = wasm_ir_type(abi->param_pieces[a].type);
     }
     sig.result = wasm_ir_type(abi->result.type);
     if (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID) {
@@ -1293,7 +1300,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     if (has_ret_area) sig.params[0] = IR_TY_I32;
     int call_nargs = (int)abi->fixed_param_count;
     for (int a = 0; a < call_nargs; a++) {
-      ir_type_t arg_ty = abi->param_types[a];
+      ir_type_t arg_ty = abi->param_pieces[a].type;
       ir_type_t ty = wasm_ir_type(arg_ty);
       if (arg_ty == IR_TY_PTR)
         ty = IR_TY_I32;
@@ -1699,22 +1706,23 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         case IR_NOP:
         case IR_LABEL:
           break;
-        case IR_PARAM:
-          if (i->src1.id != IR_VAL_IMM) obj_unsupported_op(i->op);
-          int param_slot = 0;
-          if (i->src1.imm < 0) {
-            if (!has_ret_area) obj_unsupported_op(i->op);
-            param_slot = 0;
-          } else {
-            int ordinal = func_param_ordinal_for_inst(f, i);
-            if (ordinal < 0) obj_unsupported_op(i->op);
-            param_slot = ordinal + (has_ret_area ? 1 : 0);
-          }
+        case IR_PARAM: {
+          if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0)
+            obj_unsupported_op(i->op);
+          int ordinal = func_param_ordinal_for_inst(f, i);
+          if (ordinal < 0) obj_unsupported_op(i->op);
+          int param_slot = ordinal + (has_ret_area ? 1 : 0);
           emit_local_get(&body, param_slot);
           if (param_slot >= 0 && param_slot < of->sig.nparams) {
             emit_stack_cast(&body, of->sig.params[param_slot], actual_vreg_type(i->dst),
                             actual_vreg_unsigned(i->dst));
           }
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
+        case IR_RESULT_AREA:
+          if (!has_ret_area) obj_unsupported_op(i->op);
+          emit_local_get(&body, 0);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALLOCA: {
@@ -2699,11 +2707,11 @@ static void emit_obj_data_reloc(const ir_data_module_t *module,
   if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
     if (reloc->addend != 0)
       obj_unsupported_msg("function address addend in Wasm object mode");
-    if (!reloc->has_callable_sig)
-      obj_unsupported_msg("missing lowered function-pointer signature");
+    const ir_abi_signature_t *abi =
+        ir_abi_data_relocation_signature(g_obj_data_abi, reloc);
     ensure_func_sig_for_address(
         reloc->target, reloc->target_len,
-        func_sig_from_callable_sig(&reloc->callable_sig));
+        func_sig_from_reference_abi(abi));
     obj_func_t *target = find_func(reloc->target, reloc->target_len);
     if (!target)
       obj_unsupported_msg("missing function relocation target");
@@ -2736,7 +2744,10 @@ static void emit_obj_global(const ir_data_module_t *module,
   data->is_emitted = 1;
 }
 
-void wasm32_obj_emit_data_segments(const ir_data_module_t *data_module) {
+void wasm32_obj_emit_data_segments(
+    const ir_data_module_t *data_module,
+    const ir_abi_data_module_t *data_abi) {
+  g_obj_data_abi = data_abi;
   int object_count = 0;
   for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
        object; object = object->next)

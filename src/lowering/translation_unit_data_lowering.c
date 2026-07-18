@@ -166,9 +166,7 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
   char *name = NULL;
   int name_len = 0;
   ir_data_reloc_kind_t kind = IR_DATA_RELOC_DATA;
-  ir_callable_sig_t callable_sig = {0};
   ir_function_type_t function_type = {0};
-  const ir_callable_sig_t *sig = NULL;
   if (value.symbol_ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
     name = value.symbol_ref.symbol;
     name_len = name ? (int)strlen(name) : 0;
@@ -176,14 +174,6 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
           ctx->lowering->semantic_context,
           value.symbol_ref, &name, &name_len)) {
     kind = IR_DATA_RELOC_FUNCTION;
-    ir_abi_type_context_t abi = {
-        .semantic_types = ctx->lowering->semantic_types,
-        .record_layouts = ctx->lowering->record_layouts,
-        .target = ctx->lowering->target,
-    };
-    if (ir_abi_callable_sig_from_type_id(
-            &abi, callable_type_id, &callable_sig))
-      sig = &callable_sig;
     (void)ir_function_type_from_type_id(
         ctx->lowering->semantic_types,
         callable_type_id, &function_type);
@@ -193,13 +183,11 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
   }
   ir_data_reloc_t *reloc = ir_data_object_add_reloc(
       ctx->object, offset, value.size, kind, name, name_len,
-      value.symbol_ref.addend, sig);
-  if (reloc && function_type.type_id != PSX_TYPE_ID_INVALID &&
-      ir_function_type_copy(&reloc->function_type, &function_type))
-    reloc->has_function_type = 1;
+      value.symbol_ref.addend,
+      function_type.type_id != PSX_TYPE_ID_INVALID
+          ? &function_type : NULL);
   int added = reloc != NULL;
   ir_function_type_dispose(&function_type);
-  ir_callable_sig_dispose(&callable_sig);
   return added;
 }
 

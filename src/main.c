@@ -134,6 +134,17 @@ static ir_abi_module_t *lower_module_abi(
   return ir_abi_lower_module(&context, module);
 }
 
+static ir_abi_data_module_t *lower_data_module_abi(
+    const ir_data_module_t *module,
+    const ir_build_options_t *options) {
+  ir_abi_type_context_t context = {
+      .semantic_types = options ? options->semantic_types : NULL,
+      .record_layouts = options ? options->record_layouts : NULL,
+      .target = options ? options->target : NULL,
+  };
+  return ir_abi_lower_data_module(&context, module);
+}
+
 static int wasm_emit_function_direct(
     const psx_frontend_stream_t *stream,
     const psx_frontend_function_t *function,
@@ -436,9 +447,20 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm_publish_and_destroy_session(session);
     return -3;
   }
+  ir_abi_data_module_t *data_abi = lower_data_module_abi(
+      data_module, &ir_options);
+  if (!data_abi) {
+    ir_data_module_free(data_module);
+    clear_output_callback(emit_context);
+    gen_set_simple_formatter_in(emit_context, 0);
+    if (object_mode) wasm32_obj_capture_output(0);
+    wasm_publish_and_destroy_session(session);
+    return -3;
+  }
 
   if (object_mode) {
-    wasm32_obj_emit_data_segments(data_module);
+    wasm32_obj_emit_data_segments(data_module, data_abi);
+    ir_abi_data_module_free(data_abi);
     ir_data_module_free(data_module);
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
@@ -461,7 +483,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm_publish_and_destroy_session(session);
     return (int)obj_len;
   } else {
-    wasm32_emit_data_segments(data_module);
+    wasm32_emit_data_segments(data_module, data_abi);
+    ir_abi_data_module_free(data_abi);
     ir_data_module_free(data_module);
     wasm32_module_end();
     clear_output_callback(emit_context);
@@ -767,14 +790,28 @@ int main(int argc, char **argv) {
   }
 
 #ifdef AGC_TARGET_WASM32
+  ir_abi_data_module_t *data_abi = lower_data_module_abi(
+      data_module, &ir_options);
+  if (!data_abi) {
+    ir_data_module_free(data_module);
+    if (wasm_object_mode) {
+      fclose(wasm_obj_out);
+      remove(output_path);
+    }
+    clear_output_callback(emit_context);
+    ag_compilation_session_destroy(session);
+    free(source);
+    return 1;
+  }
   if (wasm_object_mode) {
-    wasm32_obj_emit_data_segments(data_module);
+    wasm32_obj_emit_data_segments(data_module, data_abi);
     wasm32_obj_end();
     fclose(wasm_obj_out);
   } else {
-    wasm32_emit_data_segments(data_module);
+    wasm32_emit_data_segments(data_module, data_abi);
     wasm32_module_end();
   }
+  ir_abi_data_module_free(data_abi);
 #else
   // lowering 済みの文字列・浮動小数点定数・global object を emit。
   gen_string_literals_in(emit_context, data_module);

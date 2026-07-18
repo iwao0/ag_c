@@ -22,9 +22,7 @@ typedef struct ir_data_reloc_t {
   int width;
   long long addend;
   ir_data_reloc_kind_t kind;
-  ir_callable_sig_t callable_sig;
   ir_function_type_t function_type;
-  unsigned char has_callable_sig;
   unsigned char has_function_type;
 } ir_data_reloc_t;
 
@@ -63,6 +61,6 @@ int ir_data_object_set_bytes(
 ir_data_reloc_t *ir_data_object_add_reloc(
     ir_data_object_t *object, int offset, int width,
     ir_data_reloc_kind_t kind, const char *target, int target_len,
-    long long addend, const ir_callable_sig_t *callable_sig);
+    long long addend, const ir_function_type_t *function_type);
 
 #endif

@@ -107,6 +107,7 @@ struct wasm32_ir_context_t {
   wasm_func_table_ctx_t func_table;
   wasm_function_symbol_ctx_t function_symbols;
   const ir_abi_module_t *abi;
+  const ir_abi_data_module_t *data_abi;
 };
 
 static wasm32_ir_context_t default_wasm32_ir_context = {
@@ -156,6 +157,7 @@ wasm32_ir_context_t *wasm32_ir_context_active(void) {
 #define g_func_table (wasm32_ir_context_active()->func_table)
 #define g_function_symbols (wasm32_ir_context_active()->function_symbols)
 #define g_abi (wasm32_ir_context_active()->abi)
+#define g_data_abi (wasm32_ir_context_active()->data_abi)
 static ag_codegen_emit_context_t *wasm32_ir_emit_context(void) {
   wasm32_ir_context_t *ctx = wasm32_ir_context_active();
   if (!ctx->emit_context) abort();
@@ -174,6 +176,11 @@ static const ir_abi_signature_t *wasm_function_abi(
 static const ir_abi_signature_t *wasm_call_abi(
     const ir_inst_t *call) {
   return ir_abi_call_signature(g_abi, call);
+}
+
+static const ir_abi_signature_t *wasm_reference_abi(
+    const ir_inst_t *reference) {
+  return ir_abi_reference_signature(g_abi, reference);
 }
 
 #define wasm_cg_emitf(...) \
@@ -299,7 +306,7 @@ static void register_function_reference(const char *name, int name_len) {
 
 static void record_function_signature(
     const char *name, int name_len, ir_type_t result_type,
-    const ir_type_t *param_types, int param_count) {
+    const ir_abi_piece_t *param_pieces, int param_count) {
   wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 1);
   if (!symbol) return;
   if (param_count < 0) param_count = 0;
@@ -312,7 +319,7 @@ static void record_function_signature(
           diag_message_for_in(
               wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
     for (int i = 0; i < param_count; i++)
-      params[i] = param_types ? param_types[i] : IR_TY_I32;
+      params[i] = param_pieces ? param_pieces[i].type : IR_TY_I32;
   }
   free(symbol->param_types);
   symbol->param_types = params;
@@ -331,7 +338,7 @@ static void register_function_definition(const ir_func_t *function) {
   if (!abi || abi->param_count > INT_MAX) return;
   record_function_signature(
       function->name, function->name_len, function->ret_type,
-      abi->param_types, (int)abi->param_count);
+      abi->param_pieces, (int)abi->param_count);
 }
 
 static void reset_function_symbols(void) {
@@ -442,17 +449,17 @@ static int function_table_index_or_unsupported(char *name, int name_len) {
 }
 
 static ir_type_t funcptr_result_type_from_inst(const ir_inst_t *inst) {
-  return inst && inst->has_callable_sig ? inst->callable_sig.result
-                                        : IR_TY_VOID;
+  const ir_abi_signature_t *abi = wasm_reference_abi(inst);
+  return abi ? abi->result.type : IR_TY_VOID;
 }
 
 static void record_function_reference_signature(const ir_inst_t *inst) {
-  if (!inst || !inst->sym || !inst->has_callable_sig) return;
-  if (inst->callable_sig.param_count > INT_MAX) return;
-  int param_count = (int)inst->callable_sig.param_count;
+  const ir_abi_signature_t *abi = wasm_reference_abi(inst);
+  if (!inst || !inst->sym || !abi || abi->param_count > INT_MAX) return;
+  int param_count = (int)abi->param_count;
   record_function_signature(
       inst->sym, inst->sym_len, funcptr_result_type_from_inst(inst),
-      inst->callable_sig.params, param_count);
+      abi->param_pieces, param_count);
 }
 
 static void record_function_call_signature(const ir_inst_t *call) {
@@ -466,7 +473,7 @@ static void record_function_call_signature(const ir_inst_t *call) {
           ? IR_TY_VOID
           : call->dst.type;
   record_function_signature(call->sym, call->sym_len, result_type,
-                            abi->param_types, param_count);
+                            abi->param_pieces, param_count);
 }
 
 static int has_minimal_libc_stub_function(char *name, int name_len) {
@@ -570,8 +577,8 @@ static void emit_function_table(void) {
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
   const ir_abi_signature_t *abi = wasm_function_abi(f);
   if (abi && idx >= 0 && (size_t)idx < abi->param_count &&
-      abi->param_types[idx] != IR_TY_VOID)
-    return abi->param_types[idx];
+      abi->param_pieces[idx].type != IR_TY_VOID)
+    return abi->param_pieces[idx].type;
   return raw;
 }
 
@@ -618,12 +625,14 @@ static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
 }
 
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  if (i->op == IR_RESULT_AREA) {
+    collect_vreg_type_as(ctx, i->dst, IR_TY_PTR);
+    return;
+  }
   if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
     int ordinal = func_param_ordinal_for_inst(ctx->f, i);
-    ir_type_t ty = IR_TY_PTR;
-    if (i->src1.imm >= 0) {
-      ty = func_param_type_from_decl(ctx->f, ordinal, i->dst.type);
-    }
+    ir_type_t ty = func_param_type_from_decl(
+        ctx->f, ordinal, i->dst.type);
     collect_vreg_type_as(ctx, i->dst, ty);
     return;
   }
@@ -1316,7 +1325,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
       ir_type_t arg_ty = raw_arg_ty;
       int from_callable_sig = (size_t)a < abi->param_count;
-      if (from_callable_sig) arg_ty = abi->param_types[a];
+      if (from_callable_sig) arg_ty = abi->param_pieces[a].type;
       int null_ptr_pair_arg =
           !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
@@ -1333,7 +1342,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
       ir_type_t arg_ty = raw_arg_ty;
       int from_callable_sig = (size_t)a < abi->param_count;
-      if (from_callable_sig) arg_ty = abi->param_types[a];
+      if (from_callable_sig) arg_ty = abi->param_pieces[a].type;
       int null_ptr_pair_arg =
           !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
@@ -1402,7 +1411,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     }
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
     ir_type_t abi_arg_ty = (size_t)a < abi->param_count
-                               ? abi->param_types[a]
+                               ? abi->param_pieces[a].type
                                : i->args[a].type;
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
         (size_t)a >= abi->fixed_param_count && is_fp_type(arg_ty)) {
@@ -1468,12 +1477,18 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_LABEL:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
       return;
-    case IR_PARAM:
-      if (i->src1.id != IR_VAL_IMM || i->src1.imm < -1) wasm_unsupported_op(i->op);
+    case IR_PARAM: {
+      if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0)
+        wasm_unsupported_op(i->op);
       int param_ordinal = func_param_ordinal_for_inst(ctx->f, i);
-      if (i->src1.imm >= 0 && param_ordinal < 0) wasm_unsupported_op(i->op);
+      if (param_ordinal < 0) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id,
-                 i->src1.imm < 0 ? 0 : param_ordinal + func_has_hidden_ret_area(ctx->f));
+                 param_ordinal + func_has_hidden_ret_area(ctx->f));
+      return;
+    }
+    case IR_RESULT_AREA:
+      if (!func_has_hidden_ret_area(ctx->f)) wasm_unsupported_op(i->op);
+      wasm_emitf(indent, "(local.set $v%d (local.get $p0))\n", i->dst.id);
       return;
     case IR_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
@@ -1756,8 +1771,8 @@ static ir_type_t func_param_type(ir_func_t *f, int idx) {
   }
   const ir_abi_signature_t *abi = wasm_function_abi(f);
   if (abi && idx >= 0 && (size_t)idx < abi->param_count &&
-      abi->param_types[idx] != IR_TY_VOID) {
-    return abi->param_types[idx];
+      abi->param_pieces[idx].type != IR_TY_VOID) {
+    return abi->param_pieces[idx].type;
   }
   ir_inst_t *param = func_param_inst_at_ordinal(f, idx);
   if (param) {
@@ -1907,11 +1922,13 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
 static long long data_relocation_value(const ir_data_reloc_t *reloc) {
   if (!reloc) return 0;
   if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
-    if (reloc->has_callable_sig) {
-      record_function_signature(
-          reloc->target, reloc->target_len, reloc->callable_sig.result,
-          reloc->callable_sig.params, reloc->callable_sig.param_count);
-    }
+    const ir_abi_signature_t *abi =
+        ir_abi_data_relocation_signature(g_data_abi, reloc);
+    if (!abi || abi->param_count > INT_MAX)
+      wasm_unsupported_msg("function data relocation without ABI lowering result");
+    record_function_signature(
+        reloc->target, reloc->target_len, abi->result.type,
+        abi->param_pieces, (int)abi->param_count);
     int index = function_table_index_or_unsupported(
         reloc->target, reloc->target_len);
     return (long long)index + reloc->addend;
@@ -1954,8 +1971,11 @@ static void emit_global_data_object(const ir_data_object_t *object) {
   wasm_cg_emitf("\")\n");
 }
 
-void wasm32_emit_data_segments(const ir_data_module_t *data_module) {
+void wasm32_emit_data_segments(
+    const ir_data_module_t *data_module,
+    const ir_abi_data_module_t *data_abi) {
   g_data_module = data_module;
+  g_data_abi = data_abi;
   for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
        object; object = object->next) {
     if (object->kind == IR_DATA_STRING) emit_string_literal_data(object);

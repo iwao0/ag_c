@@ -2,6 +2,7 @@
 #define AG_IR_ABI_LOWERING_H
 
 #include "../ir/ir.h"
+#include "../ir/ir_data.h"
 #include "../semantic/type_identity.h"
 
 struct ag_target_info_t;
@@ -28,9 +29,24 @@ typedef struct {
   int is_unsigned;
 } ir_abi_param_info_t;
 
+typedef enum {
+  IR_ABI_PIECE_DIRECT = 0,
+  IR_ABI_PIECE_INDIRECT,
+  IR_ABI_PIECE_COMPLEX_REAL,
+  IR_ABI_PIECE_COMPLEX_IMAGINARY,
+  IR_ABI_PIECE_VARIADIC,
+} ir_abi_piece_kind_t;
+
+typedef struct {
+  ir_type_t type;
+  size_t source_index;
+  int byte_offset;
+  ir_abi_piece_kind_t kind;
+} ir_abi_piece_t;
+
 typedef struct {
   ir_abi_param_info_t result;
-  ir_type_t *param_types;
+  ir_abi_piece_t *param_pieces;
   size_t param_count;
   size_t fixed_param_count;
   int result_size;
@@ -40,6 +56,15 @@ typedef struct {
   unsigned char result_complex_half;
   unsigned char is_variadic;
 } ir_abi_signature_t;
+
+/* Source-parameter view used only while lowering semantic operations to MIR.
+ * It is target-specific lowering state and is never owned by generic IR. */
+typedef struct {
+  ir_type_t result;
+  ir_type_t *params;
+  size_t param_count;
+  unsigned char is_variadic;
+} ir_abi_callable_type_t;
 
 typedef struct {
   const ir_func_t *function;
@@ -51,21 +76,46 @@ typedef struct {
   ir_abi_signature_t signature;
 } ir_abi_call_t;
 
+typedef struct {
+  const ir_inst_t *reference;
+  ir_abi_signature_t signature;
+} ir_abi_reference_t;
+
+typedef struct {
+  const ir_symbol_func_ref_t *reference;
+  ir_abi_signature_t signature;
+} ir_abi_symbol_reference_t;
+
 typedef struct ir_abi_module_t {
   ir_abi_function_t *functions;
   size_t function_count;
   ir_abi_call_t *calls;
   size_t call_count;
+  ir_abi_reference_t *references;
+  size_t reference_count;
+  ir_abi_symbol_reference_t *symbol_references;
+  size_t symbol_reference_count;
 } ir_abi_module_t;
+
+typedef struct {
+  const ir_data_reloc_t *relocation;
+  ir_abi_signature_t signature;
+} ir_abi_data_relocation_t;
+
+typedef struct ir_abi_data_module_t {
+  ir_abi_data_relocation_t *relocations;
+  size_t relocation_count;
+} ir_abi_data_module_t;
 
 ir_abi_param_info_t ir_abi_classify_builtin_param(
     const ir_abi_type_context_t *context,
     const char *name, int name_len, int param_idx);
 ir_abi_param_info_t ir_abi_classify_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id);
-int ir_abi_callable_sig_from_type_id(
+int ir_abi_source_callable_type_from_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id,
-    ir_callable_sig_t *out);
+    ir_abi_callable_type_t *out);
+void ir_abi_callable_type_dispose(ir_abi_callable_type_t *type);
 ir_abi_module_t *ir_abi_lower_module(
     const ir_abi_type_context_t *context,
     const ir_module_t *module);
@@ -74,5 +124,17 @@ const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function);
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call);
+const ir_abi_signature_t *ir_abi_reference_signature(
+    const ir_abi_module_t *module, const ir_inst_t *reference);
+const ir_abi_signature_t *ir_abi_symbol_reference_signature(
+    const ir_abi_module_t *module,
+    const ir_symbol_func_ref_t *reference);
+ir_abi_data_module_t *ir_abi_lower_data_module(
+    const ir_abi_type_context_t *context,
+    const ir_data_module_t *module);
+void ir_abi_data_module_free(ir_abi_data_module_t *module);
+const ir_abi_signature_t *ir_abi_data_relocation_signature(
+    const ir_abi_data_module_t *module,
+    const ir_data_reloc_t *relocation);
 
 #endif

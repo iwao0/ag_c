@@ -87,6 +87,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_RET:          return "ret";
     case IR_CALL:         return "call";
     case IR_PARAM:        return "param";
+    case IR_RESULT_AREA:  return "result_area";
     case IR_VA_ARG_AREA:  return "va_arg_area";
     case IR_VLA_ALLOC:    return "vla_alloc";
     case IR_ATOMIC:       return "atomic";
@@ -127,40 +128,6 @@ ir_val_t ir_val_vreg(int id, ir_type_t t) {
   return v;
 }
 
-void ir_callable_sig_dispose(ir_callable_sig_t *signature) {
-  if (!signature) return;
-  free(signature->params);
-  memset(signature, 0, sizeof(*signature));
-}
-
-int ir_callable_sig_set(
-    ir_callable_sig_t *signature, ir_type_t result,
-    const ir_type_t *params, size_t param_count, int is_variadic) {
-  if (!signature || (param_count > 0 && !params)) return 0;
-  ir_type_t *copy = NULL;
-  if (param_count > 0) {
-    if (param_count > SIZE_MAX / sizeof(*copy)) return 0;
-    copy = malloc(param_count * sizeof(*copy));
-    if (!copy) return 0;
-    memcpy(copy, params, param_count * sizeof(*copy));
-  }
-  free(signature->params);
-  signature->params = copy;
-  signature->param_count = param_count;
-  signature->result = result;
-  signature->is_variadic = is_variadic ? 1 : 0;
-  return 1;
-}
-
-int ir_callable_sig_copy(
-    ir_callable_sig_t *destination,
-    const ir_callable_sig_t *source) {
-  if (!destination || !source) return 0;
-  return ir_callable_sig_set(
-      destination, source->result, source->params,
-      source->param_count, source->is_variadic);
-}
-
 void ir_function_type_dispose(ir_function_type_t *type) {
   if (!type) return;
   free(type->params);
@@ -171,8 +138,7 @@ int ir_function_type_set(
     ir_function_type_t *type, psx_type_id_t type_id,
     psx_qual_type_t result, const psx_qual_type_t *params,
     size_t param_count, int is_variadic, int has_prototype) {
-  if (!type || type_id == PSX_TYPE_ID_INVALID ||
-      result.type_id == PSX_TYPE_ID_INVALID ||
+  if (!type || result.type_id == PSX_TYPE_ID_INVALID ||
       (param_count > 0 && !params))
     return 0;
   psx_qual_type_t *copy = NULL;
@@ -251,7 +217,7 @@ ir_symbol_t *ir_module_add_symbol(ir_module_t *m,
 
 ir_symbol_func_ref_t *ir_symbol_add_func_ref(
     ir_symbol_t *symbol, int offset, const char *name, int name_len,
-    const ir_callable_sig_t *callable_sig) {
+    const ir_function_type_t *function_type) {
   if (!symbol || !name || name_len <= 0) return NULL;
   for (ir_symbol_func_ref_t *ref = symbol->func_refs; ref; ref = ref->next) {
     if (ref->offset == offset) return ref;
@@ -267,13 +233,13 @@ ir_symbol_func_ref_t *ir_symbol_add_func_ref(
   ref->name[name_len] = '\0';
   ref->name_len = name_len;
   ref->offset = offset;
-  if (callable_sig) {
-    if (!ir_callable_sig_copy(&ref->callable_sig, callable_sig)) {
+  if (function_type) {
+    if (!ir_function_type_copy(&ref->function_type, function_type)) {
       free(ref->name);
       free(ref);
       return NULL;
     }
-    ref->has_callable_sig = 1;
+    ref->has_function_type = 1;
   }
   if (!symbol->func_refs) symbol->func_refs = ref;
   else symbol->func_refs_tail->next = ref;
@@ -302,7 +268,6 @@ void ir_func_free(ir_func_t *f) {
     for (ir_inst_t *i = b->head; i; ) {
       ir_inst_t *inext = i->next;
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
-      ir_callable_sig_dispose(&i->callable_sig);
       ir_function_type_dispose(&i->function_type);
       free(i);
       if (ir_inst_live) ir_inst_live--;
@@ -343,7 +308,6 @@ void ir_module_free(ir_module_t *m) {
     ir_symbol_t *next = symbol->next;
     for (ir_symbol_func_ref_t *ref = symbol->func_refs; ref; ) {
       ir_symbol_func_ref_t *ref_next = ref->next;
-      ir_callable_sig_dispose(&ref->callable_sig);
       ir_function_type_dispose(&ref->function_type);
       free(ref->name);
       free(ref);
@@ -367,7 +331,6 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
   f->ret_type = ret_type;
   f->next_vreg_id = 0;
   f->next_block_id = 0;
-  f->result_area_vreg = -1;
   /* entry ブロックを最初から確保しておく */
   ir_block_t *entry = ir_block_new(f);
   f->entry = entry;

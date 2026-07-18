@@ -50,6 +50,7 @@ typedef struct {
   ir_abi_param_info_t return_info;
   psx_qual_type_t return_qual_type;
   int returns_void;
+  int result_area_vreg;
   hir_local_slot_t local_slots[512];
   size_t local_slot_count;
   hir_loop_target_t loop_targets[32];
@@ -129,14 +130,6 @@ static int append_instruction(
     return 0;
   }
   ir_func_append_inst(context->function, instruction);
-  return 1;
-}
-
-static int set_callable_signature(
-    ir_inst_t *instruction, const ir_callable_sig_t *signature) {
-  if (!ir_callable_sig_copy(&instruction->callable_sig, signature))
-    return 0;
-  instruction->has_callable_sig = 1;
   return 1;
 }
 
@@ -681,7 +674,7 @@ static ir_val_t coerce_direct_value_to_qual_type(
 
 static int setup_scalar_parameters(
     hir_ir_context_t *context, const psx_hir_node_t *root,
-    const ir_callable_sig_t *signature) {
+    const ir_abi_callable_type_t *signature) {
   if (child_count_for_edge(root, PSX_HIR_EDGE_PARAMETER) !=
       signature->param_count) {
     context->status = IR_HIR_BUILD_INVALID;
@@ -3038,21 +3031,20 @@ static ir_val_t build_scalar_or_void_call(
       .record_layouts = context->options->record_layouts,
       .target = context->options->target,
   };
-  ir_callable_sig_t signature = {0};
+  ir_abi_callable_type_t signature = {0};
   size_t argument_count = child_count_for_edge(
       node, PSX_HIR_EDGE_ARGUMENT);
   const psx_type_t *callable_semantic_type =
       psx_semantic_type_table_lookup(
           context->options->semantic_types,
           callable_type.type_id);
-  int accepts_unprototyped_arguments = 0;
   int is_void_result =
       node_type_kind(context, node) == PSX_TYPE_VOID;
   int is_complex_result = is_complex_abi_type(result_type);
   int is_indirect_aggregate_result =
       is_indirect_aggregate_abi_type(result_type);
   if (callable_type.type_id == PSX_TYPE_ID_INVALID ||
-      !ir_abi_callable_sig_from_type_id(
+      !ir_abi_source_callable_type_from_type_id(
           &abi, callable_type.type_id, &signature) ||
       argument_count > INT_MAX ||
       (signature.is_variadic
@@ -3066,12 +3058,6 @@ static ir_val_t build_scalar_or_void_call(
        !is_indirect_aggregate_result &&
        !is_direct_value_abi_type(result_type)))
     return unsupported_expr(context);
-  accepts_unprototyped_arguments =
-      callable_semantic_type &&
-      !callable_semantic_type->has_function_prototype &&
-      !signature.is_variadic && signature.param_count == 0 &&
-      argument_count > 0;
-
   ir_val_t callee_value = ir_val_none();
   if (callee) {
     ir_abi_param_info_t callee_type = classify_node_type(context, callee);
@@ -3083,10 +3069,8 @@ static ir_val_t build_scalar_or_void_call(
   }
 
   ir_val_t *arguments = NULL;
-  ir_type_t *argument_abi_types = NULL;
   size_t argument_capacity = 0;
   size_t emitted_count = 0;
-  size_t emitted_fixed_count = 0;
   for (size_t i = 0; i < argument_count; i++) {
     const psx_hir_node_t *argument = child_for_edge(
         context, node, PSX_HIR_EDGE_ARGUMENT, i);
@@ -3106,11 +3090,8 @@ static ir_val_t build_scalar_or_void_call(
   }
   if (argument_count) {
     arguments = calloc(argument_capacity, sizeof(*arguments));
-    argument_abi_types = calloc(
-        argument_capacity, sizeof(*argument_abi_types));
-    if (!arguments || !argument_abi_types) {
+    if (!arguments) {
       free(arguments);
-      free(argument_abi_types);
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
       return ir_val_none();
     }
@@ -3150,7 +3131,6 @@ static ir_val_t build_scalar_or_void_call(
       size_t chunk_count = (size_t)(rounded_size / 8);
       if (emitted_count > argument_capacity - chunk_count) {
         free(arguments);
-        free(argument_abi_types);
         return unsupported_expr(context);
       }
       ir_val_t source = aggregate_value_address(context, argument);
@@ -3158,13 +3138,11 @@ static ir_val_t build_scalar_or_void_call(
       if (context->status != IR_HIR_BUILD_OK ||
           source.type != IR_TY_PTR || temporary < 0) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
       ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
       if (!copy) {
         free(arguments);
-        free(argument_abi_types);
         context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
         return ir_val_none();
       }
@@ -3173,7 +3151,6 @@ static ir_val_t build_scalar_or_void_call(
       copy->alloca_size = argument_type.source_size;
       if (!append_instruction(context, copy)) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
       for (int offset = 0; offset < rounded_size; offset += 8) {
@@ -3185,11 +3162,9 @@ static ir_val_t build_scalar_or_void_call(
             context, chunk_pointer, IR_TY_I64);
         if (context->status != IR_HIR_BUILD_OK) {
           free(arguments);
-          free(argument_abi_types);
           return ir_val_none();
         }
-        arguments[emitted_count] = chunk;
-        argument_abi_types[emitted_count++] = IR_TY_I64;
+        arguments[emitted_count++] = chunk;
       }
       continue;
     }
@@ -3198,7 +3173,6 @@ static ir_val_t build_scalar_or_void_call(
       if (!is_complex_abi_type(argument_type) ||
           emitted_count + 2 > argument_capacity) {
         free(arguments);
-        free(argument_abi_types);
         return unsupported_expr(context);
       }
       ir_val_t pointer = materialize_complex_operand(
@@ -3206,7 +3180,6 @@ static ir_val_t build_scalar_or_void_call(
       if (context->status != IR_HIR_BUILD_OK ||
           pointer.type != IR_TY_PTR) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
       ir_val_t imaginary_pointer = pointer_with_offset(
@@ -3217,14 +3190,10 @@ static ir_val_t build_scalar_or_void_call(
           context, imaginary_pointer, parameter_type.type);
       if (context->status != IR_HIR_BUILD_OK) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
-      arguments[emitted_count] = real;
-      argument_abi_types[emitted_count++] = parameter_type.type;
-      arguments[emitted_count] = imaginary;
-      argument_abi_types[emitted_count++] = parameter_type.type;
-      emitted_fixed_count = emitted_count;
+      arguments[emitted_count++] = real;
+      arguments[emitted_count++] = imaginary;
       continue;
     }
     if (i < signature.param_count &&
@@ -3233,7 +3202,6 @@ static ir_val_t build_scalar_or_void_call(
           argument_type.source_size != parameter_type.source_size ||
           emitted_count >= argument_capacity) {
         free(arguments);
-        free(argument_abi_types);
         return unsupported_expr(context);
       }
       ir_val_t source = aggregate_value_address(context, argument);
@@ -3242,13 +3210,11 @@ static ir_val_t build_scalar_or_void_call(
       if (context->status != IR_HIR_BUILD_OK ||
           source.type != IR_TY_PTR || temporary < 0) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
       ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
       if (!copy) {
         free(arguments);
-        free(argument_abi_types);
         context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
         return ir_val_none();
       }
@@ -3257,13 +3223,10 @@ static ir_val_t build_scalar_or_void_call(
       copy->alloca_size = parameter_type.source_size;
       if (!append_instruction(context, copy)) {
         free(arguments);
-        free(argument_abi_types);
         return ir_val_none();
       }
-      arguments[emitted_count] =
+      arguments[emitted_count++] =
           ir_val_vreg(temporary, IR_TY_PTR);
-      argument_abi_types[emitted_count++] = IR_TY_PTR;
-      emitted_fixed_count = emitted_count;
       continue;
     }
     if (i >= signature.param_count && is_float_abi_type(argument_type) &&
@@ -3275,7 +3238,6 @@ static ir_val_t build_scalar_or_void_call(
         (i < signature.param_count &&
          signature.params[i] != parameter_type.type)) {
       free(arguments);
-      free(argument_abi_types);
       return unsupported_expr(context);
     }
     ir_val_t value = build_expr(context, argument);
@@ -3291,13 +3253,9 @@ static ir_val_t build_scalar_or_void_call(
     }
     if (context->status != IR_HIR_BUILD_OK) {
       free(arguments);
-      free(argument_abi_types);
       return ir_val_none();
     }
-    arguments[emitted_count] = value;
-    argument_abi_types[emitted_count++] = parameter_type.type;
-    if (i < signature.param_count || accepts_unprototyped_arguments)
-      emitted_fixed_count = emitted_count;
+    arguments[emitted_count++] = value;
   }
 
   int result_vreg = -1;
@@ -3305,14 +3263,12 @@ static ir_val_t build_scalar_or_void_call(
     result_vreg = new_vreg(context);
     if (result_vreg < 0) {
       free(arguments);
-      free(argument_abi_types);
       return ir_val_none();
     }
   }
   ir_inst_t *call = ir_inst_new(IR_CALL);
   if (!call) {
     free(arguments);
-    free(argument_abi_types);
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
@@ -3322,7 +3278,6 @@ static ir_val_t build_scalar_or_void_call(
         ir_type_size(result_type.type) >= 8 ? 8 : 4);
     if (slot < 0) {
       free(arguments);
-      free(argument_abi_types);
       free(call);
       return ir_val_none();
     }
@@ -3332,7 +3287,6 @@ static ir_val_t build_scalar_or_void_call(
         context, result_type.source_size, 8);
     if (result_area < 0) {
       free(arguments);
-      free(argument_abi_types);
       free(call);
       return ir_val_none();
     }
@@ -3351,7 +3305,6 @@ static ir_val_t build_scalar_or_void_call(
   call->args = arguments;
   if (emitted_count > INT_MAX) {
     free(arguments);
-    free(argument_abi_types);
     free(call);
     return unsupported_expr(context);
   }
@@ -3362,32 +3315,14 @@ static ir_val_t build_scalar_or_void_call(
   if (!ir_function_type_from_type_id(
           context->options->semantic_types,
           callable_type.type_id, &call->function_type)) {
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     free(arguments);
-    free(argument_abi_types);
     free(call);
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
   call->has_function_type = 1;
-  ir_callable_sig_t expanded_signature = {0};
-  if (!ir_callable_sig_set(
-          &expanded_signature, signature.result,
-          argument_abi_types, emitted_fixed_count,
-          signature.is_variadic) ||
-      !set_callable_signature(call, &expanded_signature)) {
-    ir_callable_sig_dispose(&expanded_signature);
-    ir_callable_sig_dispose(&signature);
-    ir_function_type_dispose(&call->function_type);
-    free(arguments);
-    free(argument_abi_types);
-    free(call);
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    return ir_val_none();
-  }
-  ir_callable_sig_dispose(&expanded_signature);
-  ir_callable_sig_dispose(&signature);
-  free(argument_abi_types);
+  ir_abi_callable_type_dispose(&signature);
   if (!append_instruction(context, call)) return ir_val_none();
   if (is_void_result) return ir_val_none();
   if (is_complex_result) return call->dst;
@@ -3422,15 +3357,7 @@ static ir_val_t build_function_reference(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   size_t name_length = 0;
   const char *name = psx_hir_node_name(node, &name_length);
-  ir_abi_type_context_t abi = {
-      .semantic_types = context->options->semantic_types,
-      .record_layouts = context->options->record_layouts,
-      .target = context->options->target,
-  };
-  ir_callable_sig_t signature = {0};
-  if (!name || name_length == 0 ||
-      !ir_abi_callable_sig_from_type_id(
-          &abi, psx_hir_node_qual_type(node).type_id, &signature))
+  if (!name || name_length == 0)
     return unsupported_expr(context);
   int result_vreg = new_vreg(context);
   if (result_vreg < 0) return ir_val_none();
@@ -3448,20 +3375,11 @@ static ir_val_t build_function_reference(
           context->options->semantic_types,
           psx_hir_node_qual_type(node).type_id,
           &load->function_type)) {
-    ir_callable_sig_dispose(&signature);
     free(load);
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
   load->has_function_type = 1;
-  if (!set_callable_signature(load, &signature)) {
-    ir_callable_sig_dispose(&signature);
-    ir_function_type_dispose(&load->function_type);
-    free(load);
-    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    return ir_val_none();
-  }
-  ir_callable_sig_dispose(&signature);
   if (!append_instruction(context, load)) return ir_val_none();
   return load->dst;
 }
@@ -4171,7 +4089,7 @@ static int build_statement(
             value_type.param_class != IR_ABI_PARAM_AGGREGATE ||
             value_type.source_size != context->return_info.source_size ||
             source.type != IR_TY_PTR ||
-            context->function->result_area_vreg < 0)
+            context->result_area_vreg < 0)
           return 0;
         ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
         if (!copy) {
@@ -4179,7 +4097,7 @@ static int build_statement(
           return 0;
         }
         copy->src1 = ir_val_vreg(
-            context->function->result_area_vreg, IR_TY_PTR);
+            context->result_area_vreg, IR_TY_PTR);
         copy->src2 = source;
         copy->alloca_size = context->return_info.source_size;
         if (!append_instruction(context, copy)) return 0;
@@ -4407,7 +4325,7 @@ ir_module_t *ir_build_function_module_from_hir(
       .record_layouts = options->record_layouts,
       .target = options->target,
   };
-  ir_callable_sig_t signature = {0};
+  ir_abi_callable_type_t signature = {0};
   psx_type_id_t signature_id =
       psx_hir_node_attached_qual_type(root).type_id;
   psx_type_id_t result_type_id = psx_semantic_type_table_base(
@@ -4417,13 +4335,13 @@ ir_module_t *ir_build_function_module_from_hir(
   const psx_type_t *result_type = psx_semantic_type_table_lookup(
       options->semantic_types, result_type_id);
   int returns_void = result_type && result_type->kind == PSX_TYPE_VOID;
-  if (!ir_abi_callable_sig_from_type_id(&abi, signature_id, &signature) ||
+  if (!ir_abi_source_callable_type_from_type_id(&abi, signature_id, &signature) ||
       (!returns_void && !is_complex_abi_type(return_info) &&
        !is_indirect_aggregate_abi_type(return_info) &&
        !is_direct_value_abi_type(return_info)) ||
       signature.result != (returns_void ? IR_TY_VOID : return_info.type)) {
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
   size_t name_length = 0;
@@ -4432,7 +4350,7 @@ ir_module_t *ir_build_function_module_from_hir(
       &(hir_ir_context_t){.hir = hir}, root,
       PSX_HIR_EDGE_FUNCTION_BODY, 0);
   if (!name || name_length == 0 || !body) {
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
 
@@ -4446,11 +4364,12 @@ ir_module_t *ir_build_function_module_from_hir(
           .qualifiers = PSX_TYPE_QUALIFIER_NONE,
       },
       .returns_void = returns_void,
+      .result_area_vreg = -1,
   };
   context.module = ir_module_new();
   if (!context.module) {
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
   context.function = ir_func_new(
@@ -4458,14 +4377,14 @@ ir_module_t *ir_build_function_module_from_hir(
   if (!context.function) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
   if (!ir_function_type_from_type_id(
           options->semantic_types, signature_id,
           &context.function->function_type)) {
     ir_module_free(context.module);
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;
   }
@@ -4475,29 +4394,28 @@ ir_module_t *ir_build_function_module_from_hir(
     if (return_area < 0) {
       ir_module_free(context.module);
       if (status) *status = context.status;
-      ir_callable_sig_dispose(&signature);
+      ir_abi_callable_type_dispose(&signature);
       return NULL;
     }
-    ir_inst_t *parameter = ir_inst_new(IR_PARAM);
+    ir_inst_t *parameter = ir_inst_new(IR_RESULT_AREA);
     if (!parameter) {
       ir_module_free(context.module);
       if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      ir_callable_sig_dispose(&signature);
+      ir_abi_callable_type_dispose(&signature);
       return NULL;
     }
     parameter->dst = ir_val_vreg(return_area, IR_TY_PTR);
-    parameter->src1 = ir_val_imm(IR_TY_I32, -1);
     if (!append_instruction(&context, parameter)) {
       ir_module_free(context.module);
       if (status) *status = context.status;
-      ir_callable_sig_dispose(&signature);
+      ir_abi_callable_type_dispose(&signature);
       return NULL;
     }
-    context.function->result_area_vreg = return_area;
+    context.result_area_vreg = return_area;
   }
   if (signature.param_count > INT_MAX) {
     ir_module_free(context.module);
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
     return NULL;
   }
@@ -4508,7 +4426,7 @@ ir_module_t *ir_build_function_module_from_hir(
   if (signature_length < 0) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_INVALID;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
   context.function->c_signature = malloc((size_t)signature_length + 1);
@@ -4519,7 +4437,7 @@ ir_module_t *ir_build_function_module_from_hir(
           (size_t)signature_length + 1) != signature_length) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
   context.function->c_signature_len = signature_length;
@@ -4529,10 +4447,10 @@ ir_module_t *ir_build_function_module_from_hir(
       !collect_label_blocks(&context, body)) {
     ir_module_free(context.module);
     if (status) *status = context.status;
-    ir_callable_sig_dispose(&signature);
+    ir_abi_callable_type_dispose(&signature);
     return NULL;
   }
-  ir_callable_sig_dispose(&signature);
+  ir_abi_callable_type_dispose(&signature);
   if (!build_statement(&context, body)) {
     ir_module_free(context.module);
     if (status) *status = context.status;

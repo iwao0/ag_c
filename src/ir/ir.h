@@ -37,27 +37,12 @@ typedef enum {
 int ir_type_size(ir_type_t t);
 const char *ir_type_name(ir_type_t t);
 
-/* C の recursive type を ABI lowering した後の callable signature。
- * parser の型 projection を IR に持ち込まず、backend が必要とする物理型だけを保持する。 */
-typedef struct {
-  ir_type_t result;
-  ir_type_t *params;
-  size_t param_count;
-  unsigned char is_variadic;
-} ir_callable_sig_t;
-
-int ir_callable_sig_set(
-    ir_callable_sig_t *signature, ir_type_t result,
-    const ir_type_t *params, size_t param_count, int is_variadic);
-int ir_callable_sig_copy(
-    ir_callable_sig_t *destination,
-    const ir_callable_sig_t *source);
-void ir_callable_sig_dispose(ir_callable_sig_t *signature);
-
 /* Target-independent C function type retained by MIR. TypeId/QualType are
  * semantic identities; target register classes, sizes and ABI pieces belong
  * to AbiLowering and are intentionally absent here. */
 typedef struct {
+  /* Compiler-generated functions may not have an interned source TypeId;
+   * their result/params still form a complete target-independent type. */
   psx_type_id_t type_id;
   psx_qual_type_t result;
   psx_qual_type_t *params;
@@ -126,6 +111,10 @@ typedef enum {
 
   /* 関数 prologue: 第 n 仮引数を vreg に読む */
   IR_PARAM,
+
+  /* 関数のaggregate結果保存先をvregに読む。物理的な受け渡し位置は
+   * AbiLoweringとbackendが決定し、MIRにはtarget registerを持たせない。 */
+  IR_RESULT_AREA,
 
   /* Apple ARM64 ABI variadic argument-area builtin. */
   IR_VA_ARG_AREA,
@@ -238,7 +227,6 @@ typedef struct ir_inst_t {
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
   unsigned char is_unsigned;
-  ir_callable_sig_t callable_sig;
   ir_function_type_t function_type;
   /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
    * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
@@ -246,7 +234,6 @@ typedef struct ir_inst_t {
    * 有効なので関数アドレスは常に GOT 経由にする。 */
   unsigned char is_got_funcref;
   unsigned char is_function_symbol;
-  unsigned char has_callable_sig;
   unsigned char has_function_type;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
@@ -314,8 +301,6 @@ typedef struct ir_func_t {
   int frame_size;
   int is_static;      /* 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。 */
   ir_type_t ret_type;
-  /* aggregate resultの保存先を表すvreg。target固有レジスタはsidecarが決める。 */
-  int result_area_vreg;
   int continuation_condition_block_id;
   unsigned char is_continuation_entry;
   unsigned char continuation_has_suspend;
@@ -348,9 +333,7 @@ typedef struct ir_symbol_func_ref_t {
   char *name;
   int name_len;
   int offset;
-  ir_callable_sig_t callable_sig;
   ir_function_type_t function_type;
-  unsigned char has_callable_sig;
   unsigned char has_function_type;
 } ir_symbol_func_ref_t;
 
@@ -391,7 +374,7 @@ ir_symbol_t *ir_module_add_symbol(ir_module_t *m,
                                   const char *name, int name_len);
 ir_symbol_func_ref_t *ir_symbol_add_func_ref(
     ir_symbol_t *symbol, int offset, const char *name, int name_len,
-    const ir_callable_sig_t *callable_sig);
+    const ir_function_type_t *function_type);
 const ir_symbol_func_ref_t *ir_symbol_find_func_ref(
     const ir_symbol_t *symbol, int offset);
 ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t ret_type);

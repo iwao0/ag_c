@@ -83,6 +83,7 @@ typedef struct {
   node_function_definition_t *cur_fn;
   int return_struct_size;
   int return_complex_half;
+  int result_area_vreg;
   int failed;
   /* offset → ALLOCA vreg (ポインタ) のマップ */
   int lvar_offset[MAX_LVARS];
@@ -1669,10 +1670,6 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 static void attach_callable_type(
     ir_build_ctx_t *ctx, ir_inst_t *sym, psx_type_id_t type_id) {
   if (!ctx || !sym) return;
-  ir_abi_type_context_t abi = abi_type_context(ctx);
-  sym->has_callable_sig =
-      ir_abi_callable_sig_from_type_id(
-          &abi, type_id, &sym->callable_sig) ? 1 : 0;
   sym->has_function_type = ir_function_type_from_type_id(
       ctx->semantic_types, type_id, &sym->function_type) ? 1 : 0;
 }
@@ -2377,9 +2374,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_vreg(slot, IR_TY_PTR);
   }
   /* 1/2/4/8B 以外の struct 戻り値を値文脈 (引数 / 式) で使う場合: 呼び出し側で
-   * ret_area を確保し x8 で渡す。戻り値はその area のアドレス (PTR)。間接呼び出し
-   * (関数ポインタ経由) でも x8 ret_area ABI は同じなので、direct/indirect 両方で
-   * 確保する (codegen は x8 設定と blr を独立に出す)。struct 代入の直接 rhs (direct
+   * result areaを確保する。戻り値はそのareaのアドレス (PTR)。間接呼び出し
+   * (関数ポインタ経由) でも同じresult-area contractなので、direct/indirect両方で
+   * 確保する。struct 代入の直接 rhs (direct
    * call) は build_assign_struct がインラインで dst へ書くためここには来ないが、
    * 間接呼び出しの代入は build_assign_struct がこの経路へ委譲する。 */
   int struct_ret_area = -1;
@@ -3248,7 +3245,7 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
   if (ctx->return_struct_size > 0 && node->lhs) {
     materialize_aggregate_expr_to(
-        ctx, node->lhs, ctx->f->result_area_vreg,
+        ctx, node->lhs, ctx->result_area_vreg,
         ctx->return_struct_size);
     if (ctx->failed) return;
     ir_inst_t *inst = ir_inst_new(IR_RET);
@@ -3771,6 +3768,7 @@ static void emit_implicit_return_if_missing(
 
 static int build_function(
     ir_build_ctx_t *ctx, node_function_definition_t *fn) {
+  ctx->result_area_vreg = -1;
   if (!prepare_continuation_entry(ctx, fn)) return 0;
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
@@ -3818,11 +3816,22 @@ static int build_function(
     ir_name_len = n;
   }
   ctx->f = ir_func_new(ctx->m, ir_name, ir_name_len, ret_ty);
-  if (!ctx->continuation &&
-      !ir_function_type_from_type_id(
-          ctx->semantic_types,
-          ps_function_definition_signature_qual_type(fn).type_id,
-          &ctx->f->function_type)) {
+  int function_type_lowered = 0;
+  if (ctx->continuation) {
+    psx_qual_type_t command_type = {
+        .type_id = ret_type_id,
+        .qualifiers = PSX_TYPE_QUALIFIER_NONE,
+    };
+    function_type_lowered = ir_function_type_set(
+        &ctx->f->function_type, PSX_TYPE_ID_INVALID,
+        command_type, &command_type, 1, 0, 1);
+  } else {
+    function_type_lowered = ir_function_type_from_type_id(
+        ctx->semantic_types,
+        ps_function_definition_signature_qual_type(fn).type_id,
+        &ctx->f->function_type);
+  }
+  if (!function_type_lowered) {
     fail(ctx, "function type lowering failed");
     return 0;
   }
@@ -3893,19 +3902,17 @@ static int build_function(
     ir_func_append_inst(ctx->f, command);
   }
   /* >8B struct 戻り値 (および 3/5/6/7B の非 clean サイズ) の関数では prologue で
-   * x8 を受け取る (Apple ARM64 ABI 簡略版)。1/2/4/8B のみ x0 で 1 レジスタ返却。
+   * aggregate結果保存先を受け取る。1/2/4/8B のみscalar返却。
    * 非 clean サイズを scalar 返ししていたため `{char;short;uchar}` 戻り値が先頭
    * メンバ幅 (1B) しか復元できず壊れていた。 */
   ctx->return_struct_size =
       cg_size_needs_indirect_struct(ret_struct_size) ? ret_struct_size : 0;
   if (ctx->return_struct_size > 0) {
     int v = ir_func_new_vreg(ctx->f);
-    ir_inst_t *p = ir_inst_new(IR_PARAM);
+    ir_inst_t *p = ir_inst_new(IR_RESULT_AREA);
     p->dst = ir_val_vreg(v, IR_TY_PTR);
-    /* src1.imm = -1 で「x8 を受け取る」を表す。codegen で特別扱い。 */
-    p->src1 = ir_val_imm(IR_TY_I32, -1);
     ir_func_append_inst(ctx->f, p);
-    ctx->f->result_area_vreg = v;
+    ctx->result_area_vreg = v;
   }
   /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
    * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */

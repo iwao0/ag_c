@@ -3424,11 +3424,14 @@ for (const file of backendFiles) {
   if (/#[ \t]*include[^\n]*parser\/semantic_ctx\.h/.test(source)) {
     throw new Error(`${file} directly includes parser/semantic_ctx.h`);
   }
+  const parserDependencySource = file.startsWith("src/ir/")
+    ? source.replace(/\bpsx_(?:type_id|qual_type)_t\b/g, "")
+    : source;
   if ((file.startsWith("src/arch/") || file.startsWith("src/ir/")) &&
-      (/#[ \t]*include[^\n]*parser\//.test(source) ||
-       /\bpsx?_[A-Za-z0-9_]+\b/.test(source) ||
+      (/#[ \t]*include[^\n]*parser\//.test(parserDependencySource) ||
+       /\bpsx?_[A-Za-z0-9_]+\b/.test(parserDependencySource) ||
        /\b(?:global_var_t|lvar_t|node_t|tag_member_info_t|string_lit_t|float_lit_t)\b/.test(
-         source,
+         parserDependencySource,
        ))) {
     throw new Error(`${file} IR/backend layer directly depends on parser types or APIs`);
   }
@@ -3550,6 +3553,7 @@ if (wasmObjFunctionCodegenViolations.length ||
 }
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
+const irDataHeaderSource = await readFile("src/ir/ir_data.h", "utf8");
 const resolvedGlobalAstSource = await readFile(
   "src/semantic/resolved_node.h",
   "utf8",
@@ -3597,13 +3601,48 @@ if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test
     !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    !/ir_abi_callable_sig_from_type_id\s*\(/.test(
+    /\bir_abi_(?:classify|callable)[A-Za-z0-9_]*\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/ir_function_type_from_type_id\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/ir_symbol_add_func_ref\s*\([^]*?&function_type\s*\)/.test(
       irSymbolLoweringSource,
     ) ||
     /\bps_type_sizeof\s*\(/.test(abiLoweringSource) ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(abiLoweringSource)) {
   throw new Error(
-    "IR ABI lowering must classify resolved function references from TypeId and target layout",
+    "generic IR must retain resolved function TypeId while ABI lowering owns target classification",
+  );
+}
+
+const forbiddenGenericIrAbiMetadata = [
+  "ir_callable_sig_t",
+  "callable_sig",
+  "has_callable_sig",
+  "ret_struct_size",
+  "ret_complex_half",
+  "arg_abi_types",
+  "param_abi_types",
+  "nargs_fixed",
+  "is_variadic_call",
+];
+for (const name of forbiddenGenericIrAbiMetadata) {
+  const pattern = new RegExp(`\\b${name}\\b`);
+  if (pattern.test(irHeaderSource) || pattern.test(irDataHeaderSource)) {
+    throw new Error(`generic IR must not own target ABI metadata: ${name}`);
+  }
+}
+if (/\bx8\b/.test(irHeaderSource) ||
+    /IR_PARAM[^\n]*-1|-1[^\n]*IR_PARAM/.test(irBuilderSource) ||
+    !/\bIR_RESULT_AREA\b/.test(irHeaderSource) ||
+    !/\bir_abi_reference_signature\s*\(/.test(wasmIrSource) ||
+    !/\bir_abi_data_relocation_signature\s*\(/.test(wasmIrSource) ||
+    !/\bir_abi_reference_signature\s*\(/.test(wasmObjSource) ||
+    !/\bir_abi_data_relocation_signature\s*\(/.test(wasmObjSource)) {
+  throw new Error(
+    "aggregate result and function-reference ABI must be represented by target-neutral MIR plus sidecars",
   );
 }
 
@@ -4303,18 +4342,18 @@ if (/\bnode_func_t\b/.test(astSource) ||
 const classifyCallParam = irBuilderSource.match(
   /static\s+ir_abi_param_info_t\s+classify_call_param\s*\([^]*?\n\}/,
 );
-const attachCallableFromCallee = irBuilderSource.match(
-  /static\s+void\s+attach_callable_type_from_callee\s*\([^]*?\n\}/,
+const attachCallableType = irBuilderSource.match(
+  /static\s+void\s+attach_callable_type\s*\([^]*?\n\}/,
 );
 if (!classifyCallParam ||
     !/psx_function_call_qual_type\s*\(/.test(classifyCallParam[0]) ||
     !/psx_semantic_type_table_parameter\s*\(/.test(classifyCallParam[0]) ||
     /(?:callee_type|param_types)\s*(?:->|\[)/.test(classifyCallParam[0]) ||
-    !attachCallableFromCallee ||
-    !/ps_node_qual_type\s*\(/.test(attachCallableFromCallee[0]) ||
-    /ps_node_get_type\s*\(/.test(attachCallableFromCallee[0])) {
+    !attachCallableType ||
+    !/ir_function_type_from_type_id\s*\(/.test(attachCallableType[0]) ||
+    /\bir_abi_[A-Za-z0-9_]+\s*\(/.test(attachCallableType[0])) {
   throw new Error(
-    "IR callable ABI lowering must consume finalized TypeId relations",
+    "IR calls must retain finalized function TypeId without embedding ABI projections",
   );
 }
 const typeNameRef = astSource.match(

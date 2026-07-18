@@ -125,15 +125,11 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
         print_val(s, i->args[k]);
       }
       sink_printf(s, ")");
-      if (i->has_callable_sig) {
-        sink_printf(s, " callable{n=%zu,ret=%s,var=%u}",
-                    i->callable_sig.param_count,
-                    ir_type_name(i->callable_sig.result),
-                    (unsigned)i->callable_sig.is_variadic);
-      }
       break;
     case IR_PARAM:
       sink_printf(s, "#%lld", i->src1.imm);
+      break;
+    case IR_RESULT_AREA:
       break;
     case IR_NEG:
     case IR_NOT:

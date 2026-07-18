@@ -70,7 +70,7 @@ int ir_data_object_set_bytes(
 ir_data_reloc_t *ir_data_object_add_reloc(
     ir_data_object_t *object, int offset, int width,
     ir_data_reloc_kind_t kind, const char *target, int target_len,
-    long long addend, const ir_callable_sig_t *callable_sig) {
+    long long addend, const ir_function_type_t *function_type) {
   if (!object || offset < 0 ||
       (width != 1 && width != 2 && width != 4 && width != 8) ||
       object->byte_size < width || offset > object->byte_size - width ||
@@ -91,13 +91,13 @@ ir_data_reloc_t *ir_data_object_add_reloc(
   reloc->width = width;
   reloc->kind = kind;
   reloc->addend = addend;
-  if (callable_sig) {
-    if (!ir_callable_sig_copy(&reloc->callable_sig, callable_sig)) {
+  if (function_type) {
+    if (!ir_function_type_copy(&reloc->function_type, function_type)) {
       free(reloc->target);
       free(reloc);
       return NULL;
     }
-    reloc->has_callable_sig = 1;
+    reloc->has_function_type = 1;
   }
   if (!object->relocs) object->relocs = reloc;
   else object->relocs_tail->next = reloc;
@@ -111,7 +111,6 @@ void ir_data_module_free(ir_data_module_t *module) {
     ir_data_object_t *next = object->next;
     for (ir_data_reloc_t *reloc = object->relocs; reloc; ) {
       ir_data_reloc_t *reloc_next = reloc->next;
-      ir_callable_sig_dispose(&reloc->callable_sig);
       ir_function_type_dispose(&reloc->function_type);
       free(reloc->target);
       free(reloc);

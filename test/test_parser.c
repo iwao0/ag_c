@@ -658,10 +658,16 @@ static long test_function_abi_value(
   if (signature) {
     if (field == 0) value = (long)signature->param_count;
     else if (field == 1 && index < signature->param_count)
-      value = signature->param_types[index];
+      value = signature->param_pieces[index].type;
     else if (field == 2) value = signature->is_variadic;
     else if (field == 3) value = signature->result_size;
     else if (field == 4) value = signature->result_area_vreg;
+    else if (field == 5 && index < signature->param_count)
+      value = (long)signature->param_pieces[index].source_index;
+    else if (field == 6 && index < signature->param_count)
+      value = signature->param_pieces[index].byte_offset;
+    else if (field == 7 && index < signature->param_count)
+      value = signature->param_pieces[index].kind;
   }
   ir_abi_module_free(abi);
   return value;
@@ -677,9 +683,28 @@ static long test_call_abi_value(
   if (signature) {
     if (field == 0) value = (long)signature->fixed_param_count;
     else if (field == 1 && index < signature->param_count)
-      value = signature->param_types[index];
+      value = signature->param_pieces[index].type;
     else if (field == 2) value = signature->is_variadic;
     else if (field == 3) value = signature->result_size;
+    else if (field == 4) value = signature->result.type;
+  }
+  ir_abi_module_free(abi);
+  return value;
+}
+
+static long test_reference_abi_value(
+    const ir_module_t *module, const ir_inst_t *reference,
+    int field, size_t index) {
+  ir_abi_module_t *abi = test_lower_ir_abi(module);
+  const ir_abi_signature_t *signature =
+      abi ? ir_abi_reference_signature(abi, reference) : NULL;
+  long value = -1;
+  if (signature) {
+    if (field == 0) value = (long)signature->param_count;
+    else if (field == 1 && index < signature->param_count)
+      value = signature->param_pieces[index].type;
+    else if (field == 2) value = signature->result.type;
+    else if (field == 3) value = signature->is_variadic;
   }
   ir_abi_module_free(abi);
   return value;
@@ -5025,22 +5050,20 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_TRUE(strncmp(call->sym, "add", 3) == 0);
   ASSERT_EQ(2, call->nargs);
   ASSERT_EQ(2, test_call_abi_value(ir, call, 0, 0));
-  ASSERT_TRUE(call->has_callable_sig);
   ASSERT_TRUE(call->has_function_type);
   ASSERT_TRUE(call->function_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(2, call->function_type.param_count);
-  ASSERT_EQ(IR_TY_I32, call->callable_sig.result);
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 4, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 1));
   ASSERT_TRUE(variadic_call != NULL);
   ASSERT_EQ(2, variadic_call->nargs);
   ASSERT_EQ(1, test_call_abi_value(ir, variadic_call, 0, 0));
   ASSERT_TRUE(test_call_abi_value(ir, variadic_call, 2, 0));
-  ASSERT_TRUE(variadic_call->has_callable_sig);
   ASSERT_TRUE(variadic_call->has_function_type);
   ASSERT_EQ(1, variadic_call->function_type.param_count);
   ASSERT_TRUE(variadic_call->function_type.is_variadic);
-  ASSERT_TRUE(variadic_call->callable_sig.is_variadic);
+  ASSERT_TRUE(test_call_abi_value(ir, variadic_call, 2, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, variadic_call, 1, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, variadic_call, 1, 1));
   ir_module_free(ir);
@@ -5076,9 +5099,9 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_TRUE(recursive_call != NULL);
   ASSERT_EQ(5, recursive_call->sym_len);
   ASSERT_TRUE(strncmp(recursive_call->sym, "recur", 5) == 0);
-  ASSERT_TRUE(recursive_call->has_callable_sig);
-  ASSERT_EQ(IR_TY_I32, recursive_call->callable_sig.result);
-  ASSERT_EQ(1, recursive_call->callable_sig.param_count);
+  ASSERT_TRUE(recursive_call->has_function_type);
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, recursive_call, 4, 0));
+  ASSERT_EQ(1, test_call_abi_value(ir, recursive_call, 0, 0));
   ir_module_free(ir);
   reset_test_translation_unit_state();
 }
@@ -5419,6 +5442,8 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(12, test_function_abi_value(ir, 3, 0));
   ASSERT_TRUE(test_function_abi_value(ir, 4, 0) >= 0);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RESULT_AREA));
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 1);
   ir_module_free(ir);
 
@@ -5850,6 +5875,7 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
   printf("test_typed_hir_complex_copy_comparison_without_ast...\n");
   reset_test_translation_unit_state();
   node_t **program = parse_program_input(
+      "double _Complex identity(double _Complex value) { return value; } "
       "int compare(void) { "
       "_Complex double first = 3.0; "
       "_Complex double copy = first; "
@@ -5859,8 +5885,9 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
   ASSERT_TRUE(program != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
-  ASSERT_EQ(1, psx_hir_module_root_count(hir));
-  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t identity_root_id = psx_hir_module_root_at(hir, 0);
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 1);
   free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -5877,6 +5904,23 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
   ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *identity_ir = ir_build_function_module_from_hir(
+      hir, identity_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(identity_ir != NULL && identity_ir->funcs != NULL);
+  ASSERT_EQ(2, test_function_abi_value(identity_ir, 0, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 1, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 1, 1));
+  ASSERT_EQ(0, test_function_abi_value(identity_ir, 5, 0));
+  ASSERT_EQ(0, test_function_abi_value(identity_ir, 5, 1));
+  ASSERT_EQ(0, test_function_abi_value(identity_ir, 6, 0));
+  ASSERT_EQ(8, test_function_abi_value(identity_ir, 6, 1));
+  ASSERT_EQ(IR_ABI_PIECE_COMPLEX_REAL,
+            test_function_abi_value(identity_ir, 7, 0));
+  ASSERT_EQ(IR_ABI_PIECE_COMPLEX_IMAGINARY,
+            test_function_abi_value(identity_ir, 7, 1));
+  ir_module_free(identity_ir);
+  status = IR_HIR_BUILD_INVALID;
   ir_module_t *ir = ir_build_function_module_from_hir(
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
@@ -5979,10 +6023,10 @@ static void test_typed_hir_indirect_call_lowering_without_ast() {
   ASSERT_TRUE(call->sym == NULL);
   ASSERT_TRUE(call->callee.id >= 0);
   ASSERT_EQ(IR_TY_PTR, call->callee.type);
-  ASSERT_TRUE(call->has_callable_sig);
-  ASSERT_EQ(1, call->callable_sig.param_count);
-  ASSERT_EQ(IR_TY_I32, call->callable_sig.params[0]);
-  ASSERT_EQ(IR_TY_I32, call->callable_sig.result);
+  ASSERT_TRUE(call->has_function_type);
+  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 4, 0));
   ASSERT_EQ(1, call->nargs);
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
   ir_module_free(ir);
@@ -6036,9 +6080,9 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast() {
   ASSERT_TRUE(call->sym == NULL);
   ASSERT_EQ(1, call->nargs);
   ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
-  ASSERT_TRUE(call->has_callable_sig);
-  ASSERT_EQ(1, call->callable_sig.param_count);
-  ASSERT_EQ(IR_TY_I32, call->callable_sig.params[0]);
+  ASSERT_TRUE(call->has_function_type);
+  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
   ir_module_free(ir);
   reset_test_translation_unit_state();
 }
@@ -6163,13 +6207,27 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
   ASSERT_TRUE(function_reference != NULL);
   ASSERT_TRUE(function_reference->is_function_symbol);
   ASSERT_TRUE(function_reference->is_got_funcref);
-  ASSERT_TRUE(function_reference->has_callable_sig);
   ASSERT_TRUE(function_reference->has_function_type);
   ASSERT_TRUE(
       function_reference->function_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(1, function_reference->function_type.param_count);
-  ASSERT_EQ(1, function_reference->callable_sig.param_count);
-  ASSERT_EQ(IR_TY_I32, function_reference->callable_sig.result);
+  ASSERT_EQ(1, test_reference_abi_value(
+                   ir, function_reference, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_reference_abi_value(
+                            ir, function_reference, 2, 0));
+  ir_symbol_t *callback_slots = ir_module_add_symbol(
+      ir, "callback_slots", 14);
+  ir_symbol_func_ref_t *callback_ref = ir_symbol_add_func_ref(
+      callback_slots, 0, function_reference->sym,
+      function_reference->sym_len, &function_reference->function_type);
+  ir_abi_module_t *symbol_abi = test_lower_ir_abi(ir);
+  const ir_abi_signature_t *callback_ref_abi =
+      ir_abi_symbol_reference_signature(symbol_abi, callback_ref);
+  ASSERT_TRUE(callback_ref_abi != NULL);
+  ASSERT_EQ(1, callback_ref_abi->param_count);
+  ASSERT_EQ(IR_TY_I32, callback_ref_abi->param_pieces[0].type);
+  ASSERT_EQ(IR_TY_I32, callback_ref_abi->result.type);
+  ir_abi_module_free(symbol_abi);
   ir_module_free(ir);
   reset_test_translation_unit_state();
 }
@@ -26545,6 +26603,23 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(first_callback_data != NULL);
   ASSERT_TRUE(first_callback_data->relocs != NULL);
   ASSERT_EQ(IR_DATA_RELOC_FUNCTION, first_callback_data->relocs->kind);
+  ASSERT_TRUE(first_callback_data->relocs->has_function_type);
+  ir_abi_type_context_t first_data_abi_context = {
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          first.semantic_context),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          first.semantic_context),
+      .target = ag_compilation_session_target(&first),
+  };
+  ir_abi_data_module_t *first_data_abi = ir_abi_lower_data_module(
+      &first_data_abi_context, first_data);
+  const ir_abi_signature_t *first_callback_abi =
+      ir_abi_data_relocation_signature(
+          first_data_abi, first_callback_data->relocs);
+  ASSERT_TRUE(first_callback_abi != NULL);
+  ASSERT_EQ(0, first_callback_abi->param_count);
+  ASSERT_EQ(IR_TY_I32, first_callback_abi->result.type);
+  ir_abi_data_module_free(first_data_abi);
   ASSERT_TRUE(first_aggregate_data != NULL);
   ASSERT_EQ(11, first_aggregate_data->bytes[0]);
   ASSERT_EQ(22, first_aggregate_data->bytes[4]);

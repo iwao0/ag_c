@@ -96,11 +96,37 @@ ir_abi_param_info_t ir_abi_classify_type_id(
   }
 }
 
-int ir_abi_callable_sig_from_type_id(
+void ir_abi_callable_type_dispose(ir_abi_callable_type_t *type) {
+  if (!type) return;
+  free(type->params);
+  memset(type, 0, sizeof(*type));
+}
+
+static int set_callable_type(
+    ir_abi_callable_type_t *type, ir_type_t result,
+    const ir_type_t *params, size_t param_count, int is_variadic) {
+  if (!type || (param_count > 0 && !params) ||
+      param_count > SIZE_MAX / sizeof(*params))
+    return 0;
+  ir_type_t *copy = NULL;
+  if (param_count > 0) {
+    copy = malloc(param_count * sizeof(*copy));
+    if (!copy) return 0;
+    memcpy(copy, params, param_count * sizeof(*copy));
+  }
+  free(type->params);
+  type->result = result;
+  type->params = copy;
+  type->param_count = param_count;
+  type->is_variadic = is_variadic ? 1 : 0;
+  return 1;
+}
+
+int ir_abi_source_callable_type_from_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id,
-    ir_callable_sig_t *out) {
+    ir_abi_callable_type_t *out) {
   if (!context || !context->semantic_types || !out) return 0;
-  ir_callable_sig_dispose(out);
+  ir_abi_callable_type_dispose(out);
   const psx_type_t *function = psx_semantic_type_table_lookup(
       context->semantic_types, type_id);
   while (function && (function->kind == PSX_TYPE_POINTER ||
@@ -130,7 +156,7 @@ int ir_abi_callable_sig_from_type_id(
         context, param_type_id);
     params[i] = param.type == IR_TY_VOID ? IR_TY_I32 : param.type;
   }
-  int ok = ir_callable_sig_set(
+  int ok = set_callable_type(
       out,
       function->base && function->base->kind == PSX_TYPE_VOID
           ? IR_TY_VOID : result.type,
@@ -172,7 +198,7 @@ static int lower_function_type_signature(
     const ir_function_type_t *function_type,
     ir_abi_signature_t *out) {
   if (!context || !function_type || !out ||
-      function_type->type_id == PSX_TYPE_ID_INVALID)
+      function_type->result.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   memset(out, 0, sizeof(*out));
   out->result_area = ir_val_none();
@@ -197,18 +223,36 @@ static int lower_function_type_signature(
     piece_count += pieces;
   }
   if (piece_count > 0) {
-    out->param_types = calloc(piece_count, sizeof(*out->param_types));
-    if (!out->param_types) return 0;
+    out->param_pieces = calloc(
+        piece_count, sizeof(*out->param_pieces));
+    if (!out->param_pieces) return 0;
   }
   for (size_t i = 0, piece = 0; i < function_type->param_count; i++) {
     psx_type_id_t type_id = function_type->params[i].type_id;
     ir_abi_param_info_t info = ir_abi_classify_type_id(context, type_id);
     if (type_is_complex(context, type_id)) {
-      out->param_types[piece++] = info.type;
-      out->param_types[piece++] = info.type;
+      out->param_pieces[piece++] = (ir_abi_piece_t){
+          .type = info.type,
+          .source_index = i,
+          .byte_offset = 0,
+          .kind = IR_ABI_PIECE_COMPLEX_REAL,
+      };
+      out->param_pieces[piece++] = (ir_abi_piece_t){
+          .type = info.type,
+          .source_index = i,
+          .byte_offset = ir_type_size(info.type),
+          .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
+      };
     } else {
-      out->param_types[piece++] = info.type == IR_TY_VOID
-                                      ? IR_TY_I32 : info.type;
+      out->param_pieces[piece++] = (ir_abi_piece_t){
+          .type = info.type == IR_TY_VOID ? IR_TY_I32 : info.type,
+          .source_index = i,
+          .byte_offset = 0,
+          .kind = info.param_class == IR_ABI_PARAM_AGGREGATE &&
+                          info.type == IR_TY_PTR
+                      ? IR_ABI_PIECE_INDIRECT
+                      : IR_ABI_PIECE_DIRECT,
+      };
     }
   }
   out->param_count = piece_count;
@@ -218,7 +262,7 @@ static int lower_function_type_signature(
 
 static void dispose_signature(ir_abi_signature_t *signature) {
   if (!signature) return;
-  free(signature->param_types);
+  free(signature->param_pieces);
   memset(signature, 0, sizeof(*signature));
 }
 
@@ -237,6 +281,49 @@ static size_t count_module_calls(const ir_module_t *module) {
   return count;
 }
 
+static size_t count_module_references(const ir_module_t *module) {
+  size_t count = 0;
+  for (const ir_func_t *function = module ? module->funcs : NULL;
+       function; function = function->next) {
+    for (const ir_block_t *block = function->entry; block;
+         block = block->next) {
+      for (const ir_inst_t *instruction = block->head; instruction;
+           instruction = instruction->next) {
+        if (instruction->op != IR_CALL &&
+            instruction->has_function_type)
+          count++;
+      }
+    }
+  }
+  return count;
+}
+
+static size_t count_symbol_references(const ir_module_t *module) {
+  size_t count = 0;
+  for (const ir_symbol_t *symbol = module ? module->symbols : NULL;
+       symbol; symbol = symbol->next) {
+    for (const ir_symbol_func_ref_t *reference = symbol->func_refs;
+         reference; reference = reference->next) {
+      if (reference->has_function_type) count++;
+    }
+  }
+  return count;
+}
+
+static int function_result_area_vreg(const ir_func_t *function) {
+  int result = -1;
+  for (const ir_block_t *block = function ? function->entry : NULL;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next) {
+      if (instruction->op != IR_RESULT_AREA) continue;
+      if (instruction->dst.id < 0 || result >= 0) return -1;
+      result = instruction->dst.id;
+    }
+  }
+  return result;
+}
+
 ir_abi_module_t *ir_abi_lower_module(
     const ir_abi_type_context_t *context,
     const ir_module_t *module) {
@@ -247,6 +334,8 @@ ir_abi_module_t *ir_abi_lower_module(
        function = function->next)
     abi->function_count++;
   abi->call_count = count_module_calls(module);
+  abi->reference_count = count_module_references(module);
+  abi->symbol_reference_count = count_symbol_references(module);
   if (abi->function_count > 0) {
     abi->functions = calloc(
         abi->function_count, sizeof(*abi->functions));
@@ -256,9 +345,20 @@ ir_abi_module_t *ir_abi_lower_module(
     abi->calls = calloc(abi->call_count, sizeof(*abi->calls));
     if (!abi->calls) goto fail;
   }
+  if (abi->reference_count > 0) {
+    abi->references = calloc(
+        abi->reference_count, sizeof(*abi->references));
+    if (!abi->references) goto fail;
+  }
+  if (abi->symbol_reference_count > 0) {
+    abi->symbol_references = calloc(
+        abi->symbol_reference_count, sizeof(*abi->symbol_references));
+    if (!abi->symbol_references) goto fail;
+  }
 
   size_t function_index = 0;
   size_t call_index = 0;
+  size_t reference_index = 0;
   for (const ir_func_t *function = module->funcs; function;
        function = function->next) {
     ir_abi_function_t *lowered = &abi->functions[function_index++];
@@ -266,12 +366,27 @@ ir_abi_module_t *ir_abi_lower_module(
     if (!lower_function_type_signature(
             context, &function->function_type, &lowered->signature))
       goto fail;
-    lowered->signature.result_area_vreg = function->result_area_vreg;
+    lowered->signature.result_area_vreg =
+        function_result_area_vreg(function);
+    if (lowered->signature.result_is_indirect &&
+        lowered->signature.result_area_vreg < 0)
+      goto fail;
     for (const ir_block_t *block = function->entry; block;
          block = block->next) {
       for (const ir_inst_t *instruction = block->head; instruction;
            instruction = instruction->next) {
-        if (instruction->op != IR_CALL) continue;
+        if (instruction->op != IR_CALL) {
+          if (instruction->has_function_type) {
+            ir_abi_reference_t *reference =
+                &abi->references[reference_index++];
+            reference->reference = instruction;
+            if (!lower_function_type_signature(
+                    context, &instruction->function_type,
+                    &reference->signature))
+              goto fail;
+          }
+          continue;
+        }
         ir_abi_call_t *call = &abi->calls[call_index++];
         call->call = instruction;
         if (!lower_function_type_signature(
@@ -285,14 +400,19 @@ ir_abi_module_t *ir_abi_lower_module(
             actual_count < declared_piece_count)
           goto fail;
         if (actual_count != declared_piece_count) {
-          ir_type_t *types = realloc(
-              call->signature.param_types,
-              actual_count * sizeof(*types));
-          if (actual_count > 0 && !types) goto fail;
-          call->signature.param_types = types;
+          ir_abi_piece_t *pieces = realloc(
+              call->signature.param_pieces,
+              actual_count * sizeof(*pieces));
+          if (actual_count > 0 && !pieces) goto fail;
+          call->signature.param_pieces = pieces;
         }
         for (size_t i = declared_piece_count; i < actual_count; i++) {
-          call->signature.param_types[i] = instruction->args[i].type;
+          call->signature.param_pieces[i] = (ir_abi_piece_t){
+              .type = instruction->args[i].type,
+              .source_index = SIZE_MAX,
+              .byte_offset = 0,
+              .kind = IR_ABI_PIECE_VARIADIC,
+          };
         }
         call->signature.param_count = actual_count;
         call->signature.fixed_param_count =
@@ -303,6 +423,21 @@ ir_abi_module_t *ir_abi_lower_module(
             actual_count > declared_piece_count;
         call->signature.result_area = instruction->result_area;
       }
+    }
+  }
+  size_t symbol_reference_index = 0;
+  for (const ir_symbol_t *symbol = module->symbols; symbol;
+       symbol = symbol->next) {
+    for (const ir_symbol_func_ref_t *reference = symbol->func_refs;
+         reference; reference = reference->next) {
+      if (!reference->has_function_type) continue;
+      ir_abi_symbol_reference_t *lowered =
+          &abi->symbol_references[symbol_reference_index++];
+      lowered->reference = reference;
+      if (!lower_function_type_signature(
+              context, &reference->function_type,
+              &lowered->signature))
+        goto fail;
     }
   }
   return abi;
@@ -318,8 +453,14 @@ void ir_abi_module_free(ir_abi_module_t *module) {
     dispose_signature(&module->functions[i].signature);
   for (size_t i = 0; i < module->call_count; i++)
     dispose_signature(&module->calls[i].signature);
+  for (size_t i = 0; i < module->reference_count; i++)
+    dispose_signature(&module->references[i].signature);
+  for (size_t i = 0; i < module->symbol_reference_count; i++)
+    dispose_signature(&module->symbol_references[i].signature);
   free(module->functions);
   free(module->calls);
+  free(module->references);
+  free(module->symbol_references);
   free(module);
 }
 
@@ -339,6 +480,95 @@ const ir_abi_signature_t *ir_abi_call_signature(
   for (size_t i = 0; i < module->call_count; i++) {
     if (module->calls[i].call == call)
       return &module->calls[i].signature;
+  }
+  return NULL;
+}
+
+const ir_abi_signature_t *ir_abi_reference_signature(
+    const ir_abi_module_t *module, const ir_inst_t *reference) {
+  if (!module || !reference) return NULL;
+  for (size_t i = 0; i < module->reference_count; i++) {
+    if (module->references[i].reference == reference)
+      return &module->references[i].signature;
+  }
+  return NULL;
+}
+
+const ir_abi_signature_t *ir_abi_symbol_reference_signature(
+    const ir_abi_module_t *module,
+    const ir_symbol_func_ref_t *reference) {
+  if (!module || !reference) return NULL;
+  for (size_t i = 0; i < module->symbol_reference_count; i++) {
+    if (module->symbol_references[i].reference == reference)
+      return &module->symbol_references[i].signature;
+  }
+  return NULL;
+}
+
+static size_t count_data_function_relocations(
+    const ir_data_module_t *module) {
+  size_t count = 0;
+  for (const ir_data_object_t *object = module ? module->objects : NULL;
+       object; object = object->next) {
+    for (const ir_data_reloc_t *relocation = object->relocs;
+         relocation; relocation = relocation->next) {
+      if (relocation->kind == IR_DATA_RELOC_FUNCTION &&
+          relocation->has_function_type)
+        count++;
+    }
+  }
+  return count;
+}
+
+ir_abi_data_module_t *ir_abi_lower_data_module(
+    const ir_abi_type_context_t *context,
+    const ir_data_module_t *module) {
+  if (!context || !module) return NULL;
+  ir_abi_data_module_t *abi = calloc(1, sizeof(*abi));
+  if (!abi) return NULL;
+  abi->relocation_count = count_data_function_relocations(module);
+  if (abi->relocation_count > 0) {
+    abi->relocations = calloc(
+        abi->relocation_count, sizeof(*abi->relocations));
+    if (!abi->relocations) goto fail;
+  }
+  size_t index = 0;
+  for (const ir_data_object_t *object = module->objects; object;
+       object = object->next) {
+    for (const ir_data_reloc_t *relocation = object->relocs;
+         relocation; relocation = relocation->next) {
+      if (relocation->kind != IR_DATA_RELOC_FUNCTION) continue;
+      if (!relocation->has_function_type) goto fail;
+      ir_abi_data_relocation_t *lowered = &abi->relocations[index++];
+      lowered->relocation = relocation;
+      if (!lower_function_type_signature(
+              context, &relocation->function_type,
+              &lowered->signature))
+        goto fail;
+    }
+  }
+  return abi;
+
+fail:
+  ir_abi_data_module_free(abi);
+  return NULL;
+}
+
+void ir_abi_data_module_free(ir_abi_data_module_t *module) {
+  if (!module) return;
+  for (size_t i = 0; i < module->relocation_count; i++)
+    dispose_signature(&module->relocations[i].signature);
+  free(module->relocations);
+  free(module);
+}
+
+const ir_abi_signature_t *ir_abi_data_relocation_signature(
+    const ir_abi_data_module_t *module,
+    const ir_data_reloc_t *relocation) {
+  if (!module || !relocation) return NULL;
+  for (size_t i = 0; i < module->relocation_count; i++) {
+    if (module->relocations[i].relocation == relocation)
+      return &module->relocations[i].signature;
   }
   return NULL;
 }

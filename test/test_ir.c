@@ -245,17 +245,21 @@ static void test_resolved_symbols(void) {
   symbol->alignment = 8;
   symbol->is_static = 1;
 
-  ir_callable_sig_t sig = {0};
-  ir_type_t params[] = {IR_TY_I64};
-  if (!ir_callable_sig_set(&sig, IR_TY_I32, params, 1, 0)) {
+  ir_function_type_t type = {0};
+  psx_qual_type_t params[] = {
+      {3, PSX_TYPE_QUALIFIER_CONST},
+  };
+  if (!ir_function_type_set(
+          &type, 1, (psx_qual_type_t){2, PSX_TYPE_QUALIFIER_NONE},
+          params, 1, 0, 1)) {
     failures++;
-    fprintf(stderr, "FAIL: callable signature allocation\n");
+    fprintf(stderr, "FAIL: function type allocation\n");
     ir_module_free(m);
     return;
   }
   ir_symbol_func_ref_t *ref =
-      ir_symbol_add_func_ref(symbol, 8, function_name, 7, &sig);
-  ir_callable_sig_dispose(&sig);
+      ir_symbol_add_func_ref(symbol, 8, function_name, 7, &type);
+  ir_function_type_dispose(&type);
 
   symbol_name[0] = 'X';
   function_name[0] = 'Y';
@@ -271,10 +275,12 @@ static void test_resolved_symbols(void) {
   }
   if (!ref || ir_symbol_find_func_ref(symbol, 8) != ref ||
       ir_symbol_find_func_ref(symbol, 4) != NULL ||
-      strcmp(ref->name, "handler") != 0 || !ref->has_callable_sig ||
-      ref->callable_sig.result != IR_TY_I32 ||
-      ref->callable_sig.param_count != 1 ||
-      ref->callable_sig.params[0] != IR_TY_I64) {
+      strcmp(ref->name, "handler") != 0 || !ref->has_function_type ||
+      ref->function_type.type_id != 1 ||
+      ref->function_type.result.type_id != 2 ||
+      ref->function_type.param_count != 1 ||
+      ref->function_type.params[0].type_id != 3 ||
+      ref->function_type.params[0].qualifiers != PSX_TYPE_QUALIFIER_CONST) {
     failures++;
     fprintf(stderr, "FAIL: resolved function reference metadata\n");
   }
@@ -299,18 +305,22 @@ static void test_data_module(void) {
   object->is_static = 1;
 
   char target_name[] = "handler";
-  ir_callable_sig_t sig = {0};
-  ir_type_t params[] = {IR_TY_PTR};
-  if (!ir_callable_sig_set(&sig, IR_TY_I32, params, 1, 0)) {
+  ir_function_type_t type = {0};
+  psx_qual_type_t params[] = {
+      {3, PSX_TYPE_QUALIFIER_NONE},
+  };
+  if (!ir_function_type_set(
+          &type, 1, (psx_qual_type_t){2, PSX_TYPE_QUALIFIER_NONE},
+          params, 1, 0, 1)) {
     failures++;
-    fprintf(stderr, "FAIL: callable signature allocation\n");
+    fprintf(stderr, "FAIL: relocation function type allocation\n");
     ir_data_module_free(module);
     return;
   }
   ir_data_reloc_t *reloc = ir_data_object_add_reloc(
       object, 4, 4, IR_DATA_RELOC_FUNCTION,
-      target_name, 7, 12, &sig);
-  ir_callable_sig_dispose(&sig);
+      target_name, 7, 12, &type);
+  ir_function_type_dispose(&type);
 
   object_name[0] = 'X';
   target_name[0] = 'Y';
@@ -325,10 +335,11 @@ static void test_data_module(void) {
   }
   if (!reloc || strcmp(reloc->target, "handler") != 0 ||
       reloc->offset != 4 || reloc->width != 4 || reloc->addend != 12 ||
-      reloc->kind != IR_DATA_RELOC_FUNCTION || !reloc->has_callable_sig ||
-      reloc->callable_sig.result != IR_TY_I32 ||
-      reloc->callable_sig.param_count != 1 ||
-      reloc->callable_sig.params[0] != IR_TY_PTR) {
+      reloc->kind != IR_DATA_RELOC_FUNCTION || !reloc->has_function_type ||
+      reloc->function_type.type_id != 1 ||
+      reloc->function_type.result.type_id != 2 ||
+      reloc->function_type.param_count != 1 ||
+      reloc->function_type.params[0].type_id != 3) {
     failures++;
     fprintf(stderr, "FAIL: IR data relocation metadata and ownership\n");
   }
@@ -348,41 +359,29 @@ static void test_data_module(void) {
 
 static void test_dynamic_function_signatures(void) {
   enum { PARAM_COUNT = 40 };
-  ir_type_t abi_params[PARAM_COUNT];
   psx_qual_type_t c_params[PARAM_COUNT];
   for (size_t i = 0; i < PARAM_COUNT; i++) {
-    abi_params[i] = i % 2 ? IR_TY_I64 : IR_TY_I32;
     c_params[i] = (psx_qual_type_t){
         .type_id = (psx_type_id_t)(i + 2),
         .qualifiers = PSX_TYPE_QUALIFIER_NONE,
     };
   }
 
-  ir_callable_sig_t callable = {0};
-  ir_callable_sig_t callable_copy = {0};
   ir_function_type_t function_type = {0};
   ir_function_type_t function_type_copy = {0};
-  int ok = ir_callable_sig_set(
-               &callable, IR_TY_I32, abi_params, PARAM_COUNT, 1) &&
-           ir_callable_sig_copy(&callable_copy, &callable) &&
-           ir_function_type_set(
+  int ok = ir_function_type_set(
                &function_type, 1,
                (psx_qual_type_t){2, PSX_TYPE_QUALIFIER_NONE},
                c_params, PARAM_COUNT, 1, 1) &&
            ir_function_type_copy(&function_type_copy, &function_type);
-  abi_params[39] = IR_TY_PTR;
   c_params[39].type_id = 99;
-  if (!ok || callable_copy.param_count != PARAM_COUNT ||
-      callable_copy.params[39] != IR_TY_I64 ||
-      function_type_copy.param_count != PARAM_COUNT ||
+  if (!ok || function_type_copy.param_count != PARAM_COUNT ||
       function_type_copy.params[39].type_id != 41 ||
       !function_type_copy.is_variadic ||
       !function_type_copy.has_prototype) {
     failures++;
     fprintf(stderr, "FAIL: dynamic function signature ownership\n");
   }
-  ir_callable_sig_dispose(&callable_copy);
-  ir_callable_sig_dispose(&callable);
   ir_function_type_dispose(&function_type_copy);
   ir_function_type_dispose(&function_type);
 }

@@ -280,6 +280,7 @@ static void gen_inst_memcpy(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst);
@@ -331,6 +332,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_EQ: case IR_NE:
                            gen_inst_int_cmp(ctx, inst); return;
     case IR_PARAM:         gen_inst_param(ctx, inst); return;
+    case IR_RESULT_AREA:   gen_inst_result_area(ctx, inst); return;
     case IR_CALL:          gen_inst_call(ctx, inst); return;
     case IR_BR:
       arm64_cg_emitf(ctx, "  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
@@ -774,16 +776,13 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
 
 static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
       int idx = (int)inst->src1.imm;
-      /* idx == -1 → x8 (struct return area)。
-       * float/double → s{idx}/d{idx}、整数 → x{idx}。
+      /* float/double → s{idx}/d{idx}、整数 → x{idx}。
        * 整数 idx >= 8 → 呼び出し側が stack に積んだ 9 個目以降の引数を
        *   [x29 + total_size + (idx-8)*8] から load する (Apple ARM64 ABI)。 */
       int is_fp = (inst->dst.type == IR_TY_F32 || inst->dst.type == IR_TY_F64);
       char src_buf[8];
       const char *src_reg;
-      if (idx == -1) {
-        src_reg = "x8";
-      } else if (!is_fp && idx >= 8) {
+      if (!is_fp && idx >= 8) {
         /* stack-passed integer arg: ldr to a scratch reg then write to slot. */
         int stack_off = ctx->total_size + (idx - 8) * 8;
         const char *tmp = "x9";
@@ -820,12 +819,23 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     if (!is_fp && ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
       int r = ctx->f->vreg_phys_reg[inst->dst.id];
-      if (r != idx && !(idx == -1 && r == 8)) {
+      if (r != idx) {
         arm64_cg_emitf(ctx, "  mov x%d, %s\n", r, src_reg);
       }
     } else {
       emit_frame_store(ctx, src_reg, ctx->vreg_off[inst->dst.id]);
     }
+  }
+}
+
+static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst) {
+  if (inst->dst.id < 0 || inst->dst.id >= ctx->f->next_vreg_id) return;
+  if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
+    int destination = ctx->f->vreg_phys_reg[inst->dst.id];
+    if (destination != 8)
+      arm64_cg_emitf(ctx, "  mov x%d, x8\n", destination);
+  } else {
+    emit_frame_store(ctx, "x8", ctx->vreg_off[inst->dst.id]);
   }
 }
 
