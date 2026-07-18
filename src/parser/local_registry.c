@@ -231,13 +231,6 @@ static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
 
-int ps_local_registry_scope_is_visible_from_in(
-    const psx_local_registry_t *registry,
-    unsigned declaration_scope, unsigned reference_scope) {
-  return registry && psx_scope_graph_scope_is_visible_from(
-      registry->scope_graph, declaration_scope, reference_scope);
-}
-
 static void index_add(psx_local_registry_t *registry, lvar_t *var) {
   var->declaration_id = psx_scope_graph_declare(
       registry->scope_graph, PSX_NAMESPACE_ORDINARY,
@@ -281,13 +274,6 @@ unsigned ps_local_registry_next_scope_seq_in(
       ? psx_scope_graph_next_scope_id(registry->scope_graph)
       : PSX_SCOPE_ID_INVALID;
   return next == PSX_SCOPE_ID_INVALID || next == 0 ? 0 : next - 1;
-}
-
-unsigned ps_local_registry_register_binding_event_in(
-    psx_local_registry_t *registry) {
-  return registry
-      ? psx_scope_graph_reserve_declaration_order(registry->scope_graph)
-      : 0;
 }
 
 psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(

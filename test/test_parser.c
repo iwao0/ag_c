@@ -25536,14 +25536,49 @@ static void test_semantic_context_isolation() {
       ag_compilation_session_diagnostic_context(test_suite_session);
   ps_ctx_bind_diagnostic_context(first, diagnostics);
   ps_ctx_bind_diagnostic_context(second, diagnostics);
+  psx_global_registry_t *first_globals = ps_global_registry_create();
+  psx_global_registry_t *second_globals = ps_global_registry_create();
+  psx_local_registry_t *first_locals =
+      ps_local_registry_create(diagnostics);
+  psx_local_registry_t *second_locals =
+      ps_local_registry_create(diagnostics);
+  ASSERT_TRUE(first_globals != NULL);
+  ASSERT_TRUE(second_globals != NULL);
+  ASSERT_TRUE(first_locals != NULL);
+  ASSERT_TRUE(second_locals != NULL);
+  if (!first_globals || !second_globals || !first_locals || !second_locals) {
+    ps_global_registry_destroy(first_globals);
+    ps_global_registry_destroy(second_globals);
+    ps_local_registry_destroy(first_locals);
+    ps_local_registry_destroy(second_locals);
+    ps_ctx_destroy(first);
+    ps_ctx_destroy(second);
+    return;
+  }
+  ps_global_registry_bind_semantic_types(
+      first_globals, ps_ctx_semantic_type_table_in(first));
+  ps_global_registry_bind_semantic_types(
+      second_globals, ps_ctx_semantic_type_table_in(second));
+  ps_local_registry_bind_semantic_types(
+      first_locals, ps_ctx_semantic_type_table_in(first));
+  ps_local_registry_bind_semantic_types(
+      second_locals, ps_ctx_semantic_type_table_in(second));
+  ps_global_registry_bind_scope_graph(
+      first_globals, ps_ctx_scope_graph(first));
+  ps_global_registry_bind_scope_graph(
+      second_globals, ps_ctx_scope_graph(second));
+  ps_local_registry_bind_scope_graph(
+      first_locals, ps_ctx_scope_graph(first));
+  ps_local_registry_bind_scope_graph(
+      second_locals, ps_ctx_scope_graph(second));
 
   char enum_name[] = "ContextValue";
   char tag_name[] = "ContextTag";
   long long value = 0;
   ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      first, test_local_registry(), enum_name, 12, 11, NULL));
+      first, first_locals, enum_name, 12, 11, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      first, test_local_registry(),
+      first, first_locals,
       TK_STRUCT, tag_name, 10, 0, 0));
 
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
@@ -25551,7 +25586,7 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       second, TK_STRUCT, tag_name, 10));
   ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      second, test_local_registry(), enum_name, 12, 22, NULL));
+      second, second_locals, enum_name, 12, 22, NULL));
   ASSERT_TRUE(ps_ctx_find_enum_const_in(
       second, enum_name, 12, &value));
   ASSERT_EQ(22, value);
@@ -25576,8 +25611,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
+          .global_registry = second_globals,
+          .local_registry = second_locals,
           .name = function_name,
           .name_len = 15,
           .is_call = 1,
@@ -25593,8 +25628,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
+          .global_registry = second_globals,
+          .local_registry = second_locals,
           .name = direct_enum_name,
           .name_len = 10,
           .value = 37,
@@ -25610,8 +25645,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
+          .global_registry = second_globals,
+          .local_registry = second_locals,
           .name = direct_enum_name,
           .name_len = 10,
       },
@@ -25625,7 +25660,7 @@ static void test_semantic_context_isolation() {
   };
   long long direct_enum_value = 0;
   ASSERT_TRUE(psx_resolve_enum_initializer_syntax_in_contexts(
-      second, test_global_registry(), test_local_registry(),
+      second, second_globals, second_locals,
       &direct_enum_expression.base, NULL, &direct_enum_value));
   ASSERT_EQ(37, direct_enum_value);
 
@@ -25636,8 +25671,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
+          .global_registry = second_globals,
+          .local_registry = second_locals,
           .name = direct_typedef_name,
           .name_len = 13,
           .type = direct_typedef_type,
@@ -25656,7 +25691,7 @@ static void test_semantic_context_isolation() {
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = first,
-          .global_registry = test_global_registry(),
+          .global_registry = first_globals,
           .name = direct_typedef_name,
           .name_len = 13,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -25668,7 +25703,7 @@ static void test_semantic_context_isolation() {
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
+          .global_registry = second_globals,
           .name = direct_typedef_name,
           .name_len = 13,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -25687,13 +25722,13 @@ static void test_semantic_context_isolation() {
       .decl_type = ps_type_new_integer(TK_INT, 4, 0),
   };
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, test_local_registry(),
+      second, second_locals,
       TK_STRUCT, direct_tag_name, 9, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, test_local_registry(),
+      second, second_locals,
       TK_STRUCT, direct_tag_name, 9, 1, 1));
   const psx_record_decl_t *direct_layout_record =
       ps_ctx_ensure_tag_record_decl_in(
@@ -25728,8 +25763,8 @@ static void test_semantic_context_isolation() {
   };
   const psx_type_t *direct_tag_type =
       psx_apply_parsed_decl_specifier_in_contexts(
-          second, test_global_registry(),
-          test_local_registry(), &direct_tag_specifier);
+          second, second_globals,
+          second_locals, &direct_tag_specifier);
   ASSERT_TRUE(direct_tag_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
   ASSERT_EQ(0, ps_type_sizeof(direct_tag_type));
@@ -25793,7 +25828,7 @@ static void test_semantic_context_isolation() {
       .member_name_len = 5,
   };
   psx_semantic_resolve_tree_in_contexts(
-      second, test_global_registry(), test_local_registry(),
+      second, second_globals, second_locals,
       (node_t *)&detached_access, NULL, NULL);
   ASSERT_TRUE(psx_member_access_state(&detached_access) != NULL);
   ASSERT_TRUE(
@@ -25829,7 +25864,7 @@ static void test_semantic_context_isolation() {
 
   char applied_tag_name[] = "AppliedTag";
   psx_apply_parsed_tag_declaration_in_contexts(
-      second, test_local_registry(),
+      second, second_locals,
       TK_STRUCT, applied_tag_name, 10,
       PSX_TAG_DECLARATION_DEFINITION, 0, NULL);
   const psx_record_decl_t *applied_record =
@@ -25852,11 +25887,15 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
 
   char direct_label_name[] = "direct_label";
+  ASSERT_TRUE(psx_scope_graph_enter_scope(
+                  ps_ctx_scope_graph(second),
+                  PSX_SCOPE_FUNCTION) != PSX_SCOPE_ID_INVALID);
   psx_ctx_register_goto_ref_in(
       second, direct_label_name, 12, NULL);
   psx_ctx_register_label_def_in(
       second, direct_label_name, 12, NULL);
   psx_ctx_validate_goto_refs_in(second);
+  ASSERT_TRUE(psx_scope_graph_leave_scope(ps_ctx_scope_graph(second)));
 
   psx_typed_hir_tree_t semantic_expression = {0};
   psx_semantic_expr_id_t semantic_expression_id =
@@ -25889,8 +25928,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
+          .global_registry = second_globals,
+          .local_registry = second_locals,
           .name = (char *)"StreamType",
           .name_len = 10,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -25916,8 +25955,6 @@ static void test_semantic_context_isolation() {
   psx_lowering_context_t *second_lowering_context =
       ps_lowering_context_create(arena_context, diagnostics);
   ASSERT_TRUE(second_lowering_context != NULL);
-  ps_local_registry_bind_semantic_types(
-      test_local_registry(), ps_ctx_semantic_type_table_in(second));
   ps_lowering_context_bind_target(
       second_lowering_context, ps_ctx_target_info(second));
   ps_lowering_context_bind_semantic_types(
@@ -25931,13 +25968,13 @@ static void test_semantic_context_isolation() {
       local_declaration_adapter;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declaration_adapter,
-      &local_declarations, second, test_global_registry(),
-      test_local_registry(),
+      &local_declarations, second, second_globals,
+      second_locals,
       ag_compilation_session_parser_runtime_context(test_suite_session));
   psx_legacy_statement_syntax_adapter_t statement_adapter;
   ASSERT_TRUE(psx_legacy_statement_syntax_adapter_init(
-      &statement_adapter, second, test_global_registry(),
-      test_local_registry(),
+      &statement_adapter, second, second_globals,
+      second_locals,
       ag_compilation_session_parser_runtime_context(
           test_suite_session),
       &local_declarations.name_classifier,
@@ -25951,11 +25988,11 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(parsed_function_syntax != NULL);
   ASSERT_TRUE(
       psx_resolve_local_declaration_syntax_tree_in_contexts(
-          second, test_global_registry(), test_local_registry(),
+          second, second_globals, second_locals,
           second_lowering_context, test_compilation_options(),
           &parsed_function_syntax));
   parsed_function.lvars =
-      ps_decl_get_locals_in(test_local_registry());
+      ps_decl_get_locals_in(second_locals);
   parsed_function.base.rhs = parsed_function_syntax;
   ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
   psx_validate_control_flow(
@@ -25964,10 +26001,10 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
   ps_parser_stream_end(&parser_stream);
   ps_lowering_context_destroy(second_lowering_context);
-  ps_local_registry_bind_semantic_types(
-      test_local_registry(),
-      ps_ctx_semantic_type_table_in(test_semantic_context()));
-
+  ps_global_registry_destroy(first_globals);
+  ps_global_registry_destroy(second_globals);
+  ps_local_registry_destroy(first_locals);
+  ps_local_registry_destroy(second_locals);
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);
 }
@@ -25978,6 +26015,14 @@ static void test_compilation_session_registry_isolation() {
   ag_compilation_session_t second;
   ASSERT_TRUE(ag_compilation_session_init(&first, NULL));
   ASSERT_TRUE(ag_compilation_session_init(&second, NULL));
+  ASSERT_TRUE(ag_compilation_session_is_complete(&first));
+  ASSERT_TRUE(ag_compilation_session_is_complete(&second));
+  ps_global_registry_bind_scope_graph(
+      second.global_registry, first.scope_graph);
+  ASSERT_TRUE(!ag_compilation_session_is_complete(&second));
+  ps_global_registry_bind_scope_graph(
+      second.global_registry, second.scope_graph);
+  ASSERT_TRUE(ag_compilation_session_is_complete(&second));
 
   global_var_t first_global = {
       .name = (char *)"shared_global",
@@ -26290,6 +26335,45 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_EQ(PSX_IDENTIFIER_GLOBAL_OBJECT,
             isolated_global_resolution.kind);
   ASSERT_TRUE(isolated_global_resolution.global == &first_global);
+  psx_identifier_resolution_t mismatched_graph_resolution;
+  psx_resolve_identifier(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = first.semantic_context,
+          .global_registry = second.global_registry,
+          .local_registry = first.local_registry,
+          .name = (char *)"shared_global",
+          .name_len = 13,
+      },
+      &mismatched_graph_resolution);
+  ASSERT_EQ(PSX_IDENTIFIER_UNDEFINED,
+            mismatched_graph_resolution.kind);
+  ASSERT_TRUE(mismatched_graph_resolution.global == NULL);
+  psx_global_declaration_resolution_t mismatched_global_declaration;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = first.semantic_context,
+          .global_registry = second.global_registry,
+          .name = (char *)"mismatched_global",
+          .name_len = 17,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .is_extern_decl = 1,
+      },
+      &mismatched_global_declaration);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_INVALID,
+            mismatched_global_declaration.status);
+  psx_enum_constant_resolution_t mismatched_enum_declaration;
+  psx_resolve_enum_constant(
+      &(psx_enum_constant_resolution_request_t){
+          .semantic_context = first.semantic_context,
+          .global_registry = first.global_registry,
+          .local_registry = second.local_registry,
+          .name = (char *)"MismatchedEnum",
+          .name_len = 14,
+          .value = 9,
+      },
+      &mismatched_enum_declaration);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_INVALID,
+            mismatched_enum_declaration.status);
   node_identifier_t isolated_global_identifier = {
       .base = {.kind = ND_IDENTIFIER},
       .name = (char *)"shared_global",

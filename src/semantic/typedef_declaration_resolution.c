@@ -23,6 +23,11 @@ void psx_resolve_typedef_declaration(
   psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_local_registry_t *local_registry = request->local_registry;
   psx_global_registry_t *global_registry = request->global_registry;
+  psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
+  if (!scope_graph ||
+      scope_graph != ps_local_registry_scope_graph(local_registry) ||
+      scope_graph != ps_global_registry_scope_graph(global_registry))
+    return;
 
   int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
   if (ps_ctx_has_enum_const_in_current_scope_in(

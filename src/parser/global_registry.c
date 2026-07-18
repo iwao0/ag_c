@@ -410,8 +410,6 @@ bool ps_iter_float_literals_in(
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
-  if (registry->scope_graph)
-    psx_scope_graph_reset(registry->scope_graph);
   free_owned_names_until(registry, NULL);
   registry->global_vars = NULL;
   registry->string_literals = NULL;

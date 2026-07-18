@@ -47,11 +47,6 @@ unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry);
 unsigned ps_local_registry_next_scope_seq_in(
     const psx_local_registry_t *registry);
-unsigned ps_local_registry_register_binding_event_in(
-    psx_local_registry_t *registry);
-int ps_local_registry_scope_is_visible_from_in(
-    const psx_local_registry_t *registry,
-    unsigned declaration_scope, unsigned reference_scope);
 psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
     const psx_local_registry_t *registry);
 lvar_t *ps_local_registry_find_visible_in(

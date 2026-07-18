@@ -260,6 +260,19 @@ const psx_scope_declaration_t *psx_scope_graph_declaration(
   return declaration->kind != PSX_DECL_UNKNOWN ? declaration : NULL;
 }
 
+size_t psx_scope_graph_declaration_count(
+    const psx_scope_graph_t *graph) {
+  return graph ? graph->declaration_count : 0;
+}
+
+const psx_scope_declaration_t *psx_scope_graph_declaration_at(
+    const psx_scope_graph_t *graph, size_t index) {
+  if (!graph || index >= graph->declaration_count) return NULL;
+  const psx_scope_declaration_t *declaration =
+      &graph->declarations[index];
+  return declaration->kind != PSX_DECL_UNKNOWN ? declaration : NULL;
+}
+
 void psx_scope_graph_forget_declaration(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id) {
   if (!graph || declaration_id == PSX_DECL_ID_INVALID ||

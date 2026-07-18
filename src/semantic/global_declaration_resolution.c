@@ -64,6 +64,10 @@ void psx_resolve_global_declaration(
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_global_registry_t *global_registry = request->global_registry;
+  if (!ps_ctx_scope_graph(semantic_context) ||
+      ps_ctx_scope_graph(semantic_context) !=
+          ps_global_registry_scope_graph(global_registry))
+    return;
 
   if (type_contains_incomplete_record(
           semantic_context, request->type) ||

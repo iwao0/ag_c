@@ -113,6 +113,10 @@ psx_decl_id_t psx_scope_graph_lookup_in_scope(
     psx_c_namespace_t name_space, const char *name, int name_len);
 const psx_scope_declaration_t *psx_scope_graph_declaration(
     const psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
+size_t psx_scope_graph_declaration_count(
+    const psx_scope_graph_t *graph);
+const psx_scope_declaration_t *psx_scope_graph_declaration_at(
+    const psx_scope_graph_t *graph, size_t index);
 void psx_scope_graph_forget_declaration(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 int psx_scope_graph_rehome_declaration_at(

@@ -121,6 +121,7 @@ static void reset_translation_unit_state(
     psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
     arena_context_t *arena_context) {
+  psx_scope_graph_reset(ps_ctx_scope_graph(semantic_context));
   ps_global_registry_reset_translation_unit_in(global_registry);
   ps_decl_reset_translation_unit_state_in(local_registry);
   ps_ctx_reset_translation_unit_scope_in(semantic_context);

@@ -224,6 +224,23 @@ const scopeGraphIdentifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",
   "utf8",
 );
+const scopeGraphTranslationUnitSource = await readFile(
+  "src/frontend/translation_unit.c",
+  "utf8",
+);
+const scopeGraphRegistrySources = [
+  scopeGraphLocalRegistrySource,
+  scopeGraphGlobalRegistrySource,
+  scopeGraphSemanticContextSource,
+].join("\n");
+const identifierResolverBody =
+  scopeGraphIdentifierResolutionSource.match(
+    /void\s+psx_resolve_identifier\s*\([^]*?\n}\n\nstatic\s+psx_qual_type_t/,
+  )?.[0] ?? "";
+const tagScopeLookupBody =
+  scopeGraphSemanticContextSource.match(
+    /static\s+tag_type_t\s*\*find_tag_type_at_scope_in\s*\([^]*?\n}\n\nstatic\s+tag_type_t\s*\*find_tag_type_by_record_id_in/,
+  )?.[0] ?? "";
 if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
     !/PSX_NAMESPACE_ORDINARY/.test(scopeGraphHeader) ||
@@ -239,6 +256,26 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/ps_local_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
     !/ps_global_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
     !/ps_ctx_bind_scope_graph\s*\(/.test(compilationSession) ||
+    !/context->scope_graph\s*=\s*psx_scope_graph_create\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/context->owns_scope_graph\s*=\s*context->scope_graph\s*\?\s*1\s*:\s*0/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    /scope_graph\s*=\s*NULL/.test(scopeGraphSemanticContextSource) ||
+    /psx_scope_graph_reset\s*\(/.test(scopeGraphGlobalRegistrySource) ||
+    !/reset_translation_unit_state\s*\([^]*?psx_scope_graph_reset\s*\(ps_ctx_scope_graph\s*\(semantic_context\)\)/.test(
+      scopeGraphTranslationUnitSource,
+    ) ||
+    !/ag_compilation_session_is_complete\s*\([^]*?ps_ctx_scope_graph\s*\([^]*?==\s*session->scope_graph[^]*?ps_global_registry_scope_graph\s*\([^]*?==\s*session->scope_graph[^]*?ps_local_registry_scope_graph\s*\([^]*?==\s*session->scope_graph/.test(
+      compilationSession,
+    ) ||
+    /\b(?:gvars_by_bucket|lvars_by_bucket|tags_by_bucket|aggregate_members_by_bucket|enum_entries_by_bucket|typedef_entries_by_bucket|function_symbols_by_bucket|label_definitions_by_bucket|next_hash)\b/.test(
+      scopeGraphRegistrySources,
+    ) ||
+    !tagScopeLookupBody ||
+    !/psx_scope_graph_declaration_at\s*\(/.test(tagScopeLookupBody) ||
+    /context->tags_all/.test(tagScopeLookupBody) ||
     /\b(?:current_scope_seq|next_declaration_seq|scope_parent_by_seq)\s*;/.test(
       scopeGraphLocalRegistrySource,
     ) ||
@@ -281,6 +318,13 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     ) ||
     !/shared_identifier_scope_graph\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
       scopeGraphIdentifierResolutionSource,
+    ) ||
+    !identifierResolverBody ||
+    !/if\s*\(!shared_identifier_scope_graph\s*\(request\)\)\s*return\s*;/.test(
+      identifierResolverBody,
+    ) ||
+    /\b(?:ps_decl_find_lvar_in|ps_local_registry_find_visible_in|ps_ctx_find_enum_const_in|ps_ctx_find_enum_const_at_in_contexts|ps_ctx_find_function_symbol_in|psx_resolve_global_object_symbol_in)\s*\(/.test(
+      identifierResolverBody,
     )) {
   throw new Error(
     "CompilationSession must own one ScopeId/DeclId graph with all C namespaces",
@@ -1769,7 +1813,10 @@ if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
     !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_local_registry_scope_is_visible_from_in\s*\(/.test(
+    !/context->scope_graph\s*!=\s*ps_local_registry_scope_graph\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/psx_scope_graph_lookup\s*\(/.test(
       semanticContextOwnershipSource,
     )) {
   throw new Error(
@@ -2453,7 +2500,9 @@ const functionDeclarationResolutionSource = await readFile(
   "src/semantic/function_declaration_resolution.c",
   "utf8",
 );
-if (!/ps_ctx_find_function_symbol_in\s*\(/.test(identifierResolutionSource) ||
+if (!/case\s+PSX_DECL_FUNCTION:[^]*?resolution->function\s*=\s*declaration->payload/.test(
+      identifierResolutionSource,
+    ) ||
     /ps_ctx_find_function_symbol\s*\(/.test(identifierResolutionSource) ||
     !/ps_ctx_register_function_type_in\s*\(/.test(
       functionDeclarationResolutionSource,
@@ -3125,7 +3174,10 @@ if (contextFreeOrdinaryNamespaceCall.test(
     !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
       typedefDeclarationResolutionSource,
     ) ||
-    !/ps_ctx_find_enum_const_at_in_contexts\s*\(/.test(
+    !/psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_ORDINARY/.test(
+      identifierResolutionSource,
+    ) ||
+    !/ps_ctx_enum_const_value_by_declaration_id_in\s*\(/.test(
       identifierResolutionSource,
     ) ||
     !/ps_ctx_find_typedef_name_in\s*\(/.test(

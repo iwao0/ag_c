@@ -135,6 +135,12 @@ int ag_compilation_session_is_complete(
   return session && session->scope_graph && session->semantic_context &&
          session->global_registry &&
          session->local_registry && session->preprocessor_context &&
+         ps_ctx_scope_graph(session->semantic_context) ==
+             session->scope_graph &&
+         ps_global_registry_scope_graph(session->global_registry) ==
+             session->scope_graph &&
+         ps_local_registry_scope_graph(session->local_registry) ==
+             session->scope_graph &&
          session->arena_context &&
          session->diagnostic_context && session->token_allocator_context &&
          session->parser_runtime_context &&
