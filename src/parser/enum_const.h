@@ -25,6 +25,7 @@ typedef struct {
   void *expression_context;
   node_t *(*parse_assignment_expression)(void *context);
   tokenizer_context_t *tokenizer_context;
+  const psx_name_classifier_t *name_classifier;
 } psx_enum_body_syntax_context_t;
 
 long long psx_parse_enum_const_expr_in_contexts(

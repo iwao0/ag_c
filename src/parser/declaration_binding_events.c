@@ -29,6 +29,7 @@ void psx_record_decl_specifier_binding_events(
     const psx_parsed_decl_specifier_t *specifier,
     const psx_name_classifier_t *name_classifier) {
   if (!specifier ||
+      specifier->binding_events_recorded ||
       specifier->source != PSX_PARSED_DECL_TYPE_TAG ||
       specifier->tag_action.action == PSX_PARSED_TAG_NONE)
     return;

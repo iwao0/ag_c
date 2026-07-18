@@ -715,6 +715,10 @@ static void parse_tag_specifier(
 
   if (tk_consume_ctx(tk_ctx, '{')) {
     action->action = PSX_PARSED_TAG_DEFINITION;
+    ps_name_classifier_record_binding_event(options->name_classifier);
+    specifier->binding_events_recorded =
+        options->name_classifier &&
+        options->name_classifier->record_binding_event;
     if (action->kind == TK_ENUM) {
       action->enum_body = calloc(1, sizeof(*action->enum_body));
       if (!action->enum_body) {
@@ -729,6 +733,7 @@ static void parse_tag_specifier(
               .parse_assignment_expression =
                   options->parse_assignment_expression,
               .tokenizer_context = tk_ctx,
+              .name_classifier = options->name_classifier,
           });
     } else {
       action->aggregate_body = calloc(1, sizeof(*action->aggregate_body));
@@ -741,6 +746,10 @@ static void parse_tag_specifier(
     }
   } else {
     action->action = PSX_PARSED_TAG_REFERENCE;
+    ps_name_classifier_record_binding_event(options->name_classifier);
+    specifier->binding_events_recorded =
+        options->name_classifier &&
+        options->name_classifier->record_binding_event;
   }
 }
 

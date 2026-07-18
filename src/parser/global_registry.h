@@ -3,6 +3,7 @@
 
 #include "gvar_public.h"
 #include "literal_public.h"
+#include "../semantic/scope_graph.h"
 
 typedef struct psx_type_t psx_type_t;
 typedef struct string_lit_t string_lit_t;
@@ -19,6 +20,10 @@ void ps_global_registry_destroy(psx_global_registry_t *registry);
 void ps_global_registry_bind_semantic_types(
     psx_global_registry_t *registry,
     const psx_semantic_type_table_t *semantic_types);
+void ps_global_registry_bind_scope_graph(
+    psx_global_registry_t *registry, psx_scope_graph_t *scope_graph);
+psx_scope_graph_t *ps_global_registry_scope_graph(
+    const psx_global_registry_t *registry);
 
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry);

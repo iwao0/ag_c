@@ -2,6 +2,7 @@
 #define PARSER_LOCAL_REGISTRY_H
 
 #include "lvar_public.h"
+#include "../semantic/scope_graph.h"
 
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -26,6 +27,10 @@ void ps_local_registry_destroy(psx_local_registry_t *registry);
 void ps_local_registry_bind_semantic_types(
     psx_local_registry_t *registry,
     const psx_semantic_type_table_t *semantic_types);
+void ps_local_registry_bind_scope_graph(
+    psx_local_registry_t *registry, psx_scope_graph_t *scope_graph);
+psx_scope_graph_t *ps_local_registry_scope_graph(
+    const psx_local_registry_t *registry);
 int psx_local_registry_checkpoint_begin(
     psx_local_registry_t *registry,
     psx_local_registry_checkpoint_t *checkpoint);
@@ -53,6 +58,12 @@ lvar_t *ps_local_registry_find_visible_in(
     const psx_local_registry_t *registry,
     char *name, int name_len, psx_local_lookup_point_t point);
 void ps_local_registry_reset_in(psx_local_registry_t *registry);
+void ps_local_registry_reset_translation_unit_in(
+    psx_local_registry_t *registry);
+void ps_local_registry_prepare_function_resolution_in(
+    psx_local_registry_t *registry);
+void ps_local_registry_enter_translation_unit_in(
+    psx_local_registry_t *registry);
 void ps_local_registry_set_current_function_in(
     psx_local_registry_t *registry, char *name, int len);
 void ps_local_registry_get_current_function_in(

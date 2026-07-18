@@ -10,6 +10,7 @@
 #include "tokenizer/allocator.h"
 #include "lowering/runtime_context.h"
 #include "hir/hir.h"
+#include "semantic/scope_graph.h"
 #include "codegen_emit.h"
 #include <string.h>
 #include <stdlib.h>
@@ -61,17 +62,23 @@ int ag_compilation_session_init(
   tk_context_bind_diagnostic_context(
       &session->tokenizer, session->diagnostic_context);
   session->arena_context = arena_context_create();
+  session->scope_graph = psx_scope_graph_create();
   session->semantic_context = ps_ctx_create(session->arena_context);
   session->hir_module = psx_hir_module_create();
   session->global_registry = ps_global_registry_create();
   ps_global_registry_bind_semantic_types(
       session->global_registry,
       ps_ctx_semantic_type_table_in(session->semantic_context));
+  ps_global_registry_bind_scope_graph(
+      session->global_registry, session->scope_graph);
   session->local_registry = ps_local_registry_create(
       session->diagnostic_context);
   ps_local_registry_bind_semantic_types(
       session->local_registry,
       ps_ctx_semantic_type_table_in(session->semantic_context));
+  ps_local_registry_bind_scope_graph(
+      session->local_registry, session->scope_graph);
+  ps_ctx_bind_scope_graph(session->semantic_context, session->scope_graph);
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
   ps_ctx_bind_target_info(session->semantic_context, &session->target);
@@ -98,13 +105,15 @@ int ag_compilation_session_init(
       ps_ctx_record_layout_table_in(session->semantic_context));
   session->codegen_emit_context = cg_context_create(
       session->diagnostic_context);
-  if (!session->semantic_context || !session->global_registry ||
+  if (!session->scope_graph || !session->semantic_context ||
+      !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
       !session->arena_context || !session->diagnostic_context ||
       !session->token_allocator_context || !session->parser_runtime_context ||
       !session->lowering_context || !session->hir_module ||
       !session->codegen_emit_context) {
     psx_hir_module_destroy(session->hir_module);
+    psx_scope_graph_destroy(session->scope_graph);
     ps_ctx_destroy(session->semantic_context);
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
@@ -123,7 +132,8 @@ int ag_compilation_session_init(
 
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session) {
-  return session && session->semantic_context && session->global_registry &&
+  return session && session->scope_graph && session->semantic_context &&
+         session->global_registry &&
          session->local_registry && session->preprocessor_context &&
          session->arena_context &&
          session->diagnostic_context && session->token_allocator_context &&
@@ -175,6 +185,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);
   ps_local_registry_destroy(session->local_registry);
+  psx_scope_graph_destroy(session->scope_graph);
   pp_context_destroy(session->preprocessor_context);
   diag_context_destroy(session->diagnostic_context);
   tk_allocator_context_destroy(session->token_allocator_context);
@@ -276,6 +287,12 @@ psx_hir_module_t *ag_compilation_session_hir_module(
     const ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? session->hir_module : NULL;
+}
+
+psx_scope_graph_t *ag_compilation_session_scope_graph(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->scope_graph : NULL;
 }
 
 ag_compilation_options_t *ag_compilation_session_options(

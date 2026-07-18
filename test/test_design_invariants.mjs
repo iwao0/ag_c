@@ -200,6 +200,48 @@ const compilationSession = await readFile(
   "src/compilation_session.c",
   "utf8",
 );
+const compilationSessionInternal = await readFile(
+  "src/compilation_session_internal.h",
+  "utf8",
+);
+const scopeGraphHeader = await readFile(
+  "src/semantic/scope_graph.h",
+  "utf8",
+);
+const scopeGraphLocalRegistrySource = await readFile(
+  "src/parser/local_registry.c",
+  "utf8",
+);
+const scopeGraphGlobalRegistrySource = await readFile(
+  "src/parser/global_registry.c",
+  "utf8",
+);
+if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
+    !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
+    !/PSX_NAMESPACE_ORDINARY/.test(scopeGraphHeader) ||
+    !/PSX_NAMESPACE_TAG/.test(scopeGraphHeader) ||
+    !/PSX_NAMESPACE_LABEL/.test(scopeGraphHeader) ||
+    !/PSX_NAMESPACE_MEMBER/.test(scopeGraphHeader) ||
+    !/psx_scope_graph_t\s*\*scope_graph\s*;/.test(
+      compilationSessionInternal,
+    ) ||
+    !/session->scope_graph\s*=\s*psx_scope_graph_create\s*\(/.test(
+      compilationSession,
+    ) ||
+    !/ps_local_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
+    !/ps_global_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
+    !/ps_ctx_bind_scope_graph\s*\(/.test(compilationSession) ||
+    /\b(?:current_scope_seq|next_declaration_seq|scope_parent_by_seq)\s*;/.test(
+      scopeGraphLocalRegistrySource,
+    ) ||
+    !/psx_scope_graph_lookup\s*\(/.test(scopeGraphLocalRegistrySource) ||
+    !/psx_scope_graph_lookup_in_scope\s*\(/.test(
+      scopeGraphGlobalRegistrySource,
+    )) {
+  throw new Error(
+    "CompilationSession must own one ScopeId/DeclId graph with all C namespaces",
+  );
+}
 const semanticIntegerConstructionSource = (
   await Promise.all(
     allSourceFiles

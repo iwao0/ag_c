@@ -203,6 +203,7 @@ struct psx_function_symbol_t {
 struct psx_semantic_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
+  psx_scope_graph_t *scope_graph;
   ag_target_info_t target;
   psx_record_id_t next_record_id;
   psx_semantic_expression_table_t *semantic_expressions;
@@ -491,6 +492,16 @@ void ps_ctx_bind_diagnostic_context(
   if (context) context->diagnostic_context = diagnostic_context;
 }
 
+void ps_ctx_bind_scope_graph(
+    psx_semantic_context_t *context, psx_scope_graph_t *scope_graph) {
+  if (context) context->scope_graph = scope_graph;
+}
+
+psx_scope_graph_t *ps_ctx_scope_graph(
+    const psx_semantic_context_t *context) {
+  return context ? context->scope_graph : NULL;
+}
+
 ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context) {
   return context ? context->diagnostic_context : NULL;
@@ -607,6 +618,7 @@ void ps_ctx_reset_translation_unit_scope_in(
   if (!context) return;
   arena_context_t *arena_context = context->arena_context;
   ag_diagnostic_context_t *diagnostic_context = context->diagnostic_context;
+  psx_scope_graph_t *scope_graph = context->scope_graph;
   ag_target_info_t target = context->target;
   psx_semantic_expression_table_t *semantic_expressions =
       context->semantic_expressions;
@@ -617,6 +629,7 @@ void ps_ctx_reset_translation_unit_scope_in(
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
   context->diagnostic_context = diagnostic_context;
+  context->scope_graph = scope_graph;
   context->target = target;
   context->semantic_expressions = semantic_expressions;
   context->semantic_types = semantic_types;

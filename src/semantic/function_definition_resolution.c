@@ -35,7 +35,7 @@ static int resolve_function_definition_header(
     return 0;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
-  ps_decl_reset_locals_in(local_registry);
+  ps_local_registry_prepare_function_resolution_in(local_registry);
   local_storage_reset(lowering_context);
   ps_ctx_reset_function_scope_in(semantic_context);
 

@@ -79,6 +79,7 @@ typedef struct {
   psx_parsed_tag_action_t tag_action;
   psx_parsed_alignas_t alignas_specifiers[8];
   int alignas_specifier_count;
+  unsigned char binding_events_recorded;
 } psx_parsed_decl_specifier_t;
 
 typedef struct {

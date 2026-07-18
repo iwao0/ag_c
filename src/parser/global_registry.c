@@ -4,6 +4,7 @@
 #include "type.h"
 #include "type_builder.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/scope_graph.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,10 +31,12 @@ typedef struct {
   psx_global_registry_name_t *owned_names;
   global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
   psx_global_registry_global_snapshot_t *global_snapshots;
+  psx_scope_graph_checkpoint_t scope_graph_checkpoint;
 } psx_global_registry_transaction_t;
 
 struct psx_global_registry_t {
   const psx_semantic_type_table_t *semantic_types;
+  psx_scope_graph_t *scope_graph;
   string_lit_t *string_literals;
   float_lit_t *float_literals;
   global_var_t *global_vars;
@@ -47,6 +50,7 @@ struct psx_global_registry_t {
 static void free_global_registry_transaction(
     psx_global_registry_transaction_t *transaction) {
   if (!transaction) return;
+  psx_scope_graph_checkpoint_commit(&transaction->scope_graph_checkpoint);
   psx_global_registry_global_snapshot_t *snapshot =
       transaction->global_snapshots;
   while (snapshot) {
@@ -98,6 +102,12 @@ int psx_global_registry_checkpoint_begin(
   transaction->owned_names = registry->owned_names;
   memcpy(transaction->gvars_by_bucket, registry->gvars_by_bucket,
          sizeof(transaction->gvars_by_bucket));
+  if (registry->scope_graph &&
+      !psx_scope_graph_checkpoint_begin(
+          registry->scope_graph, &transaction->scope_graph_checkpoint)) {
+    free(transaction);
+    return 0;
+  }
   registry->active_transaction = transaction;
   checkpoint->state = transaction;
   return 1;
@@ -161,6 +171,7 @@ void psx_global_registry_checkpoint_commit(
   if (!transaction) return;
   registry->active_transaction = NULL;
   checkpoint->state = NULL;
+  psx_scope_graph_checkpoint_commit(&transaction->scope_graph_checkpoint);
   free_global_registry_transaction(transaction);
 }
 
@@ -184,6 +195,8 @@ void psx_global_registry_checkpoint_rollback(
   free_owned_names_until(registry, transaction->owned_names);
   registry->active_transaction = NULL;
   checkpoint->state = NULL;
+  psx_scope_graph_checkpoint_rollback(
+      registry->scope_graph, &transaction->scope_graph_checkpoint);
   free_global_registry_transaction(transaction);
 }
 
@@ -191,6 +204,17 @@ void ps_global_registry_bind_semantic_types(
     psx_global_registry_t *registry,
     const psx_semantic_type_table_t *semantic_types) {
   if (registry) registry->semantic_types = semantic_types;
+}
+
+void ps_global_registry_bind_scope_graph(
+    psx_global_registry_t *registry, psx_scope_graph_t *scope_graph) {
+  if (registry && !registry->active_transaction)
+    registry->scope_graph = scope_graph;
+}
+
+psx_scope_graph_t *ps_global_registry_scope_graph(
+    const psx_global_registry_t *registry) {
+  return registry ? registry->scope_graph : NULL;
 }
 
 static int resolve_global_decl_type(
@@ -297,6 +321,12 @@ static unsigned gvar_name_hash(const char *name, int len) {
 void ps_register_global_var_in(
     psx_global_registry_t *registry, global_var_t *gv) {
   if (!registry || !gv) return;
+  if (registry->scope_graph) {
+    gv->declaration_id = psx_scope_graph_declare_at(
+        registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+        gv->name, gv->name_len, gv);
+  }
   gv->next = registry->global_vars;
   registry->global_vars = gv;
   unsigned h = gvar_name_hash(gv->name, gv->name_len);
@@ -334,6 +364,16 @@ void psx_register_float_lit_in(
 global_var_t *ps_find_global_var_in(
     psx_global_registry_t *registry, char *name, int len) {
   if (!registry || !name || len <= 0) return NULL;
+  if (registry->scope_graph) {
+    psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
+        registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+        PSX_NAMESPACE_ORDINARY, name, len);
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration(registry->scope_graph, id);
+    return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
+               ? declaration->payload
+               : NULL;
+  }
   unsigned h = gvar_name_hash(name, len);
   for (global_var_t *gv = registry->gvars_by_bucket[h];
        gv; gv = gv->next_hash) {
@@ -392,6 +432,8 @@ bool ps_iter_float_literals_in(
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
+  if (registry->scope_graph)
+    psx_scope_graph_reset(registry->scope_graph);
   free_owned_names_until(registry, NULL);
   registry->global_vars = NULL;
   registry->string_literals = NULL;

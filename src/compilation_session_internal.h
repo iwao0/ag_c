@@ -11,6 +11,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session);
 struct ag_compilation_session_t {
   struct ag_compilation_session_t *previous_session;
   psx_semantic_context_t *semantic_context;
+  psx_scope_graph_t *scope_graph;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   ag_preprocessor_context_t *preprocessor_context;

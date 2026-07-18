@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/scope_graph.h"
 
 typedef struct lvar_t lvar_t;
 typedef struct global_var_t global_var_t;
@@ -13,6 +14,7 @@ typedef struct {
   const char *name;
   int name_len;
   unsigned scope_seq;
+  psx_decl_id_t declaration_id;
   int is_used;
   int is_unevaluated_used;
   int is_address_taken;

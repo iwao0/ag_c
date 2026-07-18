@@ -20,6 +20,7 @@
 #include "../src/parser/local_registry.h"
 #include "../src/parser/name_environment.h"
 #include "../src/semantic/resolved_node_type.h"
+#include "../src/semantic/scope_graph.h"
 #include "../src/semantic/resolved_object_ref.h"
 #include "../src/semantic/resolved_lvalue.h"
 #include "../src/semantic/resolved_node.h"
@@ -6404,10 +6405,14 @@ static int parse_raw_function_item(
   ps_parser_name_environment_init(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()));
+  psx_local_lookup_point_t function_lookup_point =
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
   ps_parser_name_environment_reset_at(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()),
-      0, 0, 0);
+      function_lookup_point.scope_seq,
+      ps_local_registry_next_scope_seq_in(test_local_registry()),
+      function_lookup_point.declaration_seq);
   local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
           &name_environment);
@@ -26810,6 +26815,91 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(1, wasm_backend.destroy_count);
 }
 
+static void test_scope_graph_namespace_and_transaction_boundary(void) {
+  printf("test_scope_graph_namespace_and_transaction_boundary...\n");
+  psx_scope_graph_t *graph = psx_scope_graph_create();
+  ASSERT_TRUE(graph != NULL);
+  ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
+            psx_scope_graph_current_scope(graph));
+
+  int global_payload = 1;
+  int tag_payload = 2;
+  psx_decl_id_t global_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+      "same", 4, &global_payload);
+  psx_decl_id_t tag_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_TAG, PSX_DECL_TAG,
+      "same", 4, &tag_payload);
+  ASSERT_TRUE(global_id != PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(tag_id != PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(global_id != tag_id);
+
+  psx_scope_id_t function_scope = psx_scope_graph_enter_scope(
+      graph, PSX_SCOPE_FUNCTION);
+  ASSERT_TRUE(function_scope != PSX_SCOPE_ID_INVALID);
+  int local_payload = 3;
+  psx_decl_id_t local_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
+      "same", 4, &local_payload);
+  psx_scope_lookup_point_t function_point =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_EQ(local_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "same", 4, function_point));
+  ASSERT_EQ(tag_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_TAG, "same", 4, function_point));
+
+  psx_scope_id_t block_scope = psx_scope_graph_enter_scope(
+      graph, PSX_SCOPE_BLOCK);
+  ASSERT_TRUE(block_scope != PSX_SCOPE_ID_INVALID);
+  psx_scope_lookup_point_t before_inner =
+      psx_scope_graph_capture_lookup_point(graph);
+  int inner_payload = 4;
+  psx_decl_id_t inner_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
+      "same", 4, &inner_payload);
+  psx_scope_lookup_point_t after_inner =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_EQ(local_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "same", 4, before_inner));
+  ASSERT_EQ(inner_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "same", 4, after_inner));
+
+  int label_payload = 5;
+  psx_decl_id_t label_id = psx_scope_graph_declare_at(
+      graph, function_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
+      "same", 4, &label_payload);
+  ASSERT_EQ(label_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_LABEL, "same", 4, after_inner));
+
+  psx_scope_graph_checkpoint_t checkpoint = {0};
+  ASSERT_TRUE(psx_scope_graph_checkpoint_begin(graph, &checkpoint));
+  int rolled_back_payload = 6;
+  psx_decl_id_t rolled_back_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
+      "temporary", 9, &rolled_back_payload);
+  ASSERT_TRUE(rolled_back_id != PSX_DECL_ID_INVALID);
+  psx_scope_graph_checkpoint_rollback(graph, &checkpoint);
+  ASSERT_EQ(PSX_DECL_ID_INVALID, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "temporary", 9,
+      psx_scope_graph_capture_lookup_point(graph)));
+
+  ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
+  ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
+  psx_scope_id_t record_scope = psx_scope_graph_enter_scope(
+      graph, PSX_SCOPE_RECORD);
+  ASSERT_TRUE(record_scope != PSX_SCOPE_ID_INVALID);
+  int member_payload = 7;
+  psx_decl_id_t member_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
+      "same", 4, &member_payload);
+  ASSERT_EQ(member_id, psx_scope_graph_lookup_in_scope(
+      graph, record_scope, PSX_NAMESPACE_MEMBER, "same", 4));
+  ASSERT_EQ(global_id, psx_scope_graph_lookup_in_scope(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, "same", 4));
+  psx_scope_graph_destroy(graph);
+}
+
 int main() {
   ag_compilation_session_t suite_session;
   ag_target_info_t suite_target = ag_target_info_host();
@@ -26820,6 +26910,7 @@ int main() {
   test_suite_session = &suite_session;
   printf("Running tests for Parser...\n");
 
+  test_scope_graph_namespace_and_transaction_boundary();
   test_arena_checkpoint_rollback();
   test_parser_name_environment_boundary();
   test_parser_name_classifier_boundary();

@@ -161,9 +161,12 @@ int psx_frontend_stream_begin(
       ag_compilation_session_semantic_context(session);
   psx_global_registry_t *global_registry =
       ag_compilation_session_global_registry(session);
+  psx_local_registry_t *local_registry =
+      ag_compilation_session_local_registry(session);
   psx_parser_runtime_context_t *runtime_context =
       ag_compilation_session_parser_runtime_context(session);
   ps_global_registry_reset_diag_state_in(global_registry);
+  ps_local_registry_enter_translation_unit_in(local_registry);
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
   ps_ctx_reset_function_names_in(semantic_context);
@@ -247,10 +250,14 @@ int psx_frontend_next_function_with_resolver(
           local_registry,
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0);
+      psx_local_lookup_point_t function_lookup_point =
+          ps_local_registry_capture_lookup_point_in(local_registry);
       ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
           stream->parser.syntax.name_classifier,
-          0, 0, 0);
+          function_lookup_point.scope_seq,
+          ps_local_registry_next_scope_seq_in(local_registry),
+          function_lookup_point.declaration_seq);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(
               &stream->local_name_environment);
@@ -313,6 +320,7 @@ int psx_frontend_next_function_with_resolver(
       }
       ps_dispose_function_definition_syntax(
           &item.value.function_header);
+      ps_local_registry_enter_translation_unit_in(local_registry);
       return 1;
     }
   }

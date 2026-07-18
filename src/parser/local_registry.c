@@ -7,6 +7,7 @@
 #include "node_utils.h"
 #include "type.h"
 #include "type_builder.h"
+#include "../semantic/scope_graph.h"
 #include "../semantic/type_identity.h"
 #include <stdlib.h>
 #include <string.h>
@@ -34,13 +35,9 @@ struct psx_local_registry_t {
   lvar_t *all_locals;
   lvar_t *all_bindings;
   lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-  unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
   int lvar_scope_depth;
-  unsigned next_scope_seq;
-  unsigned current_scope_seq;
-  unsigned next_declaration_seq;
-  unsigned *scope_parent_by_seq;
-  size_t scope_parent_capacity;
+  psx_scope_graph_t *scope_graph;
+  unsigned char owns_scope_graph;
   lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
   lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
   lvar_usage_event_t *usage_events_head;
@@ -57,11 +54,8 @@ typedef struct {
   lvar_t *all_locals;
   lvar_t *all_bindings;
   lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-  unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
   int lvar_scope_depth;
-  unsigned next_scope_seq;
-  unsigned current_scope_seq;
-  unsigned next_declaration_seq;
+  psx_scope_graph_checkpoint_t scope_graph_checkpoint;
   lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
   lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
   lvar_usage_event_t *usage_events_head;
@@ -86,14 +80,27 @@ psx_local_registry_t *ps_local_registry_create(
     ag_diagnostic_context_t *diagnostic_context) {
   psx_local_registry_t *registry =
       calloc(1, sizeof(psx_local_registry_t));
-  if (registry) registry->diagnostic_context = diagnostic_context;
+  if (registry) {
+    registry->diagnostic_context = diagnostic_context;
+    registry->scope_graph = psx_scope_graph_create();
+    registry->owns_scope_graph = registry->scope_graph ? 1 : 0;
+    if (!registry->scope_graph) {
+      free(registry);
+      return NULL;
+    }
+  }
   return registry;
 }
 
 void ps_local_registry_destroy(psx_local_registry_t *registry) {
   if (!registry) return;
+  psx_local_registry_transaction_t *transaction =
+      registry->active_transaction;
+  if (transaction)
+    psx_scope_graph_checkpoint_commit(&transaction->scope_graph_checkpoint);
   free(registry->active_transaction);
-  free(registry->scope_parent_by_seq);
+  if (registry->owns_scope_graph)
+    psx_scope_graph_destroy(registry->scope_graph);
   free(registry);
 }
 
@@ -112,13 +119,12 @@ int psx_local_registry_checkpoint_begin(
   transaction->all_bindings = registry->all_bindings;
   memcpy(transaction->lvar_scope_stack, registry->lvar_scope_stack,
          sizeof(transaction->lvar_scope_stack));
-  memcpy(transaction->lvar_scope_seq_stack,
-         registry->lvar_scope_seq_stack,
-         sizeof(transaction->lvar_scope_seq_stack));
   transaction->lvar_scope_depth = registry->lvar_scope_depth;
-  transaction->next_scope_seq = registry->next_scope_seq;
-  transaction->current_scope_seq = registry->current_scope_seq;
-  transaction->next_declaration_seq = registry->next_declaration_seq;
+  if (!psx_scope_graph_checkpoint_begin(
+          registry->scope_graph, &transaction->scope_graph_checkpoint)) {
+    free(transaction);
+    return 0;
+  }
   memcpy(transaction->lvars_by_bucket, registry->lvars_by_bucket,
          sizeof(transaction->lvars_by_bucket));
   memcpy(transaction->lvars_by_offset, registry->lvars_by_offset,
@@ -158,6 +164,7 @@ void psx_local_registry_checkpoint_commit(
   if (!transaction) return;
   registry->active_transaction = NULL;
   checkpoint->state = NULL;
+  psx_scope_graph_checkpoint_commit(&transaction->scope_graph_checkpoint);
   free(transaction);
 }
 
@@ -174,13 +181,7 @@ void psx_local_registry_checkpoint_rollback(
   registry->all_bindings = transaction->all_bindings;
   memcpy(registry->lvar_scope_stack, transaction->lvar_scope_stack,
          sizeof(registry->lvar_scope_stack));
-  memcpy(registry->lvar_scope_seq_stack,
-         transaction->lvar_scope_seq_stack,
-         sizeof(registry->lvar_scope_seq_stack));
   registry->lvar_scope_depth = transaction->lvar_scope_depth;
-  registry->next_scope_seq = transaction->next_scope_seq;
-  registry->current_scope_seq = transaction->current_scope_seq;
-  registry->next_declaration_seq = transaction->next_declaration_seq;
   memcpy(registry->lvars_by_bucket, transaction->lvars_by_bucket,
          sizeof(registry->lvars_by_bucket));
   memcpy(registry->lvars_by_offset, transaction->lvars_by_offset,
@@ -193,6 +194,8 @@ void psx_local_registry_checkpoint_rollback(
       transaction->current_function_name_len;
   registry->active_transaction = NULL;
   checkpoint->state = NULL;
+  psx_scope_graph_checkpoint_rollback(
+      registry->scope_graph, &transaction->scope_graph_checkpoint);
   free(transaction);
 }
 
@@ -200,6 +203,20 @@ void ps_local_registry_bind_semantic_types(
     psx_local_registry_t *registry,
     const psx_semantic_type_table_t *semantic_types) {
   if (registry) registry->semantic_types = semantic_types;
+}
+
+void ps_local_registry_bind_scope_graph(
+    psx_local_registry_t *registry, psx_scope_graph_t *scope_graph) {
+  if (!registry || !scope_graph || registry->active_transaction) return;
+  if (registry->owns_scope_graph)
+    psx_scope_graph_destroy(registry->scope_graph);
+  registry->scope_graph = scope_graph;
+  registry->owns_scope_graph = 0;
+}
+
+psx_scope_graph_t *ps_local_registry_scope_graph(
+    const psx_local_registry_t *registry) {
+  return registry ? registry->scope_graph : NULL;
 }
 
 static int resolve_local_decl_type(
@@ -227,44 +244,24 @@ static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
 
-static void ensure_scope_parent_capacity(
-    psx_local_registry_t *registry, unsigned scope_seq) {
-  if (!registry ||
-      (size_t)scope_seq < registry->scope_parent_capacity) return;
-  size_t capacity = registry->scope_parent_capacity
-      ? registry->scope_parent_capacity : 16;
-  while (capacity <= (size_t)scope_seq) capacity *= 2;
-  unsigned *grown = realloc(
-      registry->scope_parent_by_seq,
-      capacity * sizeof(*registry->scope_parent_by_seq));
-  if (!grown) {
-    ps_diag_ctx_in(
-        registry->diagnostic_context, NULL, "scope",
-        "local scope ancestry allocation failed");
-  }
-  memset(grown + registry->scope_parent_capacity, 0,
-         (capacity - registry->scope_parent_capacity) * sizeof(*grown));
-  registry->scope_parent_by_seq = grown;
-  registry->scope_parent_capacity = capacity;
-}
-
 int ps_local_registry_scope_is_visible_from_in(
     const psx_local_registry_t *registry,
     unsigned declaration_scope, unsigned reference_scope) {
-  if (!registry) return 0;
-  for (;;) {
-    if (reference_scope == declaration_scope) return 1;
-    if (reference_scope == 0 ||
-        (size_t)reference_scope >= registry->scope_parent_capacity)
-      return 0;
-    reference_scope = registry->scope_parent_by_seq[reference_scope];
-  }
+  return registry && psx_scope_graph_scope_is_visible_from(
+      registry->scope_graph, declaration_scope, reference_scope);
 }
 
 static void index_add(psx_local_registry_t *registry, lvar_t *var) {
-  var->scope_seq = registry->current_scope_seq;
-  var->declaration_seq =
-      ps_local_registry_register_binding_event_in(registry);
+  var->declaration_id = psx_scope_graph_declare(
+      registry->scope_graph, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_LOCAL_OBJECT, var->name, var->len, var);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(
+          registry->scope_graph, var->declaration_id);
+  if (declaration) {
+    var->scope_seq = declaration->scope_id;
+    var->declaration_seq = declaration->declaration_order;
+  }
   unsigned name_bucket = name_hash(var->name, var->len);
   var->next_hash = registry->lvars_by_bucket[name_bucket];
   registry->lvars_by_bucket[name_bucket] = var;
@@ -300,25 +297,35 @@ static void offset_index_remove(
 
 unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry) {
-  return registry ? registry->current_scope_seq : 0;
+  psx_scope_id_t scope = registry
+      ? psx_scope_graph_current_scope(registry->scope_graph)
+      : PSX_SCOPE_ID_INVALID;
+  return scope == PSX_SCOPE_ID_INVALID ? 0 : scope;
 }
 
 unsigned ps_local_registry_next_scope_seq_in(
     const psx_local_registry_t *registry) {
-  return registry ? registry->next_scope_seq : 0;
+  psx_scope_id_t next = registry
+      ? psx_scope_graph_next_scope_id(registry->scope_graph)
+      : PSX_SCOPE_ID_INVALID;
+  return next == PSX_SCOPE_ID_INVALID || next == 0 ? 0 : next - 1;
 }
 
 unsigned ps_local_registry_register_binding_event_in(
     psx_local_registry_t *registry) {
-  return registry ? ++registry->next_declaration_seq : 0;
+  return registry
+      ? psx_scope_graph_reserve_declaration_order(registry->scope_graph)
+      : 0;
 }
 
 psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
     const psx_local_registry_t *registry) {
   if (!registry) return (psx_local_lookup_point_t){0};
+  psx_scope_lookup_point_t point =
+      psx_scope_graph_capture_lookup_point(registry->scope_graph);
   return (psx_local_lookup_point_t){
-      .scope_seq = registry->current_scope_seq,
-      .declaration_seq = registry->next_declaration_seq,
+      .scope_seq = point.scope_id == PSX_SCOPE_ID_INVALID ? 0 : point.scope_id,
+      .declaration_seq = point.declaration_order,
   };
 }
 
@@ -326,18 +333,17 @@ lvar_t *ps_local_registry_find_visible_in(
     const psx_local_registry_t *registry,
     char *name, int name_len, psx_local_lookup_point_t point) {
   if (!registry || !name || name_len <= 0) return NULL;
-  for (lvar_t *var = registry->all_bindings;
-       var; var = var->next_binding) {
-    if (var->declaration_seq > point.declaration_seq ||
-        var->len != name_len ||
-        memcmp(var->name, name, (size_t)name_len) != 0)
-      continue;
-    if (ps_local_registry_scope_is_visible_from_in(
-            registry,
-            var->scope_seq, point.scope_seq))
-      return var;
-  }
-  return NULL;
+  psx_decl_id_t id = psx_scope_graph_lookup(
+      registry->scope_graph, PSX_NAMESPACE_ORDINARY, name, name_len,
+      (psx_scope_lookup_point_t){
+          .scope_id = point.scope_seq,
+          .declaration_order = point.declaration_seq,
+      });
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(registry->scope_graph, id);
+  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
+             ? declaration->payload
+             : NULL;
 }
 
 void psx_local_registry_add_in(
@@ -437,9 +443,16 @@ lvar_t *ps_local_registry_create_type_binding_in(
   if (!var) return NULL;
   var->name = name;
   var->len = name_len;
-  var->scope_seq = registry->current_scope_seq;
-  var->declaration_seq =
-      ps_local_registry_register_binding_event_in(registry);
+  var->declaration_id = psx_scope_graph_declare(
+      registry->scope_graph, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_LOCAL_OBJECT, name, name_len, var);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(
+          registry->scope_graph, var->declaration_id);
+  if (declaration) {
+    var->scope_seq = declaration->scope_id;
+    var->declaration_seq = declaration->declaration_order;
+  }
   var->decl_type_table = registry->semantic_types;
   var->decl_type = canonical_type;
   var->decl_qual_type = qual_type;
@@ -601,6 +614,7 @@ psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
       .name = var->name,
       .name_len = var->len,
       .scope_seq = var->scope_seq,
+      .declaration_id = var->declaration_id,
       .is_used = var->is_used,
       .is_unevaluated_used = var->is_unevaluated_used,
       .is_address_taken = var->is_address_taken,
@@ -626,7 +640,7 @@ int ps_lvar_name_len(const lvar_t *var) {
   return var ? var->len : 0;
 }
 
-void ps_local_registry_reset_in(psx_local_registry_t *registry) {
+static void clear_local_registry_state(psx_local_registry_t *registry) {
   if (!registry) return;
   const psx_local_registry_transaction_t *transaction =
       registry->active_transaction;
@@ -648,16 +662,49 @@ void ps_local_registry_reset_in(psx_local_registry_t *registry) {
          sizeof(registry->lvars_by_bucket));
   memset(registry->lvars_by_offset, 0,
          sizeof(registry->lvars_by_offset));
-  registry->next_scope_seq = 0;
-  registry->current_scope_seq = 0;
-  registry->next_declaration_seq = 0;
-  ensure_scope_parent_capacity(registry, 0);
-  registry->scope_parent_by_seq[0] = 0;
   registry->usage_events_head = NULL;
   registry->usage_events_tail = NULL;
   registry->current_usage_region = NULL;
   registry->current_function_name = NULL;
   registry->current_function_name_len = 0;
+}
+
+void ps_local_registry_reset_in(psx_local_registry_t *registry) {
+  if (!registry) return;
+  clear_local_registry_state(registry);
+  while (psx_scope_graph_leave_scope(registry->scope_graph)) {}
+  if (psx_scope_graph_enter_scope(
+          registry->scope_graph, PSX_SCOPE_FUNCTION) == PSX_SCOPE_ID_INVALID)
+    ps_diag_ctx_in(
+        registry->diagnostic_context, NULL, "scope",
+        "function scope graph allocation failed");
+}
+
+void ps_local_registry_reset_translation_unit_in(
+    psx_local_registry_t *registry) {
+  if (!registry) return;
+  clear_local_registry_state(registry);
+  while (psx_scope_graph_leave_scope(registry->scope_graph)) {}
+}
+
+void ps_local_registry_prepare_function_resolution_in(
+    psx_local_registry_t *registry) {
+  if (!registry) return;
+  psx_scope_id_t current =
+      psx_scope_graph_current_scope(registry->scope_graph);
+  if (current == PSX_SCOPE_ID_TRANSLATION_UNIT ||
+      psx_scope_graph_scope_kind(registry->scope_graph, current) !=
+          PSX_SCOPE_FUNCTION) {
+    ps_local_registry_reset_in(registry);
+    return;
+  }
+  clear_local_registry_state(registry);
+}
+
+void ps_local_registry_enter_translation_unit_in(
+    psx_local_registry_t *registry) {
+  if (!registry) return;
+  while (psx_scope_graph_leave_scope(registry->scope_graph)) {}
 }
 
 void ps_local_registry_set_current_function_in(
@@ -692,15 +739,13 @@ void ps_decl_enter_scope_in(psx_local_registry_t *registry) {
   if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
     registry->lvar_scope_stack[registry->lvar_scope_depth] =
         registry->locals;
-    registry->lvar_scope_seq_stack[registry->lvar_scope_depth] =
-        registry->current_scope_seq;
   }
   registry->lvar_scope_depth++;
-  unsigned parent_scope_seq = registry->current_scope_seq;
-  registry->current_scope_seq = ++registry->next_scope_seq;
-  ensure_scope_parent_capacity(registry, registry->current_scope_seq);
-  registry->scope_parent_by_seq[registry->current_scope_seq] =
-      parent_scope_seq;
+  if (psx_scope_graph_enter_scope(
+          registry->scope_graph, PSX_SCOPE_BLOCK) == PSX_SCOPE_ID_INVALID)
+    ps_diag_ctx_in(
+        registry->diagnostic_context, NULL, "scope",
+        "scope graph allocation failed");
 }
 
 void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
@@ -713,8 +758,7 @@ void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
          var != restore; var = var->next)
       index_remove(registry, var);
     registry->locals = restore;
-    registry->current_scope_seq =
-        registry->lvar_scope_seq_stack[registry->lvar_scope_depth];
+    psx_scope_graph_leave_scope(registry->scope_graph);
   }
 }
 

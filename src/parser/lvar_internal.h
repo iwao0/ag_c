@@ -3,6 +3,7 @@
 
 #include "lvar_public.h"
 #include "vla_runtime.h"
+#include "../semantic/scope_graph.h"
 
 struct lvar_t {
   lvar_t *next;
@@ -12,6 +13,7 @@ struct lvar_t {
   lvar_t *next_offhash;
   unsigned scope_seq;
   unsigned declaration_seq;
+  psx_decl_id_t declaration_id;
   char *name;
   int len;
   int offset;

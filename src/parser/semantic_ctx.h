@@ -29,6 +29,10 @@ arena_context_t *ps_ctx_arena(
 void ps_ctx_bind_diagnostic_context(
     psx_semantic_context_t *context,
     ag_diagnostic_context_t *diagnostic_context);
+void ps_ctx_bind_scope_graph(
+    psx_semantic_context_t *context, psx_scope_graph_t *scope_graph);
+psx_scope_graph_t *ps_ctx_scope_graph(
+    const psx_semantic_context_t *context);
 ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context);
 void ps_ctx_bind_target_info(
