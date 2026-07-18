@@ -129,6 +129,10 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
     case IR_PARAM:
       sink_printf(s, "#%lld", i->src1.imm);
       break;
+    case IR_PARAM_BIND:
+      sink_printf(s, "param[%zu] -> ", i->parameter_index);
+      print_val(s, i->src1);
+      break;
     case IR_RESULT_AREA:
       break;
     case IR_NEG:

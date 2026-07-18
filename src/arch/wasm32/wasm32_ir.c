@@ -481,9 +481,10 @@ static void record_function_call_signature(const ir_inst_t *call) {
   if (!abi || abi->fixed_param_count > INT_MAX) return;
   int param_count = (int)abi->fixed_param_count;
   ir_type_t result_type =
-      call->is_void_call || abi->result_is_indirect
+      call->is_void_call || abi->result_is_indirect ||
+              abi->result_complex_half > 0
           ? IR_TY_VOID
-          : call->dst.type;
+          : abi->result.type;
   record_function_signature(call->sym, call->sym_len, result_type,
                             abi->param_pieces, param_count);
 }
@@ -652,7 +653,7 @@ static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   collect_vreg_type(ctx, i->src1);
   collect_vreg_type(ctx, i->src2);
   collect_vreg_type(ctx, i->src3);
-  collect_vreg_type(ctx, i->result_area);
+  collect_vreg_type(ctx, i->result_storage);
   collect_vreg_type(ctx, i->callee);
   if (i->op == IR_CALL) {
     int argument_count = 0;
@@ -1287,6 +1288,79 @@ static void emit_memcpy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
 }
 
+static const char *parameter_store_opcode(ir_type_t type) {
+  switch (type) {
+    case IR_TY_I8: return "i32.store8";
+    case IR_TY_I16: return "i32.store16";
+    case IR_TY_I32:
+    case IR_TY_PTR: return "i32.store";
+    case IR_TY_I64: return "i64.store";
+    case IR_TY_F32: return "f32.store";
+    case IR_TY_F64: return "f64.store";
+    default: return NULL;
+  }
+}
+
+static void emit_parameter_copy(
+    wasm_func_ctx_t *ctx, ir_val_t destination,
+    int parameter_slot, int size, int indent) {
+  int offset = 0;
+  const struct {
+    int width;
+    const char *store;
+    const char *load;
+  } chunks[] = {
+      {8, "i64.store", "i64.load"},
+      {4, "i32.store", "i32.load"},
+      {2, "i32.store16", "i32.load16_u"},
+      {1, "i32.store8", "i32.load8_u"},
+  };
+  for (size_t chunk = 0; chunk < sizeof(chunks) / sizeof(chunks[0]); chunk++) {
+    while (offset + chunks[chunk].width <= size) {
+      wasm_emitf(indent, "(%s ", chunks[chunk].store);
+      emit_addr_plus_const(ctx, destination, offset);
+      wasm_cg_emitf(" (%s ", chunks[chunk].load);
+      if (offset == 0) {
+        wasm_cg_emitf("(local.get $p%d)", parameter_slot);
+      } else {
+        wasm_cg_emitf(
+            "(i32.add (local.get $p%d) (i32.const %d))",
+            parameter_slot, offset);
+      }
+      wasm_cg_emitf("))\n");
+      offset += chunks[chunk].width;
+    }
+  }
+}
+
+static void emit_parameter_bind(
+    wasm_func_ctx_t *ctx, ir_inst_t *instruction, int indent) {
+  const ir_abi_signature_t *signature = wasm_function_abi(ctx->f);
+  size_t piece_count = 0;
+  size_t physical_index = 0;
+  const ir_abi_piece_t *pieces = ir_abi_signature_parameter_pieces(
+      signature, instruction->parameter_index,
+      &piece_count, &physical_index);
+  if (!pieces || piece_count == 0 || instruction->src1.type != IR_TY_PTR)
+    wasm_unsupported_op(instruction->op);
+  int hidden = func_has_hidden_ret_area(ctx->f) ? 1 : 0;
+  for (size_t i = 0; i < piece_count; i++) {
+    int parameter_slot = (int)(physical_index + i) + hidden;
+    if (pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+      emit_parameter_copy(
+          ctx, instruction->src1, parameter_slot,
+          pieces[i].source_size, indent);
+      continue;
+    }
+    const char *store = parameter_store_opcode(pieces[i].type);
+    if (!store) wasm_unsupported_op(instruction->op);
+    wasm_emitf(indent, "(%s ", store);
+    emit_addr_plus_const(
+        ctx, instruction->src1, pieces[i].byte_offset);
+    wasm_cg_emitf(" (local.get $p%d))\n", parameter_slot);
+  }
+}
+
 static int val_uses_vreg(ir_val_t v, int id) {
   return v.id == id;
 }
@@ -1295,7 +1369,7 @@ static int inst_uses_vreg(ir_inst_t *i, int id) {
   if (!i) return 0;
   if (val_uses_vreg(i->src1, id) || val_uses_vreg(i->src2, id) ||
       val_uses_vreg(i->src3, id) || val_uses_vreg(i->callee, id) ||
-      val_uses_vreg(i->result_area, id)) {
+      val_uses_vreg(i->result_storage, id)) {
     return 1;
   }
   if (i->op == IR_CALL) {
@@ -1372,23 +1446,36 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     if (abi->result_complex_half != 0) {
       wasm_unsupported_op(i->op);
     }
-    int returns_aggregate = abi->result_is_indirect;
-    if (returns_aggregate && abi->result_area.id == IR_VAL_NONE) {
+    int returns_hidden = abi->result_is_indirect;
+    int returns_direct_aggregate =
+        abi->result.param_class == IR_ABI_PARAM_AGGREGATE &&
+        !abi->result_is_indirect;
+    if ((returns_hidden || returns_direct_aggregate) &&
+        abi->result_area.id == IR_VAL_NONE) {
       wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
     }
-    int returns_void = returns_aggregate || i->is_void_call ||
+    int returns_void = returns_hidden || i->is_void_call ||
                        abi->result.type == IR_TY_VOID ||
-                       i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
+                       (!returns_direct_aggregate &&
+                        (i->dst.id == IR_VAL_NONE ||
+                         i->dst.type == IR_TY_VOID));
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
-    const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
-    if (result_unused) wasm_emitf(indent, "(drop ");
+    const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(
+        returns_direct_aggregate ? abi->result.type : i->dst.type);
+    if (returns_direct_aggregate) {
+      const char *store = parameter_store_opcode(abi->result.type);
+      if (!store) wasm_unsupported_op(i->op);
+      wasm_emitf(indent, "(%s ", store);
+      emit_addr_expr(ctx, abi->result_area);
+      wasm_cg_emitf(" ");
+    } else if (result_unused) wasm_emitf(indent, "(drop ");
     else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
     else wasm_emitf(indent, "");
     wasm_cg_emitf("(call_indirect");
     int call_nargs = (int)abi->fixed_param_count;
     if (call_nargs > argument_count)
       wasm_unsupported_msg("call has fewer lowered arguments than its function type");
-    if (returns_aggregate) wasm_cg_emitf(" (param i32)");
+    if (returns_hidden) wasm_cg_emitf(" (param i32)");
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t raw_arg_ty = arguments[a].type;
       ir_type_t arg_ty = raw_arg_ty;
@@ -1403,7 +1490,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       wasm_cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
     }
     if (!returns_void) wasm_cg_emitf(" (result %s)", ret_ty);
-    if (returns_aggregate) {
+    if (returns_hidden) {
       wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, abi->result_area, IR_TY_PTR);
     }
@@ -1424,7 +1511,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, i->callee, IR_TY_I32);
     wasm_cg_emitf(")");
-    if (result_unused || !returns_void) wasm_cg_emitf(")");
+    if (result_unused || !returns_void || returns_direct_aggregate)
+      wasm_cg_emitf(")");
     wasm_cg_emitf("\n");
     emit_variadic_arg_area_restore(vararg_area_bytes, indent);
     return;
@@ -1434,14 +1522,27 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
   record_function_call_signature(i);
-  int returns_void = i->is_void_call || i->dst.id == IR_VAL_NONE ||
-                     i->dst.type == IR_TY_VOID;
+  int returns_direct_aggregate =
+      abi->result.param_class == IR_ABI_PARAM_AGGREGATE &&
+      !abi->result_is_indirect;
+  int returns_void = i->is_void_call ||
+                     abi->result.type == IR_TY_VOID ||
+                     (!returns_direct_aggregate &&
+                      abi->result_complex_half == 0 &&
+                      i->dst.id == IR_VAL_NONE);
   if (abi->result_complex_half > 0) {
     wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
-    emit_val_expr_as(ctx, i->dst, IR_TY_PTR);
+    emit_val_expr_as(ctx, abi->result_area, IR_TY_PTR);
   } else if (abi->result_is_indirect) {
     wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
     emit_val_expr_as(ctx, abi->result_area, IR_TY_PTR);
+  } else if (returns_direct_aggregate) {
+    const char *store = parameter_store_opcode(abi->result.type);
+    if (!store || abi->result_area.id == IR_VAL_NONE)
+      wasm_unsupported_op(i->op);
+    wasm_emitf(indent, "(%s ", store);
+    emit_addr_expr(ctx, abi->result_area);
+    wasm_cg_emitf(" (call $%.*s", i->sym_len, i->sym);
   } else if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
     wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
   } else {
@@ -1519,8 +1620,9 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_abi_argument_expr_as(ctx, &arguments[a], arg_ty);
   }
   wasm_cg_emitf(")");
-  if (!abi->result_is_indirect && abi->result_complex_half == 0 &&
-      !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
+  if ((!abi->result_is_indirect && abi->result_complex_half == 0 &&
+       !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) ||
+      returns_direct_aggregate) {
     wasm_cg_emitf(")");
   }
   wasm_cg_emitf("\n");
@@ -1540,6 +1642,49 @@ static void emit_complex_ret_copy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent
   wasm_cg_emitf("))\n");
 }
 
+static const char *aggregate_load_opcode(ir_type_t type) {
+  switch (type) {
+    case IR_TY_I8: return "i32.load8_u";
+    case IR_TY_I16: return "i32.load16_u";
+    case IR_TY_I32: return "i32.load";
+    case IR_TY_I64: return "i64.load";
+    default: return NULL;
+  }
+}
+
+static void emit_indirect_ret_copy(
+    wasm_func_ctx_t *ctx, ir_inst_t *instruction, int indent) {
+  const ir_abi_signature_t *abi = wasm_function_abi(ctx->f);
+  if (!abi || !abi->result_is_indirect ||
+      instruction->src1.type != IR_TY_PTR)
+    wasm_unsupported_op(instruction->op);
+  int offset = 0;
+  const struct {
+    int width;
+    const char *store;
+    const char *load;
+  } chunks[] = {
+      {8, "i64.store", "i64.load"},
+      {4, "i32.store", "i32.load"},
+      {2, "i32.store16", "i32.load16_u"},
+      {1, "i32.store8", "i32.load8_u"},
+  };
+  for (size_t chunk = 0; chunk < sizeof(chunks) / sizeof(chunks[0]); chunk++) {
+    while (offset + chunks[chunk].width <= abi->result_size) {
+      wasm_emitf(indent, "(%s ", chunks[chunk].store);
+      if (offset == 0)
+        wasm_cg_emitf("(local.get $p0)");
+      else
+        wasm_cg_emitf(
+            "(i32.add (local.get $p0) (i32.const %d))", offset);
+      wasm_cg_emitf(" (%s ", chunks[chunk].load);
+      emit_addr_plus_const(ctx, instruction->src1, offset);
+      wasm_cg_emitf("))\n");
+      offset += chunks[chunk].width;
+    }
+  }
+}
+
 static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int indent) {
   switch (i->op) {
     case IR_NOP:
@@ -1556,6 +1701,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
                  param_ordinal + func_has_hidden_ret_area(ctx->f));
       return;
     }
+    case IR_PARAM_BIND:
+      emit_parameter_bind(ctx, i, indent);
+      return;
     case IR_RESULT_AREA:
       if (!func_has_hidden_ret_area(ctx->f)) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (local.get $p0))\n", i->dst.id);
@@ -1802,6 +1950,12 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       wasm_emitf(indent, "(br $dispatch)\n");
       return;
     case IR_RET:
+      if (wasm_function_abi(ctx->f)->result_is_indirect) {
+        emit_indirect_ret_copy(ctx, i, indent);
+        if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
+        wasm_emitf(indent, "return\n");
+        return;
+      }
       if (wasm_function_abi(ctx->f)->result_complex_half > 0) {
         emit_complex_ret_copy(ctx, i, indent);
         if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
@@ -1809,7 +1963,16 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
         return;
       }
       if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
-      if (i->src1.id != IR_VAL_NONE) {
+      if (wasm_function_abi(ctx->f)->result.param_class ==
+              IR_ABI_PARAM_AGGREGATE) {
+        const char *load = aggregate_load_opcode(
+            wasm_function_abi(ctx->f)->result.type);
+        if (!load || i->src1.type != IR_TY_PTR)
+          wasm_unsupported_op(i->op);
+        wasm_emitf(indent, "(return (%s ", load);
+        emit_addr_expr(ctx, i->src1);
+        wasm_cg_emitf("))\n");
+      } else if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");
         emit_val_expr_as(ctx, i->src1, ctx->f->ret_type);
         wasm_cg_emitf(")\n");
@@ -1823,15 +1986,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
 }
 
 static int func_param_count(ir_func_t *f) {
-  int count = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0) {
-        count++;
-      }
-    }
-  }
-  return count + func_has_hidden_ret_area(f);
+  const ir_abi_signature_t *abi = wasm_function_abi(f);
+  if (!abi || abi->param_count > INT_MAX) return 0;
+  return (int)abi->param_count + func_has_hidden_ret_area(f);
 }
 
 static ir_type_t func_param_type(ir_func_t *f, int idx) {

@@ -27,8 +27,8 @@ static void mark_uses(ir_inst_t *inst, int *last_use, int nvregs, int n) {
       last_use[inst->args[k].value.id] = n;
     }
   }
-  if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {
-    last_use[inst->result_area.id] = n;
+  if (inst->result_storage.id >= 0 && inst->result_storage.id < nvregs) {
+    last_use[inst->result_storage.id] = n;
   }
   /* 間接呼び出しの callee も use として扱う (regalloc 用) */
   if (inst->callee.id >= 0 && inst->callee.id < nvregs) {

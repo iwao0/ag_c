@@ -40,6 +40,7 @@ typedef enum {
 typedef struct {
   ir_type_t type;
   size_t source_index;
+  int source_size;
   int byte_offset;
   ir_abi_piece_kind_t kind;
 } ir_abi_piece_t;
@@ -136,6 +137,9 @@ ir_abi_module_t *ir_abi_lower_module(
 void ir_abi_module_free(ir_abi_module_t *module);
 const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function);
+const ir_abi_piece_t *ir_abi_signature_parameter_pieces(
+    const ir_abi_signature_t *signature, size_t source_index,
+    size_t *piece_count, size_t *physical_index);
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call);
 const ir_abi_argument_t *ir_abi_call_arguments(

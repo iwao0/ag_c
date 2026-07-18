@@ -234,12 +234,14 @@ static int lower_function_type_signature(
       out->param_pieces[piece++] = (ir_abi_piece_t){
           .type = info.type,
           .source_index = i,
+          .source_size = info.source_size,
           .byte_offset = 0,
           .kind = IR_ABI_PIECE_COMPLEX_REAL,
       };
       out->param_pieces[piece++] = (ir_abi_piece_t){
           .type = info.type,
           .source_index = i,
+          .source_size = info.source_size,
           .byte_offset = ir_type_size(info.type),
           .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
       };
@@ -247,6 +249,7 @@ static int lower_function_type_signature(
       out->param_pieces[piece++] = (ir_abi_piece_t){
           .type = info.type == IR_TY_VOID ? IR_TY_I32 : info.type,
           .source_index = i,
+          .source_size = info.source_size,
           .byte_offset = 0,
           .kind = info.param_class == IR_ABI_PARAM_AGGREGATE &&
                           info.type == IR_TY_PTR
@@ -431,6 +434,7 @@ static int lower_logical_call_arguments(
       call->signature.param_pieces[physical_index] = (ir_abi_piece_t){
           .type = type,
           .source_index = i,
+          .source_size = info.source_size,
           .byte_offset = offset,
           .kind = IR_ABI_PIECE_VARIADIC,
       };
@@ -495,13 +499,24 @@ ir_abi_module_t *ir_abi_lower_module(
       goto fail;
     lowered->signature.result_area_vreg =
         function_result_area_vreg(function);
-    if (lowered->signature.result_is_indirect &&
-        lowered->signature.result_area_vreg < 0)
-      goto fail;
     for (const ir_block_t *block = function->entry; block;
          block = block->next) {
       for (const ir_inst_t *instruction = block->head; instruction;
            instruction = instruction->next) {
+        if (instruction->op == IR_PARAM_BIND) {
+          size_t piece_count = 0;
+          if (instruction->src1.type != IR_TY_PTR ||
+              instruction->src1.id < 0 ||
+              instruction->parameter_index >=
+                  function->function_type.param_count ||
+              !ir_abi_signature_parameter_pieces(
+                  &lowered->signature,
+                  instruction->parameter_index,
+                  &piece_count, NULL) ||
+              piece_count == 0)
+            goto fail;
+          continue;
+        }
         if (instruction->op != IR_CALL) {
           if (instruction->has_function_type) {
             ir_abi_reference_t *reference =
@@ -569,6 +584,8 @@ ir_abi_module_t *ir_abi_lower_module(
             call->signature.param_pieces[i] = (ir_abi_piece_t){
                 .type = instruction->args[i].value.type,
                 .source_index = SIZE_MAX,
+                .source_size = ir_type_size(
+                    instruction->args[i].value.type),
                 .byte_offset = 0,
                 .kind = IR_ABI_PIECE_VARIADIC,
             };
@@ -581,7 +598,7 @@ ir_abi_module_t *ir_abi_lower_module(
               call->signature.is_variadic &&
               actual_count > declared_piece_count;
         }
-        call->signature.result_area = instruction->result_area;
+        call->signature.result_area = instruction->result_storage;
       }
     }
   }
@@ -634,6 +651,28 @@ const ir_abi_signature_t *ir_abi_function_signature(
       return &module->functions[i].signature;
   }
   return NULL;
+}
+
+const ir_abi_piece_t *ir_abi_signature_parameter_pieces(
+    const ir_abi_signature_t *signature, size_t source_index,
+    size_t *piece_count, size_t *physical_index) {
+  if (piece_count) *piece_count = 0;
+  if (physical_index) *physical_index = 0;
+  if (!signature || !signature->param_pieces) return NULL;
+  size_t first = signature->param_count;
+  size_t count = 0;
+  for (size_t i = 0; i < signature->param_count; i++) {
+    if (signature->param_pieces[i].source_index != source_index) {
+      if (count > 0) break;
+      continue;
+    }
+    if (first == signature->param_count) first = i;
+    count++;
+  }
+  if (count == 0) return NULL;
+  if (piece_count) *piece_count = count;
+  if (physical_index) *physical_index = first;
+  return &signature->param_pieces[first];
 }
 
 const ir_abi_signature_t *ir_abi_call_signature(

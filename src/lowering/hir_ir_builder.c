@@ -50,7 +50,6 @@ typedef struct {
   ir_abi_param_info_t return_info;
   psx_qual_type_t return_qual_type;
   int returns_void;
-  int result_area_vreg;
   hir_local_slot_t local_slots[512];
   size_t local_slot_count;
   hir_loop_target_t loop_targets[32];
@@ -672,18 +671,15 @@ static ir_val_t coerce_direct_value_to_qual_type(
   return coerce_direct_value(context, value, source, target);
 }
 
-static int setup_scalar_parameters(
+static int setup_parameter_bindings(
     hir_ir_context_t *context, const psx_hir_node_t *root,
-    const ir_abi_callable_type_t *signature) {
+    const ir_function_type_t *function_type) {
   if (child_count_for_edge(root, PSX_HIR_EDGE_PARAMETER) !=
-      signature->param_count) {
+      function_type->param_count) {
     context->status = IR_HIR_BUILD_INVALID;
     return 0;
   }
-  int integer_index = 0;
-  int float_index = 0;
-  int abi_index = 0;
-  for (size_t i = 0; i < signature->param_count; i++) {
+  for (size_t i = 0; i < function_type->param_count; i++) {
     const psx_hir_node_t *parameter = child_for_edge(
         context, root, PSX_HIR_EDGE_PARAMETER, i);
     if (!parameter || psx_hir_node_kind(parameter) != PSX_HIR_LOCAL) {
@@ -695,12 +691,15 @@ static int setup_scalar_parameters(
          !is_complex_abi_type(type) &&
          !is_register_aggregate_abi_type(type) &&
          !is_indirect_aggregate_abi_type(type)) ||
-        signature->params[i] != type.type) {
+        function_type->params[i].type_id == PSX_TYPE_ID_INVALID) {
       context->status = IR_HIR_BUILD_UNSUPPORTED;
       return 0;
     }
     int minimum_size =
-        is_indirect_aggregate_abi_type(type) ? type.source_size : 0;
+        (is_complex_abi_type(type) ||
+         is_register_aggregate_abi_type(type) ||
+         is_indirect_aggregate_abi_type(type))
+            ? type.source_size : 0;
     int minimum_align =
         minimum_size >= 8 ? 8 :
         minimum_size >= 4 ? 4 :
@@ -709,90 +708,14 @@ static int setup_scalar_parameters(
     int pointer = local_address_with_minimum(
         context, parameter, minimum_size, minimum_align);
     if (pointer < 0) return 0;
-    if (is_complex_abi_type(type)) {
-      int half = ir_type_size(type.type);
-      for (int part = 0; part < 2; part++) {
-        int value_vreg = new_vreg(context);
-        if (value_vreg < 0) return 0;
-        ir_inst_t *input = ir_inst_new(IR_PARAM);
-        if (!input) {
-          context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-          return 0;
-        }
-        input->dst = ir_val_vreg(value_vreg, type.type);
-        int parameter_index =
-            ag_target_info_call_abi(context->options->target) ==
-                    AG_TARGET_CALL_ABI_AAPCS64
-                ? float_index++
-                : abi_index;
-        input->src1 = ir_val_imm(IR_TY_I32, parameter_index);
-        if (!append_instruction(context, input)) return 0;
-        ir_val_t destination = ir_val_vreg(pointer, IR_TY_PTR);
-        if (part == 1)
-          destination = pointer_with_offset(
-              context, destination, half);
-        if (context->status != IR_HIR_BUILD_OK ||
-            !store_direct_value(context, destination, input->dst))
-          return 0;
-        abi_index++;
-      }
-      continue;
-    }
-    if (is_indirect_aggregate_abi_type(type)) {
-      int source_vreg = new_vreg(context);
-      if (source_vreg < 0) return 0;
-      ir_inst_t *input = ir_inst_new(IR_PARAM);
-      if (!input) {
-        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-        return 0;
-      }
-      input->dst = ir_val_vreg(source_vreg, IR_TY_PTR);
-      int parameter_index =
-          ag_target_info_call_abi(context->options->target) ==
-                  AG_TARGET_CALL_ABI_AAPCS64
-              ? integer_index++
-              : abi_index;
-      input->src1 = ir_val_imm(IR_TY_I32, parameter_index);
-      if (!append_instruction(context, input)) return 0;
-      ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
-      if (!copy) {
-        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-        return 0;
-      }
-      copy->src1 = ir_val_vreg(pointer, IR_TY_PTR);
-      copy->src2 = input->dst;
-      copy->alloca_size = type.source_size;
-      if (!append_instruction(context, copy)) return 0;
-      abi_index++;
-      continue;
-    }
-    int value_vreg = new_vreg(context);
-    if (value_vreg < 0) return 0;
-    ir_inst_t *input = ir_inst_new(IR_PARAM);
-    if (!input) {
+    ir_inst_t *binding = ir_inst_new(IR_PARAM_BIND);
+    if (!binding) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
       return 0;
     }
-    input->dst = ir_val_vreg(value_vreg, scalar_storage_type(type));
-    int parameter_index;
-    if (ag_target_info_call_abi(context->options->target) ==
-        AG_TARGET_CALL_ABI_AAPCS64) {
-      parameter_index = is_float_abi_type(type)
-                            ? float_index++ : integer_index++;
-    } else {
-      parameter_index = abi_index;
-    }
-    input->src1 = ir_val_imm(IR_TY_I32, parameter_index);
-    if (!append_instruction(context, input)) return 0;
-    ir_inst_t *store = ir_inst_new(IR_STORE);
-    if (!store) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return 0;
-    }
-    store->src1 = ir_val_vreg(pointer, IR_TY_PTR);
-    store->src2 = input->dst;
-    if (!append_instruction(context, store)) return 0;
-    abi_index++;
+    binding->src1 = ir_val_vreg(pointer, IR_TY_PTR);
+    binding->parameter_index = i;
+    if (!append_instruction(context, binding)) return 0;
   }
   return 1;
 }
@@ -2952,6 +2875,8 @@ static ir_val_t aggregate_value_address(
     return aggregate_value_address(context, value);
   }
   ir_abi_param_info_t type = classify_node_type(context, node);
+  if (kind == PSX_HIR_CALL)
+    return build_scalar_or_void_call(context, node, type);
   if (is_register_aggregate_abi_type(type)) {
     ir_val_t value = build_expr(context, node);
     ir_type_t storage_type = integer_storage_type(type);
@@ -2987,9 +2912,6 @@ static ir_val_t aggregate_value_address(
       return ir_val_none();
     return ir_val_vreg(temporary, IR_TY_PTR);
   }
-  if (kind == PSX_HIR_CALL)
-    return build_scalar_or_void_call(
-        context, node, type);
   if (kind == PSX_HIR_ASSIGN)
     return build_aggregate_assignment(
         context, node, classify_node_type(context, node));
@@ -3041,6 +2963,8 @@ static ir_val_t build_scalar_or_void_call(
   int is_void_result =
       node_type_kind(context, node) == PSX_TYPE_VOID;
   int is_complex_result = is_complex_abi_type(result_type);
+  int is_aggregate_result =
+      result_type.param_class == IR_ABI_PARAM_AGGREGATE;
   int is_indirect_aggregate_result =
       is_indirect_aggregate_abi_type(result_type);
   if (callable_type.type_id == PSX_TYPE_ID_INVALID ||
@@ -3231,7 +3155,7 @@ static ir_val_t build_scalar_or_void_call(
   }
 
   int result_vreg = -1;
-  if (!is_void_result && !is_complex_result) {
+  if (!is_void_result && !is_complex_result && !is_aggregate_result) {
     result_vreg = new_vreg(context);
     if (result_vreg < 0) {
       free(arguments);
@@ -3244,7 +3168,7 @@ static ir_val_t build_scalar_or_void_call(
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
-  if (is_complex_result) {
+  if (is_complex_result || is_aggregate_result) {
     int slot = allocate_scalar_temp(
         context, result_type.source_size,
         ir_type_size(result_type.type) >= 8 ? 8 : 4);
@@ -3253,18 +3177,7 @@ static ir_val_t build_scalar_or_void_call(
       free(call);
       return ir_val_none();
     }
-    call->dst = ir_val_vreg(slot, IR_TY_PTR);
-  } else if (is_indirect_aggregate_result) {
-    int result_area = allocate_scalar_temp(
-        context, result_type.source_size, 8);
-    if (result_area < 0) {
-      free(arguments);
-      free(call);
-      return ir_val_none();
-    }
-    call->dst = ir_val_vreg(result_vreg, IR_TY_PTR);
-    call->result_area =
-        ir_val_vreg(result_area, IR_TY_PTR);
+    call->result_storage = ir_val_vreg(slot, IR_TY_PTR);
   } else if (!is_void_result) {
     call->dst = ir_val_vreg(result_vreg, result_type.type);
   }
@@ -3297,9 +3210,8 @@ static ir_val_t build_scalar_or_void_call(
   ir_abi_callable_type_dispose(&signature);
   if (!append_instruction(context, call)) return ir_val_none();
   if (is_void_result) return ir_val_none();
-  if (is_complex_result) return call->dst;
-  if (is_indirect_aggregate_result)
-    return call->result_area;
+  if (is_complex_result || is_aggregate_result)
+    return call->result_storage;
   return ir_val_vreg(result_vreg, result_type.type);
 }
 
@@ -4053,32 +3965,21 @@ static int build_statement(
         ret->src1 = result;
         return append_instruction(context, ret);
       }
-      if (is_indirect_aggregate_abi_type(context->return_info)) {
+      if (context->return_info.param_class == IR_ABI_PARAM_AGGREGATE) {
         ir_abi_param_info_t value_type = classify_node_type(
             context, value);
         ir_val_t source = aggregate_value_address(context, value);
         if (context->status != IR_HIR_BUILD_OK ||
             value_type.param_class != IR_ABI_PARAM_AGGREGATE ||
             value_type.source_size != context->return_info.source_size ||
-            source.type != IR_TY_PTR ||
-            context->result_area_vreg < 0)
+            source.type != IR_TY_PTR)
           return 0;
-        ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
-        if (!copy) {
-          context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-          return 0;
-        }
-        copy->src1 = ir_val_vreg(
-            context->result_area_vreg, IR_TY_PTR);
-        copy->src2 = source;
-        copy->alloca_size = context->return_info.source_size;
-        if (!append_instruction(context, copy)) return 0;
         ir_inst_t *ret = ir_inst_new(IR_RET);
         if (!ret) {
           context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
           return 0;
         }
-        ret->src1 = ir_val_none();
+        ret->src1 = source;
         return append_instruction(context, ret);
       }
       if (context->returns_void) {
@@ -4336,7 +4237,6 @@ ir_module_t *ir_build_function_module_from_hir(
           .qualifiers = PSX_TYPE_QUALIFIER_NONE,
       },
       .returns_void = returns_void,
-      .result_area_vreg = -1,
   };
   context.module = ir_module_new();
   if (!context.module) {
@@ -4361,30 +4261,6 @@ ir_module_t *ir_build_function_module_from_hir(
     return NULL;
   }
   context.function->is_static = psx_hir_node_is_static_function(root);
-  if (is_indirect_aggregate_abi_type(return_info)) {
-    int return_area = new_vreg(&context);
-    if (return_area < 0) {
-      ir_module_free(context.module);
-      if (status) *status = context.status;
-      ir_abi_callable_type_dispose(&signature);
-      return NULL;
-    }
-    ir_inst_t *parameter = ir_inst_new(IR_RESULT_AREA);
-    if (!parameter) {
-      ir_module_free(context.module);
-      if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      ir_abi_callable_type_dispose(&signature);
-      return NULL;
-    }
-    parameter->dst = ir_val_vreg(return_area, IR_TY_PTR);
-    if (!append_instruction(&context, parameter)) {
-      ir_module_free(context.module);
-      if (status) *status = context.status;
-      ir_abi_callable_type_dispose(&signature);
-      return NULL;
-    }
-    context.result_area_vreg = return_area;
-  }
   if (signature.param_count > INT_MAX) {
     ir_module_free(context.module);
     ir_abi_callable_type_dispose(&signature);
@@ -4413,7 +4289,8 @@ ir_module_t *ir_build_function_module_from_hir(
     return NULL;
   }
   context.function->c_signature_len = signature_length;
-  if (!setup_scalar_parameters(&context, root, &signature) ||
+  if (!setup_parameter_bindings(
+          &context, root, &context.function->function_type) ||
       !emit_vla_parameter_strides(&context, root) ||
       !preallocate_local_storage(&context, body) ||
       !collect_label_blocks(&context, body)) {

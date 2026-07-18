@@ -3658,6 +3658,31 @@ for (const [name, source] of [
     );
   }
 }
+const parameterBindingLowering = hirIrBuilder.match(
+  /static int setup_parameter_bindings\s*\([^]*?\n\}/,
+);
+if (!parameterBindingLowering ||
+    !/ir_inst_new\s*\(\s*IR_PARAM_BIND\s*\)/.test(
+      parameterBindingLowering[0],
+    ) ||
+    /ir_inst_new\s*\(\s*IR_PARAM\s*\)|ag_target_info_call_abi|integer_index|float_index/.test(
+      parameterBindingLowering[0],
+    )) {
+  throw new Error(
+    "typed HIR must bind one source parameter to storage without assigning physical ABI indices",
+  );
+}
+for (const [name, source] of [
+  ["Apple ARM64", arm64IrEmitSource],
+  ["Wasm text", wasmIrSource],
+  ["Wasm object", wasmObjSource],
+]) {
+  if (!/\bir_abi_signature_parameter_pieces\s*\(/.test(source)) {
+    throw new Error(
+      `${name} backend must expand logical parameter bindings from AbiLowering sidecars`,
+    );
+  }
+}
 if (!/ir_opt_const_fold\s*\(m\)[\s\S]*?ir_opt_dce\s*\(m\)[\s\S]*?lower_module_abi\s*\(m/.test(
       compilerMainSource,
     ) ||

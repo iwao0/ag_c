@@ -109,7 +109,7 @@ static void const_fold_func(ir_func_t *f) {
         if (inst->args)
           substitute_with_const(&cm, &inst->args[i].value, nvregs);
       }
-      substitute_with_const(&cm, &inst->result_area, nvregs);
+      substitute_with_const(&cm, &inst->result_storage, nvregs);
 
       /* LOAD_IMM: dst が定数値 */
       if (inst->op == IR_LOAD_IMM) {
@@ -178,6 +178,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_CONTINUATION_SUSPEND:
     case IR_LABEL:
     case IR_PARAM:
+    case IR_PARAM_BIND:
     case IR_RESULT_AREA:
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */
     case IR_LOAD_TLV_ADDR: /* 内部で blr __tlv_bootstrap を発行する */
@@ -199,8 +200,8 @@ static void count_uses(ir_inst_t *inst, int *use_cnt, int nvregs) {
       use_cnt[inst->args[k].value.id]++;
     }
   }
-  if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {
-    use_cnt[inst->result_area.id]++;
+  if (inst->result_storage.id >= 0 && inst->result_storage.id < nvregs) {
+    use_cnt[inst->result_storage.id]++;
   }
   /* 間接呼び出しの callee も use として数える */
   if (inst->callee.id >= 0 && inst->callee.id < nvregs) {

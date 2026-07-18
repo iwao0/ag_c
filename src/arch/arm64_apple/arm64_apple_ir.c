@@ -30,6 +30,7 @@ typedef struct {
   ir_func_t *f;
   int *vreg_off;
   int alloca_base;
+  int result_area_off;
   int total_size;
   int *alloca_region_off;
   int alloca_next;
@@ -111,7 +112,14 @@ static void layout_frame(gen_ctx_t *ctx) {
   for (int i = 0; i < nvregs; i++) {
     ctx->vreg_off[i] = vreg_base + i * 8;
   }
-  ctx->alloca_base = vreg_base + nvregs * 8;
+  ctx->result_area_off = -1;
+  int frame_prefix = vreg_base + nvregs * 8;
+  const ir_abi_signature_t *abi = function_abi(ctx);
+  if (abi && abi->result_is_indirect) {
+    ctx->result_area_off = frame_prefix;
+    frame_prefix += 8;
+  }
+  ctx->alloca_base = frame_prefix;
   ctx->alloca_next = ctx->alloca_base;
   ctx->alloca_region_off = calloc((size_t)(nvregs > 0 ? nvregs : 1), sizeof(int));
   int raw = scan_alloca_end(ctx->f, ctx->alloca_base);
@@ -318,6 +326,7 @@ static void gen_inst_memcpy(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_param_bind(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst);
@@ -370,6 +379,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_EQ: case IR_NE:
                            gen_inst_int_cmp(ctx, inst); return;
     case IR_PARAM:         gen_inst_param(ctx, inst); return;
+    case IR_PARAM_BIND:    gen_inst_param_bind(ctx, inst); return;
     case IR_RESULT_AREA:   gen_inst_result_area(ctx, inst); return;
     case IR_CALL:          gen_inst_call(ctx, inst); return;
     case IR_BR:
@@ -812,6 +822,115 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
   release_dst(ctx, inst->dst, d, spill);
 }
 
+static int abi_piece_is_fp(const ir_abi_piece_t *piece) {
+  return piece && (piece->type == IR_TY_F32 || piece->type == IR_TY_F64);
+}
+
+static int incoming_piece_index(
+    const ir_abi_signature_t *signature, size_t physical_index) {
+  if (!signature || physical_index >= signature->param_count) abort();
+  int fp = abi_piece_is_fp(&signature->param_pieces[physical_index]);
+  int index = 0;
+  for (size_t i = 0; i < physical_index; i++) {
+    if (abi_piece_is_fp(&signature->param_pieces[i]) == fp) index++;
+  }
+  return index;
+}
+
+static const char *incoming_piece_register(
+    gen_ctx_t *ctx, const ir_abi_signature_t *signature,
+    size_t physical_index, char *buffer, size_t buffer_size) {
+  const ir_abi_piece_t *piece = &signature->param_pieces[physical_index];
+  int index = incoming_piece_index(signature, physical_index);
+  int fp = abi_piece_is_fp(piece);
+  if (index < 8) {
+    if (fp) {
+      snprintf(buffer, buffer_size, "%c%d",
+               piece->type == IR_TY_F64 ? 'd' : 's', index);
+    } else {
+      snprintf(buffer, buffer_size, "x%d", index);
+    }
+    return buffer;
+  }
+  int stack_offset = ctx->total_size + (index - 8) * 8;
+  if (fp) {
+    snprintf(buffer, buffer_size, "%c17",
+             piece->type == IR_TY_F64 ? 'd' : 's');
+  } else {
+    snprintf(buffer, buffer_size, "x17");
+  }
+  emit_frame_load(ctx, buffer, stack_offset);
+  return buffer;
+}
+
+static void emit_parameter_piece_store(
+    gen_ctx_t *ctx, const char *destination, int byte_offset,
+    ir_type_t type, const char *source) {
+  char narrow_source[8];
+  const char *opcode = "str";
+  if (type == IR_TY_I8 || type == IR_TY_I16 || type == IR_TY_I32) {
+    to_w_name(source, narrow_source, sizeof(narrow_source));
+    source = narrow_source;
+    if (type == IR_TY_I8) opcode = "strb";
+    else if (type == IR_TY_I16) opcode = "strh";
+  }
+  if (byte_offset == 0)
+    arm64_cg_emitf(ctx, "  %s %s, [%s]\n", opcode, source, destination);
+  else
+    arm64_cg_emitf(ctx, "  %s %s, [%s, #%d]\n",
+                   opcode, source, destination, byte_offset);
+}
+
+static void emit_indirect_parameter_copy(
+    gen_ctx_t *ctx, const char *destination,
+    const char *source, int size) {
+  int offset = 0;
+  for (; offset + 8 <= size; offset += 8) {
+    arm64_cg_emitf(ctx, "  ldr x9, [%s, #%d]\n", source, offset);
+    arm64_cg_emitf(ctx, "  str x9, [%s, #%d]\n", destination, offset);
+  }
+  for (; offset + 4 <= size; offset += 4) {
+    arm64_cg_emitf(ctx, "  ldr w9, [%s, #%d]\n", source, offset);
+    arm64_cg_emitf(ctx, "  str w9, [%s, #%d]\n", destination, offset);
+  }
+  for (; offset + 2 <= size; offset += 2) {
+    arm64_cg_emitf(ctx, "  ldrh w9, [%s, #%d]\n", source, offset);
+    arm64_cg_emitf(ctx, "  strh w9, [%s, #%d]\n", destination, offset);
+  }
+  for (; offset < size; offset++) {
+    arm64_cg_emitf(ctx, "  ldrb w9, [%s, #%d]\n", source, offset);
+    arm64_cg_emitf(ctx, "  strb w9, [%s, #%d]\n", destination, offset);
+  }
+}
+
+static void gen_inst_param_bind(gen_ctx_t *ctx, ir_inst_t *inst) {
+  const ir_abi_signature_t *signature = function_abi(ctx);
+  size_t piece_count = 0;
+  size_t physical_index = 0;
+  const ir_abi_piece_t *pieces = ir_abi_signature_parameter_pieces(
+      signature, inst->parameter_index, &piece_count, &physical_index);
+  if (!pieces || piece_count == 0 || inst->src1.type != IR_TY_PTR) abort();
+
+  for (size_t i = 0; i < piece_count; i++) {
+    char source_buffer[8];
+    const char *source = incoming_piece_register(
+        ctx, signature, physical_index + i,
+        source_buffer, sizeof(source_buffer));
+    char destination_buffer[8];
+    const char *destination = ensure_val_in(
+        ctx, inst->src1, "x16", destination_buffer,
+        sizeof(destination_buffer));
+    if (pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+      emit_indirect_parameter_copy(
+          ctx, destination, source, pieces[i].source_size);
+    } else {
+      emit_parameter_piece_store(
+          ctx, destination, pieces[i].byte_offset,
+          pieces[i].type, source);
+    }
+  }
+}
+
 static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
       int idx = (int)inst->src1.imm;
       /* float/double → s{idx}/d{idx}、整数 → x{idx}。
@@ -868,12 +987,14 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
 
 static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst) {
   if (inst->dst.id < 0 || inst->dst.id >= ctx->f->next_vreg_id) return;
+  if (ctx->result_area_off < 0) abort();
+  emit_frame_load(ctx, "x16", ctx->result_area_off);
   if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
     int destination = ctx->f->vreg_phys_reg[inst->dst.id];
-    if (destination != 8)
-      arm64_cg_emitf(ctx, "  mov x%d, x8\n", destination);
+    if (destination != 16)
+      arm64_cg_emitf(ctx, "  mov x%d, x16\n", destination);
   } else {
-    emit_frame_store(ctx, "x8", ctx->vreg_off[inst->dst.id]);
+    emit_frame_store(ctx, "x16", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -1027,13 +1148,25 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         arm64_cg_emitf(ctx, "  add sp, sp, #%d\n", var_stack_bytes);
       }
       /* _Complex 戻り値 (HFA): dst は {re,im} スロットの PTR。d0/d1 (s0/s1) を書き戻す。 */
-  if (abi->result_complex_half > 0 && inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+  if (abi->result_complex_half > 0 &&
+      abi->result_area.id != IR_VAL_NONE) {
     const char *suf = (abi->result_complex_half == 8) ? "d" : "s";
     char buf[8];
-    const char *p = ensure_val_in(ctx, inst->dst, "x9", buf, sizeof(buf));
+    const char *p = ensure_val_in(
+        ctx, abi->result_area, "x9", buf, sizeof(buf));
     if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
     arm64_cg_emitf(ctx, "  str %s0, [x9]\n", suf);
     arm64_cg_emitf(ctx, "  str %s1, [x9, #%d]\n", suf, (int)abi->result_complex_half);
+    return;
+  }
+  if (abi->result.param_class == IR_ABI_PARAM_AGGREGATE &&
+      !abi->result_is_indirect &&
+      abi->result_area.id != IR_VAL_NONE) {
+    char buffer[8];
+    const char *destination = ensure_val_in(
+        ctx, abi->result_area, "x16", buffer, sizeof(buffer));
+    emit_parameter_piece_store(
+        ctx, destination, 0, abi->result.type, "x0");
     return;
   }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
@@ -1060,7 +1193,19 @@ static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
       const ir_abi_signature_t *abi = function_abi(ctx);
       if (!abi) abort();
-      if (abi->result_complex_half > 0) {
+      if (abi->result_is_indirect) {
+        if (inst->src1.type != IR_TY_PTR ||
+            inst->src1.id == IR_VAL_NONE ||
+            ctx->result_area_off < 0)
+          abort();
+        char source_buffer[8];
+        const char *source = ensure_val_in(
+            ctx, inst->src1, "x10",
+            source_buffer, sizeof(source_buffer));
+        emit_frame_load(ctx, "x11", ctx->result_area_off);
+        emit_indirect_parameter_copy(
+            ctx, "x11", source, abi->result_size);
+      } else if (abi->result_complex_half > 0) {
         /* _Complex 戻り値 (HFA): src1 は {re,im} スロットの PTR。re→d0/s0, im→d1/s1。 */
         const char *suf = (abi->result_complex_half == 8) ? "d" : "s";
         char buf[8];
@@ -1068,6 +1213,19 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
         if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
         arm64_cg_emitf(ctx, "  ldr %s0, [x9]\n", suf);
         arm64_cg_emitf(ctx, "  ldr %s1, [x9, #%d]\n", suf, (int)abi->result_complex_half);
+      } else if (abi->result.param_class == IR_ABI_PARAM_AGGREGATE) {
+        if (inst->src1.type != IR_TY_PTR ||
+            inst->src1.id == IR_VAL_NONE)
+          abort();
+        char buffer[8];
+        const char *source = ensure_val_in(
+            ctx, inst->src1, "x9", buffer, sizeof(buffer));
+        const char *load = abi->result.type == IR_TY_I64 ? "ldr x0" :
+                           abi->result.type == IR_TY_I32 ? "ldr w0" :
+                           abi->result.type == IR_TY_I16 ? "ldrh w0" :
+                           abi->result.type == IR_TY_I8 ? "ldrb w0" : NULL;
+        if (!load) abort();
+        arm64_cg_emitf(ctx, "  %s, [%s]\n", load, source);
       } else if (inst->src1.id != IR_VAL_NONE) {
         if (inst->src1.type == IR_TY_F32) {
           char buf[8];
@@ -1082,7 +1240,7 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
           const char *src = ensure_val_in(ctx, inst->src1, "x0", buf, sizeof(buf));
           if (strcmp(src, "x0") != 0) arm64_cg_emitf(ctx, "  mov x0, %s\n", src);
         }
-      } else {
+      } else if (!abi->result_is_indirect) {
         arm64_cg_emitf(ctx, "  mov x0, #0\n");
       }
       emit_restore_regs(ctx);
@@ -1218,6 +1376,8 @@ static void gen_func(
   arm64_cg_emitf(&ctx, "  stp x29, x30, [sp]\n");
   arm64_cg_emitf(&ctx, "  mov x29, sp\n");
   emit_save_regs(&ctx);
+  if (ctx.result_area_off >= 0)
+    emit_frame_store(&ctx, "x8", ctx.result_area_off);
 
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {

@@ -112,6 +112,12 @@ typedef enum {
   /* 関数 prologue: 第 n 仮引数を vreg に読む */
   IR_PARAM,
 
+  /* Source-level parameter binding. src1 is the destination object address and
+   * parameter_index names one parameter in ir_func_t.function_type. The MIR
+   * instruction contains no register class, physical parameter index, or ABI
+   * piece count; AbiLowering expands it for the selected target. */
+  IR_PARAM_BIND,
+
   /* 関数のaggregate結果保存先をvregに読む。物理的な受け渡し位置は
    * AbiLoweringとbackendが決定し、MIRにはtarget registerを持たせない。 */
   IR_RESULT_AREA,
@@ -209,7 +215,7 @@ typedef struct {
  *
  * 匿名 union (C11 標準・GNU 拡張ではない) には op ごとに排他的にしか使われないスカラ系
  * メタフィールドだけを入れている。ir_opt / ir_regalloc の汎用オペランド走査が op を
- * 問わず全命令で読む args / nargs / callee / result_area / src3 は union に入れない
+ * 問わず全命令で読む args / nargs / callee / result_storage / src3 は union に入れない
  * (同一メモリを別 op の値と共有すると誤読する)。並べ替えはレイアウトのみの変更で、
  * ir_inst_new が calloc + フィールド代入のため挙動には影響しない。
  */
@@ -222,9 +228,9 @@ typedef struct ir_inst_t {
   /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
   ir_call_argument_t *args; /* CALL のsource-level実引数列 */
-  /* IR_CALL のaggregate結果を受け取る保存先。target固有の渡し方は
-   * AbiLowering sidecarが決定する。 */
-  ir_val_t result_area;
+  /* IR_CALL のsource-level object結果を受け取る保存先。直接/間接returnや
+   * register pieceへの分解はAbiLowering sidecarが決定する。 */
+  ir_val_t result_storage;
   /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
    * sym ではなく callee vreg を blr する。 */
   ir_val_t callee;
@@ -252,7 +258,7 @@ typedef struct ir_inst_t {
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で
    * ゲートされている (switch(op) / if(op==...))。ここに汎用走査される
-   * args/nargs/callee/result_area/src3 を入れてはならない。 */
+   * args/nargs/callee/result_storage/src3 を入れてはならない。 */
   union {
     struct {            /* IR_BR / IR_BR_COND / IR_LABEL */
       int label_id;       /* 分岐先 / ラベル id */
@@ -265,6 +271,9 @@ typedef struct ir_inst_t {
     struct {            /* IR_CALL */
       unsigned char is_void_call;
       unsigned char is_implicit_call;
+    };
+    struct {            /* IR_PARAM_BIND */
+      size_t parameter_index;
     };
     struct {            /* IR_ATOMIC */
       unsigned char atomic_kind;   /* ir_atomic_kind_t */

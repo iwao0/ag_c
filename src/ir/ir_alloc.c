@@ -87,6 +87,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_RET:          return "ret";
     case IR_CALL:         return "call";
     case IR_PARAM:        return "param";
+    case IR_PARAM_BIND:   return "param_bind";
     case IR_RESULT_AREA:  return "result_area";
     case IR_VA_ARG_AREA:  return "va_arg_area";
     case IR_VLA_ALLOC:    return "vla_alloc";
@@ -373,7 +374,7 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
     i->label_id = -1;
     i->else_label_id = -1;
   }
-  i->result_area = ir_val_none();
+  i->result_storage = ir_val_none();
   i->callee = ir_val_none();
   i->src3 = ir_val_none();  /* 未使用時に汎用オペランド走査 (ir_opt/ir_regalloc) の対象外にする */
   return i;

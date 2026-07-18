@@ -2387,7 +2387,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     ia->alloca_size = ret_struct_size;
     ia->alloca_align = 8;
     ir_func_append_inst(ctx->f, ia);
-    call->result_area = ir_val_vreg(struct_ret_area, IR_TY_PTR);
+    call->result_storage = ir_val_vreg(struct_ret_area, IR_TY_PTR);
   }
   ir_func_append_inst(ctx->f, call);
   if (struct_ret_area >= 0) return ir_val_vreg(struct_ret_area, IR_TY_PTR);
