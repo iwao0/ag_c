@@ -6,6 +6,54 @@
 #include <stdlib.h>
 #include <string.h>
 
+int hir_ir_setup_parameter_bindings(
+    hir_ir_context_t *context, const psx_hir_node_t *root,
+    const ir_function_type_t *function_type) {
+  if (hir_ir_child_count_for_edge(root, PSX_HIR_EDGE_PARAMETER) !=
+      function_type->param_count) {
+    context->status = IR_HIR_BUILD_INVALID;
+    return 0;
+  }
+  for (size_t i = 0; i < function_type->param_count; i++) {
+    const psx_hir_node_t *parameter = hir_ir_child_for_edge(
+        context, root, PSX_HIR_EDGE_PARAMETER, i);
+    if (!parameter || psx_hir_node_kind(parameter) != PSX_HIR_LOCAL) {
+      context->status = IR_HIR_BUILD_INVALID;
+      return 0;
+    }
+    ir_mir_type_info_t type = hir_ir_classify_node_type(
+        context, parameter);
+    if ((!hir_ir_is_scalar_value_type(type) &&
+         !hir_ir_is_complex_type(type) &&
+         type.type_class != IR_MIR_TYPE_AGGREGATE) ||
+        function_type->params[i].type_id == PSX_TYPE_ID_INVALID) {
+      context->status = IR_HIR_BUILD_UNSUPPORTED;
+      return 0;
+    }
+    int minimum_size =
+        (hir_ir_is_complex_type(type) ||
+         type.type_class == IR_MIR_TYPE_AGGREGATE)
+            ? type.source_size : 0;
+    int minimum_align =
+        minimum_size >= 8 ? 8 :
+        minimum_size >= 4 ? 4 :
+        minimum_size >= 2 ? 2 :
+        minimum_size > 0 ? 1 : 0;
+    int pointer = hir_ir_local_address_with_minimum(
+        context, parameter, minimum_size, minimum_align);
+    if (pointer < 0) return 0;
+    ir_inst_t *binding = ir_inst_new(IR_PARAM_BIND);
+    if (!binding) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return 0;
+    }
+    binding->src1 = ir_val_vreg(pointer, IR_TY_PTR);
+    binding->parameter_index = i;
+    if (!hir_ir_append_instruction(context, binding)) return 0;
+  }
+  return 1;
+}
+
 static psx_qual_type_t atomic_pointee_type(
     const hir_ir_context_t *context,
     const psx_hir_node_t *pointer_argument) {

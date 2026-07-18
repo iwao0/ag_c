@@ -153,5 +153,11 @@ int wasm32_machine_select_store(
     ir_type_t memory_type, wasm32_machine_memory_t *selected);
 const char *wasm32_machine_opcode_wat(wasm32_machine_opcode_t opcode);
 unsigned wasm32_machine_opcode_binary(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_comparison(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_unsigned(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_shift(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_remainder(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_add(wasm32_machine_opcode_t opcode);
+int wasm32_machine_opcode_is_subtract(wasm32_machine_opcode_t opcode);
 
 #endif

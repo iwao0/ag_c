@@ -80,8 +80,13 @@ long long hir_ir_normalize_integer_immediate(
     long long value, int byte_size, int is_unsigned);
 int hir_ir_local_storage_address(
     hir_ir_context_t *context, int object_offset, int size, int align);
+int hir_ir_find_local_address(
+    const hir_ir_context_t *context, int object_offset);
 int hir_ir_local_address(
     hir_ir_context_t *context, const psx_hir_node_t *local);
+int hir_ir_local_address_with_minimum(
+    hir_ir_context_t *context, const psx_hir_node_t *local,
+    int minimum_size, int minimum_align);
 ir_val_t hir_ir_coerce_direct_value(
     hir_ir_context_t *context, ir_val_t value,
     ir_mir_type_info_t source, ir_mir_type_info_t target);
@@ -93,6 +98,9 @@ ir_val_t hir_ir_build_expr(
 ir_val_t hir_ir_build_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t result_type);
+int hir_ir_setup_parameter_bindings(
+    hir_ir_context_t *context, const psx_hir_node_t *root,
+    const ir_function_type_t *function_type);
 ir_val_t hir_ir_build_aggregate_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t target_type);
@@ -102,6 +110,8 @@ int hir_ir_build_statement(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 ir_val_t hir_ir_build_vla_allocation(
     hir_ir_context_t *context, const psx_hir_node_t *node);
+int hir_ir_emit_vla_parameter_strides(
+    hir_ir_context_t *context, const psx_hir_node_t *root);
 ir_val_t hir_ir_emit_integer_binary(
     hir_ir_context_t *context, ir_op_t op, ir_val_t left,
     ir_val_t right, ir_type_t type);

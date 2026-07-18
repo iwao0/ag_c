@@ -13,12 +13,24 @@ typedef struct {
 
 typedef enum {
   WASM32_MACHINE_INST_NONE = 0,
+  WASM32_MACHINE_INST_NOP,
+  WASM32_MACHINE_INST_ALLOCA,
+  WASM32_MACHINE_INST_INTEGER_CONSTANT,
+  WASM32_MACHINE_INST_FLOAT_CONSTANT,
+  WASM32_MACHINE_INST_STRING_ADDRESS,
+  WASM32_MACHINE_INST_SYMBOL_ADDRESS,
+  WASM32_MACHINE_INST_TLS_ADDRESS,
   WASM32_MACHINE_INST_BINARY,
   WASM32_MACHINE_INST_UNARY,
   WASM32_MACHINE_INST_CONVERSION,
   WASM32_MACHINE_INST_LOAD,
   WASM32_MACHINE_INST_STORE,
   WASM32_MACHINE_INST_ATOMIC,
+  WASM32_MACHINE_INST_MEMORY_COPY,
+  WASM32_MACHINE_INST_ALIGN_POINTER,
+  WASM32_MACHINE_INST_DYNAMIC_ALLOCA,
+  WASM32_MACHINE_INST_VARARG_AREA,
+  WASM32_MACHINE_INST_ADDRESS_ADD,
   WASM32_MACHINE_INST_CALL,
   WASM32_MACHINE_INST_PARAMETER_BIND,
   WASM32_MACHINE_INST_CONTROL,
@@ -58,6 +70,26 @@ typedef struct {
 
 typedef struct {
   ir_inst_t *source;
+  ir_op_t op;
+  ir_val_t dst;
+  ir_val_t src1;
+  ir_val_t src2;
+  ir_val_t src3;
+  ir_val_t callee;
+  ir_val_t result_storage;
+  char *sym;
+  int sym_len;
+  int object_size;
+  int alloca_size;
+  int alloca_align;
+  size_t parameter_index;
+  unsigned char is_unsigned;
+  unsigned char is_function_symbol;
+  unsigned char is_implicit_call;
+  unsigned char has_reference_signature;
+  unsigned char atomic_kind;
+  unsigned char atomic_rmw_op;
+  unsigned char atomic_width;
   wasm32_machine_inst_kind_t kind;
   wasm32_machine_binary_t binary;
   wasm32_machine_unary_t unary;
@@ -67,6 +99,7 @@ typedef struct {
   wasm32_machine_call_t call;
   wasm32_machine_parameter_bind_t parameter_bind;
   wasm32_machine_control_t control;
+  wasm32_machine_signature_t reference_signature;
 } wasm32_machine_inst_t;
 
 typedef struct {

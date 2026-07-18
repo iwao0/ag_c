@@ -389,3 +389,62 @@ unsigned wasm32_machine_opcode_binary(wasm32_machine_opcode_t opcode) {
     return 0;
   return opcode_encodings[opcode].binary;
 }
+
+int wasm32_machine_opcode_is_comparison(wasm32_machine_opcode_t opcode) {
+  switch (opcode) {
+    case WASM32_MI_I32_EQ: case WASM32_MI_I64_EQ:
+    case WASM32_MI_I32_NE: case WASM32_MI_I64_NE:
+    case WASM32_MI_I32_LT_S: case WASM32_MI_I64_LT_S:
+    case WASM32_MI_I32_LT_U: case WASM32_MI_I64_LT_U:
+    case WASM32_MI_I32_LE_S: case WASM32_MI_I64_LE_S:
+    case WASM32_MI_I32_LE_U: case WASM32_MI_I64_LE_U:
+    case WASM32_MI_F32_EQ: case WASM32_MI_F64_EQ:
+    case WASM32_MI_F32_NE: case WASM32_MI_F64_NE:
+    case WASM32_MI_F32_LT: case WASM32_MI_F64_LT:
+    case WASM32_MI_F32_LE: case WASM32_MI_F64_LE:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int wasm32_machine_opcode_is_unsigned(wasm32_machine_opcode_t opcode) {
+  switch (opcode) {
+    case WASM32_MI_I32_DIV_U: case WASM32_MI_I64_DIV_U:
+    case WASM32_MI_I32_REM_U: case WASM32_MI_I64_REM_U:
+    case WASM32_MI_I32_SHR_U: case WASM32_MI_I64_SHR_U:
+    case WASM32_MI_I32_LT_U: case WASM32_MI_I64_LT_U:
+    case WASM32_MI_I32_LE_U: case WASM32_MI_I64_LE_U:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int wasm32_machine_opcode_is_shift(wasm32_machine_opcode_t opcode) {
+  switch (opcode) {
+    case WASM32_MI_I32_SHL: case WASM32_MI_I64_SHL:
+    case WASM32_MI_I32_SHR_S: case WASM32_MI_I64_SHR_S:
+    case WASM32_MI_I32_SHR_U: case WASM32_MI_I64_SHR_U:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int wasm32_machine_opcode_is_remainder(wasm32_machine_opcode_t opcode) {
+  return opcode == WASM32_MI_I32_REM_S ||
+         opcode == WASM32_MI_I64_REM_S ||
+         opcode == WASM32_MI_I32_REM_U ||
+         opcode == WASM32_MI_I64_REM_U;
+}
+
+int wasm32_machine_opcode_is_add(wasm32_machine_opcode_t opcode) {
+  return opcode == WASM32_MI_I32_ADD ||
+         opcode == WASM32_MI_I64_ADD;
+}
+
+int wasm32_machine_opcode_is_subtract(wasm32_machine_opcode_t opcode) {
+  return opcode == WASM32_MI_I32_SUB ||
+         opcode == WASM32_MI_I64_SUB;
+}

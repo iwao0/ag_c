@@ -255,6 +255,46 @@ static int select_instruction(
     const wasm32_machine_function_t *function,
     wasm32_machine_inst_t *selected) {
   ir_inst_t *instruction = selected->source;
+  switch (instruction->op) {
+    case IR_NOP:
+      selected->kind = WASM32_MACHINE_INST_NOP;
+      return 1;
+    case IR_ALLOCA:
+      selected->kind = WASM32_MACHINE_INST_ALLOCA;
+      return 1;
+    case IR_LOAD_IMM:
+      selected->kind = WASM32_MACHINE_INST_INTEGER_CONSTANT;
+      return 1;
+    case IR_LOAD_FP_IMM:
+      selected->kind = WASM32_MACHINE_INST_FLOAT_CONSTANT;
+      return 1;
+    case IR_LOAD_STR:
+      selected->kind = WASM32_MACHINE_INST_STRING_ADDRESS;
+      return 1;
+    case IR_LOAD_SYM:
+      selected->kind = WASM32_MACHINE_INST_SYMBOL_ADDRESS;
+      return 1;
+    case IR_LOAD_TLV_ADDR:
+      selected->kind = WASM32_MACHINE_INST_TLS_ADDRESS;
+      return 1;
+    case IR_MEMCPY:
+      selected->kind = WASM32_MACHINE_INST_MEMORY_COPY;
+      return 1;
+    case IR_ALIGN_PTR:
+      selected->kind = WASM32_MACHINE_INST_ALIGN_POINTER;
+      return 1;
+    case IR_VLA_ALLOC:
+      selected->kind = WASM32_MACHINE_INST_DYNAMIC_ALLOCA;
+      return 1;
+    case IR_VA_ARG_AREA:
+      selected->kind = WASM32_MACHINE_INST_VARARG_AREA;
+      return 1;
+    case IR_LEA:
+      selected->kind = WASM32_MACHINE_INST_ADDRESS_ADD;
+      return 1;
+    default:
+      break;
+  }
   if (is_integer_binary(instruction->op) ||
       is_float_binary(instruction->op)) {
     selected->kind = WASM32_MACHINE_INST_BINARY;
@@ -392,20 +432,53 @@ static int initialize_instructions(
     machine_block->next_block_id = block->next ? block->next->id : -1;
     for (ir_inst_t *instruction = block->head; instruction;
          instruction = instruction->next) {
-      function->instructions[index].source = instruction;
+      wasm32_machine_inst_t *machine_instruction =
+          &function->instructions[index];
+      machine_instruction->source = instruction;
+      machine_instruction->op = instruction->op;
+      machine_instruction->dst = instruction->dst;
+      machine_instruction->src1 = instruction->src1;
+      machine_instruction->src2 = instruction->src2;
+      machine_instruction->src3 = instruction->src3;
+      machine_instruction->callee = instruction->callee;
+      machine_instruction->result_storage = instruction->result_storage;
+      machine_instruction->sym = instruction->sym;
+      machine_instruction->sym_len = instruction->sym_len;
+      machine_instruction->object_size = instruction->object_size;
+      machine_instruction->alloca_size = instruction->alloca_size;
+      machine_instruction->alloca_align = instruction->alloca_align;
+      machine_instruction->parameter_index = instruction->parameter_index;
+      machine_instruction->is_unsigned = instruction->is_unsigned;
+      machine_instruction->is_function_symbol =
+          instruction->is_function_symbol;
+      machine_instruction->is_implicit_call = instruction->is_implicit_call;
+      machine_instruction->atomic_kind = instruction->atomic_kind;
+      machine_instruction->atomic_rmw_op = instruction->atomic_rmw_op;
+      machine_instruction->atomic_width = instruction->atomic_width;
+      if (instruction->op == IR_LOAD_SYM &&
+          instruction->is_function_symbol) {
+        const ir_abi_signature_t *reference_abi =
+            ir_abi_reference_signature(abi_module, instruction);
+        if (reference_abi &&
+            !wasm32_machine_signature_from_abi(
+                reference_abi, 1,
+                &machine_instruction->reference_signature))
+          return 0;
+        if (reference_abi)
+          machine_instruction->has_reference_signature = 1;
+      }
       if (instruction->op == IR_CALL) {
-        function->instructions[index].kind =
-            WASM32_MACHINE_INST_CALL;
+        machine_instruction->kind = WASM32_MACHINE_INST_CALL;
         if (!select_call(
                 abi_module, instruction,
-                &function->instructions[index].call))
+                &machine_instruction->call))
           return 0;
       } else if (instruction->op == IR_PARAM_BIND) {
-        function->instructions[index].kind =
+        machine_instruction->kind =
             WASM32_MACHINE_INST_PARAMETER_BIND;
         if (!select_parameter_bind(
                 function_abi, instruction,
-                &function->instructions[index].parameter_bind))
+                &machine_instruction->parameter_bind))
           return 0;
       }
       index++;
@@ -627,6 +700,8 @@ void wasm32_machine_function_dispose(
   for (int i = 0; i < function->instruction_count; i++) {
     wasm32_machine_signature_dispose(
         &function->instructions[i].call.signature);
+    wasm32_machine_signature_dispose(
+        &function->instructions[i].reference_signature);
     free(function->instructions[i].call.arguments);
     free(function->instructions[i].parameter_bind.pieces);
   }

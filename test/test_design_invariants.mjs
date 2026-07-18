@@ -207,6 +207,9 @@ const hirIrBuilder = `${await readFile(
 )}\n${await readFile(
   "src/lowering/hir_ir_statement.c",
   "utf8",
+)}\n${await readFile(
+  "src/lowering/hir_ir_vla.c",
+  "utf8",
 )}`;
 const compilationSession = await readFile(
   "src/compilation_session.c",
@@ -3490,10 +3493,10 @@ for (const pattern of wasmObjParserReads) {
   }
 }
 if (wasmObjFunctionCodegenViolations.length ||
-    !/\bdata_for_ir_inst\s*\(\s*module\s*,/.test(
+    !/\bdata_for_machine_inst\s*\(\s*module\s*,/.test(
       wasmObjFunctionCodegen,
     ) ||
-    !/static obj_data_t \*data_for_ir_inst[\s\S]*?\bir_module_find_symbol\s*\(/.test(
+    !/static obj_data_t \*data_for_machine_inst[\s\S]*?\bir_module_find_symbol\s*\(/.test(
       wasmObjSource,
     )) {
   throw new Error(
@@ -3528,6 +3531,10 @@ const abiLoweringSource = await readFile(
 );
 const abiLoweringHeader = await readFile(
   "src/lowering/abi_lowering.h",
+  "utf8",
+);
+const wasmMachineFunctionPlanSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
 );
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
@@ -3599,9 +3606,10 @@ for (const name of forbiddenGenericIrAbiMetadata) {
 if (/\bx8\b|\bret_type\b/.test(irHeaderSource) ||
     /\bIR_(?:PARAM|RESULT_AREA)\b/.test(irHeaderSource) ||
     /\bresult_area_vreg\b/.test(abiLoweringHeader) ||
-    !/\bir_abi_reference_signature\s*\(/.test(wasmIrSource) ||
+    !/\bir_abi_reference_signature\s*\(/.test(
+      wasmMachineFunctionPlanSource,
+    ) ||
     !/\bir_abi_data_relocation_signature\s*\(/.test(wasmIrSource) ||
-    !/\bir_abi_reference_signature\s*\(/.test(wasmObjSource) ||
     !/\bir_abi_data_relocation_signature\s*\(/.test(wasmObjSource)) {
   throw new Error(
     "aggregate result and function-reference ABI must be represented by target-neutral MIR plus sidecars",
@@ -3643,8 +3651,16 @@ for (const [name, source] of [
     );
   }
 }
-const parameterBindingLowering = hirIrBuilder.match(
-  /static int setup_parameter_bindings\s*\([^]*?\n\}/,
+const hirIrCallAbiSource = await readFile(
+  "src/lowering/hir_ir_call.c",
+  "utf8",
+);
+const hirIrOrchestratorSource = await readFile(
+  "src/lowering/hir_ir_builder.c",
+  "utf8",
+);
+const parameterBindingLowering = hirIrCallAbiSource.match(
+  /int hir_ir_setup_parameter_bindings\s*\([^]*?(?=\nstatic psx_qual_type_t)/,
 );
 if (!parameterBindingLowering ||
     !/ir_inst_new\s*\(\s*IR_PARAM_BIND\s*\)/.test(
@@ -3652,6 +3668,9 @@ if (!parameterBindingLowering ||
     ) ||
     /ir_inst_new\s*\(\s*IR_PARAM\s*\)|ag_target_info_call_abi|integer_index|float_index/.test(
       parameterBindingLowering[0],
+    ) ||
+    /\b(?:static\s+)?int\s+(?:setup_parameter_bindings|hir_ir_setup_parameter_bindings)\s*\([^;]*\)\s*\{/.test(
+      hirIrOrchestratorSource,
     )) {
   throw new Error(
     "typed HIR must bind one source parameter to storage without assigning physical ABI indices",
@@ -9233,6 +9252,10 @@ const hirIrAggregateSource = await readFile(
   "src/lowering/hir_ir_aggregate.c",
   "utf8",
 );
+const hirIrVlaSource = await readFile(
+  "src/lowering/hir_ir_vla.c",
+  "utf8",
+);
 if (/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
       hirIrBuilderSource,
     ) ||
@@ -9258,9 +9281,21 @@ if (/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
       hirIrStatementSource,
     ) ||
     !/\bhir_ir_cfg_new_block\s*\([^;]*\)\s*\{/.test(hirIrCfgSource) ||
-    /\bhir_ir_cfg_new_block\s*\([^;]*\)\s*\{/.test(hirIrBuilderSource)) {
+    /\bhir_ir_cfg_new_block\s*\([^;]*\)\s*\{/.test(hirIrBuilderSource) ||
+    /\bir_val_t\s+hir_ir_build_vla_allocation\s*\([^;]*\)\s*\{/.test(
+      hirIrBuilderSource,
+    ) ||
+    /\bint\s+hir_ir_emit_vla_parameter_strides\s*\([^;]*\)\s*\{/.test(
+      hirIrBuilderSource,
+    ) ||
+    !/\bir_val_t\s+hir_ir_build_vla_allocation\s*\([^;]*\)\s*\{/.test(
+      hirIrVlaSource,
+    ) ||
+    !/\bint\s+hir_ir_emit_vla_parameter_strides\s*\([^;]*\)\s*\{/.test(
+      hirIrVlaSource,
+    )) {
   throw new Error(
-    "HIR-to-IR statement and CFG lowering must remain separate builder modules",
+    "HIR-to-IR expression, call, aggregate, statement, CFG, and VLA lowering must remain separate builder modules",
   );
 }
 
@@ -9284,14 +9319,22 @@ const wasmObjectWriterSource = await readFile(
   "src/arch/wasm32/wasm32_obj.c",
   "utf8",
 );
+const wasmWatRuntimeSource = await readFile(
+  "src/arch/wasm32/wasm32_wat_runtime.c",
+  "utf8",
+);
 if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
     !/wasm32_machine_select_binary\s*\(/.test(
       wasmMachineFunctionSource,
     ) ||
-    !/wasm32_machine_function_instruction\s*\(/.test(
+    /wasm32_machine_function_instruction\s*\(/.test(
       wasmWatWriterSource,
     ) ||
-    !/wasm32_machine_function_instruction\s*\(/.test(
+    /wasm32_machine_function_instruction\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/machine\.instructions\s*\[/.test(wasmWatWriterSource) ||
+    !/machine_function\.instructions\s*\[/.test(
       wasmObjectWriterSource,
     ) ||
     /wasm32_machine_select_binary\s*\(/.test(wasmWatWriterSource) ||
@@ -9307,6 +9350,21 @@ if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
   );
 }
 
+for (const [name, source] of [
+  ["Wasm text", wasmWatWriterSource],
+  ["Wasm object", wasmObjectWriterSource],
+]) {
+  if (!/WASM32_MACHINE_INST_CONTROL/.test(source) ||
+      !/control\.target_block_id/.test(source) ||
+      !/control\.else_block_id/.test(source) ||
+      !/control\.value/.test(source) ||
+      /(?:i|instruction)->(?:label_id|else_label_id)/.test(source)) {
+    throw new Error(
+      `${name} backend must serialize preplanned Machine control flow`,
+    );
+  }
+}
+
 if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
     !/wasm32_machine_select_store\s*\(/.test(wasmMachineIrSource) ||
     !/wasm32_machine_select_load\s*\(/.test(wasmMachineFunctionSource) ||
@@ -9319,10 +9377,10 @@ if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
     !/static\s+void\s+emit_store\s*\([^]*?WASM32_MACHINE_INST_STORE/.test(
       wasmWatWriterSource,
     ) ||
-    !/case\s+IR_LOAD:\s*\{[^]*?WASM32_MACHINE_INST_LOAD/.test(
+    !/case\s+WASM32_MACHINE_INST_LOAD\s*:\s*\{/.test(
       wasmObjectWriterSource,
     ) ||
-    !/case\s+IR_STORE:\s*\{[^]*?WASM32_MACHINE_INST_STORE/.test(
+    !/case\s+WASM32_MACHINE_INST_STORE\s*:\s*\{/.test(
       wasmObjectWriterSource,
     ) ||
     /switch\s*\(\s*effective_load_type/.test(wasmWatWriterSource) ||
@@ -9333,6 +9391,25 @@ if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
   throw new Error(
     "Wasm WAT and object writers must serialize preselected Machine IR memory instructions",
   );
+}
+
+for (const [name, source] of [
+  ["Wasm text", wasmWatWriterSource],
+  ["Wasm object", wasmObjectWriterSource],
+]) {
+  if (/switch\s*\(\s*i->op\s*\)/.test(source) ||
+      !/switch\s*\(\s*planned->kind\s*\)/.test(source)) {
+    throw new Error(
+      `${name} backend must dispatch selected Machine instructions instead of source IR opcodes`,
+    );
+  }
+  if (/(?:planned|selected|instruction|i)->source\b/.test(source) ||
+      /machine_function\.instructions\[[^\]]+\]\.source/.test(source) ||
+      /ir_abi_reference_signature\s*\(/.test(source)) {
+    throw new Error(
+      `${name} backend must serialize Machine instruction operands without dereferencing source IR`,
+    );
+  }
 }
 
 if (!/wasm32_machine_select_unary\s*\(/.test(wasmMachineIrSource) ||
@@ -9407,6 +9484,20 @@ if (!/wasm32_machine_function_build\s*\(/.test(
     /static\s+void\s+add_alloca_slot\s*\(/.test(wasmWatWriterSource)) {
   throw new Error(
     "Wasm WAT and object writers must share the Machine function analysis plan",
+  );
+}
+
+if (!/void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(void\)\s*\{/.test(
+      wasmWatRuntimeSource,
+    ) ||
+    /void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(void\)\s*\{/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_wat_emit_minimal_libc_stubs\s*\(\s*\)/.test(
+      wasmWatWriterSource,
+    )) {
+  throw new Error(
+    "Wasm WAT writer must keep the minimal libc runtime in its dedicated emitter",
   );
 }
 

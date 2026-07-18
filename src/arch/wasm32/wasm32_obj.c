@@ -229,11 +229,6 @@ static const ir_abi_signature_t *obj_function_abi(
   return ir_abi_function_signature(g_obj_abi, function);
 }
 
-static const ir_abi_signature_t *obj_reference_abi(
-    const ir_inst_t *reference) {
-  return ir_abi_reference_signature(g_obj_abi, reference);
-}
-
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
 
@@ -411,12 +406,13 @@ static int align_to(int v, int align) {
   return (v + align - 1) & ~(align - 1);
 }
 
-static obj_data_t *data_for_ir_inst(const ir_module_t *module,
-                                    const ir_inst_t *inst,
+static obj_data_t *data_for_machine_inst(
+                                    const ir_module_t *module,
+                                    const wasm32_machine_inst_t *inst,
                                     int *out_addend) {
   if (!module || !inst || !inst->sym || inst->sym_len <= 0) return NULL;
   if (out_addend) *out_addend = 0;
-  if (inst->op == IR_LOAD_STR)
+  if (inst->kind == WASM32_MACHINE_INST_STRING_ADDRESS)
     return intern_data(inst->sym, inst->sym_len, 0, 1, 0);
   const ir_symbol_t *symbol =
       ir_module_find_symbol(module, inst->sym, inst->sym_len);
@@ -915,11 +911,13 @@ static obj_sig_t func_sig_from_reference_abi(
   return sig;
 }
 
-static obj_sig_t func_sig_from_ir_callable(const ir_inst_t *inst,
-                                           const char *name, int name_len) {
+static obj_sig_t func_sig_from_machine_callable(
+    const wasm32_machine_inst_t *inst, const char *name, int name_len) {
   (void)name;
   (void)name_len;
-  return func_sig_from_reference_abi(obj_reference_abi(inst));
+  if (!inst || !inst->has_reference_signature)
+    obj_unsupported_msg("missing function-reference ABI in Wasm object mode");
+  return copy_signature(&inst->reference_signature);
 }
 
 static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
@@ -945,12 +943,12 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
 static unsigned selected_opcode_or_unsupported(
     const wasm32_machine_inst_t *selected) {
   unsigned opcode = wasm32_machine_opcode_binary(selected->binary.opcode);
-  if (!opcode) obj_unsupported_op(selected->source->op);
+  if (!opcode) obj_unsupported_op(selected->op);
   return opcode;
 }
 
 static void emit_selected_unary(
-    wb_t *body, ir_inst_t *instruction,
+    wb_t *body, const wasm32_machine_inst_t *instruction,
     const wasm32_machine_inst_t *machine, int param_count) {
   const wasm32_machine_unary_t *selected = &machine->unary;
   if (selected->form == WASM32_MI_UNARY_ZERO_THEN_OPERAND) {
@@ -972,16 +970,6 @@ static void emit_selected_unary(
       body, local_index(param_count, instruction->dst.id));
 }
 
-static const wasm32_machine_inst_t *machine_inst_or_unsupported(
-    const wasm32_machine_function_t *function,
-    const ir_inst_t *instruction, wasm32_machine_inst_kind_t kind) {
-  const wasm32_machine_inst_t *selected =
-      wasm32_machine_function_instruction(function, instruction);
-  if (!selected || selected->kind != kind)
-    obj_unsupported_op(instruction->op);
-  return selected;
-}
-
 static void emit_addr_plus_const(wb_t *b, ir_val_t v, int off, int param_count) {
   emit_addr_val(b, v, param_count);
   if (off == 0) return;
@@ -999,7 +987,8 @@ static void emit_copy_chunk(wb_t *b, ir_val_t dst, ir_val_t src, int off, ir_typ
   emit_memarg(b, ty);
 }
 
-static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
+static void emit_memcpy_inline(
+    wb_t *b, const wasm32_machine_inst_t *i, int param_count) {
   int n = i->alloca_size;
   if (n < 0) obj_unsupported_op(i->op);
   int off = 0;
@@ -1080,7 +1069,7 @@ static void emit_indirect_return_copy(
 
 static void emit_parameter_bind(
     wb_t *body, const obj_func_t *object_function,
-    ir_inst_t *instruction,
+    const wasm32_machine_inst_t *instruction,
     const wasm32_machine_inst_t *selected,
     int param_count) {
   if (!selected ||
@@ -1180,7 +1169,7 @@ static void emit_variadic_arg_area_restore(wb_t *b, obj_func_t *of, obj_global_t
 }
 
 static void emit_direct_aggregate_call_result(
-    wb_t *body, ir_inst_t *instruction,
+    wb_t *body, const wasm32_machine_inst_t *instruction,
     const wasm32_machine_call_t *call,
     int result_local_i32, int result_local_i64,
     int param_count) {
@@ -1365,9 +1354,9 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
       /* Every invocation reconstructs ALLOCA pointer vregs from the same frame. */
       for (int index = 0;
            index < machine_function.instruction_count; index++) {
-        ir_inst_t *instruction =
-            machine_function.instructions[index].source;
-        if (instruction->op != IR_ALLOCA) continue;
+        const wasm32_machine_inst_t *instruction =
+            &machine_function.instructions[index];
+        if (instruction->kind != WASM32_MACHINE_INST_ALLOCA) continue;
         const wasm32_machine_alloca_t *slot =
             wasm32_machine_function_alloca(
                 &machine_function, instruction->dst.id);
@@ -1380,9 +1369,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
       }
       for (int index = 0;
            index < machine_function.instruction_count; index++) {
-        ir_inst_t *instruction =
-            machine_function.instructions[index].source;
-        if (instruction->op != IR_ALIGN_PTR) continue;
+        const wasm32_machine_inst_t *instruction =
+            &machine_function.instructions[index];
+        if (instruction->kind != WASM32_MACHINE_INST_ALIGN_POINTER)
+          continue;
         emit_addr_val(&body, instruction->src1, param_count);
         emit_const(
             &body, IR_TY_I32, instruction->alloca_align - 1);
@@ -1430,17 +1420,16 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
       const wasm32_machine_inst_t *planned =
           &machine_function.instructions[
               block->first_instruction + instruction_index];
-      ir_inst_t *i = planned->source;
-      switch (i->op) {
-        case IR_NOP:
-        case IR_LABEL:
+      const wasm32_machine_inst_t *i = planned;
+      switch (planned->kind) {
+        case WASM32_MACHINE_INST_NOP:
           break;
-        case IR_PARAM_BIND:
+        case WASM32_MACHINE_INST_PARAMETER_BIND:
           emit_parameter_bind(
               &body, of, i, planned,
               param_count);
           break;
-        case IR_ALLOCA: {
+        case WASM32_MACHINE_INST_ALLOCA: {
           if (has_persistent_continuation_frame) break;
           const wasm32_machine_alloca_t *slot =
               wasm32_machine_function_alloca(
@@ -1453,7 +1442,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_LOAD_IMM:
+        case WASM32_MACHINE_INST_INTEGER_CONSTANT:
           if (actual_vreg_type(i->dst) == IR_TY_F32 || actual_vreg_type(i->dst) == IR_TY_F64) {
             emit_fp_const(&body, actual_vreg_type(i->dst), i->src1.fp_imm);
           } else {
@@ -1461,18 +1450,20 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           }
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
-        case IR_LOAD_FP_IMM:
+        case WASM32_MACHINE_INST_FLOAT_CONSTANT:
           emit_fp_const(&body, i->dst.type, i->src1.fp_imm);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
-        case IR_LOAD_STR:
-        case IR_LOAD_SYM:
-        case IR_LOAD_TLV_ADDR: {
+        case WASM32_MACHINE_INST_STRING_ADDRESS:
+        case WASM32_MACHINE_INST_SYMBOL_ADDRESS:
+        case WASM32_MACHINE_INST_TLS_ADDRESS: {
           if (!i->sym) obj_unsupported_op(i->op);
-          if (i->op == IR_LOAD_SYM && i->is_function_symbol) {
+          if (planned->kind == WASM32_MACHINE_INST_SYMBOL_ADDRESS &&
+              i->is_function_symbol) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
             if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
-              target->sig = func_sig_from_ir_callable(i, i->sym, i->sym_len);
+              target->sig = func_sig_from_machine_callable(
+                  i, i->sym, i->sym_len);
             }
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);
@@ -1483,7 +1474,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             break;
           }
           int addend = 0;
-          obj_data_t *d = data_for_ir_inst(module, i, &addend);
+          obj_data_t *d = data_for_machine_inst(module, i, &addend);
           if (!d) obj_unsupported_msg("missing IR data symbol in Wasm object mode");
           wb_u8(&body, 0x41);
           uint32_t imm_off = wb_uleb5(&body, 0);
@@ -1491,16 +1482,8 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_ZEXT:
-        case IR_SEXT:
-        case IR_TRUNC:
-        case IR_I2F:
-        case IR_F2I:
-        case IR_F2F: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i,
-                  WASM32_MACHINE_INST_CONVERSION);
+        case WASM32_MACHINE_INST_CONVERSION: {
+          const wasm32_machine_inst_t *selected = planned;
           emit_val(
               &body, i->src1, selected->conversion.source_type,
               param_count);
@@ -1513,20 +1496,16 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_LOAD: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_LOAD);
+        case WASM32_MACHINE_INST_LOAD: {
+          const wasm32_machine_inst_t *selected = planned;
           emit_addr_val(&body, i->src1, param_count);
           wb_u8(&body, memory_binary_or_unsupported(selected->load));
           emit_selected_memarg(&body, &selected->load);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_STORE: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_STORE);
+        case WASM32_MACHINE_INST_STORE: {
+          const wasm32_machine_inst_t *selected = planned;
           emit_addr_val(&body, i->src1, param_count);
           emit_val(
               &body, i->src2, selected->store.value_type,
@@ -1535,10 +1514,8 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_selected_memarg(&body, &selected->store);
           break;
         }
-        case IR_ATOMIC: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_ATOMIC);
+        case WASM32_MACHINE_INST_ATOMIC: {
+          const wasm32_machine_inst_t *selected = planned;
           if (i->atomic_kind == IR_ATOMIC_FENCE) {
             wb_u8(&body, 0x01);
             break;
@@ -1610,10 +1587,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           obj_unsupported_op(i->op);
           break;
         }
-        case IR_MEMCPY:
+        case WASM32_MACHINE_INST_MEMORY_COPY:
           emit_memcpy_inline(&body, i, param_count);
           break;
-        case IR_VLA_ALLOC:
+        case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
           emit_stack_global_get(&body, of, stack_pointer);
           emit_val(&body, i->src1, IR_TY_I32, param_count);
           emit_const(&body, IR_TY_I32, 15);
@@ -1625,19 +1602,19 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_get(&body, local_index(param_count, i->dst.id));
           emit_stack_global_set(&body, of, stack_pointer);
           break;
-        case IR_VA_ARG_AREA:
+        case WASM32_MACHINE_INST_VARARG_AREA:
           if (!va_arg_area) va_arg_area = intern_va_arg_area_global();
           of = &g_obj.funcs[of_index];
           emit_stack_global_get(&body, of, va_arg_area);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
-        case IR_LEA:
+        case WASM32_MACHINE_INST_ADDRESS_ADD:
           emit_addr_val(&body, i->src1, param_count);
           emit_val(&body, i->src2, IR_TY_I32, param_count);
           wb_u8(&body, 0x6a);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
-        case IR_ALIGN_PTR: {
+        case WASM32_MACHINE_INST_ALIGN_POINTER: {
           if (f->is_continuation_entry) break;
           int align = i->alloca_align > 0 ? i->alloca_align : 16;
           emit_addr_val(&body, i->src1, param_count);
@@ -1648,24 +1625,16 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_NEG:
-        case IR_NOT:
-        case IR_FNEG:
+        case WASM32_MACHINE_INST_UNARY:
           emit_selected_unary(
-              &body, i,
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_UNARY),
+              &body, i, planned,
               param_count);
           break;
-        case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
-        case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
-        case IR_SHL: case IR_SHR: case IR_LSR:
-        case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_BINARY);
+        case WASM32_MACHINE_INST_BINARY: {
+          const wasm32_machine_inst_t *selected = planned;
           ir_type_t op_ty = selected->binary.operand_type;
-          if (i->op == IR_MOD || i->op == IR_UMOD) {
+          if (wasm32_machine_opcode_is_remainder(
+                  selected->binary.opcode)) {
             emit_val(&body, i->src2, op_ty, param_count);
             wb_u8(&body, op_ty == IR_TY_I64 ? 0x50 : 0x45);
             wb_u8(&body, 0x04);
@@ -1685,22 +1654,8 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_FADD: case IR_FSUB: case IR_FMUL: case IR_FDIV:
-        case IR_FEQ: case IR_FNE: case IR_FLT: case IR_FLE: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_BINARY);
-          ir_type_t op_ty = selected->binary.operand_type;
-          emit_val(&body, i->src1, op_ty, param_count);
-          emit_val(&body, i->src2, op_ty, param_count);
-          wb_u8(&body, selected_opcode_or_unsupported(selected));
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
-        case IR_CALL: {
-          const wasm32_machine_inst_t *selected =
-              machine_inst_or_unsupported(
-                  &machine_function, i, WASM32_MACHINE_INST_CALL);
+        case WASM32_MACHINE_INST_CALL: {
+          const wasm32_machine_inst_t *selected = planned;
           const wasm32_machine_call_t *call = &selected->call;
           const obj_sig_t *csig = &call->signature;
           int argument_count = call->argument_count;
@@ -1778,95 +1733,120 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                                          old_va_arg_area_local, vararg_area_bytes);
           break;
         }
-        case IR_BR:
-          if (!has_control_flow) obj_unsupported_op(i->op);
-          emit_const(&body, IR_TY_I32, i->label_id);
-          emit_local_set(&body, pc_local);
-          wb_u8(&body, 0x0c);
-          wb_uleb(&body, 1);
-          break;
-        case IR_BR_COND:
-          if (!has_control_flow) obj_unsupported_op(i->op);
-          emit_val(&body, i->src1, IR_TY_I32, param_count);
-          wb_u8(&body, 0x04);
-          wb_u8(&body, 0x40);
-          emit_const(&body, IR_TY_I32, i->label_id);
-          emit_local_set(&body, pc_local);
-          wb_u8(&body, 0x05);
-          emit_const(&body, IR_TY_I32, i->else_label_id);
-          emit_local_set(&body, pc_local);
-          wb_u8(&body, 0x0b);
-          wb_u8(&body, 0x0c);
-          wb_uleb(&body, 1);
-          break;
-        case IR_CONTINUATION_SUSPEND:
-          if (!f->is_continuation_entry || !has_control_flow)
-            obj_unsupported_op(i->op);
-          emit_local_get(&body, resumed_local);
-          wb_u8(&body, 0x04); wb_u8(&body, 0x40);
-          emit_const(&body, IR_TY_I32, 0);
-          emit_local_set(&body, resumed_local);
-          emit_local_get(&body, 0);
-          wb_u8(&body, 0x04); wb_u8(&body, 0x40);
-          emit_const(&body, IR_TY_I32, i->label_id);
-          emit_local_set(&body, pc_local);
-          wb_u8(&body, 0x05);
-          emit_const(&body, IR_TY_I32, i->else_label_id);
-          emit_local_set(&body, pc_local);
-          wb_u8(&body, 0x0b);
-          wb_u8(&body, 0x05);
-          emit_continuation_data_store_const(
-              &body, of, continuation_status_data, 2);
-          emit_const(&body, IR_TY_I32, 2);
-          wb_u8(&body, 0x0f);
-          wb_u8(&body, 0x0b);
-          wb_u8(&body, 0x0c);
-          wb_uleb(&body, 1);
-          break;
-        case IR_RET:
-          if (f->is_continuation_entry) {
-            emit_data_address(&body, of, continuation_result_data, 0);
-            if (i->src1.id != IR_VAL_NONE)
-              emit_val(&body, i->src1, IR_TY_I32, param_count);
-            else
+        case WASM32_MACHINE_INST_CONTROL:
+          switch (planned->control.kind) {
+            case WASM32_MACHINE_CONTROL_LABEL:
+              if (!has_control_flow) obj_unsupported_op(i->op);
+              break;
+            case WASM32_MACHINE_CONTROL_BRANCH:
+              if (!has_control_flow) obj_unsupported_op(i->op);
+              emit_const(
+                  &body, IR_TY_I32,
+                  planned->control.target_block_id);
+              emit_local_set(&body, pc_local);
+              wb_u8(&body, 0x0c);
+              wb_uleb(&body, 1);
+              break;
+            case WASM32_MACHINE_CONTROL_BRANCH_CONDITIONAL:
+              if (!has_control_flow) obj_unsupported_op(i->op);
+              emit_val(
+                  &body, planned->control.value,
+                  IR_TY_I32, param_count);
+              wb_u8(&body, 0x04);
+              wb_u8(&body, 0x40);
+              emit_const(
+                  &body, IR_TY_I32,
+                  planned->control.target_block_id);
+              emit_local_set(&body, pc_local);
+              wb_u8(&body, 0x05);
+              emit_const(
+                  &body, IR_TY_I32,
+                  planned->control.else_block_id);
+              emit_local_set(&body, pc_local);
+              wb_u8(&body, 0x0b);
+              wb_u8(&body, 0x0c);
+              wb_uleb(&body, 1);
+              break;
+            case WASM32_MACHINE_CONTROL_SUSPEND:
+              if (!f->is_continuation_entry || !has_control_flow)
+                obj_unsupported_op(i->op);
+              emit_local_get(&body, resumed_local);
+              wb_u8(&body, 0x04); wb_u8(&body, 0x40);
               emit_const(&body, IR_TY_I32, 0);
-            wb_u8(&body, store_opcode(IR_TY_I32));
-            emit_memarg(&body, IR_TY_I32);
-            emit_continuation_data_store_const(
-                &body, of, continuation_status_data, 3);
-            if (has_stack_restore) {
-              emit_local_get(&body, old_sp_local);
-              emit_stack_global_set(&body, of, stack_pointer);
+              emit_local_set(&body, resumed_local);
+              emit_local_get(&body, 0);
+              wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+              emit_const(
+                  &body, IR_TY_I32,
+                  planned->control.target_block_id);
+              emit_local_set(&body, pc_local);
+              wb_u8(&body, 0x05);
+              emit_const(
+                  &body, IR_TY_I32,
+                  planned->control.else_block_id);
+              emit_local_set(&body, pc_local);
+              wb_u8(&body, 0x0b);
+              wb_u8(&body, 0x05);
+              emit_continuation_data_store_const(
+                  &body, of, continuation_status_data, 2);
+              emit_const(&body, IR_TY_I32, 2);
+              wb_u8(&body, 0x0f);
+              wb_u8(&body, 0x0b);
+              wb_u8(&body, 0x0c);
+              wb_uleb(&body, 1);
+              break;
+            case WASM32_MACHINE_CONTROL_RETURN: {
+              ir_val_t result = planned->control.value;
+              if (f->is_continuation_entry) {
+                emit_data_address(
+                    &body, of, continuation_result_data, 0);
+                if (result.id != IR_VAL_NONE)
+                  emit_val(&body, result, IR_TY_I32, param_count);
+                else
+                  emit_const(&body, IR_TY_I32, 0);
+                wb_u8(&body, store_opcode(IR_TY_I32));
+                emit_memarg(&body, IR_TY_I32);
+                emit_continuation_data_store_const(
+                    &body, of, continuation_status_data, 3);
+                if (has_stack_restore) {
+                  emit_local_get(&body, old_sp_local);
+                  emit_stack_global_set(&body, of, stack_pointer);
+                }
+                emit_const(&body, IR_TY_I32, 3);
+              } else {
+                if (machine_function.signature.has_hidden_result) {
+                  if (result.type != IR_TY_PTR ||
+                      result.id == IR_VAL_NONE)
+                    obj_unsupported_op(i->op);
+                  emit_indirect_return_copy(
+                      &body, result,
+                      machine_function.result_source_size,
+                      param_count);
+                } else if (
+                    machine_function.signature
+                        .has_direct_aggregate_result) {
+                  if (result.type != IR_TY_PTR ||
+                      result.id == IR_VAL_NONE)
+                    obj_unsupported_op(i->op);
+                  ir_type_t result_type =
+                      machine_function.direct_result_type;
+                  emit_addr_val(&body, result, param_count);
+                  wb_u8(&body, load_opcode(result_type, 1));
+                  emit_memarg(&body, result_type);
+                } else if (result.id != IR_VAL_NONE) {
+                  emit_val(&body, result, of->sig.result, param_count);
+                }
+                if (has_stack_restore) {
+                  emit_local_get(&body, old_sp_local);
+                  emit_stack_global_set(&body, of, stack_pointer);
+                }
+              }
+              wb_u8(&body, 0x0f);
+              break;
             }
-            emit_const(&body, IR_TY_I32, 3);
-          } else {
-            if (machine_function.signature.has_hidden_result) {
-              if (i->src1.type != IR_TY_PTR ||
-                  i->src1.id == IR_VAL_NONE)
-                obj_unsupported_op(i->op);
-              emit_indirect_return_copy(
-                  &body, i->src1,
-                  machine_function.result_source_size,
-                  param_count);
-            } else if (
-                machine_function.signature.has_direct_aggregate_result) {
-              if (i->src1.type != IR_TY_PTR ||
-                  i->src1.id == IR_VAL_NONE)
-                obj_unsupported_op(i->op);
-              ir_type_t result_type =
-                  machine_function.direct_result_type;
-              emit_addr_val(&body, i->src1, param_count);
-              wb_u8(&body, load_opcode(result_type, 1));
-              emit_memarg(&body, result_type);
-            } else if (i->src1.id != IR_VAL_NONE) {
-              emit_val(&body, i->src1, of->sig.result, param_count);
-            }
-            if (has_stack_restore) {
-              emit_local_get(&body, old_sp_local);
-              emit_stack_global_set(&body, of, stack_pointer);
-            }
+            default:
+              obj_unsupported_op(i->op);
           }
-          wb_u8(&body, 0x0f);
           break;
         default:
           obj_unsupported_op(i->op);

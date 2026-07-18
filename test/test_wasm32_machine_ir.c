@@ -12,6 +12,8 @@ static const ir_inst_t *fixture_call;
 static const ir_abi_signature_t *fixture_call_abi;
 static const ir_abi_argument_t *fixture_call_arguments;
 static size_t fixture_call_argument_count;
+static const ir_inst_t *fixture_reference;
+static const ir_abi_signature_t *fixture_reference_abi;
 
 const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function) {
@@ -35,6 +37,12 @@ const ir_abi_argument_t *ir_abi_call_arguments(
   }
   if (argument_count) *argument_count = fixture_call_argument_count;
   return fixture_call_arguments;
+}
+
+const ir_abi_signature_t *ir_abi_reference_signature(
+    const ir_abi_module_t *module, const ir_inst_t *reference) {
+  (void)module;
+  return reference == fixture_reference ? fixture_reference_abi : NULL;
 }
 
 typedef struct {
@@ -450,6 +458,9 @@ int main(void) {
   function_instructions[5].op = IR_LOAD_SYM;
   function_instructions[5].dst =
       (ir_val_t){.id = 4, .type = IR_TY_PTR};
+  function_instructions[5].sym = "planned_ref";
+  function_instructions[5].sym_len = 11;
+  function_instructions[5].is_function_symbol = 1;
   function_instructions[6].op = IR_VLA_ALLOC;
   function_instructions[6].dst =
       (ir_val_t){.id = 5, .type = IR_TY_PTR};
@@ -560,6 +571,21 @@ int main(void) {
       .result_area = {.id = 0, .type = IR_TY_PTR},
       .is_variadic = 1,
   };
+  ir_abi_piece_t reference_result = {
+      .type = IR_TY_I32,
+      .kind = IR_ABI_PIECE_DIRECT,
+  };
+  ir_abi_piece_t reference_param = {
+      .type = IR_TY_I64,
+      .kind = IR_ABI_PIECE_DIRECT,
+  };
+  ir_abi_signature_t reference_abi = {
+      .result_pieces = &reference_result,
+      .result_count = 1,
+      .param_pieces = &reference_param,
+      .param_count = 1,
+      .fixed_param_count = 1,
+  };
   ir_abi_argument_t planned_call_arguments[] = {
       {
           .source = {.id = 3, .type = IR_TY_I32},
@@ -579,6 +605,8 @@ int main(void) {
   fixture_call_abi = &planned_call_abi;
   fixture_call_arguments = planned_call_arguments;
   fixture_call_argument_count = 2;
+  fixture_reference = &function_instructions[5];
+  fixture_reference_abi = &reference_abi;
   wasm32_machine_function_t machine_function;
   if (!wasm32_machine_function_build(
           &function, &fake_abi_module, &machine_function)) {
@@ -598,6 +626,9 @@ int main(void) {
   const wasm32_machine_inst_t *selected_conversion =
       wasm32_machine_function_instruction(
           &machine_function, &function_instructions[8]);
+  const wasm32_machine_inst_t *selected_reference =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[5]);
   const wasm32_machine_inst_t *selected_binary =
       wasm32_machine_function_instruction(
           &machine_function, &function_instructions[9]);
@@ -613,9 +644,23 @@ int main(void) {
   const wasm32_machine_inst_t *selected_parameter =
       wasm32_machine_function_instruction(
           &machine_function, &function_instructions[13]);
+  const wasm32_machine_inst_t *selected_control =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[14]);
+  const wasm32_machine_block_t *selected_block =
+      wasm32_machine_function_block(&machine_function, 0);
   if (machine_function.frame_size != 32 ||
       machine_function.alloca_count != 2 ||
       machine_function.instruction_count != 15 ||
+      machine_function.block_count != 1 ||
+      machine_function.instructions[0].kind !=
+          WASM32_MACHINE_INST_ALLOCA ||
+      machine_function.instructions[4].kind !=
+          WASM32_MACHINE_INST_INTEGER_CONSTANT ||
+      machine_function.instructions[5].kind !=
+          WASM32_MACHINE_INST_SYMBOL_ADDRESS ||
+      machine_function.instructions[6].kind !=
+          WASM32_MACHINE_INST_DYNAMIC_ALLOCA ||
       machine_function.signature.nparams != 3 ||
       !machine_function.signature.has_hidden_result ||
       machine_function.direct_result_type != IR_TY_VOID ||
@@ -637,6 +682,11 @@ int main(void) {
       !selected_load ||
       selected_load->kind != WASM32_MACHINE_INST_LOAD ||
       selected_load->load.opcode != WASM32_MI_I64_LOAD ||
+      !selected_reference ||
+      !selected_reference->has_reference_signature ||
+      selected_reference->reference_signature.result != IR_TY_I32 ||
+      selected_reference->reference_signature.nparams != 1 ||
+      selected_reference->reference_signature.params[0] != IR_TY_I64 ||
       !selected_conversion ||
       selected_conversion->kind != WASM32_MACHINE_INST_CONVERSION ||
       selected_conversion->conversion.opcode !=
@@ -676,6 +726,27 @@ int main(void) {
           physical_function_params ||
       selected_parameter->parameter_bind.pieces[1].type != IR_TY_I64 ||
       selected_parameter->parameter_bind.pieces[1].byte_offset != 8 ||
+      !selected_control ||
+      selected_control->kind != WASM32_MACHINE_INST_CONTROL ||
+      selected_control->control.kind != WASM32_MACHINE_CONTROL_BRANCH ||
+      selected_control->control.target_block_id != 1 ||
+      !selected_block || selected_block->id != 0 ||
+      selected_block->first_instruction != 0 ||
+      selected_block->instruction_count != 15 ||
+      selected_block->next_block_id != -1 ||
+      !selected_block->has_terminator ||
+      wasm32_machine_function_block(&machine_function, 1) != NULL ||
+      !wasm32_machine_opcode_is_comparison(
+          WASM32_MI_I64_LT_U) ||
+      !wasm32_machine_opcode_is_unsigned(
+          WASM32_MI_I64_REM_U) ||
+      !wasm32_machine_opcode_is_shift(
+          WASM32_MI_I32_SHR_S) ||
+      !wasm32_machine_opcode_is_remainder(
+          WASM32_MI_I32_REM_S) ||
+      !wasm32_machine_opcode_is_add(WASM32_MI_I64_ADD) ||
+      !wasm32_machine_opcode_is_subtract(WASM32_MI_I32_SUB) ||
+      wasm32_machine_opcode_is_comparison(WASM32_MI_I32_ADD) ||
       wasm32_machine_function_instruction(
           &machine_function, &call) != NULL) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
