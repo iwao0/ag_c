@@ -1,4 +1,6 @@
 #include "wasm32_obj.h"
+#include "wasm32_machine_abi.h"
+#include "wasm32_machine_function.h"
 #include "wasm32_machine_ir.h"
 #include "../../diag/diag.h"
 #include "../../lowering/abi_lowering.h"
@@ -54,11 +56,7 @@ typedef struct {
   int addend;
 } obj_reloc_t;
 
-typedef struct {
-  ir_type_t *params;
-  int nparams;
-  ir_type_t result;
-} obj_sig_t;
+typedef wasm32_machine_signature_t obj_sig_t;
 
 typedef struct {
   char *name;
@@ -408,8 +406,7 @@ static unsigned wasm_valtype(ir_type_t t) {
 }
 
 static ir_type_t wasm_ir_type(ir_type_t t) {
-  if (t == IR_TY_I8 || t == IR_TY_I16 || t == IR_TY_PTR) return IR_TY_I32;
-  return t;
+  return wasm32_machine_value_type(t);
 }
 
 static obj_data_t *intern_data(const char *name, int name_len, int align_log2,
@@ -718,208 +715,11 @@ static ir_type_t memory_access_type(ir_type_t raw, ir_type_t actual) {
   return raw;
 }
 
-static void note_vreg_type(ir_type_t *types, int ntypes, ir_val_t v) {
-  if (v.id >= 0 && v.id < ntypes && types[v.id] == IR_TY_I32) {
-    types[v.id] = wasm_ir_type(v.type);
-  }
-}
-
-static void note_vreg_unsigned(unsigned char *is_unsigned, int ntypes, ir_val_t v, int flag) {
-  if (v.id >= 0 && v.id < ntypes) is_unsigned[v.id] = flag ? 1 : 0;
-}
-
-static int force_vreg_i32(ir_type_t *types, unsigned char *forced_i32, int ntypes, ir_val_t v) {
-  if (v.id < 0 || v.id >= ntypes) return 0;
-  int changed = types[v.id] != IR_TY_I32 || !forced_i32[v.id];
-  types[v.id] = IR_TY_I32;
-  forced_i32[v.id] = 1;
-  return changed;
-}
-
-static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw);
-static obj_sig_t call_sig_from_inst(ir_inst_t *i);
-
-static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *is_unsigned,
-                                int ntypes) {
-  for (int v = 0; v < ntypes; v++) types[v] = IR_TY_I32;
-  unsigned char *forced_i32 = calloc((size_t)ntypes, 1);
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      note_vreg_type(types, ntypes, i->dst);
-      note_vreg_unsigned(is_unsigned, ntypes, i->dst, i->is_unsigned);
-      if (i->op == IR_LOAD_IMM && i->dst.type == IR_TY_I32 && i->src1.id == IR_VAL_IMM &&
-          i->src1.imm > INT32_MAX) {
-        note_vreg_unsigned(is_unsigned, ntypes, i->dst, 1);
-      }
-      note_vreg_type(types, ntypes, i->src1);
-      note_vreg_type(types, ntypes, i->src2);
-      note_vreg_type(types, ntypes, i->src3);
-      note_vreg_type(types, ntypes, i->callee);
-      note_vreg_type(types, ntypes, i->result_storage);
-      if (i->op == IR_CALL) {
-        int argument_count = 0;
-        const ir_abi_argument_t *arguments = obj_call_arguments(
-            i, &argument_count);
-        for (int a = 0; a < argument_count; a++)
-          note_vreg_type(types, ntypes, arguments[a].source);
-      }
-    }
-  }
-  int changed = 1;
-  while (changed) {
-    changed = 0;
-    for (ir_block_t *b = f->entry; b; b = b->next) {
-      for (ir_inst_t *i = b->head; i; i = i->next) {
-        switch (i->op) {
-          case IR_ALLOCA:
-          case IR_LOAD_STR:
-          case IR_LOAD_SYM:
-          case IR_LOAD_TLV_ADDR:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            break;
-          case IR_LOAD:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            break;
-          case IR_STORE:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            break;
-          case IR_ATOMIC:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            if (i->atomic_kind == IR_ATOMIC_CAS) {
-              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
-            }
-            break;
-          case IR_MEMCPY:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
-            break;
-          case IR_VLA_ALLOC:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            break;
-          case IR_VA_ARG_AREA:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            break;
-          case IR_LEA:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            break;
-          case IR_ALIGN_PTR:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-            break;
-          case IR_CALL:
-            changed |= force_vreg_i32(types, forced_i32, ntypes, i->callee);
-            if (i->dst.id >= 0 && i->dst.id < ntypes) {
-              obj_sig_t csig = call_sig_from_inst(i);
-              if (csig.result != IR_TY_VOID) {
-                int force_result_i32 = i->dst.type == IR_TY_PTR;
-                if (force_result_i32 || forced_i32[i->dst.id]) {
-                  changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-                } else if (types[i->dst.id] != csig.result) {
-                  types[i->dst.id] = csig.result;
-                  changed = 1;
-                }
-              }
-              free(csig.params);
-            }
-            break;
-          case IR_ADD:
-          case IR_SUB:
-            if (i->dst.id >= 0 && i->dst.id < ntypes && forced_i32[i->dst.id]) {
-              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
-              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
-            }
-            if ((i->src1.id >= 0 && i->src1.id < ntypes && forced_i32[i->src1.id]) ||
-                (i->src2.id >= 0 && i->src2.id < ntypes && forced_i32[i->src2.id])) {
-              changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
-            }
-            break;
-          default:
-            break;
-        }
-      }
-    }
-  }
-  free(forced_i32);
-}
-
-static int collect_frame_size(ir_func_t *f) {
-  int frame_size = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_ALLOCA) continue;
-      int align = i->alloca_align > 0 ? i->alloca_align : 4;
-      frame_size = align_to(frame_size, align);
-      frame_size += i->alloca_size;
-    }
-  }
-  return align_to(frame_size, 16);
-}
-
-static int func_has_vla_alloc(ir_func_t *f) {
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_VLA_ALLOC) return 1;
-    }
-  }
-  return 0;
-}
-
-static int func_has_variadic_varargs(ir_func_t *f) {
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      const ir_abi_signature_t *abi =
-          i->op == IR_CALL ? obj_call_abi(i) : NULL;
-      int argument_count = 0;
-      if (abi) (void)obj_call_arguments(i, &argument_count);
-      if (abi && abi->is_variadic &&
-          (size_t)argument_count > abi->fixed_param_count) {
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
-
-static int func_has_control_flow(ir_func_t *f) {
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) return 1;
-    }
-  }
-  return 0;
-}
-
-static int func_has_atomic_cas_width(ir_func_t *f, int width64) {
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_ATOMIC || i->atomic_kind != IR_ATOMIC_CAS) continue;
-      if ((i->atomic_width == 8) == width64) return 1;
-    }
-  }
-  return 0;
-}
-
 static int block_has_terminator(ir_block_t *b) {
   ir_inst_t *tail = b ? b->tail : NULL;
   return tail && (tail->op == IR_BR || tail->op == IR_BR_COND ||
                   tail->op == IR_RET ||
                   tail->op == IR_CONTINUATION_SUSPEND);
-}
-
-static int alloca_offset(ir_func_t *f, int vreg) {
-  int frame_size = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_ALLOCA) continue;
-      int align = i->alloca_align > 0 ? i->alloca_align : 4;
-      frame_size = align_to(frame_size, align);
-      if (i->dst.id == vreg) return frame_size;
-      frame_size += i->alloca_size;
-    }
-  }
-  return -1;
 }
 
 static void emit_local_get(wb_t *b, int idx) {
@@ -934,6 +734,8 @@ static void emit_local_set(wb_t *b, int idx) {
 
 static void emit_const(wb_t *b, ir_type_t type, long long value);
 static void emit_memarg(wb_t *b, ir_type_t ty);
+static unsigned load_opcode(ir_type_t ty, int is_unsigned);
+static unsigned store_opcode(ir_type_t ty);
 
 static void emit_data_address(wb_t *b, obj_func_t *of,
                               int data_idx, int addend) {
@@ -946,7 +748,7 @@ static void emit_data_address(wb_t *b, obj_func_t *of,
 static void emit_continuation_data_load(wb_t *b, obj_func_t *of,
                                         int data_idx) {
   emit_data_address(b, of, data_idx, 0);
-  wb_u8(b, 0x28); /* i32.load */
+  wb_u8(b, load_opcode(IR_TY_I32, 1));
   emit_memarg(b, IR_TY_I32);
 }
 
@@ -954,7 +756,7 @@ static void emit_continuation_data_store_const(wb_t *b, obj_func_t *of,
                                                int data_idx, int value) {
   emit_data_address(b, of, data_idx, 0);
   emit_const(b, IR_TY_I32, value);
-  wb_u8(b, 0x36); /* i32.store */
+  wb_u8(b, store_opcode(IR_TY_I32));
   emit_memarg(b, IR_TY_I32);
 }
 
@@ -1054,32 +856,36 @@ static void emit_addr_val(wb_t *b, ir_val_t v, int param_count) {
   emit_stack_cast(b, actual_vreg_type(v), IR_TY_I32, actual_vreg_unsigned(v));
 }
 
+static wasm32_machine_memory_t select_load_or_unsupported(
+    ir_type_t memory_type, int is_unsigned) {
+  wasm32_machine_memory_t selected = {0};
+  if (!wasm32_machine_select_load(memory_type, is_unsigned, &selected))
+    obj_unsupported_msg("unsupported Wasm object load type");
+  return selected;
+}
+
+static wasm32_machine_memory_t select_store_or_unsupported(
+    ir_type_t memory_type) {
+  wasm32_machine_memory_t selected = {0};
+  if (!wasm32_machine_select_store(memory_type, &selected))
+    obj_unsupported_msg("unsupported Wasm object store type");
+  return selected;
+}
+
+static unsigned memory_binary_or_unsupported(
+    wasm32_machine_memory_t selected) {
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode) obj_unsupported_msg("missing Wasm object memory opcode");
+  return opcode;
+}
+
 static int mem_align_log2(ir_type_t ty) {
-  switch (ty) {
-    case IR_TY_I8: return 0;
-    case IR_TY_I16: return 1;
-    case IR_TY_I32:
-    case IR_TY_PTR:
-    case IR_TY_F32: return 2;
-    case IR_TY_I64:
-    case IR_TY_F64: return 3;
-    default: obj_unsupported_msg("unsupported Wasm object memory type");
-  }
-  return 0;
+  return (int)select_store_or_unsupported(ty).alignment_log2;
 }
 
 static unsigned load_opcode(ir_type_t ty, int is_unsigned) {
-  switch (ty) {
-    case IR_TY_I8: return is_unsigned ? 0x2d : 0x2c;
-    case IR_TY_I16: return is_unsigned ? 0x2f : 0x2e;
-    case IR_TY_I32:
-    case IR_TY_PTR: return 0x28;
-    case IR_TY_I64: return 0x29;
-    case IR_TY_F32: return 0x2a;
-    case IR_TY_F64: return 0x2b;
-    default: obj_unsupported_msg("unsupported Wasm object load type");
-  }
-  return 0;
+  return memory_binary_or_unsupported(
+      select_load_or_unsupported(ty, is_unsigned));
 }
 
 static void emit_abi_argument(
@@ -1104,17 +910,7 @@ static void emit_abi_argument(
 }
 
 static unsigned store_opcode(ir_type_t ty) {
-  switch (ty) {
-    case IR_TY_I8: return 0x3a;
-    case IR_TY_I16: return 0x3b;
-    case IR_TY_I32:
-    case IR_TY_PTR: return 0x36;
-    case IR_TY_I64: return 0x37;
-    case IR_TY_F32: return 0x38;
-    case IR_TY_F64: return 0x39;
-    default: obj_unsupported_msg("unsupported Wasm object store type");
-  }
-  return 0;
+  return memory_binary_or_unsupported(select_store_or_unsupported(ty));
 }
 
 static ir_type_t atomic_width_type(ir_inst_t *i) {
@@ -1133,16 +929,14 @@ static ir_type_t atomic_value_type(ir_inst_t *i) {
 }
 
 static unsigned atomic_rmw_opcode(ir_inst_t *i) {
-  int is64 = atomic_value_type(i) == IR_TY_I64;
-  switch (i->atomic_rmw_op) {
-    case IR_ARMW_ADD: return is64 ? 0x7c : 0x6a;
-    case IR_ARMW_SUB: return is64 ? 0x7d : 0x6b;
-    case IR_ARMW_OR: return is64 ? 0x84 : 0x72;
-    case IR_ARMW_AND: return is64 ? 0x83 : 0x71;
-    case IR_ARMW_XOR: return is64 ? 0x85 : 0x73;
-    default: obj_unsupported_op(i->op);
-  }
-  return 0;
+  wasm32_machine_binary_t selected;
+  if (!wasm32_machine_select_atomic_rmw(
+          (ir_atomic_rmw_op_t)i->atomic_rmw_op,
+          atomic_value_type(i), &selected))
+    obj_unsupported_op(i->op);
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode) obj_unsupported_op(i->op);
+  return opcode;
 }
 
 static void emit_memarg(wb_t *b, ir_type_t ty) {
@@ -1150,36 +944,11 @@ static void emit_memarg(wb_t *b, ir_type_t ty) {
   wb_uleb(b, 0);
 }
 
-static int collect_param_count(ir_func_t *f) {
-  const ir_abi_signature_t *abi = obj_function_abi(f);
-  return abi ? (int)abi->param_count : 0;
-}
-
-static int func_has_ret_area(ir_func_t *f) {
-  const ir_abi_signature_t *abi = obj_function_abi(f);
-  return ir_abi_signature_result_is_indirect(abi);
-}
-
-static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
-  (void)name;
-  (void)name_len;
-  return raw;
-}
-
 static obj_sig_t func_sig_from_reference_abi(
     const ir_abi_signature_t *abi) {
-  if (!abi || abi->param_count > INT_MAX)
+  obj_sig_t sig;
+  if (!wasm32_machine_signature_from_abi(abi, 1, &sig))
     obj_unsupported_msg("missing function-reference ABI in Wasm object mode");
-  obj_sig_t sig = {
-      .result = wasm_ir_type(
-          ir_abi_signature_direct_result_type(abi)),
-      .nparams = (int)abi->param_count,
-  };
-  if (sig.nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
-    for (int i = 0; i < sig.nparams; i++)
-      sig.params[i] = wasm_ir_type(abi->param_pieces[i].type);
-  }
   return sig;
 }
 
@@ -1217,78 +986,18 @@ static ir_val_t call_ret_area(ir_inst_t *i) {
 
 static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
   const ir_abi_signature_t *abi = obj_function_abi(f);
-  if (!abi || abi->param_count > INT_MAX)
+  if (!wasm32_machine_signature_from_abi(abi, 1, sig))
     obj_unsupported_msg("function without ABI lowering result");
-  int has_ret_area = func_has_ret_area(f);
-  memset(sig, 0, sizeof(*sig));
-  sig->nparams = collect_param_count(f) + (has_ret_area ? 1 : 0);
-  ir_type_t result_type = ir_abi_signature_direct_result_type(abi);
-  sig->result = has_ret_area || result_type == IR_TY_VOID
-                  ? IR_TY_VOID
-                  : wasm_ir_type(result_type);
-  if (sig->nparams > 0) {
-    sig->params = xrealloc(NULL, (size_t)sig->nparams * sizeof(ir_type_t));
-    if (has_ret_area) sig->params[0] = IR_TY_I32;
-    for (size_t i = 0; i < abi->param_count; i++)
-      sig->params[i + (has_ret_area ? 1u : 0u)] =
-          wasm_ir_type(abi->param_pieces[i].type);
-  }
 }
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
-  obj_sig_t sig = {0};
   const ir_abi_signature_t *abi = obj_call_abi(i);
-  if (!abi) obj_unsupported_msg("call without ABI lowering result");
-  int has_ret_area = call_has_ret_area(i);
-  int direct_aggregate_result =
-      ir_abi_signature_result_is_direct_aggregate(abi);
-  ir_type_t result_type = ir_abi_signature_direct_result_type(abi);
-  if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
+  if (call_has_ret_area(i) && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
-  if (!has_ret_area && i->callee.id != IR_VAL_NONE) {
-    sig.nparams = (int)abi->fixed_param_count;
-    if (sig.nparams > 0) {
-      sig.params = xrealloc(
-          NULL, (size_t)sig.nparams * sizeof(*sig.params));
-      for (int a = 0; a < sig.nparams; a++)
-        sig.params[a] = wasm_ir_type(abi->param_pieces[a].type);
-    }
-    sig.result = wasm_ir_type(result_type);
-    if (!direct_aggregate_result &&
-        (i->is_void_call || i->dst.id == IR_VAL_NONE ||
-         i->dst.type == IR_TY_VOID)) {
-      sig.result = IR_TY_VOID;
-    }
-    if (!i->is_void_call && i->dst.id != IR_VAL_NONE) {
-      sig.result = wasm_ir_type(i->dst.type);
-    }
-    return sig;
-  }
-  sig.nparams = (int)abi->fixed_param_count + (has_ret_area ? 1 : 0);
-  if (sig.nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
-    if (has_ret_area) sig.params[0] = IR_TY_I32;
-    int call_nargs = (int)abi->fixed_param_count;
-    for (int a = 0; a < call_nargs; a++) {
-      ir_type_t arg_ty = abi->param_pieces[a].type;
-      ir_type_t ty = wasm_ir_type(arg_ty);
-      if (arg_ty == IR_TY_PTR)
-        ty = IR_TY_I32;
-      sig.params[a + (has_ret_area ? 1 : 0)] = ty;
-    }
-  }
-  if (has_ret_area || i->is_void_call ||
-      (!direct_aggregate_result &&
-       (i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID))) {
-    sig.result = IR_TY_VOID;
-  } else if (direct_aggregate_result) {
-    sig.result = wasm_ir_type(result_type);
-  } else {
-    ir_type_t ret_ty = i->sym ? func_result_type_from_decl(i->sym, i->sym_len, i->dst.type)
-                              : i->dst.type;
-    sig.result = wasm_ir_type(ret_ty);
-  }
+  obj_sig_t sig;
+  if (!wasm32_machine_call_signature(i, abi, &sig))
+    obj_unsupported_msg("call without ABI lowering result");
   return sig;
 }
 
@@ -1300,6 +1009,34 @@ static unsigned selected_binary_opcode(ir_op_t op, ir_type_t operand_type) {
   unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
   if (!opcode) obj_unsupported_op(op);
   return opcode;
+}
+
+static void emit_selected_unary(
+    wb_t *body, ir_inst_t *instruction, int param_count) {
+  ir_type_t operand_type = instruction->op == IR_FNEG
+                               ? actual_vreg_type(instruction->src1)
+                               : actual_vreg_type(instruction->dst);
+  wasm32_machine_unary_t selected;
+  if (!wasm32_machine_select_unary(
+          instruction->op, operand_type, &selected))
+    obj_unsupported_op(instruction->op);
+  if (selected.form == WASM32_MI_UNARY_ZERO_THEN_OPERAND) {
+    emit_const(body, selected.operand_type, 0);
+    emit_val(
+        body, instruction->src1, selected.operand_type, param_count);
+  } else if (selected.form == WASM32_MI_UNARY_OPERAND_THEN_NEG_ONE) {
+    emit_val(
+        body, instruction->src1, selected.operand_type, param_count);
+    emit_const(body, selected.operand_type, -1);
+  } else {
+    emit_val(
+        body, instruction->src1, selected.operand_type, param_count);
+  }
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode) obj_unsupported_op(instruction->op);
+  wb_u8(body, opcode);
+  emit_local_set(
+      body, local_index(param_count, instruction->dst.id));
 }
 
 static void emit_addr_plus_const(wb_t *b, ir_val_t v, int off, int param_count) {
@@ -1524,21 +1261,26 @@ static void emit_direct_aggregate_call_result(
 
 static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                           ir_func_t *f) {
+  wasm32_machine_function_t machine_function;
+  if (!wasm32_machine_function_build(
+          f, g_obj_abi, &machine_function))
+    obj_unsupported_msg("failed to build Wasm machine function");
   const ir_abi_signature_t *function_abi = obj_function_abi(f);
   if (!function_abi) obj_unsupported_msg("function without ABI lowering result");
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
-  int has_ret_area = func_has_ret_area(f);
-  int nlocals = f->next_vreg_id;
-  int frame_size = collect_frame_size(f);
-  int has_variadic_varargs = func_has_variadic_varargs(f);
+  int has_ret_area = machine_function.signature.has_hidden_result;
+  int nlocals = machine_function.vreg_count;
+  int frame_size = machine_function.frame_size;
+  int has_variadic_varargs = machine_function.has_variadic_varargs;
   int has_persistent_continuation_frame =
       f->is_continuation_entry && f->continuation_has_suspend;
   int has_stack_restore = !has_persistent_continuation_frame &&
-      (frame_size > 0 || func_has_vla_alloc(f) || has_variadic_varargs);
-  int has_control_flow = func_has_control_flow(f);
-  int has_atomic_cas32 = func_has_atomic_cas_width(f, 0);
-  int has_atomic_cas64 = func_has_atomic_cas_width(f, 1);
+      (frame_size > 0 || machine_function.has_vla_alloc ||
+       has_variadic_varargs);
+  int has_control_flow = machine_function.has_control_flow;
+  int has_atomic_cas32 = machine_function.has_atomic_cas32;
+  int has_atomic_cas64 = machine_function.has_atomic_cas64;
   int extra_base = local_index(param_count, nlocals);
   int extra_count = 0;
   int fp_local = -1;
@@ -1594,14 +1336,8 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   }
   obj_global_t *va_arg_area = NULL;
   wb_t body = {0};
-  ir_type_t *local_types = NULL;
-  unsigned char *local_unsigned = NULL;
-  if (nlocals > 0) {
-    local_types = xrealloc(NULL, (size_t)nlocals * sizeof(ir_type_t));
-    local_unsigned = xrealloc(NULL, (size_t)nlocals);
-    memset(local_unsigned, 0, (size_t)nlocals);
-    collect_local_types(f, local_types, local_unsigned, nlocals);
-  }
+  ir_type_t *local_types = machine_function.vreg_types;
+  unsigned char *local_unsigned = machine_function.vreg_unsigned;
   g_emit_local_types = local_types;
   g_emit_local_unsigned = local_unsigned;
   g_emit_local_count = nlocals;
@@ -1695,7 +1431,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
       for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
         for (ir_inst_t *i = blk->head; i; i = i->next) {
           if (i->op != IR_ALLOCA) continue;
-          int off = alloca_offset(f, i->dst.id);
+          const wasm32_machine_alloca_t *slot =
+              wasm32_machine_function_alloca(
+                  &machine_function, i->dst.id);
+          int off = slot ? slot->offset : -1;
           emit_local_get(&body, fp_local);
           emit_const(&body, IR_TY_I32, off);
           wb_u8(&body, 0x6a);
@@ -1750,7 +1489,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           break;
         case IR_ALLOCA: {
           if (has_persistent_continuation_frame) break;
-          int off = alloca_offset(f, i->dst.id);
+          const wasm32_machine_alloca_t *slot =
+              wasm32_machine_function_alloca(
+                  &machine_function, i->dst.id);
+          int off = slot ? slot->offset : -1;
           if (off < 0 || frame_size <= 0) obj_unsupported_op(i->op);
           emit_local_get(&body, fp_local);
           emit_const(&body, IR_TY_I32, off);
@@ -1940,35 +1682,11 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
-        case IR_NEG: {
-          ir_type_t ty = wasm_ir_type(i->dst.type);
-          if (ty == IR_TY_F32 || ty == IR_TY_F64) {
-            emit_val(&body, i->src1, ty, param_count);
-            wb_u8(&body, ty == IR_TY_F64 ? 0x9a : 0x8c);
-          } else {
-            emit_const(&body, ty, 0);
-            emit_val(&body, i->src1, ty, param_count);
-            wb_u8(&body, ty == IR_TY_I64 ? 0x7d : 0x6b);
-          }
-          emit_local_set(&body, local_index(param_count, i->dst.id));
+        case IR_NEG:
+        case IR_NOT:
+        case IR_FNEG:
+          emit_selected_unary(&body, i, param_count);
           break;
-        }
-        case IR_NOT: {
-          ir_type_t ty = wasm_ir_type(i->dst.type);
-          emit_val(&body, i->src1, ty, param_count);
-          emit_const(&body, ty, -1);
-          wb_u8(&body, ty == IR_TY_I64 ? 0x83 : 0x73);
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
-        case IR_FNEG: {
-          ir_type_t ty = wasm_ir_type(i->src1.type);
-          if (ty != IR_TY_F32 && ty != IR_TY_F64) obj_unsupported_op(i->op);
-          emit_val(&body, i->src1, ty, param_count);
-          wb_u8(&body, ty == IR_TY_F64 ? 0x9a : 0x8c);
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
         case IR_SHL: case IR_SHR: case IR_LSR:
@@ -2146,7 +1864,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
               emit_val(&body, i->src1, IR_TY_I32, param_count);
             else
               emit_const(&body, IR_TY_I32, 0);
-            wb_u8(&body, 0x36);
+            wb_u8(&body, store_opcode(IR_TY_I32));
             emit_memarg(&body, IR_TY_I32);
             emit_continuation_data_store_const(
                 &body, of, continuation_status_data, 3);
@@ -2213,11 +1931,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   }
   wb_u8(&body, 0x0b);
   of->body = body;
-  free(local_types);
-  free(local_unsigned);
   g_emit_local_types = NULL;
   g_emit_local_unsigned = NULL;
   g_emit_local_count = 0;
+  wasm32_machine_function_dispose(&machine_function);
 }
 
 static void assign_indices(void) {

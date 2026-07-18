@@ -84,6 +84,8 @@ static const wasm32_opcode_encoding_t opcode_encodings[WASM32_MI_COUNT] = {
     [WASM32_MI_I64_TRUNC_F64_U] = {"i64.trunc_f64_u", 0xb1},
     [WASM32_MI_F32_DEMOTE_F64] = {"f32.demote_f64", 0xb6},
     [WASM32_MI_F64_PROMOTE_F32] = {"f64.promote_f32", 0xbb},
+    [WASM32_MI_F32_NEG] = {"f32.neg", 0x8c},
+    [WASM32_MI_F64_NEG] = {"f64.neg", 0x9a},
     [WASM32_MI_I32_LOAD8_S] = {"i32.load8_s", 0x2c},
     [WASM32_MI_I32_LOAD8_U] = {"i32.load8_u", 0x2d},
     [WASM32_MI_I32_LOAD16_S] = {"i32.load16_s", 0x2e},
@@ -100,7 +102,7 @@ static const wasm32_opcode_encoding_t opcode_encodings[WASM32_MI_COUNT] = {
     [WASM32_MI_F64_STORE] = {"f64.store", 0x39},
 };
 
-static ir_type_t normalize_value_type(ir_type_t type) {
+ir_type_t wasm32_machine_value_type(ir_type_t type) {
   if (type == IR_TY_I8 || type == IR_TY_I16 || type == IR_TY_PTR)
     return IR_TY_I32;
   return type;
@@ -151,7 +153,7 @@ int wasm32_machine_select_binary(
     ir_op_t source_op, ir_type_t operand_type,
     wasm32_machine_binary_t *selected) {
   if (!selected) return 0;
-  operand_type = normalize_value_type(operand_type);
+  operand_type = wasm32_machine_value_type(operand_type);
   wasm32_machine_opcode_t opcode = WASM32_MI_INVALID;
   if (operand_type == IR_TY_I32 || operand_type == IR_TY_I64)
     opcode = select_integer(source_op, operand_type == IR_TY_I64);
@@ -175,8 +177,8 @@ int wasm32_machine_select_conversion(
     ir_type_t source_type, ir_type_t result_type, int is_unsigned,
     wasm32_machine_conversion_t *selected) {
   if (!selected) return 0;
-  source_type = normalize_value_type(source_type);
-  result_type = normalize_value_type(result_type);
+  source_type = wasm32_machine_value_type(source_type);
+  result_type = wasm32_machine_value_type(result_type);
   wasm32_machine_opcode_t opcode = WASM32_MI_INVALID;
   if (source_type == result_type) {
     opcode = WASM32_MI_COPY;
@@ -219,6 +221,56 @@ int wasm32_machine_select_conversion(
   selected->source_type = source_type;
   selected->result_type = result_type;
   return 1;
+}
+
+int wasm32_machine_select_unary(
+    ir_op_t source_op, ir_type_t operand_type,
+    wasm32_machine_unary_t *selected) {
+  if (!selected) return 0;
+  operand_type = wasm32_machine_value_type(operand_type);
+  wasm32_machine_opcode_t opcode = WASM32_MI_INVALID;
+  wasm32_machine_unary_form_t form = WASM32_MI_UNARY_DIRECT;
+  if (source_op == IR_NEG &&
+      (operand_type == IR_TY_I32 || operand_type == IR_TY_I64)) {
+    opcode = operand_type == IR_TY_I64
+                 ? WASM32_MI_I64_SUB
+                 : WASM32_MI_I32_SUB;
+    form = WASM32_MI_UNARY_ZERO_THEN_OPERAND;
+  } else if (source_op == IR_NOT &&
+             (operand_type == IR_TY_I32 || operand_type == IR_TY_I64)) {
+    opcode = operand_type == IR_TY_I64
+                 ? WASM32_MI_I64_XOR
+                 : WASM32_MI_I32_XOR;
+    form = WASM32_MI_UNARY_OPERAND_THEN_NEG_ONE;
+  } else if ((source_op == IR_FNEG || source_op == IR_NEG) &&
+             (operand_type == IR_TY_F32 || operand_type == IR_TY_F64)) {
+    opcode = operand_type == IR_TY_F64
+                 ? WASM32_MI_F64_NEG
+                 : WASM32_MI_F32_NEG;
+  }
+  if (opcode == WASM32_MI_INVALID) return 0;
+  *selected = (wasm32_machine_unary_t){
+      .opcode = opcode,
+      .operand_type = operand_type,
+      .result_type = operand_type,
+      .form = form,
+  };
+  return 1;
+}
+
+int wasm32_machine_select_atomic_rmw(
+    ir_atomic_rmw_op_t source_op, ir_type_t operand_type,
+    wasm32_machine_binary_t *selected) {
+  ir_op_t binary_op;
+  switch (source_op) {
+    case IR_ARMW_ADD: binary_op = IR_ADD; break;
+    case IR_ARMW_SUB: binary_op = IR_SUB; break;
+    case IR_ARMW_OR: binary_op = IR_OR; break;
+    case IR_ARMW_AND: binary_op = IR_AND; break;
+    case IR_ARMW_XOR: binary_op = IR_XOR; break;
+    default: return 0;
+  }
+  return wasm32_machine_select_binary(binary_op, operand_type, selected);
 }
 
 int wasm32_machine_select_load(

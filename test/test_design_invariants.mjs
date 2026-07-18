@@ -9255,6 +9255,14 @@ const wasmMachineIrSource = await readFile(
   "src/arch/wasm32/wasm32_machine_ir.c",
   "utf8",
 );
+const wasmMachineAbiSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_abi.c",
+  "utf8",
+);
+const wasmMachineFunctionSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_function.c",
+  "utf8",
+);
 const wasmWatWriterSource = await readFile(
   "src/arch/wasm32/wasm32_ir.c",
   "utf8",
@@ -9274,6 +9282,68 @@ if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
     )) {
   throw new Error(
     "Wasm WAT and object writers must share Machine IR binary instruction selection",
+  );
+}
+
+if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_select_store\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_select_load\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_select_store\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_select_load\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_select_store\s*\(/.test(wasmObjectWriterSource) ||
+    /switch\s*\(\s*effective_load_type/.test(wasmWatWriterSource) ||
+    /switch\s*\(\s*store_ty\s*\)/.test(wasmWatWriterSource) ||
+    /\b0x(?:28|29|2a|2b|2c|2d|2e|2f|36|37|38|39|3a|3b)\b/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm WAT and object writers must share Machine IR memory instruction selection",
+  );
+}
+
+if (!/wasm32_machine_select_unary\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_select_unary\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_select_unary\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmObjectWriterSource) ||
+    /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmWatWriterSource) ||
+    /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmObjectWriterSource)) {
+  throw new Error(
+    "Wasm WAT and object writers must share Machine IR unary and atomic RMW instruction selection",
+  );
+}
+
+if (!/wasm32_machine_signature_from_abi\s*\(/.test(
+      wasmMachineAbiSource,
+    ) ||
+    !/wasm32_machine_call_signature\s*\(/.test(wasmMachineAbiSource) ||
+    !/wasm32_machine_signature_from_abi\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_call_signature\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_signature_from_abi\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_call_signature\s*\(/.test(wasmObjectWriterSource)) {
+  throw new Error(
+    "Wasm WAT and object writers must share the Machine ABI signature plan",
+  );
+}
+
+if (!/wasm32_machine_function_build\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/wasm32_machine_function_build\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_function_build\s*\(/.test(wasmObjectWriterSource) ||
+    /static\s+void\s+collect_local_types\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /static\s+void\s+collect_inst_vregs\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /static\s+int\s+collect_frame_size\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /static\s+void\s+add_alloca_slot\s*\(/.test(wasmWatWriterSource)) {
+  throw new Error(
+    "Wasm WAT and object writers must share the Machine function analysis plan",
   );
 }
 

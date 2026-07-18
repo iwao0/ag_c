@@ -81,6 +81,8 @@ typedef enum {
   WASM32_MI_I64_TRUNC_F64_U,
   WASM32_MI_F32_DEMOTE_F64,
   WASM32_MI_F64_PROMOTE_F32,
+  WASM32_MI_F32_NEG,
+  WASM32_MI_F64_NEG,
   WASM32_MI_I32_LOAD8_S,
   WASM32_MI_I32_LOAD8_U,
   WASM32_MI_I32_LOAD16_S,
@@ -110,6 +112,19 @@ typedef struct {
   ir_type_t result_type;
 } wasm32_machine_conversion_t;
 
+typedef enum {
+  WASM32_MI_UNARY_DIRECT = 0,
+  WASM32_MI_UNARY_ZERO_THEN_OPERAND,
+  WASM32_MI_UNARY_OPERAND_THEN_NEG_ONE,
+} wasm32_machine_unary_form_t;
+
+typedef struct {
+  wasm32_machine_opcode_t opcode;
+  ir_type_t operand_type;
+  ir_type_t result_type;
+  wasm32_machine_unary_form_t form;
+} wasm32_machine_unary_t;
+
 typedef struct {
   wasm32_machine_opcode_t opcode;
   ir_type_t memory_type;
@@ -117,12 +132,20 @@ typedef struct {
   unsigned alignment_log2;
 } wasm32_machine_memory_t;
 
+ir_type_t wasm32_machine_value_type(ir_type_t type);
+
 int wasm32_machine_select_binary(
     ir_op_t source_op, ir_type_t operand_type,
     wasm32_machine_binary_t *selected);
 int wasm32_machine_select_conversion(
     ir_type_t source_type, ir_type_t result_type, int is_unsigned,
     wasm32_machine_conversion_t *selected);
+int wasm32_machine_select_unary(
+    ir_op_t source_op, ir_type_t operand_type,
+    wasm32_machine_unary_t *selected);
+int wasm32_machine_select_atomic_rmw(
+    ir_atomic_rmw_op_t source_op, ir_type_t operand_type,
+    wasm32_machine_binary_t *selected);
 int wasm32_machine_select_load(
     ir_type_t memory_type, int is_unsigned,
     wasm32_machine_memory_t *selected);
