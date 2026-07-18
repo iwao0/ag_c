@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "abi_lowering.h"
+#include "function_type_lowering.h"
 #include "../diag/diag.h"
 #include "../parser/type.h"
 #include "../semantic/type_identity.h"
@@ -131,14 +132,12 @@ static int append_instruction(
   return 1;
 }
 
-static void set_callable_signature(
+static int set_callable_signature(
     ir_inst_t *instruction, const ir_callable_sig_t *signature) {
-  instruction->callable_sig.result = signature->result;
-  instruction->callable_sig.param_count = signature->param_count;
-  instruction->callable_sig.is_variadic = signature->is_variadic;
-  for (int i = 0; i < signature->param_count; i++)
-    instruction->callable_sig.params[i] = signature->params[i];
+  if (!ir_callable_sig_copy(&instruction->callable_sig, signature))
+    return 0;
   instruction->has_callable_sig = 1;
+  return 1;
 }
 
 static int is_integer_ir_type(ir_type_t type);
@@ -719,10 +718,6 @@ static int setup_scalar_parameters(
     if (pointer < 0) return 0;
     if (is_complex_abi_type(type)) {
       int half = ir_type_size(type.type);
-      if (abi_index + 2 > 32) {
-        context->status = IR_HIR_BUILD_UNSUPPORTED;
-        return 0;
-      }
       for (int part = 0; part < 2; part++) {
         int value_vreg = new_vreg(context);
         if (value_vreg < 0) return 0;
@@ -746,7 +741,7 @@ static int setup_scalar_parameters(
         if (context->status != IR_HIR_BUILD_OK ||
             !store_direct_value(context, destination, input->dst))
           return 0;
-        context->function->param_abi_types[abi_index++] = type.type;
+        abi_index++;
       }
       continue;
     }
@@ -775,11 +770,7 @@ static int setup_scalar_parameters(
       copy->src2 = input->dst;
       copy->alloca_size = type.source_size;
       if (!append_instruction(context, copy)) return 0;
-      if (abi_index >= 32) {
-        context->status = IR_HIR_BUILD_UNSUPPORTED;
-        return 0;
-      }
-      context->function->param_abi_types[abi_index++] = IR_TY_PTR;
+      abi_index++;
       continue;
     }
     int value_vreg = new_vreg(context);
@@ -808,15 +799,8 @@ static int setup_scalar_parameters(
     store->src1 = ir_val_vreg(pointer, IR_TY_PTR);
     store->src2 = input->dst;
     if (!append_instruction(context, store)) return 0;
-    if (abi_index >= 32) {
-      context->status = IR_HIR_BUILD_UNSUPPORTED;
-      return 0;
-    }
-    context->function->param_abi_types[abi_index++] =
-        signature->params[i];
+    abi_index++;
   }
-  context->function->param_abi_count = abi_index;
-  context->function->nargs_fixed = abi_index;
   return 1;
 }
 
@@ -3054,7 +3038,7 @@ static ir_val_t build_scalar_or_void_call(
       .record_layouts = context->options->record_layouts,
       .target = context->options->target,
   };
-  ir_callable_sig_t signature;
+  ir_callable_sig_t signature = {0};
   size_t argument_count = child_count_for_edge(
       node, PSX_HIR_EDGE_ARGUMENT);
   const psx_type_t *callable_semantic_type =
@@ -3343,8 +3327,6 @@ static ir_val_t build_scalar_or_void_call(
       return ir_val_none();
     }
     call->dst = ir_val_vreg(slot, IR_TY_PTR);
-    call->ret_complex_half =
-        (unsigned char)ir_type_size(result_type.type);
   } else if (is_indirect_aggregate_result) {
     int result_area = allocate_scalar_temp(
         context, result_type.source_size, 8);
@@ -3355,8 +3337,7 @@ static ir_val_t build_scalar_or_void_call(
       return ir_val_none();
     }
     call->dst = ir_val_vreg(result_vreg, IR_TY_PTR);
-    call->ret_struct_size = result_type.source_size;
-    call->ret_struct_area =
+    call->result_area =
         ir_val_vreg(result_area, IR_TY_PTR);
   } else if (!is_void_result) {
     call->dst = ir_val_vreg(result_vreg, result_type.type);
@@ -3368,7 +3349,6 @@ static ir_val_t build_scalar_or_void_call(
     call->callee = callee_value;
   }
   call->args = arguments;
-  call->arg_abi_types = argument_abi_types;
   if (emitted_count > INT_MAX) {
     free(arguments);
     free(argument_abi_types);
@@ -3376,31 +3356,43 @@ static ir_val_t build_scalar_or_void_call(
     return unsupported_expr(context);
   }
   call->nargs = (int)emitted_count;
-  call->nargs_fixed = (short)emitted_fixed_count;
-  call->is_variadic_call =
-      signature.is_variadic && argument_count > signature.param_count;
   call->is_void_call = is_void_result ? 1 : 0;
   call->is_implicit_call =
       psx_hir_node_is_implicit_call(node) ? 1 : 0;
-  if (emitted_fixed_count > IR_CALLABLE_MAX_PARAMS) {
+  if (!ir_function_type_from_type_id(
+          context->options->semantic_types,
+          callable_type.type_id, &call->function_type)) {
+    ir_callable_sig_dispose(&signature);
     free(arguments);
     free(argument_abi_types);
     free(call);
-    return unsupported_expr(context);
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
   }
-  ir_callable_sig_t expanded_signature = {
-      .result = signature.result,
-      .param_count = (unsigned char)emitted_fixed_count,
-      .is_variadic = signature.is_variadic,
-  };
-  for (size_t i = 0; i < emitted_fixed_count; i++)
-    expanded_signature.params[i] = argument_abi_types[i];
-  set_callable_signature(call, &expanded_signature);
+  call->has_function_type = 1;
+  ir_callable_sig_t expanded_signature = {0};
+  if (!ir_callable_sig_set(
+          &expanded_signature, signature.result,
+          argument_abi_types, emitted_fixed_count,
+          signature.is_variadic) ||
+      !set_callable_signature(call, &expanded_signature)) {
+    ir_callable_sig_dispose(&expanded_signature);
+    ir_callable_sig_dispose(&signature);
+    ir_function_type_dispose(&call->function_type);
+    free(arguments);
+    free(argument_abi_types);
+    free(call);
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  ir_callable_sig_dispose(&expanded_signature);
+  ir_callable_sig_dispose(&signature);
+  free(argument_abi_types);
   if (!append_instruction(context, call)) return ir_val_none();
   if (is_void_result) return ir_val_none();
   if (is_complex_result) return call->dst;
   if (is_indirect_aggregate_result)
-    return call->ret_struct_area;
+    return call->result_area;
   return ir_val_vreg(result_vreg, result_type.type);
 }
 
@@ -3435,7 +3427,7 @@ static ir_val_t build_function_reference(
       .record_layouts = context->options->record_layouts,
       .target = context->options->target,
   };
-  ir_callable_sig_t signature;
+  ir_callable_sig_t signature = {0};
   if (!name || name_length == 0 ||
       !ir_abi_callable_sig_from_type_id(
           &abi, psx_hir_node_qual_type(node).type_id, &signature))
@@ -3452,7 +3444,24 @@ static ir_val_t build_function_reference(
   load->sym_len = (int)name_length;
   load->is_got_funcref = 1;
   load->is_function_symbol = 1;
-  set_callable_signature(load, &signature);
+  if (!ir_function_type_from_type_id(
+          context->options->semantic_types,
+          psx_hir_node_qual_type(node).type_id,
+          &load->function_type)) {
+    ir_callable_sig_dispose(&signature);
+    free(load);
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  load->has_function_type = 1;
+  if (!set_callable_signature(load, &signature)) {
+    ir_callable_sig_dispose(&signature);
+    ir_function_type_dispose(&load->function_type);
+    free(load);
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  ir_callable_sig_dispose(&signature);
   if (!append_instruction(context, load)) return ir_val_none();
   return load->dst;
 }
@@ -4152,8 +4161,6 @@ static int build_statement(
           return 0;
         }
         ret->src1 = result;
-        ret->ret_complex_half =
-            (unsigned char)ir_type_size(context->return_info.type);
         return append_instruction(context, ret);
       }
       if (is_indirect_aggregate_abi_type(context->return_info)) {
@@ -4164,7 +4171,7 @@ static int build_statement(
             value_type.param_class != IR_ABI_PARAM_AGGREGATE ||
             value_type.source_size != context->return_info.source_size ||
             source.type != IR_TY_PTR ||
-            context->function->ret_area_vreg < 0)
+            context->function->result_area_vreg < 0)
           return 0;
         ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
         if (!copy) {
@@ -4172,7 +4179,7 @@ static int build_statement(
           return 0;
         }
         copy->src1 = ir_val_vreg(
-            context->function->ret_area_vreg, IR_TY_PTR);
+            context->function->result_area_vreg, IR_TY_PTR);
         copy->src2 = source;
         copy->alloca_size = context->return_info.source_size;
         if (!append_instruction(context, copy)) return 0;
@@ -4400,7 +4407,7 @@ ir_module_t *ir_build_function_module_from_hir(
       .record_layouts = options->record_layouts,
       .target = options->target,
   };
-  ir_callable_sig_t signature;
+  ir_callable_sig_t signature = {0};
   psx_type_id_t signature_id =
       psx_hir_node_attached_qual_type(root).type_id;
   psx_type_id_t result_type_id = psx_semantic_type_table_base(
@@ -4416,6 +4423,7 @@ ir_module_t *ir_build_function_module_from_hir(
        !is_direct_value_abi_type(return_info)) ||
       signature.result != (returns_void ? IR_TY_VOID : return_info.type)) {
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
+    ir_callable_sig_dispose(&signature);
     return NULL;
   }
   size_t name_length = 0;
@@ -4423,7 +4431,10 @@ ir_module_t *ir_build_function_module_from_hir(
   const psx_hir_node_t *body = child_for_edge(
       &(hir_ir_context_t){.hir = hir}, root,
       PSX_HIR_EDGE_FUNCTION_BODY, 0);
-  if (!name || name_length == 0 || !body) return NULL;
+  if (!name || name_length == 0 || !body) {
+    ir_callable_sig_dispose(&signature);
+    return NULL;
+  }
 
   hir_ir_context_t context = {
       .hir = hir,
@@ -4439,6 +4450,7 @@ ir_module_t *ir_build_function_module_from_hir(
   context.module = ir_module_new();
   if (!context.module) {
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    ir_callable_sig_dispose(&signature);
     return NULL;
   }
   context.function = ir_func_new(
@@ -4446,24 +4458,31 @@ ir_module_t *ir_build_function_module_from_hir(
   if (!context.function) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    ir_callable_sig_dispose(&signature);
+    return NULL;
+  }
+  if (!ir_function_type_from_type_id(
+          options->semantic_types, signature_id,
+          &context.function->function_type)) {
+    ir_module_free(context.module);
+    ir_callable_sig_dispose(&signature);
+    if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;
   }
   context.function->is_static = psx_hir_node_is_static_function(root);
-  if (is_complex_abi_type(return_info))
-    context.function->ret_complex_half =
-        ir_type_size(return_info.type);
   if (is_indirect_aggregate_abi_type(return_info)) {
-    context.function->ret_struct_size = return_info.source_size;
     int return_area = new_vreg(&context);
     if (return_area < 0) {
       ir_module_free(context.module);
       if (status) *status = context.status;
+      ir_callable_sig_dispose(&signature);
       return NULL;
     }
     ir_inst_t *parameter = ir_inst_new(IR_PARAM);
     if (!parameter) {
       ir_module_free(context.module);
       if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      ir_callable_sig_dispose(&signature);
       return NULL;
     }
     parameter->dst = ir_val_vreg(return_area, IR_TY_PTR);
@@ -4471,12 +4490,17 @@ ir_module_t *ir_build_function_module_from_hir(
     if (!append_instruction(&context, parameter)) {
       ir_module_free(context.module);
       if (status) *status = context.status;
+      ir_callable_sig_dispose(&signature);
       return NULL;
     }
-    context.function->ret_area_vreg = return_area;
+    context.function->result_area_vreg = return_area;
   }
-  context.function->is_variadic = signature.is_variadic;
-  context.function->nargs_fixed = signature.param_count;
+  if (signature.param_count > INT_MAX) {
+    ir_module_free(context.module);
+    ir_callable_sig_dispose(&signature);
+    if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
+    return NULL;
+  }
   const psx_type_t *function_type = psx_semantic_type_table_lookup(
       options->semantic_types, signature_id);
   int signature_length = ps_type_format_canonical_signature_for_target(
@@ -4484,6 +4508,7 @@ ir_module_t *ir_build_function_module_from_hir(
   if (signature_length < 0) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_INVALID;
+    ir_callable_sig_dispose(&signature);
     return NULL;
   }
   context.function->c_signature = malloc((size_t)signature_length + 1);
@@ -4494,6 +4519,7 @@ ir_module_t *ir_build_function_module_from_hir(
           (size_t)signature_length + 1) != signature_length) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    ir_callable_sig_dispose(&signature);
     return NULL;
   }
   context.function->c_signature_len = signature_length;
@@ -4503,8 +4529,10 @@ ir_module_t *ir_build_function_module_from_hir(
       !collect_label_blocks(&context, body)) {
     ir_module_free(context.module);
     if (status) *status = context.status;
+    ir_callable_sig_dispose(&signature);
     return NULL;
   }
+  ir_callable_sig_dispose(&signature);
   if (!build_statement(&context, body)) {
     ir_module_free(context.module);
     if (status) *status = context.status;

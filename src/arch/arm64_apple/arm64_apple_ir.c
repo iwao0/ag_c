@@ -18,12 +18,14 @@
 #include "../../ir/ir.h"
 #include "../../diag/diag.h"
 #include "../../lowering/frame_layout.h"
+#include "../../lowering/abi_lowering.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct {
   ag_codegen_emit_context_t *emit_context;
+  const ir_abi_module_t *abi;
   ir_func_t *f;
   int *vreg_off;
   int alloca_base;
@@ -38,6 +40,16 @@ typedef struct {
 
 #define arm64_cg_emitf(ctx, ...) \
   cg_emitf_in((ctx)->emit_context, __VA_ARGS__)
+
+static const ir_abi_signature_t *function_abi(
+    const gen_ctx_t *ctx) {
+  return ctx ? ir_abi_function_signature(ctx->abi, ctx->f) : NULL;
+}
+
+static const ir_abi_signature_t *call_abi(
+    const gen_ctx_t *ctx, const ir_inst_t *call) {
+  return ctx ? ir_abi_call_signature(ctx->abi, call) : NULL;
+}
 
 static int round_up(int v, int a) {
   return (v + a - 1) / a * a;
@@ -818,22 +830,27 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
+      const ir_abi_signature_t *abi = call_abi(ctx, inst);
+      if (!abi) abort();
       /* Apple ARM64 ABI:
        *   - 通常: 整数引数 x0..x7、float/double 引数 s0..d7 (独立カウンタ)。
        *   - variadic: 固定引数のみ通常レジスタ、可変引数は全て stack に置く。
        *     stack は 16-byte align、各 variadic arg は 8B スロット。
        *     float は引数渡しで double に促進。 */
       int var_stack_bytes = 0;
-      int fixed_limit = inst->is_variadic_call ? inst->nargs_fixed : inst->nargs;
+      int is_variadic_call = abi->is_variadic;
+      int fixed_limit = (int)abi->fixed_param_count;
       /* 非 variadic で 9 個以降の引数: stack 渡し (Apple ARM64 ABI 簡略版)。
        * 引数を整数/FP で分類し、それぞれ register が 8 個を超えた分のみ stack に
        * 積む。実際の ABI では int と FP の register カウンタは独立しているので、
        * "9 個目" は両カテゴリ別々に判定する必要がある。 */
       int extra_stack_args = 0;
-      if (!inst->is_variadic_call && inst->nargs > 0) {
+      if (!is_variadic_call && inst->nargs > 0) {
         /* どの引数が stack に乗るか先に決める。 */
         int int_count = 0, fp_count = 0;
-        int stack_idx[64];
+        int *stack_idx = malloc(
+            (size_t)inst->nargs * sizeof(*stack_idx));
+        if (!stack_idx) abort();
         int stack_n = 0;
         for (int i = 0; i < inst->nargs; i++) {
           int is_fp = (inst->args[i].type == IR_TY_F32 || inst->args[i].type == IR_TY_F64);
@@ -867,17 +884,18 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
             }
           }
         }
+        free(stack_idx);
       }
-      if (inst->is_variadic_call) {
-        int nargs_var = inst->nargs - inst->nargs_fixed;
+      if (is_variadic_call) {
+        int nargs_var = inst->nargs - fixed_limit;
         var_stack_bytes = ((nargs_var + 1) / 2) * 16;
         if (var_stack_bytes > 0) {
           arm64_cg_emitf(ctx, "  sub sp, sp, #%d\n", var_stack_bytes);
         }
         /* 可変引数を stack slot に書く */
-        for (int i = inst->nargs_fixed; i < inst->nargs; i++) {
+        for (int i = fixed_limit; i < inst->nargs; i++) {
           ir_val_t arg = inst->args[i];
-          int slot_off = (i - inst->nargs_fixed) * 8;
+          int slot_off = (i - fixed_limit) * 8;
           if (arg.type == IR_TY_F32) {
             /* float → double に昇格して書く */
             char buf[8];
@@ -924,9 +942,10 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         }
       }
       /* struct return: ret_area を x8 にロード */
-      if (inst->ret_struct_size > 0 && inst->ret_struct_area.id != IR_VAL_NONE) {
+      if (abi->result_is_indirect && abi->result_area.id != IR_VAL_NONE) {
         char buf[8];
-        const char *src = ensure_val_in(ctx, inst->ret_struct_area, "x8", buf, sizeof(buf));
+        const char *src = ensure_val_in(
+            ctx, abi->result_area, "x8", buf, sizeof(buf));
         if (strcmp(src, "x8") != 0) {
           arm64_cg_emitf(ctx, "  mov x8, %s\n", src);
         }
@@ -946,13 +965,13 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         arm64_cg_emitf(ctx, "  add sp, sp, #%d\n", var_stack_bytes);
       }
       /* _Complex 戻り値 (HFA): dst は {re,im} スロットの PTR。d0/d1 (s0/s1) を書き戻す。 */
-  if (inst->ret_complex_half > 0 && inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
+  if (abi->result_complex_half > 0 && inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+    const char *suf = (abi->result_complex_half == 8) ? "d" : "s";
     char buf[8];
     const char *p = ensure_val_in(ctx, inst->dst, "x9", buf, sizeof(buf));
     if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
     arm64_cg_emitf(ctx, "  str %s0, [x9]\n", suf);
-    arm64_cg_emitf(ctx, "  str %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+    arm64_cg_emitf(ctx, "  str %s1, [x9, #%d]\n", suf, (int)abi->result_complex_half);
     return;
   }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
@@ -977,14 +996,16 @@ static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
-      if (inst->ret_complex_half > 0) {
+      const ir_abi_signature_t *abi = function_abi(ctx);
+      if (!abi) abort();
+      if (abi->result_complex_half > 0) {
         /* _Complex 戻り値 (HFA): src1 は {re,im} スロットの PTR。re→d0/s0, im→d1/s1。 */
-        const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
+        const char *suf = (abi->result_complex_half == 8) ? "d" : "s";
         char buf[8];
         const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
         if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
         arm64_cg_emitf(ctx, "  ldr %s0, [x9]\n", suf);
-        arm64_cg_emitf(ctx, "  ldr %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+        arm64_cg_emitf(ctx, "  ldr %s1, [x9, #%d]\n", suf, (int)abi->result_complex_half);
       } else if (inst->src1.id != IR_VAL_NONE) {
         if (inst->src1.type == IR_TY_F32) {
           char buf[8];
@@ -1114,12 +1135,14 @@ static void gen_inst_align_ptr(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_func(
-    ag_codegen_emit_context_t *emit_context, ir_func_t *f) {
+    ag_codegen_emit_context_t *emit_context, ir_func_t *f,
+    const ir_abi_module_t *abi) {
   /* レジスタ割り付け */
   ir_regalloc_function(f);
 
   gen_ctx_t ctx = {0};
   ctx.emit_context = emit_context;
+  ctx.abi = abi;
   ctx.f = f;
   layout_frame(&ctx);
 
@@ -1145,7 +1168,8 @@ static void gen_func(
 }
 
 void gen_ir_module_in(
-    ag_codegen_emit_context_t *emit_context, ir_module_t *m) {
+    ag_codegen_emit_context_t *emit_context, ir_module_t *m,
+    const ir_abi_module_t *abi) {
   if (!emit_context) abort();
   if (!m) return;
   /* Phase 6: 最適化パス。const fold で即値伝播と算術畳み込みを行い、
@@ -1153,6 +1177,6 @@ void gen_ir_module_in(
   ir_opt_const_fold(m);
   ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next) {
-    gen_func(emit_context, f);
+    gen_func(emit_context, f, abi);
   }
 }

@@ -127,6 +127,81 @@ ir_val_t ir_val_vreg(int id, ir_type_t t) {
   return v;
 }
 
+void ir_callable_sig_dispose(ir_callable_sig_t *signature) {
+  if (!signature) return;
+  free(signature->params);
+  memset(signature, 0, sizeof(*signature));
+}
+
+int ir_callable_sig_set(
+    ir_callable_sig_t *signature, ir_type_t result,
+    const ir_type_t *params, size_t param_count, int is_variadic) {
+  if (!signature || (param_count > 0 && !params)) return 0;
+  ir_type_t *copy = NULL;
+  if (param_count > 0) {
+    if (param_count > SIZE_MAX / sizeof(*copy)) return 0;
+    copy = malloc(param_count * sizeof(*copy));
+    if (!copy) return 0;
+    memcpy(copy, params, param_count * sizeof(*copy));
+  }
+  free(signature->params);
+  signature->params = copy;
+  signature->param_count = param_count;
+  signature->result = result;
+  signature->is_variadic = is_variadic ? 1 : 0;
+  return 1;
+}
+
+int ir_callable_sig_copy(
+    ir_callable_sig_t *destination,
+    const ir_callable_sig_t *source) {
+  if (!destination || !source) return 0;
+  return ir_callable_sig_set(
+      destination, source->result, source->params,
+      source->param_count, source->is_variadic);
+}
+
+void ir_function_type_dispose(ir_function_type_t *type) {
+  if (!type) return;
+  free(type->params);
+  memset(type, 0, sizeof(*type));
+}
+
+int ir_function_type_set(
+    ir_function_type_t *type, psx_type_id_t type_id,
+    psx_qual_type_t result, const psx_qual_type_t *params,
+    size_t param_count, int is_variadic, int has_prototype) {
+  if (!type || type_id == PSX_TYPE_ID_INVALID ||
+      result.type_id == PSX_TYPE_ID_INVALID ||
+      (param_count > 0 && !params))
+    return 0;
+  psx_qual_type_t *copy = NULL;
+  if (param_count > 0) {
+    if (param_count > SIZE_MAX / sizeof(*copy)) return 0;
+    copy = malloc(param_count * sizeof(*copy));
+    if (!copy) return 0;
+    memcpy(copy, params, param_count * sizeof(*copy));
+  }
+  free(type->params);
+  type->type_id = type_id;
+  type->result = result;
+  type->params = copy;
+  type->param_count = param_count;
+  type->is_variadic = is_variadic ? 1 : 0;
+  type->has_prototype = has_prototype ? 1 : 0;
+  return 1;
+}
+
+int ir_function_type_copy(
+    ir_function_type_t *destination,
+    const ir_function_type_t *source) {
+  if (!destination || !source) return 0;
+  return ir_function_type_set(
+      destination, source->type_id, source->result,
+      source->params, source->param_count,
+      source->is_variadic, source->has_prototype);
+}
+
 /* ---- アロケータ ---- */
 
 /* メモリ計測用カウンタ。関数ごとに IR を解放するため、現在 resident と、同時 resident の
@@ -193,7 +268,11 @@ ir_symbol_func_ref_t *ir_symbol_add_func_ref(
   ref->name_len = name_len;
   ref->offset = offset;
   if (callable_sig) {
-    ref->callable_sig = *callable_sig;
+    if (!ir_callable_sig_copy(&ref->callable_sig, callable_sig)) {
+      free(ref->name);
+      free(ref);
+      return NULL;
+    }
     ref->has_callable_sig = 1;
   }
   if (!symbol->func_refs) symbol->func_refs = ref;
@@ -223,7 +302,8 @@ void ir_func_free(ir_func_t *f) {
     for (ir_inst_t *i = b->head; i; ) {
       ir_inst_t *inext = i->next;
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
-      free(i->arg_abi_types);
+      ir_callable_sig_dispose(&i->callable_sig);
+      ir_function_type_dispose(&i->function_type);
       free(i);
       if (ir_inst_live) ir_inst_live--;
       i = inext;
@@ -233,6 +313,7 @@ void ir_func_free(ir_func_t *f) {
     b = bnext;
   }
   free(f->vreg_phys_reg);
+  ir_function_type_dispose(&f->function_type);
   free(f->c_signature);
   free(f->continuation_entry_name);
   free(f->continuation_condition_name);
@@ -262,6 +343,8 @@ void ir_module_free(ir_module_t *m) {
     ir_symbol_t *next = symbol->next;
     for (ir_symbol_func_ref_t *ref = symbol->func_refs; ref; ) {
       ir_symbol_func_ref_t *ref_next = ref->next;
+      ir_callable_sig_dispose(&ref->callable_sig);
+      ir_function_type_dispose(&ref->function_type);
       free(ref->name);
       free(ref);
       ref = ref_next;
@@ -284,7 +367,7 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
   f->ret_type = ret_type;
   f->next_vreg_id = 0;
   f->next_block_id = 0;
-  f->ret_area_vreg = -1;
+  f->result_area_vreg = -1;
   /* entry ブロックを最初から確保しておく */
   ir_block_t *entry = ir_block_new(f);
   f->entry = entry;
@@ -327,7 +410,7 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
     i->label_id = -1;
     i->else_label_id = -1;
   }
-  i->ret_struct_area = ir_val_none();
+  i->result_area = ir_val_none();
   i->callee = ir_val_none();
   i->src3 = ir_val_none();  /* 未使用時に汎用オペランド走査 (ir_opt/ir_regalloc) の対象外にする */
   return i;

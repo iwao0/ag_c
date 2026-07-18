@@ -26,87 +26,12 @@ static void mark_uses(ir_inst_t *inst, int *last_use, int nvregs, int n) {
       last_use[inst->args[k].id] = n;
     }
   }
-  if (inst->ret_struct_area.id >= 0 && inst->ret_struct_area.id < nvregs) {
-    last_use[inst->ret_struct_area.id] = n;
+  if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {
+    last_use[inst->result_area.id] = n;
   }
   /* 間接呼び出しの callee も use として扱う (regalloc 用) */
   if (inst->callee.id >= 0 && inst->callee.id < nvregs) {
     last_use[inst->callee.id] = n;
-  }
-}
-
-/* (caller-saved 用、現在未使用) 各 vreg が「ブロック境界を跨いで使われる」
- * または「def と use の間に IR_CALL を挟む」場合に 1 をセットする。
- * Phase 5 は callee-saved を使うのでこの関数は呼ばれない。 */
-__attribute__((unused))
-static void mark_unallocatable_vregs(ir_func_t *f, int *unalloc) {
-  int nvregs = f->next_vreg_id;
-  int *def_block = calloc((size_t)nvregs, sizeof(int));
-  for (int i = 0; i < nvregs; i++) def_block[i] = -1;
-  /* def 時のブロック index を記録 */
-  int bidx = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->dst.id >= 0 && i->dst.id < nvregs && def_block[i->dst.id] == -1) {
-        def_block[i->dst.id] = bidx;
-      }
-    }
-    bidx++;
-  }
-  /* block を跨ぐ vreg を unalloc に mark */
-  bidx = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      int srcs[32];
-      int ns = 0;
-      if (i->src1.id >= 0 && i->src1.id < nvregs) srcs[ns++] = i->src1.id;
-      if (i->src2.id >= 0 && i->src2.id < nvregs) srcs[ns++] = i->src2.id;
-      if (i->src3.id >= 0 && i->src3.id < nvregs) srcs[ns++] = i->src3.id;
-      for (int k = 0; k < i->nargs && ns < 32; k++) {
-        if (i->args && i->args[k].id >= 0 && i->args[k].id < nvregs) {
-          srcs[ns++] = i->args[k].id;
-        }
-      }
-      if (i->ret_struct_area.id >= 0 && i->ret_struct_area.id < nvregs && ns < 32) {
-        srcs[ns++] = i->ret_struct_area.id;
-      }
-      for (int k = 0; k < ns; k++) {
-        int v = srcs[k];
-        if (def_block[v] != -1 && def_block[v] != bidx) unalloc[v] = 1;
-      }
-    }
-    bidx++;
-  }
-  free(def_block);
-
-  /* call をまたぐ live range も unalloc に mark (block 内で見る) */
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    int *first_def = calloc((size_t)nvregs, sizeof(int));
-    int *last_use = calloc((size_t)nvregs, sizeof(int));
-    int *call_at = calloc(128, sizeof(int));
-    int ncalls = 0;
-    for (int i = 0; i < nvregs; i++) { first_def[i] = -1; last_use[i] = -1; }
-    int n = 0;
-    for (ir_inst_t *inst = b->head; inst; inst = inst->next) {
-      if (inst->op == IR_CALL && ncalls < 128) call_at[ncalls++] = n;
-      if (inst->dst.id >= 0 && inst->dst.id < nvregs && first_def[inst->dst.id] == -1) {
-        first_def[inst->dst.id] = n;
-      }
-      mark_uses(inst, last_use, nvregs, n);
-      n++;
-    }
-    for (int v = 0; v < nvregs; v++) {
-      if (first_def[v] < 0 || last_use[v] < 0) continue;
-      for (int c = 0; c < ncalls; c++) {
-        if (first_def[v] < call_at[c] && call_at[c] < last_use[v]) {
-          unalloc[v] = 1;
-          break;
-        }
-      }
-    }
-    free(first_def);
-    free(last_use);
-    free(call_at);
   }
 }
 

@@ -17,6 +17,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "../type_system/type_ids.h"
+
 /* ------------------------------------------------------------------ */
 /* 型システム                                                          */
 /* ------------------------------------------------------------------ */
@@ -35,16 +37,43 @@ typedef enum {
 int ir_type_size(ir_type_t t);
 const char *ir_type_name(ir_type_t t);
 
-#define IR_CALLABLE_MAX_PARAMS 16
-
 /* C の recursive type を ABI lowering した後の callable signature。
  * parser の型 projection を IR に持ち込まず、backend が必要とする物理型だけを保持する。 */
 typedef struct {
   ir_type_t result;
-  ir_type_t params[IR_CALLABLE_MAX_PARAMS];
-  unsigned char param_count;
+  ir_type_t *params;
+  size_t param_count;
   unsigned char is_variadic;
 } ir_callable_sig_t;
+
+int ir_callable_sig_set(
+    ir_callable_sig_t *signature, ir_type_t result,
+    const ir_type_t *params, size_t param_count, int is_variadic);
+int ir_callable_sig_copy(
+    ir_callable_sig_t *destination,
+    const ir_callable_sig_t *source);
+void ir_callable_sig_dispose(ir_callable_sig_t *signature);
+
+/* Target-independent C function type retained by MIR. TypeId/QualType are
+ * semantic identities; target register classes, sizes and ABI pieces belong
+ * to AbiLowering and are intentionally absent here. */
+typedef struct {
+  psx_type_id_t type_id;
+  psx_qual_type_t result;
+  psx_qual_type_t *params;
+  size_t param_count;
+  unsigned char is_variadic;
+  unsigned char has_prototype;
+} ir_function_type_t;
+
+int ir_function_type_set(
+    ir_function_type_t *type, psx_type_id_t type_id,
+    psx_qual_type_t result, const psx_qual_type_t *params,
+    size_t param_count, int is_variadic, int has_prototype);
+int ir_function_type_copy(
+    ir_function_type_t *destination,
+    const ir_function_type_t *source);
+void ir_function_type_dispose(ir_function_type_t *type);
 
 /* ------------------------------------------------------------------ */
 /* オペコード                                                          */
@@ -178,7 +207,7 @@ ir_val_t ir_val_vreg(int id, ir_type_t t);
  *
  * 匿名 union (C11 標準・GNU 拡張ではない) には op ごとに排他的にしか使われないスカラ系
  * メタフィールドだけを入れている。ir_opt / ir_regalloc の汎用オペランド走査が op を
- * 問わず全命令で読む args / nargs / callee / ret_struct_area / src3 は union に入れない
+ * 問わず全命令で読む args / nargs / callee / result_area / src3 は union に入れない
  * (同一メモリを別 op の値と共有すると誤読する)。並べ替えはレイアウトのみの変更で、
  * ir_inst_new が calloc + フィールド代入のため挙動には影響しない。
  */
@@ -191,12 +220,9 @@ typedef struct ir_inst_t {
   /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
   ir_val_t *args;     /* CALL の実引数列 */
-  /* CALL の宣言上の ABI 型。pointer arithmetic などで args[].type が物理的な
-   * integer 幅になっていても、callee parameter の意味型を backend へ渡す。 */
-  ir_type_t *arg_abi_types;
-  /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
-   * ret_struct_size > 0 のときに ret_struct_area が有効。 */
-  ir_val_t ret_struct_area;
+  /* IR_CALL のaggregate結果を受け取る保存先。target固有の渡し方は
+   * AbiLowering sidecarが決定する。 */
+  ir_val_t result_area;
   /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
    * sym ではなく callee vreg を blr する。 */
   ir_val_t callee;
@@ -212,12 +238,8 @@ typedef struct ir_inst_t {
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
   unsigned char is_unsigned;
-  /* IR_RET / IR_CALL: 戻り値が _Complex のとき half バイト数 (float=4, double=8)。
-   * 0 = 非複素数。複素数は HFA として re→d0/s0, im→d1/s1 で渡す。
-   *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
-   *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
-  unsigned char ret_complex_half;
   ir_callable_sig_t callable_sig;
+  ir_function_type_t function_type;
   /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
    * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
    * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
@@ -225,11 +247,12 @@ typedef struct ir_inst_t {
   unsigned char is_got_funcref;
   unsigned char is_function_symbol;
   unsigned char has_callable_sig;
+  unsigned char has_function_type;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で
    * ゲートされている (switch(op) / if(op==...))。ここに汎用走査される
-   * args/nargs/callee/ret_struct_area/src3 を入れてはならない。 */
+   * args/nargs/callee/result_area/src3 を入れてはならない。 */
   union {
     struct {            /* IR_BR / IR_BR_COND / IR_LABEL */
       int label_id;       /* 分岐先 / ラベル id */
@@ -240,13 +263,6 @@ typedef struct ir_inst_t {
       int alloca_align;   /* アライメント (バイト) */
     };
     struct {            /* IR_CALL */
-      int ret_struct_size;
-      /* variadic 呼び出し時の固定引数数。args[nargs_fixed..nargs-1] が stack 行き。
-       * 固定引数数は declaration signature の nargs_fixed に保持する。 */
-      short nargs_fixed;
-      /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
-       * 0/1 のみ。1 のとき args[nargs_fixed..nargs-1] は stack。 */
-      unsigned char is_variadic_call;
       unsigned char is_void_call;
       unsigned char is_implicit_call;
     };
@@ -283,6 +299,7 @@ typedef struct ir_func_t {
   char *continuation_resume_export;
   char *continuation_status_export;
   char *continuation_result_export;
+  ir_function_type_t function_type;
   ir_block_t *entry;
   ir_block_t *cur_block;
   ir_block_t *blocks_tail;
@@ -295,21 +312,10 @@ typedef struct ir_func_t {
   int next_vreg_id;
   int next_block_id;
   int frame_size;
-  int is_variadic;
   int is_static;      /* 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。 */
-  int nargs_fixed;
   ir_type_t ret_type;
-  /* 戻り値が struct のときのサイズ (Apple ABI で x8 隠し引数を使う条件)。
-   * 0 = struct 戻り値ではない。 */
-  int ret_struct_size;
-  /* 関数 prologue で x8 (= caller の戻り値領域ポインタ) を受け取る vreg。
-   * ret_struct_size > 0 のときのみ有効。 */
-  int ret_area_vreg;
-  /* 戻り値が _Complex のとき half バイト数 (float=4, double=8)。0 = 非複素数。
-   * build_stmt_return が IR_RET に複素数戻り値を組むのに使う。 */
-  int ret_complex_half;
-  int param_abi_count;
-  ir_type_t param_abi_types[32];
+  /* aggregate resultの保存先を表すvreg。target固有レジスタはsidecarが決める。 */
+  int result_area_vreg;
   int continuation_condition_block_id;
   unsigned char is_continuation_entry;
   unsigned char continuation_has_suspend;
@@ -343,7 +349,9 @@ typedef struct ir_symbol_func_ref_t {
   int name_len;
   int offset;
   ir_callable_sig_t callable_sig;
+  ir_function_type_t function_type;
   unsigned char has_callable_sig;
+  unsigned char has_function_type;
 } ir_symbol_func_ref_t;
 
 typedef struct ir_symbol_t {

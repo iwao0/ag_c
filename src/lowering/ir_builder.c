@@ -20,6 +20,7 @@
 #include "ir_builder.h"
 #include "../ir/ir.h"
 #include "abi_lowering.h"
+#include "function_type_lowering.h"
 #include "../target_info.h"
 #include "../type_layout.h"
 #include "ir_symbol_lowering.h"
@@ -33,6 +34,7 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_object_ref.h"
 #include "../semantic/resolved_function.h"
+#include "../semantic/function_call_resolution.h"
 #include "../semantic/function_call_resolution.h"
 #include "../semantic/case_label_resolution.h"
 #include "../semantic/literal_resolution.h"
@@ -79,6 +81,8 @@ typedef struct {
   ag_diagnostic_context_t *diagnostic_context;
   /* 現在処理中の関数 AST。lvars リストを引くため。 */
   node_function_definition_t *cur_fn;
+  int return_struct_size;
+  int return_complex_half;
   int failed;
   /* offset → ALLOCA vreg (ポインタ) のマップ */
   int lvar_offset[MAX_LVARS];
@@ -1669,12 +1673,8 @@ static void attach_callable_type(
   sym->has_callable_sig =
       ir_abi_callable_sig_from_type_id(
           &abi, type_id, &sym->callable_sig) ? 1 : 0;
-}
-
-static void attach_callable_type_from_callee(
-    ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
-  if (!call || !callee) return;
-  attach_callable_type(ctx, call, ps_node_qual_type(callee).type_id);
+  sym->has_function_type = ir_function_type_from_type_id(
+      ctx->semantic_types, type_id, &sym->function_type) ? 1 : 0;
 }
 
 static psx_type_id_t function_return_type_id(
@@ -2356,30 +2356,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   }
   call->args = cargs;
   call->nargs = argc;
-  call->is_variadic_call = is_variadic_call;
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
   call->is_implicit_call =
       psx_function_call_is_implicit_declaration(call_node) ? 1 : 0;
-  call->nargs_fixed = nargs_fixed;
-  if (call_node->callee)
-    attach_callable_type_from_callee(ctx, call, call_node->callee);
-  if (argc > 0) {
-    call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
-    for (int a = 0; a < argc; a++) {
-      ir_type_t abi_type = cargs[a].type;
-      if (call->sym && a < call->nargs_fixed) {
-        ir_abi_param_info_t param = classify_call_param(ctx, call_node, a);
-        if (param.param_class == IR_ABI_PARAM_POINTER ||
-            (param.param_class == IR_ABI_PARAM_AGGREGATE &&
-             param.type == IR_TY_PTR)) {
-          abi_type = IR_TY_PTR;
-        } else if (param.type != IR_TY_VOID) {
-          abi_type = param.type;
-        }
-      }
-      call->arg_abi_types[a] = abi_type;
-    }
-  }
+  attach_callable_type(
+      ctx, call, psx_function_call_qual_type(call_node).type_id);
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
@@ -2392,7 +2373,6 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     ia->alloca_align = 8;
     ir_func_append_inst(ctx->f, ia);
     call->dst = ir_val_vreg(slot, IR_TY_PTR);
-    call->ret_complex_half = (unsigned char)half;
     ir_func_append_inst(ctx->f, call);
     return ir_val_vreg(slot, IR_TY_PTR);
   }
@@ -2410,8 +2390,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     ia->alloca_size = ret_struct_size;
     ia->alloca_align = 8;
     ir_func_append_inst(ctx->f, ia);
-    call->ret_struct_size = ret_struct_size;
-    call->ret_struct_area = ir_val_vreg(struct_ret_area, IR_TY_PTR);
+    call->result_area = ir_val_vreg(struct_ret_area, IR_TY_PTR);
   }
   ir_func_append_inst(ctx->f, call);
   if (struct_ret_area >= 0) return ir_val_vreg(struct_ret_area, IR_TY_PTR);
@@ -3267,8 +3246,10 @@ static ir_val_t build_small_struct_return_value(ir_build_ctx_t *ctx, node_t *src
 
 static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
-  if (ctx->f->ret_struct_size > 0 && node->lhs) {
-    materialize_aggregate_expr_to(ctx, node->lhs, ctx->f->ret_area_vreg, ctx->f->ret_struct_size);
+  if (ctx->return_struct_size > 0 && node->lhs) {
+    materialize_aggregate_expr_to(
+        ctx, node->lhs, ctx->f->result_area_vreg,
+        ctx->return_struct_size);
     if (ctx->failed) return;
     ir_inst_t *inst = ir_inst_new(IR_RET);
     inst->src1 = ir_val_none();
@@ -3292,9 +3273,10 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   }
   /* _Complex 戻り値 (HFA): 戻り式を temp slot に {re,im} で materialize し、
    * IR_RET に slot の PTR と half を渡す (codegen が re→d0/s0, im→d1/s1)。 */
-  if (ctx->f->ret_complex_half > 0 && node->lhs) {
-    ir_type_t fp_ty = (ctx->f->ret_complex_half == 4) ? IR_TY_F32 : IR_TY_F64;
-    int half = ctx->f->ret_complex_half;
+  if (ctx->return_complex_half > 0 && node->lhs) {
+    ir_type_t fp_ty =
+        (ctx->return_complex_half == 4) ? IR_TY_F32 : IR_TY_F64;
+    int half = ctx->return_complex_half;
     int slot = ir_func_new_vreg(ctx->f);
     ir_inst_t *al = ir_inst_new(IR_ALLOCA);
     al->dst = ir_val_vreg(slot, IR_TY_PTR);
@@ -3305,7 +3287,6 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     if (ctx->failed) return;
     ir_inst_t *inst = ir_inst_new(IR_RET);
     inst->src1 = ir_val_vreg(slot, IR_TY_PTR);
-    inst->ret_complex_half = (unsigned char)half;
     ir_func_append_inst(ctx->f, inst);
     return;
   }
@@ -3571,7 +3552,6 @@ static int setup_function_params(
     ir_build_ctx_t *ctx, node_function_definition_t *fn) {
   int int_arg_idx = ctx->continuation ? 1 : 0;
   int fp_arg_idx = 0;
-  int abi_idx = ctx->continuation ? 1 : 0;
   for (int i = 0; i < fn->parameter_count; i++) {
     node_t *arg = fn->parameters[i];
     if (!arg || psx_resolution_node_kind(arg) != ND_LVAR) {
@@ -3600,7 +3580,6 @@ static int setup_function_params(
       p->dst = ir_val_vreg(param_vreg, IR_TY_PTR);
       p->src1 = ir_val_imm(IR_TY_I32, int_arg_idx++);
       ir_func_append_inst(ctx->f, p);
-      if (abi_idx < 32) ctx->f->param_abi_types[abi_idx++] = IR_TY_PTR;
       if (!owner ||
           alloca_for_owner_with_minimum(
               ctx, owner, param_full_size,
@@ -3632,7 +3611,6 @@ static int setup_function_params(
         p->dst = ir_val_vreg(pv, pty);
         p->src1 = ir_val_imm(IR_TY_I32, fp_arg_idx++);
         ir_func_append_inst(ctx->f, p);
-        if (abi_idx < 32) ctx->f->param_abi_types[abi_idx++] = pty;
         int dst_p = base_ptr;
         if (part == 1) {
           int lp = ir_func_new_vreg(ctx->f);
@@ -3657,16 +3635,6 @@ static int setup_function_params(
     p->dst = ir_val_vreg(param_vreg, vty);
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
-    if (abi_idx < 32) {
-      ir_abi_param_info_t param = classify_type_id(
-          ctx, ps_node_qual_type(arg).type_id);
-      int is_pointer =
-          ps_node_value_is_pointer_like(arg) ||
-          ps_lvar_value_is_pointer_like(owner);
-      ir_type_t abi_type = is_pointer ? IR_TY_PTR : param.type;
-      if (abi_type == IR_TY_VOID) abi_type = vty;
-      ctx->f->param_abi_types[abi_idx++] = abi_type;
-    }
     int ptr_vreg = address_of_lvar(ctx, local_offset);
     if (ptr_vreg < 0) return 0;
     ir_inst_t *st = ir_inst_new(IR_STORE);
@@ -3674,7 +3642,6 @@ static int setup_function_params(
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
-  ctx->f->param_abi_count = abi_idx;
   return 1;
 }
 
@@ -3851,6 +3818,14 @@ static int build_function(
     ir_name_len = n;
   }
   ctx->f = ir_func_new(ctx->m, ir_name, ir_name_len, ret_ty);
+  if (!ctx->continuation &&
+      !ir_function_type_from_type_id(
+          ctx->semantic_types,
+          ps_function_definition_signature_qual_type(fn).type_id,
+          &ctx->f->function_type)) {
+    fail(ctx, "function type lowering failed");
+    return 0;
+  }
   if (ctx->continuation) {
     ctx->f->is_continuation_entry = 1;
     ctx->f->continuation_has_suspend = ctx->continuation_while != NULL;
@@ -3902,12 +3877,10 @@ static int build_function(
   }
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
   if (ret_type->kind == PSX_TYPE_COMPLEX) {
-    ctx->f->ret_complex_half =
+    ctx->return_complex_half =
         (ret_type->floating_kind == PSX_FLOATING_KIND_FLOAT) ? 4 : 8;
   }
-  ctx->f->is_variadic = fn->signature->is_variadic_function;
   ctx->f->is_static = fn->is_static;
-  ctx->f->nargs_fixed = fn->parameter_count;
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
@@ -3918,23 +3891,21 @@ static int build_function(
     command->dst = ir_val_vreg(command_vreg, IR_TY_I32);
     command->src1 = ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, command);
-    ctx->f->param_abi_count = 1;
-    ctx->f->param_abi_types[0] = IR_TY_I32;
   }
   /* >8B struct 戻り値 (および 3/5/6/7B の非 clean サイズ) の関数では prologue で
    * x8 を受け取る (Apple ARM64 ABI 簡略版)。1/2/4/8B のみ x0 で 1 レジスタ返却。
    * 非 clean サイズを scalar 返ししていたため `{char;short;uchar}` 戻り値が先頭
    * メンバ幅 (1B) しか復元できず壊れていた。 */
-  ctx->f->ret_struct_size =
+  ctx->return_struct_size =
       cg_size_needs_indirect_struct(ret_struct_size) ? ret_struct_size : 0;
-  if (ctx->f->ret_struct_size > 0) {
+  if (ctx->return_struct_size > 0) {
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
     p->dst = ir_val_vreg(v, IR_TY_PTR);
     /* src1.imm = -1 で「x8 を受け取る」を表す。codegen で特別扱い。 */
     p->src1 = ir_val_imm(IR_TY_I32, -1);
     ir_func_append_inst(ctx->f, p);
-    ctx->f->ret_area_vreg = v;
+    ctx->f->result_area_vreg = v;
   }
   /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
    * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */

@@ -23,7 +23,9 @@ typedef struct ir_data_reloc_t {
   long long addend;
   ir_data_reloc_kind_t kind;
   ir_callable_sig_t callable_sig;
+  ir_function_type_t function_type;
   unsigned char has_callable_sig;
+  unsigned char has_function_type;
 } ir_data_reloc_t;
 
 typedef struct ir_data_object_t {

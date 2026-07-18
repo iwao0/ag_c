@@ -108,7 +108,7 @@ static void const_fold_func(ir_func_t *f) {
       for (int i = 0; i < inst->nargs; i++) {
         if (inst->args) substitute_with_const(&cm, &inst->args[i], nvregs);
       }
-      substitute_with_const(&cm, &inst->ret_struct_area, nvregs);
+      substitute_with_const(&cm, &inst->result_area, nvregs);
 
       /* LOAD_IMM: dst が定数値 */
       if (inst->op == IR_LOAD_IMM) {
@@ -196,8 +196,8 @@ static void count_uses(ir_inst_t *inst, int *use_cnt, int nvregs) {
       use_cnt[inst->args[k].id]++;
     }
   }
-  if (inst->ret_struct_area.id >= 0 && inst->ret_struct_area.id < nvregs) {
-    use_cnt[inst->ret_struct_area.id]++;
+  if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {
+    use_cnt[inst->result_area.id]++;
   }
   /* 間接呼び出しの callee も use として数える */
   if (inst->callee.id >= 0 && inst->callee.id < nvregs) {

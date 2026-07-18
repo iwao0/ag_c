@@ -13,6 +13,7 @@
 #include "ir/ir.h"
 #include "hir/hir.h"
 #include "lowering/hir_ir_builder.h"
+#include "lowering/abi_lowering.h"
 #include "lowering/translation_unit_data_lowering.h"
 #include "arch/arm64_apple/arm64_apple_ir.h"
 #include "arch/wasm32/wasm32_ir.h"
@@ -123,6 +124,16 @@ static ir_module_t *build_resolved_function_module(
       options, &status);
 }
 
+static ir_abi_module_t *lower_module_abi(
+    const ir_module_t *module, const ir_build_options_t *options) {
+  ir_abi_type_context_t context = {
+      .semantic_types = options ? options->semantic_types : NULL,
+      .record_layouts = options ? options->record_layouts : NULL,
+      .target = options ? options->target : NULL,
+  };
+  return ir_abi_lower_module(&context, module);
+}
+
 static int wasm_emit_function_direct(
     const psx_frontend_stream_t *stream,
     const psx_frontend_function_t *function,
@@ -130,20 +141,27 @@ static int wasm_emit_function_direct(
   ir_module_t *m = build_resolved_function_module(
       stream, function, options);
   if (!m) return 0;
+  ir_abi_module_t *abi = lower_module_abi(m, options);
+  if (!abi) {
+    ir_module_free(m);
+    return 0;
+  }
   dump_ir_if_requested(m);
   if (object_mode) {
-    wasm32_obj_gen_ir_module(m);
+    wasm32_obj_gen_ir_module(m, abi);
   } else {
-    wasm32_gen_ir_module(m);
+    wasm32_gen_ir_module(m, abi);
   }
+  ir_abi_module_free(abi);
   ir_module_free(m);
   return 1;
 }
 
 #ifndef AGC_TARGET_WASM32
 static void arm64_emit_ir_module(
-    ir_module_t *module, void *context) {
-  gen_ir_module_in((ag_codegen_emit_context_t *)context, module);
+    ir_module_t *module, const ir_abi_module_t *abi, void *context) {
+  gen_ir_module_in(
+      (ag_codegen_emit_context_t *)context, module, abi);
 }
 #endif
 
@@ -699,7 +717,20 @@ int main(int argc, char **argv) {
     }
 #ifndef AGC_TARGET_WASM32
     dump_ir_if_requested(function_module);
-    arm64_emit_ir_module(function_module, emit_context);
+    ir_abi_module_t *abi = lower_module_abi(
+        function_module, &ir_options);
+    if (!abi) {
+      ir_module_free(function_module);
+      diag_emit_internalf_in(
+          diagnostics, DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
+      ag_compilation_session_destroy(session);
+      free(source);
+      return 1;
+    }
+    arm64_emit_ir_module(function_module, abi, emit_context);
+    ir_abi_module_free(abi);
     ir_module_free(function_module);
 #endif
     psx_frontend_free_processed_ast_in_session(session);

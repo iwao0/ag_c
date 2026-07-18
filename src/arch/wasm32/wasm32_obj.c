@@ -1,5 +1,6 @@
 #include "wasm32_obj.h"
 #include "../../diag/diag.h"
+#include "../../lowering/abi_lowering.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -139,6 +140,7 @@ struct wasm32_obj_context_t {
   ir_type_t *emit_local_types;
   unsigned char *emit_local_unsigned;
   int emit_local_count;
+  const ir_abi_module_t *abi;
 };
 
 static wasm32_obj_context_t default_wasm32_obj_context;
@@ -214,9 +216,20 @@ wasm32_obj_context_t *wasm32_obj_context_active(void) {
 #define g_emit_local_unsigned \
   (wasm32_obj_context_active()->emit_local_unsigned)
 #define g_emit_local_count (wasm32_obj_context_active()->emit_local_count)
+#define g_obj_abi (wasm32_obj_context_active()->abi)
 
 static ag_diagnostic_context_t *wasm32_obj_diagnostics(void) {
   return wasm32_obj_context_active()->diagnostic_context;
+}
+
+static const ir_abi_signature_t *obj_function_abi(
+    const ir_func_t *function) {
+  return ir_abi_function_signature(g_obj_abi, function);
+}
+
+static const ir_abi_signature_t *obj_call_abi(
+    const ir_inst_t *call) {
+  return ir_abi_call_signature(g_obj_abi, call);
 }
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
@@ -735,7 +748,7 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
       note_vreg_type(types, ntypes, i->src2);
       note_vreg_type(types, ntypes, i->src3);
       note_vreg_type(types, ntypes, i->callee);
-      note_vreg_type(types, ntypes, i->ret_struct_area);
+      note_vreg_type(types, ntypes, i->result_area);
       for (int a = 0; a < i->nargs; a++) note_vreg_type(types, ntypes, i->args[a]);
     }
   }
@@ -861,7 +874,10 @@ static int func_has_vla_alloc(ir_func_t *f) {
 static int func_has_variadic_varargs(ir_func_t *f) {
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_CALL && i->is_variadic_call && i->nargs > i->nargs_fixed) {
+      const ir_abi_signature_t *abi =
+          i->op == IR_CALL ? obj_call_abi(i) : NULL;
+      if (abi && abi->is_variadic &&
+          (size_t)i->nargs > abi->fixed_param_count) {
         return 1;
       }
     }
@@ -1131,28 +1147,19 @@ static void emit_memarg(wb_t *b, ir_type_t ty) {
 }
 
 static int collect_param_count(ir_func_t *f) {
-  int count = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0) {
-        count++;
-      }
-    }
-  }
-  int declared = f ? f->nargs_fixed : 0;
-  if (declared > count) {
-    count = declared;
-  }
-  return count;
+  const ir_abi_signature_t *abi = obj_function_abi(f);
+  return abi ? (int)abi->param_count : 0;
 }
 
 static int func_has_ret_area(ir_func_t *f) {
-  return f && (f->ret_struct_size > 0 || f->ret_area_vreg >= 0 || f->ret_complex_half > 0);
+  const ir_abi_signature_t *abi = obj_function_abi(f);
+  return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  if (f && idx >= 0 && idx < f->param_abi_count && idx < 32) {
-    return f->param_abi_types[idx];
+  const ir_abi_signature_t *abi = obj_function_abi(f);
+  if (abi && idx >= 0 && (size_t)idx < abi->param_count) {
+    return abi->param_types[idx];
   }
   if (raw == IR_TY_PTR) return IR_TY_PTR;
   return raw;
@@ -1204,13 +1211,15 @@ static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
 }
 
 static int call_has_ret_area(ir_inst_t *i) {
-  return i && (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE ||
-               i->ret_complex_half > 0);
+  const ir_abi_signature_t *abi = obj_call_abi(i);
+  return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
 }
 
 static ir_val_t call_ret_area(ir_inst_t *i) {
-  if (i->ret_complex_half > 0) return i->dst;
-  return i->ret_struct_area;
+  const ir_abi_signature_t *abi = obj_call_abi(i);
+  if (!abi) return ir_val_none();
+  if (abi->result_complex_half > 0) return i->dst;
+  return abi->result_area;
 }
 
 static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
@@ -1241,16 +1250,25 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   obj_sig_t sig = {0};
+  const ir_abi_signature_t *abi = obj_call_abi(i);
+  if (!abi) obj_unsupported_msg("call without ABI lowering result");
   int has_ret_area = call_has_ret_area(i);
   if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
-  if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_callable_sig) {
-    sig = func_sig_from_ir_callable(i, i->sym, i->sym_len);
+  if (!has_ret_area && i->callee.id != IR_VAL_NONE) {
+    sig.nparams = (int)abi->fixed_param_count;
+    if (sig.nparams > 0) {
+      sig.params = xrealloc(
+          NULL, (size_t)sig.nparams * sizeof(*sig.params));
+      for (int a = 0; a < sig.nparams; a++)
+        sig.params[a] = wasm_ir_type(abi->param_types[a]);
+    }
+    sig.result = wasm_ir_type(abi->result.type);
     if (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID) {
       sig.result = IR_TY_VOID;
     }
-    int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+    int call_nargs = (int)abi->fixed_param_count;
     if (sig.nparams < call_nargs) {
       int old_nparams = sig.nparams;
       sig.params = xrealloc(sig.params, (size_t)call_nargs * sizeof(ir_type_t));
@@ -1269,14 +1287,13 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     }
     return sig;
   }
-  sig.nparams = (i->is_variadic_call ? i->nargs_fixed : i->nargs) + (has_ret_area ? 1 : 0);
+  sig.nparams = (int)abi->fixed_param_count + (has_ret_area ? 1 : 0);
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
     if (has_ret_area) sig.params[0] = IR_TY_I32;
-    int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+    int call_nargs = (int)abi->fixed_param_count;
     for (int a = 0; a < call_nargs; a++) {
-      ir_type_t arg_ty = i->arg_abi_types ? i->arg_abi_types[a]
-                                          : i->args[a].type;
+      ir_type_t arg_ty = abi->param_types[a];
       ir_type_t ty = wasm_ir_type(arg_ty);
       if (arg_ty == IR_TY_PTR)
         ty = IR_TY_I32;
@@ -1389,8 +1406,10 @@ static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
 static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t *stack_pointer,
                                           obj_global_t **va_arg_area, int old_va_arg_area_local,
                                           ir_inst_t *i, int param_count) {
-  if (!i->is_variadic_call) return 0;
-  int nargs_var = i->nargs - i->nargs_fixed;
+  const ir_abi_signature_t *abi = obj_call_abi(i);
+  if (!abi || !abi->is_variadic) return 0;
+  int fixed_count = (int)abi->fixed_param_count;
+  int nargs_var = i->nargs - fixed_count;
   if (nargs_var <= 0) return 0;
   if (!stack_pointer) obj_unsupported_msg("variadic call without stack pointer in Wasm object mode");
   if (!*va_arg_area) *va_arg_area = intern_va_arg_area_global();
@@ -1407,8 +1426,8 @@ static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t 
   emit_stack_global_get(b, of, stack_pointer);
   emit_stack_global_set(b, of, *va_arg_area);
 
-  for (int a = i->nargs_fixed; a < i->nargs; a++) {
-    int off = (a - i->nargs_fixed) * 8;
+  for (int a = fixed_count; a < i->nargs; a++) {
+    int off = (a - fixed_count) * 8;
     emit_stack_global_get(b, of, *va_arg_area);
     emit_const(b, IR_TY_I32, off);
     wb_u8(b, 0x6a);
@@ -1444,9 +1463,10 @@ static void emit_variadic_arg_area_restore(wb_t *b, obj_func_t *of, obj_global_t
   emit_stack_global_set(b, of, va_arg_area);
 }
 
-static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
-  ir_type_t ty = i->ret_complex_half == 4 ? IR_TY_F32 : IR_TY_F64;
-  if (i->ret_complex_half != 4 && i->ret_complex_half != 8) obj_unsupported_op(i->op);
+static void emit_complex_ret_copy(
+    wb_t *b, ir_inst_t *i, int param_count, int half) {
+  ir_type_t ty = half == 4 ? IR_TY_F32 : IR_TY_F64;
+  if (half != 4 && half != 8) obj_unsupported_op(i->op);
   emit_local_get(b, 0);
   emit_addr_val(b, i->src1, param_count);
   wb_u8(b, load_opcode(ty, 0));
@@ -1454,9 +1474,9 @@ static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
   wb_u8(b, store_opcode(ty));
   emit_memarg(b, ty);
   emit_local_get(b, 0);
-  emit_const(b, IR_TY_I32, i->ret_complex_half);
+  emit_const(b, IR_TY_I32, half);
   wb_u8(b, 0x6a);
-  emit_addr_plus_const(b, i->src1, i->ret_complex_half, param_count);
+  emit_addr_plus_const(b, i->src1, half, param_count);
   wb_u8(b, load_opcode(ty, 0));
   emit_memarg(b, ty);
   wb_u8(b, store_opcode(ty));
@@ -1465,6 +1485,8 @@ static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
 
 static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                           ir_func_t *f) {
+  const ir_abi_signature_t *function_abi = obj_function_abi(f);
+  if (!function_abi) obj_unsupported_msg("function without ABI lowering result");
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
   int has_ret_area = func_has_ret_area(f);
@@ -2107,8 +2129,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             }
             emit_const(&body, IR_TY_I32, 3);
           } else {
-            if (i->ret_complex_half > 0) {
-              emit_complex_ret_copy(&body, i, param_count);
+            if (function_abi->result_complex_half > 0) {
+              emit_complex_ret_copy(
+                  &body, i, param_count,
+                  function_abi->result_complex_half);
             } else if (i->src1.id != IR_VAL_NONE) {
               emit_val(&body, i->src1, of->sig.result, param_count);
             }
@@ -2588,7 +2612,9 @@ void wasm32_obj_begin(void) {
   g_obj.capture_output = capture_output;
 }
 
-void wasm32_obj_gen_ir_module(ir_module_t *m) {
+void wasm32_obj_gen_ir_module(
+    ir_module_t *m, const ir_abi_module_t *abi) {
+  g_obj_abi = abi;
   for (ir_func_t *f = m->funcs; f; f = f->next) {
     obj_func_t *of = intern_func(f->name, f->name_len);
     if (of->defined) obj_unsupported_msg("duplicate function in Wasm object mode");

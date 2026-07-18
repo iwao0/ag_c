@@ -1,6 +1,7 @@
 #include "ir_symbol_lowering.h"
 
 #include "abi_lowering.h"
+#include "function_type_lowering.h"
 #include "../parser/gvar_public.h"
 #include "../parser/symtab.h"
 #include "../target_info.h"
@@ -23,6 +24,7 @@ static void lower_func_ref(
   int name_len = 0;
   if (!ps_gvar_symbol_ref_named(value.symbol_ref, &name, &name_len)) return;
   ir_callable_sig_t callable_sig = {0};
+  ir_function_type_t function_type = {0};
   ir_abi_type_context_t abi = {
       .semantic_types = ctx->semantic_types,
       .record_layouts = ctx->record_layouts,
@@ -30,8 +32,17 @@ static void lower_func_ref(
   };
   if (!ir_abi_callable_sig_from_type_id(
           &abi, type_id, &callable_sig)) return;
-  ir_symbol_add_func_ref(
+  if (!ir_function_type_from_type_id(
+          ctx->semantic_types, type_id, &function_type)) {
+    ir_callable_sig_dispose(&callable_sig);
+    return;
+  }
+  ir_symbol_func_ref_t *ref = ir_symbol_add_func_ref(
       ctx->symbol, offset, name, name_len, &callable_sig);
+  if (ref && ir_function_type_copy(&ref->function_type, &function_type))
+    ref->has_function_type = 1;
+  ir_function_type_dispose(&function_type);
+  ir_callable_sig_dispose(&callable_sig);
 }
 
 static void lower_aggregate_scalar(

@@ -1,6 +1,7 @@
 #include "translation_unit_data_lowering.h"
 
 #include "abi_lowering.h"
+#include "function_type_lowering.h"
 #include "../parser/global_registry.h"
 #include "../parser/gvar_public.h"
 #include "../parser/literal_public.h"
@@ -166,6 +167,7 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
   int name_len = 0;
   ir_data_reloc_kind_t kind = IR_DATA_RELOC_DATA;
   ir_callable_sig_t callable_sig = {0};
+  ir_function_type_t function_type = {0};
   const ir_callable_sig_t *sig = NULL;
   if (value.symbol_ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
     name = value.symbol_ref.symbol;
@@ -182,13 +184,23 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
     if (ir_abi_callable_sig_from_type_id(
             &abi, callable_type_id, &callable_sig))
       sig = &callable_sig;
+    (void)ir_function_type_from_type_id(
+        ctx->lowering->semantic_types,
+        callable_type_id, &function_type);
   } else if (!ps_gvar_symbol_ref_named(
                  value.symbol_ref, &name, &name_len)) {
     return 0;
   }
-  return ir_data_object_add_reloc(
-             ctx->object, offset, value.size, kind, name, name_len,
-             value.symbol_ref.addend, sig) != NULL;
+  ir_data_reloc_t *reloc = ir_data_object_add_reloc(
+      ctx->object, offset, value.size, kind, name, name_len,
+      value.symbol_ref.addend, sig);
+  if (reloc && function_type.type_id != PSX_TYPE_ID_INVALID &&
+      ir_function_type_copy(&reloc->function_type, &function_type))
+    reloc->has_function_type = 1;
+  int added = reloc != NULL;
+  ir_function_type_dispose(&function_type);
+  ir_callable_sig_dispose(&callable_sig);
+  return added;
 }
 
 static int lower_init_value(global_data_lowering_t *ctx, int offset,

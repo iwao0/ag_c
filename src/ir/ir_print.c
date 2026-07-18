@@ -126,8 +126,8 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       }
       sink_printf(s, ")");
       if (i->has_callable_sig) {
-        sink_printf(s, " callable{n=%u,ret=%s,var=%u}",
-                    (unsigned)i->callable_sig.param_count,
+        sink_printf(s, " callable{n=%zu,ret=%s,var=%u}",
+                    i->callable_sig.param_count,
                     ir_type_name(i->callable_sig.result),
                     (unsigned)i->callable_sig.is_variadic);
       }
@@ -173,7 +173,8 @@ static void print_block(ir_print_sink_t *s, ir_block_t *b) {
 
 static void print_func(ir_print_sink_t *s, ir_func_t *f) {
   sink_printf(s, "func @%.*s -> %s", f->name_len, f->name ? f->name : "", ir_type_name(f->ret_type));
-  if (f->is_variadic) sink_printf(s, " variadic(fixed=%d)", f->nargs_fixed);
+  if (f->function_type.is_variadic)
+    sink_printf(s, " variadic(fixed=%zu)", f->function_type.param_count);
   sink_printf(s, " {\n");
   for (ir_block_t *b = f->entry; b; b = b->next) {
     print_block(s, b);

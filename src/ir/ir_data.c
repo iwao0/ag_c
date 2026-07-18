@@ -92,7 +92,11 @@ ir_data_reloc_t *ir_data_object_add_reloc(
   reloc->kind = kind;
   reloc->addend = addend;
   if (callable_sig) {
-    reloc->callable_sig = *callable_sig;
+    if (!ir_callable_sig_copy(&reloc->callable_sig, callable_sig)) {
+      free(reloc->target);
+      free(reloc);
+      return NULL;
+    }
     reloc->has_callable_sig = 1;
   }
   if (!object->relocs) object->relocs = reloc;
@@ -107,6 +111,8 @@ void ir_data_module_free(ir_data_module_t *module) {
     ir_data_object_t *next = object->next;
     for (ir_data_reloc_t *reloc = object->relocs; reloc; ) {
       ir_data_reloc_t *reloc_next = reloc->next;
+      ir_callable_sig_dispose(&reloc->callable_sig);
+      ir_function_type_dispose(&reloc->function_type);
       free(reloc->target);
       free(reloc);
       reloc = reloc_next;
