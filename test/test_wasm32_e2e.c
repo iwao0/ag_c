@@ -1059,10 +1059,10 @@ static int collect_stub_table_symbols(const char *src, symbol_set_t *out) {
 }
 
 static int collect_stub_emit_symbols(const char *src, symbol_set_t *out) {
-  const char *start = strstr(src, "static void emit_minimal_libc_stubs(void)");
+  const char *start = strstr(
+      src, "void wasm32_wat_emit_minimal_libc_stubs(void)");
   if (!start) return 1;
-  const char *end = strstr(start, "static int wasm_align_up_int");
-  if (!end) return 1;
+  const char *end = src + strlen(src);
 
   const char *needle = "has_undefined_function(\"";
   size_t needle_len = strlen(needle);
@@ -1172,19 +1172,24 @@ static int collect_public_std_header_symbols(symbol_set_t *out) {
 }
 
 static int verify_minimal_libc_stub_table_sync(void) {
-  char *src = slurp_alloc("src/arch/wasm32/wasm32_ir.c");
-  if (!src) {
-    fprintf(stderr, "FAIL: open src/arch/wasm32/wasm32_ir.c for minimal libc stub sync check\n");
+  char *table_src = slurp_alloc("src/arch/wasm32/wasm32_ir.c");
+  char *runtime_src =
+      slurp_alloc("src/arch/wasm32/wasm32_wat_runtime.c");
+  if (!table_src || !runtime_src) {
+    fprintf(stderr, "FAIL: open Wasm WAT runtime sources for minimal libc stub sync check\n");
+    free(table_src);
+    free(runtime_src);
     return 1;
   }
 
   symbol_set_t table = {0};
   symbol_set_t emitted = {0};
   int failed = 0;
-  if (collect_stub_table_symbols(src, &table) != 0 ||
-      collect_stub_emit_symbols(src, &emitted) != 0) {
-    fprintf(stderr, "FAIL: parse minimal libc stub symbols from src/arch/wasm32/wasm32_ir.c\n");
-    free(src);
+  if (collect_stub_table_symbols(table_src, &table) != 0 ||
+      collect_stub_emit_symbols(runtime_src, &emitted) != 0) {
+    fprintf(stderr, "FAIL: parse minimal libc stub symbols from Wasm WAT runtime sources\n");
+    free(table_src);
+    free(runtime_src);
     return 1;
   }
 
@@ -1203,7 +1208,8 @@ static int verify_minimal_libc_stub_table_sync(void) {
     }
   }
 
-  free(src);
+  free(table_src);
+  free(runtime_src);
   return failed;
 }
 

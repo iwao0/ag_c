@@ -45,6 +45,26 @@ static wasm32_machine_alloca_t *find_alloca(
   return NULL;
 }
 
+const wasm32_machine_inst_t *wasm32_machine_function_instruction(
+    const wasm32_machine_function_t *function,
+    const ir_inst_t *source_instruction) {
+  if (!function || !source_instruction) return NULL;
+  for (int i = 0; i < function->instruction_count; i++) {
+    if (function->instructions[i].source == source_instruction)
+      return &function->instructions[i];
+  }
+  return NULL;
+}
+
+const wasm32_machine_block_t *wasm32_machine_function_block(
+    const wasm32_machine_function_t *function, int block_id) {
+  if (!function) return NULL;
+  for (int i = 0; i < function->block_count; i++) {
+    if (function->blocks[i].id == block_id) return &function->blocks[i];
+  }
+  return NULL;
+}
+
 const wasm32_machine_alloca_t *wasm32_machine_function_alloca(
     const wasm32_machine_function_t *function, int vreg) {
   if (!function) return NULL;
@@ -92,10 +112,333 @@ static int collect_allocas(wasm32_machine_function_t *function) {
   return 1;
 }
 
-static void collect_instruction_values(
+static int is_integer_comparison(ir_op_t op) {
+  return op == IR_EQ || op == IR_NE || op == IR_LT || op == IR_LE ||
+         op == IR_ULT || op == IR_ULE;
+}
+
+static int is_integer_binary(ir_op_t op) {
+  return op == IR_ADD || op == IR_SUB || op == IR_MUL || op == IR_DIV ||
+         op == IR_UDIV || op == IR_MOD || op == IR_UMOD || op == IR_AND ||
+         op == IR_OR || op == IR_XOR || op == IR_SHL || op == IR_SHR ||
+         op == IR_LSR || is_integer_comparison(op);
+}
+
+static int is_float_binary(ir_op_t op) {
+  return op == IR_FADD || op == IR_FSUB || op == IR_FMUL ||
+         op == IR_FDIV || op == IR_FEQ || op == IR_FNE ||
+         op == IR_FLT || op == IR_FLE;
+}
+
+static int is_conversion(ir_op_t op) {
+  return op == IR_ZEXT || op == IR_SEXT || op == IR_TRUNC ||
+         op == IR_I2F || op == IR_F2I || op == IR_F2F;
+}
+
+static ir_type_t memory_access_type(ir_type_t raw, ir_type_t actual) {
+  if (raw == IR_TY_I8 || raw == IR_TY_I16) return raw;
+  if (raw == IR_TY_PTR)
+    return actual == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+  if (actual == IR_TY_I32 && raw != IR_TY_I32) return IR_TY_I32;
+  return raw;
+}
+
+static ir_type_t atomic_memory_type(const ir_inst_t *instruction) {
+  switch (instruction->atomic_width ? instruction->atomic_width : 4) {
+    case 1: return IR_TY_I8;
+    case 2: return IR_TY_I16;
+    case 4: return IR_TY_I32;
+    case 8: return IR_TY_I64;
+    default: return IR_TY_VOID;
+  }
+}
+
+static ir_type_t binary_operand_type(
+    const wasm32_machine_function_t *function,
+    const ir_inst_t *instruction) {
+  ir_type_t lhs = wasm32_machine_function_vreg_type(
+      function, instruction->src1);
+  ir_type_t rhs = wasm32_machine_function_vreg_type(
+      function, instruction->src2);
+  ir_type_t dst = wasm32_machine_function_vreg_type(
+      function, instruction->dst);
+  if (is_float_binary(instruction->op)) return lhs;
+  if (is_integer_comparison(instruction->op))
+    return lhs == IR_TY_I64 || rhs == IR_TY_I64
+               ? IR_TY_I64
+               : IR_TY_I32;
+  if (instruction->op == IR_SHL || instruction->op == IR_SHR ||
+      instruction->op == IR_LSR)
+    return lhs == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+  return dst == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+}
+
+static int select_call(
+    const ir_abi_module_t *abi_module,
+    const ir_inst_t *instruction,
+    wasm32_machine_call_t *call) {
+  const ir_abi_signature_t *abi =
+      ir_abi_call_signature(abi_module, instruction);
+  if (!abi || abi->fixed_param_count > INT_MAX) return 0;
+  size_t argument_count = 0;
+  const ir_abi_argument_t *arguments =
+      ir_abi_call_arguments(abi_module, instruction, &argument_count);
+  if (argument_count > INT_MAX ||
+      (argument_count > 0 && !arguments) ||
+      !wasm32_machine_call_signature(
+          instruction, abi, &call->signature))
+    return 0;
+  if (argument_count > 0) {
+    call->arguments = malloc(
+        argument_count * sizeof(*call->arguments));
+    if (!call->arguments) {
+      wasm32_machine_signature_dispose(&call->signature);
+      return 0;
+    }
+    memcpy(
+        call->arguments, arguments,
+        argument_count * sizeof(*call->arguments));
+  }
+  call->argument_count = (int)argument_count;
+  call->fixed_argument_count = (int)abi->fixed_param_count;
+  call->result_area = abi->result_area;
+  call->direct_result_type =
+      abi->result_count == 1 && abi->result_pieces &&
+              !call->signature.has_hidden_result
+          ? abi->result_pieces[0].type
+          : IR_TY_VOID;
+  call->is_indirect =
+      instruction->callee.id != IR_VAL_NONE ? 1 : 0;
+  call->is_variadic = abi->is_variadic ? 1 : 0;
+  if ((call->signature.has_hidden_result ||
+       call->signature.has_direct_aggregate_result) &&
+      call->result_area.id == IR_VAL_NONE)
+    return 0;
+  return 1;
+}
+
+static int select_parameter_bind(
+    const ir_abi_signature_t *function_abi,
+    const ir_inst_t *instruction,
+    wasm32_machine_parameter_bind_t *binding) {
+  if (!function_abi || !function_abi->param_pieces) return 0;
+  size_t source_index = instruction->parameter_index;
+  size_t first = function_abi->param_count;
+  size_t count = 0;
+  for (size_t i = 0; i < function_abi->param_count; i++) {
+    if (function_abi->param_pieces[i].source_index != source_index)
+      continue;
+    if (first == function_abi->param_count) first = i;
+    count++;
+  }
+  if (count == 0 || count > INT_MAX || first > INT_MAX) return 0;
+  binding->pieces = malloc(count * sizeof(*binding->pieces));
+  if (!binding->pieces) return 0;
+  int output = 0;
+  for (size_t i = 0; i < function_abi->param_count; i++) {
+    if (function_abi->param_pieces[i].source_index == source_index)
+      binding->pieces[output++] = function_abi->param_pieces[i];
+  }
+  binding->piece_count = (int)count;
+  binding->physical_index =
+      (int)first +
+      (function_abi->result_count == 1 &&
+               function_abi->result_pieces &&
+               function_abi->result_pieces[0].kind ==
+                   IR_ABI_PIECE_INDIRECT
+           ? 1
+           : 0);
+  return 1;
+}
+
+static int select_instruction(
+    const wasm32_machine_function_t *function,
+    wasm32_machine_inst_t *selected) {
+  ir_inst_t *instruction = selected->source;
+  if (is_integer_binary(instruction->op) ||
+      is_float_binary(instruction->op)) {
+    selected->kind = WASM32_MACHINE_INST_BINARY;
+    return wasm32_machine_select_binary(
+        instruction->op,
+        binary_operand_type(function, instruction),
+        &selected->binary);
+  }
+  if (instruction->op == IR_NEG || instruction->op == IR_NOT ||
+      instruction->op == IR_FNEG) {
+    ir_type_t operand_type = instruction->op == IR_FNEG
+                                 ? wasm32_machine_function_vreg_type(
+                                       function, instruction->src1)
+                                 : wasm32_machine_function_vreg_type(
+                                       function, instruction->dst);
+    selected->kind = WASM32_MACHINE_INST_UNARY;
+    return wasm32_machine_select_unary(
+        instruction->op, operand_type, &selected->unary);
+  }
+  if (is_conversion(instruction->op)) {
+    int is_unsigned =
+        instruction->op == IR_ZEXT ? 1 :
+        instruction->op == IR_SEXT ? 0 :
+        (instruction->op == IR_I2F || instruction->op == IR_F2I)
+            ? instruction->is_unsigned ||
+                  wasm32_machine_function_vreg_is_unsigned(
+                      function, instruction->src1)
+            : wasm32_machine_function_vreg_is_unsigned(
+                  function, instruction->src1);
+    selected->kind = WASM32_MACHINE_INST_CONVERSION;
+    return wasm32_machine_select_conversion(
+        wasm32_machine_function_vreg_type(function, instruction->src1),
+        wasm32_machine_function_vreg_type(function, instruction->dst),
+        is_unsigned, &selected->conversion);
+  }
+  if (instruction->op == IR_LOAD) {
+    ir_type_t memory_type = memory_access_type(
+        instruction->dst.type,
+        wasm32_machine_function_vreg_type(function, instruction->dst));
+    selected->kind = WASM32_MACHINE_INST_LOAD;
+    return wasm32_machine_select_load(
+        memory_type, instruction->is_unsigned, &selected->load);
+  }
+  if (instruction->op == IR_STORE) {
+    ir_type_t memory_type = memory_access_type(
+        instruction->src2.type,
+        wasm32_machine_function_vreg_type(function, instruction->src2));
+    selected->kind = WASM32_MACHINE_INST_STORE;
+    return wasm32_machine_select_store(memory_type, &selected->store);
+  }
+  if (instruction->op == IR_ATOMIC) {
+    selected->kind = WASM32_MACHINE_INST_ATOMIC;
+    if (instruction->atomic_kind == IR_ATOMIC_FENCE) return 1;
+    ir_type_t memory_type = atomic_memory_type(instruction);
+    if (memory_type == IR_TY_VOID) return 0;
+    if (instruction->atomic_kind == IR_ATOMIC_LOAD ||
+        instruction->atomic_kind == IR_ATOMIC_RMW ||
+        instruction->atomic_kind == IR_ATOMIC_CAS) {
+      if (!wasm32_machine_select_load(
+              memory_type, instruction->is_unsigned, &selected->load))
+        return 0;
+    }
+    if (instruction->atomic_kind == IR_ATOMIC_STORE ||
+        instruction->atomic_kind == IR_ATOMIC_RMW ||
+        instruction->atomic_kind == IR_ATOMIC_CAS) {
+      if (!wasm32_machine_select_store(memory_type, &selected->store))
+        return 0;
+    }
+    if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+        instruction->atomic_rmw_op != IR_ARMW_XCHG) {
+      return wasm32_machine_select_atomic_rmw(
+          (ir_atomic_rmw_op_t)instruction->atomic_rmw_op,
+          memory_type == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32,
+          &selected->binary);
+    }
+  }
+  if (instruction->op == IR_LABEL || instruction->op == IR_BR ||
+      instruction->op == IR_BR_COND || instruction->op == IR_RET ||
+      instruction->op == IR_CONTINUATION_SUSPEND) {
+    selected->kind = WASM32_MACHINE_INST_CONTROL;
+    selected->control.target_block_id = instruction->label_id;
+    selected->control.else_block_id = instruction->else_label_id;
+    if (instruction->op == IR_LABEL)
+      selected->control.kind = WASM32_MACHINE_CONTROL_LABEL;
+    else if (instruction->op == IR_BR)
+      selected->control.kind = WASM32_MACHINE_CONTROL_BRANCH;
+    else if (instruction->op == IR_BR_COND) {
+      selected->control.kind =
+          WASM32_MACHINE_CONTROL_BRANCH_CONDITIONAL;
+      selected->control.value = instruction->src1;
+    } else if (instruction->op == IR_RET) {
+      selected->control.kind = WASM32_MACHINE_CONTROL_RETURN;
+      selected->control.value = instruction->src1;
+    } else {
+      selected->control.kind = WASM32_MACHINE_CONTROL_SUSPEND;
+    }
+  }
+  return 1;
+}
+
+static int initialize_instructions(
     wasm32_machine_function_t *function,
     const ir_abi_module_t *abi_module,
-    ir_inst_t *instruction) {
+    const ir_abi_signature_t *function_abi) {
+  int count = 0;
+  int block_count = 0;
+  for (ir_block_t *block = function->source->entry; block;
+       block = block->next) {
+    block_count++;
+    for (ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next)
+      count++;
+  }
+  if (count > 0) {
+    function->instructions =
+        calloc((size_t)count, sizeof(*function->instructions));
+    if (!function->instructions) return 0;
+  }
+  if (block_count > 0) {
+    function->blocks =
+        calloc((size_t)block_count, sizeof(*function->blocks));
+    if (!function->blocks) return 0;
+  }
+  function->instruction_count = count;
+  function->block_count = block_count;
+  int index = 0;
+  int block_index = 0;
+  for (ir_block_t *block = function->source->entry; block;
+       block = block->next) {
+    wasm32_machine_block_t *machine_block =
+        &function->blocks[block_index++];
+    machine_block->source = block;
+    machine_block->id = block->id;
+    machine_block->first_instruction = index;
+    machine_block->next_block_id = block->next ? block->next->id : -1;
+    for (ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next) {
+      function->instructions[index].source = instruction;
+      if (instruction->op == IR_CALL) {
+        function->instructions[index].kind =
+            WASM32_MACHINE_INST_CALL;
+        if (!select_call(
+                abi_module, instruction,
+                &function->instructions[index].call))
+          return 0;
+      } else if (instruction->op == IR_PARAM_BIND) {
+        function->instructions[index].kind =
+            WASM32_MACHINE_INST_PARAMETER_BIND;
+        if (!select_parameter_bind(
+                function_abi, instruction,
+                &function->instructions[index].parameter_bind))
+          return 0;
+      }
+      index++;
+    }
+    machine_block->instruction_count =
+        index - machine_block->first_instruction;
+    ir_inst_t *tail = block->tail;
+    machine_block->has_terminator =
+        tail && (tail->op == IR_BR || tail->op == IR_BR_COND ||
+                 tail->op == IR_RET ||
+                 tail->op == IR_CONTINUATION_SUSPEND)
+            ? 1
+            : 0;
+  }
+  return 1;
+}
+
+static int select_instructions(wasm32_machine_function_t *function) {
+  for (int i = 0; i < function->instruction_count; i++) {
+    if (function->instructions[i].kind == WASM32_MACHINE_INST_CALL ||
+        function->instructions[i].kind ==
+            WASM32_MACHINE_INST_PARAMETER_BIND)
+      continue;
+    if (!select_instruction(function, &function->instructions[i]))
+      return 0;
+  }
+  return 1;
+}
+
+static void collect_instruction_values(
+    wasm32_machine_function_t *function,
+    ir_inst_t *instruction,
+    const wasm32_machine_inst_t *selected) {
   note_value(function, instruction->dst);
   note_value(function, instruction->src1);
   note_value(function, instruction->src2);
@@ -112,17 +455,14 @@ static void collect_instruction_values(
     function->vreg_unsigned[instruction->dst.id] = 1;
   }
   if (instruction->op != IR_CALL) return;
-  size_t argument_count = 0;
-  const ir_abi_argument_t *arguments =
-      ir_abi_call_arguments(abi_module, instruction, &argument_count);
-  for (size_t i = 0; i < argument_count; i++)
-    note_value(function, arguments[i].source);
+  for (int i = 0; i < selected->call.argument_count; i++)
+    note_value(function, selected->call.arguments[i].source);
 }
 
 static void collect_function_flags(
     wasm32_machine_function_t *function,
-    const ir_abi_module_t *abi_module,
-    ir_inst_t *instruction) {
+    ir_inst_t *instruction,
+    const wasm32_machine_inst_t *selected) {
   if (instruction->op == IR_LABEL || instruction->op == IR_BR ||
       instruction->op == IR_BR_COND)
     function->has_control_flow = 1;
@@ -135,14 +475,9 @@ static void collect_function_flags(
       function->has_atomic_cas32 = 1;
   }
   if (instruction->op != IR_CALL) return;
-  const ir_abi_signature_t *abi =
-      ir_abi_call_signature(abi_module, instruction);
-  size_t argument_count = 0;
-  if (abi)
-    (void)ir_abi_call_arguments(
-        abi_module, instruction, &argument_count);
-  if (abi && abi->is_variadic &&
-      argument_count > abi->fixed_param_count)
+  if (selected->call.is_variadic &&
+      selected->call.argument_count >
+          selected->call.fixed_argument_count)
     function->has_variadic_varargs = 1;
 }
 
@@ -173,8 +508,7 @@ static void infer_alloca_value_types(
 }
 
 static int propagate_forced_i32(
-    wasm32_machine_function_t *function,
-    const ir_abi_module_t *abi_module) {
+    wasm32_machine_function_t *function) {
   unsigned char *forced_i32 =
       calloc((size_t)function->vreg_count, 1);
   if (function->vreg_count > 0 && !forced_i32) return 0;
@@ -237,27 +571,26 @@ static int propagate_forced_i32(
             changed |= force_i32(
                 function, forced_i32, instruction->callee);
             if (!valid_vreg(function, instruction->dst)) break;
-            const ir_abi_signature_t *abi =
-                ir_abi_call_signature(abi_module, instruction);
-            wasm32_machine_signature_t signature;
-            if (!wasm32_machine_call_signature(
-                    instruction, abi, &signature)) {
+            const wasm32_machine_inst_t *selected =
+                wasm32_machine_function_instruction(
+                    function, instruction);
+            if (!selected ||
+                selected->kind != WASM32_MACHINE_INST_CALL) {
               free(forced_i32);
               return 0;
             }
-            if (signature.result != IR_TY_VOID) {
+            if (selected->call.signature.result != IR_TY_VOID) {
               if (instruction->dst.type == IR_TY_PTR ||
                   forced_i32[instruction->dst.id]) {
                 changed |= force_i32(
                     function, forced_i32, instruction->dst);
               } else if (function->vreg_types[instruction->dst.id] !=
-                         signature.result) {
+                         selected->call.signature.result) {
                 function->vreg_types[instruction->dst.id] =
-                    signature.result;
+                    selected->call.signature.result;
                 changed = 1;
               }
             }
-            wasm32_machine_signature_dispose(&signature);
             break;
           }
           case IR_ADD:
@@ -291,9 +624,17 @@ void wasm32_machine_function_dispose(
     wasm32_machine_function_t *function) {
   if (!function) return;
   wasm32_machine_signature_dispose(&function->signature);
+  for (int i = 0; i < function->instruction_count; i++) {
+    wasm32_machine_signature_dispose(
+        &function->instructions[i].call.signature);
+    free(function->instructions[i].call.arguments);
+    free(function->instructions[i].parameter_bind.pieces);
+  }
   free(function->vreg_types);
   free(function->vreg_unsigned);
   free(function->vreg_used);
+  free(function->instructions);
+  free(function->blocks);
   free(function->allocas);
   memset(function, 0, sizeof(*function));
 }
@@ -312,6 +653,16 @@ int wasm32_machine_function_build(
   if (!wasm32_machine_signature_from_abi(
           function_abi, 1, &function->signature))
     return 0;
+  function->direct_result_type =
+      function_abi->result_count == 1 &&
+              function_abi->result_pieces &&
+              !function->signature.has_hidden_result
+          ? function_abi->result_pieces[0].type
+          : IR_TY_VOID;
+  function->result_source_size =
+      function_abi->result_count == 1 && function_abi->result_pieces
+          ? function_abi->result_pieces[0].source_size
+          : 0;
   if (function->vreg_count > 0) {
     function->vreg_types =
         malloc((size_t)function->vreg_count * sizeof(*function->vreg_types));
@@ -331,15 +682,27 @@ int wasm32_machine_function_build(
     wasm32_machine_function_dispose(function);
     return 0;
   }
+  if (!initialize_instructions(
+          function, abi_module, function_abi)) {
+    wasm32_machine_function_dispose(function);
+    return 0;
+  }
+  int instruction_index = 0;
   for (ir_block_t *block = source->entry; block; block = block->next) {
     for (ir_inst_t *instruction = block->head; instruction;
          instruction = instruction->next) {
-      collect_instruction_values(function, abi_module, instruction);
-      collect_function_flags(function, abi_module, instruction);
+      const wasm32_machine_inst_t *selected =
+          &function->instructions[instruction_index++];
+      collect_instruction_values(function, instruction, selected);
+      collect_function_flags(function, instruction, selected);
     }
   }
   infer_alloca_value_types(function);
-  if (!propagate_forced_i32(function, abi_module)) {
+  if (!propagate_forced_i32(function)) {
+    wasm32_machine_function_dispose(function);
+    return 0;
+  }
+  if (!select_instructions(function)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }

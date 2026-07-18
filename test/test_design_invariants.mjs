@@ -3625,15 +3625,21 @@ if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_
   );
 }
 
+if (/->(?:args|nargs)\b/.test(arm64IrEmitSource) ||
+    !/\bir_abi_call_arguments\s*\(/.test(arm64IrEmitSource)) {
+  throw new Error(
+    "Apple ARM64 backend must consume call argument pieces from AbiLowering sidecars",
+  );
+}
 for (const [name, source] of [
-  ["Apple ARM64", arm64IrEmitSource],
   ["Wasm text", wasmIrSource],
   ["Wasm object", wasmObjSource],
 ]) {
   if (/->(?:args|nargs)\b/.test(source) ||
-      !/\bir_abi_call_arguments\s*\(/.test(source)) {
+      /\bir_abi_call_arguments\s*\(/.test(source) ||
+      !/WASM32_MACHINE_INST_CALL/.test(source)) {
     throw new Error(
-      `${name} backend must consume call argument pieces from AbiLowering sidecars`,
+      `${name} backend must consume preplanned Machine call arguments`,
     );
   }
 }
@@ -3651,14 +3657,21 @@ if (!parameterBindingLowering ||
     "typed HIR must bind one source parameter to storage without assigning physical ABI indices",
   );
 }
+if (!/\bir_abi_signature_parameter_pieces\s*\(/.test(
+      arm64IrEmitSource,
+    )) {
+  throw new Error(
+    "Apple ARM64 backend must expand logical parameter bindings from AbiLowering sidecars",
+  );
+}
 for (const [name, source] of [
-  ["Apple ARM64", arm64IrEmitSource],
   ["Wasm text", wasmIrSource],
   ["Wasm object", wasmObjSource],
 ]) {
-  if (!/\bir_abi_signature_parameter_pieces\s*\(/.test(source)) {
+  if (/\bir_abi_signature_parameter_pieces\s*\(/.test(source) ||
+      !/WASM32_MACHINE_INST_PARAMETER_BIND/.test(source)) {
     throw new Error(
-      `${name} backend must expand logical parameter bindings from AbiLowering sidecars`,
+      `${name} backend must serialize preplanned Machine parameter bindings`,
     );
   }
 }
@@ -9272,8 +9285,17 @@ const wasmObjectWriterSource = await readFile(
   "utf8",
 );
 if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
-    !/wasm32_machine_select_binary\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_select_binary\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_select_binary\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/wasm32_machine_function_instruction\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_machine_function_instruction\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /wasm32_machine_select_binary\s*\(/.test(wasmWatWriterSource) ||
+    /wasm32_machine_select_binary\s*\(/.test(wasmObjectWriterSource) ||
     /static\s+const\s+char\s*\*\s*wasm_(?:fp_)?binop\s*\(/.test(
       wasmWatWriterSource,
     ) ||
@@ -9281,36 +9303,68 @@ if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
       wasmObjectWriterSource,
     )) {
   throw new Error(
-    "Wasm WAT and object writers must share Machine IR binary instruction selection",
+    "Wasm WAT and object writers must serialize preselected Machine IR binary instructions",
   );
 }
 
 if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
     !/wasm32_machine_select_store\s*\(/.test(wasmMachineIrSource) ||
-    !/wasm32_machine_select_load\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_select_store\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_select_load\s*\(/.test(wasmObjectWriterSource) ||
-    !/wasm32_machine_select_store\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_select_load\s*\(/.test(wasmMachineFunctionSource) ||
+    !/wasm32_machine_select_store\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/static\s+void\s+emit_load\s*\([^]*?WASM32_MACHINE_INST_LOAD/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/static\s+void\s+emit_store\s*\([^]*?WASM32_MACHINE_INST_STORE/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/case\s+IR_LOAD:\s*\{[^]*?WASM32_MACHINE_INST_LOAD/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/case\s+IR_STORE:\s*\{[^]*?WASM32_MACHINE_INST_STORE/.test(
+      wasmObjectWriterSource,
+    ) ||
     /switch\s*\(\s*effective_load_type/.test(wasmWatWriterSource) ||
     /switch\s*\(\s*store_ty\s*\)/.test(wasmWatWriterSource) ||
     /\b0x(?:28|29|2a|2b|2c|2d|2e|2f|36|37|38|39|3a|3b)\b/.test(
       wasmObjectWriterSource,
     )) {
   throw new Error(
-    "Wasm WAT and object writers must share Machine IR memory instruction selection",
+    "Wasm WAT and object writers must serialize preselected Machine IR memory instructions",
   );
 }
 
 if (!/wasm32_machine_select_unary\s*\(/.test(wasmMachineIrSource) ||
     !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmMachineIrSource) ||
-    !/wasm32_machine_select_unary\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_select_unary\s*\(/.test(wasmObjectWriterSource) ||
-    !/wasm32_machine_select_atomic_rmw\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_select_unary\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/wasm32_machine_select_atomic_rmw\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    /wasm32_machine_select_(?:unary|atomic_rmw)\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /wasm32_machine_select_(?:unary|atomic_rmw)\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/WASM32_MACHINE_INST_UNARY/.test(wasmWatWriterSource) ||
+    !/WASM32_MACHINE_INST_ATOMIC/.test(wasmWatWriterSource) ||
+    !/WASM32_MACHINE_INST_UNARY/.test(wasmObjectWriterSource) ||
+    !/WASM32_MACHINE_INST_ATOMIC/.test(wasmObjectWriterSource) ||
     /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmWatWriterSource) ||
     /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmObjectWriterSource)) {
   throw new Error(
-    "Wasm WAT and object writers must share Machine IR unary and atomic RMW instruction selection",
+    "Wasm WAT and object writers must serialize preselected Machine IR unary and atomic instructions",
+  );
+}
+
+if (!/WASM32_MACHINE_INST_CONVERSION/.test(wasmMachineFunctionSource) ||
+    !/WASM32_MACHINE_INST_CONVERSION/.test(wasmWatWriterSource) ||
+    !/WASM32_MACHINE_INST_CONVERSION/.test(wasmObjectWriterSource)) {
+  throw new Error(
+    "Wasm WAT and object writers must serialize preselected Machine IR conversions",
   );
 }
 
@@ -9319,11 +9373,20 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
     ) ||
     !/wasm32_machine_call_signature\s*\(/.test(wasmMachineAbiSource) ||
     !/wasm32_machine_signature_from_abi\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_call_signature\s*\(/.test(wasmWatWriterSource) ||
     !/wasm32_machine_signature_from_abi\s*\(/.test(wasmObjectWriterSource) ||
-    !/wasm32_machine_call_signature\s*\(/.test(wasmObjectWriterSource)) {
+    !/wasm32_machine_call_signature\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/WASM32_MACHINE_INST_CALL/.test(wasmWatWriterSource) ||
+    !/WASM32_MACHINE_INST_CALL/.test(wasmObjectWriterSource) ||
+    /(?:ir_abi_call_(?:signature|arguments)|wasm32_machine_call_signature)\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /(?:ir_abi_call_(?:signature|arguments)|wasm32_machine_call_signature)\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
   throw new Error(
-    "Wasm WAT and object writers must share the Machine ABI signature plan",
+    "Wasm WAT and object writers must serialize the preplanned Machine call ABI",
   );
 }
 
@@ -9344,6 +9407,23 @@ if (!/wasm32_machine_function_build\s*\(/.test(
     /static\s+void\s+add_alloca_slot\s*\(/.test(wasmWatWriterSource)) {
   throw new Error(
     "Wasm WAT and object writers must share the Machine function analysis plan",
+  );
+}
+
+if (!/result_source_size/.test(wasmMachineFunctionSource) ||
+    !/direct_result_type/.test(wasmMachineFunctionSource) ||
+    !/machine\.result_source_size/.test(wasmWatWriterSource) ||
+    !/machine_function\.result_source_size/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /ir_abi_signature_(?:result_is_indirect|result_is_direct_aggregate|direct_result_type|result_source_size)\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /ir_abi_signature_(?:result_is_indirect|result_is_direct_aggregate|direct_result_type|result_source_size)\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm writers must serialize the Machine function result plan without reinterpreting ABI sidecars",
   );
 }
 

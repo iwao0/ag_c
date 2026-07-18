@@ -8,6 +8,10 @@
 
 static const ir_func_t *fixture_function;
 static const ir_abi_signature_t *fixture_function_abi;
+static const ir_inst_t *fixture_call;
+static const ir_abi_signature_t *fixture_call_abi;
+static const ir_abi_argument_t *fixture_call_arguments;
+static size_t fixture_call_argument_count;
 
 const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function) {
@@ -18,17 +22,19 @@ const ir_abi_signature_t *ir_abi_function_signature(
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call) {
   (void)module;
-  (void)call;
-  return NULL;
+  return call == fixture_call ? fixture_call_abi : NULL;
 }
 
 const ir_abi_argument_t *ir_abi_call_arguments(
     const ir_abi_module_t *module, const ir_inst_t *call,
     size_t *argument_count) {
   (void)module;
-  (void)call;
-  if (argument_count) *argument_count = 0;
-  return NULL;
+  if (call != fixture_call) {
+    if (argument_count) *argument_count = 0;
+    return NULL;
+  }
+  if (argument_count) *argument_count = fixture_call_argument_count;
+  return fixture_call_arguments;
 }
 
 typedef struct {
@@ -414,7 +420,7 @@ int main(void) {
     return 1;
   }
 
-  ir_inst_t function_instructions[9] = {0};
+  ir_inst_t function_instructions[15] = {0};
   function_instructions[0].op = IR_ALLOCA;
   function_instructions[0].dst =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
@@ -450,29 +456,129 @@ int main(void) {
   function_instructions[6].src1 =
       (ir_val_t){.id = 3, .type = IR_TY_I32};
   function_instructions[7].op = IR_ATOMIC;
+  function_instructions[7].dst =
+      (ir_val_t){.id = 10, .type = IR_TY_I32};
   function_instructions[7].src1 =
       (ir_val_t){.id = 4, .type = IR_TY_PTR};
   function_instructions[7].src2 =
       (ir_val_t){.id = 1, .type = IR_TY_PTR};
   function_instructions[7].atomic_kind = IR_ATOMIC_CAS;
   function_instructions[7].atomic_width = 8;
-  function_instructions[8].op = IR_BR;
-  function_instructions[8].label_id = 1;
-  for (size_t i = 0; i + 1 < 9; i++)
+  function_instructions[8].op = IR_ZEXT;
+  function_instructions[8].dst =
+      (ir_val_t){.id = 6, .type = IR_TY_I64};
+  function_instructions[8].src1 =
+      (ir_val_t){.id = 3, .type = IR_TY_I32};
+  function_instructions[9].op = IR_ADD;
+  function_instructions[9].dst =
+      (ir_val_t){.id = 7, .type = IR_TY_I64};
+  function_instructions[9].src1 =
+      (ir_val_t){.id = 6, .type = IR_TY_I64};
+  function_instructions[9].src2 =
+      (ir_val_t){.id = IR_VAL_IMM, .type = IR_TY_I64, .imm = 2};
+  function_instructions[10].op = IR_NOT;
+  function_instructions[10].dst =
+      (ir_val_t){.id = 8, .type = IR_TY_I64};
+  function_instructions[10].src1 =
+      (ir_val_t){.id = 7, .type = IR_TY_I64};
+  function_instructions[11].op = IR_ATOMIC;
+  function_instructions[11].dst =
+      (ir_val_t){.id = 9, .type = IR_TY_I64};
+  function_instructions[11].src1 =
+      (ir_val_t){.id = 4, .type = IR_TY_PTR};
+  function_instructions[11].src2 =
+      (ir_val_t){.id = IR_VAL_IMM, .type = IR_TY_I64, .imm = 3};
+  function_instructions[11].atomic_kind = IR_ATOMIC_RMW;
+  function_instructions[11].atomic_rmw_op = IR_ARMW_XOR;
+  function_instructions[11].atomic_width = 8;
+  function_instructions[12].op = IR_CALL;
+  function_instructions[12].dst =
+      (ir_val_t){.id = IR_VAL_NONE, .type = IR_TY_VOID};
+  function_instructions[12].callee =
+      (ir_val_t){.id = IR_VAL_NONE, .type = IR_TY_VOID};
+  function_instructions[12].sym = "planned_call";
+  function_instructions[12].sym_len = 12;
+  function_instructions[13].op = IR_PARAM_BIND;
+  function_instructions[13].src1 =
+      (ir_val_t){.id = 0, .type = IR_TY_PTR};
+  function_instructions[13].parameter_index = 0;
+  function_instructions[14].op = IR_BR;
+  function_instructions[14].label_id = 1;
+  for (size_t i = 0; i + 1 < 15; i++)
     function_instructions[i].next = &function_instructions[i + 1];
   ir_block_t function_block = {
       .id = 0,
       .head = &function_instructions[0],
-      .tail = &function_instructions[8],
+      .tail = &function_instructions[14],
   };
   ir_func_t function = {
       .entry = &function_block,
-      .next_vreg_id = 6,
+      .next_vreg_id = 11,
   };
-  ir_abi_signature_t empty_function_abi = {0};
+  ir_abi_piece_t function_result = {
+      .type = IR_TY_PTR,
+      .source_size = 24,
+      .kind = IR_ABI_PIECE_INDIRECT,
+  };
+  ir_abi_piece_t physical_function_params[] = {
+      {
+          .type = IR_TY_I32,
+          .source_index = 0,
+          .source_size = 16,
+          .byte_offset = 0,
+          .kind = IR_ABI_PIECE_DIRECT,
+      },
+      {
+          .type = IR_TY_I64,
+          .source_index = 0,
+          .source_size = 16,
+          .byte_offset = 8,
+          .kind = IR_ABI_PIECE_DIRECT,
+      },
+  };
+  ir_abi_signature_t function_abi_with_parameter = {
+      .result_pieces = &function_result,
+      .result_count = 1,
+      .param_pieces = physical_function_params,
+      .param_count = 2,
+      .fixed_param_count = 2,
+  };
+  ir_abi_piece_t planned_call_result = {
+      .type = IR_TY_PTR,
+      .kind = IR_ABI_PIECE_INDIRECT,
+  };
+  ir_abi_piece_t planned_call_params[] = {
+      {.type = IR_TY_I32, .kind = IR_ABI_PIECE_DIRECT},
+      {.type = IR_TY_I64, .kind = IR_ABI_PIECE_VARIADIC},
+  };
+  ir_abi_signature_t planned_call_abi = {
+      .result_pieces = &planned_call_result,
+      .result_count = 1,
+      .param_pieces = planned_call_params,
+      .param_count = 2,
+      .fixed_param_count = 1,
+      .result_area = {.id = 0, .type = IR_TY_PTR},
+      .is_variadic = 1,
+  };
+  ir_abi_argument_t planned_call_arguments[] = {
+      {
+          .source = {.id = 3, .type = IR_TY_I32},
+          .type = IR_TY_I32,
+          .access = IR_ABI_ARGUMENT_DIRECT,
+      },
+      {
+          .source = {.id = 6, .type = IR_TY_I64},
+          .type = IR_TY_I64,
+          .access = IR_ABI_ARGUMENT_DIRECT,
+      },
+  };
   ir_abi_module_t fake_abi_module = {0};
   fixture_function = &function;
-  fixture_function_abi = &empty_function_abi;
+  fixture_function_abi = &function_abi_with_parameter;
+  fixture_call = &function_instructions[12];
+  fixture_call_abi = &planned_call_abi;
+  fixture_call_arguments = planned_call_arguments;
+  fixture_call_argument_count = 2;
   wasm32_machine_function_t machine_function;
   if (!wasm32_machine_function_build(
           &function, &fake_abi_module, &machine_function)) {
@@ -483,8 +589,37 @@ int main(void) {
       wasm32_machine_function_alloca(&machine_function, 0);
   const wasm32_machine_alloca_t *second_alloca =
       wasm32_machine_function_alloca(&machine_function, 1);
+  const wasm32_machine_inst_t *selected_store =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[2]);
+  const wasm32_machine_inst_t *selected_load =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[3]);
+  const wasm32_machine_inst_t *selected_conversion =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[8]);
+  const wasm32_machine_inst_t *selected_binary =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[9]);
+  const wasm32_machine_inst_t *selected_unary =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[10]);
+  const wasm32_machine_inst_t *selected_atomic =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[11]);
+  const wasm32_machine_inst_t *selected_call =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[12]);
+  const wasm32_machine_inst_t *selected_parameter =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[13]);
   if (machine_function.frame_size != 32 ||
       machine_function.alloca_count != 2 ||
+      machine_function.instruction_count != 15 ||
+      machine_function.signature.nparams != 3 ||
+      !machine_function.signature.has_hidden_result ||
+      machine_function.direct_result_type != IR_TY_VOID ||
+      machine_function.result_source_size != 24 ||
       !first_alloca || first_alloca->offset != 0 ||
       first_alloca->value_type != IR_TY_I64 ||
       !second_alloca || second_alloca->offset != 16 ||
@@ -495,7 +630,54 @@ int main(void) {
       !machine_function.has_vla_alloc ||
       !machine_function.has_control_flow ||
       machine_function.has_atomic_cas32 ||
-      !machine_function.has_atomic_cas64) {
+      !machine_function.has_atomic_cas64 ||
+      !selected_store ||
+      selected_store->kind != WASM32_MACHINE_INST_STORE ||
+      selected_store->store.opcode != WASM32_MI_I64_STORE ||
+      !selected_load ||
+      selected_load->kind != WASM32_MACHINE_INST_LOAD ||
+      selected_load->load.opcode != WASM32_MI_I64_LOAD ||
+      !selected_conversion ||
+      selected_conversion->kind != WASM32_MACHINE_INST_CONVERSION ||
+      selected_conversion->conversion.opcode !=
+          WASM32_MI_I64_EXTEND_I32_U ||
+      !selected_binary ||
+      selected_binary->kind != WASM32_MACHINE_INST_BINARY ||
+      selected_binary->binary.opcode != WASM32_MI_I64_ADD ||
+      !selected_unary ||
+      selected_unary->kind != WASM32_MACHINE_INST_UNARY ||
+      selected_unary->unary.opcode != WASM32_MI_I64_XOR ||
+      !selected_atomic ||
+      selected_atomic->kind != WASM32_MACHINE_INST_ATOMIC ||
+      selected_atomic->load.opcode != WASM32_MI_I64_LOAD ||
+      selected_atomic->store.opcode != WASM32_MI_I64_STORE ||
+      selected_atomic->binary.opcode != WASM32_MI_I64_XOR ||
+      !selected_call ||
+      selected_call->kind != WASM32_MACHINE_INST_CALL ||
+      selected_call->call.signature.nparams != 2 ||
+      selected_call->call.signature.params[0] != IR_TY_I32 ||
+      selected_call->call.signature.params[1] != IR_TY_I32 ||
+      selected_call->call.signature.result != IR_TY_VOID ||
+      !selected_call->call.signature.has_hidden_result ||
+      selected_call->call.argument_count != 2 ||
+      selected_call->call.fixed_argument_count != 1 ||
+      selected_call->call.arguments == planned_call_arguments ||
+      selected_call->call.arguments[1].source.id != 6 ||
+      selected_call->call.result_area.id != 0 ||
+      selected_call->call.direct_result_type != IR_TY_VOID ||
+      selected_call->call.is_indirect ||
+      !selected_call->call.is_variadic ||
+      !selected_parameter ||
+      selected_parameter->kind !=
+          WASM32_MACHINE_INST_PARAMETER_BIND ||
+      selected_parameter->parameter_bind.piece_count != 2 ||
+      selected_parameter->parameter_bind.physical_index != 1 ||
+      selected_parameter->parameter_bind.pieces ==
+          physical_function_params ||
+      selected_parameter->parameter_bind.pieces[1].type != IR_TY_I64 ||
+      selected_parameter->parameter_bind.pieces[1].byte_offset != 8 ||
+      wasm32_machine_function_instruction(
+          &machine_function, &call) != NULL) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
     return 1;
   }
