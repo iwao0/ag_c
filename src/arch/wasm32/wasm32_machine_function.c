@@ -207,6 +207,10 @@ static int select_call(
               !call->signature.has_hidden_result
           ? abi->result_pieces[0].type
           : IR_TY_VOID;
+  if (call->signature.has_direct_aggregate_result &&
+      !wasm32_machine_select_store(
+          call->direct_result_type, &call->direct_result_store))
+    return 0;
   call->is_indirect =
       instruction->callee.id != IR_VAL_NONE ? 1 : 0;
   call->is_variadic = abi->is_variadic ? 1 : 0;
@@ -233,7 +237,10 @@ static int select_parameter_bind(
   }
   if (count == 0 || count > INT_MAX || first > INT_MAX) return 0;
   binding->pieces = malloc(count * sizeof(*binding->pieces));
-  if (!binding->pieces) return 0;
+  binding->stores = calloc(count, sizeof(*binding->stores));
+  binding->copy_plans = calloc(count, sizeof(*binding->copy_plans));
+  if (!binding->pieces || !binding->stores || !binding->copy_plans)
+    return 0;
   int output = 0;
   for (size_t i = 0; i < function_abi->param_count; i++) {
     if (function_abi->param_pieces[i].source_index == source_index)
@@ -248,6 +255,17 @@ static int select_parameter_bind(
                    IR_ABI_PIECE_INDIRECT
            ? 1
            : 0);
+  for (int i = 0; i < binding->piece_count; i++) {
+    if (binding->pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+      if (!wasm32_machine_copy_plan_build(
+              binding->pieces[i].source_size,
+              &binding->copy_plans[i]))
+        return 0;
+    } else if (!wasm32_machine_select_store(
+                   binding->pieces[i].type, &binding->stores[i])) {
+      return 0;
+    }
+  }
   return 1;
 }
 
@@ -279,7 +297,8 @@ static int select_instruction(
       return 1;
     case IR_MEMCPY:
       selected->kind = WASM32_MACHINE_INST_MEMORY_COPY;
-      return 1;
+      return wasm32_machine_copy_plan_build(
+          instruction->alloca_size, &selected->copy);
     case IR_ALIGN_PTR:
       selected->kind = WASM32_MACHINE_INST_ALIGN_POINTER;
       return 1;
@@ -347,29 +366,52 @@ static int select_instruction(
   }
   if (instruction->op == IR_ATOMIC) {
     selected->kind = WASM32_MACHINE_INST_ATOMIC;
-    if (instruction->atomic_kind == IR_ATOMIC_FENCE) return 1;
+    if (instruction->atomic_kind == IR_ATOMIC_FENCE) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_FENCE;
+      return 1;
+    }
     ir_type_t memory_type = atomic_memory_type(instruction);
     if (memory_type == IR_TY_VOID) return 0;
     if (instruction->atomic_kind == IR_ATOMIC_LOAD ||
         instruction->atomic_kind == IR_ATOMIC_RMW ||
         instruction->atomic_kind == IR_ATOMIC_CAS) {
       if (!wasm32_machine_select_load(
-              memory_type, instruction->is_unsigned, &selected->load))
+              memory_type, instruction->is_unsigned,
+              &selected->atomic.load))
         return 0;
     }
     if (instruction->atomic_kind == IR_ATOMIC_STORE ||
         instruction->atomic_kind == IR_ATOMIC_RMW ||
         instruction->atomic_kind == IR_ATOMIC_CAS) {
-      if (!wasm32_machine_select_store(memory_type, &selected->store))
+      if (!wasm32_machine_select_store(
+              memory_type, &selected->atomic.store))
         return 0;
     }
-    if (instruction->atomic_kind == IR_ATOMIC_RMW &&
-        instruction->atomic_rmw_op != IR_ARMW_XCHG) {
-      return wasm32_machine_select_atomic_rmw(
+    if (instruction->atomic_kind == IR_ATOMIC_LOAD) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_LOAD;
+    } else if (instruction->atomic_kind == IR_ATOMIC_STORE) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_STORE;
+    } else if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+               instruction->atomic_rmw_op == IR_ARMW_XCHG) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_EXCHANGE;
+    } else if (instruction->atomic_kind == IR_ATOMIC_RMW) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_RMW;
+      if (!wasm32_machine_select_atomic_rmw(
           (ir_atomic_rmw_op_t)instruction->atomic_rmw_op,
           memory_type == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32,
-          &selected->binary);
+          &selected->atomic.binary))
+        return 0;
+    } else if (instruction->atomic_kind == IR_ATOMIC_CAS) {
+      selected->atomic.kind = WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE;
+      if (!wasm32_machine_select_binary(
+              IR_EQ,
+              memory_type == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32,
+              &selected->atomic.comparison))
+        return 0;
+    } else {
+      return 0;
     }
+    return 1;
   }
   if (instruction->op == IR_LABEL || instruction->op == IR_BR ||
       instruction->op == IR_BR_COND || instruction->op == IR_RET ||
@@ -452,9 +494,6 @@ static int initialize_instructions(
       machine_instruction->is_function_symbol =
           instruction->is_function_symbol;
       machine_instruction->is_implicit_call = instruction->is_implicit_call;
-      machine_instruction->atomic_kind = instruction->atomic_kind;
-      machine_instruction->atomic_rmw_op = instruction->atomic_rmw_op;
-      machine_instruction->atomic_width = instruction->atomic_width;
       if (instruction->op == IR_LOAD_SYM &&
           instruction->is_function_symbol) {
         const ir_abi_signature_t *reference_abi =
@@ -697,13 +736,24 @@ void wasm32_machine_function_dispose(
     wasm32_machine_function_t *function) {
   if (!function) return;
   wasm32_machine_signature_dispose(&function->signature);
+  wasm32_machine_copy_plan_dispose(&function->result_copy);
   for (int i = 0; i < function->instruction_count; i++) {
     wasm32_machine_signature_dispose(
         &function->instructions[i].call.signature);
     wasm32_machine_signature_dispose(
         &function->instructions[i].reference_signature);
     free(function->instructions[i].call.arguments);
+    wasm32_machine_copy_plan_dispose(
+        &function->instructions[i].copy);
+    for (int piece = 0;
+         piece < function->instructions[i].parameter_bind.piece_count;
+         piece++) {
+      wasm32_machine_copy_plan_dispose(
+          &function->instructions[i].parameter_bind.copy_plans[piece]);
+    }
     free(function->instructions[i].parameter_bind.pieces);
+    free(function->instructions[i].parameter_bind.stores);
+    free(function->instructions[i].parameter_bind.copy_plans);
   }
   free(function->vreg_types);
   free(function->vreg_unsigned);
@@ -738,6 +788,16 @@ int wasm32_machine_function_build(
       function_abi->result_count == 1 && function_abi->result_pieces
           ? function_abi->result_pieces[0].source_size
           : 0;
+  if ((function->signature.has_hidden_result &&
+       !wasm32_machine_copy_plan_build(
+           function->result_source_size, &function->result_copy)) ||
+      (function->signature.has_direct_aggregate_result &&
+       !wasm32_machine_select_load(
+           function->direct_result_type, 1,
+           &function->direct_result_load))) {
+    wasm32_machine_function_dispose(function);
+    return 0;
+  }
   if (function->vreg_count > 0) {
     function->vreg_types =
         malloc((size_t)function->vreg_count * sizeof(*function->vreg_types));

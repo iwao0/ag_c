@@ -190,6 +190,50 @@ static const unary_case_t unary_cases[] = {
 };
 
 int main(void) {
+  wasm32_machine_copy_plan_t copy_plan;
+  if (!wasm32_machine_copy_plan_build(15, &copy_plan) ||
+      copy_plan.chunk_count != 4 ||
+      copy_plan.chunks[0].offset != 0 ||
+      copy_plan.chunks[0].load.opcode != WASM32_MI_I64_LOAD ||
+      copy_plan.chunks[0].store.opcode != WASM32_MI_I64_STORE ||
+      copy_plan.chunks[1].offset != 8 ||
+      copy_plan.chunks[1].load.opcode != WASM32_MI_I32_LOAD ||
+      copy_plan.chunks[2].offset != 12 ||
+      copy_plan.chunks[2].load.opcode != WASM32_MI_I32_LOAD16_U ||
+      copy_plan.chunks[3].offset != 14 ||
+      copy_plan.chunks[3].load.opcode != WASM32_MI_I32_LOAD8_U) {
+    fprintf(stderr, "FAIL: machine copy plan\n");
+    return 1;
+  }
+  wasm32_machine_copy_plan_dispose(&copy_plan);
+  if (copy_plan.chunks || copy_plan.chunk_count != 0 ||
+      wasm32_machine_copy_plan_build(-1, &copy_plan)) {
+    fprintf(stderr, "FAIL: machine copy plan boundary\n");
+    return 1;
+  }
+  wasm32_machine_primitive_plan_t primitives;
+  if (!wasm32_machine_primitive_plan_build(&primitives)) {
+    fprintf(stderr, "FAIL: machine primitive plan build\n");
+    return 1;
+  }
+  const wasm32_machine_conversion_t *planned_conversion =
+      wasm32_machine_planned_conversion(
+          &primitives, IR_TY_PTR, IR_TY_I64, 1);
+  const wasm32_machine_memory_t *planned_load =
+      wasm32_machine_planned_load(&primitives, IR_TY_I16, 1);
+  const wasm32_machine_memory_t *planned_store =
+      wasm32_machine_planned_store(&primitives, IR_TY_F64);
+  if (!planned_conversion ||
+      planned_conversion->opcode != WASM32_MI_I64_EXTEND_I32_U ||
+      !planned_load || planned_load->opcode != WASM32_MI_I32_LOAD16_U ||
+      !planned_store || planned_store->opcode != WASM32_MI_F64_STORE ||
+      wasm32_machine_planned_conversion(
+          &primitives, IR_TY_VOID, IR_TY_I32, 0) ||
+      wasm32_machine_planned_load(&primitives, IR_TY_VOID, 0) ||
+      wasm32_machine_planned_store(&primitives, IR_TY_VOID)) {
+    fprintf(stderr, "FAIL: machine primitive plan lookup\n");
+    return 1;
+  }
   for (size_t i = 0; i < sizeof(binary_cases) / sizeof(binary_cases[0]); i++) {
     const binary_case_t *test = &binary_cases[i];
     wasm32_machine_binary_t selected;
@@ -199,10 +243,14 @@ int main(void) {
         test->source_op == IR_LE || test->source_op == IR_ULE ||
         test->source_op == IR_FEQ || test->source_op == IR_FNE ||
         test->source_op == IR_FLT || test->source_op == IR_FLE;
+    int guards_zero =
+        test->source_op == IR_MOD || test->source_op == IR_UMOD;
     if (!wasm32_machine_select_binary(
             test->source_op, test->operand_type, &selected) ||
         strcmp(wasm32_machine_opcode_wat(selected.opcode), test->wat) != 0 ||
         wasm32_machine_opcode_binary(selected.opcode) != test->binary ||
+        selected.is_comparison != is_comparison ||
+        selected.guard_zero_divisor != guards_zero ||
         selected.result_type !=
             (is_comparison ? IR_TY_I32 : test->operand_type)) {
       fprintf(stderr, "FAIL: machine binary case %zu (%s)\n", i, test->wat);
@@ -638,6 +686,9 @@ int main(void) {
   const wasm32_machine_inst_t *selected_atomic =
       wasm32_machine_function_instruction(
           &machine_function, &function_instructions[11]);
+  const wasm32_machine_inst_t *selected_cas =
+      wasm32_machine_function_instruction(
+          &machine_function, &function_instructions[7]);
   const wasm32_machine_inst_t *selected_call =
       wasm32_machine_function_instruction(
           &machine_function, &function_instructions[12]);
@@ -665,6 +716,9 @@ int main(void) {
       !machine_function.signature.has_hidden_result ||
       machine_function.direct_result_type != IR_TY_VOID ||
       machine_function.result_source_size != 24 ||
+      machine_function.result_copy.chunk_count != 3 ||
+      machine_function.result_copy.chunks[0].load.opcode !=
+          WASM32_MI_I64_LOAD ||
       !first_alloca || first_alloca->offset != 0 ||
       first_alloca->value_type != IR_TY_I64 ||
       !second_alloca || second_alloca->offset != 16 ||
@@ -699,9 +753,14 @@ int main(void) {
       selected_unary->unary.opcode != WASM32_MI_I64_XOR ||
       !selected_atomic ||
       selected_atomic->kind != WASM32_MACHINE_INST_ATOMIC ||
-      selected_atomic->load.opcode != WASM32_MI_I64_LOAD ||
-      selected_atomic->store.opcode != WASM32_MI_I64_STORE ||
-      selected_atomic->binary.opcode != WASM32_MI_I64_XOR ||
+      selected_atomic->atomic.kind != WASM32_MACHINE_ATOMIC_RMW ||
+      selected_atomic->atomic.load.opcode != WASM32_MI_I64_LOAD ||
+      selected_atomic->atomic.store.opcode != WASM32_MI_I64_STORE ||
+      selected_atomic->atomic.binary.opcode != WASM32_MI_I64_XOR ||
+      !selected_cas ||
+      selected_cas->atomic.kind !=
+          WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE ||
+      selected_cas->atomic.comparison.opcode != WASM32_MI_I64_EQ ||
       !selected_call ||
       selected_call->kind != WASM32_MACHINE_INST_CALL ||
       selected_call->call.signature.nparams != 2 ||
@@ -726,6 +785,10 @@ int main(void) {
           physical_function_params ||
       selected_parameter->parameter_bind.pieces[1].type != IR_TY_I64 ||
       selected_parameter->parameter_bind.pieces[1].byte_offset != 8 ||
+      selected_parameter->parameter_bind.stores[0].opcode !=
+          WASM32_MI_I32_STORE ||
+      selected_parameter->parameter_bind.stores[1].opcode !=
+          WASM32_MI_I64_STORE ||
       !selected_control ||
       selected_control->kind != WASM32_MACHINE_INST_CONTROL ||
       selected_control->control.kind != WASM32_MACHINE_CONTROL_BRANCH ||

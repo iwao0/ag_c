@@ -142,6 +142,7 @@ struct wasm32_obj_context_t {
   int emit_local_count;
   const ir_abi_module_t *abi;
   const ir_abi_data_module_t *data_abi;
+  wasm32_machine_primitive_plan_t primitives;
 };
 
 static wasm32_obj_context_t default_wasm32_obj_context;
@@ -219,6 +220,8 @@ wasm32_obj_context_t *wasm32_obj_context_active(void) {
 #define g_emit_local_count (wasm32_obj_context_active()->emit_local_count)
 #define g_obj_abi (wasm32_obj_context_active()->abi)
 #define g_obj_data_abi (wasm32_obj_context_active()->data_abi)
+#define g_obj_machine_primitives \
+  (wasm32_obj_context_active()->primitives)
 
 static ag_diagnostic_context_t *wasm32_obj_diagnostics(void) {
   return wasm32_obj_context_active()->diagnostic_context;
@@ -794,13 +797,15 @@ static void emit_fp_const(wb_t *b, ir_type_t type, double value) {
 static void emit_conversion_opcode(
     wb_t *b, ir_type_t source_type, ir_type_t result_type,
     int is_unsigned) {
-  wasm32_machine_conversion_t selected;
-  if (!wasm32_machine_select_conversion(
+  const wasm32_machine_conversion_t *selected =
+      wasm32_machine_planned_conversion(
+          &g_obj_machine_primitives,
           wasm_ir_type(source_type), wasm_ir_type(result_type),
-          is_unsigned, &selected))
+          is_unsigned);
+  if (!selected)
     obj_unsupported_msg("unsupported Wasm object value conversion");
-  if (selected.opcode == WASM32_MI_COPY) return;
-  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (selected->opcode == WASM32_MI_COPY) return;
+  unsigned opcode = wasm32_machine_opcode_binary(selected->opcode);
   if (!opcode) obj_unsupported_msg("missing Wasm object conversion opcode");
   wb_u8(b, opcode);
 }
@@ -835,20 +840,24 @@ static void emit_addr_val(wb_t *b, ir_val_t v, int param_count) {
   emit_stack_cast(b, actual_vreg_type(v), IR_TY_I32, actual_vreg_unsigned(v));
 }
 
-static wasm32_machine_memory_t select_load_or_unsupported(
+static wasm32_machine_memory_t planned_load_or_unsupported(
     ir_type_t memory_type, int is_unsigned) {
-  wasm32_machine_memory_t selected = {0};
-  if (!wasm32_machine_select_load(memory_type, is_unsigned, &selected))
+  const wasm32_machine_memory_t *selected =
+      wasm32_machine_planned_load(
+          &g_obj_machine_primitives, memory_type, is_unsigned);
+  if (!selected)
     obj_unsupported_msg("unsupported Wasm object load type");
-  return selected;
+  return *selected;
 }
 
-static wasm32_machine_memory_t select_store_or_unsupported(
+static wasm32_machine_memory_t planned_store_or_unsupported(
     ir_type_t memory_type) {
-  wasm32_machine_memory_t selected = {0};
-  if (!wasm32_machine_select_store(memory_type, &selected))
+  const wasm32_machine_memory_t *selected =
+      wasm32_machine_planned_store(
+          &g_obj_machine_primitives, memory_type);
+  if (!selected)
     obj_unsupported_msg("unsupported Wasm object store type");
-  return selected;
+  return *selected;
 }
 
 static unsigned memory_binary_or_unsupported(
@@ -859,12 +868,12 @@ static unsigned memory_binary_or_unsupported(
 }
 
 static int mem_align_log2(ir_type_t ty) {
-  return (int)select_store_or_unsupported(ty).alignment_log2;
+  return (int)planned_store_or_unsupported(ty).alignment_log2;
 }
 
 static unsigned load_opcode(ir_type_t ty, int is_unsigned) {
   return memory_binary_or_unsupported(
-      select_load_or_unsupported(ty, is_unsigned));
+      planned_load_or_unsupported(ty, is_unsigned));
 }
 
 static void emit_abi_argument(
@@ -889,7 +898,7 @@ static void emit_abi_argument(
 }
 
 static unsigned store_opcode(ir_type_t ty) {
-  return memory_binary_or_unsupported(select_store_or_unsupported(ty));
+  return memory_binary_or_unsupported(planned_store_or_unsupported(ty));
 }
 
 static void emit_memarg(wb_t *b, ir_type_t ty) {
@@ -977,94 +986,69 @@ static void emit_addr_plus_const(wb_t *b, ir_val_t v, int off, int param_count) 
   wb_u8(b, 0x6a);
 }
 
-static void emit_copy_chunk(wb_t *b, ir_val_t dst, ir_val_t src, int off, ir_type_t ty,
-                            int param_count) {
-  emit_addr_plus_const(b, dst, off, param_count);
-  emit_addr_plus_const(b, src, off, param_count);
-  wb_u8(b, load_opcode(ty, 1));
-  emit_memarg(b, ty);
-  wb_u8(b, store_opcode(ty));
-  emit_memarg(b, ty);
+static void emit_copy_chunk(
+    wb_t *b, ir_val_t dst, ir_val_t src,
+    const wasm32_machine_copy_chunk_t *chunk, int param_count) {
+  emit_addr_plus_const(b, dst, chunk->offset, param_count);
+  emit_addr_plus_const(b, src, chunk->offset, param_count);
+  wb_u8(b, memory_binary_or_unsupported(chunk->load));
+  emit_selected_memarg(b, &chunk->load);
+  wb_u8(b, memory_binary_or_unsupported(chunk->store));
+  emit_selected_memarg(b, &chunk->store);
 }
 
 static void emit_memcpy_inline(
     wb_t *b, const wasm32_machine_inst_t *i, int param_count) {
-  int n = i->alloca_size;
-  if (n < 0) obj_unsupported_op(i->op);
-  int off = 0;
-  for (; off + 8 <= n; off += 8) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I64, param_count);
-  for (; off + 4 <= n; off += 4) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I32, param_count);
-  for (; off + 2 <= n; off += 2) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I16, param_count);
-  for (; off < n; off++) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I8, param_count);
+  for (int chunk = 0; chunk < i->copy.chunk_count; chunk++)
+    emit_copy_chunk(
+        b, i->src1, i->src2, &i->copy.chunks[chunk], param_count);
 }
 
 static void emit_parameter_copy_chunk(
     wb_t *b, ir_val_t destination, int parameter_slot,
-    int offset, ir_type_t type, int param_count) {
-  emit_addr_plus_const(b, destination, offset, param_count);
+    const wasm32_machine_copy_chunk_t *chunk, int param_count) {
+  emit_addr_plus_const(b, destination, chunk->offset, param_count);
   emit_local_get(b, parameter_slot);
-  if (offset != 0) {
-    emit_const(b, IR_TY_I32, offset);
+  if (chunk->offset != 0) {
+    emit_const(b, IR_TY_I32, chunk->offset);
     wb_u8(b, 0x6a);
   }
-  wb_u8(b, load_opcode(type, 1));
-  emit_memarg(b, type);
-  wb_u8(b, store_opcode(type));
-  emit_memarg(b, type);
+  wb_u8(b, memory_binary_or_unsupported(chunk->load));
+  emit_selected_memarg(b, &chunk->load);
+  wb_u8(b, memory_binary_or_unsupported(chunk->store));
+  emit_selected_memarg(b, &chunk->store);
 }
 
 static void emit_parameter_copy(
     wb_t *b, ir_val_t destination, int parameter_slot,
-    int size, int param_count) {
-  int offset = 0;
-  for (; offset + 8 <= size; offset += 8)
+    const wasm32_machine_copy_plan_t *plan, int param_count) {
+  for (int index = 0; index < plan->chunk_count; index++)
     emit_parameter_copy_chunk(
-        b, destination, parameter_slot, offset,
-        IR_TY_I64, param_count);
-  for (; offset + 4 <= size; offset += 4)
-    emit_parameter_copy_chunk(
-        b, destination, parameter_slot, offset,
-        IR_TY_I32, param_count);
-  for (; offset + 2 <= size; offset += 2)
-    emit_parameter_copy_chunk(
-        b, destination, parameter_slot, offset,
-        IR_TY_I16, param_count);
-  for (; offset < size; offset++)
-    emit_parameter_copy_chunk(
-        b, destination, parameter_slot, offset,
-        IR_TY_I8, param_count);
+        b, destination, parameter_slot, &plan->chunks[index],
+        param_count);
 }
 
 static void emit_return_copy_chunk(
-    wb_t *body, ir_val_t source, int offset,
-    ir_type_t type, int param_count) {
+    wb_t *body, ir_val_t source,
+    const wasm32_machine_copy_chunk_t *chunk, int param_count) {
   emit_local_get(body, 0);
-  if (offset != 0) {
-    emit_const(body, IR_TY_I32, offset);
+  if (chunk->offset != 0) {
+    emit_const(body, IR_TY_I32, chunk->offset);
     wb_u8(body, 0x6a);
   }
-  emit_addr_plus_const(body, source, offset, param_count);
-  wb_u8(body, load_opcode(type, 1));
-  emit_memarg(body, type);
-  wb_u8(body, store_opcode(type));
-  emit_memarg(body, type);
+  emit_addr_plus_const(body, source, chunk->offset, param_count);
+  wb_u8(body, memory_binary_or_unsupported(chunk->load));
+  emit_selected_memarg(body, &chunk->load);
+  wb_u8(body, memory_binary_or_unsupported(chunk->store));
+  emit_selected_memarg(body, &chunk->store);
 }
 
 static void emit_indirect_return_copy(
-    wb_t *body, ir_val_t source, int size, int param_count) {
-  int offset = 0;
-  for (; offset + 8 <= size; offset += 8)
+    wb_t *body, ir_val_t source,
+    const wasm32_machine_copy_plan_t *plan, int param_count) {
+  for (int index = 0; index < plan->chunk_count; index++)
     emit_return_copy_chunk(
-        body, source, offset, IR_TY_I64, param_count);
-  for (; offset + 4 <= size; offset += 4)
-    emit_return_copy_chunk(
-        body, source, offset, IR_TY_I32, param_count);
-  for (; offset + 2 <= size; offset += 2)
-    emit_return_copy_chunk(
-        body, source, offset, IR_TY_I16, param_count);
-  for (; offset < size; offset++)
-    emit_return_copy_chunk(
-        body, source, offset, IR_TY_I8, param_count);
+        body, source, &plan->chunks[index], param_count);
 }
 
 static void emit_parameter_bind(
@@ -1088,7 +1072,7 @@ static void emit_parameter_bind(
     if (binding->pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
       emit_parameter_copy(
           body, instruction->src1, parameter_slot,
-          binding->pieces[i].source_size, param_count);
+          &binding->copy_plans[i], param_count);
       continue;
     }
     emit_addr_plus_const(
@@ -1098,8 +1082,8 @@ static void emit_parameter_bind(
     emit_stack_cast(
         body, object_function->sig.params[parameter_slot],
         wasm_ir_type(binding->pieces[i].type), 1);
-    wb_u8(body, store_opcode(binding->pieces[i].type));
-    emit_memarg(body, binding->pieces[i].type);
+    wb_u8(body, memory_binary_or_unsupported(binding->stores[i]));
+    emit_selected_memarg(body, &binding->stores[i]);
   }
 }
 
@@ -1182,8 +1166,8 @@ static void emit_direct_aggregate_call_result(
   emit_local_set(body, temporary);
   emit_addr_val(body, call->result_area, param_count);
   emit_local_get(body, temporary);
-  wb_u8(body, store_opcode(result_type));
-  emit_memarg(body, result_type);
+  wb_u8(body, memory_binary_or_unsupported(call->direct_result_store));
+  emit_selected_memarg(body, &call->direct_result_store);
 }
 
 static void gen_func_body(const ir_module_t *module, obj_func_t *of,
@@ -1516,72 +1500,89 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         }
         case WASM32_MACHINE_INST_ATOMIC: {
           const wasm32_machine_inst_t *selected = planned;
-          if (i->atomic_kind == IR_ATOMIC_FENCE) {
+          if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_FENCE) {
             wb_u8(&body, 0x01);
             break;
           }
-          ir_type_t value_ty = selected->load.opcode != WASM32_MI_INVALID
-                                   ? selected->load.value_type
-                                   : selected->store.value_type;
-          if (i->atomic_kind == IR_ATOMIC_LOAD) {
+          ir_type_t value_ty =
+              selected->atomic.load.opcode != WASM32_MI_INVALID
+                  ? selected->atomic.load.value_type
+                  : selected->atomic.store.value_type;
+          if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_LOAD) {
             emit_addr_val(&body, i->src1, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->load));
-            emit_selected_memarg(&body, &selected->load);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.load));
+            emit_selected_memarg(&body, &selected->atomic.load);
             emit_local_set(&body, local_index(param_count, i->dst.id));
             break;
           }
-          if (i->atomic_kind == IR_ATOMIC_STORE) {
+          if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_STORE) {
             emit_addr_val(&body, i->src1, param_count);
             emit_val(&body, i->src2, value_ty, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->store));
-            emit_selected_memarg(&body, &selected->store);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.store));
+            emit_selected_memarg(&body, &selected->atomic.store);
             break;
           }
-          if (i->atomic_kind == IR_ATOMIC_RMW) {
+          if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_EXCHANGE ||
+              selected->atomic.kind == WASM32_MACHINE_ATOMIC_RMW) {
             emit_addr_val(&body, i->src1, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->load));
-            emit_selected_memarg(&body, &selected->load);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.load));
+            emit_selected_memarg(&body, &selected->atomic.load);
             emit_local_set(&body, local_index(param_count, i->dst.id));
 
             emit_addr_val(&body, i->src1, param_count);
-            if (i->atomic_rmw_op == IR_ARMW_XCHG) {
+            if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_EXCHANGE) {
               emit_val(&body, i->src2, value_ty, param_count);
             } else {
               emit_val(&body, i->dst, value_ty, param_count);
               emit_val(&body, i->src2, value_ty, param_count);
-              wb_u8(&body, selected_opcode_or_unsupported(selected));
+              unsigned opcode = wasm32_machine_opcode_binary(
+                  selected->atomic.binary.opcode);
+              if (!opcode) obj_unsupported_op(i->op);
+              wb_u8(&body, opcode);
             }
-            wb_u8(&body, memory_binary_or_unsupported(selected->store));
-            emit_selected_memarg(&body, &selected->store);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.store));
+            emit_selected_memarg(&body, &selected->atomic.store);
             break;
           }
-          if (i->atomic_kind == IR_ATOMIC_CAS) {
+          if (selected->atomic.kind ==
+              WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE) {
             int tmp_local = value_ty == IR_TY_I64 ? atomic_tmp64_local : atomic_tmp32_local;
             int exp_local = value_ty == IR_TY_I64 ? atomic_exp64_local : atomic_exp32_local;
             emit_addr_val(&body, i->src1, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->load));
-            emit_selected_memarg(&body, &selected->load);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.load));
+            emit_selected_memarg(&body, &selected->atomic.load);
             emit_local_set(&body, tmp_local);
             emit_addr_val(&body, i->src2, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->load));
-            emit_selected_memarg(&body, &selected->load);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.load));
+            emit_selected_memarg(&body, &selected->atomic.load);
             emit_local_set(&body, exp_local);
             emit_local_get(&body, tmp_local);
             emit_local_get(&body, exp_local);
-            wb_u8(&body, value_ty == IR_TY_I64 ? 0x51 : 0x46);
+            unsigned comparison_opcode = wasm32_machine_opcode_binary(
+                selected->atomic.comparison.opcode);
+            if (!comparison_opcode) obj_unsupported_op(i->op);
+            wb_u8(&body, comparison_opcode);
             emit_local_set(&body, local_index(param_count, i->dst.id));
             emit_local_get(&body, local_index(param_count, i->dst.id));
             wb_u8(&body, 0x04);
             wb_u8(&body, 0x40);
             emit_addr_val(&body, i->src1, param_count);
             emit_val(&body, i->src3, value_ty, param_count);
-            wb_u8(&body, memory_binary_or_unsupported(selected->store));
-            emit_selected_memarg(&body, &selected->store);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.store));
+            emit_selected_memarg(&body, &selected->atomic.store);
             wb_u8(&body, 0x0b);
             emit_addr_val(&body, i->src2, param_count);
             emit_local_get(&body, tmp_local);
-            wb_u8(&body, memory_binary_or_unsupported(selected->store));
-            emit_selected_memarg(&body, &selected->store);
+            wb_u8(
+                &body, memory_binary_or_unsupported(selected->atomic.store));
+            emit_selected_memarg(&body, &selected->atomic.store);
             break;
           }
           obj_unsupported_op(i->op);
@@ -1633,8 +1634,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         case WASM32_MACHINE_INST_BINARY: {
           const wasm32_machine_inst_t *selected = planned;
           ir_type_t op_ty = selected->binary.operand_type;
-          if (wasm32_machine_opcode_is_remainder(
-                  selected->binary.opcode)) {
+          if (selected->binary.guard_zero_divisor) {
             emit_val(&body, i->src2, op_ty, param_count);
             wb_u8(&body, op_ty == IR_TY_I64 ? 0x50 : 0x45);
             wb_u8(&body, 0x04);
@@ -1819,8 +1819,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                       result.id == IR_VAL_NONE)
                     obj_unsupported_op(i->op);
                   emit_indirect_return_copy(
-                      &body, result,
-                      machine_function.result_source_size,
+                      &body, result, &machine_function.result_copy,
                       param_count);
                 } else if (
                     machine_function.signature
@@ -1828,11 +1827,12 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                   if (result.type != IR_TY_PTR ||
                       result.id == IR_VAL_NONE)
                     obj_unsupported_op(i->op);
-                  ir_type_t result_type =
-                      machine_function.direct_result_type;
                   emit_addr_val(&body, result, param_count);
-                  wb_u8(&body, load_opcode(result_type, 1));
-                  emit_memarg(&body, result_type);
+                  wb_u8(
+                      &body, memory_binary_or_unsupported(
+                                 machine_function.direct_result_load));
+                  emit_selected_memarg(
+                      &body, &machine_function.direct_result_load);
                 } else if (result.id != IR_VAL_NONE) {
                   emit_val(&body, result, of->sig.result, param_count);
                 }
@@ -2314,6 +2314,8 @@ void wasm32_obj_begin(void) {
   wasm32_obj_clear_module(&g_obj);
   g_obj.out = out;
   g_obj.capture_output = capture_output;
+  if (!wasm32_machine_primitive_plan_build(&g_obj_machine_primitives))
+    obj_unsupported_msg("failed to build Wasm object Machine primitive plan");
 }
 
 void wasm32_obj_gen_ir_module(

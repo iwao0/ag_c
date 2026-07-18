@@ -104,6 +104,12 @@ typedef struct {
   wasm32_machine_opcode_t opcode;
   ir_type_t operand_type;
   ir_type_t result_type;
+  unsigned char is_comparison;
+  unsigned char is_unsigned;
+  unsigned char is_shift;
+  unsigned char guard_zero_divisor;
+  unsigned char tracks_address;
+  unsigned char subtracts_address;
 } wasm32_machine_binary_t;
 
 typedef struct {
@@ -132,6 +138,33 @@ typedef struct {
   unsigned alignment_log2;
 } wasm32_machine_memory_t;
 
+typedef struct {
+  int offset;
+  wasm32_machine_memory_t load;
+  wasm32_machine_memory_t store;
+} wasm32_machine_copy_chunk_t;
+
+typedef struct {
+  wasm32_machine_copy_chunk_t *chunks;
+  int chunk_count;
+} wasm32_machine_copy_plan_t;
+
+#define WASM32_MACHINE_IR_TYPE_COUNT ((int)IR_TY_PTR + 1)
+
+typedef struct {
+  wasm32_machine_conversion_t
+      conversions[WASM32_MACHINE_IR_TYPE_COUNT]
+                 [WASM32_MACHINE_IR_TYPE_COUNT][2];
+  wasm32_machine_memory_t
+      loads[WASM32_MACHINE_IR_TYPE_COUNT][2];
+  wasm32_machine_memory_t stores[WASM32_MACHINE_IR_TYPE_COUNT];
+  unsigned char
+      conversion_valid[WASM32_MACHINE_IR_TYPE_COUNT]
+                      [WASM32_MACHINE_IR_TYPE_COUNT][2];
+  unsigned char load_valid[WASM32_MACHINE_IR_TYPE_COUNT][2];
+  unsigned char store_valid[WASM32_MACHINE_IR_TYPE_COUNT];
+} wasm32_machine_primitive_plan_t;
+
 ir_type_t wasm32_machine_value_type(ir_type_t type);
 
 int wasm32_machine_select_binary(
@@ -151,6 +184,21 @@ int wasm32_machine_select_load(
     wasm32_machine_memory_t *selected);
 int wasm32_machine_select_store(
     ir_type_t memory_type, wasm32_machine_memory_t *selected);
+int wasm32_machine_copy_plan_build(
+    int size, wasm32_machine_copy_plan_t *plan);
+void wasm32_machine_copy_plan_dispose(
+    wasm32_machine_copy_plan_t *plan);
+int wasm32_machine_primitive_plan_build(
+    wasm32_machine_primitive_plan_t *plan);
+const wasm32_machine_conversion_t *wasm32_machine_planned_conversion(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t source_type, ir_type_t result_type, int is_unsigned);
+const wasm32_machine_memory_t *wasm32_machine_planned_load(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t memory_type, int is_unsigned);
+const wasm32_machine_memory_t *wasm32_machine_planned_store(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t memory_type);
 const char *wasm32_machine_opcode_wat(wasm32_machine_opcode_t opcode);
 unsigned wasm32_machine_opcode_binary(wasm32_machine_opcode_t opcode);
 int wasm32_machine_opcode_is_comparison(wasm32_machine_opcode_t opcode);

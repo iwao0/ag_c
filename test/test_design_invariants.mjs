@@ -9339,6 +9339,14 @@ if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
     ) ||
     /wasm32_machine_select_binary\s*\(/.test(wasmWatWriterSource) ||
     /wasm32_machine_select_binary\s*\(/.test(wasmObjectWriterSource) ||
+    /wasm32_machine_opcode_is_[A-Za-z0-9_]+\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /wasm32_machine_opcode_is_[A-Za-z0-9_]+\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/guard_zero_divisor/.test(wasmWatWriterSource) ||
+    !/guard_zero_divisor/.test(wasmObjectWriterSource) ||
     /static\s+const\s+char\s*\*\s*wasm_(?:fp_)?binop\s*\(/.test(
       wasmWatWriterSource,
     ) ||
@@ -9393,6 +9401,29 @@ if (!/wasm32_machine_select_load\s*\(/.test(wasmMachineIrSource) ||
   );
 }
 
+if (!/wasm32_machine_copy_plan_build\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_copy_plan_build\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/result_copy/.test(wasmMachineFunctionSource) ||
+    !/direct_result_load/.test(wasmMachineFunctionSource) ||
+    !/direct_result_store/.test(wasmMachineFunctionSource) ||
+    !/copy\.chunks/.test(wasmWatWriterSource) ||
+    !/copy\.chunks/.test(wasmObjectWriterSource) ||
+    !/copy_plans/.test(wasmWatWriterSource) ||
+    !/copy_plans/.test(wasmObjectWriterSource) ||
+    /wasm_copy_chunks/.test(wasmWatWriterSource) ||
+    /for\s*\([^)]*(?:off|offset)\s*\+\s*(?:8|4|2)\s*<=/.test(
+      wasmWatWriterSource,
+    ) ||
+    /for\s*\([^)]*(?:off|offset)\s*\+\s*(?:8|4|2)\s*<=/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm writers must serialize preplanned Machine copy chunks and aggregate memory operations",
+  );
+}
+
 for (const [name, source] of [
   ["Wasm text", wasmWatWriterSource],
   ["Wasm object", wasmObjectWriterSource],
@@ -9430,6 +9461,13 @@ if (!/wasm32_machine_select_unary\s*\(/.test(wasmMachineIrSource) ||
     !/WASM32_MACHINE_INST_ATOMIC/.test(wasmWatWriterSource) ||
     !/WASM32_MACHINE_INST_UNARY/.test(wasmObjectWriterSource) ||
     !/WASM32_MACHINE_INST_ATOMIC/.test(wasmObjectWriterSource) ||
+    !/WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    /\bIR_(?:ATOMIC|ARMW)_[A-Z0-9_]+\b/.test(wasmWatWriterSource) ||
+    /\bIR_(?:ATOMIC|ARMW)_[A-Z0-9_]+\b/.test(
+      wasmObjectWriterSource,
+    ) ||
     /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmWatWriterSource) ||
     /switch\s*\(\s*i->atomic_rmw_op\s*\)/.test(wasmObjectWriterSource)) {
   throw new Error(
@@ -9439,9 +9477,24 @@ if (!/wasm32_machine_select_unary\s*\(/.test(wasmMachineIrSource) ||
 
 if (!/WASM32_MACHINE_INST_CONVERSION/.test(wasmMachineFunctionSource) ||
     !/WASM32_MACHINE_INST_CONVERSION/.test(wasmWatWriterSource) ||
-    !/WASM32_MACHINE_INST_CONVERSION/.test(wasmObjectWriterSource)) {
+    !/WASM32_MACHINE_INST_CONVERSION/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_primitive_plan_build\s*\(/.test(
+      wasmMachineIrSource,
+    ) ||
+    !/wasm32_machine_planned_conversion\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_machine_planned_conversion\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /wasm32_machine_select_(?:conversion|load|store|binary|unary|atomic_rmw)\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /wasm32_machine_select_(?:conversion|load|store|binary|unary|atomic_rmw)\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
   throw new Error(
-    "Wasm WAT and object writers must serialize preselected Machine IR conversions",
+    "Wasm WAT and object writers must serialize the preplanned Machine primitive catalog",
   );
 }
 
@@ -9503,8 +9556,10 @@ if (!/void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(void\)\s*\{/.test(
 
 if (!/result_source_size/.test(wasmMachineFunctionSource) ||
     !/direct_result_type/.test(wasmMachineFunctionSource) ||
-    !/machine\.result_source_size/.test(wasmWatWriterSource) ||
-    !/machine_function\.result_source_size/.test(
+    !/machine\.result_copy/.test(wasmWatWriterSource) ||
+    !/machine\.direct_result_load/.test(wasmWatWriterSource) ||
+    !/machine_function\.result_copy/.test(wasmObjectWriterSource) ||
+    !/machine_function\.direct_result_load/.test(
       wasmObjectWriterSource,
     ) ||
     /ir_abi_signature_(?:result_is_indirect|result_is_direct_aggregate|direct_result_type|result_source_size)\s*\(/.test(

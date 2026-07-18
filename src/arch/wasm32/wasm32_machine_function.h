@@ -58,15 +58,35 @@ typedef struct {
   int fixed_argument_count;
   ir_val_t result_area;
   ir_type_t direct_result_type;
+  wasm32_machine_memory_t direct_result_store;
   unsigned char is_indirect;
   unsigned char is_variadic;
 } wasm32_machine_call_t;
 
 typedef struct {
   ir_abi_piece_t *pieces;
+  wasm32_machine_memory_t *stores;
+  wasm32_machine_copy_plan_t *copy_plans;
   int piece_count;
   int physical_index;
 } wasm32_machine_parameter_bind_t;
+
+typedef enum {
+  WASM32_MACHINE_ATOMIC_FENCE = 0,
+  WASM32_MACHINE_ATOMIC_LOAD,
+  WASM32_MACHINE_ATOMIC_STORE,
+  WASM32_MACHINE_ATOMIC_EXCHANGE,
+  WASM32_MACHINE_ATOMIC_RMW,
+  WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE,
+} wasm32_machine_atomic_kind_t;
+
+typedef struct {
+  wasm32_machine_atomic_kind_t kind;
+  wasm32_machine_memory_t load;
+  wasm32_machine_memory_t store;
+  wasm32_machine_binary_t binary;
+  wasm32_machine_binary_t comparison;
+} wasm32_machine_atomic_t;
 
 typedef struct {
   ir_inst_t *source;
@@ -87,15 +107,14 @@ typedef struct {
   unsigned char is_function_symbol;
   unsigned char is_implicit_call;
   unsigned char has_reference_signature;
-  unsigned char atomic_kind;
-  unsigned char atomic_rmw_op;
-  unsigned char atomic_width;
   wasm32_machine_inst_kind_t kind;
   wasm32_machine_binary_t binary;
   wasm32_machine_unary_t unary;
   wasm32_machine_conversion_t conversion;
   wasm32_machine_memory_t load;
   wasm32_machine_memory_t store;
+  wasm32_machine_atomic_t atomic;
+  wasm32_machine_copy_plan_t copy;
   wasm32_machine_call_t call;
   wasm32_machine_parameter_bind_t parameter_bind;
   wasm32_machine_control_t control;
@@ -116,6 +135,8 @@ typedef struct {
   wasm32_machine_signature_t signature;
   ir_type_t direct_result_type;
   int result_source_size;
+  wasm32_machine_memory_t direct_result_load;
+  wasm32_machine_copy_plan_t result_copy;
   ir_type_t *vreg_types;
   unsigned char *vreg_unsigned;
   unsigned char *vreg_used;

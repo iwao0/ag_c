@@ -1,6 +1,8 @@
 #include "wasm32_machine_ir.h"
 
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct {
   const char *wat;
@@ -170,6 +172,22 @@ int wasm32_machine_select_binary(
        source_op == IR_FLT || source_op == IR_FLE)
           ? IR_TY_I32
           : operand_type;
+  selected->is_comparison =
+      wasm32_machine_opcode_is_comparison(opcode) ? 1 : 0;
+  selected->is_unsigned =
+      wasm32_machine_opcode_is_unsigned(opcode) ? 1 : 0;
+  selected->is_shift =
+      wasm32_machine_opcode_is_shift(opcode) ? 1 : 0;
+  selected->guard_zero_divisor =
+      wasm32_machine_opcode_is_remainder(opcode) ? 1 : 0;
+  selected->tracks_address =
+      ((wasm32_machine_opcode_is_add(opcode) ||
+        wasm32_machine_opcode_is_subtract(opcode)) &&
+       !selected->is_comparison)
+          ? 1
+          : 0;
+  selected->subtracts_address =
+      wasm32_machine_opcode_is_subtract(opcode) ? 1 : 0;
   return 1;
 }
 
@@ -376,6 +394,125 @@ int wasm32_machine_select_store(
       .alignment_log2 = alignment_log2,
   };
   return 1;
+}
+
+int wasm32_machine_copy_plan_build(
+    int size, wasm32_machine_copy_plan_t *plan) {
+  static const struct {
+    int width;
+    ir_type_t type;
+  } copy_kinds[] = {
+      {8, IR_TY_I64},
+      {4, IR_TY_I32},
+      {2, IR_TY_I16},
+      {1, IR_TY_I8},
+  };
+  if (!plan || size < 0) return 0;
+  memset(plan, 0, sizeof(*plan));
+  int count = 0;
+  int offset = 0;
+  for (size_t i = 0; i < sizeof(copy_kinds) / sizeof(copy_kinds[0]); i++) {
+    while (offset + copy_kinds[i].width <= size) {
+      count++;
+      offset += copy_kinds[i].width;
+    }
+  }
+  if (count == 0) return 1;
+  plan->chunks = calloc((size_t)count, sizeof(*plan->chunks));
+  if (!plan->chunks) return 0;
+  plan->chunk_count = count;
+  int output = 0;
+  offset = 0;
+  for (size_t i = 0; i < sizeof(copy_kinds) / sizeof(copy_kinds[0]); i++) {
+    while (offset + copy_kinds[i].width <= size) {
+      wasm32_machine_copy_chunk_t *chunk = &plan->chunks[output++];
+      chunk->offset = offset;
+      if (!wasm32_machine_select_load(
+              copy_kinds[i].type, 1, &chunk->load) ||
+          !wasm32_machine_select_store(
+              copy_kinds[i].type, &chunk->store)) {
+        wasm32_machine_copy_plan_dispose(plan);
+        return 0;
+      }
+      offset += copy_kinds[i].width;
+    }
+  }
+  return 1;
+}
+
+void wasm32_machine_copy_plan_dispose(
+    wasm32_machine_copy_plan_t *plan) {
+  if (!plan) return;
+  free(plan->chunks);
+  memset(plan, 0, sizeof(*plan));
+}
+
+int wasm32_machine_primitive_plan_build(
+    wasm32_machine_primitive_plan_t *plan) {
+  if (!plan) return 0;
+  memset(plan, 0, sizeof(*plan));
+  for (int source = IR_TY_VOID; source <= IR_TY_PTR; source++) {
+    for (int result = IR_TY_VOID; result <= IR_TY_PTR; result++) {
+      for (int is_unsigned = 0; is_unsigned <= 1; is_unsigned++) {
+        plan->conversion_valid[source][result][is_unsigned] =
+            wasm32_machine_select_conversion(
+                (ir_type_t)source, (ir_type_t)result, is_unsigned,
+                &plan->conversions[source][result][is_unsigned])
+                ? 1
+                : 0;
+      }
+    }
+    for (int is_unsigned = 0; is_unsigned <= 1; is_unsigned++) {
+      plan->load_valid[source][is_unsigned] =
+          wasm32_machine_select_load(
+              (ir_type_t)source, is_unsigned,
+              &plan->loads[source][is_unsigned])
+              ? 1
+              : 0;
+    }
+    plan->store_valid[source] =
+        wasm32_machine_select_store(
+            (ir_type_t)source, &plan->stores[source])
+            ? 1
+            : 0;
+  }
+  return 1;
+}
+
+static int valid_plan_type(ir_type_t type) {
+  return type >= IR_TY_VOID && type <= IR_TY_PTR;
+}
+
+const wasm32_machine_conversion_t *wasm32_machine_planned_conversion(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t source_type, ir_type_t result_type, int is_unsigned) {
+  source_type = wasm32_machine_value_type(source_type);
+  result_type = wasm32_machine_value_type(result_type);
+  is_unsigned = is_unsigned ? 1 : 0;
+  if (!plan || !valid_plan_type(source_type) ||
+      !valid_plan_type(result_type) ||
+      !plan->conversion_valid[source_type][result_type][is_unsigned])
+    return NULL;
+  return &plan->conversions[source_type][result_type][is_unsigned];
+}
+
+const wasm32_machine_memory_t *wasm32_machine_planned_load(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t memory_type, int is_unsigned) {
+  is_unsigned = is_unsigned ? 1 : 0;
+  if (!plan || !valid_plan_type(memory_type) ||
+      !plan->load_valid[memory_type][is_unsigned])
+    return NULL;
+  return &plan->loads[memory_type][is_unsigned];
+}
+
+const wasm32_machine_memory_t *wasm32_machine_planned_store(
+    const wasm32_machine_primitive_plan_t *plan,
+    ir_type_t memory_type) {
+  if (!plan || !valid_plan_type(memory_type) ||
+      !plan->store_valid[memory_type])
+    return NULL;
+  return &plan->stores[memory_type];
 }
 
 const char *wasm32_machine_opcode_wat(wasm32_machine_opcode_t opcode) {
