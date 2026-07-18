@@ -216,6 +216,14 @@ const scopeGraphGlobalRegistrySource = await readFile(
   "src/parser/global_registry.c",
   "utf8",
 );
+const scopeGraphSemanticContextSource = await readFile(
+  "src/parser/semantic_ctx.c",
+  "utf8",
+);
+const scopeGraphIdentifierResolutionSource = await readFile(
+  "src/semantic/identifier_resolution.c",
+  "utf8",
+);
 if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
     !/PSX_NAMESPACE_ORDINARY/.test(scopeGraphHeader) ||
@@ -237,6 +245,18 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/psx_scope_graph_lookup\s*\(/.test(scopeGraphLocalRegistrySource) ||
     !/psx_scope_graph_lookup_in_scope\s*\(/.test(
       scopeGraphGlobalRegistrySource,
+    ) ||
+    !/psx_scope_graph_declare\s*\([^]*?PSX_DECL_ENUM_CONSTANT/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/psx_scope_graph_declare\s*\([^]*?PSX_DECL_TYPEDEF/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/psx_scope_graph_declare_at\s*\([^]*?PSX_DECL_FUNCTION/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/shared_identifier_scope_graph\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
+      scopeGraphIdentifierResolutionSource,
     )) {
   throw new Error(
     "CompilationSession must own one ScopeId/DeclId graph with all C namespaces",
@@ -3925,14 +3945,17 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
 if (/\b(?:legacy|psx_local_registry_t|psx_global_registry_t|psx_semantic_context_t)\b|#include\s+"(?:local_registry|semantic_ctx|stmt_legacy)\.h"/.test(
       `${expressionSyntaxAdapterSource}\n${statementSyntaxAdapterSource}\n${statementSyntaxAdapterHeader}\n${localDeclarationFrontendSource}\n${localDeclarationFrontendHeader}`,
     ) ||
-    !/ps_local_registry_capture_lookup_point_in\s*\(/.test(
+    /ps_local_registry_capture_lookup_point_in\s*\(/.test(
+      legacyNameClassifierSource,
+    ) ||
+    !/PSX_SCOPE_ID_INVALID/.test(
       legacyNameClassifierSource,
     ) ||
     !/psx_legacy_name_classifier_init\s*\(/.test(
       `${parserLegacySource}\n${statementLegacySource}\n${localDeclarationLegacySource}`,
     )) {
   throw new Error(
-    "production syntax adapters must depend only on NameClassifier; registry-backed lookup compatibility belongs in dedicated legacy adapters",
+    "production syntax adapters must depend only on NameClassifier; missing legacy lookup points must remain explicitly invalid",
   );
 }
 if (/psx_(?:semantic_context|global_registry|local_registry)_t/.test(

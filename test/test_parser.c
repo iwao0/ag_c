@@ -14053,10 +14053,12 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT, resolution.status);
 
   ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(1, resolution.scope_depth);
+  ps_decl_leave_scope_in(test_local_registry());
   ps_ctx_leave_block_scope_in(test_semantic_context());
 
   psx_global_object_result_t object;
@@ -14124,6 +14126,7 @@ static void test_enum_constant_resolution_boundary() {
   ASSERT_EQ(PSX_ENUM_CONSTANT_DUPLICATE, resolution.status);
 
   ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   request.value = 11;
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_OK, resolution.status);
@@ -14133,6 +14136,7 @@ static void test_enum_constant_resolution_boundary() {
   ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"__EnumBoundary", 14, &value));
   ASSERT_EQ(11, value);
+  ps_decl_leave_scope_in(test_local_registry());
   ps_ctx_leave_block_scope_in(test_semantic_context());
   ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"__EnumBoundary", 14, &value));
@@ -26833,6 +26837,35 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_TRUE(global_id != PSX_DECL_ID_INVALID);
   ASSERT_TRUE(tag_id != PSX_DECL_ID_INVALID);
   ASSERT_TRUE(global_id != tag_id);
+
+  psx_scope_lookup_point_t before_synthetic =
+      psx_scope_graph_capture_lookup_point(graph);
+  int synthetic_payload = 8;
+  psx_decl_id_t synthetic_id = psx_scope_graph_declare_synthetic_at(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_GLOBAL_OBJECT, "__synthetic", 11, &synthetic_payload);
+  psx_scope_lookup_point_t after_synthetic =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_TRUE(synthetic_id != PSX_DECL_ID_INVALID);
+  ASSERT_EQ(before_synthetic.declaration_order,
+            after_synthetic.declaration_order);
+  ASSERT_EQ(synthetic_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "__synthetic", 11,
+      after_synthetic));
+
+  psx_scope_id_t prototype_scope = psx_scope_graph_enter_scope(
+      graph, PSX_SCOPE_FUNCTION_PROTOTYPE);
+  ASSERT_TRUE(prototype_scope != PSX_SCOPE_ID_INVALID);
+  int prototype_parameter_payload = 9;
+  ASSERT_TRUE(psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
+      "parameter", 9, &prototype_parameter_payload) !=
+      PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
+  psx_scope_lookup_point_t after_prototype =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_EQ(after_synthetic.declaration_order,
+            after_prototype.declaration_order);
 
   psx_scope_id_t function_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION);

@@ -194,6 +194,16 @@ int psx_frontend_stream_begin(
   };
   ps_parser_stream_begin_with_syntax(
       &stream->parser, tk_ctx, start, &stream->parser_syntax);
+  psx_local_lookup_point_t translation_unit_lookup_point =
+      ps_local_registry_capture_lookup_point_in(local_registry);
+  ps_parser_name_environment_reset_at(
+      &stream->parser.name_environment, empty_classifier,
+      translation_unit_lookup_point.scope_seq,
+      ps_local_registry_next_scope_seq_in(local_registry),
+      translation_unit_lookup_point.declaration_seq);
+  stream->parser.syntax.name_classifier =
+      ps_parser_name_environment_classifier(
+          &stream->parser.name_environment);
   stream->is_started = 1;
   return 1;
 }

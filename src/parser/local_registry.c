@@ -701,6 +701,26 @@ void ps_local_registry_prepare_function_resolution_in(
   clear_local_registry_state(registry);
 }
 
+static void enter_local_scope(
+    psx_local_registry_t *registry, psx_scope_kind_t kind) {
+  if (!registry) return;
+  if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
+    registry->lvar_scope_stack[registry->lvar_scope_depth] =
+        registry->locals;
+  }
+  registry->lvar_scope_depth++;
+  if (psx_scope_graph_enter_scope(
+          registry->scope_graph, kind) == PSX_SCOPE_ID_INVALID)
+    ps_diag_ctx_in(
+        registry->diagnostic_context, NULL, "scope",
+        "scope graph allocation failed");
+}
+
+void ps_local_registry_enter_prototype_scope_in(
+    psx_local_registry_t *registry) {
+  enter_local_scope(registry, PSX_SCOPE_FUNCTION_PROTOTYPE);
+}
+
 void ps_local_registry_enter_translation_unit_in(
     psx_local_registry_t *registry) {
   if (!registry) return;
@@ -735,17 +755,7 @@ ps_local_registry_set_current_usage_region_in(
 }
 
 void ps_decl_enter_scope_in(psx_local_registry_t *registry) {
-  if (!registry) return;
-  if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    registry->lvar_scope_stack[registry->lvar_scope_depth] =
-        registry->locals;
-  }
-  registry->lvar_scope_depth++;
-  if (psx_scope_graph_enter_scope(
-          registry->scope_graph, PSX_SCOPE_BLOCK) == PSX_SCOPE_ID_INVALID)
-    ps_diag_ctx_in(
-        registry->diagnostic_context, NULL, "scope",
-        "scope graph allocation failed");
+  enter_local_scope(registry, PSX_SCOPE_BLOCK);
 }
 
 void ps_decl_leave_scope_in(psx_local_registry_t *registry) {

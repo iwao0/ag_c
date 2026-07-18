@@ -27,6 +27,7 @@ typedef struct {
   int is_extern_decl;
   int is_static;
   int is_thread_local;
+  int is_compiler_generated;
   const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_global_declaration_pipeline_request_t;

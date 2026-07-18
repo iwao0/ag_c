@@ -62,6 +62,8 @@ void ps_local_registry_reset_translation_unit_in(
     psx_local_registry_t *registry);
 void ps_local_registry_prepare_function_resolution_in(
     psx_local_registry_t *registry);
+void ps_local_registry_enter_prototype_scope_in(
+    psx_local_registry_t *registry);
 void ps_local_registry_enter_translation_unit_in(
     psx_local_registry_t *registry);
 void ps_local_registry_set_current_function_in(

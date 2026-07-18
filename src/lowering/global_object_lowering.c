@@ -39,6 +39,8 @@ int lower_resolved_global_object_declaration(
   global->is_extern_decl = request->is_extern_decl ? 1 : 0;
   global->is_static = request->is_extern_decl ? 0
                                                : (request->is_static ? 1 : 0);
+  global->is_compiler_generated =
+      request->is_compiler_generated ? 1 : 0;
   if (!ps_global_registry_bind_decl_qual_type(
           global_registry, global,
           request->resolution->declaration_qual_type)) {
@@ -127,6 +129,7 @@ int lower_global_object_declaration(
           .type = request->type,
           .is_extern_decl = request->is_extern_decl,
           .is_static = request->is_static,
+          .is_compiler_generated = 0,
           .resolution = &resolution,
       },
       result);

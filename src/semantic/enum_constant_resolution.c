@@ -80,11 +80,13 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
       !syntax_expression || !value)
     return 0;
   const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_local_lookup_point_t lookup_point =
+      ps_local_registry_capture_lookup_point_in(local_registry);
   psx_syntax_integer_constant_result_t constant_result;
   psx_resolved_hir_build_failure_t failure;
   psx_syntax_typed_hir_resolution_status_t status =
       psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
-          semantic_context, global_registry, local_registry, NULL,
+          semantic_context, global_registry, local_registry, &lookup_point,
           syntax_expression, &typed_hir, &constant_result, &failure);
   if (status == PSX_SYNTAX_TYPED_HIR_RESOLVED && typed_hir &&
       constant_result.is_constant) {

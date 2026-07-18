@@ -53,6 +53,7 @@ struct global_var_t {
   unsigned int is_static : 1;      // 1: static (内部リンケージ)。.global を出さず .comm でなく .zerofill に。
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
+  unsigned int is_compiler_generated : 1;
   const psx_semantic_type_table_t *decl_type_table;
   /* Canonical projection for legacy readers; QualType/table is authoritative. */
   const psx_type_t *decl_type;

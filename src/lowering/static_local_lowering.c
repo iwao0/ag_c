@@ -84,6 +84,7 @@ lvar_t *lower_static_local_object(
   }
   global->name = mangled;
   global->name_len = mangled_len;
+  global->is_compiler_generated = 1;
   ps_register_global_var_in(request->global_registry, global);
 
   lvar_t *alias = ps_local_registry_create_static_alias_in(

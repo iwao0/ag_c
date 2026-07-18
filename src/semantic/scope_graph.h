@@ -14,6 +14,7 @@ typedef uint32_t psx_decl_id_t;
 typedef enum {
   PSX_SCOPE_TRANSLATION_UNIT = 0,
   PSX_SCOPE_FUNCTION,
+  PSX_SCOPE_FUNCTION_PROTOTYPE,
   PSX_SCOPE_BLOCK,
   PSX_SCOPE_RECORD,
 } psx_scope_kind_t;
@@ -94,6 +95,10 @@ psx_decl_id_t psx_scope_graph_declare_at(
     psx_scope_graph_t *graph, psx_scope_id_t scope_id,
     psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
     const char *name, int name_len, void *payload);
+psx_decl_id_t psx_scope_graph_declare_synthetic_at(
+    psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
+    const char *name, int name_len, void *payload);
 psx_decl_id_t psx_scope_graph_lookup(
     const psx_scope_graph_t *graph, psx_c_namespace_t name_space,
     const char *name, int name_len, psx_scope_lookup_point_t point);
@@ -102,6 +107,8 @@ psx_decl_id_t psx_scope_graph_lookup_in_scope(
     psx_c_namespace_t name_space, const char *name, int name_len);
 const psx_scope_declaration_t *psx_scope_graph_declaration(
     const psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
+void psx_scope_graph_forget_declaration(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 
 int psx_scope_graph_checkpoint_begin(
     const psx_scope_graph_t *graph,

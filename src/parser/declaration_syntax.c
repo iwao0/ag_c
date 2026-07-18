@@ -12,6 +12,7 @@
 #include "function_parameter_syntax.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
+#include "../semantic/scope_graph.h"
 #include "../tokenizer/tokenizer.h"
 
 #include <stdlib.h>
@@ -150,6 +151,7 @@ static void consume_declaration_alignas(
           specifier->alignas_specifier_count++];
   *alignas = (psx_parsed_alignas_t){
       .diagnostic_token = start,
+      .scope_seq = PSX_SCOPE_ID_INVALID,
   };
   ps_name_classifier_capture_lookup_point(
       options->name_classifier, &alignas->scope_seq,

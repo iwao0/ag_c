@@ -78,6 +78,7 @@ static int plan_file_scope_compound_literal(
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
               .type = type,
               .is_static = 1,
+              .is_compiler_generated = 1,
               .initializer = &parsed,
               .diag_tok = diag_tok,
           },

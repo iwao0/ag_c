@@ -161,6 +161,7 @@ int psx_begin_global_declaration_pipeline(
               .type = request->type,
               .is_extern_decl = request->is_extern_decl,
               .is_static = request->is_static,
+              .is_compiler_generated = request->is_compiler_generated,
               .resolution = &resolution,
           },
           &lowered)) {

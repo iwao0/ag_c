@@ -162,6 +162,10 @@ static void resolve_identifier(
             .scope_seq = identifier->scope_seq,
             .declaration_seq = identifier->declaration_seq,
         };
+  int has_lookup_point = context->has_lookup_point_override ||
+                         identifier->base.tok ||
+                         identifier->scope_seq != 0 ||
+                         identifier->declaration_seq != 0;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = context->semantic_context,
@@ -170,7 +174,7 @@ static void resolve_identifier(
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
-          .has_local_lookup_point = 1,
+          .has_local_lookup_point = has_lookup_point,
           .local_lookup_point = point,
       },
       resolution);

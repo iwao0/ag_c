@@ -103,7 +103,9 @@ psx_scope_id_t psx_scope_graph_enter_scope(
     return PSX_SCOPE_ID_INVALID;
   psx_scope_id_t id = (psx_scope_id_t)graph->scope_count;
   psx_scope_id_t order_root =
-      kind == PSX_SCOPE_FUNCTION || kind == PSX_SCOPE_RECORD
+      kind == PSX_SCOPE_FUNCTION ||
+              kind == PSX_SCOPE_FUNCTION_PROTOTYPE ||
+              kind == PSX_SCOPE_RECORD
           ? id
           : graph->scopes[graph->current_scope].order_root_id;
   graph->scopes[graph->scope_count++] = (psx_scope_node_t){
@@ -167,10 +169,11 @@ static uint32_t reserve_declaration_order_at(
   return ++graph->scopes[root].next_declaration_order;
 }
 
-psx_decl_id_t psx_scope_graph_declare_at(
+static psx_decl_id_t declare_at(
     psx_scope_graph_t *graph, psx_scope_id_t scope_id,
     psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
-    const char *name, int name_len, void *payload) {
+    const char *name, int name_len, void *payload,
+    int advances_source_order) {
   if (!graph || scope_id >= graph->scope_count ||
       name_space < 0 || name_space >= PSX_NAMESPACE_COUNT ||
       !name || name_len <= 0 ||
@@ -186,10 +189,32 @@ psx_decl_id_t psx_scope_graph_declare_at(
           .kind = kind,
           .name = name,
           .name_len = name_len,
-          .declaration_order = reserve_declaration_order_at(graph, scope_id),
+          .declaration_order = advances_source_order
+                                   ? reserve_declaration_order_at(
+                                         graph, scope_id)
+                                   : graph->scopes[
+                                         graph->scopes[scope_id]
+                                             .order_root_id]
+                                         .next_declaration_order,
           .payload = payload,
       };
   return id;
+}
+
+psx_decl_id_t psx_scope_graph_declare_at(
+    psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
+    const char *name, int name_len, void *payload) {
+  return declare_at(
+      graph, scope_id, name_space, kind, name, name_len, payload, 1);
+}
+
+psx_decl_id_t psx_scope_graph_declare_synthetic_at(
+    psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
+    const char *name, int name_len, void *payload) {
+  return declare_at(
+      graph, scope_id, name_space, kind, name, name_len, payload, 0);
 }
 
 psx_decl_id_t psx_scope_graph_declare(
@@ -206,13 +231,29 @@ const psx_scope_declaration_t *psx_scope_graph_declaration(
   if (!graph || declaration_id == PSX_DECL_ID_INVALID ||
       declaration_id > graph->declaration_count)
     return NULL;
-  return &graph->declarations[declaration_id - 1];
+  const psx_scope_declaration_t *declaration =
+      &graph->declarations[declaration_id - 1];
+  return declaration->kind != PSX_DECL_UNKNOWN ? declaration : NULL;
+}
+
+void psx_scope_graph_forget_declaration(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id) {
+  if (!graph || declaration_id == PSX_DECL_ID_INVALID ||
+      declaration_id > graph->declaration_count)
+    return;
+  psx_scope_declaration_t *declaration =
+      &graph->declarations[declaration_id - 1];
+  declaration->kind = PSX_DECL_UNKNOWN;
+  declaration->name = NULL;
+  declaration->name_len = 0;
+  declaration->payload = NULL;
 }
 
 static int declaration_name_matches(
     const psx_scope_declaration_t *declaration,
     psx_c_namespace_t name_space, const char *name, int name_len) {
-  return declaration && declaration->name_space == name_space &&
+  return declaration && declaration->kind != PSX_DECL_UNKNOWN &&
+         declaration->name_space == name_space && declaration->name &&
          declaration->name_len == name_len &&
          memcmp(declaration->name, name, (size_t)name_len) == 0;
 }

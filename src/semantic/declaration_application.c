@@ -716,7 +716,7 @@ void psx_apply_parsed_function_parameters_in_contexts(
   }
   int resolved_count = 0;
   ps_ctx_enter_block_scope_in(semantic_context);
-  ps_decl_enter_scope_in(local_registry);
+  ps_local_registry_enter_prototype_scope_in(local_registry);
   for (int i = 0; i < parameters->count; i++) {
     const psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];

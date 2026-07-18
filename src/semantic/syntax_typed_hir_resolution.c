@@ -596,6 +596,10 @@ static int resolve_direct_identifier_with_usage(
     return 1;
   }
   psx_identifier_expression_resolution_t resolved;
+  int has_lookup_point = context->identifier_lookup_point ||
+                         identifier->base.tok ||
+                         identifier->scope_seq != 0 ||
+                         identifier->declaration_seq != 0;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
           .semantic_context = context->semantic_context,
@@ -604,7 +608,7 @@ static int resolve_direct_identifier_with_usage(
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
-          .has_local_lookup_point = 1,
+          .has_local_lookup_point = has_lookup_point,
           .local_lookup_point = {
               .scope_seq = context->identifier_lookup_point
                                ? context->identifier_lookup_point->scope_seq
@@ -3666,6 +3670,7 @@ static int resolve_direct_compound_literal(
                   .name_len = name_len,
                   .type = object_type,
                   .is_static = 1,
+                  .is_compiler_generated = 1,
                   .initializer = &storage_initializer,
                   .diag_tok = compound->base.tok,
               },

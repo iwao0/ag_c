@@ -4,6 +4,7 @@
 #include "initializer_syntax.h"
 #include "runtime_context.h"
 #include "statement_syntax_adapter.h"
+#include "../semantic/scope_graph.h"
 #include "stmt.h"
 #include "../diag/diag.h"
 
@@ -28,7 +29,7 @@ static void capture_lookup_point(
           &adapter->name_classifier,
           scope_seq, declaration_seq))
     return;
-  if (scope_seq) *scope_seq = 0;
+  if (scope_seq) *scope_seq = PSX_SCOPE_ID_INVALID;
   if (declaration_seq) *declaration_seq = 0;
 }
 

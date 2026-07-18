@@ -236,6 +236,9 @@ bool ps_ctx_find_enum_const_at_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value);
+bool ps_ctx_enum_const_value_by_declaration_id_in(
+    psx_semantic_context_t *context, psx_decl_id_t declaration_id,
+    long long *out_value);
 int ps_ctx_has_enum_const_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
 

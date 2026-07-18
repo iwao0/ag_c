@@ -1,6 +1,7 @@
 #include "name_classifier_legacy.h"
 
 #include "local_registry.h"
+#include "../semantic/scope_graph.h"
 
 static int classify_typedef_name(
     void *context, const token_t *token) {
@@ -43,11 +44,8 @@ static void capture_lookup_point(
   if (ps_name_classifier_capture_lookup_point(
           &adapter->source, scope_seq, declaration_seq))
     return;
-  psx_local_lookup_point_t point =
-      ps_local_registry_capture_lookup_point_in(
-          adapter->local_registry);
-  if (scope_seq) *scope_seq = point.scope_seq;
-  if (declaration_seq) *declaration_seq = point.declaration_seq;
+  if (scope_seq) *scope_seq = PSX_SCOPE_ID_INVALID;
+  if (declaration_seq) *declaration_seq = 0;
 }
 
 int psx_legacy_name_classifier_init(

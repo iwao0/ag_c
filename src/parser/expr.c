@@ -1,4 +1,5 @@
 #include "expr.h"
+#include "../semantic/scope_graph.h"
 #include "arena.h"
 #include "core.h"
 #include "diag.h"
@@ -135,7 +136,7 @@ static int is_type_name_start_token(
 static void capture_lookup_point(
     expr_parse_ctx_t *ctx, unsigned *scope_seq,
     unsigned *declaration_seq) {
-  if (scope_seq) *scope_seq = 0;
+  if (scope_seq) *scope_seq = PSX_SCOPE_ID_INVALID;
   if (declaration_seq) *declaration_seq = 0;
   if (ctx && ctx->syntax.capture_lookup_point)
     ctx->syntax.capture_lookup_point(
