@@ -20,6 +20,7 @@ struct goto_ref_t {
   char *name;
   int len;
   token_t *tok;
+  psx_scope_id_t scope_id;
 };
 
 typedef struct label_def_t label_def_t;
@@ -28,6 +29,7 @@ struct label_def_t {
   char *name;
   int len;
   token_t *tok;
+  psx_decl_id_t declaration_id;
 };
 
 typedef struct deferred_parser_diagnostic_t deferred_parser_diagnostic_t;
@@ -48,6 +50,8 @@ struct tag_type_t {
   int scope_depth;
   unsigned scope_seq;
   unsigned declaration_seq;
+  psx_decl_id_t declaration_id;
+  psx_scope_id_t member_scope_id;
   psx_record_decl_t *record_decl;
   psx_record_member_decl_t *record_decl_members;
 };
@@ -70,6 +74,8 @@ typedef struct tag_member_decl_t {
 
 struct tag_member_t {
   tag_member_t *next_hash;
+  tag_type_t *owner;
+  psx_decl_id_t declaration_id;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
@@ -244,9 +250,7 @@ static int collect_tag_member_declarations_in(
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_member_t *member = context->aggregate_members_by_bucket[i];
          member; member = member->next_hash) {
-      if (member->tag_kind != tag->kind || member->tag_len != tag->len ||
-          member->scope_depth != tag->scope_depth ||
-          strncmp(member->tag_name, tag->name, (size_t)tag->len) != 0)
+      if (member->owner != tag)
         continue;
       if (count == capacity) {
         capacity *= 2;
@@ -712,6 +716,7 @@ void ps_ctx_reset_tag_diag_state_in(
        * previous parse. A later parse starts a new registry-owned generation. */
       t->record_decl = NULL;
       t->record_decl_members = NULL;
+      t->member_scope_id = PSX_SCOPE_ID_INVALID;
     }
   }
   memset(context->aggregate_members_by_bucket, 0,
@@ -867,6 +872,10 @@ void psx_ctx_register_goto_ref_in(
   g->name = name;
   g->len = len;
   g->tok = tok;
+  g->scope_id = context->scope_graph
+                    ? psx_scope_graph_current_scope(
+                          context->scope_graph)
+                    : PSX_SCOPE_ID_INVALID;
   g->next_all = context->goto_references_all;
   context->goto_references_all = g;
 }
@@ -876,19 +885,47 @@ void psx_ctx_register_label_def_in(
     char *name, int len, token_t *tok) {
   if (!context) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (label_def_t *d = context->label_definitions_by_bucket[bucket];
-       d; d = d->next_hash) {
-    if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
+  psx_scope_id_t function_scope = PSX_SCOPE_ID_INVALID;
+  if (context->scope_graph) {
+    function_scope = psx_scope_graph_nearest_scope_of_kind(
+        context->scope_graph,
+        psx_scope_graph_current_scope(context->scope_graph),
+        PSX_SCOPE_FUNCTION);
+    if (function_scope != PSX_SCOPE_ID_INVALID &&
+        psx_scope_graph_lookup_in_scope(
+            context->scope_graph, function_scope,
+            PSX_NAMESPACE_LABEL, name, len) != PSX_DECL_ID_INVALID) {
       ps_diag_duplicate_with_name_in(
           context->diagnostic_context, tok,
           diag_text_for_in(context->diagnostic_context, DIAG_TEXT_LABEL), name,
           len);
+      return;
+    }
+  } else {
+    for (label_def_t *d = context->label_definitions_by_bucket[bucket];
+         d; d = d->next_hash) {
+      if (d->len != len ||
+          strncmp(d->name, name, (size_t)len) != 0)
+        continue;
+      ps_diag_duplicate_with_name_in(
+          context->diagnostic_context, tok,
+          diag_text_for_in(context->diagnostic_context, DIAG_TEXT_LABEL), name,
+          len);
+      return;
     }
   }
   label_def_t *d = ctx_calloc_in(context, 1, sizeof(label_def_t));
+  if (!d) return;
   d->name = name;
   d->len = len;
   d->tok = tok;
+  if (context->scope_graph && function_scope != PSX_SCOPE_ID_INVALID) {
+    d->declaration_id = psx_scope_graph_declare_at(
+        context->scope_graph, function_scope,
+        PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
+        name, len, d);
+    if (d->declaration_id == PSX_DECL_ID_INVALID) return;
+  }
   d->next_hash = context->label_definitions_by_bucket[bucket];
   context->label_definitions_by_bucket[bucket] = d;
 }
@@ -898,13 +935,24 @@ void psx_ctx_validate_goto_refs_in(
   if (!context) return;
   for (goto_ref_t *g = context->goto_references_all;
        g; g = g->next_all) {
-    unsigned bucket = psx_ctx_hash_name(g->name, g->len);
     int found = 0;
-    for (label_def_t *d = context->label_definitions_by_bucket[bucket];
-         d; d = d->next_hash) {
-      if (d->len == g->len && strncmp(d->name, g->name, (size_t)g->len) == 0) {
-        found = 1;
-        break;
+    if (context->scope_graph &&
+        g->scope_id != PSX_SCOPE_ID_INVALID) {
+      found = psx_scope_graph_lookup(
+                  context->scope_graph, PSX_NAMESPACE_LABEL,
+                  g->name, g->len,
+                  (psx_scope_lookup_point_t){
+                      .scope_id = g->scope_id,
+                  }) != PSX_DECL_ID_INVALID;
+    } else {
+      unsigned bucket = psx_ctx_hash_name(g->name, g->len);
+      for (label_def_t *d = context->label_definitions_by_bucket[bucket];
+           d; d = d->next_hash) {
+        if (d->len == g->len &&
+            strncmp(d->name, g->name, (size_t)g->len) == 0) {
+          found = 1;
+          break;
+        }
       }
     }
     if (!found) {
@@ -917,11 +965,48 @@ void psx_ctx_validate_goto_refs_in(
   }
 }
 
-// tag_types_by_bucket から (kind, name, len) に一致するエントリを返す。なければ NULL。
+static tag_type_t *tag_type_from_declaration_in(
+    psx_semantic_context_t *context, psx_decl_id_t declaration_id) {
+  const psx_scope_declaration_t *declaration =
+      context && context->scope_graph
+          ? psx_scope_graph_declaration(
+                context->scope_graph, declaration_id)
+          : NULL;
+  return declaration && declaration->kind == PSX_DECL_TAG
+             ? declaration->payload
+             : NULL;
+}
+
+static tag_type_t *find_visible_tag_by_name_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !context->scope_graph || !name || len <= 0)
+    return NULL;
+  psx_decl_id_t declaration_id = psx_scope_graph_lookup(
+      context->scope_graph, PSX_NAMESPACE_TAG, name, len,
+      psx_scope_graph_capture_lookup_point(context->scope_graph));
+  return tag_type_from_declaration_in(context, declaration_id);
+}
+
+static int ensure_tag_member_scope_in(
+    psx_semantic_context_t *context, tag_type_t *tag) {
+  if (!context || !tag ||
+      (tag->kind != TK_STRUCT && tag->kind != TK_UNION))
+    return 0;
+  if (!context->scope_graph) return 1;
+  if (tag->member_scope_id != PSX_SCOPE_ID_INVALID) return 1;
+  tag->member_scope_id = psx_scope_graph_create_scope_at(
+      context->scope_graph, tag->scope_seq, PSX_SCOPE_RECORD);
+  return tag->member_scope_id != PSX_SCOPE_ID_INVALID;
+}
+
 static tag_type_t *find_tag_type_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   if (!context || !name || len <= 0) return NULL;
+  if (context->scope_graph) {
+    tag_type_t *tag = find_visible_tag_by_name_in(context, name, len);
+    return tag && tag->kind == kind ? tag : NULL;
+  }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
   for (tag_type_t *t = context->tags_by_bucket[bucket];
        t; t = t->next_hash) {
@@ -936,9 +1021,8 @@ static tag_type_t *find_tag_type_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth) {
   if (!context || !name || len <= 0 || scope_depth < 0) return NULL;
-  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  for (tag_type_t *tag = context->tags_by_bucket[bucket];
-       tag; tag = tag->next_hash) {
+  for (tag_type_t *tag = context->tags_all;
+       tag; tag = tag->next_all) {
     if (tag->kind == kind && tag->len == len &&
         tag->scope_depth == scope_depth &&
         strncmp(tag->name, name, (size_t)len) == 0)
@@ -968,7 +1052,30 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
     psx_local_lookup_point_t point) {
-  if (!context) return NULL;
+  if (!context || !local_registry || !name || len <= 0) return NULL;
+  if (context->scope_graph &&
+      context->scope_graph ==
+          ps_local_registry_scope_graph(local_registry)) {
+    psx_scope_lookup_point_t graph_point =
+        point.scope_seq == PSX_SCOPE_ID_INVALID
+            ? psx_scope_graph_capture_lookup_point(context->scope_graph)
+            : (psx_scope_lookup_point_t){
+                  .scope_id = point.scope_seq,
+                  .declaration_order = point.declaration_seq,
+              };
+    psx_decl_id_t declaration_id = psx_scope_graph_lookup(
+        context->scope_graph, PSX_NAMESPACE_TAG, name, len,
+        graph_point);
+    tag_type_t *tag = tag_type_from_declaration_in(
+        context, declaration_id);
+    if (!tag || tag->kind != kind) return NULL;
+    if (kind == TK_ENUM) {
+      return ps_type_new_enum_in(
+          context->arena_context, name, len, tag->scope_depth + 1);
+    }
+    return ps_type_new_record_in(
+        context->arena_context, tag->record_decl);
+  }
   for (tag_type_t *tag = context->tags_all; tag; tag = tag->next_all) {
     if (tag->kind != kind || tag->len != len ||
         strncmp(tag->name, name, (size_t)len) != 0 ||
@@ -993,17 +1100,30 @@ int ps_ctx_register_tag_type_in_contexts(
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count) {
   if (!context || !local_registry || !name || len <= 0) return 0;
-  tag_type_t *existing = find_tag_type_in(context, kind, name, len);
-  /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
-   * 内側スコープに同名タグを別レイアウトで宣言した場合 (`struct S{int a;}` 外側 → ブロック内
-   * `struct S{double x;}`) は新規エントリとして先頭挿入し、leave_block_scope で削除されるよう
-   * scope_depth を立てる。find_tag_type は先頭から最初の一致を返すので、内側 shadow が優先される。 */
-  if (existing && existing->scope_depth == context->scope_depth) {
+  psx_scope_graph_t *scope_graph = context->scope_graph;
+  if (scope_graph != ps_local_registry_scope_graph(local_registry))
+    scope_graph = NULL;
+  tag_type_t *existing = NULL;
+  if (scope_graph) {
+    psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+        scope_graph, psx_scope_graph_current_scope(scope_graph),
+        PSX_NAMESPACE_TAG, name, len);
+    existing = tag_type_from_declaration_in(context, declaration_id);
+    if (existing && existing->kind != kind) return 0;
+  } else {
+    tag_type_t *visible = find_tag_type_in(context, kind, name, len);
+    if (visible && visible->scope_depth == context->scope_depth)
+      existing = visible;
+  }
+  if (existing) {
     /* C11 6.7.2.1p1 / 6.7.2.2p2 / 6.7.2.3p3: 同一スコープでの完全型タグの再定義は不可。
      * 既存もメンバを持っている (= 完全型) のに、今回も新しいメンバを持っている (= 完全型) なら
      * 二重定義。一方が前方宣言なら従来どおり update。 */
     if (tag_type_is_complete(existing) && is_complete) return 0;
     if (kind == TK_STRUCT || kind == TK_UNION) {
+      if (is_complete &&
+          !ensure_tag_member_scope_in(context, existing))
+        return 0;
       psx_record_decl_t *record_decl = (psx_record_decl_t *)
           ps_ctx_ensure_tag_record_decl_in(context, kind, name, len);
       if (!record_decl) return 0;
@@ -1024,13 +1144,7 @@ int ps_ctx_register_tag_type_in_contexts(
   t->len = len;
   t->enum_is_complete = kind == TK_ENUM && is_complete ? 1 : 0;
   t->scope_depth = context->scope_depth;
-  t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
-  t->declaration_seq =
-      ps_local_registry_register_binding_event_in(local_registry);
-  t->next_hash = context->tags_by_bucket[bucket];
-  context->tags_by_bucket[bucket] = t;
-  t->next_all = context->tags_all;
-  context->tags_all = t;
+  t->member_scope_id = PSX_SCOPE_ID_INVALID;
   if (kind == TK_STRUCT || kind == TK_UNION) {
     t->record_decl = ctx_calloc_in(
         context, 1, sizeof(psx_record_decl_t));
@@ -1041,11 +1155,39 @@ int ps_ctx_register_tag_type_in_contexts(
     t->record_decl->tag_len = len;
     t->record_decl->is_complete = is_complete ? 1 : 0;
     t->record_decl->member_count = member_count;
-    if (!psx_record_decl_table_define(
-            context->record_decls, t->record_decl))
-      return 0;
-    refresh_cached_record_decl(context, t);
   }
+  if (scope_graph) {
+    t->declaration_id = psx_scope_graph_declare(
+        scope_graph, PSX_NAMESPACE_TAG, PSX_DECL_TAG,
+        name, len, t);
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration(
+            scope_graph, t->declaration_id);
+    if (!declaration) return 0;
+    t->scope_seq = declaration->scope_id;
+    t->declaration_seq = declaration->declaration_order;
+  } else {
+    t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
+    t->declaration_seq =
+        ps_local_registry_register_binding_event_in(local_registry);
+  }
+  if (t->record_decl && !psx_record_decl_table_define(
+                            context->record_decls, t->record_decl)) {
+    psx_scope_graph_forget_declaration(
+        scope_graph, t->declaration_id);
+    return 0;
+  }
+  if (is_complete && t->record_decl &&
+      !ensure_tag_member_scope_in(context, t)) {
+    psx_scope_graph_forget_declaration(
+        scope_graph, t->declaration_id);
+    return 0;
+  }
+  t->next_hash = context->tags_by_bucket[bucket];
+  context->tags_by_bucket[bucket] = t;
+  t->next_all = context->tags_all;
+  context->tags_all = t;
+  refresh_cached_record_decl(context, t);
   return 1;
 }
 
@@ -1057,6 +1199,17 @@ int ps_ctx_find_tag_kind_at_current_scope_in(
     psx_semantic_context_t *context,
     char *name, int len, token_kind_t *out_kind) {
   if (!context || !name || len <= 0) return 0;
+  if (context->scope_graph) {
+    psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+        context->scope_graph,
+        psx_scope_graph_current_scope(context->scope_graph),
+        PSX_NAMESPACE_TAG, name, len);
+    tag_type_t *tag = tag_type_from_declaration_in(
+        context, declaration_id);
+    if (!tag) return 0;
+    if (out_kind) *out_kind = tag->kind;
+    return 1;
+  }
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_type_t *tag = context->tags_by_bucket[i]; tag;
          tag = tag->next_hash) {
@@ -1186,19 +1339,28 @@ int ps_ctx_get_tag_align_in(
   return layout ? layout->alignment : -1;
 }
 
-static tag_member_t *find_tag_member_record_at_current_scope_in(
-    psx_semantic_context_t *context,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
+static tag_member_t *find_tag_member_record_in(
+    psx_semantic_context_t *context, tag_type_t *tag,
     const psx_record_member_decl_t *declaration, unsigned bucket) {
-  if (!context || !declaration || declaration->len <= 0) return NULL;
+  if (!context || !tag || !declaration || declaration->len <= 0)
+    return NULL;
+  if (context->scope_graph &&
+      tag->member_scope_id != PSX_SCOPE_ID_INVALID) {
+    psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+        context->scope_graph, tag->member_scope_id,
+        PSX_NAMESPACE_MEMBER, declaration->name, declaration->len);
+    const psx_scope_declaration_t *binding =
+        psx_scope_graph_declaration(
+            context->scope_graph, declaration_id);
+    return binding && binding->kind == PSX_DECL_MEMBER
+               ? binding->payload
+               : NULL;
+  }
   for (tag_member_t *m = context->aggregate_members_by_bucket[bucket];
        m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->declaration.len == declaration->len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+    if (m->owner == tag && m->declaration.len == declaration->len &&
         strncmp(m->declaration.name, declaration->name,
-                (size_t)declaration->len) == 0 &&
-        m->scope_depth == context->scope_depth) {
+                (size_t)declaration->len) == 0) {
       return m;
     }
   }
@@ -1206,20 +1368,29 @@ static tag_member_t *find_tag_member_record_at_current_scope_in(
 }
 
 static int insert_tag_member_record_in(
-    psx_semantic_context_t *context,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
+    psx_semantic_context_t *context, tag_type_t *tag,
     const psx_record_member_decl_t *declaration,
     const psx_record_member_layout_t *layout, unsigned bucket) {
+  if (!context || !tag || !declaration) return 0;
   tag_member_t *m = ctx_calloc_in(context, 1, sizeof(tag_member_t));
   if (!m) return 0;
-  m->tag_kind = tag_kind;
-  m->tag_name = tag_name;
-  m->tag_len = tag_len;
+  m->owner = tag;
+  m->tag_kind = tag->kind;
+  m->tag_name = tag->name;
+  m->tag_len = tag->len;
   m->declaration.name = declaration->name;
   m->declaration.len = declaration->len;
   if (!initialize_tag_member_record(context, m, declaration, layout)) return 0;
   m->decl_order = context->aggregate_member_decl_order++;
-  m->scope_depth = context->scope_depth;
+  m->scope_depth = tag->scope_depth;
+  if (declaration->len > 0 && context->scope_graph &&
+      tag->member_scope_id != PSX_SCOPE_ID_INVALID) {
+    m->declaration_id = psx_scope_graph_declare_at(
+        context->scope_graph, tag->member_scope_id,
+        PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
+        declaration->name, declaration->len, m);
+    if (m->declaration_id == PSX_DECL_ID_INVALID) return 0;
+  }
   m->next_hash = context->aggregate_members_by_bucket[bucket];
   context->aggregate_members_by_bucket[bucket] = m;
   return 1;
@@ -1232,9 +1403,7 @@ static int count_tag_member_records_in(
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (const tag_member_t *member = context->aggregate_members_by_bucket[i];
          member; member = member->next_hash) {
-      if (member->tag_kind == tag->kind && member->tag_len == tag->len &&
-          member->scope_depth == tag->scope_depth &&
-          strncmp(member->tag_name, tag->name, (size_t)tag->len) == 0)
+      if (member->owner == tag)
         count++;
     }
   }
@@ -1255,18 +1424,18 @@ int psx_ctx_register_tag_member_in(
   return 1;
 }
 
-int ps_ctx_register_tag_members_in(
-    psx_semantic_context_t *context,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
+static int register_tag_members_for_owner_in(
+    psx_semantic_context_t *context, tag_type_t *tag,
     const psx_record_member_decl_t *declarations,
     const psx_record_member_layout_t *layouts, int member_count,
     int *out_conflict_index) {
   if (out_conflict_index) *out_conflict_index = -1;
-  if (!context ||
-      (tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
-      tag_len <= 0 || !declarations || !layouts || member_count <= 0) {
+  if (!context || !tag ||
+      (tag->kind != TK_STRUCT && tag->kind != TK_UNION) ||
+      !declarations || !layouts || member_count <= 0) {
     return 0;
   }
+  if (!ensure_tag_member_scope_in(context, tag)) return 0;
 
   for (int i = 0; i < member_count; i++) {
     const psx_record_member_decl_t *declaration = &declarations[i];
@@ -1278,12 +1447,13 @@ int ps_ctx_register_tag_members_in(
       return 0;
     }
     if (declaration->len == 0) continue;
-    unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+    unsigned bucket = (psx_ctx_hash_tag(
+                           tag->kind, tag->name, tag->len) ^
                        psx_ctx_hash_name(
                            declaration->name, declaration->len)) &
                       (PCTX_HASH_BUCKETS - 1u);
-    if (find_tag_member_record_at_current_scope_in(
-            context, tag_kind, tag_name, tag_len, declaration, bucket)) {
+    if (find_tag_member_record_in(
+            context, tag, declaration, bucket)) {
       if (out_conflict_index) *out_conflict_index = i;
       return 0;
     }
@@ -1300,17 +1470,15 @@ int ps_ctx_register_tag_members_in(
 
   for (int i = 0; i < member_count; i++) {
     const psx_record_member_decl_t *declaration = &declarations[i];
-    unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+    unsigned bucket = (psx_ctx_hash_tag(
+                           tag->kind, tag->name, tag->len) ^
                        psx_ctx_hash_name(
                            declaration->name, declaration->len)) &
                       (PCTX_HASH_BUCKETS - 1u);
     if (!insert_tag_member_record_in(
-            context, tag_kind, tag_name, tag_len,
-            declaration, &layouts[i], bucket))
+            context, tag, declaration, &layouts[i], bucket))
       return 0;
   }
-  tag_type_t *tag = find_tag_type_in(
-      context, tag_kind, tag_name, tag_len);
   if (tag && tag->record_decl) {
     tag->record_decl->member_count =
         count_tag_member_records_in(context, tag);
@@ -1329,6 +1497,23 @@ int ps_ctx_register_tag_members_in(
   return 1;
 }
 
+int ps_ctx_register_tag_members_in(
+    psx_semantic_context_t *context,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const psx_record_member_decl_t *declarations,
+    const psx_record_member_layout_t *layouts, int member_count,
+    int *out_conflict_index) {
+  if (!context ||
+      (tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
+      tag_len <= 0) {
+    if (out_conflict_index) *out_conflict_index = -1;
+    return 0;
+  }
+  return register_tag_members_for_owner_in(
+      context, find_tag_type_in(context, tag_kind, tag_name, tag_len),
+      declarations, layouts, member_count, out_conflict_index);
+}
+
 int ps_ctx_register_record_members_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     const psx_record_member_decl_t *declarations,
@@ -1339,8 +1524,8 @@ int ps_ctx_register_record_members_in(
     if (out_conflict_index) *out_conflict_index = -1;
     return 0;
   }
-  return ps_ctx_register_tag_members_in(
-      context, tag->kind, tag->name, tag->len,
+  return register_tag_members_for_owner_in(
+      context, tag,
       declarations, layouts, member_count, out_conflict_index);
 }
 
@@ -1423,21 +1608,34 @@ static bool find_tag_member_impl_in(
     psx_record_member_decl_t *out_declaration,
     psx_record_member_layout_t *out_layout) {
   if (!context || (!out_declaration && !out_layout)) return false;
-  int target_scope = scope_depth;
-  if (target_scope < 0) {
-    tag_type_t *tt = find_tag_type_in(context, kind, name, len);
-    if (!tt) return false;
-    target_scope = tt->scope_depth;
+  tag_type_t *tag = scope_depth >= 0
+                        ? find_tag_type_at_scope_in(
+                              context, kind, name, len, scope_depth)
+                        : find_tag_type_in(context, kind, name, len);
+  if (!tag) return false;
+  if (member_len > 0 && context->scope_graph &&
+      tag->member_scope_id != PSX_SCOPE_ID_INVALID) {
+    psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+        context->scope_graph, tag->member_scope_id,
+        PSX_NAMESPACE_MEMBER, member_name, member_len);
+    const psx_scope_declaration_t *binding =
+        psx_scope_graph_declaration(
+            context->scope_graph, declaration_id);
+    tag_member_t *member =
+        binding && binding->kind == PSX_DECL_MEMBER
+            ? binding->payload
+            : NULL;
+    return member && member->owner == tag &&
+           fill_tag_member_in(
+               context, member, out_declaration, out_layout);
   }
   unsigned bucket = (psx_ctx_hash_tag(kind, name, len) ^
                      psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
   for (tag_member_t *m = context->aggregate_members_by_bucket[bucket];
        m; m = m->next_hash) {
-    if (m->tag_kind == kind && m->tag_len == len &&
-        m->declaration.len == member_len &&
-        strncmp(m->tag_name, name, (size_t)len) == 0 &&
-        strncmp(m->declaration.name, member_name, (size_t)member_len) == 0 &&
-        m->scope_depth == target_scope) {
+    if (m->owner == tag && m->declaration.len == member_len &&
+        strncmp(m->declaration.name, member_name,
+                (size_t)member_len) == 0) {
       return fill_tag_member_in(
           context, m, out_declaration, out_layout);
     }
@@ -1500,6 +1698,18 @@ void ps_ctx_promote_tag_to_file_scope_in(
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   if (!t || t->scope_depth == 0) return;
+  if (context->scope_graph) {
+    if (!psx_scope_graph_rehome_declaration_at(
+            context->scope_graph, t->declaration_id,
+            PSX_SCOPE_ID_TRANSLATION_UNIT))
+      return;
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration(
+            context->scope_graph, t->declaration_id);
+    if (!declaration) return;
+    t->scope_seq = declaration->scope_id;
+    t->declaration_seq = declaration->declaration_order;
+  }
   int old_depth = t->scope_depth;
   t->scope_depth = 0;
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {

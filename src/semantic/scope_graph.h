@@ -78,10 +78,16 @@ psx_scope_kind_t psx_scope_graph_scope_kind(
     const psx_scope_graph_t *graph, psx_scope_id_t scope_id);
 psx_scope_id_t psx_scope_graph_enter_scope(
     psx_scope_graph_t *graph, psx_scope_kind_t kind);
+psx_scope_id_t psx_scope_graph_create_scope_at(
+    psx_scope_graph_t *graph, psx_scope_id_t parent_scope,
+    psx_scope_kind_t kind);
 int psx_scope_graph_leave_scope(psx_scope_graph_t *graph);
 int psx_scope_graph_scope_is_visible_from(
     const psx_scope_graph_t *graph, psx_scope_id_t declaration_scope,
     psx_scope_id_t reference_scope);
+psx_scope_id_t psx_scope_graph_nearest_scope_of_kind(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_scope_kind_t kind);
 
 uint32_t psx_scope_graph_reserve_declaration_order(
     psx_scope_graph_t *graph);
@@ -109,6 +115,9 @@ const psx_scope_declaration_t *psx_scope_graph_declaration(
     const psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 void psx_scope_graph_forget_declaration(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
+int psx_scope_graph_rehome_declaration_at(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    psx_scope_id_t scope_id);
 
 int psx_scope_graph_checkpoint_begin(
     const psx_scope_graph_t *graph,

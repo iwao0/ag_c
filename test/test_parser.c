@@ -12493,6 +12493,7 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
 
   ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   request.kind = TK_STRUCT;
   request.mode = PSX_TAG_DECLARATION_FORWARD;
   psx_resolve_tag_declaration(&request, &resolution);
@@ -12508,6 +12509,7 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_EQ(1, resolution.scope_depth);
+  ps_decl_leave_scope_in(test_local_registry());
   ps_ctx_leave_block_scope_in(test_semantic_context());
   ASSERT_EQ(0, ps_ctx_get_tag_scope_depth_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__TagBoundary", 13));
@@ -13763,6 +13765,10 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(transaction_size_before_duplicate,
             psx_aggregate_layout_size(&transaction_layout));
 
+  psx_aggregate_layout_state_t member_boundary_layout;
+  init_boundary_aggregate_layout(
+      &member_boundary_layout, TK_STRUCT,
+      (char *)"__MemberBoundary", 16);
   ASSERT_TRUE(register_boundary_tag_member(
       TK_STRUCT, (char *)"__MemberBoundary", 16,
       (char *)"x", 1, 4, integer, 3, 5, 1));
@@ -26884,6 +26890,8 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t block_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_BLOCK);
   ASSERT_TRUE(block_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(function_scope, psx_scope_graph_nearest_scope_of_kind(
+      graph, block_scope, PSX_SCOPE_FUNCTION));
   psx_scope_lookup_point_t before_inner =
       psx_scope_graph_capture_lookup_point(graph);
   int inner_payload = 4;
@@ -26896,6 +26904,14 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
       graph, PSX_NAMESPACE_ORDINARY, "same", 4, before_inner));
   ASSERT_EQ(inner_id, psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_ORDINARY, "same", 4, after_inner));
+
+  int promoted_tag_payload = 10;
+  psx_decl_id_t promoted_tag_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_TAG, PSX_DECL_TAG,
+      "__promoted", 10, &promoted_tag_payload);
+  ASSERT_TRUE(promoted_tag_id != PSX_DECL_ID_INVALID);
+  ASSERT_TRUE(psx_scope_graph_rehome_declaration_at(
+      graph, promoted_tag_id, PSX_SCOPE_ID_TRANSLATION_UNIT));
 
   int label_payload = 5;
   psx_decl_id_t label_id = psx_scope_graph_declare_at(
@@ -26918,6 +26934,9 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
 
   ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
   ASSERT_TRUE(psx_scope_graph_leave_scope(graph));
+  ASSERT_EQ(promoted_tag_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_TAG, "__promoted", 10,
+      psx_scope_graph_capture_lookup_point(graph)));
   psx_scope_id_t record_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_RECORD);
   ASSERT_TRUE(record_scope != PSX_SCOPE_ID_INVALID);

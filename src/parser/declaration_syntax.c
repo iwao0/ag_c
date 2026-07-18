@@ -718,6 +718,8 @@ static void parse_tag_specifier(
   if (tk_consume_ctx(tk_ctx, '{')) {
     action->action = PSX_PARSED_TAG_DEFINITION;
     ps_name_classifier_record_binding_event(options->name_classifier);
+    if (action->kind == TK_STRUCT || action->kind == TK_UNION)
+      ps_name_classifier_reserve_scope(options->name_classifier);
     specifier->binding_events_recorded =
         options->name_classifier &&
         options->name_classifier->record_binding_event;

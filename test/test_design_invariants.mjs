@@ -255,6 +255,30 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/psx_scope_graph_declare_at\s*\([^]*?PSX_DECL_FUNCTION/.test(
       scopeGraphSemanticContextSource,
     ) ||
+    !/psx_scope_graph_declare\s*\([^]*?PSX_NAMESPACE_TAG[^]*?PSX_DECL_TAG/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_clone_tag_type_at_in_contexts\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/psx_ctx_register_label_def_in\s*\([^]*?psx_scope_graph_nearest_scope_of_kind\s*\([^]*?PSX_SCOPE_FUNCTION[^]*?psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/psx_ctx_validate_goto_refs_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ensure_tag_member_scope_in\s*\([^]*?psx_scope_graph_create_scope_at\s*\([^]*?PSX_SCOPE_RECORD/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/insert_tag_member_record_in\s*\([^]*?psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_MEMBER[^]*?PSX_DECL_MEMBER/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/find_tag_member_impl_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_MEMBER/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
     !/shared_identifier_scope_graph\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
       scopeGraphIdentifierResolutionSource,
     )) {
@@ -2549,6 +2573,16 @@ const declarationSpecifierResolutionSource = await readFile(
   "src/semantic/declaration_specifier_resolution.c",
   "utf8",
 );
+if (!/PSX_PARSED_TAG_DEFINITION[^]*?PSX_TAG_DECLARATION_FORWARD/.test(
+      declarationApplicationSource,
+    ) ||
+    !/PSX_PARSED_TAG_DEFINITION[^]*?PSX_TAG_DECLARATION_FORWARD/.test(
+      declarationSpecifierResolutionSource,
+    )) {
+  throw new Error(
+    "tag definitions must bind an incomplete RecordId before resolving members",
+  );
+}
 const declaratorBoundResolutionSource = await readFile(
   "src/semantic/declarator_bound_resolution.c",
   "utf8",

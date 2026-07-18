@@ -133,7 +133,10 @@ static void apply_decl_tag_action(
   psx_apply_parsed_tag_declaration_in_contexts(
       semantic_context, local_registry,
       action->kind, action->name, action->name_len,
-      PSX_TAG_DECLARATION_REFERENCE, 0,
+      action->action == PSX_PARSED_TAG_DEFINITION
+          ? PSX_TAG_DECLARATION_FORWARD
+          : PSX_TAG_DECLARATION_REFERENCE,
+      0,
       action->diagnostic_token);
   if (action->action != PSX_PARSED_TAG_DEFINITION) return;
 

@@ -96,9 +96,11 @@ psx_scope_kind_t psx_scope_graph_scope_kind(
              : PSX_SCOPE_TRANSLATION_UNIT;
 }
 
-psx_scope_id_t psx_scope_graph_enter_scope(
-    psx_scope_graph_t *graph, psx_scope_kind_t kind) {
+psx_scope_id_t psx_scope_graph_create_scope_at(
+    psx_scope_graph_t *graph, psx_scope_id_t parent_scope,
+    psx_scope_kind_t kind) {
   if (!graph || graph->scope_count >= (size_t)PSX_SCOPE_ID_INVALID ||
+      parent_scope >= graph->scope_count ||
       !ensure_scope_capacity(graph, graph->scope_count + 1))
     return PSX_SCOPE_ID_INVALID;
   psx_scope_id_t id = (psx_scope_id_t)graph->scope_count;
@@ -107,13 +109,22 @@ psx_scope_id_t psx_scope_graph_enter_scope(
               kind == PSX_SCOPE_FUNCTION_PROTOTYPE ||
               kind == PSX_SCOPE_RECORD
           ? id
-          : graph->scopes[graph->current_scope].order_root_id;
+          : graph->scopes[parent_scope].order_root_id;
   graph->scopes[graph->scope_count++] = (psx_scope_node_t){
       .id = id,
-      .parent_id = graph->current_scope,
+      .parent_id = parent_scope,
       .order_root_id = order_root,
       .kind = kind,
   };
+  return id;
+}
+
+psx_scope_id_t psx_scope_graph_enter_scope(
+    psx_scope_graph_t *graph, psx_scope_kind_t kind) {
+  psx_scope_id_t id = psx_scope_graph_create_scope_at(
+      graph, graph ? graph->current_scope : PSX_SCOPE_ID_INVALID,
+      kind);
+  if (id == PSX_SCOPE_ID_INVALID) return id;
   graph->current_scope = id;
   return id;
 }
@@ -137,6 +148,19 @@ int psx_scope_graph_scope_is_visible_from(
     if (reference_scope == PSX_SCOPE_ID_TRANSLATION_UNIT) return 0;
     reference_scope = graph->scopes[reference_scope].parent_id;
     if (reference_scope == PSX_SCOPE_ID_INVALID) return 0;
+  }
+}
+
+psx_scope_id_t psx_scope_graph_nearest_scope_of_kind(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_scope_kind_t kind) {
+  if (!graph || scope_id >= graph->scope_count)
+    return PSX_SCOPE_ID_INVALID;
+  for (;;) {
+    if (graph->scopes[scope_id].kind == kind) return scope_id;
+    scope_id = graph->scopes[scope_id].parent_id;
+    if (scope_id == PSX_SCOPE_ID_INVALID)
+      return PSX_SCOPE_ID_INVALID;
   }
 }
 
@@ -247,6 +271,23 @@ void psx_scope_graph_forget_declaration(
   declaration->name = NULL;
   declaration->name_len = 0;
   declaration->payload = NULL;
+}
+
+int psx_scope_graph_rehome_declaration_at(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    psx_scope_id_t scope_id) {
+  if (!graph || declaration_id == PSX_DECL_ID_INVALID ||
+      declaration_id > graph->declaration_count ||
+      scope_id >= graph->scope_count)
+    return 0;
+  psx_scope_declaration_t *declaration =
+      &graph->declarations[declaration_id - 1];
+  if (declaration->kind == PSX_DECL_UNKNOWN) return 0;
+  declaration->scope_id = scope_id;
+  declaration->declaration_order =
+      graph->scopes[graph->scopes[scope_id].order_root_id]
+          .next_declaration_order;
+  return 1;
 }
 
 static int declaration_name_matches(

@@ -250,7 +250,9 @@ static psx_decl_specifier_value_status_t resolve_tag_action_value(
   psx_apply_parsed_tag_declaration_in_contexts(
       context->semantic_context, context->local_registry,
       action->kind, action->name, action->name_len,
-      action->action == PSX_PARSED_TAG_REFERENCE && is_standalone_tag
+      action->action == PSX_PARSED_TAG_DEFINITION ||
+              (action->action == PSX_PARSED_TAG_REFERENCE &&
+               is_standalone_tag)
           ? PSX_TAG_DECLARATION_FORWARD
           : PSX_TAG_DECLARATION_REFERENCE,
       0, action->diagnostic_token);
