@@ -3646,6 +3646,29 @@ if (/\bx8\b/.test(irHeaderSource) ||
   );
 }
 
+for (const [name, source] of [
+  ["Apple ARM64", arm64IrEmitSource],
+  ["Wasm text", wasmIrSource],
+  ["Wasm object", wasmObjSource],
+]) {
+  if (/->(?:args|nargs)\b/.test(source) ||
+      !/\bir_abi_call_arguments\s*\(/.test(source)) {
+    throw new Error(
+      `${name} backend must consume call argument pieces from AbiLowering sidecars`,
+    );
+  }
+}
+if (!/ir_opt_const_fold\s*\(m\)[\s\S]*?ir_opt_dce\s*\(m\)[\s\S]*?lower_module_abi\s*\(m/.test(
+      compilerMainSource,
+    ) ||
+    /\bir_opt_(?:const_fold|dce)\s*\(/.test(arm64IrEmitSource) ||
+    /\bir_opt_(?:const_fold|dce)\s*\(/.test(wasmIrSource) ||
+    /\bir_opt_(?:const_fold|dce)\s*\(/.test(wasmObjSource)) {
+  throw new Error(
+    "target-independent MIR optimization must finish before AbiLowering and backend emission",
+  );
+}
+
 const sourceFiles = (await sourceFilesUnder("src")).sort();
 const legacyTypeMutationRe =
   /\b(?:psx_ctx_add_tag_member|ps_ctx_typedef_set_decl_type|ps_tag_member_set_decl_type|ps_tag_member_decl_type_mut|tag_member_record_set_decl_type|typedef_record_set_decl_type)\b/g;

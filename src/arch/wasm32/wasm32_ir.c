@@ -168,6 +168,8 @@ static ag_diagnostic_context_t *wasm32_ir_diagnostics(void) {
   return cg_context_diagnostics(wasm32_ir_emit_context());
 }
 
+static void wasm_unsupported_msg(const char *msg);
+
 static const ir_abi_signature_t *wasm_function_abi(
     const ir_func_t *function) {
   return ir_abi_function_signature(g_abi, function);
@@ -176,6 +178,17 @@ static const ir_abi_signature_t *wasm_function_abi(
 static const ir_abi_signature_t *wasm_call_abi(
     const ir_inst_t *call) {
   return ir_abi_call_signature(g_abi, call);
+}
+
+static const ir_abi_argument_t *wasm_call_arguments(
+    const ir_inst_t *call, int *argument_count) {
+  size_t count = 0;
+  const ir_abi_argument_t *arguments = ir_abi_call_arguments(
+      g_abi, call, &count);
+  if (count > INT_MAX || (count > 0 && !arguments))
+    wasm_unsupported_msg("invalid lowered call arguments");
+  if (argument_count) *argument_count = (int)count;
+  return arguments;
 }
 
 static const ir_abi_signature_t *wasm_reference_abi(
@@ -220,7 +233,6 @@ static const char *wasm_type(ir_type_t t) {
   }
 }
 
-static void wasm_unsupported_msg(const char *msg);
 static int has_undefined_function(const char *name, int len);
 static int has_defined_function(const char *name, int len);
 
@@ -642,7 +654,13 @@ static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   collect_vreg_type(ctx, i->src3);
   collect_vreg_type(ctx, i->result_area);
   collect_vreg_type(ctx, i->callee);
-  for (int a = 0; a < i->nargs; a++) collect_vreg_type(ctx, i->args[a]);
+  if (i->op == IR_CALL) {
+    int argument_count = 0;
+    const ir_abi_argument_t *arguments = wasm_call_arguments(
+        i, &argument_count);
+    for (int a = 0; a < argument_count; a++)
+      collect_vreg_type(ctx, arguments[a].source);
+  }
 }
 
 static void add_alloca_slot(wasm_func_ctx_t *ctx, ir_inst_t *i) {
@@ -895,6 +913,41 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
     return;
   }
   emit_val_expr(ctx, v);
+}
+
+static void emit_abi_argument_expr_as(
+    wasm_func_ctx_t *ctx, const ir_abi_argument_t *argument,
+    ir_type_t target) {
+  if (!argument) wasm_unsupported_msg("missing lowered call argument");
+  if (argument->access == IR_ABI_ARGUMENT_DIRECT) {
+    emit_val_expr_as(ctx, argument->source, target);
+    return;
+  }
+  if (argument->access != IR_ABI_ARGUMENT_LOAD ||
+      argument->source.type != IR_TY_PTR ||
+      argument->type != target) {
+    wasm_unsupported_msg("unsupported lowered call argument access");
+  }
+  const char *op = NULL;
+  switch (argument->type) {
+    case IR_TY_I8: op = "i32.load8_u"; break;
+    case IR_TY_I16: op = "i32.load16_u"; break;
+    case IR_TY_I32:
+    case IR_TY_PTR: op = "i32.load"; break;
+    case IR_TY_I64: op = "i64.load"; break;
+    case IR_TY_F32: op = "f32.load"; break;
+    case IR_TY_F64: op = "f64.load"; break;
+    default: wasm_unsupported_msg("invalid lowered call argument type");
+  }
+  wasm_cg_emitf("(%s ", op);
+  if (argument->byte_offset == 0) {
+    emit_val_expr_as(ctx, argument->source, IR_TY_PTR);
+  } else {
+    wasm_cg_emitf("(i32.add ");
+    emit_val_expr_as(ctx, argument->source, IR_TY_PTR);
+    wasm_cg_emitf(" (i32.const %d))", argument->byte_offset);
+  }
+  wasm_cg_emitf(")");
 }
 
 static void emit_wasm_type_cast_prefix(ir_type_t from, ir_type_t to, int is_unsigned) {
@@ -1245,8 +1298,13 @@ static int inst_uses_vreg(ir_inst_t *i, int id) {
       val_uses_vreg(i->result_area, id)) {
     return 1;
   }
-  for (int a = 0; a < i->nargs; a++) {
-    if (val_uses_vreg(i->args[a], id)) return 1;
+  if (i->op == IR_CALL) {
+    int argument_count = 0;
+    const ir_abi_argument_t *arguments = wasm_call_arguments(
+        i, &argument_count);
+    for (int a = 0; a < argument_count; a++) {
+      if (val_uses_vreg(arguments[a].source, id)) return 1;
+    }
   }
   return 0;
 }
@@ -1262,28 +1320,33 @@ static int vreg_used_after(ir_inst_t *from, int id) {
 static int emit_variadic_arg_area_prepare(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   const ir_abi_signature_t *abi = wasm_call_abi(i);
   if (!abi || !abi->is_variadic) return 0;
+  int argument_count = 0;
+  const ir_abi_argument_t *arguments = wasm_call_arguments(
+      i, &argument_count);
   int fixed_count = (int)abi->fixed_param_count;
-  int nargs_var = i->nargs - fixed_count;
+  int nargs_var = argument_count - fixed_count;
   if (nargs_var <= 0) return 0;
   int bytes = align_to(nargs_var * 8, 16);
   wasm_emitf(indent, "(local.set $old_va_arg_area (global.get $__ag_va_arg_area))\n");
   wasm_emitf(indent, "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
              bytes);
   wasm_emitf(indent, "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
-  for (int a = fixed_count; a < i->nargs; a++) {
+  for (int a = fixed_count; a < argument_count; a++) {
     int off = (a - fixed_count) * 8;
-    ir_type_t arg_ty = i->args[a].type == IR_TY_PTR ? IR_TY_PTR : effective_val_type(ctx, i->args[a]);
+    ir_type_t arg_ty = arguments[a].type == IR_TY_PTR
+                           ? IR_TY_PTR
+                           : arguments[a].type;
     if (arg_ty == IR_TY_F64) {
       wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
-      emit_val_expr_as(ctx, i->args[a], IR_TY_F64);
+      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_F64);
       wasm_cg_emitf(")\n");
     } else if (arg_ty == IR_TY_F32) {
       wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) (f64.promote_f32 ", off);
-      emit_val_expr_as(ctx, i->args[a], IR_TY_F32);
+      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_F32);
       wasm_cg_emitf("))\n");
     } else {
       wasm_emitf(indent, "(i64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
-      emit_val_expr_as(ctx, i->args[a], IR_TY_I64);
+      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_I64);
       wasm_cg_emitf(")\n");
     }
   }
@@ -1300,6 +1363,9 @@ static void emit_variadic_arg_area_restore(int bytes, int indent) {
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   const ir_abi_signature_t *abi = wasm_call_abi(i);
   if (!abi) wasm_unsupported_msg("call without ABI lowering result");
+  int argument_count = 0;
+  const ir_abi_argument_t *arguments = wasm_call_arguments(
+      i, &argument_count);
   int vararg_area_bytes = emit_variadic_arg_area_prepare(ctx, i, indent);
   if (i->callee.id != IR_VAL_NONE) {
     g_func_table.needs_table = 1;
@@ -1320,14 +1386,17 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     else wasm_emitf(indent, "");
     wasm_cg_emitf("(call_indirect");
     int call_nargs = (int)abi->fixed_param_count;
+    if (call_nargs > argument_count)
+      wasm_unsupported_msg("call has fewer lowered arguments than its function type");
     if (returns_aggregate) wasm_cg_emitf(" (param i32)");
     for (int a = 0; a < call_nargs; a++) {
-      ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
+      ir_type_t raw_arg_ty = arguments[a].type;
       ir_type_t arg_ty = raw_arg_ty;
       int from_callable_sig = (size_t)a < abi->param_count;
       if (from_callable_sig) arg_ty = abi->param_pieces[a].type;
       int null_ptr_pair_arg =
-          !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_callable_sig && a == 0 && call_nargs >= 2 &&
+          arguments[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
@@ -1339,17 +1408,18 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       emit_val_expr_as(ctx, abi->result_area, IR_TY_PTR);
     }
     for (int a = 0; a < call_nargs; a++) {
-      ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
+      ir_type_t raw_arg_ty = arguments[a].type;
       ir_type_t arg_ty = raw_arg_ty;
       int from_callable_sig = (size_t)a < abi->param_count;
       if (from_callable_sig) arg_ty = abi->param_pieces[a].type;
       int null_ptr_pair_arg =
-          !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_callable_sig && a == 0 && call_nargs >= 2 &&
+          arguments[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
       wasm_cg_emitf(" ");
-      emit_val_expr_as(ctx, i->args[a], arg_ty);
+      emit_abi_argument_expr_as(ctx, &arguments[a], arg_ty);
     }
     wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, i->callee, IR_TY_I32);
@@ -1402,17 +1472,17 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
                     (is_minimal_fprintf ? 4 :
                      ((is_minimal_sscanf || is_minimal_swscanf) ? 4 :
                       (abi->is_variadic
-                           ? (int)abi->fixed_param_count : i->nargs))));
+                           ? (int)abi->fixed_param_count : argument_count))));
   for (int a = 0; a < call_nargs; a++) {
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
-        a >= i->nargs) {
+        a >= argument_count) {
       wasm_cg_emitf(" (i64.const 0)");
       continue;
     }
-    ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+    ir_type_t arg_ty = arguments[a].type;
     ir_type_t abi_arg_ty = (size_t)a < abi->param_count
                                ? abi->param_pieces[a].type
-                               : i->args[a].type;
+                               : arguments[a].type;
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
         (size_t)a >= abi->fixed_param_count && is_fp_type(arg_ty)) {
       wasm_cg_emitf(" (i64.const 0)");
@@ -1446,7 +1516,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       arg_ty = IR_TY_I64;
     }
     wasm_cg_emitf(" ");
-    emit_val_expr_as(ctx, i->args[a], arg_ty);
+    emit_abi_argument_expr_as(ctx, &arguments[a], arg_ty);
   }
   wasm_cg_emitf(")");
   if (!abi->result_is_indirect && abi->result_complex_half == 0 &&
@@ -1887,8 +1957,6 @@ void wasm32_gen_ir_module(
     ir_module_t *m, const ir_abi_module_t *abi) {
   g_abi = abi;
   if (!m) return;
-  ir_opt_const_fold(m);
-  ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next)
     register_function_definition(f);
   for (ir_func_t *f = m->funcs; f; f = f->next) emit_func(m, f);

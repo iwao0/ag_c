@@ -255,6 +255,17 @@ static void obj_unsupported_msg(const char *msg) {
                       msg);
 }
 
+static const ir_abi_argument_t *obj_call_arguments(
+    const ir_inst_t *call, int *argument_count) {
+  size_t count = 0;
+  const ir_abi_argument_t *arguments = ir_abi_call_arguments(
+      g_obj_abi, call, &count);
+  if (count > INT_MAX || (count > 0 && !arguments))
+    obj_unsupported_msg("invalid lowered call arguments");
+  if (argument_count) *argument_count = (int)count;
+  return arguments;
+}
+
 static void *xrealloc(void *p, size_t n) {
   void *q = realloc(p, n);
   if (!q) diag_emit_internalf_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_obj_diagnostics(), DIAG_ERR_INTERNAL_OOM));
@@ -757,7 +768,13 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
       note_vreg_type(types, ntypes, i->src3);
       note_vreg_type(types, ntypes, i->callee);
       note_vreg_type(types, ntypes, i->result_area);
-      for (int a = 0; a < i->nargs; a++) note_vreg_type(types, ntypes, i->args[a]);
+      if (i->op == IR_CALL) {
+        int argument_count = 0;
+        const ir_abi_argument_t *arguments = obj_call_arguments(
+            i, &argument_count);
+        for (int a = 0; a < argument_count; a++)
+          note_vreg_type(types, ntypes, arguments[a].source);
+      }
     }
   }
   for (ir_block_t *b = f->entry; b; b = b->next) {
@@ -885,8 +902,10 @@ static int func_has_variadic_varargs(ir_func_t *f) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       const ir_abi_signature_t *abi =
           i->op == IR_CALL ? obj_call_abi(i) : NULL;
+      int argument_count = 0;
+      if (abi) (void)obj_call_arguments(i, &argument_count);
       if (abi && abi->is_variadic &&
-          (size_t)i->nargs > abi->fixed_param_count) {
+          (size_t)argument_count > abi->fixed_param_count) {
         return 1;
       }
     }
@@ -1108,6 +1127,27 @@ static unsigned load_opcode(ir_type_t ty, int is_unsigned) {
   return 0;
 }
 
+static void emit_abi_argument(
+    wb_t *b, const ir_abi_argument_t *argument,
+    ir_type_t want, int param_count) {
+  if (!argument) obj_unsupported_msg("missing lowered call argument");
+  if (argument->access == IR_ABI_ARGUMENT_DIRECT) {
+    emit_val(b, argument->source, want, param_count);
+    return;
+  }
+  if (argument->access != IR_ABI_ARGUMENT_LOAD ||
+      argument->source.type != IR_TY_PTR)
+    obj_unsupported_msg("unsupported lowered call argument access");
+  emit_addr_val(b, argument->source, param_count);
+  if (argument->byte_offset != 0) {
+    emit_const(b, IR_TY_I32, argument->byte_offset);
+    wb_u8(b, 0x6a); /* i32.add */
+  }
+  wb_u8(b, load_opcode(argument->type, 1));
+  emit_memarg(b, argument->type);
+  emit_stack_cast(b, argument->type, want, 1);
+}
+
 static unsigned store_opcode(ir_type_t ty) {
   switch (ty) {
     case IR_TY_I8: return 0x3a;
@@ -1275,20 +1315,6 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     if (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID) {
       sig.result = IR_TY_VOID;
     }
-    int call_nargs = (int)abi->fixed_param_count;
-    if (sig.nparams < call_nargs) {
-      int old_nparams = sig.nparams;
-      sig.params = xrealloc(sig.params, (size_t)call_nargs * sizeof(ir_type_t));
-      for (int a = old_nparams; a < call_nargs; a++) {
-        ir_type_t arg_ty = i->args[a].type;
-        ir_type_t ty = wasm_ir_type(arg_ty);
-        int null_ptr_pair_arg =
-            a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
-        if (arg_ty == IR_TY_PTR || null_ptr_pair_arg) ty = IR_TY_I32;
-        sig.params[a] = ty;
-      }
-      sig.nparams = call_nargs;
-    }
     if (!i->is_void_call && i->dst.id != IR_VAL_NONE) {
       sig.result = wasm_ir_type(i->dst.type);
     }
@@ -1415,8 +1441,11 @@ static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t 
                                           ir_inst_t *i, int param_count) {
   const ir_abi_signature_t *abi = obj_call_abi(i);
   if (!abi || !abi->is_variadic) return 0;
+  int argument_count = 0;
+  const ir_abi_argument_t *arguments = obj_call_arguments(
+      i, &argument_count);
   int fixed_count = (int)abi->fixed_param_count;
-  int nargs_var = i->nargs - fixed_count;
+  int nargs_var = argument_count - fixed_count;
   if (nargs_var <= 0) return 0;
   if (!stack_pointer) obj_unsupported_msg("variadic call without stack pointer in Wasm object mode");
   if (!*va_arg_area) *va_arg_area = intern_va_arg_area_global();
@@ -1433,23 +1462,26 @@ static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t 
   emit_stack_global_get(b, of, stack_pointer);
   emit_stack_global_set(b, of, *va_arg_area);
 
-  for (int a = fixed_count; a < i->nargs; a++) {
+  for (int a = fixed_count; a < argument_count; a++) {
     int off = (a - fixed_count) * 8;
     emit_stack_global_get(b, of, *va_arg_area);
     emit_const(b, IR_TY_I32, off);
     wb_u8(b, 0x6a);
-    ir_type_t arg_ty = wasm_ir_type(i->args[a].type);
+    ir_type_t arg_ty = wasm_ir_type(arguments[a].type);
     if (arg_ty == IR_TY_F64) {
-      emit_val(b, i->args[a], IR_TY_F64, param_count);
+      emit_abi_argument(
+          b, &arguments[a], IR_TY_F64, param_count);
       wb_u8(b, store_opcode(IR_TY_F64));
       emit_memarg(b, IR_TY_F64);
     } else if (arg_ty == IR_TY_F32) {
-      emit_val(b, i->args[a], IR_TY_F32, param_count);
+      emit_abi_argument(
+          b, &arguments[a], IR_TY_F32, param_count);
       wb_u8(b, 0xbb); /* f64.promote_f32 */
       wb_u8(b, store_opcode(IR_TY_F64));
       emit_memarg(b, IR_TY_F64);
     } else {
-      emit_val(b, i->args[a], IR_TY_I64, param_count);
+      emit_abi_argument(
+          b, &arguments[a], IR_TY_I64, param_count);
       wb_u8(b, store_opcode(IR_TY_I64));
       emit_memarg(b, IR_TY_I64);
     }
@@ -1778,7 +1810,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         case IR_TRUNC: {
           ir_type_t got = actual_vreg_type(i->src1);
           ir_type_t want = actual_vreg_type(i->dst);
-          emit_local_get(&body, local_index(param_count, i->src1.id));
+          emit_val(&body, i->src1, got, param_count);
           emit_stack_cast(&body, got, want,
                           i->op == IR_ZEXT ? 1 :
                           i->op == IR_SEXT ? 0 : actual_vreg_unsigned(i->src1));
@@ -2013,6 +2045,9 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           break;
         }
         case IR_CALL: {
+          int argument_count = 0;
+          const ir_abi_argument_t *arguments = obj_call_arguments(
+              i, &argument_count);
           int vararg_area_bytes =
               emit_variadic_arg_area_prepare(&body, of, stack_pointer, &va_arg_area,
                                              old_va_arg_area_local, i, param_count);
@@ -2024,7 +2059,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             for (int a = 0; a < csig.nparams; a++) {
               int p = a + (call_has_ret_area(i) ? 1 : 0);
               if (p >= csig.nparams) break;
-              emit_val(&body, i->args[a], csig.params[p], param_count);
+              if (a >= argument_count)
+                obj_unsupported_msg("indirect call has too few lowered arguments");
+              emit_abi_argument(
+                  &body, &arguments[a], csig.params[p], param_count);
             }
             emit_addr_val(&body, i->callee, param_count);
             wb_u8(&body, 0x11);
@@ -2060,10 +2098,11 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           }
           int has_call_ret_area = call_has_ret_area(i);
           if (has_call_ret_area) emit_addr_val(&body, call_ret_area(i), param_count);
-          for (int a = 0; a < i->nargs; a++) {
+          for (int a = 0; a < argument_count; a++) {
             int p = a + (has_call_ret_area ? 1 : 0);
             if (p >= emit_sig->nparams) break;
-            emit_val(&body, i->args[a], emit_sig->params[p], param_count);
+            emit_abi_argument(
+                &body, &arguments[a], emit_sig->params[p], param_count);
           }
           wb_u8(&body, 0x10);
           uint32_t imm_off = wb_uleb5(&body, 0);

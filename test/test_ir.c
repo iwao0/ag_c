@@ -187,9 +187,9 @@ static void test_call(void) {
   ir_inst_t *icall = ir_inst_new(IR_CALL);
   icall->dst = ir_val_vreg(vret, IR_TY_I32);
   icall->sym = "add"; icall->sym_len = 3;
-  icall->args = calloc(2, sizeof(ir_val_t));
-  icall->args[0] = ir_val_vreg(v0, IR_TY_I32);
-  icall->args[1] = ir_val_vreg(v1, IR_TY_I32);
+  icall->args = calloc(2, sizeof(*icall->args));
+  icall->args[0].value = ir_val_vreg(v0, IR_TY_I32);
+  icall->args[1].value = ir_val_vreg(v1, IR_TY_I32);
   icall->nargs = 2;
   ir_func_append_inst(f, icall);
 

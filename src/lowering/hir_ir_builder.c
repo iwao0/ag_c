@@ -3068,28 +3068,10 @@ static ir_val_t build_scalar_or_void_call(
       return unsupported_expr(context);
   }
 
-  ir_val_t *arguments = NULL;
-  size_t argument_capacity = 0;
+  ir_call_argument_t *arguments = NULL;
   size_t emitted_count = 0;
-  for (size_t i = 0; i < argument_count; i++) {
-    const psx_hir_node_t *argument = child_for_edge(
-        context, node, PSX_HIR_EDGE_ARGUMENT, i);
-    ir_abi_param_info_t argument_type = classify_node_type(
-        context, argument);
-    size_t slots = is_complex_abi_type(argument_type) ? 2 : 1;
-    if (i >= signature.param_count &&
-        argument_type.param_class == IR_ABI_PARAM_AGGREGATE) {
-      if (argument_type.source_size <= 0 ||
-          argument_type.source_size > INT_MAX - 7)
-        return unsupported_expr(context);
-      slots = (size_t)((argument_type.source_size + 7) / 8);
-    }
-    if (slots > SIZE_MAX - argument_capacity)
-      return unsupported_expr(context);
-    argument_capacity += slots;
-  }
   if (argument_count) {
-    arguments = calloc(argument_capacity, sizeof(*arguments));
+    arguments = calloc(argument_count, sizeof(*arguments));
     if (!arguments) {
       free(arguments);
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
@@ -3102,13 +3084,14 @@ static ir_val_t build_scalar_or_void_call(
     ir_abi_param_info_t argument_type = classify_node_type(
         context, argument);
     ir_abi_param_info_t parameter_type;
+    psx_qual_type_t lowered_argument_type =
+        psx_hir_node_qual_type(argument);
     if (i < signature.param_count) {
-      psx_qual_type_t parameter_type_id =
-          psx_semantic_type_table_parameter(
-              context->options->semantic_types,
-              callable_type.type_id, (int)i);
+      lowered_argument_type = psx_semantic_type_table_parameter(
+          context->options->semantic_types,
+          callable_type.type_id, (int)i);
       parameter_type = ir_abi_classify_type_id(
-          &abi, parameter_type_id.type_id);
+          &abi, lowered_argument_type.type_id);
     } else {
       parameter_type = argument_type;
       if (argument_type.param_class == IR_ABI_PARAM_INTEGER &&
@@ -3128,8 +3111,9 @@ static ir_val_t build_scalar_or_void_call(
         argument_type.param_class == IR_ABI_PARAM_AGGREGATE) {
       int rounded_size =
           ((argument_type.source_size + 7) / 8) * 8;
-      size_t chunk_count = (size_t)(rounded_size / 8);
-      if (emitted_count > argument_capacity - chunk_count) {
+      if (argument_type.source_size <= 0 ||
+          rounded_size < argument_type.source_size ||
+          emitted_count >= argument_count) {
         free(arguments);
         return unsupported_expr(context);
       }
@@ -3153,25 +3137,17 @@ static ir_val_t build_scalar_or_void_call(
         free(arguments);
         return ir_val_none();
       }
-      for (int offset = 0; offset < rounded_size; offset += 8) {
-        ir_val_t chunk_pointer = ir_val_vreg(temporary, IR_TY_PTR);
-        if (offset > 0)
-          chunk_pointer = pointer_with_offset(
-              context, chunk_pointer, offset);
-        ir_val_t chunk = load_direct_value(
-            context, chunk_pointer, IR_TY_I64);
-        if (context->status != IR_HIR_BUILD_OK) {
-          free(arguments);
-          return ir_val_none();
-        }
-        arguments[emitted_count++] = chunk;
-      }
+      arguments[emitted_count++] = (ir_call_argument_t){
+          .value = ir_val_vreg(temporary, IR_TY_PTR),
+          .type = lowered_argument_type,
+          .representation = IR_CALL_ARGUMENT_ADDRESS,
+      };
       continue;
     }
     if (i < signature.param_count &&
         is_complex_abi_type(parameter_type)) {
       if (!is_complex_abi_type(argument_type) ||
-          emitted_count + 2 > argument_capacity) {
+          emitted_count >= argument_count) {
         free(arguments);
         return unsupported_expr(context);
       }
@@ -3182,25 +3158,18 @@ static ir_val_t build_scalar_or_void_call(
         free(arguments);
         return ir_val_none();
       }
-      ir_val_t imaginary_pointer = pointer_with_offset(
-          context, pointer, ir_type_size(parameter_type.type));
-      ir_val_t real = load_direct_value(
-          context, pointer, parameter_type.type);
-      ir_val_t imaginary = load_direct_value(
-          context, imaginary_pointer, parameter_type.type);
-      if (context->status != IR_HIR_BUILD_OK) {
-        free(arguments);
-        return ir_val_none();
-      }
-      arguments[emitted_count++] = real;
-      arguments[emitted_count++] = imaginary;
+      arguments[emitted_count++] = (ir_call_argument_t){
+          .value = pointer,
+          .type = lowered_argument_type,
+          .representation = IR_CALL_ARGUMENT_ADDRESS,
+      };
       continue;
     }
     if (i < signature.param_count &&
-        is_indirect_aggregate_abi_type(parameter_type)) {
+        parameter_type.param_class == IR_ABI_PARAM_AGGREGATE) {
       if (argument_type.param_class != IR_ABI_PARAM_AGGREGATE ||
           argument_type.source_size != parameter_type.source_size ||
-          emitted_count >= argument_capacity) {
+          emitted_count >= argument_count) {
         free(arguments);
         return unsupported_expr(context);
       }
@@ -3225,8 +3194,11 @@ static ir_val_t build_scalar_or_void_call(
         free(arguments);
         return ir_val_none();
       }
-      arguments[emitted_count++] =
-          ir_val_vreg(temporary, IR_TY_PTR);
+      arguments[emitted_count++] = (ir_call_argument_t){
+          .value = ir_val_vreg(temporary, IR_TY_PTR),
+          .type = lowered_argument_type,
+          .representation = IR_CALL_ARGUMENT_ADDRESS,
+      };
       continue;
     }
     if (i >= signature.param_count && is_float_abi_type(argument_type) &&
@@ -3245,17 +3217,17 @@ static ir_val_t build_scalar_or_void_call(
       value = coerce_direct_value_to_qual_type(
           context, value, argument_type,
           parameter_type,
-          i < signature.param_count
-              ? psx_semantic_type_table_parameter(
-                    context->options->semantic_types,
-                    callable_type.type_id, (int)i)
-              : psx_hir_node_qual_type(argument));
+          lowered_argument_type);
     }
     if (context->status != IR_HIR_BUILD_OK) {
       free(arguments);
       return ir_val_none();
     }
-    arguments[emitted_count++] = value;
+    arguments[emitted_count++] = (ir_call_argument_t){
+        .value = value,
+        .type = lowered_argument_type,
+        .representation = IR_CALL_ARGUMENT_VALUE,
+    };
   }
 
   int result_vreg = -1;

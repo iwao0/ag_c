@@ -2066,13 +2066,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     fail(ctx, "more than 8 fixed args in variadic call (Phase 7e unsupported)");
     return ir_val_none();
   }
-  ir_val_t *cargs = NULL;
+  ir_call_argument_t *cargs = NULL;
   /* _Complex 値引数は 2 FP レジスタ (re, im)、variadic aggregate は 8B stack
    * slot 列に展開されるので、cargs は余裕を持って確保し、argc で実エントリ数を数える。 */
   int argc = 0;
   if (call_node->argument_count > 0) {
     cargs = calloc(
-        (size_t)(8 * call_node->argument_count), sizeof(ir_val_t));
+        (size_t)(8 * call_node->argument_count), sizeof(*cargs));
     for (int i = 0; i < call_node->argument_count; i++) {
       node_t *arg = call_node->arguments[i];
       ir_abi_param_info_t declared_param = {0};
@@ -2129,7 +2129,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           ld->dst = ir_val_vreg(lv, fp_ty);
           ld->src1 = ir_val_vreg(pp, IR_TY_PTR);
           ir_func_append_inst(ctx->f, ld);
-          cargs[argc++] = ir_val_vreg(lv, fp_ty);
+          cargs[argc++].value = ir_val_vreg(lv, fp_ty);
         }
         continue;
       }
@@ -2194,7 +2194,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg->kind == ND_FUNCALL && arg_full_size > 8) {
         ir_val_t a = build_expr(ctx, arg);
         if (ctx->failed) return ir_val_none();
-        cargs[argc++] = ir_val_vreg(a.id, IR_TY_PTR);
+        cargs[argc++].value = ir_val_vreg(a.id, IR_TY_PTR);
         continue;
       }
       if (arg_full_size == 8 &&
@@ -2202,7 +2202,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         if (arg->kind == ND_FUNCALL) {
           ir_val_t value = build_expr(ctx, arg);
           if (ctx->failed) return ir_val_none();
-          cargs[argc++] = ir_val_vreg(value.id, IR_TY_I64);
+          cargs[argc++].value = ir_val_vreg(value.id, IR_TY_I64);
           continue;
         }
         int src_ptr;
@@ -2231,7 +2231,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         ld->dst = ir_val_vreg(chunk, IR_TY_I64);
         ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
         ir_func_append_inst(ctx->f, ld);
-        cargs[argc++] = ir_val_vreg(chunk, IR_TY_I64);
+        cargs[argc++].value = ir_val_vreg(chunk, IR_TY_I64);
         continue;
       }
       if (arg_full_size > 8 || struct_needs_ptr) {
@@ -2288,11 +2288,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             ld->src1 = ir_val_vreg(p, IR_TY_PTR);
             ld->is_unsigned = 1;
             ir_func_append_inst(ctx->f, ld);
-            cargs[argc++] = ir_val_vreg(chunk, IR_TY_I64);
+            cargs[argc++].value = ir_val_vreg(chunk, IR_TY_I64);
           }
           continue;
         }
-        cargs[argc++] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+        cargs[argc++].value = ir_val_vreg(tmp_vreg, IR_TY_PTR);
       } else {
         ir_val_t cv = build_expr(ctx, arg);
         if (ctx->failed) return ir_val_none();
@@ -2319,7 +2319,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             }
           }
         }
-        cargs[argc++] = cv;
+        cargs[argc++].value = cv;
       }
     }
   }

@@ -185,6 +185,19 @@ ir_val_t ir_val_imm(ir_type_t t, long long imm);
 ir_val_t ir_val_fp_imm(ir_type_t t, double v);
 ir_val_t ir_val_vreg(int id, ir_type_t t);
 
+typedef enum {
+  IR_CALL_ARGUMENT_VALUE = 0,
+  IR_CALL_ARGUMENT_ADDRESS,
+} ir_call_argument_representation_t;
+
+/* One source-level C argument. Aggregate and complex values are represented
+ * by an address; AbiLowering expands that value into target-specific pieces. */
+typedef struct {
+  ir_val_t value;
+  psx_qual_type_t type;
+  ir_call_argument_representation_t representation;
+} ir_call_argument_t;
+
 /* ------------------------------------------------------------------ */
 /* 命令                                                                */
 /* ------------------------------------------------------------------ */
@@ -208,7 +221,7 @@ typedef struct ir_inst_t {
 
   /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
-  ir_val_t *args;     /* CALL の実引数列 */
+  ir_call_argument_t *args; /* CALL のsource-level実引数列 */
   /* IR_CALL のaggregate結果を受け取る保存先。target固有の渡し方は
    * AbiLowering sidecarが決定する。 */
   ir_val_t result_area;

@@ -22,8 +22,9 @@ static void mark_uses(ir_inst_t *inst, int *last_use, int nvregs, int n) {
   if (inst->src2.id >= 0 && inst->src2.id < nvregs) last_use[inst->src2.id] = n;
   if (inst->src3.id >= 0 && inst->src3.id < nvregs) last_use[inst->src3.id] = n;
   for (int k = 0; k < inst->nargs; k++) {
-    if (inst->args && inst->args[k].id >= 0 && inst->args[k].id < nvregs) {
-      last_use[inst->args[k].id] = n;
+    if (inst->args && inst->args[k].value.id >= 0 &&
+        inst->args[k].value.id < nvregs) {
+      last_use[inst->args[k].value.id] = n;
     }
   }
   if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {

@@ -152,6 +152,8 @@ static int wasm_emit_function_direct(
   ir_module_t *m = build_resolved_function_module(
       stream, function, options);
   if (!m) return 0;
+  ir_opt_const_fold(m);
+  ir_opt_dce(m);
   ir_abi_module_t *abi = lower_module_abi(m, options);
   if (!abi) {
     ir_module_free(m);
@@ -739,6 +741,8 @@ int main(int argc, char **argv) {
       return 1;
     }
 #ifndef AGC_TARGET_WASM32
+    ir_opt_const_fold(function_module);
+    ir_opt_dce(function_module);
     dump_ir_if_requested(function_module);
     ir_abi_module_t *abi = lower_module_abi(
         function_module, &ir_options);

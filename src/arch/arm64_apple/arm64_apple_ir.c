@@ -19,6 +19,7 @@
 #include "../../diag/diag.h"
 #include "../../lowering/frame_layout.h"
 #include "../../lowering/abi_lowering.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,17 @@ static const ir_abi_signature_t *function_abi(
 static const ir_abi_signature_t *call_abi(
     const gen_ctx_t *ctx, const ir_inst_t *call) {
   return ctx ? ir_abi_call_signature(ctx->abi, call) : NULL;
+}
+
+static const ir_abi_argument_t *call_arguments(
+    const gen_ctx_t *ctx, const ir_inst_t *call,
+    int *argument_count) {
+  size_t count = 0;
+  const ir_abi_argument_t *arguments = ir_abi_call_arguments(
+      ctx ? ctx->abi : NULL, call, &count);
+  if (count > INT_MAX || (count > 0 && !arguments)) abort();
+  if (argument_count) *argument_count = (int)count;
+  return arguments;
 }
 
 static int round_up(int v, int a) {
@@ -213,6 +225,32 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
   }
   snprintf(out_buf, out_size, "%s", scratch);
   arm64_cg_emitf(ctx, "  mov %s, #0\n", scratch);
+  return out_buf;
+}
+
+static const char *ensure_abi_argument_in(
+    gen_ctx_t *ctx, const ir_abi_argument_t *argument,
+    const char *scratch, char *out_buf, size_t out_size) {
+  if (!argument) abort();
+  if (argument->access == IR_ABI_ARGUMENT_DIRECT)
+    return ensure_val_in(
+        ctx, argument->source, scratch, out_buf, out_size);
+  if (argument->access != IR_ABI_ARGUMENT_LOAD ||
+      argument->source.type != IR_TY_PTR)
+    abort();
+  const char *address_scratch = strcmp(scratch, "x16") == 0
+                                    ? "x17" : "x16";
+  char address_buf[8];
+  const char *address = ensure_val_in(
+      ctx, argument->source, address_scratch,
+      address_buf, sizeof(address_buf));
+  snprintf(out_buf, out_size, "%s", scratch);
+  if (argument->byte_offset == 0) {
+    arm64_cg_emitf(ctx, "  ldr %s, [%s]\n", scratch, address);
+  } else {
+    arm64_cg_emitf(ctx, "  ldr %s, [%s, #%d]\n",
+                   scratch, address, argument->byte_offset);
+  }
   return out_buf;
 }
 
@@ -842,6 +880,9 @@ static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
       const ir_abi_signature_t *abi = call_abi(ctx, inst);
       if (!abi) abort();
+      int argument_count = 0;
+      const ir_abi_argument_t *arguments = call_arguments(
+          ctx, inst, &argument_count);
       /* Apple ARM64 ABI:
        *   - 通常: 整数引数 x0..x7、float/double 引数 s0..d7 (独立カウンタ)。
        *   - variadic: 固定引数のみ通常レジスタ、可変引数は全て stack に置く。
@@ -855,15 +896,16 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
        * 積む。実際の ABI では int と FP の register カウンタは独立しているので、
        * "9 個目" は両カテゴリ別々に判定する必要がある。 */
       int extra_stack_args = 0;
-      if (!is_variadic_call && inst->nargs > 0) {
+      if (!is_variadic_call && argument_count > 0) {
         /* どの引数が stack に乗るか先に決める。 */
         int int_count = 0, fp_count = 0;
         int *stack_idx = malloc(
-            (size_t)inst->nargs * sizeof(*stack_idx));
+            (size_t)argument_count * sizeof(*stack_idx));
         if (!stack_idx) abort();
         int stack_n = 0;
-        for (int i = 0; i < inst->nargs; i++) {
-          int is_fp = (inst->args[i].type == IR_TY_F32 || inst->args[i].type == IR_TY_F64);
+        for (int i = 0; i < argument_count; i++) {
+          int is_fp = (arguments[i].type == IR_TY_F32 ||
+                       arguments[i].type == IR_TY_F64);
           if (is_fp) {
             if (fp_count < 8) fp_count++;
             else stack_idx[stack_n++] = i;
@@ -877,19 +919,23 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
           var_stack_bytes = ((extra_stack_args + 1) / 2) * 16;
           arm64_cg_emitf(ctx, "  sub sp, sp, #%d\n", var_stack_bytes);
           for (int k = 0; k < stack_n; k++) {
-            ir_val_t arg = inst->args[stack_idx[k]];
+            const ir_abi_argument_t *arg =
+                &arguments[stack_idx[k]];
             int slot_off = k * 8;
-            int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
+            int is_fp = (arg->type == IR_TY_F32 ||
+                         arg->type == IR_TY_F64);
             char buf[8];
             if (is_fp) {
-              const char *suf = (arg.type == IR_TY_F64) ? "d" : "s";
+              const char *suf = (arg->type == IR_TY_F64) ? "d" : "s";
               char tmp_reg[8];
               snprintf(tmp_reg, sizeof(tmp_reg), "%s0", suf);
-              const char *src = ensure_val_in(ctx, arg, tmp_reg, buf, sizeof(buf));
+              const char *src = ensure_abi_argument_in(
+                  ctx, arg, tmp_reg, buf, sizeof(buf));
               if (strcmp(src, tmp_reg) != 0) arm64_cg_emitf(ctx, "  fmov %s, %s\n", tmp_reg, src);
               arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", tmp_reg, slot_off);
             } else {
-              const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
+              const char *src = ensure_abi_argument_in(
+                  ctx, arg, "x9", buf, sizeof(buf));
               arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", src, slot_off);
             }
           }
@@ -897,30 +943,33 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         free(stack_idx);
       }
       if (is_variadic_call) {
-        int nargs_var = inst->nargs - fixed_limit;
+        int nargs_var = argument_count - fixed_limit;
         var_stack_bytes = ((nargs_var + 1) / 2) * 16;
         if (var_stack_bytes > 0) {
           arm64_cg_emitf(ctx, "  sub sp, sp, #%d\n", var_stack_bytes);
         }
         /* 可変引数を stack slot に書く */
-        for (int i = fixed_limit; i < inst->nargs; i++) {
-          ir_val_t arg = inst->args[i];
+        for (int i = fixed_limit; i < argument_count; i++) {
+          const ir_abi_argument_t *arg = &arguments[i];
           int slot_off = (i - fixed_limit) * 8;
-          if (arg.type == IR_TY_F32) {
+          if (arg->type == IR_TY_F32) {
             /* float → double に昇格して書く */
             char buf[8];
-            const char *src = ensure_val_in(ctx, arg, "s0", buf, sizeof(buf));
+            const char *src = ensure_abi_argument_in(
+                ctx, arg, "s0", buf, sizeof(buf));
             if (strcmp(src, "s0") != 0) arm64_cg_emitf(ctx, "  fmov s0, %s\n", src);
             arm64_cg_emitf(ctx, "  fcvt d0, s0\n");
             arm64_cg_emitf(ctx, "  str d0, [sp, #%d]\n", slot_off);
-          } else if (arg.type == IR_TY_F64) {
+          } else if (arg->type == IR_TY_F64) {
             char buf[8];
-            const char *src = ensure_val_in(ctx, arg, "d0", buf, sizeof(buf));
+            const char *src = ensure_abi_argument_in(
+                ctx, arg, "d0", buf, sizeof(buf));
             if (strcmp(src, "d0") != 0) arm64_cg_emitf(ctx, "  fmov d0, %s\n", src);
             arm64_cg_emitf(ctx, "  str d0, [sp, #%d]\n", slot_off);
           } else {
             char buf[8];
-            const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
+            const char *src = ensure_abi_argument_in(
+                ctx, arg, "x9", buf, sizeof(buf));
             arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", src, slot_off);
           }
         }
@@ -930,19 +979,22 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
       int int_idx = 0;
       int fp_idx = 0;
       for (int i = 0; i < fixed_limit; i++) {
-        ir_val_t arg = inst->args[i];
-        int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
+        if (i >= argument_count) abort();
+        const ir_abi_argument_t *arg = &arguments[i];
+        int is_fp = (arg->type == IR_TY_F32 ||
+                     arg->type == IR_TY_F64);
         if (is_fp && fp_idx >= 8) continue;
         if (!is_fp && int_idx >= 8) continue;
         char regname[8];
         if (is_fp) {
-          const char *suf = (arg.type == IR_TY_F64) ? "d" : "s";
+          const char *suf = (arg->type == IR_TY_F64) ? "d" : "s";
           snprintf(regname, sizeof(regname), "%s%d", suf, fp_idx++);
         } else {
           snprintf(regname, sizeof(regname), "x%d", int_idx++);
         }
         char buf[8];
-        const char *src = ensure_val_in(ctx, arg, regname, buf, sizeof(buf));
+        const char *src = ensure_abi_argument_in(
+            ctx, arg, regname, buf, sizeof(buf));
         if (strcmp(src, regname) != 0) {
           if (is_fp) {
             arm64_cg_emitf(ctx, "  fmov %s, %s\n", regname, src);
@@ -1182,10 +1234,6 @@ void gen_ir_module_in(
     const ir_abi_module_t *abi) {
   if (!emit_context) abort();
   if (!m) return;
-  /* Phase 6: 最適化パス。const fold で即値伝播と算術畳み込みを行い、
-   * DCE で使われない命令 (LOAD_IMM だけ残ったものなど) を IR_NOP に置換。 */
-  ir_opt_const_fold(m);
-  ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next) {
     gen_func(emit_context, f, abi);
   }

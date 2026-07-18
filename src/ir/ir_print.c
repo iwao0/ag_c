@@ -122,7 +122,7 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       sink_printf(s, "@%.*s(", i->sym_len, i->sym ? i->sym : "");
       for (int k = 0; k < i->nargs; k++) {
         if (k > 0) sink_printf(s, ", ");
-        print_val(s, i->args[k]);
+        print_val(s, i->args[k].value);
       }
       sink_printf(s, ")");
       break;

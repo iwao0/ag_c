@@ -5056,6 +5056,20 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 4, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 1));
+  ir_abi_module_t *call_abi = test_lower_ir_abi(ir);
+  size_t lowered_argument_count = 0;
+  const ir_abi_argument_t *lowered_arguments = ir_abi_call_arguments(
+      call_abi, call, &lowered_argument_count);
+  ASSERT_TRUE(call_abi != NULL);
+  ASSERT_EQ(2, lowered_argument_count);
+  ASSERT_TRUE(lowered_arguments != NULL);
+  ASSERT_EQ(call->args[0].value.id, lowered_arguments[0].source.id);
+  ASSERT_EQ(call->args[1].value.id, lowered_arguments[1].source.id);
+  ir_val_t saved_argument = call->args[0].value;
+  call->args[0].value = ir_val_none();
+  ASSERT_EQ(saved_argument.id, lowered_arguments[0].source.id);
+  call->args[0].value = saved_argument;
+  ir_abi_module_free(call_abi);
   ASSERT_TRUE(variadic_call != NULL);
   ASSERT_EQ(2, variadic_call->nargs);
   ASSERT_EQ(1, test_call_abi_value(ir, variadic_call, 0, 0));
@@ -5153,10 +5167,28 @@ static void test_typed_hir_variadic_aggregate_call_without_ast() {
   ASSERT_TRUE(call != NULL);
   ASSERT_TRUE(test_call_abi_value(ir, call, 2, 0));
   ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
-  ASSERT_EQ(3, call->nargs);
+  ASSERT_EQ(2, call->nargs);
+  ASSERT_TRUE(call->args[0].type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(call->args[1].type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+            call->args[1].representation);
   ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
   ASSERT_EQ(IR_TY_I64, test_call_abi_value(ir, call, 1, 1));
   ASSERT_EQ(IR_TY_I64, test_call_abi_value(ir, call, 1, 2));
+  ir_abi_module_t *call_abi = test_lower_ir_abi(ir);
+  size_t physical_argument_count = 0;
+  const ir_abi_argument_t *physical_arguments = ir_abi_call_arguments(
+      call_abi, call, &physical_argument_count);
+  ASSERT_TRUE(call_abi != NULL && physical_arguments != NULL);
+  ASSERT_EQ(3, physical_argument_count);
+  ASSERT_EQ(IR_ABI_ARGUMENT_DIRECT, physical_arguments[0].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, physical_arguments[1].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, physical_arguments[2].access);
+  ASSERT_EQ(0, physical_arguments[1].byte_offset);
+  ASSERT_EQ(8, physical_arguments[2].byte_offset);
+  ASSERT_EQ(call->args[1].value.id, physical_arguments[1].source.id);
+  ASSERT_EQ(call->args[1].value.id, physical_arguments[2].source.id);
+  ir_abi_module_free(call_abi);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
   reset_test_translation_unit_state();
@@ -5878,7 +5910,7 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
       "double _Complex identity(double _Complex value) { return value; } "
       "int compare(void) { "
       "_Complex double first = 3.0; "
-      "_Complex double copy = first; "
+      "_Complex double copy = identity(first); "
       "_Complex double sum = copy + 1.0; "
       "_Complex double expected = 4.0; "
       "return sum == expected; }");
@@ -5925,7 +5957,35 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(6, count_ir_op(ir->funcs, IR_ALLOCA));
+  const ir_inst_t *identity_call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !identity_call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        identity_call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(identity_call != NULL);
+  ASSERT_EQ(1, identity_call->nargs);
+  ASSERT_TRUE(identity_call->args[0].type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
+            identity_call->args[0].representation);
+  ir_abi_module_t *identity_call_abi = test_lower_ir_abi(ir);
+  size_t identity_piece_count = 0;
+  const ir_abi_argument_t *identity_pieces = ir_abi_call_arguments(
+      identity_call_abi, identity_call, &identity_piece_count);
+  ASSERT_TRUE(identity_call_abi != NULL && identity_pieces != NULL);
+  ASSERT_EQ(2, identity_piece_count);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, identity_pieces[0].access);
+  ASSERT_EQ(IR_ABI_ARGUMENT_LOAD, identity_pieces[1].access);
+  ASSERT_EQ(0, identity_pieces[0].byte_offset);
+  ASSERT_EQ(8, identity_pieces[1].byte_offset);
+  ir_abi_module_free(identity_call_abi);
+  ASSERT_EQ(7, count_ir_op(ir->funcs, IR_ALLOCA));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_MEMCPY));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_FADD));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_FEQ));

@@ -44,6 +44,18 @@ typedef struct {
   ir_abi_piece_kind_t kind;
 } ir_abi_piece_t;
 
+typedef enum {
+  IR_ABI_ARGUMENT_DIRECT = 0,
+  IR_ABI_ARGUMENT_LOAD,
+} ir_abi_argument_access_t;
+
+typedef struct {
+  ir_val_t source;
+  ir_type_t type;
+  int byte_offset;
+  ir_abi_argument_access_t access;
+} ir_abi_argument_t;
+
 typedef struct {
   ir_abi_param_info_t result;
   ir_abi_piece_t *param_pieces;
@@ -74,6 +86,8 @@ typedef struct {
 typedef struct {
   const ir_inst_t *call;
   ir_abi_signature_t signature;
+  ir_abi_argument_t *arguments;
+  size_t argument_count;
 } ir_abi_call_t;
 
 typedef struct {
@@ -124,6 +138,9 @@ const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function);
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call);
+const ir_abi_argument_t *ir_abi_call_arguments(
+    const ir_abi_module_t *module, const ir_inst_t *call,
+    size_t *argument_count);
 const ir_abi_signature_t *ir_abi_reference_signature(
     const ir_abi_module_t *module, const ir_inst_t *reference);
 const ir_abi_signature_t *ir_abi_symbol_reference_signature(

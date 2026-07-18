@@ -106,7 +106,8 @@ static void const_fold_func(ir_func_t *f) {
       substitute_with_const(&cm, &inst->src1, nvregs);
       substitute_with_const(&cm, &inst->src2, nvregs);
       for (int i = 0; i < inst->nargs; i++) {
-        if (inst->args) substitute_with_const(&cm, &inst->args[i], nvregs);
+        if (inst->args)
+          substitute_with_const(&cm, &inst->args[i].value, nvregs);
       }
       substitute_with_const(&cm, &inst->result_area, nvregs);
 
@@ -193,8 +194,9 @@ static void count_uses(ir_inst_t *inst, int *use_cnt, int nvregs) {
   if (inst->src2.id >= 0 && inst->src2.id < nvregs) use_cnt[inst->src2.id]++;
   if (inst->src3.id >= 0 && inst->src3.id < nvregs) use_cnt[inst->src3.id]++;
   for (int k = 0; k < inst->nargs; k++) {
-    if (inst->args && inst->args[k].id >= 0 && inst->args[k].id < nvregs) {
-      use_cnt[inst->args[k].id]++;
+    if (inst->args && inst->args[k].value.id >= 0 &&
+        inst->args[k].value.id < nvregs) {
+      use_cnt[inst->args[k].value.id]++;
     }
   }
   if (inst->result_area.id >= 0 && inst->result_area.id < nvregs) {

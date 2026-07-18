@@ -324,6 +324,133 @@ static int function_result_area_vreg(const ir_func_t *function) {
   return result;
 }
 
+static size_t logical_variadic_piece_count(
+    const ir_abi_type_context_t *context,
+    const ir_call_argument_t *argument) {
+  if (!context || !argument ||
+      argument->type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  ir_abi_param_info_t info = ir_abi_classify_type_id(
+      context, argument->type.type_id);
+  if (info.param_class == IR_ABI_PARAM_UNKNOWN ||
+      info.type == IR_TY_VOID)
+    return 0;
+  if (type_is_complex(context, argument->type.type_id)) return 2;
+  if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+    if (info.source_size <= 0) return 0;
+    return (size_t)((info.source_size + 7) / 8);
+  }
+  return 1;
+}
+
+static int lower_logical_call_arguments(
+    const ir_abi_type_context_t *context,
+    const ir_inst_t *instruction,
+    ir_abi_call_t *call) {
+  size_t source_count = instruction->nargs > 0
+                            ? (size_t)instruction->nargs : 0;
+  size_t declared_source_count = instruction->function_type.param_count;
+  size_t declared_piece_count = call->signature.param_count;
+  int declared_variadic = call->signature.is_variadic;
+  if ((source_count > 0 && !instruction->args) ||
+      source_count < declared_source_count ||
+      (instruction->function_type.has_prototype && !declared_variadic &&
+       source_count != declared_source_count))
+    return 0;
+
+  size_t physical_count = declared_piece_count;
+  for (size_t i = declared_source_count; i < source_count; i++) {
+    size_t pieces = logical_variadic_piece_count(
+        context, &instruction->args[i]);
+    if (pieces == 0 || physical_count > SIZE_MAX - pieces) return 0;
+    physical_count += pieces;
+  }
+  if (physical_count > 0) {
+    if (physical_count > SIZE_MAX / sizeof(*call->arguments)) return 0;
+    call->arguments = calloc(
+        physical_count, sizeof(*call->arguments));
+    if (!call->arguments) return 0;
+  }
+  if (physical_count != declared_piece_count) {
+    ir_abi_piece_t *pieces = realloc(
+        call->signature.param_pieces,
+        physical_count * sizeof(*pieces));
+    if (physical_count > 0 && !pieces) return 0;
+    call->signature.param_pieces = pieces;
+  }
+
+  for (size_t i = 0; i < declared_piece_count; i++) {
+    const ir_abi_piece_t *piece = &call->signature.param_pieces[i];
+    if (piece->source_index >= declared_source_count) return 0;
+    const ir_call_argument_t *logical_argument =
+        &instruction->args[piece->source_index];
+    ir_abi_argument_access_t access = IR_ABI_ARGUMENT_DIRECT;
+    if (piece->kind == IR_ABI_PIECE_INDIRECT) {
+      if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
+        return 0;
+    } else if (logical_argument->representation ==
+               IR_CALL_ARGUMENT_ADDRESS) {
+      access = IR_ABI_ARGUMENT_LOAD;
+    } else if (piece->kind == IR_ABI_PIECE_COMPLEX_REAL ||
+               piece->kind == IR_ABI_PIECE_COMPLEX_IMAGINARY) {
+      return 0;
+    }
+    call->arguments[i] = (ir_abi_argument_t){
+        .source = logical_argument->value,
+        .type = piece->type,
+        .byte_offset = piece->byte_offset,
+        .access = access,
+    };
+  }
+
+  size_t physical_index = declared_piece_count;
+  for (size_t i = declared_source_count; i < source_count; i++) {
+    const ir_call_argument_t *logical_argument = &instruction->args[i];
+    ir_abi_param_info_t info = ir_abi_classify_type_id(
+        context, logical_argument->type.type_id);
+    size_t piece_count = logical_variadic_piece_count(
+        context, logical_argument);
+    for (size_t piece_index = 0; piece_index < piece_count;
+         piece_index++, physical_index++) {
+      int offset = 0;
+      ir_type_t type = logical_argument->value.type;
+      ir_abi_argument_access_t access = IR_ABI_ARGUMENT_DIRECT;
+      if (type_is_complex(context, logical_argument->type.type_id)) {
+        if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
+          return 0;
+        type = info.type;
+        offset = (int)piece_index * ir_type_size(type);
+        access = IR_ABI_ARGUMENT_LOAD;
+      } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+        if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
+          return 0;
+        type = IR_TY_I64;
+        offset = (int)piece_index * 8;
+        access = IR_ABI_ARGUMENT_LOAD;
+      }
+      call->signature.param_pieces[physical_index] = (ir_abi_piece_t){
+          .type = type,
+          .source_index = i,
+          .byte_offset = offset,
+          .kind = IR_ABI_PIECE_VARIADIC,
+      };
+      call->arguments[physical_index] = (ir_abi_argument_t){
+          .source = logical_argument->value,
+          .type = type,
+          .byte_offset = offset,
+          .access = access,
+      };
+    }
+  }
+  call->argument_count = physical_count;
+  call->signature.param_count = physical_count;
+  call->signature.fixed_param_count =
+      declared_variadic ? declared_piece_count : physical_count;
+  call->signature.is_variadic =
+      declared_variadic && physical_count > declared_piece_count;
+  return 1;
+}
+
 ir_abi_module_t *ir_abi_lower_module(
     const ir_abi_type_context_t *context,
     const ir_module_t *module) {
@@ -396,31 +523,64 @@ ir_abi_module_t *ir_abi_lower_module(
         size_t declared_piece_count = call->signature.param_count;
         size_t actual_count = instruction->nargs > 0
                                   ? (size_t)instruction->nargs : 0;
-        if (call->signature.is_variadic &&
-            actual_count < declared_piece_count)
-          goto fail;
-        if (actual_count != declared_piece_count) {
-          ir_abi_piece_t *pieces = realloc(
-              call->signature.param_pieces,
-              actual_count * sizeof(*pieces));
-          if (actual_count > 0 && !pieces) goto fail;
-          call->signature.param_pieces = pieces;
+        int has_logical_arguments = actual_count == 0;
+        if (actual_count > 0) {
+          if (!instruction->args) goto fail;
+          has_logical_arguments =
+              instruction->args[0].type.type_id != PSX_TYPE_ID_INVALID;
+          for (size_t i = 1; i < actual_count; i++) {
+            if ((instruction->args[i].type.type_id != PSX_TYPE_ID_INVALID) !=
+                has_logical_arguments)
+              goto fail;
+          }
         }
-        for (size_t i = declared_piece_count; i < actual_count; i++) {
-          call->signature.param_pieces[i] = (ir_abi_piece_t){
-              .type = instruction->args[i].type,
-              .source_index = SIZE_MAX,
-              .byte_offset = 0,
-              .kind = IR_ABI_PIECE_VARIADIC,
-          };
+        if (has_logical_arguments) {
+          if (!lower_logical_call_arguments(
+                  context, instruction, call))
+            goto fail;
+        } else {
+          if (actual_count > 0) {
+            if (actual_count > SIZE_MAX / sizeof(*call->arguments))
+              goto fail;
+            call->arguments = malloc(
+                actual_count * sizeof(*call->arguments));
+            if (!call->arguments) goto fail;
+            for (size_t i = 0; i < actual_count; i++) {
+              call->arguments[i] = (ir_abi_argument_t){
+                  .source = instruction->args[i].value,
+                  .type = instruction->args[i].value.type,
+                  .byte_offset = 0,
+                  .access = IR_ABI_ARGUMENT_DIRECT,
+              };
+            }
+          }
+          call->argument_count = actual_count;
+          if (call->signature.is_variadic &&
+              actual_count < declared_piece_count)
+            goto fail;
+          if (actual_count != declared_piece_count) {
+            ir_abi_piece_t *pieces = realloc(
+                call->signature.param_pieces,
+                actual_count * sizeof(*pieces));
+            if (actual_count > 0 && !pieces) goto fail;
+            call->signature.param_pieces = pieces;
+          }
+          for (size_t i = declared_piece_count; i < actual_count; i++) {
+            call->signature.param_pieces[i] = (ir_abi_piece_t){
+                .type = instruction->args[i].value.type,
+                .source_index = SIZE_MAX,
+                .byte_offset = 0,
+                .kind = IR_ABI_PIECE_VARIADIC,
+            };
+          }
+          call->signature.param_count = actual_count;
+          call->signature.fixed_param_count =
+              call->signature.is_variadic
+                  ? declared_piece_count : actual_count;
+          call->signature.is_variadic =
+              call->signature.is_variadic &&
+              actual_count > declared_piece_count;
         }
-        call->signature.param_count = actual_count;
-        call->signature.fixed_param_count =
-            call->signature.is_variadic
-                ? declared_piece_count : actual_count;
-        call->signature.is_variadic =
-            call->signature.is_variadic &&
-            actual_count > declared_piece_count;
         call->signature.result_area = instruction->result_area;
       }
     }
@@ -452,6 +612,8 @@ void ir_abi_module_free(ir_abi_module_t *module) {
   for (size_t i = 0; i < module->function_count; i++)
     dispose_signature(&module->functions[i].signature);
   for (size_t i = 0; i < module->call_count; i++)
+    free(module->calls[i].arguments);
+  for (size_t i = 0; i < module->call_count; i++)
     dispose_signature(&module->calls[i].signature);
   for (size_t i = 0; i < module->reference_count; i++)
     dispose_signature(&module->references[i].signature);
@@ -480,6 +642,20 @@ const ir_abi_signature_t *ir_abi_call_signature(
   for (size_t i = 0; i < module->call_count; i++) {
     if (module->calls[i].call == call)
       return &module->calls[i].signature;
+  }
+  return NULL;
+}
+
+const ir_abi_argument_t *ir_abi_call_arguments(
+    const ir_abi_module_t *module, const ir_inst_t *call,
+    size_t *argument_count) {
+  if (argument_count) *argument_count = 0;
+  if (!module || !call) return NULL;
+  for (size_t i = 0; i < module->call_count; i++) {
+    if (module->calls[i].call != call) continue;
+    if (argument_count)
+      *argument_count = module->calls[i].argument_count;
+    return module->calls[i].arguments;
   }
   return NULL;
 }
