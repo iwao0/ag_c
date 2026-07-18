@@ -1,10 +1,9 @@
 #include "local_declaration.h"
 
-#include "../parser/decl.h"
+#include "../diag/diag.h"
 #include "../parser/expr.h"
 #include "../parser/node_utils.h"
 #include "../parser/runtime_context.h"
-#include "../parser/semantic_ctx.h"
 #include "../parser/static_assert_declaration.h"
 
 static node_t *parse_local_initializer_assignment_expression(
@@ -38,7 +37,6 @@ static int parse_local_decl_specifier_syntax(
           .expression_context = adapter,
           .parse_assignment_expression =
               parse_local_initializer_assignment_expression,
-          .semantic_context = adapter->semantic_context,
           .runtime_context = adapter->runtime_context,
       });
 }
@@ -54,23 +52,6 @@ static void parse_local_declarator_syntax(
           .expression_context = adapter,
           .parse_assignment_expression =
               parse_local_initializer_assignment_expression,
-          .semantic_context = adapter->semantic_context,
-          .runtime_context = adapter->runtime_context,
-      });
-}
-
-static void parse_local_runtime_declarator_expressions(
-    void *context, psx_parsed_declarator_t *declarator) {
-  psx_frontend_local_declaration_syntax_adapter_t *adapter = context;
-  if (!adapter || !adapter->syntax || !declarator) return;
-  ps_parse_runtime_declarator_expressions_with_options(
-      declarator,
-      &(psx_decl_specifier_syntax_options_t){
-          .name_classifier = &adapter->syntax->name_classifier,
-          .expression_context = adapter,
-          .parse_assignment_expression =
-              parse_local_initializer_assignment_expression,
-          .semantic_context = adapter->semantic_context,
           .runtime_context = adapter->runtime_context,
       });
 }
@@ -79,18 +60,24 @@ static node_t *parse_local_initializer_assignment_expression(
     void *context) {
   psx_frontend_local_declaration_syntax_adapter_t *adapter = context;
   if (!adapter || !adapter->syntax) return NULL;
-  return psx_expr_assign_in_contexts(
-      adapter->semantic_context, adapter->global_registry,
-      adapter->local_registry, adapter->runtime_context,
-      &adapter->syntax->name_classifier, adapter->syntax);
+  return psx_expr_assign_with_syntax_services(
+      adapter->runtime_context, &adapter->syntax->name_classifier,
+      adapter->syntax, adapter->current_function_name,
+      adapter->current_function_name_len);
 }
 
-static void record_local_initializer_unsupported_gnu_extension(
+static void diagnose_local_initializer_unsupported_gnu_extension(
     void *context, const token_t *token, const char *name) {
   psx_frontend_local_declaration_syntax_adapter_t *adapter = context;
   if (!adapter) return;
-  ps_ctx_record_unsupported_gnu_extension_warning_in(
-      adapter->semantic_context, token, name);
+  ag_diagnostic_context_t *diagnostics =
+      ps_parser_runtime_diagnostics(adapter->runtime_context);
+  diag_emit_tokf_in(
+      diagnostics, DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION,
+      token,
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION),
+      name ? name : "");
 }
 
 static void parse_local_initializer_syntax(
@@ -105,40 +92,44 @@ static void parse_local_initializer_syntax(
           .runtime_context = adapter->runtime_context,
           .parse_assignment_expression =
               parse_local_initializer_assignment_expression,
-          .record_unsupported_gnu_extension =
-              record_local_initializer_unsupported_gnu_extension,
+          .diagnose_unsupported_gnu_extension =
+              diagnose_local_initializer_unsupported_gnu_extension,
       });
 }
 
-void psx_frontend_init_local_declaration_callbacks_in_contexts(
+void psx_frontend_init_local_declaration_syntax_adapter(
     psx_frontend_local_declaration_syntax_adapter_t *adapter,
     psx_local_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context) {
+    psx_parser_runtime_context_t *runtime_context,
+    const psx_name_classifier_t *name_classifier,
+    char *current_function_name, int current_function_name_len) {
   if (!adapter || !callbacks) return;
   *adapter = (psx_frontend_local_declaration_syntax_adapter_t){0};
   *callbacks = (psx_local_declaration_callbacks_t){0};
-  if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
-    return;
+  if (!runtime_context) return;
   *adapter = (psx_frontend_local_declaration_syntax_adapter_t){
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
       .runtime_context = runtime_context,
       .syntax = callbacks,
+      .current_function_name = current_function_name,
+      .current_function_name_len = current_function_name_len,
   };
   *callbacks = (psx_local_declaration_callbacks_t){
       .context = adapter,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
+      .name_classifier = name_classifier
+                             ? *name_classifier
+                             : (psx_name_classifier_t){0},
       .runtime_context = runtime_context,
       .parse_static_assert = parse_local_static_assert_syntax,
       .parse_decl_specifier = parse_local_decl_specifier_syntax,
       .parse_declarator = parse_local_declarator_syntax,
-      .parse_runtime_declarator_expressions =
-          parse_local_runtime_declarator_expressions,
       .parse_initializer = parse_local_initializer_syntax,
   };
+}
+
+void psx_frontend_local_declaration_syntax_set_function_name(
+    psx_frontend_local_declaration_syntax_adapter_t *adapter,
+    char *current_function_name, int current_function_name_len) {
+  if (!adapter) return;
+  adapter->current_function_name = current_function_name;
+  adapter->current_function_name_len = current_function_name_len;
 }

@@ -48,7 +48,39 @@ struct psx_local_registry_t {
   psx_lvar_usage_region_t *current_usage_region;
   char *current_function_name;
   int current_function_name_len;
+  void *active_transaction;
 };
+
+typedef struct {
+  psx_local_registry_t *registry;
+  lvar_t *locals;
+  lvar_t *all_locals;
+  lvar_t *all_bindings;
+  lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
+  unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
+  int lvar_scope_depth;
+  unsigned next_scope_seq;
+  unsigned current_scope_seq;
+  unsigned next_declaration_seq;
+  lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
+  lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
+  lvar_usage_event_t *usage_events_head;
+  lvar_usage_event_t *usage_events_tail;
+  psx_lvar_usage_region_t *current_usage_region;
+  char *current_function_name;
+  int current_function_name_len;
+} psx_local_registry_transaction_t;
+
+static int local_transaction_contains_original(
+    const psx_local_registry_transaction_t *transaction,
+    const lvar_t *var) {
+  if (!transaction || !var) return 0;
+  for (const lvar_t *current = transaction->all_locals;
+       current; current = current->next_all) {
+    if (current == var) return 1;
+  }
+  return 0;
+}
 
 psx_local_registry_t *ps_local_registry_create(
     ag_diagnostic_context_t *diagnostic_context) {
@@ -60,8 +92,108 @@ psx_local_registry_t *ps_local_registry_create(
 
 void ps_local_registry_destroy(psx_local_registry_t *registry) {
   if (!registry) return;
+  free(registry->active_transaction);
   free(registry->scope_parent_by_seq);
   free(registry);
+}
+
+int psx_local_registry_checkpoint_begin(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint) {
+  if (!registry || !checkpoint || registry->active_transaction)
+    return 0;
+  *checkpoint = (psx_local_registry_checkpoint_t){0};
+  psx_local_registry_transaction_t *transaction =
+      calloc(1, sizeof(*transaction));
+  if (!transaction) return 0;
+  transaction->registry = registry;
+  transaction->locals = registry->locals;
+  transaction->all_locals = registry->all_locals;
+  transaction->all_bindings = registry->all_bindings;
+  memcpy(transaction->lvar_scope_stack, registry->lvar_scope_stack,
+         sizeof(transaction->lvar_scope_stack));
+  memcpy(transaction->lvar_scope_seq_stack,
+         registry->lvar_scope_seq_stack,
+         sizeof(transaction->lvar_scope_seq_stack));
+  transaction->lvar_scope_depth = registry->lvar_scope_depth;
+  transaction->next_scope_seq = registry->next_scope_seq;
+  transaction->current_scope_seq = registry->current_scope_seq;
+  transaction->next_declaration_seq = registry->next_declaration_seq;
+  memcpy(transaction->lvars_by_bucket, registry->lvars_by_bucket,
+         sizeof(transaction->lvars_by_bucket));
+  memcpy(transaction->lvars_by_offset, registry->lvars_by_offset,
+         sizeof(transaction->lvars_by_offset));
+  transaction->usage_events_head = registry->usage_events_head;
+  transaction->usage_events_tail = registry->usage_events_tail;
+  transaction->current_usage_region = registry->current_usage_region;
+  transaction->current_function_name = registry->current_function_name;
+  transaction->current_function_name_len =
+      registry->current_function_name_len;
+  registry->active_transaction = transaction;
+  checkpoint->state = transaction;
+  return 1;
+}
+
+int psx_local_registry_checkpoint_is_active(
+    const psx_local_registry_t *registry) {
+  return registry && registry->active_transaction;
+}
+
+static psx_local_registry_transaction_t *local_checkpoint_transaction(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint) {
+  psx_local_registry_transaction_t *transaction =
+      checkpoint ? checkpoint->state : NULL;
+  if (!registry || !transaction || transaction->registry != registry ||
+      registry->active_transaction != transaction)
+    return NULL;
+  return transaction;
+}
+
+void psx_local_registry_checkpoint_commit(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint) {
+  psx_local_registry_transaction_t *transaction =
+      local_checkpoint_transaction(registry, checkpoint);
+  if (!transaction) return;
+  registry->active_transaction = NULL;
+  checkpoint->state = NULL;
+  free(transaction);
+}
+
+void psx_local_registry_checkpoint_rollback(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint) {
+  psx_local_registry_transaction_t *transaction =
+      local_checkpoint_transaction(registry, checkpoint);
+  if (!transaction) return;
+  if (transaction->usage_events_tail)
+    transaction->usage_events_tail->next = NULL;
+  registry->locals = transaction->locals;
+  registry->all_locals = transaction->all_locals;
+  registry->all_bindings = transaction->all_bindings;
+  memcpy(registry->lvar_scope_stack, transaction->lvar_scope_stack,
+         sizeof(registry->lvar_scope_stack));
+  memcpy(registry->lvar_scope_seq_stack,
+         transaction->lvar_scope_seq_stack,
+         sizeof(registry->lvar_scope_seq_stack));
+  registry->lvar_scope_depth = transaction->lvar_scope_depth;
+  registry->next_scope_seq = transaction->next_scope_seq;
+  registry->current_scope_seq = transaction->current_scope_seq;
+  registry->next_declaration_seq = transaction->next_declaration_seq;
+  memcpy(registry->lvars_by_bucket, transaction->lvars_by_bucket,
+         sizeof(registry->lvars_by_bucket));
+  memcpy(registry->lvars_by_offset, transaction->lvars_by_offset,
+         sizeof(registry->lvars_by_offset));
+  registry->usage_events_head = transaction->usage_events_head;
+  registry->usage_events_tail = transaction->usage_events_tail;
+  registry->current_usage_region = transaction->current_usage_region;
+  registry->current_function_name = transaction->current_function_name;
+  registry->current_function_name_len =
+      transaction->current_function_name_len;
+  registry->active_transaction = NULL;
+  checkpoint->state = NULL;
+  free(transaction);
 }
 
 void ps_local_registry_bind_semantic_types(
@@ -496,8 +628,12 @@ int ps_lvar_name_len(const lvar_t *var) {
 
 void ps_local_registry_reset_in(psx_local_registry_t *registry) {
   if (!registry) return;
+  const psx_local_registry_transaction_t *transaction =
+      registry->active_transaction;
   for (lvar_t *var = registry->all_locals;
        var; var = var->next_all) {
+    if (local_transaction_contains_original(transaction, var))
+      continue;
     free(var->vla_runtime.param_inner_dim_consts);
     free(var->vla_runtime.param_inner_dim_src_offsets);
     var->vla_runtime.param_inner_dim_consts = NULL;

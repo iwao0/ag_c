@@ -31,6 +31,7 @@ typedef enum {
   PSX_HIR_TERNARY,
   PSX_HIR_COMMA,
   PSX_HIR_ASSIGN,
+  PSX_HIR_OBJECT_COPY,
   PSX_HIR_COMPOUND_ASSIGN,
   PSX_HIR_LOCAL,
   PSX_HIR_IF,
@@ -172,6 +173,7 @@ int psx_hir_node_vla_runtime_store_dimension(
     const psx_hir_node_t *node, size_t index);
 int psx_hir_node_label_id(const psx_hir_node_t *node);
 int psx_hir_node_is_static_function(const psx_hir_node_t *node);
+int psx_hir_node_is_implicit_call(const psx_hir_node_t *node);
 psx_hir_symbol_id_t psx_hir_node_symbol_id(const psx_hir_node_t *node);
 int psx_hir_node_bitfield_info(
     const psx_hir_node_t *node, int *bit_width, int *bit_offset,

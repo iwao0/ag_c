@@ -253,8 +253,27 @@ int psx_resolve_incomplete_array_type(
   return ps_type_complete_array(type, (int)outer_count);
 }
 
+const psx_type_t *psx_resolve_completed_incomplete_array_type(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *incomplete_type,
+    const psx_incomplete_array_resolution_t *request) {
+  if (!semantic_context || !incomplete_type || !request) return NULL;
+  psx_type_t *completed = ps_type_clone_in(
+      ps_ctx_arena(semantic_context), incomplete_type);
+  if (!completed ||
+      !psx_resolve_incomplete_array_type(
+          semantic_context, completed, request))
+    return NULL;
+  psx_qual_type_t completed_qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, completed);
+  if (completed_qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      completed_qual_type);
+}
+
 static long long initializer_string_count(
-    const psx_type_t *array_type, node_t *initializer) {
+    const psx_type_t *array_type, const node_t *initializer) {
   if (!array_type || !array_type->base || !initializer ||
       initializer->kind != ND_STRING)
     return 0;
@@ -266,9 +285,23 @@ static long long initializer_string_count(
   return (long long)string->byte_len + 1;
 }
 
+static int legacy_incomplete_array_constant_index(
+    void *context, const node_t *expression, long long *value) {
+  (void)context;
+  int ok = 1;
+  long long resolved = psx_eval_const_int((node_t *)expression, &ok);
+  if (!ok) return 0;
+  if (value) *value = resolved;
+  return 1;
+}
+
 static long long initializer_list_count(
-    const node_init_list_t *list, int *entries_initialize_outer_elements) {
-  if (!list || !entries_initialize_outer_elements) return 0;
+    const node_init_list_t *list,
+    psx_incomplete_array_constant_index_resolver_t resolve_index,
+    void *resolve_index_context,
+    int *entries_initialize_outer_elements) {
+  if (!list || !resolve_index || !entries_initialize_outer_elements)
+    return 0;
   if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
     node_t *value = list->entries[0].value;
     if (value && value->kind == ND_STRING) return -1;
@@ -282,15 +315,21 @@ static long long initializer_list_count(
       *entries_initialize_outer_elements = 1;
     if (entry->designator_count > 0 &&
         entry->designators[0].kind == PSX_INIT_DESIGNATOR_INDEX) {
-      int ok = 1;
-      long long index = psx_eval_const_int(
-          entry->designators[0].index_expr, &ok);
-      if (!ok || index < 0) return 0;
+      long long index = 0;
+      if (!entry->designators[0].index_expr ||
+          !resolve_index(
+              resolve_index_context,
+              entry->designators[0].index_expr, &index) ||
+          index < 0)
+        return 0;
       long long end = index;
       if (entry->designators[0].is_range) {
-        end = psx_eval_const_int(
-            entry->designators[0].range_end_expr, &ok);
-        if (!ok || end < index) return 0;
+        if (!entry->designators[0].range_end_expr ||
+            !resolve_index(
+                resolve_index_context,
+                entry->designators[0].range_end_expr, &end) ||
+            end < index)
+          return 0;
       }
       cursor = end;
       *entries_initialize_outer_elements = 1;
@@ -299,6 +338,47 @@ static long long initializer_list_count(
     cursor++;
   }
   return max_index + 1;
+}
+
+int psx_resolve_incomplete_array_initializer_shape(
+    const psx_type_t *incomplete_type,
+    psx_decl_init_kind_t initializer_kind,
+    const node_t *initializer,
+    psx_incomplete_array_constant_index_resolver_t resolve_index,
+    void *resolve_index_context,
+    psx_incomplete_array_resolution_t *resolution) {
+  if (resolution)
+    *resolution = (psx_incomplete_array_resolution_t){0};
+  if (!incomplete_type || !resolution ||
+      incomplete_type->kind != PSX_TYPE_ARRAY ||
+      incomplete_type->array_len > 0 || incomplete_type->is_vla ||
+      !initializer)
+    return 0;
+
+  long long count = 0;
+  int entries_initialize_outer_elements = 0;
+  if (initializer_kind == PSX_DECL_INIT_EXPR) {
+    count = initializer_string_count(incomplete_type, initializer);
+  } else if (initializer_kind == PSX_DECL_INIT_LIST &&
+             initializer->kind == ND_INIT_LIST) {
+    const node_init_list_t *list =
+        (const node_init_list_t *)initializer;
+    count = initializer_list_count(
+        list, resolve_index, resolve_index_context,
+        &entries_initialize_outer_elements);
+    if (count < 0) {
+      count = initializer_string_count(
+          incomplete_type, list->entries[0].value);
+      if (count <= 0) count = list->entry_count;
+    }
+  }
+  if (count <= 0) return 0;
+  *resolution = (psx_incomplete_array_resolution_t){
+      .initializer_count = count,
+      .entries_initialize_outer_elements =
+          entries_initialize_outer_elements,
+  };
+  return 1;
 }
 
 int psx_resolve_incomplete_array_initializer(
@@ -310,24 +390,11 @@ int psx_resolve_incomplete_array_initializer(
       type->is_vla || !initializer)
     return 0;
 
-  long long count = 0;
-  int entries_initialize_outer_elements = 0;
-  if (initializer_kind == PSX_DECL_INIT_EXPR) {
-    count = initializer_string_count(type, initializer);
-  } else if (initializer_kind == PSX_DECL_INIT_LIST &&
-             initializer->kind == ND_INIT_LIST) {
-    node_init_list_t *list = (node_init_list_t *)initializer;
-    count = initializer_list_count(
-        list, &entries_initialize_outer_elements);
-    if (count < 0) {
-      count = initializer_string_count(type, list->entries[0].value);
-      if (count <= 0) count = list->entry_count;
-    }
-  }
-  return psx_resolve_incomplete_array_type(
-      semantic_context, type, &(psx_incomplete_array_resolution_t){
-                .initializer_count = count,
-                .entries_initialize_outer_elements =
-                    entries_initialize_outer_elements,
-            });
+  psx_incomplete_array_resolution_t resolution;
+  return psx_resolve_incomplete_array_initializer_shape(
+             type, initializer_kind, initializer,
+             legacy_incomplete_array_constant_index, NULL,
+             &resolution) &&
+         psx_resolve_incomplete_array_type(
+             semantic_context, type, &resolution);
 }

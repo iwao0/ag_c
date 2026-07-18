@@ -598,7 +598,9 @@ static int aggregate_member_index(
 static psx_initializer_target_t aggregate_designated_target(
     const static_hir_aggregate_t *aggregate,
     const psx_hir_node_t *entry,
-    const psx_type_t *context_type, int context_offset) {
+    const psx_type_t *context_type, int context_offset,
+    const psx_hir_node_t *range_override,
+    long long range_index) {
   psx_initializer_target_t target = {
       .type = context_type,
       .type_id = ps_lowering_type_id(
@@ -621,7 +623,11 @@ static psx_initializer_target_t aggregate_designated_target(
           &aggregate->eval, designator,
           PSX_HIR_EDGE_DESIGNATOR_INDEX, 0);
       int ok = 1;
-      long long index = eval_const_int(&aggregate->eval, index_node, &ok);
+      long long index = designator == range_override
+                            ? range_index
+                            : eval_const_int(
+                                  &aggregate->eval,
+                                  index_node, &ok);
       if (!ok || index < 0 || index >= target.type->array_len)
         return (psx_initializer_target_t){0};
       if (target.first_array_index < 0)
@@ -770,6 +776,89 @@ static int aggregate_write_scalar(
   return 1;
 }
 
+static int aggregate_entry_range(
+    const static_hir_aggregate_t *aggregate,
+    const psx_hir_node_t *entry,
+    const psx_hir_node_t **range_designator,
+    long long *range_begin, long long *range_end) {
+  if (range_designator) *range_designator = NULL;
+  if (range_begin) *range_begin = 0;
+  if (range_end) *range_end = 0;
+  if (!aggregate || !entry || !range_designator ||
+      !range_begin || !range_end)
+    return 0;
+  for (size_t ordinal = 0;; ordinal++) {
+    const psx_hir_node_t *designator = child_for_edge(
+        &aggregate->eval, entry, PSX_HIR_EDGE_DESIGNATOR,
+        ordinal);
+    if (!designator) return 1;
+    if (psx_hir_node_kind(designator) !=
+            PSX_HIR_INDEX_DESIGNATOR ||
+        psx_hir_node_integer_value(designator) == 0)
+      continue;
+    if (*range_designator) return 0;
+    const psx_hir_node_t *begin_node = child_for_edge(
+        &aggregate->eval, designator,
+        PSX_HIR_EDGE_DESIGNATOR_INDEX, 0);
+    const psx_hir_node_t *end_node = child_for_edge(
+        &aggregate->eval, designator,
+        PSX_HIR_EDGE_DESIGNATOR_RANGE_END, 0);
+    int begin_ok = 1;
+    int end_ok = 1;
+    long long begin = eval_const_int(
+        &aggregate->eval, begin_node, &begin_ok);
+    long long end = eval_const_int(
+        &aggregate->eval, end_node, &end_ok);
+    if (!begin_ok || !end_ok || begin < 0 || end < begin)
+      return 0;
+    *range_designator = designator;
+    *range_begin = begin;
+    *range_end = end;
+  }
+}
+
+static int aggregate_lower_list(
+    static_hir_aggregate_t *aggregate,
+    const psx_type_t *context_type, int context_offset,
+    const psx_hir_node_t *list);
+
+static int aggregate_lower_target_value(
+    static_hir_aggregate_t *aggregate,
+    psx_initializer_target_t *target,
+    const psx_hir_node_t *value, int cursor) {
+  if (!aggregate || !target || !target->type || !value) return 0;
+  aggregate_mark_union_target(aggregate, target);
+  if (psx_hir_node_kind(value) == PSX_HIR_INITIALIZER_LIST)
+    return aggregate_lower_list(
+        aggregate, target->type, target->relative_offset, value);
+  if (psx_hir_node_kind(value) == PSX_HIR_STRING &&
+      (aggregate_is_character_array_for_string(
+           aggregate, target->type, value) ||
+       (cursor >= 0 && cursor < aggregate->leaves.count &&
+        aggregate_is_character_array_for_string(
+            aggregate,
+            aggregate->leaves.items[cursor].string_array_type,
+            value)))) {
+    const psx_type_t *string_type = target->type;
+    int string_offset = target->relative_offset;
+    if (string_type->kind != PSX_TYPE_ARRAY && cursor >= 0 &&
+        cursor < aggregate->leaves.count) {
+      const psx_initializer_scalar_leaf_t *leaf =
+          &aggregate->leaves.items[cursor];
+      if (leaf->string_array_type) {
+        string_type = leaf->string_array_type;
+        string_offset = leaf->string_array_offset;
+        target->type = string_type;
+        target->type_id = leaf->string_array_type_id;
+        target->relative_offset = string_offset;
+      }
+    }
+    return aggregate_write_string(
+        aggregate, string_type, string_offset, value);
+  }
+  return aggregate_write_scalar(aggregate, target, value);
+}
+
 static int aggregate_lower_list(
     static_hir_aggregate_t *aggregate,
     const psx_type_t *context_type, int context_offset,
@@ -791,45 +880,40 @@ static int aggregate_lower_list(
     if (!value) return 0;
     int has_designator = child_for_edge(
         &aggregate->eval, entry, PSX_HIR_EDGE_DESIGNATOR, 0) != NULL;
-    psx_initializer_target_t target = has_designator
-        ? aggregate_designated_target(
-              aggregate, entry, context_type, context_offset)
-        : aggregate_positional_target(
-              aggregate, context_type, context_offset, cursor,
-              psx_hir_node_kind(value) == PSX_HIR_INITIALIZER_LIST);
-    if (!target.type) return 0;
-    aggregate_mark_union_target(aggregate, &target);
-    if (psx_hir_node_kind(value) == PSX_HIR_INITIALIZER_LIST) {
-      if (!aggregate_lower_list(
-              aggregate, target.type, target.relative_offset, value))
-        return 0;
-    } else if (psx_hir_node_kind(value) == PSX_HIR_STRING &&
-               (aggregate_is_character_array_for_string(
-                    aggregate, target.type, value) ||
-                (cursor >= 0 && cursor < aggregate->leaves.count &&
-                 aggregate_is_character_array_for_string(
-                     aggregate,
-                     aggregate->leaves.items[cursor].string_array_type,
-                     value)))) {
-      const psx_type_t *string_type = target.type;
-      int string_offset = target.relative_offset;
-      if (string_type->kind != PSX_TYPE_ARRAY && cursor >= 0 &&
-          cursor < aggregate->leaves.count) {
-        const psx_initializer_scalar_leaf_t *leaf =
-            &aggregate->leaves.items[cursor];
-        if (leaf->string_array_type) {
-          string_type = leaf->string_array_type;
-          string_offset = leaf->string_array_offset;
-          target.type = string_type;
-          target.type_id = leaf->string_array_type_id;
-          target.relative_offset = string_offset;
-        }
-      }
-      if (!aggregate_write_string(
-              aggregate, string_type, string_offset, value))
-        return 0;
-    } else if (!aggregate_write_scalar(aggregate, &target, value)) {
+    const psx_hir_node_t *range_designator = NULL;
+    long long range_begin = 0;
+    long long range_end = 0;
+    if (!aggregate_entry_range(
+            aggregate, entry, &range_designator,
+            &range_begin, &range_end))
       return 0;
+    psx_initializer_target_t target = {0};
+    if (range_designator) {
+      for (long long index = range_begin;; index++) {
+        target = aggregate_designated_target(
+            aggregate, entry, context_type, context_offset,
+            range_designator, index);
+        int target_cursor = aggregate_leaf_index_for_target(
+            &aggregate->leaves, &target);
+        if (!target.type ||
+            !aggregate_lower_target_value(
+                aggregate, &target, value, target_cursor))
+          return 0;
+        if (index == range_end) break;
+      }
+    } else {
+      target = has_designator
+          ? aggregate_designated_target(
+                aggregate, entry, context_type, context_offset,
+                NULL, 0)
+          : aggregate_positional_target(
+                aggregate, context_type, context_offset, cursor,
+                psx_hir_node_kind(value) ==
+                    PSX_HIR_INITIALIZER_LIST);
+      if (!target.type ||
+          !aggregate_lower_target_value(
+              aggregate, &target, value, cursor))
+        return 0;
     }
     cursor = psx_initializer_leaf_cursor_after_target_with_records(
         ps_lowering_semantic_types(aggregate->eval.lowering_context),

@@ -10,8 +10,11 @@
 #include "../parser/global_registry.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
+#include "syntax_typed_hir_resolution.h"
+#include "typed_hir_materialization.h"
 
 #include <string.h>
+#include <limits.h>
 
 void psx_resolve_enum_constant(
     const psx_enum_constant_resolution_request_t *request,
@@ -65,67 +68,51 @@ void psx_resolve_enum_constant(
   resolution->status = PSX_ENUM_CONSTANT_OK;
 }
 
-long long psx_resolve_prepared_enum_const_expr_in_context(
+int psx_resolve_enum_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
-    const psx_parsed_enum_expr_t *expression) {
-  if (!expression) return 0;
-  if (expression->kind == PSX_ENUM_EXPR_VALUE) return expression->value;
-  if (expression->kind == PSX_ENUM_EXPR_IDENTIFIER) {
-    long long value = 0;
-    if (!ps_ctx_find_enum_const_in(
-            semantic_context,
-            expression->identifier, expression->identifier_len, &value)) {
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const node_t *syntax_expression,
+    const token_t *diagnostic_token,
+    long long *value) {
+  if (value) *value = 0;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !syntax_expression || !value)
+    return 0;
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_syntax_integer_constant_result_t constant_result;
+  psx_resolved_hir_build_failure_t failure;
+  psx_syntax_typed_hir_resolution_status_t status =
+      psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+          semantic_context, global_registry, local_registry, NULL,
+          syntax_expression, &typed_hir, &constant_result, &failure);
+  if (status == PSX_SYNTAX_TYPED_HIR_RESOLVED && typed_hir &&
+      constant_result.is_constant) {
+    if (constant_result.value < INT_MIN ||
+        constant_result.value > INT_MAX) {
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
-          expression->diagnostic_token, "enum",
-          diag_message_for_in(
-              ps_ctx_diagnostics(semantic_context),
-              DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
-          expression->identifier_len, expression->identifier);
+          (token_t *)diagnostic_token, "enum",
+          "enumerator value is not representable as int");
+      return 0;
     }
-    return value;
+    *value = constant_result.value;
+    return 1;
   }
-  long long left =
-      psx_resolve_prepared_enum_const_expr_in_context(
-          semantic_context, expression->lhs);
-  if (expression->kind == PSX_ENUM_EXPR_CONDITIONAL) {
-    return left
-               ? psx_resolve_prepared_enum_const_expr_in_context(
-                     semantic_context, expression->rhs)
-               : psx_resolve_prepared_enum_const_expr_in_context(
-                     semantic_context, expression->alternative);
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  if (status == PSX_SYNTAX_TYPED_HIR_FAILED) {
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        "%s: enum initializer direct resolution failed "
+        "(status %d, node kind %d)",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+        (int)failure.status, failure.source_node_kind);
+    return 0;
   }
-  if (expression->kind == PSX_ENUM_EXPR_UNARY) {
-    switch (expression->op) {
-      case TK_PLUS: return left;
-      case TK_MINUS: return -left;
-      case TK_TILDE: return ~left;
-      case TK_BANG: return !left;
-      default: return 0;
-    }
-  }
-  long long right =
-      psx_resolve_prepared_enum_const_expr_in_context(
-          semantic_context, expression->rhs);
-  switch (expression->op) {
-    case TK_PLUS: return left + right;
-    case TK_MINUS: return left - right;
-    case TK_MUL: return left * right;
-    case TK_DIV: return left / right;
-    case TK_MOD: return left % right;
-    case TK_SHL: return left << right;
-    case TK_SHR: return left >> right;
-    case TK_LT: return left < right;
-    case TK_LE: return left <= right;
-    case TK_GT: return left > right;
-    case TK_GE: return left >= right;
-    case TK_EQEQ: return left == right;
-    case TK_NEQ: return left != right;
-    case TK_AMP: return left & right;
-    case TK_CARET: return left ^ right;
-    case TK_PIPE: return left | right;
-    case TK_ANDAND: return left && right;
-    case TK_OROR: return left || right;
-    default: return 0;
-  }
+  ps_diag_ctx_in(
+      diagnostics, (token_t *)diagnostic_token, "enum",
+      "enumerator value is not an integer constant expression");
+  return 0;
 }

@@ -104,6 +104,7 @@ struct psx_type_t {
 
   const psx_type_t *const *param_types;
   int param_count;
+  unsigned char has_function_prototype;
   unsigned char is_variadic_function;
 
 };

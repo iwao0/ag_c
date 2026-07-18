@@ -78,8 +78,7 @@ void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
-  if (!options || !options->semantic_context ||
-      !options->runtime_context ||
+  if (!options || !options->runtime_context ||
       !tokenizer(options->runtime_context)) {
     return;
   }

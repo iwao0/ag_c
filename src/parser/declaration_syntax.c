@@ -2,7 +2,6 @@
 #include "declarator_shape_builder.h"
 
 #include "aggregate_member_syntax.h"
-#include "alignas_value.h"
 #include "anon_tag.h"
 #include "arena.h"
 #include "declarator_syntax.h"
@@ -105,8 +104,27 @@ static psx_parsed_const_expr_t make_parsed_const_expr(
 
 typedef struct {
   psx_parsed_decl_specifier_t *specifier;
+  const psx_decl_specifier_syntax_options_t *options;
   psx_parser_runtime_context_t *runtime_context;
 } declaration_alignas_parse_context_t;
+
+int psx_token_starts_type_name_syntax(
+    token_t *token, const psx_name_classifier_t *name_classifier) {
+  if (!token) return 0;
+  psx_skip_gnu_attributes_at(&token);
+  if (!token) return 0;
+  if (token->kind == TK_THREAD_LOCAL || token->kind == TK_EXTERN ||
+      token->kind == TK_STATIC || token->kind == TK_AUTO ||
+      token->kind == TK_REGISTER || token->kind == TK_TYPEDEF ||
+      token->kind == TK_ALIGNAS || token->kind == TK_INLINE ||
+      token->kind == TK_NORETURN || token->kind == TK_CONST ||
+      token->kind == TK_VOLATILE || token->kind == TK_RESTRICT ||
+      token->kind == TK_ATOMIC || token->kind == TK_STRUCT ||
+      token->kind == TK_UNION || token->kind == TK_ENUM ||
+      psx_is_type_specifier_token(token->kind))
+    return 1;
+  return ps_name_classifier_is_typedef_name(name_classifier, token);
+}
 
 static void consume_declaration_alignas(
     void *context, psx_type_spec_result_t *result) {
@@ -116,8 +134,10 @@ static void consume_declaration_alignas(
       parse_context ? parse_context->specifier : NULL;
   psx_parser_runtime_context_t *runtime_context =
       parse_context ? parse_context->runtime_context : NULL;
+  const psx_decl_specifier_syntax_options_t *options =
+      parse_context ? parse_context->options : NULL;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
-  if (!specifier || specifier->alignas_expression_count >= 8) {
+  if (!specifier || !options || specifier->alignas_specifier_count >= 8) {
     ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                  "declaration alignas limit exceeded");
   }
@@ -125,17 +145,45 @@ static void consume_declaration_alignas(
       tk_ctx, current_token(runtime_context)->next);
   tk_expect_ctx(tk_ctx, '(');
   token_t *start = current_token(runtime_context);
-  token_t *end = find_declaration_expression_end(
-      start, TK_RPAREN, TK_EOF);
-  if (!end) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
-                 "unterminated declaration alignas");
+  psx_parsed_alignas_t *alignas =
+      &specifier->alignas_specifiers[
+          specifier->alignas_specifier_count++];
+  *alignas = (psx_parsed_alignas_t){
+      .diagnostic_token = start,
+  };
+  ps_name_classifier_capture_lookup_point(
+      options->name_classifier, &alignas->scope_seq,
+      &alignas->declaration_seq);
+  if (psx_token_starts_type_name_syntax(
+          start, options->name_classifier)) {
+    alignas->kind = PSX_PARSED_ALIGNAS_TYPE_NAME;
+    alignas->type_name = calloc(1, sizeof(*alignas->type_name));
+    if (!alignas->type_name ||
+        !psx_parse_type_name_syntax_at(
+            start, options, alignas->type_name) ||
+        !alignas->type_name->end ||
+        alignas->type_name->end->kind != TK_RPAREN) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), start, "declaration-syntax",
+          "invalid type name in declaration alignas");
+    }
+    tk_set_current_token_ctx(tk_ctx, alignas->type_name->end);
+  } else {
+    alignas->kind = PSX_PARSED_ALIGNAS_EXPRESSION;
+    if (!options->parse_assignment_expression) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), start, "declaration-syntax",
+          "declaration alignas expression parser is unavailable");
+    }
+    alignas->expression =
+        options->parse_assignment_expression(options->expression_context);
+    if (!alignas->expression ||
+        current_token(runtime_context)->kind != TK_RPAREN) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), start, "declaration-syntax",
+          "invalid expression in declaration alignas");
+    }
   }
-  psx_parsed_const_expr_t *expression =
-      &specifier->alignas_expressions[
-          specifier->alignas_expression_count++];
-  *expression = make_parsed_const_expr(start, end);
-  tk_set_current_token_ctx(tk_ctx, end);
   tk_expect_ctx(tk_ctx, ')');
 }
 
@@ -214,7 +262,8 @@ static int parse_type_name_syntax_at(
   *out = (psx_parsed_type_name_t){0};
   token_t *saved = current_token(runtime_context);
   token_t *type_start = start;
-  psx_skip_gnu_attributes_at(&type_start);
+  psx_skip_gnu_attributes_at_with_diagnostics(
+      &type_start, diagnostics(runtime_context));
   if (!type_start) return 0;
 
   out->diagnostic_token = type_start;
@@ -248,10 +297,7 @@ static int parse_type_name_syntax_at(
   declarator_options.name_classifier = NULL;
   out->declarator = psx_parse_abstract_declarator_syntax_tree_in_contexts(
       &declarator_options);
-  if (prepare_constant_bounds)
-    ps_prepare_constant_declarator_expressions_in_context(
-        &out->declarator, options->semantic_context,
-        options->name_classifier);
+  (void)prepare_constant_bounds;
   out->end = current_token(runtime_context);
   tk_set_current_token_ctx(tk_ctx, saved);
   return 1;
@@ -540,6 +586,7 @@ void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
     return;
   parse_declarator_syntax_tree_into(
       declarator, 0, NULL, options, 0);
+  psx_materialize_declarator_expression_syntax(declarator, options);
 }
 
 int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
@@ -547,8 +594,11 @@ int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_context
     const psx_decl_specifier_syntax_options_t *options) {
   if (!declarator || !options || !options->runtime_context)
     return 0;
-  return parse_declarator_syntax_tree_into(
+  int parsed = parse_declarator_syntax_tree_into(
       declarator, 0, NULL, options, 0);
+  if (parsed)
+    psx_materialize_declarator_expression_syntax(declarator, options);
+  return parsed;
 }
 
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
@@ -556,6 +606,7 @@ psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
       &declarator, 1, NULL, options, 0);
+  psx_materialize_declarator_expression_syntax(&declarator, options);
   return declarator;
 }
 
@@ -565,6 +616,7 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
   parse_declarator_syntax_tree_into(
       &declarator, 0, is_parameter_grouping_parenthesis,
       options, 0);
+  psx_materialize_declarator_expression_syntax(&declarator, options);
   return declarator;
 }
 
@@ -584,7 +636,7 @@ psx_declarator_outermost_function_suffix(
   return NULL;
 }
 
-void ps_parse_runtime_declarator_expressions_with_options(
+void psx_materialize_declarator_expression_syntax(
     psx_parsed_declarator_t *declarator,
     const psx_decl_specifier_syntax_options_t *options) {
   psx_parser_runtime_context_t *runtime_context =
@@ -608,59 +660,32 @@ void ps_parse_runtime_declarator_expressions_with_options(
                    "runtime array bound was not fully consumed");
     }
   }
+  if (declarator->has_bitfield &&
+      !declarator->bit_width_expression.node &&
+      declarator->bit_width_expression.start &&
+      declarator->bit_width_expression.end) {
+    tk_set_current_token_ctx(
+        tk_ctx, declarator->bit_width_expression.start);
+    declarator->bit_width_expression.node =
+        options->parse_assignment_expression(
+            options->expression_context);
+    if (current_token(runtime_context) !=
+        declarator->bit_width_expression.end) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), current_token(runtime_context),
+          "declaration-syntax",
+          "bit-field width was not fully consumed");
+    }
+  }
   for (int i = 0; i < declarator->function_suffix_count; i++) {
     psx_parsed_function_parameters_t *parameters =
         declarator->function_suffixes[i].parameters;
     for (int p = 0; parameters && p < parameters->count; p++) {
-      ps_parse_runtime_declarator_expressions_with_options(
+      psx_materialize_declarator_expression_syntax(
           &parameters->items[p].declarator, options);
     }
   }
   tk_set_current_token_ctx(tk_ctx, saved);
-}
-
-void ps_prepare_constant_declarator_expressions_in_context(
-    psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    const psx_name_classifier_t *name_classifier) {
-  if (!declarator) return;
-  for (int i = 0; i < declarator->array_bound_count; i++) {
-    psx_parsed_const_expr_t *expression =
-        &declarator->array_bounds[i].expression;
-    if (expression->has_constant_value) continue;
-    expression->constant_value =
-        psx_eval_parsed_enum_const_expr_in_context(
-            semantic_context, name_classifier,
-            expression->start, expression->end);
-    expression->has_constant_value = 1;
-  }
-  if (declarator->has_bitfield &&
-      !declarator->bit_width_expression.has_constant_value) {
-    psx_parsed_const_expr_t *expression =
-        &declarator->bit_width_expression;
-    expression->constant_value =
-        psx_eval_parsed_enum_const_expr_in_context(
-            semantic_context, name_classifier,
-            expression->start, expression->end);
-    expression->has_constant_value = 1;
-  }
-}
-
-void ps_prepare_decl_specifier_alignments_in_context(
-    psx_parsed_decl_specifier_t *specifier,
-    psx_semantic_context_t *semantic_context,
-    const psx_name_classifier_t *name_classifier) {
-  if (!specifier) return;
-  for (int i = 0; i < specifier->alignas_expression_count; i++) {
-    psx_parsed_const_expr_t *expression =
-        &specifier->alignas_expressions[i];
-    if (expression->has_constant_value) continue;
-    expression->constant_value =
-        psx_eval_parsed_alignas_value_in_context(
-            semantic_context, name_classifier,
-            expression->start, expression->end);
-    expression->has_constant_value = 1;
-  }
 }
 
 static void parse_tag_specifier(
@@ -696,9 +721,15 @@ static void parse_tag_specifier(
         ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context), "declaration-syntax",
                      "enum body allocation failed");
       }
-      psx_parse_enum_body_in_contexts(
-          action->enum_body, options->semantic_context,
-          options->name_classifier, tk_ctx);
+      psx_parse_enum_body_syntax(
+          action->enum_body,
+          &(psx_enum_body_syntax_context_t){
+              .diagnostics = diagnostics(runtime_context),
+              .expression_context = options->expression_context,
+              .parse_assignment_expression =
+                  options->parse_assignment_expression,
+              .tokenizer_context = tk_ctx,
+          });
     } else {
       action->aggregate_body = calloc(1, sizeof(*action->aggregate_body));
       if (!action->aggregate_body) {
@@ -728,13 +759,15 @@ int psx_try_parse_decl_specifier_syntax_ex(
   specifier->diagnostic_token = current_token(runtime_context);
   declaration_alignas_parse_context_t alignas_context = {
       .specifier = specifier,
+      .options = options,
       .runtime_context = runtime_context,
   };
 
   token_kind_t builtin_kind = psx_consume_type_kind_with_syntax_ex(
-      options->semantic_context, &specifier->type_spec,
+      &specifier->type_spec,
       &(psx_type_spec_syntax_t){
           .context = options->context,
+          .diagnostics = diagnostics(runtime_context),
           .tokenizer_context = tk_ctx,
           .name_classifier = options->name_classifier,
           .consume_alignas_context = &alignas_context,
@@ -813,6 +846,13 @@ void psx_parse_decl_specifier_syntax_ex(
 void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return;
+  for (int i = 0; i < specifier->alignas_specifier_count; i++) {
+    psx_parsed_alignas_t *alignas = &specifier->alignas_specifiers[i];
+    if (alignas->type_name) {
+      psx_dispose_type_name_syntax(alignas->type_name);
+      free(alignas->type_name);
+    }
+  }
   psx_parsed_tag_action_t *tag_action = &specifier->tag_action;
   if (tag_action->aggregate_body) {
     psx_dispose_parsed_aggregate_body(tag_action->aggregate_body);

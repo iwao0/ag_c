@@ -21,6 +21,19 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
     psx_local_registry_t *local_registry,
     const psx_type_name_ref_t *type_name,
     psx_type_name_resolution_state_t *state);
+int psx_resolve_type_name_qual_type_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_type_name_ref_t *type_name,
+    psx_qual_type_t *qual_type);
+int psx_resolve_bound_type_name_qual_type_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_type_name_ref_t *type_name,
+    psx_type_name_resolution_state_t *state,
+    psx_qual_type_t *qual_type);
 
 static inline psx_type_name_resolution_state_t *
 psx_node_type_name_state_mut(node_t *node) {

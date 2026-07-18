@@ -4,7 +4,10 @@
 
 #include "../parser/arena.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/vla_runtime.h"
 #include "semantic_node_internal.h"
+#include "typed_hir_tree_internal.h"
+#include "vla_runtime_plan.h"
 
 void psx_semantic_node_builder_init(
     psx_semantic_node_builder_t *builder,
@@ -163,6 +166,99 @@ psx_semantic_node_t *psx_semantic_node_builder_statement(
           builder, spec, children, child_edges, child_count,
           NULL, source_node_kind, sizeof(*statement));
   return statement ? &statement->node : NULL;
+}
+
+psx_semantic_node_t *psx_semantic_node_builder_vla_runtime(
+    psx_semantic_node_builder_t *builder,
+    const psx_vla_runtime_plan_t *plan,
+    int source_node_kind) {
+  if (!builder || !plan || plan->dimension_count <= 0 ||
+      !plan->dimensions || plan->element_size <= 0 ||
+      (plan->performs_allocation &&
+       plan->descriptor_frame_offset <= 0) ||
+      (!plan->performs_allocation &&
+       plan->descriptor_frame_offset != 0) ||
+      plan->stride_store_count < 0 ||
+      (plan->stride_store_count > 0 &&
+       (!plan->stride_store_offsets ||
+        !plan->stride_start_dimensions))) {
+    psx_semantic_node_builder_fail(
+        builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS,
+        source_node_kind);
+    return NULL;
+  }
+  size_t count = (size_t)plan->dimension_count;
+  psx_semantic_node_t **children = arena_alloc_in(
+      builder->arena_context, count * sizeof(*children));
+  psx_hir_edge_kind_t *edges = arena_alloc_in(
+      builder->arena_context, count * sizeof(*edges));
+  if (!children || !edges) {
+    psx_semantic_node_builder_fail(
+        builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source_node_kind);
+    return NULL;
+  }
+  for (size_t i = 0; i < count; i++) {
+    const psx_vla_runtime_dimension_t *dimension =
+        &plan->dimensions[i];
+    if (dimension->is_constant) {
+      psx_hir_node_spec_t number_spec = {
+          .kind = PSX_HIR_NUMBER,
+          .attached_qual_type = {
+              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+          .integer_value = dimension->constant_value,
+      };
+      if (dimension->constant_value <= 0 ||
+          !psx_semantic_node_builder_has_canonical_type(
+              builder, plan->constant_qual_type)) {
+        psx_semantic_node_builder_fail(
+            builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+            source_node_kind);
+        return NULL;
+      }
+      children[i] = psx_semantic_node_builder_leaf_expression(
+          builder, &number_spec, plan->constant_qual_type,
+          NULL, source_node_kind);
+      if (!children[i]) return NULL;
+    } else if (!dimension->expression ||
+               !dimension->expression->root) {
+      psx_semantic_node_builder_fail(
+          builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+          source_node_kind);
+      return NULL;
+    } else {
+      children[i] =
+          (psx_semantic_node_t *)dimension->expression->root;
+    }
+    edges[i] = PSX_HIR_EDGE_VLA_DIMENSION;
+  }
+  for (int i = 0; i < plan->stride_store_count; i++) {
+    if (plan->stride_store_offsets[i] <= 0 ||
+        plan->stride_start_dimensions[i] < 0 ||
+        plan->stride_start_dimensions[i] >= plan->dimension_count) {
+      psx_semantic_node_builder_fail(
+          builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+          source_node_kind);
+      return NULL;
+    }
+  }
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_VLA_ALLOC,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .storage_offset = plan->descriptor_frame_offset,
+      .vla_stride_frame_offset = plan->row_stride_frame_offset,
+      .vla_stride_element_size = plan->element_size,
+      .vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE,
+      .vla_runtime_store_offsets = plan->stride_store_offsets,
+      .vla_runtime_store_dimensions =
+          plan->stride_start_dimensions,
+      .vla_runtime_store_count =
+          (size_t)plan->stride_store_count,
+  };
+  return psx_semantic_node_builder_statement(
+      builder, &spec, children, edges, count,
+      source_node_kind);
 }
 
 psx_qual_type_t psx_semantic_node_expression_qual_type(

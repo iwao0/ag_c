@@ -9,6 +9,29 @@
 
 #define GVAR_HASH_BUCKETS 256u
 
+typedef struct psx_global_registry_name_t {
+  struct psx_global_registry_name_t *next;
+  char bytes[];
+} psx_global_registry_name_t;
+
+typedef struct psx_global_registry_global_snapshot_t {
+  global_var_t *global;
+  global_var_t value;
+  struct psx_global_registry_global_snapshot_t *next;
+} psx_global_registry_global_snapshot_t;
+
+typedef struct {
+  psx_global_registry_t *registry;
+  global_var_t *global_vars;
+  string_lit_t *string_literals;
+  float_lit_t *float_literals;
+  int next_string_literal_id;
+  int next_float_literal_id;
+  psx_global_registry_name_t *owned_names;
+  global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
+  psx_global_registry_global_snapshot_t *global_snapshots;
+} psx_global_registry_transaction_t;
+
 struct psx_global_registry_t {
   const psx_semantic_type_table_t *semantic_types;
   string_lit_t *string_literals;
@@ -16,8 +39,35 @@ struct psx_global_registry_t {
   global_var_t *global_vars;
   int next_string_literal_id;
   int next_float_literal_id;
+  psx_global_registry_name_t *owned_names;
   global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
+  psx_global_registry_transaction_t *active_transaction;
 };
+
+static void free_global_registry_transaction(
+    psx_global_registry_transaction_t *transaction) {
+  if (!transaction) return;
+  psx_global_registry_global_snapshot_t *snapshot =
+      transaction->global_snapshots;
+  while (snapshot) {
+    psx_global_registry_global_snapshot_t *next = snapshot->next;
+    free(snapshot);
+    snapshot = next;
+  }
+  free(transaction);
+}
+
+static void free_owned_names_until(
+    psx_global_registry_t *registry,
+    psx_global_registry_name_t *stop) {
+  if (!registry) return;
+  while (registry->owned_names != stop) {
+    psx_global_registry_name_t *owned = registry->owned_names;
+    if (!owned) break;
+    registry->owned_names = owned->next;
+    free(owned);
+  }
+}
 
 psx_global_registry_t *ps_global_registry_create(void) {
   return calloc(1, sizeof(psx_global_registry_t));
@@ -25,7 +75,116 @@ psx_global_registry_t *ps_global_registry_create(void) {
 
 void ps_global_registry_destroy(psx_global_registry_t *registry) {
   if (!registry) return;
+  free_global_registry_transaction(registry->active_transaction);
+  free_owned_names_until(registry, NULL);
   free(registry);
+}
+
+int psx_global_registry_checkpoint_begin(
+    psx_global_registry_t *registry,
+    psx_global_registry_checkpoint_t *checkpoint) {
+  if (!registry || !checkpoint || registry->active_transaction)
+    return 0;
+  *checkpoint = (psx_global_registry_checkpoint_t){0};
+  psx_global_registry_transaction_t *transaction =
+      calloc(1, sizeof(*transaction));
+  if (!transaction) return 0;
+  transaction->registry = registry;
+  transaction->global_vars = registry->global_vars;
+  transaction->string_literals = registry->string_literals;
+  transaction->float_literals = registry->float_literals;
+  transaction->next_string_literal_id = registry->next_string_literal_id;
+  transaction->next_float_literal_id = registry->next_float_literal_id;
+  transaction->owned_names = registry->owned_names;
+  memcpy(transaction->gvars_by_bucket, registry->gvars_by_bucket,
+         sizeof(transaction->gvars_by_bucket));
+  registry->active_transaction = transaction;
+  checkpoint->state = transaction;
+  return 1;
+}
+
+int psx_global_registry_checkpoint_is_active(
+    const psx_global_registry_t *registry) {
+  return registry && registry->active_transaction;
+}
+
+static int transaction_contains_original_global(
+    const psx_global_registry_transaction_t *transaction,
+    const global_var_t *global) {
+  if (!transaction || !global) return 0;
+  for (const global_var_t *current = transaction->global_vars;
+       current; current = current->next) {
+    if (current == global) return 1;
+  }
+  return 0;
+}
+
+int psx_global_registry_note_global_mutation(
+    psx_global_registry_t *registry, global_var_t *global) {
+  if (!registry || !global) return 0;
+  psx_global_registry_transaction_t *transaction =
+      registry->active_transaction;
+  if (!transaction ||
+      !transaction_contains_original_global(transaction, global))
+    return 1;
+  for (psx_global_registry_global_snapshot_t *snapshot =
+           transaction->global_snapshots;
+       snapshot; snapshot = snapshot->next) {
+    if (snapshot->global == global) return 1;
+  }
+  psx_global_registry_global_snapshot_t *snapshot =
+      malloc(sizeof(*snapshot));
+  if (!snapshot) return 0;
+  snapshot->global = global;
+  snapshot->value = *global;
+  snapshot->next = transaction->global_snapshots;
+  transaction->global_snapshots = snapshot;
+  return 1;
+}
+
+static psx_global_registry_transaction_t *checkpoint_transaction(
+    psx_global_registry_t *registry,
+    psx_global_registry_checkpoint_t *checkpoint) {
+  psx_global_registry_transaction_t *transaction =
+      checkpoint ? checkpoint->state : NULL;
+  if (!registry || !transaction || transaction->registry != registry ||
+      registry->active_transaction != transaction)
+    return NULL;
+  return transaction;
+}
+
+void psx_global_registry_checkpoint_commit(
+    psx_global_registry_t *registry,
+    psx_global_registry_checkpoint_t *checkpoint) {
+  psx_global_registry_transaction_t *transaction =
+      checkpoint_transaction(registry, checkpoint);
+  if (!transaction) return;
+  registry->active_transaction = NULL;
+  checkpoint->state = NULL;
+  free_global_registry_transaction(transaction);
+}
+
+void psx_global_registry_checkpoint_rollback(
+    psx_global_registry_t *registry,
+    psx_global_registry_checkpoint_t *checkpoint) {
+  psx_global_registry_transaction_t *transaction =
+      checkpoint_transaction(registry, checkpoint);
+  if (!transaction) return;
+  for (psx_global_registry_global_snapshot_t *snapshot =
+           transaction->global_snapshots;
+       snapshot; snapshot = snapshot->next)
+    *snapshot->global = snapshot->value;
+  registry->global_vars = transaction->global_vars;
+  registry->string_literals = transaction->string_literals;
+  registry->float_literals = transaction->float_literals;
+  registry->next_string_literal_id = transaction->next_string_literal_id;
+  registry->next_float_literal_id = transaction->next_float_literal_id;
+  memcpy(registry->gvars_by_bucket, transaction->gvars_by_bucket,
+         sizeof(registry->gvars_by_bucket));
+  free_owned_names_until(registry, transaction->owned_names);
+  registry->active_transaction = NULL;
+  checkpoint->state = NULL;
+  free_global_registry_transaction(transaction);
 }
 
 void ps_global_registry_bind_semantic_types(
@@ -74,6 +233,8 @@ int ps_global_registry_bind_decl_qual_type(
   const psx_type_t *canonical = psx_semantic_type_table_lookup(
       registry->semantic_types, type.type_id);
   if (!canonical) return 0;
+  if (!psx_global_registry_note_global_mutation(registry, global))
+    return 0;
   global->decl_type_table = registry->semantic_types;
   global->decl_type = canonical;
   global->decl_qual_type = type;
@@ -118,6 +279,8 @@ int ps_global_registry_complete_array_qual_type(
       current_base.type_id != replacement_base.type_id ||
       current_base.qualifiers != replacement_base.qualifiers)
     return 0;
+  if (!psx_global_registry_note_global_mutation(registry, global))
+    return 0;
   global->decl_type = replacement;
   global->decl_type_table = registry->semantic_types;
   global->decl_qual_type = complete_type;
@@ -139,6 +302,19 @@ void ps_register_global_var_in(
   unsigned h = gvar_name_hash(gv->name, gv->name_len);
   gv->next_hash = registry->gvars_by_bucket[h];
   registry->gvars_by_bucket[h] = gv;
+}
+
+char *ps_global_registry_copy_name_in(
+    psx_global_registry_t *registry, const char *name, int len) {
+  if (!registry || !name || len <= 0) return NULL;
+  psx_global_registry_name_t *owned = malloc(
+      sizeof(*owned) + (size_t)len + 1);
+  if (!owned) return NULL;
+  memcpy(owned->bytes, name, (size_t)len);
+  owned->bytes[len] = '\0';
+  owned->next = registry->owned_names;
+  registry->owned_names = owned;
+  return owned->bytes;
 }
 
 void psx_register_string_lit_in(
@@ -216,6 +392,7 @@ bool ps_iter_float_literals_in(
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
+  free_owned_names_until(registry, NULL);
   registry->global_vars = NULL;
   registry->string_literals = NULL;
   registry->float_literals = NULL;

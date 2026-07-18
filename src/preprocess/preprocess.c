@@ -2047,14 +2047,19 @@ static token_t *handle_pragma_pack_body(
   return tok;
 }
 
-static void warn_unsupported_gnu_extension_token(ag_preprocessor_context_t *context,
-                                                 const token_t *tok) {
+static void diagnose_unsupported_gnu_extension_token(
+    ag_preprocessor_context_t *context, const token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return;
   const token_ident_t *id = (const token_ident_t *)tok;
-  diag_warn_tokf_in(context->diagnostic_context, DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
-                 "%s: %.*s",
-                 diag_warn_message_for_in(context->diagnostic_context, DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
-                 id->len, id->str);
+  diag_emit_tokf_in(
+      context->diagnostic_context,
+      DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
+      diag_message_for_in(
+          context->diagnostic_context,
+          DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION),
+      id->len == 10 && memcmp(id->str, "push_macro", 10) == 0
+          ? "push_macro"
+          : "pop_macro");
 }
 
 static token_t *handle_pragma(
@@ -2072,7 +2077,7 @@ static token_t *handle_pragma(
       tok = handle_pragma_pack_body(context, tok, pcur);
     }
   } else if (ident_is(tok, "push_macro") || ident_is(tok, "pop_macro")) {
-    warn_unsupported_gnu_extension_token(context, tok);
+    diagnose_unsupported_gnu_extension_token(context, tok);
   }
   return skip_to_next_line(tok);
 }

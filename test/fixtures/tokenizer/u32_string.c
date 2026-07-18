@@ -2,7 +2,7 @@
 // 期待: exit=65
 #include <assert.h>
 int main(void) {
-    int *s = U"AB";
+    unsigned int *s = U"AB";
     assert(*s == 65);
     return 0;
 }

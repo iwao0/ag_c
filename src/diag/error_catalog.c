@@ -183,6 +183,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES, "E3093", "parser.continuation_alloca_across_frames"},
     {DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED, "E3094", "parser.continuation_frame_loop_required"},
     {DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT, "E3095", "parser.continuation_frame_condition_call_count"},
+    {DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION, "E3096", "parser.unsupported_gnu_extension"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

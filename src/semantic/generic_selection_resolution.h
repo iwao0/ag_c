@@ -3,6 +3,7 @@
 
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "../type_system/type_ids.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -21,6 +22,13 @@ typedef struct {
   int selected_index;
   int conflict_index;
 } psx_generic_selection_resolution_t;
+
+void psx_resolve_generic_selection_qual_types_in(
+    psx_qual_type_t control_type,
+    const psx_qual_type_t *association_types,
+    const unsigned char *is_default,
+    int association_count,
+    psx_generic_selection_resolution_t *resolution);
 
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,

@@ -1,4 +1,5 @@
 #include "assignment_validation.h"
+#include "assignment_resolution.h"
 #include "resolved_node_kind.h"
 
 #include "../parser/ast.h"
@@ -7,6 +8,38 @@
 #include "../parser/semantic_ctx.h"
 #include "function_call_resolution.h"
 #include "resolved_object_ref.h"
+
+static psx_qual_type_t assignment_node_qual_type(
+    psx_semantic_context_t *semantic_context,
+    const node_t *node) {
+  if (!semantic_context || !node)
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t type = ps_node_qual_type(node);
+  return type.type_id != PSX_TYPE_ID_INVALID
+             ? type
+             : ps_ctx_intern_qual_type_in(
+                   semantic_context, ps_node_get_type(node));
+}
+
+static int assignment_compound_operator(
+    token_kind_t source_operator,
+    psx_compound_assignment_operator_t *operation) {
+  if (!operation) return 0;
+  switch (source_operator) {
+    case TK_PLUSEQ: *operation = PSX_COMPOUND_ASSIGN_ADD; return 1;
+    case TK_MINUSEQ: *operation = PSX_COMPOUND_ASSIGN_SUB; return 1;
+    case TK_MULEQ: *operation = PSX_COMPOUND_ASSIGN_MUL; return 1;
+    case TK_DIVEQ: *operation = PSX_COMPOUND_ASSIGN_DIV; return 1;
+    case TK_MODEQ: *operation = PSX_COMPOUND_ASSIGN_MOD; return 1;
+    case TK_SHLEQ: *operation = PSX_COMPOUND_ASSIGN_SHL; return 1;
+    case TK_SHREQ: *operation = PSX_COMPOUND_ASSIGN_SHR; return 1;
+    case TK_ANDEQ: *operation = PSX_COMPOUND_ASSIGN_BITAND; return 1;
+    case TK_XOREQ: *operation = PSX_COMPOUND_ASSIGN_BITXOR; return 1;
+    case TK_OREQ: *operation = PSX_COMPOUND_ASSIGN_BITOR; return 1;
+    default: return 0;
+  }
+}
 
 void psx_validate_assignment_in_context(
     psx_semantic_context_t *semantic_context, const node_t *node,
@@ -72,10 +105,38 @@ void psx_validate_assignment_in_context(
         "関数識別子に代入することはできません (C11 6.5.16p2)");
   }
   ps_node_expect_lvalue_at_in(diagnostics, node->lhs, "=", tok);
-  ps_node_reject_const_assign_at_in(
-      semantic_context, diagnostics, node->lhs, "=", tok);
   if (node->is_source_assignment) {
-    ps_node_reject_const_qual_discard_at_in(
-        semantic_context, diagnostics, node->lhs, node->rhs, tok);
+    psx_assignment_types_resolution_t resolution;
+    psx_resolve_assignment_qual_types_in(
+        semantic_context,
+        assignment_node_qual_type(semantic_context, node->lhs),
+        assignment_node_qual_type(semantic_context, node->rhs),
+        node->rhs->kind == ND_NUM &&
+            ((const node_num_t *)node->rhs)->val == 0,
+        &resolution);
+    if (resolution.status ==
+        PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE) {
+      ps_node_reject_const_assign_at_in(
+          semantic_context, diagnostics, node->lhs, "=", tok);
+    } else if (resolution.status ==
+               PSX_ASSIGNMENT_DISCARDS_QUALIFIERS) {
+      ps_node_reject_const_qual_discard_at_in(
+          semantic_context, diagnostics, node->lhs, node->rhs, tok);
+    }
+  } else if (node->is_source_compound_assignment) {
+    psx_compound_assignment_operator_t operation;
+    psx_assignment_types_resolution_t resolution;
+    if (assignment_compound_operator(node->source_op, &operation)) {
+      psx_resolve_compound_assignment_qual_types_in(
+          semantic_context, operation,
+          assignment_node_qual_type(semantic_context, node->lhs),
+          assignment_node_qual_type(semantic_context, node->rhs),
+          &resolution);
+      if (resolution.status ==
+          PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE) {
+        ps_node_reject_const_assign_at_in(
+            semantic_context, diagnostics, node->lhs, "=", tok);
+      }
+    }
   }
 }

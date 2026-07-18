@@ -37,6 +37,7 @@ struct psx_hir_node_t {
   unsigned char bit_is_signed;
   unsigned char member_from_pointer;
   unsigned char is_static_function;
+  unsigned char is_implicit_call;
 };
 
 typedef struct {
@@ -281,6 +282,7 @@ int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_TERNARY:
     case PSX_HIR_COMMA:
     case PSX_HIR_ASSIGN:
+    case PSX_HIR_OBJECT_COPY:
     case PSX_HIR_COMPOUND_ASSIGN:
     case PSX_HIR_LOCAL:
     case PSX_HIR_PRE_INC:
@@ -343,6 +345,7 @@ static psx_hir_node_id_t add_node(
   node->bit_is_signed = spec->bit_is_signed;
   node->member_from_pointer = spec->member_from_pointer;
   node->is_static_function = spec->is_static_function;
+  node->is_implicit_call = spec->is_implicit_call;
   if (spec->child_count) {
     node->children = malloc(spec->child_count * sizeof(*node->children));
     node->child_edges = malloc(
@@ -593,6 +596,11 @@ int psx_hir_node_label_id(const psx_hir_node_t *node) {
 int psx_hir_node_is_static_function(const psx_hir_node_t *node) {
   return node && node->kind == PSX_HIR_FUNCTION
              ? node->is_static_function != 0 : 0;
+}
+
+int psx_hir_node_is_implicit_call(const psx_hir_node_t *node) {
+  return node && node->kind == PSX_HIR_CALL
+             ? node->is_implicit_call != 0 : 0;
 }
 
 psx_hir_symbol_id_t psx_hir_node_symbol_id(const psx_hir_node_t *node) {

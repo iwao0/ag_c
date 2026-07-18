@@ -3,8 +3,15 @@
 
 #include "typed_hir_tree.h"
 
+typedef struct {
+  const psx_typed_hir_tree_t *expression;
+  long long constant_value;
+  unsigned char is_constant;
+} psx_vla_runtime_dimension_t;
+
 typedef struct psx_vla_runtime_plan_t {
-  const psx_typed_hir_tree_t **dimensions;
+  psx_vla_runtime_dimension_t *dimensions;
+  psx_qual_type_t constant_qual_type;
   int *stride_store_offsets;
   int *stride_start_dimensions;
   int dimension_count;

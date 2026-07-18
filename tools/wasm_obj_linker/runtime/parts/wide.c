@@ -690,8 +690,8 @@ int __agc_runtime_mbsinit(long ps_addr) {
 
 long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_addr) {
   long state_addr = ps_addr ? ps_addr : (long)&ag_rt_mbsrtowcs_state;
-  long *srcp = (long *)ag_rt_ptr(srcp_addr);
-  char *src = ag_rt_ptr(*srcp);
+  char **srcp = (char **)ag_rt_ptr(srcp_addr);
+  char *src = *srcp;
   int *dst = dst_addr ? (int *)ag_rt_ptr(dst_addr) : (int *)0;
   long count = 0;
   long pos = 0;
@@ -707,15 +707,15 @@ long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_ad
     if (dst && count < len) dst[count] = 0;
     *srcp = 0;
   } else if (dst) {
-    *srcp = (long)(src + pos);
+    *srcp = src + pos;
   }
   return count;
 }
 
 long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_addr) {
   long state_addr = ps_addr ? ps_addr : (long)&ag_rt_wcsrtombs_state;
-  long *srcp = (long *)ag_rt_ptr(srcp_addr);
-  int *src = (int *)ag_rt_ptr(*srcp);
+  int **srcp = (int **)ag_rt_ptr(srcp_addr);
+  int *src = *srcp;
   char *dst = dst_addr ? ag_rt_ptr(dst_addr) : (char *)0;
   long count = 0;
   long bytes = 0;
@@ -724,7 +724,7 @@ long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_ad
     long r = __agc_runtime_wcrtomb((long)tmp, src[count], state_addr);
     if (r < 0) return r;
     if (dst && bytes + r > len) {
-      *srcp = (long)(src + count);
+      *srcp = src + count;
       return bytes;
     }
     if (dst) {
@@ -824,13 +824,13 @@ int __agc_runtime_wctomb(long s_addr, int wc) {
 }
 
 long __agc_runtime_mbstowcs(long dst_addr, long src_addr, long n) {
-  long srcp = src_addr;
+  char *srcp = ag_rt_ptr(src_addr);
   if (!src_addr) return -1;
   return __agc_runtime_mbsrtowcs(dst_addr, (long)&srcp, n, 0);
 }
 
 long __agc_runtime_wcstombs(long dst_addr, long src_addr, long n) {
-  long srcp = src_addr;
+  int *srcp = (int *)ag_rt_ptr(src_addr);
   if (!src_addr) return -1;
   return __agc_runtime_wcsrtombs(dst_addr, (long)&srcp, n, 0);
 }

@@ -9,8 +9,8 @@
 typedef struct psx_parsed_aggregate_body_t psx_parsed_aggregate_body_t;
 typedef struct psx_parsed_function_parameters_t
     psx_parsed_function_parameters_t;
+typedef struct psx_parsed_type_name_t psx_parsed_type_name_t;
 typedef struct node_t node_t;
-typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_local_declaration_callbacks_t
     psx_local_declaration_callbacks_t;
@@ -19,8 +19,6 @@ typedef struct {
   token_t *start;
   token_t *end;
   node_t *node;
-  long long constant_value;
-  int has_constant_value;
   char *identifier_name;
   int identifier_name_len;
 } psx_parsed_const_expr_t;
@@ -55,10 +53,23 @@ typedef struct {
   void *context;
   void *expression_context;
   node_t *(*parse_assignment_expression)(void *context);
-  psx_semantic_context_t *semantic_context;
   psx_parser_runtime_context_t *runtime_context;
   int allow_implicit_int;
 } psx_decl_specifier_syntax_options_t;
+
+typedef enum {
+  PSX_PARSED_ALIGNAS_EXPRESSION = 0,
+  PSX_PARSED_ALIGNAS_TYPE_NAME,
+} psx_parsed_alignas_kind_t;
+
+typedef struct {
+  psx_parsed_alignas_kind_t kind;
+  token_t *diagnostic_token;
+  node_t *expression;
+  psx_parsed_type_name_t *type_name;
+  unsigned scope_seq;
+  unsigned declaration_seq;
+} psx_parsed_alignas_t;
 
 typedef struct {
   psx_parsed_decl_type_source_t source;
@@ -66,8 +77,8 @@ typedef struct {
   token_ident_t *typedef_name;
   token_t *diagnostic_token;
   psx_parsed_tag_action_t tag_action;
-  psx_parsed_const_expr_t alignas_expressions[8];
-  int alignas_expression_count;
+  psx_parsed_alignas_t alignas_specifiers[8];
+  int alignas_specifier_count;
 } psx_parsed_decl_specifier_t;
 
 typedef struct {
@@ -98,13 +109,16 @@ typedef struct {
   int function_suffix_capacity;
 } psx_parsed_declarator_t;
 
-typedef struct psx_parsed_type_name_t {
+struct psx_parsed_type_name_t {
   psx_parsed_decl_specifier_t specifier;
   psx_parsed_declarator_t declarator;
   struct psx_parsed_type_name_t *atomic_inner;
   token_t *diagnostic_token;
   token_t *end;
-} psx_parsed_type_name_t;
+};
+
+int psx_token_starts_type_name_syntax(
+    token_t *token, const psx_name_classifier_t *name_classifier);
 
 void psx_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
@@ -125,17 +139,9 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
 const psx_parsed_function_suffix_t *
 psx_declarator_outermost_function_suffix(
     const psx_parsed_declarator_t *declarator);
-void ps_parse_runtime_declarator_expressions_with_options(
+void psx_materialize_declarator_expression_syntax(
     psx_parsed_declarator_t *declarator,
     const psx_decl_specifier_syntax_options_t *options);
-void ps_prepare_constant_declarator_expressions_in_context(
-    psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    const psx_name_classifier_t *name_classifier);
-void ps_prepare_decl_specifier_alignments_in_context(
-    psx_parsed_decl_specifier_t *specifier,
-    psx_semantic_context_t *semantic_context,
-    const psx_name_classifier_t *name_classifier);
 void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
 void psx_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);

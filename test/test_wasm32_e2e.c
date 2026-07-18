@@ -47,6 +47,9 @@ static const wasm_link2_case_t link2_cases[] = {
 
 static const wasm_e2e_reject_case_t reject_cases[] = {
     {"test/fixtures/wasm32/setjmp_stub_ops.c", "setjmp/longjmp require unsupported"},
+    {"test/fixtures/probes_found_bugs/gnu_statement_expression.c", "E3096"},
+    {"test/fixtures/probes_found_bugs/gnu_attribute_parse.c", "E3096"},
+    {"test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c", "E3096"},
 };
 
 static const char *expected_rejection(const char *path) {
@@ -280,6 +283,7 @@ static const wasm_e2e_case_t cases[] = {
     {"alignas", "global_var", "test/fixtures/alignas/global_var.c"},
     {"alignas", "struct_member", "test/fixtures/alignas/struct_member.c"},
     {"alignas", "alignas_alignof", "test/fixtures/alignas/alignas_alignof.c"},
+    {"alignas", "type_name", "test/fixtures/alignas/type_name.c"},
 
     {"bitfield", "read", "test/fixtures/bitfield/read.c"},
     {"bitfield", "read_b", "test/fixtures/bitfield/read_b.c"},

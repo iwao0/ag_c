@@ -37,6 +37,7 @@ typedef struct {
   unsigned char bit_is_signed;
   unsigned char member_from_pointer;
   unsigned char is_static_function;
+  unsigned char is_implicit_call;
 } psx_hir_node_spec_t;
 
 typedef struct {

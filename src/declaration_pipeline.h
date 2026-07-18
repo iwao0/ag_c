@@ -12,6 +12,8 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct psx_vla_runtime_plan_t psx_vla_runtime_plan_t;
+typedef struct psx_typed_hir_tree_t psx_typed_hir_tree_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -25,7 +27,7 @@ typedef struct {
   int is_extern_decl;
   int is_static;
   int is_thread_local;
-  psx_parsed_initializer_t *initializer;
+  const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_global_declaration_pipeline_request_t;
 
@@ -76,6 +78,8 @@ typedef struct {
 } psx_function_definition_pipeline_request_t;
 
 typedef struct {
+  struct lvar_t **parameter_vars;
+  const psx_type_t **parameter_types;
   node_t **args;
   int nargs;
   int has_unnamed_parameter;
@@ -116,7 +120,7 @@ typedef struct {
   char *name;
   int name_len;
   const psx_type_t *type;
-  psx_parsed_initializer_t *initializer;
+  const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_static_local_declaration_pipeline_request_t;
 
@@ -136,6 +140,10 @@ int psx_begin_static_local_declaration_pipeline(
 int psx_finish_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result);
+int psx_finish_static_local_declaration_typed_hir_pipeline(
+    const psx_static_local_declaration_pipeline_request_t *request,
+    psx_static_local_declaration_pipeline_result_t *result,
+    const psx_typed_hir_tree_t *initializer_typed_hir);
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -146,19 +154,23 @@ typedef struct {
   const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int requested_alignment;
-  psx_parsed_initializer_t *initializer;
+  const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_automatic_local_declaration_pipeline_request_t;
 
 typedef struct {
   struct lvar_t *var;
   node_t *initialization;
+  psx_vla_runtime_plan_t *vla_runtime_plan;
 } psx_automatic_local_declaration_pipeline_result_t;
 
 int psx_apply_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_automatic_local_declaration_pipeline_result_t *result);
 int psx_begin_automatic_local_declaration_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result);
+int psx_begin_automatic_local_declaration_hir_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_automatic_local_declaration_pipeline_result_t *result);
 int psx_finish_automatic_local_declaration_pipeline(

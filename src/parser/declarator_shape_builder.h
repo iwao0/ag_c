@@ -9,6 +9,9 @@ void ps_declarator_shape_init(psx_declarator_shape_t *shape);
 int ps_declarator_shape_copy_in(
     arena_context_t *arena_context, psx_declarator_shape_t *dst,
     const psx_declarator_shape_t *src);
+int ps_declarator_shape_append_shape_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    const psx_declarator_shape_t *suffix);
 int ps_declarator_shape_append_pointer_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int is_const_qualified, int is_volatile_qualified);
@@ -25,7 +28,7 @@ int ps_declarator_shape_append_function_in(
 int ps_declarator_op_set_function_params_in(
     arena_context_t *arena_context, psx_declarator_op_t *op,
     const psx_type_t *const *param_types,
-    int param_count, int is_variadic);
+    int param_count, int is_variadic, int has_prototype);
 int ps_declarator_shape_set_array_bound(
     psx_declarator_shape_t *shape, int op_index,
     int array_len, int is_vla);

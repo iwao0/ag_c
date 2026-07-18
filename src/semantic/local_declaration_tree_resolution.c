@@ -116,8 +116,9 @@ static void *begin_declaration(
         "canonical local declaration type resolution failed");
   }
   application->requested_alignment =
-      psx_apply_parsed_decl_alignment(
-          application->semantic_context, specifier);
+      psx_resolve_parsed_decl_alignment_in_contexts(
+          application->semantic_context, application->global_registry,
+          application->local_registry, specifier);
   application->is_extern = specifier->type_spec.is_extern ? 1 : 0;
   application->is_static = specifier->type_spec.is_static ? 1 : 0;
   return application;
@@ -315,13 +316,6 @@ static node_t *apply_local_declaration_syntax(
   if (!semantic_context || !global_registry || !local_registry ||
       !lowering_context || !options || !declaration)
     return NULL;
-  ps_prepare_decl_specifier_alignments_in_context(
-      &declaration->specifier, semantic_context,
-      &(psx_name_classifier_t){
-          .context = semantic_context,
-          .is_typedef_name =
-              ps_ctx_name_classifier(semantic_context).is_typedef_name,
-      });
   psx_local_declaration_application_context_t application_context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,

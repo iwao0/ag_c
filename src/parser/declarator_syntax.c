@@ -13,7 +13,8 @@ static token_t *current_token(const psx_declarator_syntax_t *syntax) {
 static void skip_gnu_attributes(
     const psx_declarator_syntax_t *syntax) {
   token_t *token = current_token(syntax);
-  psx_skip_gnu_attributes_at(&token);
+  psx_skip_gnu_attributes_at_with_diagnostics(
+      &token, syntax->diagnostic_context);
   tk_set_current_token_ctx(syntax->tokenizer_context, token);
 }
 

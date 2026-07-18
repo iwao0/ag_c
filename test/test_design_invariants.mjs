@@ -92,6 +92,10 @@ const resolvedTreeHirHeader = await readFile(
   "src/semantic/typed_hir_materialization.h",
   "utf8",
 );
+const typedHirBuildStatusHeader = await readFile(
+  "src/semantic/typed_hir_build_status.h",
+  "utf8",
+);
 const resolvedHirNodeInternalHeader = await readFile(
   "src/semantic/semantic_node_internal.h",
   "utf8",
@@ -373,6 +377,18 @@ const statementSyntaxContextSource = await readFile(
 );
 const statementSyntaxAdapterSource = await readFile(
   "src/parser/statement_syntax_adapter.c",
+  "utf8",
+);
+const statementLegacySource = await readFile(
+  "src/parser/stmt_legacy.c",
+  "utf8",
+);
+const legacyNameClassifierSource = await readFile(
+  "src/parser/name_classifier_legacy.c",
+  "utf8",
+);
+const statementSyntaxAdapterHeader = await readFile(
+  "src/parser/statement_syntax_adapter.h",
   "utf8",
 );
 const parserStatementSource = await readFile("src/parser/stmt.c", "utf8");
@@ -815,7 +831,7 @@ if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource)
   throw new Error("semantic state must be owned by an explicit context lifecycle");
 }
 const legacySemanticGlobals =
-  /^static\s+.*\b(?:goto_refs_all|label_defs_by_bucket|deferred_parser_warnings_all|tag_types_by_bucket|all_tag_types|tag_members_by_bucket|enum_consts_by_bucket|all_enum_consts|typedefs_by_bucket|all_typedefs|func_names_by_bucket|tag_scope_depth|tag_member_decl_order)\b/gm;
+  /^static\s+.*\b(?:goto_refs_all|label_defs_by_bucket|deferred_parser_diagnostics_all|tag_types_by_bucket|all_tag_types|tag_members_by_bucket|enum_consts_by_bucket|all_enum_consts|typedefs_by_bucket|all_typedefs|func_names_by_bucket|tag_scope_depth|tag_member_decl_order)\b/gm;
 if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
 }
@@ -855,6 +871,10 @@ const wasmBackendContextSource = await readFile(
   "utf8",
 );
 const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
+const wasmRuntimeWideSource = await readFile(
+  "tools/wasm_obj_linker/runtime/parts/wide.c",
+  "utf8",
+);
 const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
 const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
 const tokenizerNumberSource = await readFile(
@@ -1333,6 +1353,23 @@ if (!/wasm32_backend_context_create\s*\(\s*ag_codegen_emit_context_t\s*\*emit_co
   );
 }
 
+if (/\(i64\.load\s+\(local\.get\s+\$srcp\)\)/.test(wasmIrSource) ||
+    /\(i64\.store\s+\(local\.get\s+\$srcp\)/.test(wasmIrSource) ||
+    /intern_data_symbol\("__ag_(?:mbstowcs|wcstombs)_srcp"[^;]*,\s*8\s*,\s*8\s*\)/.test(
+      wasmIrSource,
+    ) ||
+    /long\s*\*\s*srcp\s*=/.test(wasmRuntimeWideSource) ||
+    !/char\s*\*\s*\*srcp\s*=\s*\(char\s*\*\s*\*\)ag_rt_ptr\(srcp_addr\)/.test(
+      wasmRuntimeWideSource,
+    ) ||
+    !/int\s*\*\s*\*srcp\s*=\s*\(int\s*\*\s*\*\)ag_rt_ptr\(srcp_addr\)/.test(
+      wasmRuntimeWideSource,
+    )) {
+  throw new Error(
+    "Wasm multibyte conversion pointer-to-pointer storage must use the target pointer width",
+  );
+}
+
 const explicitCodegenEmitSources = [
   compilationSessionSource,
   codegenEmitSource,
@@ -1691,7 +1728,7 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
       `${frontendTranslationUnitSource}\n${frontendTranslationUnitHeader}\n${frontendTranslationUnitResolverHeader}`,
     ) ||
     /\bnode_t\b/.test(frontendTranslationUnitResolverHeader) ||
-    !/psx_resolve_parsed_function_internal_in_contexts\s*\(/.test(
+    !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\(/.test(
       parserCompatibilityTestHook,
     ) ||
     !/resolution\.compatibility_root/.test(
@@ -1732,6 +1769,52 @@ const semanticTreeResolutionSource = await readFile(
   "src/semantic/semantic_tree_resolution.c",
   "utf8",
 );
+const legacySyntaxDiagnosticsSource = await readFile(
+  "src/semantic/legacy_syntax_diagnostics.c",
+  "utf8",
+);
+const legacySyntaxDiagnosticsHeader = await readFile(
+  "src/semantic/legacy_syntax_diagnostics.h",
+  "utf8",
+);
+const semanticTreeResolutionTestSupportHeader = await readFile(
+  "src/semantic/semantic_tree_resolution_test_support.h",
+  "utf8",
+);
+const declarationRegistrationBoundarySource = await readFile(
+  "src/semantic/declaration_registration.c",
+  "utf8",
+);
+const mutableCompatibilityImplementationFiles = new Set([
+  "src/semantic/identifier_binding.c",
+  "src/semantic/local_declaration_tree_resolution.c",
+  "src/semantic/semantic_pass.c",
+  "src/lowering/semantic_lowering_pass.c",
+  "src/semantic/legacy_syntax_diagnostics.c",
+]);
+const mutableCompatibilityCallers = [];
+const mutableCompatibilityCallPattern =
+  /\bpsx_(?:bind_identifier_(?:tree|initializer_tree)|semantic_resolve_(?:tree|initializer_tree)|lower_semantic_(?:tree|initializer_syntax)|resolve_local_declaration_syntax_tree)_in_contexts\s*\(/;
+for (const file of allSourceFiles) {
+  if (mutableCompatibilityImplementationFiles.has(file) ||
+      !file.endsWith(".c"))
+    continue;
+  const source = await readFile(file, "utf8");
+  if (mutableCompatibilityCallPattern.test(source))
+    mutableCompatibilityCallers.push(file);
+}
+if (mutableCompatibilityCallers.length > 0 ||
+    !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      declarationRegistrationBoundarySource,
+    ) ||
+    /psx_bind_identifier_tree|psx_semantic_resolve_tree/.test(
+      declarationRegistrationBoundarySource,
+    )) {
+  throw new Error(
+    "mutable compatibility resolution must remain diagnostic-only; callers: " +
+      (mutableCompatibilityCallers.join(", ") || "none"),
+  );
+}
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
@@ -1765,6 +1848,22 @@ const assignmentValidationSource = await readFile(
   "src/semantic/assignment_validation.c",
   "utf8",
 );
+const assignmentResolutionHeader = await readFile(
+  "src/semantic/assignment_resolution.h",
+  "utf8",
+);
+const assignmentResolutionSource = await readFile(
+  "src/semantic/assignment_resolution.c",
+  "utf8",
+);
+const callResolutionHeader = await readFile(
+  "src/semantic/call_resolution.h",
+  "utf8",
+);
+const callResolutionSource = await readFile(
+  "src/semantic/call_resolution.c",
+  "utf8",
+);
 const identifierBindingSource = await readFile(
   "src/semantic/identifier_binding.c",
   "utf8",
@@ -1792,12 +1891,20 @@ const localDeclarationFrontendSource = await readFile(
   "src/frontend/local_declaration.c",
   "utf8",
 );
+const localDeclarationFrontendHeader = await readFile(
+  "src/frontend/local_declaration.h",
+  "utf8",
+);
+const localDeclarationLegacySource = await readFile(
+  "src/frontend/local_declaration_legacy.c",
+  "utf8",
+);
 const localDeclarationTreeResolutionSource = await readFile(
   "src/semantic/local_declaration_tree_resolution.c",
   "utf8",
 );
 if (/#include\s+"\.\.\/frontend\//.test(
-      `${semanticTreeResolutionSource}\n${localDeclarationTreeResolutionSource}`,
+      `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}\n${localDeclarationTreeResolutionSource}`,
     ) ||
     /\bpsx_(?:apply|resolve)_local_declaration_syntax/.test(
       localDeclarationFrontendSource,
@@ -1937,16 +2044,16 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/\.local_registry\s*=\s*local_registry/.test(
       identifierBindingSource,
     ) ||
     !/psx_analyze_function_lvar_usage_in\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_lower_semantic_tree_in_contexts\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/ps_decl_replay_lvar_usage_events_in\s*\(/.test(
       lvarUsageAnalysisSource,
@@ -2376,6 +2483,10 @@ const declarationApplicationSource = await readFile(
   "src/semantic/declaration_application.c",
   "utf8",
 );
+const declarationSpecifierResolutionSource = await readFile(
+  "src/semantic/declaration_specifier_resolution.c",
+  "utf8",
+);
 const declaratorBoundResolutionSource = await readFile(
   "src/semantic/declarator_bound_resolution.c",
   "utf8",
@@ -2461,6 +2572,22 @@ const memberAccessResolutionHeader = await readFile(
   "src/semantic/member_access_resolution.h",
   "utf8",
 );
+const memberResolutionSource = await readFile(
+  "src/semantic/member_resolution.c",
+  "utf8",
+);
+const memberResolutionHeader = await readFile(
+  "src/semantic/member_resolution.h",
+  "utf8",
+);
+const hirMemberResolutionHeader = await readFile(
+  "src/semantic/hir_member_resolution.h",
+  "utf8",
+);
+const hirMemberResolutionSource = await readFile(
+  "src/semantic/hir_member_resolution.c",
+  "utf8",
+);
 const memberAccessAstHeader = await readFile(
   "src/parser/ast.h",
   "utf8",
@@ -2492,24 +2619,27 @@ if (/\bps_node_new_tag_member_(?:deref|lvar_ref)_for_in\s*\(/.test(
   );
 }
 if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
-      memberAccessResolutionSource,
+      `${memberAccessResolutionSource}\n${memberResolutionSource}`,
     ) ||
-    /\baggregate_definition\b/.test(memberAccessResolutionSource) ||
+    /\baggregate_definition\b/.test(memberResolutionSource) ||
     /\bps_type_find_aggregate_member\s*\(/.test(
-      memberAccessResolutionSource,
+      memberResolutionSource,
     ) ||
     !/\bps_ctx_get_record_decl_in\s*\(/.test(
-      memberAccessResolutionSource,
+      memberResolutionSource,
     ) ||
     !/resolution->member_index\s*=\s*aggregate_member_index/.test(
+      memberResolutionSource,
+    ) ||
+    !/resolution->record_id\s*=/.test(memberResolutionSource) ||
+    !/\bpsx_resolve_member_access_qual_type_in\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
-    !/resolution->record_id\s*=/.test(memberAccessResolutionSource) ||
     !/\bpsx_record_member_decl_t\s+declaration\s*;/.test(
-      memberAccessResolutionHeader,
+      memberResolutionHeader,
     ) ||
     /\btag_member_info_t\s+member\s*;/.test(
-      memberAccessResolutionHeader,
+      memberResolutionHeader,
     ) ||
     /\bpsx_record_member_decl_t\s*\*\s*resolved_member\s*;/.test(
       memberAccessAstHeader,
@@ -2524,7 +2654,7 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessStateHeader,
     ) ||
     /resolution->declaration\.(?:offset|bit_offset)\b/.test(
-      memberAccessResolutionSource,
+      memberResolutionSource,
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       resolvedTreeMaterialization,
@@ -2543,27 +2673,70 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
     ) ||
     !/spec->bit_offset\s*=\s*\(unsigned char\)member->bit_offset/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/\bpsx_resolve_member_access_qual_type_in\s*\(/.test(
+      hirMemberResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      hirMemberResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_member\s*\(/.test(
+      hirMemberResolutionSource,
+    ) ||
+    !/\bPSX_HIR_MEMBER_ACCESS\b/.test(
+      hirMemberResolutionSource,
+    ) ||
+    /member_access_resolution\.h/.test(
+      `${hirMemberResolutionHeader}\n${hirMemberResolutionSource}`,
     )) {
   throw new Error(
-    "member access semantics must retain RecordId and ordinal while Typed HIR materialization resolves target offsets",
+    "member access semantics must retain RecordId and ordinal while each Typed HIR materializer resolves target offsets",
   );
 }
+const memberQualTypeCore = memberResolutionSource.match(
+  /void\s+psx_resolve_member_access_qual_type_in\s*\([^]*?\n\}/,
+);
 if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
-      memberAccessResolutionHeader,
+      memberResolutionHeader,
     ) ||
-    !/\bpsx_semantic_type_table_aggregate_object\s*\(/.test(
-      memberAccessResolutionSource,
+    !/\bpsx_qual_type_t\s+member_qual_type\s*;/.test(
+      memberResolutionHeader,
+    ) ||
+    !memberQualTypeCore ||
+    /\bnode_t\b|\bps_node_|\bPSX_HIR_/.test(memberQualTypeCore[0]) ||
+    /parser\/ast\.h|member_access_resolution\.h/.test(
+      `${memberResolutionHeader}\n${memberResolutionSource}`,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      memberQualTypeCore[0],
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      memberQualTypeCore[0],
+    ) ||
+    /\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
+      memberQualTypeCore[0],
+    ) ||
+    !/object_qual_type\.qualifiers/.test(
+      memberResolutionSource,
     ) ||
     /\bps_type_find_aggregate_object_type\s*\(/.test(
-      memberAccessResolutionSource,
+      memberResolutionSource,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       memberTypeIdentitySource.match(
         /psx_qual_type_t\s+psx_semantic_type_table_aggregate_object\s*\([^]*?\n\}/,
       )?.[0] || "",
     ) ||
-    !/resolution\.base_object_qual_type\.qualifiers/.test(
+    !/resolution\.member_qual_type/.test(
       semanticPassSource,
+    ) ||
+    /resolution\.base_object_qual_type\.qualifiers/.test(
+      semanticPassSource,
+    ) ||
+    !/\bpsx_resolve_member_access_qual_type_in\s*\(/.test(
+      memberAccessResolutionSource.match(
+        /void\s+psx_resolve_member_access\s*\([^]*?\n\}/,
+      )?.[0] || "",
     ) ||
     /ps_type_has_qualifier\s*\(\s*object_type/.test(
       semanticPassSource,
@@ -2618,8 +2791,28 @@ const typeNameResolutionSource = await readFile(
   "src/semantic/type_name_resolution.c",
   "utf8",
 );
+const typeNameResolutionHeader = await readFile(
+  "src/semantic/type_name_resolution.h",
+  "utf8",
+);
 const typeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
+  "utf8",
+);
+const typeQuerySemanticsHeader = await readFile(
+  "src/semantic/type_query_semantics.h",
+  "utf8",
+);
+const typeQuerySemanticsSource = await readFile(
+  "src/semantic/type_query_semantics.c",
+  "utf8",
+);
+const compoundLiteralSemanticsHeader = await readFile(
+  "src/semantic/compound_literal_semantics.h",
+  "utf8",
+);
+const compoundLiteralSemanticsSource = await readFile(
+  "src/semantic/compound_literal_semantics.c",
   "utf8",
 );
 if (!/\bps_ctx_type_sizeof_in\s*\(/.test(typeQueryResolutionSource) ||
@@ -2632,6 +2825,45 @@ if (!/\bps_ctx_type_sizeof_in\s*\(/.test(typeQueryResolutionSource) ||
     )) {
   throw new Error(
     "sizeof and alignof resolution must intern semantic types and query target layout by TypeId",
+  );
+}
+if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
+      `${typeQuerySemanticsHeader}\n${typeQuerySemanticsSource}`,
+    ) ||
+    !/psx_type_query_plan_kind_t/.test(typeQuerySemanticsHeader) ||
+    !/PSX_TYPE_QUERY_PLAN_RUNTIME_PRODUCT/.test(
+      typeQuerySemanticsHeader,
+    ) ||
+    !/PSX_TYPE_QUERY_PLAN_RUNTIME_SLOT/.test(
+      typeQuerySemanticsHeader,
+    ) ||
+    !/psx_resolve_sizeof_qual_type_plan_in\s*\(/.test(
+      typeQuerySemanticsSource,
+    ) ||
+    !/psx_resolve_alignof_qual_type_plan_in\s*\(/.test(
+      typeQuerySemanticsSource,
+    )) {
+  throw new Error(
+    "type query semantics must resolve canonical QualType plans without Syntax AST dependencies",
+  );
+}
+if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/ast\.h|resolution_state/.test(
+      `${compoundLiteralSemanticsHeader}\n${compoundLiteralSemanticsSource}`,
+    ) ||
+    !/psx_compound_literal_plan_t/.test(
+      compoundLiteralSemanticsHeader,
+    ) ||
+    !/psx_resolve_compound_literal_qual_type_plan_in\s*\(/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    !/PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC/.test(
+      compoundLiteralSemanticsHeader,
+    ) ||
+    !/PSX_COMPOUND_LITERAL_STORAGE_STATIC/.test(
+      compoundLiteralSemanticsHeader,
+    )) {
+  throw new Error(
+    "compound literal semantics must resolve storage duration and canonical result QualType without Syntax AST dependencies",
   );
 }
 const declarationResolutionSource = await readFile(
@@ -2678,6 +2910,7 @@ const frontendSemanticPipelineSource = await readFile(
 const semanticTraversalCallers = [
   frontendSemanticPipelineSource,
   semanticTreeResolutionSource,
+  legacySyntaxDiagnosticsSource,
   declarationApplicationSource,
   await readFile("src/semantic/declaration_registration.c", "utf8"),
 ].join("\n");
@@ -2697,9 +2930,9 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     ) ||
     contextFreeSemanticTraversalCall.test(semanticTraversalCallers) ||
     !/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
-    !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
+    !/ps_ctx_find_typedef_(?:decl_type|name)_at_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     ) ||
     !/ps_ctx_clone_tag_type_at_in_contexts\s*\(/.test(
@@ -2834,10 +3067,10 @@ if (!/ps_find_global_var_in\s*\(/.test(
     !/!request->semantic_context\b/.test(globalObjectLoweringSource) ||
     !/!request->global_registry\b/.test(globalObjectLoweringSource) ||
     !/psx_lower_semantic_tree_in_contexts\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_lower_semantic_initializer_syntax_in_contexts\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       semanticLoweringPassSource,
@@ -2850,6 +3083,10 @@ if (!/ps_find_global_var_in\s*\(/.test(
   );
 }
 const parserSource = await readFile("src/parser/parser.c", "utf8");
+const parserLegacySource = await readFile(
+  "src/parser/parser_legacy.c",
+  "utf8",
+);
 const statementParserSource = await readFile("src/parser/stmt.c", "utf8");
 const statementControlFlowValidationSource = await readFile(
   "src/semantic/control_flow_validation.c",
@@ -2881,6 +3118,25 @@ const localDeclarationSyntaxSource = await readFile(
   "utf8",
 );
 const enumConstSource = await readFile("src/parser/enum_const.c", "utf8");
+const enumConstHeader = await readFile("src/parser/enum_const.h", "utf8");
+const enumBodySyntaxBoundary = enumConstSource.match(
+  /void\s+psx_parse_enum_body_syntax\s*\([^]*?\n\}/,
+)?.[0] ?? "";
+if (!/node_t\s*\*initializer\s*;/.test(enumConstHeader) ||
+    /psx_parsed_enum_expr_t|PSX_ENUM_EXPR_/.test(
+      `${enumConstHeader}\n${enumBodySyntaxBoundary}`,
+    ) ||
+    !/parse_assignment_expression\s*\(/.test(enumBodySyntaxBoundary) ||
+    /psx_semantic_context_t|ps_ctx_|psx_resolve_/.test(
+      enumBodySyntaxBoundary,
+    ) ||
+    !/psx_resolve_enum_initializer_syntax_in_contexts\s*\([^]*?psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      enumConstantResolutionSource,
+    )) {
+  throw new Error(
+    "enum initializers must remain immutable Syntax AST until direct semantic resolution",
+  );
+}
 const alignasValueSource = await readFile(
   "src/parser/alignas_value.c",
   "utf8",
@@ -2905,7 +3161,7 @@ const explicitLifecycleCallers = [
   lifecycleDeclarationPipelineSource,
 ].join("\n");
 const contextFreeLifecycleCall =
-  /\bps_ctx_(?:reset_translation_unit_scope|reset_function_diag_state|reset_tag_diag_state|reset_function_scope|enter_block_scope|leave_block_scope|record_unsupported_gnu_extension_warning|emit_deferred_parser_warnings|promote_tag_to_file_scope)\s*\(/;
+  /\bps_ctx_(?:reset_translation_unit_scope|reset_function_diag_state|reset_tag_diag_state|reset_function_scope|enter_block_scope|leave_block_scope|record_unsupported_gnu_extension|emit_deferred_parser_diagnostics|promote_tag_to_file_scope)\s*\(/;
 const contextFreeJumpRegistryCall =
   /\bpsx_ctx_(?:register_goto_ref|register_label_def|validate_goto_refs)\s*\(/;
 const implicitActiveContextFallback =
@@ -2942,16 +3198,25 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     /active_local_declarations/.test(statementParserSource) ||
     /psx_expr_expr_in_contexts\s*\(/.test(statementParserSource) ||
     !/syntax\.parse_expression/.test(statementParserSource) ||
-    !/psx_parse_statement_expression_in_contexts\s*\(/.test(
+    !/psx_statement_syntax_adapter_init\s*\(/.test(
       expressionSyntaxAdapterSource,
+    ) ||
+    /psx_expr_(?:expr|assign|conditional)_in_contexts\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    /psx_legacy_statement_syntax_adapter_init\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_frontend_init_local_declaration_syntax_adapter\s*\(/.test(
+      frontendTranslationUnitSource,
     ) ||
     !/psx_parse_initializer_syntax_list_with_context\s*\(/.test(
       expressionSyntaxAdapterSource,
     ) ||
-    /ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
+    /ps_ctx_record_unsupported_gnu_extension_in\s*\(/.test(
       initializerSyntaxSource,
     ) ||
-    !/context->record_unsupported_gnu_extension/.test(
+    !/context->diagnose_unsupported_gnu_extension/.test(
       initializerSyntaxSource,
     ) ||
     /psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts\s*\(/.test(
@@ -2976,13 +3241,13 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/ps_ctx_reset_function_scope_in\s*\(/.test(
       frontendFunctionDefinitionSource,
     ) ||
-    !/ps_ctx_emit_deferred_parser_warnings_in\s*\(/.test(
+    !/ps_ctx_emit_deferred_parser_diagnostics_in\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_apply_parsed_function_parameters_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
-    !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
+    !/ps_ctx_record_unsupported_gnu_extension_in\s*\(/.test(
       functionParameterResolutionSource,
     ) ||
     !/psx_apply_parsed_declarator_in_contexts\s*\(/.test(
@@ -3143,6 +3408,10 @@ const resolvedGlobalAstSource = await readFile(
 );
 const constantExpressionSource = await readFile(
   "src/semantic/constant_expression.c",
+  "utf8",
+);
+const integerConstantEvaluationSource = await readFile(
+  "src/semantic/integer_constant_evaluation.c",
   "utf8",
 );
 const irSymbolLoweringSource = await readFile(
@@ -3459,7 +3728,16 @@ if (!/typedef\s+enum\s*\{[^]*?\}\s*psx_syntax_node_kind_t\s*;/.test(
   );
 }
 if (/__va_arg_area/.test(parserExpressionSource) ||
-    !/memcmp\s*\(\s*identifier->name\s*,\s*"__va_arg_area"/.test(
+    !/memcmp\s*\(\s*request->name\s*,\s*"__va_arg_area"/.test(
+      identifierResolutionSource,
+    ) ||
+    !/resolution->kind\s*=\s*PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA/.test(
+      identifierResolutionSource,
+    ) ||
+    !/PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA/.test(
+      identifierResolutionHeader,
+    ) ||
+    !/case\s+PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA\s*:\s*return\s+materialize_builtin_va_arg_area/.test(
       identifierBindingSource,
     ) ||
     !/psx_bind_va_arg_area_reference_in\s*\(/.test(
@@ -3469,7 +3747,7 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
       resolvedObjectRefSource,
     )) {
   throw new Error(
-    "__va_arg_area must remain identifier syntax while binding records its semantic reference in a sidecar",
+    "__va_arg_area must remain identifier syntax, be classified by semantic identifier resolution, and use a sidecar only in the compatibility binder",
   );
 }
 if (!/psx_bind_local_reference_in\s*\(/.test(identifierBindingSource) ||
@@ -3529,13 +3807,16 @@ if (!/psx_expression_syntax_context_t\s+syntax\s*;/.test(
     !/psx_name_classifier_t\s+name_classifier\s*;/.test(
       expressionSyntaxContextSource,
     ) ||
-    !/psx_expr_expr_syntax\s*\(\s*&syntax_context\s*\)/.test(
+    !/parse_with_syntax_services\s*\(/.test(
       expressionSyntaxAdapterSource,
     ) ||
-    !/psx_expr_assign_syntax\s*\(\s*&syntax_context\s*\)/.test(
+    !/psx_expr_expr_syntax/.test(
       expressionSyntaxAdapterSource,
     ) ||
-    !/psx_expr_conditional_syntax\s*\(\s*&syntax_context\s*\)/.test(
+    !/psx_expr_assign_syntax/.test(
+      expressionSyntaxAdapterSource,
+    ) ||
+    !/psx_expr_conditional_syntax/.test(
       expressionSyntaxAdapterSource,
     )) {
   throw new Error(
@@ -3577,10 +3858,10 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
       localDeclarationTreeResolutionSource,
     ) ||
     !/psx_stmt_stmt_syntax\s*\(\s*&syntax\s*\)/.test(
-      statementSyntaxAdapterSource,
+      statementLegacySource,
     ) ||
     !/psx_parse_statement_expression_syntax\s*\(\s*&syntax\s*\)/.test(
-      statementSyntaxAdapterSource,
+      statementLegacySource,
     ) ||
     !/syntax\.parse_expression/.test(statementParserSource) ||
     !/syntax\.parse_local_declaration/.test(statementParserSource) ||
@@ -3597,6 +3878,47 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
     )) {
   throw new Error(
     "statement parser core must receive a syntax-only context with NameClassifier while semantic registries remain isolated in the compatibility adapter",
+  );
+}
+if (/\b(?:legacy|psx_local_registry_t|psx_global_registry_t|psx_semantic_context_t)\b|#include\s+"(?:local_registry|semantic_ctx|stmt_legacy)\.h"/.test(
+      `${expressionSyntaxAdapterSource}\n${statementSyntaxAdapterSource}\n${statementSyntaxAdapterHeader}\n${localDeclarationFrontendSource}\n${localDeclarationFrontendHeader}`,
+    ) ||
+    !/ps_local_registry_capture_lookup_point_in\s*\(/.test(
+      legacyNameClassifierSource,
+    ) ||
+    !/psx_legacy_name_classifier_init\s*\(/.test(
+      `${parserLegacySource}\n${statementLegacySource}\n${localDeclarationLegacySource}`,
+    )) {
+  throw new Error(
+    "production syntax adapters must depend only on NameClassifier; registry-backed lookup compatibility belongs in dedicated legacy adapters",
+  );
+}
+if (/psx_(?:semantic_context|global_registry|local_registry)_t/.test(
+      statementSyntaxAdapterHeader,
+    ) ||
+    /ps_ctx_name_classifier\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    /psx_expr_(?:expr|assign|conditional)_in_contexts\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    /psx_legacy_statement_syntax_adapter_init\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_name_classifier_t\s+empty_classifier\s*=\s*\{0\}/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/ps_parser_name_environment_reset_at\s*\([^]*?stream->parser\.syntax\.name_classifier/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_statement_syntax_adapter_init\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_frontend_init_local_declaration_syntax_adapter\s*\(/.test(
+      frontendTranslationUnitSource,
+    )) {
+  throw new Error(
+    "production parsing must own typedef classification in parser NameEnvironment and must not receive semantic registries",
   );
 }
 if (/\bps_ctx_(?:enter|leave)_block_scope_in\s*\(/.test(parserSource) ||
@@ -3620,6 +3942,10 @@ const parameterBindingSeedIndex = frontendTranslationUnitSource.indexOf(
 const internalStorageRegistration = localRegistrySource.match(
   /lvar_t\s*\*ps_local_registry_create_internal_storage_object_in\s*\([^]*?\n\}/,
 )?.[0] ?? "";
+const declaratorExpressionSyntaxSource = await readFile(
+  "src/parser/declaration_syntax.c",
+  "utf8",
+);
 if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     !/int\s+ps_parse_function_definition_body\s*\(\s*psx_parser_stream_t\s*\*stream\s*,\s*psx_parsed_function_definition_t\s*\*definition\s*,/.test(
       parserStreamHeader,
@@ -3640,8 +3966,8 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     /ps_parse_runtime_declarator_expressions_with_options\s*\(/.test(
       frontendFunctionDefinitionSource,
     ) ||
-    !/ps_parse_runtime_declarator_expressions_with_options\s*\(\s*declarator\s*,\s*options\s*\)/.test(
-      toplevelDeclarationSyntaxSource,
+    !/psx_materialize_declarator_expression_syntax\s*\(\s*declarator\s*,\s*options\s*\)/.test(
+      declaratorExpressionSyntaxSource,
     ) ||
     /\bbound->node\s*=/.test(
       `${localDeclarationPipelineSource}\n${declarationApplicationSource}`,
@@ -3649,7 +3975,10 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
-    !/psx_resolution_work_tree_create_from_syntax\s*\(/.test(
+    !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      declaratorBoundResolutionSource,
+    ) ||
+    /psx_resolution_work_tree_|psx_bind_identifier_tree|psx_semantic_resolve_tree|psx_typed_hir_tree_materialize/.test(
       declaratorBoundResolutionSource,
     ) ||
     /\bpsx_clone_syntax_tree_for_resolution\s*\(/.test(
@@ -4392,6 +4721,10 @@ const expressionOperandResolutionSource = await readFile(
   "src/semantic/expression_operand_resolution.c",
   "utf8",
 );
+const expressionOperandResolutionHeader = await readFile(
+  "src/semantic/expression_operand_resolution.h",
+  "utf8",
+);
 if (!/\bps_type_integer_rank\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
@@ -4587,27 +4920,27 @@ if (missingNodeKinds.length || duplicateNodeKinds.length ||
   );
 }
 const completeSemanticBoundaryCheckCount = [
-  ...semanticTreeResolutionSource.matchAll(
+  ...legacySyntaxDiagnosticsSource.matchAll(
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/g,
   ),
 ].length;
 const initializerSemanticBoundaryCheckCount = [
-  ...semanticTreeResolutionSource.matchAll(
+  ...legacySyntaxDiagnosticsSource.matchAll(
     /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/g,
   ),
 ].length;
 const internedSemanticBoundaryCheckCount = [
-  ...semanticTreeResolutionSource.matchAll(
+  ...legacySyntaxDiagnosticsSource.matchAll(
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\(/g,
   ),
 ].length;
 const internedInitializerBoundaryCheckCount = [
-  ...semanticTreeResolutionSource.matchAll(
+  ...legacySyntaxDiagnosticsSource.matchAll(
     /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\(/g,
   ),
 ].length;
 const availableTypeInterningCheckCount = [
-  ...semanticTreeResolutionSource.matchAll(
+  ...legacySyntaxDiagnosticsSource.matchAll(
     /\bpsx_require_available_semantic_tree_types_interned\s*\(/g,
   ),
 ].length;
@@ -4621,20 +4954,20 @@ if (completeSemanticBoundaryCheckCount !== 2 ||
   );
 }
 const typedResolutionBoundary =
-  semanticTreeResolutionSource.match(
+  legacySyntaxDiagnosticsSource.match(
     /static\s+int\s+resolve_typed_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
 const expressionFinalizationBoundary =
-  semanticTreeResolutionSource.match(
-    /static\s+int\s+finalize_expression_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+  legacySyntaxDiagnosticsSource.match(
+    /static\s+int\s+finalize_expression_compatibility_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
 const functionSemanticPipelineBody =
-  semanticTreeResolutionSource.match(
-    /static\s+int\s+resolve_function_work_tree_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+  legacySyntaxDiagnosticsSource.match(
+    /static\s+int\s+resolve_function_compatibility_tree_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
 const expressionSemanticPipelineBody =
-  semanticTreeResolutionSource.match(
-    /static\s+int\s+resolve_nonfunction_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+  legacySyntaxDiagnosticsSource.match(
+    /static\s+int\s+resolve_nonfunction_compatibility_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
 if (!/psx_require_available_semantic_tree_types_interned\s*\(/.test(
       typedResolutionBoundary,
@@ -4648,7 +4981,7 @@ if (!/psx_require_available_semantic_tree_types_interned\s*\(/.test(
     !/psx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?psx_require_semantic_tree_has_canonical_expression_types\s*\(/.test(
       functionSemanticPipelineBody,
     ) ||
-    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_tree\s*\(/.test(
+    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_compatibility_tree\s*\(/.test(
       expressionSemanticPipelineBody,
     )) {
   throw new Error(
@@ -4725,6 +5058,22 @@ const castLoweringHeader = await readFile(
   "src/lowering/cast_lowering.h",
   "utf8",
 );
+const aggregateCastResolutionHeader = await readFile(
+  "src/semantic/aggregate_cast_resolution.h",
+  "utf8",
+);
+const aggregateCastResolutionSource = await readFile(
+  "src/semantic/aggregate_cast_resolution.c",
+  "utf8",
+);
+const characterArrayInitializerHeader = await readFile(
+  "src/semantic/character_array_initializer.h",
+  "utf8",
+);
+const characterArrayInitializerSource = await readFile(
+  "src/semantic/character_array_initializer.c",
+  "utf8",
+);
 const sourceCastResolutionHeader = await readFile(
   "src/semantic/source_cast_resolution.h",
   "utf8",
@@ -4753,6 +5102,21 @@ const typedHirMaterializationSource = await readFile(
   "src/semantic/typed_hir_tree_materialization.c",
   "utf8",
 );
+const aggregateQualTypeCastPlanStart = castLoweringSource.indexOf(
+  "psx_plan_aggregate_source_cast_qual_types",
+);
+const aggregateCompatibilityCastPlanStart = castLoweringSource.indexOf(
+  "int psx_plan_aggregate_source_cast(",
+  aggregateQualTypeCastPlanStart,
+);
+const aggregateQualTypeCastPlan =
+  aggregateQualTypeCastPlanStart >= 0 &&
+  aggregateCompatibilityCastPlanStart > aggregateQualTypeCastPlanStart
+    ? castLoweringSource.slice(
+        aggregateQualTypeCastPlanStart,
+        aggregateCompatibilityCastPlanStart,
+      )
+    : "";
 if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t\s*\)\s*\)/.test(
       nodeUtilsSource,
     ) ||
@@ -4761,9 +5125,79 @@ if (!/arena_alloc_in\s*\(\s*arena_context\s*,\s*sizeof\s*\(\s*node_source_cast_t
     )) {
   throw new Error("source casts must use their own arena allocation size");
 }
+if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
+      aggregateCastResolutionHeader,
+    ) ||
+    !/\bpsx_resolve_aggregate_cast_qual_types\s*\(/.test(
+      aggregateCastResolutionHeader,
+    ) ||
+    /\b(?:node_t|node_source_cast_t|psx_hir_[a-zA-Z0-9_]+)\b/.test(
+      `${aggregateCastResolutionHeader}\n${aggregateCastResolutionSource}`,
+    ) ||
+    /(?:temporary|local_storage|lowering_context)/.test(
+      aggregateCastResolutionSource,
+    ) ||
+    !/psx_record_decl_table_lookup\s*\(/.test(
+      aggregateCastResolutionSource,
+    ) ||
+    !/ps_type_sizeof_id_with_records\s*\(/.test(
+      aggregateCastResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate cast semantics must resolve independently from Syntax AST, HIR, and temporary storage planning",
+  );
+}
+if (!/\bpsx_character_array_initializer_plan_t\b/.test(
+      characterArrayInitializerHeader,
+    ) ||
+    !/\bpsx_plan_character_array_string_initializer\s*\(/.test(
+      characterArrayInitializerHeader,
+    ) ||
+    /\b(?:node_t|node_string_t|psx_hir_[a-zA-Z0-9_]+)\b/.test(
+      `${characterArrayInitializerHeader}\n${characterArrayInitializerSource}`,
+    ) ||
+    /(?:lowering_context|ps_node_new_)/.test(
+      characterArrayInitializerSource,
+    ) ||
+    !/tk_emit_string_code_units\s*\(/.test(
+      characterArrayInitializerSource,
+    ) ||
+    !/psx_plan_character_array_string_initializer\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/static\s+psx_semantic_node_t\s+\*build_direct_character_array_initializer\s*\([\s\S]{0,4000}?PSX_HIR_NUMBER[\s\S]{0,1000}?plan->units\[unit\]/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    (syntaxTypedHirResolutionSource.match(
+      /\bbuild_direct_character_array_initializer\s*\(/g,
+    ) ?? []).length < 3) {
+  throw new Error(
+    "character array string initialization must use an AST-independent semantic plan and emit Typed HIR directly",
+  );
+}
 if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
       castLoweringHeader,
     ) ||
+    !/\bint\s+psx_plan_aggregate_source_cast_qual_types\s*\(/.test(
+      castLoweringHeader,
+    ) ||
+    !aggregateQualTypeCastPlan ||
+    /\bnode_t\b|\bnode_source_cast_t\b|\bND_[A-Z0-9_]+\b/.test(
+      aggregateQualTypeCastPlan,
+    ) ||
+    !/psx_resolve_aggregate_cast_qual_types\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/context->unevaluated_depth\s*==\s*0[\s\S]*?psx_plan_aggregate_source_cast_resolution\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /if\s*\(context->unevaluated_depth\s*!=\s*0\)\s*return\s+0\s*;[\s\S]{0,300}ps_type_is_tag_aggregate/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/binding->aggregate_plan\.temporary/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_HIR_ASSIGN/.test(syntaxTypedHirResolutionSource) ||
     /\blower_source_cast_expression\s*\(/.test(
       castLoweringSource,
     ) ||
@@ -4799,6 +5233,72 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     )) {
   throw new Error(
     "source casts must materialize directly from structured resolution metadata without generated semantic AST",
+  );
+}
+if (!/initializer->kind\s*==\s*PSX_DECL_INIT_LIST[\s\S]{0,300}preflight_direct_flat_initializer\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /!is_complete_fixed_array\s*&&\s*!is_complete_aggregate[\s\S]{0,150}initializer->kind\s*!=\s*PSX_DECL_INIT_EXPR/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct local resolution must route scalar brace initializers through the structural flat initializer plan",
+  );
+}
+if (/declaration->is_typedef[\s\S]{0,1200}declarator->function_suffix_count\s*>\s*0/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct local typedef resolution must accept recursive function declarators",
+  );
+}
+const directSizeofTypeName = syntaxTypedHirResolutionSource.match(
+  /static int resolve_direct_sizeof_type_name\s*\([\s\S]*?\n\}/,
+);
+if (!directSizeofTypeName ||
+    /base_state\.bound_base_type\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/op->array_len\s*<=\s*0\s*\|\|\s*factor\s*<=\s*0/.test(
+      directSizeofTypeName[0],
+    )) {
+  throw new Error(
+    "direct sizeof(type-name) must apply pointer declarators before rejecting an unsized function base",
+  );
+}
+if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/__vla_typedef_bound_%d/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/bound->expression_id\s*=\s*reference_id/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\.runtime_application\s*=\s*[^,]*ps_type_contains_vla_array/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /if\s*\(\s*!type\s*\|\|\s*ps_type_contains_vla_array\(type\)\s*\)\s*return\s+0/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_expr_id_t\s*\*runtime_factor_ids\s*;/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /const\s+node_t\s*\*\*runtime_factors\s*;/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/base_state\.bound_runtime_application/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/ps_ctx_semantic_expression_in\s*\([^]*?runtime_factor_ids\[i\]/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/bound_runtime_application/.test(nodeResolutionStateSource) ||
+    !/ps_ctx_find_typedef_name_at_in_contexts\s*\(/.test(
+      typeNameResolutionSource,
+    )) {
+  throw new Error(
+    "VLA typedef bounds must be captured once into Typed HIR and referenced by semantic expression ID outside canonical types",
   );
 }
 if (/\blower_aggregate_address_expression\s*\(/.test(
@@ -5550,7 +6050,7 @@ for (const [name, source, requiredLayoutCall] of [
   }
 }
 const automaticLocalPipeline = declarationPipelineSource.match(
-  /int\s+psx_begin_automatic_local_declaration_pipeline\s*\([^]*?\n\}/,
+  /static\s+int\s+begin_automatic_local_declaration_pipeline\s*\([^]*?\n\}/,
 );
 if (!automaticLocalPipeline ||
     !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_resolve_local_declaration\s*\(/.test(
@@ -5928,12 +6428,19 @@ if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(
   );
 }
 
-const vlaDeclarationResolutionSource = await readFile(
-  "src/semantic/declaration_resolution.h",
+const declaratorApplicationTypesHeader = await readFile(
+  "src/semantic/declarator_application_types.h",
   "utf8",
 );
-const runtimeArrayBoundStruct = vlaDeclarationResolutionSource.match(
+const runtimeArrayBoundStruct = declaratorApplicationTypesHeader.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_runtime_array_bound_t\s*;/,
+);
+const runtimeDeclaratorApplicationStruct =
+  declaratorApplicationTypesHeader.match(
+    /typedef\s+struct\s+psx_runtime_declarator_application_t\s*\{([^]*?)\}\s*psx_runtime_declarator_application_t\s*;/,
+  );
+const typedefInfoStruct = semanticContextHeaderSource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_typedef_info_t\s*;/,
 );
 const localDeclarationResolutionSource = await readFile(
   "src/semantic/local_declaration_resolution.h",
@@ -5967,6 +6474,32 @@ if (!runtimeArrayBoundStruct ||
       runtimeArrayBoundStruct[1],
     ) ||
     /\bnode_t\s*\*/.test(runtimeArrayBoundStruct[1]) ||
+    !runtimeDeclaratorApplicationStruct ||
+    !/psx_declarator_shape_t\s+shape\s*;/.test(
+      runtimeDeclaratorApplicationStruct[1],
+    ) ||
+    !/psx_runtime_array_bound_t\s*\*array_bounds\s*;/.test(
+      runtimeDeclaratorApplicationStruct[1],
+    ) ||
+    !typedefInfoStruct ||
+    !/const\s+psx_runtime_declarator_application_t\s*\*runtime_application\s*;/.test(
+      typedefInfoStruct[1],
+    ) ||
+    !/clone_typedef_runtime_application\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/out->runtime_application\s*=/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/psx_compose_runtime_declarator_applications_in\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/bound\.declarator_op_index\s*\+=\s*op_offset/.test(
+      declarationApplicationSource,
+    ) ||
+    !/specifier_resolution\.typedef_runtime_application/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !localVlaDimensionStruct ||
     !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
       localVlaDimensionStruct[1],
@@ -6004,7 +6537,10 @@ if (!runtimeArrayBoundStruct ||
     /psx_resolution_work_tree_|psx_bind_identifier_tree_|psx_semantic_resolve_tree_in_contexts/.test(
       declarationApplicationSource,
     ) ||
-    !/psx_typed_hir_tree_materialize\s*\(/.test(
+    !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      declaratorBoundResolutionSource,
+    ) ||
+    /psx_typed_hir_tree_materialize|psx_resolution_work_tree_|psx_bind_identifier_tree_|psx_semantic_resolve_tree_in_contexts/.test(
       declaratorBoundResolutionSource,
     ) ||
     !/ps_ctx_register_semantic_expression_in\s*\([^]*?bound_resolution\.typed_expression/.test(
@@ -6037,7 +6573,10 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
 }
 const vlaGeneratedSemanticNodeRe =
   /\bps_(?:node_new_binary_for_target_in|node_new_num_in|node_new_assign_in|node_new_lvar_typed_in)\s*\(/;
-if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\*\s*dimensions\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
+if (!/typedef\s+struct\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\s*expression\s*;[^]*?long\s+long\s+constant_value\s*;[^]*?is_constant\s*;[^]*?\}\s*psx_vla_runtime_dimension_t\s*;/.test(
+      vlaRuntimePlanHeaderSource,
+    ) ||
+    !/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?psx_vla_runtime_dimension_t\s*\*\s*dimensions\s*;[^]*?psx_qual_type_t\s+constant_qual_type\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
       vlaRuntimePlanHeaderSource,
     ) ||
     vlaGeneratedSemanticNodeRe.test(vlaLoweringSource) ||
@@ -6050,13 +6589,18 @@ if (!/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?const\s+psx_typed_hir_t
     ) ||
     !/PSX_HIR_EDGE_VLA_DIMENSION/.test(hirHeader) ||
     !/vla_runtime_store_offsets/.test(hirInternalHeader) ||
-    !/materialize_vla_runtime\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION[^]*?vla_runtime_store_offsets/.test(
+    !/materialize_vla_runtime\s*\([^]*?psx_semantic_node_builder_vla_runtime/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/psx_semantic_node_builder_vla_runtime\s*\([^]*?PSX_HIR_EDGE_VLA_DIMENSION[^]*?vla_runtime_store_offsets/.test(
+      semanticNodeBuilderSource,
     ) ||
     /build_node\s*\(\s*builder\s*,\s*plan->dimensions/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/dimension->root/.test(resolvedTreeMaterialization) ||
+    !/dimension->is_constant[^]*?PSX_HIR_NUMBER[^]*?dimension->expression->root/.test(
+      semanticNodeBuilderSource,
+    ) ||
     /plan->dimensions/.test(semanticPassSource) ||
     /plan->dimensions/.test(identifierBindingSource) ||
     /plan->dimensions/.test(semanticLoweringPassSource) ||
@@ -6626,6 +7170,87 @@ const declarationSyntaxHeader = await readFile(
   "src/parser/declaration_syntax.h",
   "utf8",
 );
+const declarationSyntaxOptionsDefinition =
+  declarationSyntaxHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_decl_specifier_syntax_options_t\s*;/,
+  )?.[1] ?? "";
+const parsedConstExpressionDefinition =
+  declarationSyntaxHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_parsed_const_expr_t\s*;/,
+  )?.[1] ?? "";
+const parsedAlignasDefinition =
+  declarationSyntaxHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_parsed_alignas_t\s*;/,
+  )?.[1] ?? "";
+const typeSpecifierSyntaxDefinition =
+  parserCoreHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_type_spec_syntax_t\s*;/,
+  )?.[1] ?? "";
+const declarationParserSyntaxOnlySource = [
+  parserDeclarationSyntaxSource,
+  functionParameterSyntaxSource,
+  declaratorSyntaxSource,
+  aggregateMemberSyntaxSource,
+  localDeclarationSyntaxSource,
+  toplevelDeclarationSyntaxSource,
+].join("\n");
+if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\b/.test(
+      `${declarationSyntaxOptionsDefinition}\n${toplevelSyntaxContextDefinition}\n${typeSpecifierSyntaxDefinition}\n${declarationParserSyntaxOnlySource}`,
+    ) ||
+    /#include\s+"(?:semantic_ctx|global_registry|local_registry)\.h"/.test(
+      declarationParserSyntaxOnlySource,
+    ) ||
+    /#include\s+"alignas_value\.h"/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/const\s+psx_name_classifier_t\s*\*name_classifier\s*;/.test(
+      declarationSyntaxOptionsDefinition,
+    ) ||
+    !/ag_diagnostic_context_t\s*\*diagnostics\s*;/.test(
+      typeSpecifierSyntaxDefinition,
+    ) ||
+    !/const\s+psx_name_classifier_t\s*\*name_classifier\s*;/.test(
+      typeSpecifierSyntaxDefinition,
+    ) ||
+    !/node_t\s*\*node\s*;/.test(parsedConstExpressionDefinition) ||
+    /\b(?:constant_value|has_constant_value)\b/.test(
+      parsedConstExpressionDefinition,
+    ) ||
+    !/node_t\s*\*expression\s*;/.test(parsedAlignasDefinition) ||
+    !/psx_parsed_type_name_t\s*\*type_name\s*;/.test(
+      parsedAlignasDefinition,
+    ) ||
+    !/psx_parsed_alignas_t\s+alignas_specifiers\s*\[8\]\s*;/.test(
+      declarationSyntaxHeader,
+    ) ||
+    /alignas_expressions|alignas_expression_count/.test(
+      declarationSyntaxHeader,
+    ) ||
+    !/psx_token_starts_type_name_syntax\s*\(/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/psx_parse_type_name_syntax_at\s*\(/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/parse_assignment_expression\s*\(options->expression_context\)/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/alignas->type_name[^]*?psx_dispose_type_name_syntax\s*\(alignas->type_name\)[^]*?free\s*\(alignas->type_name\)/.test(
+      parserDeclarationSyntaxSource,
+    ) ||
+    !/source->alignas_specifier_count[^]*?alignas->expression\s*=\s*clone_node[^]*?alignas->type_name\s*=\s*clone_type_name_syntax/.test(
+      resolutionWorkTree,
+    ) ||
+    !/token_kind_t\s+psx_consume_type_kind_with_syntax_ex\s*\(\s*psx_type_spec_result_t\s*\*out\s*,\s*const\s+psx_type_spec_syntax_t\s*\*syntax\s*\)/.test(
+      parserCoreHeader,
+    ) ||
+    !/void\s+psx_materialize_declarator_expression_syntax\s*\(/.test(
+      declarationSyntaxHeader,
+    )) {
+  throw new Error(
+    "declaration parser cores must build typeless Syntax with NameClassifier and syntax services only",
+  );
+}
 const nameClassifierUsers = [
   "src/parser/declaration_syntax.c",
   "src/parser/function_parameter_syntax.c",
@@ -6669,6 +7294,18 @@ if (!/typedef\s+struct\s*\{[^]*?void\s*\*context\s*;[^]*?psx_typedef_name_classi
         : implicitNameClassifierUsers.length
           ? `:\n${implicitNameClassifierUsers.join("\n")}`
           : ""),
+  );
+}
+if (/#include\s+"semantic_ctx\.h"|\bpsx_semantic_context_t\b|\bps_ctx_[A-Za-z0-9_]+\s*\(/.test(
+      `${parserSource}\n${parserCoreHeader}`,
+    ) ||
+    !/#include\s+"semantic_ctx\.h"/.test(parserLegacySource) ||
+    !/psx_consume_type_kind_in_contexts\s*\(/.test(
+      parserLegacySource,
+    ) ||
+    !/ps_expr_in_contexts\s*\(/.test(parserLegacySource)) {
+  throw new Error(
+    "parser core must depend on NameClassifier and syntax services; semantic-context wrappers belong in parser_legacy.c",
   );
 }
 
@@ -6807,7 +7444,7 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/psx_semantic_node_builder_expression\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/PSX_SYNTAX_TYPED_HIR_NOT_HANDLED/.test(
+    !/PSX_SYNTAX_TYPED_HIR_REJECTED/.test(
       syntaxTypedHirResolutionHeader,
     ) ||
     /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|ps_node_bind_|ps_node_resolution_state|ps_node_get_type|ps_node_qual_type/.test(
@@ -6914,9 +7551,212 @@ if (!/ps_lvar_static_storage_global\s*\(/.test(
   );
 }
 
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
+      `${assignmentResolutionHeader}\n${assignmentResolutionSource}`,
+    ) ||
+    !/psx_resolve_assignment_qual_types_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_compound_assignment_qual_types_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_assignment_qual_types_in\s*\(/.test(
+      assignmentValidationSource,
+    ) ||
+    !/psx_resolve_compound_assignment_qual_types_in\s*\(/.test(
+      assignmentValidationSource,
+    ) ||
+    !/\bPSX_HIR_ASSIGN\b/.test(syntaxTypedHirResolutionSource) ||
+    !/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/DIRECT_IDENTIFIER_USAGE_INITIALIZED/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "assignment typing must be an AST-independent QualType rule shared by direct Typed HIR and compatibility diagnostics",
+  );
+}
+
+const directCallBindingAdapter = identifierBindingSource.match(
+  /static\s+void\s+bind_direct_call\s*\([^]*?\n\}/,
+);
+const sharedCallTypeRuleUses = [
+  syntaxTypedHirResolutionSource,
+  semanticPassSource,
+].filter((source) =>
+  /\bpsx_resolve_call_qual_types_in\s*\(/.test(source)
+).length;
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
+      `${callResolutionHeader}\n${callResolutionSource}`,
+    ) ||
+    !/\bhas_function_prototype\b/.test(typeSource) ||
+    !/canonical->has_function_prototype\s*==\s*[^;]*candidate->has_function_prototype/.test(
+      typeIdentityImplementationSource,
+    ) ||
+    !/function->has_function_prototype/.test(callResolutionSource) ||
+    !/callable_semantic_type->has_function_prototype/.test(
+      hirIrBuilder,
+    ) ||
+    /enforce_empty_parameter_count/.test(
+      `${callResolutionHeader}\n${callResolutionSource}\n${syntaxTypedHirResolutionSource}\n${semanticPassSource}`,
+    ) ||
+    !/parameters->count\s*>\s*0\s*\|\|\s*parameters->is_variadic/.test(
+      declarationApplicationSource,
+    ) ||
+    !/\bpsx_semantic_type_table_callable_function\s*\(/.test(
+      callResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      callResolutionSource,
+    ) ||
+    sharedCallTypeRuleUses !== 2 ||
+    !/\bPSX_HIR_CALL\b/.test(syntaxTypedHirResolutionSource) ||
+    !/\bPSX_HIR_EDGE_CALLEE\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bPSX_HIR_EDGE_ARGUMENT\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolution\.function_qual_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !directCallBindingAdapter ||
+    /argument_count|param_count|is_variadic_function/.test(
+      directCallBindingAdapter[0],
+    )) {
+  throw new Error(
+    "function call typing must be one AST-independent QualType rule shared by direct Typed HIR and compatibility diagnostics",
+  );
+}
+
+const subscriptQualTypeCore = expressionOperandResolutionSource.match(
+  /static\s+int\s+qual_type_is_subscript_base\s*\([^]*?void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
+);
+if (!/\bpsx_subscript_qual_types_resolution_t\b/.test(
+      expressionOperandResolutionHeader,
+    ) ||
+    !subscriptQualTypeCore ||
+    /\bnode_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
+      subscriptQualTypeCore[0],
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      subscriptQualTypeCore[0],
+    ) ||
+    !/\bpsx_resolve_subscript_qual_types_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bPSX_HIR_SUBSCRIPT\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolution\.swapped\s*\?\s*right\s*:\s*left/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_vla_runtime_view_t/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_vla_runtime_view\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/apply_direct_vla_runtime_view\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/view\.stride_frame_offset\s*\+=\s*PSX_VLA_RUNTIME_SLOT_SIZE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/ps_type_contains_vla_array\s*\(result_type\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /direct_subscript_binding_t|resolve_direct_vla_subscript_binding/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "subscript typing must use one AST-independent QualType rule, normalize child order, and structurally propagate VLA runtime views into direct Typed HIR",
+  );
+}
+
+if (!/\bpsx_resolve_member_hir_node_spec_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolution\.member\.member_qual_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /member_access_resolution\.h/.test(
+      `${hirMemberResolutionHeader}\n${hirMemberResolutionSource}`,
+    ) ||
+    !/\bpsx_resolve_member_access_qual_type_in\s*\(/.test(
+      hirMemberResolutionSource,
+    )) {
+  throw new Error(
+    "direct member Typed HIR must share AST-independent meaning resolution and add target layout only at HIR materialization",
+  );
+}
+
+if (!/#include\s+"static_assert_resolution\.h"/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_STATIC_ASSERT\s*:\s*\{[^]*?psx_resolve_static_assert\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_STATIC_ASSERT\s*:\s*\{[^]*?\.kind\s*=\s*PSX_HIR_NOP/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "block static assertions must resolve through the shared constant rule and become direct HIR NOP statements without mutating Syntax",
+  );
+}
+
+if (!/control->init->kind\s*==\s*ND_LOCAL_DECLARATION/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/declaration_scope[^]*?ps_ctx_enter_block_scope_in\s*\([^]*?ps_decl_enter_scope_in\s*\([^]*?preflight_direct_statement\s*\(\s*context,\s*control->init\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/ps_decl_leave_scope_in\s*\([^]*?ps_ctx_leave_block_scope_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/children\[count\]\s*=\s*build_direct_statement\s*\(\s*context,\s*control->init\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "for declaration initializers must resolve in a dedicated lexical scope and remain declaration blocks on the direct HIR init edge",
+  );
+}
+
+const typeNameQualTypeValueAdapter = typeNameResolutionSource.match(
+  /int\s+psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
+);
+if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
+      typeNameResolutionHeader,
+    ) ||
+    !/\bpsx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      typeNameResolutionHeader,
+    ) ||
+    !typeNameQualTypeValueAdapter ||
+    !/psx_type_name_resolution_state_t\s+state\s*=\s*\{0\}/.test(
+      typeNameQualTypeValueAdapter[0],
+    ) ||
+    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      typeNameQualTypeValueAdapter[0],
+    ) ||
+    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bPSX_HIR_CAST\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_node_type_name_state/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "source cast type names must resolve to QualType values for direct Typed HIR while compatibility state uses the same core",
+  );
+}
+
 const sharedOperandTypeRuleCores = [
-  "resolve_indirection_result_type_value",
-  "resolve_address_result_type_value",
   "resolve_arithmetic_unary_result_type_value",
   "resolve_binary_result_type_value",
   "resolve_conditional_result_type_value",
@@ -6930,6 +7770,30 @@ for (const core of sharedOperandTypeRuleCores) {
       `${core} must be the single type-rule core shared by QualType and compatibility-node adapters`,
     );
   }
+}
+const indirectionQualTypeAdapter = expressionOperandResolutionSource.match(
+  /psx_qual_type_t\s+psx_resolve_indirection_result_qual_type_in\s*\([^]*?\n\}/,
+);
+const addressQualTypeAdapter = expressionOperandResolutionSource.match(
+  /psx_qual_type_t\s+psx_resolve_address_result_qual_type_in\s*\([^]*?\n\}/,
+);
+if (!indirectionQualTypeAdapter ||
+    !/psx_semantic_type_table_base\s*\(/.test(
+      indirectionQualTypeAdapter[0],
+    ) ||
+    /resolve_indirection_result_type_value\s*\(/.test(
+      indirectionQualTypeAdapter[0],
+    ) ||
+    !addressQualTypeAdapter ||
+    !/ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      addressQualTypeAdapter[0],
+    ) ||
+    /resolve_address_result_type_value\s*\(/.test(
+      addressQualTypeAdapter[0],
+    )) {
+  throw new Error(
+    "indirection and address QualType rules must preserve recursive qualifiers through TypeId relations instead of canonical type-value clones",
+  );
 }
 const binaryTargetRuleCalls = expressionOperandResolutionSource.match(
   /\bps_type_binary_result_for_target_in\s*\(/g,
@@ -7132,6 +7996,10 @@ if (!/MAP\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
     "typed unary negate must remain distinct from syntax lowering and materialize as PSX_HIR_NEGATE",
   );
 }
+const directComplexComponentKindChecks =
+  syntaxTypedHirResolutionSource.match(
+    /syntax->kind\s*==\s*ND_CREAL\s*\|\|\s*\n\s*syntax->kind\s*==\s*ND_CIMAG/g,
+  ) ?? [];
 if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||
@@ -7144,6 +8012,13 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
     !/build_complex_component\s*\([^]*?!is_float_abi_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
       hirIrBuilder,
     ) ||
+    directComplexComponentKindChecks.length !== 2 ||
+    !/context->semantic_context,\s*syntax->kind,\s*\n\s*operand_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/syntax->kind\s*==\s*ND_CREAL[^]*?PSX_HIR_CREAL[^]*?syntax->kind\s*==\s*ND_CIMAG[^]*?PSX_HIR_CIMAG/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     /\blower_complex_part_expression\s*\(/.test(
       semanticLoweringPassSource,
     ) ||
@@ -7151,10 +8026,27 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
       (path) => /src\/lowering\/complex_part_lowering\.[ch]$/.test(path),
     )) {
   throw new Error(
-    "resolved real/imag operators must materialize directly into Typed HIR without parser-shaped lowering",
+    "real/imag operators must resolve from canonical QualType directly into Typed HIR without parser-shaped lowering",
   );
 }
-if (!/resolved_kind\s*==\s*ND_GENERIC_SELECTION/.test(
+const genericQualTypeResolution = genericSelectionResolutionSource.match(
+  /void\s+psx_resolve_generic_selection_qual_types_in\s*\([^]*?\n\}/,
+)?.[0] ?? "";
+if (!genericQualTypeResolution ||
+    /\bnode_t\b|\bps_node_|node_generic_selection_t/.test(
+      genericQualTypeResolution,
+    ) ||
+    !/psx_resolve_generic_selection_qual_types_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_generic_binding_t/.test(syntaxTypedHirResolutionSource) ||
+    !/preflight_direct_unevaluated_expression\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_generic_selection_(?:selected|type_name_state)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolved_kind\s*==\s*ND_GENERIC_SELECTION/.test(
       resolvedTreeMaterialization,
     ) ||
     !/psx_generic_selection_selected_expression_const\s*\(/.test(
@@ -7227,6 +8119,70 @@ if (!/resolved_kind\s*==\s*ND_SIZEOF_QUERY/.test(
     "sizeof resolution must stay outside Syntax AST and materialize its runtime plan directly into Typed HIR",
   );
 }
+if (!/direct_type_query_binding_t/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_sizeof_qual_type_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_sizeof_runtime_product_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_sizeof_runtime_slot_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_alignof_qual_type_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/static\s+psx_semantic_node_t\s*\*build_direct_type_query\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_(?:sizeof|alignof)_query_(?:resolution_state|resolved_|runtime_plan)/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct sizeof and alignof resolution must use Syntax-external QualType plans instead of node resolution state",
+  );
+}
+if (!/direct_compound_literal_binding_t/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_compound_literal_qual_type_plan_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/static\s+psx_semantic_node_t\s*\*build_direct_compound_literal\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_HIR_STMT_EXPR/.test(syntaxTypedHirResolutionSource) ||
+    !/lower_complete_internal_local_object\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_apply_global_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_global_reference\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/__compound_lit_%d/.test(syntaxTypedHirResolutionSource) ||
+    /psx_compound_literal_(?:resolution|direct_initializer)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_node_type_name_state|ps_node_resolution_state/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/lower_complete_internal_local_object\s*\(/.test(
+      localObjectLoweringSource,
+    ) ||
+    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+      localObjectLoweringSource,
+    ) ||
+    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+      castLoweringSource,
+    )) {
+  throw new Error(
+    "direct compound literals must use Syntax-external QualType plans, internal automatic storage, and registered static global storage without perturbing source name binding",
+  );
+}
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(
       compilationSession,
     )) {
@@ -7248,7 +8204,7 @@ const typedHirMaterializationDeclaration = resolutionWorkTreeInternalHeader.matc
   /int\s+psx_resolution_work_tree_materialize_typed_hir\s*\(([^]*?)\);/,
 )?.[1] ?? "";
 const semanticMaterializationCalls =
-  semanticTreeResolutionSource.match(
+  legacySyntaxDiagnosticsSource.match(
     /\bmaterialize_resolved_tree\s*\(/g,
   ) ?? [];
 const nonfunctionTypedResolutionStart =
@@ -7257,33 +8213,445 @@ const nonfunctionTypedResolutionStart =
   );
 const directSyntaxTypedHirDispatch =
   semanticTreeResolutionSource.indexOf(
-    "psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts",
+    "psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts",
     nonfunctionTypedResolutionStart,
   );
-const compatibilityWorkTreeFallback =
+const directInitializerTypedHirDispatch =
   semanticTreeResolutionSource.indexOf(
-    "psx_resolution_work_tree_create_from_syntax",
+    "psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts",
+    nonfunctionTypedResolutionStart,
+  );
+const compatibilityDiagnosticDispatch =
+  semanticTreeResolutionSource.indexOf(
+    "psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts",
     nonfunctionTypedResolutionStart,
   );
 if (nonfunctionTypedResolutionStart < 0 ||
     directSyntaxTypedHirDispatch < nonfunctionTypedResolutionStart ||
-    compatibilityWorkTreeFallback < 0 ||
-    directSyntaxTypedHirDispatch > compatibilityWorkTreeFallback) {
+    compatibilityDiagnosticDispatch < 0 ||
+    directSyntaxTypedHirDispatch > compatibilityDiagnosticDispatch) {
   throw new Error(
-    "expression resolution must attempt direct Syntax to Typed HIR before the compatibility work-tree fallback",
+    "expression resolution must attempt direct Syntax to Typed HIR before compatibility diagnostics",
+  );
+}
+const incdecQualTypeResolution = expressionOperandResolutionSource.match(
+  /psx_qual_type_t\s+psx_resolve_incdec_result_qual_type_in\s*\([^]*?\n\}/,
+)?.[0] ?? "";
+if (!incdecQualTypeResolution ||
+    /\bnode_t\b|\bps_node_/.test(incdecQualTypeResolution) ||
+    !/PSX_TYPE_QUALIFIER_CONST/.test(incdecQualTypeResolution) ||
+    !/psx_resolve_incdec_result_qual_type_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_PRE_INC\s*,\s*PSX_HIR_PRE_INC\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_PRE_DEC\s*,\s*PSX_HIR_PRE_DEC\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_POST_INC\s*,\s*PSX_HIR_POST_INC\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_POST_DEC\s*,\s*PSX_HIR_POST_DEC\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "increment and decrement must resolve from canonical QualType directly into Typed HIR",
+  );
+}
+if (!/MAP\s*\(\s*ND_COMMA\s*,\s*PSX_HIR_COMMA\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_hir_node_kind\(node\)\s*==\s*PSX_HIR_COMMA\s*&&\s*is_void/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "comma expressions must resolve directly into Typed HIR, including void-valued evaluation",
+  );
+}
+if (directInitializerTypedHirDispatch < nonfunctionTypedResolutionStart ||
+    directInitializerTypedHirDispatch > compatibilityDiagnosticDispatch ||
+    !/psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionHeader,
+    ) ||
+    !/PSX_HIR_INITIALIZER_LIST/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_INITIALIZER_ENTRY/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_MEMBER_DESIGNATOR/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_INDEX_DESIGNATOR/.test(syntaxTypedHirResolutionSource)) {
+  throw new Error(
+    "initializer resolution must build structural Typed HIR from immutable Syntax before compatibility diagnostics",
+  );
+}
+if (!/designator->range_end_expr[^]*?range_end_value\s*<\s*index_value/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_HIR_EDGE_DESIGNATOR_RANGE_END/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/static\s+int\s+aggregate_entry_range\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/PSX_HIR_EDGE_DESIGNATOR_RANGE_END/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/designator\s*==\s*range_override\s*\?\s*range_index/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/for\s*\(\s*long long index\s*=\s*range_begin\s*;\s*;\s*index\+\+\s*\)/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/static\s+int\s+flat_initializer_entry_ranges\s*\(/.test(
+      initializerResolutionSource,
+    ) ||
+    !/static\s+int\s+flat_initializer_apply_designated_ranges\s*\(/.test(
+      initializerResolutionSource,
+    ) ||
+    !/designator_index\s*\+\s*1/.test(initializerResolutionSource) ||
+    !/item->evaluation_group\s*=\s*group/.test(
+      initializerResolutionSource,
+    ) ||
+    !/flat_initializer_activate_union_member\s*\(/.test(
+      initializerResolutionSource,
+    ) ||
+    !/\.is_active\s*=\s*0/.test(initializerResolutionSource) ||
+    !/\.is_active\s*=\s*1/.test(initializerResolutionSource) ||
+    /flat_initializer_type_contains_union/.test(
+      initializerResolutionSource,
+    ) ||
+    !/if\s*\(\s*!item->is_active\s*\)\s*continue/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/evaluation_group_count/.test(initializerResolutionSource) ||
+    !/__initializer_value_%d/.test(syntaxTypedHirResolutionSource) ||
+    !/lower_complete_internal_local_object\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/plan->evaluation_group_count\s*\+[^;]*active_item_count/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/for\s*\(int i\s*=\s*0;\s*i\s*<\s*plan->evaluation_group_count;\s*i\+\+\)[^]*?build_direct_expression\s*\(\s*context,\s*value_syntax\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "automatic aggregate plans must preserve union member activity and lower range values through one explicit internal temporary evaluation group",
+  );
+}
+if (!/psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionHeader,
+    ) ||
+    !/preflight_direct_statement\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_statement\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_builder_statement\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/direct_case_value\s*\(/.test(syntaxTypedHirResolutionSource) ||
+    !/psx_normalize_integer_constant_cast\s*\(/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/psx_apply_integer_constant_binary\s*\(/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/psx_apply_integer_constant_binary\s*\(/.test(
+      constantExpressionSource,
+    ) ||
+    !/psx_apply_integer_constant_binary\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_case_label_(?:bind_value|is_resolved|value)\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_resolution_work_tree_|typed_hir_tree_materialization/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct statement resolution must build Typed HIR without a mutable compatibility tree",
+  );
+}
+const directFunctionDispatchStart = semanticTreeResolutionSource.indexOf(
+  "psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts",
+);
+const directFunctionDispatch = semanticTreeResolutionSource.indexOf(
+  "psx_resolve_syntax_function_direct_to_typed_hir_in_contexts",
+  directFunctionDispatchStart,
+);
+const compatibilityFunctionDispatch = semanticTreeResolutionSource.indexOf(
+  "psx_legacy_syntax_diagnostics_accept_function_in_contexts",
+  directFunctionDispatchStart,
+);
+if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionHeader,
+    ) ||
+    !/psx_resolve_function_definition_header_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_HIR_EDGE_PARAMETER/.test(syntaxTypedHirResolutionSource) ||
+    !/PSX_HIR_EDGE_FUNCTION_BODY/.test(syntaxTypedHirResolutionSource) ||
+    !/\.kind\s*=\s*PSX_HIR_FUNCTION/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/preflight_direct_local_declaration\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_begin_automatic_local_declaration_hir_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_begin_automatic_local_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_apply_resolved_runtime_parsed_declarator_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/int\s+psx_apply_resolved_runtime_parsed_declarator_in_contexts\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    /psx_apply_runtime_parsed_declarator_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_local_declaration\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/preflight_direct_flat_initializer\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_flat_local_initializer_plan\s*\(/.test(
+      initializerResolutionSource,
+    ) ||
+    !/psx_resolve_incomplete_array_initializer_shape\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/resolve_direct_completed_array_type\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_flat_local_initializer_plan\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_flat_initializer\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_typedef_declaration\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/is_semantic_only/.test(syntaxTypedHirResolutionSource) ||
+    !/psx_resolve_decl_specifier_value_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/void\s+psx_resolve_decl_specifier_value_in_contexts\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    /psx_eval_parsed_enum_const_expr_in_context\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    !/psx_resolve_parsed_decl_alignment_in_contexts\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    /psx_(?:eval_parsed_alignas_value|parse_alignas_value)_in_context/.test(
+      `${declarationApplicationSource}\n${declarationSpecifierResolutionSource}`,
+    ) ||
+    !/psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_apply_resolved_runtime_parsed_declarator_in_contexts\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    !/specifier_resolution\.requested_alignment/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /ps_prepare_constant_declarator_expressions_in_context\s*\(|ps_prepare_decl_specifier_alignments_in_context\s*\(/.test(
+      declarationSpecifierResolutionSource,
+    ) ||
+    /ps_prepare_constant_declarator_expressions_in_context\s*\(|ps_prepare_decl_specifier_alignments_in_context\s*\(|psx_apply_parsed_decl_specifier_in_contexts\s*\(|psx_apply_parsed_standalone_tag_in_contexts\s*\(|psx_apply_local_declaration_syntax_in_contexts\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_builder_vla_runtime\s*\(/.test(
+      semanticNodeBuilderSource,
+    ) ||
+    !/psx_semantic_node_builder_vla_runtime\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_semantic_node_builder_vla_runtime\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/vla_runtime_plan/.test(explicitArenaDeclarationPipelineSource) ||
+    /psx_finish_automatic_local_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_bind_local_initializer_target_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/ps_ctx_rollback_function_registration_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    directFunctionDispatchStart < 0 || directFunctionDispatch < 0 ||
+    compatibilityFunctionDispatch < 0 ||
+    directFunctionDispatch > compatibilityFunctionDispatch) {
+  throw new Error(
+    "function resolution must build direct Typed HIR from a canonical header before compatibility fallback",
+  );
+}
+if (!/active_transaction/.test(globalRegistrySource) ||
+    !/psx_global_registry_checkpoint_begin\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/psx_global_registry_note_global_mutation\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/psx_global_registry_checkpoint_rollback\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_global_registry_checkpoint_commit\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_global_registry_checkpoint_is_active\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/!psx_global_registry_checkpoint_is_active\s*\(\s*global_registry\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_local_registry_checkpoint_begin\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    !/psx_local_registry_checkpoint_is_active\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    !/local_transaction_active\s*&&\s*!global_transaction_active/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_local_registry_checkpoint_rollback\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_lowering_context_checkpoint\s*\(/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/psx_lowering_context_rollback\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_apply_block_extern_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_begin_static_local_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/function_declarations/.test(syntaxTypedHirResolutionSource) ||
+    !/ps_ctx_rollback_function_registration_in\s*\([^]*?declaration->name/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_global_registry_note_global_mutation\s*\(/.test(
+      globalObjectLoweringSource,
+    ) ||
+    !/psx_global_registry_note_global_mutation\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/const\s+ag_compilation_options_t\s*\*options/.test(
+      syntaxTypedHirResolutionHeader,
+    ) ||
+    !/lowering_context,\s*options,\s*syntax_function/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/\.options\s*=\s*options/.test(syntaxTypedHirResolutionSource)) {
+  throw new Error(
+    "direct Syntax resolution must transactionally isolate global state, join nested transactions, and receive lowering options before compatibility fallback",
+  );
+}
+if (!/int\s+psx_finish_static_local_declaration_typed_hir_pipeline\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
+    !/psx_materialize_static_aggregate_initializer_plan\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
+    !/psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts\s*\([^]*?psx_finish_static_local_declaration_typed_hir_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /psx_finish_static_local_declaration_pipeline\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct static local scalar initializers must lower from Typed HIR without invoking the compatibility declaration pipeline",
+  );
+}
+const functionDefinitionResolutionHeader = await readFile(
+  "src/semantic/function_definition_resolution.h",
+  "utf8",
+);
+const functionDefinitionResolutionSource = await readFile(
+  "src/semantic/function_definition_resolution.c",
+  "utf8",
+);
+if (!/psx_function_definition_header_resolution_t\s*;/.test(
+      functionDefinitionResolutionHeader,
+    ) ||
+    !/psx_resolve_function_definition_header_in_contexts\s*\(/.test(
+      functionDefinitionResolutionHeader,
+    ) ||
+    !/psx_qual_type_t\s+signature_qual_type\s*;/.test(
+      functionDefinitionResolutionHeader,
+    ) ||
+    !/lvar_t\s*\*\*\s*parameters\s*;/.test(
+      functionDefinitionResolutionHeader,
+    ) ||
+    !/result->parameter_types\s*,\s*result->nargs/.test(
+      explicitArenaDeclarationPipelineSource,
+    ) ||
+    /parameter_types\s*\[[^\]]+\]\s*=\s*ps_node_get_type\s*\(/.test(
+      explicitArenaDeclarationPipelineSource,
+    ) ||
+    !/ps_ctx_get_function_type_in\s*\(/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    !/ps_ctx_intern_qual_type_in\s*\(/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    !/f->function_type\s*=\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      await readFile("src/parser/semantic_ctx.c", "utf8"),
+    ) ||
+    /f->function_type\s*=\s*ctx_type_clone_persistent_in\s*\(/.test(
+      await readFile("src/parser/semantic_ctx.c", "utf8"),
+    ) ||
+    !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(
+      functionDefinitionResolutionSource,
+    )) {
+  throw new Error(
+    "function headers must resolve to canonical value data before any mutable compatibility node is projected",
   );
 }
 if (!parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
+    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|semantic_pass\.h|identifier_binding\.h|semantic_lowering_pass\.h|typed_hir_materialization\.h/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/int\s+psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
+      legacySyntaxDiagnosticsHeader,
+    ) ||
+    !/int\s+psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts\s*\(/.test(
+      legacySyntaxDiagnosticsHeader,
+    ) ||
+    /psx_typed_hir_tree_t|psx_resolved_hir_build|psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|node_t\s*\*\s*\*/.test(
+      legacySyntaxDiagnosticsHeader,
+    ) ||
     !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\(/.test(
       parsedFunctionResolutionBoundary[1],
     ) ||
     /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
       parsedFunctionResolutionBoundary[1],
     ) ||
-    !/psx_resolution_work_tree_create_from_syntax\s*\([^]*?syntax_function->body[^]*?work_definition\.body\s*=\s*body[^]*?psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?psx_resolution_work_tree_replace_compatibility_root\s*\(/.test(
-      semanticTreeResolutionSource,
+    !/static\s+psx_resolution_work_tree_t\s*\*resolve_function_compatibility_tree\s*\([^]*?psx_resolution_work_tree_create_from_syntax\s*\([^]*?syntax_function->body[^]*?work_definition\.body\s*=\s*body[^]*?psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?psx_resolution_work_tree_replace_compatibility_root\s*\(/.test(
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_frontend_next_function_with_resolver\s*\(/.test(
       frontendTranslationUnitSource,
@@ -7303,8 +8671,23 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_resolution_work_tree_(?:create_from_syntax|compatibility_root_mut|replace_compatibility_root)\s*\(/.test(
       initializerResolutionBoundary[1],
     ) ||
-    !/resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?psx_resolution_work_tree_create_from_syntax\s*\([^]*?resolve_nonfunction_tree\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
+    !/resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts\s*\([^]*?valid\s+%s\s+reached\s+the\s+compatibility\s+diagnostic\s+path[^]*?return\s+NULL\s*;/.test(
       semanticTreeResolutionSource,
+    ) ||
+    /resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    /psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\(/.test(
+      semanticTreeResolutionTestSupportHeader,
+    ) ||
+    !/psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\(/.test(
+      semanticTreeResolutionTestSupportHeader,
+    ) ||
+    /semantic_tree_resolution_internal\.h/.test(
+      `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}\n${parserCompatibilityTestHook}`,
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
       resolutionWorkTreeInternalHeader,
@@ -7346,10 +8729,16 @@ if (!parsedFunctionResolutionBoundary ||
     ) ||
     semanticMaterializationCalls.length !== 3 ||
     /if\s*\(\s*is_initializer\s*\)\s*return\s+1/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
-    !/return\s+materialize_resolved_tree\s*\(\s*semantic_context,\s*work_tree,\s*fallback_diag_tok\s*\)/.test(
-      semanticTreeResolutionSource,
+    !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
+      legacySyntaxDiagnosticsSource,
+    ) ||
+    !/psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
+      legacySyntaxDiagnosticsSource,
+    ) ||
+    /psx_legacy_syntax_diagnostics_accept_(?:function|nonfunction)_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_typed_hir\s*\(/.test(
       resolutionWorkTreeHeader,
@@ -7379,6 +8768,9 @@ if (!parsedFunctionResolutionBoundary ||
       resolvedTreeHirHeader,
     ) ||
     !/PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/#include\s+"typed_hir_build_status\.h"/.test(
       resolvedTreeHirHeader,
     ) ||
     !/psx_typed_hir_tree_t\s*\*psx_typed_hir_tree_materialize\s*\(/.test(
@@ -7426,7 +8818,7 @@ if (!parsedFunctionResolutionBoundary ||
       resolutionWorkTree,
     ) ||
     !/psx_resolution_work_tree_compatibility_root_mut\s*\(/.test(
-      semanticTreeResolutionSource,
+      legacySyntaxDiagnosticsSource,
     ) ||
     /const\s+node_t\s*\*psx_resolution_work_tree_compatibility_root\s*\(/.test(
       `${resolutionWorkTree}\n${resolutionWorkTreeInternalHeader}`,
@@ -7445,7 +8837,7 @@ if (!parsedFunctionResolutionBoundary ||
   );
 }
 const lowerTreeBoundary =
-  semanticTreeResolutionSource.match(
+  legacySyntaxDiagnosticsSource.match(
     /static\s+node_t\s*\*lower_tree\s*\([^)]*\)\s*\{([^]*?)\n\}/,
   )?.[1] ?? "";
 const resolveTreeCalls =
@@ -7465,7 +8857,7 @@ if (resolveTreeCalls.length !== 1 ||
     !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?psx_validate_lowered_tree_in_context\s*\(/.test(
       functionSemanticPipelineBody,
     ) ||
-    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_tree\s*\(/.test(
+    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_compatibility_tree\s*\(/.test(
       expressionSemanticPipelineBody,
     ) ||
     /\bpsx_semantic_resolve_(?:tree|initializer_tree)_in_contexts\s*\(/.test(
@@ -7595,6 +8987,35 @@ if (astTypeOwnershipViolations.length) {
   throw new Error(
     "AST-bound canonical types must not be mutated or recovered as mutable views:\n" +
       astTypeOwnershipViolations.sort().join("\n"),
+  );
+}
+
+const errorCatalogHeader = await readFile(
+  "src/diag/error_catalog.h",
+  "utf8",
+);
+const warningCatalogHeader = await readFile(
+  "src/diag/warning_catalog.h",
+  "utf8",
+);
+if (!/DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION\s*=\s*3096/.test(
+      errorCatalogHeader,
+    ) ||
+    /DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION/.test(
+      warningCatalogHeader,
+    ) ||
+    !/psx_parse_statement_expression_syntax[^]*?DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION/.test(
+      parserStatementSource,
+    ) ||
+    !/diagnose_unsupported_gnu_extension[^]*?array range designator/.test(
+      initializerSyntaxSource,
+    ) ||
+    !/diagnose_unsupported_gnu_extension_token[^]*?DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION/.test(
+      preprocessSource,
+    ) ||
+    /\bND_STMT_EXPR\b/.test(syntaxTypedHirResolutionSource)) {
+  throw new Error(
+    "GNU extensions must be rejected as E3096 before direct Typed HIR resolution",
   );
 }
 

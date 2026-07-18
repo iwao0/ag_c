@@ -7,6 +7,7 @@
 #include "name_classifier.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
+#include "../semantic/declarator_application_types.h"
 #include "../semantic/record_decl_table.h"
 #include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"
@@ -46,8 +47,12 @@ psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     psx_semantic_context_t *context,
     psx_integer_kind_t integer_kind, int is_unsigned,
     int is_plain_char);
+psx_qual_type_t ps_ctx_intern_void_qual_type_in(
+    psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee);
+psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
+    psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(
     const psx_semantic_context_t *context, const psx_type_t *type);
 const psx_type_t *ps_ctx_type_by_id_in(
@@ -79,10 +84,10 @@ void ps_ctx_enter_block_scope_in(
     psx_semantic_context_t *context);
 void ps_ctx_leave_block_scope_in(
     psx_semantic_context_t *context);
-void ps_ctx_record_unsupported_gnu_extension_warning_in(
+void ps_ctx_record_unsupported_gnu_extension_in(
     psx_semantic_context_t *context,
     const token_t *tok, const char *name);
-void ps_ctx_emit_deferred_parser_warnings_in(
+void ps_ctx_emit_deferred_parser_diagnostics_in(
     psx_semantic_context_t *context);
 void psx_ctx_register_goto_ref_in(
     psx_semantic_context_t *context,
@@ -232,6 +237,7 @@ int ps_ctx_has_enum_const_in_current_scope_in(
 
 typedef struct {
   const psx_type_t *decl_type;
+  const psx_runtime_declarator_application_t *runtime_application;
 } psx_typedef_info_t;
 
 static inline const psx_type_t *ps_ctx_typedef_decl_type(
@@ -259,6 +265,11 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type);
+bool ps_ctx_find_typedef_name_at_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, psx_local_lookup_point_t point,
+    psx_typedef_info_t *out);
 int ps_ctx_has_typedef_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
 bool psx_ctx_find_typedef_layout_in(

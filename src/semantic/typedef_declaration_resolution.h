@@ -2,6 +2,7 @@
 #define SEMANTIC_TYPEDEF_DECLARATION_RESOLUTION_H
 
 #include "../parser/type.h"
+#include "declarator_application_types.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -23,6 +24,7 @@ typedef struct {
   char *name;
   int name_len;
   const psx_type_t *type;
+  const psx_runtime_declarator_application_t *runtime_application;
 } psx_typedef_declaration_resolution_request_t;
 
 typedef struct {

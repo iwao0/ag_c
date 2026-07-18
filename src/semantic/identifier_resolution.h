@@ -15,6 +15,7 @@ typedef enum {
   PSX_IDENTIFIER_ENUM_CONSTANT,
   PSX_IDENTIFIER_GLOBAL_OBJECT,
   PSX_IDENTIFIER_FUNCTION,
+  PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA,
   PSX_IDENTIFIER_UNDECLARED_CALL,
 } psx_identifier_resolution_kind_t;
 
@@ -46,6 +47,7 @@ typedef struct {
   int decays_function_to_pointer;
   int local_has_static_storage;
   int local_is_vla;
+  int local_is_vla_object;
 } psx_identifier_expression_resolution_t;
 
 void psx_resolve_identifier(

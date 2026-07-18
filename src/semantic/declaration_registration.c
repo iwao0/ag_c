@@ -3,11 +3,10 @@
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../parser/diag.h"
-#include "constant_expression.h"
-#include "identifier_binding.h"
-#include "semantic_pass.h"
 #include "enum_constant_resolution.h"
 #include "static_assert_resolution.h"
+#include "syntax_typed_hir_resolution.h"
+#include "typed_hir_materialization.h"
 #include "typedef_declaration_resolution.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/global_registry.h"
@@ -190,24 +189,26 @@ void psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    node_t *condition, token_t *diag_tok) {
+    const node_t *condition, token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry || !condition)
     return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
-  condition = psx_bind_identifier_tree_in_contexts(
-      semantic_context, global_registry, local_registry,
-      condition, diag_tok);
-  psx_semantic_resolve_tree_in_contexts(
-      semantic_context, global_registry, local_registry,
-      condition, NULL, diag_tok);
-  int is_constant = 1;
-  long long value = psx_eval_const_int(condition, &is_constant);
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_syntax_integer_constant_result_t constant_result;
+  psx_resolved_hir_build_failure_t failure;
+  psx_syntax_typed_hir_resolution_status_t status =
+      psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+          semantic_context, global_registry, local_registry,
+          NULL, condition, &typed_hir, &constant_result, &failure);
+  int is_constant =
+      status == PSX_SYNTAX_TYPED_HIR_RESOLVED &&
+      typed_hir && constant_result.is_constant;
   psx_static_assert_resolution_t resolution;
   psx_resolve_static_assert(
       &(psx_static_assert_request_t){
           .is_constant = is_constant,
-          .value = value,
+          .value = constant_result.value,
       },
       &resolution);
   if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT) {

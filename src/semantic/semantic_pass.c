@@ -13,6 +13,7 @@
 #include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "assignment_validation.h"
+#include "call_resolution.h"
 #include "case_label_resolution.h"
 #include "constant_expression.h"
 #include "expression_operand_resolution.h"
@@ -383,21 +384,14 @@ static void semantic_resolve_member_access(
       .is_resolved = 1,
   };
 
-  const psx_type_t *decl_type =
-      psx_record_member_decl_type(&state->declaration);
-  psx_type_t *access_type = decl_type
-                                ? ps_type_clone_in(
-                                      ps_ctx_arena(semantic_context),
-                                      decl_type)
-                                : NULL;
-  if (access_type && resolution.base_object_type)
-    ps_type_set_decl_spec_qualifiers(
-        access_type,
-        (resolution.base_object_qual_type.qualifiers &
-         PSX_TYPE_QUALIFIER_CONST) != 0,
-        (resolution.base_object_qual_type.qualifiers &
-         PSX_TYPE_QUALIFIER_VOLATILE) != 0);
-  ps_node_bind_type((node_t *)access, access_type);
+  const psx_type_t *access_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolution.member_qual_type);
+  if (access_type)
+    ps_node_bind_qual_type(
+        (node_t *)access, access_type,
+        resolution.member_qual_type);
   const psx_type_t *base_type = ps_node_get_type(access->base.lhs);
   if (access->from_pointer) {
     state->base_address_qual_type =
@@ -482,6 +476,59 @@ static void semantic_resolve_function_call(
       psx_function_call_type(call);
   int is_implicit_declaration =
       psx_function_call_is_implicit_declaration(call);
+  if (!is_implicit_declaration) {
+    const psx_semantic_type_table_t *types =
+        ps_ctx_semantic_type_table_in(semantic_context);
+    psx_qual_type_t callee_type = call->callee
+        ? ps_node_qual_type(call->callee)
+        : (psx_qual_type_t){
+              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    if (callee_type.type_id == PSX_TYPE_ID_INVALID) {
+      callee_type = ps_ctx_intern_qual_type_in(
+          semantic_context,
+          call->callee ? ps_node_get_type(call->callee)
+                       : bound_call_type);
+    }
+    psx_call_types_resolution_t call_types;
+    psx_resolve_call_qual_types_in(
+        semantic_context, callee_type, call->argument_count,
+        &call_types);
+    if (call_types.function_qual_type.type_id !=
+        PSX_TYPE_ID_INVALID) {
+      const psx_type_t *canonical_function =
+          psx_semantic_type_table_lookup(
+              types, call_types.function_qual_type.type_id);
+      const psx_type_t *canonical_return =
+          psx_semantic_type_table_lookup(
+              types, call_types.return_qual_type.type_id);
+      if (canonical_function)
+        psx_function_call_bind_qual_type(
+            call, canonical_function,
+            call_types.function_qual_type);
+      if (canonical_return)
+        ps_node_bind_qual_type(
+            (node_t *)call, canonical_return,
+            call_types.return_qual_type);
+    }
+    if (call_types.status == PSX_CALL_TYPES_OK)
+      return;
+    if (call_types.status ==
+        PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH) {
+      char *name = psx_function_call_direct_name(call);
+      int name_len = psx_function_call_direct_name_length(call);
+      ps_diag_ctx_in(
+          diagnostics,
+          call->base.tok
+              ? call->base.tok
+              : (token_t *)fallback_diag_tok,
+          "funcall",
+          "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
+          name_len, name ? name : "",
+          call_types.is_variadic ? ">=" : "",
+          call_types.parameter_count, call->argument_count);
+      return;
+    }
+  }
   psx_function_call_resolution_t resolution;
   psx_resolve_function_call_type(
       bound_call_type,
@@ -563,14 +610,18 @@ static void semantic_resolve_source_cast(
           ps_ctx_arena(semantic_context), (node_t *)cast,
           sizeof(*cast)))
     return;
-  semantic_bind_result_type(
-      (node_t *)cast,
-      ps_type_clone_in(
-          ps_ctx_arena(semantic_context),
-          semantic_resolve_type_name_ref(
-              semantic_context, global_registry, local_registry,
-              &cast->type_name,
-              psx_node_type_name_state_mut(&cast->base))));
+  psx_qual_type_t target_type;
+  if (!psx_resolve_bound_type_name_qual_type_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &cast->type_name,
+          psx_node_type_name_state_mut(&cast->base),
+          &target_type))
+    return;
+  const psx_type_t *canonical =
+      ps_ctx_type_by_id_in(semantic_context, target_type.type_id);
+  if (canonical)
+    ps_node_bind_qual_type(
+        (node_t *)cast, canonical, target_type);
 }
 
 static void semantic_resolve_compound_literal(
@@ -786,7 +837,7 @@ static void semantic_resolve_sizeof_query(
         continue;
       node_t *bound =
           syntax->declarator.array_bounds[bound_index].expression.node;
-      ps_ctx_record_unsupported_gnu_extension_warning_in(
+      ps_ctx_record_unsupported_gnu_extension_in(
           traversal->semantic_context,
           bound && bound->tok ? bound->tok : query->base.tok,
           "zero-length array");

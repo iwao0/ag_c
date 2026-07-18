@@ -51,7 +51,10 @@ void psx_resolve_typedef_declaration(
     }
   }
 
-  const psx_typedef_info_t info = {.decl_type = request->type};
+  const psx_typedef_info_t info = {
+      .decl_type = request->type,
+      .runtime_application = request->runtime_application,
+  };
   if (!ps_ctx_register_typedef_name_in_contexts(
           semantic_context, local_registry,
           request->name, request->name_len, &info,

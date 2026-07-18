@@ -28,8 +28,6 @@ typedef struct psx_local_declaration_callbacks_t {
       void *context, psx_parsed_decl_specifier_t *specifier);
   void (*parse_declarator)(
       void *context, psx_parsed_declarator_t *declarator);
-  void (*parse_runtime_declarator_expressions)(
-      void *context, psx_parsed_declarator_t *declarator);
   void (*parse_initializer)(
       void *context, psx_parsed_initializer_t *initializer,
       token_t *assign_tok);

@@ -1,0 +1,97 @@
+#include "member_resolution.h"
+
+#include <string.h>
+
+static int aggregate_member_index(
+    const psx_record_decl_t *record, const char *member_name,
+    int member_name_len) {
+  if (!record || !record->members) return -1;
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *candidate = &record->members[i];
+    if (candidate->name && candidate->len == member_name_len &&
+        memcmp(candidate->name, member_name, (size_t)member_name_len) == 0)
+      return i;
+  }
+  return -1;
+}
+
+static const psx_record_member_decl_t *aggregate_member_named(
+    const psx_record_decl_t *record, const char *member_name,
+    int member_name_len) {
+  if (!record || !record->members || !member_name || member_name_len <= 0)
+    return NULL;
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (member->name && member->len == member_name_len &&
+        memcmp(member->name, member_name, (size_t)member_name_len) == 0)
+      return member;
+  }
+  return NULL;
+}
+
+void psx_resolve_member_access_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t base_qual_type,
+    const char *member_name,
+    int member_name_len,
+    int from_pointer,
+    psx_member_access_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_MEMBER_ACCESS_INVALID_BASE;
+  resolution->member_index = -1;
+  resolution->member_qual_type = (psx_qual_type_t){
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context ||
+      base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      !member_name || member_name_len <= 0)
+    return;
+
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  const psx_type_t *base_type = psx_semantic_type_table_lookup(
+      semantic_types, base_qual_type.type_id);
+  if (!base_type) return;
+  psx_qual_type_t object_qual_type = base_qual_type;
+  if (from_pointer) {
+    if (base_type->kind != PSX_TYPE_POINTER &&
+        base_type->kind != PSX_TYPE_ARRAY)
+      return;
+    object_qual_type = psx_semantic_type_table_base(
+        semantic_types, base_qual_type.type_id);
+  } else if (!ps_type_is_tag_aggregate(base_type)) {
+    return;
+  }
+  const psx_type_t *object_type = psx_semantic_type_table_lookup(
+      semantic_types, object_qual_type.type_id);
+  if (!object_type || !ps_type_is_tag_aggregate(object_type))
+    return;
+
+  resolution->base_object_qual_type = object_qual_type;
+  resolution->base_object_type = object_type;
+  resolution->record_id = ps_type_record_id(object_type);
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, resolution->record_id);
+  const psx_record_member_decl_t *member = aggregate_member_named(
+      record, member_name, member_name_len);
+  if (!member) {
+    resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
+    return;
+  }
+
+  resolution->member_index = aggregate_member_index(
+      record, member_name, member_name_len);
+  resolution->declaration = *member;
+  resolution->member_qual_type =
+      psx_semantic_type_table_record_member(
+          semantic_types, object_qual_type.type_id,
+          resolution->member_index);
+  if (resolution->member_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
+    return;
+  }
+  resolution->member_qual_type.qualifiers |=
+      object_qual_type.qualifiers;
+
+  resolution->status = PSX_MEMBER_ACCESS_OK;
+}

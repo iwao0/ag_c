@@ -2,7 +2,7 @@
 // 期待: exit=65
 #include <assert.h>
 int main(void) {
-    short *s = u"AB";
+    unsigned short *s = u"AB";
     assert(s[0] == 65);
     return 0;
 }

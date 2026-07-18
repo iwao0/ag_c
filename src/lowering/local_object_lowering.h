@@ -18,6 +18,8 @@ typedef struct {
 
 lvar_t *lower_complete_local_object(
     const psx_local_object_request_t *request);
+lvar_t *lower_complete_internal_local_object(
+    const psx_local_object_request_t *request);
 lvar_t *declare_incomplete_local_object(
     const psx_local_object_request_t *request);
 int complete_declared_local_object(

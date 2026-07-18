@@ -98,7 +98,7 @@ typedef enum {
   /* 関数 prologue: 第 n 仮引数を vreg に読む */
   IR_PARAM,
 
-  /* Apple ARM64 ABI 用 builtin (現 ND_VA_ARG_AREA 相当) */
+  /* Apple ARM64 ABI variadic argument-area builtin. */
   IR_VA_ARG_AREA,
   /* VLA 動的スタック確保: src1 = 必要バイト数 (i32/i64)、dst = 確保した領域の
    * 先頭アドレス (PTR)。codegen は内部で 16-byte アライン → sub sp, sp → mov dst, sp。

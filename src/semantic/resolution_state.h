@@ -3,6 +3,7 @@
 
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
+#include "declarator_application_types.h"
 #include "resolved_node_kind.h"
 
 struct global_var_t;
@@ -129,6 +130,7 @@ typedef struct {
 typedef struct psx_type_name_resolution_state_t {
   const psx_type_t *bound_base_type;
   const psx_type_t *resolved_type;
+  const psx_runtime_declarator_application_t *bound_runtime_application;
 } psx_type_name_resolution_state_t;
 
 typedef struct psx_node_resolution_state_t {

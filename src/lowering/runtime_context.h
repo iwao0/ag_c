@@ -25,7 +25,21 @@ typedef struct psx_lowering_context_t {
   int aggregate_cast_temp_sequence;
   int compound_assignment_temp_sequence;
   int member_rvalue_sequence;
+  int initializer_value_temp_sequence;
+  int vla_typedef_bound_sequence;
 } psx_lowering_context_t;
+
+typedef struct {
+  frame_layout_t local_frame_layout;
+  int static_local_sequences[PSX_STATIC_LOCAL_KIND_COUNT];
+  int file_scope_compound_sequence;
+  int local_compound_sequence;
+  int aggregate_cast_temp_sequence;
+  int compound_assignment_temp_sequence;
+  int member_rvalue_sequence;
+  int initializer_value_temp_sequence;
+  int vla_typedef_bound_sequence;
+} psx_lowering_context_checkpoint_t;
 
 psx_lowering_context_t *ps_lowering_context_create(
     arena_context_t *arena_context,
@@ -67,5 +81,11 @@ int ps_lowering_type_alignment(
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx);
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx);
+void psx_lowering_context_checkpoint(
+    const psx_lowering_context_t *ctx,
+    psx_lowering_context_checkpoint_t *checkpoint);
+void psx_lowering_context_rollback(
+    psx_lowering_context_t *ctx,
+    const psx_lowering_context_checkpoint_t *checkpoint);
 
 #endif

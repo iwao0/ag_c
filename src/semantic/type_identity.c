@@ -143,6 +143,8 @@ static int semantic_type_node_matches(
                  ps_type_record_id(candidate);
     case PSX_TYPE_FUNCTION:
       return canonical->param_count == candidate->param_count &&
+             canonical->has_function_prototype ==
+                 candidate->has_function_prototype &&
              canonical->is_variadic_function ==
                  candidate->is_variadic_function;
     case PSX_TYPE_VOID:

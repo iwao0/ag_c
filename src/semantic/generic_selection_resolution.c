@@ -10,6 +10,71 @@
 
 #include <string.h>
 
+static void initialize_resolution(
+    psx_generic_selection_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
+  resolution->selected_index = -1;
+  resolution->conflict_index = -1;
+}
+
+void psx_resolve_generic_selection_qual_types_in(
+    psx_qual_type_t control_type,
+    const psx_qual_type_t *association_types,
+    const unsigned char *is_default,
+    int association_count,
+    psx_generic_selection_resolution_t *resolution) {
+  initialize_resolution(resolution);
+  if (!resolution || control_type.type_id == PSX_TYPE_ID_INVALID ||
+      !association_types || !is_default || association_count <= 0)
+    return;
+
+  int default_index = -1;
+  for (int i = 0; i < association_count; i++) {
+    if (is_default[i]) {
+      if (default_index >= 0) {
+        resolution->status =
+            PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT;
+        resolution->conflict_index = i;
+        return;
+      }
+      default_index = i;
+      continue;
+    }
+    if (association_types[i].type_id == PSX_TYPE_ID_INVALID) {
+      resolution->conflict_index = i;
+      return;
+    }
+    for (int j = 0; j < i; j++) {
+      if (!is_default[j] &&
+          association_types[i].type_id ==
+              association_types[j].type_id) {
+        resolution->status =
+            PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE;
+        resolution->conflict_index = i;
+        return;
+      }
+    }
+  }
+
+  int selected = -1;
+  for (int i = 0; i < association_count; i++) {
+    if (!is_default[i] &&
+        control_type.type_id == association_types[i].type_id) {
+      selected = i;
+      break;
+    }
+  }
+  if (selected < 0) selected = default_index;
+  if (selected < 0) {
+    resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH;
+    return;
+  }
+  resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_OK;
+  resolution->selected_index = selected;
+}
+
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -17,10 +82,7 @@ void psx_resolve_generic_selection_in_contexts(
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution) {
   if (!resolution) return;
-  memset(resolution, 0, sizeof(*resolution));
-  resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
-  resolution->selected_index = -1;
-  resolution->conflict_index = -1;
+  initialize_resolution(resolution);
   if (!semantic_context || !global_registry || !local_registry ||
       !selection || !selection->control ||
       selection->association_count <= 0)
@@ -50,24 +112,20 @@ void psx_resolve_generic_selection_in_contexts(
         selection->association_count;
   }
 
-  int default_index = -1;
   psx_qual_type_t *association_types = arena_alloc_in(
       ps_ctx_arena(semantic_context),
       (size_t)selection->association_count * sizeof(*association_types));
-  if (!association_types) return;
+  unsigned char *is_default = arena_alloc_in(
+      ps_ctx_arena(semantic_context),
+      (size_t)selection->association_count * sizeof(*is_default));
+  if (!association_types || !is_default) return;
   memset(
       association_types, 0,
       (size_t)selection->association_count * sizeof(*association_types));
   for (int i = 0; i < selection->association_count; i++) {
     psx_generic_association_t *association = &selection->associations[i];
+    is_default[i] = association->is_default ? 1 : 0;
     if (association->is_default) {
-      if (default_index >= 0) {
-        resolution->status =
-            PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT;
-        resolution->conflict_index = i;
-        return;
-      }
-      default_index = i;
       continue;
     }
     const psx_type_t *resolved =
@@ -93,16 +151,6 @@ void psx_resolve_generic_selection_in_contexts(
       resolution->conflict_index = i;
       return;
     }
-    for (int j = 0; j < i; j++) {
-      psx_generic_association_t *previous = &selection->associations[j];
-      if (!previous->is_default &&
-          association_types[i].type_id == association_types[j].type_id) {
-        resolution->status =
-            PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE;
-        resolution->conflict_index = i;
-        return;
-      }
-    }
   }
 
   psx_qual_type_t control_type = ps_node_qual_type(selection->control);
@@ -110,29 +158,20 @@ void psx_resolve_generic_selection_in_contexts(
     control_type = ps_ctx_intern_qual_type_in(
         semantic_context, ps_node_get_type(selection->control));
   }
-  int selected = -1;
-  if (control_type.type_id != PSX_TYPE_ID_INVALID) {
-    for (int i = 0; i < selection->association_count; i++) {
-      if (!selection->associations[i].is_default &&
-          control_type.type_id == association_types[i].type_id) {
-        selected = i;
-        break;
-      }
-    }
-  }
-  if (selected < 0) selected = default_index;
-  if (selected < 0) {
-    resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH;
+  psx_resolve_generic_selection_qual_types_in(
+      control_type, association_types, is_default,
+      selection->association_count, resolution);
+  if (resolution->status != PSX_GENERIC_SELECTION_RESOLUTION_OK)
     return;
-  }
+  int selected = resolution->selected_index;
   const psx_type_t *selected_type = ps_node_get_type(
       selection->associations[selected].expression);
   if (!selected_type) {
+    resolution->status =
+        PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
     resolution->conflict_index = selected;
     return;
   }
-  resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_OK;
-  resolution->selected_index = selected;
 }
 
 int psx_generic_selection_selected_index(

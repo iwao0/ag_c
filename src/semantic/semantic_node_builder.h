@@ -9,6 +9,7 @@
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_semantic_node_t psx_semantic_node_t;
+typedef struct psx_vla_runtime_plan_t psx_vla_runtime_plan_t;
 
 typedef struct {
   arena_context_t *arena_context;
@@ -49,6 +50,10 @@ psx_semantic_node_t *psx_semantic_node_builder_statement(
     psx_semantic_node_t *const *children,
     const psx_hir_edge_kind_t *child_edges,
     size_t child_count,
+    int source_node_kind);
+psx_semantic_node_t *psx_semantic_node_builder_vla_runtime(
+    psx_semantic_node_builder_t *builder,
+    const psx_vla_runtime_plan_t *plan,
     int source_node_kind);
 psx_qual_type_t psx_semantic_node_expression_qual_type(
     const psx_semantic_node_t *node);

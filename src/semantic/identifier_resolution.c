@@ -28,6 +28,12 @@ void psx_resolve_identifier(
   psx_local_registry_t *local_registry = request->local_registry;
   psx_global_registry_t *global_registry = request->global_registry;
 
+  if (!request->is_call && request->name_len == 13 &&
+      memcmp(request->name, "__va_arg_area", 13) == 0) {
+    resolution->kind = PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA;
+    return;
+  }
+
   resolution->local = request->has_local_lookup_point
       ? ps_local_registry_find_visible_in(
             local_registry,
@@ -131,7 +137,21 @@ void psx_resolve_identifier_expression(
               ps_function_symbol_type(
                   resolution->symbol.function));
       break;
-    case PSX_IDENTIFIER_UNDECLARED_CALL:
+    case PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA: {
+      resolution->declaration_qual_type =
+          ps_ctx_intern_pointer_to_qual_type_in(
+              semantic_context,
+              ps_ctx_intern_void_qual_type_in(
+                  semantic_context));
+      break;
+    }
+    case PSX_IDENTIFIER_UNDECLARED_CALL: {
+      if (!request->is_call) return;
+      resolution->declaration_qual_type =
+          ps_ctx_intern_implicit_function_qual_type_in(
+              semantic_context);
+      break;
+    }
     case PSX_IDENTIFIER_UNDEFINED:
       return;
   }
@@ -143,7 +163,12 @@ void psx_resolve_identifier_expression(
     resolution->declaration_qual_type = invalid_qual_type();
     return;
   }
-  if (resolution->symbol.kind == PSX_IDENTIFIER_FUNCTION) {
+  resolution->local_is_vla_object =
+      resolution->symbol.kind == PSX_IDENTIFIER_LOCAL &&
+      resolution->local_is_vla &&
+      declared_type->kind == PSX_TYPE_ARRAY;
+  if (resolution->symbol.kind == PSX_IDENTIFIER_FUNCTION ||
+      resolution->symbol.kind == PSX_IDENTIFIER_UNDECLARED_CALL) {
     resolution->expression_qual_type =
         ps_ctx_intern_pointer_to_qual_type_in(
             semantic_context, declared);

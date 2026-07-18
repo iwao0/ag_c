@@ -128,4 +128,50 @@ void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx) {
   ctx->aggregate_cast_temp_sequence = 0;
   ctx->compound_assignment_temp_sequence = 0;
   ctx->member_rvalue_sequence = 0;
+  ctx->initializer_value_temp_sequence = 0;
+  ctx->vla_typedef_bound_sequence = 0;
+}
+
+void psx_lowering_context_checkpoint(
+    const psx_lowering_context_t *ctx,
+    psx_lowering_context_checkpoint_t *checkpoint) {
+  if (!ctx || !checkpoint) return;
+  *checkpoint = (psx_lowering_context_checkpoint_t){
+      .local_frame_layout = ctx->local_frame_layout,
+      .file_scope_compound_sequence = ctx->file_scope_compound_sequence,
+      .local_compound_sequence = ctx->local_compound_sequence,
+      .aggregate_cast_temp_sequence = ctx->aggregate_cast_temp_sequence,
+      .compound_assignment_temp_sequence =
+          ctx->compound_assignment_temp_sequence,
+      .member_rvalue_sequence = ctx->member_rvalue_sequence,
+      .initializer_value_temp_sequence =
+          ctx->initializer_value_temp_sequence,
+      .vla_typedef_bound_sequence =
+          ctx->vla_typedef_bound_sequence,
+  };
+  memcpy(checkpoint->static_local_sequences,
+         ctx->static_local_sequences,
+         sizeof(checkpoint->static_local_sequences));
+}
+
+void psx_lowering_context_rollback(
+    psx_lowering_context_t *ctx,
+    const psx_lowering_context_checkpoint_t *checkpoint) {
+  if (!ctx || !checkpoint) return;
+  ctx->local_frame_layout = checkpoint->local_frame_layout;
+  memcpy(ctx->static_local_sequences,
+         checkpoint->static_local_sequences,
+         sizeof(ctx->static_local_sequences));
+  ctx->file_scope_compound_sequence =
+      checkpoint->file_scope_compound_sequence;
+  ctx->local_compound_sequence = checkpoint->local_compound_sequence;
+  ctx->aggregate_cast_temp_sequence =
+      checkpoint->aggregate_cast_temp_sequence;
+  ctx->compound_assignment_temp_sequence =
+      checkpoint->compound_assignment_temp_sequence;
+  ctx->member_rvalue_sequence = checkpoint->member_rvalue_sequence;
+  ctx->initializer_value_temp_sequence =
+      checkpoint->initializer_value_temp_sequence;
+  ctx->vla_typedef_bound_sequence =
+      checkpoint->vla_typedef_bound_sequence;
 }

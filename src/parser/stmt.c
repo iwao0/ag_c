@@ -224,6 +224,14 @@ node_t *psx_parse_statement_expression_syntax(
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
   };
   if (!context.tokenizer_context) return NULL;
+  token_t *extension_token = curtok(&context);
+  diag_emit_tokf_in(
+      diagnostics(&context), DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION,
+      extension_token,
+      diag_message_for_in(
+          diagnostics(&context), DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION),
+      "statement expression");
+  ps_parser_mark_recoverable_syntax_error_in(runtime_context);
   tk_expect_ctx(context.tokenizer_context, '(');
   node_t *block = parse_stmt_block(&context);
   tk_expect_ctx(context.tokenizer_context, ')');

@@ -33,6 +33,6 @@ void psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    node_t *condition, token_t *diag_tok);
+    const node_t *condition, token_t *diag_tok);
 
 #endif

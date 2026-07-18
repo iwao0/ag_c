@@ -690,7 +690,7 @@ int main(void) {
                        "struct Ops ops={sum}; int main(){struct Value v;v.a=1;v.b=2;v.c=3;"
                        "return ops.scalar(0,v,0);}\n",
                        funcptr_struct_value_arg, 2, 6);
-  const char *forward_aggregate_member_pointer_stride[] = {"i32.const 12"};
+  const char *forward_aggregate_member_pointer_stride[] = {"i64.const 12"};
   failures += run_case(
       "forward_aggregate_member_pointer_stride",
       "struct Item; struct Def{struct Item *items;}; "
@@ -760,7 +760,9 @@ int main(void) {
       funcptr_nine_params, 1, 45);
   const char *forward_func_addr[] = {"(table 3 funcref)", "(elem (i32.const 2) $main"};
   failures += run_case("forward_func_addr",
-                       "int main(); void *foo(){return &main;} int main(){foo(); return 0;}\n",
+                       "typedef int (*fn_t)(void); int main(void); "
+                       "fn_t foo(void){return &main;} "
+                       "int main(void){foo(); return 0;}\n",
                        forward_func_addr, 2, 0);
   const char *forward_funcptr_store[] = {"(table 3 funcref)", "(elem (i32.const 2) $later"};
   failures += run_case("forward_funcptr_store",

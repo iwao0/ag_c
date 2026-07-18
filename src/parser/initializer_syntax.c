@@ -140,8 +140,8 @@ node_t *psx_parse_initializer_syntax_list_with_context(
           node_t *range_end_expr = NULL;
           int is_range = 0;
           if (curtok(runtime_context)->kind == TK_ELLIPSIS) {
-            if (context->record_unsupported_gnu_extension)
-              context->record_unsupported_gnu_extension(
+            if (context->diagnose_unsupported_gnu_extension)
+              context->diagnose_unsupported_gnu_extension(
                   context->context, curtok(runtime_context),
                   "array range designator");
             tk_set_current_token_ctx(

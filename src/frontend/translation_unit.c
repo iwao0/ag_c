@@ -18,7 +18,7 @@
 #include "../parser/local_registry.h"
 #include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/stmt_legacy.h"
+#include "../parser/statement_syntax_adapter.h"
 #include <string.h>
 
 static int frontend_session_is_complete(
@@ -31,23 +31,25 @@ static node_t *parse_toplevel_assignment_expression(void *context) {
   ag_compilation_session_t *session =
       stream ? stream->session : NULL;
   if (!frontend_session_is_complete(session)) return NULL;
-  return psx_expr_assign_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
+  return psx_expr_assign_with_syntax_services(
       ag_compilation_session_parser_runtime_context(session),
-      &stream->parser.syntax.name_classifier, NULL);
+      &stream->parser.syntax.name_classifier, NULL, NULL, 0);
 }
 
-static void record_toplevel_unsupported_gnu_extension(
+static void diagnose_toplevel_unsupported_gnu_extension(
     void *context, const token_t *token, const char *name) {
   psx_frontend_stream_t *stream = context;
   ag_compilation_session_t *session =
       stream ? stream->session : NULL;
   if (!frontend_session_is_complete(session)) return;
-  ps_ctx_record_unsupported_gnu_extension_warning_in(
-      ag_compilation_session_semantic_context(session),
-      token, name);
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(session);
+  diag_emit_tokf_in(
+      diagnostics, DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION,
+      token,
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION),
+      name ? name : "");
 }
 
 static int parse_toplevel_static_assert_syntax(
@@ -79,14 +81,12 @@ static int parse_toplevel_declaration_head_syntax(
   psx_toplevel_declaration_syntax_context_t syntax = {
       .context = stream,
       .name_classifier = *name_classifier,
-      .semantic_context =
-          ag_compilation_session_semantic_context(session),
       .runtime_context =
           ag_compilation_session_parser_runtime_context(session),
       .parse_assignment_expression =
           parse_toplevel_assignment_expression,
-      .record_unsupported_gnu_extension =
-          record_toplevel_unsupported_gnu_extension,
+      .diagnose_unsupported_gnu_extension =
+          diagnose_toplevel_unsupported_gnu_extension,
   };
   return psx_parse_toplevel_declaration_head_syntax_with_context(
       declaration, &syntax);
@@ -103,14 +103,12 @@ static int finish_toplevel_declaration_syntax(
   psx_toplevel_declaration_syntax_context_t syntax = {
       .context = stream,
       .name_classifier = *name_classifier,
-      .semantic_context =
-          ag_compilation_session_semantic_context(session),
       .runtime_context =
           ag_compilation_session_parser_runtime_context(session),
       .parse_assignment_expression =
           parse_toplevel_assignment_expression,
-      .record_unsupported_gnu_extension =
-          record_toplevel_unsupported_gnu_extension,
+      .diagnose_unsupported_gnu_extension =
+          diagnose_toplevel_unsupported_gnu_extension,
   };
   return psx_finish_toplevel_declaration_syntax_with_context(
       declaration, &syntax);
@@ -163,28 +161,27 @@ int psx_frontend_stream_begin(
       ag_compilation_session_semantic_context(session);
   psx_global_registry_t *global_registry =
       ag_compilation_session_global_registry(session);
-  psx_local_registry_t *local_registry =
-      ag_compilation_session_local_registry(session);
   psx_parser_runtime_context_t *runtime_context =
       ag_compilation_session_parser_runtime_context(session);
   ps_global_registry_reset_diag_state_in(global_registry);
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
   ps_ctx_reset_function_names_in(semantic_context);
-  psx_frontend_init_local_declaration_callbacks_in_contexts(
+  psx_name_classifier_t empty_classifier = {0};
+  psx_frontend_init_local_declaration_syntax_adapter(
       &stream->local_declaration_adapter,
-      &stream->local_declarations, semantic_context,
-      global_registry, local_registry, runtime_context);
+      &stream->local_declarations, runtime_context,
+      &empty_classifier, NULL, 0);
   ps_parser_name_environment_init(
       &stream->local_name_environment,
-      ps_ctx_name_classifier(semantic_context));
+      empty_classifier);
   stream->local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
           &stream->local_name_environment);
   stream->parser_syntax = (psx_parser_syntax_services_t){
       .context = stream,
       .runtime_context = runtime_context,
-      .name_classifier = ps_ctx_name_classifier(semantic_context),
+      .name_classifier = empty_classifier,
       .parse_static_assert =
           parse_toplevel_static_assert_syntax,
       .parse_toplevel_declaration_head =
@@ -252,7 +249,7 @@ int psx_frontend_next_function_with_resolver(
           function_name ? function_name->len : 0);
       ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
-          ps_ctx_name_classifier(semantic_context),
+          stream->parser.syntax.name_classifier,
           0, 0, 0);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(
@@ -260,16 +257,21 @@ int psx_frontend_next_function_with_resolver(
       psx_record_function_definition_declarator_binding_events(
           &item.value.function_header.declarator,
           &stream->local_declarations.name_classifier);
-      psx_legacy_statement_syntax_adapter_t statement_adapter;
-      if (!psx_legacy_statement_syntax_adapter_init(
-              &statement_adapter, semantic_context,
-              global_registry, local_registry,
+      psx_frontend_local_declaration_syntax_set_function_name(
+          &stream->local_declaration_adapter,
+          function_name ? function_name->str : NULL,
+          function_name ? function_name->len : 0);
+      psx_statement_syntax_adapter_t statement_adapter;
+      if (!psx_statement_syntax_adapter_init(
+              &statement_adapter,
               ag_compilation_session_parser_runtime_context(session),
               &stream->local_declarations.name_classifier,
-              &stream->local_declarations))
+              &stream->local_declarations,
+              function_name ? function_name->str : NULL,
+              function_name ? function_name->len : 0))
         return 0;
       psx_statement_syntax_context_t statement_syntax =
-          psx_legacy_statement_syntax_context(
+          psx_statement_syntax_adapter_context(
               &statement_adapter);
       if (!ps_parse_function_definition_body(
               &stream->parser, &item.value.function_header,
@@ -338,7 +340,7 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
       !frontend_session_is_complete(stream->session) ||
       !ag_compilation_session_is_active(stream->session))
     return 0;
-  ps_ctx_emit_deferred_parser_warnings_in(
+  ps_ctx_emit_deferred_parser_diagnostics_in(
       ag_compilation_session_semantic_context(stream->session));
   ps_parser_stream_end(&stream->parser);
   ps_parser_name_environment_dispose(

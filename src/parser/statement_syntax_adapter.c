@@ -1,57 +1,54 @@
-#include "stmt_legacy.h"
-
-#include "decl.h"
 #include "expr.h"
-#include "local_registry.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
+#include "statement_syntax_adapter.h"
 #include "stmt.h"
 
 static node_t *parse_expression(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
-  return psx_expr_expr_in_contexts(
-      adapter->semantic_context, adapter->global_registry,
-      adapter->local_registry, adapter->runtime_context,
-      &adapter->name_classifier, adapter->local_declarations);
+  psx_statement_syntax_adapter_t *adapter = context;
+  return psx_expr_expr_with_syntax_services(
+      adapter->runtime_context, &adapter->name_classifier,
+      adapter->local_declarations,
+      adapter->current_function_name,
+      adapter->current_function_name_len);
 }
 
 static node_t *parse_local_declaration(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
+  psx_statement_syntax_adapter_t *adapter = context;
   return psx_parse_local_declaration_syntax(
       adapter->local_declarations);
 }
 
 static node_t *parse_case_expression(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
-  return psx_expr_conditional_in_contexts(
-      adapter->semantic_context, adapter->global_registry,
-      adapter->local_registry, adapter->runtime_context,
-      &adapter->name_classifier, adapter->local_declarations);
+  psx_statement_syntax_adapter_t *adapter = context;
+  return psx_expr_conditional_with_syntax_services(
+      adapter->runtime_context, &adapter->name_classifier,
+      adapter->local_declarations,
+      adapter->current_function_name,
+      adapter->current_function_name_len);
 }
 
 static void enter_block_scope(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
+  psx_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_enter_scope(&adapter->name_classifier);
 }
 
 static void leave_block_scope(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
+  psx_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_leave_scope(&adapter->name_classifier);
 }
 
 static void enter_local_scope(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
+  psx_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_enter_scope(&adapter->name_classifier);
 }
 
 static void leave_local_scope(void *context) {
-  psx_legacy_statement_syntax_adapter_t *adapter = context;
+  psx_statement_syntax_adapter_t *adapter = context;
   ps_name_classifier_leave_scope(&adapter->name_classifier);
 }
 
-psx_statement_syntax_context_t
-psx_legacy_statement_syntax_context(
-    psx_legacy_statement_syntax_adapter_t *adapter) {
+psx_statement_syntax_context_t psx_statement_syntax_adapter_context(
+    psx_statement_syntax_adapter_t *adapter) {
   return (psx_statement_syntax_context_t){
       .context = adapter,
       .runtime_context = adapter->runtime_context,
@@ -66,59 +63,20 @@ psx_legacy_statement_syntax_context(
   };
 }
 
-int psx_legacy_statement_syntax_adapter_init(
-    psx_legacy_statement_syntax_adapter_t *adapter,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
+int psx_statement_syntax_adapter_init(
+    psx_statement_syntax_adapter_t *adapter,
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!adapter || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
-    return 0;
-  *adapter = (psx_legacy_statement_syntax_adapter_t){
-      .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations,
+    char *current_function_name, int current_function_name_len) {
+  if (!adapter || !runtime_context) return 0;
+  *adapter = (psx_statement_syntax_adapter_t){
       .runtime_context = runtime_context,
       .local_declarations = local_declarations,
       .name_classifier =
           name_classifier ? *name_classifier : (psx_name_classifier_t){0},
+      .current_function_name = current_function_name,
+      .current_function_name_len = current_function_name_len,
   };
   return 1;
-}
-
-node_t *psx_stmt_stmt_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  psx_legacy_statement_syntax_adapter_t adapter;
-  if (!psx_legacy_statement_syntax_adapter_init(
-          &adapter, semantic_context, global_registry, local_registry,
-          runtime_context, name_classifier, local_declarations))
-    return NULL;
-  psx_statement_syntax_context_t syntax =
-      psx_legacy_statement_syntax_context(&adapter);
-  return psx_stmt_stmt_syntax(&syntax);
-}
-
-node_t *psx_parse_statement_expression_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  psx_legacy_statement_syntax_adapter_t adapter;
-  if (!psx_legacy_statement_syntax_adapter_init(
-          &adapter, semantic_context, global_registry, local_registry,
-          runtime_context, name_classifier, local_declarations))
-    return NULL;
-  psx_statement_syntax_context_t syntax =
-      psx_legacy_statement_syntax_context(&adapter);
-  return psx_parse_statement_expression_syntax(&syntax);
 }

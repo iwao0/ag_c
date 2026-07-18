@@ -206,6 +206,11 @@ psx_type_t *ps_type_new_floating_in(
       arena_context, is_complex ? PSX_TYPE_COMPLEX : PSX_TYPE_FLOAT);
   if (!type) return NULL;
   type->floating_kind = floating_kind;
+  if (is_complex) {
+    type->base = ps_type_new_floating_in(
+        arena_context, floating_kind, 0);
+    if (!type->base) return NULL;
+  }
   return type;
 }
 
@@ -473,6 +478,7 @@ void ps_type_set_function_params_in(
   if (param_count < 0) param_count = 0;
   function_type->param_types = NULL;
   function_type->param_count = param_count;
+  function_type->has_function_prototype = 1;
   function_type->is_variadic_function = is_variadic ? 1 : 0;
   if (param_count == 0) return;
   const psx_type_t **params =
@@ -679,12 +685,13 @@ int ps_declarator_shape_append_function_in(
 int ps_declarator_op_set_function_params_in(
     arena_context_t *arena_context, psx_declarator_op_t *op,
     const psx_type_t *const *param_types,
-    int param_count, int is_variadic) {
+    int param_count, int is_variadic, int has_prototype) {
   if (!op || op->kind != PSX_DECL_OP_FUNCTION || param_count < 0)
     return 0;
   op->function_param_types = NULL;
   op->function_param_count = param_count;
   op->function_is_variadic = is_variadic ? 1 : 0;
+  op->function_has_prototype = has_prototype ? 1 : 0;
   op->has_canonical_function_params = 1;
   if (param_count == 0) return 1;
   op->function_param_types =
@@ -717,7 +724,7 @@ int ps_declarator_op_set_variadic(
   return 1;
 }
 
-static int declarator_shape_append_shape(
+int ps_declarator_shape_append_shape_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     const psx_declarator_shape_t *suffix) {
   if (!shape || !suffix || suffix->count < 0) return 0;
@@ -745,7 +752,8 @@ static int declarator_shape_append_shape(
         appended = ps_declarator_op_set_function_params_in(
             arena_context, copy,
             op->function_param_types, op->function_param_count,
-            op->function_is_variadic);
+            op->function_is_variadic,
+            op->function_has_prototype);
       }
     }
     if (!appended) return 0;
@@ -758,7 +766,8 @@ int ps_declarator_shape_copy_in(
     const psx_declarator_shape_t *src) {
   if (!dst || !src) return 0;
   ps_declarator_shape_init(dst);
-  return declarator_shape_append_shape(arena_context, dst, src);
+  return ps_declarator_shape_append_shape_in(
+      arena_context, dst, src);
 }
 
 int ps_declarator_shape_count_ops(
@@ -794,6 +803,8 @@ psx_type_t *ps_type_apply_declarator_shape_in(
         ps_type_set_function_params_in(
             arena_context, type, op->function_param_types,
             op->function_param_count, op->function_is_variadic);
+        type->has_function_prototype =
+            op->function_has_prototype ? 1 : 0;
       }
     }
   }
@@ -984,6 +995,7 @@ int ps_type_is_scalar(const psx_type_t *type) {
     case PSX_TYPE_BOOL:
     case PSX_TYPE_INTEGER:
     case PSX_TYPE_FLOAT:
+    case PSX_TYPE_COMPLEX:
     case PSX_TYPE_POINTER:
       return 1;
     default:

@@ -5878,7 +5878,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local $src i32)\n");
     wasm_emitf(4, "(local $i i64)\n");
     wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(local.set $src (i32.wrap_i64 (i64.load (local.get $srcp))))\n");
+    wasm_emitf(4, "(local.set $src (i32.load (local.get $srcp)))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $len)) (then (br $done)))\n");
     wasm_emitf(6, "(local.set $ch (i32.load8_u (i32.add (local.get $src) (i32.wrap_i64 (local.get $i)))))\n");
@@ -5889,16 +5889,16 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(if (i32.and (i64.lt_u (local.get $i) (local.get $len)) (i32.eqz (i32.load8_u (i32.add (local.get $src) (i32.wrap_i64 (local.get $i)))))) (then\n");
     wasm_emitf(6, "(if (local.get $dst) (then (i32.store (i32.add (local.get $dst) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4)))) (i32.const 0))))\n");
-    wasm_emitf(6, "(i64.store (local.get $srcp) (i64.const 0))\n");
+    wasm_emitf(6, "(i32.store (local.get $srcp) (i32.const 0))\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(local.get $i)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("mbstowcs", 8)) {
-    int srcp_addr = intern_data_symbol("__ag_mbstowcs_srcp", 18, 8, 8)->addr;
+    int srcp_addr = intern_data_symbol("__ag_mbstowcs_srcp", 18, 4, 4)->addr;
     wasm_emitf(2, "(func $mbstowcs (param $dst i32) (param $src i32) (param $n i64) (result i64)\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $src)) (then (return (i64.const -1))))\n");
-    wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $src)))\n", srcp_addr);
+    wasm_emitf(4, "(i32.store (i32.const %d) (local.get $src))\n", srcp_addr);
     wasm_emitf(4, "(call $mbsrtowcs (local.get $dst) (i32.const %d) (local.get $n) (i32.const 0))\n", srcp_addr);
     wasm_emitf(2, ")\n");
   }
@@ -5908,7 +5908,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local $src i32)\n");
     wasm_emitf(4, "(local $i i64)\n");
     wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(local.set $src (i32.wrap_i64 (i64.load (local.get $srcp))))\n");
+    wasm_emitf(4, "(local.set $src (i32.load (local.get $srcp)))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $len)) (then (br $done)))\n");
     wasm_emitf(6, "(local.set $ch (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
@@ -5919,16 +5919,16 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(if (i32.and (i64.lt_u (local.get $i) (local.get $len)) (i32.eqz (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))) (then\n");
     wasm_emitf(6, "(if (local.get $dst) (then (i32.store8 (i32.add (local.get $dst) (i32.wrap_i64 (local.get $i))) (i32.const 0))))\n");
-    wasm_emitf(6, "(i64.store (local.get $srcp) (i64.const 0))\n");
+    wasm_emitf(6, "(i32.store (local.get $srcp) (i32.const 0))\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(local.get $i)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcstombs", 8)) {
-    int srcp_addr = intern_data_symbol("__ag_wcstombs_srcp", 18, 8, 8)->addr;
+    int srcp_addr = intern_data_symbol("__ag_wcstombs_srcp", 18, 4, 4)->addr;
     wasm_emitf(2, "(func $wcstombs (param $dst i32) (param $src i32) (param $n i64) (result i64)\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $src)) (then (return (i64.const -1))))\n");
-    wasm_emitf(4, "(i64.store (i32.const %d) (i64.extend_i32_u (local.get $src)))\n", srcp_addr);
+    wasm_emitf(4, "(i32.store (i32.const %d) (local.get $src))\n", srcp_addr);
     wasm_emitf(4, "(call $wcsrtombs (local.get $dst) (i32.const %d) (local.get $n) (i32.const 0))\n", srcp_addr);
     wasm_emitf(2, ")\n");
   }

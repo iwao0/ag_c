@@ -9,7 +9,7 @@ typedef struct {
   void *context;
   psx_parser_runtime_context_t *runtime_context;
   node_t *(*parse_assignment_expression)(void *context);
-  void (*record_unsupported_gnu_extension)(
+  void (*diagnose_unsupported_gnu_extension)(
       void *context, const token_t *token, const char *name);
 } psx_initializer_syntax_context_t;
 

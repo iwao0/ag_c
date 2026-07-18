@@ -30,9 +30,9 @@ struct label_def_t {
   token_t *tok;
 };
 
-typedef struct deferred_parser_warning_t deferred_parser_warning_t;
-struct deferred_parser_warning_t {
-  deferred_parser_warning_t *next_all;
+typedef struct deferred_parser_diagnostic_t deferred_parser_diagnostic_t;
+struct deferred_parser_diagnostic_t {
+  deferred_parser_diagnostic_t *next_all;
   const token_t *tok;
   const char *name;
 };
@@ -169,6 +169,7 @@ struct typedef_name_t {
   char *name;
   int len;
   psx_type_t *decl_type;
+  psx_runtime_declarator_application_t *runtime_application;
   int scope_depth;
   unsigned scope_seq;
   unsigned declaration_seq;
@@ -181,6 +182,11 @@ static const psx_type_t *tag_member_record_decl_type(
 
 static const psx_type_t *typedef_record_decl_type(const typedef_name_t *t) {
   return t ? t->decl_type : NULL;
+}
+
+static const psx_runtime_declarator_application_t *
+typedef_record_runtime_application(const typedef_name_t *t) {
+  return t ? t->runtime_application : NULL;
 }
 
 struct psx_function_symbol_t {
@@ -206,7 +212,7 @@ struct psx_semantic_context_t {
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
-  deferred_parser_warning_t *pending_warnings_all;
+  deferred_parser_diagnostic_t *pending_diagnostics_all;
   tag_type_t *tags_by_bucket[PCTX_HASH_BUCKETS];
   tag_type_t *tags_all;
   tag_member_t *aggregate_members_by_bucket[PCTX_HASH_BUCKETS];
@@ -352,6 +358,17 @@ psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
   return ps_ctx_intern_qual_type_in(context, type);
 }
 
+psx_qual_type_t ps_ctx_intern_void_qual_type_in(
+    psx_semantic_context_t *context) {
+  if (!context) {
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  }
+  return ps_ctx_intern_qual_type_in(
+      context,
+      ps_type_new_in(context->arena_context, PSX_TYPE_VOID));
+}
+
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee) {
   return context
@@ -359,6 +376,21 @@ psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
                    context->semantic_types, pointee)
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                                  PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
+    psx_semantic_context_t *context) {
+  if (!context) {
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  }
+  psx_qual_type_t result = ps_ctx_intern_integer_qual_type_in(
+      context, PSX_INTEGER_KIND_INT, 0, 0);
+  const psx_type_t *result_type = ps_ctx_type_by_id_in(
+      context, result.type_id);
+  return ps_ctx_intern_qual_type_in(
+      context,
+      ps_type_new_function_in(context->arena_context, result_type));
 }
 
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(
@@ -596,45 +628,47 @@ void ps_ctx_reset_translation_unit_scope_in(
   psx_record_layout_table_reset(record_layouts);
 }
 
-void ps_ctx_record_unsupported_gnu_extension_warning_in(
+void ps_ctx_record_unsupported_gnu_extension_in(
     psx_semantic_context_t *context,
     const token_t *tok, const char *name) {
   if (!context) return;
-  deferred_parser_warning_t *w = ctx_calloc_in(
-      context, 1, sizeof(deferred_parser_warning_t));
-  if (!w) {
+  deferred_parser_diagnostic_t *diagnostic = ctx_calloc_in(
+      context, 1, sizeof(deferred_parser_diagnostic_t));
+  if (!diagnostic) {
     diag_emit_internalf_in(
         context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
         diag_message_for_in(context->diagnostic_context,
                             DIAG_ERR_INTERNAL_OOM));
+    return;
   }
-  w->tok = tok;
-  w->name = name;
-  w->next_all = context->pending_warnings_all;
-  context->pending_warnings_all = w;
+  diagnostic->tok = tok;
+  diagnostic->name = name;
+  diagnostic->next_all = context->pending_diagnostics_all;
+  context->pending_diagnostics_all = diagnostic;
 }
 
-void ps_ctx_emit_deferred_parser_warnings_in(
+void ps_ctx_emit_deferred_parser_diagnostics_in(
     psx_semantic_context_t *context) {
   if (!context) return;
-  deferred_parser_warning_t *rev = NULL;
-  while (context->pending_warnings_all) {
-    deferred_parser_warning_t *w = context->pending_warnings_all;
-    context->pending_warnings_all = w->next_all;
-    w->next_all = rev;
-    rev = w;
+  deferred_parser_diagnostic_t *rev = NULL;
+  while (context->pending_diagnostics_all) {
+    deferred_parser_diagnostic_t *diagnostic =
+        context->pending_diagnostics_all;
+    context->pending_diagnostics_all = diagnostic->next_all;
+    diagnostic->next_all = rev;
+    rev = diagnostic;
   }
   while (rev) {
-    deferred_parser_warning_t *w = rev;
-    rev = w->next_all;
-    diag_warn_tokf_in(
+    deferred_parser_diagnostic_t *diagnostic = rev;
+    rev = diagnostic->next_all;
+    diag_emit_tokf_in(
         context->diagnostic_context,
-        DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, w->tok, "%s: %s",
-        diag_warn_message_for_in(
+        DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION, diagnostic->tok,
+        diag_message_for_in(
             context->diagnostic_context,
-            DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
-        w->name ? w->name : "");
-    ctx_release_in(context, w);
+            DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION),
+        diagnostic->name ? diagnostic->name : "");
+    ctx_release_in(context, diagnostic);
   }
 }
 
@@ -1599,13 +1633,58 @@ int ps_ctx_has_typedef_in_current_scope_in(
   return find_typedef_in_current_scope_in(context, name, len) != NULL;
 }
 
-static void initialize_typedef_record(
+static psx_runtime_declarator_application_t *
+clone_typedef_runtime_application(
+    psx_semantic_context_t *context,
+    const psx_runtime_declarator_application_t *source) {
+  if (!source) return NULL;
+  if (!context || source->shape.count < 0 ||
+      source->array_bound_count < 0 ||
+      (source->shape.count > 0 && !source->shape.ops) ||
+      (source->array_bound_count > 0 && !source->array_bounds))
+    return NULL;
+  psx_runtime_declarator_application_t *copy = ctx_calloc_in(
+      context, 1, sizeof(*copy));
+  if (!copy) return NULL;
+  if (source->shape.count > 0) {
+    copy->shape.ops = ctx_calloc_in(
+        context, (size_t)source->shape.count,
+        sizeof(*copy->shape.ops));
+    if (!copy->shape.ops) return NULL;
+    memcpy(
+        copy->shape.ops, source->shape.ops,
+        (size_t)source->shape.count * sizeof(*copy->shape.ops));
+    copy->shape.count = source->shape.count;
+    copy->shape.capacity = source->shape.count;
+  }
+  if (source->array_bound_count > 0) {
+    copy->array_bounds = ctx_calloc_in(
+        context, (size_t)source->array_bound_count,
+        sizeof(*copy->array_bounds));
+    if (!copy->array_bounds) return NULL;
+    memcpy(
+        copy->array_bounds, source->array_bounds,
+        (size_t)source->array_bound_count *
+            sizeof(*copy->array_bounds));
+    copy->array_bound_count = source->array_bound_count;
+  }
+  return copy;
+}
+
+static int initialize_typedef_record(
     psx_semantic_context_t *context,
     typedef_name_t *t, const psx_typedef_info_t *info) {
-  if (!t || !info || t->decl_type) return;
+  if (!t || !info || t->decl_type) return 0;
   t->decl_type = ctx_type_clone_persistent_in(
       context, ps_ctx_typedef_decl_type(info));
+  if (!t->decl_type) return 0;
+  if (info->runtime_application) {
+    t->runtime_application = clone_typedef_runtime_application(
+        context, info->runtime_application);
+    if (!t->runtime_application) return 0;
+  }
   ps_ctx_bind_record_ids_in(context, t->decl_type);
+  return 1;
 }
 
 int ps_ctx_register_typedef_name_in_contexts(
@@ -1642,7 +1721,7 @@ int ps_ctx_register_typedef_name_in_contexts(
   context->typedef_entries_by_bucket[bucket] = t;
   t->next_all = context->typedef_entries_all;
   context->typedef_entries_all = t;
-  initialize_typedef_record(context, t, info);
+  if (!initialize_typedef_record(context, t, info)) return 0;
   if (out_created) *out_created = 1;
   return 1;
 }
@@ -1667,6 +1746,8 @@ bool ps_ctx_find_typedef_name_in(
   if (out) {
     memset(out, 0, sizeof(*out));
     out->decl_type = typedef_record_decl_type(t);
+    out->runtime_application =
+        typedef_record_runtime_application(t);
   }
   return true;
 }
@@ -1685,6 +1766,19 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type) {
+  psx_typedef_info_t info;
+  if (!ps_ctx_find_typedef_name_at_in_contexts(
+          context, local_registry, name, len, point, &info))
+    return false;
+  if (out_type) *out_type = info.decl_type;
+  return true;
+}
+
+bool ps_ctx_find_typedef_name_at_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, psx_local_lookup_point_t point,
+    psx_typedef_info_t *out) {
   if (!context || !local_registry || !name || len <= 0) return false;
   for (typedef_name_t *type = context->typedef_entries_all; type;
        type = type->next_all) {
@@ -1695,7 +1789,13 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
         !ps_local_registry_scope_is_visible_from_in(
             local_registry, type->scope_seq, point.scope_seq))
       continue;
-    if (out_type) *out_type = typedef_record_decl_type(type);
+    if (out) {
+      *out = (psx_typedef_info_t){
+          .decl_type = typedef_record_decl_type(type),
+          .runtime_application =
+              typedef_record_runtime_application(type),
+      };
+    }
     return true;
   }
   return false;
@@ -1862,8 +1962,11 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
   if (f->function_type)
     return ps_type_shape_matches(f->function_type, function_type)
                ? f : NULL;
-  f->function_type =
-      ctx_type_clone_persistent_in(context, function_type);
+  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
+      context, function_type);
+  if (identity.type_id == PSX_TYPE_ID_INVALID) return NULL;
+  f->function_type = psx_semantic_type_table_lookup_qual_type(
+      context->semantic_types, identity);
   return f;
 }
 

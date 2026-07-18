@@ -1,7 +1,7 @@
 #include "parser_compatibility_test_hook.h"
 
 #include "../../src/frontend/translation_unit_resolver.h"
-#include "../../src/semantic/semantic_tree_resolution_internal.h"
+#include "../../src/semantic/semantic_tree_resolution_test_support.h"
 #include "../../src/semantic/typed_hir_materialization.h"
 
 typedef struct {
@@ -14,10 +14,10 @@ static int resolve_function_for_compatibility_test(
     const token_t *fallback_diag_tok,
     psx_hir_node_id_t *hir_root) {
   compatibility_resolver_context_t *resolver_context = context;
-  psx_function_resolution_internal_result_t resolution;
+  psx_function_compatibility_test_result_t resolution;
   if (!resolver_context || !resolver_context->compatibility_root ||
       !hir_root ||
-      !psx_resolve_parsed_function_internal_in_contexts(
+      !psx_resolve_parsed_function_compatibility_for_test_in_contexts(
           ag_compilation_session_semantic_context(session),
           ag_compilation_session_global_registry(session),
           ag_compilation_session_local_registry(session),

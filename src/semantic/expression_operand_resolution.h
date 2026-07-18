@@ -55,6 +55,12 @@ psx_qual_type_t psx_resolve_indirection_result_qual_type_in(
 psx_qual_type_t psx_resolve_address_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);
+psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type);
+psx_qual_type_t psx_resolve_value_decay_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t expression_type);
 int psx_qual_type_is_scalar_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t type);
@@ -71,8 +77,21 @@ typedef struct {
   int swapped;
 } psx_subscript_operands_resolution_t;
 
+typedef struct {
+  psx_subscript_operands_status_t status;
+  psx_qual_type_t base_qual_type;
+  psx_qual_type_t index_qual_type;
+  psx_qual_type_t result_qual_type;
+  int swapped;
+} psx_subscript_qual_types_resolution_t;
+
 void psx_resolve_subscript_operands(
     node_t *left, node_t *right,
     psx_subscript_operands_resolution_t *resolution);
+void psx_resolve_subscript_qual_types_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t left_type,
+    psx_qual_type_t right_type,
+    psx_subscript_qual_types_resolution_t *resolution);
 
 #endif

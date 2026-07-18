@@ -860,6 +860,9 @@ int lower_resolved_static_initializer(
       resolution->status != PSX_STATIC_INITIALIZER_OK ||
       !resolution->type || !resolution->initializer)
     return 0;
+  if (!psx_global_registry_note_global_mutation(
+          global_registry, global))
+    return 0;
 
   const psx_type_t *type = resolution->type;
   if (resolution->type_completed) {

@@ -1,7 +1,10 @@
 #ifndef SEMANTIC_ENUM_CONSTANT_RESOLUTION_H
 #define SEMANTIC_ENUM_CONSTANT_RESOLUTION_H
 
-struct psx_parsed_enum_expr_t;
+typedef struct node_t node_t;
+typedef struct token_t token_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -33,8 +36,12 @@ typedef struct {
 void psx_resolve_enum_constant(
     const psx_enum_constant_resolution_request_t *request,
     psx_enum_constant_resolution_t *resolution);
-long long psx_resolve_prepared_enum_const_expr_in_context(
+int psx_resolve_enum_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
-    const struct psx_parsed_enum_expr_t *expression);
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const node_t *syntax_expression,
+    const token_t *diagnostic_token,
+    long long *value);
 
 #endif

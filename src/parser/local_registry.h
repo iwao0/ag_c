@@ -12,6 +12,10 @@ typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 
 typedef struct {
+  void *state;
+} psx_local_registry_checkpoint_t;
+
+typedef struct psx_local_lookup_point_t {
   unsigned scope_seq;
   unsigned declaration_seq;
 } psx_local_lookup_point_t;
@@ -22,6 +26,17 @@ void ps_local_registry_destroy(psx_local_registry_t *registry);
 void ps_local_registry_bind_semantic_types(
     psx_local_registry_t *registry,
     const psx_semantic_type_table_t *semantic_types);
+int psx_local_registry_checkpoint_begin(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint);
+int psx_local_registry_checkpoint_is_active(
+    const psx_local_registry_t *registry);
+void psx_local_registry_checkpoint_commit(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint);
+void psx_local_registry_checkpoint_rollback(
+    psx_local_registry_t *registry,
+    psx_local_registry_checkpoint_t *checkpoint);
 
 unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry);

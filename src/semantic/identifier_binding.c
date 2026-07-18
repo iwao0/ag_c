@@ -180,12 +180,6 @@ static node_t *materialize_identifier(
     node_identifier_t *identifier, int is_call,
     const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *out_resolution) {
-  if (!is_call && identifier->name_len == 13 &&
-      memcmp(identifier->name, "__va_arg_area", 13) == 0) {
-    if (out_resolution)
-      *out_resolution = (psx_identifier_resolution_t){0};
-    return materialize_builtin_va_arg_area(identifier, context);
-  }
   psx_identifier_resolution_t resolution;
   resolve_identifier(identifier, is_call, context, &resolution);
   if (out_resolution) *out_resolution = resolution;
@@ -210,6 +204,8 @@ static node_t *materialize_identifier(
           identifier, resolution.global);
     case PSX_IDENTIFIER_FUNCTION:
       return materialize_function(identifier, &resolution, context);
+    case PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA:
+      return materialize_builtin_va_arg_area(identifier, context);
     case PSX_IDENTIFIER_UNDECLARED_CALL:
       return NULL;
     case PSX_IDENTIFIER_UNDEFINED:
@@ -340,22 +336,6 @@ static void bind_direct_call(
         "funcall", "canonical function type is missing for '%.*s'",
         identifier->name_len, identifier->name);
     return;
-  }
-  int expected = callee_type->param_count;
-  int is_variadic = callee_type->is_variadic_function;
-  int mismatch = is_variadic
-      ? call->argument_count < expected
-      : call->argument_count != expected;
-  if (mismatch) {
-    ps_diag_ctx_in(
-        ps_ctx_diagnostics(context->semantic_context),
-        identifier->base.tok
-            ? identifier->base.tok
-            : (token_t *)context->fallback_diag_tok,
-        "funcall",
-        "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
-        identifier->name_len, identifier->name,
-        is_variadic ? ">=" : "", expected, call->argument_count);
   }
 }
 

@@ -50,8 +50,15 @@ const psx_type_t *psx_apply_runtime_declarator_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application);
-int psx_apply_parsed_decl_alignment(
+int psx_compose_runtime_declarator_applications_in(
+    arena_context_t *arena_context,
+    const psx_runtime_declarator_application_t *declared,
+    const psx_runtime_declarator_application_t *typedef_base,
+    psx_runtime_declarator_application_t *result);
+int psx_resolve_parsed_decl_alignment_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
     const psx_parsed_decl_specifier_t *specifier);
 void psx_apply_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
@@ -80,6 +87,14 @@ void psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index,
     psx_local_lookup_point_t lookup_point);
+int psx_apply_resolved_runtime_parsed_declarator_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_declarator_t *declarator,
+    const psx_runtime_array_bound_t *resolved_bounds,
+    int resolved_bound_count,
+    psx_runtime_declarator_application_t *application);
 void psx_apply_parsed_function_parameters_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

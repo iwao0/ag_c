@@ -3,7 +3,6 @@
 #include "core.h"
 #include "diag.h"
 #include "runtime_context.h"
-#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
@@ -77,11 +76,6 @@ static int parse_declarator_head(
       &declaration->declarators[declaration->declarator_count - 1];
   if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
           declarator, options)) return 0;
-  ps_parse_runtime_declarator_expressions_with_options(
-      declarator, options);
-  ps_prepare_constant_declarator_expressions_in_context(
-      declarator, options->semantic_context,
-      options->name_classifier);
   require_declarator_name(declarator, runtime_context);
   return 1;
 }
@@ -89,14 +83,12 @@ static int parse_declarator_head(
 int psx_parse_toplevel_declaration_head_syntax_with_context(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_syntax_context_t *context) {
-  psx_semantic_context_t *semantic_context =
-      context ? context->semantic_context : NULL;
   psx_parser_runtime_context_t *runtime_context =
       context ? context->runtime_context : NULL;
   const psx_name_classifier_t *name_classifier =
       context ? &context->name_classifier : NULL;
-  if (!declaration || !context || !semantic_context ||
-      !runtime_context || !context->parse_assignment_expression ||
+  if (!declaration || !context || !runtime_context ||
+      !context->parse_assignment_expression ||
       !tokenizer(runtime_context))
     return 0;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
@@ -105,7 +97,6 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
       .expression_context = context->context,
       .parse_assignment_expression =
           context->parse_assignment_expression,
-      .semantic_context = semantic_context,
       .runtime_context = runtime_context,
   };
   *declaration = (psx_parsed_toplevel_declaration_t){0};
@@ -124,7 +115,6 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
                   syntax_options.expression_context,
               .parse_assignment_expression =
                   syntax_options.parse_assignment_expression,
-              .semantic_context = syntax_options.semantic_context,
               .runtime_context = syntax_options.runtime_context,
               .allow_implicit_int = 0,
           })) {
@@ -134,8 +124,6 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
         diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     return 0;
   }
-  ps_prepare_decl_specifier_alignments_in_context(
-      &declaration->specifier, semantic_context, name_classifier);
   declaration->is_extern = declaration->specifier.type_spec.is_extern;
   declaration->is_static = declaration->specifier.type_spec.is_static;
   declaration->is_thread_local =
@@ -162,12 +150,10 @@ static int initializer_value_is_missing(
 int psx_finish_toplevel_declaration_syntax_with_context(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_syntax_context_t *context) {
-  psx_semantic_context_t *semantic_context =
-      context ? context->semantic_context : NULL;
   psx_parser_runtime_context_t *runtime_context =
       context ? context->runtime_context : NULL;
-  if (!declaration || !context || !semantic_context ||
-      !runtime_context || !context->parse_assignment_expression ||
+  if (!declaration || !context || !runtime_context ||
+      !context->parse_assignment_expression ||
       !tokenizer(runtime_context))
     return 0;
   tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
@@ -176,8 +162,8 @@ int psx_finish_toplevel_declaration_syntax_with_context(
       .runtime_context = runtime_context,
       .parse_assignment_expression =
           context->parse_assignment_expression,
-      .record_unsupported_gnu_extension =
-          context->record_unsupported_gnu_extension,
+      .diagnose_unsupported_gnu_extension =
+          context->diagnose_unsupported_gnu_extension,
   };
   if (declaration->is_standalone_tag) {
     tk_expect_ctx(tk_ctx, ';');
@@ -215,7 +201,6 @@ int psx_finish_toplevel_declaration_syntax_with_context(
                 .expression_context = context->context,
                 .parse_assignment_expression =
                     context->parse_assignment_expression,
-                .semantic_context = semantic_context,
                 .runtime_context = runtime_context,
             })) {
       return 0;

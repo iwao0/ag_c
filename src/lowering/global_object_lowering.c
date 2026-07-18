@@ -19,6 +19,9 @@ int lower_resolved_global_object_declaration(
 
   global_var_t *existing = request->resolution->existing;
   if (existing) {
+    if (!psx_global_registry_note_global_mutation(
+            global_registry, existing))
+      return 0;
     if (request->resolution->clear_existing_extern)
       existing->is_extern_decl = 0;
     if (request->resolution->complete_existing_array &&
@@ -32,7 +35,6 @@ int lower_resolved_global_object_declaration(
 
   global_var_t *global = calloc(1, sizeof(*global));
   if (!global) return 0;
-  global->name = request->name;
   global->name_len = request->name_len;
   global->is_extern_decl = request->is_extern_decl ? 1 : 0;
   global->is_static = request->is_extern_decl ? 0
@@ -40,6 +42,12 @@ int lower_resolved_global_object_declaration(
   if (!ps_global_registry_bind_decl_qual_type(
           global_registry, global,
           request->resolution->declaration_qual_type)) {
+    free(global);
+    return 0;
+  }
+  global->name = ps_global_registry_copy_name_in(
+      global_registry, request->name, request->name_len);
+  if (!global->name) {
     free(global);
     return 0;
   }

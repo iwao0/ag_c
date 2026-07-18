@@ -52,7 +52,7 @@ static lvar_t *create_internal_vla_storage(
       local_registry, name, name_len, offset, storage_size, 0, type);
 }
 
-psx_vla_lowering_result_t lower_vla_declaration(
+psx_vla_lowering_result_t lower_vla_declaration_plan(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
   if (!request || !request->lowering_context) return result;
@@ -64,15 +64,30 @@ psx_vla_lowering_result_t lower_vla_declaration(
       ps_type_pointee_value_type(request->type));
   if (!request->local_registry ||
       !request->type || count <= 0 ||
-      element_size <= 0 || !request->dimensions || !request->is_const) {
+      element_size <= 0 || !request->dimensions) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
         diag_message_for_in(
             diagnostics, DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
 
+  int has_constant_dimension = 0;
+  for (int i = 0; i < count; i++) {
+    const psx_vla_runtime_dimension_t *dimension =
+        &request->dimensions[i];
+    if (dimension->is_constant) {
+      if (dimension->constant_value <= 0) return result;
+      has_constant_dimension = 1;
+    } else if (!dimension->expression) {
+      return result;
+    }
+  }
+  if (has_constant_dimension &&
+      request->constant_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return result;
+
   frame_vla_layout_t layout = frame_layout_vla_storage(
-      count, count == 2 && request->is_const[1]);
+      count, count == 2 && request->dimensions[1].is_constant);
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
   int row_stride_offset = 0;
@@ -100,6 +115,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
   memcpy(
       plan->dimensions, request->dimensions,
       (size_t)count * sizeof(*plan->dimensions));
+  plan->constant_qual_type = request->constant_qual_type;
   plan->dimension_count = count;
   plan->descriptor_frame_offset = var_offset;
   plan->row_stride_frame_offset = row_stride_offset;
@@ -132,11 +148,22 @@ psx_vla_lowering_result_t lower_vla_declaration(
     plan->stride_start_dimensions[store_index++] = level + 1;
   }
   result.runtime_plan = plan;
-  result.init = ps_node_new_vla_runtime_in(arena_context, plan);
   return result;
 }
 
-psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
+psx_vla_lowering_result_t lower_vla_declaration(
+    const psx_vla_lowering_request_t *request) {
+  psx_vla_lowering_result_t result =
+      lower_vla_declaration_plan(request);
+  if (result.runtime_plan && request && request->lowering_context) {
+    result.init = ps_node_new_vla_runtime_in(
+        ps_lowering_arena(request->lowering_context),
+        result.runtime_plan);
+  }
+  return result;
+}
+
+psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
   if (!request || !request->lowering_context) return result;
@@ -181,7 +208,9 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   if (!plan->dimensions || !plan->stride_store_offsets ||
       !plan->stride_start_dimensions)
     return result;
-  plan->dimensions[0] = request->row_dimension;
+  plan->dimensions[0] = (psx_vla_runtime_dimension_t){
+      .expression = request->row_dimension,
+  };
   plan->stride_store_offsets[0] = row_stride_offset;
   plan->stride_start_dimensions[0] = 0;
   plan->dimension_count = 1;
@@ -189,7 +218,18 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   plan->row_stride_frame_offset = row_stride_offset;
   plan->element_size = element_size;
   result.runtime_plan = plan;
-  result.init = ps_node_new_vla_runtime_in(arena_context, plan);
+  return result;
+}
+
+psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
+    const psx_pointer_vla_lowering_request_t *request) {
+  psx_vla_lowering_result_t result =
+      lower_pointer_to_vla_declaration_plan(request);
+  if (result.runtime_plan && request && request->lowering_context) {
+    result.init = ps_node_new_vla_runtime_in(
+        ps_lowering_arena(request->lowering_context),
+        result.runtime_plan);
+  }
   return result;
 }
 

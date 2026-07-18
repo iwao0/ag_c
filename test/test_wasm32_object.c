@@ -156,6 +156,23 @@ static int run_fail_case(const char *name, const char *cmd, const char *needle) 
   return 0;
 }
 
+static int run_compile_fail_case(
+    const char *name, const char *src, const char *needle) {
+  char c_path[256];
+  char o_path[256];
+  char cmd[1024];
+  snprintf(c_path, sizeof(c_path), "build/wasm32_obj/%s.c", name);
+  snprintf(o_path, sizeof(o_path), "build/wasm32_obj/%s.o", name);
+  if (write_file(c_path, src) != 0) {
+    fprintf(stderr, "FAIL: write %s\n", c_path);
+    return 1;
+  }
+  snprintf(
+      cmd, sizeof(cmd), "./build/ag_c_wasm -c -o %s %s",
+      o_path, c_path);
+  return run_fail_case(name, cmd, needle);
+}
+
 static int run_linked_import_abi_case(void) {
   if (!command_available("wasm-objdump")) return 0;
   if (write_file("build/wasm32_obj/import_abi_a.c",
@@ -1389,7 +1406,7 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
-  const char *i64_shift_needles[] = {"i64.extend_i32_s", "i64.shl"};
+  const char *i64_shift_needles[] = {"(i64) -> i64", "i64.shl"};
   failures += run_objdump_check("i64_shift",
                                 "long f(long x){return x<<3;}\n",
                                 i64_shift_needles, 2);
@@ -1788,23 +1805,23 @@ int main(void) {
                                        extern_local_funcptr_needles, 5,
                                        extern_funcptr_rejects, 0);
 
-  failures += run_objdump_check_absent("extern_funcptr_return_stmt_expr",
-                                       "typedef struct FILE FILE; extern FILE *stdout; "
-                                       "int fprintf(FILE*, const char*, ...); "
-                                       "typedef int (*Printer)(FILE*, const char*, ...); "
-                                       "Printer get(void){return ({ &fprintf; });} "
-                                       "int main(void){return get()(stdout, \"x\");}\n",
-                                       extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 0);
+  failures += run_compile_fail_case(
+      "extern_funcptr_return_stmt_expr",
+      "typedef struct FILE FILE; extern FILE *stdout; "
+      "int fprintf(FILE*, const char*, ...); "
+      "typedef int (*Printer)(FILE*, const char*, ...); "
+      "Printer get(void){return ({ &fprintf; });} "
+      "int main(void){return get()(stdout, \"x\");}\n",
+      "E3096");
 
-  failures += run_objdump_check_absent("extern_funcptr_return_stmt_expr_cast",
-                                       "typedef struct FILE FILE; extern FILE *stdout; "
-                                       "int fprintf(FILE*, const char*, ...); "
-                                       "typedef int (*Printer)(FILE*, const char*, ...); "
-                                       "Printer get(void){return ({ (Printer)&fprintf; });} "
-                                       "int main(void){return get()(stdout, \"x\");}\n",
-                                       extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 0);
+  failures += run_compile_fail_case(
+      "extern_funcptr_return_stmt_expr_cast",
+      "typedef struct FILE FILE; extern FILE *stdout; "
+      "int fprintf(FILE*, const char*, ...); "
+      "typedef int (*Printer)(FILE*, const char*, ...); "
+      "Printer get(void){return ({ (Printer)&fprintf; });} "
+      "int main(void){return get()(stdout, \"x\");}\n",
+      "E3096");
 
   failures += run_objdump_check_absent("extern_funcptr_return_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "

@@ -3,7 +3,7 @@
 
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
-#include "../semantic/typed_hir_tree.h"
+#include "../semantic/vla_runtime_plan.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
@@ -13,8 +13,8 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  const psx_typed_hir_tree_t **dimensions;
-  unsigned char *is_const;
+  psx_vla_runtime_dimension_t *dimensions;
+  psx_qual_type_t constant_qual_type;
   int dimension_count;
   const psx_type_t *type;
   int requested_alignment;
@@ -29,6 +29,8 @@ typedef struct {
 
 psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request);
+psx_vla_lowering_result_t lower_vla_declaration_plan(
+    const psx_vla_lowering_request_t *request);
 
 typedef struct {
   psx_local_registry_t *local_registry;
@@ -42,6 +44,8 @@ typedef struct {
 } psx_pointer_vla_lowering_request_t;
 
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
+    const psx_pointer_vla_lowering_request_t *request);
+psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request);
 
 typedef struct {

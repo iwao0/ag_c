@@ -48,7 +48,6 @@ static int callbacks_are_complete(
       !callbacks->parse_static_assert ||
       !callbacks->parse_decl_specifier ||
       !callbacks->parse_declarator ||
-      !callbacks->parse_runtime_declarator_expressions ||
       !callbacks->parse_initializer ||
       !tokenizer(callbacks)) {
     return 0;
@@ -141,8 +140,6 @@ node_t *psx_parse_local_declaration_syntax(
     psx_parsed_declarator_t *declarator =
         &declaration->declarators[declaration->declarator_count - 1];
     callbacks->parse_declarator(
-        callbacks->context, declarator);
-    callbacks->parse_runtime_declarator_expressions(
         callbacks->context, declarator);
     psx_record_declarator_binding_events(
         declarator, &callbacks->name_classifier);

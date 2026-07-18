@@ -17,6 +17,7 @@ typedef struct {
   unsigned int is_incomplete_array : 1;
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
+  unsigned int function_has_prototype : 1;
   const psx_type_t **function_param_types;
   int function_param_count;
   int function_is_variadic;

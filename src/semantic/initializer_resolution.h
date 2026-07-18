@@ -8,6 +8,40 @@
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
+typedef struct arena_context_t arena_context_t;
+typedef int (*psx_initializer_constant_index_resolver_t)(
+    void *context, const node_t *expression, long long *value);
+typedef int (*psx_initializer_value_type_resolver_t)(
+    void *context, const node_t *expression, psx_qual_type_t *type);
+
+typedef struct {
+  int relative_offset;
+  psx_qual_type_t target_qual_type;
+  unsigned char bit_width;
+  unsigned char bit_offset;
+  unsigned char bit_is_signed;
+  unsigned char is_active;
+  unsigned char is_object_copy;
+  unsigned char has_integer_value;
+  long long integer_value;
+  const node_t *value;
+  int evaluation_group;
+} psx_local_initializer_item_t;
+
+typedef struct {
+  psx_qual_type_t object_qual_type;
+  psx_local_initializer_item_t *items;
+  const node_t **evaluation_values;
+  int item_count;
+  int explicit_item_count;
+  int evaluation_group_count;
+} psx_local_initializer_plan_t;
+
+typedef enum {
+  PSX_LOCAL_INITIALIZER_OK = 0,
+  PSX_LOCAL_INITIALIZER_NOT_SUPPORTED,
+  PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY,
+} psx_local_initializer_status_t;
 
 typedef struct {
   const psx_record_member_decl_t *declaration;
@@ -42,6 +76,20 @@ typedef struct {
   int count;
   int capacity;
 } psx_initializer_scalar_leaf_list_t;
+
+psx_local_initializer_status_t
+psx_resolve_flat_local_initializer_plan(
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target,
+    psx_qual_type_t object_qual_type,
+    const node_init_list_t *initializer,
+    psx_initializer_constant_index_resolver_t resolve_index,
+    psx_initializer_value_type_resolver_t resolve_value_type,
+    void *resolve_index_context,
+    psx_local_initializer_plan_t *plan);
 
 psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
     ag_diagnostic_context_t *diagnostics,

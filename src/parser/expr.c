@@ -128,21 +128,8 @@ static node_t *new_binary_with_source_op(
 
 static int is_type_name_start_token(
     token_t *t, const expr_parse_ctx_t *ctx) {
-  if (!t) return 0;
-  psx_skip_gnu_attributes_at(&t);
-  if (!t) return 0;
-  if (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN ||
-      t->kind == TK_STATIC || t->kind == TK_AUTO ||
-      t->kind == TK_REGISTER || t->kind == TK_TYPEDEF ||
-      t->kind == TK_ALIGNAS || t->kind == TK_INLINE ||
-      t->kind == TK_NORETURN)
-    return 1;
-  if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
-  if (t->kind == TK_STRUCT || t->kind == TK_UNION || t->kind == TK_ENUM) return 1;
-  if (psx_is_type_specifier_token(t->kind)) return 1;
-  if (ctx && ps_name_classifier_is_typedef_name(
-                 &ctx->syntax.name_classifier, t)) return 1;
-  return 0;
+  return psx_token_starts_type_name_syntax(
+      t, ctx ? &ctx->syntax.name_classifier : NULL);
 }
 
 static void capture_lookup_point(

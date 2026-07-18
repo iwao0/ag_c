@@ -3,10 +3,6 @@
 
 #include <stddef.h>
 
-/* NOTE: C11 標準では size_t を使うが、現パーサーが typedef 名の
- * 引数型・戻り値型に未対応のため long で代替している。
- * また const 修飾も省略している。 */
-
 #define NULL ((void *)0)
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
@@ -52,7 +48,7 @@ long wcstombs(char *dst, int *src, long n);
 
 /* Pseudo-random numbers */
 int rand(void);
-void srand(int seed);
+void srand(unsigned int seed);
 
 /* Integer arithmetic */
 int abs(int n);
@@ -63,8 +59,10 @@ ldiv_t ldiv(long numer, long denom);
 lldiv_t lldiv(long long numer, long long denom);
 
 /* Sorting and searching */
-void qsort(void *base, long nmemb, long size, int (*compar)(void *, void *));
-void *bsearch(void *key, void *base, long nmemb, long size, int (*compar)(void *, void *));
+void qsort(void *base, size_t nmemb, size_t size,
+           int (*compar)(const void *, const void *));
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*compar)(const void *, const void *));
 
 /* Environment */
 char *getenv(char *name);

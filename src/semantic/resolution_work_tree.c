@@ -65,6 +65,9 @@ static int clone_parsed_declarator(
     arena_context_t *arena_context,
     psx_parsed_declarator_t *destination,
     const psx_parsed_declarator_t *source);
+static psx_parsed_type_name_t *clone_type_name_syntax(
+    arena_context_t *arena_context,
+    const psx_parsed_type_name_t *source);
 
 static int clone_parsed_const_expr(
     arena_context_t *arena_context,
@@ -80,10 +83,17 @@ static int clone_decl_specifier(
     psx_parsed_decl_specifier_t *destination,
     const psx_parsed_decl_specifier_t *source) {
   *destination = *source;
-  for (int i = 0; i < source->alignas_expression_count; i++) {
-    if (!clone_parsed_const_expr(
-            arena_context, &destination->alignas_expressions[i],
-            &source->alignas_expressions[i]))
+  for (int i = 0; i < source->alignas_specifier_count; i++) {
+    const psx_parsed_alignas_t *source_alignas =
+        &source->alignas_specifiers[i];
+    psx_parsed_alignas_t *alignas =
+        &destination->alignas_specifiers[i];
+    alignas->expression = clone_node(
+        arena_context, source_alignas->expression);
+    alignas->type_name = clone_type_name_syntax(
+        arena_context, source_alignas->type_name);
+    if ((source_alignas->expression && !alignas->expression) ||
+        (source_alignas->type_name && !alignas->type_name))
       return 0;
   }
   return 1;

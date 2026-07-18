@@ -2,6 +2,7 @@
 
 #include "alignof_query_resolution.h"
 #include "generic_selection_resolution.h"
+#include "integer_constant_evaluation.h"
 #include "literal_resolution.h"
 #include "resolved_node_kind.h"
 #include "resolved_object_ref.h"
@@ -9,37 +10,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
-#include <stdint.h>
 #include <string.h>
-
-static int integer_cast_width(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_INTEGER) return 0;
-  switch (type->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR: return 1;
-    case PSX_INTEGER_KIND_SHORT: return 2;
-    case PSX_INTEGER_KIND_INT:
-    case PSX_INTEGER_KIND_ENUM:
-      return 4;
-    case PSX_INTEGER_KIND_LONG_LONG: return 8;
-    case PSX_INTEGER_KIND_LONG:
-    case PSX_INTEGER_KIND_NONE:
-    default:
-      return 0;
-  }
-}
-
-static long long normalize_integer_cast(
-    long long value, const psx_type_t *target) {
-  int byte_width = integer_cast_width(target);
-  int bits = byte_width * 8;
-  if (bits <= 0 || bits >= 64) return value;
-  uint64_t mask = (UINT64_C(1) << bits) - 1;
-  uint64_t normalized = (uint64_t)value & mask;
-  if (!ps_type_is_unsigned(target) &&
-      (normalized & (UINT64_C(1) << (bits - 1))))
-    normalized |= ~mask;
-  return (long long)normalized;
-}
 
 static int type_uses_floating_value(const psx_type_t *type) {
   return type && (type->kind == PSX_TYPE_FLOAT ||
@@ -67,10 +38,16 @@ long long psx_eval_const_int(node_t *node, int *ok) {
                              ? (long long)psx_eval_const_fp(node->lhs, ok)
                              : psx_eval_const_int(node->lhs, ok);
       if (ok && !*ok) return 0;
-      if (target && target->kind == PSX_TYPE_BOOL)
-        return result != 0;
-      if (target && target->kind == PSX_TYPE_INTEGER)
-        return normalize_integer_cast(result, target);
+      if (target && (target->kind == PSX_TYPE_BOOL ||
+                     target->kind == PSX_TYPE_INTEGER)) {
+        long long normalized;
+        if (!psx_normalize_integer_constant_cast(
+                target, result, &normalized)) {
+          if (ok) *ok = 0;
+          return 0;
+        }
+        return normalized;
+      }
       if (target && target->kind == PSX_TYPE_FLOAT)
         return (long long)psx_eval_const_fp(node->lhs, ok);
       return result;
@@ -173,27 +150,14 @@ long long psx_eval_const_int(node_t *node, int *ok) {
   long long left = psx_eval_const_int(node->lhs, ok);
   if (ok && !*ok) return 0;
   long long right = psx_eval_const_int(node->rhs, ok);
-  switch (psx_resolved_object_ref_node_kind(node)) {
-    case ND_ADD: return left + right;
-    case ND_SUB: return left - right;
-    case ND_MUL: return left * right;
-    case ND_DIV: return left / right;
-    case ND_MOD: return left % right;
-    case ND_SHL: return left << right;
-    case ND_SHR: return left >> right;
-    case ND_BITAND: return left & right;
-    case ND_BITXOR: return left ^ right;
-    case ND_BITOR: return left | right;
-    case ND_EQ: return left == right;
-    case ND_NE: return left != right;
-    case ND_LT: return left < right;
-    case ND_LE: return left <= right;
-    case ND_LOGAND: return left && right;
-    case ND_LOGOR: return left || right;
-    default:
-      if (ok) *ok = 0;
-      return 0;
-  }
+  long long result;
+  if (psx_apply_integer_constant_binary(
+          (psx_syntax_node_kind_t)
+              psx_resolved_object_ref_node_kind(node),
+          left, right, &result))
+    return result;
+  if (ok) *ok = 0;
+  return 0;
 }
 
 double psx_eval_const_fp(node_t *node, int *ok) {

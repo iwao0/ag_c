@@ -29,6 +29,8 @@
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/local_initializer_binding.h"
 #include "semantic/static_initializer_resolution.h"
+#include "semantic/static_initializer_materialization.h"
+#include "semantic/typed_hir_materialization.h"
 #include "semantic/parameter_declaration_resolution.h"
 
 
@@ -450,11 +452,19 @@ static int append_definition_parameter(
     *capacity = pda_next_cap_in(
         ps_ctx_diagnostics(semantic_context),
         *capacity, result->nargs + 2);
+    result->parameter_vars = pda_xreallocarray_in(
+        ps_ctx_diagnostics(semantic_context), result->parameter_vars,
+        (size_t)*capacity, sizeof(*result->parameter_vars));
+    result->parameter_types = pda_xreallocarray_in(
+        ps_ctx_diagnostics(semantic_context), result->parameter_types,
+        (size_t)*capacity, sizeof(*result->parameter_types));
     result->args = pda_xreallocarray_in(
         ps_ctx_diagnostics(semantic_context), result->args,
         (size_t)*capacity, sizeof(node_t *));
   }
   if (!name) {
+    result->parameter_vars[result->nargs] = NULL;
+    result->parameter_types[result->nargs] = resolution.type;
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
             ps_lowering_arena(lowering_context), resolution.type);
@@ -498,6 +508,8 @@ static int append_definition_parameter(
         "canonical parameter lowering failed for '%.*s'",
         name->len, name->str);
   }
+  result->parameter_vars[result->nargs] = lowered;
+  result->parameter_types[result->nargs] = resolution.type;
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
           ps_lowering_arena(lowering_context), lowered);
@@ -544,8 +556,12 @@ int psx_begin_function_definition_pipeline(
   state->parameter_count = primary_suffix->parameters
                                ? primary_suffix->parameters->count : 0;
   state->args_capacity = 16;
+  result->parameter_vars = calloc(
+      (size_t)state->args_capacity, sizeof(*result->parameter_vars));
+  result->parameter_types = calloc(
+      (size_t)state->args_capacity, sizeof(*result->parameter_types));
   result->args = calloc((size_t)state->args_capacity, sizeof(node_t *));
-  return result->args != NULL;
+  return result->parameter_vars && result->parameter_types && result->args;
 }
 
 int psx_apply_function_definition_parameter_pipeline(
@@ -564,6 +580,8 @@ int psx_apply_function_definition_parameter_pipeline(
           "void parameter must be the only parameter");
     }
     state->result->nargs = 0;
+    state->result->parameter_vars[0] = NULL;
+    state->result->parameter_types[0] = NULL;
     state->result->args[0] = NULL;
     return 1;
   }
@@ -577,15 +595,11 @@ int psx_finish_function_definition_pipeline(
   psx_function_definition_pipeline_result_t *result = state->result;
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
-  const psx_type_t **parameter_types = result->nargs > 0
-      ? calloc((size_t)result->nargs, sizeof(*parameter_types)) : NULL;
-  for (int i = 0; i < result->nargs; i++)
-    parameter_types[i] = ps_node_get_type(result->args[i]);
   psx_set_resolved_function_parameter_types(
       ps_ctx_arena(state->semantic_context), primary,
-      parameter_types, result->nargs,
-      primary->function_is_variadic);
-  free(parameter_types);
+      result->parameter_types, result->nargs,
+      primary->function_is_variadic,
+      state->parameter_count > 0 || primary->function_is_variadic);
 
   result->function_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
@@ -766,6 +780,66 @@ int psx_finish_static_local_declaration_pipeline(
   return 1;
 }
 
+int psx_finish_static_local_declaration_typed_hir_pipeline(
+    const psx_static_local_declaration_pipeline_request_t *request,
+    psx_static_local_declaration_pipeline_result_t *result,
+    const psx_typed_hir_tree_t *initializer_typed_hir) {
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry || !request->local_registry ||
+      !request->lowering_context || !result->global || !result->alias ||
+      !request->initializer || !request->initializer->has_initializer ||
+      !initializer_typed_hir)
+    return 0;
+
+  psx_static_initializer_resolution_t resolution;
+  psx_resolve_static_initializer(
+      &(psx_static_initializer_resolution_request_t){
+          .semantic_context = request->semantic_context,
+          .type = request->type,
+          .kind = request->initializer->kind,
+          .initializer = request->initializer->value,
+          .diag_tok = request->initializer->value_tok,
+      },
+      &resolution);
+  if (resolution.status != PSX_STATIC_INITIALIZER_OK)
+    return 0;
+
+  psx_hir_module_t *initializer_hir = NULL;
+  psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
+  if (resolution.is_aggregate_initializer) {
+    if (!psx_materialize_static_aggregate_initializer_plan(
+            initializer_typed_hir, request->global_registry,
+            request->lowering_context, resolution.type,
+            request->initializer->value_tok, &aggregate_plan))
+      return 0;
+    resolution.aggregate_plan = &aggregate_plan;
+  } else {
+    initializer_hir = psx_hir_module_create();
+    if (!initializer_hir) return 0;
+    psx_resolved_hir_build_failure_t failure;
+    psx_hir_node_id_t initializer_root = psx_typed_hir_tree_emit(
+        initializer_hir, initializer_typed_hir, &failure);
+    if (initializer_root == PSX_HIR_NODE_ID_INVALID) {
+      psx_hir_module_destroy(initializer_hir);
+      return 0;
+    }
+    resolution.initializer_hir = initializer_hir;
+    resolution.initializer_hir_root = initializer_root;
+  }
+  int lowered = lower_static_local_declaration_initializer(
+      request->global_registry, request->lowering_context,
+      result->global, &resolution, request->initializer->value_tok,
+      &result->type_completed);
+  psx_hir_module_destroy(initializer_hir);
+  if (!lowered) return 0;
+  if (result->type_completed &&
+      !ps_local_registry_complete_array_type(
+          request->local_registry, result->alias, resolution.type))
+    return 0;
+  result->initialized = 1;
+  return 1;
+}
+
 int psx_apply_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result) {
@@ -825,9 +899,10 @@ static node_t *append_local_initialization(
                : node;
 }
 
-int psx_begin_automatic_local_declaration_pipeline(
+static int begin_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result) {
+    psx_automatic_local_declaration_pipeline_result_t *result,
+    int materialize_compatibility_ast) {
   if (result)
     *result = (psx_automatic_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->name || request->name_len <= 0 ||
@@ -901,19 +976,33 @@ int psx_begin_automatic_local_declaration_pipeline(
       lowering.dimensions = arena_alloc_in(
           ps_lowering_arena(request->lowering_context),
           (size_t)resolution.dimension_count * sizeof(*lowering.dimensions));
-      lowering.is_const = arena_alloc_in(
-          ps_lowering_arena(request->lowering_context),
-          (size_t)resolution.dimension_count * sizeof(*lowering.is_const));
+      lowering.constant_qual_type = ps_ctx_intern_integer_qual_type_in(
+          request->semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+      if (!lowering.dimensions ||
+          lowering.constant_qual_type.type_id == PSX_TYPE_ID_INVALID)
+        return 0;
       for (int i = 0; i < resolution.dimension_count; i++) {
-        lowering.dimensions[i] = ps_ctx_semantic_expression_in(
-            request->semantic_context,
-            resolution.dimensions[i].expression_id);
-        if (!lowering.dimensions[i]) return 0;
-        lowering.is_const[i] = resolution.dimensions[i].is_constant;
+        const psx_local_vla_dimension_t *dimension =
+            &resolution.dimensions[i];
+        lowering.dimensions[i] = (psx_vla_runtime_dimension_t){
+            .expression = dimension->is_constant
+                              ? NULL
+                              : ps_ctx_semantic_expression_in(
+                                    request->semantic_context,
+                                    dimension->expression_id),
+            .constant_value = dimension->constant_value,
+            .is_constant = dimension->is_constant ? 1 : 0,
+        };
+        if (!dimension->is_constant &&
+            !lowering.dimensions[i].expression)
+          return 0;
       }
-      vla = lower_vla_declaration(&lowering);
+      vla = materialize_compatibility_ast
+                ? lower_vla_declaration(&lowering)
+                : lower_vla_declaration_plan(&lowering);
       result->var = vla.var;
       result->initialization = vla.init;
+      result->vla_runtime_plan = vla.runtime_plan;
       break;
     }
     case PSX_LOCAL_STORAGE_POINTER_TO_VLA: {
@@ -922,8 +1011,7 @@ int psx_begin_automatic_local_declaration_pipeline(
           request->semantic_context,
           resolution.pointer_row_dimension_id);
       if (!row_dimension) return 0;
-      vla = lower_pointer_to_vla_declaration(
-          &(psx_pointer_vla_lowering_request_t){
+      psx_pointer_vla_lowering_request_t lowering = {
               .local_registry = request->local_registry,
               .lowering_context = request->lowering_context,
               .name = request->name,
@@ -932,15 +1020,33 @@ int psx_begin_automatic_local_declaration_pipeline(
               .type = request->type,
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
-          });
+      };
+      vla = materialize_compatibility_ast
+                ? lower_pointer_to_vla_declaration(&lowering)
+                : lower_pointer_to_vla_declaration_plan(&lowering);
       result->var = vla.var;
       result->initialization = vla.init;
+      result->vla_runtime_plan = vla.runtime_plan;
       break;
     }
   }
   if (!result->var) return 0;
 
   return 1;
+}
+
+int psx_begin_automatic_local_declaration_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result) {
+  return begin_automatic_local_declaration_pipeline(
+      request, result, 1);
+}
+
+int psx_begin_automatic_local_declaration_hir_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result) {
+  return begin_automatic_local_declaration_pipeline(
+      request, result, 0);
 }
 
 int psx_finish_automatic_local_declaration_pipeline(
@@ -1067,7 +1173,7 @@ lvar_t *psx_apply_temporary_local_declaration_pipeline(
       !request->lowering_context) {
     return NULL;
   }
-  return lower_complete_local_object(
+  return lower_complete_internal_local_object(
       &(psx_local_object_request_t){
           .local_registry = request->local_registry,
           .lowering_context = request->lowering_context,

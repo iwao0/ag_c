@@ -184,6 +184,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "Continuation entry does not support alloca across frames";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "Continuation entry requires one direct while(frame_condition()) loop";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "Continuation entry permits exactly one frame condition call";
+    case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported: %s";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
@@ -226,7 +227,6 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "left operand of '%s' is unary '!' and '!' has higher precedence than '%s', so '(!x) %s y' is parsed instead of '!(x %s y)'";
     case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "pointer is compared with non-zero integer constant %lld using '%s' (C11 6.5.16.1)";
     case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "integer constant expression %lld %s %lld = %lld exceeds the range of int (C11 6.5p5 undefined behavior)";
-    case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported by this compiler; skipping it";
   }
   return NULL;
 }

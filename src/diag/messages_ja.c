@@ -184,6 +184,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ alloca を使用できません";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "continuation entry には while(frame_condition()) の直接ループが1つ必要です";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "continuation entry 内のフレーム条件呼び出しは1回だけ許可されます";
+    case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張は使用できません: %s";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -226,7 +227,6 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'%s' の左辺が単項 '!' で、'!' の優先順位が '%s' より高いため '(!x) %s y' と解釈されます ('!(x %s y)' を意図していませんか)";
     case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "ポインタを非ゼロ整数定数 %lld と '%s' で比較しています (C11 6.5.16.1)";
     case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "整数定数式 %lld %s %lld = %lld は int の範囲を超えています (C11 6.5p5 未定義動作)";
-    case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張はこのコンパイラでは使用できません。読み飛ばします";
   }
   return NULL;
 }
