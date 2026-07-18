@@ -23,7 +23,7 @@ static void check_str_eq(const char *label, const char *got, const char *expecte
 /* ---- test 1: 算術式 (1 + 2) を return する 1 関数だけのモジュール ---- */
 static void test_simple_add(void) {
   ir_module_t *m = ir_module_new();
-  ir_func_t *f = ir_func_new(m, "main", 4, IR_TY_I32);
+  ir_func_t *f = ir_func_new(m, "main", 4);
 
   int v0 = ir_func_new_vreg(f);
   int v1 = ir_func_new_vreg(f);
@@ -53,7 +53,7 @@ static void test_simple_add(void) {
   ir_print_module_to_buf(m, buf, sizeof(buf));
 
   const char *expected =
-    "func @main -> i32 {\n"
+    "func @main {\n"
     ".L0:\n"
     "  v0 = load_imm i32 1\n"
     "  v1 = load_imm i32 2\n"
@@ -105,16 +105,16 @@ static void test_globals(void) {
 /* ---- test 3: 制御フロー (if 風) ---- */
 static void test_control_flow(void) {
   ir_module_t *m = ir_module_new();
-  ir_func_t *f = ir_func_new(m, "cmp", 3, IR_TY_I32);
+  ir_func_t *f = ir_func_new(m, "cmp", 3);
 
   int v0 = ir_func_new_vreg(f); /* x */
   int v1 = ir_func_new_vreg(f); /* 0 */
   int v2 = ir_func_new_vreg(f); /* x > 0 ? */
 
-  ir_inst_t *iparam = ir_inst_new(IR_PARAM);
-  iparam->dst = ir_val_vreg(v0, IR_TY_I32);
-  iparam->src1 = ir_val_imm(IR_TY_I32, 0);
-  ir_func_append_inst(f, iparam);
+  ir_inst_t *ix = ir_inst_new(IR_LOAD_IMM);
+  ix->dst = ir_val_vreg(v0, IR_TY_I32);
+  ix->src1 = ir_val_imm(IR_TY_I32, 1);
+  ir_func_append_inst(f, ix);
 
   ir_inst_t *izero = ir_inst_new(IR_LOAD_IMM);
   izero->dst = ir_val_vreg(v1, IR_TY_I32);
@@ -151,9 +151,9 @@ static void test_control_flow(void) {
   ir_print_module_to_buf(m, buf, sizeof(buf));
 
   const char *expected =
-    "func @cmp -> i32 {\n"
+    "func @cmp {\n"
     ".L0:\n"
-    "  v0 = param i32 #0\n"
+    "  v0 = load_imm i32 1\n"
     "  v1 = load_imm i32 0\n"
     "  v2 = lt i32 v1, v0\n"
     "  br_cond v2, .L1, .L2\n"
@@ -168,7 +168,7 @@ static void test_control_flow(void) {
 /* ---- test 4: 関数呼び出し ---- */
 static void test_call(void) {
   ir_module_t *m = ir_module_new();
-  ir_func_t *f = ir_func_new(m, "main", 4, IR_TY_I32);
+  ir_func_t *f = ir_func_new(m, "main", 4);
 
   int v0 = ir_func_new_vreg(f);
   int v1 = ir_func_new_vreg(f);
@@ -201,7 +201,7 @@ static void test_call(void) {
   ir_print_module_to_buf(m, buf, sizeof(buf));
 
   const char *expected =
-    "func @main -> i32 {\n"
+    "func @main {\n"
     ".L0:\n"
     "  v0 = load_imm i32 3\n"
     "  v1 = load_imm i32 4\n"

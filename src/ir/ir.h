@@ -109,18 +109,11 @@ typedef enum {
   /* 関数呼び出し */
   IR_CALL,
 
-  /* 関数 prologue: 第 n 仮引数を vreg に読む */
-  IR_PARAM,
-
   /* Source-level parameter binding. src1 is the destination object address and
    * parameter_index names one parameter in ir_func_t.function_type. The MIR
    * instruction contains no register class, physical parameter index, or ABI
    * piece count; AbiLowering expands it for the selected target. */
   IR_PARAM_BIND,
-
-  /* 関数のaggregate結果保存先をvregに読む。物理的な受け渡し位置は
-   * AbiLoweringとbackendが決定し、MIRにはtarget registerを持たせない。 */
-  IR_RESULT_AREA,
 
   /* Apple ARM64 ABI variadic argument-area builtin. */
   IR_VA_ARG_AREA,
@@ -322,7 +315,6 @@ typedef struct ir_func_t {
   int next_block_id;
   int frame_size;
   int is_static;      /* 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。 */
-  ir_type_t ret_type;
   int continuation_condition_block_id;
   unsigned char is_continuation_entry;
   unsigned char continuation_has_suspend;
@@ -399,7 +391,7 @@ ir_symbol_func_ref_t *ir_symbol_add_func_ref(
     const ir_function_type_t *function_type);
 const ir_symbol_func_ref_t *ir_symbol_find_func_ref(
     const ir_symbol_t *symbol, int offset);
-ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t ret_type);
+ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len);
 ir_block_t  *ir_block_new(ir_func_t *f);
 ir_inst_t   *ir_inst_new(ir_op_t op);
 

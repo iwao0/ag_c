@@ -21,8 +21,7 @@ CFLAGS+=-DDIAG_LANG_JA
 endif
 
 ARCH_SRCS=$(wildcard src/arch/*/*.c)
-COMPAT_AST_IR_SRCS=src/lowering/ir_builder.c
-LOWERING_SRCS=$(filter-out $(COMPAT_AST_IR_SRCS),$(wildcard src/lowering/*.c))
+LOWERING_SRCS=$(wildcard src/lowering/*.c)
 SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/hir/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(LOWERING_SRCS) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)

@@ -661,13 +661,13 @@ static long test_function_abi_value(
       value = signature->param_pieces[index].type;
     else if (field == 2) value = signature->is_variadic;
     else if (field == 3) value = signature->result_size;
-    else if (field == 4) value = signature->result_area_vreg;
     else if (field == 5 && index < signature->param_count)
       value = (long)signature->param_pieces[index].source_index;
     else if (field == 6 && index < signature->param_count)
       value = signature->param_pieces[index].byte_offset;
     else if (field == 7 && index < signature->param_count)
       value = signature->param_pieces[index].kind;
+    else if (field == 8) value = signature->result.type;
   }
   ir_abi_module_free(abi);
   return value;
@@ -4603,7 +4603,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_TRUE(ir != NULL);
   ASSERT_TRUE(ir->funcs != NULL);
   ASSERT_TRUE(strcmp(ir->funcs->name, "main") == 0);
-  ASSERT_EQ(IR_TY_I32, ir->funcs->ret_type);
+  ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 8, 0));
   ASSERT_TRUE(ir->funcs->entry != NULL);
   ASSERT_TRUE(ir->funcs->entry->head != NULL);
   ASSERT_EQ(IR_ADD, ir->funcs->entry->head->op);
@@ -4771,7 +4771,6 @@ static void test_typed_hir_parameter_lowering_without_ast() {
   ASSERT_TRUE(ir->funcs->function_type.result.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(2, ir->funcs->function_type.param_count);
   ASSERT_TRUE(ir->funcs->function_type.has_prototype);
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(2, test_function_abi_value(ir, 0, 0));
   ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 1, 0));
@@ -4816,7 +4815,7 @@ static void test_typed_hir_pointer_lowering_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_PTR, ir->funcs->ret_type);
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 8, 0));
   ASSERT_EQ(1, test_function_abi_value(ir, 0, 0));
   ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 4);
@@ -5324,13 +5323,17 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
       "struct Pair make_pair(int left, int right) { "
       "struct Pair pair; pair.left = left; pair.right = right; "
       "return pair; } "
-      "int read_left(void) { return make_pair(3, 4).left; }");
+      "int read_left(void) { return make_pair(3, 4).left; } "
+      "int read_initialized(void) { "
+      "struct Pair pair = make_pair(5, 6); return pair.right; }");
   ASSERT_TRUE(program != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
-  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  ASSERT_EQ(3, psx_hir_module_root_count(hir));
   psx_hir_node_id_t make_root_id = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t read_root_id = psx_hir_module_root_at(hir, 1);
+  psx_hir_node_id_t initialized_root_id =
+      psx_hir_module_root_at(hir, 2);
   free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -5351,9 +5354,8 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
       hir, make_root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_I64, ir->funcs->ret_type);
+  ASSERT_EQ(IR_TY_I64, test_function_abi_value(ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_RESULT_AREA));
   ir_module_free(ir);
 
   status = IR_HIR_BUILD_INVALID;
@@ -5364,6 +5366,28 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_STORE));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 1);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
+  ir_module_free(ir);
+
+  status = IR_HIR_BUILD_INVALID;
+  ir = ir_build_function_module_from_hir(
+      hir, initialized_root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+  const ir_inst_t *initialized_call = NULL;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block && !initialized_call; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_CALL) {
+        initialized_call = instruction;
+        break;
+      }
+    }
+  }
+  ASSERT_TRUE(initialized_call != NULL);
+  ASSERT_TRUE(initialized_call->result_storage.id != IR_VAL_NONE);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
   reset_test_translation_unit_state();
@@ -5410,7 +5434,6 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
       hir, pair_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(IR_TY_I64, test_function_abi_value(ir, 1, 0));
   ir_module_free(ir);
@@ -5420,7 +5443,6 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
       hir, triple_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
@@ -5476,9 +5498,6 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(12, test_function_abi_value(ir, 3, 0));
-  ASSERT_EQ(-1, test_function_abi_value(ir, 4, 0));
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_RESULT_AREA));
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
@@ -5745,7 +5764,6 @@ static void test_typed_hir_floating_lowering_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM_BIND));
   unsigned parameter_binding_mask = 0;
   for (const ir_block_t *block = ir->funcs->entry;
@@ -6180,7 +6198,7 @@ static void test_typed_hir_void_function_lowering_without_ast() {
       hir, assign_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(assign_ir != NULL && assign_ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_VOID, assign_ir->funcs->ret_type);
+  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(assign_ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(assign_ir->funcs, IR_RET));
   ir_module_free(assign_ir);
 
@@ -6189,7 +6207,7 @@ static void test_typed_hir_void_function_lowering_without_ast() {
       hir, clear_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(clear_ir != NULL && clear_ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_VOID, clear_ir->funcs->ret_type);
+  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(clear_ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(clear_ir->funcs, IR_RET));
   ir_module_free(clear_ir);
 
@@ -10427,7 +10445,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(0, count_ir_op(ir->funcs, IR_PARAM));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 13);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 25);

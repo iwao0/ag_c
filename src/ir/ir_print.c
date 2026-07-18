@@ -126,14 +126,9 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       }
       sink_printf(s, ")");
       break;
-    case IR_PARAM:
-      sink_printf(s, "#%lld", i->src1.imm);
-      break;
     case IR_PARAM_BIND:
       sink_printf(s, "param[%zu] -> ", i->parameter_index);
       print_val(s, i->src1);
-      break;
-    case IR_RESULT_AREA:
       break;
     case IR_NEG:
     case IR_NOT:
@@ -172,7 +167,7 @@ static void print_block(ir_print_sink_t *s, ir_block_t *b) {
 }
 
 static void print_func(ir_print_sink_t *s, ir_func_t *f) {
-  sink_printf(s, "func @%.*s -> %s", f->name_len, f->name ? f->name : "", ir_type_name(f->ret_type));
+  sink_printf(s, "func @%.*s", f->name_len, f->name ? f->name : "");
   if (f->function_type.is_variadic)
     sink_printf(s, " variadic(fixed=%zu)", f->function_type.param_count);
   sink_printf(s, " {\n");

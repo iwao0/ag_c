@@ -96,76 +96,6 @@ ir_abi_param_info_t ir_abi_classify_type_id(
   }
 }
 
-void ir_abi_callable_type_dispose(ir_abi_callable_type_t *type) {
-  if (!type) return;
-  free(type->params);
-  memset(type, 0, sizeof(*type));
-}
-
-static int set_callable_type(
-    ir_abi_callable_type_t *type, ir_type_t result,
-    const ir_type_t *params, size_t param_count, int is_variadic) {
-  if (!type || (param_count > 0 && !params) ||
-      param_count > SIZE_MAX / sizeof(*params))
-    return 0;
-  ir_type_t *copy = NULL;
-  if (param_count > 0) {
-    copy = malloc(param_count * sizeof(*copy));
-    if (!copy) return 0;
-    memcpy(copy, params, param_count * sizeof(*copy));
-  }
-  free(type->params);
-  type->result = result;
-  type->params = copy;
-  type->param_count = param_count;
-  type->is_variadic = is_variadic ? 1 : 0;
-  return 1;
-}
-
-int ir_abi_source_callable_type_from_type_id(
-    const ir_abi_type_context_t *context, psx_type_id_t type_id,
-    ir_abi_callable_type_t *out) {
-  if (!context || !context->semantic_types || !out) return 0;
-  ir_abi_callable_type_dispose(out);
-  const psx_type_t *function = psx_semantic_type_table_lookup(
-      context->semantic_types, type_id);
-  while (function && (function->kind == PSX_TYPE_POINTER ||
-                      function->kind == PSX_TYPE_ARRAY)) {
-    type_id = psx_semantic_type_table_base(
-        context->semantic_types, type_id).type_id;
-    function = psx_semantic_type_table_lookup(
-        context->semantic_types, type_id);
-  }
-  if (!function || function->kind != PSX_TYPE_FUNCTION) return 0;
-
-  psx_type_id_t result_type_id = psx_semantic_type_table_base(
-      context->semantic_types, type_id).type_id;
-  ir_abi_param_info_t result = ir_abi_classify_type_id(
-      context, result_type_id);
-  int count = function->param_count;
-  if (count < 0) count = 0;
-  ir_type_t *params = NULL;
-  if (count > 0) {
-    params = calloc((size_t)count, sizeof(*params));
-    if (!params) return 0;
-  }
-  for (int i = 0; i < count; i++) {
-    psx_type_id_t param_type_id = psx_semantic_type_table_parameter(
-        context->semantic_types, type_id, i).type_id;
-    ir_abi_param_info_t param = ir_abi_classify_type_id(
-        context, param_type_id);
-    params[i] = param.type == IR_TY_VOID ? IR_TY_I32 : param.type;
-  }
-  int ok = set_callable_type(
-      out,
-      function->base && function->base->kind == PSX_TYPE_VOID
-          ? IR_TY_VOID : result.type,
-      params, (size_t)count,
-      function->is_variadic_function);
-  free(params);
-  return ok;
-}
-
 static int type_is_complex(
     const ir_abi_type_context_t *context, psx_type_id_t type_id) {
   const psx_type_t *type = context && context->semantic_types
@@ -202,7 +132,6 @@ static int lower_function_type_signature(
     return 0;
   memset(out, 0, sizeof(*out));
   out->result_area = ir_val_none();
-  out->result_area_vreg = -1;
   out->result = ir_abi_classify_type_id(
       context, function_type->result.type_id);
   out->result_size = out->result.source_size;
@@ -311,20 +240,6 @@ static size_t count_symbol_references(const ir_module_t *module) {
     }
   }
   return count;
-}
-
-static int function_result_area_vreg(const ir_func_t *function) {
-  int result = -1;
-  for (const ir_block_t *block = function ? function->entry : NULL;
-       block; block = block->next) {
-    for (const ir_inst_t *instruction = block->head; instruction;
-         instruction = instruction->next) {
-      if (instruction->op != IR_RESULT_AREA) continue;
-      if (instruction->dst.id < 0 || result >= 0) return -1;
-      result = instruction->dst.id;
-    }
-  }
-  return result;
 }
 
 static size_t logical_variadic_piece_count(
@@ -497,8 +412,6 @@ ir_abi_module_t *ir_abi_lower_module(
     if (!lower_function_type_signature(
             context, &function->function_type, &lowered->signature))
       goto fail;
-    lowered->signature.result_area_vreg =
-        function_result_area_vreg(function);
     for (const ir_block_t *block = function->entry; block;
          block = block->next) {
       for (const ir_inst_t *instruction = block->head; instruction;

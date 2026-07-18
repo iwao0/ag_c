@@ -177,9 +177,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_RET:
     case IR_CONTINUATION_SUSPEND:
     case IR_LABEL:
-    case IR_PARAM:
     case IR_PARAM_BIND:
-    case IR_RESULT_AREA:
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */
     case IR_LOAD_TLV_ADDR: /* 内部で blr __tlv_bootstrap を発行する */
     case IR_VLA_ALLOC:    /* SP を動的に変更する */

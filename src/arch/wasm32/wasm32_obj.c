@@ -735,21 +735,8 @@ static int force_vreg_i32(ir_type_t *types, unsigned char *forced_i32, int ntype
   return changed;
 }
 
-static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw);
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw);
 static obj_sig_t call_sig_from_inst(ir_inst_t *i);
-
-static int func_param_ordinal_for_inst(ir_func_t *f, ir_inst_t *target) {
-  int ordinal = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
-      if (i == target) return ordinal;
-      ordinal++;
-    }
-  }
-  return -1;
-}
 
 static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *is_unsigned,
                                 int ntypes) {
@@ -774,25 +761,6 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
             i, &argument_count);
         for (int a = 0; a < argument_count; a++)
           note_vreg_type(types, ntypes, arguments[a].source);
-      }
-    }
-  }
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_RESULT_AREA &&
-          i->dst.id >= 0 && i->dst.id < ntypes) {
-        force_vreg_i32(types, forced_i32, ntypes, i->dst);
-        continue;
-      }
-      if (i->op != IR_PARAM || i->dst.id < 0 || i->dst.id >= ntypes ||
-          i->src1.id != IR_VAL_IMM) {
-        continue;
-      }
-      int ordinal = func_param_ordinal_for_inst(f, i);
-      ir_type_t pty = func_param_type_from_decl(f, ordinal, i->dst.type);
-      types[i->dst.id] = wasm_ir_type(pty);
-      if (pty == IR_TY_PTR) {
-        force_vreg_i32(types, forced_i32, ntypes, i->dst);
       }
     }
   }
@@ -1205,15 +1173,6 @@ static int func_has_ret_area(ir_func_t *f) {
   return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
 }
 
-static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  const ir_abi_signature_t *abi = obj_function_abi(f);
-  if (abi && idx >= 0 && (size_t)idx < abi->param_count) {
-    return abi->param_pieces[idx].type;
-  }
-  if (raw == IR_TY_PTR) return IR_TY_PTR;
-  return raw;
-}
-
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
   (void)name;
   (void)name_len;
@@ -1275,9 +1234,9 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
   int has_ret_area = func_has_ret_area(f);
   memset(sig, 0, sizeof(*sig));
   sig->nparams = collect_param_count(f) + (has_ret_area ? 1 : 0);
-  sig->result = has_ret_area || f->ret_type == IR_TY_VOID
+  sig->result = has_ret_area || abi->result.type == IR_TY_VOID
                   ? IR_TY_VOID
-                  : wasm_ir_type(func_result_type_from_decl(f->name, f->name_len, f->ret_type));
+                  : wasm_ir_type(abi->result.type);
   if (sig->nparams > 0) {
     sig->params = xrealloc(NULL, (size_t)sig->nparams * sizeof(ir_type_t));
     if (has_ret_area) sig->params[0] = IR_TY_I32;
@@ -1873,28 +1832,9 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         case IR_NOP:
         case IR_LABEL:
           break;
-        case IR_PARAM: {
-          if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0)
-            obj_unsupported_op(i->op);
-          int ordinal = func_param_ordinal_for_inst(f, i);
-          if (ordinal < 0) obj_unsupported_op(i->op);
-          int param_slot = ordinal + (has_ret_area ? 1 : 0);
-          emit_local_get(&body, param_slot);
-          if (param_slot >= 0 && param_slot < of->sig.nparams) {
-            emit_stack_cast(&body, of->sig.params[param_slot], actual_vreg_type(i->dst),
-                            actual_vreg_unsigned(i->dst));
-          }
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
         case IR_PARAM_BIND:
           emit_parameter_bind(
               &body, f, of, i, param_count, has_ret_area);
-          break;
-        case IR_RESULT_AREA:
-          if (!has_ret_area) obj_unsupported_op(i->op);
-          emit_local_get(&body, 0);
-          emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALLOCA: {
           if (has_persistent_continuation_frame) break;

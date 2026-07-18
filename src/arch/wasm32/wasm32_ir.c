@@ -348,8 +348,11 @@ static void register_function_definition(const ir_func_t *function) {
   symbol->defined = 1;
   const ir_abi_signature_t *abi = wasm_function_abi(function);
   if (!abi || abi->param_count > INT_MAX) return;
+  ir_type_t result_type =
+      abi->result_is_indirect || abi->result_complex_half > 0
+          ? IR_TY_VOID : abi->result.type;
   record_function_signature(
-      function->name, function->name_len, function->ret_type,
+      function->name, function->name_len, result_type,
       abi->param_pieces, (int)abi->param_count);
 }
 
@@ -587,42 +590,9 @@ static void emit_function_table(void) {
   wasm_cg_emitf(")\n");
 }
 
-static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  const ir_abi_signature_t *abi = wasm_function_abi(f);
-  if (abi && idx >= 0 && (size_t)idx < abi->param_count &&
-      abi->param_pieces[idx].type != IR_TY_VOID)
-    return abi->param_pieces[idx].type;
-  return raw;
-}
-
 static int func_has_hidden_ret_area(ir_func_t *f) {
   const ir_abi_signature_t *abi = wasm_function_abi(f);
   return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
-}
-
-static int func_param_ordinal_for_inst(ir_func_t *f, ir_inst_t *target) {
-  int ordinal = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
-      if (i == target) return ordinal;
-      ordinal++;
-    }
-  }
-  return -1;
-}
-
-static ir_inst_t *func_param_inst_at_ordinal(ir_func_t *f, int ordinal) {
-  if (ordinal < 0) return NULL;
-  int cur = 0;
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
-      if (cur == ordinal) return i;
-      cur++;
-    }
-  }
-  return NULL;
 }
 
 static void collect_vreg_type_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t type) {
@@ -638,17 +608,6 @@ static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
 }
 
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
-  if (i->op == IR_RESULT_AREA) {
-    collect_vreg_type_as(ctx, i->dst, IR_TY_PTR);
-    return;
-  }
-  if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
-    int ordinal = func_param_ordinal_for_inst(ctx->f, i);
-    ir_type_t ty = func_param_type_from_decl(
-        ctx->f, ordinal, i->dst.type);
-    collect_vreg_type_as(ctx, i->dst, ty);
-    return;
-  }
   collect_vreg_type(ctx, i->dst);
   collect_vreg_type(ctx, i->src1);
   collect_vreg_type(ctx, i->src2);
@@ -1692,21 +1651,8 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_LABEL:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
       return;
-    case IR_PARAM: {
-      if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0)
-        wasm_unsupported_op(i->op);
-      int param_ordinal = func_param_ordinal_for_inst(ctx->f, i);
-      if (param_ordinal < 0) wasm_unsupported_op(i->op);
-      wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id,
-                 param_ordinal + func_has_hidden_ret_area(ctx->f));
-      return;
-    }
     case IR_PARAM_BIND:
       emit_parameter_bind(ctx, i, indent);
-      return;
-    case IR_RESULT_AREA:
-      if (!func_has_hidden_ret_area(ctx->f)) wasm_unsupported_op(i->op);
-      wasm_emitf(indent, "(local.set $v%d (local.get $p0))\n", i->dst.id);
       return;
     case IR_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
@@ -1974,7 +1920,8 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
         wasm_cg_emitf("))\n");
       } else if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");
-        emit_val_expr_as(ctx, i->src1, ctx->f->ret_type);
+        emit_val_expr_as(
+            ctx, i->src1, wasm_function_abi(ctx->f)->result.type);
         wasm_cg_emitf(")\n");
       } else {
         wasm_emitf(indent, "return\n");
@@ -2001,10 +1948,6 @@ static ir_type_t func_param_type(ir_func_t *f, int idx) {
       abi->param_pieces[idx].type != IR_TY_VOID) {
     return abi->param_pieces[idx].type;
   }
-  ir_inst_t *param = func_param_inst_at_ordinal(f, idx);
-  if (param) {
-    return func_param_type_from_decl(f, idx, param->dst.type);
-  }
   return IR_TY_I32;
 }
 
@@ -2026,8 +1969,10 @@ static void emit_func(const ir_module_t *module, ir_func_t *f) {
     if (!pt) wasm_unsupported_msg("non-integer Wasm function parameter");
     wasm_cg_emitf(" (param $p%d %s)", p, pt);
   }
-  if (f->ret_type != IR_TY_VOID && !func_has_hidden_ret_area(f)) {
-    const char *rt = wasm_type(f->ret_type);
+  const ir_abi_signature_t *function_abi = wasm_function_abi(f);
+  if (function_abi && function_abi->result.type != IR_TY_VOID &&
+      !func_has_hidden_ret_area(f)) {
+    const char *rt = wasm_type(function_abi->result.type);
     if (!rt) wasm_unsupported_msg("non-integer Wasm function return");
     wasm_cg_emitf(" (result %s)", rt);
   }

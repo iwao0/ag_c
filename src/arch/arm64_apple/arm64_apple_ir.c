@@ -325,9 +325,7 @@ static void gen_inst_lea(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_memcpy(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst);
-static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_param_bind(gen_ctx_t *ctx, ir_inst_t *inst);
-static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst);
@@ -378,9 +376,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_LT: case IR_LE: case IR_ULT: case IR_ULE:
     case IR_EQ: case IR_NE:
                            gen_inst_int_cmp(ctx, inst); return;
-    case IR_PARAM:         gen_inst_param(ctx, inst); return;
     case IR_PARAM_BIND:    gen_inst_param_bind(ctx, inst); return;
-    case IR_RESULT_AREA:   gen_inst_result_area(ctx, inst); return;
     case IR_CALL:          gen_inst_call(ctx, inst); return;
     case IR_BR:
       arm64_cg_emitf(ctx, "  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
@@ -928,73 +924,6 @@ static void gen_inst_param_bind(gen_ctx_t *ctx, ir_inst_t *inst) {
           ctx, destination, pieces[i].byte_offset,
           pieces[i].type, source);
     }
-  }
-}
-
-static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
-      int idx = (int)inst->src1.imm;
-      /* float/double → s{idx}/d{idx}、整数 → x{idx}。
-       * 整数 idx >= 8 → 呼び出し側が stack に積んだ 9 個目以降の引数を
-       *   [x29 + total_size + (idx-8)*8] から load する (Apple ARM64 ABI)。 */
-      int is_fp = (inst->dst.type == IR_TY_F32 || inst->dst.type == IR_TY_F64);
-      char src_buf[8];
-      const char *src_reg;
-      if (!is_fp && idx >= 8) {
-        /* stack-passed integer arg: ldr to a scratch reg then write to slot. */
-        int stack_off = ctx->total_size + (idx - 8) * 8;
-        const char *tmp = "x9";
-        emit_frame_load(ctx, tmp, stack_off);
-        if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-          if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
-            int r = ctx->f->vreg_phys_reg[inst->dst.id];
-            arm64_cg_emitf(ctx, "  mov x%d, %s\n", r, tmp);
-          } else {
-            emit_frame_store(ctx, tmp, ctx->vreg_off[inst->dst.id]);
-          }
-        }
-        return;
-      } else if (is_fp && idx >= 8) {
-        /* stack-passed float/double arg: 8B slot に置かれている。
-         * d0 を scratch として使い、slot へ転送。 */
-        int stack_off = ctx->total_size + (idx - 8) * 8;
-        const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
-        char r0[4];
-        snprintf(r0, sizeof(r0), "%s0", suf);
-        emit_frame_load(ctx, r0, stack_off);
-        if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-          emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
-        }
-        return;
-      } else if (is_fp) {
-        const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
-        snprintf(src_buf, sizeof(src_buf), "%s%d", suf, idx);
-        src_reg = src_buf;
-      } else {
-        snprintf(src_buf, sizeof(src_buf), "x%d", idx);
-        src_reg = src_buf;
-      }
-  if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    if (!is_fp && ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
-      int r = ctx->f->vreg_phys_reg[inst->dst.id];
-      if (r != idx) {
-        arm64_cg_emitf(ctx, "  mov x%d, %s\n", r, src_reg);
-      }
-    } else {
-      emit_frame_store(ctx, src_reg, ctx->vreg_off[inst->dst.id]);
-    }
-  }
-}
-
-static void gen_inst_result_area(gen_ctx_t *ctx, ir_inst_t *inst) {
-  if (inst->dst.id < 0 || inst->dst.id >= ctx->f->next_vreg_id) return;
-  if (ctx->result_area_off < 0) abort();
-  emit_frame_load(ctx, "x16", ctx->result_area_off);
-  if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
-    int destination = ctx->f->vreg_phys_reg[inst->dst.id];
-    if (destination != 16)
-      arm64_cg_emitf(ctx, "  mov x%d, x16\n", destination);
-  } else {
-    emit_frame_store(ctx, "x16", ctx->vreg_off[inst->dst.id]);
   }
 }
 

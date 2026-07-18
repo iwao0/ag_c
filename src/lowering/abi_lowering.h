@@ -63,21 +63,11 @@ typedef struct {
   size_t param_count;
   size_t fixed_param_count;
   int result_size;
-  int result_area_vreg;
   ir_val_t result_area;
   unsigned char result_is_indirect;
   unsigned char result_complex_half;
   unsigned char is_variadic;
 } ir_abi_signature_t;
-
-/* Source-parameter view used only while lowering semantic operations to MIR.
- * It is target-specific lowering state and is never owned by generic IR. */
-typedef struct {
-  ir_type_t result;
-  ir_type_t *params;
-  size_t param_count;
-  unsigned char is_variadic;
-} ir_abi_callable_type_t;
 
 typedef struct {
   const ir_func_t *function;
@@ -127,10 +117,6 @@ ir_abi_param_info_t ir_abi_classify_builtin_param(
     const char *name, int name_len, int param_idx);
 ir_abi_param_info_t ir_abi_classify_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id);
-int ir_abi_source_callable_type_from_type_id(
-    const ir_abi_type_context_t *context, psx_type_id_t type_id,
-    ir_abi_callable_type_t *out);
-void ir_abi_callable_type_dispose(ir_abi_callable_type_t *type);
 ir_abi_module_t *ir_abi_lower_module(
     const ir_abi_type_context_t *context,
     const ir_module_t *module);

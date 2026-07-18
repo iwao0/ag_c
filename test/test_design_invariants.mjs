@@ -1091,23 +1091,12 @@ const translationUnitDataLoweringHeader = await readFile(
   "src/lowering/translation_unit_data_lowering.h",
   "utf8",
 );
-const irBuilderSource = await readFile(
-  "src/lowering/ir_builder.c",
-  "utf8",
-);
-const irBuilderHeader = await readFile(
-  "src/lowering/ir_builder.h",
-  "utf8",
-);
 const irBuildOptionsHeader = await readFile(
   "src/lowering/ir_build_options.h",
   "utf8",
 );
 if (/\bps_node_atomic_pointer_info\s*\(/.test(
       `${parserLayerSource}\n${loweringLayerSource}`,
-    ) ||
-    !/int\s+width\s*=\s*ir_type_deref_size\s*\(\s*ctx\s*,\s*ps_node_get_type\s*\(\s*parg\s*\)\s*\)/.test(
-      irBuilderSource,
     )) {
   throw new Error(
     "atomic IR width must come from TypeId target layout instead of a parser node size helper",
@@ -1297,46 +1286,8 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
   );
 }
 
-const irBuilderActiveSessionReads =
-  irBuilderSource.match(/\bag_compilation_session_active_compat\s*\(\)/g) ?? [];
-const irBuilderRange = (start, end) => {
-  const startIndex = irBuilderSource.indexOf(start);
-  return irBuilderSource.slice(
-    startIndex,
-    irBuilderSource.indexOf(end, startIndex),
-  );
-};
-const irTargetOnlyEntryBodies = [
-  irBuilderRange(
-    "ir_build_module_for_target(",
-    "int ir_build_emit_function_for_target(",
-  ),
-  irBuilderRange(
-    "ir_build_emit_function_for_target(",
-    "\nint ir_build_emit_function_with_options(",
-  ),
-  irBuilderRange(
-    "ir_build_function_module_for_target(",
-    "\nir_module_t *ir_build_function_module_with_options(",
-  ),
-  irBuilderRange(
-    "ir_build_each_and_emit_for_target(",
-    "\nint ir_build_each_and_emit_with_options(",
-  ),
-];
 if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
       irBuildOptionsHeader,
-    ) ||
-    !/ctx->configured_continuation/.test(irBuilderSource) ||
-    !/ctx->continuation\s*=\s*NULL\s*;[\s\S]*?ctx->continuation_while\s*=\s*NULL\s*;/.test(
-      irBuilderSource,
-    ) ||
-    irBuilderActiveSessionReads.length !== 0 ||
-    irTargetOnlyEntryBodies.some((body) =>
-      !body.includes("ir_build_options_for_target(") ||
-      !body.includes("diag_context_create(") ||
-      !body.includes("diag_context_destroy(") ||
-      body.includes("ir_build_options_for_active_session(")
     ) ||
     !/\.target\s*=\s*ag_compilation_session_target\s*\(/.test(
       compilerMainSource,
@@ -1376,10 +1327,9 @@ if (!/int\s+ag_compilation_session_deactivate\s*\(/.test(
 }
 
 if (/ag_compilation_session_(?:active_compat|effective_target_compat)\s*\(/.test(
-      `${compilationSessionSource}\n${preprocessSource}\n${irBuilderSource}`,
+      `${compilationSessionSource}\n${preprocessSource}\n${hirIrBuilder}`,
     ) ||
-    /\bag_target_pointer_size\s*\(/.test(preprocessSource) ||
-    /\bag_target_pointer_size\s*\(/.test(irBuilderSource)) {
+    /\bag_target_pointer_size\s*\(/.test(preprocessSource)) {
   throw new Error(
     "preprocess and IR core APIs must receive their target explicitly",
   );
@@ -2251,7 +2201,7 @@ const productionSessionConsumers = [
   semanticPipelineSource,
   identifierBindingSource,
   translationUnitDataLoweringSource,
-  irBuilderSource,
+  hirIrBuilder,
   preprocessSource,
 ];
 if (directSessionContextField.test(productionSessionConsumers.join("\n")) ||
@@ -2273,16 +2223,6 @@ const contextFreeApiDeclarations = [
       "psx_frontend_program",
       "psx_frontend_program_from",
       "psx_frontend_program_ctx",
-    ],
-  },
-  {
-    core: irBuilderHeader,
-    source: irBuilderSource,
-    names: [
-      "ir_build_module",
-      "ir_build_each_and_emit",
-      "ir_build_emit_function",
-      "ir_build_function_module",
     ],
   },
   {
@@ -3574,10 +3514,14 @@ const abiLoweringSource = await readFile(
   "src/lowering/abi_lowering.c",
   "utf8",
 );
+const abiLoweringHeader = await readFile(
+  "src/lowering/abi_lowering.h",
+  "utf8",
+);
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
-    !/\blower_ir_global_symbol\s*\(/.test(irBuilderSource) ||
-    !/object_size\s*=\s*\(s->byte_len\s*\+\s*1\)/.test(irBuilderSource)) {
+    !/\blower_ir_global_symbol\s*\(/.test(irSymbolLoweringSource) ||
+    !/\bobject_size\b/.test(hirIrBuilder)) {
   throw new Error(
     "IR lowering must materialize global layout and string size before backend codegen",
   );
@@ -3585,11 +3529,8 @@ if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
 if (/\bnode_gvar_t\b/.test(resolvedGlobalAstSource) ||
     /\bps_find_global_var\s*\(/.test(constantExpressionSource) ||
     /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
-    !/global_var_t\s*\*global\s*=\s*psx_resolved_object_ref_global\s*\(\s*node\s*\)/.test(
-      irBuilderSource,
-    ) ||
-    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*global\s*,\s*ctx->semantic_types\s*,\s*ctx->record_decls\s*,\s*ctx->record_layouts\s*,\s*ctx->target\s*\)/.test(
-      irBuilderSource,
+    !/psx_resolved_object_ref_global\s*\(/.test(
+      resolvedTreeMaterialization,
     )) {
   throw new Error(
     "resolved global references must retain symbol identity in resolution state without active-registry lookup or specialized node payloads",
@@ -3634,9 +3575,9 @@ for (const name of forbiddenGenericIrAbiMetadata) {
     throw new Error(`generic IR must not own target ABI metadata: ${name}`);
   }
 }
-if (/\bx8\b/.test(irHeaderSource) ||
-    /IR_PARAM[^\n]*-1|-1[^\n]*IR_PARAM/.test(irBuilderSource) ||
-    !/\bIR_RESULT_AREA\b/.test(irHeaderSource) ||
+if (/\bx8\b|\bret_type\b/.test(irHeaderSource) ||
+    /\bIR_(?:PARAM|RESULT_AREA)\b/.test(irHeaderSource) ||
+    /\bresult_area_vreg\b/.test(abiLoweringHeader) ||
     !/\bir_abi_reference_signature\s*\(/.test(wasmIrSource) ||
     !/\bir_abi_data_relocation_signature\s*\(/.test(wasmIrSource) ||
     !/\bir_abi_reference_signature\s*\(/.test(wasmObjSource) ||
@@ -4387,19 +4328,13 @@ if (/\bnode_func_t\b/.test(astSource) ||
     "function definitions and resolved call metadata must live outside Syntax AST",
   );
 }
-const classifyCallParam = irBuilderSource.match(
-  /static\s+ir_abi_param_info_t\s+classify_call_param\s*\([^]*?\n\}/,
+const logicalCallLowering = hirIrBuilder.match(
+  /static\s+ir_val_t\s+build_scalar_or_void_call\s*\([^;]*?\)\s*\{[^]*?\n\}/,
 );
-const attachCallableType = irBuilderSource.match(
-  /static\s+void\s+attach_callable_type\s*\([^]*?\n\}/,
-);
-if (!classifyCallParam ||
-    !/psx_function_call_qual_type\s*\(/.test(classifyCallParam[0]) ||
-    !/psx_semantic_type_table_parameter\s*\(/.test(classifyCallParam[0]) ||
-    /(?:callee_type|param_types)\s*(?:->|\[)/.test(classifyCallParam[0]) ||
-    !attachCallableType ||
-    !/ir_function_type_from_type_id\s*\(/.test(attachCallableType[0]) ||
-    /\bir_abi_[A-Za-z0-9_]+\s*\(/.test(attachCallableType[0])) {
+if (!logicalCallLowering ||
+    !/psx_semantic_type_table_parameter\s*\(/.test(logicalCallLowering[0]) ||
+    !/ir_function_type_from_type_id\s*\(/.test(logicalCallLowering[0]) ||
+    /ir_abi_(?:source_callable|callable_type)/.test(logicalCallLowering[0])) {
   throw new Error(
     "IR calls must retain finalized function TypeId without embedding ABI projections",
   );
@@ -4676,13 +4611,16 @@ if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
 const resolvedReferencePayloadPattern =
   /\bnode_(?:lvar|gvar|funcref)_t\b/;
 if (resolvedReferencePayloadPattern.test(resolvedObjectRefSource) ||
-    resolvedReferencePayloadPattern.test(irBuilderSource) ||
     /resolved_node\.h/.test(nodeUtilsHeaderSource) ||
     !/typedef\s+struct\s*\{[^]*?psx_resolved_reference_kind_t\s+kind\s*;[^]*?\}\s*psx_resolved_reference_state_t\s*;/.test(
       earlyNodeResolutionState,
     ) ||
-    !/psx_resolved_object_ref_storage_offset\s*\(/.test(irBuilderSource) ||
-    !/psx_resolved_object_ref_name\s*\(/.test(irBuilderSource)) {
+    !/psx_resolved_object_ref_storage_offset\s*\(/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/psx_resolved_object_ref_name\s*\(/.test(
+      resolvedTreeMaterialization,
+    )) {
   throw new Error(
     "resolved reference payload must be owned by resolution state and consumed through semantic accessors",
   );
@@ -4877,16 +4815,7 @@ const semanticDiagnosticsSource = await readFile(
 const semanticWarningCalls = callBodies(
   semanticDiagnosticsSource, "diag_warn_tokf_in",
 );
-const irWarningCalls = callBodies(irBuilderSource, "diag_warn_tokf_in");
-const continuationValidationSource = irBuilderSource.slice(
-  irBuilderSource.indexOf("static int prepare_continuation_entry("),
-  irBuilderSource.indexOf("\nstatic void fail(", irBuilderSource.indexOf(
-    "static int prepare_continuation_entry(",
-  )),
-);
-const continuationDiagnosticCalls = callBodies(
-  continuationValidationSource, "diag_emit_tokf_in",
-);
+const irWarningCalls = callBodies(hirIrBuilder, "diag_warn_tokf_in");
 const wasmObjectOutputSource = wasmObjSource.slice(
   wasmObjSource.indexOf("void wasm32_obj_end("),
 );
@@ -4924,17 +4853,11 @@ if (semanticWarningCalls.length === 0 ||
     !irWarningCalls.some((body) =>
       body.includes("DIAG_WARN_PARSER_MISSING_RETURN") &&
       body.includes("diag_warn_message_for_in(")) ||
-    continuationDiagnosticCalls.length !== 4 ||
-    continuationDiagnosticCalls.some((body) =>
-      !body.includes("diag_message_for_in(")) ||
     wasmObjectDiagnosticCalls.length !== 3 ||
     wasmObjectDiagnosticCalls.some((body) =>
       !body.includes("diag_message_for_in(")) ||
     !/DIAG_ERR_CODEGEN_WASM_OBJECT_OPEN_FAILED[\s\S]*?diag_emit_internalf_in\s*\([\s\S]*?diag_message_for_in\s*\(/.test(
       compilerMainSource,
-    ) ||
-    /continuation entry (?:must|does|requires|permits)|continuation frame condition must/.test(
-      irBuilderSource,
     ) ||
     /failed to (?:open|write) Wasm object output|missing Wasm object output sink/.test(
       `${compilerMainSource}\n${wasmObjSource}`,
@@ -5076,7 +4999,7 @@ if ([
       globalObjectLoweringSource,
       explicitDiagnosticCompoundLiteralLoweringSource,
       explicitDiagnosticCastLoweringSource,
-      irBuilderSource,
+      hirIrBuilder,
       compilerMainSource,
       explicitDiagnosticInitializerResolutionSource,
       explicitDiagnosticInitializerLoweringSource,
@@ -6341,14 +6264,8 @@ const targetSensitiveLoweringSources = [
   loweringRuntimeSource,
   explicitDiagnosticCastLoweringSource,
   declarationPipelineSource,
-  irBuilderSource,
+  hirIrBuilder,
 ].join("\n");
-const irNodeTypeSize = irBuilderSource.match(
-  /static\s+int\s+ir_node_type_size\s*\([^]*?\n\}/,
-);
-const irAggregateSizeFromNode = irBuilderSource.match(
-  /static\s+int\s+aggregate_size_from_node\s*\([^]*?\n\}/,
-);
 if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_alignment\s*\(/.test(loweringRuntimeHeader) ||
@@ -6360,16 +6277,7 @@ if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_type_alignof_id_with_records\s*\(/.test(
       loweringRuntimeSource,
     ) ||
-    !irNodeTypeSize ||
-    !/\bps_node_qual_type\s*\(/.test(irNodeTypeSize[0]) ||
-    /\bps_node_get_type\s*\(/.test(irNodeTypeSize[0]) ||
-    !irAggregateSizeFromNode ||
-    !/\bps_node_qual_type\s*\(/.test(irAggregateSizeFromNode[0]) ||
-    !/\baggregate_size_from_type_id\s*\(/.test(
-      irAggregateSizeFromNode[0],
-    ) ||
-    /\bps_node_get_type\s*\(/.test(irAggregateSizeFromNode[0]) ||
-    /\baggregate_size_from_type\s*\(/.test(irBuilderSource) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(hirIrBuilder) ||
     /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",
@@ -6417,7 +6325,7 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
 }
 for (const [name, source] of [
   ["cast", explicitDiagnosticCastLoweringSource],
-  ["IR builder", irBuilderSource],
+  ["HIR IR builder", hirIrBuilder],
 ]) {
   if (/\bps_node_(?:type|storage_type|deref)_size\s*\(/.test(source)) {
     throw new Error(
@@ -6458,8 +6366,8 @@ if (!targetCanonicalSignatureSection ||
     !/\bag_target_info_scalar_size\s*\(/.test(
       targetCanonicalSignatureSection[0],
     ) ||
-    !/\bps_type_format_canonical_signature_for_target\s*\([^]*?ctx->target/.test(
-      irBuilderSource,
+    !/\bps_type_format_canonical_signature_for_target\s*\([^]*?options->target/.test(
+      hirIrBuilder,
     )) {
   throw new Error(
     "canonical C signatures must derive ABI widths from explicit TargetSpec",
@@ -6869,7 +6777,6 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
       resolvedTreeMaterialization,
     ) ||
     !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(typeQueryResolutionSource) ||
-    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(irBuilderSource) ||
     !/AG_TARGET_SCALAR_LONG_LONG[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
       parameterDeclarationResolutionSource,
     ) ||
@@ -6878,7 +6785,7 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
     ) ||
     /\b8\s*\*\s*(?:count|level|stride_count|subscript_depth)/.test(
       frameLayoutSource + vlaLoweringSource + typeQueryResolutionSource +
-        irBuilderSource,
+        hirIrBuilder,
     )) {
   throw new Error(
     "VLA runtime descriptor ABI must be explicit and independent from C target layout",
@@ -7358,12 +7265,6 @@ if (!aggregateWalkerLayoutSection ||
     /\bpsx_semantic_type_table_(?:create|intern)\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    (irBuilderSource.match(
-      /ctx\.record_layouts\s*=\s*options\s*\?\s*options->record_layouts\s*:\s*NULL\s*;/g,
-    ) ?? []).length !== 2 ||
-    (irBuilderSource.match(
-      /ctx\.record_decls\s*=\s*options\s*\?\s*options->record_decls\s*:\s*NULL\s*;/g,
-    ) ?? []).length !== 2 ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*semantic_types\s*;/.test(
       irBuildOptionsHeader,
     ) ||
@@ -9137,10 +9038,10 @@ if (!/ir_build_function_module_from_hir\s*\(/.test(compilerMainSource) ||
     /ir_build_function_module_with_options\s*\(|#include\s+"lowering\/ir_builder\.h"|AG_(?:DISABLE|REQUIRE)_TYPED_HIR|translation_unit_legacy_ast/.test(
       compilerMainSource,
     ) ||
-    !/COMPAT_AST_IR_SRCS\s*=\s*src\/lowering\/ir_builder\.c/.test(
+    /COMPAT_AST_IR_SRCS|src\/lowering\/ir_builder\.c/.test(
       makefileSource,
     ) ||
-    !/LOWERING_SRCS\s*=\s*\$\(filter-out\s+\$\(COMPAT_AST_IR_SRCS\)/.test(
+    !/LOWERING_SRCS\s*=\s*\$\(wildcard\s+src\/lowering\/\*\.c\)/.test(
       makefileSource,
     )) {
   throw new Error(

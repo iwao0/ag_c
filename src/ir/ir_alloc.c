@@ -86,9 +86,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_LABEL:        return "label";
     case IR_RET:          return "ret";
     case IR_CALL:         return "call";
-    case IR_PARAM:        return "param";
     case IR_PARAM_BIND:   return "param_bind";
-    case IR_RESULT_AREA:  return "result_area";
     case IR_VA_ARG_AREA:  return "va_arg_area";
     case IR_VLA_ALLOC:    return "vla_alloc";
     case IR_ATOMIC:       return "atomic";
@@ -321,7 +319,7 @@ void ir_module_free(ir_module_t *m) {
   free(m);
 }
 
-ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t ret_type) {
+ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len) {
   ir_func_t *f = calloc(1, sizeof(ir_func_t));
   if (name && name_len > 0) {
     f->name = malloc((size_t)name_len + 1);
@@ -329,7 +327,6 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
     f->name[name_len] = '\0';
     f->name_len = name_len;
   }
-  f->ret_type = ret_type;
   f->next_vreg_id = 0;
   f->next_block_id = 0;
   /* entry ブロックを最初から確保しておく */
