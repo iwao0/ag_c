@@ -706,16 +706,6 @@ static wasm32_machine_conversion_t planned_conversion_or_unsupported(
   return *selected;
 }
 
-static wasm32_machine_memory_t planned_load_or_unsupported(
-    ir_type_t memory_type, int is_unsigned) {
-  const wasm32_machine_memory_t *selected =
-      wasm32_machine_planned_load(
-          &g_machine_primitives, memory_type, is_unsigned);
-  if (!selected)
-    wasm_unsupported_msg("unsupported Wasm load type");
-  return *selected;
-}
-
 static const char *memory_wat_or_unsupported(
     wasm32_machine_memory_t selected) {
   const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
@@ -747,19 +737,18 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
 }
 
 static void emit_abi_argument_expr_as(
-    wasm_func_ctx_t *ctx, const ir_abi_argument_t *argument,
+    wasm_func_ctx_t *ctx, const wasm32_machine_argument_t *argument,
     ir_type_t target) {
   if (!argument) wasm_unsupported_msg("missing lowered call argument");
-  if (argument->access == IR_ABI_ARGUMENT_DIRECT) {
+  if (argument->access == WASM32_MACHINE_ARGUMENT_DIRECT) {
     emit_val_expr_as(ctx, argument->source, target);
     return;
   }
-  if (argument->access != IR_ABI_ARGUMENT_LOAD ||
+  if (argument->access != WASM32_MACHINE_ARGUMENT_LOAD ||
       argument->source.type != IR_TY_PTR) {
     wasm_unsupported_msg("unsupported lowered call argument access");
   }
-  wasm32_machine_memory_t load =
-      planned_load_or_unsupported(argument->type, 1);
+  wasm32_machine_memory_t load = argument->load;
   wasm32_machine_conversion_t conversion =
       planned_conversion_or_unsupported(load.value_type, target, 1);
   const char *op = memory_wat_or_unsupported(load);
@@ -1067,7 +1056,8 @@ static void emit_parameter_bind(
     wasm_unsupported_op(instruction->op);
   for (int i = 0; i < binding->piece_count; i++) {
     int parameter_slot = binding->physical_index + i;
-    if (binding->pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+    if (binding->pieces[i].kind ==
+        WASM32_MACHINE_PARAMETER_INDIRECT) {
       emit_parameter_copy(
           ctx, instruction->src1, parameter_slot,
           &binding->copy_plans[i], indent);
@@ -1118,34 +1108,35 @@ static int emit_variadic_arg_area_prepare(
     wasm_func_ctx_t *ctx, const wasm32_machine_call_t *call,
     int indent) {
   if (!call->is_variadic) return 0;
-  int argument_count = call->argument_count;
-  const ir_abi_argument_t *arguments = call->arguments;
-  int fixed_count = call->fixed_argument_count;
-  int nargs_var = argument_count - fixed_count;
-  if (nargs_var <= 0) return 0;
-  int bytes = align_to(nargs_var * 8, 16);
+  const wasm32_machine_argument_t *arguments = call->arguments;
+  int bytes = call->variadic_area_size;
+  if (bytes <= 0) return 0;
   wasm_emitf(indent, "(local.set $old_va_arg_area (global.get $__ag_va_arg_area))\n");
   wasm_emitf(indent, "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
              bytes);
   wasm_emitf(indent, "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
-  for (int a = fixed_count; a < argument_count; a++) {
-    int off = (a - fixed_count) * 8;
-    ir_type_t arg_ty = arguments[a].type == IR_TY_PTR
-                           ? IR_TY_PTR
-                           : arguments[a].type;
-    if (arg_ty == IR_TY_F64) {
-      wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
-      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_F64);
-      wasm_cg_emitf(")\n");
-    } else if (arg_ty == IR_TY_F32) {
-      wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) (f64.promote_f32 ", off);
-      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_F32);
-      wasm_cg_emitf("))\n");
-    } else {
-      wasm_emitf(indent, "(i64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
-      emit_abi_argument_expr_as(ctx, &arguments[a], IR_TY_I64);
-      wasm_cg_emitf(")\n");
+  for (int i = 0; i < call->variadic_argument_count; i++) {
+    const wasm32_machine_variadic_argument_t *variadic =
+        &call->variadic_arguments[i];
+    const char *store = memory_wat_or_unsupported(variadic->store);
+    const char *conversion =
+        wasm32_machine_opcode_wat(variadic->conversion.opcode);
+    wasm_emitf(
+        indent,
+        "(%s (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ",
+        store, variadic->byte_offset);
+    if (variadic->conversion.opcode != WASM32_MI_COPY) {
+      if (!conversion)
+        wasm_unsupported_msg(
+            "missing Wasm variadic argument conversion opcode");
+      wasm_cg_emitf("(%s ", conversion);
     }
+    emit_abi_argument_expr_as(
+        ctx, &arguments[variadic->argument_index],
+        variadic->argument_type);
+    if (variadic->conversion.opcode != WASM32_MI_COPY)
+      wasm_cg_emitf(")");
+    wasm_cg_emitf(")\n");
   }
   return bytes;
 }
@@ -1165,7 +1156,7 @@ static void emit_call(
   const wasm32_machine_call_t *call = &selected->call;
   const wasm32_machine_signature_t *call_signature = &call->signature;
   int argument_count = call->argument_count;
-  const ir_abi_argument_t *arguments = call->arguments;
+  const wasm32_machine_argument_t *arguments = call->arguments;
   int vararg_area_bytes =
       emit_variadic_arg_area_prepare(ctx, call, indent);
   if (i->callee.id != IR_VAL_NONE) {
@@ -1284,7 +1275,7 @@ static void emit_call(
     ir_type_t arg_ty = a < planned_argument_count
                            ? call_signature->params[
                                  a + (returns_hidden ? 1 : 0)]
-                           : arguments[a].type;
+                           : arguments[a].value_type;
     ir_type_t abi_arg_ty = arg_ty;
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
         a >= call->fixed_argument_count && is_fp_type(arg_ty)) {

@@ -9293,9 +9293,21 @@ if (/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
     ) ||
     !/\bint\s+hir_ir_emit_vla_parameter_strides\s*\([^;]*\)\s*\{/.test(
       hirIrVlaSource,
+    ) ||
+    /\bnode_t\s*\*\s*lower_decl_initializer\s*\([^;]*\)\s*\{/.test(
+      hirIrBuilderSource,
+    ) ||
+    !/\bnode_t\s*\*\s*lower_decl_initializer\s*\([^;]*\)\s*\{/.test(
+      initializerLoweringSource,
+    ) ||
+    !/\bint\s+psx_lower_static_scalar_hir_initializer\s*\([^;]*\)\s*\{/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bint\s+psx_build_static_aggregate_hir_initializer_plan\s*\([^;]*\)\s*\{/.test(
+      staticHirInitializerSource,
     )) {
   throw new Error(
-    "HIR-to-IR expression, call, aggregate, statement, CFG, and VLA lowering must remain separate builder modules",
+    "HIR-to-IR expression, call, aggregate, statement, CFG, VLA, and initializer lowering must remain separate modules",
   );
 }
 
@@ -9514,6 +9526,22 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
     ) ||
     /(?:ir_abi_call_(?:signature|arguments)|wasm32_machine_call_signature)\s*\(/.test(
       wasmObjectWriterSource,
+    ) ||
+    /\bir_abi_(?:argument|piece)_t\b|\bIR_ABI_(?:ARGUMENT|PIECE)_[A-Z0-9_]+\b/.test(
+      wasmWatWriterSource,
+    ) ||
+    /\bir_abi_(?:argument|piece)_t\b|\bIR_ABI_(?:ARGUMENT|PIECE)_[A-Z0-9_]+\b/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/\bwasm32_machine_argument_t\b/.test(wasmWatWriterSource) ||
+    !/\bwasm32_machine_argument_t\b/.test(wasmObjectWriterSource) ||
+    !/\bvariadic_arguments\b/.test(wasmWatWriterSource) ||
+    !/\bvariadic_arguments\b/.test(wasmObjectWriterSource) ||
+    !/\bvariadic_area_size\b/.test(wasmMachineFunctionSource) ||
+    /\bnargs_var\b/.test(wasmWatWriterSource) ||
+    /\bnargs_var\b/.test(wasmObjectWriterSource) ||
+    !/\bwasm32_machine_parameter_piece_t\b/.test(
+      wasmMachineFunctionSource,
     )) {
   throw new Error(
     "Wasm WAT and object writers must serialize the preplanned Machine call ABI",

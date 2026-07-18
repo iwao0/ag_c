@@ -189,15 +189,28 @@ static int select_call(
           instruction, abi, &call->signature))
     return 0;
   if (argument_count > 0) {
-    call->arguments = malloc(
-        argument_count * sizeof(*call->arguments));
+    call->arguments = calloc(
+        argument_count, sizeof(*call->arguments));
     if (!call->arguments) {
       wasm32_machine_signature_dispose(&call->signature);
       return 0;
     }
-    memcpy(
-        call->arguments, arguments,
-        argument_count * sizeof(*call->arguments));
+    for (size_t i = 0; i < argument_count; i++) {
+      wasm32_machine_argument_t *selected = &call->arguments[i];
+      selected->source = arguments[i].source;
+      selected->value_type = arguments[i].type;
+      selected->byte_offset = arguments[i].byte_offset;
+      if (arguments[i].access == IR_ABI_ARGUMENT_DIRECT) {
+        selected->access = WASM32_MACHINE_ARGUMENT_DIRECT;
+      } else if (arguments[i].access == IR_ABI_ARGUMENT_LOAD &&
+                 arguments[i].source.type == IR_TY_PTR &&
+                 wasm32_machine_select_load(
+                     arguments[i].type, 1, &selected->load)) {
+        selected->access = WASM32_MACHINE_ARGUMENT_LOAD;
+      } else {
+        return 0;
+      }
+    }
   }
   call->argument_count = (int)argument_count;
   call->fixed_argument_count = (int)abi->fixed_param_count;
@@ -214,6 +227,43 @@ static int select_call(
   call->is_indirect =
       instruction->callee.id != IR_VAL_NONE ? 1 : 0;
   call->is_variadic = abi->is_variadic ? 1 : 0;
+  if (call->is_variadic &&
+      call->argument_count > call->fixed_argument_count) {
+    call->variadic_argument_count =
+        call->argument_count - call->fixed_argument_count;
+    call->variadic_area_size = align_to(
+        call->variadic_argument_count * 8, 16);
+    call->variadic_arguments = calloc(
+        (size_t)call->variadic_argument_count,
+        sizeof(*call->variadic_arguments));
+    if (!call->variadic_arguments) return 0;
+    for (int i = 0; i < call->variadic_argument_count; i++) {
+      int argument_index = call->fixed_argument_count + i;
+      wasm32_machine_variadic_argument_t *variadic =
+          &call->variadic_arguments[i];
+      ir_type_t source_type = wasm32_machine_value_type(
+          call->arguments[argument_index].value_type);
+      ir_type_t storage_type;
+      variadic->argument_index = argument_index;
+      variadic->byte_offset = i * 8;
+      if (source_type == IR_TY_F64) {
+        variadic->argument_type = IR_TY_F64;
+        storage_type = IR_TY_F64;
+      } else if (source_type == IR_TY_F32) {
+        variadic->argument_type = IR_TY_F32;
+        storage_type = IR_TY_F64;
+      } else {
+        variadic->argument_type = IR_TY_I64;
+        storage_type = IR_TY_I64;
+      }
+      if (!wasm32_machine_select_conversion(
+              variadic->argument_type, storage_type, 1,
+              &variadic->conversion) ||
+          !wasm32_machine_select_store(
+              storage_type, &variadic->store))
+        return 0;
+    }
+  }
   if ((call->signature.has_hidden_result ||
        call->signature.has_direct_aggregate_result) &&
       call->result_area.id == IR_VAL_NONE)
@@ -244,7 +294,15 @@ static int select_parameter_bind(
   int output = 0;
   for (size_t i = 0; i < function_abi->param_count; i++) {
     if (function_abi->param_pieces[i].source_index == source_index)
-      binding->pieces[output++] = function_abi->param_pieces[i];
+      binding->pieces[output++] = (wasm32_machine_parameter_piece_t){
+          .value_type = function_abi->param_pieces[i].type,
+          .source_size = function_abi->param_pieces[i].source_size,
+          .byte_offset = function_abi->param_pieces[i].byte_offset,
+          .kind = function_abi->param_pieces[i].kind ==
+                          IR_ABI_PIECE_INDIRECT
+                      ? WASM32_MACHINE_PARAMETER_INDIRECT
+                      : WASM32_MACHINE_PARAMETER_DIRECT,
+      };
   }
   binding->piece_count = (int)count;
   binding->physical_index =
@@ -256,13 +314,15 @@ static int select_parameter_bind(
            ? 1
            : 0);
   for (int i = 0; i < binding->piece_count; i++) {
-    if (binding->pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+    if (binding->pieces[i].kind ==
+        WASM32_MACHINE_PARAMETER_INDIRECT) {
       if (!wasm32_machine_copy_plan_build(
               binding->pieces[i].source_size,
               &binding->copy_plans[i]))
         return 0;
     } else if (!wasm32_machine_select_store(
-                   binding->pieces[i].type, &binding->stores[i])) {
+                   binding->pieces[i].value_type,
+                   &binding->stores[i])) {
       return 0;
     }
   }
@@ -743,6 +803,7 @@ void wasm32_machine_function_dispose(
     wasm32_machine_signature_dispose(
         &function->instructions[i].reference_signature);
     free(function->instructions[i].call.arguments);
+    free(function->instructions[i].call.variadic_arguments);
     wasm32_machine_copy_plan_dispose(
         &function->instructions[i].copy);
     for (int piece = 0;

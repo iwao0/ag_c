@@ -404,11 +404,6 @@ static int align_log2_for_size(int size) {
   return a;
 }
 
-static int align_to(int v, int align) {
-  if (align <= 1) return v;
-  return (v + align - 1) & ~(align - 1);
-}
-
 static obj_data_t *data_for_machine_inst(
                                     const ir_module_t *module,
                                     const wasm32_machine_inst_t *inst,
@@ -716,6 +711,8 @@ static void emit_local_set(wb_t *b, int idx) {
 
 static void emit_const(wb_t *b, ir_type_t type, long long value);
 static void emit_memarg(wb_t *b, ir_type_t ty);
+static void emit_selected_memarg(
+    wb_t *b, const wasm32_machine_memory_t *selected);
 static unsigned load_opcode(ir_type_t ty, int is_unsigned);
 static unsigned store_opcode(ir_type_t ty);
 
@@ -867,6 +864,14 @@ static unsigned memory_binary_or_unsupported(
   return opcode;
 }
 
+static unsigned conversion_binary_or_unsupported(
+    wasm32_machine_conversion_t selected) {
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode)
+    obj_unsupported_msg("missing Wasm object conversion opcode");
+  return opcode;
+}
+
 static int mem_align_log2(ir_type_t ty) {
   return (int)planned_store_or_unsupported(ty).alignment_log2;
 }
@@ -877,14 +882,14 @@ static unsigned load_opcode(ir_type_t ty, int is_unsigned) {
 }
 
 static void emit_abi_argument(
-    wb_t *b, const ir_abi_argument_t *argument,
+    wb_t *b, const wasm32_machine_argument_t *argument,
     ir_type_t want, int param_count) {
   if (!argument) obj_unsupported_msg("missing lowered call argument");
-  if (argument->access == IR_ABI_ARGUMENT_DIRECT) {
+  if (argument->access == WASM32_MACHINE_ARGUMENT_DIRECT) {
     emit_val(b, argument->source, want, param_count);
     return;
   }
-  if (argument->access != IR_ABI_ARGUMENT_LOAD ||
+  if (argument->access != WASM32_MACHINE_ARGUMENT_LOAD ||
       argument->source.type != IR_TY_PTR)
     obj_unsupported_msg("unsupported lowered call argument access");
   emit_addr_val(b, argument->source, param_count);
@@ -892,9 +897,9 @@ static void emit_abi_argument(
     emit_const(b, IR_TY_I32, argument->byte_offset);
     wb_u8(b, 0x6a); /* i32.add */
   }
-  wb_u8(b, load_opcode(argument->type, 1));
-  emit_memarg(b, argument->type);
-  emit_stack_cast(b, argument->type, want, 1);
+  wb_u8(b, memory_binary_or_unsupported(argument->load));
+  emit_selected_memarg(b, &argument->load);
+  emit_stack_cast(b, argument->load.value_type, want, 1);
 }
 
 static unsigned store_opcode(ir_type_t ty) {
@@ -1069,7 +1074,8 @@ static void emit_parameter_bind(
     if (parameter_slot < 0 ||
         parameter_slot >= object_function->sig.nparams)
       obj_unsupported_op(instruction->op);
-    if (binding->pieces[i].kind == IR_ABI_PIECE_INDIRECT) {
+    if (binding->pieces[i].kind ==
+        WASM32_MACHINE_PARAMETER_INDIRECT) {
       emit_parameter_copy(
           body, instruction->src1, parameter_slot,
           &binding->copy_plans[i], param_count);
@@ -1081,7 +1087,7 @@ static void emit_parameter_bind(
     emit_local_get(body, parameter_slot);
     emit_stack_cast(
         body, object_function->sig.params[parameter_slot],
-        wasm_ir_type(binding->pieces[i].type), 1);
+        wasm_ir_type(binding->pieces[i].value_type), 1);
     wb_u8(body, memory_binary_or_unsupported(binding->stores[i]));
     emit_selected_memarg(body, &binding->stores[i]);
   }
@@ -1092,14 +1098,11 @@ static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t 
                                           const wasm32_machine_call_t *call,
                                           int param_count) {
   if (!call->is_variadic) return 0;
-  int argument_count = call->argument_count;
-  const ir_abi_argument_t *arguments = call->arguments;
-  int fixed_count = call->fixed_argument_count;
-  int nargs_var = argument_count - fixed_count;
-  if (nargs_var <= 0) return 0;
+  const wasm32_machine_argument_t *arguments = call->arguments;
+  int bytes = call->variadic_area_size;
+  if (bytes <= 0) return 0;
   if (!stack_pointer) obj_unsupported_msg("variadic call without stack pointer in Wasm object mode");
   if (!*va_arg_area) *va_arg_area = intern_va_arg_area_global();
-  int bytes = align_to(nargs_var * 8, 16);
 
   emit_stack_global_get(b, of, *va_arg_area);
   emit_local_set(b, old_va_arg_area_local);
@@ -1112,29 +1115,21 @@ static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t 
   emit_stack_global_get(b, of, stack_pointer);
   emit_stack_global_set(b, of, *va_arg_area);
 
-  for (int a = fixed_count; a < argument_count; a++) {
-    int off = (a - fixed_count) * 8;
+  for (int i = 0; i < call->variadic_argument_count; i++) {
+    const wasm32_machine_variadic_argument_t *variadic =
+        &call->variadic_arguments[i];
     emit_stack_global_get(b, of, *va_arg_area);
-    emit_const(b, IR_TY_I32, off);
+    emit_const(b, IR_TY_I32, variadic->byte_offset);
     wb_u8(b, 0x6a);
-    ir_type_t arg_ty = wasm_ir_type(arguments[a].type);
-    if (arg_ty == IR_TY_F64) {
-      emit_abi_argument(
-          b, &arguments[a], IR_TY_F64, param_count);
-      wb_u8(b, store_opcode(IR_TY_F64));
-      emit_memarg(b, IR_TY_F64);
-    } else if (arg_ty == IR_TY_F32) {
-      emit_abi_argument(
-          b, &arguments[a], IR_TY_F32, param_count);
-      wb_u8(b, 0xbb); /* f64.promote_f32 */
-      wb_u8(b, store_opcode(IR_TY_F64));
-      emit_memarg(b, IR_TY_F64);
-    } else {
-      emit_abi_argument(
-          b, &arguments[a], IR_TY_I64, param_count);
-      wb_u8(b, store_opcode(IR_TY_I64));
-      emit_memarg(b, IR_TY_I64);
-    }
+    emit_abi_argument(
+        b, &arguments[variadic->argument_index],
+        variadic->argument_type, param_count);
+    if (variadic->conversion.opcode != WASM32_MI_COPY)
+      wb_u8(
+          b, conversion_binary_or_unsupported(
+                 variadic->conversion));
+    wb_u8(b, memory_binary_or_unsupported(variadic->store));
+    emit_selected_memarg(b, &variadic->store);
   }
   return bytes;
 }
@@ -1659,7 +1654,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           const wasm32_machine_call_t *call = &selected->call;
           const obj_sig_t *csig = &call->signature;
           int argument_count = call->argument_count;
-          const ir_abi_argument_t *arguments = call->arguments;
+          const wasm32_machine_argument_t *arguments = call->arguments;
           int vararg_area_bytes =
               emit_variadic_arg_area_prepare(&body, of, stack_pointer, &va_arg_area,
                                              old_va_arg_area_local, call,

@@ -636,9 +636,10 @@ int main(void) {
   };
   ir_abi_argument_t planned_call_arguments[] = {
       {
-          .source = {.id = 3, .type = IR_TY_I32},
+          .source = {.id = 4, .type = IR_TY_PTR},
           .type = IR_TY_I32,
-          .access = IR_ABI_ARGUMENT_DIRECT,
+          .byte_offset = 4,
+          .access = IR_ABI_ARGUMENT_LOAD,
       },
       {
           .source = {.id = 6, .type = IR_TY_I64},
@@ -770,20 +771,41 @@ int main(void) {
       !selected_call->call.signature.has_hidden_result ||
       selected_call->call.argument_count != 2 ||
       selected_call->call.fixed_argument_count != 1 ||
-      selected_call->call.arguments == planned_call_arguments ||
+      (const void *)selected_call->call.arguments ==
+          (const void *)planned_call_arguments ||
+      selected_call->call.arguments[0].access !=
+          WASM32_MACHINE_ARGUMENT_LOAD ||
+      selected_call->call.arguments[0].byte_offset != 4 ||
+      selected_call->call.arguments[0].load.opcode !=
+          WASM32_MI_I32_LOAD ||
       selected_call->call.arguments[1].source.id != 6 ||
+      selected_call->call.arguments[1].value_type != IR_TY_I64 ||
+      selected_call->call.arguments[1].access !=
+          WASM32_MACHINE_ARGUMENT_DIRECT ||
       selected_call->call.result_area.id != 0 ||
       selected_call->call.direct_result_type != IR_TY_VOID ||
       selected_call->call.is_indirect ||
       !selected_call->call.is_variadic ||
+      selected_call->call.variadic_argument_count != 1 ||
+      selected_call->call.variadic_area_size != 16 ||
+      !selected_call->call.variadic_arguments ||
+      selected_call->call.variadic_arguments[0].argument_index != 1 ||
+      selected_call->call.variadic_arguments[0].byte_offset != 0 ||
+      selected_call->call.variadic_arguments[0].argument_type !=
+          IR_TY_I64 ||
+      selected_call->call.variadic_arguments[0].conversion.opcode !=
+          WASM32_MI_COPY ||
+      selected_call->call.variadic_arguments[0].store.opcode !=
+          WASM32_MI_I64_STORE ||
       !selected_parameter ||
       selected_parameter->kind !=
           WASM32_MACHINE_INST_PARAMETER_BIND ||
       selected_parameter->parameter_bind.piece_count != 2 ||
       selected_parameter->parameter_bind.physical_index != 1 ||
-      selected_parameter->parameter_bind.pieces ==
-          physical_function_params ||
-      selected_parameter->parameter_bind.pieces[1].type != IR_TY_I64 ||
+      (const void *)selected_parameter->parameter_bind.pieces ==
+          (const void *)physical_function_params ||
+      selected_parameter->parameter_bind.pieces[1].value_type !=
+          IR_TY_I64 ||
       selected_parameter->parameter_bind.pieces[1].byte_offset != 8 ||
       selected_parameter->parameter_bind.stores[0].opcode !=
           WASM32_MI_I32_STORE ||

@@ -51,20 +51,56 @@ typedef struct {
   ir_val_t value;
 } wasm32_machine_control_t;
 
+typedef enum {
+  WASM32_MACHINE_ARGUMENT_DIRECT = 0,
+  WASM32_MACHINE_ARGUMENT_LOAD,
+} wasm32_machine_argument_access_t;
+
+typedef struct {
+  ir_val_t source;
+  ir_type_t value_type;
+  int byte_offset;
+  wasm32_machine_argument_access_t access;
+  wasm32_machine_memory_t load;
+} wasm32_machine_argument_t;
+
+typedef struct {
+  int argument_index;
+  int byte_offset;
+  ir_type_t argument_type;
+  wasm32_machine_conversion_t conversion;
+  wasm32_machine_memory_t store;
+} wasm32_machine_variadic_argument_t;
+
 typedef struct {
   wasm32_machine_signature_t signature;
-  ir_abi_argument_t *arguments;
+  wasm32_machine_argument_t *arguments;
   int argument_count;
   int fixed_argument_count;
   ir_val_t result_area;
   ir_type_t direct_result_type;
   wasm32_machine_memory_t direct_result_store;
+  wasm32_machine_variadic_argument_t *variadic_arguments;
+  int variadic_argument_count;
+  int variadic_area_size;
   unsigned char is_indirect;
   unsigned char is_variadic;
 } wasm32_machine_call_t;
 
+typedef enum {
+  WASM32_MACHINE_PARAMETER_DIRECT = 0,
+  WASM32_MACHINE_PARAMETER_INDIRECT,
+} wasm32_machine_parameter_kind_t;
+
 typedef struct {
-  ir_abi_piece_t *pieces;
+  ir_type_t value_type;
+  int source_size;
+  int byte_offset;
+  wasm32_machine_parameter_kind_t kind;
+} wasm32_machine_parameter_piece_t;
+
+typedef struct {
+  wasm32_machine_parameter_piece_t *pieces;
   wasm32_machine_memory_t *stores;
   wasm32_machine_copy_plan_t *copy_plans;
   int piece_count;
