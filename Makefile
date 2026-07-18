@@ -46,6 +46,7 @@ TEST_IR=build/test_ir
 TEST_FRAME_LAYOUT=build/test_frame_layout
 TEST_IR_E2E=build/test_ir_e2e
 TEST_WASM32_BACKEND=build/test_wasm32_backend
+TEST_WASM32_MACHINE_IR=build/test_wasm32_machine_ir
 TEST_WASM32_E2E=build/test_wasm32_e2e
 TEST_WASM32_OBJECT=build/test_wasm32_object
 BENCH_TOKENIZER=build/bench_tokenizer
@@ -58,7 +59,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/semantic/aggregate_cast_resolution.o $(OBJROOT)/sema
 PARSER_LIB_OBJS+=$(OBJROOT)/hir/hir.o $(OBJROOT)/semantic/typed_hir_tree.o $(OBJROOT)/semantic/typed_hir_tree_materialization.o $(OBJROOT)/semantic/typed_hir_emission.o $(OBJROOT)/semantic/syntax_typed_hir_resolution.o $(OBJROOT)/semantic/resolution_work_tree.o $(OBJROOT)/lowering/static_hir_initializer.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/record_decl_table.o $(OBJROOT)/semantic/record_layout.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/scope_graph.o
-PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/function_type_lowering.o $(OBJROOT)/lowering/mir_type_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/lowering/runtime_initializer_plan.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
+PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/function_type_lowering.o $(OBJROOT)/lowering/mir_type_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/lowering/hir_ir_cfg.o $(OBJROOT)/lowering/hir_ir_expression.o $(OBJROOT)/lowering/hir_ir_call.o $(OBJROOT)/lowering/hir_ir_aggregate.o $(OBJROOT)/lowering/hir_ir_statement.o $(OBJROOT)/lowering/runtime_initializer_plan.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/name_environment.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declaration_binding_events.o
 PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
@@ -147,6 +148,10 @@ $(TEST_WASM32_BACKEND): test/test_wasm32_backend.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_backend.c
 
+$(TEST_WASM32_MACHINE_IR): test/test_wasm32_machine_ir.c $(OBJROOT)/arch/wasm32/wasm32_machine_ir.o
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
 $(TEST_WASM32_E2E): test/test_wasm32_e2e.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_e2e.c
@@ -231,7 +236,7 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_FRAME_LAYOUT) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_FRAME_LAYOUT) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_MACHINE_IR) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(MAKE) test-design-invariants
@@ -241,6 +246,7 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) 
 	$(TEST_FRAME_LAYOUT)
 	$(TEST_IR_E2E)
 	$(TEST_WASM32_BACKEND)
+	$(TEST_WASM32_MACHINE_IR)
 	$(TEST_WASM32_E2E)
 	$(TEST_WASM32_OBJECT)
 	$(TEST_E2E)

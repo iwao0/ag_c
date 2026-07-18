@@ -1,4 +1,5 @@
 #include "wasm32_obj.h"
+#include "wasm32_machine_ir.h"
 #include "../../diag/diag.h"
 #include "../../lowering/abi_lowering.h"
 #include <limits.h>
@@ -1009,8 +1010,19 @@ static void emit_fp_const(wb_t *b, ir_type_t type, double value) {
   }
 }
 
-static unsigned i2f_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
-static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
+static void emit_conversion_opcode(
+    wb_t *b, ir_type_t source_type, ir_type_t result_type,
+    int is_unsigned) {
+  wasm32_machine_conversion_t selected;
+  if (!wasm32_machine_select_conversion(
+          wasm_ir_type(source_type), wasm_ir_type(result_type),
+          is_unsigned, &selected))
+    obj_unsupported_msg("unsupported Wasm object value conversion");
+  if (selected.opcode == WASM32_MI_COPY) return;
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode) obj_unsupported_msg("missing Wasm object conversion opcode");
+  wb_u8(b, opcode);
+}
 
 static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   want = wasm_ir_type(want);
@@ -1022,39 +1034,14 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   if (v.id < 0) obj_unsupported_msg("missing Wasm object value");
   ir_type_t got = actual_vreg_type(v);
   emit_local_get(b, local_index(param_count, v.id));
-  if (got == want) return;
-  if (got == IR_TY_I32 && want == IR_TY_I64) {
-    wb_u8(b, actual_vreg_unsigned(v) ? 0xad : 0xac); /* i64.extend_i32_{u,s} */
-  } else if (got == IR_TY_I64 && want == IR_TY_I32) {
-    wb_u8(b, 0xa7); /* i32.wrap_i64 */
-  } else if ((got == IR_TY_I32 || got == IR_TY_I64) &&
-             (want == IR_TY_F32 || want == IR_TY_F64)) {
-    wb_u8(b, i2f_opcode(want, got, 0));
-  } else if ((got == IR_TY_F32 || got == IR_TY_F64) &&
-             (want == IR_TY_I32 || want == IR_TY_I64)) {
-    wb_u8(b, f2i_opcode(want, got, 0));
-  } else {
-    obj_unsupported_msg("unsupported Wasm object value cast");
-  }
+  emit_conversion_opcode(
+      b, got, want, actual_vreg_unsigned(v));
 }
 
 static void emit_stack_cast(wb_t *b, ir_type_t got, ir_type_t want, int is_unsigned) {
   got = wasm_ir_type(got);
   want = wasm_ir_type(want);
-  if (got == want) return;
-  if (got == IR_TY_I32 && want == IR_TY_I64) {
-    wb_u8(b, is_unsigned ? 0xad : 0xac);
-  } else if (got == IR_TY_I64 && want == IR_TY_I32) {
-    wb_u8(b, 0xa7);
-  } else if ((got == IR_TY_I32 || got == IR_TY_I64) &&
-             (want == IR_TY_F32 || want == IR_TY_F64)) {
-    wb_u8(b, i2f_opcode(want, got, is_unsigned));
-  } else if ((got == IR_TY_F32 || got == IR_TY_F64) &&
-             (want == IR_TY_I32 || want == IR_TY_I64)) {
-    wb_u8(b, f2i_opcode(want, got, is_unsigned));
-  } else {
-    obj_unsupported_msg("unsupported Wasm object parameter cast");
-  }
+  emit_conversion_opcode(b, got, want, is_unsigned);
 }
 
 static void emit_addr_val(wb_t *b, ir_val_t v, int param_count) {
@@ -1305,70 +1292,14 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   return sig;
 }
 
-static unsigned int_binop_opcode(ir_op_t op, ir_type_t ty) {
-  int is64 = wasm_ir_type(ty) == IR_TY_I64;
-  switch (op) {
-    case IR_ADD: return is64 ? 0x7c : 0x6a;
-    case IR_SUB: return is64 ? 0x7d : 0x6b;
-    case IR_MUL: return is64 ? 0x7e : 0x6c;
-    case IR_DIV: return is64 ? 0x7f : 0x6d;
-    case IR_UDIV: return is64 ? 0x80 : 0x6e;
-    case IR_MOD: return is64 ? 0x81 : 0x6f;
-    case IR_UMOD: return is64 ? 0x82 : 0x70;
-    case IR_AND: return is64 ? 0x83 : 0x71;
-    case IR_OR: return is64 ? 0x84 : 0x72;
-    case IR_XOR: return is64 ? 0x85 : 0x73;
-    case IR_SHL: return is64 ? 0x86 : 0x74;
-    case IR_SHR: return is64 ? 0x87 : 0x75;
-    case IR_LSR: return is64 ? 0x88 : 0x76;
-    case IR_EQ: return is64 ? 0x51 : 0x46;
-    case IR_NE: return is64 ? 0x52 : 0x47;
-    case IR_LT: return is64 ? 0x53 : 0x48;
-    case IR_LE: return is64 ? 0x57 : 0x4c;
-    case IR_ULT: return is64 ? 0x54 : 0x49;
-    case IR_ULE: return is64 ? 0x58 : 0x4d;
-    default: obj_unsupported_op(op);
-  }
-  return 0;
-}
-
-static unsigned fp_binop_opcode(ir_op_t op, ir_type_t ty) {
-  int is64 = ty == IR_TY_F64;
-  if (ty != IR_TY_F32 && ty != IR_TY_F64) obj_unsupported_op(op);
-  switch (op) {
-    case IR_FADD: return is64 ? 0xa0 : 0x92;
-    case IR_FSUB: return is64 ? 0xa1 : 0x93;
-    case IR_FMUL: return is64 ? 0xa2 : 0x94;
-    case IR_FDIV: return is64 ? 0xa3 : 0x95;
-    case IR_FEQ: return is64 ? 0x61 : 0x5b;
-    case IR_FNE: return is64 ? 0x62 : 0x5c;
-    case IR_FLT: return is64 ? 0x63 : 0x5d;
-    case IR_FLE: return is64 ? 0x65 : 0x5f;
-    default: obj_unsupported_op(op);
-  }
-  return 0;
-}
-
-static unsigned i2f_opcode(ir_type_t dst, ir_type_t src, int is_unsigned) {
-  dst = wasm_ir_type(dst);
-  src = wasm_ir_type(src);
-  if (dst == IR_TY_F32 && src == IR_TY_I32) return is_unsigned ? 0xb3 : 0xb2;
-  if (dst == IR_TY_F32 && src == IR_TY_I64) return is_unsigned ? 0xb5 : 0xb4;
-  if (dst == IR_TY_F64 && src == IR_TY_I32) return is_unsigned ? 0xb8 : 0xb7;
-  if (dst == IR_TY_F64 && src == IR_TY_I64) return is_unsigned ? 0xba : 0xb9;
-  obj_unsupported_op(IR_I2F);
-  return 0;
-}
-
-static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned) {
-  dst = wasm_ir_type(dst);
-  src = wasm_ir_type(src);
-  if (dst == IR_TY_I32 && src == IR_TY_F32) return is_unsigned ? 0xa9 : 0xa8;
-  if (dst == IR_TY_I32 && src == IR_TY_F64) return is_unsigned ? 0xab : 0xaa;
-  if (dst == IR_TY_I64 && src == IR_TY_F32) return is_unsigned ? 0xaf : 0xae;
-  if (dst == IR_TY_I64 && src == IR_TY_F64) return is_unsigned ? 0xb1 : 0xb0;
-  obj_unsupported_op(IR_F2I);
-  return 0;
+static unsigned selected_binary_opcode(ir_op_t op, ir_type_t operand_type) {
+  wasm32_machine_binary_t selected;
+  if (!wasm32_machine_select_binary(
+          op, wasm_ir_type(operand_type), &selected))
+    obj_unsupported_op(op);
+  unsigned opcode = wasm32_machine_opcode_binary(selected.opcode);
+  if (!opcode) obj_unsupported_op(op);
+  return opcode;
 }
 
 static void emit_addr_plus_const(wb_t *b, ir_val_t v, int off, int param_count) {
@@ -1867,41 +1798,20 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
         }
         case IR_ZEXT:
         case IR_SEXT:
-        case IR_TRUNC: {
+        case IR_TRUNC:
+        case IR_I2F:
+        case IR_F2I:
+        case IR_F2F: {
           ir_type_t got = actual_vreg_type(i->src1);
           ir_type_t want = actual_vreg_type(i->dst);
           emit_val(&body, i->src1, got, param_count);
-          emit_stack_cast(&body, got, want,
-                          i->op == IR_ZEXT ? 1 :
-                          i->op == IR_SEXT ? 0 : actual_vreg_unsigned(i->src1));
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
-        case IR_I2F: {
-          ir_type_t src_ty = wasm_ir_type(i->src1.type);
-          emit_val(&body, i->src1, src_ty, param_count);
-          wb_u8(&body, i2f_opcode(i->dst.type, src_ty, i->is_unsigned));
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
-        case IR_F2I: {
-          ir_type_t src_ty = wasm_ir_type(i->src1.type);
-          emit_val(&body, i->src1, src_ty, param_count);
-          wb_u8(&body, f2i_opcode(i->dst.type, src_ty, i->is_unsigned));
-          emit_local_set(&body, local_index(param_count, i->dst.id));
-          break;
-        }
-        case IR_F2F: {
-          ir_type_t src_ty = wasm_ir_type(i->src1.type);
-          ir_type_t dst_ty = wasm_ir_type(i->dst.type);
-          emit_val(&body, i->src1, src_ty, param_count);
-          if (dst_ty == IR_TY_F64 && src_ty == IR_TY_F32) {
-            wb_u8(&body, 0xbb);
-          } else if (dst_ty == IR_TY_F32 && src_ty == IR_TY_F64) {
-            wb_u8(&body, 0xb6);
-          } else if (dst_ty != src_ty) {
-            obj_unsupported_op(i->op);
-          }
+          int is_unsigned =
+              i->op == IR_ZEXT ? 1 :
+              i->op == IR_SEXT ? 0 :
+              (i->op == IR_I2F || i->op == IR_F2I)
+                  ? i->is_unsigned
+                  : actual_vreg_unsigned(i->src1);
+          emit_conversion_opcode(&body, got, want, is_unsigned);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
@@ -2084,14 +1994,14 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             wb_u8(&body, 0x05);
             emit_val(&body, i->src1, op_ty, param_count);
             emit_val(&body, i->src2, op_ty, param_count);
-            wb_u8(&body, int_binop_opcode(i->op, op_ty));
+            wb_u8(&body, selected_binary_opcode(i->op, op_ty));
             wb_u8(&body, 0x0b);
             emit_local_set(&body, local_index(param_count, i->dst.id));
             break;
           }
           emit_val(&body, i->src1, op_ty, param_count);
           emit_val(&body, i->src2, op_ty, param_count);
-          wb_u8(&body, int_binop_opcode(i->op, op_ty));
+          wb_u8(&body, selected_binary_opcode(i->op, op_ty));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
@@ -2100,7 +2010,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           ir_type_t op_ty = wasm_ir_type(i->src1.type);
           emit_val(&body, i->src1, op_ty, param_count);
           emit_val(&body, i->src2, op_ty, param_count);
-          wb_u8(&body, fp_binop_opcode(i->op, op_ty));
+          wb_u8(&body, selected_binary_opcode(i->op, op_ty));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }

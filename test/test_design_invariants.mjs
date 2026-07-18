@@ -195,7 +195,19 @@ const resolvedTreeInternalHeader = await readFile(
 const hirIrBuilder = `${await readFile(
   "src/lowering/hir_ir_builder.h",
   "utf8",
-)}\n${await readFile("src/lowering/hir_ir_builder.c", "utf8")}`;
+)}\n${await readFile("src/lowering/hir_ir_builder.c", "utf8")}\n${await readFile(
+  "src/lowering/hir_ir_expression.c",
+  "utf8",
+)}\n${await readFile(
+  "src/lowering/hir_ir_call.c",
+  "utf8",
+)}\n${await readFile(
+  "src/lowering/hir_ir_aggregate.c",
+  "utf8",
+)}\n${await readFile(
+  "src/lowering/hir_ir_statement.c",
+  "utf8",
+)}`;
 const compilationSession = await readFile(
   "src/compilation_session.c",
   "utf8",
@@ -4355,7 +4367,7 @@ if (/\bnode_func_t\b/.test(astSource) ||
   );
 }
 const logicalCallLowering = hirIrBuilder.match(
-  /static\s+ir_val_t\s+build_scalar_or_void_call\s*\([^;]*?\)\s*\{[^]*?\n\}/,
+  /ir_val_t\s+hir_ir_build_call\s*\([^;]*?\)\s*\{[^]*?\n\}/,
 );
 if (!logicalCallLowering ||
     !/psx_semantic_type_table_parameter\s*\(/.test(logicalCallLowering[0]) ||
@@ -5181,7 +5193,7 @@ if (/\bpsx_lower_implicit_conversions\s*\(/.test(
     /\bpsx_lower_implicit_conversions\s*\(/.test(
       expressionSemanticPipelineBody,
     ) ||
-    !/\bcoerce_direct_value_to_qual_type\s*\(/.test(
+    !/\bhir_ir_coerce_direct_value_to_qual_type\s*\(/.test(
       hirIrBuilder,
     ) ||
     !/semantic_target->kind\s*==\s*PSX_TYPE_BOOL/.test(
@@ -8174,7 +8186,7 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
     !/case\s+ND_CREAL\s*:\s*case\s+ND_CIMAG\s*:[^]*?node->lhs\s*=\s*lower_tree[^]*?break\s*;/.test(
       semanticLoweringPassSource,
     ) ||
-    !/build_complex_component\s*\([^]*?!is_float_mir_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
+    !/build_complex_component\s*\([^]*?!hir_ir_is_float_value_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
       hirIrBuilder,
     ) ||
     directComplexComponentKindChecks.length !== 2 ||
@@ -9181,6 +9193,87 @@ if (!/DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION\s*=\s*3096/.test(
     /\bND_STMT_EXPR\b/.test(syntaxTypedHirResolutionSource)) {
   throw new Error(
     "GNU extensions must be rejected as E3096 before direct Typed HIR resolution",
+  );
+}
+
+const hirIrBuilderSource = await readFile(
+  "src/lowering/hir_ir_builder.c",
+  "utf8",
+);
+const hirIrCfgSource = await readFile(
+  "src/lowering/hir_ir_cfg.c",
+  "utf8",
+);
+const hirIrStatementSource = await readFile(
+  "src/lowering/hir_ir_statement.c",
+  "utf8",
+);
+const hirIrExpressionSource = await readFile(
+  "src/lowering/hir_ir_expression.c",
+  "utf8",
+);
+const hirIrCallSource = await readFile(
+  "src/lowering/hir_ir_call.c",
+  "utf8",
+);
+const hirIrAggregateSource = await readFile(
+  "src/lowering/hir_ir_aggregate.c",
+  "utf8",
+);
+if (/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
+      hirIrBuilderSource,
+    ) ||
+    !/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
+      hirIrExpressionSource,
+    ) ||
+    /\bir_val_t\s+hir_ir_build_call\s*\([^;]*\)\s*\{/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/\bir_val_t\s+hir_ir_build_call\s*\([^;]*\)\s*\{/.test(
+      hirIrCallSource,
+    ) ||
+    /\bir_val_t\s+hir_ir_aggregate_value_address\s*\([^;]*\)\s*\{/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/\bir_val_t\s+hir_ir_aggregate_value_address\s*\([^;]*\)\s*\{/.test(
+      hirIrAggregateSource,
+    ) ||
+    /\bint\s+hir_ir_build_statement\s*\([^;]*\)\s*\{/.test(
+      hirIrBuilderSource,
+    ) ||
+    !/\bint\s+hir_ir_build_statement\s*\([^;]*\)\s*\{/.test(
+      hirIrStatementSource,
+    ) ||
+    !/\bhir_ir_cfg_new_block\s*\([^;]*\)\s*\{/.test(hirIrCfgSource) ||
+    /\bhir_ir_cfg_new_block\s*\([^;]*\)\s*\{/.test(hirIrBuilderSource)) {
+  throw new Error(
+    "HIR-to-IR statement and CFG lowering must remain separate builder modules",
+  );
+}
+
+const wasmMachineIrSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_ir.c",
+  "utf8",
+);
+const wasmWatWriterSource = await readFile(
+  "src/arch/wasm32/wasm32_ir.c",
+  "utf8",
+);
+const wasmObjectWriterSource = await readFile(
+  "src/arch/wasm32/wasm32_obj.c",
+  "utf8",
+);
+if (!/wasm32_machine_select_binary\s*\(/.test(wasmMachineIrSource) ||
+    !/wasm32_machine_select_binary\s*\(/.test(wasmWatWriterSource) ||
+    !/wasm32_machine_select_binary\s*\(/.test(wasmObjectWriterSource) ||
+    /static\s+const\s+char\s*\*\s*wasm_(?:fp_)?binop\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /static\s+unsigned\s+(?:int|fp)_binop_opcode\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm WAT and object writers must share Machine IR binary instruction selection",
   );
 }
 

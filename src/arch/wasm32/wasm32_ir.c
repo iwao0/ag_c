@@ -1,4 +1,5 @@
 #include "wasm32_ir.h"
+#include "wasm32_machine_ir.h"
 #include "../../codegen_emit.h"
 #include "../../diag/diag.h"
 #include "../../lowering/abi_lowering.h"
@@ -243,12 +244,6 @@ static int is_fp_type(ir_type_t t) {
 static const char *wasm_fp_type_or_unsupported(ir_type_t t) {
   const char *ty = wasm_type(t);
   if (!ty || !is_fp_type(t)) wasm_unsupported_msg("unsupported Wasm floating-point type");
-  return ty;
-}
-
-static const char *wasm_int_type_or_unsupported(ir_type_t t) {
-  const char *ty = wasm_type(t);
-  if (!ty || is_fp_type(t)) wasm_unsupported_msg("unsupported Wasm integer type");
   return ty;
 }
 
@@ -844,31 +839,36 @@ static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
   }
 }
 
+static wasm32_machine_conversion_t select_conversion_or_unsupported(
+    ir_type_t source_type, ir_type_t result_type, int is_unsigned) {
+  wasm32_machine_conversion_t selected = {0};
+  if (!wasm32_machine_select_conversion(
+          source_type, result_type, is_unsigned, &selected))
+    wasm_unsupported_msg("unsupported Wasm value conversion");
+  return selected;
+}
+
 static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target) {
   if (target == IR_TY_PTR) target = IR_TY_I32;
   ir_type_t src = effective_val_type(ctx, v);
   if (src == IR_TY_PTR) src = IR_TY_I32;
-  if (src == target) {
+  wasm32_machine_conversion_t selected =
+      select_conversion_or_unsupported(
+          src, target, val_is_unsigned(ctx, v));
+  if (selected.opcode == WASM32_MI_COPY) {
     emit_val_expr(ctx, v);
     return;
   }
-  if (target == IR_TY_I64 && src != IR_TY_I64) {
-    if (v.id == IR_VAL_IMM && !is_fp_type(src)) {
-      wasm_cg_emitf("(i64.const %lld)", v.imm);
-      return;
-    }
-    wasm_cg_emitf("(%s ", val_is_unsigned(ctx, v) ? "i64.extend_i32_u" : "i64.extend_i32_s");
-    emit_val_expr(ctx, v);
-    wasm_cg_emitf(")");
+  if (target == IR_TY_I64 && src == IR_TY_I32 &&
+      v.id == IR_VAL_IMM && !is_fp_type(src)) {
+    wasm_cg_emitf("(i64.const %lld)", v.imm);
     return;
   }
-  if (target != IR_TY_I64 && src == IR_TY_I64) {
-    wasm_cg_emitf("(i32.wrap_i64 ");
-    emit_val_expr(ctx, v);
-    wasm_cg_emitf(")");
-    return;
-  }
+  const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
+  if (!opcode) wasm_unsupported_msg("missing Wasm conversion opcode");
+  wasm_cg_emitf("(%s ", opcode);
   emit_val_expr(ctx, v);
+  wasm_cg_emitf(")");
 }
 
 static void emit_abi_argument_expr_as(
@@ -907,20 +907,19 @@ static void emit_abi_argument_expr_as(
 }
 
 static void emit_wasm_type_cast_prefix(ir_type_t from, ir_type_t to, int is_unsigned) {
-  if (from == IR_TY_PTR) from = IR_TY_I32;
-  if (to == IR_TY_PTR) to = IR_TY_I32;
-  if (from == to) return;
-  if (to == IR_TY_I64 && from != IR_TY_I64) {
-    wasm_cg_emitf("(%s ", is_unsigned ? "i64.extend_i32_u" : "i64.extend_i32_s");
-  } else if (to != IR_TY_I64 && from == IR_TY_I64) {
-    wasm_cg_emitf("(i32.wrap_i64 ");
+  wasm32_machine_conversion_t selected =
+      select_conversion_or_unsupported(from, to, is_unsigned);
+  if (selected.opcode != WASM32_MI_COPY) {
+    const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
+    if (!opcode) wasm_unsupported_msg("missing Wasm cast opcode");
+    wasm_cg_emitf("(%s ", opcode);
   }
 }
 
 static void emit_wasm_type_cast_suffix(ir_type_t from, ir_type_t to) {
-  if (from == IR_TY_PTR) from = IR_TY_I32;
-  if (to == IR_TY_PTR) to = IR_TY_I32;
-  if (from != to && (from == IR_TY_I64 || to == IR_TY_I64)) wasm_cg_emitf(")");
+  wasm32_machine_conversion_t selected =
+      select_conversion_or_unsupported(from, to, 0);
+  if (selected.opcode != WASM32_MI_COPY) wasm_cg_emitf(")");
 }
 
 static void emit_addr_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
@@ -935,48 +934,6 @@ static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
   wasm_cg_emitf("(i32.add ");
   emit_addr_expr(ctx, base);
   wasm_cg_emitf(" (i32.const %d))", off);
-}
-
-static const char *wasm_binop(ir_op_t op, ir_type_t t) {
-  const char *prefix = wasm_type(t);
-  if (!prefix) return NULL;
-  switch (op) {
-    case IR_ADD: return t == IR_TY_I64 ? "i64.add" : "i32.add";
-    case IR_SUB: return t == IR_TY_I64 ? "i64.sub" : "i32.sub";
-    case IR_MUL: return t == IR_TY_I64 ? "i64.mul" : "i32.mul";
-    case IR_DIV: return t == IR_TY_I64 ? "i64.div_s" : "i32.div_s";
-    case IR_UDIV: return t == IR_TY_I64 ? "i64.div_u" : "i32.div_u";
-    case IR_MOD: return t == IR_TY_I64 ? "i64.rem_s" : "i32.rem_s";
-    case IR_UMOD: return t == IR_TY_I64 ? "i64.rem_u" : "i32.rem_u";
-    case IR_AND: return t == IR_TY_I64 ? "i64.and" : "i32.and";
-    case IR_OR:  return t == IR_TY_I64 ? "i64.or" : "i32.or";
-    case IR_XOR: return t == IR_TY_I64 ? "i64.xor" : "i32.xor";
-    case IR_SHL: return t == IR_TY_I64 ? "i64.shl" : "i32.shl";
-    case IR_SHR: return t == IR_TY_I64 ? "i64.shr_s" : "i32.shr_s";
-    case IR_LSR: return t == IR_TY_I64 ? "i64.shr_u" : "i32.shr_u";
-    case IR_EQ:  return t == IR_TY_I64 ? "i64.eq" : "i32.eq";
-    case IR_NE:  return t == IR_TY_I64 ? "i64.ne" : "i32.ne";
-    case IR_LT:  return t == IR_TY_I64 ? "i64.lt_s" : "i32.lt_s";
-    case IR_LE:  return t == IR_TY_I64 ? "i64.le_s" : "i32.le_s";
-    case IR_ULT: return t == IR_TY_I64 ? "i64.lt_u" : "i32.lt_u";
-    case IR_ULE: return t == IR_TY_I64 ? "i64.le_u" : "i32.le_u";
-    default: return NULL;
-  }
-}
-
-static const char *wasm_fp_binop(ir_op_t op, ir_type_t t) {
-  if (!is_fp_type(t)) return NULL;
-  switch (op) {
-    case IR_FADD: return t == IR_TY_F64 ? "f64.add" : "f32.add";
-    case IR_FSUB: return t == IR_TY_F64 ? "f64.sub" : "f32.sub";
-    case IR_FMUL: return t == IR_TY_F64 ? "f64.mul" : "f32.mul";
-    case IR_FDIV: return t == IR_TY_F64 ? "f64.div" : "f32.div";
-    case IR_FEQ:  return t == IR_TY_F64 ? "f64.eq" : "f32.eq";
-    case IR_FNE:  return t == IR_TY_F64 ? "f64.ne" : "f32.ne";
-    case IR_FLT:  return t == IR_TY_F64 ? "f64.lt" : "f32.lt";
-    case IR_FLE:  return t == IR_TY_F64 ? "f64.le" : "f32.le";
-    default: return NULL;
-  }
 }
 
 static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
@@ -1682,51 +1639,31 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_ZEXT:
     case IR_SEXT:
     case IR_TRUNC:
-      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-      if (i->dst.type == IR_TY_I64 && i->src1.type != IR_TY_I64) {
-        wasm_cg_emitf("(%s ", i->op == IR_ZEXT ? "i64.extend_i32_u" : "i64.extend_i32_s");
-        emit_val_expr(ctx, i->src1);
-        wasm_cg_emitf(")");
-      } else if (i->dst.type != IR_TY_I64 && i->src1.type == IR_TY_I64) {
-        wasm_cg_emitf("(i32.wrap_i64 ");
-        emit_val_expr(ctx, i->src1);
-        wasm_cg_emitf(")");
-      } else {
-        emit_val_expr(ctx, i->src1);
-      }
-      wasm_cg_emitf(")\n");
-      return;
     case IR_I2F:
-      wasm_emitf(indent, "(local.set $v%d (%s.convert_%s_%c ", i->dst.id,
-                 wasm_fp_type_or_unsupported(i->dst.type),
-                 wasm_int_type_or_unsupported(effective_val_type(ctx, i->src1)),
-                 (i->is_unsigned || val_is_unsigned(ctx, i->src1)) ? 'u' : 's');
-      emit_val_expr(ctx, i->src1);
-      wasm_cg_emitf("))\n");
-      return;
     case IR_F2I:
-      wasm_emitf(indent, "(local.set $v%d (%s.trunc_%s_%c ", i->dst.id,
-                 wasm_int_type_or_unsupported(i->dst.type),
-                 wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)),
-                 i->is_unsigned ? 'u' : 's');
-      emit_val_expr(ctx, i->src1);
-      wasm_cg_emitf("))\n");
-      return;
-    case IR_F2F:
+    case IR_F2F: {
+      ir_type_t source_type = effective_val_type(ctx, i->src1);
+      ir_type_t result_type = effective_val_type(ctx, i->dst);
+      int is_unsigned =
+          i->op == IR_ZEXT ? 1 :
+          i->op == IR_SEXT ? 0 :
+          (i->op == IR_I2F || i->op == IR_F2I)
+              ? i->is_unsigned || val_is_unsigned(ctx, i->src1)
+              : val_is_unsigned(ctx, i->src1);
+      wasm32_machine_conversion_t selected =
+          select_conversion_or_unsupported(
+              source_type, result_type, is_unsigned);
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-      if (i->dst.type == IR_TY_F64 && effective_val_type(ctx, i->src1) == IR_TY_F32) {
-        wasm_cg_emitf("(f64.promote_f32 ");
-        emit_val_expr(ctx, i->src1);
-        wasm_cg_emitf(")");
-      } else if (i->dst.type == IR_TY_F32 && effective_val_type(ctx, i->src1) == IR_TY_F64) {
-        wasm_cg_emitf("(f32.demote_f64 ");
-        emit_val_expr(ctx, i->src1);
-        wasm_cg_emitf(")");
-      } else {
-        emit_val_expr(ctx, i->src1);
+      if (selected.opcode != WASM32_MI_COPY) {
+        const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
+        if (!opcode) wasm_unsupported_op(i->op);
+        wasm_cg_emitf("(%s ", opcode);
       }
+      emit_val_expr(ctx, i->src1);
+      if (selected.opcode != WASM32_MI_COPY) wasm_cg_emitf(")");
       wasm_cg_emitf(")\n");
       return;
+    }
     case IR_LOAD:
       emit_load(ctx, i, indent);
       return;
@@ -1785,7 +1722,10 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_FEQ: case IR_FNE: case IR_FLT: case IR_FLE: {
       int is_cmp = (i->op == IR_FEQ || i->op == IR_FNE || i->op == IR_FLT || i->op == IR_FLE);
       ir_type_t op_ty = is_cmp ? effective_val_type(ctx, i->src1) : effective_val_type(ctx, i->dst);
-      const char *op = wasm_fp_binop(i->op, op_ty);
+      wasm32_machine_binary_t selected;
+      if (!wasm32_machine_select_binary(i->op, op_ty, &selected))
+        wasm_unsupported_op(i->op);
+      const char *op = wasm32_machine_opcode_wat(selected.opcode);
       if (!op) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
       emit_val_expr_as(ctx, i->src1, op_ty);
@@ -1805,7 +1745,10 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       ir_type_t op_ty = is_cmp ? ((src1_ty == IR_TY_I64 || src2_ty == IR_TY_I64) ? IR_TY_I64 : src1_ty)
                                : effective_val_type(ctx, i->dst);
       if (uses_ptr_value(ctx, i)) op_ty = IR_TY_I32;
-      const char *op = wasm_binop(i->op, op_ty);
+      wasm32_machine_binary_t selected;
+      if (!wasm32_machine_select_binary(i->op, op_ty, &selected))
+        wasm_unsupported_op(i->op);
+      const char *op = wasm32_machine_opcode_wat(selected.opcode);
       if (!op) wasm_unsupported_op(i->op);
       if (op_ty == IR_TY_I64 &&
           src1_ty != IR_TY_PTR && src2_ty != IR_TY_PTR &&
