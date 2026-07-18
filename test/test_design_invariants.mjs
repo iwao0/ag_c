@@ -9601,6 +9601,65 @@ if (!/result_source_size/.test(wasmMachineFunctionSource) ||
   );
 }
 
+const runtimeSymbolManifest = JSON.parse(await readFile(
+  "tools/wasm_obj_linker/runtime/symbol-manifest.json",
+  "utf8",
+));
+const runtimeSymbolGenerator = await readFile(
+  "tools/wasm_obj_linker/generate_runtime_symbol_manifest.mjs",
+  "utf8",
+);
+const runtimeLinkerSource = await readFile(
+  "tools/wasm_obj_linker/ag_wasm_link.c",
+  "utf8",
+);
+const runtimeImportsSource = await readFile(
+  "tools/wasm_js_api/agc-runtime-imports.js",
+  "utf8",
+);
+const runtimeCatalog = await readFile(
+  "tools/wasm_obj_linker/runtime/generated/runtime-symbols.md",
+  "utf8",
+);
+const runtimeManifestFields = [
+  "cSymbol",
+  "runtimeSymbol",
+  "importNamespace",
+  "signature",
+  "memory",
+  "availability",
+  "bridge",
+];
+if (runtimeSymbolManifest.version !== 2 ||
+    !Array.isArray(runtimeSymbolManifest.functions) ||
+    runtimeSymbolManifest.functions.length === 0 ||
+    runtimeSymbolManifest.functions.some((entry) =>
+      runtimeManifestFields.some((field) => !(field in entry)) ||
+      typeof entry.memory?.read !== "boolean" ||
+      typeof entry.memory?.write !== "boolean") ||
+    !/generateC\(manifest\)/.test(runtimeSymbolGenerator) ||
+    !/generateJs\(manifest\)/.test(runtimeSymbolGenerator) ||
+    !/generateDocs\(manifest\)/.test(runtimeSymbolGenerator) ||
+    !/runtime_manifest_signature_matches\(entry, target_type, 0\)/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/runtime_manifest_signature_matches\(entry, caller_type, 1\)/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/materializeAgcRuntimeImportGroup\("env", "math", env\)/.test(
+      runtimeImportsSource,
+    ) ||
+    !/materializeAgcRuntimeImportGroup\("env", "stdio", implementations\)/.test(
+      runtimeImportsSource,
+    ) ||
+    !/This file is generated from `tools\/wasm_obj_linker\/runtime\/symbol-manifest\.json`/.test(
+      runtimeCatalog,
+    )) {
+  throw new Error(
+    "runtime manifest must own signatures, effects, availability, linker routing, JS imports, and generated docs",
+  );
+}
+
 console.log(
   "design invariants: ok (IR/backend isolation, canonical type ownership, and record identity verified)",
 );

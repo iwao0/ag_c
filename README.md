@@ -82,6 +82,19 @@ make test-wasm-js-api
 make test-wasm-js-pipeline
 ```
 
+Wasm runtime symbolの正本は
+`tools/wasm_obj_linker/runtime/symbol-manifest.json`です。C symbol、runtime実装、
+import namespace、Wasm signature、memory read/write、target availability、bridge種別を定義し、
+C linker table、JS import catalog、型検証用metadata、一覧ドキュメントを生成します。
+
+```sh
+make generate-runtime-symbol-manifest
+make check-runtime-symbol-manifest
+```
+
+生成された一覧は
+`tools/wasm_obj_linker/runtime/generated/runtime-symbols.md`で確認できます。
+
 JS からは `createToolchain()` で compiler/linker wasm をまとめて読み込み、
 `compileWat(source)`、`compileObject(source)`、`compileLinkedWasm(source)` を使います:
 

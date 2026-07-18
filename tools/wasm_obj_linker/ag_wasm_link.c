@@ -831,13 +831,36 @@ typedef enum {
   RUNTIME_SYMBOL_SYNTHETIC,
 } runtime_symbol_kind_t;
 
+typedef enum {
+  RUNTIME_SIGNATURE_EXACT,
+  RUNTIME_SIGNATURE_CALLER,
+} runtime_signature_kind_t;
+
+enum {
+  RUNTIME_AVAILABLE_WASM32_JS = 1u << 0,
+  RUNTIME_AVAILABLE_WASM32_OBJECT_LINKER = 1u << 1,
+  RUNTIME_AVAILABLE_WASM32_OBJECT_RUNTIME = 1u << 2,
+};
+
 typedef struct {
   const char *name;
   const char *target;
   runtime_symbol_kind_t kind;
+  runtime_signature_kind_t signature_kind;
+  unsigned char param_types[16];
+  unsigned char param_count;
+  unsigned char result_type;
+  unsigned char memory_read;
+  unsigned char memory_write;
+  unsigned char availability;
+  const char *import_namespace;
 } runtime_symbol_manifest_entry_t;
 
 #include "runtime/generated/runtime-symbols.inc"
+
+static unsigned char wasm_type_result_valtype(type_t *t);
+static uint32_t wasm_type_param_count(type_t *t);
+static unsigned char wasm_type_param_valtype(type_t *t, uint32_t idx);
 
 static const runtime_symbol_manifest_entry_t *find_runtime_func_symbol(str_t name) {
   size_t count = sizeof(agc_runtime_function_symbols) / sizeof(agc_runtime_function_symbols[0]);
@@ -859,6 +882,30 @@ static int is_runtime_data_symbol(str_t name) {
 
 static int is_runtime_func_symbol(str_t name) {
   return find_runtime_func_symbol(name) != NULL;
+}
+
+static int runtime_manifest_signature_matches(
+    const runtime_symbol_manifest_entry_t *entry, type_t *type,
+    int allow_integer_width_conversion) {
+  if (!entry || !type ||
+      entry->signature_kind == RUNTIME_SIGNATURE_CALLER)
+    return entry && type;
+  if (wasm_type_param_count(type) != entry->param_count) return 0;
+  for (uint32_t i = 0; i < entry->param_count; i++) {
+    unsigned char actual = wasm_type_param_valtype(type, i);
+    unsigned char expected = entry->param_types[i];
+    if (actual == expected) continue;
+    int integer_pair =
+        (actual == 0x7f || actual == 0x7e) &&
+        (expected == 0x7f || expected == 0x7e);
+    if (!allow_integer_width_conversion || !integer_pair) return 0;
+  }
+  unsigned char actual_result = wasm_type_result_valtype(type);
+  if (actual_result == entry->result_type) return 1;
+  int integer_pair =
+      (actual_result == 0x7f || actual_result == 0x7e) &&
+      (entry->result_type == 0x7f || entry->result_type == 0x7e);
+  return allow_integer_width_conversion && integer_pair;
 }
 
 static int is_unsupported_control_flow_symbol(str_t name) {
@@ -2554,6 +2601,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
   int target_func = -1;
   if (!find_defined_func(objs, obj_count, target_name, &target_obj, &target_func)) return 0;
   type_t *target_type = &target_obj->types[target_obj->funcs[target_func].type_index];
+  if (!runtime_manifest_signature_matches(entry, target_type, 0)) {
+    fprintf(stderr, "runtime implementation signature mismatch: %.*s -> %s\n",
+            name.len, name.s, target_lit);
+    exit(1);
+  }
+  if (!runtime_manifest_signature_matches(entry, caller_type, 1)) return 0;
   uint32_t caller_params = wasm_type_param_count(caller_type);
   uint32_t target_params = wasm_type_param_count(target_type);
   if (caller_params != target_params) return 0;

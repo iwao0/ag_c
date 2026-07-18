@@ -88,8 +88,29 @@ for (const [name, entry] of Object.entries(exportsMap)) {
     const mathEnv = mod.createAgcRuntimeMathEnvImports();
     const stdioEnv = mod.createAgcRuntimeStdioEnvImports();
     const manifest = mod.AGC_RUNTIME_IMPORT_MANIFEST;
-    if (!manifest || manifest.version !== 1 || !manifest.namespaces?.env) {
+    if (!manifest || manifest.version !== 2 ||
+        !Array.isArray(manifest.functions) || !manifest.namespaces?.env) {
       throw new Error("runtime import manifest has an invalid shape");
+    }
+    const wasmTypes = new Set(["i32", "i64", "f32", "f64"]);
+    for (const entry of manifest.functions) {
+      if (!entry || typeof entry.cSymbol !== "string" ||
+          typeof entry.runtimeSymbol !== "string" ||
+          entry.importNamespace !== "env" ||
+          (entry.importGroup !== "math" && entry.importGroup !== "stdio") ||
+          typeof entry.implementation !== "string" ||
+          entry.signature?.kind !== "exact" ||
+          !Array.isArray(entry.signature.params) ||
+          entry.signature.params.some((type) => !wasmTypes.has(type)) ||
+          (entry.signature.result !== "void" &&
+           !wasmTypes.has(entry.signature.result)) ||
+          typeof entry.memory?.read !== "boolean" ||
+          typeof entry.memory?.write !== "boolean" ||
+          !Array.isArray(entry.availability) ||
+          !entry.availability.includes("wasm32-js") ||
+          (entry.bridge !== "runtime" && entry.bridge !== "host")) {
+        throw new Error(`runtime import manifest entry has an invalid shape: ${entry?.cSymbol}`);
+      }
     }
     const assertManifestGroup = (groupName, implementation) => {
       const declared = manifest.namespaces.env[groupName];

@@ -1,4 +1,9 @@
-export { AGC_RUNTIME_IMPORT_MANIFEST } from "./generated/runtime-import-manifest.js";
+import {
+  AGC_RUNTIME_IMPORT_MANIFEST,
+  materializeAgcRuntimeImportGroup,
+} from "./generated/runtime-import-manifest.js";
+
+export { AGC_RUNTIME_IMPORT_MANIFEST };
 
 function agcRound(x) {
   x = Number(x);
@@ -1380,7 +1385,7 @@ function makeStdio(options = {}) {
 
 export function createAgcRuntimeStdioEnvImports(options = {}) {
   const stdio = makeStdio(options);
-  return {
+  const implementations = {
     printf: stdio.printf,
     fprintf: stdio.fprintf,
     sprintf: stdio.sprintf,
@@ -1422,6 +1427,7 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     perror: stdio.perror,
     __error: stdio.__error,
   };
+  return materializeAgcRuntimeImportGroup("env", "stdio", implementations);
 }
 
 export function createAgcRuntimeMathEnvImports(options = {}) {
@@ -1459,7 +1465,7 @@ export function createAgcRuntimeMathEnvImports(options = {}) {
   env.islessequal = (x, y) => !agcIsunordered(x, y) && Number(x) <= Number(y) ? 1 : 0;
   env.islessgreater = (x, y) => !agcIsunordered(x, y) && Number(x) !== Number(y) ? 1 : 0;
   env.isunordered = agcIsunordered;
-  return env;
+  return materializeAgcRuntimeImportGroup("env", "math", env);
 }
 
 export function createAgcRuntimeImports(imports = {}) {

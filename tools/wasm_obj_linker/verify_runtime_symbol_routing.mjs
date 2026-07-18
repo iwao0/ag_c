@@ -24,7 +24,9 @@ function difference(left, right) {
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const declared = new Set(
-  manifest.linker.functions.filter((entry) => entry.kind === "bridge").map((entry) => entry.name),
+  manifest.functions
+    .filter((entry) => entry.bridge === "runtime")
+    .map((entry) => entry.cSymbol),
 );
 const inputImports = envFunctionImports(await readFile(inputDumpPath, "utf8"));
 const outputImports = envFunctionImports(await readFile(outputDumpPath, "utf8"));

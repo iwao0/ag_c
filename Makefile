@@ -34,6 +34,7 @@ RUNTIME_SYMBOL_MANIFEST=tools/wasm_obj_linker/runtime/symbol-manifest.json
 RUNTIME_SYMBOL_GENERATOR=tools/wasm_obj_linker/generate_runtime_symbol_manifest.mjs
 RUNTIME_SYMBOL_GENERATED_C=tools/wasm_obj_linker/runtime/generated/runtime-symbols.inc
 RUNTIME_SYMBOL_GENERATED_JS=tools/wasm_js_api/generated/runtime-import-manifest.js
+RUNTIME_SYMBOL_GENERATED_DOC=tools/wasm_obj_linker/runtime/generated/runtime-symbols.md
 WASM_SELFHOST_API=build/wasm_selfhost_api/ag_c_wasm_api.wasm
 WASM_LINKER_SELFHOST=build/wasm_linker_selfhost/ag_wasm_link.wasm
 TEST_TOKENIZER=build/test_tokenizer
@@ -77,7 +78,7 @@ $(TARGET): $(OBJS)
 $(WASM_TARGET): $(WASM_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(WASM_OBJS)
 
-$(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c $(RUNTIME_SYMBOL_MANIFEST) $(RUNTIME_SYMBOL_GENERATOR) $(RUNTIME_SYMBOL_GENERATED_C)
+$(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c $(RUNTIME_SYMBOL_MANIFEST) $(RUNTIME_SYMBOL_GENERATOR) $(RUNTIME_SYMBOL_GENERATED_C) $(RUNTIME_SYMBOL_GENERATED_DOC)
 	@mkdir -p build
 	@node $(RUNTIME_SYMBOL_GENERATOR) --check
 	$(CC) $(CFLAGS) -o $@ $<

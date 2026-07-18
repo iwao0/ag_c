@@ -12,8 +12,34 @@ export type AgcRuntimeImports = WebAssembly.Imports & {
   onStderr?: (chunk: string) => void;
 };
 
+export type AgcRuntimeWasmValueType = "i32" | "i64" | "f32" | "f64";
+
+export interface AgcRuntimeFunctionManifestEntry {
+  readonly cSymbol: string;
+  readonly runtimeSymbol: string | null;
+  readonly importNamespace: string;
+  readonly importGroup: "math" | "stdio";
+  readonly implementation: string;
+  readonly signature: {
+    readonly kind: "exact";
+    readonly params: readonly AgcRuntimeWasmValueType[];
+    readonly result: "void" | AgcRuntimeWasmValueType;
+  };
+  readonly memory: {
+    readonly read: boolean;
+    readonly write: boolean;
+  };
+  readonly availability: readonly (
+    | "wasm32-js"
+    | "wasm32-object-linker"
+    | "wasm32-object-runtime"
+  )[];
+  readonly bridge: "runtime" | "host";
+}
+
 export interface AgcRuntimeImportManifest {
-  readonly version: 1;
+  readonly version: 2;
+  readonly functions: readonly AgcRuntimeFunctionManifestEntry[];
   readonly namespaces: {
     readonly env: {
       readonly math: readonly string[];
