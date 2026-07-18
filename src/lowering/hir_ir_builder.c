@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "abi_lowering.h"
+#include "mir_type_lowering.h"
 #include "function_type_lowering.h"
 #include "../diag/diag.h"
 #include "../parser/type.h"
@@ -47,7 +47,7 @@ typedef struct {
   ir_module_t *module;
   ir_func_t *function;
   ir_hir_build_status_t status;
-  ir_abi_param_info_t return_info;
+  ir_mir_type_info_t return_info;
   psx_qual_type_t return_qual_type;
   int returns_void;
   hir_local_slot_t local_slots[512];
@@ -82,15 +82,15 @@ static size_t child_count_for_edge(
   return count;
 }
 
-static ir_abi_param_info_t classify_node_type(
+static ir_mir_type_info_t classify_node_type(
     const hir_ir_context_t *context, const psx_hir_node_t *node) {
-  ir_abi_type_context_t abi = {
+  ir_mir_type_context_t type_context = {
       .semantic_types = context->options->semantic_types,
       .record_layouts = context->options->record_layouts,
       .target = context->options->target,
   };
-  return ir_abi_classify_type_id(
-      &abi, psx_hir_node_qual_type(node).type_id);
+  return ir_mir_classify_type_id(
+      &type_context, psx_hir_node_qual_type(node).type_id);
 }
 
 static psx_type_kind_t node_type_kind(
@@ -134,7 +134,7 @@ static int append_instruction(
 
 static int is_integer_ir_type(ir_type_t type);
 static int is_float_ir_type(ir_type_t type);
-static int is_direct_value_abi_type(ir_abi_param_info_t type);
+static int is_direct_mir_value_type(ir_mir_type_info_t type);
 static int block_has_predecessor(
     const ir_func_t *function, const ir_block_t *target);
 static ir_val_t scalar_truth_value(
@@ -145,7 +145,7 @@ static int store_direct_value(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value);
 static ir_val_t materialize_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t target_type);
+    ir_mir_type_info_t target_type);
 static ir_val_t aggregate_value_address(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 
@@ -171,7 +171,7 @@ static int append_implicit_return(
   }
   if (context->returns_void) {
     ret->src1 = ir_val_none();
-  } else if (is_direct_value_abi_type(context->return_info)) {
+  } else if (is_direct_mir_value_type(context->return_info)) {
     ret->src1 = is_float_ir_type(context->return_info.type)
                     ? ir_val_fp_imm(context->return_info.type, 0.0)
                     : ir_val_imm(context->return_info.type, 0);
@@ -335,41 +335,41 @@ static int is_float_ir_type(ir_type_t type) {
   return type == IR_TY_F32 || type == IR_TY_F64;
 }
 
-static int is_scalar_abi_type(ir_abi_param_info_t type) {
-  return type.param_class == IR_ABI_PARAM_INTEGER ||
-         type.param_class == IR_ABI_PARAM_POINTER;
+static int is_scalar_mir_type(ir_mir_type_info_t type) {
+  return type.type_class == IR_MIR_TYPE_INTEGER ||
+         type.type_class == IR_MIR_TYPE_POINTER;
 }
 
-static int is_float_abi_type(ir_abi_param_info_t type) {
-  return type.param_class == IR_ABI_PARAM_FLOAT &&
+static int is_float_mir_type(ir_mir_type_info_t type) {
+  return type.type_class == IR_MIR_TYPE_FLOAT &&
          is_float_ir_type(type.type) &&
          type.source_size == ir_type_size(type.type);
 }
 
-static int is_complex_abi_type(ir_abi_param_info_t type) {
-  return type.param_class == IR_ABI_PARAM_FLOAT &&
+static int is_complex_mir_type(ir_mir_type_info_t type) {
+  return type.type_class == IR_MIR_TYPE_COMPLEX &&
          is_float_ir_type(type.type) &&
          type.source_size == 2 * ir_type_size(type.type);
 }
 
-static int is_scalar_value_abi_type(ir_abi_param_info_t type) {
-  return is_scalar_abi_type(type) || is_float_abi_type(type);
+static int is_scalar_mir_value_type(ir_mir_type_info_t type) {
+  return is_scalar_mir_type(type) || is_float_mir_type(type);
 }
 
-static int is_direct_value_abi_type(ir_abi_param_info_t type) {
-  return is_scalar_value_abi_type(type);
+static int is_direct_mir_value_type(ir_mir_type_info_t type) {
+  return is_scalar_mir_value_type(type);
 }
 
-static ir_type_t integer_storage_type(ir_abi_param_info_t type) {
+static ir_type_t integer_storage_type(ir_mir_type_info_t type) {
   if (type.source_size >= 8) return IR_TY_I64;
   if (type.source_size == 4) return IR_TY_I32;
   if (type.source_size == 2) return IR_TY_I16;
   return IR_TY_I8;
 }
 
-static ir_type_t scalar_storage_type(ir_abi_param_info_t type) {
-  if (is_float_abi_type(type)) return type.type;
-  return type.param_class == IR_ABI_PARAM_POINTER
+static ir_type_t scalar_storage_type(ir_mir_type_info_t type) {
+  if (is_float_mir_type(type)) return type.type;
+  return type.type_class == IR_MIR_TYPE_POINTER
              ? IR_TY_PTR : integer_storage_type(type);
 }
 
@@ -443,7 +443,7 @@ static int local_owner_address_with_minimum(
     hir_ir_context_t *context, const psx_hir_node_t *local,
     int minimum_size, int minimum_align) {
   int object_offset = psx_hir_node_object_offset(local);
-  ir_abi_param_info_t type = classify_node_type(context, local);
+  ir_mir_type_info_t type = classify_node_type(context, local);
   int size = psx_hir_node_object_size(local);
   if (size <= 0) size = type.source_size;
   if (minimum_size > size) size = minimum_size;
@@ -509,7 +509,7 @@ static int preallocate_local_storage(
 
 static ir_val_t coerce_integer(
     hir_ir_context_t *context, ir_val_t value,
-    ir_abi_param_info_t source, ir_abi_param_info_t target) {
+    ir_mir_type_info_t source, ir_mir_type_info_t target) {
   target.type = integer_storage_type(target);
   if (!is_integer_ir_type(value.type) ||
       !is_integer_ir_type(target.type))
@@ -539,14 +539,14 @@ static ir_val_t coerce_integer(
 
 static ir_val_t coerce_scalar(
     hir_ir_context_t *context, ir_val_t value,
-    ir_abi_param_info_t source, ir_abi_param_info_t target) {
-  if (!is_scalar_abi_type(source) || !is_scalar_abi_type(target))
+    ir_mir_type_info_t source, ir_mir_type_info_t target) {
+  if (!is_scalar_mir_type(source) || !is_scalar_mir_type(target))
     return unsupported_expr(context);
-  if (target.param_class == IR_ABI_PARAM_POINTER) {
-    if (source.param_class == IR_ABI_PARAM_POINTER &&
+  if (target.type_class == IR_MIR_TYPE_POINTER) {
+    if (source.type_class == IR_MIR_TYPE_POINTER &&
         value.type == IR_TY_PTR)
       return value;
-    if (source.param_class == IR_ABI_PARAM_INTEGER) {
+    if (source.type_class == IR_MIR_TYPE_INTEGER) {
       int source_size = source.source_size;
       int target_size = ag_target_info_pointer_size(
           context->options->target);
@@ -569,7 +569,7 @@ static ir_val_t coerce_scalar(
     }
     return unsupported_expr(context);
   }
-  if (source.param_class == IR_ABI_PARAM_POINTER) {
+  if (source.type_class == IR_MIR_TYPE_POINTER) {
     int source_size = ag_target_info_pointer_size(
         context->options->target);
     int target_size = target.source_size;
@@ -590,27 +590,27 @@ static ir_val_t coerce_scalar(
     if (!append_instruction(context, conversion)) return ir_val_none();
     return conversion->dst;
   }
-  if (source.param_class != IR_ABI_PARAM_INTEGER)
+  if (source.type_class != IR_MIR_TYPE_INTEGER)
     return unsupported_expr(context);
   return coerce_integer(context, value, source, target);
 }
 
 static ir_val_t coerce_direct_value(
     hir_ir_context_t *context, ir_val_t value,
-    ir_abi_param_info_t source, ir_abi_param_info_t target) {
-  if (!is_scalar_value_abi_type(source) ||
-      !is_scalar_value_abi_type(target))
+    ir_mir_type_info_t source, ir_mir_type_info_t target) {
+  if (!is_scalar_mir_value_type(source) ||
+      !is_scalar_mir_value_type(target))
     return unsupported_expr(context);
-  if (is_float_abi_type(source) || is_float_abi_type(target)) {
+  if (is_float_mir_type(source) || is_float_mir_type(target)) {
     if (value.type == target.type) return value;
     ir_op_t op;
-    if (is_float_abi_type(source) && is_float_abi_type(target)) {
+    if (is_float_mir_type(source) && is_float_mir_type(target)) {
       op = IR_F2F;
-    } else if (is_float_abi_type(source) &&
-               target.param_class == IR_ABI_PARAM_INTEGER) {
+    } else if (is_float_mir_type(source) &&
+               target.type_class == IR_MIR_TYPE_INTEGER) {
       op = IR_F2I;
-    } else if (source.param_class == IR_ABI_PARAM_INTEGER &&
-               is_float_abi_type(target)) {
+    } else if (source.type_class == IR_MIR_TYPE_INTEGER &&
+               is_float_mir_type(target)) {
       op = IR_I2F;
     } else {
       return unsupported_expr(context);
@@ -634,7 +634,7 @@ static ir_val_t coerce_direct_value(
 
 static ir_val_t coerce_direct_value_to_qual_type(
     hir_ir_context_t *context, ir_val_t value,
-    ir_abi_param_info_t source, ir_abi_param_info_t target,
+    ir_mir_type_info_t source, ir_mir_type_info_t target,
     psx_qual_type_t target_qual_type) {
   const psx_type_t *semantic_target =
       psx_semantic_type_table_lookup(
@@ -642,9 +642,9 @@ static ir_val_t coerce_direct_value_to_qual_type(
           target_qual_type.type_id);
   if (semantic_target && semantic_target->kind == PSX_TYPE_BOOL) {
     value = scalar_truth_value(context, value);
-    source = (ir_abi_param_info_t){
+    source = (ir_mir_type_info_t){
         .type = IR_TY_I32,
-        .param_class = IR_ABI_PARAM_INTEGER,
+        .type_class = IR_MIR_TYPE_INTEGER,
         .source_size = 4,
         .is_unsigned = 1,
     };
@@ -668,17 +668,17 @@ static int setup_parameter_bindings(
       context->status = IR_HIR_BUILD_INVALID;
       return 0;
     }
-    ir_abi_param_info_t type = classify_node_type(context, parameter);
-    if ((!is_scalar_value_abi_type(type) &&
-         !is_complex_abi_type(type) &&
-         type.param_class != IR_ABI_PARAM_AGGREGATE) ||
+    ir_mir_type_info_t type = classify_node_type(context, parameter);
+    if ((!is_scalar_mir_value_type(type) &&
+         !is_complex_mir_type(type) &&
+         type.type_class != IR_MIR_TYPE_AGGREGATE) ||
         function_type->params[i].type_id == PSX_TYPE_ID_INVALID) {
       context->status = IR_HIR_BUILD_UNSUPPORTED;
       return 0;
     }
     int minimum_size =
-        (is_complex_abi_type(type) ||
-         type.param_class == IR_ABI_PARAM_AGGREGATE)
+        (is_complex_mir_type(type) ||
+         type.type_class == IR_MIR_TYPE_AGGREGATE)
             ? type.source_size : 0;
     int minimum_align =
         minimum_size >= 8 ? 8 :
@@ -1079,10 +1079,10 @@ static ir_val_t pointer_with_element_offset(
     hir_ir_context_t *context, const psx_hir_node_t *pointer_node,
     ir_val_t pointer, const psx_hir_node_t *index_node,
     ir_val_t index, int subtract) {
-  ir_abi_param_info_t index_type =
+  ir_mir_type_info_t index_type =
       classify_node_type(context, index_node);
   if (pointer.type != IR_TY_PTR ||
-      index_type.param_class != IR_ABI_PARAM_INTEGER ||
+      index_type.type_class != IR_MIR_TYPE_INTEGER ||
       !is_integer_ir_type(index.type))
     return unsupported_expr(context);
   index = emit_integer_width_conversion(
@@ -1114,7 +1114,7 @@ static ir_val_t pointer_with_element_offset(
 static int try_build_pointer_arithmetic(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     const psx_hir_node_t *lhs, const psx_hir_node_t *rhs,
-    ir_abi_param_info_t result_type, ir_val_t *result) {
+    ir_mir_type_info_t result_type, ir_val_t *result) {
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB) return 0;
   const psx_type_t *left_semantic_type =
@@ -1136,7 +1136,7 @@ static int try_build_pointer_arithmetic(
   if (left_pointer && right_pointer) {
     if (kind != PSX_HIR_SUB ||
         left.type != IR_TY_PTR || right.type != IR_TY_PTR ||
-        result_type.param_class != IR_ABI_PARAM_INTEGER) {
+        result_type.type_class != IR_MIR_TYPE_INTEGER) {
       *result = unsupported_expr(context);
       return 1;
     }
@@ -1188,10 +1188,10 @@ static ir_val_t subscript_address(
 
   ir_val_t base_pointer = build_expr(context, base);
   ir_val_t index_value = build_expr(context, index);
-  ir_abi_param_info_t index_type = classify_node_type(context, index);
+  ir_mir_type_info_t index_type = classify_node_type(context, index);
   if (context->status != IR_HIR_BUILD_OK ||
       base_pointer.type != IR_TY_PTR ||
-      index_type.param_class != IR_ABI_PARAM_INTEGER ||
+      index_type.type_class != IR_MIR_TYPE_INTEGER ||
       !is_integer_ir_type(index_value.type))
     return unsupported_expr(context);
   index_value = emit_integer_width_conversion(
@@ -1290,19 +1290,19 @@ static ir_val_t pointer_with_offset(
 
 static ir_val_t build_complex_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t target_type) {
+    ir_mir_type_info_t target_type) {
   const psx_hir_node_t *target = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *source_node = child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  if (!target || !source_node || !is_complex_abi_type(target_type) ||
+  if (!target || !source_node || !is_complex_mir_type(target_type) ||
       !hir_node_is_lvalue(target))
     return unsupported_expr(context);
   ir_val_t destination = lvalue_address(context, target);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-  ir_abi_param_info_t source_type = classify_node_type(
+  ir_mir_type_info_t source_type = classify_node_type(
       context, source_node);
-  if (is_complex_abi_type(source_type)) {
+  if (is_complex_mir_type(source_type)) {
     ir_val_t source = materialize_complex_operand(
         context, source_node, target_type);
     if (context->status != IR_HIR_BUILD_OK || source.type != IR_TY_PTR)
@@ -1318,12 +1318,12 @@ static ir_val_t build_complex_assignment(
     if (!append_instruction(context, copy)) return ir_val_none();
     return destination;
   }
-  if (!is_scalar_value_abi_type(source_type))
+  if (!is_scalar_mir_value_type(source_type))
     return unsupported_expr(context);
   ir_val_t real = build_expr(context, source_node);
-  ir_abi_param_info_t component_type = {
+  ir_mir_type_info_t component_type = {
       .type = target_type.type,
-      .param_class = IR_ABI_PARAM_FLOAT,
+      .type_class = IR_MIR_TYPE_FLOAT,
       .source_size = ir_type_size(target_type.type),
   };
   if (context->status == IR_HIR_BUILD_OK)
@@ -1364,10 +1364,10 @@ static ir_val_t build_complex_assignment(
 
 static ir_val_t build_complex_comparison(
     hir_ir_context_t *context, psx_hir_node_kind_t kind,
-    ir_val_t left, ir_val_t right, ir_abi_param_info_t type) {
+    ir_val_t left, ir_val_t right, ir_mir_type_info_t type) {
   if ((kind != PSX_HIR_EQ && kind != PSX_HIR_NE) ||
       left.type != IR_TY_PTR || right.type != IR_TY_PTR ||
-      !is_complex_abi_type(type))
+      !is_complex_mir_type(type))
     return unsupported_expr(context);
   int half = ir_type_size(type.type);
   ir_val_t left_imaginary = pointer_with_offset(context, left, half);
@@ -1460,9 +1460,9 @@ static ir_val_t emit_float_binary(
 
 static ir_val_t materialize_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t target_type) {
-  ir_abi_param_info_t source_type = classify_node_type(context, node);
-  if (is_complex_abi_type(source_type)) {
+    ir_mir_type_info_t target_type) {
+  ir_mir_type_info_t source_type = classify_node_type(context, node);
+  if (is_complex_mir_type(source_type)) {
     ir_val_t source = build_expr(context, node);
     if (context->status != IR_HIR_BUILD_OK ||
         source.type != IR_TY_PTR)
@@ -1478,14 +1478,14 @@ static ir_val_t materialize_complex_operand(
         target_half >= 8 ? 8 : 4);
     if (slot < 0) return ir_val_none();
     ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
-    ir_abi_param_info_t source_component = {
+    ir_mir_type_info_t source_component = {
         .type = source_type.type,
-        .param_class = IR_ABI_PARAM_FLOAT,
+        .type_class = IR_MIR_TYPE_FLOAT,
         .source_size = source_half,
     };
-    ir_abi_param_info_t target_component = {
+    ir_mir_type_info_t target_component = {
         .type = target_type.type,
-        .param_class = IR_ABI_PARAM_FLOAT,
+        .type_class = IR_MIR_TYPE_FLOAT,
         .source_size = target_half,
     };
     for (int part = 0; part < 2; part++) {
@@ -1511,7 +1511,7 @@ static ir_val_t materialize_complex_operand(
     }
     return destination;
   }
-  if (!is_scalar_value_abi_type(source_type))
+  if (!is_scalar_mir_value_type(source_type))
     return unsupported_expr(context);
   int half = ir_type_size(target_type.type);
   int slot = allocate_scalar_temp(
@@ -1519,9 +1519,9 @@ static ir_val_t materialize_complex_operand(
   if (slot < 0) return ir_val_none();
   ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
   ir_val_t real = build_expr(context, node);
-  ir_abi_param_info_t component_type = {
+  ir_mir_type_info_t component_type = {
       .type = target_type.type,
-      .param_class = IR_ABI_PARAM_FLOAT,
+      .type_class = IR_MIR_TYPE_FLOAT,
       .source_size = half,
   };
   if (context->status == IR_HIR_BUILD_OK)
@@ -1549,22 +1549,22 @@ static ir_val_t materialize_complex_operand(
 
 static ir_val_t build_complex_binary(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t type) {
+    ir_mir_type_info_t type) {
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   const psx_hir_node_t *left_node = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *right_node = child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  if (!left_node || !right_node || !is_complex_abi_type(type) ||
+  if (!left_node || !right_node || !is_complex_mir_type(type) ||
       (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
        kind != PSX_HIR_MUL && kind != PSX_HIR_DIV))
     return unsupported_expr(context);
-  ir_abi_param_info_t left_type = classify_node_type(context, left_node);
-  ir_abi_param_info_t right_type = classify_node_type(context, right_node);
-  if ((!is_complex_abi_type(left_type) &&
-       !is_scalar_value_abi_type(left_type)) ||
-      (!is_complex_abi_type(right_type) &&
-       !is_scalar_value_abi_type(right_type)))
+  ir_mir_type_info_t left_type = classify_node_type(context, left_node);
+  ir_mir_type_info_t right_type = classify_node_type(context, right_node);
+  if ((!is_complex_mir_type(left_type) &&
+       !is_scalar_mir_value_type(left_type)) ||
+      (!is_complex_mir_type(right_type) &&
+       !is_scalar_mir_value_type(right_type)))
     return unsupported_expr(context);
   ir_val_t left = materialize_complex_operand(
       context, left_node, type);
@@ -1657,10 +1657,10 @@ static ir_val_t emit_float_negate(
 
 static ir_val_t build_complex_negate(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t type) {
+    ir_mir_type_info_t type) {
   const psx_hir_node_t *operand = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
-  if (!operand || !is_complex_abi_type(type))
+  if (!operand || !is_complex_mir_type(type))
     return unsupported_expr(context);
   ir_val_t source = materialize_complex_operand(
       context, operand, type);
@@ -1697,17 +1697,17 @@ static ir_val_t build_complex_negate(
 
 static ir_val_t build_complex_component(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t result_type) {
+    ir_mir_type_info_t result_type) {
   const psx_hir_node_t *operand = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   int is_real = psx_hir_node_kind(node) == PSX_HIR_CREAL;
-  if (!operand || !is_direct_value_abi_type(result_type))
+  if (!operand || !is_direct_mir_value_type(result_type))
     return unsupported_expr(context);
-  ir_abi_param_info_t operand_type = classify_node_type(
+  ir_mir_type_info_t operand_type = classify_node_type(
       context, operand);
-  if (!is_complex_abi_type(operand_type)) {
+  if (!is_complex_mir_type(operand_type)) {
     if (!is_real) {
-      if (!is_float_abi_type(result_type))
+      if (!is_float_mir_type(result_type))
         return ir_val_imm(result_type.type, 0);
       int zero_vreg = new_vreg(context);
       if (zero_vreg < 0) return ir_val_none();
@@ -1727,7 +1727,7 @@ static ir_val_t build_complex_component(
           context, value, operand_type, result_type);
     return value;
   }
-  if (!is_float_abi_type(result_type))
+  if (!is_float_mir_type(result_type))
     return unsupported_expr(context);
   if (operand_type.type != result_type.type)
     return unsupported_expr(context);
@@ -1744,19 +1744,19 @@ static ir_val_t build_complex_component(
 
 static ir_val_t build_scalar_negate(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t type) {
+    ir_mir_type_info_t type) {
   const psx_hir_node_t *operand = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
-  if (!operand || !is_direct_value_abi_type(type))
+  if (!operand || !is_direct_mir_value_type(type))
     return unsupported_expr(context);
   ir_val_t value = build_expr(context, operand);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   value = coerce_direct_value(
       context, value, classify_node_type(context, operand), type);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-  if (is_float_abi_type(type))
+  if (is_float_mir_type(type))
     return emit_float_negate(context, value, type.type);
-  if (type.param_class != IR_ABI_PARAM_INTEGER)
+  if (type.type_class != IR_MIR_TYPE_INTEGER)
     return unsupported_expr(context);
   return emit_integer_binary(
       context, IR_SUB, ir_val_imm(type.type, 0), value, type.type);
@@ -1806,7 +1806,7 @@ static ir_val_t emit_integer_binary(
 
 static ir_val_t coerce_explicit_cast_value(
     hir_ir_context_t *context, ir_val_t value,
-    ir_abi_param_info_t source, ir_abi_param_info_t target,
+    ir_mir_type_info_t source, ir_mir_type_info_t target,
     psx_qual_type_t target_qual_type) {
   const psx_type_t *semantic_target =
       psx_semantic_type_table_lookup(
@@ -1822,9 +1822,9 @@ static ir_val_t coerce_explicit_cast_value(
       target.source_size >= 4)
     return coerce_direct_value(context, value, source, target);
 
-  ir_abi_param_info_t promoted_target = target;
+  ir_mir_type_info_t promoted_target = target;
   promoted_target.type = IR_TY_I32;
-  promoted_target.param_class = IR_ABI_PARAM_INTEGER;
+  promoted_target.type_class = IR_MIR_TYPE_INTEGER;
   promoted_target.source_size = 4;
   value = coerce_direct_value(
       context, value, source, promoted_target);
@@ -2061,14 +2061,14 @@ static ir_val_t scalar_truth_value(
 
 static ir_val_t build_inc_dec(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t type) {
+    ir_mir_type_info_t type) {
   const psx_hir_node_t *target = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   if (!target || !hir_node_is_lvalue(target))
     return unsupported_expr(context);
-  if (type.param_class != IR_ABI_PARAM_INTEGER &&
-      type.param_class != IR_ABI_PARAM_POINTER &&
-      !is_float_abi_type(type))
+  if (type.type_class != IR_MIR_TYPE_INTEGER &&
+      type.type_class != IR_MIR_TYPE_POINTER &&
+      !is_float_mir_type(type))
     return unsupported_expr(context);
 
   ir_val_t pointer = lvalue_address(context, target);
@@ -2102,7 +2102,7 @@ static ir_val_t build_inc_dec(
 
   long long step = 1;
   ir_val_t step_value = ir_val_none();
-  if (type.param_class == IR_ABI_PARAM_POINTER) {
+  if (type.type_class == IR_MIR_TYPE_POINTER) {
     int stride_offset = psx_hir_node_vla_stride_frame_offset(target);
     if (stride_offset != 0) {
       int slot_size = psx_hir_node_vla_stride_slot_size(target);
@@ -2135,7 +2135,7 @@ static ir_val_t build_inc_dec(
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   int is_increment = kind == PSX_HIR_PRE_INC || kind == PSX_HIR_POST_INC;
   ir_val_t new_value;
-  if (is_float_abi_type(type)) {
+  if (is_float_mir_type(type)) {
     int one_vreg = new_vreg(context);
     if (one_vreg < 0) return ir_val_none();
     ir_inst_t *one = ir_inst_new(IR_LOAD_FP_IMM);
@@ -2177,13 +2177,13 @@ static ir_val_t build_inc_dec(
 
 static ir_val_t build_compound_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t target_type) {
+    ir_mir_type_info_t target_type) {
   const psx_hir_node_t *target = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *rhs_node = child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
   if (!target || !rhs_node || !hir_node_is_lvalue(target) ||
-      !is_scalar_value_abi_type(target_type))
+      !is_scalar_mir_value_type(target_type))
     return unsupported_expr(context);
 
   ir_val_t pointer = lvalue_address(context, target);
@@ -2216,19 +2216,19 @@ static ir_val_t build_compound_assignment(
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
 
   ir_val_t rhs = build_expr(context, rhs_node);
-  ir_abi_param_info_t rhs_type = classify_node_type(context, rhs_node);
+  ir_mir_type_info_t rhs_type = classify_node_type(context, rhs_node);
   if (context->status != IR_HIR_BUILD_OK ||
-      !is_scalar_value_abi_type(rhs_type))
+      !is_scalar_mir_value_type(rhs_type))
     return unsupported_expr(context);
   psx_hir_compound_operator_t compound_op =
       psx_hir_node_compound_operator(node);
 
   ir_val_t result;
-  ir_abi_param_info_t operation_type = target_type;
-  if (target_type.param_class == IR_ABI_PARAM_POINTER) {
+  ir_mir_type_info_t operation_type = target_type;
+  if (target_type.type_class == IR_MIR_TYPE_POINTER) {
     if ((compound_op != PSX_HIR_COMPOUND_ADD &&
          compound_op != PSX_HIR_COMPOUND_SUB) ||
-        rhs_type.param_class != IR_ABI_PARAM_INTEGER ||
+        rhs_type.type_class != IR_MIR_TYPE_INTEGER ||
         !is_integer_ir_type(rhs.type))
       return unsupported_expr(context);
     rhs = emit_integer_width_conversion(
@@ -2270,16 +2270,16 @@ static ir_val_t build_compound_assignment(
         context,
         compound_op == PSX_HIR_COMPOUND_ADD ? IR_ADD : IR_SUB,
         old_value, byte_offset, IR_TY_PTR);
-  } else if (is_float_abi_type(target_type) ||
-             is_float_abi_type(rhs_type)) {
+  } else if (is_float_mir_type(target_type) ||
+             is_float_mir_type(rhs_type)) {
     if (compound_op != PSX_HIR_COMPOUND_ADD &&
         compound_op != PSX_HIR_COMPOUND_SUB &&
         compound_op != PSX_HIR_COMPOUND_MUL &&
         compound_op != PSX_HIR_COMPOUND_DIV)
       return unsupported_expr(context);
     operation_type =
-        is_float_abi_type(rhs_type) &&
-                (!is_float_abi_type(target_type) ||
+        is_float_mir_type(rhs_type) &&
+                (!is_float_mir_type(target_type) ||
                  rhs_type.source_size > target_type.source_size)
             ? rhs_type : target_type;
     old_value = coerce_direct_value(
@@ -2294,8 +2294,8 @@ static ir_val_t build_compound_assignment(
     result = emit_float_binary(
         context, op, old_value, rhs, operation_type.type);
   } else {
-    if (target_type.param_class != IR_ABI_PARAM_INTEGER ||
-        rhs_type.param_class != IR_ABI_PARAM_INTEGER)
+    if (target_type.type_class != IR_MIR_TYPE_INTEGER ||
+        rhs_type.type_class != IR_MIR_TYPE_INTEGER)
       return unsupported_expr(context);
     int operation_size = target_type.source_size;
     if (operation_size < 4) operation_size = 4;
@@ -2303,9 +2303,9 @@ static ir_val_t build_compound_assignment(
         compound_op != PSX_HIR_COMPOUND_SHR &&
         rhs_type.source_size > operation_size)
       operation_size = rhs_type.source_size;
-    operation_type = (ir_abi_param_info_t){
+    operation_type = (ir_mir_type_info_t){
         .type = operation_size >= 8 ? IR_TY_I64 : IR_TY_I32,
-        .param_class = IR_ABI_PARAM_INTEGER,
+        .type_class = IR_MIR_TYPE_INTEGER,
         .source_size = operation_size >= 8 ? 8 : 4,
     };
     const psx_type_t *target_semantic_type =
@@ -2364,9 +2364,9 @@ static ir_val_t build_compound_assignment(
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     result = coerce_direct_value(
         context, result,
-        (ir_abi_param_info_t){
+        (ir_mir_type_info_t){
             .type = IR_TY_I32,
-            .param_class = IR_ABI_PARAM_INTEGER,
+            .type_class = IR_MIR_TYPE_INTEGER,
             .source_size = 4,
             .is_unsigned = 1,
         },
@@ -2418,7 +2418,7 @@ static ir_val_t build_short_circuit(
 
 static ir_val_t build_scalar_ternary(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t result_type) {
+    ir_mir_type_info_t result_type) {
   const psx_hir_node_t *condition = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *if_true = child_for_edge(
@@ -2426,7 +2426,7 @@ static ir_val_t build_scalar_ternary(
   const psx_hir_node_t *if_false = child_for_edge(
       context, node, PSX_HIR_EDGE_ELSE, 0);
   if (!condition || !if_true || !if_false ||
-      !is_direct_value_abi_type(result_type))
+      !is_direct_mir_value_type(result_type))
     return unsupported_expr(context);
   int size = result_type.source_size;
   int alignment = size >= 8 ? 8 : size >= 4 ? 4 :
@@ -2700,20 +2700,20 @@ static ir_val_t build_atomic_call(
 
 static ir_val_t build_scalar_or_void_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t result_type);
+    ir_mir_type_info_t result_type);
 
 static ir_val_t build_aggregate_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t target_type) {
+    ir_mir_type_info_t target_type) {
   const psx_hir_node_t *target = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *source_node = child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  ir_abi_param_info_t source_type = classify_node_type(
+  ir_mir_type_info_t source_type = classify_node_type(
       context, source_node);
   if (!target || !source_node ||
-      target_type.param_class != IR_ABI_PARAM_AGGREGATE ||
-      source_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      target_type.type_class != IR_MIR_TYPE_AGGREGATE ||
+      source_type.type_class != IR_MIR_TYPE_AGGREGATE ||
       target_type.source_size <= 0 ||
       source_type.source_size != target_type.source_size)
     return unsupported_expr(context);
@@ -2781,12 +2781,12 @@ static ir_val_t build_object_copy(
 
 static int copy_aggregate_value_to(
     hir_ir_context_t *context, const psx_hir_node_t *source_node,
-    ir_val_t destination, ir_abi_param_info_t result_type) {
-  ir_abi_param_info_t source_type = classify_node_type(
+    ir_val_t destination, ir_mir_type_info_t result_type) {
+  ir_mir_type_info_t source_type = classify_node_type(
       context, source_node);
   if (destination.type != IR_TY_PTR ||
-      result_type.param_class != IR_ABI_PARAM_AGGREGATE ||
-      source_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      result_type.type_class != IR_MIR_TYPE_AGGREGATE ||
+      source_type.type_class != IR_MIR_TYPE_AGGREGATE ||
       result_type.source_size <= 0 ||
       source_type.source_size != result_type.source_size) {
     unsupported_expr(context);
@@ -2808,7 +2808,7 @@ static int copy_aggregate_value_to(
 
 static ir_val_t build_aggregate_ternary_address(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t result_type) {
+    ir_mir_type_info_t result_type) {
   const psx_hir_node_t *condition = child_for_edge(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *if_true = child_for_edge(
@@ -2816,7 +2816,7 @@ static ir_val_t build_aggregate_ternary_address(
   const psx_hir_node_t *if_false = child_for_edge(
       context, node, PSX_HIR_EDGE_ELSE, 0);
   if (!condition || !if_true || !if_false ||
-      result_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+      result_type.type_class != IR_MIR_TYPE_AGGREGATE ||
       result_type.source_size <= 0)
     return unsupported_expr(context);
   int temporary = allocate_scalar_temp(
@@ -2861,16 +2861,16 @@ static ir_val_t aggregate_value_address(
       return unsupported_expr(context);
     return aggregate_value_address(context, value);
   }
-  ir_abi_param_info_t type = classify_node_type(context, node);
+  ir_mir_type_info_t type = classify_node_type(context, node);
   if (kind == PSX_HIR_CALL)
     return build_scalar_or_void_call(context, node, type);
   if (kind == PSX_HIR_CAST) {
     const psx_hir_node_t *operand = child_for_edge(
         context, node, PSX_HIR_EDGE_LHS, 0);
     if (!operand) return unsupported_expr(context);
-    ir_abi_param_info_t operand_type = classify_node_type(
+    ir_mir_type_info_t operand_type = classify_node_type(
         context, operand);
-    if (operand_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+    if (operand_type.type_class != IR_MIR_TYPE_AGGREGATE ||
         operand_type.source_size != type.source_size)
       return unsupported_expr(context);
     return aggregate_value_address(context, operand);
@@ -2896,7 +2896,7 @@ static ir_val_t aggregate_value_address(
 
 static ir_val_t build_scalar_or_void_call(
     hir_ir_context_t *context, const psx_hir_node_t *node,
-    ir_abi_param_info_t result_type) {
+    ir_mir_type_info_t result_type) {
   size_t name_length = 0;
   const char *name = psx_hir_node_name(node, &name_length);
   const psx_hir_node_t *callee = child_for_edge(
@@ -2911,7 +2911,7 @@ static ir_val_t build_scalar_or_void_call(
       psx_semantic_type_table_callable_function(
           context->options->semantic_types,
           psx_hir_node_attached_qual_type(node));
-  ir_abi_type_context_t abi = {
+  ir_mir_type_context_t type_context = {
       .semantic_types = context->options->semantic_types,
       .record_layouts = context->options->record_layouts,
       .target = context->options->target,
@@ -2933,9 +2933,9 @@ static ir_val_t build_scalar_or_void_call(
       context->options->semantic_types, callable_type.type_id);
   int is_void_result =
       node_type_kind(context, node) == PSX_TYPE_VOID;
-  int is_complex_result = is_complex_abi_type(result_type);
+  int is_complex_result = is_complex_mir_type(result_type);
   int is_aggregate_result =
-      result_type.param_class == IR_ABI_PARAM_AGGREGATE;
+      result_type.type_class == IR_MIR_TYPE_AGGREGATE;
   if (callable_type.type_id == PSX_TYPE_ID_INVALID ||
       !callable_semantic_type ||
       callable_semantic_type->kind != PSX_TYPE_FUNCTION ||
@@ -2946,14 +2946,14 @@ static ir_val_t build_scalar_or_void_call(
       callable_result.type_id != psx_hir_node_qual_type(node).type_id ||
       (!is_void_result && !is_complex_result &&
        !is_aggregate_result &&
-       !is_direct_value_abi_type(result_type)))
+       !is_direct_mir_value_type(result_type)))
     return unsupported_expr(context);
   ir_val_t callee_value = ir_val_none();
   if (callee) {
-    ir_abi_param_info_t callee_type = classify_node_type(context, callee);
+    ir_mir_type_info_t callee_type = classify_node_type(context, callee);
     callee_value = build_expr(context, callee);
     if (context->status != IR_HIR_BUILD_OK ||
-        callee_type.param_class != IR_ABI_PARAM_POINTER ||
+        callee_type.type_class != IR_MIR_TYPE_POINTER ||
         callee_value.type != IR_TY_PTR)
       return unsupported_expr(context);
   }
@@ -2971,20 +2971,20 @@ static ir_val_t build_scalar_or_void_call(
   for (size_t i = 0; i < argument_count; i++) {
     const psx_hir_node_t *argument = child_for_edge(
         context, node, PSX_HIR_EDGE_ARGUMENT, i);
-    ir_abi_param_info_t argument_type = classify_node_type(
+    ir_mir_type_info_t argument_type = classify_node_type(
         context, argument);
-    ir_abi_param_info_t parameter_type;
+    ir_mir_type_info_t parameter_type;
     psx_qual_type_t lowered_argument_type =
         psx_hir_node_qual_type(argument);
     if (i < parameter_count) {
       lowered_argument_type = psx_semantic_type_table_parameter(
           context->options->semantic_types,
           callable_type.type_id, (int)i);
-      parameter_type = ir_abi_classify_type_id(
-          &abi, lowered_argument_type.type_id);
+      parameter_type = ir_mir_classify_type_id(
+          &type_context, lowered_argument_type.type_id);
     } else {
       parameter_type = argument_type;
-      if (argument_type.param_class == IR_ABI_PARAM_INTEGER &&
+      if (argument_type.type_class == IR_MIR_TYPE_INTEGER &&
           argument_type.source_size < 4) {
         const psx_type_t *semantic_type =
             psx_semantic_type_table_lookup(
@@ -2998,7 +2998,7 @@ static ir_val_t build_scalar_or_void_call(
       }
     }
     if (i >= parameter_count &&
-        argument_type.param_class == IR_ABI_PARAM_AGGREGATE) {
+        argument_type.type_class == IR_MIR_TYPE_AGGREGATE) {
       int rounded_size =
           ((argument_type.source_size + 7) / 8) * 8;
       if (argument_type.source_size <= 0 ||
@@ -3035,8 +3035,8 @@ static ir_val_t build_scalar_or_void_call(
       continue;
     }
     if (i < parameter_count &&
-        is_complex_abi_type(parameter_type)) {
-      if (!is_complex_abi_type(argument_type) ||
+        is_complex_mir_type(parameter_type)) {
+      if (!is_complex_mir_type(argument_type) ||
           emitted_count >= argument_count) {
         free(arguments);
         return unsupported_expr(context);
@@ -3056,8 +3056,8 @@ static ir_val_t build_scalar_or_void_call(
       continue;
     }
     if (i < parameter_count &&
-        parameter_type.param_class == IR_ABI_PARAM_AGGREGATE) {
-      if (argument_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+        parameter_type.type_class == IR_MIR_TYPE_AGGREGATE) {
+      if (argument_type.type_class != IR_MIR_TYPE_AGGREGATE ||
           argument_type.source_size != parameter_type.source_size ||
           emitted_count >= argument_count) {
         free(arguments);
@@ -3091,12 +3091,12 @@ static ir_val_t build_scalar_or_void_call(
       };
       continue;
     }
-    if (i >= parameter_count && is_float_abi_type(argument_type) &&
+    if (i >= parameter_count && is_float_mir_type(argument_type) &&
         argument_type.type == IR_TY_F32) {
       parameter_type.type = IR_TY_F64;
       parameter_type.source_size = 8;
     }
-    if (!argument || !is_direct_value_abi_type(parameter_type)) {
+    if (!argument || !is_direct_mir_value_type(parameter_type)) {
       free(arguments);
       return unsupported_expr(context);
     }
@@ -3248,7 +3248,7 @@ static ir_val_t build_expr(
       return unsupported_expr(context);
     return build_expr(context, value);
   }
-  ir_abi_param_info_t type = classify_node_type(context, node);
+  ir_mir_type_info_t type = classify_node_type(context, node);
   int is_void = node_type_kind(context, node) == PSX_TYPE_VOID;
   if (psx_hir_node_kind(node) == PSX_HIR_CALL && is_void)
     return build_scalar_or_void_call(context, node, type);
@@ -3272,7 +3272,7 @@ static ir_val_t build_expr(
   }
   if (psx_hir_node_kind(node) == PSX_HIR_TERNARY && is_void)
     return build_void_ternary(context, node);
-  if (type.param_class == IR_ABI_PARAM_AGGREGATE) {
+  if (type.type_class == IR_MIR_TYPE_AGGREGATE) {
     psx_hir_node_kind_t kind = psx_hir_node_kind(node);
     if (hir_node_is_lvalue(node) || kind == PSX_HIR_CALL ||
         kind == PSX_HIR_CAST || kind == PSX_HIR_ASSIGN ||
@@ -3281,7 +3281,7 @@ static ir_val_t build_expr(
       return aggregate_value_address(context, node);
     return unsupported_expr(context);
   }
-  if (is_complex_abi_type(type)) {
+  if (is_complex_mir_type(type)) {
     psx_hir_node_kind_t kind = psx_hir_node_kind(node);
     if (hir_node_is_lvalue(node))
       return lvalue_address(context, node);
@@ -3312,14 +3312,14 @@ static ir_val_t build_expr(
     }
     return unsupported_expr(context);
   }
-  if (!is_direct_value_abi_type(type)) {
+  if (!is_direct_mir_value_type(type)) {
     return unsupported_expr(context);
   }
   if (psx_hir_node_kind(node) == PSX_HIR_CREAL ||
       psx_hir_node_kind(node) == PSX_HIR_CIMAG)
     return build_complex_component(context, node, type);
   if (psx_hir_node_kind(node) == PSX_HIR_NUMBER) {
-    if (is_float_abi_type(type)) {
+    if (is_float_mir_type(type)) {
       int result = new_vreg(context);
       if (result < 0) return ir_val_none();
       ir_inst_t *load = ir_inst_new(IR_LOAD_FP_IMM);
@@ -3333,7 +3333,7 @@ static ir_val_t build_expr(
       if (!append_instruction(context, load)) return ir_val_none();
       return load->dst;
     }
-    if (type.param_class != IR_ABI_PARAM_INTEGER)
+    if (type.type_class != IR_MIR_TYPE_INTEGER)
       return unsupported_expr(context);
     return ir_val_imm(type.type, psx_hir_node_integer_value(node));
   }
@@ -3342,7 +3342,7 @@ static ir_val_t build_expr(
   if (psx_hir_node_kind(node) == PSX_HIR_FUNCTION_REF)
     return build_function_reference(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_VA_ARG_AREA) {
-    if (type.param_class != IR_ABI_PARAM_POINTER)
+    if (type.type_class != IR_MIR_TYPE_POINTER)
       return unsupported_expr(context);
     int result = new_vreg(context);
     if (result < 0) return ir_val_none();
@@ -3401,7 +3401,7 @@ static ir_val_t build_expr(
   if (psx_hir_node_kind(node) == PSX_HIR_ADDRESS) {
     const psx_hir_node_t *operand = child_for_edge(
         context, node, PSX_HIR_EDGE_LHS, 0);
-    if (type.param_class != IR_ABI_PARAM_POINTER || !operand)
+    if (type.type_class != IR_MIR_TYPE_POINTER || !operand)
       return unsupported_expr(context);
     return lvalue_address(context, operand);
   }
@@ -3522,7 +3522,7 @@ static ir_val_t build_expr(
     if (!operand) return unsupported_expr(context);
     ir_val_t value = build_expr(context, operand);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    ir_abi_param_info_t source_type =
+    ir_mir_type_info_t source_type =
         classify_node_type(context, operand);
     return psx_hir_node_kind(node) == PSX_HIR_CAST
                ? coerce_explicit_cast_value(
@@ -3558,7 +3558,7 @@ static ir_val_t build_expr(
       return unsupported_expr(context);
     ir_val_t value = build_expr(context, value_node);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-    ir_abi_param_info_t target_type = classify_node_type(context, target);
+    ir_mir_type_info_t target_type = classify_node_type(context, target);
     value = coerce_direct_value_to_qual_type(
         context, value, classify_node_type(context, value_node),
         target_type, psx_hir_node_qual_type(target));
@@ -3598,19 +3598,19 @@ static ir_val_t build_expr(
   ir_val_t right = build_expr(context, rhs);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
 
-  ir_abi_param_info_t left_type = classify_node_type(context, lhs);
-  ir_abi_param_info_t right_type = classify_node_type(context, rhs);
-  if (is_complex_abi_type(left_type) || is_complex_abi_type(right_type)) {
-    if (!is_complex_abi_type(left_type) ||
-        !is_complex_abi_type(right_type) ||
+  ir_mir_type_info_t left_type = classify_node_type(context, lhs);
+  ir_mir_type_info_t right_type = classify_node_type(context, rhs);
+  if (is_complex_mir_type(left_type) || is_complex_mir_type(right_type)) {
+    if (!is_complex_mir_type(left_type) ||
+        !is_complex_mir_type(right_type) ||
         left_type.type != right_type.type ||
         left_type.source_size != right_type.source_size)
       return unsupported_expr(context);
     return build_complex_comparison(
         context, psx_hir_node_kind(node), left, right, left_type);
   }
-  int is_float = is_float_abi_type(left_type) ||
-                 is_float_abi_type(right_type);
+  int is_float = is_float_mir_type(left_type) ||
+                 is_float_mir_type(right_type);
   if (is_float) {
     psx_hir_node_kind_t kind = psx_hir_node_kind(node);
     if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
@@ -3622,9 +3622,9 @@ static ir_val_t build_expr(
                                 right_type.type == IR_TY_F64
                             ? IR_TY_F64
                             : IR_TY_F32;
-    ir_abi_param_info_t arithmetic_type = {
+    ir_mir_type_info_t arithmetic_type = {
         .type = fp_type,
-        .param_class = IR_ABI_PARAM_FLOAT,
+        .type_class = IR_MIR_TYPE_FLOAT,
         .source_size = ir_type_size(fp_type),
     };
     left = coerce_direct_value(
@@ -3677,12 +3677,12 @@ static ir_val_t build_expr(
     case PSX_HIR_SUB: op = IR_SUB; break;
     case PSX_HIR_MUL: op = IR_MUL; break;
     case PSX_HIR_DIV:
-      if (left_type.param_class != IR_ABI_PARAM_INTEGER)
+      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
         return unsupported_expr(context);
       op = uac_is_unsigned ? IR_UDIV : IR_DIV;
       break;
     case PSX_HIR_MOD:
-      if (left_type.param_class != IR_ABI_PARAM_INTEGER)
+      if (left_type.type_class != IR_MIR_TYPE_INTEGER)
         return unsupported_expr(context);
       op = uac_is_unsigned ? IR_UMOD : IR_MOD;
       break;
@@ -3694,11 +3694,11 @@ static ir_val_t build_expr(
     case PSX_HIR_EQ: op = IR_EQ; break;
     case PSX_HIR_NE: op = IR_NE; break;
     case PSX_HIR_LT:
-      op = left_type.param_class == IR_ABI_PARAM_POINTER ||
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
                    uac_is_unsigned ? IR_ULT : IR_LT;
       break;
     case PSX_HIR_LE:
-      op = left_type.param_class == IR_ABI_PARAM_POINTER ||
+      op = left_type.type_class == IR_MIR_TYPE_POINTER ||
                    uac_is_unsigned ? IR_ULE : IR_LE;
       break;
     default: return unsupported_expr(context);
@@ -3885,13 +3885,13 @@ static int build_statement(
         ret->src1 = ir_val_none();
         return append_instruction(context, ret);
       }
-      if (is_complex_abi_type(context->return_info)) {
-        ir_abi_param_info_t value_type = classify_node_type(
+      if (is_complex_mir_type(context->return_info)) {
+        ir_mir_type_info_t value_type = classify_node_type(
             context, value);
         ir_val_t result = materialize_complex_operand(
             context, value, context->return_info);
         if (context->status != IR_HIR_BUILD_OK ||
-            !is_complex_abi_type(value_type) ||
+            !is_complex_mir_type(value_type) ||
             result.type != IR_TY_PTR)
           return 0;
         ir_inst_t *ret = ir_inst_new(IR_RET);
@@ -3902,12 +3902,12 @@ static int build_statement(
         ret->src1 = result;
         return append_instruction(context, ret);
       }
-      if (context->return_info.param_class == IR_ABI_PARAM_AGGREGATE) {
-        ir_abi_param_info_t value_type = classify_node_type(
+      if (context->return_info.type_class == IR_MIR_TYPE_AGGREGATE) {
+        ir_mir_type_info_t value_type = classify_node_type(
             context, value);
         ir_val_t source = aggregate_value_address(context, value);
         if (context->status != IR_HIR_BUILD_OK ||
-            value_type.param_class != IR_ABI_PARAM_AGGREGATE ||
+            value_type.type_class != IR_MIR_TYPE_AGGREGATE ||
             value_type.source_size != context->return_info.source_size ||
             source.type != IR_TY_PTR)
           return 0;
@@ -3925,7 +3925,7 @@ static int build_statement(
       }
       ir_val_t result = build_expr(context, value);
       if (context->status != IR_HIR_BUILD_OK) return 0;
-      ir_abi_param_info_t value_type = classify_node_type(context, value);
+      ir_mir_type_info_t value_type = classify_node_type(context, value);
       result = coerce_direct_value_to_qual_type(
           context, result, value_type, context->return_info,
           context->return_qual_type);
@@ -4130,7 +4130,7 @@ ir_module_t *ir_build_function_module_from_hir(
   const psx_hir_node_t *root = psx_hir_module_lookup(hir, function_root);
   if (!root || psx_hir_node_kind(root) != PSX_HIR_FUNCTION) return NULL;
 
-  ir_abi_type_context_t abi = {
+  ir_mir_type_context_t type_context = {
       .semantic_types = options->semantic_types,
       .record_layouts = options->record_layouts,
       .target = options->target,
@@ -4141,16 +4141,16 @@ ir_module_t *ir_build_function_module_from_hir(
       options->semantic_types, signature_id);
   psx_type_id_t result_type_id = psx_semantic_type_table_base(
       options->semantic_types, signature_id).type_id;
-  ir_abi_param_info_t return_info = ir_abi_classify_type_id(
-      &abi, result_type_id);
+  ir_mir_type_info_t return_info = ir_mir_classify_type_id(
+      &type_context, result_type_id);
   const psx_type_t *result_type = psx_semantic_type_table_lookup(
       options->semantic_types, result_type_id);
   int returns_void = result_type && result_type->kind == PSX_TYPE_VOID;
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION ||
       function_type->param_count < 0 ||
-      (!returns_void && !is_complex_abi_type(return_info) &&
-       return_info.param_class != IR_ABI_PARAM_AGGREGATE &&
-       !is_direct_value_abi_type(return_info))) {
+      (!returns_void && !is_complex_mir_type(return_info) &&
+       return_info.type_class != IR_MIR_TYPE_AGGREGATE &&
+       !is_direct_mir_value_type(return_info))) {
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
     return NULL;
   }

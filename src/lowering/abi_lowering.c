@@ -6,6 +6,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef enum {
+  IR_ABI_PARAM_UNKNOWN = 0,
+  IR_ABI_PARAM_INTEGER,
+  IR_ABI_PARAM_FLOAT,
+  IR_ABI_PARAM_POINTER,
+  IR_ABI_PARAM_AGGREGATE,
+} ir_abi_param_class_t;
+
+typedef struct {
+  ir_type_t type;
+  ir_abi_param_class_t param_class;
+  int source_size;
+  int is_unsigned;
+} ir_abi_param_info_t;
+
 static ir_abi_param_info_t abi_param_unknown(void) {
   return (ir_abi_param_info_t){
       .type = IR_TY_VOID,
@@ -17,39 +32,17 @@ static int aggregate_has_direct_integer_width(int size) {
   return size == 1 || size == 2 || size == 4 || size == 8;
 }
 
-ir_abi_param_info_t ir_abi_classify_builtin_param(
-    const ir_abi_type_context_t *context,
-    const char *name, int name_len, int param_idx) {
-  if (name_len == 6 && strncmp(name, "memset", 6) == 0) {
-    if (param_idx == 0) {
-      return (ir_abi_param_info_t){
-          .type = IR_TY_PTR,
-          .param_class = IR_ABI_PARAM_POINTER,
-          .source_size = context && context->target
-                             ? ag_target_info_pointer_size(context->target)
-                             : 0,
-      };
-    }
-    if (param_idx == 1) {
-      return (ir_abi_param_info_t){
-          .type = IR_TY_I32,
-          .param_class = IR_ABI_PARAM_INTEGER,
-          .source_size = 4,
-      };
-    }
-    if (param_idx == 2) {
-      return (ir_abi_param_info_t){
-          .type = IR_TY_I64,
-          .param_class = IR_ABI_PARAM_INTEGER,
-          .source_size = 8,
-          .is_unsigned = 1,
-      };
-    }
+static ir_type_t aggregate_direct_integer_type(int size) {
+  switch (size) {
+    case 1: return IR_TY_I8;
+    case 2: return IR_TY_I16;
+    case 4: return IR_TY_I32;
+    case 8: return IR_TY_I64;
+    default: return IR_TY_VOID;
   }
-  return abi_param_unknown();
 }
 
-ir_abi_param_info_t ir_abi_classify_type_id(
+static ir_abi_param_info_t ir_abi_classify_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id) {
   if (!context || !context->semantic_types || !context->record_layouts ||
       !context->target || type_id == PSX_TYPE_ID_INVALID)
@@ -76,7 +69,7 @@ ir_abi_param_info_t ir_abi_classify_type_id(
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
       info.type = aggregate_has_direct_integer_width(info.source_size)
-                      ? (info.source_size == 8 ? IR_TY_I64 : IR_TY_I32)
+                      ? aggregate_direct_integer_type(info.source_size)
                       : IR_TY_PTR;
       info.param_class = IR_ABI_PARAM_AGGREGATE;
       return info;
@@ -105,21 +98,72 @@ static int type_is_complex(
   return type && type->kind == PSX_TYPE_COMPLEX;
 }
 
-static int type_is_aggregate(
-    const ir_abi_type_context_t *context, psx_type_id_t type_id) {
-  const psx_type_t *type = context && context->semantic_types
-                               ? psx_semantic_type_table_lookup(
-                                     context->semantic_types, type_id)
-                               : NULL;
-  return type && (type->kind == PSX_TYPE_STRUCT ||
-                  type->kind == PSX_TYPE_UNION);
-}
-
 static size_t type_piece_count(
     const ir_abi_type_context_t *context, psx_type_id_t type_id,
     ir_abi_param_info_t info) {
   if (type_is_complex(context, type_id)) return 2;
   (void)info;
+  return 1;
+}
+
+static int lower_result_pieces(
+    const ir_abi_type_context_t *context, psx_type_id_t type_id,
+    ir_abi_signature_t *out) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      context->semantic_types, type_id);
+  if (!type) return 0;
+  if (type->kind == PSX_TYPE_VOID) return 1;
+
+  ir_abi_param_info_t info = ir_abi_classify_type_id(context, type_id);
+  if (info.param_class == IR_ABI_PARAM_UNKNOWN ||
+      info.type == IR_TY_VOID || info.source_size <= 0)
+    return 0;
+
+  size_t piece_count = type->kind == PSX_TYPE_COMPLEX &&
+                               ag_target_info_call_abi(context->target) ==
+                                   AG_TARGET_CALL_ABI_AAPCS64
+                           ? 2u
+                           : 1u;
+  out->result_pieces = calloc(
+      piece_count, sizeof(*out->result_pieces));
+  if (!out->result_pieces) return 0;
+  out->result_count = piece_count;
+
+  if (type->kind == PSX_TYPE_COMPLEX && piece_count == 2) {
+    out->result_pieces[0] = (ir_abi_piece_t){
+        .type = info.type,
+        .source_index = SIZE_MAX,
+        .source_size = info.source_size,
+        .byte_offset = 0,
+        .kind = IR_ABI_PIECE_COMPLEX_REAL,
+    };
+    out->result_pieces[1] = (ir_abi_piece_t){
+        .type = info.type,
+        .source_index = SIZE_MAX,
+        .source_size = info.source_size,
+        .byte_offset = ir_type_size(info.type),
+        .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
+    };
+    return 1;
+  }
+
+  ir_abi_piece_kind_t kind = IR_ABI_PIECE_DIRECT;
+  ir_type_t piece_type = info.type;
+  if (type->kind == PSX_TYPE_COMPLEX ||
+      (info.param_class == IR_ABI_PARAM_AGGREGATE &&
+       !aggregate_has_direct_integer_width(info.source_size))) {
+    kind = IR_ABI_PIECE_INDIRECT;
+    piece_type = IR_TY_PTR;
+  } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
+    kind = IR_ABI_PIECE_DIRECT_AGGREGATE;
+  }
+  out->result_pieces[0] = (ir_abi_piece_t){
+      .type = piece_type,
+      .source_index = SIZE_MAX,
+      .source_size = info.source_size,
+      .byte_offset = 0,
+      .kind = kind,
+  };
   return 1;
 }
 
@@ -132,14 +176,9 @@ static int lower_function_type_signature(
     return 0;
   memset(out, 0, sizeof(*out));
   out->result_area = ir_val_none();
-  out->result = ir_abi_classify_type_id(
-      context, function_type->result.type_id);
-  out->result_size = out->result.source_size;
-  out->result_is_indirect =
-      type_is_aggregate(context, function_type->result.type_id) &&
-      !aggregate_has_direct_integer_width(out->result.source_size);
-  if (type_is_complex(context, function_type->result.type_id))
-    out->result_complex_half = (unsigned char)ir_type_size(out->result.type);
+  if (!lower_result_pieces(
+          context, function_type->result.type_id, out))
+    return 0;
   out->is_variadic = function_type->is_variadic;
 
   size_t piece_count = 0;
@@ -194,6 +233,7 @@ static int lower_function_type_signature(
 
 static void dispose_signature(ir_abi_signature_t *signature) {
   if (!signature) return;
+  free(signature->result_pieces);
   free(signature->param_pieces);
   memset(signature, 0, sizeof(*signature));
 }
@@ -586,6 +626,46 @@ const ir_abi_piece_t *ir_abi_signature_parameter_pieces(
   if (piece_count) *piece_count = count;
   if (physical_index) *physical_index = first;
   return &signature->param_pieces[first];
+}
+
+const ir_abi_piece_t *ir_abi_signature_result_pieces(
+    const ir_abi_signature_t *signature, size_t *piece_count) {
+  if (piece_count)
+    *piece_count = signature ? signature->result_count : 0;
+  return signature && signature->result_count > 0
+             ? signature->result_pieces : NULL;
+}
+
+int ir_abi_signature_result_is_indirect(
+    const ir_abi_signature_t *signature) {
+  return signature && signature->result_count == 1 &&
+         signature->result_pieces &&
+         signature->result_pieces[0].kind == IR_ABI_PIECE_INDIRECT;
+}
+
+int ir_abi_signature_result_is_direct_aggregate(
+    const ir_abi_signature_t *signature) {
+  return signature && signature->result_count == 1 &&
+         signature->result_pieces &&
+         signature->result_pieces[0].kind ==
+             IR_ABI_PIECE_DIRECT_AGGREGATE;
+}
+
+ir_type_t ir_abi_signature_direct_result_type(
+    const ir_abi_signature_t *signature) {
+  if (!signature || signature->result_count != 1 ||
+      !signature->result_pieces ||
+      signature->result_pieces[0].kind == IR_ABI_PIECE_INDIRECT)
+    return IR_TY_VOID;
+  return signature->result_pieces[0].type;
+}
+
+int ir_abi_signature_result_source_size(
+    const ir_abi_signature_t *signature) {
+  return signature && signature->result_count > 0 &&
+                 signature->result_pieces
+             ? signature->result_pieces[0].source_size
+             : 0;
 }
 
 const ir_abi_signature_t *ir_abi_call_signature(

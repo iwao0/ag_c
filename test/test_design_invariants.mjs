@@ -3557,6 +3557,15 @@ if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test
     "generic IR must retain resolved function TypeId while ABI lowering owns target classification",
   );
 }
+if (/abi_lowering\.h|\bir_abi_(?:classify|lower)_[A-Za-z0-9_]*\s*\(/.test(
+      hirIrBuilder,
+    ) ||
+    !/mir_type_lowering\.h/.test(hirIrBuilder) ||
+    !/\bir_mir_classify_type_id\s*\(/.test(hirIrBuilder)) {
+  throw new Error(
+    "HIR to MIR lowering must use logical MIR value types and leave ABI classification to the post-MIR pass",
+  );
+}
 
 const forbiddenGenericIrAbiMetadata = [
   "ir_callable_sig_t",
@@ -3584,6 +3593,23 @@ if (/\bx8\b|\bret_type\b/.test(irHeaderSource) ||
     !/\bir_abi_data_relocation_signature\s*\(/.test(wasmObjSource)) {
   throw new Error(
     "aggregate result and function-reference ABI must be represented by target-neutral MIR plus sidecars",
+  );
+}
+if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_size)\s*;/.test(
+      abiLoweringHeader,
+    ) ||
+    /\bir_abi_(?:param_info_t|classify_type_id)\b/.test(
+      abiLoweringHeader,
+    ) ||
+    !/ir_abi_piece_t\s*\*result_pieces\s*;/.test(abiLoweringHeader) ||
+    !/size_t\s+result_count\s*;/.test(abiLoweringHeader) ||
+    !/\blower_result_pieces\s*\(/.test(abiLoweringSource) ||
+    !/\bag_target_info_call_abi\s*\(/.test(abiLoweringSource) ||
+    /\[[ \t]*(?:16|32)[ \t]*\]/.test(
+      `${irHeaderSource}\n${abiLoweringHeader}\n${abiLoweringSource}`,
+    )) {
+  throw new Error(
+    "AbiLowering must own dynamic target-specific parameter and result piece sequences without legacy result flags or fixed callable caps",
   );
 }
 
@@ -8148,7 +8174,7 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
     !/case\s+ND_CREAL\s*:\s*case\s+ND_CIMAG\s*:[^]*?node->lhs\s*=\s*lower_tree[^]*?break\s*;/.test(
       semanticLoweringPassSource,
     ) ||
-    !/build_complex_component\s*\([^]*?!is_float_abi_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
+    !/build_complex_component\s*\([^]*?!is_float_mir_type\s*\(\s*result_type\s*\)[^]*?ir_val_imm\s*\(\s*result_type\.type\s*,\s*0\s*\)/.test(
       hirIrBuilder,
     ) ||
     directComplexComponentKindChecks.length !== 2 ||

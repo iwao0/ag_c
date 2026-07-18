@@ -626,10 +626,8 @@ static int test_semantic_define_typedef_name(
       name, len, info, NULL, NULL);
 }
 
-static void test_semantic_define_function_name_with_ret(
-    char *name, int len, int ret_struct_size) {
-  psx_ctx_define_function_name_with_ret_in(
-      test_semantic_context(), name, len, ret_struct_size);
+static void test_semantic_define_function_name(char *name, int len) {
+  psx_ctx_define_function_name_in(test_semantic_context(), name, len);
 }
 
 static int test_semantic_track_function_type(
@@ -660,14 +658,23 @@ static long test_function_abi_value(
     else if (field == 1 && index < signature->param_count)
       value = signature->param_pieces[index].type;
     else if (field == 2) value = signature->is_variadic;
-    else if (field == 3) value = signature->result_size;
+    else if (field == 3)
+      value = ir_abi_signature_result_source_size(signature);
     else if (field == 5 && index < signature->param_count)
       value = (long)signature->param_pieces[index].source_index;
     else if (field == 6 && index < signature->param_count)
       value = signature->param_pieces[index].byte_offset;
     else if (field == 7 && index < signature->param_count)
       value = signature->param_pieces[index].kind;
-    else if (field == 8) value = signature->result.type;
+    else if (field == 8)
+      value = ir_abi_signature_direct_result_type(signature);
+    else if (field == 9) value = (long)signature->result_count;
+    else if (field == 10 && index < signature->result_count)
+      value = signature->result_pieces[index].type;
+    else if (field == 11 && index < signature->result_count)
+      value = signature->result_pieces[index].byte_offset;
+    else if (field == 12 && index < signature->result_count)
+      value = signature->result_pieces[index].kind;
   }
   ir_abi_module_free(abi);
   return value;
@@ -685,8 +692,10 @@ static long test_call_abi_value(
     else if (field == 1 && index < signature->param_count)
       value = signature->param_pieces[index].type;
     else if (field == 2) value = signature->is_variadic;
-    else if (field == 3) value = signature->result_size;
-    else if (field == 4) value = signature->result.type;
+    else if (field == 3)
+      value = ir_abi_signature_result_source_size(signature);
+    else if (field == 4)
+      value = ir_abi_signature_direct_result_type(signature);
   }
   ir_abi_module_free(abi);
   return value;
@@ -703,7 +712,8 @@ static long test_reference_abi_value(
     if (field == 0) value = (long)signature->param_count;
     else if (field == 1 && index < signature->param_count)
       value = signature->param_pieces[index].type;
-    else if (field == 2) value = signature->result.type;
+    else if (field == 2)
+      value = ir_abi_signature_direct_result_type(signature);
     else if (field == 3) value = signature->is_variadic;
   }
   ir_abi_module_free(abi);
@@ -5498,6 +5508,10 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(12, test_function_abi_value(ir, 3, 0));
+  ASSERT_EQ(1, test_function_abi_value(ir, 9, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 10, 0));
+  ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+            test_function_abi_value(ir, 12, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
@@ -5547,25 +5561,8 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
       psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t caller_root =
       psx_hir_module_root_at(hir, 1);
-  const psx_hir_node_t *combine = psx_hir_module_lookup(
-      hir, combine_root);
-  ASSERT_TRUE(combine != NULL);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
-  psx_type_id_t result_type_id = psx_semantic_type_table_base(
-      semantic_types,
-      psx_hir_node_attached_qual_type(combine).type_id).type_id;
-  ir_abi_type_context_t abi = {
-      .semantic_types = semantic_types,
-      .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
-      .target = ag_compilation_session_target(test_suite_session),
-  };
-  ir_abi_param_info_t result_abi = ir_abi_classify_type_id(
-      &abi, result_type_id);
-  ASSERT_EQ(IR_ABI_PARAM_AGGREGATE, result_abi.param_class);
-  ASSERT_EQ(3, result_abi.source_size);
-  ASSERT_EQ(IR_TY_PTR, result_abi.type);
   free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -5586,6 +5583,9 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(3, test_function_abi_value(ir, 3, 0));
+  ASSERT_EQ(1, test_function_abi_value(ir, 9, 0));
+  ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
+            test_function_abi_value(ir, 12, 0));
   ASSERT_EQ(2, test_function_abi_value(ir, 0, 0));
   ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
   ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 1));
@@ -5967,6 +5967,15 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
             test_function_abi_value(identity_ir, 7, 0));
   ASSERT_EQ(IR_ABI_PIECE_COMPLEX_IMAGINARY,
             test_function_abi_value(identity_ir, 7, 1));
+  ASSERT_EQ(2, test_function_abi_value(identity_ir, 9, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 10, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 10, 1));
+  ASSERT_EQ(0, test_function_abi_value(identity_ir, 11, 0));
+  ASSERT_EQ(8, test_function_abi_value(identity_ir, 11, 1));
+  ASSERT_EQ(IR_ABI_PIECE_COMPLEX_REAL,
+            test_function_abi_value(identity_ir, 12, 0));
+  ASSERT_EQ(IR_ABI_PIECE_COMPLEX_IMAGINARY,
+            test_function_abi_value(identity_ir, 12, 1));
   ir_module_free(identity_ir);
   status = IR_HIR_BUILD_INVALID;
   ir_module_t *ir = ir_build_function_module_from_hir(
@@ -6302,7 +6311,8 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
   ASSERT_TRUE(callback_ref_abi != NULL);
   ASSERT_EQ(1, callback_ref_abi->param_count);
   ASSERT_EQ(IR_TY_I32, callback_ref_abi->param_pieces[0].type);
-  ASSERT_EQ(IR_TY_I32, callback_ref_abi->result.type);
+  ASSERT_EQ(IR_TY_I32,
+            ir_abi_signature_direct_result_type(callback_ref_abi));
   ir_abi_module_free(symbol_abi);
   ir_module_free(ir);
   reset_test_translation_unit_state();
@@ -8999,8 +9009,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(psx_resolve_function_reference_type(
                   test_semantic_context(), parameter) == NULL);
 
-  test_semantic_define_function_name_with_ret(
-      function_name, function_name_len, 0);
+  test_semantic_define_function_name(function_name, function_name_len);
   ASSERT_TRUE(test_semantic_track_function_type(
       function_name, function_name_len, function));
 
@@ -11696,16 +11705,36 @@ static void test_target_type_layout_boundary() {
   };
   ir_abi_type_context_t wasm_abi = host_abi;
   wasm_abi.target = &wasm;
-  ir_abi_param_info_t host_record_abi = ir_abi_classify_type_id(
-      &host_abi, record_identity.type_id);
-  ir_abi_param_info_t wasm_record_abi = ir_abi_classify_type_id(
-      &wasm_abi, record_identity.type_id);
-  ASSERT_EQ(IR_ABI_PARAM_AGGREGATE, host_record_abi.param_class);
-  ASSERT_EQ(16, host_record_abi.source_size);
-  ASSERT_EQ(IR_TY_PTR, host_record_abi.type);
-  ASSERT_EQ(IR_ABI_PARAM_AGGREGATE, wasm_record_abi.param_class);
-  ASSERT_EQ(8, wasm_record_abi.source_size);
-  ASSERT_EQ(IR_TY_I64, wasm_record_abi.type);
+  ir_module_t *abi_probe_module = ir_module_new();
+  ASSERT_TRUE(abi_probe_module != NULL);
+  ir_func_t *abi_probe_function = ir_func_new(
+      abi_probe_module, "record_result", 13);
+  ASSERT_TRUE(abi_probe_function != NULL);
+  ASSERT_TRUE(ir_function_type_set(
+      &abi_probe_function->function_type, PSX_TYPE_ID_INVALID,
+      record_identity, NULL, 0, 0, 1));
+  ir_abi_module_t *host_lowered = ir_abi_lower_module(
+      &host_abi, abi_probe_module);
+  ir_abi_module_t *wasm_lowered = ir_abi_lower_module(
+      &wasm_abi, abi_probe_module);
+  const ir_abi_signature_t *host_signature =
+      ir_abi_function_signature(host_lowered, abi_probe_function);
+  const ir_abi_signature_t *wasm_signature =
+      ir_abi_function_signature(wasm_lowered, abi_probe_function);
+  ASSERT_TRUE(host_signature != NULL);
+  ASSERT_TRUE(wasm_signature != NULL);
+  ASSERT_TRUE(ir_abi_signature_result_is_indirect(host_signature));
+  ASSERT_EQ(16, ir_abi_signature_result_source_size(host_signature));
+  ASSERT_EQ(1, host_signature->result_count);
+  ASSERT_EQ(IR_TY_PTR, host_signature->result_pieces[0].type);
+  ASSERT_TRUE(ir_abi_signature_result_is_direct_aggregate(
+      wasm_signature));
+  ASSERT_EQ(8, ir_abi_signature_result_source_size(wasm_signature));
+  ASSERT_EQ(1, wasm_signature->result_count);
+  ASSERT_EQ(IR_TY_I64, wasm_signature->result_pieces[0].type);
+  ir_abi_module_free(host_lowered);
+  ir_abi_module_free(wasm_lowered);
+  ir_module_free(abi_probe_module);
   ASSERT_EQ(4, ps_type_alignof_id_with_records(
                    types, record_layouts, record_identity.type_id, &wasm));
   const psx_record_layout_t *host_record_layout =
@@ -11847,6 +11876,49 @@ static void test_target_type_layout_boundary() {
   ps_lowering_context_bind_record_layouts(
       lowering, session_record_layouts);
   psx_record_layout_table_destroy(record_layouts);
+}
+
+static void test_dynamic_abi_piece_capacity() {
+  printf("test_dynamic_abi_piece_capacity...\n");
+  reset_test_translation_unit_state();
+  enum { PARAM_COUNT = 40 };
+  psx_qual_type_t integer = ps_ctx_intern_qual_type_in(
+      test_semantic_context(),
+      ps_type_new_integer(TK_INT, 4, 0));
+  ASSERT_TRUE(integer.type_id != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t parameters[PARAM_COUNT];
+  for (size_t i = 0; i < PARAM_COUNT; i++) parameters[i] = integer;
+
+  ir_module_t *module = ir_module_new();
+  ASSERT_TRUE(module != NULL);
+  ir_func_t *function = ir_func_new(module, "many_parameters", 15);
+  ASSERT_TRUE(function != NULL);
+  ASSERT_TRUE(ir_function_type_set(
+      &function->function_type, PSX_TYPE_ID_INVALID,
+      integer, parameters, PARAM_COUNT, 0, 1));
+
+  ir_abi_type_context_t context = {
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      .target = ag_compilation_session_target(test_suite_session),
+  };
+  ir_abi_module_t *lowered = ir_abi_lower_module(&context, module);
+  const ir_abi_signature_t *signature =
+      ir_abi_function_signature(lowered, function);
+  ASSERT_TRUE(signature != NULL);
+  ASSERT_EQ(PARAM_COUNT, signature->param_count);
+  ASSERT_EQ(PARAM_COUNT, signature->fixed_param_count);
+  ASSERT_EQ(39, signature->param_pieces[39].source_index);
+  ASSERT_EQ(IR_TY_I32, signature->param_pieces[39].type);
+  ASSERT_EQ(IR_ABI_PIECE_DIRECT, signature->param_pieces[39].kind);
+  ASSERT_EQ(1, signature->result_count);
+  ASSERT_EQ(IR_TY_I32, signature->result_pieces[0].type);
+
+  ir_abi_module_free(lowered);
+  ir_module_free(module);
+  reset_test_translation_unit_state();
 }
 
 static void test_wasm_target_global_pointer_data_layout() {
@@ -22262,7 +22334,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_type_derived_function(dpa_ret_type) == NULL);
   ASSERT_EQ(2, double_ptr_to_array_ty->base->array_len);
   ASSERT_EQ(8, ps_type_sizeof(double_ptr_to_array_ty->base->base));
-  test_semantic_define_function_name_with_ret("__tm_manual_type", 16, 0);
+  test_semantic_define_function_name("__tm_manual_type", 16);
   psx_type_t *manual_ret_type =
       ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_type_t *manual_function_type =
@@ -22275,8 +22347,8 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(manual_ret_stored, "p<f64>");
 
   const char manual_ptrarr_name[] = "__tm_manual_ptrarr_type";
-  test_semantic_define_function_name_with_ret(
-      (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1, 0);
+  test_semantic_define_function_name(
+      (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1);
   psx_type_t *manual_ptrarr_element = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *manual_ptrarr_inner =
       ps_type_new_array(manual_ptrarr_element, 4, 16, 0);
@@ -22306,8 +22378,8 @@ static void test_type_metadata_bridge() {
       manual_ptrarr_function_type, "p<a3<a4<i32>>>()");
 
   const char many_param_name[] = "__tm_many_param_type";
-  test_semantic_define_function_name_with_ret(
-      (char *)many_param_name, (int)sizeof(many_param_name) - 1, 0);
+  test_semantic_define_function_name(
+      (char *)many_param_name, (int)sizeof(many_param_name) - 1);
   psx_type_t *many_param_function = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
   const psx_type_t *many_param_types[17] = {0};
@@ -26696,7 +26768,8 @@ static void test_compilation_session_registry_isolation() {
           first_data_abi, first_callback_data->relocs);
   ASSERT_TRUE(first_callback_abi != NULL);
   ASSERT_EQ(0, first_callback_abi->param_count);
-  ASSERT_EQ(IR_TY_I32, first_callback_abi->result.type);
+  ASSERT_EQ(IR_TY_I32,
+            ir_abi_signature_direct_result_type(first_callback_abi));
   ir_abi_data_module_free(first_data_abi);
   ASSERT_TRUE(first_aggregate_data != NULL);
   ASSERT_EQ(11, first_aggregate_data->bytes[0]);
@@ -27347,6 +27420,7 @@ int main() {
   test_complex_initializer_semantic_lowering_boundary();
   test_local_declaration_storage_plan_boundary();
   test_target_type_layout_boundary();
+  test_dynamic_abi_piece_capacity();
   test_wasm_target_global_pointer_data_layout();
   test_vla_lowering_request_boundary();
   test_parameter_declaration_storage_plan_boundary();

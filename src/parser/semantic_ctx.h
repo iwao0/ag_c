@@ -121,9 +121,6 @@ void ps_ctx_rollback_function_registration_in(
     const psx_function_registration_checkpoint_t *checkpoint);
 void psx_ctx_define_function_name_in(
     psx_semantic_context_t *context, char *name, int len);
-void psx_ctx_define_function_name_with_ret_in(
-    psx_semantic_context_t *context, char *name, int len,
-    int ret_struct_size);
 int ps_ctx_is_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
 const psx_type_t *psx_ctx_get_function_ret_type_in(

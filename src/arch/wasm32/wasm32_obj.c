@@ -1170,7 +1170,7 @@ static int collect_param_count(ir_func_t *f) {
 
 static int func_has_ret_area(ir_func_t *f) {
   const ir_abi_signature_t *abi = obj_function_abi(f);
-  return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
+  return ir_abi_signature_result_is_indirect(abi);
 }
 
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
@@ -1184,7 +1184,8 @@ static obj_sig_t func_sig_from_reference_abi(
   if (!abi || abi->param_count > INT_MAX)
     obj_unsupported_msg("missing function-reference ABI in Wasm object mode");
   obj_sig_t sig = {
-      .result = wasm_ir_type(abi->result.type),
+      .result = wasm_ir_type(
+          ir_abi_signature_direct_result_type(abi)),
       .nparams = (int)abi->param_count,
   };
   if (sig.nparams > 0) {
@@ -1218,7 +1219,7 @@ static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
 
 static int call_has_ret_area(ir_inst_t *i) {
   const ir_abi_signature_t *abi = obj_call_abi(i);
-  return abi && (abi->result_is_indirect || abi->result_complex_half > 0);
+  return ir_abi_signature_result_is_indirect(abi);
 }
 
 static ir_val_t call_ret_area(ir_inst_t *i) {
@@ -1234,9 +1235,10 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
   int has_ret_area = func_has_ret_area(f);
   memset(sig, 0, sizeof(*sig));
   sig->nparams = collect_param_count(f) + (has_ret_area ? 1 : 0);
-  sig->result = has_ret_area || abi->result.type == IR_TY_VOID
+  ir_type_t result_type = ir_abi_signature_direct_result_type(abi);
+  sig->result = has_ret_area || result_type == IR_TY_VOID
                   ? IR_TY_VOID
-                  : wasm_ir_type(abi->result.type);
+                  : wasm_ir_type(result_type);
   if (sig->nparams > 0) {
     sig->params = xrealloc(NULL, (size_t)sig->nparams * sizeof(ir_type_t));
     if (has_ret_area) sig->params[0] = IR_TY_I32;
@@ -1252,8 +1254,8 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (!abi) obj_unsupported_msg("call without ABI lowering result");
   int has_ret_area = call_has_ret_area(i);
   int direct_aggregate_result =
-      abi->result.param_class == IR_ABI_PARAM_AGGREGATE &&
-      !abi->result_is_indirect;
+      ir_abi_signature_result_is_direct_aggregate(abi);
+  ir_type_t result_type = ir_abi_signature_direct_result_type(abi);
   if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
@@ -1265,7 +1267,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       for (int a = 0; a < sig.nparams; a++)
         sig.params[a] = wasm_ir_type(abi->param_pieces[a].type);
     }
-    sig.result = wasm_ir_type(abi->result.type);
+    sig.result = wasm_ir_type(result_type);
     if (!direct_aggregate_result &&
         (i->is_void_call || i->dst.id == IR_VAL_NONE ||
          i->dst.type == IR_TY_VOID)) {
@@ -1294,7 +1296,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
        (i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID))) {
     sig.result = IR_TY_VOID;
   } else if (direct_aggregate_result) {
-    sig.result = wasm_ir_type(abi->result.type);
+    sig.result = wasm_ir_type(result_type);
   } else {
     ir_type_t ret_ty = i->sym ? func_result_type_from_decl(i->sym, i->sym_len, i->dst.type)
                               : i->dst.type;
@@ -1566,31 +1568,9 @@ static void emit_variadic_arg_area_restore(wb_t *b, obj_func_t *of, obj_global_t
   emit_stack_global_set(b, of, va_arg_area);
 }
 
-static void emit_complex_ret_copy(
-    wb_t *b, ir_inst_t *i, int param_count, int half) {
-  ir_type_t ty = half == 4 ? IR_TY_F32 : IR_TY_F64;
-  if (half != 4 && half != 8) obj_unsupported_op(i->op);
-  emit_local_get(b, 0);
-  emit_addr_val(b, i->src1, param_count);
-  wb_u8(b, load_opcode(ty, 0));
-  emit_memarg(b, ty);
-  wb_u8(b, store_opcode(ty));
-  emit_memarg(b, ty);
-  emit_local_get(b, 0);
-  emit_const(b, IR_TY_I32, half);
-  wb_u8(b, 0x6a);
-  emit_addr_plus_const(b, i->src1, half, param_count);
-  wb_u8(b, load_opcode(ty, 0));
-  emit_memarg(b, ty);
-  wb_u8(b, store_opcode(ty));
-  emit_memarg(b, ty);
-}
-
 static int call_returns_direct_aggregate(ir_inst_t *instruction) {
   const ir_abi_signature_t *abi = obj_call_abi(instruction);
-  return abi &&
-         abi->result.param_class == IR_ABI_PARAM_AGGREGATE &&
-         !abi->result_is_indirect;
+  return ir_abi_signature_result_is_direct_aggregate(abi);
 }
 
 static void emit_direct_aggregate_call_result(
@@ -1600,14 +1580,15 @@ static void emit_direct_aggregate_call_result(
   const ir_abi_signature_t *abi = obj_call_abi(instruction);
   if (!abi || abi->result_area.id == IR_VAL_NONE)
     obj_unsupported_op(instruction->op);
-  ir_type_t type = wasm_ir_type(abi->result.type);
+  ir_type_t result_type = ir_abi_signature_direct_result_type(abi);
+  ir_type_t type = wasm_ir_type(result_type);
   int temporary = type == IR_TY_I64
                       ? result_local_i64 : result_local_i32;
   emit_local_set(body, temporary);
   emit_addr_val(body, abi->result_area, param_count);
   emit_local_get(body, temporary);
-  wb_u8(body, store_opcode(abi->result.type));
-  emit_memarg(body, abi->result.type);
+  wb_u8(body, store_opcode(result_type));
+  emit_memarg(body, result_type);
 }
 
 static void gen_func_body(const ir_module_t *module, obj_func_t *of,
@@ -2265,25 +2246,24 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             }
             emit_const(&body, IR_TY_I32, 3);
           } else {
-            if (function_abi->result_is_indirect) {
+            if (ir_abi_signature_result_is_indirect(function_abi)) {
               if (i->src1.type != IR_TY_PTR ||
                   i->src1.id == IR_VAL_NONE)
                 obj_unsupported_op(i->op);
               emit_indirect_return_copy(
                   &body, i->src1,
-                  function_abi->result_size, param_count);
-            } else if (function_abi->result_complex_half > 0) {
-              emit_complex_ret_copy(
-                  &body, i, param_count,
-                  function_abi->result_complex_half);
-            } else if (function_abi->result.param_class ==
-                       IR_ABI_PARAM_AGGREGATE) {
+                  ir_abi_signature_result_source_size(function_abi),
+                  param_count);
+            } else if (ir_abi_signature_result_is_direct_aggregate(
+                           function_abi)) {
               if (i->src1.type != IR_TY_PTR ||
                   i->src1.id == IR_VAL_NONE)
                 obj_unsupported_op(i->op);
+              ir_type_t result_type =
+                  ir_abi_signature_direct_result_type(function_abi);
               emit_addr_val(&body, i->src1, param_count);
-              wb_u8(&body, load_opcode(function_abi->result.type, 1));
-              emit_memarg(&body, function_abi->result.type);
+              wb_u8(&body, load_opcode(result_type, 1));
+              emit_memarg(&body, result_type);
             } else if (i->src1.id != IR_VAL_NONE) {
               emit_val(&body, i->src1, of->sig.result, param_count);
             }

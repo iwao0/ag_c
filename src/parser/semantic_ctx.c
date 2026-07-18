@@ -1953,9 +1953,8 @@ void ps_ctx_rollback_function_registration_in(
   function->function_type = checkpoint->function_type;
 }
 
-static void define_function_name_with_ret_in(
-    psx_semantic_context_t *context, char *name, int len,
-    int ret_struct_size) {
+static void define_function_name_in(
+    psx_semantic_context_t *context, char *name, int len) {
   if (!context || !context->scope_graph || !name || len <= 0) return;
   psx_function_symbol_t *existing =
       find_function_name_mut_in(context, name, len);
@@ -1969,7 +1968,6 @@ static void define_function_name_with_ret_in(
   if (!f) return;
   f->name = name;
   f->len = len;
-  (void)ret_struct_size;
   f->declaration_id = psx_scope_graph_declare_at(
       context->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, PSX_DECL_FUNCTION,
@@ -1982,16 +1980,9 @@ static void define_function_name_with_ret_in(
   context->function_symbols_all = f;
 }
 
-void psx_ctx_define_function_name_with_ret_in(
-    psx_semantic_context_t *context, char *name, int len,
-    int ret_struct_size) {
-  define_function_name_with_ret_in(
-      context, name, len, ret_struct_size);
-}
-
 void psx_ctx_define_function_name_in(
     psx_semantic_context_t *context, char *name, int len) {
-  define_function_name_with_ret_in(context, name, len, 0);
+  define_function_name_in(context, name, len);
 }
 
 bool ps_ctx_has_function_name_in(
@@ -2034,7 +2025,7 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
   psx_function_symbol_t *f =
       find_function_name_mut_in(context, name, len);
   if (!f) {
-    define_function_name_with_ret_in(context, name, len, 0);
+    define_function_name_in(context, name, len);
     f = find_function_name_mut_in(context, name, len);
   }
   if (!f) return NULL;

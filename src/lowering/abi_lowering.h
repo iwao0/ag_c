@@ -15,22 +15,8 @@ typedef struct {
 } ir_abi_type_context_t;
 
 typedef enum {
-  IR_ABI_PARAM_UNKNOWN = 0,
-  IR_ABI_PARAM_INTEGER,
-  IR_ABI_PARAM_FLOAT,
-  IR_ABI_PARAM_POINTER,
-  IR_ABI_PARAM_AGGREGATE,
-} ir_abi_param_class_t;
-
-typedef struct {
-  ir_type_t type;
-  ir_abi_param_class_t param_class;
-  int source_size;
-  int is_unsigned;
-} ir_abi_param_info_t;
-
-typedef enum {
   IR_ABI_PIECE_DIRECT = 0,
+  IR_ABI_PIECE_DIRECT_AGGREGATE,
   IR_ABI_PIECE_INDIRECT,
   IR_ABI_PIECE_COMPLEX_REAL,
   IR_ABI_PIECE_COMPLEX_IMAGINARY,
@@ -58,14 +44,12 @@ typedef struct {
 } ir_abi_argument_t;
 
 typedef struct {
-  ir_abi_param_info_t result;
+  ir_abi_piece_t *result_pieces;
+  size_t result_count;
   ir_abi_piece_t *param_pieces;
   size_t param_count;
   size_t fixed_param_count;
-  int result_size;
   ir_val_t result_area;
-  unsigned char result_is_indirect;
-  unsigned char result_complex_half;
   unsigned char is_variadic;
 } ir_abi_signature_t;
 
@@ -112,11 +96,6 @@ typedef struct ir_abi_data_module_t {
   size_t relocation_count;
 } ir_abi_data_module_t;
 
-ir_abi_param_info_t ir_abi_classify_builtin_param(
-    const ir_abi_type_context_t *context,
-    const char *name, int name_len, int param_idx);
-ir_abi_param_info_t ir_abi_classify_type_id(
-    const ir_abi_type_context_t *context, psx_type_id_t type_id);
 ir_abi_module_t *ir_abi_lower_module(
     const ir_abi_type_context_t *context,
     const ir_module_t *module);
@@ -126,6 +105,16 @@ const ir_abi_signature_t *ir_abi_function_signature(
 const ir_abi_piece_t *ir_abi_signature_parameter_pieces(
     const ir_abi_signature_t *signature, size_t source_index,
     size_t *piece_count, size_t *physical_index);
+const ir_abi_piece_t *ir_abi_signature_result_pieces(
+    const ir_abi_signature_t *signature, size_t *piece_count);
+int ir_abi_signature_result_is_indirect(
+    const ir_abi_signature_t *signature);
+int ir_abi_signature_result_is_direct_aggregate(
+    const ir_abi_signature_t *signature);
+ir_type_t ir_abi_signature_direct_result_type(
+    const ir_abi_signature_t *signature);
+int ir_abi_signature_result_source_size(
+    const ir_abi_signature_t *signature);
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call);
 const ir_abi_argument_t *ir_abi_call_arguments(
