@@ -13,7 +13,7 @@
 #include <string.h>
 
 #define LVAR_SCOPE_STACK_MAX 256
-#define LVAR_HASH_BUCKETS 256u
+#define LVAR_OFFSET_BUCKETS 256u
 
 struct psx_lvar_usage_region_t {
   psx_lvar_usage_region_t *prev;
@@ -38,8 +38,7 @@ struct psx_local_registry_t {
   int lvar_scope_depth;
   psx_scope_graph_t *scope_graph;
   unsigned char owns_scope_graph;
-  lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
-  lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
+  lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
   lvar_usage_event_t *usage_events_tail;
   psx_lvar_usage_region_t *current_usage_region;
@@ -56,8 +55,7 @@ typedef struct {
   lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
   int lvar_scope_depth;
   psx_scope_graph_checkpoint_t scope_graph_checkpoint;
-  lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
-  lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
+  lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
   lvar_usage_event_t *usage_events_tail;
   psx_lvar_usage_region_t *current_usage_region;
@@ -125,8 +123,6 @@ int psx_local_registry_checkpoint_begin(
     free(transaction);
     return 0;
   }
-  memcpy(transaction->lvars_by_bucket, registry->lvars_by_bucket,
-         sizeof(transaction->lvars_by_bucket));
   memcpy(transaction->lvars_by_offset, registry->lvars_by_offset,
          sizeof(transaction->lvars_by_offset));
   transaction->usage_events_head = registry->usage_events_head;
@@ -182,8 +178,6 @@ void psx_local_registry_checkpoint_rollback(
   memcpy(registry->lvar_scope_stack, transaction->lvar_scope_stack,
          sizeof(registry->lvar_scope_stack));
   registry->lvar_scope_depth = transaction->lvar_scope_depth;
-  memcpy(registry->lvars_by_bucket, transaction->lvars_by_bucket,
-         sizeof(registry->lvars_by_bucket));
   memcpy(registry->lvars_by_offset, transaction->lvars_by_offset,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = transaction->usage_events_head;
@@ -233,13 +227,6 @@ static int resolve_local_decl_type(
   return *canonical_type != NULL;
 }
 
-static unsigned name_hash(const char *name, int len) {
-  unsigned hash = 2166136261u;
-  for (int i = 0; i < len; i++)
-    hash = (hash ^ (unsigned char)name[i]) * 16777619u;
-  return hash & (LVAR_HASH_BUCKETS - 1u);
-}
-
 static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
@@ -262,24 +249,9 @@ static void index_add(psx_local_registry_t *registry, lvar_t *var) {
     var->scope_seq = declaration->scope_id;
     var->declaration_seq = declaration->declaration_order;
   }
-  unsigned name_bucket = name_hash(var->name, var->len);
-  var->next_hash = registry->lvars_by_bucket[name_bucket];
-  registry->lvars_by_bucket[name_bucket] = var;
   unsigned offset_bucket = offset_hash(var->offset);
   var->next_offhash = registry->lvars_by_offset[offset_bucket];
   registry->lvars_by_offset[offset_bucket] = var;
-}
-
-static void index_remove(psx_local_registry_t *registry, lvar_t *var) {
-  unsigned bucket = name_hash(var->name, var->len);
-  lvar_t **cursor = &registry->lvars_by_bucket[bucket];
-  while (*cursor) {
-    if (*cursor == var) {
-      *cursor = var->next_hash;
-      return;
-    }
-    cursor = &(*cursor)->next_hash;
-  }
 }
 
 static void offset_index_remove(
@@ -461,9 +433,6 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->next_binding = registry->all_bindings;
   registry->all_bindings = var;
   registry->locals = var;
-  unsigned bucket = name_hash(name, name_len);
-  var->next_hash = registry->lvars_by_bucket[bucket];
-  registry->lvars_by_bucket[bucket] = var;
   return var;
 }
 
@@ -658,8 +627,6 @@ static void clear_local_registry_state(psx_local_registry_t *registry) {
   registry->all_locals = NULL;
   registry->all_bindings = NULL;
   registry->lvar_scope_depth = 0;
-  memset(registry->lvars_by_bucket, 0,
-         sizeof(registry->lvars_by_bucket));
   memset(registry->lvars_by_offset, 0,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = NULL;
@@ -764,9 +731,6 @@ void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
   if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
     lvar_t *restore =
         registry->lvar_scope_stack[registry->lvar_scope_depth];
-    for (lvar_t *var = registry->locals;
-         var != restore; var = var->next)
-      index_remove(registry, var);
     registry->locals = restore;
     psx_scope_graph_leave_scope(registry->scope_graph);
   }
@@ -871,11 +835,12 @@ lvar_t *psx_decl_find_lvar_by_offset_in(
 lvar_t *ps_decl_find_lvar_in(
     const psx_local_registry_t *registry, char *name, int len) {
   if (!registry || !name || len <= 0) return NULL;
-  unsigned bucket = name_hash(name, len);
-  for (lvar_t *var = registry->lvars_by_bucket[bucket];
-       var; var = var->next_hash) {
-    if (var->len == len && memcmp(var->name, name, (size_t)len) == 0)
-      return var;
-  }
-  return NULL;
+  psx_decl_id_t id = psx_scope_graph_lookup(
+      registry->scope_graph, PSX_NAMESPACE_ORDINARY, name, len,
+      psx_scope_graph_capture_lookup_point(registry->scope_graph));
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(registry->scope_graph, id);
+  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
+             ? declaration->payload
+             : NULL;
 }

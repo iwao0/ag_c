@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GVAR_HASH_BUCKETS 256u
-
 typedef struct psx_global_registry_name_t {
   struct psx_global_registry_name_t *next;
   char bytes[];
@@ -29,7 +27,6 @@ typedef struct {
   int next_string_literal_id;
   int next_float_literal_id;
   psx_global_registry_name_t *owned_names;
-  global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
   psx_global_registry_global_snapshot_t *global_snapshots;
   psx_scope_graph_checkpoint_t scope_graph_checkpoint;
 } psx_global_registry_transaction_t;
@@ -43,7 +40,6 @@ struct psx_global_registry_t {
   int next_string_literal_id;
   int next_float_literal_id;
   psx_global_registry_name_t *owned_names;
-  global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
   psx_global_registry_transaction_t *active_transaction;
 };
 
@@ -100,8 +96,6 @@ int psx_global_registry_checkpoint_begin(
   transaction->next_string_literal_id = registry->next_string_literal_id;
   transaction->next_float_literal_id = registry->next_float_literal_id;
   transaction->owned_names = registry->owned_names;
-  memcpy(transaction->gvars_by_bucket, registry->gvars_by_bucket,
-         sizeof(transaction->gvars_by_bucket));
   if (registry->scope_graph &&
       !psx_scope_graph_checkpoint_begin(
           registry->scope_graph, &transaction->scope_graph_checkpoint)) {
@@ -190,8 +184,6 @@ void psx_global_registry_checkpoint_rollback(
   registry->float_literals = transaction->float_literals;
   registry->next_string_literal_id = transaction->next_string_literal_id;
   registry->next_float_literal_id = transaction->next_float_literal_id;
-  memcpy(registry->gvars_by_bucket, transaction->gvars_by_bucket,
-         sizeof(registry->gvars_by_bucket));
   free_owned_names_until(registry, transaction->owned_names);
   registry->active_transaction = NULL;
   checkpoint->state = NULL;
@@ -311,13 +303,6 @@ int ps_global_registry_complete_array_qual_type(
   return 1;
 }
 
-static unsigned gvar_name_hash(const char *name, int len) {
-  unsigned h = 2166136261u;
-  for (int i = 0; i < len; i++)
-    h = (h ^ (unsigned char)name[i]) * 16777619u;
-  return h & (GVAR_HASH_BUCKETS - 1u);
-}
-
 void ps_register_global_var_in(
     psx_global_registry_t *registry, global_var_t *gv) {
   if (!registry || !gv) return;
@@ -334,9 +319,6 @@ void ps_register_global_var_in(
   }
   gv->next = registry->global_vars;
   registry->global_vars = gv;
-  unsigned h = gvar_name_hash(gv->name, gv->name_len);
-  gv->next_hash = registry->gvars_by_bucket[h];
-  registry->gvars_by_bucket[h] = gv;
 }
 
 char *ps_global_registry_copy_name_in(
@@ -369,23 +351,14 @@ void psx_register_float_lit_in(
 global_var_t *ps_find_global_var_in(
     psx_global_registry_t *registry, char *name, int len) {
   if (!registry || !name || len <= 0) return NULL;
-  if (registry->scope_graph) {
-    psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
-        registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
-        PSX_NAMESPACE_ORDINARY, name, len);
-    const psx_scope_declaration_t *declaration =
-        psx_scope_graph_declaration(registry->scope_graph, id);
-    return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
-               ? declaration->payload
-               : NULL;
-  }
-  unsigned h = gvar_name_hash(name, len);
-  for (global_var_t *gv = registry->gvars_by_bucket[h];
-       gv; gv = gv->next_hash) {
-    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0)
-      return gv;
-  }
-  return NULL;
+  psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
+      registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, name, len);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(registry->scope_graph, id);
+  return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
+             ? declaration->payload
+             : NULL;
 }
 
 string_lit_t *ps_find_string_lit_by_label_in(
@@ -445,8 +418,6 @@ void ps_global_registry_reset_translation_unit_in(
   registry->float_literals = NULL;
   registry->next_string_literal_id = 0;
   registry->next_float_literal_id = 0;
-  memset(registry->gvars_by_bucket, 0,
-         sizeof(registry->gvars_by_bucket));
 }
 
 void ps_global_registry_reset_diag_state_in(

@@ -23,7 +23,6 @@ typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 struct global_var_t {
   // --- 8 バイト (ポインタ / long long / double) ---
   global_var_t *next;
-  global_var_t *next_hash;  // 名前ハッシュ表のチェーン（ps_find_global_var の O(1) 化用）
   char *name;
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   // 配列の `{...}` 初期化子: flat 化した値列を保持する。
