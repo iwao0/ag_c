@@ -268,6 +268,7 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;
     case ND_UNARY_NEGATE:
+    case ND_LOGICAL_NOT:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;

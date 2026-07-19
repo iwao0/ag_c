@@ -286,6 +286,19 @@ static void warn_comparison(
       child_with_edge(node, PSX_HIR_EDGE_LHS);
   const psx_semantic_node_t *rhs =
       child_with_edge(node, PSX_HIR_EDGE_RHS);
+  if ((node->spec.kind == PSX_HIR_EQ ||
+       node->spec.kind == PSX_HIR_NE) &&
+      lhs && lhs->spec.kind == PSX_HIR_LOGICAL_NOT) {
+    const char *op = binary_operator_text(node->spec.kind);
+    diag_warn_tokf_in(
+        walk->diagnostics,
+        DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES,
+        walk->fallback_diag_tok,
+        diag_warn_message_for_in(
+            walk->diagnostics,
+            DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES),
+        op, op, op, op);
+  }
   warn_self_or_logical_compare(walk, node, lhs, rhs);
   if (node->spec.kind == PSX_HIR_LOGAND ||
       node->spec.kind == PSX_HIR_LOGOR)

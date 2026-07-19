@@ -60,8 +60,6 @@ struct node_t {
   token_t *tok;     // statement/expression start token for post-parse diagnostics
   token_kind_t source_op;
 
-  unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
-                                     // (`!p == 0` の precedence-trap 警告に使う)
   unsigned int is_explicit_addr_expr : 1;
   unsigned int is_source_assignment : 1;
   unsigned int has_empty_body : 1;

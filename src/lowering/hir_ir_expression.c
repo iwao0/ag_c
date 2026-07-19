@@ -1080,6 +1080,63 @@ ir_val_t hir_ir_scalar_truth_value(
   return compare->dst;
 }
 
+static ir_val_t build_logical_not(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t result_type) {
+  const psx_hir_node_t *operand = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand || result_type.type_class != IR_MIR_TYPE_INTEGER)
+    return hir_ir_unsupported_expr(context);
+  ir_mir_type_info_t operand_type =
+      hir_ir_classify_node_type(context, operand);
+  ir_val_t value = hir_ir_build_expr(context, operand);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (!hir_ir_is_complex_type(operand_type)) {
+    value = hir_ir_scalar_truth_value(context, value);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    return hir_ir_emit_integer_binary(
+        context, IR_EQ, value,
+        ir_val_imm(value.type, 0), result_type.type);
+  }
+  if (value.type != IR_TY_PTR) return hir_ir_unsupported_expr(context);
+  int half = ir_type_size(operand_type.type);
+  ir_val_t components[2] = {
+      value, hir_ir_pointer_with_offset(context, value, half)};
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int zero_vreg = hir_ir_new_vreg(context);
+  if (zero_vreg < 0) return ir_val_none();
+  ir_inst_t *zero = ir_inst_new(IR_LOAD_FP_IMM);
+  if (!zero) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  zero->dst = ir_val_vreg(zero_vreg, operand_type.type);
+  zero->src1 = ir_val_fp_imm(operand_type.type, 0.0);
+  if (!hir_ir_append_instruction(context, zero)) return ir_val_none();
+  ir_val_t comparisons[2];
+  for (int i = 0; i < 2; i++) {
+    ir_val_t component = load_direct_value(
+        context, components[i], operand_type.type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    int comparison_vreg = hir_ir_new_vreg(context);
+    if (comparison_vreg < 0) return ir_val_none();
+    ir_inst_t *comparison = ir_inst_new(IR_FEQ);
+    if (!comparison) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    comparison->dst = ir_val_vreg(comparison_vreg, result_type.type);
+    comparison->src1 = component;
+    comparison->src2 = zero->dst;
+    if (!hir_ir_append_instruction(context, comparison))
+      return ir_val_none();
+    comparisons[i] = comparison->dst;
+  }
+  return hir_ir_emit_integer_binary(
+      context, IR_AND, comparisons[0], comparisons[1],
+      result_type.type);
+}
+
 static ir_val_t build_inc_dec(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t type) {
@@ -1697,6 +1754,8 @@ ir_val_t hir_ir_build_expr(
     return build_short_circuit(context, node, 1);
   if (psx_hir_node_kind(node) == PSX_HIR_LOGOR)
     return build_short_circuit(context, node, 0);
+  if (psx_hir_node_kind(node) == PSX_HIR_LOGICAL_NOT)
+    return build_logical_not(context, node, type);
   if (psx_hir_node_kind(node) == PSX_HIR_TERNARY)
     return build_scalar_ternary(context, node, type);
   if (psx_hir_node_kind(node) == PSX_HIR_PRE_INC ||

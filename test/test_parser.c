@@ -2564,9 +2564,23 @@ static void test_syntax_literal_type_boundary() {
 
   node_t *logical_not =
       parse_expr_input_with_existing_locals("!0");
-  ASSERT_EQ(ND_EQ, logical_not->kind);
-  ASSERT_EQ(ND_NUM, logical_not->rhs->kind);
-  ASSERT_TRUE(ps_node_get_type(logical_not->rhs) == NULL);
+  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
+  ASSERT_EQ(ND_NUM, logical_not->lhs->kind);
+  ASSERT_TRUE(logical_not->rhs == NULL);
+  ASSERT_TRUE(logical_not->tok != NULL);
+  ASSERT_EQ(TK_BANG, logical_not->tok->kind);
+  ASSERT_TRUE(ps_node_get_type(logical_not) == NULL);
+  ASSERT_TRUE(ps_node_get_type(logical_not->lhs) == NULL);
+  node_t *resolved_logical_not =
+      analyze_test_expression(logical_not, logical_not->tok);
+  ASSERT_TRUE(resolved_logical_not != logical_not);
+  ASSERT_EQ(ND_LOGICAL_NOT, resolved_logical_not->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type(resolved_logical_not)->kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(resolved_logical_not)->integer_kind);
+  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
+  ASSERT_TRUE(ps_node_get_type(logical_not) == NULL);
 }
 
 static void test_direct_literal_typed_hir_resolution_boundary() {
@@ -2604,6 +2618,41 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(integer_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_ctx_type_by_id_in(
                   test_semantic_context(), integer_type.type_id) != NULL);
+  psx_hir_module_destroy(hir);
+
+  node_t *logical_not =
+      parse_expr_input_with_existing_locals("!1.0");
+  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(logical_not));
+  const psx_typed_hir_tree_t *typed_logical_not = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), logical_not,
+          &typed_logical_not, &failure));
+  ASSERT_TRUE(typed_logical_not != NULL);
+  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
+  ASSERT_TRUE(ps_node_get_type(logical_not) == NULL);
+  ASSERT_TRUE(ps_node_get_type(logical_not->lhs) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t logical_not_id = psx_typed_hir_tree_emit(
+      hir, typed_logical_not, &failure);
+  ASSERT_TRUE(logical_not_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *logical_not_hir =
+      psx_hir_module_lookup(hir, logical_not_id);
+  ASSERT_EQ(PSX_HIR_LOGICAL_NOT,
+            psx_hir_node_kind(logical_not_hir));
+  ASSERT_EQ(1, psx_hir_node_child_count(logical_not_hir));
+  ASSERT_EQ(PSX_HIR_EDGE_LHS,
+            psx_hir_node_child_edge_at(logical_not_hir, 0));
+  const psx_type_t *logical_not_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(logical_not_hir).type_id);
+  ASSERT_TRUE(logical_not_type != NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            logical_not_type->integer_kind);
   psx_hir_module_destroy(hir);
 
   node_t *string =
@@ -16463,12 +16512,14 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(42, as_num(neg->lhs)->val);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(neg)->kind);
 
-    node_t *not0 = parse_expr_input("!0");
-  ASSERT_EQ(ND_EQ, not0->kind);
+  node_t *not0 = parse_expr_input("!0");
+  ASSERT_EQ(ND_LOGICAL_NOT, not0->kind);
   ASSERT_EQ(ND_NUM, not0->lhs->kind);
   ASSERT_EQ(0, as_num(not0->lhs)->val);
-  ASSERT_EQ(ND_NUM, not0->rhs->kind);
-  ASSERT_EQ(0, as_num(not0->rhs)->val);
+  ASSERT_TRUE(not0->rhs == NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(not0)->kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(not0)->integer_kind);
 
   node_t *bitnot = parse_expr_input("~5");
   ASSERT_EQ(ND_SUB, bitnot->kind);               // (~5) == ((0-5)-1)

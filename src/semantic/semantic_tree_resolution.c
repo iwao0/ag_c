@@ -191,6 +191,11 @@ static int diagnose_direct_syntax_rejection(
           operator_name);
       return 1;
     }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_LOGICAL_NOT_REQUIRES_SCALAR:
+      ps_diag_ctx_in(
+          diagnostics, token, "unary",
+          "単項 ! のオペランドはスカラー型でなければなりません");
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE: {
       const char *operator_name = direct_incdec_operator_name(
           failure->source_node_kind);

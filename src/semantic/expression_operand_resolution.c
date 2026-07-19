@@ -91,6 +91,18 @@ psx_qual_type_t psx_resolve_arithmetic_unary_result_qual_type_in(
           semantic_context, operator, type));
 }
 
+psx_qual_type_t psx_resolve_logical_not_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  if (!psx_qual_type_is_scalar_in(semantic_context, operand_type))
+    return invalid_qual_type();
+  return intern_result_type(
+      semantic_context,
+      ps_type_new_integer_kind_in(
+          ps_ctx_arena(semantic_context),
+          PSX_INTEGER_KIND_INT, 0, 0));
+}
+
 psx_qual_type_t psx_resolve_binary_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_type_binary_op_t operator,

@@ -66,6 +66,7 @@ typedef enum {
   PSX_HIR_FP_TO_INT,
   PSX_HIR_INT_TO_FP,
   PSX_HIR_NEGATE,
+  PSX_HIR_LOGICAL_NOT,
   /* Target-independent request for the current C variadic cursor. */
   PSX_HIR_VARARG_CURSOR,
   PSX_HIR_CAST,

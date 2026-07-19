@@ -2016,6 +2016,22 @@ static int preflight_direct_expression_impl(
     if (qual_type) *qual_type = result;
     return 1;
   }
+  if (syntax->kind == ND_LOGICAL_NOT) {
+    psx_qual_type_t operand_type;
+    if (!preflight_direct_expression(
+            context, syntax->lhs, &operand_type))
+      return 0;
+    psx_qual_type_t result =
+        psx_resolve_logical_not_result_qual_type_in(
+            context->semantic_context, operand_type);
+    if (result.type_id == PSX_TYPE_ID_INVALID)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_LOGICAL_NOT_REQUIRES_SCALAR,
+          syntax);
+    if (qual_type) *qual_type = result;
+    return 1;
+  }
   if (syntax->kind == ND_TERNARY) {
     const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
     psx_qual_type_t condition_type;
@@ -3170,6 +3186,32 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 1, NULL, syntax->kind);
   }
 
+  if (syntax->kind == ND_LOGICAL_NOT) {
+    psx_semantic_node_t *operand =
+        build_direct_expression(context, syntax->lhs);
+    if (!operand) return NULL;
+    psx_qual_type_t result_qual_type =
+        psx_resolve_logical_not_result_qual_type_in(
+            context->semantic_context,
+            psx_semantic_node_expression_qual_type(operand));
+    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      set_failure(
+          context->failure,
+          PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+      return NULL;
+    }
+    psx_semantic_node_t *children[] = {operand};
+    psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_LOGICAL_NOT,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+    };
+    return psx_semantic_node_builder_expression(
+        &context->builder, &spec, result_qual_type,
+        children, edges, 1, NULL, syntax->kind);
+  }
+
   if (syntax->kind == ND_TERNARY) {
     const node_ctrl_t *ternary = (const node_ctrl_t *)syntax;
     psx_semantic_node_t *condition =
@@ -3283,6 +3325,13 @@ static int direct_integer_constant(
     if (!direct_integer_constant(context, syntax->lhs, &operand))
       return 0;
     *value = -operand;
+    return 1;
+  }
+  if (syntax->kind == ND_LOGICAL_NOT) {
+    long long operand;
+    if (!direct_integer_constant(context, syntax->lhs, &operand))
+      return 0;
+    *value = !operand;
     return 1;
   }
   if (syntax->kind == ND_CAST && syntax->is_source_cast) {

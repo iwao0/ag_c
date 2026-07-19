@@ -8962,6 +8962,30 @@ if (!/MAP\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
     "typed unary negate must remain distinct from syntax lowering and materialize as PSX_HIR_NEGATE",
   );
 }
+const logicalNotParser = parserExpressionSource.match(
+  /if\s*\(\s*k\s*==\s*TK_BANG\s*\)\s*\{[^]*?\n\s*\}/,
+)?.[0] ?? "";
+if (!/\bND_LOGICAL_NOT\b/.test(syntaxNodeKindHeader) ||
+    !/\bPSX_HIR_LOGICAL_NOT\b/.test(hirHeader) ||
+    !/logical_not->kind\s*=\s*ND_LOGICAL_NOT/.test(logicalNotParser) ||
+    /\bND_EQ\b|from_logical_not/.test(logicalNotParser) ||
+    /\bfrom_logical_not\b/.test(astHeader) ||
+    !/MAP\s*\(\s*ND_LOGICAL_NOT\s*,\s*PSX_HIR_LOGICAL_NOT\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/syntax->kind\s*==\s*ND_LOGICAL_NOT[^]*?PSX_HIR_LOGICAL_NOT/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_LOGICAL_NOT\s*:[^]*?semantic_resolve_logical_not/.test(
+      semanticPassSource,
+    ) ||
+    !/PSX_HIR_LOGICAL_NOT[^]*?build_logical_not\s*\(/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "logical not must preserve its source operator through Typed HIR",
+  );
+}
 const directComplexComponentKindChecks =
   syntaxTypedHirResolutionSource.match(
     /syntax->kind\s*==\s*ND_CREAL\s*\|\|\s*\n\s*syntax->kind\s*==\s*ND_CIMAG/g,

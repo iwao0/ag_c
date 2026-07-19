@@ -58,6 +58,13 @@ long long psx_eval_const_int(
       long long value = psx_eval_const_int(store, node->lhs, ok);
       return !ok || *ok ? -value : 0;
     }
+    case ND_LOGICAL_NOT: {
+      const psx_type_t *operand_type = ps_node_get_type(store, node->lhs);
+      long long value = type_uses_floating_value(operand_type)
+                            ? psx_eval_const_fp(store, node->lhs, ok) != 0.0
+                            : psx_eval_const_int(store, node->lhs, ok) != 0;
+      return !ok || *ok ? !value : 0;
+    }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       int resolved_size = psx_sizeof_query_resolved_size(store, query);
@@ -187,6 +194,8 @@ double psx_eval_const_fp(
       double value = psx_eval_const_fp(store, node->lhs, ok);
       return !ok || *ok ? -value : 0.0;
     }
+    case ND_LOGICAL_NOT:
+      return (double)psx_eval_const_int(store, node, ok);
     case ND_ADD: {
       double left = psx_eval_const_fp(store, node->lhs, ok);
       if (ok && !*ok) return 0.0;

@@ -1,8 +1,8 @@
 // 続き53: `!x == y` の優先順位罠を W3021 で警告 (clang -Wlogical-not-parentheses 相当)。
 //
 // `!` は `==` / `!=` より優先順位が高いため `!p == 0` は `(!p) == 0` と解釈される。
-// ag_c は `!x` を ND_EQ(x, 0) に変換し、その node に from_logical_not フラグを立てる。
-// equality() で `==` / `!=` の LHS が from_logical_not なら警告。
+// ag_c は `!x` を ND_LOGICAL_NOT として保持する。
+// `==` / `!=` の LHS が ND_LOGICAL_NOT なら警告する。
 //
 // 本 fixture は合法形のみ。
 #include <assert.h>
@@ -21,13 +21,12 @@ int main(void) {
     if (x == 0) {}
     if (p == (void*)0) {}
 
-    /* (c) `!` を括弧で囲んだ `!(x == y)` は ND_EQ が直接 `!` から来ていない
-     *     ので警告なし (`!(...)` は EQ ノードで from_logical_not が立つが、その
-     *     ND_EQ が等価式の LHS にならない -> 警告判定の対象外)。 */
+    /* (c) `!` を括弧で囲んだ `!(x == y)` は ND_LOGICAL_NOT 自体が
+     *     等価式の LHS にならないため警告なし。 */
     if (!(x == 5)) {}
     if (!(x != 5)) {}
 
-    /* (d) 通常の連鎖 `(a == b) == c` も警告なし (from_logical_not が立たない) */
+    /* (d) 通常の連鎖 `(a == b) == c` も警告なし */
     int a = 1, b2 = 1, c = 1;
     if ((a == b2) == c) {}
 

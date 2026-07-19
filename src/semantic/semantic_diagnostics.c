@@ -341,7 +341,7 @@ static void warn_comparison(
   const char *op = source_op_text(op_kind);
   const token_t *tok = node->tok ? node->tok : fallback;
   if (op_kind == TK_EQEQ || op_kind == TK_NEQ) {
-    if (lhs && lhs->from_logical_not) {
+    if (lhs && lhs->kind == ND_LOGICAL_NOT) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES, tok,
           diag_warn_message_for_in(

@@ -461,6 +461,25 @@ static void semantic_resolve_arithmetic_unary(
               operator_name);
 }
 
+static void semantic_resolve_logical_not(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, const token_t *fallback_diag_tok) {
+  if (!node || node->kind != ND_LOGICAL_NOT) return;
+  semantic_bind_qual_type_result(
+      semantic_context, node,
+      psx_resolve_logical_not_result_qual_type_in(
+          semantic_context,
+          semantic_node_qual_type_value(
+              semantic_context, node->lhs)));
+  if (ps_node_get_type(
+          ps_ctx_resolution_store(semantic_context), node))
+    return;
+  ps_diag_ctx_in(
+      semantic_diagnostics(semantic_context),
+      node->tok ? node->tok : (token_t *)fallback_diag_tok,
+      "unary", "単項 ! のオペランドはスカラー型でなければなりません");
+}
+
 static void semantic_resolve_incdec(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
@@ -1205,6 +1224,11 @@ static void semantic_transform_node(
       semantic_resolve_arithmetic_unary(
           traversal->semantic_context,
           node, "単項 -", fallback_diag_tok);
+      break;
+    case ND_LOGICAL_NOT:
+      semantic_transform_node(node->lhs, traversal);
+      semantic_resolve_logical_not(
+          traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_CREAL:
     case ND_CIMAG:

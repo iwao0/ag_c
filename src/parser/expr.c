@@ -670,12 +670,14 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return negate;
   }
   if (k == TK_BANG)  {
+    token_t *op_tok = curtok(ctx);
     set_curtok(ctx, curtok(ctx)->next);
-    node_t *eq = psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_EQ, cast_ctx(ctx),
-        psx_node_new_syntax_int_in(ctx->arena_context, 0, NULL));
-    eq->from_logical_not = 1;  /* `!p == 0` の precedence-trap 警告に使う */
-    return eq;
+    node_t *logical_not = arena_alloc_in(
+        ctx->arena_context, sizeof(node_t));
+    logical_not->kind = ND_LOGICAL_NOT;
+    logical_not->lhs = cast_ctx(ctx);
+    logical_not->tok = op_tok;
+    return logical_not;
   }
   if (k == TK_TILDE) {
     set_curtok(ctx, curtok(ctx)->next);

@@ -152,6 +152,15 @@ static long long eval_const_int(
       long long value = eval_const_int(eval, lhs, ok);
       return !ok || *ok ? -value : 0;
     }
+    case PSX_HIR_LOGICAL_NOT: {
+      psx_type_shape_t operand_type = {0};
+      long long value =
+          node_type_shape(eval, lhs, &operand_type) &&
+                  type_uses_floating_value(&operand_type)
+              ? eval_const_fp(eval, lhs, ok) != 0.0
+              : eval_const_int(eval, lhs, ok) != 0;
+      return !ok || *ok ? !value : 0;
+    }
     case PSX_HIR_GLOBAL: {
       global_var_t *global = find_global(eval, node);
       psx_type_shape_t type = {0};
@@ -291,6 +300,8 @@ static double eval_const_fp(
       double value = eval_const_fp(eval, lhs, ok);
       return !ok || *ok ? -value : 0.0;
     }
+    case PSX_HIR_LOGICAL_NOT:
+      return (double)eval_const_int(eval, node, ok);
     case PSX_HIR_ADD:
     case PSX_HIR_SUB:
     case PSX_HIR_MUL:
