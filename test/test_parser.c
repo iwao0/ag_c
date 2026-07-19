@@ -27741,6 +27741,18 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               &wasm_backend);
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
+  ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&host) ==
+              &host.ir_allocation_stats);
+  ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&wasm) ==
+              &wasm.ir_allocation_stats);
+  ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&host) !=
+              ag_compilation_session_ir_allocation_stats(&wasm));
+  ASSERT_EQ(0, ir_allocation_stats_instruction_peak(
+                   ag_compilation_session_ir_allocation_stats_view(
+                       &host)));
+  ASSERT_EQ(0, ir_allocation_stats_block_peak(
+                   ag_compilation_session_ir_allocation_stats_view(
+                       &wasm)));
   ASSERT_TRUE(host.resolution_store != NULL);
   ASSERT_TRUE(wasm.resolution_store != NULL);
   ASSERT_TRUE(host.resolution_store != wasm.resolution_store);

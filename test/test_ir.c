@@ -386,9 +386,58 @@ static void test_dynamic_function_signatures(void) {
   ir_function_type_dispose(&function_type);
 }
 
+static void test_allocation_stats_isolation(void) {
+  ir_allocation_stats_t first = {0};
+  ir_allocation_stats_t second = {0};
+  ir_module_t *first_module =
+      ir_module_new_with_allocation_stats(&first);
+  ir_module_t *second_module =
+      ir_module_new_with_allocation_stats(&second);
+  ir_func_t *first_function =
+      ir_func_new(first_module, "first", 5);
+  ir_func_t *second_function =
+      ir_func_new(second_module, "second", 6);
+  ir_inst_t *first_instruction = ir_inst_new(IR_NOP);
+  ir_inst_t *second_instruction = ir_inst_new(IR_RET);
+  ir_func_append_inst(first_function, first_instruction);
+  ir_func_append_inst(first_function, second_instruction);
+  ir_block_new(first_function);
+
+  if (!first_module || !second_module || !first_function ||
+      !second_function || !first_instruction || !second_instruction ||
+      ir_allocation_stats_instruction_live(&first) != 2 ||
+      ir_allocation_stats_instruction_peak(&first) != 2 ||
+      ir_allocation_stats_block_live(&first) != 2 ||
+      ir_allocation_stats_block_peak(&first) != 2 ||
+      ir_allocation_stats_instruction_live(&second) != 0 ||
+      ir_allocation_stats_block_live(&second) != 1) {
+    failures++;
+    fprintf(stderr, "FAIL: IR allocation stats isolation\n");
+  }
+
+  ir_module_free(first_module);
+  if (ir_allocation_stats_instruction_live(&first) != 0 ||
+      ir_allocation_stats_block_live(&first) != 0 ||
+      ir_allocation_stats_instruction_peak(&first) != 2 ||
+      ir_allocation_stats_block_peak(&first) != 2 ||
+      ir_allocation_stats_block_live(&second) != 1) {
+    failures++;
+    fprintf(stderr, "FAIL: IR allocation stats release\n");
+  }
+  ir_module_free(second_module);
+  ir_allocation_stats_reset(&first);
+  if (ir_allocation_stats_instruction_peak(&first) != 0 ||
+      ir_allocation_stats_block_peak(&first) != 0 ||
+      ir_allocation_stats_block_live(&second) != 0) {
+    failures++;
+    fprintf(stderr, "FAIL: IR allocation stats reset\n");
+  }
+}
+
 int main(void) {
   test_helpers();
   test_dynamic_function_signatures();
+  test_allocation_stats_isolation();
   test_resolved_symbols();
   test_data_module();
   test_simple_add();

@@ -169,15 +169,72 @@ int ir_function_type_copy(
 
 /* ---- アロケータ ---- */
 
-/* メモリ計測用カウンタ。関数ごとに IR を解放するため、現在 resident と、同時 resident の
- * 最大 (= 最大の 1 関数) を別に追跡し、getter はピークを返す。 */
-static size_t ir_inst_live = 0, ir_inst_peak = 0;
-static size_t ir_block_live = 0, ir_block_peak = 0;
-size_t ir_inst_total_count(void) { return ir_inst_peak; }
-size_t ir_block_total_count(void) { return ir_block_peak; }
+void ir_allocation_stats_reset(ir_allocation_stats_t *stats) {
+  if (stats) *stats = (ir_allocation_stats_t){0};
+}
+
+size_t ir_allocation_stats_instruction_live(
+    const ir_allocation_stats_t *stats) {
+  return stats ? stats->instruction_live : 0;
+}
+
+size_t ir_allocation_stats_instruction_peak(
+    const ir_allocation_stats_t *stats) {
+  return stats ? stats->instruction_peak : 0;
+}
+
+size_t ir_allocation_stats_block_live(
+    const ir_allocation_stats_t *stats) {
+  return stats ? stats->block_live : 0;
+}
+
+size_t ir_allocation_stats_block_peak(
+    const ir_allocation_stats_t *stats) {
+  return stats ? stats->block_peak : 0;
+}
+
+static void stats_record_instruction(ir_func_t *function) {
+  ir_allocation_stats_t *stats =
+      function ? function->allocation_stats : NULL;
+  if (!stats) return;
+  function->tracked_instruction_count++;
+  stats->instruction_live++;
+  if (stats->instruction_live > stats->instruction_peak)
+    stats->instruction_peak = stats->instruction_live;
+}
+
+static void stats_record_block(ir_func_t *function) {
+  ir_allocation_stats_t *stats =
+      function ? function->allocation_stats : NULL;
+  if (!stats) return;
+  function->tracked_block_count++;
+  stats->block_live++;
+  if (stats->block_live > stats->block_peak)
+    stats->block_peak = stats->block_live;
+}
+
+static void stats_release_function(const ir_func_t *function) {
+  ir_allocation_stats_t *stats =
+      function ? function->allocation_stats : NULL;
+  if (!stats) return;
+  stats->instruction_live =
+      function->tracked_instruction_count <= stats->instruction_live
+          ? stats->instruction_live - function->tracked_instruction_count
+          : 0;
+  stats->block_live =
+      function->tracked_block_count <= stats->block_live
+          ? stats->block_live - function->tracked_block_count
+          : 0;
+}
 
 ir_module_t *ir_module_new(void) {
+  return ir_module_new_with_allocation_stats(NULL);
+}
+
+ir_module_t *ir_module_new_with_allocation_stats(
+    ir_allocation_stats_t *stats) {
   ir_module_t *m = calloc(1, sizeof(ir_module_t));
+  if (m) m->allocation_stats = stats;
   return m;
 }
 
@@ -269,13 +326,12 @@ void ir_func_free(ir_func_t *f) {
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
       ir_function_type_dispose(&i->function_type);
       free(i);
-      if (ir_inst_live) ir_inst_live--;
       i = inext;
     }
     free(b);
-    if (ir_block_live) ir_block_live--;
     b = bnext;
   }
+  stats_release_function(f);
   free(f->vreg_phys_reg);
   ir_function_type_dispose(&f->function_type);
   free(f->c_signature);
@@ -321,8 +377,14 @@ void ir_module_free(ir_module_t *m) {
 
 ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len) {
   ir_func_t *f = calloc(1, sizeof(ir_func_t));
+  if (!f) return NULL;
+  f->allocation_stats = m ? m->allocation_stats : NULL;
   if (name && name_len > 0) {
     f->name = malloc((size_t)name_len + 1);
+    if (!f->name) {
+      free(f);
+      return NULL;
+    }
     memcpy(f->name, name, (size_t)name_len);
     f->name[name_len] = '\0';
     f->name_len = name_len;
@@ -331,6 +393,11 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len) {
   f->next_block_id = 0;
   /* entry ブロックを最初から確保しておく */
   ir_block_t *entry = ir_block_new(f);
+  if (!entry) {
+    free(f->name);
+    free(f);
+    return NULL;
+  }
   f->entry = entry;
   f->cur_block = entry;
   /* モジュールに append */
@@ -343,8 +410,9 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len) {
 }
 
 ir_block_t *ir_block_new(ir_func_t *f) {
-  if (++ir_block_live > ir_block_peak) ir_block_peak = ir_block_live;
   ir_block_t *b = calloc(1, sizeof(ir_block_t));
+  if (!b) return NULL;
+  stats_record_block(f);
   b->id = f ? f->next_block_id++ : 0;
   if (f) {
     if (!f->entry) {
@@ -359,8 +427,8 @@ ir_block_t *ir_block_new(ir_func_t *f) {
 }
 
 ir_inst_t *ir_inst_new(ir_op_t op) {
-  if (++ir_inst_live > ir_inst_peak) ir_inst_peak = ir_inst_live;
   ir_inst_t *i = calloc(1, sizeof(ir_inst_t));
+  if (!i) return NULL;
   i->op = op;
   i->dst = ir_val_none();
   i->src1 = ir_val_none();
@@ -383,6 +451,7 @@ void ir_func_append_inst(ir_func_t *f, ir_inst_t *inst) {
   if (!b->head) b->head = inst;
   if (b->tail) b->tail->next = inst;
   b->tail = inst;
+  stats_record_instruction(f);
 }
 
 int ir_func_new_vreg(ir_func_t *f) {

@@ -8,6 +8,7 @@ typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 typedef struct psx_record_layout_table_t psx_record_layout_table_t;
+typedef struct ir_allocation_stats_t ir_allocation_stats_t;
 
 typedef struct {
   const ag_target_info_t *target;
@@ -16,6 +17,7 @@ typedef struct {
   const psx_record_layout_table_t *record_layouts;
   const ag_continuation_options_t *continuation;
   ag_diagnostic_context_t *diagnostic_context;
+  ir_allocation_stats_t *allocation_stats;
 } ir_build_options_t;
 
 #endif

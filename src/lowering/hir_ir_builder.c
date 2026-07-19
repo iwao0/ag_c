@@ -786,7 +786,8 @@ ir_module_t *ir_build_function_module_from_hir(
     if (status) *status = context.status;
     return NULL;
   }
-  context.module = ir_module_new();
+  context.module = ir_module_new_with_allocation_stats(
+      options->allocation_stats);
   if (!context.module) {
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;

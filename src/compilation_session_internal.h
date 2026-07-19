@@ -2,6 +2,7 @@
 #define AG_COMPILATION_SESSION_INTERNAL_H
 
 #include "compilation_session.h"
+#include "ir/ir_allocation_stats.h"
 #include "semantic/resolution_store.h"
 #include "tokenizer/tokenizer.h"
 
@@ -23,6 +24,7 @@ struct ag_compilation_session_t {
   psx_parser_runtime_context_t *parser_runtime_context;
   psx_lowering_context_t *lowering_context;
   psx_hir_module_t *hir_module;
+  ir_allocation_stats_t ir_allocation_stats;
   ag_codegen_emit_context_t *codegen_emit_context;
   ag_compilation_options_t options;
   ag_continuation_options_t continuation;

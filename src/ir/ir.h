@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "ir_allocation_stats.h"
 #include "../type_system/type_ids.h"
 
 /* ------------------------------------------------------------------ */
@@ -294,6 +295,9 @@ typedef struct ir_block_t {
 /* フィールドはアライメント降順 (8→4 バイト) に並べる。 */
 typedef struct ir_func_t {
   struct ir_func_t *next;
+  ir_allocation_stats_t *allocation_stats;
+  size_t tracked_instruction_count;
+  size_t tracked_block_count;
   char *name;
   char *c_signature; /* semantic pass由来のcanonical C関数型。backendはparserを再参照しない。 */
   char *continuation_entry_name;
@@ -370,6 +374,7 @@ typedef struct ir_symbol_t {
 /* ------------------------------------------------------------------ */
 
 typedef struct ir_module_t {
+  ir_allocation_stats_t *allocation_stats;
   ir_func_t *funcs;
   ir_func_t *funcs_tail;
   ir_global_t *globals;
@@ -383,6 +388,8 @@ typedef struct ir_module_t {
 /* ------------------------------------------------------------------ */
 
 ir_module_t *ir_module_new(void);
+ir_module_t *ir_module_new_with_allocation_stats(
+    ir_allocation_stats_t *stats);
 ir_symbol_t *ir_module_find_symbol(const ir_module_t *m,
                                    const char *name, int name_len);
 ir_symbol_t *ir_module_add_symbol(ir_module_t *m,
@@ -399,10 +406,6 @@ ir_inst_t   *ir_inst_new(ir_op_t op);
 /* 関数 1 つ / モジュール全体の IR を解放する (関数ごとストリーミング codegen 用)。 */
 void ir_func_free(ir_func_t *f);
 void ir_module_free(ir_module_t *m);
-
-/* メモリ計測用: これまでに確保した IR 命令 / ブロックの累計個数。 */
-size_t ir_inst_total_count(void);
-size_t ir_block_total_count(void);
 
 /* 関数 f の現在ブロックに inst を末尾追加する */
 void ir_func_append_inst(ir_func_t *f, ir_inst_t *inst);

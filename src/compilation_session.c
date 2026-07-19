@@ -285,6 +285,19 @@ psx_scope_graph_t *ag_compilation_session_scope_graph(
              ? session->scope_graph : NULL;
 }
 
+ir_allocation_stats_t *ag_compilation_session_ir_allocation_stats(
+    ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? &session->ir_allocation_stats : NULL;
+}
+
+const ir_allocation_stats_t *
+ag_compilation_session_ir_allocation_stats_view(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? &session->ir_allocation_stats : NULL;
+}
+
 ag_compilation_options_t *ag_compilation_session_options(
     ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)

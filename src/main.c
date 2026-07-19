@@ -34,8 +34,10 @@ static void print_mem_stats(
       ag_compilation_session_token_allocator_context(session));
   size_t ast = arena_total_reserved_bytes_in(
       ag_compilation_session_arena_context(session));
-  size_t ninst = ir_inst_total_count();
-  size_t nblk  = ir_block_total_count();
+  const ir_allocation_stats_t *ir_stats =
+      ag_compilation_session_ir_allocation_stats_view(session);
+  size_t ninst = ir_allocation_stats_instruction_peak(ir_stats);
+  size_t nblk = ir_allocation_stats_block_peak(ir_stats);
   size_t ir_inst_bytes  = ninst * sizeof(ir_inst_t);
   size_t ir_block_bytes = nblk  * sizeof(ir_block_t);
   const double MB = 1024.0 * 1024.0;
@@ -446,6 +448,8 @@ static int agc_wasm_compile_to_memory(
       .continuation = ag_compilation_session_continuation(session),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),
+      .allocation_stats =
+          ag_compilation_session_ir_allocation_stats(session),
   };
   psx_frontend_function_t function;
   while (psx_frontend_next_function(&stream, &function)) {
@@ -816,6 +820,8 @@ int main(int argc, char **argv) {
       .continuation = ag_compilation_session_continuation(session),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),
+      .allocation_stats =
+          ag_compilation_session_ir_allocation_stats(session),
   };
   psx_frontend_function_t function;
   while (psx_frontend_next_function(&stream, &function)) {

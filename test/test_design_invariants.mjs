@@ -1126,6 +1126,11 @@ const irBuildOptionsHeader = await readFile(
   "src/lowering/ir_build_options.h",
   "utf8",
 );
+const irAllocationStatsHeader = await readFile(
+  "src/ir/ir_allocation_stats.h",
+  "utf8",
+);
+const irAllocationSource = await readFile("src/ir/ir_alloc.c", "utf8");
 if (/\bps_node_atomic_pointer_info\s*\(/.test(
       `${parserLayerSource}\n${loweringLayerSource}`,
     )) {
@@ -1357,6 +1362,35 @@ if (!/int\s+ag_compilation_session_dispose\s*\(/.test(
     )) {
   throw new Error(
     "CompilationSession lifecycle must use explicit ownership without an active-session stack",
+  );
+}
+
+if (!/ir_allocation_stats_t\s+ir_allocation_stats\s*;/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    !/ag_compilation_session_ir_allocation_stats\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/ir_allocation_stats_t\s*\*allocation_stats\s*;/.test(
+      irBuildOptionsHeader,
+    ) ||
+    !/ir_module_new_with_allocation_stats\s*\(\s*options->allocation_stats\s*\)/.test(
+      hirIrBuilder,
+    ) ||
+    !/\.allocation_stats\s*=\s*\n?\s*ag_compilation_session_ir_allocation_stats\s*\(session\)/.test(
+      compilerMainSource,
+    ) ||
+    !/typedef\s+struct\s+ir_allocation_stats_t\s*\{/.test(
+      irAllocationStatsHeader,
+    ) ||
+    /^static\s+size_t\s+ir_(?:inst|block)_(?:live|peak)\b/m.test(
+      irAllocationSource,
+    ) ||
+    /\bir_(?:inst|block)_total_count\s*\(/.test(
+      `${irAllocationSource}\n${compilerMainSource}`,
+    )) {
+  throw new Error(
+    "IR allocation accounting must be owned by CompilationSession and passed explicitly to IR modules",
   );
 }
 
