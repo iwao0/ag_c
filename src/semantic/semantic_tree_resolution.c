@@ -282,6 +282,27 @@ static int diagnose_direct_function_rejection(
                     diagnostics,
                     DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_COMPATIBLE_TYPE:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_NO_MATCH:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH, token,
+          "%s", diag_message_for_in(
+                    diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH));
+      return 1;
     default:
       return 0;
   }

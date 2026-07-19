@@ -11180,6 +11180,21 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int function(int value); return function(); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
       ND_FUNCALL);
+  assert_direct_function_rejection(
+      "int __direct_generic_duplicate_default(void) { "
+      "return _Generic(1, default: 1, default: 2); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT,
+      ND_GENERIC_SELECTION);
+  assert_direct_function_rejection(
+      "int __direct_generic_duplicate_type(void) { "
+      "return _Generic(1, int: 1, signed int: 2, default: 3); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_COMPATIBLE_TYPE,
+      ND_GENERIC_SELECTION);
+  assert_direct_function_rejection(
+      "int __direct_generic_no_match(void) { "
+      "return _Generic(1, float: 2); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_NO_MATCH,
+      ND_GENERIC_SELECTION);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {

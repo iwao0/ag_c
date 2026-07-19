@@ -192,6 +192,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE: return "The second and third operands of a conditional expression have incompatible types (C11 6.5.15)";
     case DIAG_ERR_PARSER_CALL_NOT_CALLABLE: return "Called expression must have function or pointer-to-function type (C11 6.5.2.2p1)";
     case DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH: return "Function call argument count does not match the function prototype (C11 6.5.2.2)";
+    case DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT: return "A generic selection may contain at most one default association (C11 6.5.1.1p2)";
+    case DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE: return "A generic selection may not contain multiple compatible type associations (C11 6.5.1.1p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

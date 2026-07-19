@@ -192,6 +192,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE: return "条件演算子の第2・第3オペランドの型に互換性がありません (C11 6.5.15)";
     case DIAG_ERR_PARSER_CALL_NOT_CALLABLE: return "呼び出す式は関数型または関数へのポインタ型である必要があります (C11 6.5.2.2p1)";
     case DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH: return "関数呼び出しの引数数が関数プロトタイプと一致しません (C11 6.5.2.2)";
+    case DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT: return "_Generic に default association を複数指定できません (C11 6.5.1.1p2)";
+    case DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE: return "_Generic に互換な型 association を複数指定できません (C11 6.5.1.1p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

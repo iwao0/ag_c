@@ -505,8 +505,27 @@ static int resolve_direct_generic_selection(
   psx_resolve_generic_selection_qual_types_in(
       control_type, association_types, is_default,
       selection->association_count, &resolution);
-  if (resolution.status != PSX_GENERIC_SELECTION_RESOLUTION_OK)
-    return 0;
+  switch (resolution.status) {
+    case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT:
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT,
+          &selection->base);
+    case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE:
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_COMPATIBLE_TYPE,
+          &selection->base);
+    case PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH:
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_NO_MATCH,
+          &selection->base);
+    case PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED:
+      return 0;
+    case PSX_GENERIC_SELECTION_RESOLUTION_OK:
+      break;
+  }
 
   for (int i = 0; i < selection->association_count; i++) {
     if (i == resolution.selected_index) continue;

@@ -774,16 +774,25 @@ static void semantic_resolve_generic_selection(
   }
   switch (resolution.status) {
     case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT:
-      ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
-                  "_Generic に default association を複数指定できません (C11 6.5.1.1p2)");
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT,
+          conflict_tok, "%s", diag_message_for_in(
+                                diagnostics,
+                                DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT));
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE:
-      ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
-                  "_Generic に互換な型associationを複数指定できません (C11 6.5.1.1p2)");
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE,
+          conflict_tok, "%s", diag_message_for_in(
+                                diagnostics,
+                                DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE));
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH:
-      ps_diag_ctx_in(diagnostics, tok, "generic", "%s",
-                  diag_message_for_in(diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH));
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH, tok, "%s",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH));
       return;
     case PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED:
       ps_diag_ctx_in(diagnostics, conflict_tok, "generic",
