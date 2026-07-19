@@ -200,6 +200,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS: return "Return conversion discards pointed-to type qualifiers (C11 6.8.6.4p3, 6.5.16.1p2)";
     case DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR: return "Cast target type must be void or a scalar type (C11 6.5.4p2)";
     case DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR: return "The operand of a non-void cast must have scalar type (C11 6.5.4p2)";
+    case DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE: return "The operand of '&' must be a function designator or an lvalue designating an object (C11 6.5.3.2p1)";
+    case DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD: return "The address of a bit-field cannot be taken (C11 6.5.3.2p1)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

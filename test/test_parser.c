@@ -10229,7 +10229,8 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "_Generic(left, int: 23, default: 24); "
       "sum += sizeof(int[3]) + _Alignof(void *) + "
       "sizeof(runtime_values) + sizeof(runtime_matrix[left]) + "
-      "sizeof((int){99}) + sizeof(__DirectFn *); "
+      "sizeof((int){99}) + sizeof(__DirectFn *) + "
+      "(&runtime_values != 0); "
       "sum++, --sum, (void)sum, (void)pair; "
       "char direct_text[] = \"A\\n\"; "
       "unsigned short direct_wide[4] = {u\"A\\u03A9\"}; "
@@ -11076,6 +11077,15 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "struct S { int x; }; struct S value={1}; return (int)value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR,
       ND_CAST);
+  assert_direct_function_rejection(
+      "int __direct_address_rvalue(void) { return &1 != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+      ND_ADDR);
+  assert_direct_function_rejection(
+      "int __direct_address_bitfield(void) { "
+      "struct S { int bits:3; } value={1}; return &value.bits != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
+      ND_ADDR);
   test_compilation_options()->enable_struct_scalar_pointer_cast = false;
   assert_direct_function_rejection(
       "int __direct_cast_struct_extension_disabled(void) { "
@@ -25574,6 +25584,7 @@ static void test_parse_invalid() {
   expect_parse_fail(
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "return (int)value; }");
+  expect_parse_fail("int main(void) { return &1 != 0; }");
   expect_parse_ok(
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "(void)value; return 0; }");
@@ -25690,6 +25701,13 @@ static void test_parse_invalid_diagnostics() {
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "return (int)value; }",
       "void 以外へのキャストのオペランドはスカラ型である必要があります");
+  expect_parse_fail_with_message(
+      "int main(void) { return &1 != 0; }",
+      "& のオペランドは関数指示子またはオブジェクトを指す左辺値である必要があります");
+  expect_parse_fail_with_message(
+      "int main(void) { struct S { int bits:3; } value={1}; "
+      "return &value.bits != 0; }",
+      "ビットフィールドのアドレスは取得できません");
   expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");

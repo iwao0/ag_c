@@ -3295,28 +3295,32 @@ void ps_node_reject_const_qual_discard_at_in(
   }
 }
 
+int ps_node_is_lvalue_in(
+    const psx_resolution_store_t *store,
+    const node_t *node) {
+  if (node && node->kind == ND_GENERIC_SELECTION) {
+    const node_t *selected = generic_selection_semantic_expression(
+        store, (node_generic_selection_t *)node);
+    return selected && ps_node_is_lvalue_in(store, selected);
+  }
+  psx_resolution_node_kind_t resolved_kind =
+      psx_resolved_object_ref_node_kind(store, node);
+  return node &&
+         (resolved_kind == ND_LVAR ||
+          resolved_kind == ND_MEMBER_ACCESS ||
+          resolved_kind == ND_UNARY_DEREF ||
+          resolved_kind == ND_SUBSCRIPT ||
+          resolved_kind == ND_DEREF || resolved_kind == ND_GVAR ||
+          resolved_kind == ND_COMPOUND_LITERAL ||
+          (resolved_kind == ND_CAST && node->is_source_cast &&
+           ps_type_is_tag_aggregate(ps_node_get_type(store, node))));
+}
+
 void ps_node_expect_lvalue_at_in(
     const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const char *op, token_t *tok) {
-  if (node && node->kind == ND_GENERIC_SELECTION) {
-    node_generic_selection_t *selection =
-        (node_generic_selection_t *)node;
-    node_t *selected =
-        generic_selection_semantic_expression(store, selection);
-    if (selected) {
-      ps_node_expect_lvalue_at_in(
-          store, diagnostics, selected, op, tok);
-      return;
-    }
-  }
-  psx_resolution_node_kind_t resolved_kind =
-      psx_resolved_object_ref_node_kind(store, node);
-  if (!node || (resolved_kind != ND_LVAR &&
-                resolved_kind != ND_MEMBER_ACCESS &&
-                resolved_kind != ND_UNARY_DEREF &&
-                resolved_kind != ND_SUBSCRIPT &&
-                resolved_kind != ND_DEREF && resolved_kind != ND_GVAR)) {
+  if (!ps_node_is_lvalue_in(store, node)) {
     diag_emit_tokf_in(
         diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
         diag_message_for_in(diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),

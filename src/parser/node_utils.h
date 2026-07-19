@@ -141,6 +141,8 @@ void ps_node_reject_const_qual_discard_at_in(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     token_t *tok);
+int ps_node_is_lvalue_in(
+    const psx_resolution_store_t *store, const node_t *node);
 void ps_node_expect_lvalue_at_in(
     const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,

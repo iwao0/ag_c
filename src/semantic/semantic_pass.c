@@ -250,6 +250,59 @@ static int semantic_bind_address_result_type(
   return 1;
 }
 
+static void semantic_resolve_explicit_address(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !node || !node->lhs ||
+      !node->is_explicit_addr_expr)
+    return;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  psx_resolution_node_kind_t operand_kind =
+      psx_resolved_object_ref_node_kind(store, node->lhs);
+  psx_address_operand_category_t category =
+      operand_kind == ND_FUNCREF
+          ? PSX_ADDRESS_OPERAND_FUNCTION_DESIGNATOR
+          : ps_node_is_lvalue_in(store, node->lhs)
+                ? PSX_ADDRESS_OPERAND_OBJECT_LVALUE
+                : PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE;
+  psx_address_operand_resolution_t resolution;
+  psx_resolve_address_operand_qual_type_in(
+      semantic_context,
+      semantic_node_qual_type_value(semantic_context, node->lhs),
+      category, ps_node_bitfield_width(store, node->lhs) > 0,
+      &resolution);
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
+  token_t *tok = node->tok
+                     ? node->tok
+                     : (token_t *)fallback_diag_tok;
+  if (resolution.status ==
+      PSX_ADDRESS_OPERAND_REQUIRES_ADDRESSABLE_VALUE) {
+    diag_emit_tokf_in(
+        diagnostics,
+        DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+        tok, "%s", diag_message_for_in(
+                       diagnostics,
+                       DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE));
+    return;
+  }
+  if (resolution.status == PSX_ADDRESS_OPERAND_IS_BITFIELD) {
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD,
+        tok, "%s", diag_message_for_in(
+                       diagnostics,
+                       DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD));
+    return;
+  }
+  if (resolution.status != PSX_ADDRESS_OPERAND_OK) return;
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      semantic_context, resolution.result_qual_type.type_id);
+  if (canonical)
+    ps_node_bind_qual_type(
+        store, node, canonical, resolution.result_qual_type);
+}
+
 static void semantic_transform_initializer_syntax(
     node_t *syntax, const psx_semantic_traversal_t *traversal) {
   if (!syntax) return;
@@ -1204,20 +1257,16 @@ static void semantic_transform_node(
       break;
     case ND_ADDR:
       semantic_transform_node(node->lhs, traversal);
-      if (!semantic_bind_address_result_type(
-              traversal->semantic_context, node, node->lhs) &&
-          !ps_node_get_type(store, node))
+      if (node->is_explicit_addr_expr) {
+        semantic_resolve_explicit_address(
+            traversal->semantic_context, node, fallback_diag_tok);
+      } else if (!semantic_bind_address_result_type(
+                     traversal->semantic_context, node, node->lhs) &&
+                 !ps_node_get_type(store, node)) {
         semantic_bind_result_type(
             traversal->semantic_context, node,
             psx_resolve_address_result_type(
-                      traversal->semantic_context, node->lhs));
-      if (node->is_explicit_addr_expr &&
-          ps_node_bitfield_width(store, node->lhs) > 0) {
-        ps_diag_ctx_in(diagnostics, node->tok
-                        ? node->tok
-                        : (token_t *)fallback_diag_tok,
-                    "addr",
-                    "ビットフィールドのアドレスは取得できません (C11 6.5.3.2p1)");
+                traversal->semantic_context, node->lhs));
       }
       break;
     case ND_PRE_INC:

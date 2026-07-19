@@ -78,6 +78,31 @@ psx_qual_type_t psx_resolve_address_result_qual_type_in(
     psx_qual_type_t operand_type);
 
 typedef enum {
+  PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE = 0,
+  PSX_ADDRESS_OPERAND_OBJECT_LVALUE,
+  PSX_ADDRESS_OPERAND_FUNCTION_DESIGNATOR,
+} psx_address_operand_category_t;
+
+typedef enum {
+  PSX_ADDRESS_OPERAND_OK = 0,
+  PSX_ADDRESS_OPERAND_INVALID,
+  PSX_ADDRESS_OPERAND_REQUIRES_ADDRESSABLE_VALUE,
+  PSX_ADDRESS_OPERAND_IS_BITFIELD,
+} psx_address_operand_status_t;
+
+typedef struct {
+  psx_address_operand_status_t status;
+  psx_qual_type_t result_qual_type;
+} psx_address_operand_resolution_t;
+
+void psx_resolve_address_operand_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type,
+    psx_address_operand_category_t category,
+    int operand_is_bitfield,
+    psx_address_operand_resolution_t *resolution);
+
+typedef enum {
   PSX_INCDEC_OPERAND_OK = 0,
   PSX_INCDEC_OPERAND_CONST,
   PSX_INCDEC_OPERAND_INVALID_TYPE,

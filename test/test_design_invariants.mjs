@@ -8412,6 +8412,39 @@ if (
   );
 }
 
+const addressOperandQualTypeRule =
+  expressionOperandResolutionSource.match(
+    /void\s+psx_resolve_address_operand_qual_type_in\s*\([^]*?\n\}/,
+  );
+const sharedAddressOperandRuleUses = [
+  syntaxTypedHirResolutionSource,
+  semanticPassSource,
+].filter((source) =>
+  /\bpsx_resolve_address_operand_qual_type_in\s*\(/.test(source)
+).length;
+if (
+  !addressOperandQualTypeRule ||
+  /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
+    addressOperandQualTypeRule[0],
+  ) ||
+  sharedAddressOperandRuleUses !== 2 ||
+  !/PSX_ADDRESS_OPERAND_REQUIRES_ADDRESSABLE_VALUE/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/PSX_ADDRESS_OPERAND_IS_BITFIELD/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/int\s+ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
+  !/if\s*\(\s*!ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
+  /ビットフィールドのアドレスは取得できません/.test(
+    semanticPassSource,
+  )
+) {
+  throw new Error(
+    "explicit address operands must use one AST-independent value-category and QualType rule in direct and compatibility resolution",
+  );
+}
+
 const subscriptQualTypeCore = expressionOperandResolutionSource.match(
   /static\s+int\s+qual_type_is_subscript_base\s*\([^]*?void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
 );

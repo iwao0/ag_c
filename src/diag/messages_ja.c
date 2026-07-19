@@ -200,6 +200,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS: return "return の変換で参照先型の修飾子を破棄できません (C11 6.8.6.4p3, 6.5.16.1p2)";
     case DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR: return "キャスト先の型は void またはスカラ型である必要があります (C11 6.5.4p2)";
     case DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR: return "void 以外へのキャストのオペランドはスカラ型である必要があります (C11 6.5.4p2)";
+    case DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE: return "& のオペランドは関数指示子またはオブジェクトを指す左辺値である必要があります (C11 6.5.3.2p1)";
+    case DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD: return "ビットフィールドのアドレスは取得できません (C11 6.5.3.2p1)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

@@ -261,6 +261,37 @@ psx_qual_type_t psx_resolve_address_result_qual_type_in(
       semantic_context, operand_type);
 }
 
+void psx_resolve_address_operand_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type,
+    psx_address_operand_category_t category,
+    int operand_is_bitfield,
+    psx_address_operand_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_ADDRESS_OPERAND_INVALID;
+  resolution->result_qual_type = invalid_qual_type();
+  if (!semantic_context ||
+      operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return;
+  if (category == PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE) {
+    resolution->status =
+        PSX_ADDRESS_OPERAND_REQUIRES_ADDRESSABLE_VALUE;
+    return;
+  }
+  if (operand_is_bitfield) {
+    resolution->status = PSX_ADDRESS_OPERAND_IS_BITFIELD;
+    return;
+  }
+  resolution->result_qual_type =
+      psx_resolve_address_result_qual_type_in(
+          semantic_context, operand_type);
+  if (resolution->result_qual_type.type_id ==
+      PSX_TYPE_ID_INVALID)
+    return;
+  resolution->status = PSX_ADDRESS_OPERAND_OK;
+}
+
 void psx_resolve_incdec_operand_qual_type_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type,

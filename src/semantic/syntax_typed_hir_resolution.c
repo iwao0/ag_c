@@ -1318,8 +1318,7 @@ static int preflight_direct_lvalue(
     if (!resolve_direct_identifier(
             context, (const node_identifier_t *)syntax,
             &resolution) ||
-        resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT ||
-        resolution.local_is_vla_object)
+        resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT)
       return 0;
     if (qual_type) *qual_type = resolution.declaration_qual_type;
     return 1;
@@ -1797,24 +1796,60 @@ static int preflight_direct_expression_impl(
         context, syntax, qual_type);
   }
   if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
-    psx_qual_type_t operand_type;
-    if (!preflight_direct_lvalue(
-            context, syntax->lhs, &operand_type))
-      return 0;
+    psx_qual_type_t operand_type = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+    psx_address_operand_category_t category =
+        PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE;
+    if (preflight_direct_lvalue(
+            context, syntax->lhs, &operand_type)) {
+      category = PSX_ADDRESS_OPERAND_OBJECT_LVALUE;
+      if (syntax->lhs->kind == ND_IDENTIFIER) {
+        psx_identifier_expression_resolution_t identifier;
+        if (resolve_direct_identifier(
+                context,
+                (const node_identifier_t *)syntax->lhs,
+                &identifier) &&
+            identifier.symbol.kind == PSX_IDENTIFIER_FUNCTION)
+          category = PSX_ADDRESS_OPERAND_FUNCTION_DESIGNATOR;
+      }
+    } else {
+      if ((context->failure &&
+           context->failure->rejection !=
+               PSX_SYNTAX_TYPED_HIR_REJECTION_NONE) ||
+          syntax->lhs->kind == ND_GENERIC_SELECTION ||
+          syntax->lhs->kind == ND_COMPOUND_LITERAL)
+        return 0;
+      if (!preflight_direct_expression(
+              context, syntax->lhs, &operand_type))
+        return 0;
+    }
+    int operand_is_bitfield = 0;
     if (syntax->lhs->kind == ND_MEMBER_ACCESS) {
       psx_hir_member_resolution_t member;
       if (!resolve_direct_member_access(
               context,
               (const node_member_access_t *)syntax->lhs,
-              1,
-              &member) ||
-          member.member.declaration.bit_width > 0)
+              1, &member))
         return 0;
+      operand_is_bitfield =
+          member.member.declaration.bit_width > 0;
     }
-    psx_qual_type_t result =
-        psx_resolve_address_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+    psx_address_operand_resolution_t resolution;
+    psx_resolve_address_operand_qual_type_in(
+        context->semantic_context, operand_type, category,
+        operand_is_bitfield, &resolution);
+    if (resolution.status ==
+        PSX_ADDRESS_OPERAND_REQUIRES_ADDRESSABLE_VALUE)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+          syntax);
+    if (resolution.status == PSX_ADDRESS_OPERAND_IS_BITFIELD)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
+          syntax);
+    if (resolution.status != PSX_ADDRESS_OPERAND_OK) return 0;
     if (context->unevaluated_depth == 0 &&
         syntax->lhs->kind == ND_IDENTIFIER) {
       direct_identifier_binding_t *binding =
@@ -1827,7 +1862,7 @@ static int preflight_direct_expression_impl(
             DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN;
       }
     }
-    if (qual_type) *qual_type = result;
+    if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
   if (syntax->kind == ND_UNARY_NEGATE ||
