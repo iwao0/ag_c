@@ -8156,6 +8156,16 @@ static void test_persistent_local_scope_lookup_boundary() {
   printf("test_persistent_local_scope_lookup_boundary...\n");
   reset_test_locals();
 
+  psx_scope_graph_t *scope_graph =
+      ps_local_registry_scope_graph(test_local_registry());
+  psx_scope_id_t function_scope =
+      psx_scope_graph_current_scope(scope_graph);
+  ASSERT_EQ(PSX_SCOPE_FUNCTION,
+            psx_scope_graph_scope_kind(scope_graph, function_scope));
+  ps_decl_leave_scope_in(test_local_registry());
+  ASSERT_EQ(function_scope,
+            psx_scope_graph_current_scope(scope_graph));
+
   lvar_t *outer = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(outer != NULL);

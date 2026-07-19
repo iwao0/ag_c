@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LVAR_SCOPE_STACK_MAX 256
 #define LVAR_OFFSET_BUCKETS 256u
 
 struct psx_lvar_usage_region_t {
@@ -31,11 +30,8 @@ struct lvar_usage_event_t {
 struct psx_local_registry_t {
   ag_diagnostic_context_t *diagnostic_context;
   const psx_semantic_type_table_t *semantic_types;
-  lvar_t *locals;
   lvar_t *all_locals;
   lvar_t *all_bindings;
-  lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-  int lvar_scope_depth;
   psx_scope_graph_t *scope_graph;
   unsigned char owns_scope_graph;
   lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
@@ -49,11 +45,8 @@ struct psx_local_registry_t {
 
 typedef struct {
   psx_local_registry_t *registry;
-  lvar_t *locals;
   lvar_t *all_locals;
   lvar_t *all_bindings;
-  lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-  int lvar_scope_depth;
   psx_scope_graph_checkpoint_t scope_graph_checkpoint;
   lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
@@ -112,12 +105,8 @@ int psx_local_registry_checkpoint_begin(
       calloc(1, sizeof(*transaction));
   if (!transaction) return 0;
   transaction->registry = registry;
-  transaction->locals = registry->locals;
   transaction->all_locals = registry->all_locals;
   transaction->all_bindings = registry->all_bindings;
-  memcpy(transaction->lvar_scope_stack, registry->lvar_scope_stack,
-         sizeof(transaction->lvar_scope_stack));
-  transaction->lvar_scope_depth = registry->lvar_scope_depth;
   if (!psx_scope_graph_checkpoint_begin(
           registry->scope_graph, &transaction->scope_graph_checkpoint)) {
     free(transaction);
@@ -172,12 +161,8 @@ void psx_local_registry_checkpoint_rollback(
   if (!transaction) return;
   if (transaction->usage_events_tail)
     transaction->usage_events_tail->next = NULL;
-  registry->locals = transaction->locals;
   registry->all_locals = transaction->all_locals;
   registry->all_bindings = transaction->all_bindings;
-  memcpy(registry->lvar_scope_stack, transaction->lvar_scope_stack,
-         sizeof(registry->lvar_scope_stack));
-  registry->lvar_scope_depth = transaction->lvar_scope_depth;
   memcpy(registry->lvars_by_offset, transaction->lvars_by_offset,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = transaction->usage_events_head;
@@ -312,12 +297,10 @@ lvar_t *ps_local_registry_find_visible_in(
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var) {
   if (!registry || !var) return;
-  var->next = registry->locals;
   var->next_all = registry->all_locals;
   var->next_binding = registry->all_bindings;
   registry->all_locals = var;
   registry->all_bindings = var;
-  registry->locals = var;
   index_add(registry, var);
 }
 
@@ -400,10 +383,8 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = qual_type;
   var->is_param = 1;
-  var->next = registry->locals;
   var->next_binding = registry->all_bindings;
   registry->all_bindings = var;
-  registry->locals = var;
   return var;
 }
 
@@ -587,10 +568,8 @@ static void clear_local_registry_state(psx_local_registry_t *registry) {
     var->vla_runtime.param_inner_dim_src_offsets = NULL;
     var->vla_runtime.param_inner_dim_count = 0;
   }
-  registry->locals = NULL;
   registry->all_locals = NULL;
   registry->all_bindings = NULL;
-  registry->lvar_scope_depth = 0;
   memset(registry->lvars_by_offset, 0,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = NULL;
@@ -635,11 +614,6 @@ void ps_local_registry_prepare_function_resolution_in(
 static void enter_local_scope(
     psx_local_registry_t *registry, psx_scope_kind_t kind) {
   if (!registry) return;
-  if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    registry->lvar_scope_stack[registry->lvar_scope_depth] =
-        registry->locals;
-  }
-  registry->lvar_scope_depth++;
   if (psx_scope_graph_enter_scope(
           registry->scope_graph, kind) == PSX_SCOPE_ID_INVALID)
     ps_diag_ctx_in(
@@ -690,14 +664,15 @@ void ps_decl_enter_scope_in(psx_local_registry_t *registry) {
 }
 
 void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
-  if (!registry || registry->lvar_scope_depth <= 0) return;
-  registry->lvar_scope_depth--;
-  if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    lvar_t *restore =
-        registry->lvar_scope_stack[registry->lvar_scope_depth];
-    registry->locals = restore;
-    psx_scope_graph_leave_scope(registry->scope_graph);
-  }
+  if (!registry || !registry->scope_graph) return;
+  psx_scope_id_t current =
+      psx_scope_graph_current_scope(registry->scope_graph);
+  psx_scope_kind_t kind =
+      psx_scope_graph_scope_kind(registry->scope_graph, current);
+  if (kind != PSX_SCOPE_BLOCK &&
+      kind != PSX_SCOPE_FUNCTION_PROTOTYPE)
+    return;
+  psx_scope_graph_leave_scope(registry->scope_graph);
 }
 
 lvar_t *ps_decl_get_locals_in(const psx_local_registry_t *registry) {

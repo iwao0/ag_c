@@ -7684,6 +7684,7 @@ if (!lvarStruct ||
 if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
       lvarStruct[1],
     ) ||
+    /\blvar_t\s*\*next\s*;/.test(lvarStruct[1]) ||
     /\bdeclaration_id\b/.test(gvarStruct[1]) ||
     /\b(?:scope_seq|declaration_id)\b/.test(lvarPublicSource) ||
     !/has_local_object_in_current_scope\s*\([^]*?psx_scope_graph_lookup_declaration_in_scope\s*\([^]*?PSX_NAMESPACE_ORDINARY/.test(
@@ -7691,6 +7692,12 @@ if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
     ) ||
     /previous->scope_seq|var->(?:scope_seq|declaration_seq|declaration_id)|gv->declaration_id/.test(
       `${localRegistrySource}\n${globalRegistrySource}`,
+    ) ||
+    /\b(?:LVAR_SCOPE_STACK_MAX|lvar_scope_stack|lvar_scope_depth)\b|\blvar_t\s*\*locals\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/ps_decl_leave_scope_in\s*\([^]*?PSX_SCOPE_BLOCK[^]*?PSX_SCOPE_FUNCTION_PROTOTYPE[^]*?psx_scope_graph_leave_scope\s*\(/.test(
+      localRegistrySource,
     )) {
   throw new Error(
     "local and global object payloads must not duplicate scope graph declaration identity",
