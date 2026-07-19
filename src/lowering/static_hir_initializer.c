@@ -206,6 +206,8 @@ static long long eval_const_int(
     case PSX_HIR_NE:
     case PSX_HIR_LT:
     case PSX_HIR_LE:
+    case PSX_HIR_GT:
+    case PSX_HIR_GE:
     case PSX_HIR_LOGAND:
     case PSX_HIR_LOGOR:
       break;
@@ -268,6 +270,8 @@ static long long eval_const_int(
     case PSX_HIR_NE: return left != right;
     case PSX_HIR_LT: return left < right;
     case PSX_HIR_LE: return left <= right;
+    case PSX_HIR_GT: return left > right;
+    case PSX_HIR_GE: return left >= right;
     case PSX_HIR_LOGAND: return left && right;
     case PSX_HIR_LOGOR: return left || right;
     default:

@@ -21,6 +21,8 @@ typedef enum {
   PSX_HIR_NE,
   PSX_HIR_LT,
   PSX_HIR_LE,
+  PSX_HIR_GT,
+  PSX_HIR_GE,
   PSX_HIR_BITAND,
   PSX_HIR_BITXOR,
   PSX_HIR_BITOR,

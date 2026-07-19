@@ -343,6 +343,8 @@ static long long eval_static_const_int(
     case ND_NE:
     case ND_LT:
     case ND_LE:
+    case ND_GT:
+    case ND_GE:
     case ND_LOGAND:
     case ND_LOGOR:
       break;
@@ -380,6 +382,8 @@ static long long eval_static_const_int(
     case ND_NE: return left != right;
     case ND_LT: return left < right;
     case ND_LE: return left <= right;
+    case ND_GT: return left > right;
+    case ND_GE: return left >= right;
     case ND_LOGAND: return left && right;
     case ND_LOGOR: return left || right;
     default:

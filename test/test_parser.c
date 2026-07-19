@@ -2831,6 +2831,41 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
               PSX_TYPE_ID_INVALID);
   psx_hir_module_destroy(hir);
 
+  node_t *greater =
+      parse_expr_input_with_existing_locals("1 > 2");
+  ASSERT_EQ(ND_GT, greater->kind);
+  ASSERT_EQ(1, ((node_num_t *)greater->lhs)->val);
+  ASSERT_EQ(2, ((node_num_t *)greater->rhs)->val);
+  const psx_typed_hir_tree_t *typed_greater = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), greater,
+          &typed_greater, &failure));
+  ASSERT_TRUE(typed_greater != NULL);
+  ASSERT_EQ(ND_GT, greater->kind);
+  ASSERT_EQ(1, ((node_num_t *)greater->lhs)->val);
+  ASSERT_EQ(2, ((node_num_t *)greater->rhs)->val);
+  ASSERT_TRUE(!ps_node_has_resolution_state(greater));
+  ASSERT_TRUE(ps_node_get_type(greater) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t greater_id = psx_typed_hir_tree_emit(
+      hir, typed_greater, &failure);
+  ASSERT_TRUE(greater_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *greater_hir =
+      psx_hir_module_lookup(hir, greater_id);
+  ASSERT_EQ(PSX_HIR_GT, psx_hir_node_kind(greater_hir));
+  ASSERT_EQ(2, psx_hir_node_child_count(greater_hir));
+  const psx_hir_node_t *greater_lhs = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(greater_hir, 0));
+  const psx_hir_node_t *greater_rhs = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(greater_hir, 1));
+  ASSERT_EQ(1, psx_hir_node_integer_value(greater_lhs));
+  ASSERT_EQ(2, psx_hir_node_integer_value(greater_rhs));
+  psx_hir_module_destroy(hir);
+
   node_t *conditional =
       parse_expr_input_with_existing_locals(
           "-(1 + 2) ? 4L : 5");
@@ -7736,6 +7771,8 @@ static int test_node_usual_arith_is_unsigned(node_t *node) {
     case ND_BITOR:
     case ND_LT:
     case ND_LE:
+    case ND_GT:
+    case ND_GE:
     case ND_EQ:
     case ND_NE:
       return ps_type_usual_arithmetic_result_is_unsigned_for_target(
@@ -16577,19 +16614,17 @@ static void test_expr_relational() {
   printf("test_expr_relational...\n");
     node_t *node = parse_expr_input("1 < 2 <= 3 > 4 >= 5");
 
-  // ルートは ND_LE (>= が反転)
-  ASSERT_EQ(ND_LE, node->kind);
-  ASSERT_EQ(5, as_num(node->lhs)->val); // 5が左辺
-  // > が反転 → ND_LT
-  ASSERT_EQ(ND_LT, node->rhs->kind);
-  ASSERT_EQ(4, as_num(node->rhs->lhs)->val); // 4が左辺
+  ASSERT_EQ(ND_GE, node->kind);
+  ASSERT_EQ(5, as_num(node->rhs)->val);
+  ASSERT_EQ(ND_GT, node->lhs->kind);
+  ASSERT_EQ(4, as_num(node->lhs->rhs)->val);
   // <=
-  ASSERT_EQ(ND_LE, node->rhs->rhs->kind);
-  ASSERT_EQ(3, as_num(node->rhs->rhs->rhs)->val);
+  ASSERT_EQ(ND_LE, node->lhs->lhs->kind);
+  ASSERT_EQ(3, as_num(node->lhs->lhs->rhs)->val);
   // <
-  ASSERT_EQ(ND_LT, node->rhs->rhs->lhs->kind);
-  ASSERT_EQ(1, as_num(node->rhs->rhs->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->rhs->rhs->lhs->rhs)->val);
+  ASSERT_EQ(ND_LT, node->lhs->lhs->lhs->kind);
+  ASSERT_EQ(1, as_num(node->lhs->lhs->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->lhs->lhs->lhs->rhs)->val);
 }
 
 static void test_expr_logical_and_or() {
@@ -16906,11 +16941,11 @@ static void test_expr_unary_ops() {
   node_t *unsigned_short_return =
       as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, unsigned_short_return->kind);
-  ASSERT_EQ(ND_LT, unsigned_short_return->lhs->kind);
+  ASSERT_EQ(ND_GT, unsigned_short_return->lhs->kind);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
-      unsigned_short_return->lhs->rhs));
+      unsigned_short_return->lhs->lhs));
   ASSERT_TRUE(ps_node_is_unsigned_type(
-      unsigned_short_return->lhs->rhs));
+      unsigned_short_return->lhs->lhs));
   ASSERT_TRUE(ps_node_usual_arith_is_unsigned(
       unsigned_short_return->lhs));
 
@@ -26395,17 +26430,17 @@ static void test_parse_evil_edge_cases() {
   ASSERT_EQ(2, as_num(sh->lhs->rhs)->val);
   ASSERT_EQ(8, as_num(sh->rhs)->val);
 
-  // `>`/`>=` は AST では `<`/`<=` へ正規化されるが、後段 warning 用に元演算子を保持する。
+  // 比較演算子とオペランド順を Syntax AST にそのまま保持する。
   node_t *gt = parse_expr_input("1>2");
-  ASSERT_EQ(ND_LT, gt->kind);
+  ASSERT_EQ(ND_GT, gt->kind);
   ASSERT_EQ(TK_GT, gt->source_op);
-  ASSERT_EQ(2, as_num(gt->lhs)->val);
-  ASSERT_EQ(1, as_num(gt->rhs)->val);
+  ASSERT_EQ(1, as_num(gt->lhs)->val);
+  ASSERT_EQ(2, as_num(gt->rhs)->val);
   node_t *ge = parse_expr_input("1>=2");
-  ASSERT_EQ(ND_LE, ge->kind);
+  ASSERT_EQ(ND_GE, ge->kind);
   ASSERT_EQ(TK_GE, ge->source_op);
-  ASSERT_EQ(2, as_num(ge->lhs)->val);
-  ASSERT_EQ(1, as_num(ge->rhs)->val);
+  ASSERT_EQ(1, as_num(ge->lhs)->val);
+  ASSERT_EQ(2, as_num(ge->rhs)->val);
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
   parsed_code = parse_program_input("int main() { int a; int b; a=1,b=2; }");

@@ -274,6 +274,8 @@ int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_NE:
     case PSX_HIR_LT:
     case PSX_HIR_LE:
+    case PSX_HIR_GT:
+    case PSX_HIR_GE:
     case PSX_HIR_BITAND:
     case PSX_HIR_BITXOR:
     case PSX_HIR_BITOR:

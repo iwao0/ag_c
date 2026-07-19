@@ -2605,6 +2605,8 @@ int ps_node_binary_type_op(
     case ND_NE:
     case ND_LT:
     case ND_LE:
+    case ND_GT:
+    case ND_GE:
       *op = PSX_TYPE_BINARY_COMPARE;
       return 1;
     case ND_LOGAND:

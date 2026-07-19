@@ -203,17 +203,6 @@ static const char *source_op_text(token_kind_t op) {
   }
 }
 
-static void source_compare_operands(
-    node_t *node, node_t **out_lhs, node_t **out_rhs) {
-  if (node && (node->source_op == TK_GT || node->source_op == TK_GE)) {
-    *out_lhs = node->rhs;
-    *out_rhs = node->lhs;
-  } else {
-    *out_lhs = node ? node->lhs : NULL;
-    *out_rhs = node ? node->rhs : NULL;
-  }
-}
-
 static int nodes_identity_equal(
     const psx_resolution_store_t *store, node_t *lhs, node_t *rhs) {
   if (!lhs || !rhs ||
@@ -338,9 +327,8 @@ static void warn_comparison(
   if (op_kind != TK_EQEQ && op_kind != TK_NEQ && op_kind != TK_LT &&
       op_kind != TK_LE && op_kind != TK_GT && op_kind != TK_GE)
     return;
-  node_t *lhs;
-  node_t *rhs;
-  source_compare_operands(node, &lhs, &rhs);
+  node_t *lhs = node ? node->lhs : NULL;
+  node_t *rhs = node ? node->rhs : NULL;
   const char *op = source_op_text(op_kind);
   const token_t *tok = node->tok ? node->tok : fallback;
   if (op_kind == TK_EQEQ || op_kind == TK_NEQ) {
@@ -533,6 +521,8 @@ static void emit_node_warning(
     case ND_NE:
     case ND_LT:
     case ND_LE:
+    case ND_GT:
+    case ND_GE:
       warn_comparison(
           semantic_context, diagnostics, node, fallback_diag_tok);
       break;

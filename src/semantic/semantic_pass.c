@@ -1355,6 +1355,8 @@ static void semantic_transform_node(
     case ND_NE:
     case ND_LT:
     case ND_LE:
+    case ND_GT:
+    case ND_GE:
     case ND_LOGAND:
     case ND_LOGOR:
       semantic_transform_node(node->lhs, traversal);

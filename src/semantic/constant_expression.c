@@ -134,7 +134,7 @@ long long psx_eval_const_int(
     case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
     case ND_SHL: case ND_SHR:
     case ND_BITAND: case ND_BITXOR: case ND_BITOR:
-    case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
+    case ND_EQ: case ND_NE: case ND_LT: case ND_LE: case ND_GT: case ND_GE:
     case ND_LOGAND: case ND_LOGOR:
       break;
     default:

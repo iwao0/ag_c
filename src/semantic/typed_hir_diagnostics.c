@@ -142,6 +142,8 @@ static const char *binary_operator_text(psx_hir_node_kind_t kind) {
     case PSX_HIR_NE: return "!=";
     case PSX_HIR_LT: return "<";
     case PSX_HIR_LE: return "<=";
+    case PSX_HIR_GT: return ">";
+    case PSX_HIR_GE: return ">=";
     case PSX_HIR_LOGAND: return "&&";
     case PSX_HIR_LOGOR: return "||";
     default: return "";
@@ -232,11 +234,13 @@ static void warn_unsigned_zero(
   int always_true = 0;
   int warn = 0;
   if (rhs_zero && ps_type_is_unsigned(lhs_type)) {
-    warn = node->spec.kind == PSX_HIR_LT;
-    always_true = 0;
+    warn = node->spec.kind == PSX_HIR_LT ||
+           node->spec.kind == PSX_HIR_GE;
+    always_true = node->spec.kind == PSX_HIR_GE;
   } else if (lhs_zero && ps_type_is_unsigned(rhs_type)) {
-    warn = node->spec.kind == PSX_HIR_LE;
-    always_true = 1;
+    warn = node->spec.kind == PSX_HIR_LE ||
+           node->spec.kind == PSX_HIR_GT;
+    always_true = node->spec.kind == PSX_HIR_LE;
   }
   if (warn)
     diag_warn_tokf_in(
@@ -537,7 +541,9 @@ static void diagnose_node(
              node->spec.kind == PSX_HIR_EQ ||
              node->spec.kind == PSX_HIR_NE ||
              node->spec.kind == PSX_HIR_LT ||
-             node->spec.kind == PSX_HIR_LE) {
+             node->spec.kind == PSX_HIR_LE ||
+             node->spec.kind == PSX_HIR_GT ||
+             node->spec.kind == PSX_HIR_GE) {
     warn_comparison(walk, node);
   } else if (node->spec.kind == PSX_HIR_ADD ||
              node->spec.kind == PSX_HIR_SUB ||

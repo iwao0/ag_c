@@ -74,6 +74,8 @@ int psx_apply_integer_constant_binary(
     case ND_NE: *result = lhs != rhs; return 1;
     case ND_LT: *result = lhs < rhs; return 1;
     case ND_LE: *result = lhs <= rhs; return 1;
+    case ND_GT: *result = lhs > rhs; return 1;
+    case ND_GE: *result = lhs >= rhs; return 1;
     case ND_LOGAND: *result = lhs && rhs; return 1;
     case ND_LOGOR: *result = lhs || rhs; return 1;
     default:

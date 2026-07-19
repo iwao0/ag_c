@@ -50,7 +50,7 @@ static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
       return NODE_SEMANTIC_ROLE_INITIALIZER_SYNTAX;
 
     case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
-    case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
+    case ND_EQ: case ND_NE: case ND_LT: case ND_LE: case ND_GT: case ND_GE:
     case ND_BITAND: case ND_BITXOR: case ND_BITOR:
     case ND_SHL: case ND_SHR: case ND_LOGAND: case ND_LOGOR:
     case ND_TERNARY: case ND_COMMA: case ND_ASSIGN:

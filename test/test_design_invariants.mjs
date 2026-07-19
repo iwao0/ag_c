@@ -8948,6 +8948,32 @@ if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
     "compound assignment must preserve one lvalue evaluation directly through Typed HIR",
   );
 }
+if (!/\bND_GT\b/.test(syntaxNodeKindHeader) ||
+    !/\bND_GE\b/.test(syntaxNodeKindHeader) ||
+    !/\bPSX_HIR_GT\b/.test(hirHeader) ||
+    !/\bPSX_HIR_GE\b/.test(hirHeader) ||
+    !/new_binary_with_source_op\s*\(\s*ctx,\s*ND_GT,\s*node,\s*rhs,\s*TK_GT\s*\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/new_binary_with_source_op\s*\(\s*ctx,\s*ND_GE,\s*node,\s*rhs,\s*TK_GE\s*\)/.test(
+      parserExpressionSource,
+    ) ||
+    /new_binary_with_source_op\s*\(\s*ctx,\s*ND_(?:LT|LE),\s*rhs,\s*node,\s*TK_(?:GT|GE)\s*\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_GT,\s*PSX_HIR_GT,\s*PSX_TYPE_BINARY_COMPARE\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_GE,\s*PSX_HIR_GE,\s*PSX_TYPE_BINARY_COMPARE\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/kind\s*==\s*PSX_HIR_GT\s*\|\|\s*kind\s*==\s*PSX_HIR_GE/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "greater-than syntax and Typed HIR must preserve source operators and operand order until IR lowering",
+  );
+}
 const unaryPlusParser = parserExpressionSource.match(
   /if\s*\(\s*k\s*==\s*TK_PLUS\s*\)\s*\{[^]*?\n\s*\}/,
 )?.[0] ?? "";

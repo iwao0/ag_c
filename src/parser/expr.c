@@ -432,11 +432,11 @@ static node_t *relational_ctx(expr_parse_ctx_t *ctx) {
     } else if (curtok(ctx)->kind == TK_GT) {
       set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_LT, rhs, node, TK_GT);
+      node = new_binary_with_source_op(ctx, ND_GT, node, rhs, TK_GT);
     } else if (curtok(ctx)->kind == TK_GE) {
       set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ctx, ND_LE, rhs, node, TK_GE);
+      node = new_binary_with_source_op(ctx, ND_GE, node, rhs, TK_GE);
     }
     else return node;
   }
