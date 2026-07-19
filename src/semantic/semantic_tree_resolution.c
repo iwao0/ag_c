@@ -117,6 +117,28 @@ static int diagnose_direct_function_rejection(
           diagnostics, token, "variable", failure->source_name,
           failure->source_name_length);
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ARROW_BASE_NOT_AGGREGATE_POINTER:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_ARROW_LHS_REQUIRES_STRUCT_PTR));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
+      ps_diag_ctx_in(
+          diagnostics, token, "member",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
+          failure->source_name_length, failure->source_name);
+      return 1;
     default:
       return 0;
   }

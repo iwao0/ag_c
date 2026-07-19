@@ -1182,10 +1182,23 @@ static int resolve_direct_member_access(
           : preflight_direct_expression(
                 context, access->base.lhs, &base_type);
   if (!base_resolved) return 0;
-  return psx_resolve_member_hir_node_spec_in(
+  if (psx_resolve_member_hir_node_spec_in(
       context->semantic_context, base_type,
       access->member_name, access->member_name_len,
-      access->from_pointer, resolution);
+      access->from_pointer, resolution))
+    return 1;
+  if (resolution->member.status == PSX_MEMBER_ACCESS_INVALID_BASE)
+    return note_direct_semantic_rejection(
+        context,
+        access->from_pointer
+            ? PSX_SYNTAX_TYPED_HIR_REJECTION_ARROW_BASE_NOT_AGGREGATE_POINTER
+            : PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE,
+        &access->base);
+  if (resolution->member.status == PSX_MEMBER_ACCESS_NOT_FOUND)
+    return note_direct_named_rejection(
+        context, PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND,
+        &access->base, access->member_name, access->member_name_len);
+  return 0;
 }
 
 static int preflight_direct_lvalue(

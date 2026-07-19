@@ -11050,6 +11050,20 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "switch (value) { case value: return 1; } return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
       ND_CASE);
+  assert_direct_function_rejection(
+      "int __direct_dot_base(void) { int value = 0; return value.x; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE,
+      ND_MEMBER_ACCESS);
+  assert_direct_function_rejection(
+      "int __direct_arrow_base(void) { int *value = 0; "
+      "return value->x; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ARROW_BASE_NOT_AGGREGATE_POINTER,
+      ND_MEMBER_ACCESS);
+  assert_direct_function_rejection(
+      "int __direct_member_not_found(void) { "
+      "struct S { int x; } value = {0}; return value.y; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND,
+      ND_MEMBER_ACCESS);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25404,6 +25418,8 @@ static void test_parse_invalid() {
       "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
   expect_parse_fail("int main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
+  expect_parse_fail(
+      "int main() { struct S { int x; } s={0}; return s.y; }");
   expect_parse_fail("int main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
   expect_parse_fail("int main(void) { int *p=0; return -p; }");
   expect_parse_fail("int main(void) { int *p=0; return __real__ p; }");
