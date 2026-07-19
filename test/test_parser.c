@@ -7073,6 +7073,37 @@ static int parse_raw_function_item(
   return parsed;
 }
 
+static void assert_direct_function_rejection(
+    const char *source,
+    psx_syntax_typed_hir_rejection_t expected_rejection,
+    int expected_node_kind) {
+  reset_test_translation_unit_state();
+  psx_parser_stream_t stream = {0};
+  begin_test_parser_stream(
+      &stream, NULL, tk_tokenize((char *)source));
+  psx_parsed_toplevel_item_t item;
+  ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_resolved_hir_build_failure_t failure;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), test_lowering_context(),
+          ag_compilation_session_options_view(test_suite_session),
+          &item.value.function_header, &typed_hir, &failure));
+  ASSERT_TRUE(typed_hir == NULL);
+  ASSERT_EQ(expected_rejection, failure.rejection);
+  ASSERT_EQ(expected_node_kind, failure.source_node_kind);
+
+  ps_dispose_function_definition_syntax(
+      &item.value.function_header);
+  ps_parser_stream_end(&stream);
+  reset_test_translation_unit_state();
+}
+
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
 static node_t *selected_generic_expression(node_t *node) {
@@ -10989,6 +11020,15 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
   reset_test_translation_unit_state();
+
+  assert_direct_function_rejection(
+      "int __direct_return_value_required(void) { return; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED,
+      ND_RETURN);
+  assert_direct_function_rejection(
+      "void __direct_return_value_forbidden(void) { return 1; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
+      ND_RETURN);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {

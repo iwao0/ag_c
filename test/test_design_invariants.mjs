@@ -4044,28 +4044,40 @@ if (!/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
     !/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT/.test(
       typedHirBuildStatusHeader,
     ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN/.test(
+      typedHirBuildStatusHeader,
+    ) ||
     !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/note_direct_integer_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT/.test(
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_function_rejection\s*\([^]*?psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(

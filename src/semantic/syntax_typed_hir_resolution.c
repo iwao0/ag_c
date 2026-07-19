@@ -585,7 +585,7 @@ static int note_direct_named_rejection(
   return 0;
 }
 
-static int note_direct_control_flow_rejection(
+static int note_direct_semantic_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
     const node_t *source) {
@@ -599,7 +599,7 @@ static int note_direct_integer_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
     const node_t *source, long long value) {
-  note_direct_control_flow_rejection(context, rejection, source);
+  note_direct_semantic_rejection(context, rejection, source);
   if (context && context->failure)
     context->failure->source_integer_value = value;
   return 0;
@@ -4359,9 +4359,19 @@ static int preflight_direct_statement_impl(
           context->semantic_context,
           context->function_return_qual_type.type_id);
       if (!return_type) return 0;
-      if (return_type->kind == PSX_TYPE_VOID)
-        return syntax->lhs == NULL;
-      if (!syntax->lhs) return 0;
+      if (return_type->kind == PSX_TYPE_VOID) {
+        if (syntax->lhs)
+          return note_direct_semantic_rejection(
+              context,
+              PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
+              syntax);
+        return 1;
+      }
+      if (!syntax->lhs)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED,
+            syntax);
       psx_qual_type_t value_type;
       if (!preflight_direct_expression(
               context, syntax->lhs, &value_type))
@@ -4455,7 +4465,7 @@ static int preflight_direct_statement_impl(
       psx_qual_type_t case_qual_type;
       long long value;
       if (!context->switch_scope)
-        return note_direct_control_flow_rejection(
+        return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
             syntax);
@@ -4474,12 +4484,12 @@ static int preflight_direct_statement_impl(
     }
     case ND_DEFAULT:
       if (!context->switch_scope)
-        return note_direct_control_flow_rejection(
+        return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
             syntax);
       if (context->switch_scope->has_default)
-        return note_direct_control_flow_rejection(
+        return note_direct_semantic_rejection(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             syntax);
       context->switch_scope->has_default = 1;
@@ -4491,14 +4501,14 @@ static int preflight_direct_statement_impl(
              preflight_direct_statement(context, syntax->rhs);
     case ND_BREAK:
       if (context->loop_depth == 0 && context->switch_depth == 0)
-        return note_direct_control_flow_rejection(
+        return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH,
             syntax);
       return 1;
     case ND_CONTINUE:
       if (context->loop_depth == 0)
-        return note_direct_control_flow_rejection(
+        return note_direct_semantic_rejection(
             context,
             PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
             syntax);
