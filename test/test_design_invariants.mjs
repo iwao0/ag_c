@@ -7681,6 +7681,21 @@ if (!lvarStruct ||
     "symbols must own only QualType identity while canonical types remain const views",
   );
 }
+if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
+      lvarStruct[1],
+    ) ||
+    /\bdeclaration_id\b/.test(gvarStruct[1]) ||
+    /\b(?:scope_seq|declaration_id)\b/.test(lvarPublicSource) ||
+    !/has_local_object_in_current_scope\s*\([^]*?psx_scope_graph_lookup_declaration_in_scope\s*\([^]*?PSX_NAMESPACE_ORDINARY/.test(
+      localRegistrySource,
+    ) ||
+    /previous->scope_seq|var->(?:scope_seq|declaration_seq|declaration_id)|gv->declaration_id/.test(
+      `${localRegistrySource}\n${globalRegistrySource}`,
+    )) {
+  throw new Error(
+    "local and global object payloads must not duplicate scope graph declaration identity",
+  );
+}
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     /\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
     !/\bpsx_qual_type_t\s+ps_lvar_decl_qual_type\s*\(/.test(

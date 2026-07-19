@@ -231,17 +231,22 @@ static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
 
+static int has_local_object_in_current_scope(
+    const psx_local_registry_t *registry, const char *name, int name_len) {
+  if (!registry || !registry->scope_graph || !name || name_len <= 0)
+    return 0;
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          registry->scope_graph,
+          psx_scope_graph_current_scope(registry->scope_graph),
+          PSX_NAMESPACE_ORDINARY, name, name_len);
+  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT;
+}
+
 static void index_add(psx_local_registry_t *registry, lvar_t *var) {
-  var->declaration_id = psx_scope_graph_declare(
+  (void)psx_scope_graph_declare(
       registry->scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_LOCAL_OBJECT, var->name, var->len, var);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(
-          registry->scope_graph, var->declaration_id);
-  if (declaration) {
-    var->scope_seq = declaration->scope_id;
-    var->declaration_seq = declaration->declaration_order;
-  }
   unsigned offset_bucket = offset_hash(var->offset);
   var->next_offhash = registry->lvars_by_offset[offset_bucket];
   registry->lvars_by_offset[offset_bucket] = var;
@@ -326,10 +331,7 @@ lvar_t *ps_local_registry_create_storage_object_in(
       registry, decl_type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
-  lvar_t *previous = ps_decl_find_lvar_in(registry, name, name_len);
-  if (previous &&
-      previous->scope_seq ==
-          ps_local_registry_current_scope_seq_in(registry)) {
+  if (has_local_object_in_current_scope(registry, name, name_len)) {
     ps_diag_duplicate_with_name_in(
         registry->diagnostic_context, diagnostic_token,
         "variable", name, name_len);
@@ -383,10 +385,7 @@ lvar_t *ps_local_registry_create_type_binding_in(
   psx_qual_type_t qual_type = resolve_local_decl_type(registry, type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
-  lvar_t *previous = ps_decl_find_lvar_in(registry, name, name_len);
-  if (previous &&
-      previous->scope_seq ==
-          ps_local_registry_current_scope_seq_in(registry)) {
+  if (has_local_object_in_current_scope(registry, name, name_len)) {
     ps_diag_duplicate_with_name_in(
         registry->diagnostic_context, diagnostic_token,
         "parameter", name, name_len);
@@ -395,16 +394,9 @@ lvar_t *ps_local_registry_create_type_binding_in(
   if (!var) return NULL;
   var->name = name;
   var->len = name_len;
-  var->declaration_id = psx_scope_graph_declare(
+  (void)psx_scope_graph_declare(
       registry->scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_LOCAL_OBJECT, name, name_len, var);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(
-          registry->scope_graph, var->declaration_id);
-  if (declaration) {
-    var->scope_seq = declaration->scope_id;
-    var->declaration_seq = declaration->declaration_order;
-  }
   var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = qual_type;
   var->is_param = 1;
@@ -556,8 +548,6 @@ psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
   return (psx_lvar_registry_view_t){
       .name = var->name,
       .name_len = var->len,
-      .scope_seq = var->scope_seq,
-      .declaration_id = var->declaration_id,
       .is_used = var->is_used,
       .is_unevaluated_used = var->is_unevaluated_used,
       .is_address_taken = var->is_address_taken,

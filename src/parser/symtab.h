@@ -9,7 +9,6 @@
 #include "gvar_public.h"
 #include "literal_public.h"
 #include "type.h"
-#include "../semantic/scope_graph.h"
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 
@@ -46,7 +45,6 @@ struct global_var_t {
   int init_symbol_len;
   int union_init_ordinal;  // union の designated 初期化 `{.m=v}` で活性メンバの序数 (既定 0=先頭)
   int init_count;
-  psx_decl_id_t declaration_id;
   // ビットフラグ群 (unsigned int コンテナ、4 バイト)。真偽フラグはここに集約する。
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int is_static : 1;      // 1: static (内部リンケージ)。.global を出さず .comm でなく .zerofill に。

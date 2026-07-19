@@ -301,15 +301,17 @@ void ps_register_global_var_in(
     psx_global_registry_t *registry, global_var_t *gv) {
   if (!registry || !gv) return;
   if (registry->scope_graph) {
-    gv->declaration_id = gv->is_compiler_generated
-        ? psx_scope_graph_declare_synthetic_at(
-              registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
-              PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
-              gv->name, gv->name_len, gv)
-        : psx_scope_graph_declare_at(
-              registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
-              PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
-              gv->name, gv->name_len, gv);
+    if (gv->is_compiler_generated) {
+      (void)psx_scope_graph_declare_synthetic_at(
+          registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+          gv->name, gv->name_len, gv);
+    } else {
+      (void)psx_scope_graph_declare_at(
+          registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+          gv->name, gv->name_len, gv);
+    }
   }
   gv->next = registry->global_vars;
   registry->global_vars = gv;
