@@ -134,26 +134,12 @@ static void refresh_cached_record_decl(
 
 typedef struct enum_const_t enum_const_t;
 struct enum_const_t {
-  enum_const_t *next_all;
-  char *name;
-  int len;
   long long value;
-  int scope_depth;
-  unsigned scope_seq;
-  unsigned declaration_seq;
-  psx_decl_id_t declaration_id;
 };
 typedef struct typedef_name_t typedef_name_t;
 struct typedef_name_t {
-  typedef_name_t *next_all;
-  char *name;
-  int len;
   psx_qual_type_t decl_qual_type;
   psx_runtime_declarator_application_t *runtime_application;
-  int scope_depth;
-  unsigned scope_seq;
-  unsigned declaration_seq;
-  psx_decl_id_t declaration_id;
 };
 
 static psx_qual_type_t typedef_record_decl_qual_type(
@@ -205,8 +191,6 @@ struct psx_semantic_context_t {
   tag_type_t *tags_all;
   tag_member_t *aggregate_members_all;
   tag_member_layout_draft_t *aggregate_member_layout_drafts;
-  enum_const_t *enum_entries_all;
-  typedef_name_t *typedef_entries_all;
   psx_function_symbol_t *function_symbols_all;
   int scope_depth;
   int aggregate_member_decl_order;
@@ -720,23 +704,6 @@ void ps_ctx_reset_function_scope_in(
       continue;
     }
     all_tag = &(*all_tag)->next_all;
-  }
-  typedef_name_t **all_typedef = &context->typedef_entries_all;
-  while (*all_typedef) {
-    if ((*all_typedef)->scope_depth > 0 ||
-        (*all_typedef)->scope_seq != 0) {
-      *all_typedef = (*all_typedef)->next_all;
-      continue;
-    }
-    all_typedef = &(*all_typedef)->next_all;
-  }
-  enum_const_t **all_enum = &context->enum_entries_all;
-  while (*all_enum) {
-    if ((*all_enum)->scope_depth > 0 || (*all_enum)->scope_seq != 0) {
-      *all_enum = (*all_enum)->next_all;
-      continue;
-    }
-    all_enum = &(*all_enum)->next_all;
   }
   tag_member_t **all_member = &context->aggregate_members_all;
   while (*all_member) {
@@ -1471,20 +1438,11 @@ int ps_ctx_register_enum_const_in_contexts(
   }
   enum_const_t *e = ctx_calloc_in(context, 1, sizeof(enum_const_t));
   if (!e) return 0;
-  e->name = name;
-  e->len = len;
   e->value = value;
-  e->scope_depth = context->scope_depth;
-  e->declaration_id = psx_scope_graph_declare(
+  psx_decl_id_t declaration_id = psx_scope_graph_declare(
       scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_ENUM_CONSTANT, name, len, e);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(scope_graph, e->declaration_id);
-  if (!declaration) return 0;
-  e->scope_seq = declaration->scope_id;
-  e->declaration_seq = declaration->declaration_order;
-  e->next_all = context->enum_entries_all;
-  context->enum_entries_all = e;
+  if (declaration_id == PSX_DECL_ID_INVALID) return 0;
   if (out_created) *out_created = 1;
   return 1;
 }
@@ -1675,20 +1633,11 @@ int ps_ctx_register_typedef_name_in_contexts(
   typedef_name_t *t = ctx_calloc_in(
       context, 1, sizeof(typedef_name_t));
   if (!t) return 0;
-  t->name = name;
-  t->len = len;
-  t->scope_depth = context->scope_depth;
   if (!initialize_typedef_record(context, t, info, identity)) return 0;
-  t->declaration_id = psx_scope_graph_declare(
+  psx_decl_id_t declaration_id = psx_scope_graph_declare(
       scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_TYPEDEF, name, len, t);
-  declaration = psx_scope_graph_declaration(
-      scope_graph, t->declaration_id);
-  if (!declaration) return 0;
-  t->scope_seq = declaration->scope_id;
-  t->declaration_seq = declaration->declaration_order;
-  t->next_all = context->typedef_entries_all;
-  context->typedef_entries_all = t;
+  if (declaration_id == PSX_DECL_ID_INVALID) return 0;
   if (out_created) *out_created = 1;
   return 1;
 }

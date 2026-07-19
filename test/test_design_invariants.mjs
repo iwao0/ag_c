@@ -348,6 +348,27 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     "CompilationSession must own one ScopeId/DeclId graph with all C namespaces",
   );
 }
+const enumConstantPayload =
+  scopeGraphSemanticContextSource.match(
+    /struct\s+enum_const_t\s*\{([^}]*)\};/,
+  )?.[1] ?? "";
+const typedefPayload =
+  scopeGraphSemanticContextSource.match(
+    /struct\s+typedef_name_t\s*\{([^}]*)\};/,
+  )?.[1] ?? "";
+if (!enumConstantPayload || !typedefPayload ||
+    !/\blong\s+long\s+value\s*;/.test(enumConstantPayload) ||
+    !/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(typedefPayload) ||
+    /\b(?:name|len|declaration_id|next_all|scope_depth|scope_seq|declaration_seq)\b/.test(
+      `${enumConstantPayload}\n${typedefPayload}`,
+    ) ||
+    /\b(?:enum_entries_all|typedef_entries_all)\b/.test(
+      scopeGraphSemanticContextSource,
+    )) {
+  throw new Error(
+    "typedef and enum payloads must not duplicate scope graph identity or visibility state",
+  );
+}
 const semanticIntegerConstructionSource = (
   await Promise.all(
     allSourceFiles
