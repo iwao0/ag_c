@@ -119,12 +119,8 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
 
 static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
   if (!var) return NULL;
-  if (var->decl_type_table &&
-      var->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    return psx_semantic_type_table_lookup_qual_type(
-        var->decl_type_table, var->decl_qual_type);
-  }
-  return var->decl_type;
+  return psx_semantic_type_table_lookup_qual_type(
+      var->decl_type_table, var->decl_qual_type);
 }
 
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {

@@ -2282,11 +2282,7 @@ static void set_test_storage_fixture_type(
   var->decl_qual_type = intern_test_qual_type(type);
   var->decl_type_table = ps_ctx_semantic_type_table_in(
       test_semantic_context());
-  var->decl_type = var->decl_qual_type.type_id != PSX_TYPE_ID_INVALID
-      ? ps_ctx_type_by_id_in(
-            test_semantic_context(), var->decl_qual_type.type_id)
-      : ps_type_clone_persistent(type);
-  ASSERT_TRUE(var->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(var) != NULL);
 }
 
 static void find_long_double_float_literal(float_lit_t *lit, void *user) {
@@ -7293,7 +7289,7 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_TRUE(m != NULL);
   ASSERT_TRUE(k != NULL);
   ASSERT_TRUE(t != NULL);
-  ASSERT_TRUE(t->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(t) != NULL);
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(t));
   ASSERT_EQ(m->offset,
             ps_lvar_vla_param_inner_dim_src_offset(t, 0));
@@ -11656,7 +11652,6 @@ static void test_local_declaration_storage_plan_boundary() {
                   qualified_local_identity.type_id));
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_type_qualifiers(ps_lvar_get_decl_type(qualified_local)));
-  qualified_local->decl_type = NULL;
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_type_qualifiers(ps_lvar_get_decl_type(qualified_local)));
 
@@ -16968,10 +16963,10 @@ static void test_expr_member_access() {
   node_function_definition_t *fn = as_function_definition(parsed_code[0]);
   lvar_t *anonymous_static = find_func_lvar(fn, "s");
   ASSERT_TRUE(anonymous_static != NULL);
-  ASSERT_TRUE(anonymous_static->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(anonymous_static) != NULL);
   const psx_record_decl_t *anonymous_record = ps_ctx_get_record_decl_in(
       test_semantic_context(),
-      ps_type_record_id(anonymous_static->decl_type));
+      ps_type_record_id(ps_lvar_get_decl_type(anonymous_static)));
   ASSERT_TRUE(anonymous_record != NULL);
   ASSERT_TRUE(anonymous_record->member_count == 2);
   ASSERT_TRUE(anonymous_record->members[0].name != NULL);
@@ -17716,30 +17711,30 @@ static void test_type_metadata_bridge() {
   lvar_t *x_lvar = find_func_lvar(fn, "x");
   ASSERT_TRUE(x_lvar != NULL);
   ASSERT_TRUE(ps_node_lvar_symbol(assign->lhs) == x_lvar);
-  ASSERT_TRUE(x_lvar->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, x_lvar->decl_type->kind);
-  ASSERT_EQ(4, ps_type_sizeof(x_lvar->decl_type));
-  ASSERT_TRUE(ps_type_is_unsigned(x_lvar->decl_type));
+  const psx_type_t *x_decl_type = ps_lvar_get_decl_type(x_lvar);
+  ASSERT_TRUE(x_decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, x_decl_type->kind);
+  ASSERT_EQ(4, ps_type_sizeof(x_decl_type));
+  ASSERT_TRUE(ps_type_is_unsigned(x_decl_type));
   node_t *x_lvar_ref = psx_node_new_lvar_identifier_ref_for(x_lvar);
   ASSERT_TRUE(ps_node_is_unsigned_type(x_lvar_ref));
   node_t *x_lvar_direct_ref = psx_node_new_lvar_for(x_lvar);
   ASSERT_TRUE(ps_node_is_unsigned_type(x_lvar_direct_ref));
   const psx_type_t *x_decl_a = ps_lvar_get_decl_type(x_lvar);
   ASSERT_TRUE(x_decl_a != NULL);
-  x_lvar->decl_type = NULL;
   ASSERT_TRUE(ps_lvar_get_decl_type(x_lvar) == x_decl_a);
-  x_lvar->decl_type = x_decl_a;
 
   parsed_code = parse_program_input("int __tm_local_bool_ref(void) { _Bool b=1; return b; }");
   fn = as_function_definition(parsed_code[0]);
   lvar_t *bool_ref_lvar = find_func_lvar(fn, "b");
   ASSERT_TRUE(bool_ref_lvar != NULL);
-  ASSERT_TRUE(ps_lvar_get_decl_type(bool_ref_lvar) != NULL);
-  ASSERT_EQ(PSX_TYPE_BOOL, bool_ref_lvar->decl_type->kind);
+  const psx_type_t *bool_ref_type = ps_lvar_get_decl_type(bool_ref_lvar);
+  ASSERT_TRUE(bool_ref_type != NULL);
+  ASSERT_EQ(PSX_TYPE_BOOL, bool_ref_type->kind);
   node_t *bool_ref_node = psx_node_new_lvar_identifier_ref_for(bool_ref_lvar);
-  ASSERT_TRUE(ps_node_get_type(bool_ref_node) == bool_ref_lvar->decl_type);
+  ASSERT_TRUE(ps_node_get_type(bool_ref_node) == bool_ref_type);
   node_t *bool_direct_ref = psx_node_new_lvar_for(bool_ref_lvar);
-  ASSERT_TRUE(ps_node_get_type(bool_direct_ref) == bool_ref_lvar->decl_type);
+  ASSERT_TRUE(ps_node_get_type(bool_direct_ref) == bool_ref_type);
 
   parsed_code = parse_program_input("int __tm_local_atomic_ref(void) { _Atomic int a=1; return a; }");
   fn = as_function_definition(parsed_code[0]);
@@ -17749,7 +17744,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE((ps_lvar_decl_qual_type(atomic_ref_lvar).qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(atomic_ref_lvar->decl_type));
+            ps_type_qualifiers(ps_ctx_type_by_id_in(
+                test_semantic_context(),
+                ps_lvar_decl_type_id(atomic_ref_lvar))));
   node_t *atomic_ref_node = psx_node_new_lvar_for(atomic_ref_lvar);
   ASSERT_TRUE(ps_node_get_type(atomic_ref_node) ==
               ps_lvar_get_decl_type(atomic_ref_lvar));
@@ -17765,15 +17762,16 @@ static void test_type_metadata_bridge() {
   lvar_t *param_ll = find_func_lvar(fn, "ll");
   lvar_t *param_ch = find_func_lvar(fn, "ch");
   lvar_t *param_ai = find_func_lvar(fn, "ai");
-  ASSERT_TRUE(param_ll != NULL && param_ll->decl_type != NULL);
-  ASSERT_TRUE(param_ch != NULL && param_ch->decl_type != NULL);
-  ASSERT_TRUE(param_ai != NULL && param_ai->decl_type != NULL);
+  ASSERT_TRUE(param_ll != NULL && ps_lvar_get_decl_type(param_ll) != NULL);
+  ASSERT_TRUE(param_ch != NULL && ps_lvar_get_decl_type(param_ch) != NULL);
+  ASSERT_TRUE(param_ai != NULL && ps_lvar_get_decl_type(param_ai) != NULL);
   ASSERT_TRUE((ps_lvar_decl_qual_type(param_ll).qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG, param_ll->decl_type->integer_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
+            ps_lvar_get_decl_type(param_ll)->integer_kind);
   ASSERT_TRUE((ps_lvar_decl_qual_type(param_ch).qualifiers &
                PSX_TYPE_QUALIFIER_VOLATILE) != 0);
-  ASSERT_TRUE(param_ch->decl_type->is_plain_char);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ch)->is_plain_char);
   ASSERT_TRUE((ps_lvar_decl_qual_type(param_ai).qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
 
@@ -17842,17 +17840,19 @@ static void test_type_metadata_bridge() {
       &tmp_lvar,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_lvar_value_is_pointer_like(&tmp_lvar));
-  ASSERT_TRUE(tmp_lvar.decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tmp_lvar.decl_type->kind);
-  const psx_type_t *tmp_lvar_ptr = tmp_lvar.decl_type;
+  const psx_type_t *tmp_lvar_ptr = ps_lvar_get_decl_type(&tmp_lvar);
   ASSERT_TRUE(tmp_lvar_ptr != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_lvar_ptr->kind);
   ASSERT_TRUE(tmp_lvar_ptr != tmp_lvar_int);
-  ASSERT_TRUE(tmp_lvar.decl_type == tmp_lvar_ptr);
+  ASSERT_TRUE(ps_lvar_get_decl_type(&tmp_lvar) == tmp_lvar_ptr);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_lvar_ptr->kind);
   ASSERT_EQ(8, ps_lvar_decl_sizeof(&tmp_lvar, 99));
   ASSERT_EQ(8, ps_lvar_storage_size(&tmp_lvar, 99));
 
   const char nested_tag_ptr_array_name[] = "__tm_nested_tag_ptr_array";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)nested_tag_ptr_array_name,
+      (int)sizeof(nested_tag_ptr_array_name) - 1, 0, 8, 8);
   lvar_t tmp_lvar_nested_tag_ptr_array = {0};
   tmp_lvar_nested_tag_ptr_array.size = 16;
   psx_type_t *tmp_nested_tag = ps_type_new_tag(
@@ -17865,6 +17865,8 @@ static void test_type_metadata_bridge() {
   ps_type_add_qualifiers(tmp_nested_ptr, PSX_TYPE_QUALIFIER_CONST);
   psx_type_t *tmp_nested_array = ps_type_new_array(
       tmp_nested_ptr, 2, 16, 0);
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), tmp_nested_array);
   set_test_storage_fixture_type(&tmp_lvar_nested_tag_ptr_array,
                               tmp_nested_array);
   const psx_type_t *tmp_lvar_nested_tag_ptr_array_type =
@@ -17886,55 +17888,62 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_STRUCT,
             tmp_lvar_nested_tag_ptr_array_elem->base->base->kind);
 
-  lvar_t tmp_lvar_decl_type_wins = {0};
-  tmp_lvar_decl_type_wins.size = 4;
+  lvar_t tmp_lvar_canonical_pointer = {0};
+  tmp_lvar_canonical_pointer.size = 4;
   set_test_storage_fixture_type(
-      &tmp_lvar_decl_type_wins,
+      &tmp_lvar_canonical_pointer,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *tmp_lvar_decl_type_ref =
-      psx_node_new_lvar_object_ref_for(&tmp_lvar_decl_type_wins);
+      psx_node_new_lvar_object_ref_for(&tmp_lvar_canonical_pointer);
   ASSERT_EQ(8, ps_node_type_size(tmp_lvar_decl_type_ref));
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_decl_type_ref) ==
-              tmp_lvar_decl_type_wins.decl_type);
+              ps_lvar_get_decl_type(&tmp_lvar_canonical_pointer));
   ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_lvar_decl_type_ref));
   ASSERT_EQ(4, ps_node_deref_size(tmp_lvar_decl_type_ref));
 
-  lvar_t tmp_lvar_scalar_decl_type_wins = {0};
-  psx_type_t *tmp_lvar_scalar_canonical =
+  lvar_t tmp_lvar_canonical_scalar = {0};
+  const psx_type_t *tmp_lvar_scalar_canonical =
       ps_type_new_integer(TK_INT, 4, 0);
-  tmp_lvar_scalar_decl_type_wins.size = 8;
-  tmp_lvar_scalar_decl_type_wins.decl_type = tmp_lvar_scalar_canonical;
-  ASSERT_TRUE(ps_lvar_get_decl_type(&tmp_lvar_scalar_decl_type_wins) ==
+  tmp_lvar_canonical_scalar.size = 8;
+  set_test_storage_fixture_type(
+      &tmp_lvar_canonical_scalar,
+      tmp_lvar_scalar_canonical);
+  tmp_lvar_scalar_canonical = ps_lvar_get_decl_type(
+      &tmp_lvar_canonical_scalar);
+  ASSERT_TRUE(ps_lvar_get_decl_type(&tmp_lvar_canonical_scalar) ==
               tmp_lvar_scalar_canonical);
-  ASSERT_TRUE(!ps_lvar_is_array(&tmp_lvar_scalar_decl_type_wins));
-  ASSERT_TRUE(!ps_lvar_is_tag_aggregate(&tmp_lvar_scalar_decl_type_wins));
+  ASSERT_TRUE(!ps_lvar_is_array(&tmp_lvar_canonical_scalar));
+  ASSERT_TRUE(!ps_lvar_is_tag_aggregate(&tmp_lvar_canonical_scalar));
   ASSERT_TRUE(!ps_lvar_value_is_pointer_like(
-      &tmp_lvar_scalar_decl_type_wins));
+      &tmp_lvar_canonical_scalar));
   node_t *tmp_lvar_scalar_decl_type_ref =
-      psx_node_new_lvar_for(&tmp_lvar_scalar_decl_type_wins);
+      psx_node_new_lvar_for(&tmp_lvar_canonical_scalar);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_scalar_decl_type_ref) ==
               tmp_lvar_scalar_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_scalar_decl_type_ref));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(tmp_lvar_scalar_decl_type_ref));
   ASSERT_EQ(0, ps_node_deref_size(tmp_lvar_scalar_decl_type_ref));
   node_t *tmp_lvar_scalar_funcptr_ref =
-      psx_node_new_lvar_for(&tmp_lvar_scalar_decl_type_wins);
+      psx_node_new_lvar_for(&tmp_lvar_canonical_scalar);
   ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(tmp_lvar_scalar_funcptr_ref)) == NULL);
 
-  lvar_t tmp_lvar_ptr_array_cache_decl_type_wins = {0};
-  psx_type_t *tmp_lvar_ptr_array_cache_canonical =
+  lvar_t tmp_lvar_canonical_scalar_view = {0};
+  const psx_type_t *tmp_lvar_ptr_array_cache_canonical =
       ps_type_new_integer(TK_INT, 4, 0);
-  tmp_lvar_ptr_array_cache_decl_type_wins.size = 8;
-  tmp_lvar_ptr_array_cache_decl_type_wins.decl_type =
-      tmp_lvar_ptr_array_cache_canonical;
+  tmp_lvar_canonical_scalar_view.size = 8;
+  set_test_storage_fixture_type(
+      &tmp_lvar_canonical_scalar_view,
+      tmp_lvar_ptr_array_cache_canonical);
+  tmp_lvar_ptr_array_cache_canonical = ps_lvar_get_decl_type(
+      &tmp_lvar_canonical_scalar_view);
   ASSERT_TRUE(ps_lvar_get_decl_type(
-                  &tmp_lvar_ptr_array_cache_decl_type_wins) ==
+                  &tmp_lvar_canonical_scalar_view) ==
               tmp_lvar_ptr_array_cache_canonical);
   ASSERT_TRUE(!ps_lvar_value_is_pointer_like(
-      &tmp_lvar_ptr_array_cache_decl_type_wins));
+      &tmp_lvar_canonical_scalar_view));
   node_t *tmp_lvar_ptr_array_cache_ref =
-      psx_node_new_lvar_for(&tmp_lvar_ptr_array_cache_decl_type_wins);
+      psx_node_new_lvar_for(&tmp_lvar_canonical_scalar_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_array_cache_ref) ==
               tmp_lvar_ptr_array_cache_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_ptr_array_cache_ref));
@@ -17943,7 +17952,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
                    tmp_lvar_ptr_array_cache_ref));
   node_t *tmp_lvar_ptr_array_cache_expr_ref =
-      ps_node_new_lvar_expr_ref_for(&tmp_lvar_ptr_array_cache_decl_type_wins);
+      ps_node_new_lvar_expr_ref_for(&tmp_lvar_canonical_scalar_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_array_cache_expr_ref) ==
               tmp_lvar_ptr_array_cache_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_ptr_array_cache_expr_ref));
@@ -17952,7 +17961,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
                    tmp_lvar_ptr_array_cache_expr_ref));
   node_t *tmp_lvar_ptr_array_cache_param_ref =
-      ps_node_new_param_lvar_for(&tmp_lvar_ptr_array_cache_decl_type_wins);
+      ps_node_new_param_lvar_for(&tmp_lvar_canonical_scalar_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_array_cache_param_ref) ==
               tmp_lvar_ptr_array_cache_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_ptr_array_cache_param_ref));
@@ -17961,14 +17970,17 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
                    tmp_lvar_ptr_array_cache_param_ref));
 
-  lvar_t tmp_lvar_ptr_decl_type_wins = {0};
-  tmp_lvar_ptr_decl_type_wins.size = 8;
-  tmp_lvar_ptr_decl_type_wins.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  lvar_t tmp_lvar_canonical_pointer_view = {0};
+  tmp_lvar_canonical_pointer_view.size = 8;
+  set_test_storage_fixture_type(
+      &tmp_lvar_canonical_pointer_view,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
+  const psx_type_t *tmp_lvar_ptr_decl_type =
+      ps_lvar_get_decl_type(&tmp_lvar_canonical_pointer_view);
   node_t *tmp_lvar_ptr_decl_type_ref =
-      psx_node_new_lvar_identifier_ref_for(&tmp_lvar_ptr_decl_type_wins);
+      psx_node_new_lvar_identifier_ref_for(&tmp_lvar_canonical_pointer_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_decl_type_ref) ==
-              tmp_lvar_ptr_decl_type_wins.decl_type);
+              tmp_lvar_ptr_decl_type);
   ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_lvar_ptr_decl_type_ref));
   ASSERT_EQ(4, ps_node_deref_size(tmp_lvar_ptr_decl_type_ref));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
@@ -17980,7 +17992,7 @@ static void test_type_metadata_bridge() {
   node_t *tmp_lvar_ptr_decl_type_deref =
       ps_node_new_unary_deref_for(tmp_lvar_ptr_decl_type_ref);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_decl_type_deref) ==
-              tmp_lvar_ptr_decl_type_wins.decl_type->base);
+              tmp_lvar_ptr_decl_type->base);
   ASSERT_TRUE(!ps_node_value_is_pointer_like(tmp_lvar_ptr_decl_type_deref));
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_ptr_decl_type_deref));
   ASSERT_EQ(0, ps_node_deref_size(tmp_lvar_ptr_decl_type_deref));
@@ -17989,9 +18001,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
                    tmp_lvar_ptr_decl_type_deref, 0));
   node_t *tmp_lvar_ptr_decl_type_addr =
-      ps_node_new_lvar_array_addr_for(&tmp_lvar_ptr_decl_type_wins);
+      ps_node_new_lvar_array_addr_for(&tmp_lvar_canonical_pointer_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_decl_type_addr) ==
-              tmp_lvar_ptr_decl_type_wins.decl_type);
+              tmp_lvar_ptr_decl_type);
   ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_lvar_ptr_decl_type_addr));
   ASSERT_EQ(4, ps_node_deref_size(tmp_lvar_ptr_decl_type_addr));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
@@ -18000,8 +18012,10 @@ static void test_type_metadata_bridge() {
                    tmp_lvar_ptr_decl_type_addr, 0));
 
   lvar_t explicit_array_addr_var = {0};
-  explicit_array_addr_var.decl_type = ps_type_new_array(
-      ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
+  set_test_storage_fixture_type(
+      &explicit_array_addr_var,
+      ps_type_new_array(
+          ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0));
   node_t *decayed_array_addr =
       ps_node_new_lvar_array_addr_for(&explicit_array_addr_var);
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(decayed_array_addr)->kind);
@@ -18014,45 +18028,32 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(12, ps_node_deref_size(explicit_array_addr));
   ASSERT_EQ(0, ps_node_compound_literal_array_size(explicit_array_addr));
 
-  lvar_t tmp_lvar_flat_ptr_mismatch_decl_type = {0};
-  tmp_lvar_flat_ptr_mismatch_decl_type.size = 8;
-  tmp_lvar_flat_ptr_mismatch_decl_type.decl_type =
+  const psx_type_t *tmp_malformed_pointer_type =
       ps_type_new_pointer(NULL);
   ASSERT_EQ(0, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                   tmp_lvar_flat_ptr_mismatch_decl_type.decl_type));
+                   tmp_malformed_pointer_type));
   psx_type_t *tmp_structural_ptrarr_type = ps_type_new_pointer(
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0));
   ASSERT_EQ(16, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
                     tmp_structural_ptrarr_type));
-  node_t *tmp_lvar_flat_ptr_mismatch_ref =
-      psx_node_new_lvar_identifier_ref_for(
-          &tmp_lvar_flat_ptr_mismatch_decl_type);
-  ASSERT_TRUE(ps_node_get_type(tmp_lvar_flat_ptr_mismatch_ref) ==
-              tmp_lvar_flat_ptr_mismatch_decl_type.decl_type);
-  ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_lvar_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, ps_node_deref_size(tmp_lvar_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_pointer_qual_levels(tmp_lvar_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_base_deref_size(tmp_lvar_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
-                   tmp_lvar_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
-                   tmp_lvar_flat_ptr_mismatch_ref, 0));
 
-  lvar_t tmp_static_local_fallback_decl_type_wins = {0};
+  lvar_t tmp_static_local_canonical_type = {0};
   char *tmp_static_missing_backing_name = "__tm_missing_static_backing";
-  tmp_static_local_fallback_decl_type_wins.is_static_local = 1;
-  tmp_static_local_fallback_decl_type_wins.static_global_name =
+  tmp_static_local_canonical_type.is_static_local = 1;
+  tmp_static_local_canonical_type.static_global_name =
       tmp_static_missing_backing_name;
-  tmp_static_local_fallback_decl_type_wins.static_global_name_len =
+  tmp_static_local_canonical_type.static_global_name_len =
       (int)strlen(tmp_static_missing_backing_name);
-  tmp_static_local_fallback_decl_type_wins.size = 8;
-  tmp_static_local_fallback_decl_type_wins.decl_type =
-      ps_type_new_integer(TK_INT, 4, 0);
+  tmp_static_local_canonical_type.size = 8;
+  set_test_storage_fixture_type(
+      &tmp_static_local_canonical_type,
+      ps_type_new_integer(TK_INT, 4, 0));
   node_t *tmp_static_local_fallback_ref =
       psx_node_new_static_local_gvar_for(
-          &tmp_static_local_fallback_decl_type_wins);
+          &tmp_static_local_canonical_type);
   ASSERT_TRUE(ps_node_get_type(tmp_static_local_fallback_ref) ==
-              tmp_static_local_fallback_decl_type_wins.decl_type);
+              ps_lvar_get_decl_type(
+                  &tmp_static_local_canonical_type));
   ASSERT_EQ(4, ps_node_type_size(tmp_static_local_fallback_ref));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(tmp_static_local_fallback_ref));
   ASSERT_EQ(0, ps_node_deref_size(tmp_static_local_fallback_ref));
@@ -18103,9 +18104,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, sig_lvar_function->param_types[1]->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
             sig_lvar_function->param_types[1]->base->kind);
-  sig_lvar->decl_type = NULL;
   ASSERT_TRUE(ps_lvar_get_decl_type(sig_lvar) == sig_lvar_type);
-  sig_lvar->decl_type = sig_lvar_type;
 
   reset_test_locals();
   char funcptr_sync_lvar_name[] = "__tm_funcptr_sync_lvar";
@@ -18733,9 +18732,11 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_ptr_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(vla_ptr_lvar != NULL);
-  ASSERT_TRUE(vla_ptr_lvar->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, vla_ptr_lvar->decl_type->kind);
-  ASSERT_TRUE(ps_type_contains_vla_array(vla_ptr_lvar->decl_type));
+  ASSERT_TRUE(ps_lvar_get_decl_type(vla_ptr_lvar) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_lvar_get_decl_type(vla_ptr_lvar)->kind);
+  ASSERT_TRUE(ps_type_contains_vla_array(
+      ps_lvar_get_decl_type(vla_ptr_lvar)));
   ASSERT_EQ(8, ps_lvar_decl_sizeof(vla_ptr_lvar, 99));
   ASSERT_EQ(16, ps_lvar_storage_size(vla_ptr_lvar, 99));
   ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(vla_ptr_lvar) > 0);
@@ -18805,7 +18806,8 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_fp_leaf_lvar = find_func_lvar(fn, "a");
   ASSERT_TRUE(vla_fp_leaf_lvar != NULL);
-  const psx_type_t *vla_fp_leaf = vla_fp_leaf_lvar->decl_type;
+  const psx_type_t *vla_fp_leaf =
+      ps_lvar_get_decl_type(vla_fp_leaf_lvar);
   while (vla_fp_leaf && vla_fp_leaf->kind == PSX_TYPE_ARRAY)
     vla_fp_leaf = vla_fp_leaf->base;
   ASSERT_TRUE(vla_fp_leaf != NULL);
@@ -18819,12 +18821,14 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr_p != NULL);
-  ASSERT_TRUE(ptrarr_p->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ptrarr_p->decl_type->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(ptrarr_p) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_lvar_get_decl_type(ptrarr_p)->kind);
   ASSERT_EQ(0, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                   ptrarr_p->decl_type));
+                   ps_lvar_get_decl_type(ptrarr_p)));
   ASSERT_EQ(4, ps_ctx_type_sizeof_in(
-                   test_semantic_context(), ptrarr_p->decl_type->base));
+                   test_semantic_context(),
+                   ps_lvar_get_decl_type(ptrarr_p)->base));
   node_t *ptrarr_p_node = psx_node_new_lvar_identifier_ref_for(ptrarr_p);
   ASSERT_TRUE(ps_node_value_is_pointer_like(ptrarr_p_node));
   ASSERT_EQ(0, ps_node_deref_size(ptrarr_p_node));
@@ -18838,7 +18842,8 @@ static void test_type_metadata_bridge() {
       &tmp_fp_ptr_lvar,
       ps_type_new_pointer(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
-  const psx_type_t *tmp_fp_ptr_double = tmp_fp_ptr_lvar.decl_type;
+  const psx_type_t *tmp_fp_ptr_double =
+      ps_lvar_get_decl_type(&tmp_fp_ptr_lvar);
   ASSERT_TRUE(tmp_fp_ptr_double != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_fp_ptr_double->kind);
   ASSERT_TRUE(tmp_fp_ptr_double->base != NULL);
@@ -18860,7 +18865,8 @@ static void test_type_metadata_bridge() {
   psx_type_t *canonical_complex = ps_type_new(PSX_TYPE_COMPLEX);
   canonical_complex->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   set_test_storage_fixture_type(&tmp_complex_lvar, canonical_complex);
-  const psx_type_t *tmp_complex_type = tmp_complex_lvar.decl_type;
+  const psx_type_t *tmp_complex_type =
+      ps_lvar_get_decl_type(&tmp_complex_lvar);
   ASSERT_TRUE(tmp_complex_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, tmp_complex_type->kind);
   node_t *tmp_complex_node = psx_node_new_lvar_for(&tmp_complex_lvar);
@@ -19287,11 +19293,11 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr2d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr2d_p != NULL);
-  ASSERT_TRUE(ptrarr2d_p->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(ptrarr2d_p) != NULL);
   ASSERT_EQ(12, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    ptrarr2d_p->decl_type));
+                    ps_lvar_get_decl_type(ptrarr2d_p)));
   ASSERT_EQ(4, ps_type_pointer_view_structural_base_deref_size(
-                   ptrarr2d_p->decl_type));
+                   ps_lvar_get_decl_type(ptrarr2d_p)));
   node_t *ptrarr2d_p_node = psx_node_new_lvar_identifier_ref_for(ptrarr2d_p);
   ASSERT_EQ(12, ps_node_deref_size(ptrarr2d_p_node));
   ASSERT_EQ(12, canonical_node_ptr_array_pointee_bytes(ptrarr2d_p_node));
@@ -19317,14 +19323,18 @@ static void test_type_metadata_bridge() {
   lvar_t *typedef_ptrarr = find_func_lvar(fn, "b");
   ASSERT_TRUE(typedef_row_ptr != NULL);
   ASSERT_TRUE(typedef_ptrarr != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, typedef_row_ptr->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_row_ptr->decl_type->base->kind);
-  ASSERT_EQ(3, typedef_row_ptr->decl_type->base->array_len);
-  ASSERT_EQ(12, ps_type_deref_size(typedef_row_ptr->decl_type));
-  ASSERT_EQ(PSX_TYPE_POINTER, typedef_ptrarr->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_ptrarr->decl_type->base->kind);
-  ASSERT_EQ(3, typedef_ptrarr->decl_type->base->array_len);
-  ASSERT_EQ(12, ps_type_deref_size(typedef_ptrarr->decl_type));
+  const psx_type_t *typedef_row_ptr_type =
+      ps_lvar_get_decl_type(typedef_row_ptr);
+  const psx_type_t *typedef_ptrarr_type =
+      ps_lvar_get_decl_type(typedef_ptrarr);
+  ASSERT_EQ(PSX_TYPE_POINTER, typedef_row_ptr_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_row_ptr_type->base->kind);
+  ASSERT_EQ(3, typedef_row_ptr_type->base->array_len);
+  ASSERT_EQ(12, ps_type_deref_size(typedef_row_ptr_type));
+  ASSERT_EQ(PSX_TYPE_POINTER, typedef_ptrarr_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_ptrarr_type->base->kind);
+  ASSERT_EQ(3, typedef_ptrarr_type->base->array_len);
+  ASSERT_EQ(12, ps_type_deref_size(typedef_ptrarr_type));
 
   parsed_code = parse_program_input(
       "typedef int *TMDArrayPtr[3]; typedef int (*TMDPtrArray)[3]; "
@@ -19503,21 +19513,23 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr3d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr3d_p != NULL);
-  ASSERT_TRUE(ptrarr3d_p->decl_type != NULL);
+  const psx_type_t *ptrarr3d_type =
+      ps_lvar_get_decl_type(ptrarr3d_p);
+  ASSERT_TRUE(ptrarr3d_type != NULL);
   ASSERT_EQ(96, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    ptrarr3d_p->decl_type));
-  ASSERT_TRUE(ptrarr3d_p->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_p->decl_type->base->kind);
-  ASSERT_EQ(2, ptrarr3d_p->decl_type->base->array_len);
-  ASSERT_TRUE(ptrarr3d_p->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_p->decl_type->base->base->kind);
-  ASSERT_EQ(3, ptrarr3d_p->decl_type->base->base->array_len);
-  ASSERT_TRUE(ptrarr3d_p->decl_type->base->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_p->decl_type->base->base->base->kind);
-  ASSERT_EQ(4, ptrarr3d_p->decl_type->base->base->base->array_len);
-  ASSERT_TRUE(ptrarr3d_p->decl_type->base->base->base->base != NULL);
+                    ptrarr3d_type));
+  ASSERT_TRUE(ptrarr3d_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_type->base->kind);
+  ASSERT_EQ(2, ptrarr3d_type->base->array_len);
+  ASSERT_TRUE(ptrarr3d_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_type->base->base->kind);
+  ASSERT_EQ(3, ptrarr3d_type->base->base->array_len);
+  ASSERT_TRUE(ptrarr3d_type->base->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ptrarr3d_type->base->base->base->kind);
+  ASSERT_EQ(4, ptrarr3d_type->base->base->base->array_len);
+  ASSERT_TRUE(ptrarr3d_type->base->base->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            ptrarr3d_p->decl_type->base->base->base->base->kind);
+            ptrarr3d_type->base->base->base->base->kind);
   node_t *ptrarr3d_p_node = psx_node_new_lvar_identifier_ref_for(ptrarr3d_p);
   ASSERT_EQ(96, ps_node_deref_size(ptrarr3d_p_node));
   int ptrarr3d_inner =
@@ -19604,8 +19616,9 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *array3d_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(array3d_a != NULL);
-  ASSERT_TRUE(array3d_a->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, array3d_a->decl_type->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(array3d_a) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_lvar_get_decl_type(array3d_a)->kind);
   node_t *array3d_addr = ps_node_new_lvar_array_addr_for(array3d_a);
   ASSERT_TRUE(ps_node_value_is_pointer_like(array3d_addr));
   ASSERT_EQ(24, ps_node_deref_size(array3d_addr));
@@ -19705,7 +19718,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(param_decl_i != NULL);
   node_t *param_decl_u_node = ps_node_new_param_lvar_for(
       param_decl_u);
-  ASSERT_TRUE(ps_node_get_type(param_decl_u_node) == param_decl_u->decl_type);
+  ASSERT_TRUE(ps_node_get_type(param_decl_u_node) ==
+              ps_lvar_get_decl_type(param_decl_u));
   ASSERT_EQ(1, ps_node_type_size(param_decl_u_node));
   ASSERT_TRUE(ps_node_is_unsigned_type(param_decl_u_node));
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(param_decl_u_node));
@@ -19713,12 +19727,14 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(param_decl_u_node)->kind != PSX_TYPE_COMPLEX);
   node_t *param_decl_d_node = ps_node_new_param_lvar_for(
       param_decl_d);
-  ASSERT_TRUE(ps_node_get_type(param_decl_d_node) == param_decl_d->decl_type);
+  ASSERT_TRUE(ps_node_get_type(param_decl_d_node) ==
+              ps_lvar_get_decl_type(param_decl_d));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(param_decl_d_node));
   ASSERT_EQ(8, ps_node_type_size(param_decl_d_node));
   node_t *param_decl_i_node = ps_node_new_param_lvar_for(
       param_decl_i);
-  ASSERT_TRUE(ps_node_get_type(param_decl_i_node) == param_decl_i->decl_type);
+  ASSERT_TRUE(ps_node_get_type(param_decl_i_node) ==
+              ps_lvar_get_decl_type(param_decl_i));
   ASSERT_EQ(4, ps_node_type_size(param_decl_i_node));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(param_decl_i_node));
   ASSERT_TRUE(ps_node_get_type(param_decl_i_node)->kind != PSX_TYPE_COMPLEX);
@@ -19756,10 +19772,11 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *local_ptrarr3d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(local_ptrarr3d_p != NULL);
-  ASSERT_TRUE(local_ptrarr3d_p->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, local_ptrarr3d_p->decl_type->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(local_ptrarr3d_p) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_lvar_get_decl_type(local_ptrarr3d_p)->kind);
   ASSERT_EQ(48, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    local_ptrarr3d_p->decl_type));
+                    ps_lvar_get_decl_type(local_ptrarr3d_p)));
   node_t *local_ptrarr3d_node = psx_node_new_lvar_identifier_ref_for(local_ptrarr3d_p);
   ASSERT_EQ(48, ps_node_deref_size(local_ptrarr3d_node));
   int local_ptrarr3d_inner =
@@ -19843,9 +19860,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(vla_param_m != NULL);
   ASSERT_TRUE(vla_param_k != NULL);
   ASSERT_TRUE(vla_param_t != NULL);
-  ASSERT_TRUE(vla_param_t->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, vla_param_t->decl_type->kind);
-  ASSERT_TRUE(ps_type_contains_vla_array(vla_param_t->decl_type));
+  ASSERT_TRUE(ps_lvar_get_decl_type(vla_param_t) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(vla_param_t)->kind);
+  ASSERT_TRUE(ps_type_contains_vla_array(ps_lvar_get_decl_type(vla_param_t)));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(vla_param_t));
   ASSERT_EQ(0, ps_lvar_vla_param_inner_dim_const(vla_param_t, 0));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_const(vla_param_t, 1));
@@ -19974,11 +19991,11 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr_ip_pia = find_func_lvar(fn, "pia");
   ASSERT_TRUE(ptrarr_ip_pia != NULL);
-  ASSERT_TRUE(ptrarr_ip_pia->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(ptrarr_ip_pia) != NULL);
   ASSERT_EQ(24, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    ptrarr_ip_pia->decl_type));
+                    ps_lvar_get_decl_type(ptrarr_ip_pia)));
   ASSERT_EQ(4, ps_type_pointer_view_structural_base_deref_size(
-                   ptrarr_ip_pia->decl_type));
+                   ps_lvar_get_decl_type(ptrarr_ip_pia)));
   node_t *ptrarr_ip_pia_node = psx_node_new_lvar_identifier_ref_for(ptrarr_ip_pia);
   ASSERT_EQ(24, ps_node_deref_size(ptrarr_ip_pia_node));
   int ptrarr_ip_inner =
@@ -20014,16 +20031,16 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ptrarr_ip_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_ptrarr_ip_p != NULL);
-  ASSERT_TRUE(param_ptrarr_ip_p->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, param_ptrarr_ip_p->decl_type->kind);
-  ASSERT_TRUE(param_ptrarr_ip_p->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, param_ptrarr_ip_p->decl_type->base->kind);
-  ASSERT_TRUE(param_ptrarr_ip_p->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, param_ptrarr_ip_p->decl_type->base->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip_p) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(param_ptrarr_ip_p)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip_p)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(param_ptrarr_ip_p)->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip_p)->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(param_ptrarr_ip_p)->base->base->kind);
   ASSERT_EQ(24, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    param_ptrarr_ip_p->decl_type));
+                    ps_lvar_get_decl_type(param_ptrarr_ip_p)));
   ASSERT_EQ(4, ps_type_pointer_view_structural_base_deref_size(
-                   param_ptrarr_ip_p->decl_type));
+                   ps_lvar_get_decl_type(param_ptrarr_ip_p)));
   node_t *param_ptrarr_ip_p_node =
       psx_node_new_lvar_identifier_ref_for(param_ptrarr_ip_p);
   ASSERT_EQ(24, ps_node_deref_size(param_ptrarr_ip_p_node));
@@ -20063,24 +20080,24 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ptrarr_ip2_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_ptrarr_ip2_p != NULL);
-  ASSERT_TRUE(param_ptrarr_ip2_p->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, param_ptrarr_ip2_p->decl_type->kind);
-  ASSERT_TRUE(param_ptrarr_ip2_p->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, param_ptrarr_ip2_p->decl_type->base->kind);
-  ASSERT_EQ(2, param_ptrarr_ip2_p->decl_type->base->array_len);
-  ASSERT_EQ(24, ps_type_deref_size(param_ptrarr_ip2_p->decl_type->base));
-  ASSERT_TRUE(param_ptrarr_ip2_p->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, param_ptrarr_ip2_p->decl_type->base->base->kind);
-  ASSERT_EQ(3, param_ptrarr_ip2_p->decl_type->base->base->array_len);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip2_p) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(param_ptrarr_ip2_p)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->kind);
+  ASSERT_EQ(2, ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->array_len);
+  ASSERT_EQ(24, ps_type_deref_size(ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base));
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base->kind);
+  ASSERT_EQ(3, ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base->array_len);
   ASSERT_EQ(
-      8, ps_type_deref_size(param_ptrarr_ip2_p->decl_type->base->base));
-  ASSERT_TRUE(param_ptrarr_ip2_p->decl_type->base->base->base != NULL);
+      8, ps_type_deref_size(ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base));
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            param_ptrarr_ip2_p->decl_type->base->base->base->kind);
+            ps_lvar_get_decl_type(param_ptrarr_ip2_p)->base->base->base->kind);
   ASSERT_EQ(48, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    param_ptrarr_ip2_p->decl_type));
+                    ps_lvar_get_decl_type(param_ptrarr_ip2_p)));
   ASSERT_EQ(4, ps_type_pointer_view_structural_base_deref_size(
-                   param_ptrarr_ip2_p->decl_type));
+                   ps_lvar_get_decl_type(param_ptrarr_ip2_p)));
   node_t *param_ptrarr_ip2_p_node =
       psx_node_new_lvar_identifier_ref_for(param_ptrarr_ip2_p);
   ASSERT_EQ(48, ps_node_deref_size(param_ptrarr_ip2_p_node));
@@ -20208,12 +20225,12 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *local_typedef_ptrs = find_func_lvar(fn, "typedef_ptrs");
   ASSERT_TRUE(local_typedef_ptrs != NULL);
-  ASSERT_TRUE(local_typedef_ptrs->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, local_typedef_ptrs->decl_type->kind);
-  ASSERT_TRUE(local_typedef_ptrs->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, local_typedef_ptrs->decl_type->base->kind);
-  ASSERT_TRUE(local_typedef_ptrs->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, local_typedef_ptrs->decl_type->base->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(local_typedef_ptrs) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(local_typedef_ptrs)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(local_typedef_ptrs)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(local_typedef_ptrs)->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(local_typedef_ptrs)->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(local_typedef_ptrs)->base->base->kind);
   node_t *local_typedef_ptrs_node =
       psx_node_new_lvar_identifier_ref_for(local_typedef_ptrs);
   node_t *local_typedef_rowptr = ps_node_new_subscript_deref_for(
@@ -20250,12 +20267,12 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *flat_rows_param = find_func_lvar(fn, "rows");
   ASSERT_TRUE(flat_rows_param != NULL);
-  ASSERT_TRUE(flat_rows_param->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, flat_rows_param->decl_type->kind);
-  ASSERT_TRUE(flat_rows_param->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, flat_rows_param->decl_type->base->kind);
-  ASSERT_TRUE(flat_rows_param->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, flat_rows_param->decl_type->base->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(flat_rows_param) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(flat_rows_param)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(flat_rows_param)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(flat_rows_param)->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(flat_rows_param)->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(flat_rows_param)->base->base->kind);
   node_t *flat_rows_param_node =
       psx_node_new_lvar_identifier_ref_for(flat_rows_param);
   node_t *flat_rows_rowptr = ps_node_new_subscript_deref_for(
@@ -20456,12 +20473,12 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[0]);
   lvar_t *unsigned_pp = find_func_lvar(fn, "pp");
   ASSERT_TRUE(unsigned_pp != NULL);
-  ASSERT_TRUE(unsigned_pp->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, unsigned_pp->decl_type->kind);
-  ASSERT_TRUE(unsigned_pp->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, unsigned_pp->decl_type->base->kind);
-  ASSERT_TRUE(unsigned_pp->decl_type->base->base != NULL);
-  ASSERT_TRUE(ps_type_is_unsigned(unsigned_pp->decl_type->base->base));
+  ASSERT_TRUE(ps_lvar_get_decl_type(unsigned_pp) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(unsigned_pp)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(unsigned_pp)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(unsigned_pp)->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(unsigned_pp)->base->base != NULL);
+  ASSERT_TRUE(ps_type_is_unsigned(ps_lvar_get_decl_type(unsigned_pp)->base->base));
   node_t *unsigned_pp_node = psx_node_new_lvar_identifier_ref_for(unsigned_pp);
   node_t *unsigned_pp_elem = ps_node_new_subscript_deref_for(
       unsigned_pp_node, unsigned_pp_node, ps_node_new_num(0));
@@ -21258,21 +21275,21 @@ static void test_type_metadata_bridge() {
   lvar_t *p_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(p_lvar != NULL);
   ASSERT_TRUE(ps_node_lvar_symbol(assign->lhs) == p_lvar);
-  ASSERT_TRUE(p_lvar->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, p_lvar->decl_type->kind);
-  ASSERT_TRUE(p_lvar->decl_type->base != NULL);
-  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(p_lvar->decl_type->base));
+  ASSERT_TRUE(ps_lvar_get_decl_type(p_lvar) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(p_lvar)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(p_lvar)->base != NULL);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(ps_lvar_get_decl_type(p_lvar)->base));
 
   parsed_code = parse_program_input("double __tm_param_fp(double *p) { return p[0]; }");
   fn = as_function_definition(parsed_code[0]);
   lvar_t *param_fp_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_fp_lvar != NULL);
-  ASSERT_TRUE(param_fp_lvar->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, param_fp_lvar->decl_type->kind);
-  ASSERT_TRUE(param_fp_lvar->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, param_fp_lvar->decl_type->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_fp_lvar) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(param_fp_lvar)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(param_fp_lvar)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, ps_lvar_get_decl_type(param_fp_lvar)->base->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            param_fp_lvar->decl_type->base->floating_kind);
+            ps_lvar_get_decl_type(param_fp_lvar)->base->floating_kind);
 
   parsed_code = parse_program_input(
       "int main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
@@ -21289,26 +21306,34 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_type_is_pointer_like(array_ty));
   lvar_t *r1_lvar = find_func_lvar(fn, "r1");
   ASSERT_TRUE(r1_lvar != NULL);
-  ASSERT_TRUE(r1_lvar->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_STRUCT, r1_lvar->decl_type->kind);
-  ASSERT_EQ(0, ps_type_sizeof(r1_lvar->decl_type));
+  ASSERT_TRUE(ps_lvar_get_decl_type(r1_lvar) != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, ps_lvar_get_decl_type(r1_lvar)->kind);
+  ASSERT_EQ(0, ps_type_sizeof(ps_lvar_get_decl_type(r1_lvar)));
   ASSERT_EQ(16, ps_ctx_type_sizeof_in(
-                    test_semantic_context(), r1_lvar->decl_type));
+                    test_semantic_context(), ps_lvar_get_decl_type(r1_lvar)));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(r1_lvar));
   ASSERT_TRUE(ps_lvar_is_struct_aggregate(r1_lvar));
   ASSERT_TRUE(!ps_lvar_is_union_aggregate(r1_lvar));
 
+  const psx_record_decl_t tmp_union_record = {
+      .record_id = 0x1a22u,
+      .record_kind = PSX_TYPE_UNION,
+      .is_complete = 1,
+  };
+  ASSERT_TRUE(define_test_record_decl(&tmp_union_record));
+  psx_type_t *tmp_tag_union_type =
+      ps_type_new_tag(TK_UNION, NULL, 0, 0, 4);
+  tmp_tag_union_type->record_id = tmp_union_record.record_id;
   lvar_t tmp_tag_lvar = {0};
   tmp_tag_lvar.size = 4;
   set_test_storage_fixture_type(
-      &tmp_tag_lvar, ps_type_new_tag(TK_UNION, NULL, 0, 0, 4));
+      &tmp_tag_lvar, tmp_tag_union_type);
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(!ps_lvar_is_struct_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(ps_lvar_is_union_aggregate(&tmp_tag_lvar));
   set_test_storage_fixture_type(
       &tmp_tag_lvar,
-      ps_type_new_pointer(
-          ps_type_new_tag(TK_UNION, NULL, 0, 0, 4)));
+      ps_type_new_pointer(tmp_tag_union_type));
   ASSERT_TRUE(!ps_lvar_is_tag_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(!ps_lvar_is_union_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(ps_ctx_is_tag_aggregate_kind(TK_STRUCT));
@@ -22279,9 +22304,10 @@ static void test_type_metadata_bridge() {
   lvar_t *sd = find_func_lvar(fn, "sd");
   ASSERT_TRUE(sd != NULL);
   ASSERT_TRUE(sd->is_static_local);
-  ASSERT_TRUE(sd->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, sd->decl_type->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, sd->decl_type->floating_kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(sd) != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, ps_lvar_get_decl_type(sd)->kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            ps_lvar_get_decl_type(sd)->floating_kind);
   global_var_t *sd_gv = find_test_global_var(sd->static_global_name, sd->static_global_name_len);
   ASSERT_TRUE(sd_gv != NULL);
   ASSERT_TRUE(sd_gv->decl_type != NULL);
@@ -22329,7 +22355,7 @@ static void test_type_metadata_bridge() {
   lvar_t *sa = find_func_lvar(fn, "sa");
   ASSERT_TRUE(sa != NULL);
   ASSERT_TRUE(sa->is_static_local);
-  ASSERT_TRUE(sa->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(sa) != NULL);
   global_var_t *sa_gv = find_test_global_var(sa->static_global_name, sa->static_global_name_len);
   ASSERT_TRUE(sa_gv != NULL);
   ASSERT_TRUE(sa_gv->decl_type != NULL);
@@ -22509,9 +22535,11 @@ static void test_type_metadata_bridge() {
   lvar_t *compound_lit_local =
       test_compound_literal_local_object(compound_lit_expr);
   ASSERT_TRUE(compound_lit_local != NULL);
-  ASSERT_TRUE(compound_lit_local->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, compound_lit_local->decl_type->kind);
-  ASSERT_EQ(12, ps_type_sizeof(compound_lit_local->decl_type));
+  ASSERT_TRUE(ps_lvar_get_decl_type(compound_lit_local) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_lvar_get_decl_type(compound_lit_local)->kind);
+  ASSERT_EQ(12, ps_type_sizeof(
+                    ps_lvar_get_decl_type(compound_lit_local)));
   node_t *compound_lit_stale_addr =
       ps_node_new_lvar_array_addr_for(compound_lit_local);
   ASSERT_TRUE(ps_node_get_type(compound_lit_stale_addr) != NULL);
@@ -22525,7 +22553,7 @@ static void test_type_metadata_bridge() {
   lvar_t *compound_unsigned_local =
       test_compound_literal_local_object(compound_unsigned_expr);
   ASSERT_TRUE(compound_unsigned_local != NULL);
-  ASSERT_TRUE(compound_unsigned_local->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(compound_unsigned_local) != NULL);
   node_t *compound_unsigned_addr =
       ps_node_new_lvar_array_addr_for(compound_unsigned_local);
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(compound_unsigned_addr));
@@ -22535,7 +22563,7 @@ static void test_type_metadata_bridge() {
   lvar_t *compound_bool_local =
       test_compound_literal_local_object(compound_bool_expr);
   ASSERT_TRUE(compound_bool_local != NULL);
-  ASSERT_TRUE(compound_bool_local->decl_type != NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(compound_bool_local) != NULL);
   node_t *compound_bool_addr =
       ps_node_new_lvar_array_addr_for(compound_bool_local);
   ASSERT_TRUE(canonical_node_pointee_is_bool(compound_bool_addr));
@@ -23079,16 +23107,20 @@ static void test_type_metadata_bridge() {
       gvar_node_ptr_unsigned_sync_node));
 
   lvar_t lvar_view_fp_array = {0};
-  lvar_view_fp_array.decl_type = ps_type_new_array(
-      ps_type_new_array(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 3, 24, 0),
-      2, 48, 0);
+  set_test_storage_fixture_type(
+      &lvar_view_fp_array,
+      ps_type_new_array(
+          ps_type_new_array(
+              ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 3, 24, 0),
+          2, 48, 0));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_lvar_fp_kind(&lvar_view_fp_array));
 
   lvar_t lvar_view_complex_array = {0};
   psx_type_t *lvar_view_complex_leaf = ps_type_new(PSX_TYPE_COMPLEX);
   lvar_view_complex_leaf->floating_kind = PSX_FLOATING_KIND_DOUBLE;
-  lvar_view_complex_array.decl_type =
-      ps_type_new_array(lvar_view_complex_leaf, 2, 32, 0);
+  set_test_storage_fixture_type(
+      &lvar_view_complex_array,
+      ps_type_new_array(lvar_view_complex_leaf, 2, 32, 0));
   ASSERT_TRUE(ps_lvar_is_complex(&lvar_view_complex_array));
 
   lvar_t lvar_view_array_shape = {0};
@@ -23097,8 +23129,9 @@ static void test_type_metadata_bridge() {
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0);
   psx_type_t *lvar_view_array_d1 =
       ps_type_new_array(lvar_view_array_d2, 3, 48, 0);
-  lvar_view_array_shape.decl_type =
-      ps_type_new_array(lvar_view_array_d1, 2, 96, 0);
+  set_test_storage_fixture_type(
+      &lvar_view_array_shape,
+      ps_type_new_array(lvar_view_array_d1, 2, 96, 0));
   ASSERT_TRUE(ps_lvar_is_array(&lvar_view_array_shape));
   ASSERT_EQ(24, ps_lvar_array_flat_element_count(&lvar_view_array_shape));
   ASSERT_EQ(12, ps_lvar_array_designator_stride_elements(
@@ -23134,14 +23167,18 @@ static void test_type_metadata_bridge() {
       2, 24, 0);
   ps_ctx_bind_record_ids_in(
       test_semantic_context(), lvar_view_struct_array_type);
-  lvar_view_struct_array_shape.decl_type = lvar_view_struct_array_type;
+  set_test_storage_fixture_type(
+      &lvar_view_struct_array_shape,
+      lvar_view_struct_array_type);
   ASSERT_TRUE(ps_lvar_is_array(&lvar_view_struct_array_shape));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(&lvar_view_struct_array_shape));
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(
                     test_semantic_context(),
-                    lvar_view_struct_array_shape.decl_type));
+                    ps_lvar_get_decl_type(
+                        &lvar_view_struct_array_shape)));
   const psx_type_t *lvar_view_struct_element_type =
-      ps_type_array_leaf_type(lvar_view_struct_array_shape.decl_type);
+      ps_type_array_leaf_type(ps_lvar_get_decl_type(
+          &lvar_view_struct_array_shape));
   int lvar_view_struct_element_size = ps_ctx_type_sizeof_in(
       test_semantic_context(), lvar_view_struct_element_type);
   ASSERT_EQ(12, lvar_view_struct_element_size);
@@ -23167,10 +23204,13 @@ static void test_type_metadata_bridge() {
                        (int)sizeof(lvar_view_struct_array_tag_name) - 1, 0, 12);
   ps_ctx_bind_record_ids_in(
       test_semantic_context(), lvar_view_struct_object_type);
-  lvar_view_struct_object_size.decl_type = lvar_view_struct_object_type;
+  set_test_storage_fixture_type(
+      &lvar_view_struct_object_size,
+      lvar_view_struct_object_type);
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(
                     test_semantic_context(),
-                    lvar_view_struct_object_size.decl_type));
+                    ps_lvar_get_decl_type(
+                        &lvar_view_struct_object_size)));
   node_t *lvar_view_struct_object_ref =
       as_lvar(psx_node_new_lvar_object_ref_for(&lvar_view_struct_object_size));
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(
@@ -23185,8 +23225,9 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(lvar_view_const_array_leaf, PSX_TYPE_QUALIFIER_CONST);
   ps_type_add_qualifiers(lvar_view_const_array_leaf, PSX_TYPE_QUALIFIER_VOLATILE);
-  lvar_view_const_array_addr.decl_type =
-      ps_type_new_array(lvar_view_const_array_leaf, 2, 8, 0);
+  set_test_storage_fixture_type(
+      &lvar_view_const_array_addr,
+      ps_type_new_array(lvar_view_const_array_leaf, 2, 8, 0));
   node_t *lvar_view_const_array_addr_node =
       ps_node_new_lvar_array_addr_for(&lvar_view_const_array_addr);
   ASSERT_TRUE(canonical_node_pointee_is_const_qualified(
@@ -23195,19 +23236,28 @@ static void test_type_metadata_bridge() {
       lvar_view_const_array_addr_node));
 
   const char lvar_view_tag_name[] = "__tm_lvar_view_tag";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)lvar_view_tag_name,
+      (int)sizeof(lvar_view_tag_name) - 1, 0, 12, 4);
   lvar_t lvar_view_tag_ptr = {0};
-  lvar_view_tag_ptr.decl_type = ps_type_new_pointer(
-      ps_type_new_array(
-          ps_type_new_tag(TK_STRUCT, (char *)lvar_view_tag_name,
-                           (int)sizeof(lvar_view_tag_name) - 1, 0, 12),
-          2, 24, 0));
+  psx_type_t *lvar_view_tag_ptr_type =
+      ps_type_new_pointer(
+          ps_type_new_array(
+              ps_type_new_tag(TK_STRUCT, (char *)lvar_view_tag_name,
+                              (int)sizeof(lvar_view_tag_name) - 1, 0, 12),
+              2, 24, 0));
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), lvar_view_tag_ptr_type);
+  set_test_storage_fixture_type(
+      &lvar_view_tag_ptr, lvar_view_tag_ptr_type);
   ASSERT_TRUE(ps_lvar_is_tag_pointer(&lvar_view_tag_ptr));
   ASSERT_EQ(TK_STRUCT, ps_lvar_tag_kind(&lvar_view_tag_ptr));
 
   lvar_t lvar_node_scalar_sync = {0};
   lvar_node_scalar_sync.size = 4;
-  lvar_node_scalar_sync.decl_type =
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  set_test_storage_fixture_type(
+      &lvar_node_scalar_sync,
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   node_t *lvar_node_scalar_sync_node =
       as_lvar(psx_node_new_lvar_for(&lvar_node_scalar_sync));
   ASSERT_EQ(8, ps_node_type_size((node_t *)lvar_node_scalar_sync_node));
@@ -23222,17 +23272,24 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(
       (node_t *)lvar_node_scalar_sync_node));
   lvar_t lvar_materialized_scalar_stale_tag = lvar_node_scalar_sync;
-  lvar_materialized_scalar_stale_tag.decl_type = NULL;
   const psx_type_t *lvar_materialized_scalar_type =
       ps_lvar_get_decl_type(&lvar_materialized_scalar_stale_tag);
-  ASSERT_TRUE(lvar_materialized_scalar_type == NULL);
+  ASSERT_TRUE(lvar_materialized_scalar_type ==
+              ps_lvar_get_decl_type(&lvar_node_scalar_sync));
 
   const char lvar_node_tag_name[] = "__tm_lvar_node_tag";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)lvar_node_tag_name,
+      (int)sizeof(lvar_node_tag_name) - 1, 0, 12, 4);
   lvar_t lvar_node_tag_sync = {0};
   lvar_node_tag_sync.size = 4;
-  lvar_node_tag_sync.decl_type =
+  psx_type_t *lvar_node_tag_type =
       ps_type_new_tag(TK_STRUCT, (char *)lvar_node_tag_name,
-                       (int)sizeof(lvar_node_tag_name) - 1, 0, 12);
+                      (int)sizeof(lvar_node_tag_name) - 1, 0, 12);
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), lvar_node_tag_type);
+  set_test_storage_fixture_type(
+      &lvar_node_tag_sync, lvar_node_tag_type);
   node_t *lvar_node_tag_sync_node =
       as_lvar(psx_node_new_lvar_for(&lvar_node_tag_sync));
   ASSERT_EQ(0, ps_node_type_size((node_t *)lvar_node_tag_sync_node));
@@ -23241,8 +23298,10 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_array_elem_scalar_sync = {0};
   lvar_array_elem_scalar_sync.size = 16;
-  lvar_array_elem_scalar_sync.decl_type =
-      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 2, 8, 0);
+  set_test_storage_fixture_type(
+      &lvar_array_elem_scalar_sync,
+      ps_type_new_array(
+          ps_type_new_integer(TK_INT, 4, 0), 2, 8, 0));
   node_t *lvar_array_elem_scalar_sync_node =
       as_lvar(ps_node_new_array_elem_lvar_for(&lvar_array_elem_scalar_sync, 1));
   ASSERT_EQ(4, ps_node_type_size((node_t *)lvar_array_elem_scalar_sync_node));
@@ -23254,8 +23313,12 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_array_elem_pointer_sync = {0};
   lvar_array_elem_pointer_sync.size = 16;
-  lvar_array_elem_pointer_sync.decl_type = ps_type_new_array(
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)), 2, 16, 0);
+  set_test_storage_fixture_type(
+      &lvar_array_elem_pointer_sync,
+      ps_type_new_array(
+          ps_type_new_pointer(
+              ps_type_new_integer(TK_INT, 4, 0)),
+          2, 16, 0));
   node_t *lvar_array_elem_pointer_sync_node =
       as_lvar(ps_node_new_array_elem_lvar_for(
           &lvar_array_elem_pointer_sync, 1));
@@ -23287,12 +23350,18 @@ static void test_type_metadata_bridge() {
   member_const_owner_info.decl_type = ps_type_new_integer(TK_INT, 4, 0);
   lvar_t member_const_owner = {0};
   member_const_owner.offset = 48;
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)stale_node_tag_name,
+      (int)sizeof(stale_node_tag_name) - 1, 0, 4, 4);
   psx_type_t *member_const_owner_type =
       ps_type_new_tag(TK_STRUCT, (char *)stale_node_tag_name,
                        (int)sizeof(stale_node_tag_name) - 1, 0, 4);
   ps_type_add_qualifiers(member_const_owner_type, PSX_TYPE_QUALIFIER_CONST);
   ps_type_add_qualifiers(member_const_owner_type, PSX_TYPE_QUALIFIER_VOLATILE);
-  member_const_owner.decl_type = member_const_owner_type;
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), member_const_owner_type);
+  set_test_storage_fixture_type(
+      &member_const_owner, member_const_owner_type);
   node_t *member_const_owner_node =
       as_lvar(ps_node_new_tag_member_lvar_ref_for(
           &member_const_owner, member_const_owner_info.offset,
@@ -23328,8 +23397,9 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_node_ptr_scalar_sync = {0};
   lvar_node_ptr_scalar_sync.size = 8;
-  lvar_node_ptr_scalar_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  set_test_storage_fixture_type(
+      &lvar_node_ptr_scalar_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *lvar_node_ptr_scalar_sync_node =
       as_lvar(psx_node_new_lvar_for(&lvar_node_ptr_scalar_sync));
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)lvar_node_ptr_scalar_sync_node));
@@ -23342,8 +23412,9 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_node_ptr_bool_sync = {0};
   lvar_node_ptr_bool_sync.size = 8;
-  lvar_node_ptr_bool_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_BOOL, 1, 0));
+  set_test_storage_fixture_type(
+      &lvar_node_ptr_bool_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_BOOL, 1, 0)));
   node_t *lvar_node_ptr_bool_sync_node =
       as_lvar(psx_node_new_lvar_for(&lvar_node_ptr_bool_sync));
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)lvar_node_ptr_bool_sync_node));
@@ -23353,8 +23424,9 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_node_ptr_unsigned_sync = {0};
   lvar_node_ptr_unsigned_sync.size = 8;
-  lvar_node_ptr_unsigned_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_UNSIGNED, 4, 1));
+  set_test_storage_fixture_type(
+      &lvar_node_ptr_unsigned_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_UNSIGNED, 4, 1)));
   node_t *lvar_node_ptr_unsigned_sync_node =
       as_lvar(psx_node_new_lvar_for(&lvar_node_ptr_unsigned_sync));
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)lvar_node_ptr_unsigned_sync_node));
@@ -23380,7 +23452,7 @@ static void test_type_metadata_bridge() {
   lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
   ASSERT_TRUE(dpa_lvar != NULL);
   const psx_type_t *dpa_function_type =
-      ps_type_derived_function(dpa_lvar->decl_type);
+      ps_type_derived_function(ps_lvar_get_decl_type(dpa_lvar));
   ASSERT_TRUE(dpa_function_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, dpa_function_type->kind);
   ASSERT_TRUE(dpa_function_type->base != NULL);
@@ -23422,7 +23494,7 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[1]);
   lvar_t *pb_lvar = find_func_lvar(fn, "pb");
   ASSERT_TRUE(pb_lvar != NULL);
-  const psx_type_t *pb_type = pb_lvar->decl_type;
+  const psx_type_t *pb_type = ps_lvar_get_decl_type(pb_lvar);
   ASSERT_TRUE(pb_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, pb_type->kind);
   ASSERT_TRUE(pb_type->base != NULL);
@@ -23477,16 +23549,16 @@ static void test_type_metadata_bridge() {
   lvar_t *tm_pa = find_func_lvar(fn, "pa");
   ASSERT_TRUE(tm_ops != NULL);
   ASSERT_TRUE(tm_pa != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_ops->decl_type->kind);
-  ASSERT_TRUE(tm_ops->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_ops->decl_type->base->kind);
-  ASSERT_TRUE(ps_type_derived_function(tm_ops->decl_type) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->kind);
-  ASSERT_TRUE(tm_pa->decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_pa->decl_type->base->kind);
-  ASSERT_TRUE(tm_pa->decl_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_derived_function(tm_pa->decl_type) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_ops)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(tm_ops)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_ops)->base->kind);
+  ASSERT_TRUE(ps_type_derived_function(ps_lvar_get_decl_type(tm_ops)) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_pa)->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(tm_pa)->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_pa)->base->kind);
+  ASSERT_TRUE(ps_lvar_get_decl_type(tm_pa)->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_pa)->base->base->kind);
+  ASSERT_TRUE(ps_type_derived_function(ps_lvar_get_decl_type(tm_pa)) != NULL);
 
   parsed_code = parse_program_input(
       "int tm_local_add(int a,int b){return a+b;} "
@@ -23508,30 +23580,30 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm_local_pa != NULL);
   ASSERT_TRUE(tm_local_array_ptrs != NULL);
   ASSERT_TRUE(tm_local_ptr_array != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_ops->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_ops->decl_type->base->kind);
-  ASSERT_TRUE(ps_type_derived_function(tm_local_ops->decl_type) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_pa->decl_type->base->kind);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_derived_function(tm_local_pa->decl_type) != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->kind);
-  ASSERT_EQ(2, tm_local_matrix->decl_type->array_len);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->base->kind);
-  ASSERT_EQ(2, tm_local_matrix->decl_type->base->array_len);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_ops)->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_local_ops)->base->kind);
+  ASSERT_TRUE(ps_type_derived_function(ps_lvar_get_decl_type(tm_local_ops)) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_local_pa)->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_pa)->base->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_local_pa)->base->base->kind);
+  ASSERT_TRUE(ps_type_derived_function(ps_lvar_get_decl_type(tm_local_pa)) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_matrix)->kind);
+  ASSERT_EQ(2, ps_lvar_get_decl_type(tm_local_matrix)->array_len);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_matrix)->base->kind);
+  ASSERT_EQ(2, ps_lvar_get_decl_type(tm_local_matrix)->base->array_len);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            tm_local_matrix->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_derived_function(tm_local_matrix->decl_type) != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_array_ptrs->decl_type->kind);
-  ASSERT_EQ(3, tm_local_array_ptrs->decl_type->array_len);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_array_ptrs->decl_type->base->kind);
+            ps_lvar_get_decl_type(tm_local_matrix)->base->base->kind);
+  ASSERT_TRUE(ps_type_derived_function(ps_lvar_get_decl_type(tm_local_matrix)) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_array_ptrs)->kind);
+  ASSERT_EQ(3, ps_lvar_get_decl_type(tm_local_array_ptrs)->array_len);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_local_array_ptrs)->base->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            tm_local_array_ptrs->decl_type->base->base->kind);
-  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_ptr_array->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_ptr_array->decl_type->base->kind);
-  ASSERT_EQ(3, tm_local_ptr_array->decl_type->base->array_len);
+            ps_lvar_get_decl_type(tm_local_array_ptrs)->base->base->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(tm_local_ptr_array)->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(tm_local_ptr_array)->base->kind);
+  ASSERT_EQ(3, ps_lvar_get_decl_type(tm_local_ptr_array)->base->array_len);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            tm_local_ptr_array->decl_type->base->base->kind);
+            ps_lvar_get_decl_type(tm_local_ptr_array)->base->base->kind);
 
   parsed_code = parse_program_input(
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
@@ -24209,14 +24281,14 @@ static void test_type_metadata_bridge() {
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            td_dp_lvar->decl_type->base->floating_kind);
-  assert_canonical_type_signature(td_dp_lvar->decl_type, "p<f64>");
+            ps_lvar_get_decl_type(td_dp_lvar)->base->floating_kind);
+  assert_canonical_type_signature(ps_lvar_get_decl_type(td_dp_lvar), "p<f64>");
   lvar_t *td_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(td_fp_lvar != NULL);
-  assert_canonical_type_signature(td_fp_lvar->decl_type, "p<f64()>");
+  assert_canonical_type_signature(ps_lvar_get_decl_type(td_fp_lvar), "p<f64()>");
   lvar_t *td_bfp_lvar = find_func_lvar(fn, "bfp");
   ASSERT_TRUE(td_bfp_lvar != NULL);
-  assert_canonical_type_signature(td_bfp_lvar->decl_type, "p<f64()>");
+  assert_canonical_type_signature(ps_lvar_get_decl_type(td_bfp_lvar), "p<f64()>");
 
   parsed_code = parse_program_input(
       "int __tm817_i; int *__tm817_retp(void){ return &__tm817_i; } "
@@ -24248,27 +24320,27 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm817_get_lvar != NULL);
   ASSERT_EQ(1, canonical_lvar_pointer_qual_levels(tm817_get_lvar));
   assert_canonical_type_signature(
-      tm817_get_lvar->decl_type, "p<p<i32>()>");
+      ps_lvar_get_decl_type(tm817_get_lvar), "p<p<i32>()>");
   lvar_t *tm817_get2_lvar = find_func_lvar(fn, "get2");
   ASSERT_TRUE(tm817_get2_lvar != NULL);
   ASSERT_EQ(1, canonical_lvar_pointer_qual_levels(tm817_get2_lvar));
   assert_canonical_type_signature(
-      tm817_get2_lvar->decl_type, "p<p<i32>()>");
+      ps_lvar_get_decl_type(tm817_get2_lvar), "p<p<i32>()>");
   lvar_t *tm817_pp_lvar = find_func_lvar(fn, "pp");
   ASSERT_TRUE(tm817_pp_lvar != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm817_pp_lvar));
   assert_canonical_type_signature(
-      tm817_pp_lvar->decl_type, "p<p<i32(i32)>>");
+      ps_lvar_get_decl_type(tm817_pp_lvar), "p<p<i32(i32)>>");
   lvar_t *tm817_lget_lvar = find_func_lvar(fn, "lget");
   ASSERT_TRUE(tm817_lget_lvar != NULL);
   ASSERT_EQ(1, canonical_lvar_pointer_qual_levels(tm817_lget_lvar));
   assert_canonical_type_signature(
-      tm817_lget_lvar->decl_type, "p<p<i32>()>");
+      ps_lvar_get_decl_type(tm817_lget_lvar), "p<p<i32>()>");
   lvar_t *tm817_lpp_lvar = find_func_lvar(fn, "lpp");
   ASSERT_TRUE(tm817_lpp_lvar != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm817_lpp_lvar));
   assert_canonical_type_signature(
-      tm817_lpp_lvar->decl_type, "p<p<i32(i32)>>");
+      ps_lvar_get_decl_type(tm817_lpp_lvar), "p<p<i32(i32)>>");
 
   parsed_code = parse_program_input(
       "double __tm700_d; double *__tm700_ret_dp(void){ return &__tm700_d; } "
@@ -24278,7 +24350,7 @@ static void test_type_metadata_bridge() {
   lvar_t *tm700_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm700_fp_lvar != NULL);
   assert_canonical_type_signature(
-      tm700_fp_lvar->decl_type, "p<p<f64>()>");
+      ps_lvar_get_decl_type(tm700_fp_lvar), "p<p<f64>()>");
   global_var_t *tm700_gfp = find_test_global_var("__tm700_gfp", 11);
   ASSERT_TRUE(tm700_gfp != NULL);
   assert_canonical_type_signature(
@@ -24292,7 +24364,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm814_pp_lvar != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm814_pp_lvar));
   assert_canonical_type_signature(
-      tm814_pp_lvar->decl_type, "p<p<i32(i32)>>");
+      ps_lvar_get_decl_type(tm814_pp_lvar), "p<p<i32(i32)>>");
   node_t *tm814_pp_node = psx_node_new_lvar_for(tm814_pp_lvar);
   node_t *tm814_deref_pp = ps_node_new_unary_deref_for(tm814_pp_node);
   assert_canonical_type_signature(
@@ -24313,7 +24385,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm815_param_pp != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm815_param_pp));
   assert_canonical_type_signature(
-      tm815_param_pp->decl_type, "p<p<i32(i32)>>");
+      ps_lvar_get_decl_type(tm815_param_pp), "p<p<i32(i32)>>");
 
   parsed_code = parse_program_input(
       "int __tm816_i; int *__tm816_retp(void){ return &__tm816_i; } "
@@ -24331,7 +24403,7 @@ static void test_type_metadata_bridge() {
   lvar_t *tm816_param_fp = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm816_param_fp != NULL);
   assert_canonical_type_signature(
-      tm816_param_fp->decl_type, "p<p<i32>()>");
+      ps_lvar_get_decl_type(tm816_param_fp), "p<p<i32>()>");
   tag_member_info_t tm816_fp_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM816", 5, "fp", 2,
                                            &tm816_fp_info));
