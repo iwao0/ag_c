@@ -35,9 +35,6 @@ typedef struct psx_record_member_decl_t {
   int bit_is_signed;
   const psx_semantic_type_table_t *decl_type_table;
   psx_qual_type_t decl_qual_type;
-  /* Compatibility projection. Registered declarations are materialized from
-   * decl_qual_type through decl_type_table. */
-  const psx_type_t *decl_type;
 } psx_record_member_decl_t;
 
 const psx_type_t *psx_record_member_decl_type(

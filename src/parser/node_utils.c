@@ -1000,7 +1000,8 @@ static int gvar_walk_struct_initializer(
         gvar_member_storage_size_for_target(
             semantic_types, record_layouts, member_type_id, target);
     int member_array_count =
-        ps_type_array_flat_element_count(member.decl_type);
+        ps_type_array_flat_element_count(
+            psx_record_member_decl_type(&member));
     const psx_type_t *member_tag_type =
         record_member_decl_tag_type(&member);
     token_kind_t member_tag_kind = member_tag_type
@@ -1167,7 +1168,8 @@ static int gvar_walk_union_initializer(
       gvar_member_storage_size_for_target(
           semantic_types, record_layouts, member_type_id, target);
   int member_array_count =
-      ps_type_array_flat_element_count(member.decl_type);
+      ps_type_array_flat_element_count(
+          psx_record_member_decl_type(&member));
   int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
   const psx_type_t *member_tag_type = record_member_decl_tag_type(&member);
   token_kind_t member_tag_kind = member_tag_type

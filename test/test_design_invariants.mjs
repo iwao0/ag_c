@@ -6182,9 +6182,13 @@ if (!getTagMemberFunction ||
   );
 }
 if (!recordMemberDeclStruct ||
-    !/\bconst\s+psx_type_t\s*\*\s*decl_type\s*;/.test(
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
       recordMemberDeclStruct[1],
     ) ||
+    !/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(
+      recordMemberDeclStruct[1],
+    ) ||
+    /\bconst\s+psx_type_t\s*\*/.test(recordMemberDeclStruct[1]) ||
     !/\bint\s+bit_width\s*;/.test(recordMemberDeclStruct[1]) ||
     /\b(?:offset|bit_offset)\s*;/.test(recordMemberDeclStruct[1]) ||
     !recordMemberLayoutStruct ||
@@ -7232,12 +7236,14 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     "production symbol type views must materialize from declaration QualType identity",
   );
 }
-if (!/typedef\s+struct\s+psx_record_member_decl_t\s*\{[^]*?decl_type_table[^]*?decl_qual_type[^]*?decl_type[^]*?\}/.test(
-      typeSource,
-    ) ||
+if (!recordMemberDeclStruct ||
+    !/decl_type_table/.test(recordMemberDeclStruct[1]) ||
+    !/decl_qual_type/.test(recordMemberDeclStruct[1]) ||
+    /\bpsx_type_t\b/.test(recordMemberDeclStruct[1]) ||
     !/psx_record_member_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
       parserTypeImplementationSource,
     ) ||
+    /return\s+member->decl_type\s*;/.test(parserTypeImplementationSource) ||
     !/ps_ctx_intern_qual_type_in\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/.test(
       parserSemanticContextImplementation,
     ) ||
@@ -7245,7 +7251,7 @@ if (!/typedef\s+struct\s+psx_record_member_decl_t\s*\{[^]*?decl_type_table[^]*?d
       semanticTypeIdentitySource,
     )) {
   throw new Error(
-    "record member and symbol compatibility views must be materialized from QualType",
+    "record member type views must be materialized exclusively from QualType",
   );
 }
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||

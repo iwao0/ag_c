@@ -12,15 +12,11 @@
 
 const psx_type_t *psx_record_member_decl_type(
     const psx_record_member_decl_t *member) {
-  if (!member) return NULL;
-  if (member->decl_type_table &&
-      member->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    const psx_type_t *materialized =
-        psx_semantic_type_table_lookup_qual_type(
-            member->decl_type_table, member->decl_qual_type);
-    if (materialized) return materialized;
-  }
-  return member->decl_type;
+  if (!member || !member->decl_type_table ||
+      member->decl_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+  return psx_semantic_type_table_lookup_qual_type(
+      member->decl_type_table, member->decl_qual_type);
 }
 
 int ps_type_tag_identity_matches(const psx_type_t *a,

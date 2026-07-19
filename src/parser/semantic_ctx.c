@@ -108,8 +108,6 @@ static bool get_tag_member_impl_in(
     token_kind_t kind, char *name, int len, int scope_depth,
     int index, psx_record_member_decl_t *out_declaration,
     psx_record_member_layout_t *out_layout);
-static const psx_type_t *tag_member_record_decl_type(
-    const tag_member_t *member);
 static int collect_tag_member_declarations_in(
     psx_semantic_context_t *context, const tag_type_t *tag,
     tag_member_t ***out_members);
@@ -132,7 +130,6 @@ static void refresh_cached_record_decl(
     }
     for (int i = 0; i < member_count; i++) {
       tag_member_t *member = source_members[i];
-      const psx_type_t *decl_type = tag_member_record_decl_type(member);
       members[i] = (psx_record_member_decl_t){
           .name = member->declaration.name,
           .len = member->declaration.len,
@@ -140,7 +137,6 @@ static void refresh_cached_record_decl(
           .bit_is_signed = member->declaration.bit_is_signed,
           .decl_type_table = member->declaration.type_table,
           .decl_qual_type = member->declaration.qual_type,
-          .decl_type = decl_type,
       };
     }
   }
@@ -178,11 +174,6 @@ struct typedef_name_t {
   unsigned declaration_seq;
   psx_decl_id_t declaration_id;
 };
-
-static const psx_type_t *tag_member_record_decl_type(
-    const tag_member_t *m) {
-  return m ? m->declaration.type : NULL;
-}
 
 static psx_qual_type_t typedef_record_decl_qual_type(
     const typedef_name_t *t) {
@@ -1398,7 +1389,6 @@ static bool fill_tag_member_in(
   const psx_record_member_layout_t *layout =
       find_tag_member_layout_draft(context, member);
   if (!layout) return false;
-  const psx_type_t *decl_type = tag_member_record_decl_type(member);
   if (out_declaration) {
     *out_declaration = (psx_record_member_decl_t){
         .name = member->declaration.name,
@@ -1407,7 +1397,6 @@ static bool fill_tag_member_in(
         .bit_is_signed = member->declaration.bit_is_signed,
         .decl_type_table = member->declaration.type_table,
         .decl_qual_type = member->declaration.qual_type,
-        .decl_type = decl_type,
     };
   }
   if (out_layout) *out_layout = *layout;

@@ -401,7 +401,6 @@ void psx_resolve_aggregate_member_declaration(
         .decl_type_table = ps_ctx_semantic_type_table_in(
             semantic_context),
         .decl_qual_type = identity,
-        .decl_type = type,
     };
     batch_layouts[0] = (psx_record_member_layout_t){
         .offset = resolution->offset,
