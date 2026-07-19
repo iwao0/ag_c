@@ -10932,6 +10932,24 @@ if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
     !/free\(function->continuation_result_export\)/.test(
       wasmMachineFunctionSource,
     ) ||
+    /const\s+ir_func_t\s*\*source\s*;/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    /ir_(?:inst|block)_t\s*\*source\s*;/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    /wasm32_machine_function_instruction\s*\(/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    /wasm32_machine_function_instruction\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/copy_string\s*\(\s*&machine_instruction->sym/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/free\(function->instructions\[i\]\.sym\)/.test(
+      wasmMachineFunctionSource,
+    ) ||
     /\bir_func_t\b/.test(wasmWatWriterSource) ||
     /\bir_func_t\b/.test(wasmObjectWriterSource) ||
     /\bir_module_t\b/.test(wasmWatWriterSource) ||

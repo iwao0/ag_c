@@ -695,38 +695,27 @@ int main(void) {
   const wasm32_machine_alloca_t *second_alloca =
       wasm32_machine_function_alloca(&machine_function, 1);
   const wasm32_machine_inst_t *selected_store =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[2]);
+      &machine_function.instructions[2];
   const wasm32_machine_inst_t *selected_load =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[3]);
+      &machine_function.instructions[3];
   const wasm32_machine_inst_t *selected_conversion =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[8]);
+      &machine_function.instructions[8];
   const wasm32_machine_inst_t *selected_reference =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[5]);
+      &machine_function.instructions[5];
   const wasm32_machine_inst_t *selected_binary =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[9]);
+      &machine_function.instructions[9];
   const wasm32_machine_inst_t *selected_unary =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[10]);
+      &machine_function.instructions[10];
   const wasm32_machine_inst_t *selected_atomic =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[11]);
+      &machine_function.instructions[11];
   const wasm32_machine_inst_t *selected_cas =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[7]);
+      &machine_function.instructions[7];
   const wasm32_machine_inst_t *selected_call =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[12]);
+      &machine_function.instructions[12];
   const wasm32_machine_inst_t *selected_parameter =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[13]);
+      &machine_function.instructions[13];
   const wasm32_machine_inst_t *selected_control =
-      wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[15]);
+      &machine_function.instructions[15];
   const wasm32_machine_block_t *selected_block =
       wasm32_machine_function_block(&machine_function, 0);
   if (!machine_function.name ||
@@ -782,6 +771,8 @@ int main(void) {
       selected_load->kind != WASM32_MACHINE_INST_LOAD ||
       selected_load->load.opcode != WASM32_MI_I64_LOAD ||
       !selected_reference ||
+      selected_reference->sym == function_instructions[5].sym ||
+      strcmp(selected_reference->sym, function_instructions[5].sym) != 0 ||
       !selected_reference->has_reference_signature ||
       selected_reference->reference_signature.result != IR_TY_I32 ||
       selected_reference->reference_signature.nparams != 1 ||
@@ -875,9 +866,7 @@ int main(void) {
           WASM32_MI_I32_REM_S) ||
       !wasm32_machine_opcode_is_add(WASM32_MI_I64_ADD) ||
       !wasm32_machine_opcode_is_subtract(WASM32_MI_I32_SUB) ||
-      wasm32_machine_opcode_is_comparison(WASM32_MI_I32_ADD) ||
-      wasm32_machine_function_instruction(
-          &machine_function, &call) != NULL) {
+      wasm32_machine_opcode_is_comparison(WASM32_MI_I32_ADD)) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
     return 1;
   }
@@ -899,12 +888,22 @@ int main(void) {
       .funcs = &function,
       .symbols = &source_symbol,
   };
+  const char *source_symbol_name = source_symbol.name;
+  const char *source_func_ref_name = source_func_ref.name;
+  const char *source_instruction_name = function_instructions[14].sym;
   wasm32_machine_module_t machine_module;
   if (!wasm32_machine_module_build(
           &source_module, &fake_abi_module, &machine_module)) {
     fprintf(stderr, "FAIL: machine module plan build\n");
     return 1;
   }
+  memset(&source_module, 0, sizeof(source_module));
+  memset(&source_symbol, 0, sizeof(source_symbol));
+  memset(&source_func_ref, 0, sizeof(source_func_ref));
+  function.entry = NULL;
+  function.name = NULL;
+  function.c_signature = NULL;
+  function_instructions[14].sym = NULL;
   const wasm32_machine_symbol_t *machine_symbol =
       wasm32_machine_module_symbol(
           &machine_module, "global_slot", 11);
@@ -914,13 +913,15 @@ int main(void) {
       wasm32_machine_module_function(&machine_module, 0);
   if (machine_module.function_count != 1 ||
       machine_module.symbol_count != 1 ||
-      !machine_symbol || machine_symbol->name == source_symbol.name ||
+      !machine_symbol || machine_symbol->name == source_symbol_name ||
+      strcmp(machine_symbol->name, "global_slot") != 0 ||
       machine_symbol->byte_size != 16 || machine_symbol->alignment != 8 ||
       !machine_symbol->is_static || !machine_func_ref ||
-      machine_func_ref->name == source_func_ref.name ||
-      strcmp(machine_func_ref->name, source_func_ref.name) != 0 ||
+      machine_func_ref->name == source_func_ref_name ||
+      strcmp(machine_func_ref->name, "initial_target") != 0 ||
       !module_function ||
-      module_function->source != &function ||
+      module_function->instructions[14].sym == source_instruction_name ||
+      strcmp(module_function->instructions[14].sym, "global_slot") != 0 ||
       module_function->instructions[14].resolved_symbol != machine_symbol ||
       wasm32_machine_module_function(&machine_module, 1) != NULL) {
     fprintf(stderr, "FAIL: machine module plan invariants\n");

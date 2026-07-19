@@ -127,7 +127,6 @@ typedef struct {
 } wasm32_machine_atomic_t;
 
 typedef struct {
-  ir_inst_t *source;
   const wasm32_machine_symbol_t *resolved_symbol;
   ir_op_t op;
   ir_val_t dst;
@@ -161,7 +160,6 @@ typedef struct {
 } wasm32_machine_inst_t;
 
 typedef struct {
-  ir_block_t *source;
   int id;
   int first_instruction;
   int instruction_count;
@@ -170,7 +168,6 @@ typedef struct {
 } wasm32_machine_block_t;
 
 typedef struct {
-  const ir_func_t *source;
   char *name;
   char *c_signature;
   char *continuation_entry_name;
@@ -223,9 +220,6 @@ int wasm32_machine_function_vreg_is_unsigned(
 const wasm32_machine_alloca_t *wasm32_machine_function_alloca(
     const wasm32_machine_function_t *machine_function,
     int vreg);
-const wasm32_machine_inst_t *wasm32_machine_function_instruction(
-    const wasm32_machine_function_t *machine_function,
-    const ir_inst_t *source_instruction);
 const wasm32_machine_block_t *wasm32_machine_function_block(
     const wasm32_machine_function_t *machine_function,
     int block_id);

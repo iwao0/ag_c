@@ -6,6 +6,8 @@
 
 #include "wasm32_machine_ir.h"
 
+static int copy_string(char **destination, const char *source, int length);
+
 static int align_to(int value, int alignment) {
   if (alignment <= 1) return value;
   return (value + alignment - 1) & ~(alignment - 1);
@@ -45,17 +47,6 @@ static wasm32_machine_alloca_t *find_alloca(
   return NULL;
 }
 
-const wasm32_machine_inst_t *wasm32_machine_function_instruction(
-    const wasm32_machine_function_t *function,
-    const ir_inst_t *source_instruction) {
-  if (!function || !source_instruction) return NULL;
-  for (int i = 0; i < function->instruction_count; i++) {
-    if (function->instructions[i].source == source_instruction)
-      return &function->instructions[i];
-  }
-  return NULL;
-}
-
 const wasm32_machine_block_t *wasm32_machine_function_block(
     const wasm32_machine_function_t *function, int block_id) {
   if (!function) return NULL;
@@ -74,9 +65,10 @@ const wasm32_machine_alloca_t *wasm32_machine_function_alloca(
   return NULL;
 }
 
-static int collect_allocas(wasm32_machine_function_t *function) {
+static int collect_allocas(
+    wasm32_machine_function_t *function, const ir_func_t *source) {
   int count = 0;
-  for (ir_block_t *block = function->source->entry; block;
+  for (ir_block_t *block = source->entry; block;
        block = block->next) {
     for (ir_inst_t *instruction = block->head; instruction;
          instruction = instruction->next) {
@@ -89,7 +81,7 @@ static int collect_allocas(wasm32_machine_function_t *function) {
   }
   int frame_size = 0;
   int index = 0;
-  for (ir_block_t *block = function->source->entry; block;
+  for (ir_block_t *block = source->entry; block;
        block = block->next) {
     for (ir_inst_t *instruction = block->head; instruction;
          instruction = instruction->next) {
@@ -331,8 +323,8 @@ static int select_parameter_bind(
 
 static int select_instruction(
     const wasm32_machine_function_t *function,
-    wasm32_machine_inst_t *selected) {
-  ir_inst_t *instruction = selected->source;
+    wasm32_machine_inst_t *selected,
+    const ir_inst_t *instruction) {
   switch (instruction->op) {
     case IR_NOP:
       selected->kind = WASM32_MACHINE_INST_NOP;
@@ -499,11 +491,12 @@ static int select_instruction(
 
 static int initialize_instructions(
     wasm32_machine_function_t *function,
+    const ir_func_t *source,
     const ir_abi_module_t *abi_module,
     const ir_abi_signature_t *function_abi) {
   int count = 0;
   int block_count = 0;
-  for (ir_block_t *block = function->source->entry; block;
+  for (ir_block_t *block = source->entry; block;
        block = block->next) {
     block_count++;
     for (ir_inst_t *instruction = block->head; instruction;
@@ -524,11 +517,10 @@ static int initialize_instructions(
   function->block_count = block_count;
   int index = 0;
   int block_index = 0;
-  for (ir_block_t *block = function->source->entry; block;
+  for (ir_block_t *block = source->entry; block;
        block = block->next) {
     wasm32_machine_block_t *machine_block =
         &function->blocks[block_index++];
-    machine_block->source = block;
     machine_block->id = block->id;
     machine_block->first_instruction = index;
     machine_block->next_block_id = block->next ? block->next->id : -1;
@@ -536,7 +528,6 @@ static int initialize_instructions(
          instruction = instruction->next) {
       wasm32_machine_inst_t *machine_instruction =
           &function->instructions[index];
-      machine_instruction->source = instruction;
       machine_instruction->op = instruction->op;
       machine_instruction->dst = instruction->dst;
       machine_instruction->src1 = instruction->src1;
@@ -544,8 +535,12 @@ static int initialize_instructions(
       machine_instruction->src3 = instruction->src3;
       machine_instruction->callee = instruction->callee;
       machine_instruction->result_storage = instruction->result_storage;
-      machine_instruction->sym = instruction->sym;
       machine_instruction->sym_len = instruction->sym_len;
+      if (instruction->sym && instruction->sym_len > 0 &&
+          !copy_string(
+              &machine_instruction->sym,
+              instruction->sym, instruction->sym_len))
+        return 0;
       machine_instruction->object_size = instruction->object_size;
       machine_instruction->alloca_size = instruction->alloca_size;
       machine_instruction->alloca_align = instruction->alloca_align;
@@ -595,16 +590,24 @@ static int initialize_instructions(
   return 1;
 }
 
-static int select_instructions(wasm32_machine_function_t *function) {
-  for (int i = 0; i < function->instruction_count; i++) {
-    if (function->instructions[i].kind == WASM32_MACHINE_INST_CALL ||
-        function->instructions[i].kind ==
-            WASM32_MACHINE_INST_PARAMETER_BIND)
-      continue;
-    if (!select_instruction(function, &function->instructions[i]))
-      return 0;
+static int select_instructions(
+    wasm32_machine_function_t *function, const ir_func_t *source) {
+  int index = 0;
+  for (const ir_block_t *block = source->entry; block;
+       block = block->next) {
+    for (const ir_inst_t *instruction = block->head; instruction;
+         instruction = instruction->next, index++) {
+      if (function->instructions[index].kind ==
+              WASM32_MACHINE_INST_CALL ||
+          function->instructions[index].kind ==
+              WASM32_MACHINE_INST_PARAMETER_BIND)
+        continue;
+      if (!select_instruction(
+              function, &function->instructions[index], instruction))
+        return 0;
+    }
   }
-  return 1;
+  return index == function->instruction_count;
 }
 
 static void collect_instruction_values(
@@ -654,8 +657,8 @@ static void collect_function_flags(
 }
 
 static void infer_alloca_value_types(
-    wasm32_machine_function_t *function) {
-  for (ir_block_t *block = function->source->entry; block;
+    wasm32_machine_function_t *function, const ir_func_t *source) {
+  for (ir_block_t *block = source->entry; block;
        block = block->next) {
     for (ir_inst_t *instruction = block->head; instruction;
          instruction = instruction->next) {
@@ -680,17 +683,18 @@ static void infer_alloca_value_types(
 }
 
 static int propagate_forced_i32(
-    wasm32_machine_function_t *function) {
+    wasm32_machine_function_t *function, const ir_func_t *source) {
   unsigned char *forced_i32 =
       calloc((size_t)function->vreg_count, 1);
   if (function->vreg_count > 0 && !forced_i32) return 0;
   int changed = 1;
   while (changed) {
     changed = 0;
-    for (ir_block_t *block = function->source->entry; block;
+    int instruction_index = 0;
+    for (ir_block_t *block = source->entry; block;
          block = block->next) {
       for (ir_inst_t *instruction = block->head; instruction;
-           instruction = instruction->next) {
+           instruction = instruction->next, instruction_index++) {
         switch (instruction->op) {
           case IR_ALLOCA:
           case IR_LOAD_STR:
@@ -744,8 +748,9 @@ static int propagate_forced_i32(
                 function, forced_i32, instruction->callee);
             if (!valid_vreg(function, instruction->dst)) break;
             const wasm32_machine_inst_t *selected =
-                wasm32_machine_function_instruction(
-                    function, instruction);
+                instruction_index < function->instruction_count
+                    ? &function->instructions[instruction_index]
+                    : NULL;
             if (!selected ||
                 selected->kind != WASM32_MACHINE_INST_CALL) {
               free(forced_i32);
@@ -856,6 +861,7 @@ void wasm32_machine_function_dispose(
   wasm32_machine_signature_dispose(&function->signature);
   wasm32_machine_copy_plan_dispose(&function->result_copy);
   for (int i = 0; i < function->instruction_count; i++) {
+    free(function->instructions[i].sym);
     wasm32_machine_signature_dispose(
         &function->instructions[i].call.signature);
     wasm32_machine_signature_dispose(
@@ -890,7 +896,6 @@ int wasm32_machine_function_build(
   if (!source || !abi_module || !function || source->next_vreg_id < 0)
     return 0;
   memset(function, 0, sizeof(*function));
-  function->source = source;
   if (!copy_function_metadata(function, source)) {
     wasm32_machine_function_dispose(function);
     return 0;
@@ -936,12 +941,12 @@ int wasm32_machine_function_build(
     for (int i = 0; i < function->vreg_count; i++)
       function->vreg_types[i] = IR_TY_I32;
   }
-  if (!collect_allocas(function)) {
+  if (!collect_allocas(function, source)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }
   if (!initialize_instructions(
-          function, abi_module, function_abi)) {
+          function, source, abi_module, function_abi)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }
@@ -955,12 +960,12 @@ int wasm32_machine_function_build(
       collect_function_flags(function, instruction, selected);
     }
   }
-  infer_alloca_value_types(function);
-  if (!propagate_forced_i32(function)) {
+  infer_alloca_value_types(function, source);
+  if (!propagate_forced_i32(function, source)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }
-  if (!select_instructions(function)) {
+  if (!select_instructions(function, source)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }
