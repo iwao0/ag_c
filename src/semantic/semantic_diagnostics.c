@@ -26,19 +26,22 @@ static tk_float_kind_t type_fp_kind(const psx_type_t *type) {
   return TK_FLOAT_KIND_NONE;
 }
 
-static tk_float_kind_t node_fp_kind(node_t *node) {
-  return node ? type_fp_kind(ps_node_get_type(node))
+static tk_float_kind_t node_fp_kind(
+    const psx_resolution_store_t *store, node_t *node) {
+  return node ? type_fp_kind(ps_node_get_type(store, node))
               : TK_FLOAT_KIND_NONE;
 }
 
-static psx_resolution_node_kind_t resolved_node_kind(const node_t *node) {
-  return psx_resolved_object_ref_node_kind(node);
+static psx_resolution_node_kind_t resolved_node_kind(
+    const psx_resolution_store_t *store, const node_t *node) {
+  return psx_resolved_object_ref_node_kind(store, node);
 }
 
 static void warn_float_to_int(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *value,
     const token_t *tok) {
-  if (!value || node_fp_kind(value) == TK_FLOAT_KIND_NONE) return;
+  if (!value || node_fp_kind(store, value) == TK_FLOAT_KIND_NONE) return;
   char detail[64] = "";
   if (value->kind == ND_NUM) {
     double f = ((node_num_t *)value)->fval;
@@ -56,15 +59,17 @@ static void warn_decl_initializer_overflow(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const token_t *tok) {
-  if (!lhs || !rhs || resolved_node_kind(lhs) != ND_LVAR ||
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  if (!lhs || !rhs || resolved_node_kind(store, lhs) != ND_LVAR ||
       rhs->kind != ND_NUM)
     return;
-  if (node_fp_kind(lhs) != TK_FLOAT_KIND_NONE ||
-      node_fp_kind(rhs) != TK_FLOAT_KIND_NONE ||
-      ps_node_value_is_pointer_like(lhs) ||
-      ps_type_is_tag_aggregate(ps_node_get_type(lhs)))
+  if (node_fp_kind(store, lhs) != TK_FLOAT_KIND_NONE ||
+      node_fp_kind(store, rhs) != TK_FLOAT_KIND_NONE ||
+      ps_node_value_is_pointer_like(store, lhs) ||
+      ps_type_is_tag_aggregate(ps_node_get_type(store, lhs)))
     return;
-  const psx_type_t *lhs_type = ps_node_get_type(lhs);
+  const psx_type_t *lhs_type = ps_node_get_type(store, lhs);
   if (lhs_type && lhs_type->kind == PSX_TYPE_BOOL) return;
   int type_size = ps_ctx_type_sizeof_in(
       semantic_context, lhs_type);
@@ -76,7 +81,7 @@ static void warn_decl_initializer_overflow(
   long long min_signed = -(1LL << (bits - 1));
   long long max_unsigned = (1LL << bits) - 1;
   int out_of_range;
-  if (ps_node_integer_value_is_unsigned(lhs)) {
+  if (ps_node_integer_value_is_unsigned(store, lhs)) {
     out_of_range = value < 0 || value > max_unsigned;
     if (value < 0 && value >= min_signed) out_of_range = 0;
   } else {
@@ -95,37 +100,42 @@ static void warn_assignment(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   if (!node || node->kind != ND_ASSIGN ||
       (!node->is_source_assignment &&
-       !ps_node_is_decl_initializer(node)))
+       !ps_node_is_decl_initializer(store, node)))
     return;
   node_t *lhs = node->lhs;
   node_t *rhs = node->rhs;
   const token_t *tok = node->tok ? node->tok : fallback;
   if (node->is_source_assignment && lhs &&
-      resolved_node_kind(lhs) == ND_LVAR && rhs &&
-      resolved_node_kind(rhs) == ND_LVAR && ps_node_lvar_symbol(lhs) &&
-      ps_node_lvar_symbol(lhs) == ps_node_lvar_symbol(rhs)) {
+      resolved_node_kind(store, lhs) == ND_LVAR && rhs &&
+      resolved_node_kind(store, rhs) == ND_LVAR &&
+      ps_node_lvar_symbol(store, lhs) &&
+      ps_node_lvar_symbol(store, lhs) ==
+          ps_node_lvar_symbol(store, rhs)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_SELF_ASSIGN, tok,
         "%s", diag_warn_message_for_in(
             diagnostics, DIAG_WARN_PARSER_SELF_ASSIGN));
   }
-  if (lhs && rhs && !ps_node_value_is_pointer_like(lhs) &&
-      node_fp_kind(lhs) == TK_FLOAT_KIND_NONE &&
-      node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
-    if (ps_node_is_decl_initializer(node)) {
-      warn_float_to_int(diagnostics, rhs, tok);
+  if (lhs && rhs && !ps_node_value_is_pointer_like(store, lhs) &&
+      node_fp_kind(store, lhs) == TK_FLOAT_KIND_NONE &&
+      node_fp_kind(store, rhs) != TK_FLOAT_KIND_NONE) {
+    if (ps_node_is_decl_initializer(store, node)) {
+      warn_float_to_int(store, diagnostics, rhs, tok);
     } else {
-      warn_float_to_int(diagnostics, rhs, tok);
+      warn_float_to_int(store, diagnostics, rhs, tok);
     }
   }
-  if (ps_node_is_decl_initializer(node))
+  if (ps_node_is_decl_initializer(store, node))
     warn_decl_initializer_overflow(
         semantic_context, diagnostics, lhs, rhs, tok);
 }
 
 static void warn_return(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback) {
@@ -137,13 +147,13 @@ static void warn_return(
   int ret_pointer = ps_type_is_pointer(ret_type);
   int ret_void = ret_type && ret_type->kind == PSX_TYPE_VOID;
   const token_t *tok = node->tok ? node->tok : fallback;
-  if (node_fp_kind(node->lhs) != TK_FLOAT_KIND_NONE &&
+  if (node_fp_kind(store, node->lhs) != TK_FLOAT_KIND_NONE &&
       ret_fp == TK_FLOAT_KIND_NONE && !ret_pointer && !ret_void) {
-    warn_float_to_int(diagnostics, node->lhs, tok);
+    warn_float_to_int(store, diagnostics, node->lhs, tok);
   }
   if (ret_pointer && node->lhs->kind == ND_ADDR && node->lhs->lhs &&
-      resolved_node_kind(node->lhs->lhs) == ND_LVAR) {
-    lvar_t *src = ps_node_lvar_symbol(node->lhs->lhs);
+      resolved_node_kind(store, node->lhs->lhs) == ND_LVAR) {
+    lvar_t *src = ps_node_lvar_symbol(store, node->lhs->lhs);
     if (src && !ps_lvar_is_static_local(src)) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_RETURN_STACK_ADDRESS, tok,
@@ -186,37 +196,42 @@ static void source_compare_operands(
   }
 }
 
-static int nodes_identity_equal(node_t *lhs, node_t *rhs) {
-  if (!lhs || !rhs || resolved_node_kind(lhs) != resolved_node_kind(rhs))
+static int nodes_identity_equal(
+    const psx_resolution_store_t *store, node_t *lhs, node_t *rhs) {
+  if (!lhs || !rhs ||
+      resolved_node_kind(store, lhs) != resolved_node_kind(store, rhs))
     return 0;
   psx_resolved_object_ref_kind_t reference_kind =
-      psx_resolved_object_ref_kind(lhs);
-  if (reference_kind != psx_resolved_object_ref_kind(rhs)) return 0;
+      psx_resolved_object_ref_kind(store, lhs);
+  if (reference_kind != psx_resolved_object_ref_kind(store, rhs)) return 0;
   if (reference_kind == PSX_RESOLVED_OBJECT_REF_LOCAL) {
-    lvar_t *var = psx_resolved_object_ref_local(lhs);
-    return var && var == psx_resolved_object_ref_local(rhs);
+    lvar_t *var = psx_resolved_object_ref_local(store, lhs);
+    return var && var == psx_resolved_object_ref_local(store, rhs);
   }
   if (reference_kind == PSX_RESOLVED_OBJECT_REF_GLOBAL ||
       reference_kind == PSX_RESOLVED_OBJECT_REF_FUNCTION) {
     int lhs_len = 0;
     int rhs_len = 0;
-    char *lhs_name = psx_resolved_object_ref_name(lhs, &lhs_len);
-    char *rhs_name = psx_resolved_object_ref_name(rhs, &rhs_len);
+    char *lhs_name =
+        psx_resolved_object_ref_name(store, lhs, &lhs_len);
+    char *rhs_name =
+        psx_resolved_object_ref_name(store, rhs, &rhs_len);
     return lhs_name && rhs_name && lhs_len == rhs_len &&
            memcmp(lhs_name, rhs_name, (size_t)lhs_len) == 0;
   }
   if (lhs->kind == ND_NUM) {
     return ((node_num_t *)lhs)->val == ((node_num_t *)rhs)->val &&
-           node_fp_kind(lhs) == node_fp_kind(rhs);
+           node_fp_kind(store, lhs) == node_fp_kind(store, rhs);
   }
   return 0;
 }
 
 static void warn_identical_logical(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || (node->source_op != TK_OROR && node->source_op != TK_ANDAND) ||
-      !nodes_identity_equal(node->lhs, node->rhs))
+      !nodes_identity_equal(store, node->lhs, node->rhs))
     return;
   const char *op = source_op_text(node->source_op);
   diag_warn_tokf_in(diagnostics,
@@ -232,18 +247,21 @@ static void warn_sign_compare(
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const char *op, const token_t *tok) {
   if (!lhs || !rhs) return;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
   int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      ps_node_get_type(lhs), target);
+      ps_node_get_type(store, lhs), target);
   int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      ps_node_get_type(rhs), target);
+      ps_node_get_type(store, rhs), target);
   if (lhs_unsigned == rhs_unsigned) return;
   node_t *signed_side = lhs_unsigned ? rhs : lhs;
   if (signed_side->kind == ND_NUM &&
       ((node_num_t *)signed_side)->val >= 0)
     return;
   if (!ps_type_usual_arithmetic_result_is_unsigned_for_target(
-          ps_node_get_type(lhs), ps_node_get_type(rhs), target)) {
+          ps_node_get_type(store, lhs),
+          ps_node_get_type(store, rhs), target)) {
     return;
   }
   diag_warn_tokf_in(diagnostics,
@@ -253,16 +271,19 @@ static void warn_sign_compare(
       op);
 }
 
-static int is_zero_literal(node_t *node) {
+static int is_zero_literal(
+    const psx_resolution_store_t *store, node_t *node) {
   return node && node->kind == ND_NUM &&
-         node_fp_kind(node) == TK_FLOAT_KIND_NONE &&
+         node_fp_kind(store, node) == TK_FLOAT_KIND_NONE &&
          ((node_num_t *)node)->val == 0;
 }
 
 static void warn_unsigned_zero(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const char *op, const token_t *tok) {
-  if (ps_node_integer_value_is_unsigned(lhs) && is_zero_literal(rhs)) {
+  if (ps_node_integer_value_is_unsigned(store, lhs) &&
+      is_zero_literal(store, rhs)) {
     if (strcmp(op, ">=") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
           diag_warn_message_for_in(
@@ -274,7 +295,8 @@ static void warn_unsigned_zero(
               diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO),
           op, 0);
   }
-  if (is_zero_literal(lhs) && ps_node_integer_value_is_unsigned(rhs)) {
+  if (is_zero_literal(store, lhs) &&
+      ps_node_integer_value_is_unsigned(store, rhs)) {
     if (strcmp(op, "<=") == 0)
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, tok,
           diag_warn_message_for_in(
@@ -292,6 +314,8 @@ static void warn_comparison(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   token_kind_t op_kind = node ? node->source_op : TK_EOF;
   if (op_kind != TK_EQEQ && op_kind != TK_NEQ && op_kind != TK_LT &&
       op_kind != TK_LE && op_kind != TK_GT && op_kind != TK_GE)
@@ -309,7 +333,7 @@ static void warn_comparison(
               diagnostics, DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES),
           op, op, op, op);
     }
-    if (nodes_identity_equal(lhs, rhs))
+    if (nodes_identity_equal(store, lhs, rhs))
       diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_SELF_COMPARE, tok,
           diag_warn_message_for_in(
               diagnostics, DIAG_WARN_PARSER_SELF_COMPARE),
@@ -318,12 +342,14 @@ static void warn_comparison(
         semantic_context, diagnostics, lhs, rhs, op, tok);
     node_t *pointer = NULL;
     node_t *number = NULL;
-    if (lhs && rhs && ps_node_value_is_pointer_like(lhs) &&
-        !ps_node_value_is_pointer_like(rhs) && rhs->kind == ND_NUM) {
+    if (lhs && rhs && ps_node_value_is_pointer_like(store, lhs) &&
+        !ps_node_value_is_pointer_like(store, rhs) &&
+        rhs->kind == ND_NUM) {
       pointer = lhs;
       number = rhs;
-    } else if (lhs && rhs && ps_node_value_is_pointer_like(rhs) &&
-               !ps_node_value_is_pointer_like(lhs) && lhs->kind == ND_NUM) {
+    } else if (lhs && rhs && ps_node_value_is_pointer_like(store, rhs) &&
+               !ps_node_value_is_pointer_like(store, lhs) &&
+               lhs->kind == ND_NUM) {
       pointer = rhs;
       number = lhs;
     }
@@ -337,16 +363,17 @@ static void warn_comparison(
   } else {
     warn_sign_compare(
         semantic_context, diagnostics, lhs, rhs, op, tok);
-    warn_unsigned_zero(diagnostics, lhs, rhs, op, tok);
+    warn_unsigned_zero(store, diagnostics, lhs, rhs, op, tok);
   }
 }
 
-static int is_plain_int_literal(node_t *node) {
+static int is_plain_int_literal(
+    const psx_resolution_store_t *store, node_t *node) {
   if (!node || node->kind != ND_NUM ||
-      node_fp_kind(node) != TK_FLOAT_KIND_NONE ||
-      ps_node_integer_value_is_unsigned(node))
+      node_fp_kind(store, node) != TK_FLOAT_KIND_NONE ||
+      ps_node_integer_value_is_unsigned(store, node))
     return 0;
-  const psx_type_t *type = ps_node_get_type(node);
+  const psx_type_t *type = ps_node_get_type(store, node);
   node_num_t *number = (node_num_t *)node;
   return type && type->kind == PSX_TYPE_INTEGER &&
          type->integer_kind == PSX_INTEGER_KIND_INT &&
@@ -358,10 +385,13 @@ static void warn_arithmetic(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || node->source_op == TK_EOF) return;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   const token_t *tok = node->tok ? node->tok : fallback;
   if ((node->source_op == TK_PLUS || node->source_op == TK_MINUS ||
        node->source_op == TK_MUL) &&
-      is_plain_int_literal(node->lhs) && is_plain_int_literal(node->rhs)) {
+      is_plain_int_literal(store, node->lhs) &&
+      is_plain_int_literal(store, node->rhs)) {
     long long lhs = ((node_num_t *)node->lhs)->val;
     long long rhs = ((node_num_t *)node->rhs)->val;
     long long result = node->source_op == TK_PLUS
@@ -383,7 +413,7 @@ static void warn_arithmetic(
     int width = node->lhs &&
                         ps_ctx_type_sizeof_in(
                             semantic_context,
-                            ps_node_get_type(node->lhs)) >= 8
+                            ps_node_get_type(store, node->lhs)) >= 8
                     ? 64
                     : 32;
     if (amount < 0 || amount >= width) {
@@ -396,7 +426,7 @@ static void warn_arithmetic(
   }
   if ((node->source_op == TK_DIV || node->source_op == TK_MOD) &&
       node->rhs && node->rhs->kind == ND_NUM &&
-      node_fp_kind(node->rhs) == TK_FLOAT_KIND_NONE &&
+      node_fp_kind(store, node->rhs) == TK_FLOAT_KIND_NONE &&
       ((node_num_t *)node->rhs)->val == 0) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_DIVIDE_BY_ZERO, tok,
@@ -407,24 +437,25 @@ static void warn_arithmetic(
 }
 
 static void warn_function(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (node->kind == ND_FUNCALL &&
       psx_function_call_is_implicit_declaration(
-          (node_function_call_t *)node)) {
+          store, (node_function_call_t *)node)) {
     node_function_call_t *call = (node_function_call_t *)node;
     const char *direct_name =
-        psx_function_call_direct_name(call);
+        psx_function_call_direct_name(store, call);
     if (direct_name) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL,
           node->tok ? node->tok : fallback,
           diag_warn_message_for_in(
               diagnostics, DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL),
-          psx_function_call_direct_name_length(call), direct_name);
+          psx_function_call_direct_name_length(store, call), direct_name);
     }
-  } else if (resolved_node_kind(node) == ND_FUNCDEF &&
-             ps_node_is_implicit_int_return(node)) {
+  } else if (resolved_node_kind(store, node) == ND_FUNCDEF &&
+             ps_node_is_implicit_int_return(store, node)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_IMPLICIT_INT_RETURN,
         node->tok ? node->tok : fallback, "%s",
@@ -463,17 +494,21 @@ static void emit_node_warning(
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
-  switch (resolved_node_kind(node)) {
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  switch (resolved_node_kind(store, node)) {
     case ND_ASSIGN:
       warn_assignment(
           semantic_context, diagnostics, node, fallback_diag_tok);
       break;
     case ND_RETURN:
-      warn_return(diagnostics, node, current_func, fallback_diag_tok);
+      warn_return(
+          store, diagnostics, node, current_func, fallback_diag_tok);
       break;
     case ND_LOGOR:
     case ND_LOGAND:
-      warn_identical_logical(diagnostics, node, fallback_diag_tok);
+      warn_identical_logical(
+          store, diagnostics, node, fallback_diag_tok);
       break;
     case ND_EQ:
     case ND_NE:
@@ -494,7 +529,7 @@ static void emit_node_warning(
       break;
     case ND_FUNCDEF:
     case ND_FUNCALL:
-      warn_function(diagnostics, node, fallback_diag_tok);
+      warn_function(store, diagnostics, node, fallback_diag_tok);
       break;
     case ND_IF:
     case ND_WHILE:
@@ -532,7 +567,8 @@ static void emit_warning_tree(
   emit_node_warning(
       semantic_context, diagnostics, node, current_func,
       fallback_diag_tok);
-  switch (resolved_node_kind(node)) {
+  switch (resolved_node_kind(
+      ps_ctx_resolution_store(semantic_context), node)) {
     case ND_BLOCK:
       emit_warning_array(
           semantic_context, diagnostics, ((node_block_t *)node)->body,

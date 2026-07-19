@@ -41,10 +41,6 @@ struct tk_allocator_context_t {
   arena_chunk_t *recyc_cursor_chunk;
 };
 
-static tk_allocator_context_t default_allocator_context = {
-    .next_chunk_hint = 16 * 1024,
-};
-
 tk_allocator_context_t *tk_allocator_context_create(
     ag_diagnostic_context_t *diagnostic_context) {
   tk_allocator_context_t *ctx = calloc(1, sizeof(*ctx));
@@ -64,14 +60,10 @@ static void free_chunk_list(arena_chunk_t *head) {
 }
 
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx) {
-  if (!ctx || ctx == &default_allocator_context) return;
+  if (!ctx) return;
   free_chunk_list(ctx->arena_head);
   free_chunk_list(ctx->recyc_oldest);
   free(ctx);
-}
-
-tk_allocator_context_t *tk_allocator_default_context(void) {
-  return &default_allocator_context;
 }
 
 void tk_allocator_bind_diagnostic_context_in(

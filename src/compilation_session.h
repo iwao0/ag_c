@@ -19,16 +19,12 @@ typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 typedef struct psx_hir_module_t psx_hir_module_t;
 typedef struct psx_scope_graph_t psx_scope_graph_t;
 typedef struct ag_compilation_session_t ag_compilation_session_t;
-typedef void (*ag_session_backend_callback_t)(void *context);
+typedef void (*ag_session_backend_destroy_fn)(void *context);
 
 ag_compilation_session_t *ag_compilation_session_create(
     const ag_target_info_t *target);
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session);
-int ag_compilation_session_activate(ag_compilation_session_t *session);
-int ag_compilation_session_is_active(
-    const ag_compilation_session_t *session);
-int ag_compilation_session_deactivate(ag_compilation_session_t *session);
 int ag_compilation_session_destroy(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);
@@ -64,9 +60,9 @@ const ag_target_info_t *ag_compilation_session_target(
     const ag_compilation_session_t *session);
 int ag_compilation_session_set_backend_context(
     ag_compilation_session_t *session, void *backend_context,
-    ag_session_backend_callback_t activate,
-    ag_session_backend_callback_t deactivate,
-    ag_session_backend_callback_t destroy);
+    ag_session_backend_destroy_fn destroy);
+void *ag_compilation_session_backend_context(
+    const ag_compilation_session_t *session);
 int ag_compilation_session_set_continuation(
     ag_compilation_session_t *session, const char *entry,
     const char *frame_condition, const char *start_export,

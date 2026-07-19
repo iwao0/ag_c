@@ -18,14 +18,16 @@ typedef enum {
   ND_VLA_ALLOC,
   ND_FP_TO_INT,
   ND_INT_TO_FP,
-  ND_VA_ARG_AREA,
+  ND_VARARG_CURSOR,
 } psx_resolved_node_kind_t;
 
 typedef int psx_resolution_node_kind_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 
 psx_resolution_node_kind_t psx_resolution_node_kind(
-    const node_t *node);
+    const psx_resolution_store_t *store, const node_t *node);
 int psx_resolution_node_set_kind(
-    node_t *node, psx_resolved_node_kind_t kind);
+    psx_resolution_store_t *store, node_t *node,
+    psx_resolved_node_kind_t kind);
 
 #endif

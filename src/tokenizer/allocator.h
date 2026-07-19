@@ -9,7 +9,6 @@ typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 tk_allocator_context_t *tk_allocator_context_create(
     ag_diagnostic_context_t *diagnostic_context);
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx);
-tk_allocator_context_t *tk_allocator_default_context(void);
 void tk_allocator_bind_diagnostic_context_in(
     tk_allocator_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context);

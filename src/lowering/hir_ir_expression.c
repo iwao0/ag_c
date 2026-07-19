@@ -875,13 +875,22 @@ static int valid_bitfield(int bit_width, int bit_offset) {
          bit_offset < 64 && bit_width + bit_offset <= 64;
 }
 
+static int valid_bitfield_storage(
+    ir_type_t memory_type, int bit_width, int bit_offset) {
+  int storage_size = ir_type_size(memory_type);
+  return hir_ir_is_integer_type(memory_type) && storage_size > 0 &&
+         valid_bitfield(bit_width, bit_offset) &&
+         bit_width + bit_offset <= storage_size * 8;
+}
+
 static ir_val_t emit_bitfield_load(
     hir_ir_context_t *context, ir_val_t pointer, int bit_width,
-    int bit_offset, int is_signed, ir_type_t result_type) {
-  if (!valid_bitfield(bit_width, bit_offset) ||
+    int bit_offset, int is_signed, ir_type_t memory_type,
+    ir_type_t result_type) {
+  if (!valid_bitfield_storage(memory_type, bit_width, bit_offset) ||
       !hir_ir_is_integer_type(result_type))
     return hir_ir_unsupported_expr(context);
-  ir_type_t unit_type = bit_width + bit_offset > 32
+  ir_type_t unit_type = memory_type == IR_TY_I64
                             ? IR_TY_I64 : IR_TY_I32;
   int loaded_vreg = hir_ir_new_vreg(context);
   if (loaded_vreg < 0) return ir_val_none();
@@ -890,10 +899,13 @@ static ir_val_t emit_bitfield_load(
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
-  load->dst = ir_val_vreg(loaded_vreg, unit_type);
+  load->dst = ir_val_vreg(loaded_vreg, memory_type);
   load->src1 = pointer;
+  load->is_unsigned = 1;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-  ir_val_t current = load->dst;
+  ir_val_t current = hir_ir_emit_integer_width_conversion(
+      context, load->dst, unit_type, 1);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   if (bit_offset > 0) {
     current = hir_ir_emit_integer_binary(
         context, IR_SHR, current,
@@ -923,11 +935,11 @@ static ir_val_t emit_bitfield_load(
 
 static ir_val_t emit_bitfield_store(
     hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
-    int bit_width, int bit_offset) {
-  if (!valid_bitfield(bit_width, bit_offset) ||
+    int bit_width, int bit_offset, ir_type_t memory_type) {
+  if (!valid_bitfield_storage(memory_type, bit_width, bit_offset) ||
       !hir_ir_is_integer_type(value.type))
     return hir_ir_unsupported_expr(context);
-  ir_type_t unit_type = bit_width + bit_offset > 32
+  ir_type_t unit_type = memory_type == IR_TY_I64
                             ? IR_TY_I64 : IR_TY_I32;
   ir_val_t stored_value = hir_ir_emit_integer_width_conversion(
       context, value, unit_type, 0);
@@ -939,14 +951,18 @@ static ir_val_t emit_bitfield_store(
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
   }
-  load->dst = ir_val_vreg(loaded_vreg, unit_type);
+  load->dst = ir_val_vreg(loaded_vreg, memory_type);
   load->src1 = pointer;
+  load->is_unsigned = 1;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
+  ir_val_t loaded_value = hir_ir_emit_integer_width_conversion(
+      context, load->dst, unit_type, 1);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   uint64_t mask = bit_width == 64
                       ? UINT64_MAX : (UINT64_C(1) << bit_width) - 1;
   uint64_t shifted_mask = mask << bit_offset;
   ir_val_t cleared = hir_ir_emit_integer_binary(
-      context, IR_AND, load->dst,
+      context, IR_AND, loaded_value,
       bitfield_constant(context, unit_type, ~shifted_mask), unit_type);
   ir_val_t field = hir_ir_emit_integer_binary(
       context, IR_AND, stored_value,
@@ -967,7 +983,12 @@ static ir_val_t emit_bitfield_store(
     return ir_val_none();
   }
   store->src1 = pointer;
-  store->src2 = combined;
+  store->src2 = hir_ir_emit_integer_width_conversion(
+      context, combined, memory_type, 1);
+  if (context->status != IR_HIR_BUILD_OK) {
+    free(store);
+    return ir_val_none();
+  }
   if (!hir_ir_append_instruction(context, store)) return ir_val_none();
   return value;
 }
@@ -1087,7 +1108,7 @@ static ir_val_t build_inc_dec(
   if (is_bitfield) {
     old_value = emit_bitfield_load(
         context, pointer, bit_width, bit_offset, bit_is_signed,
-        value_type);
+        value_type, value_type);
   } else {
     int old_vreg = hir_ir_new_vreg(context);
     if (old_vreg < 0) return ir_val_none();
@@ -1163,7 +1184,7 @@ static ir_val_t build_inc_dec(
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   if (is_bitfield) {
     (void)emit_bitfield_store(
-        context, pointer, new_value, bit_width, bit_offset);
+        context, pointer, new_value, bit_width, bit_offset, value_type);
   } else {
     ir_inst_t *store = ir_inst_new(IR_STORE);
     if (!store) {
@@ -1202,7 +1223,7 @@ static ir_val_t build_compound_assignment(
   if (is_bitfield) {
     old_value = emit_bitfield_load(
         context, pointer, bit_width, bit_offset, bit_is_signed,
-        target_storage_type);
+        target_storage_type, target_storage_type);
   } else {
     int old_vreg = hir_ir_new_vreg(context);
     if (old_vreg < 0) return ir_val_none();
@@ -1379,7 +1400,8 @@ static ir_val_t build_compound_assignment(
   }
   if (is_bitfield)
     return emit_bitfield_store(
-        context, pointer, result, bit_width, bit_offset);
+        context, pointer, result, bit_width, bit_offset,
+        target_storage_type);
   if (!hir_ir_store_direct_value(context, pointer, result))
     return ir_val_none();
   return result;
@@ -1670,12 +1692,12 @@ ir_val_t hir_ir_build_expr(
     return build_string_reference(context, node);
   if (psx_hir_node_kind(node) == PSX_HIR_FUNCTION_REF)
     return build_function_reference(context, node);
-  if (psx_hir_node_kind(node) == PSX_HIR_VA_ARG_AREA) {
+  if (psx_hir_node_kind(node) == PSX_HIR_VARARG_CURSOR) {
     if (type.type_class != IR_MIR_TYPE_POINTER)
       return hir_ir_unsupported_expr(context);
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
-    ir_inst_t *area = ir_inst_new(IR_VA_ARG_AREA);
+    ir_inst_t *area = ir_inst_new(IR_VARARG_CURSOR);
     if (!area) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
       return ir_val_none();
@@ -1712,6 +1734,7 @@ ir_val_t hir_ir_build_expr(
             node, &bit_width, &bit_offset, &bit_is_signed))
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
+          hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
@@ -1749,6 +1772,7 @@ ir_val_t hir_ir_build_expr(
             node, &bit_width, &bit_offset, &bit_is_signed))
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
+          hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
@@ -1799,6 +1823,7 @@ ir_val_t hir_ir_build_expr(
             node, &bit_width, &bit_offset, &bit_is_signed))
       return emit_bitfield_load(
           context, pointer, bit_width, bit_offset, bit_is_signed,
+          hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
@@ -1828,7 +1853,8 @@ ir_val_t hir_ir_build_expr(
             node, &bit_width, &bit_offset, &bit_is_signed))
       return emit_bitfield_load(
           context, ir_val_vreg(pointer, IR_TY_PTR), bit_width,
-          bit_offset, bit_is_signed, hir_ir_scalar_storage_type(type));
+          bit_offset, bit_is_signed, hir_ir_scalar_storage_type(type),
+          hir_ir_scalar_storage_type(type));
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
     ir_inst_t *load = ir_inst_new(IR_LOAD);
@@ -1901,7 +1927,8 @@ ir_val_t hir_ir_build_expr(
             target, &bit_width, &bit_offset, &bit_is_signed)) {
       (void)bit_is_signed;
       return emit_bitfield_store(
-          context, pointer, value, bit_width, bit_offset);
+          context, pointer, value, bit_width, bit_offset,
+          hir_ir_scalar_storage_type(target_type));
     }
     ir_inst_t *store = ir_inst_new(IR_STORE);
     if (!store) {

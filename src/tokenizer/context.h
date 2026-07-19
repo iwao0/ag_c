@@ -10,7 +10,6 @@
  * 公開ヘッダには出さない内部基盤だが、正本の実体は tokenizer.c に閉じる。
  */
 
-tokenizer_context_t *tk_runtime_ctx(void);
 tokenizer_context_t *tk_effective_ctx(tokenizer_context_t *ctx);
 void tk_advance_current_token(tokenizer_context_t *ctx, token_t *cur);
 

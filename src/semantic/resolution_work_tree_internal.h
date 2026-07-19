@@ -6,8 +6,10 @@
 
 typedef struct psx_resolved_hir_build_failure_t
     psx_resolved_hir_build_failure_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 
 psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, const node_t *syntax_root);
 node_t *psx_resolution_work_tree_compatibility_root_mut(
     psx_resolution_work_tree_t *tree);

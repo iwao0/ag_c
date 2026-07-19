@@ -16,6 +16,8 @@ typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 struct tokenizer_context_t {
   tk_allocator_context_t *allocator_context;
   ag_diagnostic_context_t *diagnostic_context;
+  bool owns_allocator_context;
+  bool owns_diagnostic_context;
   bool strict_c11_mode;
   bool enable_trigraphs;
   bool enable_binary_literals;
@@ -37,24 +39,14 @@ struct tokenizer_context_t {
 };
 
 /**
- * @brief 既定コンテキストの現在トークンカーソルを取得する。
- * @return 現在トークン。未設定時は `NULL`。
- */
-token_t *tk_get_current_token(void);
-/**
  * @brief 指定コンテキストの現在トークンカーソルを取得する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 現在トークン。未設定時は `NULL`。
  */
 token_t *tk_get_current_token_ctx(tokenizer_context_t *ctx);
 /**
- * @brief 既定コンテキストの現在トークンカーソルを更新する。
- * @param tok 新しい現在トークン。`NULL` 可。
- */
-void tk_set_current_token(token_t *tok);
-/**
  * @brief 指定コンテキストの現在トークンカーソルを更新する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param tok 新しい現在トークン。`NULL` 可。
  */
 void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok);
@@ -68,91 +60,52 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok);
 const char *tk_token_kind_str(token_kind_t kind, int *len);
 
 /**
- * @brief 次トークンが1文字記号 `op` なら消費する。
- * @param op 期待する1文字記号。
- * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
- */
-bool tk_consume(char op);
-/**
  * @brief 指定コンテキストで次トークンが1文字記号 `op` なら消費する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param op 期待する1文字記号。
  * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
  */
 bool tk_consume_ctx(tokenizer_context_t *ctx, char op);
 /**
- * @brief 次トークンが記号文字列 `op` なら消費する。
- * @param op 期待する記号文字列（例: `"=="`, `"->"`）。
- * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
- */
-bool tk_consume_str(const char *op);
-/**
  * @brief 指定コンテキストで次トークンが記号文字列 `op` なら消費する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param op 期待する記号文字列。
  * @return 一致して消費した場合 `true`。不一致/未設定なら `false`（非破壊）。
  */
 bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op);
 /**
- * @brief 次トークンが識別子なら消費して返す。
- * @return 消費した識別子トークン。一致しない場合は `NULL`（非破壊）。
- */
-token_ident_t *tk_consume_ident(void);
-/**
  * @brief 指定コンテキストで次トークンが識別子なら消費して返す。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 消費した識別子トークン。一致しない場合は `NULL`（非破壊）。
  */
 token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 次トークンが1文字記号 `op` であることを期待して消費する。
- * @param op 期待する1文字記号。
- * @warning 不一致または現在トークン未設定時は診断終了する。
- */
-void tk_expect(char op);
-/**
  * @brief 指定コンテキストで次トークンが1文字記号 `op` であることを期待して消費する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param op 期待する1文字記号。
  * @warning 不一致または現在トークン未設定時は診断終了する。
  */
 void tk_expect_ctx(tokenizer_context_t *ctx, char op);
 
 /**
- * @brief 次トークンが整数リテラルであることを期待して int 値を返す。
- * @return 消費した整数値。
- * @warning 浮動小数点トークンや int 範囲外はエラー終了する。
- */
-int tk_expect_number(void);
-/**
  * @brief 指定コンテキストで次トークンが整数リテラルであることを期待して `int` 値を返す。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 消費した整数値。
  * @warning 不一致・範囲外・現在トークン未設定時は診断終了する。
  */
 int tk_expect_number_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 現在トークンが EOF かを返す。
- * @return 現在トークンが EOF のとき `true`。未設定を含むそれ以外は `false`。
- */
-bool tk_at_eof(void);
-/**
  * @brief 指定コンテキストで現在トークンが EOF かを返す。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 現在トークンが EOF のとき `true`。未設定を含むそれ以外は `false`。
  */
 bool tk_at_eof_ctx(tokenizer_context_t *ctx);
 
 /**
- * @brief 入力文字列をトークナイズして先頭トークンを返す。
- * @warning 不正な字句を検出した場合は診断API（`diag_emit_*`）で終了する。
- */
-token_t *tk_tokenize(const char *p);
-/**
  * @brief 指定コンテキストで入力文字列をトークナイズする。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param p 入力文字列。
  * @return 先頭トークン（末尾は `TK_EOF`）。
  * @warning 不正な字句を検出した場合は診断APIで終了する。
@@ -170,102 +123,52 @@ void tk_stream_close(tk_token_stream_t *s);
 /* true の間、トークナイズ不能な文字 (` @ $) ・未終端リテラル・不正数値で即エラーにせず
  * TK_UNKNOWN として 1 文字進める。プリプロセッサが `#if 0` 偽分岐の読み飛ばし・行先読み中
  * だけ立てる (中身はどうせ捨てる)。 */
-void tk_set_tolerate_untokenizable(bool v);
 void tk_set_tolerate_untokenizable_ctx(tokenizer_context_t *ctx, bool v);
 /* TK_DIAG_* マクロ内部用: 寛容モード中なら tk_stream_next の setjmp 地点へ巻き戻す。 */
-void tk_tolerate_longjmp_if_active(void);
+void tk_tolerate_longjmp_if_active_ctx(tokenizer_context_t *ctx);
 /* ヒープ確保版 (不透明な構造体をポインタで保持したい呼び出し側用)。 */
 tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in);
 void tk_stream_delete(tk_token_stream_t *s);
 
 /* パーサのカーソル前進フックを登録する (トークンストリーム driver 用、NULL で解除)。 */
-void tk_set_cursor_hook(tk_cursor_hook_t fn, void *user_data);
 void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, tk_cursor_hook_t fn,
                             void *user_data);
 /* 現在のカーソル前進フックを取得する (ネスト処理中に一時退避・復元する用)。 */
-tk_cursor_hook_t tk_get_cursor_hook(void);
 tk_cursor_hook_t tk_get_cursor_hook_ctx(tokenizer_context_t *ctx);
 void *tk_get_cursor_hook_user_data_ctx(tokenizer_context_t *ctx);
 /* カーソルを進めない深い前方先読みの直前に呼ぶ。登録された生成器が前方 lookahead を満たす
  * (プリプロセッサが tk_set_ensure_lookahead_hook で登録)。未登録なら no-op。 */
-void tk_set_ensure_lookahead_hook(tk_ensure_lookahead_hook_t fn,
-                                  void *user_data);
 void tk_set_ensure_lookahead_hook_ctx(tokenizer_context_t *ctx,
                                       tk_ensure_lookahead_hook_t fn,
                                       void *user_data);
-void tk_ensure_lookahead(void);
 void tk_ensure_lookahead_ctx(tokenizer_context_t *ctx);
 
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 設定済み入力文字列。未設定時は `NULL`。
  */
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を設定する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param p 設定する入力文字列。
  */
 void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p);
 
 /**
  * @brief 指定コンテキストのファイル名（診断表示用）を取得する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @return 設定済みファイル名。未設定時は `NULL`。
  */
 const char *tk_get_filename_ctx(tokenizer_context_t *ctx);
 /**
  * @brief 指定コンテキストのファイル名（診断表示用）を設定する。
- * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @param ctx 対象コンテキスト。
  * @param name 設定するファイル名。
  */
 void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name);
 
-/**
- * @brief strict C11 モードの有効/無効を取得する。
- * @note strict C11 が有効な場合、2進整数リテラル（`0b...`）は拒否される。
- */
-bool tk_get_strict_c11_mode(void);
-/**
- * @brief strict C11 モードの有効/無効を設定する。
- * @param strict `true` で strict C11 を有効化。
- */
-void tk_set_strict_c11_mode(bool strict);
-/** @brief トライグラフ置換の有効/無効を取得する。 */
-bool tk_get_enable_trigraphs(void);
-/**
- * @brief トライグラフ置換の有効/無効を設定する。
- * @param enable `true` で有効化。
- */
-void tk_set_enable_trigraphs(bool enable);
-/**
- * @brief 2進整数リテラル拡張の有効/無効を取得する。
- * @note strict C11 が有効な場合、この設定が true でも `0b...` は拒否される。
- */
-bool tk_get_enable_binary_literals(void);
-/**
- * @brief 2進整数リテラル拡張の有効/無効を設定する。
- * @param enable `true` で有効化。
- */
-void tk_set_enable_binary_literals(bool enable);
-/** @brief C11監査ログ（拡張使用検出）の有効/無効を取得する。 */
-bool tk_get_enable_c11_audit_extensions(void);
-/**
- * @brief C11監査ログ（拡張使用検出）の有効/無効を設定する。
- * @param enable `true` で有効化。
- */
-void tk_set_enable_c11_audit_extensions(bool enable);
-
-/**
- * @brief 既定のTokenizerコンテキストを返す。
- * @return 既定コンテキストへのポインタ。
- */
-tokenizer_context_t *tk_get_default_context(void);
-/** @brief 引数なし互換 API が参照する実行中コンテキストを切り替える。 */
-tokenizer_context_t *tk_context_activate(tokenizer_context_t *ctx);
-/** @brief 現在の実行中コンテキストを返す。未設定時は既定コンテキスト。 */
-tokenizer_context_t *tk_context_active(void);
 /**
  * @brief コンテキストを既定値で初期化する。
  * @param ctx 初期化対象コンテキスト。
@@ -327,11 +230,12 @@ typedef struct {
 } tokenizer_stats_t;
 
 /** @brief Tokenizer統計カウンタをリセットする。 */
-void tk_reset_tokenizer_stats(void);
+void tk_reset_tokenizer_stats_ctx(tokenizer_context_t *ctx);
 /**
  * @brief 現在のTokenizer統計を取得する。
  * @return `alloc_count` / `alloc_bytes` / `peak_alloc_bytes` を格納した統計値。
  */
-tokenizer_stats_t tk_get_tokenizer_stats(void);
+tokenizer_stats_t tk_get_tokenizer_stats_ctx(
+    const tokenizer_context_t *ctx);
 
 #endif

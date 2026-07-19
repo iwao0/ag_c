@@ -28,6 +28,11 @@ typedef struct {
   token_t *fallback_tok;
 } static_array_lowering_t;
 
+static psx_resolution_store_t *resolution_store(
+    const psx_lowering_context_t *lowering_context) {
+  return ps_lowering_resolution_store(lowering_context);
+}
+
 static ag_diagnostic_context_t *diagnostics(
     const static_array_lowering_t *lowering) {
   return ps_lowering_diagnostics(lowering->lowering_context);
@@ -52,7 +57,8 @@ static int resolved_member_offset(
     psx_lowering_context_t *lowering_context,
     const node_member_access_t *access, int *offset) {
   const psx_member_access_state_t *state =
-      psx_member_access_state(access);
+      psx_member_access_state(
+          resolution_store(lowering_context), access);
   if (!lowering_context || !access || !offset ||
       !state || !state->is_resolved ||
       state->record_id == PSX_RECORD_ID_INVALID ||
@@ -73,10 +79,13 @@ static int static_pointer_stride(
     psx_lowering_context_t *lowering_context, const node_t *pointer) {
   if (!lowering_context || !pointer) return 0;
   psx_type_id_t pointer_type_id =
-      ps_node_qual_type(pointer).type_id;
+      ps_node_qual_type(
+          resolution_store(lowering_context), pointer).type_id;
   if (pointer_type_id == PSX_TYPE_ID_INVALID)
     pointer_type_id = ps_lowering_type_id(
-        lowering_context, ps_node_get_type((node_t *)pointer));
+        lowering_context, ps_node_get_type(
+                              resolution_store(lowering_context),
+                              (node_t *)pointer));
   psx_qual_type_t element_type = psx_semantic_type_table_base(
       ps_lowering_semantic_types(lowering_context), pointer_type_id);
   if (element_type.type_id == PSX_TYPE_ID_INVALID) return 0;
@@ -94,7 +103,8 @@ static int resolve_static_address_constant(
   switch (node->kind) {
     case ND_COMPOUND_LITERAL: {
       const psx_node_resolution_state_t *state =
-          ps_node_resolution_state_const(node);
+          ps_node_resolution_state_const(
+              resolution_store(lowering_context), node);
       const psx_compound_literal_resolution_t *resolution =
           state ? &state->compound_literal : NULL;
       if (!resolution ||
@@ -109,10 +119,12 @@ static int resolve_static_address_constant(
       if (node->lhs &&
           (node->lhs->kind == ND_SUBSCRIPT ||
            node->lhs->kind == ND_MEMBER_ACCESS ||
-           psx_resolution_node_kind(node->lhs) == ND_DEREF))
+           psx_resolution_node_kind(
+               resolution_store(lowering_context), node->lhs) == ND_DEREF))
         return resolve_static_address_constant(
             lowering_context,
-            psx_resolution_node_kind(node->lhs) == ND_DEREF
+            psx_resolution_node_kind(
+                resolution_store(lowering_context), node->lhs) == ND_DEREF
                 ? node->lhs->lhs : node->lhs,
             symbol, symbol_len, offset);
       break;
@@ -122,12 +134,16 @@ static int resolve_static_address_constant(
               symbol, symbol_len, offset))
         return 0;
       int ok = 1;
-      long long index = psx_eval_const_int(node->rhs, &ok);
+      long long index = psx_eval_const_int(
+          resolution_store(lowering_context), node->rhs, &ok);
       psx_type_id_t base_type_id =
-          ps_node_qual_type(node->lhs).type_id;
+          ps_node_qual_type(
+              resolution_store(lowering_context), node->lhs).type_id;
       if (base_type_id == PSX_TYPE_ID_INVALID)
         base_type_id = ps_lowering_type_id(
-            lowering_context, ps_node_get_type(node->lhs));
+            lowering_context, ps_node_get_type(
+                                  resolution_store(lowering_context),
+                                  node->lhs));
       psx_qual_type_t element_type =
           psx_semantic_type_table_base(
               ps_lowering_semantic_types(lowering_context),
@@ -164,7 +180,8 @@ static int resolve_static_address_constant(
       if (resolve_static_address_constant(
               lowering_context, node->lhs,
               symbol, symbol_len, offset)) {
-        long long addend = psx_eval_const_int(node->rhs, &ok);
+        long long addend = psx_eval_const_int(
+            resolution_store(lowering_context), node->rhs, &ok);
         if (!ok) return 0;
         if (node->source_op == TK_PLUS) {
           int stride = static_pointer_stride(
@@ -178,7 +195,8 @@ static int resolve_static_address_constant(
       if (resolve_static_address_constant(
               lowering_context, node->rhs,
               symbol, symbol_len, offset)) {
-        long long addend = psx_eval_const_int(node->lhs, &ok);
+        long long addend = psx_eval_const_int(
+            resolution_store(lowering_context), node->lhs, &ok);
         if (!ok) return 0;
         if (node->source_op == TK_PLUS) {
           int stride = static_pointer_stride(
@@ -197,7 +215,8 @@ static int resolve_static_address_constant(
               lowering_context, node->lhs,
               symbol, symbol_len, offset))
         return 0;
-      long long addend = psx_eval_const_int(node->rhs, &ok);
+      long long addend = psx_eval_const_int(
+          resolution_store(lowering_context), node->rhs, &ok);
       if (!ok) return 0;
       if (node->source_op == TK_MINUS) {
         int stride = static_pointer_stride(
@@ -212,6 +231,7 @@ static int resolve_static_address_constant(
       break;
   }
   return psx_resolve_static_address_constant(
+      resolution_store(lowering_context),
       node, symbol, symbol_len, offset);
 }
 
@@ -227,7 +247,8 @@ static long long eval_static_const_int(
     psx_lowering_context_t *lowering_context,
     node_t *node, int *ok) {
   int direct_ok = 1;
-  long long direct = psx_eval_const_int(node, &direct_ok);
+  long long direct = psx_eval_const_int(
+      resolution_store(lowering_context), node, &direct_ok);
   if (direct_ok) {
     if (ok) *ok = 1;
     return direct;
@@ -238,6 +259,7 @@ static long long eval_static_const_int(
   }
   if (node->kind == ND_COMPOUND_LITERAL) {
     node_t *direct = psx_compound_literal_direct_initializer(
+        resolution_store(lowering_context),
         (node_compound_literal_t *)node);
     if (direct) {
       return eval_static_const_int(
@@ -534,7 +556,8 @@ static void write_scalar_value(
     }
   } else if (type && type->kind == PSX_TYPE_FLOAT) {
     int ok = 1;
-    floating = psx_eval_const_fp(value, &ok);
+    floating = psx_eval_const_fp(
+        resolution_store(lowering->lowering_context), value, &ok);
     if (!ok) floating = 0.0;
   } else {
     int ok = 1;
@@ -608,6 +631,7 @@ static void lower_array_list(
     token_t *tok = entry->tok ? entry->tok : lowering->fallback_tok;
     psx_initializer_target_t target = entry->designator_count > 0
         ? psx_resolve_initializer_designator_path_with_records(
+              resolution_store(lowering->lowering_context),
               diagnostics(lowering),
               ps_lowering_semantic_types(lowering->lowering_context),
               ps_lowering_record_decls(lowering->lowering_context),
@@ -782,7 +806,8 @@ static int lower_static_string_expression(
     global_var_t *global, const psx_type_t *type, node_string_t *string) {
   if (!global || !type || !string) return 0;
   if (type->kind == PSX_TYPE_POINTER) {
-    global->init_symbol = psx_string_literal_label(string);
+    global->init_symbol = psx_string_literal_label(
+        resolution_store(lowering_context), string);
     global->init_symbol_len = -1;
     return 1;
   }
@@ -819,7 +844,8 @@ static int lower_static_scalar_expression(
       lowering_context, initializer, &integer_ok);
   if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX) {
     int floating_ok = 1;
-    double floating = psx_eval_const_fp(initializer, &floating_ok);
+    double floating = psx_eval_const_fp(
+        resolution_store(lowering_context), initializer, &floating_ok);
     if (floating_ok) {
       global->fval = floating;
       return 1;
@@ -841,9 +867,11 @@ static int lower_static_scalar_expression(
     global->init_symbol_offset = offset;
     return 1;
   }
-  if (psx_resolved_object_ref_node_kind(initializer) == ND_FUNCREF) {
+  if (psx_resolved_object_ref_node_kind(
+          resolution_store(lowering_context), initializer) == ND_FUNCREF) {
     global->init_symbol = psx_resolved_object_ref_name(
-        initializer, &global->init_symbol_len);
+        resolution_store(lowering_context), initializer,
+        &global->init_symbol_len);
     return global->init_symbol != NULL;
   }
   return 0;

@@ -87,12 +87,14 @@ void psx_resolve_generic_selection_in_contexts(
       !selection || !selection->control ||
       selection->association_count <= 0)
     return;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   if (!ps_node_prepare_resolution_state_for_size_in(
-          ps_ctx_arena(semantic_context), (node_t *)selection,
+          store, ps_ctx_arena(semantic_context), (node_t *)selection,
           sizeof(*selection)))
     return;
   psx_node_resolution_state_t *node_state =
-      ps_node_resolution_state(&selection->base);
+      ps_node_resolution_state(store, &selection->base);
   if (!node_state) return;
   psx_generic_selection_resolution_state_t *selection_state =
       &node_state->generic_selection;
@@ -153,10 +155,11 @@ void psx_resolve_generic_selection_in_contexts(
     }
   }
 
-  psx_qual_type_t control_type = ps_node_qual_type(selection->control);
+  psx_qual_type_t control_type = ps_node_qual_type(
+      store, selection->control);
   if (control_type.type_id == PSX_TYPE_ID_INVALID) {
     control_type = ps_ctx_intern_qual_type_in(
-        semantic_context, ps_node_get_type(selection->control));
+        semantic_context, ps_node_get_type(store, selection->control));
   }
   psx_resolve_generic_selection_qual_types_in(
       control_type, association_types, is_default,
@@ -165,7 +168,7 @@ void psx_resolve_generic_selection_in_contexts(
     return;
   int selected = resolution->selected_index;
   const psx_type_t *selected_type = ps_node_get_type(
-      selection->associations[selected].expression);
+      store, selection->associations[selected].expression);
   if (!selected_type) {
     resolution->status =
         PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
@@ -175,10 +178,11 @@ void psx_resolve_generic_selection_in_contexts(
 }
 
 int psx_generic_selection_selected_index(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection) {
   const psx_node_resolution_state_t *node_state =
       ps_node_resolution_state_const(
-          selection ? &selection->base : NULL);
+          store, selection ? &selection->base : NULL);
   const psx_generic_selection_resolution_state_t *resolution =
       node_state ? &node_state->generic_selection : NULL;
   return resolution && resolution->is_resolved
@@ -186,16 +190,18 @@ int psx_generic_selection_selected_index(
 }
 
 node_t *psx_generic_selection_selected_expression(
+    const psx_resolution_store_t *store,
     node_generic_selection_t *selection) {
-  int selected = psx_generic_selection_selected_index(selection);
+  int selected = psx_generic_selection_selected_index(store, selection);
   return selection && selected >= 0 &&
                  selected < selection->association_count
              ? selection->associations[selected].expression : NULL;
 }
 
 const node_t *psx_generic_selection_selected_expression_const(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection) {
-  int selected = psx_generic_selection_selected_index(selection);
+  int selected = psx_generic_selection_selected_index(store, selection);
   return selection && selected >= 0 &&
                  selected < selection->association_count
              ? selection->associations[selected].expression : NULL;
@@ -203,9 +209,11 @@ const node_t *psx_generic_selection_selected_expression_const(
 
 psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state_mut(
+    psx_resolution_store_t *store,
     node_generic_selection_t *selection, int association_index) {
   psx_node_resolution_state_t *node_state =
-      ps_node_resolution_state(selection ? &selection->base : NULL);
+      ps_node_resolution_state(
+          store, selection ? &selection->base : NULL);
   psx_generic_selection_resolution_state_t *state =
       node_state ? &node_state->generic_selection : NULL;
   return state && state->association_type_names &&
@@ -217,10 +225,11 @@ psx_generic_selection_type_name_state_mut(
 
 const psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection, int association_index) {
   const psx_node_resolution_state_t *node_state =
       ps_node_resolution_state_const(
-          selection ? &selection->base : NULL);
+          store, selection ? &selection->base : NULL);
   const psx_generic_selection_resolution_state_t *state =
       node_state ? &node_state->generic_selection : NULL;
   return state && state->association_type_names &&

@@ -46,7 +46,7 @@ async function instantiateFromSource(wasmSource, imports = {}) {
   return (await WebAssembly.instantiate(asBytes(wasmSource), imports)).instance;
 }
 
-function callCompile(fn, sourcePtr, sourceNamePtr, headerPtr, headerLen,
+function callCompile(fn, adapterHandle, sourcePtr, sourceNamePtr, headerPtr, headerLen,
                      headerLimits, outputPtr, outputCap) {
   let args;
   if (headerPtr) {
@@ -61,6 +61,7 @@ function callCompile(fn, sourcePtr, sourceNamePtr, headerPtr, headerLen,
   } else {
     args = [sourcePtr, outputPtr, outputCap];
   }
+  args.unshift(adapterHandle);
   try {
     return Number(fn(...args.map((arg) => BigInt(arg))));
   } catch (err) {
@@ -197,15 +198,6 @@ function callNoArgVoidFunc(fn) {
   fn();
 }
 
-function callTwoArgNumberFunc(fn, first, second) {
-  try {
-    return Number(fn(BigInt(first), BigInt(second)));
-  } catch (err) {
-    if (err instanceof TypeError) return Number(fn(first, second));
-    throw err;
-  }
-}
-
 function callNumberFunc(fn, args) {
   try {
     return Number(fn(...args.map((arg) => BigInt(arg))));
@@ -284,32 +276,34 @@ export async function createCompiler(wasmSource, options = {}) {
   const instance = await instantiateFromSource(wasmSource, imports);
   const memory = instance.exports.memory;
   callbackMemory = memory;
-  const compileWatExport = instance.exports.agc_wasm_compile_wat;
-  const compileObjectExport = instance.exports.agc_wasm_compile_object;
-  const compileWatNamedExport = instance.exports.agc_wasm_compile_wat_named;
-  const compileObjectNamedExport = instance.exports.agc_wasm_compile_object_named;
-  const compileWatVirtualExport = instance.exports.agc_wasm_compile_wat_virtual;
-  const compileObjectVirtualExport = instance.exports.agc_wasm_compile_object_virtual;
-  const diagnosticLocaleExport = instance.exports.agc_wasm_set_diagnostic_locale;
-  const continuationOptionsExport = instance.exports.agc_wasm_set_continuation_options;
+  const adapterCreateExport = instance.exports.agc_wasm_adapter_create;
+  const adapterDestroyExport = instance.exports.agc_wasm_adapter_destroy;
+  const compileWatExport = instance.exports.agc_wasm_adapter_compile_wat;
+  const compileObjectExport = instance.exports.agc_wasm_adapter_compile_object;
+  const compileWatNamedExport = instance.exports.agc_wasm_adapter_compile_wat_named;
+  const compileObjectNamedExport = instance.exports.agc_wasm_adapter_compile_object_named;
+  const compileWatVirtualExport = instance.exports.agc_wasm_adapter_compile_wat_virtual;
+  const compileObjectVirtualExport = instance.exports.agc_wasm_adapter_compile_object_virtual;
+  const diagnosticLocaleExport = instance.exports.agc_wasm_adapter_set_diagnostic_locale;
+  const continuationOptionsExport = instance.exports.agc_wasm_adapter_set_continuation_options;
   const diagnosticExports = {
     apiVersion: instance.exports.agc_wasm_diagnostic_api_version,
-    count: instance.exports.agc_wasm_diagnostic_count,
-    severity: instance.exports.agc_wasm_diagnostic_severity,
-    codePtr: instance.exports.agc_wasm_diagnostic_code_ptr,
-    messagePtr: instance.exports.agc_wasm_diagnostic_message_ptr,
-    sourceNamePtr: instance.exports.agc_wasm_diagnostic_source_name_ptr,
-    startLine: instance.exports.agc_wasm_diagnostic_start_line,
-    startColumn: instance.exports.agc_wasm_diagnostic_start_column,
-    startOffset: instance.exports.agc_wasm_diagnostic_start_offset,
-    endLine: instance.exports.agc_wasm_diagnostic_end_line,
-    endColumn: instance.exports.agc_wasm_diagnostic_end_column,
-    endOffset: instance.exports.agc_wasm_diagnostic_end_offset,
+    count: instance.exports.agc_wasm_adapter_diagnostic_count,
+    severity: instance.exports.agc_wasm_adapter_diagnostic_severity,
+    codePtr: instance.exports.agc_wasm_adapter_diagnostic_code_ptr,
+    messagePtr: instance.exports.agc_wasm_adapter_diagnostic_message_ptr,
+    sourceNamePtr: instance.exports.agc_wasm_adapter_diagnostic_source_name_ptr,
+    startLine: instance.exports.agc_wasm_adapter_diagnostic_start_line,
+    startColumn: instance.exports.agc_wasm_adapter_diagnostic_start_column,
+    startOffset: instance.exports.agc_wasm_adapter_diagnostic_start_offset,
+    endLine: instance.exports.agc_wasm_adapter_diagnostic_end_line,
+    endColumn: instance.exports.agc_wasm_adapter_diagnostic_end_column,
+    endOffset: instance.exports.agc_wasm_adapter_diagnostic_end_offset,
   };
   const diagnosticLimitExports = {
-    set: instance.exports.agc_wasm_diagnostic_set_limits,
-    bytes: instance.exports.agc_wasm_diagnostic_bytes,
-    kind: instance.exports.agc_wasm_diagnostic_limit_kind,
+    set: instance.exports.agc_wasm_adapter_diagnostic_set_limits,
+    bytes: instance.exports.agc_wasm_adapter_diagnostic_bytes,
+    kind: instance.exports.agc_wasm_adapter_diagnostic_limit_kind,
   };
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
@@ -323,8 +317,16 @@ export async function createCompiler(wasmSource, options = {}) {
   if (!(memory instanceof WebAssembly.Memory)) {
     throw new Error("ag_c wasm module does not export memory");
   }
-  if (typeof compileWatExport !== "function") {
-    throw new Error("ag_c wasm module does not export agc_wasm_compile_wat");
+  if (typeof adapterCreateExport !== "function" ||
+      typeof adapterDestroyExport !== "function" ||
+      typeof compileWatExport !== "function") {
+    throw new Error("ag_c wasm module does not export the adapter ABI");
+  }
+  let adapterHandle = 0;
+
+  function requireAdapterHandle() {
+    if (!adapterHandle) throw new Error("ag_c wasm compiler has been disposed");
+    return adapterHandle;
   }
 
   const sourceCap = options.sourceCap ?? DEFAULT_SOURCE_CAP;
@@ -344,6 +346,7 @@ export async function createCompiler(wasmSource, options = {}) {
   }
   let sourcePtr = options.sourcePtr ?? DEFAULT_SOURCE_PTR;
   let outputPtr = options.outputPtr ?? DEFAULT_OUTPUT_PTR;
+  let ownsFixedBuffers = false;
   if (!useHeapBuffers && options.sourcePtr === undefined && options.outputPtr === undefined &&
       typeof malloc === "function" && typeof free === "function") {
     sourcePtr = callPtrFunc(malloc, sourceCap);
@@ -353,10 +356,13 @@ export async function createCompiler(wasmSource, options = {}) {
       callVoidPtrFunc(free, sourcePtr);
       throw new Error("ag_c wasm malloc failed for fixed output buffer");
     }
+    ownsFixedBuffers = true;
     ensureMemoryRange(memory, sourcePtr, sourceCap, "fixed source");
     ensureMemoryRange(memory, outputPtr, outputCap, "fixed output");
   }
   const encoder = new TextEncoder();
+  adapterHandle = callNoArgNumberFunc(adapterCreateExport);
+  if (!adapterHandle) throw new Error("ag_c wasm adapter allocation failed");
 
   function continuationNames(input) {
     if (input === undefined) return null;
@@ -399,7 +405,8 @@ export async function createCompiler(wasmSource, options = {}) {
         new Uint8Array(memory.buffer).set(bytes, ptr);
         return ptr;
       });
-      if (callNumberFunc(continuationOptionsExport, pointers) !== 0) {
+      if (callNumberFunc(
+          continuationOptionsExport, [requireAdapterHandle(), ...pointers]) !== 0) {
         throw new Error("ag_c wasm rejected continuation options");
       }
     } catch (err) {
@@ -407,7 +414,10 @@ export async function createCompiler(wasmSource, options = {}) {
       throw err;
     }
     return () => {
-      callNumberFunc(continuationOptionsExport, [0, 0, 0, 0, 0, 0]);
+      callNumberFunc(
+        continuationOptionsExport,
+        [requireAdapterHandle(), 0, 0, 0, 0, 0, 0],
+      );
       for (const ptr of allocations) callVoidPtrFunc(free, ptr);
     };
   }
@@ -424,7 +434,8 @@ export async function createCompiler(wasmSource, options = {}) {
       return;
     }
     const localeCode = locale === "en" ? 1 : 0;
-    if (callPtrFunc(diagnosticLocaleExport, localeCode) !== 0) {
+    if (callNumberFunc(
+        diagnosticLocaleExport, [requireAdapterHandle(), localeCode]) !== 0) {
       throw new Error("ag_c wasm rejected diagnostic locale");
     }
   }
@@ -437,11 +448,11 @@ export async function createCompiler(wasmSource, options = {}) {
       }
       return;
     }
-    const rc = callTwoArgNumberFunc(
-      diagnosticLimitExports.set,
+    const rc = callNumberFunc(diagnosticLimitExports.set, [
+      requireAdapterHandle(),
       resourceLimits.maxDiagnostics,
       resourceLimits.maxDiagnosticBytes,
-    );
+    ]);
     if (rc !== 0) throw new Error("ag_c wasm rejected diagnostic resource limits");
   }
 
@@ -480,7 +491,7 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function diagnosticExportAvailable() {
     return Object.values(diagnosticExports).every((value) => typeof value === "function") &&
-      callNoArgNumberFunc(diagnosticExports.apiVersion) === 1;
+      callNoArgNumberFunc(diagnosticExports.apiVersion) === 2;
   }
 
   function freezeDiagnostic(diagnostic) {
@@ -498,10 +509,11 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function readStructuredDiagnostics() {
     if (!diagnosticExportAvailable()) return Object.freeze([]);
-    const count = callNoArgNumberFunc(diagnosticExports.count);
+    const handle = requireAdapterHandle();
+    const count = callPtrFunc(diagnosticExports.count, handle);
     const diagnostics = [];
     for (let index = 0; index < count; index++) {
-      const readNumber = (fn) => callPtrFunc(fn, index);
+      const readNumber = (fn) => callNumberFunc(fn, [handle, index]);
       const severityNo = readNumber(diagnosticExports.severity);
       diagnostics.push({
         severity: severityNo === 1 ? "error" : severityNo === 2 ? "warning" : "note",
@@ -527,7 +539,8 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function diagnosticResourceLimitError(resourceLimits, diagnostics = readStructuredDiagnostics()) {
     if (typeof diagnosticLimitExports.kind !== "function") return null;
-    const kind = callNoArgNumberFunc(diagnosticLimitExports.kind);
+    const kind = callPtrFunc(
+      diagnosticLimitExports.kind, requireAdapterHandle());
     if (kind === 1) {
       return new AgcResourceLimitError(
         "maxDiagnostics",
@@ -644,7 +657,7 @@ export async function createCompiler(wasmSource, options = {}) {
       let n;
       try {
         n = callCompile(
-          compileFn, sourcePtr, sourceNameAlloc, headerAlloc,
+          compileFn, requireAdapterHandle(), sourcePtr, sourceNameAlloc, headerAlloc,
           virtualHeaders?.bytes.length ?? 0, virtualHeaders?.limits,
           outputPtr, effectiveOutputCap,
         );
@@ -706,7 +719,7 @@ export async function createCompiler(wasmSource, options = {}) {
         let n;
         try {
           n = callCompile(
-            compileFn, sourceAlloc, sourceNameAlloc, headerAlloc,
+            compileFn, requireAdapterHandle(), sourceAlloc, sourceNameAlloc, headerAlloc,
             virtualHeaders?.bytes.length ?? 0, virtualHeaders?.limits,
             outputAlloc, cap,
           );
@@ -800,7 +813,7 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function compileObject(source, options = {}) {
     if (typeof compileObjectExport !== "function") {
-      throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
+      throw new Error("ag_c wasm module does not export adapter object compilation");
     }
     configureDiagnosticLocale(options.diagnosticLocale);
     const resetContinuation = configureContinuation(options.continuation);
@@ -835,6 +848,23 @@ export async function createCompiler(wasmSource, options = {}) {
     return { object, diagnostics: readStructuredDiagnostics() };
   }
 
+  function readDiagnosticBytes() {
+    if (typeof diagnosticLimitExports.bytes !== "function") return 0;
+    return callPtrFunc(diagnosticLimitExports.bytes, requireAdapterHandle());
+  }
+
+  function dispose() {
+    if (!adapterHandle) return;
+    const handle = adapterHandle;
+    adapterHandle = 0;
+    callPtrFunc(adapterDestroyExport, handle);
+    if (ownsFixedBuffers) {
+      callVoidPtrFunc(free, outputPtr);
+      callVoidPtrFunc(free, sourcePtr);
+      ownsFixedBuffers = false;
+    }
+  }
+
   return {
     instance,
     memory,
@@ -845,7 +875,9 @@ export async function createCompiler(wasmSource, options = {}) {
     readStdout,
     readStderr: readStderrText,
     readDiagnostics: readStructuredDiagnostics,
+    readDiagnosticBytes,
     readTermination,
+    dispose,
     diagnosticCoordinateSystem: Object.freeze({
       encoding: "utf-8",
       input: "normalized",

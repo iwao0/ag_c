@@ -5,6 +5,7 @@
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 
 typedef enum {
   PSX_SEMANTIC_INVARIANT_OK = 0,
@@ -25,7 +26,8 @@ typedef struct {
 } psx_semantic_invariant_failure_t;
 
 int psx_semantic_tree_has_canonical_expression_types(
-    const node_t *root, psx_semantic_invariant_failure_t *failure);
+    const psx_resolution_store_t *store, const node_t *root,
+    psx_semantic_invariant_failure_t *failure);
 int psx_finalize_semantic_tree_type_identities(
     psx_semantic_context_t *semantic_context, node_t *root,
     psx_semantic_invariant_failure_t *failure,
@@ -43,9 +45,11 @@ void psx_require_semantic_initializer_has_interned_expression_types(
     ag_diagnostic_context_t *diagnostics, node_t *root,
     const token_t *fallback_diag_tok);
 void psx_require_semantic_tree_has_canonical_expression_types(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok);
 void psx_require_semantic_initializer_has_canonical_expression_types(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok);
 

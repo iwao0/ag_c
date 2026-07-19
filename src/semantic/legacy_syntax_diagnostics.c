@@ -148,12 +148,14 @@ static int finalize_expression_compatibility_tree(
         semantic_context, ps_ctx_diagnostics(semantic_context), root,
         fallback_diag_tok);
     psx_require_semantic_initializer_has_canonical_expression_types(
+        ps_ctx_resolution_store(semantic_context),
         ps_ctx_diagnostics(semantic_context), root, fallback_diag_tok);
   } else {
     psx_require_semantic_tree_has_interned_expression_types(
         semantic_context, ps_ctx_diagnostics(semantic_context), root,
         fallback_diag_tok);
     psx_require_semantic_tree_has_canonical_expression_types(
+        ps_ctx_resolution_store(semantic_context),
         ps_ctx_diagnostics(semantic_context), root, fallback_diag_tok);
   }
   if (!advance_with_compatibility_root(
@@ -223,7 +225,8 @@ static int resolve_function_compatibility_tree_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, work_tree, fallback_diag_tok,
           0, &function) ||
-      psx_resolution_node_kind(function) != ND_FUNCDEF)
+      psx_resolution_node_kind(
+          ps_ctx_resolution_store(semantic_context), function) != ND_FUNCDEF)
     return 0;
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
@@ -254,8 +257,10 @@ static int resolve_function_compatibility_tree_in_contexts(
       semantic_context, ps_ctx_diagnostics(semantic_context), function,
       fallback_diag_tok);
   psx_require_semantic_tree_has_canonical_expression_types(
+      ps_ctx_resolution_store(semantic_context),
       ps_ctx_diagnostics(semantic_context), function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
+      ps_ctx_resolution_store(semantic_context),
       ps_ctx_diagnostics(semantic_context), local_registry,
       current_function, fallback_diag_tok);
   if (!advance_with_compatibility_root(
@@ -280,6 +285,7 @@ static psx_resolution_work_tree_t *resolve_function_compatibility_tree(
     return NULL;
   psx_resolution_work_tree_t *work_tree =
       psx_resolution_work_tree_create_from_syntax(
+          ps_ctx_resolution_store(semantic_context),
           ps_ctx_arena(semantic_context), syntax_function->body);
   node_t *body = mutable_compatibility_root(work_tree);
   if (!work_tree || !body) return NULL;
@@ -354,6 +360,7 @@ int psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts(
     int is_initializer) {
   psx_resolution_work_tree_t *work_tree =
       psx_resolution_work_tree_create_from_syntax(
+          ps_ctx_resolution_store(semantic_context),
           ps_ctx_arena(semantic_context), syntax);
   if (!work_tree) {
     ag_diagnostic_context_t *diagnostics =

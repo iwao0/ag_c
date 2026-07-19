@@ -38,6 +38,7 @@ typedef struct {
 } wasm_global_func_state_t;
 
 typedef struct {
+  wasm32_ir_context_t *context;
   const ir_module_t *module;
   ir_func_t *f;
   wasm32_machine_function_t machine;
@@ -89,11 +90,6 @@ struct wasm32_ir_context_t {
   wasm32_machine_primitive_plan_t primitives;
 };
 
-static wasm32_ir_context_t default_wasm32_ir_context = {
-    .data = {.next_data_off = WASM_STATIC_BASE},
-};
-static wasm32_ir_context_t *active_wasm32_ir_context;
-
 wasm32_ir_context_t *wasm32_ir_context_create(
     ag_codegen_emit_context_t *emit_context) {
   if (!emit_context) return NULL;
@@ -106,8 +102,7 @@ wasm32_ir_context_t *wasm32_ir_context_create(
 }
 
 void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
-  if (!ctx || ctx == &default_wasm32_ir_context) return;
-  if (active_wasm32_ir_context == ctx) active_wasm32_ir_context = NULL;
+  if (!ctx) return;
   for (int i = 0; i < ctx->data.symbol_count; i++)
     free(ctx->data.symbols[i].name);
   for (int i = 0; i < ctx->func_table.ref_count; i++)
@@ -120,45 +115,36 @@ void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
   free(ctx);
 }
 
-wasm32_ir_context_t *wasm32_ir_context_activate(wasm32_ir_context_t *ctx) {
-  wasm32_ir_context_t *previous = active_wasm32_ir_context;
-  active_wasm32_ir_context = ctx;
-  return previous;
+#define g_data (context->data)
+#define g_data_module (context->data_module)
+#define g_func_table (context->func_table)
+#define g_function_symbols (context->function_symbols)
+#define g_abi (context->abi)
+#define g_data_abi (context->data_abi)
+#define g_machine_primitives (context->primitives)
+
+ag_codegen_emit_context_t *wasm32_ir_emit_context(
+    wasm32_ir_context_t *context) {
+  if (!context || !context->emit_context) abort();
+  return context->emit_context;
 }
 
-wasm32_ir_context_t *wasm32_ir_context_active(void) {
-  return active_wasm32_ir_context ? active_wasm32_ir_context
-                                  : &default_wasm32_ir_context;
-}
-
-#define g_data (wasm32_ir_context_active()->data)
-#define g_data_module (wasm32_ir_context_active()->data_module)
-#define g_func_table (wasm32_ir_context_active()->func_table)
-#define g_function_symbols (wasm32_ir_context_active()->function_symbols)
-#define g_abi (wasm32_ir_context_active()->abi)
-#define g_data_abi (wasm32_ir_context_active()->data_abi)
-#define g_machine_primitives \
-  (wasm32_ir_context_active()->primitives)
-ag_codegen_emit_context_t *wasm32_ir_emit_context(void) {
-  wasm32_ir_context_t *ctx = wasm32_ir_context_active();
-  if (!ctx->emit_context) abort();
-  return ctx->emit_context;
-}
-
-static ag_diagnostic_context_t *wasm32_ir_diagnostics(void) {
-  return cg_context_diagnostics(wasm32_ir_emit_context());
+static ag_diagnostic_context_t *wasm32_ir_diagnostics(
+    wasm32_ir_context_t *context) {
+  return cg_context_diagnostics(wasm32_ir_emit_context(context));
 }
 
 static const ir_abi_signature_t *wasm_function_abi(
-    const ir_func_t *function) {
+    wasm32_ir_context_t *context, const ir_func_t *function) {
   return ir_abi_function_signature(g_abi, function);
 }
 
 #define wasm_cg_emitf(...) \
-  cg_emitf_in(wasm32_ir_emit_context(), __VA_ARGS__)
+  cg_emitf_in(wasm32_ir_emit_context(context), __VA_ARGS__)
 static const char k_wasm_indent_spaces[] = "                                ";
 
-static void wasm_emit_indent(int spaces) {
+static void wasm_emit_indent(
+    wasm32_ir_context_t *context, int spaces) {
   int chunk = (int)sizeof(k_wasm_indent_spaces) - 1;
   while (spaces > chunk) {
     wasm_cg_emitf("%s", k_wasm_indent_spaces);
@@ -169,7 +155,7 @@ static void wasm_emit_indent(int spaces) {
 
 #define wasm_emitf(spaces, ...)       \
   do {                                \
-    wasm_emit_indent((spaces));       \
+    wasm_emit_indent(context, (spaces)); \
     wasm_cg_emitf(__VA_ARGS__);            \
   } while (0)
 
@@ -195,9 +181,11 @@ static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
-const char *wasm_any_type_or_unsupported(ir_type_t t) {
+const char *wasm_any_type_or_unsupported(
+    wasm32_ir_context_t *context, ir_type_t t) {
   const char *ty = wasm_type(t);
-  if (!ty) wasm_unsupported_msg("unsupported Wasm value type");
+  if (!ty)
+    wasm_unsupported_msg(context, "unsupported Wasm value type");
   return ty;
 }
 
@@ -207,15 +195,17 @@ static int align_to(int value, int align) {
   return (value + mask) & ~mask;
 }
 
-static void wasm_unsupported_op(ir_op_t op) {
-  diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+static void wasm_unsupported_op(
+    wasm32_ir_context_t *context, ir_op_t op) {
+  diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       ir_op_name(op));
 }
 
-void wasm_unsupported_msg(const char *msg) {
-  diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
-                      diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+void wasm_unsupported_msg(
+    wasm32_ir_context_t *context, const char *msg) {
+  diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                      diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
                       msg);
 }
 
@@ -224,6 +214,7 @@ static int name_eq(const char *a, int alen, const char *b, int blen) {
 }
 
 wasm_function_symbol_t *function_symbol_state(
+    wasm32_ir_context_t *context,
     const char *name, int name_len, int create) {
   if (!name || name_len <= 0) return NULL;
   for (int i = 0; i < g_function_symbols.count; i++) {
@@ -236,8 +227,8 @@ wasm_function_symbol_t *function_symbol_state(
     wasm_function_symbol_t *next = realloc(
         g_function_symbols.symbols, (size_t)next_cap * sizeof(*next));
     if (!next)
-      diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
-                          diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+      diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
+                          diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
     g_function_symbols.symbols = next;
     g_function_symbols.cap = next_cap;
   }
@@ -246,23 +237,27 @@ wasm_function_symbol_t *function_symbol_state(
   memset(symbol, 0, sizeof(*symbol));
   symbol->name = malloc((size_t)name_len + 1);
   if (!symbol->name)
-    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
   memcpy(symbol->name, name, (size_t)name_len);
   symbol->name[name_len] = '\0';
   symbol->name_len = name_len;
   return symbol;
 }
 
-static void register_function_reference(const char *name, int name_len) {
-  wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 1);
+static void register_function_reference(
+    wasm32_ir_context_t *context, const char *name, int name_len) {
+  wasm_function_symbol_t *symbol = function_symbol_state(
+      context, name, name_len, 1);
   if (symbol) symbol->referenced = 1;
 }
 
 static void record_function_signature(
+    wasm32_ir_context_t *context,
     const char *name, int name_len,
     const wasm32_machine_signature_t *signature) {
-  wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 1);
+  wasm_function_symbol_t *symbol = function_symbol_state(
+      context, name, name_len, 1);
   if (!symbol || !signature) return;
   int param_count = signature->nparams;
   ir_type_t *params = NULL;
@@ -270,9 +265,9 @@ static void record_function_signature(
     params = malloc((size_t)param_count * sizeof(*params));
     if (!params)
       diag_emit_internalf_in(
-          wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+          wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
           diag_message_for_in(
-              wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+              wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
     for (int i = 0; i < param_count; i++)
       params[i] = signature->params[i];
   }
@@ -283,21 +278,22 @@ static void record_function_signature(
   symbol->has_signature = 1;
 }
 
-static void register_function_definition(const ir_func_t *function) {
+static void register_function_definition(
+    wasm32_ir_context_t *context, const ir_func_t *function) {
   if (!function) return;
   wasm_function_symbol_t *symbol = function_symbol_state(
-      function->name, function->name_len, 1);
+      context, function->name, function->name_len, 1);
   if (!symbol) return;
   symbol->defined = 1;
-  const ir_abi_signature_t *abi = wasm_function_abi(function);
+  const ir_abi_signature_t *abi = wasm_function_abi(context, function);
   wasm32_machine_signature_t signature;
   if (!wasm32_machine_signature_from_abi(abi, 1, &signature)) return;
   record_function_signature(
-      function->name, function->name_len, &signature);
+      context, function->name, function->name_len, &signature);
   wasm32_machine_signature_dispose(&signature);
 }
 
-static void reset_function_symbols(void) {
+static void reset_function_symbols(wasm32_ir_context_t *context) {
   for (int i = 0; i < g_function_symbols.count; i++) {
     free(g_function_symbols.symbols[i].param_types);
     g_function_symbols.symbols[i].param_types = NULL;
@@ -306,7 +302,8 @@ static void reset_function_symbols(void) {
   g_function_symbols.count = 0;
 }
 
-static wasm_data_symbol_t *find_data_symbol(const char *name, int name_len) {
+static wasm_data_symbol_t *find_data_symbol(
+    wasm32_ir_context_t *context, const char *name, int name_len) {
   for (int i = 0; i < g_data.symbol_count; i++) {
     if (name_eq(g_data.symbols[i].name, g_data.symbols[i].name_len, name, name_len)) {
       return &g_data.symbols[i];
@@ -316,13 +313,14 @@ static wasm_data_symbol_t *find_data_symbol(const char *name, int name_len) {
 }
 
 wasm_data_symbol_t *intern_data_symbol(
+    wasm32_ir_context_t *context,
     const char *name, int name_len, int size, int align) {
-  wasm_data_symbol_t *existing = find_data_symbol(name, name_len);
+  wasm_data_symbol_t *existing = find_data_symbol(context, name, name_len);
   if (existing) return existing;
   if (g_data.symbol_count == g_data.symbol_cap) {
     int ncap = g_data.symbol_cap ? g_data.symbol_cap * 2 : 32;
     wasm_data_symbol_t *n = realloc(g_data.symbols, (size_t)ncap * sizeof(*n));
-    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
     g_data.symbols = n;
     g_data.symbol_cap = ncap;
   }
@@ -330,8 +328,8 @@ wasm_data_symbol_t *intern_data_symbol(
   wasm_data_symbol_t *s = &g_data.symbols[g_data.symbol_count++];
   s->name = malloc((size_t)name_len + 1);
   if (!s->name)
-    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
   memcpy(s->name, name, (size_t)name_len);
   s->name[name_len] = '\0';
   s->name_len = name_len;
@@ -341,58 +339,65 @@ wasm_data_symbol_t *intern_data_symbol(
   return s;
 }
 
-static int data_addr_for_string_label(const char *sym) {
+static int data_addr_for_string_label(
+    wasm32_ir_context_t *context, const char *sym) {
   if (!sym) return -1;
   int sym_len = (int)strlen(sym);
   ir_data_object_t *object =
       ir_data_module_find_object(g_data_module, sym, sym_len);
   if (!object || object->kind != IR_DATA_STRING) return -1;
-  return intern_data_symbol(sym, sym_len, object->byte_size,
+  return intern_data_symbol(context, sym, sym_len, object->byte_size,
                             object->alignment)->addr;
 }
 
-static int data_addr_for_ir_string(const char *sym, int sym_len, int size) {
+static int data_addr_for_ir_string(
+    wasm32_ir_context_t *context,
+    const char *sym, int sym_len, int size) {
   if (!sym || sym_len <= 0 || size <= 0) return -1;
-  return intern_data_symbol(sym, sym_len, size, 1)->addr;
+  return intern_data_symbol(context, sym, sym_len, size, 1)->addr;
 }
 
-static int data_addr_for_data_object(const ir_data_object_t *object) {
+static int data_addr_for_data_object(
+    wasm32_ir_context_t *context, const ir_data_object_t *object) {
   if (!object) return -1;
-  return intern_data_symbol(object->name, object->name_len,
+  return intern_data_symbol(context, object->name, object->name_len,
                             object->byte_size, object->alignment)->addr;
 }
 
-static int data_addr_for_ir_symbol(const ir_symbol_t *symbol) {
+static int data_addr_for_ir_symbol(
+    wasm32_ir_context_t *context, const ir_symbol_t *symbol) {
   if (!symbol) return -1;
-  return intern_data_symbol(symbol->name, symbol->name_len,
+  return intern_data_symbol(context, symbol->name, symbol->name_len,
                             symbol->byte_size, symbol->alignment)->addr;
 }
 
-static int intern_function_table_ref(char *name, int name_len) {
+static int intern_function_table_ref(
+    wasm32_ir_context_t *context, char *name, int name_len) {
   if (!name || name_len <= 0) return -1;
-  register_function_reference(name, name_len);
+  register_function_reference(context, name, name_len);
   for (int i = 0; i < g_func_table.ref_count; i++) {
     if (name_eq(g_func_table.refs[i].name, g_func_table.refs[i].name_len, name, name_len)) return i + 2;
   }
   if (g_func_table.ref_count == g_func_table.ref_cap) {
     int ncap = g_func_table.ref_cap ? g_func_table.ref_cap * 2 : 16;
     wasm_func_ref_t *n = realloc(g_func_table.refs, (size_t)ncap * sizeof(*n));
-    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
     g_func_table.refs = n;
     g_func_table.ref_cap = ncap;
   }
   int idx = g_func_table.ref_count++;
   g_func_table.refs[idx].name = malloc((size_t)name_len + 1);
   if (!g_func_table.refs[idx].name)
-    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
   memcpy(g_func_table.refs[idx].name, name, (size_t)name_len);
   g_func_table.refs[idx].name[name_len] = '\0';
   g_func_table.refs[idx].name_len = name_len;
   return idx + 2;
 }
 
-int function_table_has_ref(const char *name, int name_len) {
+int function_table_has_ref(
+    wasm32_ir_context_t *context, const char *name, int name_len) {
   for (int i = 0; i < g_func_table.ref_count; i++) {
     if (name_eq(g_func_table.refs[i].name, g_func_table.refs[i].name_len,
                 name, name_len))
@@ -401,28 +406,30 @@ int function_table_has_ref(const char *name, int name_len) {
   return 0;
 }
 
-void wasm32_wat_require_function_table(void) {
+void wasm32_wat_require_function_table(wasm32_ir_context_t *context) {
   g_func_table.needs_table = 1;
 }
 
-static int function_table_index_or_unsupported(char *name, int name_len) {
-  return intern_function_table_ref(name, name_len);
+static int function_table_index_or_unsupported(
+    wasm32_ir_context_t *context, char *name, int name_len) {
+  return intern_function_table_ref(context, name, name_len);
 }
 
 static void record_function_reference_signature(
-    const wasm32_machine_inst_t *inst) {
+    wasm32_ir_context_t *context, const wasm32_machine_inst_t *inst) {
   if (!inst || !inst->sym || !inst->has_reference_signature) return;
   record_function_signature(
-      inst->sym, inst->sym_len, &inst->reference_signature);
+      context, inst->sym, inst->sym_len, &inst->reference_signature);
 }
 
 static void record_function_call_signature(
+    wasm32_ir_context_t *context,
     const wasm32_machine_inst_t *call,
     const wasm32_machine_call_t *machine_call) {
   if (!call || !call->sym) return;
-  register_function_reference(call->sym, call->sym_len);
+  register_function_reference(context, call->sym, call->sym_len);
   record_function_signature(
-      call->sym, call->sym_len, &machine_call->signature);
+      context, call->sym, call->sym_len, &machine_call->signature);
 }
 
 static int has_minimal_libc_stub_function(char *name, int name_len) {
@@ -495,7 +502,7 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
   return 0;
 }
 
-static void emit_function_table(void) {
+static void emit_function_table(wasm32_ir_context_t *context) {
   if (g_func_table.ref_count <= 0) {
     if (g_func_table.needs_table) wasm_emitf(2, "(table 2 funcref)\n");
     return;
@@ -503,9 +510,11 @@ static void emit_function_table(void) {
   for (int i = 0; i < g_func_table.ref_count; i++) {
     char *name = g_func_table.refs[i].name;
     int name_len = g_func_table.refs[i].name_len;
-    if (!has_defined_function(name, name_len) &&
-        !(has_undefined_function(name, name_len) && has_minimal_libc_stub_function(name, name_len))) {
-      wasm_unsupported_msg("external function pointer in Wasm backend");
+    if (!has_defined_function(context, name, name_len) &&
+        !(has_undefined_function(context, name, name_len) &&
+          has_minimal_libc_stub_function(name, name_len))) {
+      wasm_unsupported_msg(
+          context, "external function pointer in Wasm backend");
     }
   }
   wasm_emitf(2, "(table %d funcref)\n", g_func_table.ref_count + 2);
@@ -514,7 +523,7 @@ static void emit_function_table(void) {
     char *name = g_func_table.refs[i].name;
     int name_len = g_func_table.refs[i].name_len;
     if (name_len == 7 && memcmp(name, "fprintf", 7) == 0 &&
-        !has_defined_function(name, name_len)) {
+        !has_defined_function(context, name, name_len)) {
       wasm_cg_emitf(" $__ag_funcptr_fprintf");
     } else {
       wasm_cg_emitf(" $%.*s", name_len, name);
@@ -605,6 +614,7 @@ static wasm_global_func_state_t *find_global_func_state(
 static void set_global_func_ref(wasm_func_ctx_t *ctx,
                                 const ir_symbol_t *symbol, int offset,
                                 char *name, int name_len) {
+  wasm32_ir_context_t *context = ctx->context;
   if (!symbol) return;
   wasm_global_func_state_t *s = find_global_func_state(ctx, symbol, offset);
   if (!s) {
@@ -612,7 +622,7 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx,
       int ncap = ctx->global_func_state_cap ? ctx->global_func_state_cap * 2 : 8;
       wasm_global_func_state_t *n =
           realloc(ctx->global_func_states, (size_t)ncap * sizeof(*n));
-      if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+      if (!n) diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
       ctx->global_func_states = n;
       ctx->global_func_state_cap = ncap;
     }
@@ -641,16 +651,17 @@ static char *current_global_func_ref(wasm_func_ctx_t *ctx,
 }
 
 static void analyze_func(wasm_func_ctx_t *ctx) {
+  wasm32_ir_context_t *context = ctx->context;
   if (!wasm32_machine_function_build(ctx->f, g_abi, &ctx->machine))
-    wasm_unsupported_msg("failed to build Wasm machine function");
+    wasm_unsupported_msg(context, "failed to build Wasm machine function");
   if (ctx->machine.alloca_count > 0) {
     ctx->allocas = calloc(
         (size_t)ctx->machine.alloca_count, sizeof(*ctx->allocas));
     if (!ctx->allocas)
       diag_emit_internalf_in(
-          wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s",
+          wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s",
           diag_message_for_in(
-              wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+              wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
     for (int i = 0; i < ctx->machine.alloca_count; i++)
       ctx->allocas[i].layout = &ctx->machine.allocas[i];
   }
@@ -673,14 +684,15 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
       (!ctx->vreg_func_ref_names || !ctx->vreg_func_ref_name_lens ||
        !ctx->vreg_global_refs || !ctx->vreg_global_ref_offsets ||
        !ctx->vreg_const_known || !ctx->vreg_const_values)) {
-    diag_emit_internalf_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(), DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_INTERNAL_OOM));
   }
 }
 
 static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
+  wasm32_ir_context_t *context = ctx->context;
   ir_type_t type = effective_val_type(ctx, v);
   const char *ty = wasm_type(type);
-  if (!ty) wasm_unsupported_msg("unsupported Wasm value type");
+  if (!ty) wasm_unsupported_msg(context, "unsupported Wasm value type");
   if (v.id == IR_VAL_IMM) {
     if (is_fp_type(type)) {
       wasm_cg_emitf("(%s.const %.17g)", ty, v.fp_imm);
@@ -692,34 +704,37 @@ static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
   } else if (v.id >= 0) {
     wasm_cg_emitf("(local.get $v%d)", v.id);
   } else {
-    wasm_unsupported_msg("missing Wasm value");
+    wasm_unsupported_msg(context, "missing Wasm value");
   }
 }
 
 static wasm32_machine_conversion_t planned_conversion_or_unsupported(
+    wasm32_ir_context_t *context,
     ir_type_t source_type, ir_type_t result_type, int is_unsigned) {
   const wasm32_machine_conversion_t *selected =
       wasm32_machine_planned_conversion(
           &g_machine_primitives, source_type, result_type, is_unsigned);
   if (!selected)
-    wasm_unsupported_msg("unsupported Wasm value conversion");
+    wasm_unsupported_msg(context, "unsupported Wasm value conversion");
   return *selected;
 }
 
 static const char *memory_wat_or_unsupported(
+    wasm32_ir_context_t *context,
     wasm32_machine_memory_t selected) {
   const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
-  if (!opcode) wasm_unsupported_msg("missing Wasm memory opcode");
+  if (!opcode) wasm_unsupported_msg(context, "missing Wasm memory opcode");
   return opcode;
 }
 
 static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target) {
+  wasm32_ir_context_t *context = ctx->context;
   if (target == IR_TY_PTR) target = IR_TY_I32;
   ir_type_t src = effective_val_type(ctx, v);
   if (src == IR_TY_PTR) src = IR_TY_I32;
   wasm32_machine_conversion_t selected =
       planned_conversion_or_unsupported(
-          src, target, val_is_unsigned(ctx, v));
+          context, src, target, val_is_unsigned(ctx, v));
   if (selected.opcode == WASM32_MI_COPY) {
     emit_val_expr(ctx, v);
     return;
@@ -730,7 +745,7 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
     return;
   }
   const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
-  if (!opcode) wasm_unsupported_msg("missing Wasm conversion opcode");
+  if (!opcode) wasm_unsupported_msg(context, "missing Wasm conversion opcode");
   wasm_cg_emitf("(%s ", opcode);
   emit_val_expr(ctx, v);
   wasm_cg_emitf(")");
@@ -739,24 +754,29 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
 static void emit_abi_argument_expr_as(
     wasm_func_ctx_t *ctx, const wasm32_machine_argument_t *argument,
     ir_type_t target) {
-  if (!argument) wasm_unsupported_msg("missing lowered call argument");
+  wasm32_ir_context_t *context = ctx->context;
+  if (!argument)
+    wasm_unsupported_msg(context, "missing lowered call argument");
   if (argument->access == WASM32_MACHINE_ARGUMENT_DIRECT) {
     emit_val_expr_as(ctx, argument->source, target);
     return;
   }
   if (argument->access != WASM32_MACHINE_ARGUMENT_LOAD ||
       argument->source.type != IR_TY_PTR) {
-    wasm_unsupported_msg("unsupported lowered call argument access");
+    wasm_unsupported_msg(
+        context, "unsupported lowered call argument access");
   }
   wasm32_machine_memory_t load = argument->load;
   wasm32_machine_conversion_t conversion =
-      planned_conversion_or_unsupported(load.value_type, target, 1);
-  const char *op = memory_wat_or_unsupported(load);
+      planned_conversion_or_unsupported(
+          context, load.value_type, target, 1);
+  const char *op = memory_wat_or_unsupported(context, load);
   if (conversion.opcode != WASM32_MI_COPY) {
     const char *conversion_op =
         wasm32_machine_opcode_wat(conversion.opcode);
     if (!conversion_op)
-      wasm_unsupported_msg("missing Wasm ABI argument conversion opcode");
+      wasm_unsupported_msg(
+          context, "missing Wasm ABI argument conversion opcode");
     wasm_cg_emitf("(%s ", conversion_op);
   }
   wasm_cg_emitf("(%s ", op);
@@ -771,19 +791,24 @@ static void emit_abi_argument_expr_as(
   if (conversion.opcode != WASM32_MI_COPY) wasm_cg_emitf(")");
 }
 
-static void emit_wasm_type_cast_prefix(ir_type_t from, ir_type_t to, int is_unsigned) {
+static void emit_wasm_type_cast_prefix(
+    wasm_func_ctx_t *ctx,
+    ir_type_t from, ir_type_t to, int is_unsigned) {
+  wasm32_ir_context_t *context = ctx->context;
   wasm32_machine_conversion_t selected =
-      planned_conversion_or_unsupported(from, to, is_unsigned);
+      planned_conversion_or_unsupported(context, from, to, is_unsigned);
   if (selected.opcode != WASM32_MI_COPY) {
     const char *opcode = wasm32_machine_opcode_wat(selected.opcode);
-    if (!opcode) wasm_unsupported_msg("missing Wasm cast opcode");
+    if (!opcode) wasm_unsupported_msg(context, "missing Wasm cast opcode");
     wasm_cg_emitf("(%s ", opcode);
   }
 }
 
-static void emit_wasm_type_cast_suffix(ir_type_t from, ir_type_t to) {
+static void emit_wasm_type_cast_suffix(
+    wasm_func_ctx_t *ctx, ir_type_t from, ir_type_t to) {
+  wasm32_ir_context_t *context = ctx->context;
   wasm32_machine_conversion_t selected =
-      planned_conversion_or_unsupported(from, to, 0);
+      planned_conversion_or_unsupported(context, from, to, 0);
   if (selected.opcode != WASM32_MI_COPY) wasm_cg_emitf(")");
 }
 
@@ -792,6 +817,7 @@ static void emit_addr_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
 }
 
 static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
+  wasm32_ir_context_t *context = ctx->context;
   if (off == 0) {
     emit_addr_expr(ctx, base);
     return;
@@ -804,10 +830,11 @@ static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
 static void emit_load(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   if (selected->kind != WASM32_MACHINE_INST_LOAD)
-    wasm_unsupported_op(i->op);
-  const char *op = memory_wat_or_unsupported(selected->load);
+    wasm_unsupported_op(context, i->op);
+  const char *op = memory_wat_or_unsupported(context, selected->load);
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
   emit_addr_expr(ctx, i->src1);
   wasm_cg_emitf("))\n");
@@ -826,14 +853,15 @@ static void emit_load(
 static void emit_store(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   int global_off = 0;
   const ir_symbol_t *symbol =
       get_vreg_global_ref(ctx, i->src1.id, &global_off);
   if (selected->kind != WASM32_MACHINE_INST_STORE)
-    wasm_unsupported_op(i->op);
+    wasm_unsupported_op(context, i->op);
   ir_type_t store_ty = selected->store.value_type;
-  const char *op = memory_wat_or_unsupported(selected->store);
+  const char *op = memory_wat_or_unsupported(context, selected->store);
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, i->src1);
   wasm_cg_emitf(" ");
@@ -864,20 +892,23 @@ static ir_type_t atomic_value_type(
 }
 
 static const char *atomic_load_op(
+    wasm32_ir_context_t *context,
     const wasm32_machine_inst_t *selected) {
-  return memory_wat_or_unsupported(selected->atomic.load);
+  return memory_wat_or_unsupported(context, selected->atomic.load);
 }
 
 static const char *atomic_store_op(
+    wasm32_ir_context_t *context,
     const wasm32_machine_inst_t *selected) {
-  return memory_wat_or_unsupported(selected->atomic.store);
+  return memory_wat_or_unsupported(context, selected->atomic.store);
 }
 
 static void emit_atomic_load_expr(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected) {
-  const char *op = atomic_load_op(selected);
-  if (!op) wasm_unsupported_op(i->op);
+  wasm32_ir_context_t *context = ctx->context;
+  const char *op = atomic_load_op(context, selected);
+  if (!op) wasm_unsupported_op(context, i->op);
   wasm_cg_emitf("(%s ", op);
   emit_addr_expr(ctx, i->src1);
   wasm_cg_emitf(")");
@@ -887,8 +918,9 @@ static void emit_atomic_store(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected,
     ir_val_t ptr, ir_val_t val, int indent) {
-  const char *op = atomic_store_op(selected);
-  if (!op) wasm_unsupported_op(i->op);
+  wasm32_ir_context_t *context = ctx->context;
+  const char *op = atomic_store_op(context, selected);
+  if (!op) wasm_unsupported_op(context, i->op);
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, ptr);
   wasm_cg_emitf(" ");
@@ -899,8 +931,9 @@ static void emit_atomic_store(
 static void emit_atomic_inst(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_ATOMIC)
-    wasm_unsupported_op(i->op);
+    wasm_unsupported_op(context, i->op);
   if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_FENCE) {
     wasm_emitf(indent, "(nop)\n");
     return;
@@ -910,9 +943,9 @@ static void emit_atomic_inst(
   if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_LOAD) {
     ir_type_t dst_ty = effective_val_type(ctx, i->dst);
     wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-    emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
+    emit_wasm_type_cast_prefix(ctx, mem_ty, dst_ty, i->is_unsigned);
     emit_atomic_load_expr(ctx, i, selected);
-    emit_wasm_type_cast_suffix(mem_ty, dst_ty);
+    emit_wasm_type_cast_suffix(ctx, mem_ty, dst_ty);
     wasm_cg_emitf(")\n");
     return;
   }
@@ -926,13 +959,13 @@ static void emit_atomic_inst(
       selected->atomic.kind == WASM32_MACHINE_ATOMIC_RMW) {
     ir_type_t dst_ty = effective_val_type(ctx, i->dst);
     wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-    emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
+    emit_wasm_type_cast_prefix(ctx, mem_ty, dst_ty, i->is_unsigned);
     emit_atomic_load_expr(ctx, i, selected);
-    emit_wasm_type_cast_suffix(mem_ty, dst_ty);
+    emit_wasm_type_cast_suffix(ctx, mem_ty, dst_ty);
     wasm_cg_emitf(")\n");
 
-    const char *store_op = atomic_store_op(selected);
-    if (!store_op) wasm_unsupported_op(i->op);
+    const char *store_op = atomic_store_op(context, selected);
+    if (!store_op) wasm_unsupported_op(context, i->op);
     wasm_emitf(indent, "(%s ", store_op);
     emit_addr_expr(ctx, i->src1);
     wasm_cg_emitf(" ");
@@ -941,7 +974,7 @@ static void emit_atomic_inst(
     } else {
       const char *op = wasm32_machine_opcode_wat(
           selected->atomic.binary.opcode);
-      if (!op) wasm_unsupported_op(i->op);
+      if (!op) wasm_unsupported_op(context, i->op);
       wasm_cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->dst, mem_ty);
       wasm_cg_emitf(" ");
@@ -954,13 +987,14 @@ static void emit_atomic_inst(
 
   if (selected->atomic.kind ==
       WASM32_MACHINE_ATOMIC_COMPARE_EXCHANGE) {
-    const char *load_op = atomic_load_op(selected);
-    const char *store_op = atomic_store_op(selected);
+    const char *load_op = atomic_load_op(context, selected);
+    const char *store_op = atomic_store_op(context, selected);
     const char *eq_op = wasm32_machine_opcode_wat(
         selected->atomic.comparison.opcode);
     const char *tmp = mem_ty == IR_TY_I64 ? "$atomic_tmp_i64" : "$atomic_tmp_i32";
     const char *exp = mem_ty == IR_TY_I64 ? "$atomic_exp_i64" : "$atomic_exp_i32";
-    if (!load_op || !store_op || !eq_op) wasm_unsupported_op(i->op);
+    if (!load_op || !store_op || !eq_op)
+      wasm_unsupported_op(context, i->op);
 
     wasm_emitf(indent, "(local.set %s (%s ", tmp, load_op);
     emit_addr_expr(ctx, i->src1);
@@ -985,7 +1019,7 @@ static void emit_atomic_inst(
     return;
   }
 
-  wasm_unsupported_op(i->op);
+  wasm_unsupported_op(context, i->op);
 }
 
 static int uses_ptr_value(
@@ -1006,8 +1040,9 @@ static int i64_runtime_extension_unsupported(wasm_func_ctx_t *ctx, ir_val_t v) {
 static void emit_memory_copy_chunk(
     wasm_func_ctx_t *ctx, ir_val_t destination, ir_val_t source,
     const wasm32_machine_copy_chunk_t *chunk, int indent) {
-  const char *store = memory_wat_or_unsupported(chunk->store);
-  const char *load = memory_wat_or_unsupported(chunk->load);
+  wasm32_ir_context_t *context = ctx->context;
+  const char *store = memory_wat_or_unsupported(context, chunk->store);
+  const char *load = memory_wat_or_unsupported(context, chunk->load);
   wasm_emitf(indent, "(%s ", store);
   emit_addr_plus_const(ctx, destination, chunk->offset);
   wasm_cg_emitf(" (%s ", load);
@@ -1026,10 +1061,11 @@ static void emit_parameter_copy(
     wasm_func_ctx_t *ctx, ir_val_t destination,
     int parameter_slot, const wasm32_machine_copy_plan_t *plan,
     int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   for (int index = 0; index < plan->chunk_count; index++) {
     const wasm32_machine_copy_chunk_t *chunk = &plan->chunks[index];
-    const char *store = memory_wat_or_unsupported(chunk->store);
-    const char *load = memory_wat_or_unsupported(chunk->load);
+    const char *store = memory_wat_or_unsupported(context, chunk->store);
+    const char *load = memory_wat_or_unsupported(context, chunk->load);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_plus_const(ctx, destination, chunk->offset);
     wasm_cg_emitf(" (%s ", load);
@@ -1047,13 +1083,14 @@ static void emit_parameter_copy(
 static void emit_parameter_bind(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *instruction,
     const wasm32_machine_inst_t *selected, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_PARAMETER_BIND)
-    wasm_unsupported_op(instruction->op);
+    wasm_unsupported_op(context, instruction->op);
   const wasm32_machine_parameter_bind_t *binding =
       &selected->parameter_bind;
   if (!binding->pieces || binding->piece_count == 0 ||
       instruction->src1.type != IR_TY_PTR)
-    wasm_unsupported_op(instruction->op);
+    wasm_unsupported_op(context, instruction->op);
   for (int i = 0; i < binding->piece_count; i++) {
     int parameter_slot = binding->physical_index + i;
     if (binding->pieces[i].kind ==
@@ -1063,8 +1100,9 @@ static void emit_parameter_bind(
           &binding->copy_plans[i], indent);
       continue;
     }
-    const char *store = memory_wat_or_unsupported(binding->stores[i]);
-    if (!store) wasm_unsupported_op(instruction->op);
+    const char *store = memory_wat_or_unsupported(
+        context, binding->stores[i]);
+    if (!store) wasm_unsupported_op(context, instruction->op);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_plus_const(
         ctx, instruction->src1, binding->pieces[i].byte_offset);
@@ -1107,6 +1145,7 @@ static int vreg_used_after(
 static int emit_variadic_arg_area_prepare(
     wasm_func_ctx_t *ctx, const wasm32_machine_call_t *call,
     int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (!call->is_variadic) return 0;
   const wasm32_machine_argument_t *arguments = call->arguments;
   int bytes = call->variadic_area_size;
@@ -1118,7 +1157,8 @@ static int emit_variadic_arg_area_prepare(
   for (int i = 0; i < call->variadic_argument_count; i++) {
     const wasm32_machine_variadic_argument_t *variadic =
         &call->variadic_arguments[i];
-    const char *store = memory_wat_or_unsupported(variadic->store);
+    const char *store = memory_wat_or_unsupported(
+        context, variadic->store);
     const char *conversion =
         wasm32_machine_opcode_wat(variadic->conversion.opcode);
     wasm_emitf(
@@ -1128,6 +1168,7 @@ static int emit_variadic_arg_area_prepare(
     if (variadic->conversion.opcode != WASM32_MI_COPY) {
       if (!conversion)
         wasm_unsupported_msg(
+            context,
             "missing Wasm variadic argument conversion opcode");
       wasm_cg_emitf("(%s ", conversion);
     }
@@ -1141,7 +1182,9 @@ static int emit_variadic_arg_area_prepare(
   return bytes;
 }
 
-static void emit_variadic_arg_area_restore(int bytes, int indent) {
+static void emit_variadic_arg_area_restore(
+    wasm_func_ctx_t *ctx, int bytes, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (bytes <= 0) return;
   wasm_emitf(indent, "(global.set $__stack_pointer (i32.add (global.get $__stack_pointer) (i32.const %d)))\n",
              bytes);
@@ -1151,8 +1194,9 @@ static void emit_variadic_arg_area_restore(int bytes, int indent) {
 static void emit_call(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *i,
     const wasm32_machine_inst_t *selected, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_CALL)
-    wasm_unsupported_op(i->op);
+    wasm_unsupported_op(context, i->op);
   const wasm32_machine_call_t *call = &selected->call;
   const wasm32_machine_signature_t *call_signature = &call->signature;
   int argument_count = call->argument_count;
@@ -1166,17 +1210,19 @@ static void emit_call(
         call_signature->has_direct_aggregate_result;
     if ((returns_hidden || returns_direct_aggregate) &&
         call->result_area.id == IR_VAL_NONE) {
-      wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
+      wasm_unsupported_msg(
+          context,
+          "indirect aggregate function call without return area in Wasm backend");
     }
     int returns_void = call_signature->result == IR_TY_VOID;
     int result_unused =
         !returns_void && !vreg_used_after(ctx, selected, i->dst.id);
     const char *ret_ty = returns_void ? NULL :
-        wasm_any_type_or_unsupported(call_signature->result);
+        wasm_any_type_or_unsupported(context, call_signature->result);
     if (returns_direct_aggregate) {
       const char *store =
-          memory_wat_or_unsupported(call->direct_result_store);
-      if (!store) wasm_unsupported_op(i->op);
+          memory_wat_or_unsupported(context, call->direct_result_store);
+      if (!store) wasm_unsupported_op(context, i->op);
       wasm_emitf(indent, "(%s ", store);
       emit_addr_expr(ctx, call->result_area);
       wasm_cg_emitf(" ");
@@ -1186,13 +1232,15 @@ static void emit_call(
     wasm_cg_emitf("(call_indirect");
     int call_nargs = call_signature->nparams - (returns_hidden ? 1 : 0);
     if (call_nargs > argument_count)
-      wasm_unsupported_msg("call has fewer lowered arguments than its function type");
+      wasm_unsupported_msg(
+          context,
+          "call has fewer lowered arguments than its function type");
     if (returns_hidden) wasm_cg_emitf(" (param i32)");
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t arg_ty =
           call_signature->params[a + (returns_hidden ? 1 : 0)];
       wasm_cg_emitf(
-          " (param %s)", wasm_any_type_or_unsupported(arg_ty));
+          " (param %s)", wasm_any_type_or_unsupported(context, arg_ty));
     }
     if (!returns_void) wasm_cg_emitf(" (result %s)", ret_ty);
     if (returns_hidden) {
@@ -1211,14 +1259,16 @@ static void emit_call(
     if (result_unused || !returns_void || returns_direct_aggregate)
       wasm_cg_emitf(")");
     wasm_cg_emitf("\n");
-    emit_variadic_arg_area_restore(vararg_area_bytes, indent);
+    emit_variadic_arg_area_restore(ctx, vararg_area_bytes, indent);
     return;
   }
-  if (!i->sym) wasm_unsupported_op(i->op);
+  if (!i->sym) wasm_unsupported_op(context, i->op);
   if (i->is_implicit_call) {
-    wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
+    wasm_unsupported_msg(
+        context,
+        "external or implicitly declared function call in Wasm backend");
   }
-  record_function_call_signature(i, call);
+  record_function_call_signature(context, i, call);
   int returns_direct_aggregate =
       call_signature->has_direct_aggregate_result;
   int returns_hidden = call_signature->has_hidden_result;
@@ -1228,9 +1278,9 @@ static void emit_call(
     emit_val_expr_as(ctx, call->result_area, IR_TY_PTR);
   } else if (returns_direct_aggregate) {
     const char *store =
-        memory_wat_or_unsupported(call->direct_result_store);
+        memory_wat_or_unsupported(context, call->direct_result_store);
     if (!store || call->result_area.id == IR_VAL_NONE)
-      wasm_unsupported_op(i->op);
+      wasm_unsupported_op(context, i->op);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_expr(ctx, call->result_area);
     wasm_cg_emitf(" (call $%.*s", i->sym_len, i->sym);
@@ -1241,22 +1291,22 @@ static void emit_call(
   }
   int is_minimal_snprintf =
       i->sym_len == 8 && memcmp(i->sym, "snprintf", 8) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_swprintf =
       i->sym_len == 8 && memcmp(i->sym, "swprintf", 8) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_printf =
       i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_fprintf =
       i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_sscanf =
       i->sym_len == 6 && memcmp(i->sym, "sscanf", 6) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_swscanf =
       i->sym_len == 7 && memcmp(i->sym, "swscanf", 7) == 0 &&
-      !has_defined_function(i->sym, i->sym_len);
+      !has_defined_function(context, i->sym, i->sym_len);
   int is_minimal_fixed2_format = is_minimal_snprintf || is_minimal_swprintf;
   int is_minimal_output_count = is_minimal_printf || is_minimal_fprintf;
   int planned_argument_count =
@@ -1319,21 +1369,22 @@ static void emit_call(
     wasm_cg_emitf(")");
   }
   wasm_cg_emitf("\n");
-  emit_variadic_arg_area_restore(vararg_area_bytes, indent);
+  emit_variadic_arg_area_restore(ctx, vararg_area_bytes, indent);
 }
 
 static void emit_indirect_ret_copy(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *instruction,
     ir_val_t source, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (!ctx->machine.signature.has_hidden_result ||
       source.type != IR_TY_PTR)
-    wasm_unsupported_op(instruction->op);
+    wasm_unsupported_op(context, instruction->op);
   for (int index = 0;
        index < ctx->machine.result_copy.chunk_count; index++) {
     const wasm32_machine_copy_chunk_t *chunk =
         &ctx->machine.result_copy.chunks[index];
-    const char *store = memory_wat_or_unsupported(chunk->store);
-    const char *load = memory_wat_or_unsupported(chunk->load);
+    const char *store = memory_wat_or_unsupported(context, chunk->store);
+    const char *load = memory_wat_or_unsupported(context, chunk->load);
     wasm_emitf(indent, "(%s ", store);
     if (chunk->offset == 0)
       wasm_cg_emitf("(local.get $p0)");
@@ -1350,12 +1401,14 @@ static void emit_indirect_ret_copy(
 static void emit_unary(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *instruction,
     const wasm32_machine_inst_t *machine, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   if (machine->kind != WASM32_MACHINE_INST_UNARY)
-    wasm_unsupported_op(instruction->op);
+    wasm_unsupported_op(context, instruction->op);
   const wasm32_machine_unary_t *unary = &machine->unary;
   const char *opcode = wasm32_machine_opcode_wat(unary->opcode);
-  const char *type = wasm_any_type_or_unsupported(unary->operand_type);
-  if (!opcode) wasm_unsupported_op(instruction->op);
+  const char *type = wasm_any_type_or_unsupported(
+      context, unary->operand_type);
+  if (!opcode) wasm_unsupported_op(context, instruction->op);
   wasm_emitf(
       indent, "(local.set $v%d (%s ", instruction->dst.id, opcode);
   if (unary->form == WASM32_MI_UNARY_ZERO_THEN_OPERAND) {
@@ -1373,6 +1426,7 @@ static void emit_unary(
 static void emit_inst(
     wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *planned,
     int dispatch_mode, int indent) {
+  wasm32_ir_context_t *context = ctx->context;
   const wasm32_machine_inst_t *i = planned;
   switch (planned->kind) {
     case WASM32_MACHINE_INST_NOP:
@@ -1382,7 +1436,7 @@ static void emit_inst(
       return;
     case WASM32_MACHINE_INST_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
-      if (off < 0) wasm_unsupported_op(i->op);
+      if (off < 0) wasm_unsupported_op(context, i->op);
       wasm_emitf(indent, "(local.set $v%d (i32.add (local.get $fp) (i32.const %d)))\n", i->dst.id, off);
       return;
     }
@@ -1398,23 +1452,27 @@ static void emit_inst(
       wasm_cg_emitf(")\n");
       return;
     case WASM32_MACHINE_INST_STRING_ADDRESS: {
-      int addr = data_addr_for_ir_string(i->sym, i->sym_len, i->object_size);
-      if (addr < 0) wasm_unsupported_op(i->op);
+      int addr = data_addr_for_ir_string(
+          context, i->sym, i->sym_len, i->object_size);
+      if (addr < 0) wasm_unsupported_op(context, i->op);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
     }
     case WASM32_MACHINE_INST_SYMBOL_ADDRESS: {
       if (i->is_function_symbol) {
-        record_function_reference_signature(i);
-        int func_idx = function_table_index_or_unsupported(i->sym, i->sym_len);
+        record_function_reference_signature(context, i);
+        int func_idx = function_table_index_or_unsupported(
+            context, i->sym, i->sym_len);
         wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, func_idx);
         set_vreg_func_ref(ctx, i->dst.id, i->sym, i->sym_len);
         return;
       }
       const ir_symbol_t *symbol =
           ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
-      int addr = data_addr_for_ir_symbol(symbol);
-      if (addr < 0) wasm_unsupported_msg("missing resolved IR global symbol");
+      int addr = data_addr_for_ir_symbol(context, symbol);
+      if (addr < 0)
+        wasm_unsupported_msg(
+            context, "missing resolved IR global symbol");
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       set_vreg_global_ref(ctx, i->dst.id, symbol, 0);
       return;
@@ -1422,8 +1480,10 @@ static void emit_inst(
     case WASM32_MACHINE_INST_TLS_ADDRESS: {
       const ir_symbol_t *symbol =
           ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
-      int addr = data_addr_for_ir_symbol(symbol);
-      if (addr < 0) wasm_unsupported_msg("missing resolved IR TLS symbol");
+      int addr = data_addr_for_ir_symbol(context, symbol);
+      if (addr < 0)
+        wasm_unsupported_msg(
+            context, "missing resolved IR TLS symbol");
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       set_vreg_global_ref(ctx, i->dst.id, symbol, 0);
       return;
@@ -1433,7 +1493,7 @@ static void emit_inst(
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (selected->opcode != WASM32_MI_COPY) {
         const char *opcode = wasm32_machine_opcode_wat(selected->opcode);
-        if (!opcode) wasm_unsupported_op(i->op);
+        if (!opcode) wasm_unsupported_op(context, i->op);
         wasm_cg_emitf("(%s ", opcode);
       }
       emit_val_expr(ctx, i->src1);
@@ -1484,7 +1544,7 @@ static void emit_inst(
       const wasm32_machine_binary_t *selected = &planned->binary;
       ir_type_t op_ty = selected->operand_type;
       const char *op = wasm32_machine_opcode_wat(selected->opcode);
-      if (!op) wasm_unsupported_op(i->op);
+      if (!op) wasm_unsupported_op(context, i->op);
       if (is_fp_type(op_ty)) {
         wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
         emit_val_expr_as(ctx, i->src1, op_ty);
@@ -1500,16 +1560,18 @@ static void emit_inst(
           (i64_runtime_extension_unsupported(ctx, i->src1) ||
            (!selected->is_shift &&
             i64_runtime_extension_unsupported(ctx, i->src2)))) {
-        wasm_unsupported_msg("runtime i32 to i64 extension in Wasm backend");
+        wasm_unsupported_msg(
+            context, "runtime i32 to i64 extension in Wasm backend");
       }
       ir_type_t dst_ty = effective_val_type(ctx, i->dst);
       ir_type_t result_ty = selected->result_type;
       int result_unsigned = uses_ptr_value(ctx, i) ||
                             selected->is_unsigned;
       if (selected->guard_zero_divisor) {
-        const char *type = wasm_any_type_or_unsupported(op_ty);
+        const char *type = wasm_any_type_or_unsupported(context, op_ty);
         wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-        emit_wasm_type_cast_prefix(result_ty, dst_ty, result_unsigned);
+        emit_wasm_type_cast_prefix(
+            ctx, result_ty, dst_ty, result_unsigned);
         wasm_cg_emitf("(if (result %s) (%s.eqz ", type, type);
         emit_val_expr_as(ctx, i->src2, op_ty);
         wasm_cg_emitf(") (then ");
@@ -1519,18 +1581,19 @@ static void emit_inst(
         wasm_cg_emitf(" ");
         emit_val_expr_as(ctx, i->src2, op_ty);
         wasm_cg_emitf(")))");
-        emit_wasm_type_cast_suffix(result_ty, dst_ty);
+        emit_wasm_type_cast_suffix(ctx, result_ty, dst_ty);
         wasm_cg_emitf(")\n");
         return;
       }
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-      emit_wasm_type_cast_prefix(result_ty, dst_ty, result_unsigned);
+      emit_wasm_type_cast_prefix(
+          ctx, result_ty, dst_ty, result_unsigned);
       wasm_cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->src1, op_ty);
       wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, op_ty);
       wasm_cg_emitf(")");
-      emit_wasm_type_cast_suffix(result_ty, dst_ty);
+      emit_wasm_type_cast_suffix(ctx, result_ty, dst_ty);
       wasm_cg_emitf(")\n");
       if (selected->tracks_address) {
         int base_off = 0;
@@ -1557,17 +1620,17 @@ static void emit_inst(
     case WASM32_MACHINE_INST_CONTROL:
       switch (planned->control.kind) {
         case WASM32_MACHINE_CONTROL_LABEL:
-          if (!dispatch_mode) wasm_unsupported_op(i->op);
+          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
           return;
         case WASM32_MACHINE_CONTROL_BRANCH:
-          if (!dispatch_mode) wasm_unsupported_op(i->op);
+          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
           wasm_emitf(
               indent, "(local.set $pc (i32.const %d))\n",
               planned->control.target_block_id);
           wasm_emitf(indent, "(br $dispatch)\n");
           return;
         case WASM32_MACHINE_CONTROL_BRANCH_CONDITIONAL:
-          if (!dispatch_mode) wasm_unsupported_op(i->op);
+          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
           wasm_emitf(indent, "(if ");
           emit_val_expr_as(ctx, planned->control.value, IR_TY_I32);
           wasm_cg_emitf("\n");
@@ -1593,9 +1656,9 @@ static void emit_inst(
             wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
           if (ctx->machine.signature.has_direct_aggregate_result) {
             const char *load = memory_wat_or_unsupported(
-                ctx->machine.direct_result_load);
+                context, ctx->machine.direct_result_load);
             if (!load || result.type != IR_TY_PTR)
-              wasm_unsupported_op(i->op);
+              wasm_unsupported_op(context, i->op);
             wasm_emitf(indent, "(return (%s ", load);
             emit_addr_expr(ctx, result);
             wasm_cg_emitf("))\n");
@@ -1610,19 +1673,22 @@ static void emit_inst(
           return;
         }
         case WASM32_MACHINE_CONTROL_SUSPEND:
-          wasm_unsupported_op(i->op);
+          wasm_unsupported_op(context, i->op);
           return;
         default:
-          wasm_unsupported_op(i->op);
+          wasm_unsupported_op(context, i->op);
           return;
       }
     default:
-      wasm_unsupported_op(i->op);
+      wasm_unsupported_op(context, i->op);
   }
 }
 
-static void emit_func(const ir_module_t *module, ir_func_t *f) {
+static void emit_func(
+    wasm32_ir_context_t *context,
+    const ir_module_t *module, ir_func_t *f) {
   wasm_func_ctx_t ctx = {0};
+  ctx.context = context;
   ctx.module = module;
   ctx.f = f;
   analyze_func(&ctx);
@@ -1633,12 +1699,15 @@ static void emit_func(const ir_module_t *module, ir_func_t *f) {
   wasm_emitf(2, "(func $%.*s", f->name_len, f->name);
   for (int p = 0; p < nparams; p++) {
     const char *pt = wasm_type(function_signature->params[p]);
-    if (!pt) wasm_unsupported_msg("non-integer Wasm function parameter");
+    if (!pt)
+      wasm_unsupported_msg(
+          context, "non-integer Wasm function parameter");
     wasm_cg_emitf(" (param $p%d %s)", p, pt);
   }
   if (function_signature->result != IR_TY_VOID) {
     const char *rt = wasm_type(function_signature->result);
-    if (!rt) wasm_unsupported_msg("non-integer Wasm function return");
+    if (!rt)
+      wasm_unsupported_msg(context, "non-integer Wasm function return");
     wasm_cg_emitf(" (result %s)", rt);
   }
   wasm_cg_emitf("\n");
@@ -1727,9 +1796,12 @@ static void emit_func(const ir_module_t *module, ir_func_t *f) {
   wasm32_machine_function_dispose(&ctx.machine);
 }
 
-void wasm32_module_begin(void) {
+void wasm32_module_begin_in(wasm32_ir_context_t *ctx) {
+  if (!ctx) abort();
+  wasm32_ir_context_t *context = ctx;
   if (!wasm32_machine_primitive_plan_build(&g_machine_primitives))
-    wasm_unsupported_msg("failed to build Wasm Machine primitive plan");
+    wasm_unsupported_msg(
+        context, "failed to build Wasm Machine primitive plan");
   for (int i = 0; i < g_data.symbol_count; i++)
     free(g_data.symbols[i].name);
   for (int i = 0; i < g_func_table.ref_count; i++)
@@ -1738,20 +1810,26 @@ void wasm32_module_begin(void) {
   g_data.symbol_count = 0;
   g_func_table.ref_count = 0;
   g_func_table.needs_table = 0;
-  reset_function_symbols();
+  reset_function_symbols(context);
   wasm_cg_emitf("(module\n");
 }
 
-void wasm32_gen_ir_module(
-    ir_module_t *m, const ir_abi_module_t *abi) {
+void wasm32_gen_ir_module_in(
+    wasm32_ir_context_t *ctx, ir_module_t *m,
+    const ir_abi_module_t *abi) {
+  if (!ctx) abort();
+  wasm32_ir_context_t *context = ctx;
   g_abi = abi;
-  if (!m) return;
-  for (ir_func_t *f = m->funcs; f; f = f->next)
-    register_function_definition(f);
-  for (ir_func_t *f = m->funcs; f; f = f->next) emit_func(m, f);
+  if (m) {
+    for (ir_func_t *f = m->funcs; f; f = f->next)
+      register_function_definition(context, f);
+    for (ir_func_t *f = m->funcs; f; f = f->next)
+      emit_func(context, m, f);
+  }
 }
 
-static void emit_wat_escaped_byte(unsigned char c) {
+static void emit_wat_escaped_byte(
+    wasm32_ir_context_t *context, unsigned char c) {
   if (c == '"' || c == '\\') {
     wasm_cg_emitf("\\%02x", (unsigned)c);
   } else if (c >= 0x20 && c <= 0x7e) {
@@ -1761,92 +1839,120 @@ static void emit_wat_escaped_byte(unsigned char c) {
   }
 }
 
-static void emit_string_literal_data(const ir_data_object_t *object) {
-  int addr = data_addr_for_string_label(object->name);
-  if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
+static void emit_string_literal_data(
+    wasm32_ir_context_t *context, const ir_data_object_t *object) {
+  int addr = data_addr_for_string_label(context, object->name);
+  if (addr < 0)
+    wasm_unsupported_msg(
+        context, "string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < object->byte_size; i++)
-    emit_wat_escaped_byte(object->bytes[i]);
+    emit_wat_escaped_byte(context, object->bytes[i]);
   wasm_cg_emitf("\")\n");
 }
 
-void emit_i32_data_bytes(int addr, long long value, int size) {
+void emit_i32_data_bytes(
+    wasm32_ir_context_t *context,
+    int addr, long long value, int size) {
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  for (int i = 0; i < size; i++) emit_wat_escaped_byte((unsigned char)((uint64_t)value >> (8 * i)));
+  for (int i = 0; i < size; i++)
+    emit_wat_escaped_byte(
+        context, (unsigned char)((uint64_t)value >> (8 * i)));
   wasm_cg_emitf("\")\n");
 }
 
-static long long data_relocation_value(const ir_data_reloc_t *reloc) {
+static long long data_relocation_value(
+    wasm32_ir_context_t *context, const ir_data_reloc_t *reloc) {
   if (!reloc) return 0;
   if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
     const ir_abi_signature_t *abi =
         ir_abi_data_relocation_signature(g_data_abi, reloc);
     wasm32_machine_signature_t signature;
     if (!wasm32_machine_signature_from_abi(abi, 1, &signature))
-      wasm_unsupported_msg("function data relocation without ABI lowering result");
-    record_function_signature(reloc->target, reloc->target_len, &signature);
+      wasm_unsupported_msg(
+          context,
+          "function data relocation without ABI lowering result");
+    record_function_signature(
+        context, reloc->target, reloc->target_len, &signature);
     wasm32_machine_signature_dispose(&signature);
     int index = function_table_index_or_unsupported(
-        reloc->target, reloc->target_len);
+        context, reloc->target, reloc->target_len);
     return (long long)index + reloc->addend;
   }
   ir_data_object_t *target = ir_data_module_find_object(
       g_data_module, reloc->target, reloc->target_len);
-  int addr = data_addr_for_data_object(target);
-  if (addr < 0) wasm_unsupported_msg("missing data relocation target");
+  int addr = data_addr_for_data_object(context, target);
+  if (addr < 0)
+    wasm_unsupported_msg(context, "missing data relocation target");
   return (long long)addr + reloc->addend;
 }
 
-static void emit_global_data_object(const ir_data_object_t *object) {
+static void emit_global_data_object(
+    wasm32_ir_context_t *context, const ir_data_object_t *object) {
   if (!object || object->is_extern) return;
   if (!object->has_explicit_initializer && object->byte_size != 1 &&
       object->byte_size != 2 && object->byte_size != 4 &&
       object->byte_size != 8)
     return;
-  int addr = data_addr_for_data_object(object);
+  int addr = data_addr_for_data_object(context, object);
   if (addr < 0 || (object->has_explicit_initializer && !object->bytes))
-    wasm_unsupported_msg("missing lowered global data in Wasm backend");
+    wasm_unsupported_msg(
+        context, "missing lowered global data in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   const ir_data_reloc_t *reloc = object->relocs;
   for (int offset = 0; offset < object->byte_size; ) {
     if (reloc && reloc->offset == offset) {
       if (reloc->width <= 0 || offset > object->byte_size - reloc->width)
-        wasm_unsupported_msg("global data relocation range");
-      uint64_t value = (uint64_t)data_relocation_value(reloc);
+        wasm_unsupported_msg(context, "global data relocation range");
+      uint64_t value = (uint64_t)data_relocation_value(context, reloc);
       for (int i = 0; i < reloc->width; i++)
-        emit_wat_escaped_byte((unsigned char)(value >> (8 * i)));
+        emit_wat_escaped_byte(
+            context, (unsigned char)(value >> (8 * i)));
       offset += reloc->width;
       reloc = reloc->next;
     } else {
       if (reloc && reloc->offset < offset)
-        wasm_unsupported_msg("overlapping global data relocations");
-      emit_wat_escaped_byte(object->bytes ? object->bytes[offset] : 0);
+        wasm_unsupported_msg(
+            context, "overlapping global data relocations");
+      emit_wat_escaped_byte(
+          context, object->bytes ? object->bytes[offset] : 0);
       offset++;
     }
   }
-  if (reloc) wasm_unsupported_msg("global data relocation outside object");
+  if (reloc)
+    wasm_unsupported_msg(
+        context, "global data relocation outside object");
   wasm_cg_emitf("\")\n");
 }
 
-void wasm32_emit_data_segments(
+void wasm32_emit_data_segments_in(
+    wasm32_ir_context_t *ctx,
     const ir_data_module_t *data_module,
     const ir_abi_data_module_t *data_abi) {
+  if (!ctx) abort();
+  wasm32_ir_context_t *context = ctx;
   g_data_module = data_module;
   g_data_abi = data_abi;
   for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
        object; object = object->next) {
-    if (object->kind == IR_DATA_STRING) emit_string_literal_data(object);
-    else if (object->kind == IR_DATA_OBJECT) emit_global_data_object(object);
+    if (object->kind == IR_DATA_STRING)
+      emit_string_literal_data(context, object);
+    else if (object->kind == IR_DATA_OBJECT)
+      emit_global_data_object(context, object);
   }
 }
 
-int has_undefined_function(const char *name, int len) {
-  wasm_function_symbol_t *symbol = function_symbol_state(name, len, 0);
+int has_undefined_function(
+    wasm32_ir_context_t *context, const char *name, int len) {
+  wasm_function_symbol_t *symbol = function_symbol_state(
+      context, name, len, 0);
   return symbol && symbol->referenced && !symbol->defined;
 }
 
-int has_defined_function(const char *name, int len) {
-  wasm_function_symbol_t *symbol = function_symbol_state(name, len, 0);
+int has_defined_function(
+    wasm32_ir_context_t *context, const char *name, int len) {
+  wasm_function_symbol_t *symbol = function_symbol_state(
+      context, name, len, 0);
   return symbol && symbol->defined;
 }
 
@@ -1858,7 +1964,7 @@ static int wasm_align_up_int(int value, int align) {
   return value + (align - rem);
 }
 
-static void emit_memory_layout_decls(void) {
+static void emit_memory_layout_decls(wasm32_ir_context_t *context) {
   int data_end = g_data.next_data_off;
   int heap_base = data_end > WASM_HEAP_BASE ? wasm_align_up_int(data_end, 8) : WASM_HEAP_BASE;
   int pages = 1;
@@ -1876,9 +1982,11 @@ static void emit_memory_layout_decls(void) {
   wasm_emitf(2, "(global $__ag_heap_pointer (mut i32) (i32.const %d))\n", heap_base);
 }
 
-void wasm32_module_end(void) {
-  wasm32_wat_emit_minimal_libc_stubs();
-  emit_function_table();
-  emit_memory_layout_decls();
+void wasm32_module_end_in(wasm32_ir_context_t *ctx) {
+  if (!ctx) abort();
+  wasm32_ir_context_t *context = ctx;
+  wasm32_wat_emit_minimal_libc_stubs(context);
+  emit_function_table(context);
+  emit_memory_layout_decls(context);
   wasm_cg_emitf(")\n");
 }

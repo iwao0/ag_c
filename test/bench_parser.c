@@ -44,9 +44,12 @@ static void run_case(
   struct timespec t_tok1;
   struct timespec t_par0;
   struct timespec t_par1;
+  tokenizer_context_t *tokenizer =
+      ag_compilation_session_tokenizer(session);
 
   clock_gettime(CLOCK_MONOTONIC, &t_tok0);
-  tk_set_current_token(tk_tokenize(input));
+  tk_set_current_token_ctx(
+      tokenizer, tk_tokenize_ctx(tokenizer, input));
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
@@ -54,7 +57,8 @@ static void run_case(
   size_t funcs = 0;
   if (!psx_frontend_reset_translation_unit_state_in_session(session) ||
       !psx_frontend_stream_begin(
-          &stream, session, NULL, tk_get_current_token())) {
+          &stream, session, NULL,
+          tk_get_current_token_ctx(tokenizer))) {
     fprintf(stderr, "failed to start frontend benchmark\n");
     free(input);
     exit(1);
@@ -82,7 +86,7 @@ int main(void) {
   ag_target_info_t target = ag_target_info_host();
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
-  if (!session || !ag_compilation_session_activate(session)) {
+  if (!session) {
     ag_compilation_session_destroy(session);
     return 1;
   }
@@ -95,9 +99,11 @@ int main(void) {
   const char *control_heavy_pattern =
       "int control_%zu(void){int i=0;int s=0;L:i=i+1;if(i<20){if(i==5)goto L;s=s+i;}return s;}\n";
 
-  tk_set_strict_c11_mode(false);
-  tk_set_enable_binary_literals(true);
-  tk_set_enable_trigraphs(true);
+  tokenizer_context_t *tokenizer =
+      ag_compilation_session_tokenizer(session);
+  tk_ctx_set_strict_c11_mode(tokenizer, false);
+  tk_ctx_set_enable_binary_literals(tokenizer, true);
+  tk_ctx_set_enable_trigraphs(tokenizer, true);
 
   puts("Parser benchmark");
   run_case(session, "mixed", mixed_pattern, 16 * 1024);

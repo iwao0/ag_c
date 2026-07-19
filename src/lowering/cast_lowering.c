@@ -192,7 +192,10 @@ int psx_plan_aggregate_source_cast(
       !node->lhs)
     return 0;
   return psx_plan_aggregate_source_cast_qual_types(
-      lowering_context, local_registry, ps_node_qual_type(node),
-      ps_node_qual_type(node->lhs),
+      lowering_context, local_registry,
+      ps_node_qual_type(
+          ps_lowering_resolution_store(lowering_context), node),
+      ps_node_qual_type(
+          ps_lowering_resolution_store(lowering_context), node->lhs),
       node->tok ? node->tok : fallback_diag_tok, options, plan);
 }

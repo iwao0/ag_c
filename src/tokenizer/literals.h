@@ -39,9 +39,9 @@ int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
                                  tk_string_literal_byte_emit_fn emit, void *user);
 
 /** @brief 文字列/文字定数中の1つのエスケープを読み取って値を返す。 */
-int tk_read_escape_char(char **pp);
+int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp);
 /** @brief 文字列/文字定数中の1つのエスケープを値化せずにスキップする。 */
-void tk_skip_escape_in_literal(char **pp);
+void tk_skip_escape_in_literal_ctx(tokenizer_context_t *ctx, char **pp);
 
 /** @brief 文字列接頭辞（L/u/U/u8）を解析する。 */
 void tk_parse_string_prefix(

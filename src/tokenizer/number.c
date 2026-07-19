@@ -12,15 +12,16 @@
 #include <stdlib.h>
 
 /** @brief 拡張: 2進整数リテラルを現在コンテキストで受理できるか判定する。 */
-static inline bool tk_is_binary_literal_enabled_in_ctx(void) {
-  tokenizer_context_t *ctx = tk_runtime_ctx();
+static inline bool tk_is_binary_literal_enabled_in_ctx(
+    tokenizer_context_t *ctx) {
   if (!ctx) return false;
   if (tk_ctx_get_strict_c11_mode(ctx)) return false;
   return tk_ctx_get_enable_binary_literals(ctx);
 }
 
 static void choose_int_type(
-    parsed_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt, char *err_loc) {
+    tokenizer_context_t *ctx, parsed_num_t *num, unsigned long long val,
+    bool is_decimal, bool has_u, int long_cnt, char *err_loc) {
   if (!has_u && long_cnt == 0) {
     if (is_decimal) {
       if (val <= (unsigned long long)INT_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_INT; return; }
@@ -34,14 +35,16 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 0) {
     if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_INT; return; }
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (!has_u && long_cnt == 1) {
@@ -54,13 +57,15 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 1) {
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (!has_u && long_cnt == 2) {
@@ -70,34 +75,38 @@ static void choose_int_type(
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 
   if (has_u && long_cnt == 2) {
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, err_loc,
+                   "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
   }
 }
 
-static void parse_int_suffix(parsed_num_t *num, char **pp, unsigned long long val, bool is_decimal, char *err_loc) {
+static void parse_int_suffix(
+    tokenizer_context_t *ctx, parsed_num_t *num, char **pp,
+    unsigned long long val, bool is_decimal, char *err_loc) {
   char *p = *pp;
   bool seen_u = false;
   int long_cnt = 0;
 
   while (true) {
     if (*p == 'u' || *p == 'U') {
-      if (seen_u) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+      if (seen_u) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
       seen_u = true;
       p++;
       continue;
     }
     if (*p == 'l' || *p == 'L') {
       if ((p[1] == 'l' || p[1] == 'L')) {
-        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 2;
         p += 2;
       } else {
-        if (long_cnt == 2) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+        if (long_cnt == 2) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
         long_cnt = 1;
         p++;
       }
@@ -107,13 +116,14 @@ static void parse_int_suffix(parsed_num_t *num, char **pp, unsigned long long va
   }
 
   if (tk_is_ident_start_byte(*p))
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_SUFFIX_INVALID));
 
-  choose_int_type(num, val, is_decimal, seen_u, long_cnt, err_loc);
+  choose_int_type(ctx, num, val, is_decimal, seen_u, long_cnt, err_loc);
   *pp = p;
 }
 
-static unsigned long long parse_digits(char **pp, int base) {
+static unsigned long long parse_digits(
+    tokenizer_context_t *ctx, char **pp, int base) {
   char *p = *pp;
   unsigned long long val = 0;
   bool has_digit = false;
@@ -126,18 +136,20 @@ static unsigned long long parse_digits(char **pp, int base) {
     if (digit >= base) break;
     has_digit = true;
     if (val > (ULLONG_MAX - (unsigned long long)digit) / (unsigned long long)base)
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, *pp, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE, *pp,
+                     "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_TOO_LARGE));
     val = val * (unsigned long long)base + (unsigned long long)digit;
     p++;
   }
-  if (!has_digit) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID, *pp, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID));
+  if (!has_digit) TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID, *pp, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_INT_LITERAL_INVALID));
   *pp = p;
   return val;
 }
 
 static long long token_signed_from_u64(unsigned long long uval);
 
-static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
+static bool try_parse_decimal_int_fast(
+    tokenizer_context_t *ctx, char **pp, parsed_num_t *num) {
   char *p = *pp;
   if (!tk_is_digit(*p)) return false;
 
@@ -159,12 +171,12 @@ static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
   num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   num->int_base = 10;
   if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') {
-    parse_int_suffix(num, &p, val, true, *pp);
+    parse_int_suffix(ctx, num, &p, val, true, *pp);
   } else {
-    choose_int_type(num, val, true, false, 0, *pp);
+    choose_int_type(ctx, num, val, true, false, 0, *pp);
   }
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
   return true;
@@ -199,7 +211,8 @@ static inline bool has_hex_float_marker(const char *p) {
  * @param endp サフィックス開始位置。解析後は消費後位置へ更新。
  * @warning 不正サフィックス（識別子継続文字の連結）は診断終了する。
  */
-static void parse_float_suffix(parsed_num_t *num, char **endp) {
+static void parse_float_suffix(
+    tokenizer_context_t *ctx, parsed_num_t *num, char **endp) {
   char *end = *endp;
   if (*end == 'f' || *end == 'F') {
     num->fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -214,8 +227,8 @@ static void parse_float_suffix(parsed_num_t *num, char **endp) {
     num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   }
   if (tk_is_ident_start_byte(*end)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s",
-                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s",
+                   TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
   }
   *endp = end;
 }
@@ -226,15 +239,16 @@ static void parse_float_suffix(parsed_num_t *num, char **endp) {
  * @param pp 入力カーソル。解析後は消費後位置へ更新。
  * @param is_hex `true` の場合は16進浮動として妥当性を検証する。
  */
-static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
+static void parse_float_literal(
+    tokenizer_context_t *ctx, parsed_num_t *num, char **pp, bool is_hex) {
   char *p = *pp;
   char *end = NULL;
   num->fval = strtod(p, &end);
   if (is_hex && end == p) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID, p, "%s",
-                TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID, p, "%s",
+                   TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
   }
-  parse_float_suffix(num, &end);
+  parse_float_suffix(ctx, num, &end);
   *pp = end;
 }
 
@@ -247,28 +261,29 @@ static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
  * @param err_loc 診断位置基準。
  */
 static void parse_integer_literal_with_base(
-    parsed_num_t *num, char **pp, int base, bool is_decimal, char *err_loc) {
+    tokenizer_context_t *ctx, parsed_num_t *num, char **pp, int base,
+    bool is_decimal, char *err_loc) {
   char *p = *pp;
-  unsigned long long val = parse_digits(&p, base);
+  unsigned long long val = parse_digits(ctx, &p, base);
   num->uval = val;
   num->val = token_signed_from_u64(val);
   num->fp_kind = TK_FLOAT_KIND_NONE;
   num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   num->int_base = (uint8_t)base;
-  parse_int_suffix(num, &p, val, is_decimal, err_loc);
+  parse_int_suffix(ctx, num, &p, val, is_decimal, err_loc);
   *pp = p;
 }
 
-static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
-  tokenizer_context_t *ctx = tk_runtime_ctx();
+static void tk_audit_extension(
+    tokenizer_context_t *ctx, char *loc, diag_text_id_t text_id) {
   if (!tk_ctx_get_enable_c11_audit_extensions(ctx)) return;
   const char *input = ctx ? ctx->user_input : NULL;
   int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",
-          TK_DIAG_TEXT(DIAG_TEXT_WARNING),
-          TK_DIAG_TEXT(DIAG_TEXT_C11_AUDIT_PREFIX),
-          TK_DIAG_TEXT(text_id), pos);
+          TK_DIAG_TEXT_IN(ctx, DIAG_TEXT_WARNING),
+          TK_DIAG_TEXT_IN(ctx, DIAG_TEXT_C11_AUDIT_PREFIX),
+          TK_DIAG_TEXT_IN(ctx, text_id), pos);
 }
 
 /**
@@ -278,53 +293,54 @@ static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
  * @param err_loc 診断位置基準。
  * @return `0` 始まり規則に一致して処理した場合 `true`。未該当なら `false`（非破壊）。
  */
-static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_loc) {
+static bool parse_zero_prefixed_number(
+    tokenizer_context_t *ctx, parsed_num_t *num, char **pp, char *err_loc) {
   char *p = *pp;
   if (!(*p == '0')) return false;
 
   if (p[1] == 'x' || p[1] == 'X') {
     if (has_hex_float_marker(p)) {
-      parse_float_literal(num, &p, true);
+      parse_float_literal(ctx, num, &p, true);
     } else {
       p += 2;
-      parse_integer_literal_with_base(num, &p, 16, false, err_loc);
+      parse_integer_literal_with_base(ctx, num, &p, 16, false, err_loc);
     }
     *pp = p;
     return true;
   }
 
   if (p[1] == 'b' || p[1] == 'B') {
-    if (!tk_is_binary_literal_enabled_in_ctx()) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s",
-                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
+    if (!tk_is_binary_literal_enabled_in_ctx(ctx)) {
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p,
+                     "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
-    tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
+    tk_audit_extension(ctx, p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
     p += 2;
     if (*p != '0' && *p != '1') {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s",
-                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s",
+                     TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
     }
-    parse_integer_literal_with_base(num, &p, 2, false, err_loc);
+    parse_integer_literal_with_base(ctx, num, &p, 2, false, err_loc);
     *pp = p;
     return true;
   }
 
   if (tk_is_digit(p[1])) {
     if (p[1] == '8' || p[1] == '9') {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s",
-                  TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
+      TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s",
+                     TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
     }
     p++;
     if (*p >= '0' && *p <= '7') {
       p--;
-      parse_integer_literal_with_base(num, &p, 8, false, err_loc);
+      parse_integer_literal_with_base(ctx, num, &p, 8, false, err_loc);
     } else {
       num->uval = 0;
       num->val = 0;
       num->fp_kind = TK_FLOAT_KIND_NONE;
       num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       num->int_base = 8;
-      parse_int_suffix(num, &p, 0, false, err_loc);
+      parse_int_suffix(ctx, num, &p, 0, false, err_loc);
     }
     *pp = p;
     return true;
@@ -333,27 +349,28 @@ static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_l
   return false;
 }
 
-void tk_parse_number_literal(char **pp, parsed_num_t *num) {
+void tk_parse_number_literal_ctx(
+    tokenizer_context_t *ctx, char **pp, parsed_num_t *num) {
   char *p = *pp;
 
-  if (parse_zero_prefixed_number(num, &p, *pp)) {
+  if (parse_zero_prefixed_number(ctx, num, &p, *pp)) {
     *pp = p;
     return;
   } else {
-    if (try_parse_decimal_int_fast(&p, num)) {
+    if (try_parse_decimal_int_fast(ctx, &p, num)) {
       *pp = p;
       return;
     }
 
     if (has_decimal_float_marker(p)) {
-      parse_float_literal(num, &p, false);
+      parse_float_literal(ctx, num, &p, false);
     } else {
-      parse_integer_literal_with_base(num, &p, 10, true, *pp);
+      parse_integer_literal_with_base(ctx, num, &p, 10, true, *pp);
     }
   }
 
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
+    TK_DIAG_ATF_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID, p, "%s", TK_DIAG_MESSAGE_IN(ctx, DIAG_ERR_TOKENIZER_NUM_LITERAL_INVALID));
   }
   *pp = p;
 }

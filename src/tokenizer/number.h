@@ -5,6 +5,8 @@
 
 #include "token.h"
 
+typedef struct tokenizer_context_t tokenizer_context_t;
+
 /* 数値リテラル解析の中間表現。ソーステキストを整数/浮動の共通表現へ変換した結果で、
  * トークン構築 (tokenize_number_literal) はこれを読んでトークンへ書き写す。
  * フィールドは 8B → 4B(enum) → 1B の順に並べて内部パディングを詰めている (sizeof=48)。 */
@@ -28,6 +30,7 @@ typedef struct parsed_num_t parsed_num_t;
  * @param num 解析結果の出力先。
  * @warning 不正な基数/サフィックス/範囲外は診断終了する。
  */
-void tk_parse_number_literal(char **pp, parsed_num_t *num);
+void tk_parse_number_literal_ctx(
+    tokenizer_context_t *ctx, char **pp, parsed_num_t *num);
 
 #endif

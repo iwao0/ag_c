@@ -1,4 +1,5 @@
 #include "semantic_ctx.h"
+#include "../semantic/resolution_store.h"
 #include "type_owned_internal.h"
 #include "diag.h"
 #include "type.h"
@@ -207,6 +208,8 @@ struct psx_function_symbol_t {
 struct psx_semantic_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
+  psx_resolution_store_t *resolution_store;
+  unsigned char owns_resolution_store;
   psx_scope_graph_t *scope_graph;
   unsigned char owns_scope_graph;
   ag_target_info_t target;
@@ -448,15 +451,20 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (context) {
     context->semantic_expressions =
         psx_semantic_expression_table_create();
+    context->resolution_store = psx_resolution_store_create();
+    context->owns_resolution_store =
+        context->resolution_store ? 1 : 0;
     context->semantic_types = psx_semantic_type_table_create();
     context->record_decls = psx_record_decl_table_create();
     context->record_layouts = psx_record_layout_table_create();
     context->scope_graph = psx_scope_graph_create();
     context->owns_scope_graph = context->scope_graph ? 1 : 0;
-    if (!context->semantic_expressions || !context->semantic_types ||
+    if (!context->semantic_expressions || !context->resolution_store ||
+        !context->semantic_types ||
         !context->record_decls || !context->record_layouts ||
         !context->scope_graph) {
       psx_semantic_expression_table_destroy(context->semantic_expressions);
+      psx_resolution_store_destroy(context->resolution_store);
       psx_semantic_type_table_destroy(context->semantic_types);
       psx_record_decl_table_destroy(context->record_decls);
       psx_record_layout_table_destroy(context->record_layouts);
@@ -476,6 +484,8 @@ void ps_ctx_destroy(psx_semantic_context_t *context) {
   if (!context) return;
   ctx_release_all(context);
   psx_semantic_expression_table_destroy(context->semantic_expressions);
+  if (context->owns_resolution_store)
+    psx_resolution_store_destroy(context->resolution_store);
   psx_semantic_type_table_destroy(context->semantic_types);
   psx_record_decl_table_destroy(context->record_decls);
   psx_record_layout_table_destroy(context->record_layouts);
@@ -502,6 +512,23 @@ void ps_ctx_bind_scope_graph(
     psx_scope_graph_destroy(context->scope_graph);
   context->scope_graph = scope_graph;
   context->owns_scope_graph = 0;
+}
+
+void ps_ctx_bind_resolution_store(
+    psx_semantic_context_t *context,
+    psx_resolution_store_t *resolution_store) {
+  if (!context || !resolution_store ||
+      context->resolution_store == resolution_store)
+    return;
+  if (context->owns_resolution_store)
+    psx_resolution_store_destroy(context->resolution_store);
+  context->resolution_store = resolution_store;
+  context->owns_resolution_store = 0;
+}
+
+psx_resolution_store_t *ps_ctx_resolution_store(
+    const psx_semantic_context_t *context) {
+  return context ? context->resolution_store : NULL;
 }
 
 psx_scope_graph_t *ps_ctx_scope_graph(
@@ -613,6 +640,8 @@ void ps_ctx_reset_translation_unit_scope_in(
   if (!context) return;
   arena_context_t *arena_context = context->arena_context;
   ag_diagnostic_context_t *diagnostic_context = context->diagnostic_context;
+  psx_resolution_store_t *resolution_store = context->resolution_store;
+  unsigned char owns_resolution_store = context->owns_resolution_store;
   psx_scope_graph_t *scope_graph = context->scope_graph;
   unsigned char owns_scope_graph = context->owns_scope_graph;
   ag_target_info_t target = context->target;
@@ -625,6 +654,8 @@ void ps_ctx_reset_translation_unit_scope_in(
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
   context->diagnostic_context = diagnostic_context;
+  context->resolution_store = resolution_store;
+  context->owns_resolution_store = owns_resolution_store;
   context->scope_graph = scope_graph;
   context->owns_scope_graph = owns_scope_graph;
   context->target = target;

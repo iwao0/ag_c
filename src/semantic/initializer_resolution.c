@@ -14,6 +14,7 @@ typedef struct {
   int relative_offset;
   int leaf_begin;
   int leaf_end;
+  psx_initializer_member_ref_t member_ref;
 } psx_initializer_object_span_t;
 
 typedef struct {
@@ -68,6 +69,26 @@ static int flat_initializer_member_offset(
   const psx_record_member_layout_t *member =
       psx_record_layout_member(layout, member_index);
   return member ? member->offset : -1;
+}
+
+static psx_initializer_member_ref_t flat_initializer_member_ref(
+    const psx_flat_initializer_context_t *context,
+    const psx_type_t *aggregate_type, int member_index,
+    const psx_record_member_decl_t *declaration) {
+  psx_initializer_member_ref_t ref = {
+      .declaration = declaration,
+      .record_id = ps_type_record_id(aggregate_type),
+      .member_index = member_index,
+  };
+  const psx_record_layout_t *layout = context && aggregate_type
+      ? psx_record_layout_table_lookup(
+            context->record_layouts, ps_type_record_id(aggregate_type),
+            context->target)
+      : NULL;
+  const psx_record_member_layout_t *member =
+      psx_record_layout_member(layout, member_index);
+  if (member) ref.layout = *member;
+  return ref;
 }
 
 static int flat_initializer_set_item_from_leaf(
@@ -158,6 +179,9 @@ static int flat_initializer_activate_union_member(
       .relative_offset = parent->relative_offset + member_offset,
       .leaf_begin = parent->leaf_begin,
       .leaf_end = parent->leaf_begin + selected.count,
+      .member_ref = flat_initializer_member_ref(
+          context, union_type, member_index,
+          &record->members[member_index]),
   };
   psx_initializer_scalar_leaf_list_dispose(&selected);
   return 1;
@@ -189,6 +213,7 @@ static int flat_initializer_child_span(
                       child_index * child_leaf_count,
         .leaf_end = parent->leaf_begin +
                     (child_index + 1) * child_leaf_count,
+        .member_ref = {0},
     };
     return child->leaf_end <= parent->leaf_end;
   }
@@ -239,8 +264,65 @@ static int flat_initializer_child_span(
       .relative_offset = member_begin,
       .leaf_begin = leaf_begin,
       .leaf_end = leaf_end,
+      .member_ref = flat_initializer_member_ref(
+          context, parent_type, child_index,
+          &record->members[child_index]),
   };
   return 1;
+}
+
+static int flat_initializer_record_has_named_member(
+    const psx_flat_initializer_context_t *context,
+    psx_type_id_t aggregate_type_id,
+    const psx_initializer_designator_t *designator) {
+  const psx_type_t *type = context
+      ? psx_semantic_type_table_lookup(
+            context->semantic_types, aggregate_type_id)
+      : NULL;
+  const psx_record_decl_t *record = type && ps_type_is_tag_aggregate(type)
+      ? psx_record_decl_table_lookup(
+            context->record_decls, ps_type_record_id(type))
+      : NULL;
+  return aggregate_member_index_by_name(record, designator) >= 0;
+}
+
+static int flat_initializer_designated_member_span(
+    psx_flat_initializer_context_t *context,
+    const psx_initializer_object_span_t *aggregate,
+    const psx_initializer_designator_t *designator,
+    psx_initializer_object_span_t *target) {
+  const psx_type_t *type = context && aggregate
+      ? psx_semantic_type_table_lookup(
+            context->semantic_types, aggregate->type_id)
+      : NULL;
+  const psx_record_decl_t *record = type && ps_type_is_tag_aggregate(type)
+      ? psx_record_decl_table_lookup(
+            context->record_decls, ps_type_record_id(type))
+      : NULL;
+  if (!record || !designator || !target) return 0;
+
+  /* Promoted names designate the physical member inside the anonymous
+     aggregate. Following that path is what selects the active union member. */
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (!psx_record_member_decl_is_unnamed_aggregate(member)) continue;
+    psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+        context->semantic_types, aggregate->type_id, i).type_id;
+    if (!flat_initializer_record_has_named_member(
+            context, member_type_id, designator))
+      continue;
+    psx_initializer_object_span_t anonymous_span;
+    if (!flat_initializer_child_span(
+            context, aggregate, i, &anonymous_span))
+      return 0;
+    return flat_initializer_designated_member_span(
+        context, &anonymous_span, designator, target);
+  }
+
+  int member_index = aggregate_member_index_by_name(record, designator);
+  return member_index >= 0 &&
+         flat_initializer_child_span(
+             context, aggregate, member_index, target);
 }
 
 static int flat_initializer_child_containing_leaf(
@@ -306,6 +388,7 @@ static int flat_initializer_string_span(
       .relative_offset = leaf->string_array_offset,
       .leaf_begin = begin,
       .leaf_end = end,
+      .member_ref = leaf->member_ref,
   };
   return end > begin;
 }
@@ -383,10 +466,12 @@ static int flat_initializer_designated_span(
       if (type->kind != PSX_TYPE_STRUCT &&
           type->kind != PSX_TYPE_UNION)
         return 0;
-      const psx_record_decl_t *record = psx_record_decl_table_lookup(
-          context->record_decls, ps_type_record_id(type));
-      child_index = aggregate_member_index_by_name(record, designator);
-      if (child_index < 0) return 0;
+      psx_initializer_object_span_t child;
+      if (!flat_initializer_designated_member_span(
+              context, target, designator, &child))
+        return 0;
+      *target = child;
+      continue;
     } else {
       return 0;
     }
@@ -553,6 +638,7 @@ static int flat_initializer_apply_list(
                 context->leaves->items[cursor].relative_offset,
             .leaf_begin = cursor,
             .leaf_end = cursor + 1,
+            .member_ref = context->leaves->items[cursor].member_ref,
         };
       }
       if (entry->value->kind == ND_INIT_LIST &&
@@ -634,6 +720,19 @@ static int flat_initializer_apply_value(
   }
   psx_local_initializer_item_t *item =
       &context->plan->items[target->leaf_begin];
+  item->relative_offset = target->relative_offset;
+  item->target_qual_type = (psx_qual_type_t){
+      target->type_id, PSX_TYPE_QUALIFIER_NONE};
+  item->bit_width = target->member_ref.declaration &&
+                            target->member_ref.declaration->bit_width > 0
+                        ? (unsigned char)
+                              target->member_ref.declaration->bit_width
+                        : 0;
+  item->bit_offset = target->member_ref.declaration
+                         ? (unsigned char)target->member_ref.layout.bit_offset
+                         : 0;
+  item->bit_is_signed = target->member_ref.declaration &&
+                        target->member_ref.declaration->bit_is_signed;
   item->has_integer_value = 0;
   item->integer_value = 0;
   item->value = value;
@@ -779,11 +878,110 @@ static psx_initializer_member_ref_t initializer_member_ref(
   return ref;
 }
 
+static int initializer_record_member_index(
+    const psx_record_decl_t *record,
+    const char *member_name, int member_name_len) {
+  if (!record || !member_name || member_name_len <= 0) return -1;
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (member->len == member_name_len && member->name &&
+        memcmp(member->name, member_name, (size_t)member_name_len) == 0)
+      return i;
+  }
+  return -1;
+}
+
+static int initializer_target_descend_member(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target,
+    int member_index, psx_initializer_target_t *target_inout) {
+  const psx_type_t *aggregate_type = target_inout
+      ? psx_semantic_type_table_lookup(
+            semantic_types, target_inout->type_id)
+      : NULL;
+  const psx_record_decl_t *record = aggregate_type &&
+          ps_type_is_tag_aggregate(aggregate_type)
+      ? psx_record_decl_table_lookup(
+            record_decls, ps_type_record_id(aggregate_type))
+      : NULL;
+  if (!record || member_index < 0 || member_index >= record->member_count)
+    return 0;
+  const psx_record_member_layout_t *layout = initializer_member_layout(
+      record_layouts, aggregate_type, target, member_index);
+  psx_qual_type_t member_type = psx_semantic_type_table_record_member(
+      semantic_types, target_inout->type_id, member_index);
+  if (!layout || member_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  if (aggregate_type->kind == PSX_TYPE_UNION) {
+    target_inout->union_relative_offset = target_inout->relative_offset;
+    target_inout->union_member_index = member_index;
+  }
+  const psx_record_member_decl_t *member = &record->members[member_index];
+  target_inout->relative_offset += layout->offset;
+  target_inout->type_id = member_type.type_id;
+  target_inout->type = psx_semantic_type_table_lookup(
+      semantic_types, member_type.type_id);
+  target_inout->member_ref = initializer_member_ref(
+      record_layouts, aggregate_type, target, member_index, member);
+  return target_inout->type != NULL;
+}
+
+int psx_resolve_initializer_member_target_with_records(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target,
+    const char *member_name, int member_name_len,
+    psx_initializer_target_t *target_inout) {
+  const psx_type_t *aggregate_type = target_inout
+      ? psx_semantic_type_table_lookup(
+            semantic_types, target_inout->type_id)
+      : NULL;
+  const psx_record_decl_t *record = aggregate_type &&
+          ps_type_is_tag_aggregate(aggregate_type)
+      ? psx_record_decl_table_lookup(
+            record_decls, ps_type_record_id(aggregate_type))
+      : NULL;
+  int logical_member = initializer_record_member_index(
+      record, member_name, member_name_len);
+  if (logical_member < 0) return 0;
+  if (target_inout->first_member_index < 0)
+    target_inout->first_member_index = logical_member;
+
+  for (int i = 0; i < record->member_count; i++) {
+    const psx_record_member_decl_t *member = &record->members[i];
+    if (!psx_record_member_decl_is_unnamed_aggregate(member)) continue;
+    psx_qual_type_t nested_type = psx_semantic_type_table_record_member(
+        semantic_types, target_inout->type_id, i);
+    const psx_type_t *nested = psx_semantic_type_table_lookup(
+        semantic_types, nested_type.type_id);
+    const psx_record_decl_t *nested_record = nested &&
+            ps_type_is_tag_aggregate(nested)
+        ? psx_record_decl_table_lookup(
+              record_decls, ps_type_record_id(nested))
+        : NULL;
+    if (initializer_record_member_index(
+            nested_record, member_name, member_name_len) < 0)
+      continue;
+    return initializer_target_descend_member(
+               semantic_types, record_decls, record_layouts, target,
+               i, target_inout) &&
+           psx_resolve_initializer_member_target_with_records(
+               semantic_types, record_decls, record_layouts, target,
+               member_name, member_name_len, target_inout);
+  }
+  return initializer_target_descend_member(
+      semantic_types, record_decls, record_layouts, target,
+      logical_member, target_inout);
+}
+
 static long long resolve_designator_index(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *expr,
     token_t *designator_tok, token_t *fallback_tok) {
   int ok = 1;
-  long long index = psx_eval_const_int(expr, &ok);
+  long long index = psx_eval_const_int(store, expr, &ok);
   token_t *tok = designator_tok ? designator_tok : fallback_tok;
   if (!ok) {
     ps_diag_ctx_in(
@@ -805,6 +1003,7 @@ static long long resolve_designator_index(
 }
 
 psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics,
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -839,7 +1038,7 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
                       : DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       long long index = resolve_designator_index(
-          diagnostics, designator->index_expr,
+          store, diagnostics, designator->index_expr,
           designator->tok, fallback_tok);
       if (index >= target.type->array_len) {
         ps_diag_ctx_in(
@@ -865,11 +1064,9 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
       continue;
     }
 
-    const psx_type_t *aggregate_type = target.type;
-    const psx_record_decl_t *record = psx_record_decl_table_lookup(
-        record_decls, ps_type_record_id(aggregate_type));
-    int member_index = aggregate_member_index_by_name(record, designator);
-    if (member_index < 0) {
+    if (!psx_resolve_initializer_member_target_with_records(
+            semantic_types, record_decls, record_layouts, layout_target,
+            designator->member_name, designator->member_len, &target)) {
       ps_diag_ctx_in(
           diagnostics,
           designator->tok ? designator->tok : fallback_tok,
@@ -878,22 +1075,6 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
               diagnostics,
               DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    if (target.first_member_index < 0)
-      target.first_member_index = member_index;
-    if (aggregate_type && aggregate_type->kind == PSX_TYPE_UNION) {
-      target.union_relative_offset = target.relative_offset;
-      target.union_member_index = member_index;
-    }
-    const psx_record_member_decl_t *member = &record->members[member_index];
-    target.relative_offset += initializer_member_offset(
-        record_layouts, aggregate_type, layout_target,
-        member_index);
-    target.type = psx_record_member_decl_type(member);
-    target.type_id = psx_semantic_type_table_record_member(
-        semantic_types, target.type_id, member_index).type_id;
-    target.member_ref = initializer_member_ref(
-        record_layouts, aggregate_type, layout_target,
-        member_index, member);
   }
   return target;
 }

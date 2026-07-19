@@ -7,10 +7,7 @@
 
 struct wasm32_backend_context_t {
   wasm32_ir_context_t *ir;
-  wasm32_ir_context_t *previous_ir;
   wasm32_obj_context_t *obj;
-  wasm32_obj_context_t *previous_obj;
-  int is_active;
 };
 
 wasm32_backend_context_t *wasm32_backend_context_create(
@@ -30,29 +27,77 @@ wasm32_backend_context_t *wasm32_backend_context_create(
   return ctx;
 }
 
-void wasm32_backend_context_activate(void *context) {
-  wasm32_backend_context_t *ctx = context;
-  if (!ctx || ctx->is_active) return;
-  ctx->previous_ir = wasm32_ir_context_activate(ctx->ir);
-  ctx->previous_obj = wasm32_obj_context_activate(ctx->obj);
-  ctx->is_active = 1;
-}
-
-void wasm32_backend_context_deactivate(void *context) {
-  wasm32_backend_context_t *ctx = context;
-  if (!ctx || !ctx->is_active) return;
-  wasm32_obj_context_activate(ctx->previous_obj);
-  wasm32_ir_context_activate(ctx->previous_ir);
-  ctx->previous_obj = NULL;
-  ctx->previous_ir = NULL;
-  ctx->is_active = 0;
-}
-
 void wasm32_backend_context_destroy(void *context) {
   wasm32_backend_context_t *ctx = context;
   if (!ctx) return;
-  wasm32_backend_context_deactivate(ctx);
   wasm32_ir_context_destroy(ctx->ir);
   wasm32_obj_context_destroy(ctx->obj);
   free(ctx);
+}
+
+void wasm32_backend_wat_begin(wasm32_backend_context_t *ctx) {
+  wasm32_module_begin_in(ctx->ir);
+}
+
+void wasm32_backend_wat_gen_ir_module(
+    wasm32_backend_context_t *ctx, ir_module_t *module,
+    const ir_abi_module_t *abi) {
+  wasm32_gen_ir_module_in(ctx->ir, module, abi);
+}
+
+void wasm32_backend_wat_emit_data_segments(
+    wasm32_backend_context_t *ctx,
+    const ir_data_module_t *data_module,
+    const ir_abi_data_module_t *data_abi) {
+  wasm32_emit_data_segments_in(ctx->ir, data_module, data_abi);
+}
+
+void wasm32_backend_wat_end(wasm32_backend_context_t *ctx) {
+  wasm32_module_end_in(ctx->ir);
+}
+
+void wasm32_backend_obj_set_output_file(
+    wasm32_backend_context_t *ctx, FILE *out) {
+  wasm32_obj_set_output_file_in(ctx->obj, out);
+}
+
+void wasm32_backend_obj_capture_output(
+    wasm32_backend_context_t *ctx, int enabled) {
+  wasm32_obj_capture_output_in(ctx->obj, enabled);
+}
+
+void wasm32_backend_obj_set_capture_limit(
+    wasm32_backend_context_t *ctx, size_t max_bytes) {
+  wasm32_obj_set_capture_limit_in(ctx->obj, max_bytes);
+}
+
+int wasm32_backend_obj_capture_limit_exceeded(
+    wasm32_backend_context_t *ctx) {
+  return wasm32_obj_capture_limit_exceeded_in(ctx->obj);
+}
+
+unsigned char *wasm32_backend_obj_take_output(
+    wasm32_backend_context_t *ctx, size_t *out_len) {
+  return wasm32_obj_take_output_in(ctx->obj, out_len);
+}
+
+void wasm32_backend_obj_begin(wasm32_backend_context_t *ctx) {
+  wasm32_obj_begin_in(ctx->obj);
+}
+
+void wasm32_backend_obj_gen_ir_module(
+    wasm32_backend_context_t *ctx, ir_module_t *module,
+    const ir_abi_module_t *abi) {
+  wasm32_obj_gen_ir_module_in(ctx->obj, module, abi);
+}
+
+void wasm32_backend_obj_emit_data_segments(
+    wasm32_backend_context_t *ctx,
+    const ir_data_module_t *data_module,
+    const ir_abi_data_module_t *data_abi) {
+  wasm32_obj_emit_data_segments_in(ctx->obj, data_module, data_abi);
+}
+
+void wasm32_backend_obj_end(wasm32_backend_context_t *ctx) {
+  wasm32_obj_end_in(ctx->obj);
 }

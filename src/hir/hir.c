@@ -38,6 +38,8 @@ struct psx_hir_node_t {
   unsigned char member_from_pointer;
   unsigned char is_static_function;
   unsigned char is_implicit_call;
+  unsigned char is_source_assignment;
+  unsigned char is_declaration_initializer;
 };
 
 typedef struct {
@@ -301,7 +303,7 @@ int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_FP_TO_INT:
     case PSX_HIR_INT_TO_FP:
     case PSX_HIR_NEGATE:
-    case PSX_HIR_VA_ARG_AREA:
+    case PSX_HIR_VARARG_CURSOR:
     case PSX_HIR_CAST:
     case PSX_HIR_CREAL:
     case PSX_HIR_CIMAG:
@@ -346,6 +348,9 @@ static psx_hir_node_id_t add_node(
   node->member_from_pointer = spec->member_from_pointer;
   node->is_static_function = spec->is_static_function;
   node->is_implicit_call = spec->is_implicit_call;
+  node->is_source_assignment = spec->is_source_assignment;
+  node->is_declaration_initializer =
+      spec->is_declaration_initializer;
   if (spec->child_count) {
     node->children = malloc(spec->child_count * sizeof(*node->children));
     node->child_edges = malloc(
@@ -538,6 +543,15 @@ int psx_hir_node_member_offset(const psx_hir_node_t *node) {
 
 int psx_hir_node_member_from_pointer(const psx_hir_node_t *node) {
   return node && node->member_from_pointer;
+}
+
+int psx_hir_node_is_source_assignment(const psx_hir_node_t *node) {
+  return node && node->is_source_assignment;
+}
+
+int psx_hir_node_is_declaration_initializer(
+    const psx_hir_node_t *node) {
+  return node && node->is_declaration_initializer;
 }
 
 int psx_hir_node_vla_stride_frame_offset(const psx_hir_node_t *node) {

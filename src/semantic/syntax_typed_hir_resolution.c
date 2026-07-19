@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../declaration_pipeline.h"
@@ -534,6 +535,13 @@ static psx_semantic_node_t *build_direct_expression(
 static psx_semantic_node_t *build_direct_expression_impl(
     direct_resolution_context_t *context,
     const node_t *syntax);
+static psx_semantic_node_t *build_direct_binary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
+static psx_semantic_node_t *apply_direct_expression_decay(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *expression);
 static psx_semantic_node_t *build_direct_statement(
     direct_resolution_context_t *context,
     const node_t *syntax);
@@ -1845,7 +1853,7 @@ static psx_semantic_node_t *build_direct_identifier(
   if (resolution.symbol.kind ==
       PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA) {
     psx_hir_node_spec_t spec = {
-        .kind = PSX_HIR_VA_ARG_AREA,
+        .kind = PSX_HIR_VARARG_CURSOR,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
     };
@@ -2107,9 +2115,63 @@ static psx_semantic_node_t *build_direct_lvalue(
 static psx_semantic_node_t *build_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax) {
+  psx_hir_node_kind_t binary_kind;
   psx_semantic_node_t *expression =
-      build_direct_expression_impl(context, syntax);
-  if (!expression) return NULL;
+      syntax && direct_binary_kind(syntax->kind, &binary_kind)
+          ? build_direct_binary_expression(context, syntax)
+          : build_direct_expression_impl(context, syntax);
+  return apply_direct_expression_decay(context, syntax, expression);
+}
+
+typedef struct direct_binary_build_frame_t {
+  const node_t *syntax;
+  psx_hir_node_kind_t hir_kind;
+  psx_semantic_node_t *lhs;
+  psx_semantic_node_t *rhs;
+  unsigned char state;
+} direct_binary_build_frame_t;
+
+static int push_direct_binary_build_frame(
+    direct_resolution_context_t *context,
+    direct_binary_build_frame_t **frames,
+    size_t *count, size_t *capacity,
+    const node_t *syntax) {
+  psx_hir_node_kind_t hir_kind;
+  if (!context || !frames || !count || !capacity || !syntax ||
+      !direct_binary_kind(syntax->kind, &hir_kind))
+    return 0;
+  if (*count == *capacity) {
+    size_t next_capacity = *capacity ? *capacity * 2 : 32;
+    if (next_capacity < *capacity ||
+        next_capacity > (size_t)-1 / sizeof(**frames)) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    direct_binary_build_frame_t *next = realloc(
+        *frames, next_capacity * sizeof(*next));
+    if (!next) {
+      set_failure(
+          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+          syntax);
+      return 0;
+    }
+    *frames = next;
+    *capacity = next_capacity;
+  }
+  (*frames)[(*count)++] = (direct_binary_build_frame_t){
+      .syntax = syntax,
+      .hir_kind = hir_kind,
+  };
+  return 1;
+}
+
+static psx_semantic_node_t *apply_direct_expression_decay(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_semantic_node_t *expression) {
+  if (!context || !syntax || !expression) return NULL;
   psx_qual_type_t source_type =
       psx_semantic_node_expression_qual_type(expression);
   psx_qual_type_t converted_type =
@@ -2132,6 +2194,104 @@ static psx_semantic_node_t *build_direct_expression(
   return psx_semantic_node_builder_expression(
       &context->builder, &spec, converted_type,
       children, edges, 1, NULL, syntax->kind);
+}
+
+static psx_semantic_node_t *build_direct_binary_node(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    psx_hir_node_kind_t hir_kind,
+    psx_semantic_node_t *lhs,
+    psx_semantic_node_t *rhs) {
+  if (!context || !syntax || !lhs || !rhs) return NULL;
+  psx_qual_type_t result_qual_type =
+      psx_resolve_binary_result_qual_type_in(
+          context->semantic_context, syntax->kind,
+          psx_semantic_node_expression_qual_type(lhs),
+          psx_semantic_node_expression_qual_type(rhs));
+  if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    set_failure(
+        context->failure,
+        PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+    return NULL;
+  }
+  psx_semantic_node_t *children[] = {lhs, rhs};
+  psx_hir_edge_kind_t edges[] = {
+      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+  psx_hir_node_spec_t spec = {
+      .kind = hir_kind,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  apply_direct_vla_runtime_view(
+      context, syntax, result_qual_type, &spec);
+  return psx_semantic_node_builder_expression(
+      &context->builder, &spec, result_qual_type,
+      children, edges, 2, NULL, syntax->kind);
+}
+
+static psx_semantic_node_t *build_direct_binary_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  direct_binary_build_frame_t *frames = NULL;
+  size_t count = 0;
+  size_t capacity = 0;
+  if (!push_direct_binary_build_frame(
+          context, &frames, &count, &capacity, syntax))
+    return NULL;
+
+  while (count > 0) {
+    direct_binary_build_frame_t *frame = &frames[count - 1];
+    if (frame->state == 0) {
+      frame->state = 1;
+      psx_hir_node_kind_t child_kind;
+      if (direct_binary_kind(frame->syntax->lhs->kind, &child_kind)) {
+        if (!push_direct_binary_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->lhs))
+          break;
+        continue;
+      }
+      frame->lhs = build_direct_expression(
+          context, frame->syntax->lhs);
+      if (!frame->lhs) break;
+    }
+    if (frame->state == 1) {
+      frame->state = 2;
+      psx_hir_node_kind_t child_kind;
+      if (direct_binary_kind(frame->syntax->rhs->kind, &child_kind)) {
+        if (!push_direct_binary_build_frame(
+                context, &frames, &count, &capacity,
+                frame->syntax->rhs))
+          break;
+        continue;
+      }
+      frame->rhs = build_direct_expression(
+          context, frame->syntax->rhs);
+      if (!frame->rhs) break;
+    }
+
+    const node_t *completed_syntax = frame->syntax;
+    psx_semantic_node_t *completed = build_direct_binary_node(
+        context, completed_syntax, frame->hir_kind,
+        frame->lhs, frame->rhs);
+    if (!completed) break;
+    count--;
+    if (count == 0) {
+      free(frames);
+      return completed;
+    }
+    completed = apply_direct_expression_decay(
+        context, completed_syntax, completed);
+    if (!completed) break;
+    direct_binary_build_frame_t *parent = &frames[count - 1];
+    if (parent->state == 1)
+      parent->lhs = completed;
+    else
+      parent->rhs = completed;
+  }
+
+  free(frames);
+  return NULL;
 }
 
 static psx_semantic_node_t *build_direct_expression_impl(
@@ -2319,11 +2479,12 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_hir_edge_kind_t edges[] = {
         PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
     psx_hir_node_spec_t spec = {
-        .kind = syntax->is_source_compound_assignment
+      .kind = syntax->is_source_compound_assignment
                     ? PSX_HIR_COMPOUND_ASSIGN
                     : PSX_HIR_ASSIGN,
         .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .is_source_assignment = syntax->is_source_assignment ? 1 : 0,
     };
     if (syntax->is_source_compound_assignment)
       spec.integer_value = hir_operator;
@@ -2575,43 +2736,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 3, NULL, syntax->kind);
   }
 
-  psx_hir_node_kind_t hir_kind;
-  if (!direct_binary_kind(syntax->kind, &hir_kind))
-    return NULL;
-  psx_semantic_node_t *lhs =
-      build_direct_expression(context, syntax->lhs);
-  psx_semantic_node_t *rhs =
-      build_direct_expression(context, syntax->rhs);
-  if (!lhs || !rhs) return NULL;
-
-  psx_qual_type_t lhs_qual_type =
-      psx_semantic_node_expression_qual_type(lhs);
-  psx_qual_type_t rhs_qual_type =
-      psx_semantic_node_expression_qual_type(rhs);
-  psx_qual_type_t result_qual_type =
-      psx_resolve_binary_result_qual_type_in(
-          context->semantic_context, syntax->kind,
-          lhs_qual_type, rhs_qual_type);
-  if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-    set_failure(
-        context->failure,
-        PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
-    return NULL;
-  }
-
-  psx_semantic_node_t *children[] = {lhs, rhs};
-  psx_hir_edge_kind_t edges[] = {
-      PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
-  psx_hir_node_spec_t spec = {
-      .kind = hir_kind,
-      .attached_qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-  };
-  apply_direct_vla_runtime_view(
-      context, syntax, result_qual_type, &spec);
-  return psx_semantic_node_builder_expression(
-      &context->builder, &spec, result_qual_type,
-      children, edges, 2, NULL, syntax->kind);
+  return NULL;
 }
 
 static int preflight_direct_condition(
@@ -4432,6 +4557,7 @@ static psx_semantic_node_t *build_direct_flat_initializer(
         .kind = PSX_HIR_ASSIGN,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .is_declaration_initializer = 1,
     };
     children[child_index] = psx_semantic_node_builder_expression(
         &context->builder, &assignment_spec,
@@ -4840,6 +4966,7 @@ static psx_semantic_node_t *build_direct_local_declaration(
         .kind = PSX_HIR_ASSIGN,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .is_declaration_initializer = 1,
     };
     assignment_spec.kind = declarator->is_object_copy_initializer
                                ? PSX_HIR_OBJECT_COPY

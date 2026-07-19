@@ -15,6 +15,7 @@
 #include <stdbool.h>
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
@@ -31,6 +32,11 @@ void ps_ctx_bind_diagnostic_context(
     ag_diagnostic_context_t *diagnostic_context);
 void ps_ctx_bind_scope_graph(
     psx_semantic_context_t *context, psx_scope_graph_t *scope_graph);
+void ps_ctx_bind_resolution_store(
+    psx_semantic_context_t *context,
+    psx_resolution_store_t *resolution_store);
+psx_resolution_store_t *ps_ctx_resolution_store(
+    const psx_semantic_context_t *context);
 psx_scope_graph_t *ps_ctx_scope_graph(
     const psx_semantic_context_t *context);
 ag_diagnostic_context_t *ps_ctx_diagnostics(

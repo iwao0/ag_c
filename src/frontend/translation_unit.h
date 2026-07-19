@@ -16,7 +16,6 @@ typedef struct {
   psx_parser_name_environment_t local_name_environment;
   ag_compilation_session_t *session;
   unsigned char is_started;
-  unsigned char owns_session_activation;
 } psx_frontend_stream_t;
 
 typedef struct {

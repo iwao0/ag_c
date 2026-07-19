@@ -1,4 +1,5 @@
 #include "compilation_session_internal.h"
+#include "semantic/resolution_store.h"
 
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
@@ -14,8 +15,6 @@
 #include "codegen_emit.h"
 #include <string.h>
 #include <stdlib.h>
-
-static ag_compilation_session_t *active_compilation_session;
 
 static char *session_strdup(const char *text) {
   if (!text || !text[0]) return NULL;
@@ -62,8 +61,11 @@ int ag_compilation_session_init(
   tk_context_bind_diagnostic_context(
       &session->tokenizer, session->diagnostic_context);
   session->arena_context = arena_context_create();
+  session->resolution_store = psx_resolution_store_create();
   session->scope_graph = psx_scope_graph_create();
   session->semantic_context = ps_ctx_create(session->arena_context);
+  ps_ctx_bind_resolution_store(
+      session->semantic_context, session->resolution_store);
   session->hir_module = psx_hir_module_create();
   session->global_registry = ps_global_registry_create();
   ps_global_registry_bind_semantic_types(
@@ -94,6 +96,8 @@ int ag_compilation_session_init(
   session->lowering_context = ps_lowering_context_create(
       session->arena_context, session->diagnostic_context);
   ps_lowering_context_bind_target(session->lowering_context, &session->target);
+  ps_lowering_context_bind_resolution_store(
+      session->lowering_context, session->resolution_store);
   ps_lowering_context_bind_semantic_types(
       session->lowering_context,
       ps_ctx_semantic_type_table_in(session->semantic_context));
@@ -108,7 +112,8 @@ int ag_compilation_session_init(
   if (!session->scope_graph || !session->semantic_context ||
       !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
-      !session->arena_context || !session->diagnostic_context ||
+      !session->arena_context || !session->resolution_store ||
+      !session->diagnostic_context ||
       !session->token_allocator_context || !session->parser_runtime_context ||
       !session->lowering_context || !session->hir_module ||
       !session->codegen_emit_context) {
@@ -124,6 +129,7 @@ int ag_compilation_session_init(
     ps_lowering_context_destroy(session->lowering_context);
     cg_context_destroy(session->codegen_emit_context);
     arena_context_destroy(session->arena_context);
+    psx_resolution_store_destroy(session->resolution_store);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -142,9 +148,14 @@ int ag_compilation_session_is_complete(
          ps_local_registry_scope_graph(session->local_registry) ==
              session->scope_graph &&
          session->arena_context &&
+         session->resolution_store &&
+         ps_ctx_resolution_store(session->semantic_context) ==
+             session->resolution_store &&
          session->diagnostic_context && session->token_allocator_context &&
          session->parser_runtime_context &&
          session->lowering_context &&
+         ps_lowering_resolution_store(session->lowering_context) ==
+             session->resolution_store &&
          session->hir_module &&
          ps_lowering_semantic_types(session->lowering_context) &&
          ps_lowering_record_decls(session->lowering_context) &&
@@ -154,39 +165,8 @@ int ag_compilation_session_is_complete(
           session->target.pointer_size == 8);
 }
 
-int ag_compilation_session_activate(ag_compilation_session_t *session) {
-  if (!ag_compilation_session_is_complete(session) || session->is_active)
-    return 0;
-  session->previous_session = active_compilation_session;
-  active_compilation_session = session;
-  if (session->backend_activate)
-    session->backend_activate(session->backend_context);
-  session->is_active = 1;
-  return 1;
-}
-
-int ag_compilation_session_is_active(
-    const ag_compilation_session_t *session) {
-  return session && session->is_active &&
-         active_compilation_session == session;
-}
-
-int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
-  if (!session || !session->is_active ||
-      active_compilation_session != session)
-    return 0;
-  if (session->backend_deactivate)
-    session->backend_deactivate(session->backend_context);
-  active_compilation_session = session->previous_session;
-  session->previous_session = NULL;
-  session->is_active = 0;
-  return 1;
-}
-
 int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (!session) return 0;
-  if (session->is_active && !ag_compilation_session_deactivate(session))
-    return 0;
   psx_hir_module_destroy(session->hir_module);
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);
@@ -203,6 +183,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   arena_context_destroy(session->arena_context);
+  psx_resolution_store_destroy(session->resolution_store);
   memset(session, 0, sizeof(*session));
   return 1;
 }
@@ -324,17 +305,19 @@ const ag_target_info_t *ag_compilation_session_target(
 
 int ag_compilation_session_set_backend_context(
     ag_compilation_session_t *session, void *backend_context,
-    ag_session_backend_callback_t activate,
-    ag_session_backend_callback_t deactivate,
-    ag_session_backend_callback_t destroy) {
-  if (!session || session->is_active || session->backend_context ||
+    ag_session_backend_destroy_fn destroy) {
+  if (!session || session->backend_context ||
       !backend_context || !destroy)
     return 0;
   session->backend_context = backend_context;
-  session->backend_activate = activate;
-  session->backend_deactivate = deactivate;
   session->backend_destroy = destroy;
   return 1;
+}
+
+void *ag_compilation_session_backend_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->backend_context : NULL;
 }
 
 int ag_compilation_session_set_continuation(
@@ -342,7 +325,7 @@ int ag_compilation_session_set_continuation(
     const char *frame_condition, const char *start_export,
     const char *resume_export, const char *status_export,
     const char *result_export) {
-  if (!session || session->is_active || !entry || !entry[0] ||
+  if (!session || !entry || !entry[0] ||
       !frame_condition || !frame_condition[0])
     return 0;
   ag_continuation_options_t next = {0};

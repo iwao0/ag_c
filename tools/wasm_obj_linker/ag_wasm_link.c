@@ -847,8 +847,8 @@ typedef struct {
   const char *target;
   runtime_symbol_kind_t kind;
   runtime_signature_kind_t signature_kind;
-  unsigned char param_types[16];
-  unsigned char param_count;
+  const unsigned char *param_types;
+  uint32_t param_count;
   unsigned char result_type;
   unsigned char memory_read;
   unsigned char memory_write;

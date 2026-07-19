@@ -27,8 +27,9 @@ typedef struct {
 } hir_label_target_t;
 
 typedef struct {
-  hir_case_target_t cases[128];
+  hir_case_target_t *cases;
   size_t case_count;
+  size_t case_capacity;
   const psx_hir_node_t *default_node;
   ir_block_t *default_block;
   ir_block_t *end_block;
@@ -42,6 +43,8 @@ typedef struct {
   ir_hir_build_status_t status;
   ir_mir_type_info_t return_info;
   psx_qual_type_t return_qual_type;
+  const ag_continuation_options_t *continuation;
+  const psx_hir_node_t *continuation_while;
   int returns_void;
   hir_local_slot_t local_slots[512];
   size_t local_slot_count;

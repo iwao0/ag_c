@@ -365,7 +365,7 @@ static int select_instruction(
     case IR_VLA_ALLOC:
       selected->kind = WASM32_MACHINE_INST_DYNAMIC_ALLOCA;
       return 1;
-    case IR_VA_ARG_AREA:
+    case IR_VARARG_CURSOR:
       selected->kind = WASM32_MACHINE_INST_VARARG_AREA;
       return 1;
     case IR_LEA:
@@ -723,7 +723,7 @@ static int propagate_forced_i32(
             changed |= force_i32(
                 function, forced_i32, instruction->src1);
             break;
-          case IR_VA_ARG_AREA:
+          case IR_VARARG_CURSOR:
             changed |= force_i32(
                 function, forced_i32, instruction->dst);
             break;

@@ -153,10 +153,6 @@ int psx_frontend_stream_begin(
   if (!stream) return 0;
   memset(stream, 0, sizeof(*stream));
   if (!frontend_session_is_complete(session)) return 0;
-  if (!ag_compilation_session_is_active(session)) {
-    if (!ag_compilation_session_activate(session)) return 0;
-    stream->owns_session_activation = 1;
-  }
   stream->session = session;
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(session);
@@ -216,7 +212,6 @@ int psx_frontend_next_function_with_resolver(
   if (result) result->hir_root = PSX_HIR_NODE_ID_INVALID;
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
-      !ag_compilation_session_is_active(stream->session) ||
       !result || !resolver) {
     return 0;
   }
@@ -356,8 +351,7 @@ int psx_frontend_next_function(
 
 int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
-      !frontend_session_is_complete(stream->session) ||
-      !ag_compilation_session_is_active(stream->session))
+      !frontend_session_is_complete(stream->session))
     return 0;
   ps_ctx_emit_deferred_parser_diagnostics_in(
       ag_compilation_session_semantic_context(stream->session));
@@ -365,10 +359,6 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   ps_parser_name_environment_dispose(
       &stream->local_name_environment);
   stream->is_started = 0;
-  if (stream->owns_session_activation) {
-    if (!ag_compilation_session_deactivate(stream->session)) return 0;
-    stream->owns_session_activation = 0;
-  }
   return 1;
 }
 

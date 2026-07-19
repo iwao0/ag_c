@@ -14,87 +14,98 @@
 #include "vla_runtime_plan.h"
 #include "source_cast_resolution.h"
 
-static psx_resolution_node_kind_t resolved_node_kind(const node_t *node) {
-  return psx_resolved_object_ref_node_kind(node);
+static psx_resolution_node_kind_t resolved_node_kind(
+    const psx_resolution_store_t *store, const node_t *node) {
+  return psx_resolved_object_ref_node_kind(store, node);
 }
 
-static int is_aggregate_lvar(node_t *node) {
-  return node && resolved_node_kind(node) == ND_LVAR &&
-         ps_type_is_tag_aggregate(ps_node_get_type(node));
+static int is_aggregate_lvar(
+    const psx_resolution_store_t *store, node_t *node) {
+  return node && resolved_node_kind(store, node) == ND_LVAR &&
+         ps_type_is_tag_aggregate(ps_node_get_type(store, node));
 }
 
-static int is_dereference(const node_t *node) {
+static int is_dereference(
+    const psx_resolution_store_t *store, const node_t *node) {
   return node &&
          (node->kind == ND_UNARY_DEREF ||
-          psx_resolution_node_kind(node) == ND_DEREF);
+          psx_resolution_node_kind(store, node) == ND_DEREF);
 }
 
-static node_t *assigned_aggregate_lvar_from_member_base(node_t *base);
+static node_t *assigned_aggregate_lvar_from_member_base(
+    const psx_resolution_store_t *store, node_t *base);
 
-static node_t *assigned_aggregate_lvar_from_member_address(node_t *address) {
+static node_t *assigned_aggregate_lvar_from_member_address(
+    const psx_resolution_store_t *store, node_t *address) {
   if (!address) return NULL;
   if (address->kind == ND_COMMA && address->rhs)
-    return assigned_aggregate_lvar_from_member_address(address->rhs);
+    return assigned_aggregate_lvar_from_member_address(store, address->rhs);
   if ((address->kind == ND_ADD || address->kind == ND_SUB) && address->lhs)
-    return assigned_aggregate_lvar_from_member_address(address->lhs);
+    return assigned_aggregate_lvar_from_member_address(store, address->lhs);
   if (address->kind == ND_ADDR && address->lhs)
-    return assigned_aggregate_lvar_from_member_base(address->lhs);
+    return assigned_aggregate_lvar_from_member_base(store, address->lhs);
   return NULL;
 }
 
-static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
+static node_t *assigned_aggregate_lvar_from_member_base(
+    const psx_resolution_store_t *store, node_t *base) {
   if (!base) return NULL;
-  if (is_aggregate_lvar(base)) return base;
+  if (is_aggregate_lvar(store, base)) return base;
   if (base->kind == ND_MEMBER_ACCESS) {
     node_member_access_t *access = (node_member_access_t *)base;
     return access->from_pointer
                ? NULL
-               : assigned_aggregate_lvar_from_member_base(base->lhs);
+               : assigned_aggregate_lvar_from_member_base(store, base->lhs);
   }
   if (base->kind == ND_COMMA && base->rhs)
-    return assigned_aggregate_lvar_from_member_base(base->rhs);
-  if (is_dereference(base) && base->lhs)
-    return assigned_aggregate_lvar_from_member_address(base->lhs);
+    return assigned_aggregate_lvar_from_member_base(store, base->rhs);
+  if (is_dereference(store, base) && base->lhs)
+    return assigned_aggregate_lvar_from_member_address(store, base->lhs);
   return NULL;
 }
 
-static node_t *assigned_lvar_from_target(node_t *target) {
+static node_t *assigned_lvar_from_target(
+    const psx_resolution_store_t *store, node_t *target) {
   if (!target) return NULL;
-  if (resolved_node_kind(target) == ND_LVAR) return target;
+  if (resolved_node_kind(store, target) == ND_LVAR) return target;
   if (target->kind == ND_MEMBER_ACCESS) {
     node_member_access_t *access = (node_member_access_t *)target;
     return access->from_pointer
                ? NULL
-               : assigned_aggregate_lvar_from_member_base(target->lhs);
+               : assigned_aggregate_lvar_from_member_base(
+                     store, target->lhs);
   }
-  if (is_dereference(target) && target->lhs &&
+  if (is_dereference(store, target) && target->lhs &&
       target->lhs->kind == ND_ADDR && target->lhs->lhs &&
-      resolved_node_kind(target->lhs->lhs) == ND_LVAR)
+      resolved_node_kind(store, target->lhs->lhs) == ND_LVAR)
     return target->lhs->lhs;
-  if (is_dereference(target))
-    return assigned_aggregate_lvar_from_member_address(target->lhs);
+  if (is_dereference(store, target))
+    return assigned_aggregate_lvar_from_member_address(store, target->lhs);
   return NULL;
 }
 
 static void record_initialized(
+    const psx_resolution_store_t *store,
     psx_local_registry_t *local_registry,
     node_t *target, psx_lvar_usage_region_t *region) {
-  lvar_t *var = ps_node_lvar_symbol(assigned_lvar_from_target(target));
+  lvar_t *var = ps_node_lvar_symbol(
+      store, assigned_lvar_from_target(store, target));
   if (var)
     ps_decl_record_lvar_usage_in_region_in(
         local_registry, var, PSX_LVAR_USAGE_INITIALIZED, region);
 }
 
 static void record_address_taken(
+    const psx_resolution_store_t *store,
     psx_local_registry_t *local_registry,
     node_t *operand, psx_lvar_usage_region_t *region) {
   if (!operand) return;
   if (operand->kind == ND_COMMA && operand->rhs) {
-    record_address_taken(local_registry, operand->rhs, region);
+    record_address_taken(store, local_registry, operand->rhs, region);
     return;
   }
-  if (resolved_node_kind(operand) == ND_LVAR) {
-    lvar_t *var = ps_node_lvar_symbol(operand);
+  if (resolved_node_kind(store, operand) == ND_LVAR) {
+    lvar_t *var = ps_node_lvar_symbol(store, operand);
     if (var)
       ps_decl_record_lvar_usage_in_region_in(
           local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
@@ -104,8 +115,8 @@ static void record_address_taken(
     node_member_access_t *access = (node_member_access_t *)operand;
     if (!access->from_pointer) {
       node_t *lvar =
-          assigned_aggregate_lvar_from_member_base(operand->lhs);
-      lvar_t *var = ps_node_lvar_symbol(lvar);
+          assigned_aggregate_lvar_from_member_base(store, operand->lhs);
+      lvar_t *var = ps_node_lvar_symbol(store, lvar);
       if (var)
         ps_decl_record_lvar_usage_in_region_in(
             local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
@@ -113,20 +124,20 @@ static void record_address_taken(
     return;
   }
   if (operand->kind == ND_ADDR && operand->lhs) {
-    if (resolved_node_kind(operand->lhs) == ND_LVAR) {
-      lvar_t *var = ps_node_lvar_symbol(operand->lhs);
+    if (resolved_node_kind(store, operand->lhs) == ND_LVAR) {
+      lvar_t *var = ps_node_lvar_symbol(store, operand->lhs);
       if (var)
         ps_decl_record_lvar_usage_in_region_in(
             local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
       return;
     }
-    record_address_taken(local_registry, operand->lhs, region);
+    record_address_taken(store, local_registry, operand->lhs, region);
     return;
   }
-  if (is_dereference(operand)) {
+  if (is_dereference(store, operand)) {
     node_t *lvar =
-        assigned_aggregate_lvar_from_member_address(operand->lhs);
-    lvar_t *var = ps_node_lvar_symbol(lvar);
+        assigned_aggregate_lvar_from_member_address(store, operand->lhs);
+    lvar_t *var = ps_node_lvar_symbol(store, lvar);
     if (var)
       ps_decl_record_lvar_usage_in_region_in(
           local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
@@ -134,32 +145,36 @@ static void record_address_taken(
 }
 
 static void collect_array(
+    const psx_resolution_store_t *store,
     psx_local_registry_t *local_registry,
     node_t **nodes, psx_lvar_usage_region_t *region) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++)
-    psx_collect_lvar_usage_events_in(local_registry, nodes[i], region);
+    psx_collect_lvar_usage_events_in(
+        store, local_registry, nodes[i], region);
 }
 
 static void collect_sizeof_vla_indices(
+    const psx_resolution_store_t *store,
     psx_local_registry_t *local_registry,
     node_t *operand, psx_lvar_usage_region_t *region) {
   if (!operand || operand->kind != ND_SUBSCRIPT) return;
   collect_sizeof_vla_indices(
-      local_registry, operand->lhs, region);
+      store, local_registry, operand->lhs, region);
   psx_collect_lvar_usage_events_in(
-      local_registry, operand->rhs, region);
+      store, local_registry, operand->rhs, region);
 }
 
 void psx_collect_lvar_usage_events_in(
+    const psx_resolution_store_t *store,
     psx_local_registry_t *local_registry,
     node_t *node, psx_lvar_usage_region_t *inherited_region) {
   if (!local_registry || !node) return;
   psx_lvar_usage_region_t *region =
-      ps_node_lvar_usage_region(node)
-          ? ps_node_lvar_usage_region(node) : inherited_region;
-  lvar_t *usage_lvar = ps_node_lvar_usage_symbol(node);
-  if (ps_node_records_lvar_usage(node) && usage_lvar) {
+      ps_node_lvar_usage_region(store, node)
+          ? ps_node_lvar_usage_region(store, node) : inherited_region;
+  lvar_t *usage_lvar = ps_node_lvar_usage_symbol(store, node);
+  if (ps_node_records_lvar_usage(store, node) && usage_lvar) {
     ps_decl_record_lvar_usage_in_region_in(
         local_registry, usage_lvar,
         node->lvar_usage_unevaluated
@@ -167,36 +182,41 @@ void psx_collect_lvar_usage_events_in(
             : PSX_LVAR_USAGE_EVALUATED,
         region);
   }
-  switch (psx_resolution_node_kind(node)) {
+  switch (psx_resolution_node_kind(store, node)) {
     case ND_COMPOUND_LITERAL: {
       psx_collect_lvar_usage_events_in(
-          local_registry, node->rhs, region);
+          store, local_registry, node->rhs, region);
       return;
     }
     case ND_INIT_LIST: {
       node_init_list_t *list = (node_init_list_t *)node;
       for (int i = 0; i < list->entry_count; i++) {
         psx_collect_lvar_usage_events_in(
-            local_registry, list->entries[i].value, region);
+            store, local_registry, list->entries[i].value, region);
         for (int d = 0; d < list->entries[i].index_expr_count; d++) {
           psx_collect_lvar_usage_events_in(
-              local_registry, list->entries[i].index_exprs[d], region);
+              store, local_registry,
+              list->entries[i].index_exprs[d], region);
         }
       }
       return;
     }
     case ND_ASSIGN:
-      record_initialized(local_registry, node->lhs, region);
-      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
-      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
+      record_initialized(store, local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->rhs, region);
       return;
     case ND_ADDR:
-      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->lhs, region);
       if (node->is_explicit_addr_expr)
-        record_address_taken(local_registry, node, region);
+        record_address_taken(store, local_registry, node, region);
       return;
     case ND_BLOCK:
-      collect_array(local_registry, ((node_block_t *)node)->body, region);
+      collect_array(
+          store, local_registry, ((node_block_t *)node)->body, region);
       return;
     case ND_STATIC_ASSERT:
       return;
@@ -207,42 +227,44 @@ void psx_collect_lvar_usage_events_in(
           (node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++)
         psx_collect_lvar_usage_events_in(
-            local_registry, function->parameters[i], region);
-      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
+            store, local_registry, function->parameters[i], region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->rhs, region);
       return;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
       psx_collect_lvar_usage_events_in(
-          local_registry, call->callee, region);
+          store, local_registry, call->callee, region);
       for (int i = 0; i < call->argument_count; i++)
         psx_collect_lvar_usage_events_in(
-            local_registry, call->arguments[i], region);
+            store, local_registry, call->arguments[i], region);
       return;
     }
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
       psx_collect_lvar_usage_events_in(
-          local_registry,
-          psx_generic_selection_selected_expression(selection), region);
+          store, local_registry,
+          psx_generic_selection_selected_expression(store, selection),
+          region);
       return;
     }
     case ND_CAST:
       psx_collect_lvar_usage_events_in(
-          local_registry, node->lhs, region);
+          store, local_registry, node->lhs, region);
       return;
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       const psx_sizeof_runtime_plan_t *plan =
-          psx_sizeof_query_runtime_plan_const(query);
+          psx_sizeof_query_runtime_plan_const(store, query);
       for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
         psx_collect_lvar_usage_events_in(
-            local_registry, plan->runtime_bounds[i], region);
+            store, local_registry, plan->runtime_bounds[i], region);
       }
-      if (psx_sizeof_query_evaluates_vla_operand(query)) {
+      if (psx_sizeof_query_evaluates_vla_operand(store, query)) {
         collect_sizeof_vla_indices(
-            local_registry, query->operand, region);
+            store, local_registry, query->operand, region);
       }
       return;
     }
@@ -251,18 +273,22 @@ void psx_collect_lvar_usage_events_in(
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
       psx_collect_lvar_usage_events_in(
-          local_registry, control->init, region);
-      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
-      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
+          store, local_registry, control->init, region);
       psx_collect_lvar_usage_events_in(
-          local_registry, control->inc, region);
+          store, local_registry, node->lhs, region);
       psx_collect_lvar_usage_events_in(
-          local_registry, control->els, region);
+          store, local_registry, node->rhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, control->inc, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, control->els, region);
       return;
     }
     default:
-      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
-      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->rhs, region);
       return;
   }
 }
@@ -312,13 +338,14 @@ static void emit_usage_warnings(
 }
 
 void psx_analyze_function_lvar_usage_in(
+    const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics,
     psx_local_registry_t *local_registry,
     node_function_definition_t *function,
     const token_t *fallback_diag_tok) {
   if (!local_registry || !function) return;
   psx_collect_lvar_usage_events_in(
-      local_registry, (node_t *)function, NULL);
+      store, local_registry, (node_t *)function, NULL);
   record_preinitialized_locals(local_registry, function);
   ps_decl_replay_lvar_usage_events_in(
       local_registry, function->lvars);

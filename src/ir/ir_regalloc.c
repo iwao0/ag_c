@@ -54,42 +54,6 @@ static int try_alloc_reg(int *reg_holder, int *last_use, int v, int n) {
   return -1;
 }
 
-__attribute__((unused))
-static void regalloc_block(ir_func_t *f, ir_block_t *b, int *unalloc) {
-  int nvregs = f->next_vreg_id;
-  int *last_use = calloc((size_t)nvregs, sizeof(int));
-  for (int i = 0; i < nvregs; i++) last_use[i] = -1;
-
-  /* Pass 1: 命令番号付け + 各 vreg の last_use を計算 */
-  int n = 0;
-  for (ir_inst_t *inst = b->head; inst; inst = inst->next) {
-    mark_uses(inst, last_use, nvregs, n);
-    n++;
-  }
-
-  /* Pass 2: linear scan で dst vreg を物理レジスタにマップ */
-  int reg_holder[PHYS_REG_COUNT];
-  for (int j = 0; j < PHYS_REG_COUNT; j++) reg_holder[j] = -1;
-  n = 0;
-  for (ir_inst_t *inst = b->head; inst; inst = inst->next) {
-    int v = inst->dst.id;
-    if (v >= 0 && v < nvregs && last_use[v] >= 0) {
-      /* call の dst (= x0 値) は call で frame に書く挙動。block を跨ぐ
-       * vreg や call をまたぐ vreg は unalloc で除外済み。 */
-      if (inst->op != IR_CALL && !unalloc[v]) {
-        int reg = try_alloc_reg(reg_holder, last_use, v, n);
-        f->vreg_phys_reg[v] = reg;
-      }
-    }
-    if (inst->op == IR_CALL) {
-      for (int j = 0; j < PHYS_REG_COUNT; j++) reg_holder[j] = -1;
-    }
-    n++;
-  }
-
-  free(last_use);
-}
-
 /* 全 block の (start_n, end_n) 命令番号範囲を集める。
  * block_id → (start, end_exclusive)。返り値: 総命令数。 */
 static int collect_block_ranges(ir_func_t *f, int *starts, int *ends, int max_blocks) {

@@ -579,22 +579,6 @@ static psx_initializer_target_t aggregate_positional_target(
   return target;
 }
 
-static int aggregate_member_index(
-    const psx_record_decl_t *record,
-    const psx_hir_node_t *designator) {
-  size_t name_length = 0;
-  const char *name = psx_hir_node_name(designator, &name_length);
-  if (!record || !name || name_length == 0 || name_length > INT32_MAX)
-    return -1;
-  for (int i = 0; i < record->member_count; i++) {
-    const psx_record_member_decl_t *member = &record->members[i];
-    if (member->len == (int)name_length && member->name &&
-        memcmp(member->name, name, name_length) == 0)
-      return i;
-  }
-  return -1;
-}
-
 static psx_initializer_target_t aggregate_designated_target(
     const static_hir_aggregate_t *aggregate,
     const psx_hir_node_t *entry,
@@ -653,29 +637,16 @@ static psx_initializer_target_t aggregate_designated_target(
     if (psx_hir_node_kind(designator) !=
         PSX_HIR_MEMBER_DESIGNATOR)
       return (psx_initializer_target_t){0};
-    const psx_type_t *aggregate_type = target.type;
-    const psx_record_decl_t *record = aggregate_record_decl(
-        aggregate, aggregate_type);
-    int member_index = aggregate_member_index(record, designator);
-    const psx_record_member_layout_t *layout = aggregate_member_layout(
-        aggregate, aggregate_type, member_index);
-    if (!record || member_index < 0 || !layout)
+    size_t name_length = 0;
+    const char *name = psx_hir_node_name(designator, &name_length);
+    if (!name || name_length == 0 || name_length > INT32_MAX ||
+        !psx_resolve_initializer_member_target_with_records(
+            ps_lowering_semantic_types(aggregate->eval.lowering_context),
+            ps_lowering_record_decls(aggregate->eval.lowering_context),
+            ps_lowering_record_layouts(aggregate->eval.lowering_context),
+            ps_lowering_target(aggregate->eval.lowering_context),
+            name, (int)name_length, &target))
       return (psx_initializer_target_t){0};
-    if (target.first_member_index < 0)
-      target.first_member_index = member_index;
-    if (aggregate_type->kind == PSX_TYPE_UNION) {
-      target.union_relative_offset = target.relative_offset;
-      target.union_member_index = member_index;
-    }
-    const psx_record_member_decl_t *member =
-        &record->members[member_index];
-    target.relative_offset += layout->offset;
-    target.type_id = psx_semantic_type_table_record_member(
-        ps_lowering_semantic_types(aggregate->eval.lowering_context),
-        target.type_id, member_index).type_id;
-    target.type = psx_record_member_decl_type(member);
-    target.member_ref = aggregate_member_ref(
-        aggregate, aggregate_type, member_index, member);
   }
   return target;
 }

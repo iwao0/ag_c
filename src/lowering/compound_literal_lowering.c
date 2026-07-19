@@ -37,7 +37,9 @@ static int plan_file_scope_compound_literal(
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
   const psx_type_t *type =
-      psx_node_resolved_type_name(&compound->base);
+      psx_node_resolved_type_name(
+          ps_lowering_resolution_store(lowering_context),
+          &compound->base);
   node_t *initializer = compound->base.rhs;
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
@@ -50,7 +52,9 @@ static int plan_file_scope_compound_literal(
       list->entries[0].value &&
       list->entries[0].value->kind == ND_NUM) {
     plan->direct_initializer_index = 0;
-    plan->object_type = ps_node_get_type(list->entries[0].value);
+    plan->object_type = ps_node_get_type(
+        ps_lowering_resolution_store(lowering_context),
+        list->entries[0].value);
     plan->kind = PSX_COMPOUND_LITERAL_DIRECT_INITIALIZER;
     return 1;
   }
@@ -105,7 +109,9 @@ static int plan_local_compound_literal(
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
   const psx_type_t *type =
-      psx_node_resolved_type_name(&compound->base);
+      psx_node_resolved_type_name(
+          ps_lowering_resolution_store(lowering_context),
+          &compound->base);
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,

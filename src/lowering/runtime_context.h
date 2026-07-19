@@ -10,10 +10,12 @@
 
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 
 typedef struct psx_lowering_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
+  psx_resolution_store_t *resolution_store;
   ag_target_info_t target;
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_decl_table_t *record_decls;
@@ -48,6 +50,10 @@ void ps_lowering_context_destroy(psx_lowering_context_t *ctx);
 arena_context_t *ps_lowering_arena(
     const psx_lowering_context_t *ctx);
 ag_diagnostic_context_t *ps_lowering_diagnostics(
+    const psx_lowering_context_t *ctx);
+void ps_lowering_context_bind_resolution_store(
+    psx_lowering_context_t *ctx, psx_resolution_store_t *store);
+psx_resolution_store_t *ps_lowering_resolution_store(
     const psx_lowering_context_t *ctx);
 void ps_lowering_context_bind_target(
     psx_lowering_context_t *ctx, const ag_target_info_t *target);

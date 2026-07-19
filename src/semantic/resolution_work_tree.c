@@ -53,32 +53,36 @@ static size_t node_storage_size(const node_t *node) {
       return sizeof(node_jump_t);
     default: break;
   }
-  size_t resolution_size =
-      psx_resolution_node_storage_size(node);
-  return resolution_size ? resolution_size : sizeof(node_t);
+  return sizeof(node_t);
 }
 
 static node_t *clone_node(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, const node_t *source);
 
 static int clone_parsed_declarator(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     psx_parsed_declarator_t *destination,
     const psx_parsed_declarator_t *source);
 static psx_parsed_type_name_t *clone_type_name_syntax(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     const psx_parsed_type_name_t *source);
 
 static int clone_parsed_const_expr(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     psx_parsed_const_expr_t *destination,
     const psx_parsed_const_expr_t *source) {
   *destination = *source;
-  destination->node = clone_node(arena_context, source->node);
+  destination->node = clone_node(
+      resolution_store, arena_context, source->node);
   return !source->node || destination->node;
 }
 
 static int clone_decl_specifier(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     psx_parsed_decl_specifier_t *destination,
     const psx_parsed_decl_specifier_t *source) {
@@ -89,9 +93,9 @@ static int clone_decl_specifier(
     psx_parsed_alignas_t *alignas =
         &destination->alignas_specifiers[i];
     alignas->expression = clone_node(
-        arena_context, source_alignas->expression);
+        resolution_store, arena_context, source_alignas->expression);
     alignas->type_name = clone_type_name_syntax(
-        arena_context, source_alignas->type_name);
+        resolution_store, arena_context, source_alignas->type_name);
     if ((source_alignas->expression && !alignas->expression) ||
         (source_alignas->type_name && !alignas->type_name))
       return 0;
@@ -135,6 +139,7 @@ static int clone_declarator_shape(
 }
 
 static psx_parsed_function_parameters_t *clone_function_parameters(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     const psx_parsed_function_parameters_t *source) {
   if (!source) return NULL;
@@ -155,10 +160,10 @@ static psx_parsed_function_parameters_t *clone_function_parameters(
     psx_parsed_function_parameter_t *parameter =
         &destination->items[i];
     if (!clone_decl_specifier(
-            arena_context, &parameter->specifier,
+            resolution_store, arena_context, &parameter->specifier,
             &source_parameter->specifier) ||
         !clone_parsed_declarator(
-            arena_context, &parameter->declarator,
+            resolution_store, arena_context, &parameter->declarator,
             &source_parameter->declarator))
       return NULL;
   }
@@ -166,6 +171,7 @@ static psx_parsed_function_parameters_t *clone_function_parameters(
 }
 
 static int clone_parsed_declarator(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     psx_parsed_declarator_t *destination,
     const psx_parsed_declarator_t *source) {
@@ -174,7 +180,8 @@ static int clone_parsed_declarator(
           arena_context, &destination->declarator_shape,
           &source->declarator_shape) ||
       !clone_parsed_const_expr(
-          arena_context, &destination->bit_width_expression,
+          resolution_store, arena_context,
+          &destination->bit_width_expression,
           &source->bit_width_expression))
     return 0;
 
@@ -189,7 +196,7 @@ static int clone_parsed_declarator(
     for (int i = 0; i < source->array_bound_count; i++) {
       destination->array_bounds[i] = source->array_bounds[i];
       if (!clone_parsed_const_expr(
-              arena_context,
+              resolution_store, arena_context,
               &destination->array_bounds[i].expression,
               &source->array_bounds[i].expression))
         return 0;
@@ -209,7 +216,7 @@ static int clone_parsed_declarator(
           source->function_suffixes[i];
       destination->function_suffixes[i].parameters =
           clone_function_parameters(
-              arena_context,
+              resolution_store, arena_context,
               source->function_suffixes[i].parameters);
       if (source->function_suffixes[i].parameters &&
           !destination->function_suffixes[i].parameters)
@@ -220,6 +227,7 @@ static int clone_parsed_declarator(
 }
 
 static psx_parsed_type_name_t *clone_type_name_syntax(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     const psx_parsed_type_name_t *source) {
   if (!source) return NULL;
@@ -228,29 +236,31 @@ static psx_parsed_type_name_t *clone_type_name_syntax(
   if (!destination) return NULL;
   *destination = *source;
   destination->atomic_inner = clone_type_name_syntax(
-      arena_context, source->atomic_inner);
+      resolution_store, arena_context, source->atomic_inner);
   if ((source->atomic_inner && !destination->atomic_inner) ||
       !clone_decl_specifier(
-          arena_context, &destination->specifier,
+          resolution_store, arena_context, &destination->specifier,
           &source->specifier) ||
       !clone_parsed_declarator(
-          arena_context, &destination->declarator,
+          resolution_store, arena_context, &destination->declarator,
           &source->declarator))
     return NULL;
   return destination;
 }
 
 static int clone_type_name_ref(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     psx_type_name_ref_t *destination,
     const psx_type_name_ref_t *source) {
   *destination = *source;
   destination->syntax = clone_type_name_syntax(
-      arena_context, source->syntax);
+      resolution_store, arena_context, source->syntax);
   return !source->syntax || destination->syntax;
 }
 
 static node_t **clone_node_array(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, node_t *const *source,
     size_t count, int null_terminated) {
   size_t slots = count + (null_terminated ? 1u : 0u);
@@ -259,7 +269,7 @@ static node_t **clone_node_array(
       arena_context, slots * sizeof(*copy));
   if (!copy) return NULL;
   for (size_t i = 0; i < count; i++) {
-    copy[i] = clone_node(arena_context, source[i]);
+    copy[i] = clone_node(resolution_store, arena_context, source[i]);
     if (source[i] && !copy[i]) return NULL;
   }
   if (null_terminated) copy[count] = NULL;
@@ -281,6 +291,7 @@ static node_t *cloned_designator_expression_alias(
 }
 
 static int clone_initializer_entries(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, node_init_list_t *destination,
     const node_init_list_t *source) {
   if (!source->entries || source->entry_count <= 0) {
@@ -296,13 +307,16 @@ static int clone_initializer_entries(
   for (size_t i = 0; i < count; i++) {
     const psx_initializer_entry_t *source_entry = &source->entries[i];
     psx_initializer_entry_t *entry = &destination->entries[i];
-    entry->value = clone_node(arena_context, source_entry->value);
+    entry->value = clone_node(
+        resolution_store, arena_context, source_entry->value);
     if (source_entry->value && !entry->value) return 0;
     for (int d = 0; d < source_entry->designator_count; d++) {
       entry->designators[d].index_expr = clone_node(
-          arena_context, source_entry->designators[d].index_expr);
+          resolution_store, arena_context,
+          source_entry->designators[d].index_expr);
       entry->designators[d].range_end_expr = clone_node(
-          arena_context, source_entry->designators[d].range_end_expr);
+          resolution_store, arena_context,
+          source_entry->designators[d].range_end_expr);
       if ((source_entry->designators[d].index_expr &&
            !entry->designators[d].index_expr) ||
           (source_entry->designators[d].range_end_expr &&
@@ -315,7 +329,8 @@ static int clone_initializer_entries(
           source_entry, entry, source_entry->index_exprs[d]);
       if (!entry->index_exprs[d])
         entry->index_exprs[d] = clone_node(
-            arena_context, source_entry->index_exprs[d]);
+            resolution_store, arena_context,
+            source_entry->index_exprs[d]);
       if (source_entry->index_exprs[d] && !entry->index_exprs[d])
         return 0;
     }
@@ -324,10 +339,12 @@ static int clone_initializer_entries(
 }
 
 static int clone_generic_selection(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     node_generic_selection_t *destination,
     const node_generic_selection_t *source) {
-  destination->control = clone_node(arena_context, source->control);
+  destination->control = clone_node(
+      resolution_store, arena_context, source->control);
   if (source->control && !destination->control) return 0;
   if (!source->associations || source->association_count <= 0) {
     destination->associations = NULL;
@@ -341,12 +358,13 @@ static int clone_generic_selection(
          count * sizeof(*destination->associations));
   for (size_t i = 0; i < count; i++) {
     if (!clone_type_name_ref(
-            arena_context,
+            resolution_store, arena_context,
             &destination->associations[i].type_name,
             &source->associations[i].type_name))
       return 0;
     destination->associations[i].expression = clone_node(
-        arena_context, source->associations[i].expression);
+        resolution_store, arena_context,
+        source->associations[i].expression);
     if (source->associations[i].expression &&
         !destination->associations[i].expression) {
       return 0;
@@ -356,6 +374,7 @@ static int clone_generic_selection(
 }
 
 static psx_parsed_local_declaration_t *clone_local_declaration(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context,
     const psx_parsed_local_declaration_t *source) {
   if (!source) return NULL;
@@ -366,7 +385,7 @@ static psx_parsed_local_declaration_t *clone_local_declaration(
   destination->declarators = NULL;
   destination->initializers = NULL;
   if (!clone_decl_specifier(
-          arena_context, &destination->specifier,
+          resolution_store, arena_context, &destination->specifier,
           &source->specifier))
     return NULL;
   if (source->declarator_count <= 0) return destination;
@@ -379,12 +398,14 @@ static psx_parsed_local_declaration_t *clone_local_declaration(
     return NULL;
   for (size_t i = 0; i < count; i++) {
     if (!clone_parsed_declarator(
-            arena_context, &destination->declarators[i],
+            resolution_store, arena_context,
+            &destination->declarators[i],
             &source->declarators[i]))
       return NULL;
     destination->initializers[i] = source->initializers[i];
     destination->initializers[i].value = clone_node(
-        arena_context, source->initializers[i].value);
+        resolution_store, arena_context,
+        source->initializers[i].value);
     if (source->initializers[i].value &&
         !destination->initializers[i].value)
       return NULL;
@@ -393,23 +414,22 @@ static psx_parsed_local_declaration_t *clone_local_declaration(
 }
 
 static node_t *clone_node(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, const node_t *source) {
   if (!source) return NULL;
-  if (!psx_syntax_node_kind_is_valid(source->kind) ||
-      ps_node_get_type(source) ||
-      ps_node_qual_type(source).type_id != PSX_TYPE_ID_INVALID ||
-      psx_resolution_node_kind(source) !=
-          (psx_resolution_node_kind_t)source->kind)
+  if (!resolution_store ||
+      !psx_syntax_node_kind_is_valid(source->kind) ||
+      ps_node_has_resolution_state(resolution_store, source))
     return NULL;
   size_t size = node_storage_size(source);
   node_t *copy = psx_resolution_node_alloc_in(
-      arena_context, size);
+      resolution_store, arena_context, size);
   if (!copy) return NULL;
   memcpy(copy, source, size);
-  copy->lhs = clone_node(arena_context, source->lhs);
+  copy->lhs = clone_node(resolution_store, arena_context, source->lhs);
   copy->rhs = source->kind == ND_STMT_EXPR
                   ? NULL
-                  : clone_node(arena_context, source->rhs);
+                  : clone_node(resolution_store, arena_context, source->rhs);
   if ((source->lhs && !copy->lhs) ||
       (source->kind != ND_STMT_EXPR && source->rhs && !copy->rhs))
     return NULL;
@@ -417,7 +437,7 @@ static node_t *clone_node(
   switch (source->kind) {
     case ND_COMPOUND_LITERAL:
       if (!clone_type_name_ref(
-              arena_context,
+              resolution_store, arena_context,
               &((node_compound_literal_t *)copy)->type_name,
               &((const node_compound_literal_t *)source)->type_name))
         return NULL;
@@ -427,7 +447,7 @@ static node_t *clone_node(
       const node_static_assert_t *source_assertion =
           (const node_static_assert_t *)source;
       assertion->condition = clone_node(
-          arena_context, source_assertion->condition);
+          resolution_store, arena_context, source_assertion->condition);
       if (source_assertion->condition && !assertion->condition)
         return NULL;
       break;
@@ -435,7 +455,7 @@ static node_t *clone_node(
     case ND_CAST:
       if (source->is_source_cast &&
           !clone_type_name_ref(
-              arena_context,
+              resolution_store, arena_context,
               &((node_source_cast_t *)copy)->type_name,
               &((const node_source_cast_t *)source)->type_name))
         return NULL;
@@ -446,7 +466,8 @@ static node_t *clone_node(
       size_t count = 0;
       while (source_block->body && source_block->body[count]) count++;
       block->body = clone_node_array(
-          arena_context, source_block->body, count, 1);
+          resolution_store, arena_context,
+          source_block->body, count, 1);
       if (source_block->body && !block->body) return NULL;
       break;
     }
@@ -467,7 +488,8 @@ static node_t *clone_node(
         }
       }
       if (!copy->rhs)
-        copy->rhs = clone_node(arena_context, source->rhs);
+        copy->rhs = clone_node(
+            resolution_store, arena_context, source->rhs);
       if (source->rhs && !copy->rhs) return NULL;
       break;
     }
@@ -475,10 +497,11 @@ static node_t *clone_node(
       const node_function_call_t *source_call =
           (const node_function_call_t *)source;
       node_function_call_t *call = (node_function_call_t *)copy;
-      call->callee = clone_node(arena_context, source_call->callee);
+      call->callee = clone_node(
+          resolution_store, arena_context, source_call->callee);
       if (source_call->callee && !call->callee) return NULL;
       call->arguments = clone_node_array(
-          arena_context, source_call->arguments,
+          resolution_store, arena_context, source_call->arguments,
           source_call->argument_count > 0
               ? (size_t)source_call->argument_count : 0,
           1);
@@ -493,9 +516,12 @@ static node_t *clone_node(
     case ND_TERNARY: {
       const node_ctrl_t *source_control = (const node_ctrl_t *)source;
       node_ctrl_t *control = (node_ctrl_t *)copy;
-      control->init = clone_node(arena_context, source_control->init);
-      control->inc = clone_node(arena_context, source_control->inc);
-      control->els = clone_node(arena_context, source_control->els);
+      control->init = clone_node(
+          resolution_store, arena_context, source_control->init);
+      control->inc = clone_node(
+          resolution_store, arena_context, source_control->inc);
+      control->els = clone_node(
+          resolution_store, arena_context, source_control->els);
       if ((source_control->init && !control->init) ||
           (source_control->inc && !control->inc) ||
           (source_control->els && !control->els)) {
@@ -505,7 +531,8 @@ static node_t *clone_node(
     }
     case ND_GENERIC_SELECTION:
       if (!clone_generic_selection(
-              arena_context, (node_generic_selection_t *)copy,
+              resolution_store, arena_context,
+              (node_generic_selection_t *)copy,
               (const node_generic_selection_t *)source)) {
         return NULL;
       }
@@ -515,10 +542,11 @@ static node_t *clone_node(
           (const node_sizeof_query_t *)source;
       node_sizeof_query_t *query = (node_sizeof_query_t *)copy;
       if (!clone_type_name_ref(
-              arena_context, &query->type_name,
+              resolution_store, arena_context, &query->type_name,
               &source_query->type_name))
         return NULL;
-      query->operand = clone_node(arena_context, source_query->operand);
+      query->operand = clone_node(
+          resolution_store, arena_context, source_query->operand);
       if (source_query->operand && !query->operand) {
         return NULL;
       }
@@ -526,14 +554,15 @@ static node_t *clone_node(
     }
     case ND_ALIGNOF_QUERY:
       if (!clone_type_name_ref(
-              arena_context,
+              resolution_store, arena_context,
               &((node_alignof_query_t *)copy)->type_name,
               &((const node_alignof_query_t *)source)->type_name))
         return NULL;
       break;
     case ND_INIT_LIST:
       if (!clone_initializer_entries(
-              arena_context, (node_init_list_t *)copy,
+              resolution_store, arena_context,
+              (node_init_list_t *)copy,
               (const node_init_list_t *)source)) {
         return NULL;
       }
@@ -542,7 +571,7 @@ static node_t *clone_node(
       node_local_declaration_t *declaration =
           (node_local_declaration_t *)copy;
       declaration->declaration = clone_local_declaration(
-          arena_context,
+          resolution_store, arena_context,
           ((const node_local_declaration_t *)source)->declaration);
       if (((const node_local_declaration_t *)source)->declaration &&
           !declaration->declaration)
@@ -568,10 +597,12 @@ static psx_resolution_work_tree_t *create_work_tree(
 }
 
 psx_resolution_work_tree_t *psx_resolution_work_tree_create_from_syntax(
+    psx_resolution_store_t *resolution_store,
     arena_context_t *arena_context, const node_t *syntax_root) {
-  if (!arena_context || !syntax_root) return NULL;
+  if (!resolution_store || !arena_context || !syntax_root) return NULL;
   return create_work_tree(
-      arena_context, clone_node(arena_context, syntax_root));
+      arena_context,
+      clone_node(resolution_store, arena_context, syntax_root));
 }
 
 node_t *psx_resolution_work_tree_compatibility_root_mut(

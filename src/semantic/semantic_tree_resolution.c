@@ -4,6 +4,7 @@
 #include "../parser/semantic_ctx.h"
 #include "legacy_syntax_diagnostics.h"
 #include "syntax_typed_hir_resolution.h"
+#include "typed_hir_diagnostics.h"
 
 const psx_typed_hir_tree_t *
 psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
@@ -22,8 +23,11 @@ psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax_function, &direct_typed_hir,
           &direct_failure);
-  if (direct_status == PSX_SYNTAX_TYPED_HIR_RESOLVED)
+  if (direct_status == PSX_SYNTAX_TYPED_HIR_RESOLVED) {
+    psx_emit_typed_hir_warnings(
+        semantic_context, direct_typed_hir, fallback_diag_tok);
     return direct_typed_hir;
+  }
   if (direct_status == PSX_SYNTAX_TYPED_HIR_FAILED) {
     ag_diagnostic_context_t *diagnostics =
         ps_ctx_diagnostics(semantic_context);

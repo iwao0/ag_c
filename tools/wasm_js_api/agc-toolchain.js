@@ -374,6 +374,7 @@ export async function createToolchain(options) {
     compileObject: (source, compileOptions) => compiler.compileObject(source, compileOptions),
     compileObjectWithDiagnostics: (source, compileOptions) =>
       compiler.compileObjectWithDiagnostics(source, compileOptions),
+    dispose: () => compiler.dispose(),
     compileLinkedWasm,
     compileLinkedWasmWithDiagnostics,
     instantiateLinkedWasm,

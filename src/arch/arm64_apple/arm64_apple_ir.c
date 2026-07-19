@@ -342,7 +342,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_SEXT:
     case IR_TRUNC:         gen_inst_int_cast(ctx, inst); return;
     case IR_VLA_ALLOC:     gen_inst_vla_alloc(ctx, inst); return;
-    case IR_VA_ARG_AREA:   gen_inst_va_arg_area(ctx, inst); return;
+    case IR_VARARG_CURSOR: gen_inst_va_arg_area(ctx, inst); return;
     case IR_LABEL:
       arm64_cg_emitf(ctx, ".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;

@@ -188,7 +188,7 @@ if (manyWarningResult.diagnostics.length !== 129) {
 }
 
 toolchain.compileObjectWithDiagnostics(warningSources[1]);
-const diagnosticBytes = Number(toolchain.compiler.instance.exports.agc_wasm_diagnostic_bytes());
+const diagnosticBytes = toolchain.compiler.readDiagnosticBytes();
 if (diagnosticBytes <= 1) throw new Error(`invalid diagnostic byte count: ${diagnosticBytes}`);
 toolchain.compileObjectWithDiagnostics(warningSources[0], {
   limits: { maxDiagnosticBytes: diagnosticBytes },

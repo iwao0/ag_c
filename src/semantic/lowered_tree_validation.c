@@ -30,5 +30,6 @@ void psx_validate_lowered_tree_in_context(
       .fallback_diag_tok = fallback_diag_tok,
   };
   psx_walk_semantic_tree(
-      root, validate_lowered_node, &validation);
+      ps_ctx_resolution_store(semantic_context), root,
+      validate_lowered_node, &validation);
 }

@@ -6,6 +6,7 @@
 #include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef struct psx_type_t psx_type_t;
 
 typedef enum {
@@ -14,7 +15,8 @@ typedef enum {
   PSX_DEREF_OPERAND_VOID_POINTER,
 } psx_deref_operand_status_t;
 
-psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand);
+psx_deref_operand_status_t psx_resolve_deref_operand(
+    const psx_resolution_store_t *store, node_t *operand);
 psx_deref_operand_status_t psx_resolve_deref_operand_qual_type_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);
@@ -86,6 +88,7 @@ typedef struct {
 } psx_subscript_qual_types_resolution_t;
 
 void psx_resolve_subscript_operands(
+    const psx_resolution_store_t *store,
     node_t *left, node_t *right,
     psx_subscript_operands_resolution_t *resolution);
 void psx_resolve_subscript_qual_types_in(

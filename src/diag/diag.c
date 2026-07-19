@@ -46,24 +46,14 @@ struct ag_diagnostic_context_t {
   int limits_enforced;
 };
 
-static ag_diagnostic_context_t published_diagnostic_context = {
-    .locale = "ja",
-    .record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT,
-    .byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT,
-};
-
 static ag_diagnostic_context_t *diag_prepare_context(
-    ag_diagnostic_context_t *context) {
-  if (!context) context = &published_diagnostic_context;
+  ag_diagnostic_context_t *context) {
+  if (!context) abort();
   if (!context->records) {
     context->records = context->initial_records;
     context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
   }
   return context;
-}
-
-static ag_diagnostic_context_t *diag_published_context(void) {
-  return diag_prepare_context(&published_diagnostic_context);
 }
 
 static void diag_copy_text(char *dst, size_t cap, const char *src) {
@@ -230,20 +220,14 @@ void diag_reset_records_in(ag_diagnostic_context_t *context) {
   context->limit_kind = 0;
 }
 
-void diag_reset_records(void) {
-  diag_reset_records_in(diag_published_context());
-}
-
 ag_diagnostic_context_t *diag_context_create(void) {
   ag_diagnostic_context_t *context = calloc(1, sizeof(*context));
   if (!context) return NULL;
-  memcpy(context->locale, published_diagnostic_context.locale,
-         sizeof(context->locale));
+  memcpy(context->locale, "ja", sizeof(context->locale));
   context->records = context->initial_records;
   context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
-  context->record_limit = published_diagnostic_context.record_limit;
-  context->byte_limit = published_diagnostic_context.byte_limit;
-  context->limits_enforced = published_diagnostic_context.limits_enforced;
+  context->record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+  context->byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT;
   return context;
 }
 
@@ -274,109 +258,75 @@ static void diag_context_release_records(ag_diagnostic_context_t *context) {
 }
 
 void diag_context_destroy(ag_diagnostic_context_t *context) {
-  if (!context || context == &published_diagnostic_context) return;
+  if (!context) return;
   diag_context_release_records(context);
   free(context);
 }
 
-void diag_context_publish(const ag_diagnostic_context_t *context) {
-  if (!context || context == &published_diagnostic_context) return;
-  ag_diagnostic_context_t *published = &published_diagnostic_context;
-  diag_context_release_records(published);
-  memcpy(published->locale, context->locale, sizeof(published->locale));
-  published->record_limit = context->record_limit;
-  published->byte_limit = context->byte_limit;
-  published->limits_enforced = context->limits_enforced;
-  if (context->record_count > AGC_DIAG_DEFAULT_RECORD_LIMIT) {
-    published->records = calloc(
-        (size_t)context->record_count, sizeof(*published->records));
-    if (!published->records) {
-      published->records = published->initial_records;
-      return;
-    }
-    published->record_cap = context->record_count;
-  }
-  for (int i = 0; i < context->record_count; i++) {
-    published->records[i] = context->records[i];
-    published->records[i].source_name =
-        diag_dup_text(context->records[i].source_name);
-    if (!published->records[i].source_name) {
-      diag_context_release_records(published);
-      return;
-    }
-  }
-  published->record_count = context->record_count;
-  published->error_count = context->error_count;
-  published->bytes = context->bytes;
-  published->limit_kind = context->limit_kind;
-}
-
-int agc_wasm_diagnostic_set_limits(int max_records, int max_bytes) {
+int diag_context_set_limits(
+    ag_diagnostic_context_t *context, int max_records, int max_bytes) {
+  if (!context) return -1;
   if (max_records <= 0 || max_bytes <= 0) return -1;
-  published_diagnostic_context.record_limit = max_records;
-  published_diagnostic_context.byte_limit = (size_t)max_bytes;
-  published_diagnostic_context.limits_enforced = 1;
+  context->record_limit = max_records;
+  context->byte_limit = (size_t)max_bytes;
+  context->limits_enforced = 1;
   return 0;
 }
 
-static const agc_diag_record_t *diag_record_at(int index) {
-  ag_diagnostic_context_t *published = &published_diagnostic_context;
-  if (!published->records) {
-    published->records = published->initial_records;
-    published->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
-  }
-  if (index < 0 || index >= published->record_count) return NULL;
-  return &published->records[index];
+static const agc_diag_record_t *diag_record_at(
+    const ag_diagnostic_context_t *context, int index) {
+  if (!context || index < 0 || index >= context->record_count) return NULL;
+  return &context->records[index];
 }
 
-int agc_wasm_diagnostic_api_version(void) { return 1; }
-int agc_wasm_diagnostic_count(void) {
-  return published_diagnostic_context.record_count;
+int agc_wasm_diagnostic_api_version(void) { return 2; }
+int diag_context_record_count(const ag_diagnostic_context_t *context) {
+  return context ? context->record_count : 0;
 }
-int agc_wasm_diagnostic_bytes(void) {
-  return (int)published_diagnostic_context.bytes;
+int diag_context_record_bytes(const ag_diagnostic_context_t *context) {
+  return context ? (int)context->bytes : 0;
 }
-int agc_wasm_diagnostic_limit_kind(void) {
-  return published_diagnostic_context.limit_kind;
+int diag_context_record_limit_kind(const ag_diagnostic_context_t *context) {
+  return context ? context->limit_kind : 0;
 }
 int diag_has_error_records_in(const ag_diagnostic_context_t *context) {
   return context && context->error_count > 0;
 }
 
-int diag_has_error_records(void) {
-  return diag_has_error_records_in(diag_published_context());
-}
-
 int diag_limit_kind_in(const ag_diagnostic_context_t *context) {
   return context ? context->limit_kind : 0;
 }
-int agc_wasm_diagnostic_severity(int index) {
-  const agc_diag_record_t *record = diag_record_at(index);
+int diag_context_record_severity(
+    const ag_diagnostic_context_t *context, int index) {
+  const agc_diag_record_t *record = diag_record_at(context, index);
   return record ? record->severity : 0;
 }
-int agc_wasm_diagnostic_code_ptr(int index) {
-  const agc_diag_record_t *record = diag_record_at(index);
-  return record ? (int)(long)record->code : 0;
+const char *diag_context_record_code(
+    const ag_diagnostic_context_t *context, int index) {
+  const agc_diag_record_t *record = diag_record_at(context, index);
+  return record ? record->code : NULL;
 }
-int agc_wasm_diagnostic_message_ptr(int index) {
-  const agc_diag_record_t *record = diag_record_at(index);
-  return record ? (int)(long)record->message : 0;
+const char *diag_context_record_message(
+    const ag_diagnostic_context_t *context, int index) {
+  const agc_diag_record_t *record = diag_record_at(context, index);
+  return record ? record->message : NULL;
 }
-int agc_wasm_diagnostic_source_name_ptr(int index) {
-  const agc_diag_record_t *record = diag_record_at(index);
-  return record && record->source_name ? (int)(long)record->source_name : 0;
+const char *diag_context_record_source_name(
+    const ag_diagnostic_context_t *context, int index) {
+  const agc_diag_record_t *record = diag_record_at(context, index);
+  return record ? record->source_name : NULL;
 }
-#define AGC_DIAG_INT_GETTER(name, field)                 \
-  int name(int index) {                                 \
-    const agc_diag_record_t *record = diag_record_at(index); \
+#define AGC_DIAG_INT_GETTER(name, field)                         \
+  int name(const ag_diagnostic_context_t *context, int index) { \
+    const agc_diag_record_t *record = diag_record_at(context, index); \
     return record ? record->field : 0;                  \
   }
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_line, start_line)
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_column, start_column)
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_offset, start_offset)
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_line, end_line)
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_column, end_column)
-AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_offset, end_offset)
+AGC_DIAG_INT_GETTER(diag_context_record_start_line, start_line)
+AGC_DIAG_INT_GETTER(diag_context_record_start_column, start_column)
+AGC_DIAG_INT_GETTER(diag_context_record_start_offset, start_offset)
+AGC_DIAG_INT_GETTER(diag_context_record_end_line, end_line)
+AGC_DIAG_INT_GETTER(diag_context_record_end_column, end_column)
+AGC_DIAG_INT_GETTER(diag_context_record_end_offset, end_offset)
 #undef AGC_DIAG_INT_GETTER
 
 static int is_bidi_control_codepoint(uint32_t cp) {
@@ -562,18 +512,6 @@ const char *diag_context_get_locale(
   return context && context->locale[0] ? context->locale : "ja";
 }
 
-void diag_set_locale(const char *locale) {
-  diag_context_set_locale(diag_published_context(), locale);
-}
-
-/**
- * @brief 現在の診断ロケールを取得する。
- * @return 現在有効なロケール名。
- */
-const char *diag_get_locale(void) {
-  return diag_context_get_locale(diag_published_context());
-}
-
 /**
  * @brief エラーIDに対応するメッセージを現在ロケールに従って取得する。
  * @param id エラーID。
@@ -588,10 +526,6 @@ const char *diag_message_for_in(
   return diag_error_key(id);
 }
 
-const char *diag_message_for(diag_error_id_t id) {
-  return diag_message_for_in(diag_published_context(), id);
-}
-
 const char *diag_warn_message_for_in(
     const ag_diagnostic_context_t *context, diag_warn_id_t id) {
   const char *msg = NULL;
@@ -599,10 +533,6 @@ const char *diag_warn_message_for_in(
       context, msg, diag_warn_message_ja(id), diag_warn_message_en(id));
   if (msg) return msg;
   return diag_warn_key(id);
-}
-
-const char *diag_warn_message_for(diag_warn_id_t id) {
-  return diag_warn_message_for_in(diag_published_context(), id);
 }
 
 /**
@@ -617,10 +547,6 @@ const char *diag_text_for_in(
   if (msg) return msg;
   return diag_ui_text_for(
       DIAG_UI_TEXT_UNKNOWN_TEXT, diag_context_get_locale(context));
-}
-
-const char *diag_text_for(diag_text_id_t id) {
-  return diag_text_for_in(diag_published_context(), id);
 }
 
 /**
@@ -682,12 +608,12 @@ static const char *diag_token_filename(
       tok ? tok->file_name_id : 0);
 }
 
-static void diag_emit_at_va(
+static _Noreturn void diag_emit_at_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *input, const char *loc, const char *fmt,
-    va_list ap) __attribute__((noreturn));
+    va_list ap);
 
-static void diag_emit_at_va(
+static _Noreturn void diag_emit_at_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *input, const char *loc, const char *fmt, va_list ap) {
   context = diag_prepare_context(context);
@@ -712,24 +638,15 @@ static void diag_emit_at_va(
   fprintf(stderr, "^ %s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
-  diag_context_publish(context);
   exit(1);
 }
 
-void diag_emit_atf_in(
+_Noreturn void diag_emit_atf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *input, const char *loc, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   diag_emit_at_va(context, id, input, loc, fmt, ap);
-}
-
-void diag_emit_atf(
-    diag_error_id_t id, const char *input, const char *loc,
-    const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  diag_emit_at_va(diag_published_context(), id, input, loc, fmt, ap);
 }
 
 /**
@@ -739,12 +656,12 @@ void diag_emit_atf(
  * @param fmt 追加メッセージのフォーマット文字列。
  * @return 戻らない。
  */
-static void diag_emit_tok_va(
+static _Noreturn void diag_emit_tok_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const token_t *tok, const char *fmt,
-    va_list ap) __attribute__((noreturn));
+    va_list ap);
 
-static void diag_emit_tok_va(
+static _Noreturn void diag_emit_tok_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const token_t *tok, const char *fmt, va_list ap) {
   context = diag_prepare_context(context);
@@ -760,23 +677,15 @@ static void diag_emit_tok_va(
   diag_vfprint_escaped(stderr, fmt, ap);
   print_token_actual(context, tok);
   fprintf(stderr, "\n");
-  diag_context_publish(context);
   exit(1);
 }
 
-void diag_emit_tokf_in(
+_Noreturn void diag_emit_tokf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   diag_emit_tok_va(context, id, tok, fmt, ap);
-}
-
-void diag_emit_tokf(
-    diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  diag_emit_tok_va(diag_published_context(), id, tok, fmt, ap);
 }
 
 static int diag_report_at_va(
@@ -815,17 +724,6 @@ int diag_report_atf_in(
   return result;
 }
 
-int diag_report_atf(
-    diag_error_id_t id, const char *input, const char *loc,
-    const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  int result = diag_report_at_va(
-      diag_published_context(), id, input, loc, fmt, ap);
-  va_end(ap);
-  return result;
-}
-
 static int diag_report_tok_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const token_t *tok, const char *fmt, va_list ap) {
@@ -852,16 +750,6 @@ int diag_report_tokf_in(
   va_list ap;
   va_start(ap, fmt);
   int result = diag_report_tok_va(context, id, tok, fmt, ap);
-  va_end(ap);
-  return result;
-}
-
-int diag_report_tokf(
-    diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  int result = diag_report_tok_va(
-      diag_published_context(), id, tok, fmt, ap);
   va_end(ap);
   return result;
 }
@@ -896,25 +784,17 @@ void diag_warn_tokf_in(
   va_end(ap);
 }
 
-void diag_warn_tokf(
-    diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  diag_warn_tok_va(diag_published_context(), id, tok, fmt, ap);
-  va_end(ap);
-}
-
 /**
  * @brief 内部診断を出力して終了する。
  * @param id エラーID。
  * @param fmt 追加メッセージのフォーマット文字列。
  * @return 戻らない。
  */
-static void diag_emit_internal_va(
+static _Noreturn void diag_emit_internal_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
-    const char *fmt, va_list ap) __attribute__((noreturn));
+    const char *fmt, va_list ap);
 
-static void diag_emit_internal_va(
+static _Noreturn void diag_emit_internal_va(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *fmt, va_list ap) {
   context = diag_prepare_context(context);
@@ -926,23 +806,15 @@ static void diag_emit_internal_va(
   fprintf(stderr, "%s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
-  diag_context_publish(context);
   exit(1);
 }
 
-void diag_emit_internalf_in(
+_Noreturn void diag_emit_internalf_in(
     ag_diagnostic_context_t *context, diag_error_id_t id,
     const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   diag_emit_internal_va(context, id, fmt, ap);
-}
-
-void diag_emit_internalf(
-    diag_error_id_t id, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  diag_emit_internal_va(diag_published_context(), id, fmt, ap);
 }
 
 static void diag_report_internal_va(
@@ -968,13 +840,5 @@ void diag_report_internalf_in(
   va_list ap;
   va_start(ap, fmt);
   diag_report_internal_va(context, id, fmt, ap);
-  va_end(ap);
-}
-
-void diag_report_internalf(
-    diag_error_id_t id, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  diag_report_internal_va(diag_published_context(), id, fmt, ap);
   va_end(ap);
 }

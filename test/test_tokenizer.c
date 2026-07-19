@@ -1053,6 +1053,41 @@ static void test_context_config_isolation_and_switch_timing() {
   ASSERT_EQ(TK_NUM, tok->kind);
 }
 
+static void test_interleaved_stream_context_isolation() {
+  printf("test_interleaved_stream_context_isolation...\n");
+
+  tokenizer_context_t relaxed;
+  tokenizer_context_t strict;
+  tk_context_init(&relaxed);
+  tk_context_init(&strict);
+  tk_ctx_set_strict_c11_mode(&relaxed, false);
+  tk_ctx_set_enable_binary_literals(&relaxed, true);
+  tk_ctx_set_strict_c11_mode(&strict, true);
+  tk_ctx_set_enable_binary_literals(&strict, false);
+
+  tk_token_stream_t *relaxed_stream = tk_stream_new(&relaxed, "0b11 + 1");
+  tk_token_stream_t *strict_stream = tk_stream_new(&strict, "2 + 3");
+  ASSERT_TRUE(relaxed_stream != NULL);
+  ASSERT_TRUE(strict_stream != NULL);
+
+  token_t *relaxed_token = tk_stream_next(relaxed_stream);
+  token_t *strict_token = tk_stream_next(strict_stream);
+  ASSERT_EQ(TK_NUM, relaxed_token->kind);
+  ASSERT_EQ(3, as_num_i(relaxed_token)->val);
+  ASSERT_EQ(TK_NUM, strict_token->kind);
+  ASSERT_EQ(2, as_num_i(strict_token)->val);
+
+  relaxed_token = tk_stream_next(relaxed_stream);
+  strict_token = tk_stream_next(strict_stream);
+  ASSERT_EQ(TK_PLUS, relaxed_token->kind);
+  ASSERT_EQ(TK_PLUS, strict_token->kind);
+
+  tk_stream_delete(strict_stream);
+  tk_stream_delete(relaxed_stream);
+  tk_context_dispose(&strict);
+  tk_context_dispose(&relaxed);
+}
+
 static void test_context_failure_path_isolation() {
   printf("test_context_failure_path_isolation...\n");
 
@@ -1359,6 +1394,7 @@ int main() {
   test_runtime_mode_switch_boundaries();
   test_tokenize_with_explicit_context();
   test_context_config_isolation_and_switch_timing();
+  test_interleaved_stream_context_isolation();
   test_context_failure_path_isolation();
   test_context_failure_path_unterminated_and_invalid_token();
   test_context_success_path_default_non_interference();
@@ -1384,6 +1420,7 @@ int main() {
   test_tokenize_float_literal();
   test_tokenize_len_guard_boundaries();
 
+  tk_test_context_shutdown();
   printf("OK: All unit tests passed!\n");
   return 0;
 }

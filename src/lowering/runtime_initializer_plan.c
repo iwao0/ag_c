@@ -17,29 +17,35 @@ static int count_items(const node_t *node) {
 static psx_qual_type_t resolved_node_qual_type(
     const psx_lowering_context_t *lowering_context,
     const node_t *node) {
-  psx_qual_type_t qual_type = ps_node_qual_type(node);
+  const psx_resolution_store_t *store =
+      ps_lowering_resolution_store(lowering_context);
+  psx_qual_type_t qual_type = ps_node_qual_type(store, node);
   if (qual_type.type_id != PSX_TYPE_ID_INVALID) return qual_type;
   return psx_semantic_type_table_find(
       ps_lowering_semantic_types(lowering_context),
-      ps_node_get_type(node));
+      ps_node_get_type(store, node));
 }
 
 static int local_ref_from_node(
     const psx_lowering_context_t *lowering_context,
     const node_t *node, psx_runtime_initializer_local_ref_t *ref) {
-  if (!node || psx_resolved_object_ref_node_kind(node) != ND_LVAR || !ref)
+  const psx_resolution_store_t *store =
+      ps_lowering_resolution_store(lowering_context);
+  if (!node ||
+      psx_resolved_object_ref_node_kind(store, node) != ND_LVAR || !ref)
     return 0;
-  lvar_t *local = psx_resolved_object_ref_local(node);
+  lvar_t *local = psx_resolved_object_ref_local(store, node);
   if (!local) return 0;
   int bit_width = 0;
   int bit_offset = 0;
   int bit_is_signed = 0;
   ps_node_bitfield_info(
-      (node_t *)node, &bit_width, &bit_offset, &bit_is_signed);
+      store, (node_t *)node,
+      &bit_width, &bit_offset, &bit_is_signed);
   *ref = (psx_runtime_initializer_local_ref_t){
       .local = local,
       .relative_offset =
-          psx_resolved_object_ref_storage_offset(node) -
+          psx_resolved_object_ref_storage_offset(store, node) -
           ps_lvar_offset(local),
       .qual_type = resolved_node_qual_type(lowering_context, node),
       .bit_width = (unsigned char)(bit_width > 0 ? bit_width : 0),
@@ -59,7 +65,8 @@ static int value_from_node(
           resolved_node_qual_type(lowering_context, node),
       .expression = node,
   };
-  if (psx_resolved_object_ref_node_kind(node) == ND_LVAR &&
+  if (psx_resolved_object_ref_node_kind(
+          ps_lowering_resolution_store(lowering_context), node) == ND_LVAR &&
       local_ref_from_node(lowering_context, node, &value->local)) {
     value->kind = PSX_RUNTIME_INITIALIZER_VALUE_LOCAL;
     value->resolved_qual_type = value->local.qual_type;

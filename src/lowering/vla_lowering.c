@@ -157,6 +157,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
       lower_vla_declaration_plan(request);
   if (result.runtime_plan && request && request->lowering_context) {
     result.init = ps_node_new_vla_runtime_in(
+        ps_lowering_resolution_store(request->lowering_context),
         ps_lowering_arena(request->lowering_context),
         result.runtime_plan);
   }
@@ -227,6 +228,7 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
       lower_pointer_to_vla_declaration_plan(request);
   if (result.runtime_plan && request && request->lowering_context) {
     result.init = ps_node_new_vla_runtime_in(
+        ps_lowering_resolution_store(request->lowering_context),
         ps_lowering_arena(request->lowering_context),
         result.runtime_plan);
   }

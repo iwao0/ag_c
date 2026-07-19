@@ -468,6 +468,7 @@ static int append_definition_parameter(
     result->parameter_types[result->nargs] = resolution.type;
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
+            ps_lowering_resolution_store(lowering_context),
             ps_lowering_arena(lowering_context), resolution.type);
     result->args[result->nargs] = NULL;
     return 1;
@@ -513,6 +514,7 @@ static int append_definition_parameter(
   result->parameter_types[result->nargs] = resolution.type;
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
+          ps_lowering_resolution_store(lowering_context),
           ps_lowering_arena(lowering_context), lowered);
   result->args[result->nargs] = NULL;
   return 0;
@@ -894,6 +896,7 @@ static node_t *append_local_initialization(
     psx_lowering_context_t *lowering_context, node_t *chain, node_t *node) {
   if (!node) return chain;
   return chain ? ps_node_new_binary_for_target_in(
+                     ps_lowering_resolution_store(lowering_context),
                      ps_lowering_arena(lowering_context),
                      ps_lowering_target(lowering_context),
                      ND_COMMA, chain, node)
@@ -1093,6 +1096,7 @@ int psx_finish_automatic_local_declaration_pipeline(
 
   if (request->initializer->has_initializer) {
     node_t *initializer = psx_bind_local_initializer_target_in(
+        ps_lowering_resolution_store(request->lowering_context),
         ps_lowering_arena(request->lowering_context),
         result->var, request->initializer->value,
         request->initializer->kind,

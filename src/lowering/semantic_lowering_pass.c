@@ -83,15 +83,17 @@ static void lower_sizeof_vla_indices(
 static void lower_source_cast_node(
     const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
+  psx_resolution_store_t *store =
+      ps_lowering_resolution_store(context->lowering_context);
   psx_node_resolution_state_t *state =
-      ps_node_resolution_state(node);
+      ps_node_resolution_state(store, node);
   if (!node || node->kind != ND_CAST || !node->is_source_cast ||
       !state)
     return;
   psx_source_cast_resolution_t *resolution =
       &state->source_cast;
   if (resolution->kind != PSX_SOURCE_CAST_UNRESOLVED) return;
-  if (!ps_type_is_tag_aggregate(ps_node_get_type(node))) {
+  if (!ps_type_is_tag_aggregate(ps_node_get_type(store, node))) {
     resolution->kind = PSX_SOURCE_CAST_DIRECT_HIR;
     return;
   }
@@ -117,7 +119,9 @@ static node_t *lower_tree(
     const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return NULL;
-  switch (psx_resolved_object_ref_node_kind(node)) {
+  psx_resolution_store_t *store =
+      ps_lowering_resolution_store(context->lowering_context);
+  switch (psx_resolved_object_ref_node_kind(store, node)) {
     case ND_STATIC_ASSERT: {
       node_static_assert_t *assertion =
           (node_static_assert_t *)node;
@@ -131,7 +135,7 @@ static node_t *lower_tree(
       node_compound_literal_t *compound =
           (node_compound_literal_t *)node;
       psx_node_resolution_state_t *state =
-          ps_node_resolution_state(node);
+          ps_node_resolution_state(store, node);
       psx_compound_literal_resolution_t *resolution =
           state ? &state->compound_literal : NULL;
       if (resolution &&
@@ -176,7 +180,7 @@ static node_t *lower_tree(
                 result_qual_type.type_id);
         if (canonical_result) {
           ps_node_bind_qual_type(
-              node, canonical_result, result_qual_type);
+              store, node, canonical_result, result_qual_type);
         }
       }
       return node;
@@ -185,7 +189,7 @@ static node_t *lower_tree(
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
       node_t *selected =
-          psx_generic_selection_selected_expression(selection);
+          psx_generic_selection_selected_expression(store, selection);
       if (selected)
         lower_tree(context, selected, fallback_diag_tok);
       break;
@@ -193,12 +197,12 @@ static node_t *lower_tree(
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       psx_sizeof_runtime_plan_t *plan =
-          psx_sizeof_query_runtime_plan(query);
+          psx_sizeof_query_runtime_plan(store, query);
       for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
         plan->runtime_bounds[i] = lower_tree(
             context, plan->runtime_bounds[i], fallback_diag_tok);
       }
-      if (psx_sizeof_query_evaluates_vla_operand(query)) {
+      if (psx_sizeof_query_evaluates_vla_operand(store, query)) {
         lower_sizeof_vla_indices(
             context, query->operand, fallback_diag_tok);
       }

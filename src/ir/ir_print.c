@@ -146,7 +146,7 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
         print_val(s, i->src2);
       }
       break;
-    case IR_VA_ARG_AREA:
+    case IR_VARARG_CURSOR:
       /* no operand */
       break;
     default:

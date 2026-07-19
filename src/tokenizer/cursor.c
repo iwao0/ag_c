@@ -17,10 +17,6 @@ static token_t *require_current_token(tokenizer_context_t *ctx, diag_error_id_t 
 }
 
 /** @brief 次トークンが指定1文字なら消費して true を返す。 */
-bool tk_consume(char op) {
-  return tk_consume_ctx(NULL, op);
-}
-
 bool tk_consume_ctx(tokenizer_context_t *ctx, char op) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = use_ctx ? use_ctx->current_token : NULL;
@@ -32,10 +28,6 @@ bool tk_consume_ctx(tokenizer_context_t *ctx, char op) {
 }
 
 /** @brief 次トークンが指定記号文字列なら消費して true を返す。 */
-bool tk_consume_str(const char *op) {
-  return tk_consume_str_ctx(NULL, op);
-}
-
 bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = use_ctx ? use_ctx->current_token : NULL;
@@ -47,10 +39,6 @@ bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op) {
 }
 
 /** @brief 次トークンが識別子なら消費して返す。 */
-token_ident_t *tk_consume_ident(void) {
-  return tk_consume_ident_ctx(NULL);
-}
-
 token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = use_ctx ? use_ctx->current_token : NULL;
@@ -62,10 +50,6 @@ token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx) {
 }
 
 /** @brief 次トークンが指定1文字であることを期待して消費する。 */
-void tk_expect(char op) {
-  tk_expect_ctx(NULL, op);
-}
-
 void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_TOKEN);
@@ -81,10 +65,6 @@ void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
 }
 
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
-int tk_expect_number(void) {
-  return tk_expect_number_ctx(NULL);
-}
-
 int tk_expect_number_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER);
@@ -104,8 +84,6 @@ int tk_expect_number_ctx(tokenizer_context_t *ctx) {
 }
 
 /** @brief 現在トークンが EOF かを返す。 */
-bool tk_at_eof(void) { return tk_at_eof_ctx(NULL); }
-
 bool tk_at_eof_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
   token_t *cur = use_ctx ? use_ctx->current_token : NULL;

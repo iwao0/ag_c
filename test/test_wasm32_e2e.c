@@ -291,6 +291,7 @@ static const wasm_e2e_case_t cases[] = {
     {"bitfield", "signed_neg", "test/fixtures/bitfield/signed_neg.c"},
     {"bitfield", "unsigned_wrap", "test/fixtures/bitfield/unsigned_wrap.c"},
     {"bitfield", "packing", "test/fixtures/bitfield/packing.c"},
+    {"bitfield", "narrow_storage_preserves_neighbor", "test/fixtures/bitfield/narrow_storage_preserves_neighbor.c"},
 
     {"type_decl", "int_func", "test/fixtures/type_decl/int_func.c"},
     {"type_decl", "int_var", "test/fixtures/type_decl/int_var.c"},

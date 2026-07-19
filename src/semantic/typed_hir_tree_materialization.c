@@ -36,6 +36,13 @@
 
 typedef psx_semantic_node_builder_t hir_materializer_t;
 
+static psx_resolution_store_t *materializer_resolution_store(
+    const hir_materializer_t *builder) {
+  return builder
+             ? ps_ctx_resolution_store(builder->semantic_context)
+             : NULL;
+}
+
 typedef struct {
   psx_semantic_node_t **items;
   psx_hir_edge_kind_t *edges;
@@ -47,7 +54,9 @@ static void set_failure(
     hir_materializer_t *builder, psx_resolved_hir_build_status_t status,
     const node_t *source) {
   psx_semantic_node_builder_fail(
-      builder, status, psx_resolution_node_kind(source));
+      builder, status,
+      psx_resolution_node_kind(
+          materializer_resolution_store(builder), source));
 }
 
 static int append_child(
@@ -132,7 +141,7 @@ static int map_kind(
     MAP(ND_VLA_ALLOC, PSX_HIR_VLA_ALLOC);
     MAP(ND_FP_TO_INT, PSX_HIR_FP_TO_INT);
     MAP(ND_INT_TO_FP, PSX_HIR_INT_TO_FP);
-    MAP(ND_VA_ARG_AREA, PSX_HIR_VA_ARG_AREA);
+    MAP(ND_VARARG_CURSOR, PSX_HIR_VARARG_CURSOR);
     MAP(ND_CAST, PSX_HIR_CAST);
     MAP(ND_CREAL, PSX_HIR_CREAL);
     MAP(ND_CIMAG, PSX_HIR_CIMAG);
@@ -182,7 +191,9 @@ static psx_semantic_node_t *materialize_vla_runtime(
   const psx_vla_runtime_plan_t *plan =
       allocation ? allocation->runtime_plan : NULL;
   return psx_semantic_node_builder_vla_runtime(
-      builder, plan, psx_resolution_node_kind(source));
+      builder, plan,
+      psx_resolution_node_kind(
+          materializer_resolution_store(builder), source));
 }
 
 static psx_semantic_node_t *materialize_expression_spec(
@@ -194,7 +205,8 @@ static psx_semantic_node_t *materialize_expression_spec(
       children ? children->items : NULL,
       children ? children->edges : NULL,
       children ? children->count : 0,
-      symbol, psx_resolution_node_kind(source));
+      symbol, psx_resolution_node_kind(
+                  materializer_resolution_store(builder), source));
 }
 
 static psx_semantic_node_t *materialize_expression(
@@ -218,7 +230,8 @@ static psx_semantic_node_t *materialize_statement(
       children ? children->items : NULL,
       children ? children->edges : NULL,
       children ? children->count : 0,
-      psx_resolution_node_kind(source));
+      psx_resolution_node_kind(
+          materializer_resolution_store(builder), source));
 }
 
 static psx_semantic_node_t *materialize_comma(
@@ -261,7 +274,8 @@ static psx_semantic_node_t *materialize_sizeof_value(
     hir_materializer_t *builder, const node_sizeof_query_t *query,
     psx_qual_type_t qual_type) {
   const psx_sizeof_runtime_plan_t *plan =
-      psx_sizeof_query_runtime_plan_const(query);
+      psx_sizeof_query_runtime_plan_const(
+          materializer_resolution_store(builder), query);
   if (plan) {
     psx_hir_node_spec_t number_spec = {
         .kind = PSX_HIR_NUMBER,
@@ -296,7 +310,8 @@ static psx_semantic_node_t *materialize_sizeof_value(
     return value;
   }
   int runtime_size_slot =
-      psx_sizeof_query_runtime_size_slot(query);
+      psx_sizeof_query_runtime_size_slot(
+          materializer_resolution_store(builder), query);
   if (runtime_size_slot != 0) {
     psx_hir_node_spec_t spec = {
         .kind = PSX_HIR_LOCAL,
@@ -314,7 +329,8 @@ static psx_semantic_node_t *materialize_sizeof_value(
       .kind = PSX_HIR_NUMBER,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .integer_value = psx_sizeof_query_resolved_size(query),
+      .integer_value = psx_sizeof_query_resolved_size(
+          materializer_resolution_store(builder), query),
   };
   return materialize_expression_spec(
       builder, &spec, qual_type, NULL, NULL, &query->base);
@@ -323,7 +339,8 @@ static psx_semantic_node_t *materialize_sizeof_value(
 static psx_semantic_node_t *materialize_sizeof_query(
     hir_materializer_t *builder, const node_sizeof_query_t *query) {
   const node_t *source = &query->base;
-  psx_qual_type_t qual_type = ps_node_qual_type(source);
+  psx_qual_type_t qual_type = ps_node_qual_type(
+      materializer_resolution_store(builder), source);
   if (!canonical_type_exists(builder, qual_type)) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
@@ -332,7 +349,9 @@ static psx_semantic_node_t *materialize_sizeof_query(
   psx_semantic_node_t *value =
       materialize_sizeof_value(builder, query, qual_type);
   if (!value) return NULL;
-  if (!psx_sizeof_query_evaluates_vla_operand(query)) return value;
+  if (!psx_sizeof_query_evaluates_vla_operand(
+          materializer_resolution_store(builder), query))
+    return value;
   psx_semantic_node_t *prefix = NULL;
   if (!materialize_sizeof_vla_indices(
           builder, query->operand, &prefix, source))
@@ -405,7 +424,8 @@ static int build_special_children(
     hir_materializer_t *builder, hir_children_t *children,
     const node_t *source, int *include_common_children) {
   *include_common_children = 1;
-  switch (psx_resolved_object_ref_node_kind(source)) {
+  switch (psx_resolved_object_ref_node_kind(
+      materializer_resolution_store(builder), source)) {
     case ND_BLOCK: {
       const node_block_t *block = (const node_block_t *)source;
       *include_common_children = 0;
@@ -500,7 +520,8 @@ static int derive_structural_expression_type(
     const hir_children_t *children, psx_qual_type_t *qual_type) {
   psx_qual_type_t derived = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  switch (psx_resolved_object_ref_node_kind(source)) {
+  switch (psx_resolved_object_ref_node_kind(
+      materializer_resolution_store(builder), source)) {
     case ND_COMMA:
       derived = child_qual_type(
           builder, children, PSX_HIR_EDGE_RHS);
@@ -542,9 +563,12 @@ static int attach_global_symbol(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_symbol_spec_t *symbol, int *has_symbol) {
   if (has_symbol) *has_symbol = 0;
-  if (psx_resolved_object_ref_node_kind(source) != ND_GVAR) return 1;
+  if (psx_resolved_object_ref_node_kind(
+          materializer_resolution_store(builder), source) != ND_GVAR)
+    return 1;
   const global_var_t *global =
-      psx_resolved_object_ref_global(source);
+      psx_resolved_object_ref_global(
+          materializer_resolution_store(builder), source);
   if (!resolved_global_symbol_spec(
           builder, global, source, symbol))
     return 0;
@@ -734,10 +758,12 @@ static psx_semantic_node_t *materialize_compound_literal(
     const node_compound_literal_t *compound) {
   const node_t *source = &compound->base;
   const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(source);
+      ps_node_resolution_state_const(
+          materializer_resolution_store(builder), source);
   const psx_compound_literal_resolution_t *resolution =
       state ? &state->compound_literal : NULL;
-  psx_qual_type_t result_type = ps_node_qual_type(source);
+  psx_qual_type_t result_type = ps_node_qual_type(
+      materializer_resolution_store(builder), source);
   if (!resolution ||
       resolution->kind == PSX_COMPOUND_LITERAL_UNPLANNED) {
     set_failure(
@@ -750,7 +776,8 @@ static psx_semantic_node_t *materialize_compound_literal(
     return NULL;
   }
   const node_t *direct =
-      psx_compound_literal_direct_initializer_const(compound);
+      psx_compound_literal_direct_initializer_const(
+          materializer_resolution_store(builder), compound);
   if (direct) return build_node(builder, direct);
 
   psx_semantic_node_t *object =
@@ -776,19 +803,21 @@ static psx_semantic_node_t *materialize_compound_literal(
 }
 
 static int source_cast_is_aggregate(
+    const psx_resolution_store_t *store,
     const node_source_cast_t *cast) {
   psx_source_cast_resolution_kind_t kind =
-      psx_source_cast_resolution_kind(cast);
+      psx_source_cast_resolution_kind(store, cast);
   return kind == PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR ||
          kind == PSX_SOURCE_CAST_AGGREGATE_TEMPORARY;
 }
 
 static int address_requires_typed_hir_lowering(
-    const node_t *source) {
+    const psx_resolution_store_t *store, const node_t *source) {
   return source && source->kind == ND_ADDR && source->lhs &&
          source->lhs->kind == ND_CAST &&
          source->lhs->is_source_cast &&
          source_cast_is_aggregate(
+             store,
              (const node_source_cast_t *)source->lhs);
 }
 
@@ -813,7 +842,8 @@ static int materialize_aggregate_temporary_parts(
     psx_semantic_node_t **object) {
   const node_t *source = &cast->base;
   const psx_source_cast_resolution_t *resolution =
-      psx_source_cast_resolution_state(cast);
+      psx_source_cast_resolution_state(
+          materializer_resolution_store(builder), cast);
   if (!resolution ||
       resolution->kind != PSX_SOURCE_CAST_AGGREGATE_TEMPORARY ||
       !resolution->aggregate_temporary ||
@@ -852,12 +882,14 @@ static psx_semantic_node_t *materialize_aggregate_cast_address(
     hir_materializer_t *builder, const node_source_cast_t *cast,
     psx_qual_type_t result_type, const node_t *address_source) {
   psx_source_cast_resolution_kind_t kind =
-      psx_source_cast_resolution_kind(cast);
+      psx_source_cast_resolution_kind(
+          materializer_resolution_store(builder), cast);
   if (kind == PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR) {
     if (cast->base.lhs &&
         cast->base.lhs->kind == ND_CAST &&
         cast->base.lhs->is_source_cast &&
         source_cast_is_aggregate(
+            materializer_resolution_store(builder),
             (const node_source_cast_t *)cast->base.lhs)) {
       return materialize_aggregate_cast_address(
           builder, (const node_source_cast_t *)cast->base.lhs,
@@ -893,7 +925,8 @@ static psx_semantic_node_t *materialize_aggregate_cast_address(
 
 static psx_semantic_node_t *materialize_address_expression(
     hir_materializer_t *builder, const node_t *source) {
-  psx_qual_type_t result_type = ps_node_qual_type(source);
+  psx_qual_type_t result_type = ps_node_qual_type(
+      materializer_resolution_store(builder), source);
   if (!canonical_type_exists(builder, result_type)) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
@@ -907,14 +940,16 @@ static psx_semantic_node_t *materialize_address_expression(
 static psx_semantic_node_t *materialize_source_cast(
     hir_materializer_t *builder, const node_source_cast_t *cast) {
   const node_t *source = &cast->base;
-  psx_qual_type_t qual_type = ps_node_qual_type(source);
+  psx_qual_type_t qual_type = ps_node_qual_type(
+      materializer_resolution_store(builder), source);
   if (!canonical_type_exists(builder, qual_type)) {
     set_failure(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
   psx_source_cast_resolution_kind_t resolution_kind =
-      psx_source_cast_resolution_kind(cast);
+      psx_source_cast_resolution_kind(
+          materializer_resolution_store(builder), cast);
   if (!source->lhs ||
       (resolution_kind != PSX_SOURCE_CAST_DIRECT_HIR &&
        resolution_kind != PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR &&
@@ -942,7 +977,8 @@ static psx_semantic_node_t *materialize_source_cast(
 static int copy_payload(
     hir_materializer_t *builder, const node_t *source,
     psx_hir_node_spec_t *spec) {
-  switch (psx_resolved_object_ref_node_kind(source)) {
+  switch (psx_resolved_object_ref_node_kind(
+      materializer_resolution_store(builder), source)) {
     case ND_ASSIGN:
       if (source->is_source_compound_assignment) {
         psx_hir_compound_operator_t op = PSX_HIR_COMPOUND_ADD;
@@ -953,6 +989,7 @@ static int copy_payload(
     case ND_ALIGNOF_QUERY:
       spec->integer_value =
           psx_alignof_query_resolved_alignment(
+              materializer_resolution_store(builder),
               (const node_alignof_query_t *)source);
       break;
     case ND_NUM: {
@@ -963,9 +1000,11 @@ static int copy_payload(
     }
     case ND_LVAR: {
       const lvar_t *local =
-          psx_resolved_object_ref_local(source);
+          psx_resolved_object_ref_local(
+              materializer_resolution_store(builder), source);
       int storage_offset =
-          psx_resolved_object_ref_storage_offset(source);
+          psx_resolved_object_ref_storage_offset(
+              materializer_resolution_store(builder), source);
       if (local) {
         if (!psx_resolve_local_hir_node_spec_in(
                 builder->semantic_context, local,
@@ -984,7 +1023,8 @@ static int copy_payload(
       const node_member_access_t *access =
           (const node_member_access_t *)source;
       const psx_member_access_state_t *state =
-          psx_member_access_state(access);
+          psx_member_access_state(
+              materializer_resolution_store(builder), access);
       if (!state || !state->is_resolved) {
         set_failure(
             builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
@@ -1015,7 +1055,8 @@ static int copy_payload(
     }
     case ND_STRING: {
       const node_string_t *string = (const node_string_t *)source;
-      char *string_label = psx_string_literal_label(string);
+      char *string_label = psx_string_literal_label(
+          materializer_resolution_store(builder), string);
       spec->name = string_label;
       spec->name_length = string_label ? strlen(string_label) : 0;
       spec->literal_contents = string->literal_contents;
@@ -1042,37 +1083,44 @@ static int copy_payload(
       const node_function_call_t *call =
           (const node_function_call_t *)source;
       int direct_name_len =
-          psx_function_call_direct_name_length(call);
-      spec->name = psx_function_call_direct_name(call);
+          psx_function_call_direct_name_length(
+              materializer_resolution_store(builder), call);
+      spec->name = psx_function_call_direct_name(
+          materializer_resolution_store(builder), call);
       spec->name_length = direct_name_len > 0
                               ? (size_t)direct_name_len : 0;
-      spec->attached_qual_type = psx_function_call_qual_type(call);
+      spec->attached_qual_type = psx_function_call_qual_type(
+          materializer_resolution_store(builder), call);
       spec->is_implicit_call =
-          psx_function_call_is_implicit_declaration(call) ? 1 : 0;
+          psx_function_call_is_implicit_declaration(
+              materializer_resolution_store(builder), call)
+              ? 1 : 0;
       break;
     }
     case ND_FUNCREF: {
       int name_len = 0;
       spec->name = psx_resolved_object_ref_name(
-          source, &name_len);
+          materializer_resolution_store(builder), source, &name_len);
       spec->name_length = name_len > 0 ? (size_t)name_len : 0;
       break;
     }
     case ND_GVAR: {
       int name_len = 0;
       spec->name = psx_resolved_object_ref_name(
-          source, &name_len);
+          materializer_resolution_store(builder), source, &name_len);
       spec->name_length = name_len > 0 ? (size_t)name_len : 0;
       break;
     }
     case ND_CASE: {
       const node_case_t *case_node = (const node_case_t *)source;
-      if (!psx_case_label_is_resolved(case_node)) {
+      if (!psx_case_label_is_resolved(
+              materializer_resolution_store(builder), case_node)) {
         set_failure(
             builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
         return 0;
       }
-      spec->integer_value = psx_case_label_value(case_node);
+      spec->integer_value = psx_case_label_value(
+          materializer_resolution_store(builder), case_node);
       break;
     }
     case ND_DEFAULT:
@@ -1104,10 +1152,12 @@ static int copy_payload(
 }
 
 static int copy_vla_payload(
+    const hir_materializer_t *builder,
     const node_t *source, psx_hir_node_spec_t *spec) {
   if (source->kind == ND_SUBSCRIPT) {
     spec->vla_stride_frame_offset =
-        ps_node_vla_row_stride_frame_off((node_t *)source);
+        ps_node_vla_row_stride_frame_off(
+            materializer_resolution_store(builder), (node_t *)source);
     if (spec->vla_stride_frame_offset != 0)
       spec->vla_stride_slot_size = PSX_VLA_RUNTIME_SLOT_SIZE;
     return 1;
@@ -1121,7 +1171,8 @@ static psx_semantic_node_t *materialize_typed_leaf(
   if (handled) *handled = 0;
   if (!source || !handled) return NULL;
   psx_hir_node_kind_t kind;
-  switch (psx_resolved_object_ref_node_kind(source)) {
+  switch (psx_resolved_object_ref_node_kind(
+      materializer_resolution_store(builder), source)) {
     case ND_NUM: kind = PSX_HIR_NUMBER; break;
     case ND_STRING: kind = PSX_HIR_STRING; break;
     case ND_LVAR: kind = PSX_HIR_LOCAL; break;
@@ -1136,14 +1187,16 @@ static psx_semantic_node_t *materialize_typed_leaf(
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
   if (!copy_payload(builder, source, &spec) ||
-      !copy_vla_payload(source, &spec))
+      !copy_vla_payload(builder, source, &spec))
     return NULL;
-  if (psx_resolved_object_ref_node_kind(source) == ND_LVAR) {
+  if (psx_resolved_object_ref_node_kind(
+          materializer_resolution_store(builder), source) == ND_LVAR) {
     int bit_width = 0;
     int bit_offset = 0;
     int bit_is_signed = 0;
     if (ps_node_bitfield_info(
-            (node_t *)source, &bit_width, &bit_offset,
+            materializer_resolution_store(builder), (node_t *)source,
+            &bit_width, &bit_offset,
             &bit_is_signed)) {
       spec.bit_width = (unsigned char)bit_width;
       spec.bit_offset = (unsigned char)bit_offset;
@@ -1156,9 +1209,11 @@ static psx_semantic_node_t *materialize_typed_leaf(
           builder, source, &symbol, &has_symbol))
     return NULL;
   return psx_semantic_node_builder_leaf_expression(
-      builder, &spec, ps_node_qual_type(source),
+      builder, &spec, ps_node_qual_type(
+                          materializer_resolution_store(builder), source),
       has_symbol ? &symbol : NULL,
-      psx_resolution_node_kind(source));
+      psx_resolution_node_kind(
+          materializer_resolution_store(builder), source));
 }
 
 static psx_semantic_node_t *materialize_initializer_designator(
@@ -1271,7 +1326,8 @@ static psx_semantic_node_t *build_node(
       builder, source, &handled_typed_leaf);
   if (handled_typed_leaf) return typed_leaf;
   psx_resolution_node_kind_t resolved_kind =
-      psx_resolution_node_kind(source);
+      psx_resolution_node_kind(
+          materializer_resolution_store(builder), source);
   if (resolved_kind == ND_INIT_LIST) {
     return materialize_initializer_list(
         builder, (const node_init_list_t *)source);
@@ -1280,7 +1336,8 @@ static psx_semantic_node_t *build_node(
     return materialize_vla_runtime(
         builder, (const node_vla_alloc_t *)source);
   }
-  if (address_requires_typed_hir_lowering(source))
+  if (address_requires_typed_hir_lowering(
+          materializer_resolution_store(builder), source))
     return materialize_address_expression(builder, source);
   if (resolved_kind == ND_COMPOUND_LITERAL) {
     return materialize_compound_literal(
@@ -1293,9 +1350,11 @@ static psx_semantic_node_t *build_node(
   if (resolved_kind == ND_GENERIC_SELECTION) {
     const node_generic_selection_t *selection =
         (const node_generic_selection_t *)source;
-    psx_qual_type_t qual_type = ps_node_qual_type(source);
+    psx_qual_type_t qual_type = ps_node_qual_type(
+        materializer_resolution_store(builder), source);
     const node_t *selected =
-        psx_generic_selection_selected_expression_const(selection);
+        psx_generic_selection_selected_expression_const(
+            materializer_resolution_store(builder), selection);
     if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
           builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
@@ -1325,7 +1384,8 @@ static psx_semantic_node_t *build_node(
     spec.kind = PSX_HIR_COMPOUND_ASSIGN;
   int is_expression = psx_hir_kind_is_expression(spec.kind);
   if (is_expression) {
-    qual_type = ps_node_qual_type(source);
+    qual_type = ps_node_qual_type(
+        materializer_resolution_store(builder), source);
     if (!canonical_type_exists(builder, qual_type)) {
       set_failure(
           builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
@@ -1340,7 +1400,8 @@ static psx_semantic_node_t *build_node(
     int bit_is_signed = 0;
     if (resolved_kind != ND_MEMBER_ACCESS &&
         ps_node_bitfield_info(
-            (node_t *)source, &bit_width, &bit_offset,
+            materializer_resolution_store(builder), (node_t *)source,
+            &bit_width, &bit_offset,
             &bit_is_signed)) {
       spec.bit_width = (unsigned char)bit_width;
       spec.bit_offset = (unsigned char)bit_offset;
@@ -1364,7 +1425,7 @@ static psx_semantic_node_t *build_node(
         builder, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, source);
     return NULL;
   }
-  if (!copy_vla_payload(source, &spec))
+  if (!copy_vla_payload(builder, source, &spec))
     return NULL;
 
   hir_children_t children = {0};
@@ -1410,7 +1471,8 @@ psx_typed_hir_tree_t *psx_typed_hir_tree_materialize(
     if (failure) {
       failure->status = PSX_RESOLVED_HIR_BUILD_INVALID_INPUT;
       failure->source_node_kind =
-          psx_resolution_node_kind(resolution_root);
+          psx_resolution_node_kind(
+              ps_ctx_resolution_store(semantic_context), resolution_root);
     }
     return NULL;
   }

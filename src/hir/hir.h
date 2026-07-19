@@ -66,7 +66,8 @@ typedef enum {
   PSX_HIR_FP_TO_INT,
   PSX_HIR_INT_TO_FP,
   PSX_HIR_NEGATE,
-  PSX_HIR_VA_ARG_AREA,
+  /* Target-independent request for the current C variadic cursor. */
+  PSX_HIR_VARARG_CURSOR,
   PSX_HIR_CAST,
   PSX_HIR_CREAL,
   PSX_HIR_CIMAG,
@@ -174,6 +175,9 @@ int psx_hir_node_vla_runtime_store_dimension(
 int psx_hir_node_label_id(const psx_hir_node_t *node);
 int psx_hir_node_is_static_function(const psx_hir_node_t *node);
 int psx_hir_node_is_implicit_call(const psx_hir_node_t *node);
+int psx_hir_node_is_source_assignment(const psx_hir_node_t *node);
+int psx_hir_node_is_declaration_initializer(
+    const psx_hir_node_t *node);
 psx_hir_symbol_id_t psx_hir_node_symbol_id(const psx_hir_node_t *node);
 int psx_hir_node_bitfield_info(
     const psx_hir_node_t *node, int *bit_width, int *bit_offset,

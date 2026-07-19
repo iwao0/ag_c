@@ -19,16 +19,20 @@ void psx_resolve_member_access(
     psx_member_access_resolution_t *resolution);
 
 static inline const psx_member_access_state_t *
-psx_member_access_state(const node_member_access_t *access) {
+psx_member_access_state(
+    const psx_resolution_store_t *store,
+    const node_member_access_t *access) {
   const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(access ? &access->base : NULL);
+      ps_node_resolution_state_const(
+          store, access ? &access->base : NULL);
   return state ? &state->member_access : NULL;
 }
 
 static inline psx_member_access_state_t *
-psx_member_access_state_mut(node_member_access_t *access) {
+psx_member_access_state_mut(
+    psx_resolution_store_t *store, node_member_access_t *access) {
   psx_node_resolution_state_t *state =
-      ps_node_resolution_state(access ? &access->base : NULL);
+      ps_node_resolution_state(store, access ? &access->base : NULL);
   return state ? &state->member_access : NULL;
 }
 

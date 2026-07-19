@@ -160,9 +160,9 @@ static char *dirname_dup_or_null(
     ag_preprocessor_context_t *context, const char *path);
 static char *my_strndup(const char *s, size_t n);
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
-static void pp_error(
+static _Noreturn void pp_error(
     ag_preprocessor_context_t *context,
-    diag_error_id_t id, const char *arg) __attribute__((noreturn));
+    diag_error_id_t id, const char *arg);
 static const char *k_pp_month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -216,7 +216,7 @@ static void *xreallocarray(
   return xrealloc(context, ptr, n * size);
 }
 
-static void pp_error(
+static _Noreturn void pp_error(
     ag_preprocessor_context_t *context,
     diag_error_id_t id, const char *arg) {
   const char *msg = diag_message_for_in(context->diagnostic_context, id);
@@ -2289,10 +2289,10 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
                                    tokenizer_context_t *tk_ctx,
                                    const ag_target_info_t *target,
                                    token_t *tok) {
-  if (!context) return NULL;
+  if (!context || !tk_ctx || !target || !tok) return NULL;
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
   const ag_target_info_t *prev_target = g_preprocess_target;
-  g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  g_preprocess_tk_ctx = tk_ctx;
   g_preprocess_target = target;
   if (include_depth == 0) {
     macro_expand_steps = 0;
@@ -3114,12 +3114,12 @@ token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
                                    tokenizer_context_t *tk_ctx,
                                    const ag_target_info_t *target,
                                    const char *src) {
-  if (!context || !out_s) return NULL;
+  if (!context || !out_s || !tk_ctx || !target || !src) return NULL;
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
   if (!s) return NULL;
   s->context = context;
-  s->tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
-  s->target = target ? *target : ag_target_info_host();
+  s->tk_ctx = tk_ctx;
+  s->target = *target;
   g_preprocess_tk_ctx = s->tk_ctx;
   g_preprocess_target = &s->target;
   /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に

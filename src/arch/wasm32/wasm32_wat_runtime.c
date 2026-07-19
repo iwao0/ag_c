@@ -11,18 +11,23 @@
 #define WASM_FE_TOWARDZERO 0x00C00000
 
 #define wasm_cg_emitf(...) \
-  cg_emitf_in(wasm32_ir_emit_context(), __VA_ARGS__)
+  cg_emitf_in(wasm32_ir_emit_context(context), __VA_ARGS__)
 
 static const char runtime_indent_spaces[] = "                                ";
 
-static void wasm_emitf(int spaces, const char *format, ...) {
+static void wasm_emitf_impl(
+    wasm32_ir_context_t *context,
+    int spaces, const char *format, ...) {
   int chunk = (int)sizeof(runtime_indent_spaces) - 1;
   while (spaces > chunk) {
-    cg_emitf_in(wasm32_ir_emit_context(), "%s", runtime_indent_spaces);
+    cg_emitf_in(
+        wasm32_ir_emit_context(context), "%s", runtime_indent_spaces);
     spaces -= chunk;
   }
   if (spaces > 0)
-    cg_emitf_in(wasm32_ir_emit_context(), "%.*s", spaces, runtime_indent_spaces);
+    cg_emitf_in(
+        wasm32_ir_emit_context(context), "%.*s", spaces,
+        runtime_indent_spaces);
   va_list arguments;
   va_start(arguments, format);
   va_list copy;
@@ -38,11 +43,32 @@ static void wasm_emitf(int spaces, const char *format, ...) {
   }
   vsnprintf(buffer, (size_t)length + 1, format, arguments);
   va_end(arguments);
-  cg_emitf_in(wasm32_ir_emit_context(), "%s", buffer);
+  cg_emitf_in(wasm32_ir_emit_context(context), "%s", buffer);
   if (buffer != stack_buffer) free(buffer);
 }
 
-static void emit_minimal_static_data_if_needed(void) {
+#define wasm_emitf(...) wasm_emitf_impl(context, __VA_ARGS__)
+#define function_symbol_state(...) \
+  function_symbol_state(context, __VA_ARGS__)
+#define intern_data_symbol(...) \
+  intern_data_symbol(context, __VA_ARGS__)
+#define wasm_any_type_or_unsupported(...) \
+  wasm_any_type_or_unsupported(context, __VA_ARGS__)
+#define wasm_unsupported_msg(...) \
+  wasm_unsupported_msg(context, __VA_ARGS__)
+#define emit_i32_data_bytes(...) \
+  emit_i32_data_bytes(context, __VA_ARGS__)
+#define has_undefined_function(...) \
+  has_undefined_function(context, __VA_ARGS__)
+#define has_defined_function(...) \
+  has_defined_function(context, __VA_ARGS__)
+#define function_table_has_ref(...) \
+  function_table_has_ref(context, __VA_ARGS__)
+#define wasm32_wat_require_function_table() \
+  wasm32_wat_require_function_table(context)
+
+static void emit_minimal_static_data_if_needed(
+    wasm32_ir_context_t *context) {
   if (has_undefined_function("setlocale", 9) || has_undefined_function("localeconv", 10)) {
     wasm_data_symbol_t *c = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1);
     wasm_data_symbol_t *dot = intern_data_symbol("__ag_stub_locale_dot", 20, 2, 1);
@@ -75,12 +101,18 @@ static void emit_minimal_static_data_if_needed(void) {
   }
 }
 
-static ir_type_t wasm_function_result_type_from_decl(char *name, int name_len) {
+static ir_type_t wasm_function_result_type_from_decl(
+    wasm32_ir_context_t *context, char *name, int name_len) {
   wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 0);
   return symbol && symbol->has_signature ? symbol->result_type : IR_TY_I32;
 }
 
-static ir_type_t wasm_function_param_type_from_decl(const char *name, int name_len,
+#define wasm_function_result_type_from_decl(...) \
+  wasm_function_result_type_from_decl(context, __VA_ARGS__)
+
+static ir_type_t wasm_function_param_type_from_decl(
+                                                    wasm32_ir_context_t *context,
+                                                    const char *name, int name_len,
                                                     int param_index,
                                                     ir_type_t fallback) {
   wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 0);
@@ -91,10 +123,12 @@ static ir_type_t wasm_function_param_type_from_decl(const char *name, int name_l
   return symbol->param_types[param_index];
 }
 
-static const char *wasm_stub_param_type(const char *name, int name_len,
+static const char *wasm_stub_param_type(
+                                        wasm32_ir_context_t *context,
+                                        const char *name, int name_len,
                                         int param_index, ir_type_t fallback) {
   ir_type_t actual = wasm_function_param_type_from_decl(
-      name, name_len, param_index, fallback);
+      context, name, name_len, param_index, fallback);
   const char *actual_wasm = wasm_any_type_or_unsupported(actual);
   const char *fallback_wasm = wasm_any_type_or_unsupported(fallback);
   if (strcmp(actual_wasm, fallback_wasm) != 0) {
@@ -103,7 +137,10 @@ static const char *wasm_stub_param_type(const char *name, int name_len,
   return actual_wasm;
 }
 
-static void emit_wasm_u64_dec_helper(void) {
+#define wasm_stub_param_type(...) \
+  wasm_stub_param_type(context, __VA_ARGS__)
+
+static void emit_wasm_u64_dec_helper(wasm32_ir_context_t *context) {
   wasm_emitf(2, "(func $__ag_write_u64_dec (param $buf i32) (param $n i64) (result i32)\n");
     wasm_emitf(4, "(local $div i64)\n");
     wasm_emitf(4, "(local $digit i64)\n");
@@ -130,7 +167,7 @@ static void emit_wasm_u64_dec_helper(void) {
     wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_sprintf_stub(void) {
+static void emit_wasm_sprintf_stub(wasm32_ir_context_t *context) {
     wasm_emitf(2, "(func $sprintf (param $buf i32) (param $fmt i32) (result i32)\n");
     wasm_emitf(4, "(local $out i32)\n");
     wasm_emitf(4, "(local $p i32)\n");
@@ -254,7 +291,7 @@ static void emit_wasm_sprintf_stub(void) {
     wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_snprintf_stubs(void) {
+static void emit_wasm_snprintf_stubs(wasm32_ir_context_t *context) {
     wasm_emitf(2, "(func $__ag_snputc (param $buf i32) (param $size i64) (param $pos i32) (param $ch i32) (result i32)\n");
     wasm_emitf(4, "(if (i32.and (i64.ne (local.get $size) (i64.const 0)) (i64.lt_u (i64.extend_i32_u (i32.add (local.get $pos) (i32.const 1))) (local.get $size)))\n");
     wasm_emitf(6, "(then (i32.store8 (i32.add (local.get $buf) (local.get $pos)) (local.get $ch)))\n");
@@ -352,7 +389,7 @@ static void emit_wasm_snprintf_stubs(void) {
     wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_swprintf_stub(void) {
+static void emit_wasm_swprintf_stub(wasm32_ir_context_t *context) {
     wasm_emitf(2, "(func $__ag_snwputc (param $buf i32) (param $size i64) (param $pos i32) (param $ch i32) (result i32)\n");
     wasm_emitf(4, "(if (i32.and (i64.ne (local.get $size) (i64.const 0)) (i64.lt_u (i64.extend_i32_u (i32.add (local.get $pos) (i32.const 1))) (local.get $size)))\n");
     wasm_emitf(6, "(then (i32.store (i32.add (local.get $buf) (i32.mul (local.get $pos) (i32.const 4))) (local.get $ch)))\n");
@@ -446,7 +483,7 @@ static void emit_wasm_swprintf_stub(void) {
     wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_vsnprintf_stubs(void) {
+static void emit_wasm_vsnprintf_stubs(wasm32_ir_context_t *context) {
     wasm_emitf(2, "(func $__ag_vsnputc (param $buf i32) (param $size i64) (param $pos i32) (param $ch i32) (result i32)\n");
     wasm_emitf(4, "(if (i32.and (i64.ne (local.get $size) (i64.const 0)) (i64.lt_u (i64.extend_i32_u (i32.add (local.get $pos) (i32.const 1))) (local.get $size)))\n");
     wasm_emitf(6, "(then (i32.store8 (i32.add (local.get $buf) (local.get $pos)) (local.get $ch)))\n");
@@ -579,7 +616,8 @@ static void emit_wasm_vsnprintf_stubs(void) {
     }
 }
 
-static int emit_declared_fixed_function_params(const char *name, int name_len) {
+static int emit_declared_fixed_function_params(
+    wasm32_ir_context_t *context, const char *name, int name_len) {
   wasm_function_symbol_t *symbol = function_symbol_state(name, name_len, 0);
   int nparams = symbol && symbol->has_signature ? symbol->param_count : 0;
   for (int i = 0; i < nparams; i++) {
@@ -590,7 +628,10 @@ static int emit_declared_fixed_function_params(const char *name, int name_len) {
   return nparams;
 }
 
-static void emit_wasm_printf_stubs(void) {
+#define emit_declared_fixed_function_params(...) \
+  emit_declared_fixed_function_params(context, __VA_ARGS__)
+
+static void emit_wasm_printf_stubs(wasm32_ir_context_t *context) {
   int slots_addr = intern_data_symbol("__ag_printf_va_slots", 20, 16, 8)->addr;
   if (has_undefined_function("printf", 6)) {
     wasm_emitf(2, "(func $printf (param $fmt i32) (param $a i64) (param $b i64) (result i32)\n");
@@ -628,7 +669,7 @@ static void emit_wasm_printf_stubs(void) {
   }
 }
 
-static void emit_wasm_vsscanf_stubs(void) {
+static void emit_wasm_vsscanf_stubs(wasm32_ir_context_t *context) {
   int slots_addr = intern_data_symbol("__ag_sscanf_va_slots", 20, 16, 8)->addr;
   wasm_emitf(2, "(func $__ag_scan_isspace (param $ch i32) (result i32)\n");
   wasm_emitf(4, "(i32.or (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.eq (local.get $ch) (i32.const 9))) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.eq (local.get $ch) (i32.const 13))))\n");
@@ -788,7 +829,7 @@ static void emit_wasm_vsscanf_stubs(void) {
   }
 }
 
-static void emit_wasm_swscanf_stub(void) {
+static void emit_wasm_swscanf_stub(wasm32_ir_context_t *context) {
   wasm_emitf(2, "(func $__ag_wscan_isspace (param $ch i32) (result i32)\n");
   wasm_emitf(4, "(i32.or (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.eq (local.get $ch) (i32.const 9))) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.eq (local.get $ch) (i32.const 13))))\n");
   wasm_emitf(2, ")\n");
@@ -937,7 +978,7 @@ static void emit_wasm_swscanf_stub(void) {
   wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_strftime_stub(void) {
+static void emit_wasm_strftime_stub(wasm32_ir_context_t *context) {
   int wday_addr = intern_data_symbol("__ag_time_wday_names", 20, 21, 1)->addr;
   int mon_addr = intern_data_symbol("__ag_time_mon_names", 19, 36, 1)->addr;
   int wday_full_addr =
@@ -1395,7 +1436,7 @@ static void emit_wasm_strftime_stub(void) {
   wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_wcsftime_stub(void) {
+static void emit_wasm_wcsftime_stub(wasm32_ir_context_t *context) {
   int fmt_addr = intern_data_symbol("__ag_wcsftime_fmt_buf", (int)sizeof("__ag_wcsftime_fmt_buf") - 1, 256, 1)->addr;
   int out_addr = intern_data_symbol("__ag_wcsftime_out_buf", (int)sizeof("__ag_wcsftime_out_buf") - 1, 256, 1)->addr;
   wasm_emitf(2, "(func $wcsftime (param $dst i32) (param $max i64) (param $fmt i32) (param $tm i32) (result i64)\n");
@@ -1433,7 +1474,8 @@ static void emit_wasm_wcsftime_stub(void) {
   wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_time_conversion_helpers(void) {
+static void emit_wasm_time_conversion_helpers(
+    wasm32_ir_context_t *context) {
   wasm_emitf(2, "(func $__ag_time_is_leap (param $year i32) (result i32)\n");
   wasm_emitf(4, "(if (result i32) (i32.eqz (i32.rem_s (local.get $year) (i32.const 400)))\n");
   wasm_emitf(6, "(then (i32.const 1))\n");
@@ -1556,7 +1598,7 @@ static void emit_wasm_time_conversion_helpers(void) {
   wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_mktime_stub(void) {
+static void emit_wasm_mktime_stub(wasm32_ir_context_t *context) {
   wasm_emitf(2, "(func $mktime (param $tm i32) (result i64)\n");
   wasm_emitf(4, "(local $t i64)\n");
   wasm_emitf(4, "(local.set $t (call $__ag_time_to_seconds (local.get $tm)))\n");
@@ -1565,7 +1607,7 @@ static void emit_wasm_mktime_stub(void) {
   wasm_emitf(2, ")\n");
 }
 
-static void emit_wasm_asctime_helpers(void) {
+static void emit_wasm_asctime_helpers(wasm32_ir_context_t *context) {
   int buf_addr = intern_data_symbol("__ag_stub_asctime_buf", 21, 26, 1)->addr;
   int wday_addr = intern_data_symbol("__ag_time_wday_names", 20, 21, 1)->addr;
   int mon_addr = intern_data_symbol("__ag_time_mon_names", 19, 36, 1)->addr;
@@ -1628,7 +1670,25 @@ static void emit_wasm_asctime_helpers(void) {
   wasm_emitf(2, ")\n");
 }
 
-void wasm32_wat_emit_minimal_libc_stubs(void) {
+#define emit_minimal_static_data_if_needed() \
+  emit_minimal_static_data_if_needed(context)
+#define emit_wasm_u64_dec_helper() emit_wasm_u64_dec_helper(context)
+#define emit_wasm_sprintf_stub() emit_wasm_sprintf_stub(context)
+#define emit_wasm_snprintf_stubs() emit_wasm_snprintf_stubs(context)
+#define emit_wasm_swprintf_stub() emit_wasm_swprintf_stub(context)
+#define emit_wasm_vsnprintf_stubs() emit_wasm_vsnprintf_stubs(context)
+#define emit_wasm_printf_stubs() emit_wasm_printf_stubs(context)
+#define emit_wasm_vsscanf_stubs() emit_wasm_vsscanf_stubs(context)
+#define emit_wasm_swscanf_stub() emit_wasm_swscanf_stub(context)
+#define emit_wasm_strftime_stub() emit_wasm_strftime_stub(context)
+#define emit_wasm_wcsftime_stub() emit_wasm_wcsftime_stub(context)
+#define emit_wasm_time_conversion_helpers() \
+  emit_wasm_time_conversion_helpers(context)
+#define emit_wasm_mktime_stub() emit_wasm_mktime_stub(context)
+#define emit_wasm_asctime_helpers() emit_wasm_asctime_helpers(context)
+
+void wasm32_wat_emit_minimal_libc_stubs(
+    wasm32_ir_context_t *context) {
   emit_minimal_static_data_if_needed();
   if (has_undefined_function("puts", 4)) {
     wasm_emitf(2, "(func $puts (param $s i32) (result i32)\n");

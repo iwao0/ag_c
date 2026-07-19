@@ -11,7 +11,9 @@ static inline bool tk_is_space_fast(char c) {
 }
 
 /** @brief 低頻度ケース（コメント/行継続/エラー）を処理する。 */
-static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, int *line_no) {
+static char *tk_skip_ignored_fallback(
+    tokenizer_context_t *ctx, char *p, bool *at_bol, bool *has_space,
+    int *line_no) {
   // 行継続（バックスラッシュ + 改行）を除去
   if (*p == '\\' && p[1] == '\n') {
     p += 2;
@@ -50,7 +52,7 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
       p++;
     }
     if (!closed) {
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p);
     }
     return p;
   }
@@ -58,7 +60,8 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
 }
 
 /** @brief 空白・コメント・行継続をスキップして次の有効文字位置を返す。 */
-char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
+char *tk_skip_ignored_ctx(tokenizer_context_t *ctx, char *p,
+                          bool *at_bol, bool *has_space, int *line_no) {
   for (;;) {
     // Hot path: ASCII空白だけを最短で処理
     while (tk_is_space_fast(*p)) {
@@ -72,7 +75,8 @@ char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
 
     char c = *p;
     if (UNLIKELY(c == '/' || c == '\\')) {
-      char *next = tk_skip_ignored_fallback(p, at_bol, has_space, line_no);
+      char *next = tk_skip_ignored_fallback(
+          ctx, p, at_bol, has_space, line_no);
       if (next == p) return p;
       p = next;
       continue;

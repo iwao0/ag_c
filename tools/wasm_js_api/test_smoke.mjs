@@ -156,15 +156,63 @@ if (!Object.isFrozen(warningResult.diagnostics) || !Object.isFrozen(warning) ||
   throw new Error("successful compile diagnostics are not an immutable snapshot");
 }
 const warningSnapshot = JSON.stringify(warningResult.diagnostics);
+const isolatedAdapter = Number(compiler.instance.exports.agc_wasm_adapter_create());
+if (!isolatedAdapter ||
+    Number(compiler.instance.exports.agc_wasm_adapter_diagnostic_count(
+      isolatedAdapter,
+    )) !== 0 ||
+    Number(compiler.instance.exports.agc_wasm_adapter_set_diagnostic_locale(
+      isolatedAdapter, 1,
+    )) !== 0 ||
+    Number(compiler.instance.exports.agc_wasm_adapter_diagnostic_set_limits(
+      isolatedAdapter, 1, 256,
+    )) !== 0) {
+  throw new Error("independent Wasm adapter state could not be configured");
+}
 compiler.compileObjectWithDiagnostics({
   name: "later.c",
   source: "int later(void) { int y = 2.5; return y; }\n",
 });
+if (Number(compiler.instance.exports.agc_wasm_adapter_diagnostic_count(
+      isolatedAdapter,
+    )) !== 0 ||
+    Number(compiler.instance.exports.agc_wasm_adapter_destroy(
+      isolatedAdapter,
+    )) !== 0) {
+  throw new Error("a compile leaked diagnostics into another Wasm adapter");
+}
 if (JSON.stringify(warningResult.diagnostics) !== warningSnapshot) {
   throw new Error("a later compile changed an earlier warning snapshot");
 }
 if (!stderrChunks.join("").includes("W3010") || !stderrChunks.join("").includes(opaqueSourceName)) {
   throw new Error("structured warning was not also emitted through onStderr");
+}
+
+for (const [name, source, expectedCodes] of [
+  ["self-assignment", "int f(void){int x;x=x;return 0;}", ["W3012"]],
+  ["self-comparison", "int f(void){int x=1;return x==x;}", ["W3013"]],
+  ["identical-logical", "int f(void){int x=1;return x&&x;}", ["W3020"]],
+  ["sign-compare", "int f(void){unsigned u=1;int s=-1;return s<u;}", ["W3018"]],
+  ["unsigned-zero", "int f(void){unsigned u=1;return u<0;}", ["W3019"]],
+  ["pointer-integer", "int f(void){int *p;return p==5;}", ["W3022"]],
+  ["integer-overflow", "int f(void){return 2147483647+1;}", ["W3023"]],
+  ["shift-range", "int f(void){return 1<<32;}", ["W3014"]],
+  ["divide-zero", "int f(void){return 1/0;}", ["W3015"]],
+  ["condition", "int f(void){int x=0;if(x=1){}while(x,0){}return x;}", ["W3007", "W3008"]],
+  ["stack-address", "int *f(void){int x=0;return &x;}", ["W3006"]],
+  ["constant-overflow", "int f(void){char c=200;return c;}", ["W3011"]],
+]) {
+  const result = compiler.compileObjectWithDiagnostics({
+    name: `typed-hir-${name}.c`,
+    source: `${source}\n`,
+  });
+  const actualCodes = result.diagnostics.map(({ code }) => code);
+  if (actualCodes.length !== expectedCodes.length ||
+      actualCodes.some((code, index) => code !== expectedCodes[index])) {
+    throw new Error(
+      `${name} Typed HIR warnings regressed: ${JSON.stringify(result.diagnostics)}`,
+    );
+  }
 }
 
 const localizedWarningSource = {
@@ -484,6 +532,16 @@ try {
   }
 } catch (err) {
   if (err.code !== "ENOENT") throw err;
+}
+
+fixedCompiler.dispose();
+compiler.dispose();
+compiler.dispose();
+try {
+  compiler.compileWat("int disposed(void) { return 0; }\n");
+  throw new Error("disposed compiler unexpectedly accepted compilation");
+} catch (err) {
+  if (!String(err?.message).includes("disposed")) throw err;
 }
 
 console.log("ag_c wasm JS API smoke: ok");

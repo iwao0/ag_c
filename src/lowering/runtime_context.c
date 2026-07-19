@@ -118,6 +118,16 @@ ag_diagnostic_context_t *ps_lowering_diagnostics(
   return ctx ? ctx->diagnostic_context : NULL;
 }
 
+void ps_lowering_context_bind_resolution_store(
+    psx_lowering_context_t *ctx, psx_resolution_store_t *store) {
+  if (ctx) ctx->resolution_store = store;
+}
+
+psx_resolution_store_t *ps_lowering_resolution_store(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? ctx->resolution_store : NULL;
+}
+
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx) {
   if (!ctx) return;
   frame_layout_reset(&ctx->local_frame_layout);

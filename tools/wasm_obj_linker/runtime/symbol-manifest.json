@@ -5877,7 +5877,7 @@
       "signature": "i64->i64",
       "memory": {
         "read": true,
-        "write": true
+        "write": false
       },
       "availability": [
         "wasm32-object-runtime"

@@ -375,7 +375,7 @@ Do not edit it directly.
 | `strcspn` | `__agc_runtime_strcspn` | `env.strcspn` | `i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `strerror` | `__agc_runtime_strerror` | `env.strerror` | `i32->i64` | read/write | wasm32-object-runtime | runtime |
 | `strftime` | `__agc_runtime_strftime` | `env.strftime` | `i64,i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
-| `strlen` | `__agc_runtime_strlen` | `env.strlen` | `i64->i64` | read/write | wasm32-object-runtime | runtime |
+| `strlen` | `__agc_runtime_strlen` | `env.strlen` | `i64->i64` | read | wasm32-object-runtime | runtime |
 | `strncat` | `__agc_runtime_strncat` | `env.strncat` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |
 | `strncmp` | `__agc_runtime_strncmp` | `env.strncmp` | `i64,i64,i64->i32` | read/write | wasm32-object-runtime | runtime |
 | `strncpy` | `__agc_runtime_strncpy` | `env.strncpy` | `i64,i64,i64->i64` | read/write | wasm32-object-runtime | runtime |

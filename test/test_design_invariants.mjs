@@ -1015,7 +1015,23 @@ const wasmBackendContextSource = await readFile(
   "src/arch/wasm32/backend_context.c",
   "utf8",
 );
+const wasmBackendContextHeader = await readFile(
+  "src/arch/wasm32/backend_context.h",
+  "utf8",
+);
+const wasmIrHeader = await readFile(
+  "src/arch/wasm32/wasm32_ir.h",
+  "utf8",
+);
+const wasmObjHeader = await readFile(
+  "src/arch/wasm32/wasm32_obj.h",
+  "utf8",
+);
 const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
+const wasmWatRuntimeContextSource = await readFile(
+  "src/arch/wasm32/wasm32_wat_runtime.c",
+  "utf8",
+);
 const wasmRuntimeWideSource = await readFile(
   "tools/wasm_obj_linker/runtime/parts/wide.c",
   "utf8",
@@ -1189,11 +1205,11 @@ if (sessionContextAccessorNames.some((name) =>
     !/ag_compilation_session_set_backend_context\s*\(/.test(
       compilationSessionSource,
     ) ||
-    !/session->backend_activate\s*\(session->backend_context\)/.test(
+    !/ag_compilation_session_backend_context\s*\(/.test(
       compilationSessionSource,
     ) ||
-    !/session->backend_deactivate\s*\(session->backend_context\)/.test(
-      compilationSessionSource,
+    /backend_(?:activate|deactivate)|previous_session|is_active/.test(
+      `${compilationSessionSource}\n${compilationSessionInternalHeader}`,
     ) ||
     !/session->backend_destroy\s*\(session->backend_context\)/.test(
       compilationSessionSource,
@@ -1204,16 +1220,25 @@ if (sessionContextAccessorNames.some((name) =>
       compilerMainSource,
     ) ||
     !/ag_compilation_session_create\s*\(/.test(compilerMainSource) ||
-    !/ag_compilation_session_activate\s*\(/.test(compilerMainSource) ||
+    /ag_compilation_session_(?:activate|deactivate|is_active)\s*\(/.test(
+      compilerMainSource,
+    ) ||
     !/ag_compilation_session_destroy\s*\(/.test(compilerMainSource) ||
     !/ag_compilation_session_tokenizer\s*\(/.test(compilerMainSource) ||
     /tk_get_default_context\s*\(/.test(compilerMainSource) ||
     /ag_target_set_pointer_size\s*\(/.test(compilerMainSource) ||
     !/pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
-    !/diag_context_publish\s*\(/.test(compilerMainSource) ||
-    !/static\s+ag_compilation_session_t\s*\*wasm_adapter_session\s*;/.test(
+    /diag_context_publish\s*\(/.test(compilerMainSource) ||
+    /static\s+ag_compilation_session_t\s*\*wasm_adapter_session\s*;/.test(
       compilerMainSource,
     ) ||
+    !/typedef\s+struct\s*\{[^]*?ag_compilation_session_t\s*\*session;[^]*?\}\s*agc_wasm_adapter_t\s*;/.test(
+      compilerMainSource,
+    ) ||
+    !/wasm_adapter_retain_session\s*\(/.test(compilerMainSource) ||
+    !/agc_wasm_adapter_create\s*\(/.test(compilerMainSource) ||
+    !/agc_wasm_adapter_destroy\s*\(/.test(compilerMainSource) ||
+    /\bagc_wasm_compile_(?:wat|object)/.test(compilerMainSource) ||
     !/ir_build_function_module_from_hir\s*\(/.test(
       compilerMainSource,
     ) ||
@@ -1288,8 +1313,8 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
     /ag_compilation_session_(?:active_compat|effective_target_compat)\s*\(/.test(
       `${compilationSessionHeader}\n${compilationSessionSource}`,
     ) ||
-    !/ag_compilation_session_is_active\s*\(/.test(
-      compilationSessionHeader,
+    /ag_compilation_session_(?:activate|deactivate|is_active)\s*\(/.test(
+      `${compilationSessionHeader}\n${compilationSessionSource}`,
     ) ||
     /ag_compiler_context_/.test(compilationSessionSource) ||
     /#include\s+"tokenizer\/tokenizer\.h"/.test(
@@ -1321,23 +1346,17 @@ if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]
   );
 }
 
-if (!/int\s+ag_compilation_session_deactivate\s*\(/.test(
-      compilationSessionHeader,
-    ) ||
-    !/int\s+ag_compilation_session_dispose\s*\(/.test(
+if (!/int\s+ag_compilation_session_dispose\s*\(/.test(
       compilationSessionInternalHeader,
     ) ||
-    !/active_compilation_session\s*!=\s*session/.test(
-      compilationSessionSource,
+    !/ag_compilation_session_backend_context\s*\(/.test(
+      compilationSessionHeader,
     ) ||
-    !/ag_compilation_session_is_active\s*\([^)]*\)\s*\{[\s\S]*?active_compilation_session\s*==\s*session/.test(
-      compilationSessionSource,
-    ) ||
-    !/session->is_active\s*&&\s*!ag_compilation_session_deactivate\s*\(session\)/.test(
-      compilationSessionSource,
+    /active_compilation_session|previous_session|owns_session_activation/.test(
+      `${compilationSessionSource}\n${compilationSessionInternalHeader}\n${compilationSessionHeader}`,
     )) {
   throw new Error(
-    "CompilationSession lifecycle must reject out-of-order deactivation and disposal",
+    "CompilationSession lifecycle must use explicit ownership without an active-session stack",
   );
 }
 
@@ -1440,7 +1459,15 @@ if (!/wasm32_backend_context_create\s*\(\s*ag_codegen_emit_context_t\s*\*emit_co
       wasmBackendContextSource,
     ) ||
     !/ag_codegen_emit_context_t\s*\*emit_context\s*;/.test(wasmIrSource) ||
-    !/cg_emitf_in\s*\(wasm32_ir_emit_context\s*\(\)/.test(wasmIrSource) ||
+    !/cg_emitf_in\s*\(wasm32_ir_emit_context\s*\(context\)/.test(
+      wasmIrSource,
+    ) ||
+    /\b_Thread_local\b/.test(
+      wasmIrSource + wasmWatRuntimeContextSource,
+    ) ||
+    /wasm32_ir_context_(?:activate|active)\s*\(/.test(
+      wasmIrSource + wasmWatRuntimeContextSource + wasmIrHeader,
+    ) ||
     /\bcg_context_active\s*\(/.test(wasmIrSource) ||
     /\bcg_emitf\s*\(/.test(wasmIrSource)) {
   throw new Error(
@@ -1510,29 +1537,70 @@ if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
   );
 }
 
-if (/s\.ctx\s*=\s*ctx\s*\?\s*ctx\s*:\s*tk_get_default_context\s*\(\)/.test(
-      tokenizerSource,
+const tokenizerProductionContextSources = [
+  tokenizerHeader,
+  tokenizerSource,
+  tokenizerConfigRuntimeSource,
+  tokenizerAllocatorSource,
+  tokenizerAllocatorHeader,
+].join("\n");
+if (/\btk_(?:get_default_context|context_active|context_activate|runtime_ctx|allocator_default_context)\s*\(/.test(
+      tokenizerProductionContextSources,
     ) ||
-    /tk_tokenize_ctx\s*\(\s*tk_get_default_context\s*\(\)/.test(
-      tokenizerSource,
+    /\b(?:active_ctx|default_ctx|default_allocator_context|default_diagnostic_context)\b/.test(
+      tokenizerProductionContextSources,
     ) ||
-    !/s\.ctx\s*=\s*ctx\s*\?\s*ctx\s*:\s*tk_context_active\s*\(\)/.test(
+    !/s\.ctx\s*=\s*ctx\s*;/.test(tokenizerSource) ||
+    !/tokenizer_context_t\s*\*tk_effective_ctx\s*\([^)]*\)\s*\{\s*return\s+ctx\s*;\s*\}/s.test(
       tokenizerSource,
     )) {
   throw new Error(
-    "context-free tokenization must use the active tokenizer context",
+    "production tokenization must require an explicit tokenizer context",
+  );
+}
+
+if (/tk_tokenize_ctx_active/.test(tokenizerSource) ||
+    !/tk_parse_number_literal_ctx\s*\(\s*ctx\s*,/.test(
+      tokenizerSource,
+    ) ||
+    !/tk_skip_escape_in_literal_ctx\s*\(\s*ctx\s*,/.test(
+      tokenizerSource,
+    ) ||
+    !/tk_skip_ignored_ctx\s*\(\s*ctx\s*,/.test(tokenizerSource) ||
+    !/tk_tolerate_longjmp_if_active_ctx\s*\(\s*tk_diag_ctx__\s*\)/.test(
+      tokenizerDiagnosticHelperSource,
+    )) {
+  throw new Error(
+    "explicit tokenizer streams must carry their context through scanning and diagnostics",
   );
 }
 
 if (!/wasm32_ir_context_create\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_obj_context_create\s*\(/.test(wasmBackendContextSource) ||
-    !/wasm32_ir_context_activate\s*\(/.test(wasmBackendContextSource) ||
-    !/wasm32_obj_context_activate\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_ir_context_destroy\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_obj_context_destroy\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_gen_ir_module_in\s*\(ctx->ir,/.test(
+      wasmBackendContextSource,
+    ) ||
+    !/wasm32_obj_gen_ir_module_in\s*\(ctx->obj,/.test(
+      wasmBackendContextSource,
+    ) ||
+    /wasm32_(?:ir|obj)_context_(?:activate|active)\s*\(/.test(
+      wasmBackendContextSource + wasmBackendContextHeader +
+        wasmIrHeader + wasmObjHeader,
+    ) ||
+    /wasm32_backend_context_(?:activate|deactivate)\s*\(/.test(
+      wasmBackendContextSource + wasmBackendContextHeader + compilerMainSource,
+    ) ||
+    !/ag_compilation_session_backend_context\s*\(session\)/.test(
+      compilerMainSource,
+    ) ||
+    /\bwasm32_(?:module_begin|module_end|gen_ir_module|emit_data_segments|obj_(?:set_output_file|capture_output|set_capture_limit|capture_limit_exceeded|take_output|begin|gen_ir_module|emit_data_segments|end))\s*\(/.test(
+      compilerMainSource,
+    ) ||
     !/attach_wasm_backend_context\s*\(/.test(compilerMainSource)) {
   throw new Error(
-    "Wasm compilation entry points must attach session-owned IR and object contexts",
+    "Wasm entry points must use an explicit session-owned backend context without public active/default APIs",
   );
 }
 const loweringStateSources = await Promise.all([
@@ -1618,6 +1686,9 @@ if (!/struct\s+tk_allocator_context_t\s*\{/.test(
     /active_allocator_context|tk_allocator_context_(?:active|activate)\s*\(/.test(
       tokenizerAllocatorSource + tokenizerAllocatorHeader,
     ) ||
+    /default_allocator_context|tk_allocator_default_context\s*\(/.test(
+      tokenizerAllocatorSource + tokenizerAllocatorHeader,
+    ) ||
     !/tk_allocator_calloc_in\s*\(\s*tk_allocator_context_t\s*\*ctx/.test(
       tokenizerAllocatorSource,
     ) ||
@@ -1662,6 +1733,12 @@ if (/default_preprocessor_context|active_preprocessor_context/.test(
       preprocessSource,
     ) ||
     !/preprocess_for_target_ctx\s*\(ag_preprocessor_context_t\s*\*context/.test(
+      preprocessSource,
+    ) ||
+    /tk_ctx\s*\?\s*tk_ctx\s*:\s*tk_get_default_context\s*\(/.test(
+      preprocessSource,
+    ) ||
+    /target\s*\?\s*\*target\s*:\s*ag_target_info_host\s*\(/.test(
       preprocessSource,
     )) {
   throw new Error(
@@ -1867,6 +1944,37 @@ const semanticTreeResolutionSource = await readFile(
   "src/semantic/semantic_tree_resolution.c",
   "utf8",
 );
+const typedHirDiagnosticsSource = await readFile(
+  "src/semantic/typed_hir_diagnostics.c",
+  "utf8",
+);
+const typedWarningHirInternalHeader = await readFile(
+  "src/hir/hir_internal.h",
+  "utf8",
+);
+const typedWarningSyntaxTypedHirResolutionSource = await readFile(
+  "src/semantic/syntax_typed_hir_resolution.c",
+  "utf8",
+);
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
+      typedHirDiagnosticsSource,
+    ) ||
+    !/unsigned\s+char\s+is_source_assignment\s*;/.test(
+      typedWarningHirInternalHeader,
+    ) ||
+    !/unsigned\s+char\s+is_declaration_initializer\s*;/.test(
+      typedWarningHirInternalHeader,
+    ) ||
+    !/\.is_source_assignment\s*=\s*syntax->is_source_assignment/.test(
+      typedWarningSyntaxTypedHirResolutionSource,
+    ) ||
+    !/\.is_declaration_initializer\s*=\s*1/.test(
+      typedWarningSyntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "Typed HIR warnings must consume semantic provenance without depending on Syntax AST kinds",
+  );
+}
 const legacySyntaxDiagnosticsSource = await readFile(
   "src/semantic/legacy_syntax_diagnostics.c",
   "utf8",
@@ -2106,7 +2214,7 @@ if (/psx_semantic_resolve_(?:initializer_)?tree_in_context\s*\(/.test(
 if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
-    !/unsigned\s+char\s+owns_session_activation\s*;/.test(
+    /owns_session_activation/.test(
       frontendTranslationUnitHeader,
     ) ||
     !/int\s+psx_frontend_stream_begin\s*\(/.test(
@@ -2170,23 +2278,12 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
     !/frontend_session_is_complete\s*\(stream->session\)/.test(
       frontendStreamCore,
     ) ||
-    !/!ag_compilation_session_is_active\s*\(session\)/.test(
+    /ag_compilation_session_(?:activate|deactivate|is_active|active_compat)\s*\(/.test(
       frontendStreamCore,
     ) ||
-    !/ag_compilation_session_activate\s*\(session\)/.test(
-      frontendStreamCore,
-    ) ||
-    !/!ag_compilation_session_is_active\s*\(stream->session\)/.test(
-      frontendStreamCore,
-    ) ||
-    /ag_compilation_session_active_compat\s*\(/.test(
-      frontendStreamCore,
-    ) ||
-    !/ag_compilation_session_deactivate\s*\(stream->session\)/.test(
-      frontendStreamCore,
-    )) {
+    /owns_session_activation/.test(frontendStreamCore)) {
   throw new Error(
-    "frontend stream core must bind explicit registries and active subsystem state to one CompilationSession scope",
+    "frontend stream core must use only the explicitly supplied CompilationSession",
   );
 }
 if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_session_is_complete\s*\(session\)\s*;\s*\}/.test(
@@ -3453,6 +3550,8 @@ if (wasmFunctionCodegenViolations.length ||
 const wasmObjSource = await readFile("src/arch/wasm32/wasm32_obj.c", "utf8");
 if (/^static\s+obj_ctx_t\s+g_obj\s*;/m.test(wasmObjSource) ||
     /^static\s+wb_t\s+g_obj_capture\s*;/m.test(wasmObjSource) ||
+    /\b_Thread_local\b/.test(wasmObjSource) ||
+    /wasm32_obj_context_(?:activate|active)\s*\(/.test(wasmObjSource) ||
     /^static\s+(?:ir_type_t|unsigned char|int)\s*\*?g_emit_local_/m.test(
       wasmObjSource,
     ) ||
@@ -3493,7 +3592,7 @@ for (const pattern of wasmObjParserReads) {
   }
 }
 if (wasmObjFunctionCodegenViolations.length ||
-    !/\bdata_for_machine_inst\s*\(\s*module\s*,/.test(
+    !/\bdata_for_machine_inst\s*\(\s*context\s*,\s*module\s*,/.test(
       wasmObjFunctionCodegen,
     ) ||
     !/static obj_data_t \*data_for_machine_inst[\s\S]*?\bir_module_find_symbol\s*\(/.test(
@@ -3817,6 +3916,10 @@ const resolvedNodeTypeSource = await readFile(
   "src/semantic/resolved_node_type.c",
   "utf8",
 );
+const resolutionStoreSource = await readFile(
+  "src/semantic/resolution_store.c",
+  "utf8",
+);
 const nodeResolutionStateSource = await readFile(
   "src/semantic/resolution_state.h",
   "utf8",
@@ -3856,13 +3959,13 @@ if (!/\bpsx_resolved_node_kind_t\s+node_kind\s*;/.test(
     !/node->kind\s*=\s*PSX_SYNTAX_NODE_INVALID/.test(
       resolvedNodeKindImplementation,
     ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*&node->base,\s*ND_FUNCDEF\s*\)/.test(
+    !/psx_resolution_node_set_kind\s*\(\s*ps_ctx_resolution_store\s*\(\s*semantic_context\s*\),\s*&node->base,\s*ND_FUNCDEF\s*\)/.test(
       frontendFunctionDefinitionSource,
     ) ||
     /node->base\.kind\s*=\s*ND_FUNCDEF/.test(
       frontendFunctionDefinitionSource,
     ) ||
-    !/psx_syntax_node_kind_is_valid\s*\(\s*source->kind\s*\)[^]*?ps_node_get_type\s*\(\s*source\s*\)[^]*?ps_node_qual_type\s*\(\s*source\s*\)\.type_id\s*!=\s*PSX_TYPE_ID_INVALID[^]*?psx_resolution_node_kind\s*\(\s*source\s*\)/.test(
+    !/psx_syntax_node_kind_is_valid\s*\(\s*source->kind\s*\)[^]*?ps_node_has_resolution_state\s*\(\s*resolution_store,\s*source\s*\)/.test(
       resolutionWorkTree,
     ) ||
     /\bND_(?:FUNCDEF|LVAR|FUNCREF|DEREF|GVAR|VLA_ALLOC|FP_TO_INT|INT_TO_FP|VA_ARG_AREA)\b/.test(
@@ -3888,14 +3991,17 @@ if (directResolvedKindFieldFiles.length) {
 if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
-    !/work_resolution_states\s*\[PSX_WORK_RESOLUTION_BUCKET_COUNT\]/.test(
-      resolvedNodeTypeSource,
+    !/buckets\s*\[PSX_RESOLUTION_STORE_BUCKET_COUNT\]/.test(
+      resolutionStoreSource,
     ) ||
-    !/arena_register_cleanup_in\s*\([^]*?remove_work_resolution_binding/.test(
-      resolvedNodeTypeSource,
+    !/arena_register_cleanup_in\s*\([^]*?remove_resolution_binding/.test(
+      resolutionStoreSource,
     ) ||
-    !/arena_register_cleanup_in\s*\([^]*?remove_external_resolution_binding/.test(
-      resolvedNodeTypeSource,
+    !/psx_resolution_store_t\s*\*resolution_store\s*;/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    !/ps_ctx_bind_resolution_store\s*\(\s*session->semantic_context\s*,\s*session->resolution_store\s*\)/.test(
+      compilationSessionSource,
     ) ||
     /PSX_RESOLUTION_NODE_PREFIX_MAGIC|is_resolution_work_node|has_external_resolution_state/.test(
       resolvedNodeTypeSource,
@@ -3903,7 +4009,7 @@ if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
     !/\bps_node_resolution_state_const\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
-    !/\bpsx_resolution_node_storage_size\s*\(/.test(
+    !/size_t\s+size\s*=\s*node_storage_size\s*\(\s*source\s*\)[^]*?psx_resolution_node_alloc_in\s*\(\s*resolution_store,\s*arena_context,\s*size\s*\)/.test(
       resolutionWorkTree,
     )) {
   throw new Error(
@@ -3989,7 +4095,7 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
     !/psx_bind_va_arg_area_reference_in\s*\(/.test(
       identifierBindingSource,
     ) ||
-    !/case\s+PSX_RESOLVED_OBJECT_REF_VA_ARG_AREA\s*:\s*return\s+ND_VA_ARG_AREA/.test(
+    !/case\s+PSX_RESOLVED_OBJECT_REF_VARARG_CURSOR\s*:\s*return\s+ND_VARARG_CURSOR/.test(
       resolvedObjectRefSource,
     )) {
   throw new Error(
@@ -4003,7 +4109,7 @@ if (!/psx_bind_local_reference_in\s*\(/.test(identifierBindingSource) ||
       identifierBindingSource,
     ) ||
     /identifier->base\.kind\s*=/.test(identifierBindingSource) ||
-    !/node->kind\s*!=\s*ND_IDENTIFIER[^]*?psx_resolved_object_ref_kind\s*\(\s*node\s*\)/.test(
+    !/node->kind\s*!=\s*ND_IDENTIFIER[^]*?psx_resolved_object_ref_kind\s*\(\s*store,\s*node\s*\)/.test(
       resolvedObjectRefSource,
     )) {
   throw new Error(
@@ -4100,7 +4206,7 @@ if (!/psx_statement_syntax_context_t\s+syntax\s*;/.test(
     !/psx_decl_begin_lvar_usage_region_in\s*\(\s*resolver->local_registry\s*\)/.test(
       localDeclarationTreeResolutionSource,
     ) ||
-    !/ps_node_set_lvar_usage_region\s*\(\s*block->body\[i\]\s*,\s*region\s*\)/.test(
+    !/ps_node_set_lvar_usage_region\s*\(\s*ps_lowering_resolution_store\s*\(\s*resolver->lowering_context\s*\),\s*block->body\[i\],\s*region\s*\)/.test(
       localDeclarationTreeResolutionSource,
     ) ||
     !/psx_stmt_stmt_syntax\s*\(\s*&syntax\s*\)/.test(
@@ -4656,22 +4762,22 @@ for (const factory of resolvedObjectRefFactories) {
   }
 }
 if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
-    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_LVAR\s*\)/.test(
+    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_LVAR\s*\)/.test(
       resolvedObjectRefSource,
     ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_GVAR\s*\)/.test(
+    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_GVAR\s*\)/.test(
       resolvedObjectRefSource,
     ) ||
-    /(?:base\.)?kind\s*=\s*ND_(?:FUNCREF|VA_ARG_AREA)/.test(
+    /(?:base\.)?kind\s*=\s*ND_(?:FUNCREF|VARARG_CURSOR)/.test(
       identifierBindingSource,
     ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*reference,\s*ND_FUNCREF\s*\)/.test(
+    !/psx_resolution_node_set_kind\s*\(\s*store,\s*reference,\s*ND_FUNCREF\s*\)/.test(
       resolvedObjectRefSource,
     ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*node,\s*ND_VA_ARG_AREA\s*\)/.test(
+    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_VARARG_CURSOR\s*\)/.test(
       resolvedObjectRefSource,
     ) ||
-    /(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR|FUNCREF|VA_ARG_AREA)/.test(
+    /(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR|FUNCREF|VARARG_CURSOR)/.test(
       resolvedObjectRefSource,
     )) {
   throw new Error(
@@ -4887,7 +4993,7 @@ const semanticWarningCalls = callBodies(
 );
 const irWarningCalls = callBodies(hirIrBuilder, "diag_warn_tokf_in");
 const wasmObjectOutputSource = wasmObjSource.slice(
-  wasmObjSource.indexOf("void wasm32_obj_end("),
+  wasmObjSource.indexOf("static void wasm32_obj_end_context("),
 );
 const wasmObjectDiagnosticCalls = callBodies(
   wasmObjectOutputSource, "diag_emit_internalf_in",
@@ -4932,10 +5038,16 @@ if (semanticWarningCalls.length === 0 ||
     /failed to (?:open|write) Wasm object output|missing Wasm object output sink/.test(
       `${compilerMainSource}\n${wasmObjSource}`,
     ) ||
-    !/agc_wasm_set_diagnostic_locale\s*\(/.test(compilerMainSource) ||
-    !/agc_wasm_set_diagnostic_locale/.test(diagnosticLocaleAdapterSource) ||
+    !/agc_wasm_adapter_set_diagnostic_locale\s*\(/.test(compilerMainSource) ||
+    !/agc_wasm_adapter_set_diagnostic_locale/.test(diagnosticLocaleAdapterSource) ||
     !/\{ diagnosticLocale \}/.test(diagnosticLocaleToolchainSource) ||
-    !/--export=agc_wasm_set_diagnostic_locale/.test(selfHostBuildSource) ||
+    !/--export=agc_wasm_adapter_set_diagnostic_locale/.test(selfHostBuildSource) ||
+    !/--export=agc_wasm_adapter_create/.test(selfHostBuildSource) ||
+    !/--export=agc_wasm_adapter_destroy/.test(selfHostBuildSource) ||
+    /--export=agc_wasm_(?:compile|set_|diagnostic_(?:set|count|bytes|limit|severity|code|message|source|start|end))/.test(
+      selfHostBuildSource,
+    ) ||
+    !/requireAdapterHandle\s*\(\)/.test(diagnosticLocaleAdapterSource) ||
     !/src\/diag\/messages_ja\.c\|src\/diag\/messages_en\.c/.test(
       selfHostBuildSource,
     ) ||
@@ -5084,10 +5196,19 @@ if ([
       configSource,
     ].some((source) => contextFreeParserDiagnosticApi.test(source)) ||
     contextFreeParserDiagnosticApi.test(compilerOwnedDiagnosticSource) ||
+    contextFreeParserDiagnosticApi.test(
+      `${diagnosticImplementationSource}\n${diagnosticPublicHeaderSource}`,
+    ) ||
+    /compatibility_diagnostic_context|diag_compatibility_context/.test(
+      `${diagnosticImplementationSource}\n${diagnosticPublicHeaderSource}`,
+    ) ||
     /\b(?:diag_context_(?:active|activate)|active_diagnostic_context|diag_current_context)\b/.test(
       `${diagnosticImplementationSource}\n${diagnosticPublicHeaderSource}`,
     ) ||
-    !/diag_published_context\s*\(/.test(diagnosticImplementationSource) ||
+    /diag_published_context|published_diagnostic_context|diag_context_publish/.test(
+      `${diagnosticImplementationSource}\n${diagnosticPublicHeaderSource}`,
+    ) ||
+    !/diag_context_record_count\s*\(/.test(diagnosticImplementationSource) ||
     !/ag_diagnostic_context_t\s*\*diagnostic_context\s*=\s*context->diagnostic_context\s*;/.test(
       parserSemanticContextImplementation,
     ) ||
@@ -5239,7 +5360,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bpsx_walk_semantic_tree_mut\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/\bps_node_set_qual_type_identity\s*\(\s*node\s*,\s*type\s*\)/.test(
+    !/\bps_node_set_qual_type_identity\s*\(\s*pass->resolution_store\s*,\s*node\s*,\s*type\s*\)/.test(
       semanticTypeIdentityPassSource,
     ) ||
     !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
@@ -5251,7 +5372,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bpsx_finalize_semantic_tree_types\s*\(/.test(
       semanticInvariantsSource,
     ) ||
-    !/\bwalk_node\s*\(\s*node->lhs\b/.test(semanticTreeWalkSource) ||
+    !/\bwalk_node\s*\(\s*store\s*,\s*node->lhs\b/.test(semanticTreeWalkSource) ||
     /\bvalidate_tree\s*\(\s*validation\s*,\s*node->(?:lhs|rhs)\b/.test(
       semanticInvariantsSource,
     )) {
@@ -8898,7 +9019,7 @@ if (!parsedFunctionResolutionBoundary ||
     /semantic_tree_resolution_internal\.h/.test(
       `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}\n${parserCompatibilityTestHook}`,
     ) ||
-    !/psx_resolution_work_tree_create_from_syntax\s*\([^,]+,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
+    !/psx_resolution_work_tree_create_from_syntax\s*\(\s*psx_resolution_store_t\s*\*resolution_store\s*,\s*arena_context_t\s*\*arena_context\s*,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
       resolutionWorkTreeInternalHeader,
     ) ||
     !/struct\s+psx_resolution_work_tree_t\s*\{[^]*?node_t\s*\*compatibility_root\s*;[^]*?psx_typed_hir_tree_t\s*\*typed_hir\s*;[^]*?psx_resolution_work_phase_t\s+phase\s*;[^]*?\};/.test(
@@ -9072,10 +9193,10 @@ if (resolveTreeCalls.length !== 1 ||
     /\bpsx_semantic_resolve_(?:tree|initializer_tree)_in_contexts\s*\(/.test(
       `${functionSemanticPipelineBody}\n${expressionSemanticPipelineBody}`,
     ) ||
-    !/psx_walk_semantic_tree\s*\(\s*root\s*,\s*validate_lowered_node/.test(
+    !/psx_walk_semantic_tree\s*\(\s*ps_ctx_resolution_store\s*\(\s*semantic_context\s*\)\s*,\s*root\s*,\s*validate_lowered_node/.test(
       loweredTreeValidationSource,
     ) ||
-    /psx_walk_semantic_tree_mut\s*\(\s*root\s*,\s*validate_lowered_node/.test(
+    /psx_walk_semantic_tree_mut\s*\(/.test(
       loweredTreeValidationSource,
     ) ||
     /static\s+void\s+semantic_validate_assignment/.test(
@@ -9240,6 +9361,10 @@ const hirIrStatementSource = await readFile(
   "src/lowering/hir_ir_statement.c",
   "utf8",
 );
+const hirIrBuilderInternalHeader = await readFile(
+  "src/lowering/hir_ir_builder_internal.h",
+  "utf8",
+);
 const hirIrExpressionSource = await readFile(
   "src/lowering/hir_ir_expression.c",
   "utf8",
@@ -9308,6 +9433,22 @@ if (/\bir_val_t\s+hir_ir_build_expr\s*\([^;]*\)\s*\{/.test(
     )) {
   throw new Error(
     "HIR-to-IR expression, call, aggregate, statement, CFG, VLA, and initializer lowering must remain separate modules",
+  );
+}
+
+if (/hir_case_target_t\s+cases\s*\[/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/hir_case_target_t\s*\*cases\s*;/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/size_t\s+case_capacity\s*;/.test(
+      hirIrBuilderInternalHeader,
+    ) ||
+    !/reserve_switch_cases\s*\(/.test(hirIrStatementSource) ||
+    !/dispose_switch_target\s*\(/.test(hirIrStatementSource)) {
+  throw new Error(
+    "HIR-to-IR switch lowering must grow case targets dynamically",
   );
 }
 
@@ -9568,13 +9709,13 @@ if (!/wasm32_machine_function_build\s*\(/.test(
   );
 }
 
-if (!/void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(void\)\s*\{/.test(
+if (!/void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(\s*wasm32_ir_context_t\s*\*context\s*\)\s*\{/.test(
       wasmWatRuntimeSource,
     ) ||
-    /void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(void\)\s*\{/.test(
+    /void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(/.test(
       wasmWatWriterSource,
     ) ||
-    !/wasm32_wat_emit_minimal_libc_stubs\s*\(\s*\)/.test(
+    !/wasm32_wat_emit_minimal_libc_stubs\s*\(\s*context\s*\)/.test(
       wasmWatWriterSource,
     )) {
   throw new Error(
@@ -9630,6 +9771,9 @@ const runtimeManifestFields = [
   "availability",
   "bridge",
 ];
+const strlenRuntimeEntry = runtimeSymbolManifest.functions.find(
+  (entry) => entry.cSymbol === "strlen",
+);
 if (runtimeSymbolManifest.version !== 2 ||
     !Array.isArray(runtimeSymbolManifest.functions) ||
     runtimeSymbolManifest.functions.length === 0 ||
@@ -9637,6 +9781,15 @@ if (runtimeSymbolManifest.version !== 2 ||
       runtimeManifestFields.some((field) => !(field in entry)) ||
       typeof entry.memory?.read !== "boolean" ||
       typeof entry.memory?.write !== "boolean") ||
+    !strlenRuntimeEntry?.memory.read || strlenRuntimeEntry.memory.write ||
+    /params\.length\s*>\s*16|while\s*\(params\.length\s*<\s*16\)/.test(
+      runtimeSymbolGenerator,
+    ) ||
+    !/const\s+unsigned\s+char\s*\*param_types\s*;/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/uint32_t\s+param_count\s*;/.test(runtimeLinkerSource) ||
+    /param_types\s*\[\s*16\s*\]/.test(runtimeLinkerSource) ||
     !/generateC\(manifest\)/.test(runtimeSymbolGenerator) ||
     !/generateJs\(manifest\)/.test(runtimeSymbolGenerator) ||
     !/generateDocs\(manifest\)/.test(runtimeSymbolGenerator) ||
@@ -9657,6 +9810,16 @@ if (runtimeSymbolManifest.version !== 2 ||
     )) {
   throw new Error(
     "runtime manifest must own signatures, effects, availability, linker routing, JS imports, and generated docs",
+  );
+}
+
+if (!/PSX_HIR_VARARG_CURSOR/.test(hirHeader) ||
+    /PSX_HIR_VA_ARG_AREA/.test(hirHeader) ||
+    !/IR_VARARG_CURSOR/.test(irHeaderSource) ||
+    /IR_VA_ARG_AREA/.test(irHeaderSource) ||
+    /Apple ARM64 ABI variadic argument-area builtin/.test(irHeaderSource)) {
+  throw new Error(
+    "generic HIR and IR must model a target-independent variadic cursor",
   );
 }
 

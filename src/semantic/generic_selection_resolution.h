@@ -8,6 +8,7 @@
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_resolution_store_t psx_resolution_store_t;
 
 typedef enum {
   PSX_GENERIC_SELECTION_RESOLUTION_OK = 0,
@@ -38,16 +39,21 @@ void psx_resolve_generic_selection_in_contexts(
     psx_generic_selection_resolution_t *resolution);
 
 int psx_generic_selection_selected_index(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection);
 node_t *psx_generic_selection_selected_expression(
+    const psx_resolution_store_t *store,
     node_generic_selection_t *selection);
 const node_t *psx_generic_selection_selected_expression_const(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection);
 psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state_mut(
+    psx_resolution_store_t *store,
     node_generic_selection_t *selection, int association_index);
 const psx_type_name_resolution_state_t *
 psx_generic_selection_type_name_state(
+    const psx_resolution_store_t *store,
     const node_generic_selection_t *selection, int association_index);
 
 #endif

@@ -195,14 +195,18 @@ psx_prepare_function_definition_resolution_in_contexts(
     return NULL;
   node_function_definition_t *node =
       psx_resolution_node_alloc_in(
+          ps_ctx_resolution_store(semantic_context),
           ps_parser_runtime_arena(runtime_context),
           sizeof(node_function_definition_t));
   if (!node ||
-      !psx_resolution_node_set_kind(&node->base, ND_FUNCDEF))
+      !psx_resolution_node_set_kind(
+          ps_ctx_resolution_store(semantic_context),
+          &node->base, ND_FUNCDEF))
     return NULL;
   node->base.tok =
       (token_t *)definition->declarator.identifier;
   ps_node_set_implicit_int_return(
+      ps_ctx_resolution_store(semantic_context),
       &node->base, resolution.has_implicit_int_return);
   node->base.rhs = definition->body;
   node->name = resolution.name;

@@ -83,16 +83,17 @@ static double elapsed_sec(struct timespec start, struct timespec end) {
   return s + ns;
 }
 
-static void run_case_with_input(const char *name, char *input) {
+static void run_case_with_input(
+    tokenizer_context_t *context, const char *name, char *input) {
   struct timespec t0;
   struct timespec t1;
 
-  tk_reset_tokenizer_stats();
+  tk_reset_tokenizer_stats_ctx(context);
   clock_gettime(CLOCK_MONOTONIC, &t0);
-  token_t *tok = tk_tokenize(input);
+  token_t *tok = tk_tokenize_ctx(context, input);
   clock_gettime(CLOCK_MONOTONIC, &t1);
 
-  tokenizer_stats_t st = tk_get_tokenizer_stats();
+  tokenizer_stats_t st = tk_get_tokenizer_stats_ctx(context);
   size_t token_count = count_tokens(tok);
   double sec = elapsed_sec(t0, t1);
   double tps = sec > 0.0 ? token_count / sec : 0.0;
@@ -101,13 +102,15 @@ static void run_case_with_input(const char *name, char *input) {
          name, strlen(input), token_count, sec, tps, st.alloc_count, st.peak_alloc_bytes);
 }
 
-static void run_case(const char *name, const char *pattern, size_t bytes) {
+static void run_case(
+    tokenizer_context_t *context, const char *name,
+    const char *pattern, size_t bytes) {
   char *input = build_input_from_pattern(pattern, bytes);
-  run_case_with_input(name, input);
+  run_case_with_input(context, name, input);
   free(input);
 }
 
-static void run_hotpath_scanner_case(void) {
+static void run_hotpath_scanner_case(tokenizer_context_t *context) {
   char *input = build_input_from_pattern(" \tfoo //c\nbar /*x*/ baz \\\nqux\n", 256 * 1024);
   struct timespec t0;
   struct timespec t1;
@@ -119,7 +122,8 @@ static void run_hotpath_scanner_case(void) {
 
   clock_gettime(CLOCK_MONOTONIC, &t0);
   while (*p) {
-    p = tk_skip_ignored(p, &at_bol, &has_space, &line_no);
+    p = tk_skip_ignored_ctx(
+        context, p, &at_bol, &has_space, &line_no);
     if (!*p) break;
     int adv = 0;
     if (tk_scan_ident_start(p, &adv)) {
@@ -143,7 +147,7 @@ static void run_hotpath_scanner_case(void) {
   free(input);
 }
 
-static void run_hotpath_literals_case(void) {
+static void run_hotpath_literals_case(tokenizer_context_t *context) {
   char *input = build_input_from_pattern("\\n\\x41\\123\\u3042\\U0001F600", 128 * 1024);
   struct timespec t0;
   struct timespec t1;
@@ -157,7 +161,7 @@ static void run_hotpath_literals_case(void) {
       continue;
     }
     p++;
-    tk_skip_escape_in_literal(&p);
+    tk_skip_escape_in_literal_ctx(context, &p);
     ops++;
   }
   clock_gettime(CLOCK_MONOTONIC, &t1);
@@ -209,6 +213,8 @@ static void run_hotpath_punctuator_case(void) {
 }
 
 int main(void) {
+  tokenizer_context_t context;
+  tk_context_init(&context);
   const char *mixed_pattern =
       "int main(){int x=0;for(int i=0;i<100;i++){x+=i;}if(x>=10){x=x-1;}return x;}\n";
   const char *ident_pattern =
@@ -218,50 +224,52 @@ int main(void) {
   const char *punct_pattern =
       "{ } ( ) [ ] ; , . ... + - * / % ++ -- += -= *= /= %= == != < <= > >= && || & | ^ ~ ? : -> << >> <<= >>= # ## %: %:%: <::> <% %>\n";
 
-  tk_set_strict_c11_mode(false);
-  tk_set_enable_binary_literals(true);
-  tk_set_enable_trigraphs(true);
+  tk_ctx_set_strict_c11_mode(&context, false);
+  tk_ctx_set_enable_binary_literals(&context, true);
+  tk_ctx_set_enable_trigraphs(&context, true);
 
   const char *mode = getenv("TOKENIZER_BENCH_MODE");
 
   puts("Tokenizer benchmark");
   if (!mode || bench_mode_is(mode, "all")) {
-    run_case("mixed", mixed_pattern, 1024);
-    run_case("mixed", mixed_pattern, 16 * 1024);
-    run_case("mixed", mixed_pattern, 256 * 1024);
-    run_case("ident", ident_pattern, 256 * 1024);
-    run_case("numeric", numeric_pattern, 256 * 1024);
-    run_case("punct", punct_pattern, 256 * 1024);
-    run_hotpath_scanner_case();
-    run_hotpath_literals_case();
+    run_case(&context, "mixed", mixed_pattern, 1024);
+    run_case(&context, "mixed", mixed_pattern, 16 * 1024);
+    run_case(&context, "mixed", mixed_pattern, 256 * 1024);
+    run_case(&context, "ident", ident_pattern, 256 * 1024);
+    run_case(&context, "numeric", numeric_pattern, 256 * 1024);
+    run_case(&context, "punct", punct_pattern, 256 * 1024);
+    run_hotpath_scanner_case(&context);
+    run_hotpath_literals_case(&context);
     run_hotpath_punctuator_case();
   } else if (bench_mode_is(mode, "scanner")) {
-    run_hotpath_scanner_case();
+    run_hotpath_scanner_case(&context);
   } else if (bench_mode_is(mode, "literals")) {
-    run_hotpath_literals_case();
+    run_hotpath_literals_case(&context);
   } else if (bench_mode_is(mode, "punctuator")) {
     run_hotpath_punctuator_case();
   } else if (bench_mode_is(mode, "hotpath")) {
-    run_hotpath_scanner_case();
-    run_hotpath_literals_case();
+    run_hotpath_scanner_case(&context);
+    run_hotpath_literals_case(&context);
     run_hotpath_punctuator_case();
   } else if (bench_mode_is(mode, "cases")) {
-    run_case("mixed", mixed_pattern, 1024);
-    run_case("mixed", mixed_pattern, 16 * 1024);
-    run_case("mixed", mixed_pattern, 256 * 1024);
-    run_case("ident", ident_pattern, 256 * 1024);
-    run_case("numeric", numeric_pattern, 256 * 1024);
-    run_case("punct", punct_pattern, 256 * 1024);
+    run_case(&context, "mixed", mixed_pattern, 1024);
+    run_case(&context, "mixed", mixed_pattern, 16 * 1024);
+    run_case(&context, "mixed", mixed_pattern, 256 * 1024);
+    run_case(&context, "ident", ident_pattern, 256 * 1024);
+    run_case(&context, "numeric", numeric_pattern, 256 * 1024);
+    run_case(&context, "punct", punct_pattern, 256 * 1024);
   } else {
     fprintf(stderr, "unknown TOKENIZER_BENCH_MODE: %s\n", mode);
+    tk_context_dispose(&context);
     return 2;
   }
 
   const char *corpus = getenv("TOKENIZER_BENCH_CORPUS_FILE");
   if (corpus && corpus[0] != '\0') {
     char *content = read_file_all(corpus);
-    run_case_with_input("corpus", content);
+    run_case_with_input(&context, "corpus", content);
     free(content);
   }
+  tk_context_dispose(&context);
   return 0;
 }

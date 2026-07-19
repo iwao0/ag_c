@@ -3,6 +3,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -525,6 +526,198 @@ const psx_hir_symbol_t *hir_ir_resolved_global_symbol(
   return symbol;
 }
 
+static int hir_name_matches(
+    const char *name, size_t name_length, const char *expected) {
+  return name && expected && name_length == strlen(expected) &&
+         memcmp(name, expected, name_length) == 0;
+}
+
+static int exact_int_void_function(
+    const psx_semantic_type_table_t *types, psx_qual_type_t qual_type) {
+  psx_qual_type_t function_type =
+      psx_semantic_type_table_callable_function(types, qual_type);
+  const psx_type_t *function = psx_semantic_type_table_lookup(
+      types, function_type.type_id);
+  psx_qual_type_t result_qual_type = psx_semantic_type_table_base(
+      types, function_type.type_id);
+  const psx_type_t *result = psx_semantic_type_table_lookup(
+      types, result_qual_type.type_id);
+  return function && function->kind == PSX_TYPE_FUNCTION &&
+         function->param_count == 0 &&
+         !function->is_variadic_function && result &&
+         result->kind == PSX_TYPE_INTEGER &&
+         result->integer_kind == PSX_INTEGER_KIND_INT &&
+         !result->is_unsigned;
+}
+
+typedef struct {
+  const hir_ir_context_t *context;
+  const ag_continuation_options_t *options;
+  const psx_hir_node_t *frame_while;
+  const psx_hir_node_t *invalid_node;
+  const psx_hir_node_t *frame_invalid_node;
+  diag_error_id_t invalid_reason;
+  diag_error_id_t frame_invalid_reason;
+  int frame_while_count;
+  int condition_call_count;
+} hir_continuation_scan_t;
+
+static void scan_continuation_node(
+    const psx_hir_node_t *node, hir_continuation_scan_t *scan) {
+  if (!node || scan->invalid_node) return;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  if (kind == PSX_HIR_GOTO || kind == PSX_HIR_LABEL) {
+    if (!scan->frame_invalid_node) {
+      scan->frame_invalid_node = node;
+      scan->frame_invalid_reason =
+          DIAG_ERR_PARSER_CONTINUATION_GOTO_LABEL_ACROSS_FRAMES;
+    }
+    return;
+  }
+  if (kind == PSX_HIR_VLA_ALLOC) {
+    if (!scan->frame_invalid_node) {
+      scan->frame_invalid_node = node;
+      scan->frame_invalid_reason =
+          DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES;
+    }
+    return;
+  }
+  if (kind == PSX_HIR_CALL) {
+    size_t name_length = 0;
+    const char *name = psx_hir_node_name(node, &name_length);
+    if (hir_name_matches(
+            name, name_length, scan->options->frame_condition)) {
+      scan->condition_call_count++;
+      if (!exact_int_void_function(
+              scan->context->options->semantic_types,
+              psx_hir_node_attached_qual_type(node))) {
+        scan->invalid_node = node;
+        scan->invalid_reason =
+            DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_TYPE;
+        return;
+      }
+    }
+    if ((hir_name_matches(name, name_length, "alloca") ||
+         hir_name_matches(name, name_length, "__builtin_alloca")) &&
+        !scan->frame_invalid_node) {
+      scan->frame_invalid_node = node;
+      scan->frame_invalid_reason =
+          DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES;
+    }
+  }
+  if (kind == PSX_HIR_WHILE) {
+    const psx_hir_node_t *condition = hir_ir_child_for_edge(
+        scan->context, node, PSX_HIR_EDGE_LHS, 0);
+    size_t name_length = 0;
+    const char *name = condition &&
+            psx_hir_node_kind(condition) == PSX_HIR_CALL
+        ? psx_hir_node_name(condition, &name_length) : NULL;
+    if (hir_name_matches(
+            name, name_length, scan->options->frame_condition)) {
+      scan->frame_while = node;
+      scan->frame_while_count++;
+    }
+  }
+  for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
+    const psx_hir_node_t *child = psx_hir_module_lookup(
+        scan->context->hir, psx_hir_node_child_at(node, i));
+    scan_continuation_node(child, scan);
+  }
+}
+
+static int emit_continuation_error(
+    hir_ir_context_t *context, diag_error_id_t id) {
+  ag_diagnostic_context_t *diagnostics =
+      context->options->diagnostic_context;
+  diag_emit_tokf_in(
+      diagnostics, id, NULL, "%s",
+      diag_message_for_in(diagnostics, id));
+  context->status = IR_HIR_BUILD_INVALID;
+  return 0;
+}
+
+static int prepare_continuation_entry(
+    hir_ir_context_t *context, const psx_hir_node_t *root,
+    const psx_hir_node_t *body) {
+  const ag_continuation_options_t *options =
+      context->options->continuation;
+  if (!options) return 1;
+  size_t name_length = 0;
+  const char *name = psx_hir_node_name(root, &name_length);
+  if (!hir_name_matches(name, name_length, options->entry) ||
+      psx_hir_node_is_static_function(root))
+    return 1;
+  if (!exact_int_void_function(
+          context->options->semantic_types,
+          psx_hir_node_attached_qual_type(root)))
+    return emit_continuation_error(
+        context, DIAG_ERR_PARSER_CONTINUATION_ENTRY_TYPE);
+
+  hir_continuation_scan_t scan = {
+      .context = context,
+      .options = options,
+  };
+  scan_continuation_node(body, &scan);
+  if (scan.invalid_node)
+    return emit_continuation_error(context, scan.invalid_reason);
+  int synchronous =
+      scan.frame_while_count == 0 && scan.condition_call_count == 0;
+  int frame_continuation =
+      scan.frame_while_count == 1 && scan.condition_call_count == 1;
+  if (!synchronous && !frame_continuation) {
+    return emit_continuation_error(
+        context,
+        scan.frame_while_count == 0
+            ? DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED
+            : DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT);
+  }
+  if (frame_continuation && scan.frame_invalid_node)
+    return emit_continuation_error(
+        context, scan.frame_invalid_reason);
+  context->continuation = options;
+  context->continuation_while = scan.frame_while;
+  return 1;
+}
+
+static char *duplicate_string(const char *text) {
+  if (!text) return NULL;
+  size_t length = strlen(text);
+  char *copy = malloc(length + 1);
+  if (copy) memcpy(copy, text, length + 1);
+  return copy;
+}
+
+static int set_continuation_function_metadata(
+    hir_ir_context_t *context) {
+  ir_func_t *function = context->function;
+  const ag_continuation_options_t *options = context->continuation;
+  if (!function || !options) return 0;
+  function->is_continuation_entry = 1;
+  function->continuation_has_suspend =
+      context->continuation_while ? 1 : 0;
+  function->continuation_entry_name = duplicate_string(options->entry);
+  function->continuation_condition_name =
+      duplicate_string(options->frame_condition);
+  function->continuation_start_export =
+      duplicate_string(options->start_export);
+  function->continuation_resume_export =
+      duplicate_string(options->resume_export);
+  function->continuation_status_export =
+      duplicate_string(options->status_export);
+  function->continuation_result_export =
+      duplicate_string(options->result_export);
+  if (!function->continuation_entry_name ||
+      !function->continuation_condition_name ||
+      !function->continuation_start_export ||
+      !function->continuation_resume_export ||
+      !function->continuation_status_export ||
+      !function->continuation_result_export) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  return 1;
+}
+
 
 
 ir_module_t *ir_build_function_module_from_hir(
@@ -533,10 +726,6 @@ ir_module_t *ir_build_function_module_from_hir(
   if (status) *status = IR_HIR_BUILD_INVALID;
   if (!hir || !options || !options->target || !options->semantic_types ||
       !options->record_layouts) {
-    return NULL;
-  }
-  if (options->continuation) {
-    if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
     return NULL;
   }
   const psx_hir_node_t *root = psx_hir_module_lookup(hir, function_root);
@@ -586,21 +775,61 @@ ir_module_t *ir_build_function_module_from_hir(
       },
       .returns_void = returns_void,
   };
+  if (!prepare_continuation_entry(&context, root, body)) {
+    if (status) *status = context.status;
+    return NULL;
+  }
   context.module = ir_module_new();
   if (!context.module) {
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;
   }
+  char *continuation_name = NULL;
+  const char *ir_name = name;
+  size_t ir_name_length = name_length;
+  if (context.continuation) {
+    int length = snprintf(
+        NULL, 0, "__agc_continuation_step_%.*s",
+        (int)name_length, name);
+    if (length < 0) {
+      ir_module_free(context.module);
+      if (status) *status = IR_HIR_BUILD_INVALID;
+      return NULL;
+    }
+    continuation_name = malloc((size_t)length + 1);
+    if (!continuation_name) {
+      ir_module_free(context.module);
+      if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return NULL;
+    }
+    snprintf(
+        continuation_name, (size_t)length + 1,
+        "__agc_continuation_step_%.*s", (int)name_length, name);
+    ir_name = continuation_name;
+    ir_name_length = (size_t)length;
+  }
   context.function = ir_func_new(
-      context.module, name, (int)name_length);
+      context.module, ir_name, (int)ir_name_length);
+  free(continuation_name);
   if (!context.function) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;
   }
-  if (!ir_function_type_from_type_id(
-          options->semantic_types, signature_id,
-          &context.function->function_type)) {
+  psx_qual_type_t continuation_parameter = {
+      .type_id = result_type_id,
+      .qualifiers = PSX_TYPE_QUALIFIER_NONE,
+  };
+  int function_type_lowered = context.continuation
+      ? ir_function_type_set(
+            &context.function->function_type, PSX_TYPE_ID_INVALID,
+            continuation_parameter, &continuation_parameter, 1, 0, 1)
+      : ir_function_type_from_type_id(
+            options->semantic_types, signature_id,
+            &context.function->function_type);
+  if (!function_type_lowered ||
+      (context.continuation &&
+       !set_continuation_function_metadata(&context))) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return NULL;
@@ -611,26 +840,29 @@ ir_module_t *ir_build_function_module_from_hir(
     if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
     return NULL;
   }
-  int signature_length = ps_type_format_canonical_signature_for_target(
-      function_type, options->target, NULL, 0);
+  int signature_length = context.continuation ? 0 :
+      ps_type_format_canonical_signature_for_target(
+          function_type, options->target, NULL, 0);
   if (signature_length < 0) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_INVALID;
     return NULL;
   }
-  context.function->c_signature = malloc((size_t)signature_length + 1);
-  if (!context.function->c_signature ||
-      ps_type_format_canonical_signature_for_target(
-          function_type, options->target,
-          context.function->c_signature,
-          (size_t)signature_length + 1) != signature_length) {
-    ir_module_free(context.module);
-    if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
-    return NULL;
+  if (!context.continuation) {
+    context.function->c_signature = malloc((size_t)signature_length + 1);
+    if (!context.function->c_signature ||
+        ps_type_format_canonical_signature_for_target(
+            function_type, options->target,
+            context.function->c_signature,
+            (size_t)signature_length + 1) != signature_length) {
+      ir_module_free(context.module);
+      if (status) *status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return NULL;
+    }
+    context.function->c_signature_len = signature_length;
   }
-  context.function->c_signature_len = signature_length;
-  if (!hir_ir_setup_parameter_bindings(
-          &context, root, &context.function->function_type) ||
+  if ((!context.continuation && !hir_ir_setup_parameter_bindings(
+          &context, root, &context.function->function_type)) ||
       !hir_ir_emit_vla_parameter_strides(&context, root) ||
       !preallocate_local_storage(&context, body) ||
       !hir_ir_cfg_collect_labels(&context, body)) {

@@ -4,6 +4,7 @@
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
 #include "../semantic/semantic_tree_resolution.h"
+#include "../semantic/continuation_syntax_validation.h"
 #include "../semantic/static_initializer_materialization.h"
 #include "../semantic/typed_hir_materialization.h"
 
@@ -50,6 +51,13 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
   if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
   if (!ag_compilation_session_is_complete(session) ||
       !syntax_function || !syntax_function->body || !hir_root)
+    return 0;
+  if (!psx_validate_continuation_condition_types_in_contexts(
+          ag_compilation_session_semantic_context(session),
+          ag_compilation_session_global_registry(session),
+          ag_compilation_session_local_registry(session),
+          ag_compilation_session_continuation(session),
+          syntax_function))
     return 0;
   const psx_typed_hir_tree_t *typed_tree =
       psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(

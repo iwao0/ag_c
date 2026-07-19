@@ -668,6 +668,7 @@ static const test_case_t test_cases[] = {
     {"bitfield", "read_b", CASE_ASSERT_FILE, "test/fixtures/bitfield/read_b.c", 0, 0},
     {"bitfield", "write_masked", CASE_ASSERT_FILE, "test/fixtures/bitfield/write_masked.c", 0, 0},
     {"bitfield", "packing", CASE_ASSERT_FILE, "test/fixtures/bitfield/packing.c", 0, 0},
+    {"bitfield", "narrow_storage_preserves_neighbor", CASE_ASSERT_FILE, "test/fixtures/bitfield/narrow_storage_preserves_neighbor.c", 0, 0},
     {"bitfield", "signed_neg", CASE_ASSERT_FILE, "test/fixtures/bitfield/signed_neg.c", 0, 0},
     {"bitfield", "unsigned_wrap", CASE_ASSERT_FILE, "test/fixtures/bitfield/unsigned_wrap.c", 0, 0},
     // _Alignas

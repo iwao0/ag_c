@@ -2,6 +2,7 @@
 #define AG_COMPILATION_SESSION_INTERNAL_H
 
 #include "compilation_session.h"
+#include "semantic/resolution_store.h"
 #include "tokenizer/tokenizer.h"
 
 int ag_compilation_session_init(
@@ -9,8 +10,8 @@ int ag_compilation_session_init(
 int ag_compilation_session_dispose(ag_compilation_session_t *session);
 
 struct ag_compilation_session_t {
-  struct ag_compilation_session_t *previous_session;
   psx_semantic_context_t *semantic_context;
+  psx_resolution_store_t *resolution_store;
   psx_scope_graph_t *scope_graph;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
@@ -26,11 +27,8 @@ struct ag_compilation_session_t {
   ag_compilation_options_t options;
   ag_continuation_options_t continuation;
   void *backend_context;
-  ag_session_backend_callback_t backend_activate;
-  ag_session_backend_callback_t backend_deactivate;
-  ag_session_backend_callback_t backend_destroy;
+  ag_session_backend_destroy_fn backend_destroy;
   ag_target_info_t target;
-  unsigned char is_active;
 };
 
 #endif

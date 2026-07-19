@@ -4,6 +4,9 @@
 #include <stddef.h>
 
 // Internal bridge for test-only controls.
-void tk_set_max_token_len_limit_for_test(size_t max_len);
+typedef struct tokenizer_context_t tokenizer_context_t;
+
+void tk_set_max_token_len_limit_for_test_ctx(
+    tokenizer_context_t *ctx, size_t max_len);
 
 #endif

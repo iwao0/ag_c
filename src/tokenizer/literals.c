@@ -211,19 +211,19 @@ int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
 }
 
 /** @brief リテラル中のエスケープ1個を値にデコードする。 */
-int tk_read_escape_char(char **pp) {
+int tk_read_escape_char_ctx(tokenizer_context_t *ctx, char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
   }
   switch (*p) {
@@ -233,7 +233,7 @@ int tk_read_escape_char(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
 
   char *bs = p - 1;
@@ -241,26 +241,26 @@ int tk_read_escape_char(char **pp) {
   uint32_t out = 0;
   int len = (int)strlen(bs);
   if (!tk_parse_escape_value(bs, len, &idx, &out)) {
-    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
   *pp = bs + idx;
   return (int)out;
 }
 
 /** @brief リテラル中のエスケープ1個を値化せず読み飛ばす。 */
-void tk_skip_escape_in_literal(char **pp) {
+void tk_skip_escape_in_literal_ctx(tokenizer_context_t *ctx, char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
+    TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
   }
   switch (*p) {
@@ -270,7 +270,7 @@ void tk_skip_escape_in_literal(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
+      TK_DIAG_AT_IN(ctx, DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
 
   if (*p == 'x') {
@@ -373,8 +373,10 @@ void tk_decode_identifier_ucn(
     int consumed = 0;
     if (tk_parse_ucn_codepoint(start + i, &cp, &consumed)) {
       if (!tk_is_valid_ucn_codepoint(cp))
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID, start + i, "%s",
-                    TK_DIAG_MESSAGE(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID));
+        TK_DIAG_ATF_IN(
+            context, DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID, start + i, "%s",
+            TK_DIAG_MESSAGE_IN(
+                context, DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID));
       char tmp[4];
       int n = tk_encode_utf8(cp, tmp);
       memcpy(buf + bi, tmp, (size_t)n);

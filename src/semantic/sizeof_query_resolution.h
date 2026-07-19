@@ -12,53 +12,61 @@ typedef struct psx_sizeof_runtime_plan_t {
 } psx_sizeof_runtime_plan_t;
 
 static inline psx_sizeof_query_resolution_state_t *
-psx_sizeof_query_resolution_state(node_sizeof_query_t *query) {
+psx_sizeof_query_resolution_state(
+    psx_resolution_store_t *store, node_sizeof_query_t *query) {
   psx_node_resolution_state_t *state =
-      ps_node_resolution_state(query ? &query->base : NULL);
+      ps_node_resolution_state(store, query ? &query->base : NULL);
   return state ? &state->sizeof_query : NULL;
 }
 
 static inline const psx_sizeof_query_resolution_state_t *
 psx_sizeof_query_resolution_state_const(
+    const psx_resolution_store_t *store,
     const node_sizeof_query_t *query) {
   const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(query ? &query->base : NULL);
+      ps_node_resolution_state_const(
+          store, query ? &query->base : NULL);
   return state ? &state->sizeof_query : NULL;
 }
 
 static inline int psx_sizeof_query_resolved_size(
+    const psx_resolution_store_t *store,
     const node_sizeof_query_t *query) {
   const psx_sizeof_query_resolution_state_t *resolution =
-      psx_sizeof_query_resolution_state_const(query);
+      psx_sizeof_query_resolution_state_const(store, query);
   return resolution ? resolution->resolved_size : 0;
 }
 
 static inline int psx_sizeof_query_runtime_size_slot(
+    const psx_resolution_store_t *store,
     const node_sizeof_query_t *query) {
   const psx_sizeof_query_resolution_state_t *resolution =
-      psx_sizeof_query_resolution_state_const(query);
+      psx_sizeof_query_resolution_state_const(store, query);
   return resolution ? resolution->runtime_size_slot : 0;
 }
 
 static inline int psx_sizeof_query_evaluates_vla_operand(
+    const psx_resolution_store_t *store,
     const node_sizeof_query_t *query) {
   const psx_sizeof_query_resolution_state_t *resolution =
-      psx_sizeof_query_resolution_state_const(query);
+      psx_sizeof_query_resolution_state_const(store, query);
   return resolution && resolution->evaluates_vla_operand;
 }
 
 static inline psx_sizeof_runtime_plan_t *
-psx_sizeof_query_runtime_plan(node_sizeof_query_t *query) {
+psx_sizeof_query_runtime_plan(
+    psx_resolution_store_t *store, node_sizeof_query_t *query) {
   psx_sizeof_query_resolution_state_t *resolution =
-      psx_sizeof_query_resolution_state(query);
+      psx_sizeof_query_resolution_state(store, query);
   return resolution ? resolution->runtime_plan : NULL;
 }
 
 static inline const psx_sizeof_runtime_plan_t *
 psx_sizeof_query_runtime_plan_const(
+    const psx_resolution_store_t *store,
     const node_sizeof_query_t *query) {
   const psx_sizeof_query_resolution_state_t *resolution =
-      psx_sizeof_query_resolution_state_const(query);
+      psx_sizeof_query_resolution_state_const(store, query);
   return resolution ? resolution->runtime_plan : NULL;
 }
 

@@ -136,7 +136,9 @@ export interface AgcWasmCompiler {
   readStdout(): string;
   readStderr(): string;
   readDiagnostics(): readonly AgcDiagnostic[];
+  readDiagnosticBytes(): number;
   readTermination(): AgcWasmTerminationEvent | null;
+  dispose(): void;
   diagnosticCoordinateSystem: {
     encoding: "utf-8";
     input: "normalized";

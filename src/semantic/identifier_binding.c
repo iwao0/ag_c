@@ -32,6 +32,13 @@ typedef struct {
   int has_lookup_point_override;
 } psx_identifier_binding_context_t;
 
+static psx_resolution_store_t *binding_store(
+    const psx_identifier_binding_context_t *context) {
+  return context
+             ? ps_ctx_resolution_store(context->semantic_context)
+             : NULL;
+}
+
 static node_t *bind_node(
     node_t *node, const psx_identifier_binding_context_t *context);
 
@@ -46,19 +53,22 @@ static int is_static_local_array(const lvar_t *var) {
 }
 
 static node_t *wrap_array_decay(
+    psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *reference,
     const psx_type_t *array_type) {
   node_t *address = psx_resolution_node_alloc_in(
-      arena_context, sizeof(*address));
+      store, arena_context, sizeof(*address));
   if (!address) return NULL;
   address->kind = ND_ADDR;
   address->lhs = reference;
   ps_node_bind_type(
-      address, ps_type_decay_array_in(arena_context, array_type));
+      store, address,
+      ps_type_decay_array_in(arena_context, array_type));
   return address;
 }
 
 static int bind_static_local_reference(
+    psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node, lvar_t *var) {
   global_var_t *global = var ? var->static_global : NULL;
   const psx_type_t *type = global
@@ -68,55 +78,55 @@ static int bind_static_local_reference(
                                   ? ps_gvar_decl_qual_type(global)
                                   : ps_lvar_decl_qual_type(var);
   return psx_bind_global_reference_in(
-      arena_context, node, global,
+      store, arena_context, node, global,
       var ? var->static_global_name : NULL,
       var ? var->static_global_name_len : 0,
       type, qual_type, global && global->is_thread_local);
 }
 
 static node_t *materialize_local(
-    arena_context_t *arena_context,
+    psx_resolution_store_t *store, arena_context_t *arena_context,
     node_identifier_t *identifier, lvar_t *var) {
   node_t *node = (node_t *)identifier;
   if (is_static_local_array(var)) {
-    if (!bind_static_local_reference(arena_context, node, var))
+    if (!bind_static_local_reference(store, arena_context, node, var))
       return NULL;
     node = wrap_array_decay(
-        arena_context, node, ps_lvar_get_decl_type(var));
+        store, arena_context, node, ps_lvar_get_decl_type(var));
   } else if (ps_lvar_is_array(var) && !ps_lvar_is_vla(var)) {
     if (!psx_bind_local_reference_in(
-            arena_context, node, var, var->offset,
+            store, arena_context, node, var, var->offset,
             ps_lvar_get_decl_type(var)))
       return NULL;
     node = wrap_array_decay(
-        arena_context, node, ps_lvar_get_decl_type(var));
+        store, arena_context, node, ps_lvar_get_decl_type(var));
   } else if (ps_lvar_is_vla(var)) {
     const psx_type_t *decl_type = ps_lvar_get_decl_type(var);
     const psx_type_t *decay_type = ps_type_decay_array_in(
         arena_context, decl_type);
     if (!psx_bind_local_reference_in(
-            arena_context, node, var, var->offset,
+            store, arena_context, node, var, var->offset,
             decay_type ? decay_type : decl_type))
       return NULL;
   } else if (var && var->is_static_local && var->static_global_name) {
-    if (!bind_static_local_reference(arena_context, node, var))
+    if (!bind_static_local_reference(store, arena_context, node, var))
       return NULL;
   } else {
     if (!psx_bind_local_reference_in(
-            arena_context, node, var, var ? var->offset : 0,
+            store, arena_context, node, var, var ? var->offset : 0,
             var ? ps_lvar_get_decl_type(var) : NULL))
       return NULL;
   }
-  ps_node_record_lvar_usage(node, var);
+  ps_node_record_lvar_usage(store, node, var);
   return node;
 }
 
 static node_t *materialize_global(
-    arena_context_t *arena_context,
+    psx_resolution_store_t *store, arena_context_t *arena_context,
     node_identifier_t *identifier, global_var_t *global) {
   node_t *node = (node_t *)identifier;
   if (!psx_bind_global_reference_in(
-          arena_context, node, global,
+          store, arena_context, node, global,
           global ? global->name : identifier->name,
           global ? global->name_len : identifier->name_len,
           global ? ps_gvar_get_decl_type(global) : NULL,
@@ -126,7 +136,8 @@ static node_t *materialize_global(
     return NULL;
   return global && ps_gvar_is_array(global)
              ? wrap_array_decay(
-                   arena_context, node, ps_gvar_get_decl_type(global))
+                   store, arena_context, node,
+                   ps_gvar_get_decl_type(global))
              : node;
 }
 
@@ -137,6 +148,7 @@ static node_t *materialize_function(
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution->function);
   return psx_bind_function_reference_in(
+             binding_store(context),
              ps_ctx_arena(context->semantic_context),
              (node_t *)identifier, identifier->name,
              identifier->name_len, function_type)
@@ -147,6 +159,7 @@ static node_t *materialize_builtin_va_arg_area(
     node_identifier_t *identifier,
     const psx_identifier_binding_context_t *context) {
   return psx_bind_va_arg_area_reference_in(
+             binding_store(context),
              ps_ctx_arena(context->semantic_context),
              (node_t *)identifier)
              ? (node_t *)identifier : NULL;
@@ -190,20 +203,25 @@ static node_t *materialize_identifier(
   switch (resolution.kind) {
     case PSX_IDENTIFIER_LOCAL:
       return materialize_local(
+          binding_store(context),
           ps_ctx_arena(context->semantic_context),
           identifier, resolution.local);
     case PSX_IDENTIFIER_ENUM_CONSTANT: {
       node_t *node = ps_node_new_num_in(
+          binding_store(context),
           ps_ctx_arena(context->semantic_context), resolution.enum_value);
       node->tok = identifier->base.tok;
       ps_node_set_lvar_usage_region(
-          node, ps_node_lvar_usage_region(&identifier->base));
+          binding_store(context), node,
+          ps_node_lvar_usage_region(
+              binding_store(context), &identifier->base));
       node->lvar_usage_unevaluated =
           identifier->base.lvar_usage_unevaluated;
       return node;
     }
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
       return materialize_global(
+          binding_store(context),
           ps_ctx_arena(context->semantic_context),
           identifier, resolution.global);
     case PSX_IDENTIFIER_FUNCTION:
@@ -234,10 +252,12 @@ static node_t *materialize_address_operand(
     node_t *node = (node_t *)identifier;
     if (is_static_local_array(var)) {
       if (!bind_static_local_reference(
+              binding_store(context),
               ps_ctx_arena(context->semantic_context), node, var))
         return NULL;
     } else if (ps_lvar_is_array(var)) {
       if (!psx_bind_local_reference_in(
+              binding_store(context),
               ps_ctx_arena(context->semantic_context), node, var,
               var->offset, ps_lvar_get_decl_type(var)))
         return NULL;
@@ -245,12 +265,13 @@ static node_t *materialize_address_operand(
       return materialize_identifier(
           identifier, 0, context, NULL);
     }
-    ps_node_record_lvar_usage(node, var);
+    ps_node_record_lvar_usage(binding_store(context), node, var);
     return node;
   }
   if (resolution.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&
       resolution.global && ps_gvar_is_array(resolution.global)) {
     return psx_bind_global_reference_in(
+               binding_store(context),
                ps_ctx_arena(context->semantic_context),
                (node_t *)identifier, resolution.global,
                resolution.global->name, resolution.global->name_len,
@@ -318,10 +339,12 @@ static void bind_direct_call(
 
   call->callee = NULL;
   psx_function_call_bind_direct_name(
-      call, identifier->name, identifier->name_len);
+      binding_store(context), call,
+      identifier->name, identifier->name_len);
   call->base.tok = identifier->base.tok;
   if (resolution.kind == PSX_IDENTIFIER_UNDECLARED_CALL) {
-    psx_function_call_set_implicit_declaration(call, 1);
+    psx_function_call_set_implicit_declaration(
+        binding_store(context), call, 1);
     return;
   }
   const psx_type_t *function_type =
@@ -330,7 +353,7 @@ static void bind_direct_call(
       ? ps_type_clone_in(
             ps_ctx_arena(context->semantic_context), function_type)
       : NULL;
-  psx_function_call_bind_type(call, callee_type);
+  psx_function_call_bind_type(binding_store(context), call, callee_type);
   if (!callee_type || callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(context->semantic_context),
@@ -346,7 +369,7 @@ static void bind_direct_call(
 static node_t *bind_node(
     node_t *node, const psx_identifier_binding_context_t *context) {
   if (!node) return NULL;
-  switch (psx_resolution_node_kind(node)) {
+  switch (psx_resolution_node_kind(binding_store(context), node)) {
     case ND_IDENTIFIER:
       return materialize_identifier(
           (node_identifier_t *)node, 0, context, NULL);
@@ -383,7 +406,8 @@ static node_t *bind_node(
             (node_identifier_t *)node->lhs,
             context);
         if (node->lhs &&
-            psx_resolved_object_ref_node_kind(node->lhs) == ND_FUNCREF)
+            psx_resolved_object_ref_node_kind(
+                binding_store(context), node->lhs) == ND_FUNCREF)
           return node->lhs;
         return node;
       }
@@ -439,11 +463,14 @@ static node_t *bind_node(
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      if (psx_sizeof_query_resolved_size(query) > 0 ||
-          psx_sizeof_query_runtime_size_slot(query) != 0 ||
-          psx_sizeof_query_runtime_plan(query) ||
+      if (psx_sizeof_query_resolved_size(
+              binding_store(context), query) > 0 ||
+          psx_sizeof_query_runtime_size_slot(
+              binding_store(context), query) != 0 ||
+          psx_sizeof_query_runtime_plan(binding_store(context), query) ||
           (query->is_type_name &&
-           psx_node_resolved_type_name(&query->base)))
+           psx_node_resolved_type_name(
+               binding_store(context), &query->base)))
         return node;
       bind_type_name(&query->type_name, context);
       bind_slot(&query->operand, context);
@@ -451,6 +478,7 @@ static node_t *bind_node(
     }
     case ND_ALIGNOF_QUERY:
       if (psx_alignof_query_resolved_alignment(
+              binding_store(context),
               (node_alignof_query_t *)node) > 0)
         return node;
       bind_type_name(

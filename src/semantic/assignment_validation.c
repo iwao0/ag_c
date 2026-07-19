@@ -15,11 +15,13 @@ static psx_qual_type_t assignment_node_qual_type(
   if (!semantic_context || !node)
     return (psx_qual_type_t){
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  psx_qual_type_t type = ps_node_qual_type(node);
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  psx_qual_type_t type = ps_node_qual_type(store, node);
   return type.type_id != PSX_TYPE_ID_INVALID
              ? type
              : ps_ctx_intern_qual_type_in(
-                   semantic_context, ps_node_get_type(node));
+                   semantic_context, ps_node_get_type(store, node));
 }
 
 static int assignment_compound_operator(
@@ -46,20 +48,22 @@ void psx_validate_assignment_in_context(
     ag_diagnostic_context_t *diagnostics,
     const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
 
-  const psx_type_t *rhs_type = ps_node_get_type(node->rhs);
+  const psx_type_t *rhs_type = ps_node_get_type(store, node->rhs);
   if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
     if (node->rhs->kind == ND_FUNCALL) {
       node_function_call_t *call =
           (node_function_call_t *)node->rhs;
       const char *direct_name =
-          psx_function_call_direct_name(call);
+          psx_function_call_direct_name(store, call);
       if (!call->callee && direct_name) {
         ps_diag_ctx_in(
             diagnostics, tok, "assign",
             "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
-            psx_function_call_direct_name_length(call), direct_name);
+            psx_function_call_direct_name_length(store, call), direct_name);
       }
     }
     ps_diag_ctx_in(
@@ -67,8 +71,8 @@ void psx_validate_assignment_in_context(
         "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
   }
 
-  if (ps_node_is_decl_initializer(node)) {
-    const psx_type_t *lhs_type = ps_node_get_type(node->lhs);
+  if (ps_node_is_decl_initializer(store, node)) {
+    const psx_type_t *lhs_type = ps_node_get_type(store, node->lhs);
     int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
     ps_node_reject_const_qual_discard_at_in(
         semantic_context, diagnostics, node->lhs, node->rhs, tok);
@@ -82,7 +86,7 @@ void psx_validate_assignment_in_context(
     if (!lhs_is_pointer && lhs_type &&
         !ps_type_is_tag_aggregate(lhs_type) &&
         lhs_type->kind != PSX_TYPE_ARRAY) {
-      if (ps_node_value_is_pointer_like(node->rhs)) {
+      if (ps_node_value_is_pointer_like(store, node->rhs)) {
         ps_diag_ctx_in(
             diagnostics, tok, "init",
             "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
@@ -99,12 +103,12 @@ void psx_validate_assignment_in_context(
 
   if (!node->is_source_assignment &&
       !node->is_source_compound_assignment) return;
-  if (psx_resolved_object_ref_node_kind(node->lhs) == ND_FUNCREF) {
+  if (psx_resolved_object_ref_node_kind(store, node->lhs) == ND_FUNCREF) {
     ps_diag_ctx_in(
         diagnostics, tok, "assign",
         "関数識別子に代入することはできません (C11 6.5.16p2)");
   }
-  ps_node_expect_lvalue_at_in(diagnostics, node->lhs, "=", tok);
+  ps_node_expect_lvalue_at_in(store, diagnostics, node->lhs, "=", tok);
   if (node->is_source_assignment) {
     psx_assignment_types_resolution_t resolution;
     psx_resolve_assignment_qual_types_in(

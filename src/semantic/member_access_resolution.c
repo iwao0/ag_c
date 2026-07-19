@@ -5,11 +5,12 @@
 
 #include <string.h>
 
-static int node_is_single_tag_array_view(node_t *node) {
-  const psx_type_t *type = ps_node_get_type(node);
+static int node_is_single_tag_array_view(
+    const psx_resolution_store_t *store, node_t *node) {
+  const psx_type_t *type = ps_node_get_type(store, node);
   return node &&
          (node->kind == ND_UNARY_DEREF ||
-          psx_resolution_node_kind(node) == ND_DEREF) && type &&
+          psx_resolution_node_kind(store, node) == ND_DEREF) && type &&
          type->kind == PSX_TYPE_ARRAY && type->base &&
          ps_type_is_tag_aggregate(type->base);
 }
@@ -27,10 +28,12 @@ void psx_resolve_member_access(
   }
 
   psx_semantic_context_t *semantic_context = request->semantic_context;
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
-  const psx_type_t *base_type = ps_node_get_type(request->base);
-  psx_qual_type_t base_qual_type = ps_node_qual_type(request->base);
+  const psx_type_t *base_type = ps_node_get_type(store, request->base);
+  psx_qual_type_t base_qual_type = ps_node_qual_type(store, request->base);
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
       base_type != psx_semantic_type_table_lookup(
                        semantic_types, base_qual_type.type_id)) {
@@ -42,7 +45,7 @@ void psx_resolve_member_access(
     return;
   }
   if (!request->from_pointer &&
-      node_is_single_tag_array_view(request->base)) {
+      node_is_single_tag_array_view(store, request->base)) {
     base_qual_type = psx_semantic_type_table_base(
         semantic_types, base_qual_type.type_id);
   }

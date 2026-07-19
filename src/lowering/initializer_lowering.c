@@ -17,6 +17,7 @@
 #include <string.h>
 
 typedef struct {
+  psx_resolution_store_t *resolution_store;
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   const ag_compilation_options_t *options;
@@ -109,7 +110,8 @@ static node_t *new_initializer_member_lvar_ref(
     int relative_offset, const psx_initializer_member_ref_t *member_ref) {
   if (!member_ref || !member_ref->declaration) return NULL;
   return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
-      context->arena_context, owner, relative_offset,
+      context->resolution_store, context->arena_context,
+      owner, relative_offset,
       psx_record_member_decl_type(member_ref->declaration),
       member_ref->declaration->bit_is_signed,
       member_ref->declaration->bit_width,
@@ -135,15 +137,20 @@ static node_t *append_init(
     node_t *chain, node_t *item) {
   return chain
              ? ps_node_new_binary_for_target_in(
+                   context->resolution_store,
                    context->arena_context, context->target,
                    ND_COMMA, chain, item)
              : item;
 }
 
-static int initializer_value_is_zero(const node_t *value) {
+static int initializer_value_is_zero(
+    const initializer_lowering_context_t *context,
+    const node_t *value) {
   if (!value || value->kind != ND_NUM) return 0;
   const node_num_t *number = (const node_num_t *)value;
-  return ps_node_value_fp_kind((node_t *)value) != TK_FLOAT_KIND_NONE
+  return ps_node_value_fp_kind(
+             context->resolution_store,
+             (node_t *)value) != TK_FLOAT_KIND_NONE
              ? number->fval == 0.0
              : number->val == 0;
 }
@@ -180,10 +187,11 @@ static node_t *new_array_elem_assign(
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
   int element_size = type_size(context, element);
   node_t *target = ps_node_new_lvar_type_at_for_in(
-      context->arena_context, var,
+      context->resolution_store, context->arena_context, var,
       ps_lvar_offset(var) + idx * (element_size > 0 ? element_size : 0),
       element);
   return ps_node_new_assign_in(
+      context->resolution_store,
       context->arena_context, target, value);
 }
 
@@ -209,7 +217,9 @@ static void append_array_string_unit(uint32_t unit, void *user) {
       ctx->lowering, ctx->chain,
       new_array_elem_assign(
           ctx->lowering, ctx->var, ctx->idx,
-          ps_node_new_num_in(ctx->lowering->arena_context, unit)));
+          ps_node_new_num_in(
+              ctx->lowering->resolution_store,
+              ctx->lowering->arena_context, unit)));
   if (ctx->assigned) ctx->assigned[ctx->idx] = 1;
   ctx->idx++;
 }
@@ -237,13 +247,17 @@ static node_t *lower_array_string_initializer_at(
         context, ctx.chain,
         new_array_elem_assign(
             context, var, ctx.idx,
-            ps_node_new_num_in(context->arena_context, 0)));
+            ps_node_new_num_in(
+                context->resolution_store,
+                context->arena_context, 0)));
     if (assigned) assigned[ctx.idx] = 1;
     ctx.idx++;
   }
   return ctx.chain
              ? ctx.chain
-             : ps_node_new_num_in(context->arena_context, 0);
+             : ps_node_new_num_in(
+                   context->resolution_store,
+                   context->arena_context, 0);
 }
 
 static node_t *lower_array_string_initializer(
@@ -254,21 +268,25 @@ static node_t *lower_array_string_initializer(
 }
 
 static lvar_t *array_copy_source_local(
+    const initializer_lowering_context_t *context,
     node_t *value, int *source_offset, node_t **initialization) {
   if (source_offset) *source_offset = 0;
   if (initialization) *initialization = NULL;
   if (!value) return NULL;
   if (value->kind == ND_COMMA && value->rhs &&
       value->rhs->kind == ND_ADDR && value->rhs->lhs &&
-      psx_resolved_object_ref_node_kind(value->rhs->lhs) == ND_LVAR) {
+      psx_resolved_object_ref_node_kind(
+          context->resolution_store, value->rhs->lhs) == ND_LVAR) {
     node_t *source = value->rhs->lhs;
     if (source_offset)
-      *source_offset = psx_resolved_object_ref_storage_offset(source);
+      *source_offset = psx_resolved_object_ref_storage_offset(
+          context->resolution_store, source);
     if (initialization) *initialization = value->lhs;
-    return psx_resolved_object_ref_local(source);
+    return psx_resolved_object_ref_local(
+        context->resolution_store, source);
   }
   psx_node_resolution_state_t *state =
-      ps_node_resolution_state(value);
+      ps_node_resolution_state(context->resolution_store, value);
   if (value->kind != ND_COMPOUND_LITERAL || !state)
     return NULL;
   psx_compound_literal_resolution_t *resolution =
@@ -286,7 +304,7 @@ static lvar_t *array_copy_source_local(
 static node_t *lower_array_expr_initializer(
     const initializer_lowering_context_t *context,
     node_t *target, node_t *value, token_t *tok) {
-  lvar_t *var = ps_node_lvar_symbol(target);
+  lvar_t *var = ps_node_lvar_symbol(context->resolution_store, target);
   if (!var) return NULL;
   int elem_size = array_leaf_size(context, var);
   int array_len = ps_lvar_array_flat_element_count(var);
@@ -306,20 +324,22 @@ static node_t *lower_array_expr_initializer(
   int source_offset = 0;
   node_t *chain = NULL;
   lvar_t *source = array_copy_source_local(
-      value, &source_offset, &chain);
+      context, value, &source_offset, &chain);
   if (array_len > 0 && source) {
     for (int i = 0; i < array_len; i++) {
       const psx_type_t *element =
           ps_type_array_leaf_type(ps_lvar_get_decl_type(var));
       node_t *dst = ps_node_new_lvar_type_at_for_in(
-          context->arena_context, var,
+          context->resolution_store, context->arena_context, var,
           ps_lvar_offset(var) + i * elem_size, element);
       node_t *src = ps_node_new_lvar_type_at_for_in(
-          context->arena_context, source,
+          context->resolution_store, context->arena_context, source,
           source_offset + i * elem_size, element);
       chain = append_init(
           context, chain,
-          ps_node_new_assign_in(context->arena_context, dst, src));
+          ps_node_new_assign_in(
+              context->resolution_store,
+              context->arena_context, dst, src));
     }
     return chain;
   }
@@ -331,11 +351,14 @@ static node_t *lower_array_expr_initializer(
           context, chain,
           new_array_elem_assign(
               context, var, i,
-              ps_node_new_num_in(context->arena_context, 0)));
+              ps_node_new_num_in(
+                  context->resolution_store,
+                  context->arena_context, 0)));
     }
     return chain;
   }
-  return ps_node_new_num_in(context->arena_context, 0);
+  return ps_node_new_num_in(
+      context->resolution_store, context->arena_context, 0);
 }
 
 static int resolve_initializer_entry_index(
@@ -351,7 +374,8 @@ static int resolve_initializer_entry_index(
   int index = base_index;
   for (int d = 0; d < entry->index_expr_count; d++) {
     int ok = 1;
-    long long resolved = psx_eval_const_int(entry->index_exprs[d], &ok);
+    long long resolved = psx_eval_const_int(
+        context->resolution_store, entry->index_exprs[d], &ok);
     if (!ok) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
@@ -458,6 +482,7 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
   typed_string_lowering_ctx_t *ctx = user;
   if (ctx->index >= ctx->capacity) return;
   node_t *target = ps_node_new_lvar_type_at_for_in(
+      ctx->lowering->resolution_store,
       ctx->lowering->arena_context, ctx->var,
       ps_lvar_offset(ctx->var) + ctx->relative_offset +
           ctx->index * ctx->element_size,
@@ -465,9 +490,12 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
   ctx->chain = append_init(
       ctx->lowering, ctx->chain,
       ps_node_new_assign_in(
+          ctx->lowering->resolution_store,
           ctx->lowering->arena_context,
           target,
-          ps_node_new_num_in(ctx->lowering->arena_context, unit)));
+          ps_node_new_num_in(
+              ctx->lowering->resolution_store,
+              ctx->lowering->arena_context, unit)));
   ctx->index++;
 }
 
@@ -510,7 +538,8 @@ static int type_has_aggregate_leaf(const psx_type_t *type) {
 static node_t *lower_array_list_initializer(
     const initializer_lowering_context_t *context,
     node_decl_init_t *initializer) {
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   if (!var || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
@@ -553,13 +582,17 @@ static node_t *lower_array_list_initializer(
           context, chain,
           new_array_elem_assign(
               context, var, i,
-              ps_node_new_num_in(context->arena_context, 0)));
+              ps_node_new_num_in(
+                  context->resolution_store,
+                  context->arena_context, 0)));
     }
   }
   free(assigned);
   return chain
              ? chain
-             : ps_node_new_num_in(context->arena_context, 0);
+             : ps_node_new_num_in(
+                   context->resolution_store,
+                   context->arena_context, 0);
 }
 
 static node_t *append_object_zero_fill(
@@ -573,13 +606,17 @@ static node_t *append_object_zero_fill(
     int width = widths[w];
     while (offset + width <= size) {
       node_t *slot = ps_node_new_lvar_storage_slot_for_in(
+          context->resolution_store,
           context->arena_context, var,
           ps_lvar_offset(var) + offset, width);
       chain = append_init(
           context, chain,
           ps_node_new_assign_in(
-              context->arena_context,
-              slot, ps_node_new_num_in(context->arena_context, 0)));
+              context->resolution_store,
+              context->arena_context, slot,
+              ps_node_new_num_in(
+                  context->resolution_store,
+                  context->arena_context, 0)));
       offset += width;
     }
   }
@@ -653,7 +690,8 @@ static long long resolve_typed_designator_index(
     const psx_initializer_entry_t *entry, int index_pos,
     token_t *fallback_tok) {
   int ok = 1;
-  long long index = psx_eval_const_int(entry->index_exprs[index_pos], &ok);
+  long long index = psx_eval_const_int(
+      context->resolution_store, entry->index_exprs[index_pos], &ok);
   if (!ok) {
     ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
                  diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
@@ -724,7 +762,7 @@ static node_t *lower_typed_initializer_value(
         context, var, type, type_id, relative_offset, value, chain);
     if (copied) return copied;
   }
-  if (initializer_value_is_zero(value) && type &&
+  if (initializer_value_is_zero(context, value) && type &&
       (type->kind == PSX_TYPE_ARRAY || ps_type_is_tag_aggregate(type))) {
     return chain;
   }
@@ -732,22 +770,28 @@ static node_t *lower_typed_initializer_value(
                        ? new_initializer_member_lvar_ref(
                              context, var, relative_offset, member_ref)
                        : ps_node_new_lvar_type_at_for_in(
+                             context->resolution_store,
                              context->arena_context, var,
                              ps_lvar_offset(var) + relative_offset, type);
   return append_init(
       context, chain,
-      ps_node_new_assign_in(context->arena_context, target, value));
+      ps_node_new_assign_in(
+          context->resolution_store,
+          context->arena_context, target, value));
 }
 
 static int initializer_list_is_flat_positional_scalar(
+    const initializer_lowering_context_t *context,
     const node_init_list_t *list) {
   if (!list || list->entry_count <= 0) return 0;
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
-    const psx_type_t *value_type = ps_node_get_type(entry->value);
+    const psx_type_t *value_type = ps_node_get_type(
+        context->resolution_store, entry->value);
     const psx_type_t *addressed_type =
         entry->value && entry->value->kind == ND_ADDR
-            ? ps_node_get_type(entry->value->lhs)
+            ? ps_node_get_type(
+                  context->resolution_store, entry->value->lhs)
             : NULL;
     if (entry->designator_count > 0 || entry->has_index ||
         entry->has_member || !entry->value ||
@@ -790,14 +834,18 @@ static node_t *append_typed_object_zero_fill(
                                context, var, leaf->relative_offset,
                                &leaf->member_ref)
                          : ps_node_new_lvar_type_at_for_in(
+                               context->resolution_store,
                                context->arena_context, var,
                                ps_lvar_offset(var) + leaf->relative_offset,
                                leaf->type);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
-            context->arena_context,
-            target, ps_node_new_num_in(context->arena_context, 0)));
+            context->resolution_store,
+            context->arena_context, target,
+            ps_node_new_num_in(
+                context->resolution_store,
+                context->arena_context, 0)));
   }
   free(leaves.items);
   return chain;
@@ -858,11 +906,13 @@ static node_t *lower_flat_typed_object_initializer_list(
 }
 
 static int initializer_value_requires_immediate_subobject(
-    node_t *value) {
-  const psx_type_t *value_type = ps_node_get_type(value);
+    const initializer_lowering_context_t *context, node_t *value) {
+  const psx_type_t *value_type =
+      ps_node_get_type(context->resolution_store, value);
   if (ps_type_is_tag_aggregate(value_type)) return 1;
   if (value && value->kind == ND_ADDR && value->lhs) {
-    const psx_type_t *addressed = ps_node_get_type(value->lhs);
+    const psx_type_t *addressed =
+        ps_node_get_type(context->resolution_store, value->lhs);
     return addressed && addressed->kind == PSX_TYPE_ARRAY;
   }
   return 0;
@@ -940,6 +990,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (entry->designator_count > 0) {
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
+              context->resolution_store,
               diagnostics(context), context->semantic_types,
               context->record_decls, context->record_layouts,
               context->target, entry, type_id, relative_offset,
@@ -962,7 +1013,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const typed_scalar_leaf_t *leaf = &leaves.items[leaf_cursor];
-    if (initializer_value_requires_immediate_subobject(entry->value)) {
+    if (initializer_value_requires_immediate_subobject(
+            context, entry->value)) {
       typed_designator_target_t target = {0};
       if (immediate_subobject_at_leaf_cursor(
               context, type, type_id, relative_offset,
@@ -1019,13 +1071,16 @@ static node_t *try_lower_typed_array_copy(
   node_t *source_initialization = NULL;
   lvar_t *source = NULL;
   if (value->kind == ND_ADDR && value->lhs &&
-      psx_resolved_object_ref_node_kind(value->lhs) == ND_LVAR) {
-    source = psx_resolved_object_ref_local(value->lhs);
+      psx_resolved_object_ref_node_kind(
+          context->resolution_store, value->lhs) == ND_LVAR) {
+    source = psx_resolved_object_ref_local(
+        context->resolution_store, value->lhs);
     source_offset =
-        psx_resolved_object_ref_storage_offset(value->lhs);
+        psx_resolved_object_ref_storage_offset(
+            context->resolution_store, value->lhs);
   } else {
     source = array_copy_source_local(
-        value, &source_offset, &source_initialization);
+        context, value, &source_offset, &source_initialization);
   }
   if (!source ||
       type_size_id(context, ps_lvar_decl_type_id(source)) <
@@ -1046,18 +1101,22 @@ static node_t *try_lower_typed_array_copy(
     int leaf_source_offset =
         source_offset + (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_type_at_for_in(
-        context->arena_context, source, leaf_source_offset, leaf->type);
+        context->resolution_store, context->arena_context,
+        source, leaf_source_offset, leaf->type);
     node_t *dst = leaf->member_ref.declaration
                       ? new_initializer_member_lvar_ref(
                             context, var, leaf->relative_offset,
                             &leaf->member_ref)
                       : ps_node_new_lvar_type_at_for_in(
+                            context->resolution_store,
                             context->arena_context, var,
                             ps_lvar_offset(var) + leaf->relative_offset,
                             leaf->type);
     chain = append_init(
         context, chain,
-        ps_node_new_assign_in(context->arena_context, dst, src));
+        ps_node_new_assign_in(
+            context->resolution_store,
+            context->arena_context, dst, src));
   }
   free(leaves.items);
   return chain;
@@ -1080,11 +1139,12 @@ static node_t *lower_flat_typed_array_initializer_list(
   }
   for (int i = 0; i < list->entry_count; i++) {
     node_t *target = ps_node_new_lvar_type_at_for_in(
-        context->arena_context, var,
+        context->resolution_store, context->arena_context, var,
         ps_lvar_offset(var) + relative_offset + i * leaf_size, leaf);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
+            context->resolution_store,
             context->arena_context, target, list->entries[i].value));
   }
   return chain;
@@ -1096,7 +1156,7 @@ static node_t *lower_typed_array_initializer_list(
     int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   if (list->entry_count == 1 &&
-      initializer_value_is_zero(list->entries[0].value) &&
+      initializer_value_is_zero(context, list->entries[0].value) &&
       list->entries[0].designator_count == 0) return chain;
   if (type_has_aggregate_leaf(type) &&
       initializer_list_has_no_nested_values(list)) {
@@ -1104,7 +1164,8 @@ static node_t *lower_typed_array_initializer_list(
         context, var, type, type_id, relative_offset,
         list, chain, fallback_tok);
   }
-  if (type->base && initializer_list_is_flat_positional_scalar(list) &&
+  if (type->base &&
+      initializer_list_is_flat_positional_scalar(context, list) &&
       (type->base->kind == PSX_TYPE_ARRAY ||
        ps_type_is_tag_aggregate(type->base))) {
     int contains_string = 0;
@@ -1145,6 +1206,7 @@ static node_t *lower_typed_array_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
+              context->resolution_store,
               diagnostics(context), context->semantic_types,
               context->record_decls, context->record_layouts,
               context->target, entry, type_id, relative_offset,
@@ -1219,7 +1281,7 @@ static node_t *lower_typed_aggregate_initializer_list(
     }
   }
   if (list->entry_count == 1 &&
-      initializer_value_is_zero(list->entries[0].value) &&
+      initializer_value_is_zero(context, list->entries[0].value) &&
       list->entries[0].designator_count == 0) return chain;
   if (type->kind == PSX_TYPE_STRUCT &&
       initializer_list_has_no_nested_values(list)) {
@@ -1228,7 +1290,7 @@ static node_t *lower_typed_aggregate_initializer_list(
         list, chain, fallback_tok);
   }
   if (type->kind == PSX_TYPE_STRUCT &&
-      initializer_list_is_flat_positional_scalar(list)) {
+      initializer_list_is_flat_positional_scalar(context, list)) {
     return lower_flat_typed_object_initializer_list(
         context, var, type_id, relative_offset,
         list, chain, fallback_tok);
@@ -1251,6 +1313,7 @@ static node_t *lower_typed_aggregate_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
+              context->resolution_store,
               diagnostics(context), context->semantic_types,
               context->record_decls, context->record_layouts,
               context->target, entry, type_id, relative_offset,
@@ -1330,7 +1393,8 @@ static node_t *lower_typed_initializer_list(
 static node_t *lower_struct_list_initializer(
     const initializer_lowering_context_t *context,
     node_decl_init_t *initializer) {
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   const psx_record_decl_t *record = record_decl(context, type);
   if (!var || !record || !initializer->base.rhs ||
@@ -1363,19 +1427,23 @@ static node_t *lower_struct_list_initializer(
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
+            context->resolution_store,
             context->arena_context, lhs, entry->value));
     ordinal = aggregate_ordinal_after_member(
         context, type, ps_lvar_decl_type_id(var), record, member_index);
   }
   return chain
              ? chain
-             : ps_node_new_num_in(context->arena_context, 0);
+             : ps_node_new_num_in(
+                   context->resolution_store,
+                   context->arena_context, 0);
 }
 
 static node_t *lower_union_list_initializer(
     const initializer_lowering_context_t *context,
     node_decl_init_t *initializer) {
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   const psx_record_decl_t *record = record_decl(context, type);
   if (!var || !record || !initializer->base.rhs ||
@@ -1412,6 +1480,7 @@ static node_t *lower_union_list_initializer(
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
+            context->resolution_store,
             context->arena_context, lhs, entry->value));
   }
   return chain;
@@ -1432,8 +1501,9 @@ static node_t *new_decl_initializer_assign(
     const initializer_lowering_context_t *context,
     node_t *target, node_t *value, token_t *tok) {
   node_t *assign = ps_node_new_assign_in(
+      context->resolution_store,
       context->arena_context, target, value);
-  ps_node_set_decl_initializer(assign, 1);
+  ps_node_set_decl_initializer(context->resolution_store, assign, 1);
   assign->tok = tok;
   return assign;
 }
@@ -1441,9 +1511,11 @@ static node_t *new_decl_initializer_assign(
 static node_t *lower_aggregate_expr_initializer(
     const initializer_lowering_context_t *context,
     node_decl_init_t *initializer, int allow_union_scalar) {
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   const psx_type_t *target_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_type_t *value_type = ps_node_get_type(initializer->base.rhs);
+  const psx_type_t *value_type = ps_node_get_type(
+      context->resolution_store, initializer->base.rhs);
   token_t *tok = initializer->base.tok;
   if (!var || !target_type) return NULL;
 
@@ -1523,18 +1595,23 @@ static node_t *lower_complex_list_initializer(
     complex_size = lvar_storage_size(context, var, 0);
   int half = complex_size > 0 ? complex_size / 2 : 8;
   node_t *real_lhs = ps_node_new_lvar_fp_slot_for_in(
-      context->arena_context, var, ps_lvar_offset(var), half);
+      context->resolution_store, context->arena_context,
+      var, ps_lvar_offset(var), half);
   node_t *imag_lhs = ps_node_new_lvar_fp_slot_for_in(
-      context->arena_context, var, ps_lvar_offset(var) + half, half);
+      context->resolution_store, context->arena_context,
+      var, ps_lvar_offset(var) + half, half);
   node_t *real_assign = new_decl_initializer_assign(
       context, real_lhs, list->entries[0].value, initializer->base.tok);
   node_t *imag_assign = new_decl_initializer_assign(
       context, imag_lhs,
       list->entry_count > 1
           ? list->entries[1].value
-          : ps_node_new_num_in(context->arena_context, 0),
+          : ps_node_new_num_in(
+                context->resolution_store,
+                context->arena_context, 0),
       initializer->base.tok);
   return ps_node_new_binary_for_target_in(
+      context->resolution_store,
       context->arena_context, context->target,
       ND_COMMA, real_assign, imag_assign);
 }
@@ -1544,7 +1621,8 @@ static node_t *lower_typed_list_initializer(
     node_decl_init_t *initializer) {
   if (!initializer || initializer->base.rhs->kind != ND_INIT_LIST)
     return NULL;
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   if (!var || !type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY)
@@ -1561,7 +1639,8 @@ static node_t *lower_typed_list_initializer(
 static node_t *lower_typed_expr_initializer(
     const initializer_lowering_context_t *context,
     node_decl_init_t *initializer) {
-  lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
+  lvar_t *var = ps_node_lvar_symbol(
+      context->resolution_store, initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   if (!var || !type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
@@ -1585,6 +1664,8 @@ node_t *lower_decl_initializer(
       !options)
     return node;
   initializer_lowering_context_t context = {
+      .resolution_store =
+          ps_lowering_resolution_store(lowering_context),
       .arena_context = ps_lowering_arena(lowering_context),
       .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,

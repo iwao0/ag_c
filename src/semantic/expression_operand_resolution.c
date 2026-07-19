@@ -246,9 +246,10 @@ psx_qual_type_t psx_resolve_value_decay_qual_type_in(
   return expression_type;
 }
 
-psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
+psx_deref_operand_status_t psx_resolve_deref_operand(
+    const psx_resolution_store_t *store, node_t *operand) {
   if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
-  const psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(store, operand);
   if (!type || !ps_type_is_pointer_like(type))
     return PSX_DEREF_OPERAND_NOT_POINTER;
   if (type->base && type->base->kind == PSX_TYPE_VOID)
@@ -259,14 +260,16 @@ psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
 const psx_type_t *psx_resolve_indirection_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand) {
   return resolve_indirection_result_type_value(
-      semantic_context, ps_node_get_type(operand));
+      semantic_context,
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
 }
 
 const psx_type_t *psx_resolve_arithmetic_unary_result_type(
     psx_semantic_context_t *semantic_context,
     psx_resolution_node_kind_t kind, node_t *operand) {
   return resolve_arithmetic_unary_result_type_value(
-      semantic_context, kind, ps_node_get_type(operand));
+      semantic_context, kind,
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
 }
 
 const psx_type_t *psx_resolve_binary_result_type(
@@ -274,7 +277,8 @@ const psx_type_t *psx_resolve_binary_result_type(
     psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs) {
   return resolve_binary_result_type_value(
       semantic_context, kind,
-      ps_node_get_type(lhs), ps_node_get_type(rhs));
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), lhs),
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), rhs));
 }
 
 const psx_type_t *psx_resolve_conditional_result_type(
@@ -282,24 +286,28 @@ const psx_type_t *psx_resolve_conditional_result_type(
     node_t *then_expr, node_t *else_expr) {
   return resolve_conditional_result_type_value(
       semantic_context,
-      ps_node_get_type(then_expr), ps_node_get_type(else_expr));
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), then_expr),
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), else_expr));
 }
 
 const psx_type_t *psx_resolve_sequence_result_type(
     psx_semantic_context_t *semantic_context, node_t *value) {
   return ps_type_clone_in(
-      ps_ctx_arena(semantic_context), ps_node_get_type(value));
+      ps_ctx_arena(semantic_context),
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), value));
 }
 
 const psx_type_t *psx_resolve_address_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand) {
   return resolve_address_result_type_value(
-      semantic_context, ps_node_get_type(operand));
+      semantic_context,
+      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
 }
 
 const psx_type_t *psx_resolve_incdec_result_type(
     psx_semantic_context_t *semantic_context, node_t *operand) {
-  const psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(
+      ps_ctx_resolution_store(semantic_context), operand);
   if (!type) return NULL;
   if (ps_type_is_pointer(type) || type->kind == PSX_TYPE_BOOL ||
       type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT)
@@ -307,21 +315,23 @@ const psx_type_t *psx_resolve_incdec_result_type(
   return NULL;
 }
 
-static int is_subscript_pointer_operand(node_t *node) {
-  const psx_type_t *type = ps_node_get_type(node);
+static int is_subscript_pointer_operand(
+    const psx_resolution_store_t *store, node_t *node) {
+  const psx_type_t *type = ps_node_get_type(store, node);
   return type && (type->kind == PSX_TYPE_POINTER ||
                   type->kind == PSX_TYPE_ARRAY);
 }
 
 void psx_resolve_subscript_operands(
+    const psx_resolution_store_t *store,
     node_t *left, node_t *right,
     psx_subscript_operands_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->base = left;
   resolution->index = right;
-  int left_is_pointer = is_subscript_pointer_operand(left);
-  int right_is_pointer = is_subscript_pointer_operand(right);
+  int left_is_pointer = is_subscript_pointer_operand(store, left);
+  int right_is_pointer = is_subscript_pointer_operand(store, right);
   if (!left_is_pointer && !right_is_pointer) {
     resolution->status = PSX_SUBSCRIPT_OPERANDS_INVALID;
     return;

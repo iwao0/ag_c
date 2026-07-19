@@ -61,6 +61,7 @@ export interface AgcWasmToolchain {
     source: AgcCompileInput,
     options?: AgcCompileOptions,
   ): AgcWasmObjectResult;
+  dispose(): void;
   /** Explicit source names must be unique using case-sensitive comparison. */
   compileLinkedWasm(
     sources: AgcCompileInput | AgcCompileInput[],

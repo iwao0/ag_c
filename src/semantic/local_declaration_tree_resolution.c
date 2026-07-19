@@ -276,6 +276,8 @@ static void finish_declarator(
       if (application->automatic_result.initialization) {
         application->initialization = application->initialization
             ? ps_node_new_binary_for_target_in(
+                  ps_lowering_resolution_store(
+                      application->lowering_context),
                   ps_lowering_arena(application->lowering_context),
                   ps_lowering_target(application->lowering_context), ND_COMMA,
                   application->initialization,
@@ -295,6 +297,8 @@ static node_t *finish_declaration(void *declaration_context) {
   node_t *result = application && application->initialization
                        ? application->initialization
                        : ps_node_new_num_in(
+                             ps_lowering_resolution_store(
+                                 application->lowering_context),
                              ps_lowering_arena(application->lowering_context),
                              0);
   free(application);
@@ -415,7 +419,9 @@ static int resolve_block_declarations(
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(
             resolver->local_registry);
-    ps_node_set_lvar_usage_region(block->body[i], region);
+    ps_node_set_lvar_usage_region(
+        ps_lowering_resolution_store(resolver->lowering_context),
+        block->body[i], region);
     if (!resolve_local_declarations_in_slot(
             resolver, &block->body[i])) {
       ok = 0;
@@ -443,7 +449,9 @@ static int resolve_function_body_declarations(
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(
             resolver->local_registry);
-    ps_node_set_lvar_usage_region(body->body[i], region);
+    ps_node_set_lvar_usage_region(
+        ps_lowering_resolution_store(resolver->lowering_context),
+        body->body[i], region);
     if (!resolve_local_declarations_in_slot(
             resolver, &body->body[i])) {
       ok = 0;
@@ -490,7 +498,9 @@ static int resolve_local_declarations_in_slot(
     psx_lvar_usage_region_t *previous_usage_region =
         ps_local_registry_set_current_usage_region_in(
             resolver->local_registry,
-            ps_node_lvar_usage_region(node));
+            ps_node_lvar_usage_region(
+                ps_lowering_resolution_store(
+                    resolver->lowering_context), node));
     node_t *replacement =
         apply_local_declaration_syntax(
             resolver->semantic_context,
@@ -504,14 +514,21 @@ static int resolve_local_declarations_in_slot(
         resolver->local_registry, previous_usage_region);
     if (!replacement) return 0;
     if (!replacement->tok) replacement->tok = node->tok;
-    if (!ps_node_lvar_usage_region(replacement))
+    if (!ps_node_lvar_usage_region(
+            ps_lowering_resolution_store(
+                resolver->lowering_context), replacement))
       ps_node_set_lvar_usage_region(
-          replacement, ps_node_lvar_usage_region(node));
+          ps_lowering_resolution_store(resolver->lowering_context),
+          replacement,
+          ps_node_lvar_usage_region(
+              ps_lowering_resolution_store(
+                  resolver->lowering_context), node));
     *slot = replacement;
     return 1;
   }
 
-  switch (psx_resolution_node_kind(node)) {
+  switch (psx_resolution_node_kind(
+      ps_lowering_resolution_store(resolver->lowering_context), node)) {
     case ND_BLOCK:
       return resolve_block_declarations(
           resolver, (node_block_t *)node);

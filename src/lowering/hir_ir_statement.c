@@ -1,6 +1,35 @@
 #include "hir_ir_builder_internal.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+static int reserve_switch_cases(
+    hir_ir_context_t *context, hir_switch_target_t *target,
+    size_t required) {
+  if (required <= target->case_capacity) return 1;
+  size_t capacity = target->case_capacity ? target->case_capacity * 2 : 16;
+  if (capacity < required) capacity = required;
+  if (capacity < target->case_capacity ||
+      capacity > SIZE_MAX / sizeof(*target->cases)) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  hir_case_target_t *cases = realloc(
+      target->cases, capacity * sizeof(*cases));
+  if (!cases) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  target->cases = cases;
+  target->case_capacity = capacity;
+  return 1;
+}
+
+static void dispose_switch_target(hir_switch_target_t *target) {
+  if (!target) return;
+  free(target->cases);
+  memset(target, 0, sizeof(*target));
+}
 
 static int collect_switch_targets(
     hir_ir_context_t *context, const psx_hir_node_t *node,
@@ -8,11 +37,8 @@ static int collect_switch_targets(
   if (!node) return 1;
   if (psx_hir_node_kind(node) == PSX_HIR_SWITCH) return 1;
   if (psx_hir_node_kind(node) == PSX_HIR_CASE) {
-    if (target->case_count >=
-        sizeof(target->cases) / sizeof(target->cases[0])) {
-      context->status = IR_HIR_BUILD_UNSUPPORTED;
-      return 0;
-    }
+    if (!reserve_switch_cases(
+            context, target, target->case_count + 1)) return 0;
     ir_block_t *block = hir_ir_cfg_new_block(context);
     if (!block) return 0;
     target->cases[target->case_count++] =
@@ -69,22 +95,19 @@ static int build_switch_statement(
   target->end_block = hir_ir_cfg_new_block(context);
   if (!target->end_block ||
       !collect_switch_targets(context, body, target)) {
-    context->switch_depth--;
-    return 0;
+    goto fail;
   }
 
   for (size_t i = 0; i < target->case_count; i++) {
     int compare_vreg = hir_ir_new_vreg(context);
     ir_block_t *next_block = hir_ir_cfg_new_block(context);
     if (compare_vreg < 0 || !next_block) {
-      context->switch_depth--;
-      return 0;
+      goto fail;
     }
     ir_inst_t *compare = ir_inst_new(IR_EQ);
     if (!compare) {
       context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      context->switch_depth--;
-      return 0;
+      goto fail;
     }
     compare->dst = ir_val_vreg(compare_vreg, IR_TY_I32);
     compare->src1 = control_value;
@@ -95,8 +118,7 @@ static int build_switch_statement(
         !hir_ir_emit_conditional_branch(
             context, compare->dst, target->cases[i].block, next_block) ||
         !hir_ir_cfg_switch_to_block(context, next_block)) {
-      context->switch_depth--;
-      return 0;
+      goto fail;
     }
   }
   ir_block_t *fallback = target->default_block
@@ -110,18 +132,22 @@ static int build_switch_statement(
   if (!body_entry || !hir_ir_cfg_emit_branch(context, fallback) ||
       !hir_ir_cfg_switch_to_block(context, body_entry) ||
       !hir_ir_cfg_push_loop(context, outer_continue, target->end_block)) {
-    context->switch_depth--;
-    return 0;
+    goto fail;
   }
   int built = hir_ir_build_statement(context, body);
   hir_ir_cfg_pop_loop(context);
   if (!built || !hir_ir_cfg_emit_branch(context, target->end_block) ||
       !hir_ir_cfg_switch_to_block(context, target->end_block)) {
-    context->switch_depth--;
-    return 0;
+    goto fail;
   }
+  dispose_switch_target(target);
   context->switch_depth--;
   return 1;
+
+fail:
+  dispose_switch_target(target);
+  context->switch_depth--;
+  return 0;
 }
 
 int hir_ir_build_statement(
@@ -275,10 +301,23 @@ int hir_ir_build_statement(
       if (psx_hir_node_kind(node) == PSX_HIR_WHILE) {
         if (!hir_ir_cfg_emit_branch(context, condition_block) ||
             !hir_ir_cfg_switch_to_block(context, condition_block)) return 0;
-        ir_val_t value = hir_ir_build_expr(context, condition);
-        if (context->status != IR_HIR_BUILD_OK ||
-            !hir_ir_emit_conditional_branch(
-                context, value, body_block, exit_block)) return 0;
+        if (node == context->continuation_while) {
+          ir_inst_t *suspend = ir_inst_new(IR_CONTINUATION_SUSPEND);
+          if (!suspend) {
+            context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+            return 0;
+          }
+          suspend->label_id = body_block->id;
+          suspend->else_label_id = exit_block->id;
+          context->function->continuation_condition_block_id =
+              condition_block->id;
+          if (!hir_ir_append_instruction(context, suspend)) return 0;
+        } else {
+          ir_val_t value = hir_ir_build_expr(context, condition);
+          if (context->status != IR_HIR_BUILD_OK ||
+              !hir_ir_emit_conditional_branch(
+                  context, value, body_block, exit_block)) return 0;
+        }
       } else if (!hir_ir_cfg_emit_branch(context, body_block)) {
         return 0;
       }

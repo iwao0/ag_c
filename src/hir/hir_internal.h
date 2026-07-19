@@ -38,6 +38,8 @@ typedef struct {
   unsigned char member_from_pointer;
   unsigned char is_static_function;
   unsigned char is_implicit_call;
+  unsigned char is_source_assignment;
+  unsigned char is_declaration_initializer;
 } psx_hir_node_spec_t;
 
 typedef struct {

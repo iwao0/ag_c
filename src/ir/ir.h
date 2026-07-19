@@ -115,8 +115,9 @@ typedef enum {
    * piece count; AbiLowering expands it for the selected target. */
   IR_PARAM_BIND,
 
-  /* Apple ARM64 ABI variadic argument-area builtin. */
-  IR_VA_ARG_AREA,
+  /* Current C variadic cursor. The selected backend supplies its ABI-specific
+   * representation (frame address, global cursor, or another target form). */
+  IR_VARARG_CURSOR,
   /* VLA 動的スタック確保: src1 = 必要バイト数 (i32/i64)、dst = 確保した領域の
    * 先頭アドレス (PTR)。codegen は内部で 16-byte アライン → sub sp, sp → mov dst, sp。
    * SP を変更するため副作用ありで、regalloc/DCE は副作用扱いにする。 */

@@ -287,9 +287,11 @@ static long long initializer_string_count(
 
 static int legacy_incomplete_array_constant_index(
     void *context, const node_t *expression, long long *value) {
-  (void)context;
+  psx_semantic_context_t *semantic_context = context;
   int ok = 1;
-  long long resolved = psx_eval_const_int((node_t *)expression, &ok);
+  long long resolved = psx_eval_const_int(
+      ps_ctx_resolution_store(semantic_context),
+      (node_t *)expression, &ok);
   if (!ok) return 0;
   if (value) *value = resolved;
   return 1;
@@ -393,7 +395,7 @@ int psx_resolve_incomplete_array_initializer(
   psx_incomplete_array_resolution_t resolution;
   return psx_resolve_incomplete_array_initializer_shape(
              type, initializer_kind, initializer,
-             legacy_incomplete_array_constant_index, NULL,
+             legacy_incomplete_array_constant_index, semantic_context,
              &resolution) &&
          psx_resolve_incomplete_array_type(
              semantic_context, type, &resolution);
