@@ -1447,31 +1447,56 @@ static void mark_direct_assignment_target(
 
 static int direct_binary_kind(
     psx_syntax_node_kind_t syntax_kind,
-    psx_hir_node_kind_t *hir_kind) {
-#define MAP(kind, hir) case kind: *hir_kind = hir; return 1
-  if (!hir_kind) return 0;
+    psx_hir_node_kind_t *hir_kind,
+    psx_type_binary_op_t *type_operator) {
+#define MAP(kind, hir, type_op)       \
+  case kind:                          \
+    if (hir_kind) *hir_kind = hir;    \
+    if (type_operator)                \
+      *type_operator = type_op;       \
+    return 1
+  if (!hir_kind && !type_operator) return 0;
   switch (syntax_kind) {
-    MAP(ND_ADD, PSX_HIR_ADD);
-    MAP(ND_SUB, PSX_HIR_SUB);
-    MAP(ND_MUL, PSX_HIR_MUL);
-    MAP(ND_DIV, PSX_HIR_DIV);
-    MAP(ND_MOD, PSX_HIR_MOD);
-    MAP(ND_BITAND, PSX_HIR_BITAND);
-    MAP(ND_BITXOR, PSX_HIR_BITXOR);
-    MAP(ND_BITOR, PSX_HIR_BITOR);
-    MAP(ND_SHL, PSX_HIR_SHL);
-    MAP(ND_SHR, PSX_HIR_SHR);
-    MAP(ND_EQ, PSX_HIR_EQ);
-    MAP(ND_NE, PSX_HIR_NE);
-    MAP(ND_LT, PSX_HIR_LT);
-    MAP(ND_LE, PSX_HIR_LE);
-    MAP(ND_LOGAND, PSX_HIR_LOGAND);
-    MAP(ND_LOGOR, PSX_HIR_LOGOR);
-    MAP(ND_COMMA, PSX_HIR_COMMA);
+    MAP(ND_ADD, PSX_HIR_ADD, PSX_TYPE_BINARY_ADD);
+    MAP(ND_SUB, PSX_HIR_SUB, PSX_TYPE_BINARY_SUB);
+    MAP(ND_MUL, PSX_HIR_MUL, PSX_TYPE_BINARY_MUL);
+    MAP(ND_DIV, PSX_HIR_DIV, PSX_TYPE_BINARY_DIV);
+    MAP(ND_MOD, PSX_HIR_MOD, PSX_TYPE_BINARY_MOD);
+    MAP(ND_BITAND, PSX_HIR_BITAND, PSX_TYPE_BINARY_BITAND);
+    MAP(ND_BITXOR, PSX_HIR_BITXOR, PSX_TYPE_BINARY_BITXOR);
+    MAP(ND_BITOR, PSX_HIR_BITOR, PSX_TYPE_BINARY_BITOR);
+    MAP(ND_SHL, PSX_HIR_SHL, PSX_TYPE_BINARY_SHL);
+    MAP(ND_SHR, PSX_HIR_SHR, PSX_TYPE_BINARY_SHR);
+    MAP(ND_EQ, PSX_HIR_EQ, PSX_TYPE_BINARY_COMPARE);
+    MAP(ND_NE, PSX_HIR_NE, PSX_TYPE_BINARY_COMPARE);
+    MAP(ND_LT, PSX_HIR_LT, PSX_TYPE_BINARY_COMPARE);
+    MAP(ND_LE, PSX_HIR_LE, PSX_TYPE_BINARY_COMPARE);
+    MAP(ND_LOGAND, PSX_HIR_LOGAND, PSX_TYPE_BINARY_LOGICAL);
+    MAP(ND_LOGOR, PSX_HIR_LOGOR, PSX_TYPE_BINARY_LOGICAL);
+    MAP(ND_COMMA, PSX_HIR_COMMA, PSX_TYPE_BINARY_COMMA);
     default:
       return 0;
   }
 #undef MAP
+}
+
+static int direct_arithmetic_unary_operator(
+    psx_syntax_node_kind_t syntax_kind,
+    psx_type_arithmetic_unary_op_t *type_operator) {
+  if (!type_operator) return 0;
+  switch (syntax_kind) {
+    case ND_UNARY_NEGATE:
+      *type_operator = PSX_TYPE_UNARY_NEGATE;
+      return 1;
+    case ND_CREAL:
+      *type_operator = PSX_TYPE_UNARY_REAL;
+      return 1;
+    case ND_CIMAG:
+      *type_operator = PSX_TYPE_UNARY_IMAGINARY;
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 static int direct_incdec_kind(
@@ -1910,13 +1935,16 @@ static int preflight_direct_expression_impl(
   if (syntax->kind == ND_UNARY_NEGATE ||
       syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
+    psx_type_arithmetic_unary_op_t type_operator;
     psx_qual_type_t operand_type;
-    if (!preflight_direct_expression(
+    if (!direct_arithmetic_unary_operator(
+            syntax->kind, &type_operator) ||
+        !preflight_direct_expression(
             context, syntax->lhs, &operand_type))
       return 0;
     psx_qual_type_t result =
         psx_resolve_arithmetic_unary_result_qual_type_in(
-            context->semantic_context, syntax->kind,
+            context->semantic_context, type_operator,
             operand_type);
     if (result.type_id == PSX_TYPE_ID_INVALID)
       return note_direct_semantic_rejection(
@@ -1961,16 +1989,18 @@ static int preflight_direct_expression_impl(
     return 1;
   }
   psx_hir_node_kind_t hir_kind;
+  psx_type_binary_op_t type_operator;
   psx_qual_type_t lhs_type;
   psx_qual_type_t rhs_type;
-  if (!direct_binary_kind(syntax->kind, &hir_kind) ||
+  if (!direct_binary_kind(
+          syntax->kind, &hir_kind, &type_operator) ||
       !preflight_direct_expression(
           context, syntax->lhs, &lhs_type) ||
       !preflight_direct_expression(
           context, syntax->rhs, &rhs_type))
     return 0;
   psx_qual_type_t result = psx_resolve_binary_result_qual_type_in(
-      context->semantic_context, syntax->kind,
+      context->semantic_context, type_operator,
       lhs_type, rhs_type);
   if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
   if (qual_type) *qual_type = result;
@@ -2428,7 +2458,8 @@ static psx_semantic_node_t *build_direct_expression(
     const node_t *syntax) {
   psx_hir_node_kind_t binary_kind;
   psx_semantic_node_t *expression =
-      syntax && direct_binary_kind(syntax->kind, &binary_kind)
+      syntax && direct_binary_kind(
+                    syntax->kind, &binary_kind, NULL)
           ? build_direct_binary_expression(context, syntax)
           : build_direct_expression_impl(context, syntax);
   return apply_direct_expression_decay(context, syntax, expression);
@@ -2437,6 +2468,7 @@ static psx_semantic_node_t *build_direct_expression(
 typedef struct direct_binary_build_frame_t {
   const node_t *syntax;
   psx_hir_node_kind_t hir_kind;
+  psx_type_binary_op_t type_operator;
   psx_semantic_node_t *lhs;
   psx_semantic_node_t *rhs;
   unsigned char state;
@@ -2448,8 +2480,10 @@ static int push_direct_binary_build_frame(
     size_t *count, size_t *capacity,
     const node_t *syntax) {
   psx_hir_node_kind_t hir_kind;
+  psx_type_binary_op_t type_operator;
   if (!context || !frames || !count || !capacity || !syntax ||
-      !direct_binary_kind(syntax->kind, &hir_kind))
+      !direct_binary_kind(
+          syntax->kind, &hir_kind, &type_operator))
     return 0;
   if (*count == *capacity) {
     size_t next_capacity = *capacity ? *capacity * 2 : 32;
@@ -2474,6 +2508,7 @@ static int push_direct_binary_build_frame(
   (*frames)[(*count)++] = (direct_binary_build_frame_t){
       .syntax = syntax,
       .hir_kind = hir_kind,
+      .type_operator = type_operator,
   };
   return 1;
 }
@@ -2511,12 +2546,13 @@ static psx_semantic_node_t *build_direct_binary_node(
     direct_resolution_context_t *context,
     const node_t *syntax,
     psx_hir_node_kind_t hir_kind,
+    psx_type_binary_op_t type_operator,
     psx_semantic_node_t *lhs,
     psx_semantic_node_t *rhs) {
   if (!context || !syntax || !lhs || !rhs) return NULL;
   psx_qual_type_t result_qual_type =
       psx_resolve_binary_result_qual_type_in(
-          context->semantic_context, syntax->kind,
+          context->semantic_context, type_operator,
           psx_semantic_node_expression_qual_type(lhs),
           psx_semantic_node_expression_qual_type(rhs));
   if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
@@ -2555,7 +2591,8 @@ static psx_semantic_node_t *build_direct_binary_expression(
     if (frame->state == 0) {
       frame->state = 1;
       psx_hir_node_kind_t child_kind;
-      if (direct_binary_kind(frame->syntax->lhs->kind, &child_kind)) {
+      if (direct_binary_kind(
+              frame->syntax->lhs->kind, &child_kind, NULL)) {
         if (!push_direct_binary_build_frame(
                 context, &frames, &count, &capacity,
                 frame->syntax->lhs))
@@ -2569,7 +2606,8 @@ static psx_semantic_node_t *build_direct_binary_expression(
     if (frame->state == 1) {
       frame->state = 2;
       psx_hir_node_kind_t child_kind;
-      if (direct_binary_kind(frame->syntax->rhs->kind, &child_kind)) {
+      if (direct_binary_kind(
+              frame->syntax->rhs->kind, &child_kind, NULL)) {
         if (!push_direct_binary_build_frame(
                 context, &frames, &count, &capacity,
                 frame->syntax->rhs))
@@ -2584,6 +2622,7 @@ static psx_semantic_node_t *build_direct_binary_expression(
     const node_t *completed_syntax = frame->syntax;
     psx_semantic_node_t *completed = build_direct_binary_node(
         context, completed_syntax, frame->hir_kind,
+        frame->type_operator,
         frame->lhs, frame->rhs);
     if (!completed) break;
     count--;
@@ -2994,12 +3033,15 @@ static psx_semantic_node_t *build_direct_expression_impl(
   if (syntax->kind == ND_UNARY_NEGATE ||
       syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
+    psx_type_arithmetic_unary_op_t type_operator;
     psx_semantic_node_t *operand =
         build_direct_expression(context, syntax->lhs);
-    if (!operand) return NULL;
+    if (!operand || !direct_arithmetic_unary_operator(
+                        syntax->kind, &type_operator))
+      return NULL;
     psx_qual_type_t result_qual_type =
         psx_resolve_arithmetic_unary_result_qual_type_in(
-            context->semantic_context, syntax->kind,
+            context->semantic_context, type_operator,
             psx_semantic_node_expression_qual_type(operand));
     if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       set_failure(

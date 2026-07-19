@@ -16,7 +16,7 @@
 #include "call_resolution.h"
 #include "case_label_resolution.h"
 #include "constant_expression.h"
-#include "expression_operand_resolution.h"
+#include "expression_operand_compatibility.h"
 #include "function_call_resolution.h"
 #include "generic_selection_resolution.h"
 #include "lvar_usage_analysis.h"

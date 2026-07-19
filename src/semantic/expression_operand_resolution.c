@@ -1,10 +1,8 @@
 #include "expression_operand_resolution.h"
 
-#include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
 #include "../parser/type_builder.h"
-#include "resolved_node_type.h"
 
 #include <string.h>
 
@@ -25,10 +23,10 @@ static psx_qual_type_t intern_result_type(
 
 static const psx_type_t *resolve_arithmetic_unary_result_type_value(
     psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind,
+    psx_type_arithmetic_unary_op_t operator,
     const psx_type_t *type) {
   if (!semantic_context || !type) return NULL;
-  if (kind == ND_UNARY_NEGATE) {
+  if (operator == PSX_TYPE_UNARY_NEGATE) {
     if (type->kind == PSX_TYPE_BOOL ||
         (type->kind == PSX_TYPE_INTEGER &&
          ps_type_integer_rank(type) < 3))
@@ -40,7 +38,9 @@ static const psx_type_t *resolve_arithmetic_unary_result_type_value(
       return ps_type_clone_in(ps_ctx_arena(semantic_context), type);
     return NULL;
   }
-  if (kind != ND_CREAL && kind != ND_CIMAG) return NULL;
+  if (operator != PSX_TYPE_UNARY_REAL &&
+      operator != PSX_TYPE_UNARY_IMAGINARY)
+    return NULL;
   if (type->kind == PSX_TYPE_COMPLEX) {
     psx_floating_kind_t floating_kind =
         type->floating_kind != PSX_FLOATING_KIND_NONE
@@ -57,14 +57,13 @@ static const psx_type_t *resolve_arithmetic_unary_result_type_value(
 
 static const psx_type_t *resolve_binary_result_type_value(
     psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind,
+    psx_type_binary_op_t operator,
     const psx_type_t *lhs,
     const psx_type_t *rhs) {
-  psx_type_binary_op_t op;
-  if (!semantic_context || !ps_node_binary_type_op(kind, &op)) return NULL;
+  if (!semantic_context) return NULL;
   return ps_type_binary_result_for_target_in(
-      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context), op,
-      lhs, rhs);
+      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context),
+      operator, lhs, rhs);
 }
 
 static const psx_type_t *resolve_conditional_result_type_value(
@@ -79,7 +78,7 @@ static const psx_type_t *resolve_conditional_result_type_value(
 
 psx_qual_type_t psx_resolve_arithmetic_unary_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind,
+    psx_type_arithmetic_unary_op_t operator,
     psx_qual_type_t operand_type) {
   if (!semantic_context ||
       operand_type.type_id == PSX_TYPE_ID_INVALID)
@@ -89,26 +88,30 @@ psx_qual_type_t psx_resolve_arithmetic_unary_result_qual_type_in(
   return intern_result_type(
       semantic_context,
       resolve_arithmetic_unary_result_type_value(
-          semantic_context, kind, type));
+          semantic_context, operator, type));
 }
 
 psx_qual_type_t psx_resolve_binary_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind,
+    psx_type_binary_op_t operator,
     psx_qual_type_t lhs_type,
     psx_qual_type_t rhs_type) {
   if (!semantic_context ||
-      lhs_type.type_id == PSX_TYPE_ID_INVALID ||
-      rhs_type.type_id == PSX_TYPE_ID_INVALID)
+      rhs_type.type_id == PSX_TYPE_ID_INVALID ||
+      (operator != PSX_TYPE_BINARY_COMMA &&
+       lhs_type.type_id == PSX_TYPE_ID_INVALID))
     return invalid_qual_type();
-  const psx_type_t *lhs = ps_ctx_type_by_id_in(
-      semantic_context, lhs_type.type_id);
+  const psx_type_t *lhs =
+      lhs_type.type_id != PSX_TYPE_ID_INVALID
+          ? ps_ctx_type_by_id_in(
+                semantic_context, lhs_type.type_id)
+          : NULL;
   const psx_type_t *rhs = ps_ctx_type_by_id_in(
       semantic_context, rhs_type.type_id);
   return intern_result_type(
       semantic_context,
       resolve_binary_result_type_value(
-          semantic_context, kind, lhs, rhs));
+          semantic_context, operator, lhs, rhs));
 }
 
 psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
@@ -193,27 +196,6 @@ void psx_resolve_control_expression_qual_type_in(
   *status = ps_type_is_scalar(canonical)
                 ? PSX_CONTROL_EXPRESSION_OK
                 : PSX_CONTROL_EXPRESSION_NOT_SCALAR;
-}
-
-static const psx_type_t *resolve_indirection_result_type_value(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *operand_type) {
-  if (!semantic_context || !operand_type || !operand_type->base ||
-      (operand_type->kind != PSX_TYPE_POINTER &&
-       operand_type->kind != PSX_TYPE_ARRAY))
-    return NULL;
-  return ps_type_clone_in(
-      ps_ctx_arena(semantic_context), operand_type->base);
-}
-
-static const psx_type_t *resolve_address_result_type_value(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *operand_type) {
-  if (!semantic_context || !operand_type) return NULL;
-  const psx_type_t *base = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), operand_type);
-  return ps_type_new_pointer_in(
-      ps_ctx_arena(semantic_context), base);
 }
 
 psx_deref_operand_status_t psx_resolve_deref_operand_qual_type_in(
@@ -351,104 +333,6 @@ psx_qual_type_t psx_resolve_value_decay_qual_type_in(
     return ps_ctx_intern_pointer_to_qual_type_in(
         semantic_context, expression_type);
   return expression_type;
-}
-
-psx_deref_operand_status_t psx_resolve_deref_operand(
-    const psx_resolution_store_t *store, node_t *operand) {
-  if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
-  const psx_type_t *type = ps_node_get_type(store, operand);
-  if (!type || !ps_type_is_pointer_like(type))
-    return PSX_DEREF_OPERAND_NOT_POINTER;
-  if (type->base && type->base->kind == PSX_TYPE_VOID)
-    return PSX_DEREF_OPERAND_VOID_POINTER;
-  return PSX_DEREF_OPERAND_OK;
-}
-
-const psx_type_t *psx_resolve_indirection_result_type(
-    psx_semantic_context_t *semantic_context, node_t *operand) {
-  return resolve_indirection_result_type_value(
-      semantic_context,
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
-}
-
-const psx_type_t *psx_resolve_arithmetic_unary_result_type(
-    psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind, node_t *operand) {
-  return resolve_arithmetic_unary_result_type_value(
-      semantic_context, kind,
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
-}
-
-const psx_type_t *psx_resolve_binary_result_type(
-    psx_semantic_context_t *semantic_context,
-    psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs) {
-  return resolve_binary_result_type_value(
-      semantic_context, kind,
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), lhs),
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), rhs));
-}
-
-const psx_type_t *psx_resolve_conditional_result_type(
-    psx_semantic_context_t *semantic_context,
-    node_t *then_expr, node_t *else_expr) {
-  return resolve_conditional_result_type_value(
-      semantic_context,
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), then_expr),
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), else_expr));
-}
-
-const psx_type_t *psx_resolve_sequence_result_type(
-    psx_semantic_context_t *semantic_context, node_t *value) {
-  return ps_type_clone_in(
-      ps_ctx_arena(semantic_context),
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), value));
-}
-
-const psx_type_t *psx_resolve_address_result_type(
-    psx_semantic_context_t *semantic_context, node_t *operand) {
-  return resolve_address_result_type_value(
-      semantic_context,
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), operand));
-}
-
-const psx_type_t *psx_resolve_incdec_result_type(
-    psx_semantic_context_t *semantic_context, node_t *operand) {
-  const psx_type_t *type = ps_node_get_type(
-      ps_ctx_resolution_store(semantic_context), operand);
-  if (!type) return NULL;
-  if (ps_type_is_pointer(type) || type->kind == PSX_TYPE_BOOL ||
-      type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT)
-    return ps_type_clone_in(ps_ctx_arena(semantic_context), type);
-  return NULL;
-}
-
-static int is_subscript_pointer_operand(
-    const psx_resolution_store_t *store, node_t *node) {
-  const psx_type_t *type = ps_node_get_type(store, node);
-  return type && (type->kind == PSX_TYPE_POINTER ||
-                  type->kind == PSX_TYPE_ARRAY);
-}
-
-void psx_resolve_subscript_operands(
-    const psx_resolution_store_t *store,
-    node_t *left, node_t *right,
-    psx_subscript_operands_resolution_t *resolution) {
-  if (!resolution) return;
-  memset(resolution, 0, sizeof(*resolution));
-  resolution->base = left;
-  resolution->index = right;
-  int left_is_pointer = is_subscript_pointer_operand(store, left);
-  int right_is_pointer = is_subscript_pointer_operand(store, right);
-  if (!left_is_pointer && !right_is_pointer) {
-    resolution->status = PSX_SUBSCRIPT_OPERANDS_INVALID;
-    return;
-  }
-  if (!left_is_pointer && right_is_pointer) {
-    resolution->base = right;
-    resolution->index = left;
-    resolution->swapped = 1;
-  }
-  resolution->status = PSX_SUBSCRIPT_OPERANDS_OK;
 }
 
 static int qual_type_is_subscript_base(

@@ -5251,6 +5251,37 @@ const expressionOperandResolutionHeader = await readFile(
   "src/semantic/expression_operand_resolution.h",
   "utf8",
 );
+const expressionOperandCompatibilitySource = await readFile(
+  "src/semantic/expression_operand_compatibility.c",
+  "utf8",
+);
+const expressionOperandCompatibilityHeader = await readFile(
+  "src/semantic/expression_operand_compatibility.h",
+  "utf8",
+);
+const typeOperatorsHeader = await readFile(
+  "src/type_system/type_operators.h",
+  "utf8",
+);
+if (
+  /parser\/ast\.h|resolved_node_kind\.h|\bnode_t\b|\bND_[A-Z0-9_]+\b|\bps_node_/.test(
+    `${expressionOperandResolutionHeader}\n${expressionOperandResolutionSource}`,
+  ) ||
+  !/\bpsx_resolve_binary_result_qual_type_in\s*\(/.test(
+    expressionOperandResolutionHeader,
+  ) ||
+  !/\bpsx_resolve_binary_result_qual_type_in\s*\(/.test(
+    expressionOperandCompatibilitySource,
+  ) ||
+  !/\bnode_t\b/.test(expressionOperandCompatibilityHeader) ||
+  /\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\//.test(
+    typeOperatorsHeader,
+  )
+) {
+  throw new Error(
+    "expression QualType rules and operators must be AST-independent while node adapters stay in the compatibility module",
+  );
+}
 if (!/\bps_type_integer_rank\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
@@ -7605,13 +7636,13 @@ const readonlySemanticTypeResults = [
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_indirection_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_arithmetic_unary_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_binary_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_conditional_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_sequence_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_address_result_type"],
-  ["src/semantic/expression_operand_resolution.h", "psx_resolve_incdec_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_indirection_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_arithmetic_unary_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_binary_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_conditional_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_sequence_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_address_result_type"],
+  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_incdec_result_type"],
   ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
   ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
@@ -8596,9 +8627,11 @@ for (const core of sharedOperandTypeRuleCores) {
   const calls = expressionOperandResolutionSource.match(
     new RegExp(`\\b${core}\\s*\\(`, "g"),
   ) ?? [];
-  if (calls.length !== 3) {
+  if (calls.length !== 2 || new RegExp(`\\b${core}\\s*\\(`).test(
+      expressionOperandCompatibilitySource,
+    )) {
     throw new Error(
-      `${core} must be the single type-rule core shared by QualType and compatibility-node adapters`,
+      `${core} must remain private to the AST-independent QualType core`,
     );
   }
 }
@@ -8844,7 +8877,10 @@ if (!/MAP\s*\(\s*ND_CREAL\s*,\s*PSX_HIR_CREAL\s*\)/.test(
       hirIrBuilder,
     ) ||
     directComplexComponentKindChecks.length !== 2 ||
-    !/context->semantic_context,\s*syntax->kind,\s*\n\s*operand_type/.test(
+    !/direct_arithmetic_unary_operator\s*\(\s*syntax->kind,\s*&type_operator\)/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/context->semantic_context,\s*type_operator,\s*\n\s*operand_type/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/syntax->kind\s*==\s*ND_CREAL[^]*?PSX_HIR_CREAL[^]*?syntax->kind\s*==\s*ND_CIMAG[^]*?PSX_HIR_CIMAG/.test(
@@ -9092,7 +9128,7 @@ if (!incdecQualTypeResolution ||
     "increment and decrement must resolve from canonical QualType directly into Typed HIR",
   );
 }
-if (!/MAP\s*\(\s*ND_COMMA\s*,\s*PSX_HIR_COMMA\s*\)/.test(
+if (!/MAP\s*\(\s*ND_COMMA\s*,\s*PSX_HIR_COMMA\s*,\s*PSX_TYPE_BINARY_COMMA\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_hir_node_kind\(node\)\s*==\s*PSX_HIR_COMMA\s*&&\s*is_void/.test(

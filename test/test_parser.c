@@ -65,7 +65,7 @@
 #include "../src/semantic/identifier_resolution.h"
 #include "../src/semantic/literal_resolution.h"
 #include "../src/semantic/member_access_resolution.h"
-#include "../src/semantic/expression_operand_resolution.h"
+#include "../src/semantic/expression_operand_compatibility.h"
 #include "../src/semantic/function_call_resolution.h"
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/identifier_binding.h"

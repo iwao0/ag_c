@@ -2,28 +2,13 @@
 #define PARSER_TYPE_H
 
 #include "../type_system/type_ids.h"
+#include "../type_system/type_operators.h"
 #include "../type_system/type_shape.h"
 #include "core.h"
 #include "type_fwd.h"
 #include <stddef.h>
 
 typedef struct ag_target_info_t ag_target_info_t;
-
-typedef enum {
-  PSX_TYPE_BINARY_COMMA = 0,
-  PSX_TYPE_BINARY_ADD,
-  PSX_TYPE_BINARY_SUB,
-  PSX_TYPE_BINARY_MUL,
-  PSX_TYPE_BINARY_DIV,
-  PSX_TYPE_BINARY_MOD,
-  PSX_TYPE_BINARY_BITAND,
-  PSX_TYPE_BINARY_BITXOR,
-  PSX_TYPE_BINARY_BITOR,
-  PSX_TYPE_BINARY_SHL,
-  PSX_TYPE_BINARY_SHR,
-  PSX_TYPE_BINARY_COMPARE,
-  PSX_TYPE_BINARY_LOGICAL,
-} psx_type_binary_op_t;
 
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
