@@ -198,9 +198,17 @@ static psx_decl_id_t declare_at(
     psx_c_namespace_t name_space, psx_scope_decl_kind_t kind,
     const char *name, int name_len, void *payload,
     int advances_source_order) {
+  int is_unnamed_member =
+      name_space == PSX_NAMESPACE_MEMBER && kind == PSX_DECL_MEMBER &&
+      !name && name_len == 0;
+  int is_invalid_member_scope =
+      name_space == PSX_NAMESPACE_MEMBER &&
+      (kind != PSX_DECL_MEMBER || !graph || scope_id >= graph->scope_count ||
+       graph->scopes[scope_id].kind != PSX_SCOPE_RECORD);
   if (!graph || scope_id >= graph->scope_count ||
       name_space < 0 || name_space >= PSX_NAMESPACE_COUNT ||
-      !name || name_len <= 0 ||
+      is_invalid_member_scope ||
+      (!is_unnamed_member && (!name || name_len <= 0)) ||
       graph->declaration_count >= (size_t)UINT32_MAX - 1 ||
       !ensure_declaration_capacity(graph, graph->declaration_count + 1))
     return PSX_DECL_ID_INVALID;

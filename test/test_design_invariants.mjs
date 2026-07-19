@@ -232,6 +232,10 @@ const scopeGraphHeader = await readFile(
   "src/semantic/scope_graph.h",
   "utf8",
 );
+const scopeGraphSource = await readFile(
+  "src/semantic/scope_graph.c",
+  "utf8",
+);
 const scopeGraphLocalRegistrySource = await readFile(
   "src/parser/local_registry.c",
   "utf8",
@@ -367,6 +371,36 @@ if (!enumConstantPayload || !typedefPayload ||
     )) {
   throw new Error(
     "typedef and enum payloads must not duplicate scope graph identity or visibility state",
+  );
+}
+const aggregateMemberPayload =
+  scopeGraphSemanticContextSource.match(
+    /struct\s+tag_member_t\s*\{([^}]*)\};/,
+  )?.[1] ?? "";
+if (!aggregateMemberPayload ||
+    !/\btag_member_decl_t\s+declaration\s*;/.test(
+      aggregateMemberPayload,
+    ) ||
+    /\b(?:next_all|owner|declaration_id|tag_kind|tag_name|tag_len|decl_order|scope_depth)\b/.test(
+      aggregateMemberPayload,
+    ) ||
+    /\b(?:aggregate_members_all|aggregate_member_decl_order)\b/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/is_unnamed_member\s*=\s*[^;]*PSX_NAMESPACE_MEMBER[^;]*PSX_DECL_MEMBER[^;]*!name[^;]*name_len\s*==\s*0/.test(
+      scopeGraphSource,
+    ) ||
+    !/is_invalid_member_scope\s*=\s*[^;]*PSX_NAMESPACE_MEMBER[^;]*PSX_DECL_MEMBER[^;]*PSX_SCOPE_RECORD/.test(
+      scopeGraphSource,
+    ) ||
+    !/collect_tag_member_declarations_in\s*\([^]*?psx_scope_graph_declaration_at\s*\([^]*?declaration->scope_id\s*!=\s*tag->member_scope_id/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/insert_tag_member_record_in\s*\([^]*?psx_scope_graph_declare_at\s*\([^]*?declaration->len\s*>\s*0\s*\?\s*declaration->name\s*:\s*NULL/.test(
+      scopeGraphSemanticContextSource,
+    )) {
+  throw new Error(
+    "record scopes must own named and unnamed member identity and declaration order",
   );
 }
 const semanticIntegerConstructionSource = (

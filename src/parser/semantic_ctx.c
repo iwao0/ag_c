@@ -52,15 +52,7 @@ typedef struct tag_member_decl_t {
 } tag_member_decl_t;
 
 struct tag_member_t {
-  tag_member_t *next_all;
-  tag_type_t *owner;
-  psx_decl_id_t declaration_id;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
   tag_member_decl_t declaration;
-  int decl_order;
-  int scope_depth;
 };
 
 typedef struct tag_member_layout_draft_t tag_member_layout_draft_t;
@@ -189,27 +181,33 @@ struct psx_semantic_context_t {
   psx_ctx_allocation_t *allocations;
   deferred_parser_diagnostic_t *pending_diagnostics_all;
   tag_type_t *tags_all;
-  tag_member_t *aggregate_members_all;
   tag_member_layout_draft_t *aggregate_member_layout_drafts;
   psx_function_symbol_t *function_symbols_all;
   int scope_depth;
-  int aggregate_member_decl_order;
 };
 
 static int collect_tag_member_declarations_in(
     psx_semantic_context_t *context, const tag_type_t *tag,
     tag_member_t ***out_members) {
   if (out_members) *out_members = NULL;
-  if (!context || !tag || !out_members) return -1;
+  if (!context || !context->scope_graph || !tag || !out_members ||
+      tag->member_scope_id == PSX_SCOPE_ID_INVALID)
+    return -1;
 
   int capacity = 8;
   int count = 0;
   tag_member_t **members = malloc(
       (size_t)capacity * sizeof(*members));
   if (!members) return -1;
-  for (tag_member_t *member = context->aggregate_members_all;
-       member; member = member->next_all) {
-    if (member->owner != tag) continue;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = 0; index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index);
+    if (!declaration || declaration->scope_id != tag->member_scope_id ||
+        declaration->name_space != PSX_NAMESPACE_MEMBER ||
+        declaration->kind != PSX_DECL_MEMBER || !declaration->payload)
+      continue;
     if (count == capacity) {
       capacity *= 2;
       tag_member_t **grown = realloc(
@@ -220,16 +218,7 @@ static int collect_tag_member_declarations_in(
       }
       members = grown;
     }
-    members[count++] = member;
-  }
-  for (int i = 1; i < count; i++) {
-    tag_member_t *member = members[i];
-    int j = i;
-    while (j > 0 && member->decl_order < members[j - 1]->decl_order) {
-      members[j] = members[j - 1];
-      j--;
-    }
-    members[j] = member;
+    members[count++] = declaration->payload;
   }
   *out_members = members;
   return count;
@@ -677,9 +666,7 @@ void ps_ctx_reset_tag_diag_state_in(
     t->record_decl_members = NULL;
     t->member_scope_id = PSX_SCOPE_ID_INVALID;
   }
-  context->aggregate_members_all = NULL;
   context->aggregate_member_layout_drafts = NULL;
-  context->aggregate_member_decl_order = 0;
 }
 
 /* 各 parse 開始時に呼ぶ、関数名テーブルの「ソフトリセット」: 累積状態 (関数情報) は残し、
@@ -704,14 +691,6 @@ void ps_ctx_reset_function_scope_in(
       continue;
     }
     all_tag = &(*all_tag)->next_all;
-  }
-  tag_member_t **all_member = &context->aggregate_members_all;
-  while (*all_member) {
-    if ((*all_member)->scope_depth > 0) {
-      *all_member = (*all_member)->next_all;
-      continue;
-    }
-    all_member = &(*all_member)->next_all;
   }
 }
 
@@ -1075,39 +1054,37 @@ static int insert_tag_member_record_in(
     const psx_record_member_decl_t *declaration,
     const psx_record_member_layout_t *layout) {
   if (!context || !tag || !declaration) return 0;
+  if (!context->scope_graph ||
+      tag->member_scope_id == PSX_SCOPE_ID_INVALID)
+    return 0;
   tag_member_t *m = ctx_calloc_in(context, 1, sizeof(tag_member_t));
   if (!m) return 0;
-  m->owner = tag;
-  m->tag_kind = tag->kind;
-  m->tag_name = tag->name;
-  m->tag_len = tag->len;
   m->declaration.name = declaration->name;
   m->declaration.len = declaration->len;
   if (!initialize_tag_member_record(context, m, declaration, layout)) return 0;
-  m->decl_order = context->aggregate_member_decl_order++;
-  m->scope_depth = tag->scope_depth;
-  if (declaration->len > 0) {
-    if (!context->scope_graph ||
-        tag->member_scope_id == PSX_SCOPE_ID_INVALID)
-      return 0;
-    m->declaration_id = psx_scope_graph_declare_at(
-        context->scope_graph, tag->member_scope_id,
-        PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
-        declaration->name, declaration->len, m);
-    if (m->declaration_id == PSX_DECL_ID_INVALID) return 0;
-  }
-  m->next_all = context->aggregate_members_all;
-  context->aggregate_members_all = m;
-  return 1;
+  return psx_scope_graph_declare_at(
+             context->scope_graph, tag->member_scope_id,
+             PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
+             declaration->len > 0 ? declaration->name : NULL,
+             declaration->len, m) != PSX_DECL_ID_INVALID;
 }
 
 static int count_tag_member_records_in(
-    const psx_semantic_context_t *context, const tag_type_t *tag) {
-  if (!context || !tag) return 0;
+  const psx_semantic_context_t *context, const tag_type_t *tag) {
+  if (!context || !context->scope_graph || !tag ||
+      tag->member_scope_id == PSX_SCOPE_ID_INVALID)
+    return 0;
   int count = 0;
-  for (const tag_member_t *member = context->aggregate_members_all;
-       member; member = member->next_all)
-    if (member->owner == tag) count++;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = 0; index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index);
+    if (declaration && declaration->scope_id == tag->member_scope_id &&
+        declaration->name_space == PSX_NAMESPACE_MEMBER &&
+        declaration->kind == PSX_DECL_MEMBER)
+      count++;
+  }
   return count;
 }
 
@@ -1314,8 +1291,7 @@ static bool find_tag_member_impl_in(
       binding && binding->kind == PSX_DECL_MEMBER
           ? binding->payload
           : NULL;
-  return member && member->owner == tag &&
-         fill_tag_member_in(
+  return member && fill_tag_member_in(
              context, member, out_declaration, out_layout);
 }
 
@@ -1386,14 +1362,7 @@ void ps_ctx_promote_tag_to_file_scope_in(
     t->scope_seq = declaration->scope_id;
     t->declaration_seq = declaration->declaration_order;
   }
-  int old_depth = t->scope_depth;
   t->scope_depth = 0;
-  for (tag_member_t *m = context->aggregate_members_all;
-       m; m = m->next_all) {
-    if (m->owner == t && m->scope_depth == old_depth) {
-      m->scope_depth = 0;
-    }
-  }
 }
 
 int ps_ctx_get_tag_member_count_at_scope_in(

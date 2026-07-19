@@ -29411,6 +29411,23 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
       "same", 4, &member_payload);
   ASSERT_EQ(member_id, psx_scope_graph_lookup_in_scope(
       graph, record_scope, PSX_NAMESPACE_MEMBER, "same", 4));
+  int unnamed_member_payload = 11;
+  psx_decl_id_t unnamed_member_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
+      NULL, 0, &unnamed_member_payload);
+  ASSERT_TRUE(unnamed_member_id != PSX_DECL_ID_INVALID);
+  const psx_scope_declaration_t *unnamed_member =
+      psx_scope_graph_declaration(graph, unnamed_member_id);
+  ASSERT_TRUE(unnamed_member != NULL);
+  ASSERT_EQ(record_scope, unnamed_member->scope_id);
+  ASSERT_EQ(PSX_NAMESPACE_MEMBER, unnamed_member->name_space);
+  ASSERT_EQ(PSX_DECL_MEMBER, unnamed_member->kind);
+  ASSERT_TRUE(unnamed_member->name == NULL);
+  ASSERT_EQ(0, unnamed_member->name_len);
+  ASSERT_EQ(PSX_DECL_ID_INVALID, psx_scope_graph_declare_at(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,
+      NULL, 0, &unnamed_member_payload));
   ASSERT_EQ(global_id, psx_scope_graph_lookup_in_scope(
       graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, "same", 4));
