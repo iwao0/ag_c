@@ -1726,10 +1726,10 @@ if (!/wasm32_ir_context_create\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_obj_context_create\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_ir_context_destroy\s*\(/.test(wasmBackendContextSource) ||
     !/wasm32_obj_context_destroy\s*\(/.test(wasmBackendContextSource) ||
-    !/wasm32_gen_ir_module_in\s*\(ctx->ir,/.test(
+    !/wasm32_gen_machine_module_in\s*\(ctx->ir,/.test(
       wasmBackendContextSource,
     ) ||
-    !/wasm32_obj_gen_ir_module_in\s*\(ctx->obj,/.test(
+    !/wasm32_obj_gen_machine_module_in\s*\(ctx->obj,/.test(
       wasmBackendContextSource,
     ) ||
     /wasm32_(?:ir|obj)_context_(?:activate|active)\s*\(/.test(
@@ -10641,6 +10641,10 @@ const wasmMachineFunctionSource = await readFile(
   "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
 );
+const wasmMachineModuleSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_module.c",
+  "utf8",
+);
 const wasmWatWriterSource = await readFile(
   "src/arch/wasm32/wasm32_ir.c",
   "utf8",
@@ -10869,8 +10873,28 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
 if (!/wasm32_machine_function_build\s*\(/.test(
       wasmMachineFunctionSource,
     ) ||
-    !/wasm32_machine_function_build\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_function_build\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_function_build\s*\(/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/wasm32_machine_module_build\s*\(/.test(
+      wasmBackendContextSource,
+    ) ||
+    /wasm32_machine_function_build\s*\(/.test(wasmWatWriterSource) ||
+    /wasm32_machine_function_build\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_module_function\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_machine_module_function\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /\bir_abi_function_signature\s*\(/.test(wasmWatWriterSource) ||
+    /\bir_abi_function_signature\s*\(/.test(wasmObjectWriterSource) ||
+    /const\s+ir_abi_module_t\s*\*\s*abi\s*;/.test(
+      wasmWatWriterSource,
+    ) ||
+    /const\s+ir_abi_module_t\s*\*\s*abi\s*;/.test(
+      wasmObjectWriterSource,
+    ) ||
     /static\s+void\s+collect_local_types\s*\(/.test(
       wasmObjectWriterSource,
     ) ||
@@ -10882,7 +10906,7 @@ if (!/wasm32_machine_function_build\s*\(/.test(
     ) ||
     /static\s+void\s+add_alloca_slot\s*\(/.test(wasmWatWriterSource)) {
   throw new Error(
-    "Wasm WAT and object writers must share the Machine function analysis plan",
+    "Wasm backend orchestration must build one owned Machine module while WAT and object writers only consume preplanned functions",
   );
 }
 

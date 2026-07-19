@@ -5,6 +5,7 @@
 #include "../src/arch/wasm32/wasm32_machine_abi.h"
 #include "../src/arch/wasm32/wasm32_machine_function.h"
 #include "../src/arch/wasm32/wasm32_machine_ir.h"
+#include "../src/arch/wasm32/wasm32_machine_module.h"
 
 static const ir_func_t *fixture_function;
 static const ir_abi_signature_t *fixture_function_abi;
@@ -835,6 +836,25 @@ int main(void) {
       wasm32_machine_function_instruction(
           &machine_function, &call) != NULL) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
+    return 1;
+  }
+  ir_module_t source_module = {.funcs = &function};
+  wasm32_machine_module_t machine_module;
+  if (!wasm32_machine_module_build(
+          &source_module, &fake_abi_module, &machine_module) ||
+      machine_module.source != &source_module ||
+      machine_module.function_count != 1 ||
+      !wasm32_machine_module_function(&machine_module, 0) ||
+      wasm32_machine_module_function(&machine_module, 0)->source !=
+          &function ||
+      wasm32_machine_module_function(&machine_module, 1) != NULL) {
+    fprintf(stderr, "FAIL: machine module plan invariants\n");
+    return 1;
+  }
+  wasm32_machine_module_dispose(&machine_module);
+  if (machine_module.source || machine_module.functions ||
+      machine_module.function_count != 0) {
+    fprintf(stderr, "FAIL: machine module plan disposal\n");
     return 1;
   }
   wasm32_machine_function_dispose(&machine_function);

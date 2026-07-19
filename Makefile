@@ -156,7 +156,7 @@ $(TEST_WASM32_BACKEND): test/test_wasm32_backend.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_backend.c
 
-$(TEST_WASM32_MACHINE_IR): test/test_wasm32_machine_ir.c $(OBJROOT)/arch/wasm32/wasm32_machine_ir.o $(OBJROOT)/arch/wasm32/wasm32_machine_abi.o $(OBJROOT)/arch/wasm32/wasm32_machine_function.o
+$(TEST_WASM32_MACHINE_IR): test/test_wasm32_machine_ir.c $(OBJROOT)/arch/wasm32/wasm32_machine_ir.o $(OBJROOT)/arch/wasm32/wasm32_machine_abi.o $(OBJROOT)/arch/wasm32/wasm32_machine_function.o $(OBJROOT)/arch/wasm32/wasm32_machine_module.o
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

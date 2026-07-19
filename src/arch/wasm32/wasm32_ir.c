@@ -85,7 +85,6 @@ struct wasm32_ir_context_t {
   const ir_data_module_t *data_module;
   wasm_func_table_ctx_t func_table;
   wasm_function_symbol_ctx_t function_symbols;
-  const ir_abi_module_t *abi;
   const ir_abi_data_module_t *data_abi;
   wasm32_machine_primitive_plan_t primitives;
 };
@@ -119,7 +118,6 @@ void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
 #define g_data_module (context->data_module)
 #define g_func_table (context->func_table)
 #define g_function_symbols (context->function_symbols)
-#define g_abi (context->abi)
 #define g_data_abi (context->data_abi)
 #define g_machine_primitives (context->primitives)
 
@@ -132,11 +130,6 @@ ag_codegen_emit_context_t *wasm32_ir_emit_context(
 static ag_diagnostic_context_t *wasm32_ir_diagnostics(
     wasm32_ir_context_t *context) {
   return cg_context_diagnostics(wasm32_ir_emit_context(context));
-}
-
-static const ir_abi_signature_t *wasm_function_abi(
-    wasm32_ir_context_t *context, const ir_func_t *function) {
-  return ir_abi_function_signature(g_abi, function);
 }
 
 #define wasm_cg_emitf(...) \
@@ -279,18 +272,16 @@ static void record_function_signature(
 }
 
 static void register_function_definition(
-    wasm32_ir_context_t *context, const ir_func_t *function) {
-  if (!function) return;
+    wasm32_ir_context_t *context, const ir_func_t *function,
+    const wasm32_machine_function_t *machine) {
+  if (!function || !machine) return;
   wasm_function_symbol_t *symbol = function_symbol_state(
       context, function->name, function->name_len, 1);
   if (!symbol) return;
   symbol->defined = 1;
-  const ir_abi_signature_t *abi = wasm_function_abi(context, function);
-  wasm32_machine_signature_t signature;
-  if (!wasm32_machine_signature_from_abi(abi, 1, &signature)) return;
   record_function_signature(
-      context, function->name, function->name_len, &signature);
-  wasm32_machine_signature_dispose(&signature);
+      context, function->name, function->name_len,
+      &machine->signature);
 }
 
 static void reset_function_symbols(wasm32_ir_context_t *context) {
@@ -650,10 +641,13 @@ static char *current_global_func_ref(wasm_func_ctx_t *ctx,
   return ref->name;
 }
 
-static void analyze_func(wasm_func_ctx_t *ctx) {
+static void analyze_func(
+    wasm_func_ctx_t *ctx,
+    const wasm32_machine_function_t *machine) {
   wasm32_ir_context_t *context = ctx->context;
-  if (!wasm32_machine_function_build(ctx->f, g_abi, &ctx->machine))
+  if (!machine)
     wasm_unsupported_msg(context, "failed to build Wasm machine function");
+  ctx->machine = *machine;
   if (ctx->machine.alloca_count > 0) {
     ctx->allocas = calloc(
         (size_t)ctx->machine.alloca_count, sizeof(*ctx->allocas));
@@ -1686,12 +1680,13 @@ static void emit_inst(
 
 static void emit_func(
     wasm32_ir_context_t *context,
-    const ir_module_t *module, ir_func_t *f) {
+    const ir_module_t *module, ir_func_t *f,
+    const wasm32_machine_function_t *machine) {
   wasm_func_ctx_t ctx = {0};
   ctx.context = context;
   ctx.module = module;
   ctx.f = f;
-  analyze_func(&ctx);
+  analyze_func(&ctx, machine);
 
   const wasm32_machine_signature_t *function_signature =
       &ctx.machine.signature;
@@ -1793,7 +1788,6 @@ static void emit_func(
   free(ctx.vreg_global_ref_offsets);
   free(ctx.vreg_const_known);
   free(ctx.vreg_const_values);
-  wasm32_machine_function_dispose(&ctx.machine);
 }
 
 void wasm32_module_begin_in(wasm32_ir_context_t *ctx) {
@@ -1814,18 +1808,29 @@ void wasm32_module_begin_in(wasm32_ir_context_t *ctx) {
   wasm_cg_emitf("(module\n");
 }
 
-void wasm32_gen_ir_module_in(
-    wasm32_ir_context_t *ctx, ir_module_t *m,
-    const ir_abi_module_t *abi) {
+void wasm32_gen_machine_module_in(
+    wasm32_ir_context_t *ctx,
+    const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_ir_context_t *context = ctx;
-  g_abi = abi;
-  if (m) {
-    for (ir_func_t *f = m->funcs; f; f = f->next)
-      register_function_definition(context, f);
-    for (ir_func_t *f = m->funcs; f; f = f->next)
-      emit_func(context, m, f);
+  if (!machine_module || !machine_module->source)
+    wasm_unsupported_msg(context, "failed to build Wasm machine module");
+  const ir_module_t *module = machine_module->source;
+  size_t index = 0;
+  for (ir_func_t *function = module->funcs; function;
+       function = function->next, index++) {
+    const wasm32_machine_function_t *machine =
+        wasm32_machine_module_function(machine_module, index);
+    if (!machine)
+      wasm_unsupported_msg(context, "incomplete Wasm machine module");
+    register_function_definition(context, function, machine);
   }
+  index = 0;
+  for (ir_func_t *function = module->funcs; function;
+       function = function->next, index++)
+    emit_func(
+        context, module, function,
+        wasm32_machine_module_function(machine_module, index));
 }
 
 static void emit_wat_escaped_byte(

@@ -141,7 +141,6 @@ struct wasm32_obj_context_t {
   ir_type_t *emit_local_types;
   unsigned char *emit_local_unsigned;
   int emit_local_count;
-  const ir_abi_module_t *abi;
   const ir_abi_data_module_t *data_abi;
   wasm32_machine_primitive_plan_t primitives;
 };
@@ -206,7 +205,6 @@ void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx) {
 #define g_emit_local_unsigned \
   (context->emit_local_unsigned)
 #define g_emit_local_count (context->emit_local_count)
-#define g_obj_abi (context->abi)
 #define g_obj_data_abi (context->data_abi)
 #define g_obj_machine_primitives \
   (context->primitives)
@@ -214,12 +212,6 @@ void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx) {
 static ag_diagnostic_context_t *wasm32_obj_diagnostics(
     wasm32_obj_context_t *context) {
   return context->diagnostic_context;
-}
-
-static const ir_abi_signature_t *obj_function_abi(
-    wasm32_obj_context_t *context,
-    const ir_func_t *function) {
-  return ir_abi_function_signature(g_obj_abi, function);
 }
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
@@ -1057,10 +1049,11 @@ static void ensure_func_sig_for_address(
 }
 
 static void collect_func_sig(
-    wasm32_obj_context_t *context, ir_func_t *f, obj_sig_t *sig) {
-  const ir_abi_signature_t *abi = obj_function_abi(context, f);
-  if (!wasm32_machine_signature_from_abi(abi, 1, sig))
+    wasm32_obj_context_t *context,
+    const wasm32_machine_function_t *machine, obj_sig_t *sig) {
+  if (!machine)
     obj_unsupported_msg(context, "function without ABI lowering result");
+  *sig = copy_signature(context, &machine->signature);
 }
 
 static unsigned selected_opcode_or_unsupported(
@@ -1299,11 +1292,11 @@ static void emit_direct_aggregate_call_result(
 static void gen_func_body(
                           wasm32_obj_context_t *context,
                           const ir_module_t *module, obj_func_t *of,
-                          ir_func_t *f) {
-  wasm32_machine_function_t machine_function;
-  if (!wasm32_machine_function_build(
-          f, g_obj_abi, &machine_function))
+                          ir_func_t *f,
+                          const wasm32_machine_function_t *planned) {
+  if (!planned)
     obj_unsupported_msg(context, "failed to build Wasm machine function");
+  wasm32_machine_function_t machine_function = *planned;
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
   int nlocals = machine_function.vreg_count;
@@ -2051,7 +2044,6 @@ static void gen_func_body(
   g_emit_local_types = NULL;
   g_emit_local_unsigned = NULL;
   g_emit_local_count = 0;
-  wasm32_machine_function_dispose(&machine_function);
 }
 
 static void assign_indices(wasm32_obj_context_t *context) {
@@ -2529,18 +2521,27 @@ void wasm32_obj_begin_in(wasm32_obj_context_t *ctx) {
         context, "failed to build Wasm object Machine primitive plan");
 }
 
-void wasm32_obj_gen_ir_module_in(
-    wasm32_obj_context_t *ctx, ir_module_t *m,
-    const ir_abi_module_t *abi) {
+void wasm32_obj_gen_machine_module_in(
+    wasm32_obj_context_t *ctx,
+    const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_obj_context_t *context = ctx;
-  g_obj_abi = abi;
-  for (ir_func_t *f = m->funcs; f; f = f->next) {
+  if (!machine_module || !machine_module->source)
+    obj_unsupported_msg(context, "failed to build Wasm machine module");
+  const ir_module_t *module = machine_module->source;
+  size_t function_index = 0;
+  for (ir_func_t *f = module->funcs; f;
+       f = f->next, function_index++) {
+    const wasm32_machine_function_t *machine =
+        wasm32_machine_module_function(
+            machine_module, function_index);
+    if (!machine)
+      obj_unsupported_msg(context, "incomplete Wasm machine module");
     obj_func_t *of = intern_func(context, f->name, f->name_len);
     if (of->defined)
       obj_unsupported_msg(context, "duplicate function in Wasm object mode");
     obj_sig_t def_sig = {0};
-    collect_func_sig(context, f, &def_sig);
+    collect_func_sig(context, machine, &def_sig);
     if (of->sig.nparams > 0 || of->sig.result != IR_TY_VOID) {
       if (!sig_equal(&of->sig, &def_sig) &&
           !sig_integer_width_compatible(&of->sig, &def_sig)) {
@@ -2563,7 +2564,7 @@ void wasm32_obj_gen_ir_module_in(
     }
     of->defined = 1;
     of->is_static = f->is_static;
-    gen_func_body(context, m, of, f);
+    gen_func_body(context, module, of, f, machine);
     if (f->is_continuation_entry) {
       if (g_obj.continuation_entry)
         obj_unsupported_msg(

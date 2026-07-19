@@ -1,6 +1,7 @@
 #include "backend_context.h"
 
 #include "../../codegen_emit.h"
+#include "wasm32_machine_module.h"
 #include "wasm32_ir.h"
 #include "wasm32_obj.h"
 #include <stdlib.h>
@@ -8,7 +9,17 @@
 struct wasm32_backend_context_t {
   wasm32_ir_context_t *ir;
   wasm32_obj_context_t *obj;
+  wasm32_machine_module_t machine_module;
 };
+
+static const wasm32_machine_module_t *build_machine_module(
+    wasm32_backend_context_t *ctx, const ir_module_t *module,
+    const ir_abi_module_t *abi) {
+  wasm32_machine_module_dispose(&ctx->machine_module);
+  return wasm32_machine_module_build(
+             module, abi, &ctx->machine_module)
+             ? &ctx->machine_module : NULL;
+}
 
 wasm32_backend_context_t *wasm32_backend_context_create(
     ag_codegen_emit_context_t *emit_context) {
@@ -30,6 +41,7 @@ wasm32_backend_context_t *wasm32_backend_context_create(
 void wasm32_backend_context_destroy(void *context) {
   wasm32_backend_context_t *ctx = context;
   if (!ctx) return;
+  wasm32_machine_module_dispose(&ctx->machine_module);
   wasm32_ir_context_destroy(ctx->ir);
   wasm32_obj_context_destroy(ctx->obj);
   free(ctx);
@@ -42,7 +54,10 @@ void wasm32_backend_wat_begin(wasm32_backend_context_t *ctx) {
 void wasm32_backend_wat_gen_ir_module(
     wasm32_backend_context_t *ctx, ir_module_t *module,
     const ir_abi_module_t *abi) {
-  wasm32_gen_ir_module_in(ctx->ir, module, abi);
+  const wasm32_machine_module_t *machine_module =
+      build_machine_module(ctx, module, abi);
+  wasm32_gen_machine_module_in(ctx->ir, machine_module);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_wat_emit_data_segments(
@@ -88,7 +103,10 @@ void wasm32_backend_obj_begin(wasm32_backend_context_t *ctx) {
 void wasm32_backend_obj_gen_ir_module(
     wasm32_backend_context_t *ctx, ir_module_t *module,
     const ir_abi_module_t *abi) {
-  wasm32_obj_gen_ir_module_in(ctx->obj, module, abi);
+  const wasm32_machine_module_t *machine_module =
+      build_machine_module(ctx, module, abi);
+  wasm32_obj_gen_machine_module_in(ctx->obj, machine_module);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_obj_emit_data_segments(
