@@ -680,14 +680,14 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return logical_not;
   }
   if (k == TK_TILDE) {
+    token_t *op_tok = curtok(ctx);
     set_curtok(ctx, curtok(ctx)->next);
-    node_t *neg = psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_SUB,
-        psx_node_new_syntax_int_in(
-            ctx->arena_context, 0, NULL), cast_ctx(ctx));
-    return psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_SUB, neg,
-        psx_node_new_syntax_int_in(ctx->arena_context, 1, NULL));
+    node_t *bitwise_not = arena_alloc_in(
+        ctx->arena_context, sizeof(node_t));
+    bitwise_not->kind = ND_BITWISE_NOT;
+    bitwise_not->lhs = cast_ctx(ctx);
+    bitwise_not->tok = op_tok;
+    return bitwise_not;
   }
   if (k == TK_MUL) {
     token_t *op_tok = curtok(ctx);

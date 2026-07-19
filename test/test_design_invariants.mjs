@@ -8986,6 +8986,29 @@ if (!/\bND_LOGICAL_NOT\b/.test(syntaxNodeKindHeader) ||
     "logical not must preserve its source operator through Typed HIR",
   );
 }
+const bitwiseNotParser = parserExpressionSource.match(
+  /if\s*\(\s*k\s*==\s*TK_TILDE\s*\)\s*\{[^]*?\n\s*\}/,
+)?.[0] ?? "";
+if (!/\bND_BITWISE_NOT\b/.test(syntaxNodeKindHeader) ||
+    !/\bPSX_HIR_BITWISE_NOT\b/.test(hirHeader) ||
+    !/bitwise_not->kind\s*=\s*ND_BITWISE_NOT/.test(bitwiseNotParser) ||
+    /\bND_SUB\b|psx_node_new_syntax_int_in/.test(bitwiseNotParser) ||
+    !/MAP\s*\(\s*ND_BITWISE_NOT\s*,\s*PSX_HIR_BITWISE_NOT\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/syntax->kind\s*==\s*ND_BITWISE_NOT[^]*?PSX_HIR_BITWISE_NOT/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_BITWISE_NOT\s*:[^]*?semantic_resolve_bitwise_not/.test(
+      semanticPassSource,
+    ) ||
+    !/PSX_HIR_BITWISE_NOT[^]*?build_bitwise_not\s*\(/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "bitwise not must preserve its source operator through Typed HIR",
+  );
+}
 const directComplexComponentKindChecks =
   syntaxTypedHirResolutionSource.match(
     /syntax->kind\s*==\s*ND_CREAL\s*\|\|\s*\n\s*syntax->kind\s*==\s*ND_CIMAG/g,

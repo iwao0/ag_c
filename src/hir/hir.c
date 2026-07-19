@@ -304,6 +304,7 @@ int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_INT_TO_FP:
     case PSX_HIR_NEGATE:
     case PSX_HIR_LOGICAL_NOT:
+    case PSX_HIR_BITWISE_NOT:
     case PSX_HIR_VARARG_CURSOR:
     case PSX_HIR_CAST:
     case PSX_HIR_CREAL:

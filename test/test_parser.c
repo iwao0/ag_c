@@ -2581,6 +2581,23 @@ static void test_syntax_literal_type_boundary() {
             ps_node_get_type(resolved_logical_not)->integer_kind);
   ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
   ASSERT_TRUE(ps_node_get_type(logical_not) == NULL);
+
+  node_t *bitwise_not =
+      parse_expr_input_with_existing_locals("~1");
+  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
+  ASSERT_EQ(ND_NUM, bitwise_not->lhs->kind);
+  ASSERT_TRUE(bitwise_not->rhs == NULL);
+  ASSERT_TRUE(bitwise_not->tok != NULL);
+  ASSERT_EQ(TK_TILDE, bitwise_not->tok->kind);
+  ASSERT_TRUE(ps_node_get_type(bitwise_not) == NULL);
+  node_t *resolved_bitwise_not =
+      analyze_test_expression(bitwise_not, bitwise_not->tok);
+  ASSERT_TRUE(resolved_bitwise_not != bitwise_not);
+  ASSERT_EQ(ND_BITWISE_NOT, resolved_bitwise_not->kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(resolved_bitwise_not)->integer_kind);
+  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
+  ASSERT_TRUE(ps_node_get_type(bitwise_not) == NULL);
 }
 
 static void test_direct_literal_typed_hir_resolution_boundary() {
@@ -2653,6 +2670,39 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(logical_not_type != NULL);
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
             logical_not_type->integer_kind);
+  psx_hir_module_destroy(hir);
+
+  node_t *bitwise_not =
+      parse_expr_input_with_existing_locals("~(unsigned char)1");
+  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(bitwise_not));
+  const psx_typed_hir_tree_t *typed_bitwise_not = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), bitwise_not,
+          &typed_bitwise_not, &failure));
+  ASSERT_TRUE(typed_bitwise_not != NULL);
+  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
+  ASSERT_TRUE(ps_node_get_type(bitwise_not) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t bitwise_not_id = psx_typed_hir_tree_emit(
+      hir, typed_bitwise_not, &failure);
+  ASSERT_TRUE(bitwise_not_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *bitwise_not_hir =
+      psx_hir_module_lookup(hir, bitwise_not_id);
+  ASSERT_EQ(PSX_HIR_BITWISE_NOT,
+            psx_hir_node_kind(bitwise_not_hir));
+  ASSERT_EQ(1, psx_hir_node_child_count(bitwise_not_hir));
+  const psx_type_t *bitwise_not_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(bitwise_not_hir).type_id);
+  ASSERT_TRUE(bitwise_not_type != NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            bitwise_not_type->integer_kind);
+  ASSERT_TRUE(!ps_type_is_unsigned(bitwise_not_type));
   psx_hir_module_destroy(hir);
 
   node_t *string =
@@ -11467,6 +11517,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_UNARY_NEGATE);
   assert_direct_function_rejection(
+      "int __direct_bitwise_not_float(void) { "
+      "double value = 1.0; return ~value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_BITWISE_NOT_REQUIRES_INTEGER,
+      ND_BITWISE_NOT);
+  assert_direct_function_rejection(
       "int __direct_real_pointer(void) { "
       "int *value = 0; return __real__ value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
@@ -16522,9 +16577,12 @@ static void test_expr_unary_ops() {
             ps_node_get_type(not0)->integer_kind);
 
   node_t *bitnot = parse_expr_input("~5");
-  ASSERT_EQ(ND_SUB, bitnot->kind);               // (~5) == ((0-5)-1)
-  ASSERT_EQ(ND_SUB, bitnot->lhs->kind);
-  ASSERT_EQ(1, as_num(bitnot->rhs)->val);
+  ASSERT_EQ(ND_BITWISE_NOT, bitnot->kind);
+  ASSERT_EQ(ND_NUM, bitnot->lhs->kind);
+  ASSERT_EQ(5, as_num(bitnot->lhs)->val);
+  ASSERT_TRUE(bitnot->rhs == NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(bitnot)->integer_kind);
 
   node_t *voidcast = parse_expr_input("(void)1");
   ASSERT_EQ(ND_CAST, voidcast->kind);

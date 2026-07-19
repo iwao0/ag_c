@@ -764,6 +764,23 @@ static ir_val_t build_scalar_negate(
       context, IR_SUB, ir_val_imm(type.type, 0), value, type.type);
 }
 
+static ir_val_t build_bitwise_not(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t type) {
+  const psx_hir_node_t *operand = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand || type.type_class != IR_MIR_TYPE_INTEGER)
+    return hir_ir_unsupported_expr(context);
+  ir_val_t value = hir_ir_build_expr(context, operand);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  value = hir_ir_coerce_direct_value(
+      context, value, hir_ir_classify_node_type(context, operand), type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return hir_ir_emit_integer_binary(
+      context, IR_XOR, value,
+      ir_val_imm(type.type, -1), type.type);
+}
+
 ir_val_t hir_ir_emit_integer_width_conversion(
     hir_ir_context_t *context, ir_val_t value, ir_type_t target,
     int sign_extend) {
@@ -1935,6 +1952,8 @@ ir_val_t hir_ir_build_expr(
 
   if (psx_hir_node_kind(node) == PSX_HIR_NEGATE)
     return build_scalar_negate(context, node, type);
+  if (psx_hir_node_kind(node) == PSX_HIR_BITWISE_NOT)
+    return build_bitwise_not(context, node, type);
 
   if (psx_hir_node_kind(node) == PSX_HIR_COMMA) {
     const psx_hir_node_t *left = hir_ir_child_for_edge(

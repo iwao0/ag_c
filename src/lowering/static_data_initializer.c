@@ -289,6 +289,11 @@ static long long eval_static_const_int(
         eval_static_const_int(lowering_context, node->lhs, ok);
     return !ok || *ok ? !value : 0;
   }
+  if (node->kind == ND_BITWISE_NOT) {
+    long long value =
+        eval_static_const_int(lowering_context, node->lhs, ok);
+    return !ok || *ok ? ~value : 0;
+  }
   if (node->kind == ND_SUB) {
     char *left_symbol = NULL;
     char *right_symbol = NULL;

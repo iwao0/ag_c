@@ -65,6 +65,10 @@ long long psx_eval_const_int(
                             : psx_eval_const_int(store, node->lhs, ok) != 0;
       return !ok || *ok ? !value : 0;
     }
+    case ND_BITWISE_NOT: {
+      long long value = psx_eval_const_int(store, node->lhs, ok);
+      return !ok || *ok ? ~value : 0;
+    }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       int resolved_size = psx_sizeof_query_resolved_size(store, query);
@@ -195,6 +199,8 @@ double psx_eval_const_fp(
       return !ok || *ok ? -value : 0.0;
     }
     case ND_LOGICAL_NOT:
+      return (double)psx_eval_const_int(store, node, ok);
+    case ND_BITWISE_NOT:
       return (double)psx_eval_const_int(store, node, ok);
     case ND_ADD: {
       double left = psx_eval_const_fp(store, node->lhs, ok);

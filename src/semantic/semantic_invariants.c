@@ -63,6 +63,7 @@ static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
     case ND_SIZEOF_QUERY:
     case ND_UNARY_NEGATE:
     case ND_LOGICAL_NOT:
+    case ND_BITWISE_NOT:
     case ND_UNARY_DEREF: case ND_DEREF:
     case ND_SUBSCRIPT: case ND_MEMBER_ACCESS:
     case ND_ADDR: case ND_STRING: case ND_NUM: case ND_GVAR:

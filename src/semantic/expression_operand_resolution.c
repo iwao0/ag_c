@@ -21,20 +21,30 @@ static psx_qual_type_t intern_result_type(
              ? result : invalid_qual_type();
 }
 
+static const psx_type_t *resolve_integer_promotion_type_value(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  if (!semantic_context || !type ||
+      (type->kind != PSX_TYPE_BOOL &&
+       type->kind != PSX_TYPE_INTEGER))
+    return NULL;
+  if (type->kind == PSX_TYPE_BOOL || ps_type_integer_rank(type) < 3)
+    return ps_type_new_integer_kind_in(
+        ps_ctx_arena(semantic_context),
+        PSX_INTEGER_KIND_INT, 0, 0);
+  return ps_type_clone_in(ps_ctx_arena(semantic_context), type);
+}
+
 static const psx_type_t *resolve_arithmetic_unary_result_type_value(
     psx_semantic_context_t *semantic_context,
     psx_type_arithmetic_unary_op_t operator,
     const psx_type_t *type) {
   if (!semantic_context || !type) return NULL;
   if (operator == PSX_TYPE_UNARY_NEGATE) {
-    if (type->kind == PSX_TYPE_BOOL ||
-        (type->kind == PSX_TYPE_INTEGER &&
-         ps_type_integer_rank(type) < 3))
-      return ps_type_new_integer_kind_in(
-          ps_ctx_arena(semantic_context),
-          PSX_INTEGER_KIND_INT, 0, 0);
-    if (type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT ||
-        type->kind == PSX_TYPE_COMPLEX)
+    if (type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER)
+      return resolve_integer_promotion_type_value(
+          semantic_context, type);
+    if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)
       return ps_type_clone_in(ps_ctx_arena(semantic_context), type);
     return NULL;
   }
@@ -101,6 +111,20 @@ psx_qual_type_t psx_resolve_logical_not_result_qual_type_in(
       ps_type_new_integer_kind_in(
           ps_ctx_arena(semantic_context),
           PSX_INTEGER_KIND_INT, 0, 0));
+}
+
+psx_qual_type_t psx_resolve_bitwise_not_result_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  if (!semantic_context ||
+      operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return invalid_qual_type();
+  const psx_type_t *type = ps_ctx_type_by_id_in(
+      semantic_context, operand_type.type_id);
+  return intern_result_type(
+      semantic_context,
+      resolve_integer_promotion_type_value(
+          semantic_context, type));
 }
 
 psx_qual_type_t psx_resolve_binary_result_qual_type_in(
