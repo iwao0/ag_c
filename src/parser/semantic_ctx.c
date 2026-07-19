@@ -425,26 +425,6 @@ const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
   return context ? context->record_layouts : NULL;
 }
 
-int ps_ctx_type_sizeof_in(
-    psx_semantic_context_t *context, const psx_type_t *type) {
-  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
-      context, type).type_id;
-  return ps_type_sizeof_id_with_records(
-      ps_ctx_semantic_type_table_in(context),
-      ps_ctx_record_layout_table_in(context), type_id,
-      ps_ctx_target_info(context));
-}
-
-int ps_ctx_type_alignof_in(
-    psx_semantic_context_t *context, const psx_type_t *type) {
-  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
-      context, type).type_id;
-  return ps_type_alignof_id_with_records(
-      ps_ctx_semantic_type_table_in(context),
-      ps_ctx_record_layout_table_in(context), type_id,
-      ps_ctx_target_info(context));
-}
-
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
@@ -1849,10 +1829,15 @@ bool psx_ctx_find_typedef_layout_in(
     char *name, int len, int *out_size, int *out_alignment) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  const psx_type_t *type = typedef_record_decl_type(context, t);
-  if (out_size) *out_size = ps_ctx_type_sizeof_in(context, type);
+  psx_qual_type_t qual_type = typedef_record_decl_qual_type(t);
+  if (out_size)
+    *out_size = ps_type_sizeof_id_with_records(
+        context->semantic_types, context->record_layouts,
+        qual_type.type_id, ps_ctx_target_info(context));
   if (out_alignment)
-    *out_alignment = ps_ctx_type_alignof_in(context, type);
+    *out_alignment = ps_type_alignof_id_with_records(
+        context->semantic_types, context->record_layouts,
+        qual_type.type_id, ps_ctx_target_info(context));
   return true;
 }
 

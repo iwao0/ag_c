@@ -16,19 +16,26 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
 #include "../parser/vla_runtime.h"
+#include "../type_layout.h"
 
 #include <string.h>
 
 static int query_type_size(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *type) {
-  return ps_ctx_type_sizeof_in(semantic_context, type);
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t qual_type) {
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
 }
 
 static int query_type_alignment(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *type) {
-  return ps_ctx_type_alignof_in(semantic_context, type);
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t qual_type) {
+  return ps_type_alignof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
 }
 
 static node_t *sizeof_base(node_t *operand, int *subscript_depth) {
@@ -151,7 +158,9 @@ static void resolve_sizeof_type_name(
   }
 
   const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
-  int base_size = query_type_size(semantic_context, base_type);
+  psx_qual_type_t base_qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, base_type);
+  int base_size = query_type_size(semantic_context, base_qual_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   psx_sizeof_runtime_plan_t *runtime_plan =
@@ -335,7 +344,11 @@ void psx_resolve_sizeof_query_in_contexts(
         (string->byte_len + 1) * width;
     return;
   }
-  int size = type ? query_type_size(semantic_context, type) : 0;
+  psx_qual_type_t qual_type = type
+      ? ps_ctx_intern_qual_type_in(semantic_context, type)
+      : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                          PSX_TYPE_QUALIFIER_NONE};
+  int size = query_type_size(semantic_context, qual_type);
   if (type && type->kind == PSX_TYPE_VOID) size = 1;
   query_resolution->resolved_size = size > 0 ? size : 8;
 }
@@ -353,12 +366,16 @@ void psx_resolve_alignof_query_in_contexts(
           store, ps_ctx_arena(semantic_context), &query->base,
           sizeof(*query)))
     return;
-  const psx_type_t *type =
-      psx_resolve_bound_type_name_ref_in_contexts(
-          semantic_context, global_registry, local_registry,
-          &query->type_name,
-          psx_node_type_name_state_mut(store, &query->base));
-  int alignment = query_type_alignment(semantic_context, type);
+  psx_type_name_resolution_state_t *type_name_state =
+      psx_node_type_name_state_mut(store, &query->base);
+  const psx_type_t *type = psx_resolve_bound_type_name_ref_in_contexts(
+      semantic_context, global_registry, local_registry,
+      &query->type_name, type_name_state);
+  psx_qual_type_t qual_type = type
+      ? psx_type_name_resolved_qual_type(type_name_state)
+      : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                          PSX_TYPE_QUALIFIER_NONE};
+  int alignment = query_type_alignment(semantic_context, qual_type);
   psx_alignof_query_resolution_state_t *resolution =
       psx_alignof_query_resolution_state(store, query);
   if (resolution)

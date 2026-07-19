@@ -3067,9 +3067,13 @@ const compoundLiteralSemanticsSource = await readFile(
   "src/semantic/compound_literal_semantics.c",
   "utf8",
 );
-if (!/\bps_ctx_type_sizeof_in\s*\(/.test(typeQueryResolutionSource) ||
-    !/\bps_ctx_type_alignof_in\s*\(/.test(typeQueryResolutionSource) ||
-    /\bps_type_(?:size|align)of_id_with_records\s*\(/.test(
+if (/\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
@@ -6924,8 +6928,15 @@ if (!/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.
     !/\bconst\s+psx_type_t\s*\*\s*ps_ctx_type_by_id_in\s*\(/.test(
       semanticContextSource,
     ) ||
-    !/\bps_ctx_type_sizeof_in\s*\(/.test(semanticContextSource) ||
-    !/\bps_ctx_type_alignof_in\s*\(/.test(semanticContextSource) ||
+    /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
+      `${semanticContextSource}\n${parserSemanticContextImplementation}`,
+    ) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      parserSemanticContextImplementation,
+    ) ||
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
+      parserSemanticContextImplementation,
+    ) ||
     /\bps_ctx_refresh_type_completeness_in\s*\(/.test(
       `${semanticContextSource}\n${parserSemanticContextImplementation}`,
     ) ||
@@ -6933,6 +6944,14 @@ if (!/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.
   throw new Error(
     "semantic context must expose immutable type identity and target layout queries",
   );
+}
+for (const path of allSourceFiles) {
+  const source = await readFile(path, "utf8");
+  if (/\bps_ctx_type_(?:size|align)of_in\s*\(/.test(source)) {
+    throw new Error(
+      `${path} must query target layout by canonical TypeId instead of a raw parser type`,
+    );
+  }
 }
 const recordIdBinder = parserSemanticContextImplementation.match(
   /void\s+ps_ctx_bind_record_ids_in\s*\([^]*?\n\}/,

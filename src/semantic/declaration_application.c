@@ -12,6 +12,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../type_layout.h"
 #include "aggregate_member_resolution.h"
 #include "declaration_resolution.h"
 #include "declarator_bound_resolution.h"
@@ -419,9 +420,10 @@ static int resolve_parsed_alignas_type_name(
         "alignas", "alignment type name could not be resolved");
     return 1;
   }
-  const psx_type_t *canonical =
-      ps_ctx_type_by_id_in(semantic_context, qual_type.type_id);
-  int alignment = ps_ctx_type_alignof_in(semantic_context, canonical);
+  int alignment = ps_type_alignof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
   return alignment > 0 ? alignment : 1;
 }
 

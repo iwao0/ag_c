@@ -75,10 +75,6 @@ const psx_record_decl_table_t *ps_ctx_record_decl_table_in(
     const psx_semantic_context_t *context);
 const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
     const psx_semantic_context_t *context);
-int ps_ctx_type_sizeof_in(
-    psx_semantic_context_t *context, const psx_type_t *type);
-int ps_ctx_type_alignof_in(
-    psx_semantic_context_t *context, const psx_type_t *type);
 int ps_ctx_publish_record_layout_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     int size, int alignment);

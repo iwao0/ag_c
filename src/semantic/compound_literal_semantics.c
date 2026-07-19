@@ -4,6 +4,7 @@
 
 #include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
+#include "../type_layout.h"
 
 int psx_resolve_compound_literal_qual_type_plan_in(
     psx_semantic_context_t *semantic_context,
@@ -21,7 +22,11 @@ int psx_resolve_compound_literal_qual_type_plan_in(
       object_type->kind == PSX_TYPE_FUNCTION ||
       ps_type_is_incomplete_array(object_type) ||
       ps_type_contains_vla_array(object_type) ||
-      ps_ctx_type_sizeof_in(semantic_context, object_type) <= 0)
+      ps_type_sizeof_id_with_records(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          ps_ctx_record_layout_table_in(semantic_context),
+          object_qual_type.type_id,
+          ps_ctx_target_info(semantic_context)) <= 0)
     return 0;
 
   psx_qual_type_t result_qual_type = object_qual_type;

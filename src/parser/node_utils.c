@@ -1464,8 +1464,12 @@ static int gvar_init_cursor_consume_plain_zero_padding(gvar_init_cursor_t *cur,
 static int record_member_declaration_storage_size_in(
     psx_semantic_context_t *semantic_context,
     const psx_record_member_decl_t *member) {
-  return ps_ctx_type_sizeof_in(semantic_context,
-                               psx_record_member_decl_type(member));
+  return member ? ps_type_sizeof_id_with_records(
+                      member->decl_type_table,
+                      ps_ctx_record_layout_table_in(semantic_context),
+                      member->decl_qual_type.type_id,
+                      ps_ctx_target_info(semantic_context))
+                : 0;
 }
 
 static int gvar_init_cursor_consume_resolved_type_zero_padding(

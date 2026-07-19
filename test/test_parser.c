@@ -1066,13 +1066,35 @@ static int test_type_size_id(psx_type_id_t type_id) {
       type_id, ps_ctx_target_info(test_semantic_context()));
 }
 
+static int test_semantic_type_sizeof_in(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  psx_qual_type_t qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, type);
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
+}
+
+static int test_semantic_type_alignof_in(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  psx_qual_type_t qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, type);
+  return ps_type_alignof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
+}
+
 static int test_tag_member_decl_value_size(const tag_member_info_t *member) {
-  return ps_ctx_type_sizeof_in(
+  return test_semantic_type_sizeof_in(
       test_semantic_context(), ps_tag_member_decl_value_type(member));
 }
 
 static int test_tag_member_decl_storage_size(const tag_member_info_t *member) {
-  return ps_ctx_type_sizeof_in(
+  return test_semantic_type_sizeof_in(
       test_semantic_context(), ps_tag_member_decl_type(member));
 }
 
@@ -12023,8 +12045,8 @@ static void test_target_type_layout_boundary() {
       semantic_context, pointer_array_identity,
       &pointer_array_query_plan));
   ASSERT_EQ(4, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(12, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
-  ASSERT_EQ(4, ps_ctx_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(semantic_context, pointer_array));
+  ASSERT_EQ(4, test_semantic_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
                    semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
@@ -12037,8 +12059,8 @@ static void test_target_type_layout_boundary() {
       semantic_context, pointer_array_identity,
       &pointer_array_query_plan));
   ASSERT_EQ(8, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
-  ASSERT_EQ(8, ps_ctx_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(semantic_context, pointer_array));
+  ASSERT_EQ(8, test_semantic_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
                    semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
@@ -12664,7 +12686,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(lowered->is_byref_param);
   ASSERT_EQ(8, lowered->size);
   ASSERT_EQ(0, ps_lvar_decl_sizeof(lowered, 0));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_lvar_get_decl_type(lowered)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
@@ -12718,7 +12740,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
             runtime_stride_slot->integer_kind);
   ASSERT_TRUE(ps_type_is_unsigned(runtime_stride_slot));
   ASSERT_EQ(PSX_VLA_RUNTIME_SLOT_SIZE,
-            ps_ctx_type_sizeof_in(
+            test_semantic_type_sizeof_in(
                 test_semantic_context(), runtime_stride_slot));
 
   const psx_typed_hir_tree_t *inner_dimension_expressions[1] = {
@@ -13307,7 +13329,7 @@ static void test_record_decl_ownership_boundary() {
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             first->members[0].decl_qual_type.qualifiers);
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    psx_record_member_decl_type(&first->members[0])));
   ASSERT_TRUE(ps_type_has_qualifier(
@@ -13666,7 +13688,7 @@ static void test_aggregate_body_phase_boundary() {
       (char *)"late", 4, &member));
   ASSERT_EQ(60, member.offset);
   ASSERT_EQ(PSX_TYPE_INTEGER, member.decl_type->kind);
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(), member.decl_type));
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
@@ -14305,9 +14327,9 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__AlignedMember", 15);
   ASSERT_TRUE(aligned_member != NULL);
   ASSERT_EQ(0, ps_type_sizeof(aligned_member));
-  ASSERT_EQ(12, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(
                     test_semantic_context(), aligned_member));
-  ASSERT_EQ(4, ps_ctx_type_alignof_in(
+  ASSERT_EQ(4, test_semantic_type_alignof_in(
                    test_semantic_context(), aligned_member));
 
   psx_resolve_tag_declaration(
@@ -16994,7 +17016,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ret_meta_type->kind);
   ASSERT_EQ(0, ps_type_sizeof(ret_meta_type));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(), ret_meta_type));
   ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
   ASSERT_TRUE(ret_meta_type ==
@@ -18197,7 +18219,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_STRUCT,
             ps_lvar_get_decl_type(aligned_value)->kind);
   ASSERT_EQ(0, ps_type_sizeof(ps_lvar_get_decl_type(aligned_value)));
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_lvar_get_decl_type(aligned_value)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
@@ -18472,7 +18494,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(gsa));
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(gsa));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(gsa));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_type_array_leaf_type(ps_gvar_get_decl_type(gsa))));
   ASSERT_EQ(4, ps_type_array_flat_element_count(
@@ -18825,7 +18847,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(byref_s_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, byref_s_type->kind);
   ASSERT_EQ(0, ps_type_sizeof(byref_s_type));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(), byref_s_type));
   node_t *byref_s_node = psx_node_new_lvar_identifier_ref_for(byref_s);
   ASSERT_EQ(ND_LVAR, psx_resolution_node_kind(byref_s_node));
@@ -18940,7 +18962,7 @@ static void test_type_metadata_bridge() {
             ps_lvar_get_decl_type(ptrarr_p)->kind);
   ASSERT_EQ(0, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
                    ps_lvar_get_decl_type(ptrarr_p)));
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_lvar_get_decl_type(ptrarr_p)->base));
   node_t *ptrarr_p_node = psx_node_new_lvar_identifier_ref_for(ptrarr_p);
@@ -19686,7 +19708,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptrarr2d_struct_array)->kind);
   ASSERT_EQ(0, ps_node_type_size(ptrarr2d_struct_array));
   ASSERT_EQ(0, ps_node_deref_size(ptrarr2d_struct_array));
-  ASSERT_EQ(48, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(48, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_node_get_type(ptrarr2d_struct_array)));
   ASSERT_TRUE(ps_node_deref_decays_to_address(ptrarr2d_struct_array));
@@ -19707,7 +19729,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptrarr2d_struct_row)->kind);
   ASSERT_EQ(0, ps_node_type_size(ptrarr2d_struct_row));
   ASSERT_EQ(0, ps_node_deref_size(ptrarr2d_struct_row));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_node_get_type(ptrarr2d_struct_row)));
   ASSERT_TRUE(ps_node_subscript_deref_uses_base_address(ptrarr2d_struct_row));
@@ -19719,7 +19741,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(ptrarr2d_struct_elem) != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ps_node_get_type(ptrarr2d_struct_elem)->kind);
   ASSERT_EQ(0, ps_node_type_size(ptrarr2d_struct_elem));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_node_get_type(ptrarr2d_struct_elem)));
   ASSERT_EQ(0, ps_node_deref_size(ptrarr2d_struct_elem));
@@ -20865,7 +20887,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(typed_struct_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, typed_struct_funcdef_ty->kind);
   ASSERT_EQ(0, ps_type_sizeof(typed_struct_funcdef_ty));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(), typed_struct_funcdef_ty));
 
   parsed_code =
@@ -21423,7 +21445,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_lvar_get_decl_type(r1_lvar) != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ps_lvar_get_decl_type(r1_lvar)->kind);
   ASSERT_EQ(0, ps_type_sizeof(ps_lvar_get_decl_type(r1_lvar)));
-  ASSERT_EQ(16, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(16, test_semantic_type_sizeof_in(
                     test_semantic_context(), ps_lvar_get_decl_type(r1_lvar)));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(r1_lvar));
   ASSERT_TRUE(ps_lvar_is_struct_aggregate(r1_lvar));
@@ -22032,7 +22054,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(tm817_gs));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(tm817_gs));
   ASSERT_EQ(0, ps_gvar_array_element_size(tm817_gs));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_gvar_get_decl_type(tm817_gs)->base));
   ASSERT_EQ(2, ps_gvar_array_element_count(tm817_gs));
@@ -22191,10 +22213,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(flat_decl_inner_record != NULL);
   flat_decl_array_element->record_id = flat_decl_inner_record->record_id;
   flat_decl_array_member.decl_type = flat_decl_array_type;
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     flat_decl_array_member.decl_type));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    flat_decl_array_member.decl_type->base));
   ASSERT_EQ(2, test_tag_flat_slot_count(TK_STRUCT, (char *)flat_decl_inner_tag,
@@ -23392,14 +23414,14 @@ static void test_type_metadata_bridge() {
       lvar_view_struct_array_type);
   ASSERT_TRUE(ps_lvar_is_array(&lvar_view_struct_array_shape));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(&lvar_view_struct_array_shape));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_lvar_get_decl_type(
                         &lvar_view_struct_array_shape)));
   const psx_type_t *lvar_view_struct_element_type =
       ps_type_array_leaf_type(ps_lvar_get_decl_type(
           &lvar_view_struct_array_shape));
-  int lvar_view_struct_element_size = ps_ctx_type_sizeof_in(
+  int lvar_view_struct_element_size = test_semantic_type_sizeof_in(
       test_semantic_context(), lvar_view_struct_element_type);
   ASSERT_EQ(12, lvar_view_struct_element_size);
   node_t *lvar_view_struct_array_elem =
@@ -23410,7 +23432,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(112,
             psx_resolved_object_ref_storage_offset(
                 lvar_view_struct_array_elem));
-  ASSERT_EQ(12, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_node_get_type((node_t *)lvar_view_struct_array_elem)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
@@ -23427,13 +23449,13 @@ static void test_type_metadata_bridge() {
   set_test_storage_fixture_type(
       &lvar_view_struct_object_size,
       lvar_view_struct_object_type);
-  ASSERT_EQ(12, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_lvar_get_decl_type(
                         &lvar_view_struct_object_size)));
   node_t *lvar_view_struct_object_ref =
       as_lvar(psx_node_new_lvar_object_ref_for(&lvar_view_struct_object_size));
-  ASSERT_EQ(12, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_node_get_type((node_t *)lvar_view_struct_object_ref)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
@@ -24414,16 +24436,16 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(gap != NULL);
   node_t *gap_node = ps_node_new_gvar_for(gap);
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(gap_node));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(),
                     ps_node_get_type(gap_node)->base));
   node_t *gap_row = ps_node_new_unary_deref_for(gap_node);
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(gap_row));
   ASSERT_EQ(0, ps_node_type_size(gap_row));
   ASSERT_EQ(0, ps_node_deref_size(gap_row));
-  ASSERT_EQ(24, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
                     test_semantic_context(), ps_node_get_type(gap_row)));
-  ASSERT_EQ(8, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(8, test_semantic_type_sizeof_in(
                    test_semantic_context(),
                    ps_node_get_type(gap_row)->base));
   ASSERT_TRUE(ps_node_get_type(gap_row) != NULL);
@@ -26898,8 +26920,8 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(direct_tag_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
   ASSERT_EQ(0, ps_type_sizeof(direct_tag_type));
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(second, direct_tag_type));
-  ASSERT_EQ(4, ps_ctx_type_alignof_in(second, direct_tag_type));
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(second, direct_tag_type));
+  ASSERT_EQ(4, test_semantic_type_alignof_in(second, direct_tag_type));
   const psx_record_decl_t *direct_record =
       test_record_decl_in(second, direct_tag_type);
   ASSERT_TRUE(direct_record != NULL);
@@ -27471,7 +27493,7 @@ static void test_compilation_session_registry_isolation() {
           &isolated_type_name, &isolated_type_name_state);
   ASSERT_TRUE(isolated_resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, isolated_resolved_type->kind);
-  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+  ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    first.semantic_context, isolated_resolved_type));
   psx_identifier_resolution_t isolated_global_resolution;
   psx_resolve_identifier(

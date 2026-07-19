@@ -5,6 +5,7 @@
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "../type_layout.h"
 #include "resolved_node_kind.h"
 #include "resolved_object_ref.h"
 
@@ -35,6 +36,15 @@ static tk_float_kind_t node_fp_kind(
 static psx_resolution_node_kind_t resolved_node_kind(
     const psx_resolution_store_t *store, const node_t *node) {
   return psx_resolved_object_ref_node_kind(store, node);
+}
+
+static int semantic_type_size(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t qual_type) {
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
 }
 
 static void warn_float_to_int(
@@ -71,8 +81,8 @@ static void warn_decl_initializer_overflow(
     return;
   const psx_type_t *lhs_type = ps_node_get_type(store, lhs);
   if (lhs_type && lhs_type->kind == PSX_TYPE_BOOL) return;
-  int type_size = ps_ctx_type_sizeof_in(
-      semantic_context, lhs_type);
+  int type_size = semantic_type_size(
+      semantic_context, ps_node_qual_type(store, lhs));
   if (type_size <= 0 || type_size >= 4) return;
 
   long long value = ((node_num_t *)rhs)->val;
@@ -416,9 +426,9 @@ static void warn_arithmetic(
       node->rhs && node->rhs->kind == ND_NUM) {
     long long amount = ((node_num_t *)node->rhs)->val;
     int width = node->lhs &&
-                        ps_ctx_type_sizeof_in(
+                        semantic_type_size(
                             semantic_context,
-                            ps_node_get_type(store, node->lhs)) >= 8
+                            ps_node_qual_type(store, node->lhs)) >= 8
                     ? 64
                     : 32;
     if (amount < 0 || amount >= width) {
