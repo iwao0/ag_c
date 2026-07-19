@@ -866,7 +866,13 @@ int main(void) {
           WASM32_MI_I32_REM_S) ||
       !wasm32_machine_opcode_is_add(WASM32_MI_I64_ADD) ||
       !wasm32_machine_opcode_is_subtract(WASM32_MI_I32_SUB) ||
-      wasm32_machine_opcode_is_comparison(WASM32_MI_I32_ADD)) {
+      wasm32_machine_opcode_is_comparison(WASM32_MI_I32_ADD) ||
+      strcmp(wasm32_machine_inst_kind_name(
+                 WASM32_MACHINE_INST_BINARY),
+             "machine.binary") != 0 ||
+      strcmp(wasm32_machine_inst_kind_name(
+                 (wasm32_machine_inst_kind_t)255),
+             "machine.unknown") != 0) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
     return 1;
   }

@@ -10938,6 +10938,13 @@ if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
     /ir_(?:inst|block)_t\s*\*source\s*;/.test(
       wasmMachineFunctionHeader,
     ) ||
+    /\bir_op_t\s+op\s*;/.test(wasmMachineFunctionHeader) ||
+    !/wasm32_machine_inst_kind_name\s*\(/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    !/wasm32_machine_inst_kind_name\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
     /wasm32_machine_function_instruction\s*\(/.test(
       wasmMachineFunctionHeader,
     ) ||
@@ -10952,6 +10959,10 @@ if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
     ) ||
     /\bir_func_t\b/.test(wasmWatWriterSource) ||
     /\bir_func_t\b/.test(wasmObjectWriterSource) ||
+    /(?:i|instruction|selected)->op\b/.test(wasmWatWriterSource) ||
+    /(?:i|instruction|selected)->op\b/.test(wasmObjectWriterSource) ||
+    /\bir_op_name\s*\(/.test(wasmWatWriterSource) ||
+    /\bir_op_name\s*\(/.test(wasmObjectWriterSource) ||
     /\bir_module_t\b/.test(wasmWatWriterSource) ||
     /\bir_module_t\b/.test(wasmObjectWriterSource) ||
     /module->funcs/.test(wasmWatWriterSource) ||

@@ -217,11 +217,14 @@ static ag_diagnostic_context_t *wasm32_obj_diagnostics(
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
 
-static void obj_unsupported_op(
-    wasm32_obj_context_t *context, ir_op_t op) {
+static void obj_unsupported_inst(
+    wasm32_obj_context_t *context,
+    const wasm32_machine_inst_t *instruction) {
   diag_emit_internalf_in(wasm32_obj_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
                       diag_message_for_in(wasm32_obj_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
-                      ir_op_name(op));
+                      wasm32_machine_inst_kind_name(
+                          instruction ? instruction->kind
+                                      : WASM32_MACHINE_INST_NONE));
 }
 
 static void obj_unsupported_msg(
@@ -1058,7 +1061,7 @@ static unsigned selected_opcode_or_unsupported(
     wasm32_obj_context_t *context,
     const wasm32_machine_inst_t *selected) {
   unsigned opcode = wasm32_machine_opcode_binary(selected->binary.opcode);
-  if (!opcode) obj_unsupported_op(context, selected->op);
+  if (!opcode) obj_unsupported_inst(context, selected);
   return opcode;
 }
 
@@ -1080,7 +1083,7 @@ static void emit_selected_unary(
         context, body, instruction->src1, selected->operand_type, param_count);
   }
   unsigned opcode = wasm32_machine_opcode_binary(selected->opcode);
-  if (!opcode) obj_unsupported_op(context, instruction->op);
+  if (!opcode) obj_unsupported_inst(context, instruction);
   wb_u8(body, opcode);
   emit_local_set(
       body, local_index(param_count, instruction->dst.id));
@@ -1177,17 +1180,17 @@ static void emit_parameter_bind(
     int param_count) {
   if (!selected ||
       selected->kind != WASM32_MACHINE_INST_PARAMETER_BIND)
-    obj_unsupported_op(context, instruction->op);
+    obj_unsupported_inst(context, instruction);
   const wasm32_machine_parameter_bind_t *binding =
       &selected->parameter_bind;
   if (!binding->pieces || binding->piece_count == 0 ||
       instruction->src1.type != IR_TY_PTR)
-    obj_unsupported_op(context, instruction->op);
+    obj_unsupported_inst(context, instruction);
   for (int i = 0; i < binding->piece_count; i++) {
     int parameter_slot = binding->physical_index + i;
     if (parameter_slot < 0 ||
         parameter_slot >= object_function->sig.nparams)
-      obj_unsupported_op(context, instruction->op);
+      obj_unsupported_inst(context, instruction);
     if (binding->pieces[i].kind ==
         WASM32_MACHINE_PARAMETER_INDIRECT) {
       emit_parameter_copy(
@@ -1274,7 +1277,7 @@ static void emit_direct_aggregate_call_result(
     int result_local_i32, int result_local_i64,
     int param_count) {
   if (call->result_area.id == IR_VAL_NONE)
-    obj_unsupported_op(context, instruction->op);
+    obj_unsupported_inst(context, instruction);
   ir_type_t result_type = call->direct_result_type;
   ir_type_t type = wasm_ir_type(result_type);
   int temporary = type == IR_TY_I64
@@ -1544,7 +1547,7 @@ static void gen_func_body(
                   &machine_function, i->dst.id);
           int off = slot ? slot->offset : -1;
           if (off < 0 || frame_size <= 0)
-            obj_unsupported_op(context, i->op);
+            obj_unsupported_inst(context, i);
           emit_local_get(&body, fp_local);
           emit_const(context, &body, IR_TY_I32, off);
           wb_u8(&body, 0x6a);
@@ -1571,7 +1574,7 @@ static void gen_func_body(
         case WASM32_MACHINE_INST_STRING_ADDRESS:
         case WASM32_MACHINE_INST_SYMBOL_ADDRESS:
         case WASM32_MACHINE_INST_TLS_ADDRESS: {
-          if (!i->sym) obj_unsupported_op(context, i->op);
+          if (!i->sym) obj_unsupported_inst(context, i);
           if (planned->kind == WASM32_MACHINE_INST_SYMBOL_ADDRESS &&
               i->is_function_symbol) {
             obj_func_t *target = intern_func(context, i->sym, i->sym_len);
@@ -1608,7 +1611,7 @@ static void gen_func_body(
           if (selected->conversion.opcode != WASM32_MI_COPY) {
             unsigned opcode = wasm32_machine_opcode_binary(
                 selected->conversion.opcode);
-            if (!opcode) obj_unsupported_op(context, i->op);
+            if (!opcode) obj_unsupported_inst(context, i);
             wb_u8(&body, opcode);
           }
           emit_local_set(&body, local_index(param_count, i->dst.id));
@@ -1681,7 +1684,7 @@ static void gen_func_body(
               emit_val(context, &body, i->src2, value_ty, param_count);
               unsigned opcode = wasm32_machine_opcode_binary(
                   selected->atomic.binary.opcode);
-              if (!opcode) obj_unsupported_op(context, i->op);
+              if (!opcode) obj_unsupported_inst(context, i);
               wb_u8(&body, opcode);
             }
             wb_u8(
@@ -1710,7 +1713,7 @@ static void gen_func_body(
             emit_local_get(&body, exp_local);
             unsigned comparison_opcode = wasm32_machine_opcode_binary(
                 selected->atomic.comparison.opcode);
-            if (!comparison_opcode) obj_unsupported_op(context, i->op);
+            if (!comparison_opcode) obj_unsupported_inst(context, i);
             wb_u8(&body, comparison_opcode);
             emit_local_set(&body, local_index(param_count, i->dst.id));
             emit_local_get(&body, local_index(param_count, i->dst.id));
@@ -1731,7 +1734,7 @@ static void gen_func_body(
             emit_selected_memarg(&body, &selected->atomic.store);
             break;
           }
-          obj_unsupported_op(context, i->op);
+          obj_unsupported_inst(context, i);
           break;
         }
         case WASM32_MACHINE_INST_MEMORY_COPY:
@@ -1847,7 +1850,7 @@ static void gen_func_body(
                                            old_va_arg_area_local, vararg_area_bytes);
             break;
           }
-          if (!i->sym) obj_unsupported_op(context, i->op);
+          if (!i->sym) obj_unsupported_inst(context, i);
           obj_func_t *target = intern_func(context, i->sym, i->sym_len);
           of = &g_obj.funcs[of_index];
           obj_sig_t *emit_sig = &target->sig;
@@ -1891,10 +1894,10 @@ static void gen_func_body(
         case WASM32_MACHINE_INST_CONTROL:
           switch (planned->control.kind) {
             case WASM32_MACHINE_CONTROL_LABEL:
-              if (!has_control_flow) obj_unsupported_op(context, i->op);
+              if (!has_control_flow) obj_unsupported_inst(context, i);
               break;
             case WASM32_MACHINE_CONTROL_BRANCH:
-              if (!has_control_flow) obj_unsupported_op(context, i->op);
+              if (!has_control_flow) obj_unsupported_inst(context, i);
               emit_const(
                   context, &body, IR_TY_I32,
                   planned->control.target_block_id);
@@ -1903,7 +1906,7 @@ static void gen_func_body(
               wb_uleb(&body, 1);
               break;
             case WASM32_MACHINE_CONTROL_BRANCH_CONDITIONAL:
-              if (!has_control_flow) obj_unsupported_op(context, i->op);
+              if (!has_control_flow) obj_unsupported_inst(context, i);
               emit_val(
                   context, &body, planned->control.value,
                   IR_TY_I32, param_count);
@@ -1925,7 +1928,7 @@ static void gen_func_body(
             case WASM32_MACHINE_CONTROL_SUSPEND:
               if (!machine_function.is_continuation_entry ||
                   !has_control_flow)
-                obj_unsupported_op(context, i->op);
+                obj_unsupported_inst(context, i);
               emit_local_get(&body, resumed_local);
               wb_u8(&body, 0x04); wb_u8(&body, 0x40);
               emit_const(context, &body, IR_TY_I32, 0);
@@ -1975,7 +1978,7 @@ static void gen_func_body(
                 if (machine_function.signature.has_hidden_result) {
                   if (result.type != IR_TY_PTR ||
                       result.id == IR_VAL_NONE)
-                    obj_unsupported_op(context, i->op);
+                    obj_unsupported_inst(context, i);
                   emit_indirect_return_copy(
                       context, &body, result,
                       &machine_function.result_copy,
@@ -1985,7 +1988,7 @@ static void gen_func_body(
                         .has_direct_aggregate_result) {
                   if (result.type != IR_TY_PTR ||
                       result.id == IR_VAL_NONE)
-                    obj_unsupported_op(context, i->op);
+                    obj_unsupported_inst(context, i);
                   emit_addr_val(context, &body, result, param_count);
                   wb_u8(
                       &body, memory_binary_or_unsupported(
@@ -2008,11 +2011,11 @@ static void gen_func_body(
               break;
             }
             default:
-              obj_unsupported_op(context, i->op);
+              obj_unsupported_inst(context, i);
           }
           break;
         default:
-          obj_unsupported_op(context, i->op);
+          obj_unsupported_inst(context, i);
       }
     }
     if (has_control_flow && !block->has_terminator) {

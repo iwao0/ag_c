@@ -186,11 +186,14 @@ static int align_to(int value, int align) {
   return (value + mask) & ~mask;
 }
 
-static void wasm_unsupported_op(
-    wasm32_ir_context_t *context, ir_op_t op) {
+static void wasm_unsupported_inst(
+    wasm32_ir_context_t *context,
+    const wasm32_machine_inst_t *instruction) {
   diag_emit_internalf_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
                       diag_message_for_in(wasm32_ir_diagnostics(context), DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
-                      ir_op_name(op));
+                      wasm32_machine_inst_kind_name(
+                          instruction ? instruction->kind
+                                      : WASM32_MACHINE_INST_NONE));
 }
 
 void wasm_unsupported_msg(
@@ -832,7 +835,7 @@ static void emit_load(
   wasm32_ir_context_t *context = ctx->context;
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   if (selected->kind != WASM32_MACHINE_INST_LOAD)
-    wasm_unsupported_op(context, i->op);
+    wasm_unsupported_inst(context, i);
   const char *op = memory_wat_or_unsupported(context, selected->load);
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
   emit_addr_expr(ctx, i->src1);
@@ -858,7 +861,7 @@ static void emit_store(
   const wasm32_machine_symbol_t *symbol =
       get_vreg_global_ref(ctx, i->src1.id, &global_off);
   if (selected->kind != WASM32_MACHINE_INST_STORE)
-    wasm_unsupported_op(context, i->op);
+    wasm_unsupported_inst(context, i);
   ir_type_t store_ty = selected->store.value_type;
   const char *op = memory_wat_or_unsupported(context, selected->store);
   wasm_emitf(indent, "(%s ", op);
@@ -907,7 +910,7 @@ static void emit_atomic_load_expr(
     const wasm32_machine_inst_t *selected) {
   wasm32_ir_context_t *context = ctx->context;
   const char *op = atomic_load_op(context, selected);
-  if (!op) wasm_unsupported_op(context, i->op);
+  if (!op) wasm_unsupported_inst(context, i);
   wasm_cg_emitf("(%s ", op);
   emit_addr_expr(ctx, i->src1);
   wasm_cg_emitf(")");
@@ -919,7 +922,7 @@ static void emit_atomic_store(
     ir_val_t ptr, ir_val_t val, int indent) {
   wasm32_ir_context_t *context = ctx->context;
   const char *op = atomic_store_op(context, selected);
-  if (!op) wasm_unsupported_op(context, i->op);
+  if (!op) wasm_unsupported_inst(context, i);
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, ptr);
   wasm_cg_emitf(" ");
@@ -932,7 +935,7 @@ static void emit_atomic_inst(
     const wasm32_machine_inst_t *selected, int indent) {
   wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_ATOMIC)
-    wasm_unsupported_op(context, i->op);
+    wasm_unsupported_inst(context, i);
   if (selected->atomic.kind == WASM32_MACHINE_ATOMIC_FENCE) {
     wasm_emitf(indent, "(nop)\n");
     return;
@@ -964,7 +967,7 @@ static void emit_atomic_inst(
     wasm_cg_emitf(")\n");
 
     const char *store_op = atomic_store_op(context, selected);
-    if (!store_op) wasm_unsupported_op(context, i->op);
+    if (!store_op) wasm_unsupported_inst(context, i);
     wasm_emitf(indent, "(%s ", store_op);
     emit_addr_expr(ctx, i->src1);
     wasm_cg_emitf(" ");
@@ -973,7 +976,7 @@ static void emit_atomic_inst(
     } else {
       const char *op = wasm32_machine_opcode_wat(
           selected->atomic.binary.opcode);
-      if (!op) wasm_unsupported_op(context, i->op);
+      if (!op) wasm_unsupported_inst(context, i);
       wasm_cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->dst, mem_ty);
       wasm_cg_emitf(" ");
@@ -993,7 +996,7 @@ static void emit_atomic_inst(
     const char *tmp = mem_ty == IR_TY_I64 ? "$atomic_tmp_i64" : "$atomic_tmp_i32";
     const char *exp = mem_ty == IR_TY_I64 ? "$atomic_exp_i64" : "$atomic_exp_i32";
     if (!load_op || !store_op || !eq_op)
-      wasm_unsupported_op(context, i->op);
+      wasm_unsupported_inst(context, i);
 
     wasm_emitf(indent, "(local.set %s (%s ", tmp, load_op);
     emit_addr_expr(ctx, i->src1);
@@ -1018,7 +1021,7 @@ static void emit_atomic_inst(
     return;
   }
 
-  wasm_unsupported_op(context, i->op);
+  wasm_unsupported_inst(context, i);
 }
 
 static int uses_ptr_value(
@@ -1084,12 +1087,12 @@ static void emit_parameter_bind(
     const wasm32_machine_inst_t *selected, int indent) {
   wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_PARAMETER_BIND)
-    wasm_unsupported_op(context, instruction->op);
+    wasm_unsupported_inst(context, instruction);
   const wasm32_machine_parameter_bind_t *binding =
       &selected->parameter_bind;
   if (!binding->pieces || binding->piece_count == 0 ||
       instruction->src1.type != IR_TY_PTR)
-    wasm_unsupported_op(context, instruction->op);
+    wasm_unsupported_inst(context, instruction);
   for (int i = 0; i < binding->piece_count; i++) {
     int parameter_slot = binding->physical_index + i;
     if (binding->pieces[i].kind ==
@@ -1101,7 +1104,7 @@ static void emit_parameter_bind(
     }
     const char *store = memory_wat_or_unsupported(
         context, binding->stores[i]);
-    if (!store) wasm_unsupported_op(context, instruction->op);
+    if (!store) wasm_unsupported_inst(context, instruction);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_plus_const(
         ctx, instruction->src1, binding->pieces[i].byte_offset);
@@ -1195,7 +1198,7 @@ static void emit_call(
     const wasm32_machine_inst_t *selected, int indent) {
   wasm32_ir_context_t *context = ctx->context;
   if (selected->kind != WASM32_MACHINE_INST_CALL)
-    wasm_unsupported_op(context, i->op);
+    wasm_unsupported_inst(context, i);
   const wasm32_machine_call_t *call = &selected->call;
   const wasm32_machine_signature_t *call_signature = &call->signature;
   int argument_count = call->argument_count;
@@ -1221,7 +1224,7 @@ static void emit_call(
     if (returns_direct_aggregate) {
       const char *store =
           memory_wat_or_unsupported(context, call->direct_result_store);
-      if (!store) wasm_unsupported_op(context, i->op);
+      if (!store) wasm_unsupported_inst(context, i);
       wasm_emitf(indent, "(%s ", store);
       emit_addr_expr(ctx, call->result_area);
       wasm_cg_emitf(" ");
@@ -1261,7 +1264,7 @@ static void emit_call(
     emit_variadic_arg_area_restore(ctx, vararg_area_bytes, indent);
     return;
   }
-  if (!i->sym) wasm_unsupported_op(context, i->op);
+  if (!i->sym) wasm_unsupported_inst(context, i);
   if (i->is_implicit_call) {
     wasm_unsupported_msg(
         context,
@@ -1279,7 +1282,7 @@ static void emit_call(
     const char *store =
         memory_wat_or_unsupported(context, call->direct_result_store);
     if (!store || call->result_area.id == IR_VAL_NONE)
-      wasm_unsupported_op(context, i->op);
+      wasm_unsupported_inst(context, i);
     wasm_emitf(indent, "(%s ", store);
     emit_addr_expr(ctx, call->result_area);
     wasm_cg_emitf(" (call $%.*s", i->sym_len, i->sym);
@@ -1377,7 +1380,7 @@ static void emit_indirect_ret_copy(
   wasm32_ir_context_t *context = ctx->context;
   if (!ctx->machine.signature.has_hidden_result ||
       source.type != IR_TY_PTR)
-    wasm_unsupported_op(context, instruction->op);
+    wasm_unsupported_inst(context, instruction);
   for (int index = 0;
        index < ctx->machine.result_copy.chunk_count; index++) {
     const wasm32_machine_copy_chunk_t *chunk =
@@ -1402,12 +1405,12 @@ static void emit_unary(
     const wasm32_machine_inst_t *machine, int indent) {
   wasm32_ir_context_t *context = ctx->context;
   if (machine->kind != WASM32_MACHINE_INST_UNARY)
-    wasm_unsupported_op(context, instruction->op);
+    wasm_unsupported_inst(context, instruction);
   const wasm32_machine_unary_t *unary = &machine->unary;
   const char *opcode = wasm32_machine_opcode_wat(unary->opcode);
   const char *type = wasm_any_type_or_unsupported(
       context, unary->operand_type);
-  if (!opcode) wasm_unsupported_op(context, instruction->op);
+  if (!opcode) wasm_unsupported_inst(context, instruction);
   wasm_emitf(
       indent, "(local.set $v%d (%s ", instruction->dst.id, opcode);
   if (unary->form == WASM32_MI_UNARY_ZERO_THEN_OPERAND) {
@@ -1435,7 +1438,7 @@ static void emit_inst(
       return;
     case WASM32_MACHINE_INST_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
-      if (off < 0) wasm_unsupported_op(context, i->op);
+      if (off < 0) wasm_unsupported_inst(context, i);
       wasm_emitf(indent, "(local.set $v%d (i32.add (local.get $fp) (i32.const %d)))\n", i->dst.id, off);
       return;
     }
@@ -1453,7 +1456,7 @@ static void emit_inst(
     case WASM32_MACHINE_INST_STRING_ADDRESS: {
       int addr = data_addr_for_ir_string(
           context, i->sym, i->sym_len, i->object_size);
-      if (addr < 0) wasm_unsupported_op(context, i->op);
+      if (addr < 0) wasm_unsupported_inst(context, i);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
     }
@@ -1490,7 +1493,7 @@ static void emit_inst(
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (selected->opcode != WASM32_MI_COPY) {
         const char *opcode = wasm32_machine_opcode_wat(selected->opcode);
-        if (!opcode) wasm_unsupported_op(context, i->op);
+        if (!opcode) wasm_unsupported_inst(context, i);
         wasm_cg_emitf("(%s ", opcode);
       }
       emit_val_expr(ctx, i->src1);
@@ -1541,7 +1544,7 @@ static void emit_inst(
       const wasm32_machine_binary_t *selected = &planned->binary;
       ir_type_t op_ty = selected->operand_type;
       const char *op = wasm32_machine_opcode_wat(selected->opcode);
-      if (!op) wasm_unsupported_op(context, i->op);
+      if (!op) wasm_unsupported_inst(context, i);
       if (is_fp_type(op_ty)) {
         wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
         emit_val_expr_as(ctx, i->src1, op_ty);
@@ -1617,17 +1620,17 @@ static void emit_inst(
     case WASM32_MACHINE_INST_CONTROL:
       switch (planned->control.kind) {
         case WASM32_MACHINE_CONTROL_LABEL:
-          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
+          if (!dispatch_mode) wasm_unsupported_inst(context, i);
           return;
         case WASM32_MACHINE_CONTROL_BRANCH:
-          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
+          if (!dispatch_mode) wasm_unsupported_inst(context, i);
           wasm_emitf(
               indent, "(local.set $pc (i32.const %d))\n",
               planned->control.target_block_id);
           wasm_emitf(indent, "(br $dispatch)\n");
           return;
         case WASM32_MACHINE_CONTROL_BRANCH_CONDITIONAL:
-          if (!dispatch_mode) wasm_unsupported_op(context, i->op);
+          if (!dispatch_mode) wasm_unsupported_inst(context, i);
           wasm_emitf(indent, "(if ");
           emit_val_expr_as(ctx, planned->control.value, IR_TY_I32);
           wasm_cg_emitf("\n");
@@ -1655,7 +1658,7 @@ static void emit_inst(
             const char *load = memory_wat_or_unsupported(
                 context, ctx->machine.direct_result_load);
             if (!load || result.type != IR_TY_PTR)
-              wasm_unsupported_op(context, i->op);
+              wasm_unsupported_inst(context, i);
             wasm_emitf(indent, "(return (%s ", load);
             emit_addr_expr(ctx, result);
             wasm_cg_emitf("))\n");
@@ -1670,14 +1673,14 @@ static void emit_inst(
           return;
         }
         case WASM32_MACHINE_CONTROL_SUSPEND:
-          wasm_unsupported_op(context, i->op);
+          wasm_unsupported_inst(context, i);
           return;
         default:
-          wasm_unsupported_op(context, i->op);
+          wasm_unsupported_inst(context, i);
           return;
       }
     default:
-      wasm_unsupported_op(context, i->op);
+      wasm_unsupported_inst(context, i);
   }
 }
 

@@ -8,6 +8,43 @@
 
 static int copy_string(char **destination, const char *source, int length);
 
+const char *wasm32_machine_inst_kind_name(
+    wasm32_machine_inst_kind_t kind) {
+  switch (kind) {
+    case WASM32_MACHINE_INST_NONE: return "machine.none";
+    case WASM32_MACHINE_INST_NOP: return "machine.nop";
+    case WASM32_MACHINE_INST_ALLOCA: return "machine.alloca";
+    case WASM32_MACHINE_INST_INTEGER_CONSTANT:
+      return "machine.integer_constant";
+    case WASM32_MACHINE_INST_FLOAT_CONSTANT:
+      return "machine.float_constant";
+    case WASM32_MACHINE_INST_STRING_ADDRESS:
+      return "machine.string_address";
+    case WASM32_MACHINE_INST_SYMBOL_ADDRESS:
+      return "machine.symbol_address";
+    case WASM32_MACHINE_INST_TLS_ADDRESS:
+      return "machine.tls_address";
+    case WASM32_MACHINE_INST_BINARY: return "machine.binary";
+    case WASM32_MACHINE_INST_UNARY: return "machine.unary";
+    case WASM32_MACHINE_INST_CONVERSION: return "machine.conversion";
+    case WASM32_MACHINE_INST_LOAD: return "machine.load";
+    case WASM32_MACHINE_INST_STORE: return "machine.store";
+    case WASM32_MACHINE_INST_ATOMIC: return "machine.atomic";
+    case WASM32_MACHINE_INST_MEMORY_COPY: return "machine.memory_copy";
+    case WASM32_MACHINE_INST_ALIGN_POINTER:
+      return "machine.align_pointer";
+    case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
+      return "machine.dynamic_alloca";
+    case WASM32_MACHINE_INST_VARARG_AREA: return "machine.vararg_area";
+    case WASM32_MACHINE_INST_ADDRESS_ADD: return "machine.address_add";
+    case WASM32_MACHINE_INST_CALL: return "machine.call";
+    case WASM32_MACHINE_INST_PARAMETER_BIND:
+      return "machine.parameter_bind";
+    case WASM32_MACHINE_INST_CONTROL: return "machine.control";
+  }
+  return "machine.unknown";
+}
+
 static int align_to(int value, int alignment) {
   if (alignment <= 1) return value;
   return (value + alignment - 1) & ~(alignment - 1);
@@ -528,7 +565,6 @@ static int initialize_instructions(
          instruction = instruction->next) {
       wasm32_machine_inst_t *machine_instruction =
           &function->instructions[index];
-      machine_instruction->op = instruction->op;
       machine_instruction->dst = instruction->dst;
       machine_instruction->src1 = instruction->src1;
       machine_instruction->src2 = instruction->src2;

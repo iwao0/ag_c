@@ -38,6 +38,9 @@ typedef enum {
   WASM32_MACHINE_INST_CONTROL,
 } wasm32_machine_inst_kind_t;
 
+const char *wasm32_machine_inst_kind_name(
+    wasm32_machine_inst_kind_t kind);
+
 typedef enum {
   WASM32_MACHINE_CONTROL_LABEL = 0,
   WASM32_MACHINE_CONTROL_BRANCH,
@@ -128,7 +131,6 @@ typedef struct {
 
 typedef struct {
   const wasm32_machine_symbol_t *resolved_symbol;
-  ir_op_t op;
   ir_val_t dst;
   ir_val_t src1;
   ir_val_t src2;
