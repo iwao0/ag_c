@@ -1786,18 +1786,31 @@ static int preflight_direct_expression_impl(
     psx_qual_type_t else_type;
     if (!preflight_direct_expression(
             context, syntax->lhs, &condition_type) ||
-        !psx_qual_type_is_scalar_in(
-            context->semantic_context, condition_type) ||
         !preflight_direct_expression(
             context, syntax->rhs, &then_type) ||
         !preflight_direct_expression(
             context, ternary->els, &else_type))
       return 0;
-    psx_qual_type_t result =
-        psx_resolve_conditional_result_qual_type_in(
-            context->semantic_context, then_type, else_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
-    if (qual_type) *qual_type = result;
+    psx_conditional_types_resolution_t resolution;
+    psx_resolve_conditional_qual_types_in(
+        context->semantic_context, condition_type,
+        then_type, else_type, &resolution);
+    if (resolution.status ==
+        PSX_CONDITIONAL_CONDITION_NOT_SCALAR)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
+          syntax);
+    if (resolution.status ==
+        PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
+          syntax);
+    if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
+      return 0;
+    if (qual_type)
+      *qual_type = resolution.result_qual_type;
     return 1;
   }
   psx_hir_node_kind_t hir_kind;
@@ -2856,12 +2869,14 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_semantic_node_t *else_value =
         build_direct_expression(context, ternary->els);
     if (!condition || !then_value || !else_value) return NULL;
-    psx_qual_type_t result_qual_type =
-        psx_resolve_conditional_result_qual_type_in(
-            context->semantic_context,
-            psx_semantic_node_expression_qual_type(then_value),
-            psx_semantic_node_expression_qual_type(else_value));
-    if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    psx_conditional_types_resolution_t resolution;
+    psx_resolve_conditional_qual_types_in(
+        context->semantic_context,
+        psx_semantic_node_expression_qual_type(condition),
+        psx_semantic_node_expression_qual_type(then_value),
+        psx_semantic_node_expression_qual_type(else_value),
+        &resolution);
+    if (resolution.status != PSX_CONDITIONAL_TYPES_OK) {
       set_failure(
           context->failure,
           PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
@@ -2877,9 +2892,9 @@ static psx_semantic_node_t *build_direct_expression_impl(
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
     };
     apply_direct_vla_runtime_view(
-        context, syntax, result_qual_type, &spec);
+        context, syntax, resolution.result_qual_type, &spec);
     return psx_semantic_node_builder_expression(
-        &context->builder, &spec, result_qual_type,
+        &context->builder, &spec, resolution.result_qual_type,
         children, edges, 3, NULL, syntax->kind);
   }
 

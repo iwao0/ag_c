@@ -11154,6 +11154,17 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int *pointer = 0; pointer *= 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
       ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_conditional_condition_type(void) { "
+      "struct S { int value; } condition = {0}; "
+      "return condition ? 1 : 2; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
+      ND_TERNARY);
+  assert_direct_function_rejection(
+      "int __direct_conditional_branch_types(int condition) { "
+      "return condition ? (void)0 : 1; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
+      ND_TERNARY);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25609,6 +25620,13 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message(
       "int main(void) { int *pointer=0; pointer*=2; return 0; }",
       "代入する型に互換性がありません");
+  expect_parse_fail_with_message(
+      "int main(void) { struct S { int value; } condition={0}; "
+      "return condition ? 1 : 2; }",
+      "条件演算子の第1オペランドはスカラ型である必要があります");
+  expect_parse_fail_with_message(
+      "int main(int condition) { return condition ? (void)0 : 1; }",
+      "条件演算子の第2・第3オペランドの型に互換性がありません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",

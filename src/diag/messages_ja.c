@@ -188,6 +188,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET: return "関数識別子に代入することはできません (C11 6.5.16p2)";
     case DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE: return "代入先は変更可能な左辺値である必要があります (C11 6.5.16p2)";
     case DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE: return "代入する型に互換性がありません (C11 6.5.16.1)";
+    case DIAG_ERR_PARSER_CONDITIONAL_CONDITION_NOT_SCALAR: return "条件演算子の第1オペランドはスカラ型である必要があります (C11 6.5.15p2)";
+    case DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE: return "条件演算子の第2・第3オペランドの型に互換性がありません (C11 6.5.15)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

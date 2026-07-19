@@ -47,6 +47,25 @@ psx_qual_type_t psx_resolve_binary_result_qual_type_in(
     psx_resolution_node_kind_t kind,
     psx_qual_type_t lhs_type,
     psx_qual_type_t rhs_type);
+
+typedef enum {
+  PSX_CONDITIONAL_TYPES_OK = 0,
+  PSX_CONDITIONAL_TYPES_INVALID,
+  PSX_CONDITIONAL_CONDITION_NOT_SCALAR,
+  PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
+} psx_conditional_types_status_t;
+
+typedef struct {
+  psx_conditional_types_status_t status;
+  psx_qual_type_t result_qual_type;
+} psx_conditional_types_resolution_t;
+
+void psx_resolve_conditional_qual_types_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t condition_type,
+    psx_qual_type_t then_type,
+    psx_qual_type_t else_type,
+    psx_conditional_types_resolution_t *resolution);
 psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t then_type,

@@ -8093,7 +8093,13 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/psx_resolve_binary_result_qual_type_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/psx_resolve_conditional_result_qual_type_in\s*\(/.test(
+    !/psx_resolve_conditional_qual_types_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_CONDITIONAL_CONDITION_NOT_SCALAR/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     /ps_type_(?:binary|conditional)_result_for_target_in\s*\(/.test(

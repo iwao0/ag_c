@@ -129,6 +129,40 @@ psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
           semantic_context, then_value, else_value));
 }
 
+void psx_resolve_conditional_qual_types_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t condition_type,
+    psx_qual_type_t then_type,
+    psx_qual_type_t else_type,
+    psx_conditional_types_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_CONDITIONAL_TYPES_INVALID;
+  resolution->result_qual_type = invalid_qual_type();
+  if (!semantic_context ||
+      condition_type.type_id == PSX_TYPE_ID_INVALID ||
+      then_type.type_id == PSX_TYPE_ID_INVALID ||
+      else_type.type_id == PSX_TYPE_ID_INVALID)
+    return;
+  const psx_type_t *condition = ps_ctx_type_by_id_in(
+      semantic_context, condition_type.type_id);
+  if (!condition || !ps_type_is_scalar(condition)) {
+    resolution->status =
+        PSX_CONDITIONAL_CONDITION_NOT_SCALAR;
+    return;
+  }
+  resolution->result_qual_type =
+      psx_resolve_conditional_result_qual_type_in(
+          semantic_context, then_type, else_type);
+  if (resolution->result_qual_type.type_id ==
+      PSX_TYPE_ID_INVALID) {
+    resolution->status =
+        PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE;
+    return;
+  }
+  resolution->status = PSX_CONDITIONAL_TYPES_OK;
+}
+
 int psx_qual_type_is_scalar_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t type) {

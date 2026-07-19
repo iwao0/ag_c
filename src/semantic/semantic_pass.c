@@ -69,6 +69,22 @@ static void semantic_bind_canonical_result_type(
         node, canonical, qual_type);
 }
 
+static psx_qual_type_t semantic_node_qual_type_value(
+    psx_semantic_context_t *semantic_context,
+    const node_t *node) {
+  if (!semantic_context || !node)
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  psx_qual_type_t type = ps_node_qual_type(store, node);
+  return type.type_id != PSX_TYPE_ID_INVALID
+             ? type
+             : ps_ctx_intern_qual_type_in(
+                   semantic_context,
+                   ps_node_get_type(store, node));
+}
+
 static void semantic_resolve_number_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -370,6 +386,59 @@ static void semantic_resolve_incdec(
                 op);
   }
   semantic_bind_result_type(semantic_context, node, type);
+}
+
+static void semantic_resolve_conditional(
+    psx_semantic_context_t *semantic_context,
+    node_ctrl_t *conditional,
+    const token_t *fallback_diag_tok) {
+  if (!semantic_context || !conditional ||
+      conditional->base.kind != ND_TERNARY)
+    return;
+  node_t *node = &conditional->base;
+  psx_conditional_types_resolution_t resolution;
+  psx_resolve_conditional_qual_types_in(
+      semantic_context,
+      semantic_node_qual_type_value(
+          semantic_context, node->lhs),
+      semantic_node_qual_type_value(
+          semantic_context, node->rhs),
+      semantic_node_qual_type_value(
+          semantic_context, conditional->els),
+      &resolution);
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
+  token_t *token = node->tok
+                       ? node->tok
+                       : (token_t *)fallback_diag_tok;
+  if (resolution.status ==
+      PSX_CONDITIONAL_CONDITION_NOT_SCALAR) {
+    diag_emit_tokf_in(
+        diagnostics,
+        DIAG_ERR_PARSER_CONDITIONAL_CONDITION_NOT_SCALAR,
+        token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_CONDITIONAL_CONDITION_NOT_SCALAR));
+    return;
+  }
+  if (resolution.status ==
+      PSX_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE) {
+    diag_emit_tokf_in(
+        diagnostics,
+        DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
+        token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE));
+    return;
+  }
+  if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
+    return;
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      semantic_context, resolution.result_qual_type.type_id);
+  if (canonical)
+    ps_node_bind_qual_type(
+        ps_ctx_resolution_store(semantic_context), node,
+        canonical, resolution.result_qual_type);
 }
 
 static void semantic_resolve_member_access(
@@ -1155,11 +1224,9 @@ static void semantic_transform_node(
       semantic_transform_node(ctrl->inc, traversal);
       semantic_transform_node(ctrl->els, traversal);
       if (node->kind == ND_TERNARY)
-        semantic_bind_result_type(
-            traversal->semantic_context, node,
-            psx_resolve_conditional_result_type(
-                      traversal->semantic_context,
-                      node->rhs, ctrl->els));
+        semantic_resolve_conditional(
+            traversal->semantic_context, ctrl,
+            fallback_diag_tok);
       break;
     }
     case ND_STMT_EXPR: {
