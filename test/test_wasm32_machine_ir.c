@@ -477,7 +477,7 @@ int main(void) {
     return 1;
   }
 
-  ir_inst_t function_instructions[15] = {0};
+  ir_inst_t function_instructions[16] = {0};
   function_instructions[0].op = IR_ALLOCA;
   function_instructions[0].dst =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
@@ -562,14 +562,19 @@ int main(void) {
   function_instructions[13].src1 =
       (ir_val_t){.id = 0, .type = IR_TY_PTR};
   function_instructions[13].parameter_index = 0;
-  function_instructions[14].op = IR_BR;
-  function_instructions[14].label_id = 1;
-  for (size_t i = 0; i + 1 < 15; i++)
+  function_instructions[14].op = IR_LOAD_SYM;
+  function_instructions[14].dst =
+      (ir_val_t){.id = 11, .type = IR_TY_PTR};
+  function_instructions[14].sym = "global_slot";
+  function_instructions[14].sym_len = 11;
+  function_instructions[15].op = IR_BR;
+  function_instructions[15].label_id = 1;
+  for (size_t i = 0; i + 1 < 16; i++)
     function_instructions[i].next = &function_instructions[i + 1];
   ir_block_t function_block = {
       .id = 0,
       .head = &function_instructions[0],
-      .tail = &function_instructions[14],
+      .tail = &function_instructions[15],
   };
   char function_name[] = "planned_function";
   char function_c_signature[] = "i32(i32)";
@@ -591,7 +596,7 @@ int main(void) {
       .entry = &function_block,
       .name_len = 16,
       .c_signature_len = 8,
-      .next_vreg_id = 11,
+      .next_vreg_id = 12,
       .is_static = 1,
       .continuation_condition_block_id = 7,
       .is_continuation_entry = 1,
@@ -721,7 +726,7 @@ int main(void) {
           &machine_function, &function_instructions[13]);
   const wasm32_machine_inst_t *selected_control =
       wasm32_machine_function_instruction(
-          &machine_function, &function_instructions[14]);
+          &machine_function, &function_instructions[15]);
   const wasm32_machine_block_t *selected_block =
       wasm32_machine_function_block(&machine_function, 0);
   if (!machine_function.name ||
@@ -742,7 +747,7 @@ int main(void) {
       !machine_function.continuation_has_suspend ||
       machine_function.frame_size != 32 ||
       machine_function.alloca_count != 2 ||
-      machine_function.instruction_count != 15 ||
+      machine_function.instruction_count != 16 ||
       machine_function.block_count != 1 ||
       machine_function.instructions[0].kind !=
           WASM32_MACHINE_INST_ALLOCA ||
@@ -856,7 +861,7 @@ int main(void) {
       selected_control->control.target_block_id != 1 ||
       !selected_block || selected_block->id != 0 ||
       selected_block->first_instruction != 0 ||
-      selected_block->instruction_count != 15 ||
+      selected_block->instruction_count != 16 ||
       selected_block->next_block_id != -1 ||
       !selected_block->has_terminator ||
       wasm32_machine_function_block(&machine_function, 1) != NULL ||
@@ -876,22 +881,55 @@ int main(void) {
     fprintf(stderr, "FAIL: machine function plan invariants\n");
     return 1;
   }
-  ir_module_t source_module = {.funcs = &function};
+  ir_symbol_func_ref_t source_func_ref = {
+      .name = "initial_target",
+      .name_len = 14,
+      .offset = 8,
+  };
+  ir_symbol_t source_symbol = {
+      .name = "global_slot",
+      .name_len = 11,
+      .byte_size = 16,
+      .alignment = 8,
+      .is_static = 1,
+      .func_refs = &source_func_ref,
+      .func_refs_tail = &source_func_ref,
+  };
+  ir_module_t source_module = {
+      .funcs = &function,
+      .symbols = &source_symbol,
+  };
   wasm32_machine_module_t machine_module;
   if (!wasm32_machine_module_build(
-          &source_module, &fake_abi_module, &machine_module) ||
-      machine_module.source != &source_module ||
-      machine_module.function_count != 1 ||
-      !wasm32_machine_module_function(&machine_module, 0) ||
-      wasm32_machine_module_function(&machine_module, 0)->source !=
-          &function ||
+          &source_module, &fake_abi_module, &machine_module)) {
+    fprintf(stderr, "FAIL: machine module plan build\n");
+    return 1;
+  }
+  const wasm32_machine_symbol_t *machine_symbol =
+      wasm32_machine_module_symbol(
+          &machine_module, "global_slot", 11);
+  const wasm32_machine_symbol_func_ref_t *machine_func_ref =
+      wasm32_machine_symbol_find_func_ref(machine_symbol, 8);
+  const wasm32_machine_function_t *module_function =
+      wasm32_machine_module_function(&machine_module, 0);
+  if (machine_module.function_count != 1 ||
+      machine_module.symbol_count != 1 ||
+      !machine_symbol || machine_symbol->name == source_symbol.name ||
+      machine_symbol->byte_size != 16 || machine_symbol->alignment != 8 ||
+      !machine_symbol->is_static || !machine_func_ref ||
+      machine_func_ref->name == source_func_ref.name ||
+      strcmp(machine_func_ref->name, source_func_ref.name) != 0 ||
+      !module_function ||
+      module_function->source != &function ||
+      module_function->instructions[14].resolved_symbol != machine_symbol ||
       wasm32_machine_module_function(&machine_module, 1) != NULL) {
     fprintf(stderr, "FAIL: machine module plan invariants\n");
     return 1;
   }
   wasm32_machine_module_dispose(&machine_module);
-  if (machine_module.source || machine_module.functions ||
-      machine_module.function_count != 0) {
+  if (machine_module.functions || machine_module.symbols ||
+      machine_module.function_count != 0 ||
+      machine_module.symbol_count != 0) {
     fprintf(stderr, "FAIL: machine module plan disposal\n");
     return 1;
   }

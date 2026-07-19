@@ -30,7 +30,7 @@ typedef struct {
 } wasm_alloca_slot_t;
 
 typedef struct {
-  const ir_symbol_t *symbol;
+  const wasm32_machine_symbol_t *symbol;
   int offset;
   char *func_ref_name;
   int func_ref_name_len;
@@ -39,7 +39,6 @@ typedef struct {
 
 typedef struct {
   wasm32_ir_context_t *context;
-  const ir_module_t *module;
   wasm32_machine_function_t machine;
   wasm_alloca_slot_t *allocas;
   wasm_global_func_state_t *global_func_states;
@@ -47,7 +46,7 @@ typedef struct {
   int global_func_state_cap;
   char **vreg_func_ref_names;
   int *vreg_func_ref_name_lens;
-  const ir_symbol_t **vreg_global_refs;
+  const wasm32_machine_symbol_t **vreg_global_refs;
   int *vreg_global_ref_offsets;
   unsigned char *vreg_const_known;
   long long *vreg_const_values;
@@ -355,7 +354,8 @@ static int data_addr_for_data_object(
 }
 
 static int data_addr_for_ir_symbol(
-    wasm32_ir_context_t *context, const ir_symbol_t *symbol) {
+    wasm32_ir_context_t *context,
+    const wasm32_machine_symbol_t *symbol) {
   if (!symbol) return -1;
   return intern_data_symbol(context, symbol->name, symbol->name_len,
                             symbol->byte_size, symbol->alignment)->addr;
@@ -559,14 +559,15 @@ static char *get_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, int *out_len) {
 }
 
 static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
-                                const ir_symbol_t *symbol, int offset) {
+                                const wasm32_machine_symbol_t *symbol,
+                                int offset) {
   if (vreg < 0 || vreg >= ctx->machine.vreg_count) return;
   ctx->vreg_global_refs[vreg] = symbol;
   ctx->vreg_global_ref_offsets[vreg] = offset;
 }
 
-static const ir_symbol_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
-                                               int *out_offset) {
+static const wasm32_machine_symbol_t *get_vreg_global_ref(
+    wasm_func_ctx_t *ctx, int vreg, int *out_offset) {
   if (out_offset) *out_offset = 0;
   if (vreg < 0 || vreg >= ctx->machine.vreg_count) return NULL;
   if (out_offset) *out_offset = ctx->vreg_global_ref_offsets[vreg];
@@ -591,7 +592,8 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 }
 
 static wasm_global_func_state_t *find_global_func_state(
-    wasm_func_ctx_t *ctx, const ir_symbol_t *symbol, int offset) {
+    wasm_func_ctx_t *ctx,
+    const wasm32_machine_symbol_t *symbol, int offset) {
   if (!symbol) return NULL;
   for (int i = 0; i < ctx->global_func_state_count; i++) {
     if (ctx->global_func_states[i].symbol == symbol &&
@@ -603,7 +605,8 @@ static wasm_global_func_state_t *find_global_func_state(
 }
 
 static void set_global_func_ref(wasm_func_ctx_t *ctx,
-                                const ir_symbol_t *symbol, int offset,
+                                const wasm32_machine_symbol_t *symbol,
+                                int offset,
                                 char *name, int name_len) {
   wasm32_ir_context_t *context = ctx->context;
   if (!symbol) return;
@@ -627,7 +630,8 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx,
 }
 
 static char *current_global_func_ref(wasm_func_ctx_t *ctx,
-                                     const ir_symbol_t *symbol, int offset,
+                                     const wasm32_machine_symbol_t *symbol,
+                                     int offset,
                                      int *out_len) {
   if (out_len) *out_len = 0;
   wasm_global_func_state_t *s = find_global_func_state(ctx, symbol, offset);
@@ -635,7 +639,8 @@ static char *current_global_func_ref(wasm_func_ctx_t *ctx,
     if (out_len) *out_len = s->func_ref_name_len;
     return s->func_ref_name;
   }
-  const ir_symbol_func_ref_t *ref = ir_symbol_find_func_ref(symbol, offset);
+  const wasm32_machine_symbol_func_ref_t *ref =
+      wasm32_machine_symbol_find_func_ref(symbol, offset);
   if (!ref) return NULL;
   if (out_len) *out_len = ref->name_len;
   return ref->name;
@@ -666,7 +671,7 @@ static void analyze_func(
     ctx->vreg_func_ref_name_lens =
         calloc((size_t)vreg_count, sizeof(int));
     ctx->vreg_global_refs =
-        calloc((size_t)vreg_count, sizeof(ir_symbol_t *));
+        calloc((size_t)vreg_count, sizeof(*ctx->vreg_global_refs));
     ctx->vreg_global_ref_offsets =
         calloc((size_t)vreg_count, sizeof(int));
     ctx->vreg_const_known =
@@ -836,7 +841,7 @@ static void emit_load(
     set_vreg_func_ref(ctx, i->dst.id, slot->func_ref_name, slot->func_ref_name_len);
   } else {
     int global_off = 0;
-    const ir_symbol_t *symbol =
+    const wasm32_machine_symbol_t *symbol =
         get_vreg_global_ref(ctx, i->src1.id, &global_off);
     int name_len = 0;
     char *name = current_global_func_ref(ctx, symbol, global_off, &name_len);
@@ -850,7 +855,7 @@ static void emit_store(
   wasm32_ir_context_t *context = ctx->context;
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   int global_off = 0;
-  const ir_symbol_t *symbol =
+  const wasm32_machine_symbol_t *symbol =
       get_vreg_global_ref(ctx, i->src1.id, &global_off);
   if (selected->kind != WASM32_MACHINE_INST_STORE)
     wasm_unsupported_op(context, i->op);
@@ -1461,8 +1466,7 @@ static void emit_inst(
         set_vreg_func_ref(ctx, i->dst.id, i->sym, i->sym_len);
         return;
       }
-      const ir_symbol_t *symbol =
-          ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
+      const wasm32_machine_symbol_t *symbol = i->resolved_symbol;
       int addr = data_addr_for_ir_symbol(context, symbol);
       if (addr < 0)
         wasm_unsupported_msg(
@@ -1472,8 +1476,7 @@ static void emit_inst(
       return;
     }
     case WASM32_MACHINE_INST_TLS_ADDRESS: {
-      const ir_symbol_t *symbol =
-          ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
+      const wasm32_machine_symbol_t *symbol = i->resolved_symbol;
       int addr = data_addr_for_ir_symbol(context, symbol);
       if (addr < 0)
         wasm_unsupported_msg(
@@ -1591,7 +1594,7 @@ static void emit_inst(
       wasm_cg_emitf(")\n");
       if (selected->tracks_address) {
         int base_off = 0;
-        const ir_symbol_t *symbol =
+        const wasm32_machine_symbol_t *symbol =
             get_vreg_global_ref(ctx, i->src1.id, &base_off);
         long long delta = 0;
         if (symbol && get_vreg_const(ctx, i->src2, &delta)) {
@@ -1680,11 +1683,9 @@ static void emit_inst(
 
 static void emit_func(
     wasm32_ir_context_t *context,
-    const ir_module_t *module,
     const wasm32_machine_function_t *machine) {
   wasm_func_ctx_t ctx = {0};
   ctx.context = context;
-  ctx.module = module;
   analyze_func(&ctx, machine);
 
   const wasm32_machine_signature_t *function_signature =
@@ -1814,9 +1815,8 @@ void wasm32_gen_machine_module_in(
     const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_ir_context_t *context = ctx;
-  if (!machine_module || !machine_module->source)
+  if (!machine_module)
     wasm_unsupported_msg(context, "failed to build Wasm machine module");
-  const ir_module_t *module = machine_module->source;
   for (size_t index = 0; index < machine_module->function_count; index++) {
     const wasm32_machine_function_t *machine =
         wasm32_machine_module_function(machine_module, index);
@@ -1826,7 +1826,7 @@ void wasm32_gen_machine_module_in(
   }
   for (size_t index = 0; index < machine_module->function_count; index++)
     emit_func(
-        context, module,
+        context,
         wasm32_machine_module_function(machine_module, index));
 }
 

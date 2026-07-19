@@ -395,15 +395,13 @@ static int align_log2_for_size(int size) {
 
 static obj_data_t *data_for_machine_inst(
                                     wasm32_obj_context_t *context,
-                                    const ir_module_t *module,
                                     const wasm32_machine_inst_t *inst,
                                     int *out_addend) {
-  if (!module || !inst || !inst->sym || inst->sym_len <= 0) return NULL;
+  if (!inst || !inst->sym || inst->sym_len <= 0) return NULL;
   if (out_addend) *out_addend = 0;
   if (inst->kind == WASM32_MACHINE_INST_STRING_ADDRESS)
     return intern_data(context, inst->sym, inst->sym_len, 0, 1, 0);
-  const ir_symbol_t *symbol =
-      ir_module_find_symbol(module, inst->sym, inst->sym_len);
+  const wasm32_machine_symbol_t *symbol = inst->resolved_symbol;
   if (!symbol)
     obj_unsupported_msg(context, "missing resolved IR global symbol in Wasm object mode");
   return intern_data(context, symbol->name, symbol->name_len,
@@ -1291,7 +1289,7 @@ static void emit_direct_aggregate_call_result(
 
 static void gen_func_body(
                           wasm32_obj_context_t *context,
-                          const ir_module_t *module, obj_func_t *of,
+                          obj_func_t *of,
                           const wasm32_machine_function_t *planned) {
   if (!planned)
     obj_unsupported_msg(context, "failed to build Wasm machine function");
@@ -1590,7 +1588,7 @@ static void gen_func_body(
             break;
           }
           int addend = 0;
-          obj_data_t *d = data_for_machine_inst(context, module, i, &addend);
+          obj_data_t *d = data_for_machine_inst(context, i, &addend);
           if (!d)
             obj_unsupported_msg(
                 context, "missing IR data symbol in Wasm object mode");
@@ -2529,9 +2527,8 @@ void wasm32_obj_gen_machine_module_in(
     const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_obj_context_t *context = ctx;
-  if (!machine_module || !machine_module->source)
+  if (!machine_module)
     obj_unsupported_msg(context, "failed to build Wasm machine module");
-  const ir_module_t *module = machine_module->source;
   for (size_t function_index = 0;
        function_index < machine_module->function_count;
        function_index++) {
@@ -2568,7 +2565,7 @@ void wasm32_obj_gen_machine_module_in(
     }
     of->defined = 1;
     of->is_static = function->is_static;
-    gen_func_body(context, module, of, function);
+    gen_func_body(context, of, function);
     if (function->is_continuation_entry) {
       if (g_obj.continuation_entry)
         obj_unsupported_msg(

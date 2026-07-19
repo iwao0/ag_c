@@ -3788,10 +3788,14 @@ for (const pattern of parserGlobalReads) {
   }
 }
 if (wasmFunctionCodegenViolations.length ||
-    !/\bir_module_find_symbol\s*\(/.test(wasmFunctionCodegen) ||
-    !/\bir_symbol_find_func_ref\s*\(/.test(wasmFunctionCodegen)) {
+    /\bir_module_find_symbol\s*\(/.test(wasmFunctionCodegen) ||
+    /\bir_symbol_find_func_ref\s*\(/.test(wasmFunctionCodegen) ||
+    !/\bwasm32_machine_symbol_find_func_ref\s*\(/.test(
+      wasmFunctionCodegen,
+    ) ||
+    !/i->resolved_symbol/.test(wasmFunctionCodegen)) {
   throw new Error(
-    "Wasm function codegen must consume resolved IR symbols instead of parser registries" +
+    "Wasm function codegen must consume resolved Machine symbols instead of source IR or parser registries" +
       (wasmFunctionCodegenViolations.length
         ? `:\n${wasmFunctionCodegenViolations.sort().join("\n")}`
         : ""),
@@ -3843,14 +3847,15 @@ for (const pattern of wasmObjParserReads) {
   }
 }
 if (wasmObjFunctionCodegenViolations.length ||
-    !/\bdata_for_machine_inst\s*\(\s*context\s*,\s*module\s*,/.test(
+    !/\bdata_for_machine_inst\s*\(\s*context\s*,\s*i\s*,/.test(
       wasmObjFunctionCodegen,
     ) ||
-    !/static obj_data_t \*data_for_machine_inst[\s\S]*?\bir_module_find_symbol\s*\(/.test(
+    /\bir_module_find_symbol\s*\(/.test(wasmObjSource) ||
+    !/static obj_data_t \*data_for_machine_inst[\s\S]*?inst->resolved_symbol/.test(
       wasmObjSource,
     )) {
   throw new Error(
-    "Wasm object function codegen must consume resolved IR symbols instead of parser registries" +
+    "Wasm object function codegen must consume resolved Machine symbols instead of source IR or parser registries" +
       (wasmObjFunctionCodegenViolations.length
         ? `:\n${wasmObjFunctionCodegenViolations.sort().join("\n")}`
         : ""),
@@ -10649,6 +10654,10 @@ const wasmMachineModuleSource = await readFile(
   "src/arch/wasm32/wasm32_machine_module.c",
   "utf8",
 );
+const wasmMachineModuleHeader = await readFile(
+  "src/arch/wasm32/wasm32_machine_module.h",
+  "utf8",
+);
 const wasmWatWriterSource = await readFile(
   "src/arch/wasm32/wasm32_ir.c",
   "utf8",
@@ -10925,8 +10934,19 @@ if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
     ) ||
     /\bir_func_t\b/.test(wasmWatWriterSource) ||
     /\bir_func_t\b/.test(wasmObjectWriterSource) ||
+    /\bir_module_t\b/.test(wasmWatWriterSource) ||
+    /\bir_module_t\b/.test(wasmObjectWriterSource) ||
     /module->funcs/.test(wasmWatWriterSource) ||
     /module->funcs/.test(wasmObjectWriterSource) ||
+    /const\s+ir_module_t\s*\*source\s*;/.test(
+      wasmMachineModuleHeader,
+    ) ||
+    !/wasm32_machine_symbol_t\s*\*symbols\s*;/.test(
+      wasmMachineModuleHeader,
+    ) ||
+    !/instruction->resolved_symbol\s*=\s*wasm32_machine_module_symbol/.test(
+      wasmMachineModuleSource,
+    ) ||
     !/index\s*<\s*machine_module->function_count/.test(
       wasmWatWriterSource,
     ) ||

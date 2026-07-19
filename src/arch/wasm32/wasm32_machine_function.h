@@ -4,6 +4,8 @@
 #include "wasm32_machine_abi.h"
 #include "wasm32_machine_ir.h"
 
+typedef struct wasm32_machine_symbol_t wasm32_machine_symbol_t;
+
 typedef struct {
   int vreg;
   int offset;
@@ -126,6 +128,7 @@ typedef struct {
 
 typedef struct {
   ir_inst_t *source;
+  const wasm32_machine_symbol_t *resolved_symbol;
   ir_op_t op;
   ir_val_t dst;
   ir_val_t src1;
