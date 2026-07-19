@@ -97,14 +97,6 @@ void ps_ctx_record_unsupported_gnu_extension_in(
     const token_t *tok, const char *name);
 void ps_ctx_emit_deferred_parser_diagnostics_in(
     psx_semantic_context_t *context);
-void psx_ctx_register_goto_ref_in(
-    psx_semantic_context_t *context,
-    char *name, int len, token_t *tok);
-void psx_ctx_register_label_def_in(
-    psx_semantic_context_t *context,
-    char *name, int len, token_t *tok);
-void psx_ctx_validate_goto_refs_in(
-    psx_semantic_context_t *context);
 
 /* Explicit-context function symbol operations. */
 void ps_ctx_reset_function_names_in(psx_semantic_context_t *context);

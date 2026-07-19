@@ -181,7 +181,7 @@ struct direct_switch_scope_t {
 };
 
 struct direct_label_binding_t {
-  const node_jump_t *syntax;
+  psx_decl_id_t declaration_id;
   direct_label_binding_t *next;
 };
 
@@ -3084,11 +3084,29 @@ static int direct_case_value(
   return 0;
 }
 
-static int direct_jump_name_equal(
-    const node_jump_t *lhs, const node_jump_t *rhs) {
-  return lhs && rhs && lhs->name && rhs->name &&
-         lhs->name_len == rhs->name_len && lhs->name_len > 0 &&
-         memcmp(lhs->name, rhs->name, (size_t)lhs->name_len) == 0;
+static psx_scope_id_t direct_label_scope(
+    const direct_resolution_context_t *context) {
+  psx_scope_graph_t *graph = context
+      ? ps_ctx_scope_graph(context->semantic_context) : NULL;
+  if (!graph) return PSX_SCOPE_ID_INVALID;
+  psx_scope_id_t current = psx_scope_graph_current_scope(graph);
+  psx_scope_id_t function_scope =
+      psx_scope_graph_nearest_scope_of_kind(
+          graph, current, PSX_SCOPE_FUNCTION);
+  return function_scope != PSX_SCOPE_ID_INVALID
+             ? function_scope : current;
+}
+
+static void forget_direct_label_declarations(
+    direct_resolution_context_t *context) {
+  psx_scope_graph_t *graph = context
+      ? ps_ctx_scope_graph(context->semantic_context) : NULL;
+  if (!graph) return;
+  for (direct_label_binding_t *label = context->labels;
+       label; label = label->next) {
+    psx_scope_graph_forget_declaration(
+        graph, label->declaration_id);
+  }
 }
 
 static int collect_direct_function_jumps(
@@ -3120,13 +3138,29 @@ static int collect_direct_function_jumps(
              collect_direct_function_jumps(context, syntax->rhs);
     case ND_LABEL: {
       const node_jump_t *label = (const node_jump_t *)syntax;
-      for (direct_label_binding_t *existing = context->labels;
-           existing; existing = existing->next) {
-        if (direct_jump_name_equal(existing->syntax, label)) return 0;
+      psx_scope_graph_t *graph =
+          ps_ctx_scope_graph(context->semantic_context);
+      psx_scope_id_t label_scope = direct_label_scope(context);
+      if (!graph || label_scope == PSX_SCOPE_ID_INVALID ||
+          !label->name || label->name_len <= 0 ||
+          psx_scope_graph_lookup_in_scope(
+              graph, label_scope, PSX_NAMESPACE_LABEL,
+              label->name, label->name_len) != PSX_DECL_ID_INVALID)
+        return 0;
+      psx_decl_id_t declaration_id = psx_scope_graph_declare_at(
+          graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
+          label->name, label->name_len, (void *)label);
+      if (declaration_id == PSX_DECL_ID_INVALID) {
+        context->preflight_failed = 1;
+        set_failure(
+            context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+            syntax);
+        return 0;
       }
       direct_label_binding_t *binding = arena_alloc_in(
           ps_ctx_arena(context->semantic_context), sizeof(*binding));
       if (!binding) {
+        psx_scope_graph_forget_declaration(graph, declaration_id);
         context->preflight_failed = 1;
         set_failure(
             context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
@@ -3134,7 +3168,7 @@ static int collect_direct_function_jumps(
         return 0;
       }
       *binding = (direct_label_binding_t){
-          .syntax = label,
+          .declaration_id = declaration_id,
           .next = context->labels,
       };
       context->labels = binding;
@@ -3166,18 +3200,18 @@ static int collect_direct_function_jumps(
 static int validate_direct_function_jumps(
     const direct_resolution_context_t *context) {
   if (!context) return 0;
+  psx_scope_graph_t *graph =
+      ps_ctx_scope_graph(context->semantic_context);
+  psx_scope_id_t label_scope = direct_label_scope(context);
+  if (!graph || label_scope == PSX_SCOPE_ID_INVALID) return 0;
   for (const direct_goto_binding_t *reference = context->gotos;
        reference; reference = reference->next) {
-    int found = 0;
-    for (const direct_label_binding_t *label = context->labels;
-         label; label = label->next) {
-      if (!direct_jump_name_equal(
-              reference->syntax, label->syntax))
-        continue;
-      found = 1;
-      break;
-    }
-    if (!found) return 0;
+    const node_jump_t *jump = reference->syntax;
+    if (!jump || !jump->name || jump->name_len <= 0 ||
+        psx_scope_graph_lookup_in_scope(
+            graph, label_scope, PSX_NAMESPACE_LABEL,
+            jump->name, jump->name_len) == PSX_DECL_ID_INVALID)
+      return 0;
   }
   return 1;
 }
@@ -5568,18 +5602,25 @@ psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
   if (!collect_direct_function_jumps(&context, syntax_statement) ||
       !validate_direct_function_jumps(&context) ||
       !preflight_direct_statement(&context, syntax_statement)) {
-    return context.preflight_failed
-               ? PSX_SYNTAX_TYPED_HIR_FAILED
-               : PSX_SYNTAX_TYPED_HIR_REJECTED;
+    psx_syntax_typed_hir_resolution_status_t status =
+        context.preflight_failed
+            ? PSX_SYNTAX_TYPED_HIR_FAILED
+            : PSX_SYNTAX_TYPED_HIR_REJECTED;
+    forget_direct_label_declarations(&context);
+    return status;
   }
 
   psx_semantic_node_t *root =
       build_direct_statement(&context, syntax_statement);
   psx_typed_hir_tree_t *tree = wrap_typed_root(
       semantic_context, root, syntax_statement, failure);
-  if (!tree) return PSX_SYNTAX_TYPED_HIR_FAILED;
+  if (!tree) {
+    forget_direct_label_declarations(&context);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
   record_direct_identifier_usage(&context);
   *typed_hir = tree;
+  forget_direct_label_declarations(&context);
   return PSX_SYNTAX_TYPED_HIR_RESOLVED;
 }
 

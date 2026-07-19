@@ -13,24 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct goto_ref_t goto_ref_t;
-struct goto_ref_t {
-  goto_ref_t *next_all;
-  char *name;
-  int len;
-  token_t *tok;
-  psx_scope_id_t scope_id;
-};
-
-typedef struct label_def_t label_def_t;
-struct label_def_t {
-  label_def_t *next_all;
-  char *name;
-  int len;
-  token_t *tok;
-  psx_decl_id_t declaration_id;
-};
-
 typedef struct deferred_parser_diagnostic_t deferred_parser_diagnostic_t;
 struct deferred_parser_diagnostic_t {
   deferred_parser_diagnostic_t *next_all;
@@ -219,8 +201,6 @@ struct psx_semantic_context_t {
   psx_record_decl_table_t *record_decls;
   psx_record_layout_table_t *record_layouts;
   psx_ctx_allocation_t *allocations;
-  goto_ref_t *goto_references_all;
-  label_def_t *label_definitions_all;
   deferred_parser_diagnostic_t *pending_diagnostics_all;
   tag_type_t *tags_all;
   tag_member_t *aggregate_members_all;
@@ -732,8 +712,6 @@ void ps_ctx_reset_function_diag_state_in(
 void ps_ctx_reset_function_scope_in(
     psx_semantic_context_t *context) {
   if (!context) return;
-  context->goto_references_all = NULL;
-  context->label_definitions_all = NULL;
   context->scope_depth = 0;
   tag_type_t **all_tag = &context->tags_all;
   while (*all_tag) {
@@ -779,75 +757,6 @@ void ps_ctx_leave_block_scope_in(
     psx_semantic_context_t *context) {
   if (!context || context->scope_depth <= 0) return;
   context->scope_depth--;
-}
-
-void psx_ctx_register_goto_ref_in(
-    psx_semantic_context_t *context,
-    char *name, int len, token_t *tok) {
-  if (!context || !context->scope_graph) return;
-  goto_ref_t *g = ctx_calloc_in(context, 1, sizeof(goto_ref_t));
-  if (!g) return;
-  g->name = name;
-  g->len = len;
-  g->tok = tok;
-  g->scope_id = psx_scope_graph_current_scope(context->scope_graph);
-  g->next_all = context->goto_references_all;
-  context->goto_references_all = g;
-}
-
-void psx_ctx_register_label_def_in(
-    psx_semantic_context_t *context,
-    char *name, int len, token_t *tok) {
-  if (!context || !context->scope_graph) return;
-  psx_scope_id_t function_scope = psx_scope_graph_nearest_scope_of_kind(
-      context->scope_graph,
-      psx_scope_graph_current_scope(context->scope_graph),
-      PSX_SCOPE_FUNCTION);
-  if (function_scope == PSX_SCOPE_ID_INVALID) return;
-  if (psx_scope_graph_lookup_in_scope(
-          context->scope_graph, function_scope,
-          PSX_NAMESPACE_LABEL, name, len) != PSX_DECL_ID_INVALID) {
-    ps_diag_duplicate_with_name_in(
-        context->diagnostic_context, tok,
-        diag_text_for_in(context->diagnostic_context, DIAG_TEXT_LABEL), name,
-        len);
-    return;
-  }
-  label_def_t *d = ctx_calloc_in(context, 1, sizeof(label_def_t));
-  if (!d) return;
-  d->name = name;
-  d->len = len;
-  d->tok = tok;
-  d->declaration_id = psx_scope_graph_declare_at(
-      context->scope_graph, function_scope,
-      PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
-      name, len, d);
-  if (d->declaration_id == PSX_DECL_ID_INVALID) return;
-  d->next_all = context->label_definitions_all;
-  context->label_definitions_all = d;
-}
-
-void psx_ctx_validate_goto_refs_in(
-    psx_semantic_context_t *context) {
-  if (!context) return;
-  for (goto_ref_t *g = context->goto_references_all;
-       g; g = g->next_all) {
-    int found = context->scope_graph &&
-                g->scope_id != PSX_SCOPE_ID_INVALID &&
-                psx_scope_graph_lookup(
-                    context->scope_graph, PSX_NAMESPACE_LABEL,
-                    g->name, g->len,
-                    (psx_scope_lookup_point_t){
-                        .scope_id = g->scope_id,
-                    }) != PSX_DECL_ID_INVALID;
-    if (!found) {
-      ps_diag_ctx_in(
-          context->diagnostic_context, g->tok, "goto",
-          diag_message_for_in(context->diagnostic_context,
-                              DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
-          g->len, g->name);
-    }
-  }
 }
 
 static tag_type_t *tag_type_from_declaration_in(

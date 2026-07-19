@@ -316,12 +316,6 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/psx_ctx_register_label_def_in\s*\([^]*?psx_scope_graph_nearest_scope_of_kind\s*\([^]*?PSX_SCOPE_FUNCTION[^]*?psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
-      scopeGraphSemanticContextSource,
-    ) ||
-    !/psx_ctx_validate_goto_refs_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
-      scopeGraphSemanticContextSource,
-    ) ||
     !/ensure_tag_member_scope_in\s*\([^]*?psx_scope_graph_create_scope_at\s*\([^]*?PSX_SCOPE_RECORD/.test(
       scopeGraphSemanticContextSource,
     ) ||
@@ -4008,6 +4002,24 @@ const syntaxTypedHirResolutionSource = await readFile(
   "src/semantic/syntax_typed_hir_resolution.c",
   "utf8",
 );
+const legacySemanticLabelApi =
+  /\b(?:psx_ctx_register_goto_ref_in|psx_ctx_register_label_def_in|psx_ctx_validate_goto_refs_in)\s*\(/;
+if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/forget_direct_label_declarations\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /direct_jump_name_equal\s*\(/.test(syntaxTypedHirResolutionSource) ||
+    legacySemanticLabelApi.test(semanticContextOwnershipSource) ||
+    legacySemanticLabelApi.test(ordinarySemanticContextHeaderSource)) {
+  throw new Error(
+    "function labels must use the shared scope graph instead of resolver-local or semantic-context symbol tables",
+  );
+}
 const hirSymbolResolutionSource = await readFile(
   "src/semantic/hir_symbol_resolution.c",
   "utf8",

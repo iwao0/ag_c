@@ -4496,6 +4496,12 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_block->body[0]));
   ASSERT_TRUE(!ps_node_has_resolution_state(
       syntax_block->body[0]->lhs));
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(test_semantic_context());
+  ASSERT_EQ(PSX_DECL_ID_INVALID,
+            psx_scope_graph_lookup_in_scope(
+                scope_graph, psx_scope_graph_current_scope(scope_graph),
+                PSX_NAMESPACE_LABEL, "done", 4));
 
   psx_hir_module_t *hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);
@@ -4615,6 +4621,19 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_local_registry(), duplicate_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_case));
+
+  node_t *duplicate_label = parse_direct_test_statement_syntax(
+      "{ duplicate: ; duplicate: ; }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), duplicate_label, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_DECL_ID_INVALID,
+            psx_scope_graph_lookup_in_scope(
+                scope_graph, psx_scope_graph_current_scope(scope_graph),
+                PSX_NAMESPACE_LABEL, "duplicate", 9));
 
   node_t *undefined_goto =
       parse_direct_test_statement_syntax("{ goto missing; }");
@@ -27189,14 +27208,38 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
 
   char direct_label_name[] = "direct_label";
-  ASSERT_TRUE(psx_scope_graph_enter_scope(
-                  ps_ctx_scope_graph(second),
-                  PSX_SCOPE_FUNCTION) != PSX_SCOPE_ID_INVALID);
-  psx_ctx_register_goto_ref_in(
-      second, direct_label_name, 12, NULL);
-  psx_ctx_register_label_def_in(
-      second, direct_label_name, 12, NULL);
-  psx_ctx_validate_goto_refs_in(second);
+  psx_scope_id_t direct_function_scope = psx_scope_graph_enter_scope(
+      ps_ctx_scope_graph(second), PSX_SCOPE_FUNCTION);
+  ASSERT_TRUE(direct_function_scope != PSX_SCOPE_ID_INVALID);
+  node_jump_t direct_goto = {
+      .base = {.kind = ND_GOTO},
+      .name = direct_label_name,
+      .name_len = 12,
+  };
+  node_jump_t direct_label = {
+      .base = {.kind = ND_LABEL},
+      .name = direct_label_name,
+      .name_len = 12,
+  };
+  node_t *direct_jump_body[] = {
+      &direct_goto.base, &direct_label.base, NULL};
+  node_block_t direct_jump_block = {
+      .base = {.kind = ND_BLOCK},
+      .body = direct_jump_body,
+  };
+  const psx_typed_hir_tree_t *direct_jump_hir = NULL;
+  psx_resolved_hir_build_failure_t direct_jump_failure = {0};
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          second, second_globals, second_locals,
+          &direct_jump_block.base, &direct_jump_hir,
+          &direct_jump_failure));
+  ASSERT_TRUE(direct_jump_hir != NULL);
+  ASSERT_EQ(PSX_DECL_ID_INVALID,
+            psx_scope_graph_lookup_in_scope(
+                ps_ctx_scope_graph(second), direct_function_scope,
+                PSX_NAMESPACE_LABEL, direct_label_name, 12));
   ASSERT_TRUE(psx_scope_graph_leave_scope(ps_ctx_scope_graph(second)));
 
   psx_typed_hir_tree_t semantic_expression = {0};
