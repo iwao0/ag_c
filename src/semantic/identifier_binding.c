@@ -13,6 +13,7 @@
 #include "resolved_object_ref.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
+#include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/global_registry.h"
 #include "../parser/lvar_internal.h"
@@ -31,6 +32,8 @@ typedef struct {
   psx_local_lookup_point_t lookup_point;
   int has_lookup_point_override;
   int usage_is_unevaluated;
+  char *function_name;
+  int function_name_len;
 } psx_identifier_binding_context_t;
 
 static psx_resolution_store_t *binding_store(
@@ -209,10 +212,41 @@ static void resolve_identifier(
       resolution);
 }
 
+static int is_predefined_function_name(
+    const psx_identifier_binding_context_t *context,
+    const node_identifier_t *identifier) {
+  static const char name[] = "__func__";
+  return context && context->function_name && identifier &&
+         identifier->name_len == (int)(sizeof(name) - 1) &&
+         memcmp(identifier->name, name, sizeof(name) - 1) == 0;
+}
+
+static node_t *materialize_predefined_function_name(
+    const psx_identifier_binding_context_t *context,
+    const node_identifier_t *identifier) {
+  if (!is_predefined_function_name(context, identifier)) return NULL;
+  node_string_t *string = psx_resolution_node_alloc_in(
+      binding_store(context), ps_ctx_arena(context->semantic_context),
+      sizeof(*string));
+  if (!string) return NULL;
+  string->base.kind = ND_STRING;
+  string->base.tok = identifier->base.tok;
+  string->literal_contents = context->function_name;
+  string->literal_length = context->function_name_len;
+  string->char_width = TK_CHAR_WIDTH_CHAR;
+  string->str_prefix_kind = TK_STR_PREFIX_NONE;
+  string->byte_len = context->function_name_len;
+  return &string->base;
+}
+
 static node_t *materialize_identifier(
     node_identifier_t *identifier, int is_call,
     const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *out_resolution) {
+  if (is_predefined_function_name(context, identifier)) {
+    if (out_resolution) *out_resolution = (psx_identifier_resolution_t){0};
+    return materialize_predefined_function_name(context, identifier);
+  }
   psx_identifier_resolution_t resolution;
   resolve_identifier(identifier, is_call, context, &resolution);
   if (out_resolution) *out_resolution = resolution;
@@ -257,6 +291,8 @@ static node_t *materialize_identifier(
 static node_t *materialize_address_operand(
     node_identifier_t *identifier,
     const psx_identifier_binding_context_t *context) {
+  if (is_predefined_function_name(context, identifier))
+    return materialize_predefined_function_name(context, identifier);
   psx_identifier_resolution_t resolution;
   resolve_identifier(identifier, 0, context, &resolution);
   if (resolution.kind == PSX_IDENTIFIER_LOCAL && resolution.local) {
@@ -397,9 +433,12 @@ static node_t *bind_node(
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
+      psx_identifier_binding_context_t function_context = *context;
+      function_context.function_name = function->name;
+      function_context.function_name_len = function->name_len;
       for (int i = 0; i < function->parameter_count; i++)
-        bind_slot(&function->parameters[i], context);
-      bind_slot(&node->rhs, context);
+        bind_slot(&function->parameters[i], &function_context);
+      bind_slot(&node->rhs, &function_context);
       return node;
     }
     case ND_FUNCALL: {
@@ -522,18 +561,27 @@ static node_t *bind_node(
   }
 }
 
+static void set_binding_function_name(
+    psx_identifier_binding_context_t *context) {
+  if (!context || !context->local_registry) return;
+  ps_decl_get_current_funcname_in(
+      context->local_registry, &context->function_name,
+      &context->function_name_len);
+}
+
 node_t *psx_bind_identifier_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return node;
-  const psx_identifier_binding_context_t context = {
+  psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
+  set_binding_function_name(&context);
   return bind_node(node, &context);
 }
 
@@ -544,7 +592,7 @@ node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
     psx_local_lookup_point_t lookup_point,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return node;
-  const psx_identifier_binding_context_t context = {
+  psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
@@ -552,6 +600,7 @@ node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
       .lookup_point = lookup_point,
       .has_lookup_point_override = 1,
   };
+  set_binding_function_name(&context);
   return bind_node(node, &context);
 }
 
@@ -572,12 +621,13 @@ node_t *psx_bind_identifier_initializer_tree_in_contexts(
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return syntax;
-  const psx_identifier_binding_context_t context = {
+  psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
+  set_binding_function_name(&context);
   return bind_initializer(syntax, &context);
 }
 

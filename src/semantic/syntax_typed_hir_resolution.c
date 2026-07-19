@@ -673,6 +673,39 @@ static int note_direct_rejection(
   return 0;
 }
 
+static int direct_is_predefined_function_name(
+    const direct_resolution_context_t *context,
+    const node_identifier_t *identifier) {
+  static const char name[] = "__func__";
+  return context && context->function_name && identifier &&
+         identifier->name_len == (int)(sizeof(name) - 1) &&
+         memcmp(
+             identifier->name, name,
+             sizeof(name) - 1) == 0;
+}
+
+static int resolve_direct_predefined_function_name_type(
+    direct_resolution_context_t *context,
+    psx_qual_type_t *qual_type) {
+  if (qual_type)
+    *qual_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!context || !context->function_name) return 0;
+  psx_literal_semantic_resolution_t resolution;
+  if (!psx_resolve_string_literal_value_in_contexts(
+          context->semantic_context, NULL,
+          &(psx_string_literal_value_t){
+              .contents = context->function_name,
+              .length = context->function_name_len,
+              .character_width = TK_CHAR_WIDTH_CHAR,
+              .prefix_kind = TK_STR_PREFIX_NONE,
+          },
+          &resolution))
+    return 0;
+  if (qual_type) *qual_type = resolution.qual_type;
+  return 1;
+}
+
 static int note_direct_named_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
@@ -1115,6 +1148,18 @@ static int resolve_direct_type_query(
             !preflight_direct_sizeof_operand(
                 context, query->operand, &queried_qual_type))
           return 0;
+      } else if (
+          query->operand->kind == ND_IDENTIFIER &&
+          direct_is_predefined_function_name(
+              context,
+              (const node_identifier_t *)query->operand)) {
+        if (!resolve_direct_predefined_function_name_type(
+                context, &queried_qual_type))
+          return 0;
+        resolved = psx_resolve_sizeof_qual_type_plan_in(
+            context->semantic_context, queried_qual_type, 1,
+            (long long)context->function_name_len + 1,
+            &binding->plan);
       } else if (query->operand->kind == ND_IDENTIFIER) {
         psx_identifier_expression_resolution_t identifier;
         context->unevaluated_depth++;
@@ -1675,6 +1720,10 @@ static int preflight_direct_expression_impl(
     return 1;
   }
   if (syntax->kind == ND_IDENTIFIER) {
+    if (direct_is_predefined_function_name(
+            context, (const node_identifier_t *)syntax))
+      return resolve_direct_predefined_function_name_type(
+          context, qual_type);
     psx_identifier_expression_resolution_t resolution;
     if (!resolve_direct_identifier(
             context, (const node_identifier_t *)syntax,
@@ -2007,20 +2056,66 @@ static int preflight_direct_expression_impl(
   return 1;
 }
 
+static psx_semantic_node_t *build_direct_string_value(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    const psx_string_literal_value_t *value,
+    int code_unit_count) {
+  if (!context || !syntax || !value || code_unit_count < 0)
+    return NULL;
+  psx_literal_semantic_resolution_t resolution;
+  if (!psx_resolve_string_literal_value_in_contexts(
+          context->semantic_context, context->global_registry,
+          value, &resolution)) {
+    set_failure(
+        context->failure,
+        PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);
+    return NULL;
+  }
+  int character_width = value->character_width;
+  if (character_width <= 0) character_width = 1;
+  psx_hir_node_spec_t spec = {
+      .kind = PSX_HIR_STRING,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .name = resolution.string_label,
+      .name_length = resolution.string_label
+                         ? strlen(resolution.string_label) : 0,
+      .literal_contents = value->contents,
+      .literal_length = value->length > 0
+                            ? (size_t)value->length : 0,
+      .object_size = (code_unit_count + 1) * character_width,
+      .object_align = character_width,
+  };
+  return psx_semantic_node_builder_leaf_expression(
+      &context->builder, &spec, resolution.qual_type, NULL,
+      syntax->kind);
+}
+
 static psx_semantic_node_t *build_direct_literal(
     direct_resolution_context_t *context,
     const node_t *syntax) {
   if (!context || !syntax) return NULL;
   const node_t *literal_syntax = syntax;
 
+  if (literal_syntax->kind == ND_STRING) {
+    const node_string_t *string =
+        (const node_string_t *)literal_syntax;
+    return build_direct_string_value(
+        context, syntax,
+        &(psx_string_literal_value_t){
+            .contents = string->literal_contents,
+            .length = string->literal_length,
+            .character_width = string->char_width,
+            .prefix_kind = string->str_prefix_kind,
+        },
+        string->byte_len);
+  }
+
   psx_literal_semantic_resolution_t resolution;
-  int resolved = literal_syntax->kind == ND_NUM
-      ? psx_resolve_number_literal_semantics_in_contexts(
-            context->semantic_context, context->global_registry,
-            (const node_num_t *)literal_syntax, &resolution)
-      : psx_resolve_string_literal_semantics_in_contexts(
-            context->semantic_context, context->global_registry,
-            (const node_string_t *)literal_syntax, &resolution);
+  int resolved = psx_resolve_number_literal_semantics_in_contexts(
+      context->semantic_context, context->global_registry,
+      (const node_num_t *)literal_syntax, &resolution);
   if (!resolved) {
     set_failure(
         context->failure,
@@ -2029,30 +2124,12 @@ static psx_semantic_node_t *build_direct_literal(
   }
 
   psx_hir_node_spec_t spec = {
-      .kind = literal_syntax->kind == ND_NUM
-                  ? PSX_HIR_NUMBER : PSX_HIR_STRING,
+      .kind = PSX_HIR_NUMBER,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .integer_value = ((const node_num_t *)literal_syntax)->val,
+      .floating_value = ((const node_num_t *)literal_syntax)->fval,
   };
-  if (literal_syntax->kind == ND_NUM) {
-    const node_num_t *number =
-        (const node_num_t *)literal_syntax;
-    spec.integer_value = number->val;
-    spec.floating_value = number->fval;
-  } else {
-    const node_string_t *string =
-        (const node_string_t *)literal_syntax;
-    spec.name = resolution.string_label;
-    spec.name_length = resolution.string_label
-                           ? strlen(resolution.string_label) : 0;
-    spec.literal_contents = string->literal_contents;
-    spec.literal_length = string->literal_length > 0
-                              ? (size_t)string->literal_length : 0;
-    int character_width = (int)string->char_width;
-    if (character_width <= 0) character_width = 1;
-    spec.object_size = (string->byte_len + 1) * character_width;
-    spec.object_align = character_width;
-  }
   return psx_semantic_node_builder_leaf_expression(
       &context->builder, &spec, resolution.qual_type, NULL,
       syntax->kind);
@@ -2175,6 +2252,16 @@ static psx_semantic_node_t *build_direct_identifier(
     direct_resolution_context_t *context,
     const node_identifier_t *identifier,
     int suppress_array_decay) {
+  if (direct_is_predefined_function_name(context, identifier))
+    return build_direct_string_value(
+        context, &identifier->base,
+        &(psx_string_literal_value_t){
+            .contents = context->function_name,
+            .length = context->function_name_len,
+            .character_width = TK_CHAR_WIDTH_CHAR,
+            .prefix_kind = TK_STR_PREFIX_NONE,
+        },
+        context->function_name_len);
   psx_identifier_expression_resolution_t resolution;
   if (!resolve_direct_identifier(context, identifier, &resolution))
     return NULL;

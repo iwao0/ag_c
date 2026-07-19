@@ -8102,7 +8102,7 @@ const parsedNumberLiteral = parserExpressionSource.match(
   /static\s+node_t\s*\*parse_num_literal\s*\([^]*?\n\}\n\n\/\/ 内容文字列/,
 );
 const parsedStringLiteral = parserExpressionSource.match(
-  /static\s+node_string_t\s*\*make_string_lit_node\s*\([^]*?\n\}\n\n\/\/ C11/,
+  /static\s+node_string_t\s*\*make_string_lit_node\s*\([^]*?\n\}\n\n\/\/ 連続する/,
 );
 const stringNodeStruct = astSource.match(
   /struct node_string_t\s*\{([^{}]*)\};/,
@@ -8164,11 +8164,45 @@ if (/\bps_type_new_[a-z0-9_]*\s*\(|\bps_node_bind_(?:type|qual_type)\s*\(|(?:->|
     !/\bpsx_resolve_number_literal_semantics_in_contexts\s*\([^]*?\bpsx_register_float_lit_in\s*\(/.test(
       literalResolutionSource,
     ) ||
-    !/\bpsx_resolve_string_literal_semantics_in_contexts\s*\([^]*?\bpsx_register_string_lit_in\s*\(/.test(
+    !/\bpsx_resolve_string_literal_value_in_contexts\s*\([^]*?\bpsx_register_string_lit_in\s*\(/.test(
       literalResolutionSource,
     )) {
   throw new Error(
     "expression parser must build typeless Syntax AST nodes without canonical type or literal-pool registration",
+  );
+}
+
+const identifierSyntaxParser = parserExpressionSource.match(
+  /static\s+node_t\s*\*parse_identifier_syntax\s*\([^]*?\n\}/,
+);
+const predefinedFunctionNameSyntaxAdapters = [
+  expressionSyntaxContextSource,
+  expressionSyntaxAdapterSource,
+  statementSyntaxAdapterSource,
+  statementSyntaxAdapterHeader,
+  localDeclarationFrontendSource,
+  localDeclarationFrontendHeader,
+].join("\n");
+if (!identifierSyntaxParser ||
+    /__func__|make_func_name_string_node/.test(
+      identifierSyntaxParser?.[0] ?? "",
+    ) ||
+    /current_function_name/.test(predefinedFunctionNameSyntaxAdapters) ||
+    !/psx_string_literal_value_t/.test(literalResolutionHeader) ||
+    !/direct_is_predefined_function_name\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_string_value\s*\([^]*?context->function_name/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/is_predefined_function_name\s*\(/.test(
+      identifierBindingSource,
+    ) ||
+    !/materialize_predefined_function_name\s*\(/.test(
+      identifierBindingSource,
+    )) {
+  throw new Error(
+    "predefined function names must remain identifier Syntax and resolve from semantic function context",
   );
 }
 

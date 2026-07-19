@@ -2,7 +2,6 @@
 
 #include "alignas_value.h"
 #include "core.h"
-#include "decl.h"
 #include "expr.h"
 #include "name_classifier_legacy.h"
 #include "runtime_context.h"
@@ -53,15 +52,10 @@ static node_t *parse_expression_in_legacy_contexts(
     node_t *(*parse)(
         psx_parser_runtime_context_t *,
         const psx_name_classifier_t *,
-        const psx_local_declaration_callbacks_t *,
-        char *, int)) {
+        const psx_local_declaration_callbacks_t *)) {
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context || !parse)
     return NULL;
-  char *function_name = NULL;
-  int function_name_len = 0;
-  ps_decl_get_current_funcname_in(
-      local_registry, &function_name, &function_name_len);
   psx_name_classifier_t semantic_classifier =
       ps_ctx_name_classifier(semantic_context);
   const psx_name_classifier_t *source_classifier =
@@ -72,9 +66,7 @@ static node_t *parse_expression_in_legacy_contexts(
     return NULL;
   psx_name_classifier_t classifier =
       psx_legacy_name_classifier_view(&classifier_adapter);
-  return parse(
-      runtime_context, &classifier, local_declarations,
-      function_name, function_name_len);
+  return parse(runtime_context, &classifier, local_declarations);
 }
 
 node_t *psx_expr_expr_in_contexts(

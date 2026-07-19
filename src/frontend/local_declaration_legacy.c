@@ -1,6 +1,5 @@
 #include "local_declaration_legacy.h"
 
-#include "../parser/decl.h"
 #include "../parser/semantic_ctx.h"
 
 void psx_frontend_init_local_declaration_callbacks_in_contexts(
@@ -16,10 +15,6 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return;
-  char *function_name = NULL;
-  int function_name_len = 0;
-  ps_decl_get_current_funcname_in(
-      local_registry, &function_name, &function_name_len);
   psx_name_classifier_t source =
       ps_ctx_name_classifier(semantic_context);
   if (!psx_legacy_name_classifier_init(
@@ -28,6 +23,5 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
   psx_name_classifier_t classifier =
       psx_legacy_name_classifier_view(&adapter->name_classifier);
   psx_frontend_init_local_declaration_syntax_adapter(
-      &adapter->syntax, callbacks, runtime_context, &classifier,
-      function_name, function_name_len);
+      &adapter->syntax, callbacks, runtime_context, &classifier);
 }

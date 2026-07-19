@@ -14,8 +14,6 @@ typedef struct {
   void (*capture_lookup_point)(
       void *context, unsigned *scope_seq,
       unsigned *declaration_seq);
-  void (*current_function_name)(
-      void *context, char **name, int *name_len);
   node_t *(*parse_initializer_list)(void *context);
   node_t *(*parse_statement_expression)(void *context);
   int (*parse_type_name)(

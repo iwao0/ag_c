@@ -62,8 +62,7 @@ static node_t *parse_local_initializer_assignment_expression(
   if (!adapter || !adapter->syntax) return NULL;
   return psx_expr_assign_with_syntax_services(
       adapter->runtime_context, &adapter->syntax->name_classifier,
-      adapter->syntax, adapter->current_function_name,
-      adapter->current_function_name_len);
+      adapter->syntax);
 }
 
 static void diagnose_local_initializer_unsupported_gnu_extension(
@@ -101,8 +100,7 @@ void psx_frontend_init_local_declaration_syntax_adapter(
     psx_frontend_local_declaration_syntax_adapter_t *adapter,
     psx_local_declaration_callbacks_t *callbacks,
     psx_parser_runtime_context_t *runtime_context,
-    const psx_name_classifier_t *name_classifier,
-    char *current_function_name, int current_function_name_len) {
+    const psx_name_classifier_t *name_classifier) {
   if (!adapter || !callbacks) return;
   *adapter = (psx_frontend_local_declaration_syntax_adapter_t){0};
   *callbacks = (psx_local_declaration_callbacks_t){0};
@@ -110,8 +108,6 @@ void psx_frontend_init_local_declaration_syntax_adapter(
   *adapter = (psx_frontend_local_declaration_syntax_adapter_t){
       .runtime_context = runtime_context,
       .syntax = callbacks,
-      .current_function_name = current_function_name,
-      .current_function_name_len = current_function_name_len,
   };
   *callbacks = (psx_local_declaration_callbacks_t){
       .context = adapter,
@@ -124,12 +120,4 @@ void psx_frontend_init_local_declaration_syntax_adapter(
       .parse_declarator = parse_local_declarator_syntax,
       .parse_initializer = parse_local_initializer_syntax,
   };
-}
-
-void psx_frontend_local_declaration_syntax_set_function_name(
-    psx_frontend_local_declaration_syntax_adapter_t *adapter,
-    char *current_function_name, int current_function_name_len) {
-  if (!adapter) return;
-  adapter->current_function_name = current_function_name;
-  adapter->current_function_name_len = current_function_name_len;
 }

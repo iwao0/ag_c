@@ -1,6 +1,5 @@
 #include "stmt_legacy.h"
 
-#include "decl.h"
 #include "name_classifier_legacy.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
@@ -16,10 +15,6 @@ int psx_legacy_statement_syntax_adapter_init(
   if (!adapter || !semantic_context || !global_registry ||
       !local_registry || !runtime_context)
     return 0;
-  char *function_name = NULL;
-  int function_name_len = 0;
-  ps_decl_get_current_funcname_in(
-      local_registry, &function_name, &function_name_len);
   psx_name_classifier_t semantic_classifier =
       ps_ctx_name_classifier(semantic_context);
   if (!psx_legacy_name_classifier_init(
@@ -31,7 +26,7 @@ int psx_legacy_statement_syntax_adapter_init(
       psx_legacy_name_classifier_view(&adapter->name_classifier);
   return psx_statement_syntax_adapter_init(
       &adapter->syntax, runtime_context, &classifier,
-      local_declarations, function_name, function_name_len);
+      local_declarations);
 }
 
 psx_statement_syntax_context_t

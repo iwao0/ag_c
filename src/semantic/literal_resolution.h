@@ -14,6 +14,13 @@ typedef struct {
   char *string_label;
 } psx_literal_semantic_resolution_t;
 
+typedef struct {
+  char *contents;
+  int length;
+  int character_width;
+  int prefix_kind;
+} psx_string_literal_value_t;
+
 int psx_resolve_number_literal_semantics_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -23,6 +30,11 @@ int psx_resolve_string_literal_semantics_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     const node_string_t *literal,
+    psx_literal_semantic_resolution_t *resolution);
+int psx_resolve_string_literal_value_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    const psx_string_literal_value_t *literal,
     psx_literal_semantic_resolution_t *resolution);
 
 void psx_string_literal_bind_label(

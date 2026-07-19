@@ -7,9 +7,7 @@ static node_t *parse_expression(void *context) {
   psx_statement_syntax_adapter_t *adapter = context;
   return psx_expr_expr_with_syntax_services(
       adapter->runtime_context, &adapter->name_classifier,
-      adapter->local_declarations,
-      adapter->current_function_name,
-      adapter->current_function_name_len);
+      adapter->local_declarations);
 }
 
 static node_t *parse_local_declaration(void *context) {
@@ -22,9 +20,7 @@ static node_t *parse_case_expression(void *context) {
   psx_statement_syntax_adapter_t *adapter = context;
   return psx_expr_conditional_with_syntax_services(
       adapter->runtime_context, &adapter->name_classifier,
-      adapter->local_declarations,
-      adapter->current_function_name,
-      adapter->current_function_name_len);
+      adapter->local_declarations);
 }
 
 static void enter_block_scope(void *context) {
@@ -67,16 +63,13 @@ int psx_statement_syntax_adapter_init(
     psx_statement_syntax_adapter_t *adapter,
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len) {
+    const psx_local_declaration_callbacks_t *local_declarations) {
   if (!adapter || !runtime_context) return 0;
   *adapter = (psx_statement_syntax_adapter_t){
       .runtime_context = runtime_context,
       .local_declarations = local_declarations,
       .name_classifier =
           name_classifier ? *name_classifier : (psx_name_classifier_t){0},
-      .current_function_name = current_function_name,
-      .current_function_name_len = current_function_name_len,
   };
   return 1;
 }

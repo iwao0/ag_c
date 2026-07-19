@@ -131,15 +131,6 @@ static void capture_lookup_point(
         ctx->syntax.context, scope_seq, declaration_seq);
 }
 
-static void current_function_name(
-    expr_parse_ctx_t *ctx, char **name, int *name_len) {
-  if (name) *name = NULL;
-  if (name_len) *name_len = 0;
-  if (ctx && ctx->syntax.current_function_name)
-    ctx->syntax.current_function_name(
-        ctx->syntax.context, name, name_len);
-}
-
 static int parse_generic_assoc_type(
     psx_type_name_ref_t *out, expr_parse_ctx_t *ctx) {
   token_t *end = NULL;
@@ -915,20 +906,6 @@ static node_string_t *make_string_lit_node(
   return snode;
 }
 
-// C11 6.4.2.2 __func__: 各関数本体に暗黙定義される const char[] の関数名。
-static node_t *make_func_name_string_node(expr_parse_ctx_t *ctx) {
-  char *current_funcname = NULL;
-  int current_funcname_len = 0;
-  current_function_name(
-      ctx, &current_funcname, &current_funcname_len);
-  const char *fname = current_funcname ? current_funcname : "";
-  int flen = current_funcname ? current_funcname_len : 0;
-  char *fstr = calloc((size_t)flen + 1, 1);
-  memcpy(fstr, fname, (size_t)flen);
-  return (node_t *)make_string_lit_node(
-      ctx, fstr, flen, TK_CHAR_WIDTH_CHAR, TK_STR_PREFIX_NONE);
-}
-
 // 連続する TK_STRING リテラルを結合して 1 つの ND_STRING ノードを返す。
 static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
   tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
@@ -1009,8 +986,6 @@ static node_t *try_parse_builtin_expect_call(token_ident_t *tok, expr_parse_ctx_
 }
 
 static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx) {
-  if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0)
-    return make_func_name_string_node(ctx);
   if (curtok(ctx)->kind == TK_LPAREN) {
     node_t *builtin = try_parse_builtin_expect_call(tok, ctx);
     if (builtin) return builtin;

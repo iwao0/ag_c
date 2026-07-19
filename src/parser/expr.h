@@ -18,16 +18,13 @@ node_t *psx_expr_conditional_syntax(
 node_t *psx_expr_expr_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len);
+    const psx_local_declaration_callbacks_t *local_declarations);
 node_t *psx_expr_assign_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len);
+    const psx_local_declaration_callbacks_t *local_declarations);
 node_t *psx_expr_conditional_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len);
+    const psx_local_declaration_callbacks_t *local_declarations);
 #endif

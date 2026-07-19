@@ -2539,6 +2539,29 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
             ps_node_get_type(resolved_string)->base->integer_kind);
 
+  node_t *function_name =
+      parse_expr_input_with_existing_locals("__func__");
+  ASSERT_EQ(ND_IDENTIFIER, function_name->kind);
+  const node_identifier_t *function_name_identifier =
+      (const node_identifier_t *)function_name;
+  ASSERT_EQ(8, function_name_identifier->name_len);
+  ASSERT_TRUE(memcmp(
+      function_name_identifier->name, "__func__", 8) == 0);
+  ASSERT_TRUE(ps_node_get_type(function_name) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(function_name));
+  node_t *resolved_function_name =
+      analyze_test_expression(function_name, function_name->tok);
+  ASSERT_TRUE(resolved_function_name != function_name);
+  ASSERT_EQ(ND_STRING, resolved_function_name->kind);
+  const node_string_t *function_name_string =
+      (const node_string_t *)resolved_function_name;
+  ASSERT_EQ(8, function_name_string->literal_length);
+  ASSERT_TRUE(memcmp(
+      function_name_string->literal_contents, "__test__", 8) == 0);
+  ASSERT_EQ(ND_IDENTIFIER, function_name->kind);
+  ASSERT_TRUE(ps_node_get_type(function_name) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(function_name));
+
   node_t *logical_not =
       parse_expr_input_with_existing_locals("!0");
   ASSERT_EQ(ND_EQ, logical_not->kind);
@@ -7139,6 +7162,84 @@ static void assert_direct_function_resolution(const char *source) {
 
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
+  ps_parser_stream_end(&stream);
+  reset_test_translation_unit_state();
+}
+
+static void test_predefined_function_name_typed_hir_boundary() {
+  printf("test_predefined_function_name_typed_hir_boundary...\n");
+  const char *source =
+      "int direct_func_name(void) { "
+      "return __func__[0] + sizeof __func__; }";
+
+  reset_test_translation_unit_state();
+  psx_parser_stream_t stream = {0};
+  begin_test_parser_stream(
+      &stream, NULL, tk_tokenize((char *)source));
+  psx_parsed_toplevel_item_t item;
+  ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
+  ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
+  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+
+  psx_parsed_function_definition_t *syntax_function =
+      &item.value.function_header;
+  node_block_t *body = (node_block_t *)syntax_function->body;
+  ASSERT_TRUE(body != NULL);
+  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
+  node_t *addition = body->body[0]->lhs;
+  ASSERT_EQ(ND_ADD, addition->kind);
+  ASSERT_EQ(ND_SUBSCRIPT, addition->lhs->kind);
+  node_t *subscript_name = addition->lhs->lhs;
+  ASSERT_EQ(ND_IDENTIFIER, subscript_name->kind);
+  ASSERT_EQ(ND_SIZEOF_QUERY, addition->rhs->kind);
+  node_t *sizeof_name =
+      ((node_sizeof_query_t *)addition->rhs)->operand;
+  ASSERT_EQ(ND_IDENTIFIER, sizeof_name->kind);
+
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_resolved_hir_build_failure_t failure;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), test_lowering_context(),
+          ag_compilation_session_options_view(test_suite_session),
+          syntax_function, &typed_hir, &failure));
+  ASSERT_TRUE(typed_hir != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, subscript_name->kind);
+  ASSERT_EQ(ND_IDENTIFIER, sizeof_name->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(subscript_name));
+  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_name));
+
+  psx_hir_module_t *hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t root_id = psx_typed_hir_tree_emit(
+      hir, typed_hir, &failure);
+  ASSERT_TRUE(root_id != PSX_HIR_NODE_ID_INVALID);
+  int found_function_name = 0;
+  int found_function_name_size = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!node) continue;
+    if (psx_hir_node_kind(node) == PSX_HIR_STRING) {
+      size_t literal_length = 0;
+      const char *contents = psx_hir_node_literal_contents(
+          node, &literal_length);
+      if (contents && literal_length == 16 &&
+          memcmp(contents, "direct_func_name", 16) == 0 &&
+          psx_hir_node_object_size(node) == 17)
+        found_function_name = 1;
+    }
+    if (psx_hir_node_kind(node) == PSX_HIR_NUMBER &&
+        psx_hir_node_integer_value(node) == 17)
+      found_function_name_size = 1;
+  }
+  ASSERT_TRUE(found_function_name);
+  ASSERT_TRUE(found_function_name_size);
+
+  psx_hir_module_destroy(hir);
+  ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
   reset_test_translation_unit_state();
 }
@@ -29013,6 +29114,7 @@ int main() {
   test_compilation_session_registry_isolation();
   test_syntax_literal_type_boundary();
   test_direct_literal_typed_hir_resolution_boundary();
+  test_predefined_function_name_typed_hir_boundary();
   test_direct_statement_typed_hir_resolution_boundary();
   test_expr_number();
   test_expr_add_sub();

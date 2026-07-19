@@ -14,8 +14,6 @@ typedef struct {
   psx_parser_runtime_context_t *runtime_context;
   const psx_local_declaration_callbacks_t *local_declarations;
   psx_name_classifier_t name_classifier;
-  char *current_function_name;
-  int current_function_name_len;
 } psx_expression_syntax_adapter_t;
 
 static psx_expression_syntax_context_t expression_syntax_context(
@@ -31,13 +29,6 @@ static void capture_lookup_point(
     return;
   if (scope_seq) *scope_seq = PSX_SCOPE_ID_INVALID;
   if (declaration_seq) *declaration_seq = 0;
-}
-
-static void current_function_name(
-    void *context, char **name, int *name_len) {
-  psx_expression_syntax_adapter_t *adapter = context;
-  if (name) *name = adapter->current_function_name;
-  if (name_len) *name_len = adapter->current_function_name_len;
 }
 
 static int nested_is_typedef_name(
@@ -130,9 +121,7 @@ static node_t *parse_statement_expression(void *context) {
   psx_statement_syntax_adapter_t statement_adapter;
   if (!psx_statement_syntax_adapter_init(
           &statement_adapter, adapter->runtime_context,
-          &nested_classifier, adapter->local_declarations,
-          adapter->current_function_name,
-          adapter->current_function_name_len))
+          &nested_classifier, adapter->local_declarations))
     return NULL;
   psx_statement_syntax_context_t syntax =
       psx_statement_syntax_adapter_context(&statement_adapter);
@@ -180,7 +169,6 @@ static psx_expression_syntax_context_t expression_syntax_context(
       .runtime_context = adapter->runtime_context,
       .name_classifier = adapter->name_classifier,
       .capture_lookup_point = capture_lookup_point,
-      .current_function_name = current_function_name,
       .parse_initializer_list = parse_initializer_list,
       .parse_statement_expression = parse_statement_expression,
       .parse_type_name = parse_type_name,
@@ -191,7 +179,6 @@ static node_t *parse_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
     const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len,
     node_t *(*parse)(const psx_expression_syntax_context_t *)) {
   if (!runtime_context || !parse) return NULL;
   psx_expression_syntax_adapter_t adapter = {
@@ -199,8 +186,6 @@ static node_t *parse_with_syntax_services(
       .local_declarations = local_declarations,
       .name_classifier =
           name_classifier ? *name_classifier : (psx_name_classifier_t){0},
-      .current_function_name = current_function_name,
-      .current_function_name_len = current_function_name_len,
   };
   psx_expression_syntax_context_t syntax_context =
       expression_syntax_context(&adapter);
@@ -210,32 +195,26 @@ static node_t *parse_with_syntax_services(
 node_t *psx_expr_expr_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len) {
+    const psx_local_declaration_callbacks_t *local_declarations) {
   return parse_with_syntax_services(
       runtime_context, name_classifier, local_declarations,
-      current_function_name, current_function_name_len,
       psx_expr_expr_syntax);
 }
 
 node_t *psx_expr_assign_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len) {
+    const psx_local_declaration_callbacks_t *local_declarations) {
   return parse_with_syntax_services(
       runtime_context, name_classifier, local_declarations,
-      current_function_name, current_function_name_len,
       psx_expr_assign_syntax);
 }
 
 node_t *psx_expr_conditional_with_syntax_services(
     psx_parser_runtime_context_t *runtime_context,
     const psx_name_classifier_t *name_classifier,
-    const psx_local_declaration_callbacks_t *local_declarations,
-    char *current_function_name, int current_function_name_len) {
+    const psx_local_declaration_callbacks_t *local_declarations) {
   return parse_with_syntax_services(
       runtime_context, name_classifier, local_declarations,
-      current_function_name, current_function_name_len,
       psx_expr_conditional_syntax);
 }

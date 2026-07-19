@@ -33,7 +33,7 @@ static node_t *parse_toplevel_assignment_expression(void *context) {
   if (!frontend_session_is_complete(session)) return NULL;
   return psx_expr_assign_with_syntax_services(
       ag_compilation_session_parser_runtime_context(session),
-      &stream->parser.syntax.name_classifier, NULL, NULL, 0);
+      &stream->parser.syntax.name_classifier, NULL);
 }
 
 static void diagnose_toplevel_unsupported_gnu_extension(
@@ -171,7 +171,7 @@ int psx_frontend_stream_begin(
   psx_frontend_init_local_declaration_syntax_adapter(
       &stream->local_declaration_adapter,
       &stream->local_declarations, runtime_context,
-      &empty_classifier, NULL, 0);
+      &empty_classifier);
   ps_parser_name_environment_init(
       &stream->local_name_environment,
       empty_classifier);
@@ -270,18 +270,12 @@ int psx_frontend_next_function_with_resolver(
       psx_record_function_definition_declarator_binding_events(
           &item.value.function_header.declarator,
           &stream->local_declarations.name_classifier);
-      psx_frontend_local_declaration_syntax_set_function_name(
-          &stream->local_declaration_adapter,
-          function_name ? function_name->str : NULL,
-          function_name ? function_name->len : 0);
       psx_statement_syntax_adapter_t statement_adapter;
       if (!psx_statement_syntax_adapter_init(
               &statement_adapter,
               ag_compilation_session_parser_runtime_context(session),
               &stream->local_declarations.name_classifier,
-              &stream->local_declarations,
-              function_name ? function_name->str : NULL,
-              function_name ? function_name->len : 0))
+              &stream->local_declarations))
         return 0;
       psx_statement_syntax_context_t statement_syntax =
           psx_statement_syntax_adapter_context(

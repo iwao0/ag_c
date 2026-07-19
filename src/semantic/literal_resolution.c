@@ -89,15 +89,34 @@ int psx_resolve_string_literal_semantics_in_contexts(
     psx_global_registry_t *global_registry,
     const node_string_t *literal,
     psx_literal_semantic_resolution_t *resolution) {
+  if (!literal) {
+    if (resolution) *resolution = (psx_literal_semantic_resolution_t){0};
+    return 0;
+  }
+  psx_string_literal_value_t value = {
+      .contents = literal->literal_contents,
+      .length = literal->literal_length,
+      .character_width = literal->char_width,
+      .prefix_kind = literal->str_prefix_kind,
+  };
+  return psx_resolve_string_literal_value_in_contexts(
+      semantic_context, global_registry, &value, resolution);
+}
+
+int psx_resolve_string_literal_value_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    const psx_string_literal_value_t *literal,
+    psx_literal_semantic_resolution_t *resolution) {
   if (resolution) *resolution = (psx_literal_semantic_resolution_t){0};
   if (!semantic_context || !literal || !resolution) return 0;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
-  int element_width = literal->char_width
-                          ? (int)literal->char_width
+  int element_width = literal->character_width
+                          ? literal->character_width
                           : TK_CHAR_WIDTH_CHAR;
   int element_is_unsigned =
-      literal->str_prefix_kind == TK_STR_PREFIX_u ||
-      literal->str_prefix_kind == TK_STR_PREFIX_U;
+      literal->prefix_kind == TK_STR_PREFIX_u ||
+      literal->prefix_kind == TK_STR_PREFIX_U;
   psx_integer_kind_t element_kind =
       element_width == TK_CHAR_WIDTH_CHAR
           ? PSX_INTEGER_KIND_CHAR
@@ -123,10 +142,11 @@ int psx_resolve_string_literal_semantics_in_contexts(
     snprintf(
         string_label, (size_t)label_length + 1, ".LC%d", id);
     registered->label = string_label;
-    registered->str = literal->literal_contents;
-    registered->len = literal->literal_length;
-    registered->char_width = literal->char_width;
-    registered->str_prefix_kind = literal->str_prefix_kind;
+    registered->str = literal->contents;
+    registered->len = literal->length;
+    registered->char_width = (tk_char_width_t)literal->character_width;
+    registered->str_prefix_kind =
+        (tk_string_prefix_kind_t)literal->prefix_kind;
     psx_register_string_lit_in(global_registry, registered);
     resolution->string_label = string_label;
   }
