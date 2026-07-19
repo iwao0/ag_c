@@ -129,7 +129,8 @@ typedef struct {
 
 typedef struct psx_type_name_resolution_state_t {
   const psx_type_t *bound_base_type;
-  const psx_type_t *resolved_type;
+  const psx_semantic_type_table_t *resolved_type_table;
+  psx_qual_type_t resolved_qual_type;
   const psx_runtime_declarator_application_t *bound_runtime_application;
 } psx_type_name_resolution_state_t;
 

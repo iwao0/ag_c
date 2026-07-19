@@ -3,6 +3,7 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
+#include "../semantic/type_name_resolution.h"
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
@@ -2221,7 +2222,8 @@ int ps_node_generic_selection_index(
   for (int i = 0; i < count; i++) {
     types[i] = resolution && resolution->association_type_names &&
                        i < resolution->association_type_name_count
-                   ? resolution->association_type_names[i].resolved_type
+                   ? psx_type_name_resolved_type(
+                         &resolution->association_type_names[i])
                    : NULL;
     defaults[i] = selection->associations[i].is_default;
   }

@@ -34,6 +34,14 @@ int psx_resolve_bound_type_name_qual_type_in_contexts(
     const psx_type_name_ref_t *type_name,
     psx_type_name_resolution_state_t *state,
     psx_qual_type_t *qual_type);
+int psx_type_name_bind_resolved_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_type_name_resolution_state_t *state,
+    const psx_type_t *resolved_type);
+const psx_type_t *psx_type_name_resolved_type(
+    const psx_type_name_resolution_state_t *state);
+psx_qual_type_t psx_type_name_resolved_qual_type(
+    const psx_type_name_resolution_state_t *state);
 
 static inline psx_type_name_resolution_state_t *
 psx_node_type_name_state_mut(
@@ -55,7 +63,7 @@ static inline const psx_type_t *psx_node_resolved_type_name(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_type_name_resolution_state_t *state =
       psx_node_type_name_state(store, node);
-  return state ? state->resolved_type : NULL;
+  return psx_type_name_resolved_type(state);
 }
 
 #endif

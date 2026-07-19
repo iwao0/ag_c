@@ -4561,7 +4561,13 @@ if (!typeNameRef ||
     !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*resolved_type_table\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+resolved_qual_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
     !compoundLiteralNode ||

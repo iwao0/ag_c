@@ -642,17 +642,12 @@ static void semantic_resolve_compound_literal(
   psx_type_name_resolution_state_t *type_name_state =
       psx_node_type_name_state_mut(
           ps_ctx_resolution_store(semantic_context), &compound->base);
-  const psx_type_t *object_type = type_name_state->resolved_type;
+  const psx_type_t *object_type =
+      psx_type_name_resolved_type(type_name_state);
   if (!object_type) {
-    psx_type_t *resolved = ps_type_clone_in(
-        ps_ctx_arena(semantic_context),
-        semantic_resolve_type_name_ref(
-            semantic_context, global_registry, local_registry,
-            &compound->type_name, type_name_state));
-    ps_ctx_bind_record_ids_in(
-        semantic_context, resolved);
-    type_name_state->resolved_type = resolved;
-    object_type = resolved;
+    object_type = semantic_resolve_type_name_ref(
+        semantic_context, global_registry, local_registry,
+        &compound->type_name, type_name_state);
   }
   const psx_type_t *result = ps_type_clone_in(
       ps_ctx_arena(semantic_context), object_type);

@@ -139,16 +139,21 @@ void psx_resolve_generic_selection_in_contexts(
       psx_type_t *normalized = ps_type_clone_in(
           ps_ctx_arena(semantic_context), resolved);
       ps_type_normalize_scalar_identity(normalized);
-      selection_state->association_type_names[i].resolved_type =
-          normalized;
-      resolved = normalized;
+      if (!psx_type_name_bind_resolved_type_in(
+              semantic_context,
+              &selection_state->association_type_names[i], normalized)) {
+        resolution->conflict_index = i;
+        return;
+      }
+      resolved = psx_type_name_resolved_type(
+          &selection_state->association_type_names[i]);
     }
     if (!resolved) {
       resolution->conflict_index = i;
       return;
     }
-    association_types[i] = ps_ctx_intern_qual_type_in(
-        semantic_context, resolved);
+    association_types[i] = psx_type_name_resolved_qual_type(
+        &selection_state->association_type_names[i]);
     if (association_types[i].type_id == PSX_TYPE_ID_INVALID) {
       resolution->conflict_index = i;
       return;

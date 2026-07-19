@@ -135,8 +135,8 @@ static void resolve_sizeof_type_name(
       });
   ps_ctx_bind_record_ids_in(
       semantic_context, resolved_type);
-  type_name_state->resolved_type = resolved_type;
-  if (!type_name_state->resolved_type) {
+  if (!psx_type_name_bind_resolved_type_in(
+          semantic_context, type_name_state, resolved_type)) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -204,7 +204,7 @@ static const psx_type_t *sizeof_operand_type(
     psx_type_name_resolution_state_t *compound_type_name =
         psx_node_type_name_state_mut(store, &compound->base);
     const psx_type_t *object_type =
-        compound_type_name ? compound_type_name->resolved_type : NULL;
+        psx_type_name_resolved_type(compound_type_name);
     if (object_type && object_type->kind == PSX_TYPE_ARRAY &&
         object_type->array_len <= 0 && compound->base.rhs) {
       psx_type_t *completed = ps_type_clone_in(
@@ -213,8 +213,10 @@ static const psx_type_t *sizeof_operand_type(
                            semantic_context, completed,
                            PSX_DECL_INIT_LIST,
                            compound->base.rhs)) {
-        compound_type_name->resolved_type = completed;
-        object_type = completed;
+        if (psx_type_name_bind_resolved_type_in(
+                semantic_context, compound_type_name, completed))
+          object_type = psx_type_name_resolved_type(
+              compound_type_name);
       }
     }
     if (compound->requires_addressable_object)
