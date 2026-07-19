@@ -11029,6 +11029,16 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "void __direct_return_value_forbidden(void) { return 1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
       ND_RETURN);
+  assert_direct_function_rejection(
+      "int __direct_static_assert_not_constant(void) { "
+      "int value = 1; _Static_assert(value, \"ng\"); return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,
+      ND_STATIC_ASSERT);
+  assert_direct_function_rejection(
+      "int __direct_static_assert_failed(void) { "
+      "_Static_assert(0, \"ng\"); return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED,
+      ND_STATIC_ASSERT);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {

@@ -4335,20 +4335,29 @@ static int preflight_direct_statement_impl(
         return 0;
       const psx_type_t *canonical = ps_ctx_type_by_id_in(
           context->semantic_context, condition_type.type_id);
-      if (!canonical ||
-          (canonical->kind != PSX_TYPE_BOOL &&
-           canonical->kind != PSX_TYPE_INTEGER) ||
-          !direct_integer_constant(
-              context, assertion->condition, &value))
-        return 0;
+      int is_constant = canonical &&
+          (canonical->kind == PSX_TYPE_BOOL ||
+           canonical->kind == PSX_TYPE_INTEGER) &&
+          direct_integer_constant(
+              context, assertion->condition, &value);
       psx_static_assert_resolution_t resolution;
       psx_resolve_static_assert(
           &(psx_static_assert_request_t){
-              .is_constant = 1,
+              .is_constant = is_constant,
               .value = value,
           },
           &resolution);
-      return resolution.status == PSX_STATIC_ASSERT_OK;
+      if (resolution.status == PSX_STATIC_ASSERT_NOT_CONSTANT)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,
+            syntax);
+      if (resolution.status == PSX_STATIC_ASSERT_FAILED)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED,
+            syntax);
+      return 1;
     }
     case ND_RETURN: {
       if (!context->enforce_function_return_type)

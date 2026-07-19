@@ -88,6 +88,20 @@ static int diagnose_direct_function_rejection(
               diagnostics,
               DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST,
+          token, "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, token,
+          "%s", diag_message_for_in(
+                    diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+      return 1;
     default:
       return 0;
   }

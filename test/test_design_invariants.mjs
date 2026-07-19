@@ -4020,71 +4020,23 @@ if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL
     "function labels must use the shared scope graph instead of resolver-local or semantic-context symbol tables",
   );
 }
-if (!/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN/.test(
-      typedHirBuildStatusHeader,
-    ) ||
-    !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_integer_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/note_direct_semantic_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN/.test(
-      syntaxTypedHirResolutionSource,
+const directFunctionRejections = [
+  ...typedHirBuildStatusHeader.matchAll(
+    /\b(PSX_SYNTAX_TYPED_HIR_REJECTION_[A-Z0-9_]+)\b/g,
+  ),
+].map((match) => match[1]).filter(
+  (name) => name !== "PSX_SYNTAX_TYPED_HIR_REJECTION_NONE",
+);
+if (directFunctionRejections.length === 0 ||
+    directFunctionRejections.some(
+      (name) => !syntaxTypedHirResolutionSource.includes(name) ||
+                !semanticTreeResolutionSource.includes(name),
     ) ||
     !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_function_rejection\s*\([^]*?psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
       semanticTreeResolutionSource,
     )) {
   throw new Error(
-    "direct function control-flow diagnostics must bypass mutable compatibility trees",
+    "every direct function rejection must bypass mutable compatibility trees",
   );
 }
 const hirSymbolResolutionSource = await readFile(
