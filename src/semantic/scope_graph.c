@@ -351,6 +351,14 @@ psx_decl_id_t psx_scope_graph_lookup_in_scope(
   return PSX_DECL_ID_INVALID;
 }
 
+const psx_scope_declaration_t *psx_scope_graph_lookup_declaration_in_scope(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, const char *name, int name_len) {
+  return psx_scope_graph_declaration(
+      graph, psx_scope_graph_lookup_in_scope(
+                 graph, scope_id, name_space, name, name_len));
+}
+
 int psx_scope_graph_checkpoint_begin(
     const psx_scope_graph_t *graph,
     psx_scope_graph_checkpoint_t *checkpoint) {

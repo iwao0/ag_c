@@ -14844,6 +14844,13 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(1, resolution.scope_depth);
+  ASSERT_TRUE(register_test_storage_fixture(
+      (char *)"__BlockTypeObject", 17, 4, 4, 0) != NULL);
+  request.name = (char *)"__BlockTypeObject";
+  request.name_len = 17;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT,
+            resolution.status);
   ps_decl_leave_scope_in(test_local_registry());
   ps_ctx_leave_block_scope_in(test_semantic_context());
 
@@ -28224,6 +28231,13 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_EQ(global_id, psx_scope_graph_lookup_in_scope(
       graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, "same", 4));
+  const psx_scope_declaration_t *global_declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, "same", 4);
+  ASSERT_TRUE(global_declaration != NULL);
+  ASSERT_EQ(global_id, global_declaration->id);
+  ASSERT_EQ(PSX_DECL_GLOBAL_OBJECT, global_declaration->kind);
   psx_scope_graph_destroy(graph);
 }
 

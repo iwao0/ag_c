@@ -3254,6 +3254,10 @@ const ordinaryNamespaceResolutionSources = [
   typedefDeclarationResolutionSource,
   globalDeclarationResolutionSource,
 ].join("\n");
+const ordinaryDeclarationConflictSources = [
+  enumConstantResolutionSource,
+  typedefDeclarationResolutionSource,
+];
 const strictResolverRequestSources = [
   [identifierResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
   [enumConstantResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
@@ -3287,6 +3291,12 @@ const contextFreeOrdinaryNamespaceCall =
   /\bps_ctx_(?:has_function_name|find_typedef_name|find_enum_const|find_enum_const_at|has_typedef_in_current_scope|has_enum_const_in_current_scope|register_typedef_name|register_enum_const|current_tag_scope_depth)\s*\(/;
 if (contextFreeOrdinaryNamespaceCall.test(
       ordinaryNamespaceResolutionSources,
+    ) ||
+    ordinaryDeclarationConflictSources.some((source) =>
+      !/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(source) ||
+      /\b(?:ps_find_global_var_in|ps_ctx_has_function_name_in|ps_decl_find_lvar_in|ps_ctx_has_typedef_in_current_scope_in|ps_ctx_has_enum_const_in_current_scope_in)\s*\(/.test(
+        source,
+      )
     ) ||
     !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
       enumConstantResolutionSource,
