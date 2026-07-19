@@ -129,8 +129,9 @@ static int validate_node(const node_t *node, void *user) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
     }
-    if (node_type != ps_ctx_type_by_id_in(
-                         semantic_context, actual.type_id)) {
+    if (node_type != psx_semantic_type_table_lookup_qual_type(
+                         ps_ctx_semantic_type_table_in(semantic_context),
+                         actual)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT, node);
     }
@@ -181,8 +182,7 @@ static int validate_node(const node_t *node, void *user) {
         psx_function_call_type(store, call);
     if (resolved_callee_type) {
       if (resolved_callee_type->kind != PSX_TYPE_FUNCTION ||
-          !ps_type_is_well_formed(resolved_callee_type) ||
-          node_type != resolved_callee_type->base) {
+          !ps_type_is_well_formed(resolved_callee_type)) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
@@ -194,11 +194,22 @@ static int validate_node(const node_t *node, void *user) {
               failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
               node);
         }
-        if (resolved_callee_type != ps_ctx_type_by_id_in(
-                                        semantic_context,
-                                        actual.type_id)) {
+        const psx_semantic_type_table_t *types =
+            ps_ctx_semantic_type_table_in(semantic_context);
+        if (resolved_callee_type !=
+            psx_semantic_type_table_lookup_qual_type(types, actual)) {
           return fail(
               failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT,
+              node);
+        }
+        psx_qual_type_t expected_result =
+            psx_semantic_type_table_base(types, actual.type_id);
+        psx_qual_type_t actual_result = ps_node_qual_type(store, node);
+        if (expected_result.type_id == PSX_TYPE_ID_INVALID ||
+            expected_result.type_id != actual_result.type_id ||
+            expected_result.qualifiers != actual_result.qualifiers) {
+          return fail(
+              failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
               node);
         }
       }

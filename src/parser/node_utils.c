@@ -1,5 +1,6 @@
 #include "node_utils.h"
 #include "../semantic/resolution_state.h"
+#include "../semantic/resolution_store.h"
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
@@ -2307,9 +2308,12 @@ void ps_node_bind_type(
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
   if (!state) return;
-  state->type = type;
-  state->qual_type = (psx_qual_type_t){
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  state->type_binding = type
+      ? (psx_node_type_binding_t){
+            .kind = PSX_NODE_TYPE_PENDING,
+            .value.pending_type = type,
+        }
+      : (psx_node_type_binding_t){0};
   if (!node_type_accepts_vla_runtime_view(store, node)) {
     state->expr.vla_runtime =
         (psx_vla_runtime_view_t){0};
@@ -2338,16 +2342,21 @@ void ps_node_bind_qual_type(
   if (qual_type.type_id == PSX_TYPE_ID_INVALID) return;
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
-  if (state) state->qual_type = qual_type;
+  const psx_type_t *resolved = psx_semantic_type_table_lookup_qual_type(
+      psx_resolution_store_semantic_types(store), qual_type);
+  if (state && resolved) {
+    state->type_binding = (psx_node_type_binding_t){
+        .kind = PSX_NODE_TYPE_CANONICAL,
+        .value.canonical_type = qual_type,
+    };
+  }
 }
 
 void ps_node_clear_type(psx_resolution_store_t *store, node_t *node) {
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
   if (!state) return;
-  state->type = NULL;
-  state->qual_type = (psx_qual_type_t){
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  state->type_binding = (psx_node_type_binding_t){0};
   state->expr.vla_runtime =
       (psx_vla_runtime_view_t){0};
 }
@@ -2364,7 +2373,14 @@ void ps_node_set_qual_type_identity(
     psx_qual_type_t qual_type) {
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
-  if (state) state->qual_type = qual_type;
+  const psx_type_t *resolved = psx_semantic_type_table_lookup_qual_type(
+      psx_resolution_store_semantic_types(store), qual_type);
+  if (state && resolved) {
+    state->type_binding = (psx_node_type_binding_t){
+        .kind = PSX_NODE_TYPE_CANONICAL,
+        .value.canonical_type = qual_type,
+    };
+  }
 }
 
 void ps_node_set_bitfield_info(

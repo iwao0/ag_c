@@ -134,10 +134,23 @@ typedef struct psx_type_name_resolution_state_t {
   const psx_runtime_declarator_application_t *bound_runtime_application;
 } psx_type_name_resolution_state_t;
 
+typedef enum {
+  PSX_NODE_TYPE_NONE = 0,
+  PSX_NODE_TYPE_PENDING,
+  PSX_NODE_TYPE_CANONICAL,
+} psx_node_type_binding_kind_t;
+
+typedef struct {
+  psx_node_type_binding_kind_t kind;
+  union {
+    const psx_type_t *pending_type;
+    psx_qual_type_t canonical_type;
+  } value;
+} psx_node_type_binding_t;
+
 typedef struct psx_node_resolution_state_t {
   psx_resolved_node_kind_t node_kind;
-  const psx_type_t *type;
-  psx_qual_type_t qual_type;
+  psx_node_type_binding_t type_binding;
   psx_expr_type_state_t expr;
   psx_compound_literal_resolution_t compound_literal;
   psx_generic_selection_resolution_state_t generic_selection;

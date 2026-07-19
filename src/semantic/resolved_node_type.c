@@ -6,6 +6,7 @@
 #include "../parser/ast.h"
 #include "resolution_state.h"
 #include "resolution_store.h"
+#include "type_identity.h"
 
 void *psx_resolution_node_alloc_in(
     psx_resolution_store_t *store, arena_context_t *arena_context,
@@ -121,16 +122,24 @@ const psx_type_t *ps_node_get_type(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_node_resolution_state_t *state =
       ps_node_resolution_state_const(store, node);
-  return state ? state->type : NULL;
+  if (!state) return NULL;
+  if (state->type_binding.kind == PSX_NODE_TYPE_PENDING)
+    return state->type_binding.value.pending_type;
+  if (state->type_binding.kind != PSX_NODE_TYPE_CANONICAL)
+    return NULL;
+  return psx_semantic_type_table_lookup_qual_type(
+      psx_resolution_store_semantic_types(store),
+      state->type_binding.value.canonical_type);
 }
 
 psx_qual_type_t ps_node_qual_type(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_node_resolution_state_t *state =
       ps_node_resolution_state_const(store, node);
-  return state ? state->qual_type
-               : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                   PSX_TYPE_QUALIFIER_NONE};
+  return state && state->type_binding.kind == PSX_NODE_TYPE_CANONICAL
+             ? state->type_binding.value.canonical_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 int ps_node_prepare_resolution_state_in(

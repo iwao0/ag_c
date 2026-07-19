@@ -44,9 +44,10 @@ static int intern_available_type(node_t *node, void *user) {
   psx_qual_type_t node_qual_type =
       ps_node_qual_type(pass->resolution_store, node);
   if (node_qual_type.type_id != PSX_TYPE_ID_INVALID &&
-      node_type == ps_ctx_type_by_id_in(
-                       pass->semantic_context,
-                       node_qual_type.type_id)) {
+      node_type == psx_semantic_type_table_lookup_qual_type(
+                       ps_ctx_semantic_type_table_in(
+                           pass->semantic_context),
+                       node_qual_type)) {
     return 1;
   }
   psx_qual_type_t type =
@@ -66,8 +67,10 @@ static int materialize_interned_type(node_t *node, void *user) {
     psx_qual_type_t callee_qual_type =
         psx_function_call_qual_type(pass->resolution_store, call);
     if (callee_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-      const psx_type_t *callee_type = ps_ctx_type_by_id_in(
-          pass->semantic_context, callee_qual_type.type_id);
+      const psx_type_t *callee_type =
+          psx_semantic_type_table_lookup_qual_type(
+              ps_ctx_semantic_type_table_in(pass->semantic_context),
+              callee_qual_type);
       psx_function_call_bind_qual_type(
           pass->resolution_store, call,
           ps_ctx_semantic_type_table_in(pass->semantic_context),
@@ -81,8 +84,10 @@ static int materialize_interned_type(node_t *node, void *user) {
   if (!ps_node_get_type(pass->resolution_store, node)) return 1;
   psx_qual_type_t qual_type =
       ps_node_qual_type(pass->resolution_store, node);
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      pass->semantic_context, qual_type.type_id);
+  const psx_type_t *canonical =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(pass->semantic_context),
+          qual_type);
   if (canonical) {
     ps_node_bind_qual_type(
         pass->resolution_store, node, canonical, qual_type);

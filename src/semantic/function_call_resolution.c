@@ -61,9 +61,9 @@ const psx_type_t *psx_function_call_type(
   const psx_function_call_resolution_state_t *state =
       call_state_const(store, call);
   return state && state->callee_type_table
-             ? psx_semantic_type_table_lookup(
+             ? psx_semantic_type_table_lookup_qual_type(
                    state->callee_type_table,
-                   state->callee_qual_type.type_id)
+                   state->callee_qual_type)
              : NULL;
 }
 

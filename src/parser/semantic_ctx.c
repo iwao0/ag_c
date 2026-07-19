@@ -474,6 +474,8 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
     }
     psx_semantic_type_table_bind_record_decls(
         context->semantic_types, context->record_decls);
+    psx_resolution_store_bind_semantic_types(
+        context->resolution_store, context->semantic_types);
     context->arena_context = arena_context;
     context->target = ag_target_info_host();
   }
@@ -524,6 +526,8 @@ void ps_ctx_bind_resolution_store(
     psx_resolution_store_destroy(context->resolution_store);
   context->resolution_store = resolution_store;
   context->owns_resolution_store = 0;
+  psx_resolution_store_bind_semantic_types(
+      context->resolution_store, context->semantic_types);
 }
 
 psx_resolution_store_t *ps_ctx_resolution_store(

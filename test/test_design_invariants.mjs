@@ -4018,6 +4018,9 @@ if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
     !/ps_ctx_bind_resolution_store\s*\(\s*session->semantic_context\s*,\s*session->resolution_store\s*\)/.test(
       compilationSessionSource,
     ) ||
+    !/psx_resolution_store_semantic_types\s*\(\s*session->resolution_store\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
     /PSX_RESOLUTION_NODE_PREFIX_MAGIC|is_resolution_work_node|has_external_resolution_state/.test(
       resolvedNodeTypeSource,
     ) ||
@@ -4440,14 +4443,28 @@ if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\
     "case label expressions must remain Syntax while resolved values live in semantic state and Typed HIR",
   );
 }
-if (!/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(
+    !/\bPSX_NODE_TYPE_PENDING\b/.test(nodeResolutionStateSource) ||
+    !/\bPSX_NODE_TYPE_CANONICAL\b/.test(nodeResolutionStateSource) ||
+    !/\bconst\s+psx_type_t\s*\*\s*pending_type\s*;/.test(
       nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+canonical_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\bpsx_qual_type_t\s+qual_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
+      resolvedNodeTypeSource,
     )) {
   throw new Error(
-    "node resolution state must retain both its canonical type view and QualType",
+    "node resolution state must use a tagged pending-or-canonical type binding",
   );
 }
 const numberNodeStruct = astSource.match(
@@ -5399,7 +5416,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       semanticInvariantsSource,
     ) ||
-    !/node_type\s*!=\s*ps_ctx_type_by_id_in\s*\(/.test(
+    !/node_type\s*!=\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
       semanticInvariantsSource,
     ) ||
     !/\bpsx_finalize_semantic_tree_types\s*\(/.test(

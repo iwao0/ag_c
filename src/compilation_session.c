@@ -151,6 +151,9 @@ int ag_compilation_session_is_complete(
          session->resolution_store &&
          ps_ctx_resolution_store(session->semantic_context) ==
              session->resolution_store &&
+         psx_resolution_store_semantic_types(
+             session->resolution_store) ==
+             ps_ctx_semantic_type_table_in(session->semantic_context) &&
          session->diagnostic_context && session->token_allocator_context &&
          session->parser_runtime_context &&
          session->lowering_context &&

@@ -20,6 +20,7 @@ typedef struct psx_resolution_binding_t {
 struct psx_resolution_store_t {
   psx_resolution_binding_t
       *buckets[PSX_RESOLUTION_STORE_BUCKET_COUNT];
+  const psx_semantic_type_table_t *semantic_types;
 };
 
 static size_t resolution_bucket(const node_t *node) {
@@ -55,6 +56,17 @@ static void remove_resolution_binding(void *data) {
 
 psx_resolution_store_t *psx_resolution_store_create(void) {
   return calloc(1, sizeof(psx_resolution_store_t));
+}
+
+void psx_resolution_store_bind_semantic_types(
+    psx_resolution_store_t *store,
+    const psx_semantic_type_table_t *semantic_types) {
+  if (store) store->semantic_types = semantic_types;
+}
+
+const psx_semantic_type_table_t *psx_resolution_store_semantic_types(
+    const psx_resolution_store_t *store) {
+  return store ? store->semantic_types : NULL;
 }
 
 void psx_resolution_store_destroy(psx_resolution_store_t *store) {

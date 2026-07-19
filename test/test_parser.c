@@ -26516,9 +26516,9 @@ static void test_semantic_type_identity() {
             (ps_node_qual_type)(
                 context_store, &typed_expression).qualifiers);
   ASSERT_TRUE((ps_node_get_type)(context_store, &typed_expression) ==
-              ps_ctx_type_by_id_in(
-                  context, (ps_node_qual_type)(
-                               context_store, &typed_expression).type_id));
+              psx_semantic_type_table_lookup_qual_type(
+                  ps_ctx_semantic_type_table_in(context),
+                  (ps_node_qual_type)(context_store, &typed_expression)));
   (ps_node_bind_type)(context_store, &typed_expression, plain_int);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             (ps_node_qual_type)(
@@ -26570,12 +26570,14 @@ static void test_semantic_type_identity() {
       (psx_function_call_qual_type)(context_store, &typed_call);
   ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
   ASSERT_TRUE((psx_function_call_type)(context_store, &typed_call) ==
-              ps_ctx_type_by_id_in(context, callee_identity.type_id));
+              psx_semantic_type_table_lookup_qual_type(
+                  ps_ctx_semantic_type_table_in(context),
+                  callee_identity));
   ASSERT_TRUE((ps_node_get_type)(context_store, (node_t *)&typed_call) ==
-              ps_ctx_type_by_id_in(
-                  context, (ps_node_qual_type)(
-                               context_store,
-                               (node_t *)&typed_call).type_id));
+              psx_semantic_type_table_lookup_qual_type(
+                  ps_ctx_semantic_type_table_in(context),
+                  (ps_node_qual_type)(context_store,
+                                      (node_t *)&typed_call)));
   ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
                 context, const_int).type_id,
             psx_semantic_type_table_parameter(
