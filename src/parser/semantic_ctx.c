@@ -149,10 +149,6 @@ typedef_record_runtime_application(const typedef_name_t *t) {
 }
 
 struct psx_function_symbol_t {
-  psx_function_symbol_t *next_all;
-  char *name;
-  int len;
-  psx_decl_id_t declaration_id;
   psx_qual_type_t function_qual_type;
   /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
@@ -176,8 +172,16 @@ struct psx_semantic_context_t {
   psx_ctx_allocation_t *allocations;
   deferred_parser_diagnostic_t *pending_diagnostics_all;
   tag_member_layout_draft_t *aggregate_member_layout_drafts;
-  psx_function_symbol_t *function_symbols_all;
 };
+
+static psx_function_symbol_t *function_symbol_from_declaration(
+    const psx_scope_declaration_t *declaration) {
+  return declaration &&
+                 declaration->name_space == PSX_NAMESPACE_ORDINARY &&
+                 declaration->kind == PSX_DECL_FUNCTION
+             ? declaration->payload
+             : NULL;
+}
 
 static const psx_scope_declaration_t *tag_declaration_for_payload_in(
     const psx_semantic_context_t *context, const tag_type_t *tag) {
@@ -582,14 +586,20 @@ static int initialize_tag_member_record(
  * テストでは fork() 経由で複数のプログラムを 1 プロセス内で解析するため、
  * 関数戻り値型チェック等が前テストの登録に引きずられないようにする。 */
 void ps_ctx_reset_function_names_in(psx_semantic_context_t *context) {
-  if (!context) return;
-  if (context->scope_graph) {
-    for (psx_function_symbol_t *function = context->function_symbols_all;
-         function; function = function->next_all)
-      psx_scope_graph_forget_declaration(
-          context->scope_graph, function->declaration_id);
+  if (!context || !context->scope_graph) return;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = 0; index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index);
+    psx_function_symbol_t *function =
+        function_symbol_from_declaration(declaration);
+    if (!function) continue;
+    psx_decl_id_t declaration_id = declaration->id;
+    psx_scope_graph_forget_declaration(
+        context->scope_graph, declaration_id);
+    ctx_release_in(context, function);
   }
-  context->function_symbols_all = NULL;
 }
 
 void ps_ctx_reset_translation_unit_scope_in(
@@ -701,10 +711,14 @@ void ps_ctx_reset_tag_diag_state_in(
  * を呼ぶユニットテストで前回パースの "function defined" 状態が今回パースに漏れない。 */
 void ps_ctx_reset_function_diag_state_in(
     psx_semantic_context_t *context) {
-  if (!context) return;
-  for (psx_function_symbol_t *f = context->function_symbols_all;
-       f; f = f->next_all)
-    f->is_defined = 0;
+  if (!context || !context->scope_graph) return;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = 0; index < declaration_count; index++) {
+    psx_function_symbol_t *function = function_symbol_from_declaration(
+        psx_scope_graph_declaration_at(context->scope_graph, index));
+    if (function) function->is_defined = 0;
+  }
 }
 
 static tag_type_t *tag_type_from_declaration_in(
@@ -1742,9 +1756,7 @@ const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
       PSX_NAMESPACE_ORDINARY, name, len);
   const psx_scope_declaration_t *declaration =
       psx_scope_graph_declaration(context->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_FUNCTION
-             ? declaration->payload
-             : NULL;
+  return function_symbol_from_declaration(declaration);
 }
 
 static psx_function_symbol_t *find_function_name_mut_in(
@@ -1786,22 +1798,13 @@ void ps_ctx_rollback_function_registration_in(
       PSX_NAMESPACE_ORDINARY, name, len);
   const psx_scope_declaration_t *declaration =
       psx_scope_graph_declaration(context->scope_graph, declaration_id);
-  if (!declaration || declaration->kind != PSX_DECL_FUNCTION ||
-      !declaration->payload)
-    return;
-  psx_function_symbol_t *function = declaration->payload;
-  psx_function_symbol_t **link =
-      &context->function_symbols_all;
-  while (*link && *link != function) {
-    link = &(*link)->next_all;
-  }
-  if (!*link) return;
+  psx_function_symbol_t *function =
+      function_symbol_from_declaration(declaration);
+  if (!function) return;
   if (!checkpoint->existed) {
-    psx_function_symbol_t *removed = *link;
-    *link = removed->next_all;
     psx_scope_graph_forget_declaration(
         context->scope_graph, declaration_id);
-    ctx_release_in(context, removed);
+    ctx_release_in(context, function);
     return;
   }
   function->is_defined = checkpoint->is_defined;
@@ -1821,18 +1824,13 @@ static void define_function_name_in(
   psx_function_symbol_t *f =
       ctx_calloc_in(context, 1, sizeof(*f));
   if (!f) return;
-  f->name = name;
-  f->len = len;
-  f->declaration_id = psx_scope_graph_declare_at(
+  psx_decl_id_t declaration_id = psx_scope_graph_declare_at(
       context->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
       PSX_NAMESPACE_ORDINARY, PSX_DECL_FUNCTION,
       name, len, f);
-  if (f->declaration_id == PSX_DECL_ID_INVALID) {
+  if (declaration_id == PSX_DECL_ID_INVALID) {
     ctx_release_in(context, f);
-    return;
   }
-  f->next_all = context->function_symbols_all;
-  context->function_symbols_all = f;
 }
 
 void psx_ctx_define_function_name_in(

@@ -13913,6 +13913,25 @@ static void test_parameter_declaration_storage_plan_boundary() {
             ps_ctx_get_function_qual_type_in(
                 test_semantic_context(), checkpoint_name,
                 (int)sizeof(checkpoint_name) - 1).type_id);
+
+  static char new_checkpoint_name[] = "__resolution_new_checkpoint";
+  ps_ctx_checkpoint_function_registration_in(
+      test_semantic_context(), new_checkpoint_name,
+      (int)sizeof(new_checkpoint_name) - 1, &function_checkpoint);
+  ASSERT_TRUE(!function_checkpoint.existed);
+  ASSERT_TRUE(ps_ctx_register_function_type_in(
+      test_semantic_context(), new_checkpoint_name,
+      (int)sizeof(new_checkpoint_name) - 1,
+      resolution_function_type));
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+      test_semantic_context(), new_checkpoint_name,
+      (int)sizeof(new_checkpoint_name) - 1));
+  ps_ctx_rollback_function_registration_in(
+      test_semantic_context(), new_checkpoint_name,
+      (int)sizeof(new_checkpoint_name) - 1, &function_checkpoint);
+  ASSERT_TRUE(!ps_ctx_find_function_symbol_in(
+      test_semantic_context(), new_checkpoint_name,
+      (int)sizeof(new_checkpoint_name) - 1));
 }
 
 static void test_global_declaration_resolution_boundary() {

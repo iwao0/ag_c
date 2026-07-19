@@ -433,6 +433,31 @@ if (!tagPayload ||
     "tag identity and lexical depth must come exclusively from scope graph declarations",
   );
 }
+const functionSymbolPayload =
+  scopeGraphSemanticContextSource.match(
+    /struct\s+psx_function_symbol_t\s*\{([\s\S]*?)\n\};/,
+  )?.[1] ?? "";
+if (!functionSymbolPayload ||
+    /\b(?:next_all|name|len|declaration_id)\b/.test(
+      functionSymbolPayload,
+    ) ||
+    /\bfunction_symbols_all\b/.test(scopeGraphSemanticContextSource) ||
+    !/ps_ctx_reset_function_names_in\s*\([^]*?psx_scope_graph_declaration_at\s*\([^]*?psx_scope_graph_forget_declaration\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_reset_function_diag_state_in\s*\([^]*?psx_scope_graph_declaration_at\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_rollback_function_registration_in\s*\([^]*?psx_scope_graph_forget_declaration\s*\([^]*?ctx_release_in\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    /f->(?:next_all|name|len|declaration_id)\b/.test(
+      scopeGraphSemanticContextSource,
+    )) {
+  throw new Error(
+    "function symbol identity and enumeration must come exclusively from scope graph declarations",
+  );
+}
 const semanticIntegerConstructionSource = (
   await Promise.all(
     allSourceFiles
