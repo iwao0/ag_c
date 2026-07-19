@@ -27,20 +27,6 @@ static ir_abi_param_info_t abi_param_unknown(void) {
   };
 }
 
-static int aggregate_has_direct_integer_width(int size) {
-  return size == 1 || size == 2 || size == 4 || size == 8;
-}
-
-static ir_type_t aggregate_direct_integer_type(int size) {
-  switch (size) {
-    case 1: return IR_TY_I8;
-    case 2: return IR_TY_I16;
-    case 4: return IR_TY_I32;
-    case 8: return IR_TY_I64;
-    default: return IR_TY_VOID;
-  }
-}
-
 static ir_abi_param_info_t ir_abi_classify_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id) {
   if (!context || !context->semantic_types || !context->record_layouts ||
@@ -67,12 +53,15 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
       info.param_class = IR_ABI_PARAM_POINTER;
       return info;
     case PSX_TYPE_STRUCT:
-    case PSX_TYPE_UNION:
-      info.type = aggregate_has_direct_integer_width(info.source_size)
-                      ? aggregate_direct_integer_type(info.source_size)
-                      : IR_TY_PTR;
+    case PSX_TYPE_UNION: {
+      const ir_abi_target_policy_t *policy =
+          ir_abi_target_policy_for(context->target);
+      if (!ir_abi_policy_direct_aggregate_type(
+              policy, info.source_size, &info.type))
+        info.type = IR_TY_PTR;
       info.param_class = IR_ABI_PARAM_AGGREGATE;
       return info;
+    }
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       info.type = type.floating_kind == PSX_FLOATING_KIND_FLOAT
@@ -124,7 +113,8 @@ static int lower_result_pieces(
       ir_abi_target_policy_for(context->target);
   if (!policy) return 0;
   size_t piece_count = type.kind == PSX_TYPE_COMPLEX
-                           ? policy->complex_result_piece_count : 1u;
+                           ? ir_abi_policy_complex_result_piece_count(policy)
+                           : 1u;
   if (piece_count != 1 && piece_count != 2) return 0;
   out->result_pieces = calloc(
       piece_count, sizeof(*out->result_pieces));
@@ -153,7 +143,8 @@ static int lower_result_pieces(
   ir_type_t piece_type = info.type;
   if (type.kind == PSX_TYPE_COMPLEX ||
       (info.param_class == IR_ABI_PARAM_AGGREGATE &&
-       !aggregate_has_direct_integer_width(info.source_size))) {
+       !ir_abi_policy_direct_aggregate_type(
+           policy, info.source_size, &piece_type))) {
     kind = IR_ABI_PIECE_INDIRECT;
     piece_type = IR_TY_PTR;
   } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
@@ -297,8 +288,10 @@ static size_t logical_variadic_piece_count(
     return 0;
   if (type_is_complex(context, argument->type.type_id)) return 2;
   if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
-    if (info.source_size <= 0) return 0;
-    return (size_t)((info.source_size + 7) / 8);
+    const ir_abi_target_policy_t *policy =
+        ir_abi_target_policy_for(context->target);
+    return ir_abi_policy_variadic_aggregate_piece_count(
+        policy, info.source_size);
   }
   return 1;
 }
@@ -384,8 +377,11 @@ static int lower_logical_call_arguments(
       } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
           return 0;
-        type = IR_TY_I64;
-        offset = (int)piece_index * 8;
+        const ir_abi_target_policy_t *policy =
+            ir_abi_target_policy_for(context->target);
+        if (!ir_abi_policy_variadic_aggregate_piece(
+                policy, piece_index, &type, &offset))
+          return 0;
         access = IR_ABI_ARGUMENT_LOAD;
       }
       call->signature.param_pieces[physical_index] = (ir_abi_piece_t){

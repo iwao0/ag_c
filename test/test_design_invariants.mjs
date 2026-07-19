@@ -3891,6 +3891,18 @@ const abiTargetPolicyHeader = await readFile(
   "src/lowering/abi_target_policy.h",
   "utf8",
 );
+const abiTargetPolicyInternalHeader = await readFile(
+  "src/lowering/abi_target_policy_internal.h",
+  "utf8",
+);
+const arm64AppleAbiPolicySource = await readFile(
+  "src/arch/arm64_apple/arm64_apple_abi_policy.c",
+  "utf8",
+);
+const wasm32AbiPolicySource = await readFile(
+  "src/arch/wasm32/wasm32_abi_policy.c",
+  "utf8",
+);
 const wasmMachineFunctionPlanSource = await readFile(
   "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
@@ -3985,9 +3997,38 @@ if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_
     !/\bir_abi_target_policy_for\s*\(/.test(abiLoweringSource) ||
     /\bag_target_info_call_abi\s*\(/.test(abiLoweringSource) ||
     !/\bag_target_info_call_abi\s*\(/.test(abiTargetPolicySource) ||
-    !/\bcomplex_result_piece_count\b/.test(abiTargetPolicyHeader) ||
+    /size_t\s+complex_result_piece_count\s*;/.test(
+      abiTargetPolicyHeader,
+    ) ||
+    !/size_t\s+complex_result_piece_count\s*;/.test(
+      abiTargetPolicyInternalHeader,
+    ) ||
+    !/\bir_abi_policy_direct_aggregate_type\s*\(/.test(
+      abiLoweringSource,
+    ) ||
+    !/\bir_abi_policy_variadic_aggregate_piece_count\s*\(/.test(
+      abiLoweringSource,
+    ) ||
+    !/\bir_abi_policy_variadic_aggregate_piece\s*\(/.test(
+      abiLoweringSource,
+    ) ||
+    /source_size\s*\+\s*7|piece_index\s*\*\s*8/.test(
+      abiLoweringSource,
+    ) ||
+    !/\.complex_result_piece_count\s*=\s*2/.test(
+      arm64AppleAbiPolicySource,
+    ) ||
+    !/\.complex_result_piece_count\s*=\s*1/.test(
+      wasm32AbiPolicySource,
+    ) ||
+    !/\.variadic_aggregate_piece_size\s*=\s*8/.test(
+      arm64AppleAbiPolicySource,
+    ) ||
+    !/\.variadic_aggregate_piece_size\s*=\s*8/.test(
+      wasm32AbiPolicySource,
+    ) ||
     /\[[ \t]*(?:16|32)[ \t]*\]/.test(
-      `${irHeaderSource}\n${abiLoweringHeader}\n${abiLoweringSource}\n${abiTargetPolicyHeader}\n${abiTargetPolicySource}`,
+      `${irHeaderSource}\n${abiLoweringHeader}\n${abiLoweringSource}\n${abiTargetPolicyHeader}\n${abiTargetPolicyInternalHeader}\n${abiTargetPolicySource}\n${arm64AppleAbiPolicySource}\n${wasm32AbiPolicySource}`,
     )) {
   throw new Error(
     "AbiLowering must consume an explicit target ABI policy and own dynamic parameter and result piece sequences without legacy result flags or fixed callable caps",

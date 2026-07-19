@@ -3,13 +3,23 @@
 
 #include <stddef.h>
 
+#include "../ir/ir.h"
+
 struct ag_target_info_t;
 
-typedef struct {
-  size_t complex_result_piece_count;
-} ir_abi_target_policy_t;
+typedef struct ir_abi_target_policy_t ir_abi_target_policy_t;
 
 const ir_abi_target_policy_t *ir_abi_target_policy_for(
     const struct ag_target_info_t *target);
+size_t ir_abi_policy_complex_result_piece_count(
+    const ir_abi_target_policy_t *policy);
+int ir_abi_policy_direct_aggregate_type(
+    const ir_abi_target_policy_t *policy, int source_size,
+    ir_type_t *out_type);
+size_t ir_abi_policy_variadic_aggregate_piece_count(
+    const ir_abi_target_policy_t *policy, int source_size);
+int ir_abi_policy_variadic_aggregate_piece(
+    const ir_abi_target_policy_t *policy, size_t piece_index,
+    ir_type_t *out_type, int *out_byte_offset);
 
 #endif
