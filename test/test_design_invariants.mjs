@@ -8971,6 +8971,13 @@ if (!/\bND_UNARY_PLUS\b/.test(syntaxNodeKindHeader) ||
     "unary plus must preserve arithmetic promotion through Typed HIR",
   );
 }
+if (/node->kind\s*==\s*ND_COMMA[^]*?node->rhs\s*=\s*apply_postfix\s*\(/.test(
+      parserExpressionSource,
+    )) {
+  throw new Error(
+    "postfix parsing must wrap the complete source expression instead of rewriting a comma-expression RHS",
+  );
+}
 if (!/MAP\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||

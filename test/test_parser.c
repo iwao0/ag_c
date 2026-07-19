@@ -4291,6 +4291,45 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
                 psx_hir_node_qual_type(subscript_hir).type_id)->kind);
   psx_hir_module_destroy(hir);
 
+  node_t *comma_subscript_syntax =
+      parse_expr_input_with_existing_locals(
+          "(0, DirectLocalArray)[1]");
+  ASSERT_EQ(ND_SUBSCRIPT, comma_subscript_syntax->kind);
+  ASSERT_EQ(ND_COMMA, comma_subscript_syntax->lhs->kind);
+  ASSERT_EQ(ND_NUM, comma_subscript_syntax->lhs->lhs->kind);
+  ASSERT_EQ(ND_IDENTIFIER, comma_subscript_syntax->lhs->rhs->kind);
+  const node_t *comma_subscript_base = comma_subscript_syntax->lhs;
+  const psx_typed_hir_tree_t *typed_comma_subscript = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), comma_subscript_syntax,
+          &typed_comma_subscript, &failure));
+  ASSERT_TRUE(comma_subscript_syntax->lhs == comma_subscript_base);
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_subscript_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_subscript_base));
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t comma_subscript_id = psx_typed_hir_tree_emit(
+      hir, typed_comma_subscript, &failure);
+  const psx_hir_node_t *comma_subscript_hir =
+      psx_hir_module_lookup(hir, comma_subscript_id);
+  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
+            psx_hir_node_kind(comma_subscript_hir));
+  ASSERT_EQ(PSX_HIR_COMMA,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                hir, psx_hir_node_child_at(comma_subscript_hir, 0))));
+  psx_hir_module_destroy(hir);
+
+  node_t *comma_post_inc_syntax =
+      parse_expr_input_with_existing_locals(
+          "(DirectAddressOnly, DirectAddressOnly)++");
+  ASSERT_EQ(ND_POST_INC, comma_post_inc_syntax->kind);
+  ASSERT_EQ(ND_COMMA, comma_post_inc_syntax->lhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_post_inc_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_post_inc_syntax->lhs));
+
   node_t *reversed_subscript_syntax =
       parse_expr_input_with_existing_locals(
           "1[DirectLocalArray]");
@@ -11611,6 +11650,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int __direct_incdec_non_lvalue(void) { return ++1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
       ND_PRE_INC);
+  assert_direct_function_rejection(
+      "int __direct_post_inc_comma(void) { "
+      "int left=1, right=2; return (left, right)++; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
+      ND_POST_INC);
   assert_direct_function_rejection(
       "int __direct_incdec_const(void) { "
       "const int value = 0; return ++value; }",

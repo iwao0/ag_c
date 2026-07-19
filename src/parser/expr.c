@@ -723,17 +723,7 @@ static node_t *build_post_inc_dec_node(
   return n;
 }
 
-static bool is_postfix_op_token(token_kind_t k) {
-  return k == TK_LBRACKET || k == TK_LPAREN || k == TK_DOT ||
-         k == TK_ARROW || k == TK_INC || k == TK_DEC;
-}
-
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
-  // 後置演算がコンマ式の rhs 側に適用される: `(a, b)++` ⇒ `(a, b++)`。
-  if (node && node->kind == ND_COMMA && is_postfix_op_token(curtok(ctx)->kind)) {
-    node->rhs = apply_postfix(node->rhs, ctx);
-    return node;
-  }
   for (;;) {
     token_kind_t k = curtok(ctx)->kind;
     if (k == TK_LBRACKET) {
