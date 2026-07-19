@@ -1634,7 +1634,10 @@ static int preflight_direct_expression_impl(
         context->semantic_context, left_type, right_type,
         &resolution);
     if (resolution.status != PSX_SUBSCRIPT_OPERANDS_OK)
-      return 0;
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS,
+          syntax);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
