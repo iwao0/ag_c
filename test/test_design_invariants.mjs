@@ -1993,6 +1993,12 @@ const typedWarningSyntaxTypedHirResolutionSource = await readFile(
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
       typedHirDiagnosticsSource,
     ) ||
+    /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
     !/unsigned\s+char\s+is_source_assignment\s*;/.test(
       typedWarningHirInternalHeader,
     ) ||
@@ -3075,6 +3081,15 @@ if (!/\bps_ctx_type_sizeof_in\s*\(/.test(typeQueryResolutionSource) ||
 }
 if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
       `${typeQuerySemanticsHeader}\n${typeQuerySemanticsSource}`,
+    ) ||
+    /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
+      typeQuerySemanticsSource,
+    ) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      typeQuerySemanticsSource,
+    ) ||
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
+      typeQuerySemanticsSource,
     ) ||
     !/psx_type_query_plan_kind_t/.test(typeQuerySemanticsHeader) ||
     !/PSX_TYPE_QUERY_PLAN_RUNTIME_PRODUCT/.test(
@@ -5708,6 +5723,10 @@ const directSizeofTypeName = syntaxTypedHirResolutionSource.match(
   /static int resolve_direct_sizeof_type_name\s*\([\s\S]*?\n\}/,
 );
 if (!directSizeofTypeName ||
+    /\bps_ctx_type_sizeof_in\s*\(/.test(directSizeofTypeName[0]) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      directSizeofTypeName[0],
+    ) ||
     /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
       directSizeofTypeName[0],
     ) ||

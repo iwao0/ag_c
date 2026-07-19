@@ -78,6 +78,7 @@
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
+#include "../src/semantic/type_query_semantics.h"
 #include "../src/semantic/type_identity_pass.h"
 #include "../src/semantic/vla_runtime_plan.h"
 #include "../src/semantic/type_name_resolution.h"
@@ -12013,12 +12014,29 @@ static void test_target_type_layout_boundary() {
     pointer_type_end = pointer_type_end->next;
   ASSERT_TRUE(pointer_type_end != NULL);
   ps_ctx_bind_target_info(semantic_context, &wasm);
+  psx_type_query_plan_t pointer_array_query_plan = {0};
+  ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
+      semantic_context, pointer_array_identity, 0, 0,
+      &pointer_array_query_plan));
+  ASSERT_EQ(12, pointer_array_query_plan.constant_factor);
+  ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
+      semantic_context, pointer_array_identity,
+      &pointer_array_query_plan));
+  ASSERT_EQ(4, pointer_array_query_plan.constant_factor);
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
   ASSERT_EQ(4, ps_ctx_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
                    semantic_context, &name_classifier, pointer_type_tokens,
                    pointer_type_end));
   ps_ctx_bind_target_info(semantic_context, &host);
+  ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
+      semantic_context, pointer_array_identity, 0, 0,
+      &pointer_array_query_plan));
+  ASSERT_EQ(24, pointer_array_query_plan.constant_factor);
+  ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
+      semantic_context, pointer_array_identity,
+      &pointer_array_query_plan));
+  ASSERT_EQ(8, pointer_array_query_plan.constant_factor);
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
   ASSERT_EQ(8, ps_ctx_type_alignof_in(semantic_context, pointer_array));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(

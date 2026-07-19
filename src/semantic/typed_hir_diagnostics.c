@@ -8,6 +8,7 @@
 
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
+#include "../type_layout.h"
 #include "semantic_node_builder.h"
 #include "semantic_node_internal.h"
 #include "typed_hir_tree_internal.h"
@@ -41,6 +42,18 @@ static const psx_type_t *canonical_type(
              ? ps_ctx_type_by_id_in(
                    walk->semantic_context, qual_type.type_id)
              : NULL;
+}
+
+static int canonical_type_size(
+    const typed_hir_diagnostic_walk_t *walk,
+    psx_qual_type_t qual_type) {
+  if (!walk || !walk->semantic_context ||
+      qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(walk->semantic_context),
+      ps_ctx_record_layout_table_in(walk->semantic_context),
+      qual_type.type_id, ps_ctx_target_info(walk->semantic_context));
 }
 
 static int type_is_pointer_like(
@@ -329,11 +342,11 @@ static void warn_arithmetic(
   if ((node->spec.kind == PSX_HIR_SHL ||
        node->spec.kind == PSX_HIR_SHR) &&
       integer_literal_value(walk, rhs, &rhs_value)) {
-    const psx_type_t *lhs_type = lhs
-        ? canonical_type(walk, psx_semantic_node_expression_qual_type(lhs))
-        : NULL;
-    int width = ps_ctx_type_sizeof_in(
-                    walk->semantic_context, lhs_type) >= 8
+    psx_qual_type_t lhs_type = lhs
+        ? psx_semantic_node_expression_qual_type(lhs)
+        : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                            PSX_TYPE_QUALIFIER_NONE};
+    int width = canonical_type_size(walk, lhs_type) >= 8
                     ? 64 : 32;
     if (rhs_value < 0 || rhs_value >= width)
       diag_warn_tokf_in(
@@ -371,8 +384,8 @@ static void warn_decl_initializer_overflow(
   const psx_type_t *target_type = canonical_type(
       walk, psx_semantic_node_expression_qual_type(target));
   if (!target_type || target_type->kind == PSX_TYPE_BOOL) return;
-  int type_size = ps_ctx_type_sizeof_in(
-      walk->semantic_context, target_type);
+  int type_size = canonical_type_size(
+      walk, psx_semantic_node_expression_qual_type(target));
   if (type_size <= 0 || type_size >= 4) return;
   int bits = type_size * 8;
   long long max_signed = (1LL << (bits - 1)) - 1;

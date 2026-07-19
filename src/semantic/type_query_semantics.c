@@ -3,17 +3,37 @@
 #include <string.h>
 
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
+#include "../type_layout.h"
+
+static int qual_type_size(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t qual_type) {
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
+}
+
+static int qual_type_alignment(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t qual_type) {
+  return ps_type_alignof_id_with_records(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context),
+      qual_type.type_id, ps_ctx_target_info(semantic_context));
+}
 
 static int begin_plan(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t queried_qual_type,
     psx_type_query_plan_t *plan) {
   if (plan) memset(plan, 0, sizeof(*plan));
+  psx_type_shape_t shape = {0};
   if (!semantic_context || !plan ||
       queried_qual_type.type_id == PSX_TYPE_ID_INVALID ||
-      !ps_ctx_type_by_id_in(
-          semantic_context, queried_qual_type.type_id))
+      !psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          queried_qual_type.type_id, &shape))
     return 0;
   psx_qual_type_t result = ps_ctx_intern_integer_qual_type_in(
       semantic_context, PSX_INTEGER_KIND_LONG, 1, 0);
@@ -29,12 +49,16 @@ int psx_resolve_sizeof_qual_type_plan_in(
     int has_constant_override, long long constant_override,
     psx_type_query_plan_t *plan) {
   if (!begin_plan(semantic_context, queried_qual_type, plan)) return 0;
-  const psx_type_t *type = ps_ctx_type_by_id_in(
-      semantic_context, queried_qual_type.type_id);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          queried_qual_type.type_id, &shape))
+    return 0;
   long long size = has_constant_override
                        ? constant_override
-                       : ps_ctx_type_sizeof_in(semantic_context, type);
-  if (!has_constant_override && type->kind == PSX_TYPE_VOID) size = 1;
+                       : qual_type_size(
+                             semantic_context, queried_qual_type);
+  if (!has_constant_override && shape.kind == PSX_TYPE_VOID) size = 1;
   if (size <= 0) return 0;
   plan->kind = PSX_TYPE_QUERY_PLAN_CONSTANT;
   plan->constant_factor = size;
@@ -72,9 +96,8 @@ int psx_resolve_alignof_qual_type_plan_in(
     psx_qual_type_t queried_qual_type,
     psx_type_query_plan_t *plan) {
   if (!begin_plan(semantic_context, queried_qual_type, plan)) return 0;
-  const psx_type_t *type = ps_ctx_type_by_id_in(
-      semantic_context, queried_qual_type.type_id);
-  int alignment = ps_ctx_type_alignof_in(semantic_context, type);
+  int alignment = qual_type_alignment(
+      semantic_context, queried_qual_type);
   if (alignment <= 0) return 0;
   plan->kind = PSX_TYPE_QUERY_PLAN_CONSTANT;
   plan->constant_factor = alignment;

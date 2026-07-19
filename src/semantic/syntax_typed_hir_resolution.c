@@ -19,6 +19,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "../target_info.h"
+#include "../type_layout.h"
 #include "assignment_resolution.h"
 #include "aggregate_cast_resolution.h"
 #include "call_resolution.h"
@@ -795,8 +796,14 @@ static int resolve_direct_sizeof_type_name(
   const psx_type_t *factor_base_type = direct_type_before_application(
       base_type, runtime_application);
   if (!factor_base_type) return 0;
-  long long factor = ps_ctx_type_sizeof_in(
+  psx_qual_type_t factor_base_qual_type = ps_ctx_intern_qual_type_in(
       context->semantic_context, factor_base_type);
+  if (factor_base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  long long factor = ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(context->semantic_context),
+      ps_ctx_record_layout_table_in(context->semantic_context),
+      factor_base_qual_type.type_id,
+      ps_ctx_target_info(context->semantic_context));
   if (factor_base_type->kind == PSX_TYPE_VOID) factor = 1;
   for (int i = effective_application.shape.count - 1;
        i >= 0; i--) {
