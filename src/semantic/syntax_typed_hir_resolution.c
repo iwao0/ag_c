@@ -572,6 +572,19 @@ static int note_direct_rejection(
   return 0;
 }
 
+static int note_direct_named_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, const char *name, int name_length) {
+  note_direct_rejection(context, source);
+  if (context && context->failure) {
+    context->failure->rejection = rejection;
+    context->failure->source_name = name;
+    context->failure->source_name_length = name_length;
+  }
+  return 0;
+}
+
 static psx_typed_hir_tree_t *wrap_typed_root(
     psx_semantic_context_t *semantic_context,
     psx_semantic_node_t *root,
@@ -3142,11 +3155,15 @@ static int collect_direct_function_jumps(
           ps_ctx_scope_graph(context->semantic_context);
       psx_scope_id_t label_scope = direct_label_scope(context);
       if (!graph || label_scope == PSX_SCOPE_ID_INVALID ||
-          !label->name || label->name_len <= 0 ||
-          psx_scope_graph_lookup_in_scope(
+          !label->name || label->name_len <= 0)
+        return note_direct_rejection(context, syntax);
+      if (psx_scope_graph_lookup_in_scope(
               graph, label_scope, PSX_NAMESPACE_LABEL,
-              label->name, label->name_len) != PSX_DECL_ID_INVALID)
-        return 0;
+              label->name, label->name_len) != PSX_DECL_ID_INVALID) {
+        return note_direct_named_rejection(
+            context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
+            syntax, label->name, label->name_len);
+      }
       psx_decl_id_t declaration_id = psx_scope_graph_declare_at(
           graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
           label->name, label->name_len, (void *)label);
@@ -3198,7 +3215,7 @@ static int collect_direct_function_jumps(
 }
 
 static int validate_direct_function_jumps(
-    const direct_resolution_context_t *context) {
+    direct_resolution_context_t *context) {
   if (!context) return 0;
   psx_scope_graph_t *graph =
       ps_ctx_scope_graph(context->semantic_context);
@@ -3207,11 +3224,16 @@ static int validate_direct_function_jumps(
   for (const direct_goto_binding_t *reference = context->gotos;
        reference; reference = reference->next) {
     const node_jump_t *jump = reference->syntax;
-    if (!jump || !jump->name || jump->name_len <= 0 ||
-        psx_scope_graph_lookup_in_scope(
+    if (!jump || !jump->name || jump->name_len <= 0)
+      return note_direct_rejection(
+          context, jump ? &jump->base : NULL);
+    if (psx_scope_graph_lookup_in_scope(
             graph, label_scope, PSX_NAMESPACE_LABEL,
-            jump->name, jump->name_len) == PSX_DECL_ID_INVALID)
-      return 0;
+            jump->name, jump->name_len) == PSX_DECL_ID_INVALID) {
+      return note_direct_named_rejection(
+          context, PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
+          &jump->base, jump->name, jump->name_len);
+    }
   }
   return 1;
 }

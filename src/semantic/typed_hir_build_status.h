@@ -14,10 +14,19 @@ typedef enum {
   PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
 } psx_resolved_hir_build_status_t;
 
+typedef enum {
+  PSX_SYNTAX_TYPED_HIR_REJECTION_NONE = 0,
+  PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
+  PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
+} psx_syntax_typed_hir_rejection_t;
+
 typedef struct psx_resolved_hir_build_failure_t {
   psx_resolved_hir_build_status_t status;
+  psx_syntax_typed_hir_rejection_t rejection;
   int source_node_kind;
   const token_t *source_token;
+  const char *source_name;
+  int source_name_length;
 } psx_resolved_hir_build_failure_t;
 
 #endif

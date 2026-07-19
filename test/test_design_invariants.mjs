@@ -4020,6 +4020,25 @@ if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL
     "function labels must use the shared scope graph instead of resolver-local or semantic-context symbol tables",
   );
 }
+if (!/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_function_rejection\s*\([^]*?psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
+      semanticTreeResolutionSource,
+    )) {
+  throw new Error(
+    "direct function label diagnostics must bypass mutable compatibility trees",
+  );
+}
 const hirSymbolResolutionSource = await readFile(
   "src/semantic/hir_symbol_resolution.c",
   "utf8",

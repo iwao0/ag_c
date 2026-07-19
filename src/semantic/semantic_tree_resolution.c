@@ -1,10 +1,42 @@
 #include "semantic_tree_resolution.h"
 #include "../diag/diag.h"
+#include "../parser/diag.h"
 #include "../parser/function_definition_syntax.h"
 #include "../parser/semantic_ctx.h"
 #include "legacy_syntax_diagnostics.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_diagnostics.h"
+
+static int diagnose_direct_function_rejection(
+    psx_semantic_context_t *semantic_context,
+    const psx_resolved_hir_build_failure_t *failure,
+    const token_t *fallback_diag_tok) {
+  if (!semantic_context || !failure || !failure->source_name ||
+      failure->source_name_length <= 0)
+    return 0;
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  token_t *token = (token_t *)(failure->source_token
+                                   ? failure->source_token
+                                   : fallback_diag_tok);
+  switch (failure->rejection) {
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL:
+      ps_diag_duplicate_with_name_in(
+          diagnostics, token,
+          diag_text_for_in(diagnostics, DIAG_TEXT_LABEL),
+          failure->source_name, failure->source_name_length);
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO:
+      ps_diag_ctx_in(
+          diagnostics, token, "goto",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
+          failure->source_name_length, failure->source_name);
+      return 1;
+    default:
+      return 0;
+  }
+}
 
 const psx_typed_hir_tree_t *
 psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
@@ -41,6 +73,9 @@ psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
         direct_failure.source_node_kind);
     return NULL;
   }
+  if (diagnose_direct_function_rejection(
+          semantic_context, &direct_failure, fallback_diag_tok))
+    return NULL;
   if (!psx_legacy_syntax_diagnostics_accept_function_in_contexts(
           semantic_context, global_registry, local_registry,
           runtime_context, lowering_context, options,

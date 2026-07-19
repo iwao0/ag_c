@@ -4621,6 +4621,8 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_local_registry(), duplicate_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_case));
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_NONE,
+            failure.rejection);
 
   node_t *duplicate_label = parse_direct_test_statement_syntax(
       "{ duplicate: ; duplicate: ; }");
@@ -4630,6 +4632,10 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), duplicate_label, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
+            failure.rejection);
+  ASSERT_EQ(9, failure.source_name_length);
+  ASSERT_TRUE(memcmp(failure.source_name, "duplicate", 9) == 0);
   ASSERT_EQ(PSX_DECL_ID_INVALID,
             psx_scope_graph_lookup_in_scope(
                 scope_graph, psx_scope_graph_current_scope(scope_graph),
@@ -4644,6 +4650,10 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_local_registry(), undefined_goto, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(undefined_goto));
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
+            failure.rejection);
+  ASSERT_EQ(7, failure.source_name_length);
+  ASSERT_TRUE(memcmp(failure.source_name, "missing", 7) == 0);
 
   psx_hir_module_destroy(hir);
   reset_test_translation_unit_state();
