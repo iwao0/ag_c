@@ -60,6 +60,20 @@ static int diagnose_direct_function_rejection(
           diag_text_for_in(diagnostics, DIAG_TEXT_DEFAULT),
           diag_text_for_in(diagnostics, DIAG_TEXT_SWITCH_SCOPE));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE, token,
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE),
+          failure->source_integer_value);
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT));
+      return 1;
     default:
       return 0;
   }

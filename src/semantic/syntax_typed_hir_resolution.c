@@ -595,6 +595,16 @@ static int note_direct_control_flow_rejection(
   return 0;
 }
 
+static int note_direct_integer_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, long long value) {
+  note_direct_control_flow_rejection(context, rejection, source);
+  if (context && context->failure)
+    context->failure->source_integer_value = value;
+  return 0;
+}
+
 static psx_typed_hir_tree_t *wrap_typed_root(
     psx_semantic_context_t *semantic_context,
     psx_semantic_node_t *root,
@@ -3067,7 +3077,10 @@ static int bind_direct_case_value(
   for (direct_case_value_t *existing =
            context->switch_scope->case_values;
        existing; existing = existing->next) {
-    if (existing->value == value) return 0;
+    if (existing->value == value)
+      return note_direct_integer_rejection(
+          context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+          &case_node->base, value);
   }
   direct_case_value_t *case_value = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*case_value));
@@ -4466,7 +4479,9 @@ static int preflight_direct_statement_impl(
             PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
             syntax);
       if (context->switch_scope->has_default)
-        return 0;
+        return note_direct_control_flow_rejection(
+            context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
+            syntax);
       context->switch_scope->has_default = 1;
       return preflight_direct_statement(context, syntax->rhs);
     case ND_GOTO:

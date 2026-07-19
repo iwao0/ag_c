@@ -22,6 +22,8 @@ typedef enum {
   PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
   PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
   PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
+  PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
+  PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
 } psx_syntax_typed_hir_rejection_t;
 
 typedef struct psx_resolved_hir_build_failure_t {
@@ -31,6 +33,7 @@ typedef struct psx_resolved_hir_build_failure_t {
   const token_t *source_token;
   const char *source_name;
   int source_name_length;
+  long long source_integer_value;
 } psx_resolved_hir_build_failure_t;
 
 #endif

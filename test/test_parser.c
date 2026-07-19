@@ -4621,8 +4621,23 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_local_registry(), duplicate_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_case));
-  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_NONE,
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
             failure.rejection);
+  ASSERT_EQ(ND_CASE, failure.source_node_kind);
+  ASSERT_EQ(1, failure.source_integer_value);
+
+  node_t *duplicate_default = parse_direct_test_statement_syntax(
+      "{ switch (0) { default: break; default: break; } }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), duplicate_default, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_default));
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
+            failure.rejection);
+  ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
 
   node_t *duplicate_label = parse_direct_test_statement_syntax(
       "{ duplicate: ; duplicate: ; }");
