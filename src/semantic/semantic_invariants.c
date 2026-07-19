@@ -34,6 +34,7 @@ static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
     case ND_CONTINUE:
     case ND_GOTO:
     case ND_LABEL:
+    case ND_NULL_STMT:
     case ND_RETURN:
     case ND_BLOCK:
     case ND_FUNCDEF:

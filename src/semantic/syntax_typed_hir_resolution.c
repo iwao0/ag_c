@@ -4884,6 +4884,8 @@ static int preflight_direct_statement_impl(
     case ND_LOCAL_DECLARATION:
       return preflight_direct_local_declaration(
           context, (const node_local_declaration_t *)syntax);
+    case ND_NULL_STMT:
+      return 1;
     case ND_STATIC_ASSERT: {
       const node_static_assert_t *assertion =
           (const node_static_assert_t *)syntax;
@@ -5856,6 +5858,16 @@ static psx_semantic_node_t *build_direct_statement(
     case ND_LOCAL_DECLARATION:
       return build_direct_local_declaration(
           context, (const node_local_declaration_t *)syntax);
+    case ND_NULL_STMT: {
+      psx_hir_node_spec_t spec = {
+          .kind = PSX_HIR_NOP,
+          .attached_qual_type = {
+              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      };
+      return psx_semantic_node_builder_statement(
+          &context->builder, &spec, NULL, NULL, 0,
+          syntax->kind);
+    }
     case ND_STATIC_ASSERT: {
       psx_hir_node_spec_t spec = {
           .kind = PSX_HIR_NOP,

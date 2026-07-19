@@ -47,6 +47,7 @@ typedef enum {
   ND_PRE_DEC,
   ND_POST_INC,
   ND_POST_DEC,
+  ND_NULL_STMT,
   ND_RETURN,
   ND_BLOCK,
   ND_FUNCALL,

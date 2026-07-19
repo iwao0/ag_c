@@ -4353,6 +4353,24 @@ if (!/\bND_STATIC_ASSERT\b/.test(syntaxNodeKindHeader) ||
     "block static assertions must remain immutable Syntax AST until resolver processing and materialize as Typed HIR no-ops",
   );
 }
+if (!/\bND_NULL_STMT\b/.test(syntaxNodeKindHeader) ||
+    /\bhas_empty_body\b/.test(astSource) ||
+    !/psx_node_new_null_statement_syntax_in\s*\(/.test(
+      parserStatementSource,
+    ) ||
+    !/case\s+ND_NULL_STMT\s*:\s*return\s+1\s*;/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_NULL_STMT\s*:\s*\{[^]*?\.kind\s*=\s*PSX_HIR_NOP/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_NULL_STMT\s*,\s*PSX_HIR_NOP\s*\)/.test(
+      resolvedTreeMaterialization,
+    )) {
+  throw new Error(
+    "null statements must remain explicit Syntax AST and materialize as Typed HIR no-ops",
+  );
+}
 const expressionParseContext = parserExpressionSource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*expr_parse_ctx_t\s*;/,
 )?.[1] ?? "";

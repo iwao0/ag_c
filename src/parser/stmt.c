@@ -122,9 +122,12 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context);
 
 static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
-  if (tk_consume_ctx(context->tokenizer_context, ';'))
-    return psx_node_new_syntax_int_in(
-        context->arena_context, 0, NULL);
+  if (curtok(context)->kind == TK_SEMI) {
+    token_t *token = curtok(context);
+    set_curtok(context, token->next);
+    return psx_node_new_null_statement_syntax_in(
+        context->arena_context, token);
+  }
   if (curtok(context)->kind == TK_LBRACE) return parse_stmt_block(context);
   if (is_label_start_stmt(context)) return parse_stmt_label(context);
   if (is_decl_like_start_stmt(context)) return parse_decl_like_stmt(context);
@@ -276,9 +279,6 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
   node->base.kind = ND_IF;
   node->base.lhs = parse_expression(context);
   tk_expect_ctx(context->tokenizer_context, ')');
-  /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
-   * (clang -Wempty-body 相当)。 */
-  if (curtok(context)->kind == TK_SEMI) node->base.has_empty_body = 1;
   node->base.rhs = stmt_internal(context);
   if (curtok(context)->kind == TK_ELSE) {
     set_curtok(context, curtok(context)->next);

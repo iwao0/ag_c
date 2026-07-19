@@ -490,7 +490,8 @@ static void warn_condition(
             diagnostics, DIAG_WARN_PARSER_COMMA_IN_CONDITION),
         context);
   }
-  if (node->kind == ND_IF && node->has_empty_body)
+  if (node->kind == ND_IF && node->rhs &&
+      node->rhs->kind == ND_NULL_STMT)
     diag_warn_tokf_in(diagnostics, DIAG_WARN_PARSER_EMPTY_BODY, tok,
         "%s", diag_warn_message_for_in(
             diagnostics, DIAG_WARN_PARSER_EMPTY_BODY));

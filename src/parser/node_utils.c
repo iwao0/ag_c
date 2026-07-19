@@ -3128,6 +3128,15 @@ node_t *psx_node_new_raw_assign_in(arena_context_t *arena_context,
   return node;
 }
 
+node_t *psx_node_new_null_statement_syntax_in(
+    arena_context_t *arena_context, token_t *token) {
+  node_t *node = arena_alloc_in(arena_context, sizeof(*node));
+  if (!node) return NULL;
+  node->kind = ND_NULL_STMT;
+  node->tok = token;
+  return node;
+}
+
 node_t *psx_node_new_static_assert_syntax_in(
     arena_context_t *arena_context, node_t *condition, token_t *token) {
   node_static_assert_t *node = arena_alloc_in(

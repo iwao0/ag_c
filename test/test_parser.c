@@ -2100,6 +2100,8 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(standalone_block->body[0]));
   ASSERT_TRUE(standalone_block->body[0]->lhs != NULL);
   ASSERT_EQ(ND_NUM, standalone_block->body[0]->lhs->kind);
+  ASSERT_TRUE(standalone_block->body[0]->rhs != NULL);
+  ASSERT_EQ(ND_NULL_STMT, standalone_block->body[0]->rhs->kind);
   ASSERT_TRUE(
       !ps_node_has_resolution_state(standalone_block->body[0]->lhs));
   ASSERT_TRUE(
@@ -4991,6 +4993,30 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
             failure.rejection);
   ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
+
+  node_t *empty_if_syntax =
+      parse_direct_test_statement_syntax("if (0);");
+  ASSERT_TRUE(empty_if_syntax != NULL);
+  ASSERT_EQ(ND_IF, empty_if_syntax->kind);
+  ASSERT_TRUE(empty_if_syntax->rhs != NULL);
+  ASSERT_EQ(ND_NULL_STMT, empty_if_syntax->rhs->kind);
+  const psx_typed_hir_tree_t *typed_empty_if = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), empty_if_syntax,
+          &typed_empty_if, &failure));
+  psx_hir_node_id_t empty_if_id = psx_typed_hir_tree_emit(
+      hir, typed_empty_if, &failure);
+  const psx_hir_node_t *empty_if_hir =
+      psx_hir_module_lookup(hir, empty_if_id);
+  ASSERT_EQ(PSX_HIR_IF, psx_hir_node_kind(empty_if_hir));
+  const psx_hir_node_t *empty_body_hir = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(empty_if_hir, 1));
+  ASSERT_EQ(PSX_HIR_NOP, psx_hir_node_kind(empty_body_hir));
+  ASSERT_TRUE(!ps_node_has_resolution_state(empty_if_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(empty_if_syntax->rhs));
 
   psx_hir_module_destroy(hir);
   reset_test_translation_unit_state();
@@ -29118,7 +29144,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       wasm.semantic_context, wasm.global_registry, wasm.local_registry,
       wasm.parser_runtime_context, NULL, NULL);
   ASSERT_TRUE(wasm_null_statement != NULL);
-  ASSERT_EQ(ND_NUM, wasm_null_statement->kind);
+  ASSERT_EQ(ND_NULL_STMT, wasm_null_statement->kind);
   ASSERT_TRUE(tk_at_eof_ctx(&wasm.tokenizer));
   ASSERT_TRUE(tk_get_current_token() ==
               active_cursor_before_explicit_statement);

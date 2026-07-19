@@ -60,7 +60,6 @@ struct node_t {
   token_t *tok;     // statement/expression start token for post-parse diagnostics
   token_kind_t source_op;
 
-  unsigned int has_empty_body : 1;
   unsigned int is_source_cast : 1;
 };
 
