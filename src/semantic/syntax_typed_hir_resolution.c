@@ -2932,15 +2932,30 @@ static psx_semantic_node_t *build_direct_expression_impl(
   return NULL;
 }
 
-static int preflight_direct_condition(
+static int preflight_direct_control_expression(
     direct_resolution_context_t *context,
-    const node_t *syntax) {
+    const node_t *control, const node_t *expression,
+    psx_control_expression_requirement_t requirement) {
   psx_qual_type_t condition_type;
-  return syntax &&
-         preflight_direct_expression(
-             context, syntax, &condition_type) &&
-         psx_qual_type_is_scalar_in(
-             context->semantic_context, condition_type);
+  if (!control || !expression ||
+      !preflight_direct_expression(
+          context, expression, &condition_type))
+    return 0;
+  psx_control_expression_status_t status;
+  psx_resolve_control_expression_qual_type_in(
+      context->semantic_context, condition_type, requirement,
+      &status);
+  if (status == PSX_CONTROL_EXPRESSION_NOT_SCALAR)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
+        control);
+  if (status == PSX_CONTROL_EXPRESSION_NOT_INTEGER)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_CONDITION_NOT_INTEGER,
+        control);
+  return status == PSX_CONTROL_EXPRESSION_OK;
 }
 
 static int direct_integer_constant(
@@ -4550,14 +4565,18 @@ static int preflight_direct_statement_impl(
     }
     case ND_IF: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;
-      return preflight_direct_condition(context, syntax->lhs) &&
+      return preflight_direct_control_expression(
+                 context, syntax, syntax->lhs,
+                 PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR) &&
              preflight_direct_statement(context, syntax->rhs) &&
              (!control->els ||
               preflight_direct_statement(context, control->els));
     }
     case ND_WHILE:
     case ND_DO_WHILE: {
-      if (!preflight_direct_condition(context, syntax->lhs))
+      if (!preflight_direct_control_expression(
+              context, syntax, syntax->lhs,
+              PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR))
         return 0;
       context->loop_depth++;
       int resolved =
@@ -4580,8 +4599,9 @@ static int preflight_direct_statement_impl(
                : preflight_direct_expression(
                      context, control->init, NULL));
       if (resolved && syntax->lhs)
-        resolved = preflight_direct_condition(
-            context, syntax->lhs);
+        resolved = preflight_direct_control_expression(
+            context, syntax, syntax->lhs,
+            PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR);
       if (resolved && control->inc)
         resolved = preflight_direct_expression(
             context, control->inc, NULL);
@@ -4598,15 +4618,9 @@ static int preflight_direct_statement_impl(
       return resolved;
     }
     case ND_SWITCH: {
-      psx_qual_type_t control_qual_type;
-      if (!preflight_direct_expression(
-              context, syntax->lhs, &control_qual_type))
-        return 0;
-      const psx_type_t *control_type = ps_ctx_type_by_id_in(
-          context->semantic_context, control_qual_type.type_id);
-      if (!control_type ||
-          (control_type->kind != PSX_TYPE_BOOL &&
-           control_type->kind != PSX_TYPE_INTEGER))
+      if (!preflight_direct_control_expression(
+              context, syntax, syntax->lhs,
+              PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER))
         return 0;
       direct_switch_scope_t scope = {
           .parent = context->switch_scope,

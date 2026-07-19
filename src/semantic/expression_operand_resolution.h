@@ -103,6 +103,24 @@ int psx_qual_type_is_scalar_in(
     psx_qual_type_t type);
 
 typedef enum {
+  PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR = 0,
+  PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER,
+} psx_control_expression_requirement_t;
+
+typedef enum {
+  PSX_CONTROL_EXPRESSION_OK = 0,
+  PSX_CONTROL_EXPRESSION_INVALID,
+  PSX_CONTROL_EXPRESSION_NOT_SCALAR,
+  PSX_CONTROL_EXPRESSION_NOT_INTEGER,
+} psx_control_expression_status_t;
+
+void psx_resolve_control_expression_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type,
+    psx_control_expression_requirement_t requirement,
+    psx_control_expression_status_t *status);
+
+typedef enum {
   PSX_SUBSCRIPT_OPERANDS_OK = 0,
   PSX_SUBSCRIPT_OPERANDS_INVALID,
 } psx_subscript_operands_status_t;

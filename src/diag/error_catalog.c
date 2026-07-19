@@ -193,6 +193,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH, "E3103", "parser.call_argument_count_mismatch"},
     {DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT, "E3104", "parser.generic_duplicate_default"},
     {DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE, "E3105", "parser.generic_duplicate_compatible_type"},
+    {DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR, "E3106", "parser.control_condition_not_scalar"},
+    {DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER, "E3107", "parser.switch_condition_not_integer"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

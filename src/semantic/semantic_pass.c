@@ -85,6 +85,54 @@ static psx_qual_type_t semantic_node_qual_type_value(
                    ps_node_get_type(store, node));
 }
 
+static const char *semantic_control_statement_name(int node_kind) {
+  switch (node_kind) {
+    case ND_IF: return "if";
+    case ND_WHILE: return "while";
+    case ND_DO_WHILE: return "do-while";
+    case ND_FOR: return "for";
+    default: return NULL;
+  }
+}
+
+static void semantic_validate_control_expression(
+    psx_semantic_context_t *semantic_context, node_t *control,
+    const token_t *fallback_diag_tok) {
+  if (!semantic_context || !control || !control->lhs) return;
+  psx_control_expression_requirement_t requirement =
+      control->kind == ND_SWITCH
+          ? PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER
+          : PSX_CONTROL_EXPRESSION_REQUIRES_SCALAR;
+  psx_control_expression_status_t status;
+  psx_resolve_control_expression_qual_type_in(
+      semantic_context,
+      semantic_node_qual_type_value(
+          semantic_context, control->lhs),
+      requirement, &status);
+  ag_diagnostic_context_t *diagnostics =
+      semantic_diagnostics(semantic_context);
+  token_t *token = control->tok
+                       ? control->tok
+                       : (token_t *)fallback_diag_tok;
+  if (status == PSX_CONTROL_EXPRESSION_NOT_SCALAR) {
+    const char *statement = semantic_control_statement_name(
+        control->kind);
+    if (!statement) return;
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR,
+        token, diag_message_for_in(
+                   diagnostics,
+                   DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR),
+        statement);
+  } else if (status == PSX_CONTROL_EXPRESSION_NOT_INTEGER) {
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER,
+        token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER));
+  }
+}
+
 static void semantic_resolve_number_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -1233,8 +1281,20 @@ static void semantic_transform_node(
         semantic_resolve_conditional(
             traversal->semantic_context, ctrl,
             fallback_diag_tok);
+      else
+        semantic_validate_control_expression(
+            traversal->semantic_context, node,
+            fallback_diag_tok);
       break;
     }
+    case ND_WHILE:
+    case ND_DO_WHILE:
+    case ND_SWITCH:
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
+      semantic_validate_control_expression(
+          traversal->semantic_context, node, fallback_diag_tok);
+      break;
     case ND_STMT_EXPR: {
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);

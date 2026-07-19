@@ -171,6 +171,30 @@ int psx_qual_type_is_scalar_in(
              ps_ctx_type_by_id_in(semantic_context, type.type_id));
 }
 
+void psx_resolve_control_expression_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t type,
+    psx_control_expression_requirement_t requirement,
+    psx_control_expression_status_t *status) {
+  if (!status) return;
+  *status = PSX_CONTROL_EXPRESSION_INVALID;
+  if (!semantic_context || type.type_id == PSX_TYPE_ID_INVALID)
+    return;
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      semantic_context, type.type_id);
+  if (!canonical) return;
+  if (requirement == PSX_CONTROL_EXPRESSION_REQUIRES_INTEGER) {
+    *status = canonical->kind == PSX_TYPE_BOOL ||
+                      canonical->kind == PSX_TYPE_INTEGER
+                  ? PSX_CONTROL_EXPRESSION_OK
+                  : PSX_CONTROL_EXPRESSION_NOT_INTEGER;
+    return;
+  }
+  *status = ps_type_is_scalar(canonical)
+                ? PSX_CONTROL_EXPRESSION_OK
+                : PSX_CONTROL_EXPRESSION_NOT_SCALAR;
+}
+
 static const psx_type_t *resolve_indirection_result_type_value(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *operand_type) {

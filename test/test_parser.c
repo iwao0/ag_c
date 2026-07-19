@@ -11195,6 +11195,35 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "return _Generic(1, float: 2); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_NO_MATCH,
       ND_GENERIC_SELECTION);
+  assert_direct_function_rejection(
+      "int __direct_if_condition_type(void) { "
+      "struct S { int value; } condition = {0}; "
+      "if (condition) return 1; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
+      ND_IF);
+  assert_direct_function_rejection(
+      "int __direct_while_condition_type(void) { "
+      "struct S { int value; } condition = {0}; "
+      "while (condition) return 1; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
+      ND_WHILE);
+  assert_direct_function_rejection(
+      "int __direct_do_while_condition_type(void) { "
+      "struct S { int value; } condition = {0}; "
+      "do { return 1; } while (condition); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
+      ND_DO_WHILE);
+  assert_direct_function_rejection(
+      "int __direct_for_condition_type(void) { "
+      "struct S { int value; } condition = {0}; "
+      "for (; condition;) return 1; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
+      ND_FOR);
+  assert_direct_function_rejection(
+      "int __direct_switch_condition_type(void) { "
+      "switch (1.0) { default: return 1; } }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_CONDITION_NOT_INTEGER,
+      ND_SWITCH);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25561,6 +25590,16 @@ static void test_parse_invalid() {
   expect_parse_fail("int main() { continue; }");             // ループ外
   expect_parse_fail("int main(void) { int x = ({ continue; 0; }); return x; }");
   expect_parse_fail("int main(void) { while (({ continue; 1; })) return 0; return 0; }");
+  expect_parse_fail(
+      "int main(void) { struct S { int value; } s = {0}; if (s) return 1; return 0; }");
+  expect_parse_fail(
+      "int main(void) { struct S { int value; } s = {0}; while (s) return 1; return 0; }");
+  expect_parse_fail(
+      "int main(void) { struct S { int value; } s = {0}; do {} while (s); return 0; }");
+  expect_parse_fail(
+      "int main(void) { struct S { int value; } s = {0}; for (; s;) return 1; return 0; }");
+  expect_parse_fail(
+      "int main(void) { switch (1.0) { default: return 0; } }");
   expect_parse_fail("int main() { case 1: return 0; }");     // switch外のcase
   expect_parse_fail("int main() { default: return 0; }");    // switch外のdefault
   expect_parse_fail("int main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複

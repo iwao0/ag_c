@@ -8303,6 +8303,34 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
   );
 }
 
+const controlExpressionQualTypeRule =
+  expressionOperandResolutionSource.match(
+    /void\s+psx_resolve_control_expression_qual_type_in\s*\([^]*?\n\}/,
+  );
+const sharedControlExpressionRuleUses = [
+  syntaxTypedHirResolutionSource,
+  semanticPassSource,
+].filter((source) =>
+  /\bpsx_resolve_control_expression_qual_type_in\s*\(/.test(source)
+).length;
+if (
+  !controlExpressionQualTypeRule ||
+  /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
+    controlExpressionQualTypeRule[0],
+  ) ||
+  sharedControlExpressionRuleUses !== 2 ||
+  !/PSX_CONTROL_EXPRESSION_NOT_SCALAR/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/PSX_CONTROL_EXPRESSION_NOT_INTEGER/.test(
+    syntaxTypedHirResolutionSource,
+  )
+) {
+  throw new Error(
+    "control-expression typing must be an AST-independent QualType rule shared by direct Typed HIR and compatibility diagnostics",
+  );
+}
+
 const subscriptQualTypeCore = expressionOperandResolutionSource.match(
   /static\s+int\s+qual_type_is_subscript_base\s*\([^]*?void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
 );

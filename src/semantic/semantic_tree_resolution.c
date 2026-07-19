@@ -15,6 +15,16 @@ static const char *direct_incdec_operator_name(int node_kind) {
              : NULL;
 }
 
+static const char *direct_control_statement_name(int node_kind) {
+  switch (node_kind) {
+    case ND_IF: return "if";
+    case ND_WHILE: return "while";
+    case ND_DO_WHILE: return "do-while";
+    case ND_FOR: return "for";
+    default: return NULL;
+  }
+}
+
 static int diagnose_direct_function_rejection(
     psx_semantic_context_t *semantic_context,
     const psx_resolved_hir_build_failure_t *failure,
@@ -302,6 +312,25 @@ static int diagnose_direct_function_rejection(
           diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH, token,
           "%s", diag_message_for_in(
                     diagnostics, DIAG_ERR_PARSER_GENERIC_NO_MATCH));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR: {
+      const char *statement = direct_control_statement_name(
+          failure->source_node_kind);
+      if (!statement) return 0;
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR,
+          token, diag_message_for_in(
+                     diagnostics,
+                     DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR),
+          statement);
+      return 1;
+    }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_CONDITION_NOT_INTEGER:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER));
       return 1;
     default:
       return 0;
