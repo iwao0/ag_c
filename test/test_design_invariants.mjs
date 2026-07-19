@@ -5251,14 +5251,6 @@ const expressionOperandResolutionHeader = await readFile(
   "src/semantic/expression_operand_resolution.h",
   "utf8",
 );
-const expressionOperandCompatibilitySource = await readFile(
-  "src/semantic/expression_operand_compatibility.c",
-  "utf8",
-);
-const expressionOperandCompatibilityHeader = await readFile(
-  "src/semantic/expression_operand_compatibility.h",
-  "utf8",
-);
 const typeOperatorsHeader = await readFile(
   "src/type_system/type_operators.h",
   "utf8",
@@ -5271,15 +5263,21 @@ if (
     expressionOperandResolutionHeader,
   ) ||
   !/\bpsx_resolve_binary_result_qual_type_in\s*\(/.test(
-    expressionOperandCompatibilitySource,
+    semanticPassSource,
   ) ||
-  !/\bnode_t\b/.test(expressionOperandCompatibilityHeader) ||
+  !/\bpsx_resolve_subscript_qual_types_in\s*\(/.test(
+    semanticPassSource,
+  ) ||
+  allSourceFiles.some((file) =>
+    file.endsWith("expression_operand_compatibility.c") ||
+    file.endsWith("expression_operand_compatibility.h")
+  ) ||
   /\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\//.test(
     typeOperatorsHeader,
   )
 ) {
   throw new Error(
-    "expression QualType rules and operators must be AST-independent while node adapters stay in the compatibility module",
+    "expression QualType rules and operators must be AST-independent while semantic pass adapts syntax directly",
   );
 }
 if (!/\bps_type_integer_rank\s*\(/.test(
@@ -7636,13 +7634,6 @@ const readonlySemanticTypeResults = [
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_indirection_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_arithmetic_unary_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_binary_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_conditional_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_sequence_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_address_result_type"],
-  ["src/semantic/expression_operand_compatibility.h", "psx_resolve_incdec_result_type"],
   ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
   ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
@@ -8627,9 +8618,7 @@ for (const core of sharedOperandTypeRuleCores) {
   const calls = expressionOperandResolutionSource.match(
     new RegExp(`\\b${core}\\s*\\(`, "g"),
   ) ?? [];
-  if (calls.length !== 2 || new RegExp(`\\b${core}\\s*\\(`).test(
-      expressionOperandCompatibilitySource,
-    )) {
+  if (calls.length !== 2) {
     throw new Error(
       `${core} must remain private to the AST-independent QualType core`,
     );

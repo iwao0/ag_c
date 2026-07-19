@@ -65,7 +65,7 @@
 #include "../src/semantic/identifier_resolution.h"
 #include "../src/semantic/literal_resolution.h"
 #include "../src/semantic/member_access_resolution.h"
-#include "../src/semantic/expression_operand_compatibility.h"
+#include "../src/semantic/expression_operand_resolution.h"
 #include "../src/semantic/function_call_resolution.h"
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/identifier_binding.h"
@@ -381,11 +381,6 @@ static void test_set_invalid_vla_runtime_view(
     diagnostics, root, tok)                                       \
   psx_require_semantic_tree_has_canonical_expression_types(       \
       test_semantic_context(), (diagnostics), (root), (tok))
-#define psx_resolve_deref_operand(operand) \
-  psx_resolve_deref_operand(test_resolution_store(), (operand))
-#define psx_resolve_subscript_operands(lhs, rhs, resolution) \
-  psx_resolve_subscript_operands(                            \
-      test_resolution_store(), (lhs), (rhs), (resolution))
 #define psx_function_call_type(call) \
   psx_function_call_type(test_resolution_store(), (call))
 #define psx_function_call_qual_type(call) \
@@ -7945,19 +7940,27 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(lowered_access->lhs));
 
-  node_t *pointer_node = psx_node_new_lvar_identifier_ref_for(pointer);
+  psx_qual_type_t pointer_qual_type =
+      intern_test_qual_type(ps_lvar_get_decl_type(pointer));
+  psx_qual_type_t integer_qual_type = intern_test_qual_type(
+      ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
-            psx_resolve_deref_operand(pointer_node));
+            psx_resolve_deref_operand_qual_type_in(
+                test_semantic_context(), pointer_qual_type));
   ASSERT_EQ(PSX_DEREF_OPERAND_NOT_POINTER,
-            psx_resolve_deref_operand(ps_node_new_num(3)));
-  psx_subscript_operands_resolution_t subscript;
-  psx_resolve_subscript_operands(
-      ps_node_new_num(3), pointer_node, &subscript);
+            psx_resolve_deref_operand_qual_type_in(
+                test_semantic_context(), integer_qual_type));
+  psx_subscript_qual_types_resolution_t subscript;
+  psx_resolve_subscript_qual_types_in(
+      test_semantic_context(), integer_qual_type,
+      pointer_qual_type, &subscript);
   ASSERT_EQ(PSX_SUBSCRIPT_OPERANDS_OK, subscript.status);
   ASSERT_TRUE(subscript.swapped);
-  ASSERT_EQ(pointer_node, subscript.base);
-  psx_resolve_subscript_operands(
-      ps_node_new_num(3), ps_node_new_num(4), &subscript);
+  ASSERT_EQ(pointer_qual_type.type_id,
+            subscript.base_qual_type.type_id);
+  psx_resolve_subscript_qual_types_in(
+      test_semantic_context(), integer_qual_type,
+      integer_qual_type, &subscript);
   ASSERT_EQ(PSX_SUBSCRIPT_OPERANDS_INVALID, subscript.status);
 }
 
@@ -8693,18 +8696,19 @@ static void test_additive_semantic_lowering_boundary() {
       array_type, pointer_type);
   ASSERT_EQ(PSX_TYPE_POINTER, array_conditional->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, array_conditional->base->kind);
-  node_t array_operand = {0};
-  test_set_resolved_node_kind(&array_operand, ND_LVAR);
-  test_bind_node_type(&array_operand, array_type);
+  psx_qual_type_t array_qual_type =
+      intern_test_qual_type(array_type);
+  psx_qual_type_t pointer_qual_type =
+      intern_test_qual_type(pointer_type);
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
-            psx_resolve_deref_operand(&array_operand));
-  ASSERT_TRUE(psx_resolve_incdec_result_type(
-                  test_semantic_context(), &array_operand) == NULL);
-  node_t pointer_operand = {0};
-  test_set_resolved_node_kind(&pointer_operand, ND_LVAR);
-  test_bind_node_type(&pointer_operand, pointer_type);
-  ASSERT_TRUE(psx_resolve_incdec_result_type(
-                  test_semantic_context(), &pointer_operand) != NULL);
+            psx_resolve_deref_operand_qual_type_in(
+                test_semantic_context(), array_qual_type));
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_resolve_incdec_result_qual_type_in(
+                test_semantic_context(), array_qual_type).type_id);
+  ASSERT_TRUE(psx_resolve_incdec_result_qual_type_in(
+                  test_semantic_context(), pointer_qual_type).type_id !=
+              PSX_TYPE_ID_INVALID);
 
   psx_type_t *comma_rhs = ps_type_new_float(
       TK_FLOAT_KIND_DOUBLE, 8);
@@ -8902,12 +8906,12 @@ static void test_unary_deref_semantic_lowering_boundary() {
 static void test_unary_operator_semantic_lowering_boundary() {
   printf("test_unary_operator_semantic_lowering_boundary...\n");
   psx_type_t *stale_wide_char = ps_type_new_integer(TK_CHAR, 8, 0);
-  node_t *stale_wide_char_value = ps_node_new_num(1);
-  ps_node_bind_type(stale_wide_char_value, stale_wide_char);
-  const psx_type_t *promoted_stale_char =
-      psx_resolve_arithmetic_unary_result_type(
-          test_semantic_context(), ND_UNARY_NEGATE,
-          stale_wide_char_value);
+  psx_qual_type_t promoted_stale_char_qual_type =
+      psx_resolve_arithmetic_unary_result_qual_type_in(
+          test_semantic_context(), PSX_TYPE_UNARY_NEGATE,
+          intern_test_qual_type(stale_wide_char));
+  const psx_type_t *promoted_stale_char = ps_ctx_type_by_id_in(
+      test_semantic_context(), promoted_stale_char_qual_type.type_id);
   ASSERT_TRUE(promoted_stale_char != NULL);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, promoted_stale_char->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(promoted_stale_char));

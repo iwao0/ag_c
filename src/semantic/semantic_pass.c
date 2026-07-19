@@ -16,7 +16,7 @@
 #include "call_resolution.h"
 #include "case_label_resolution.h"
 #include "constant_expression.h"
-#include "expression_operand_compatibility.h"
+#include "expression_operand_resolution.h"
 #include "function_call_resolution.h"
 #include "generic_selection_resolution.h"
 #include "lvar_usage_analysis.h"
@@ -54,6 +54,21 @@ static void semantic_bind_result_type(
     node_t *node, const psx_type_t *type) {
   ps_node_bind_type(
       ps_ctx_resolution_store(semantic_context), node, type);
+}
+
+static int semantic_bind_qual_type_result(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, psx_qual_type_t qual_type) {
+  if (!semantic_context || !node ||
+      qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  const psx_type_t *canonical = ps_ctx_type_by_id_in(
+      semantic_context, qual_type.type_id);
+  if (!canonical) return 0;
+  ps_node_bind_qual_type(
+      ps_ctx_resolution_store(semantic_context),
+      node, canonical, qual_type);
+  return 1;
 }
 
 static void semantic_bind_canonical_result_type(
@@ -189,31 +204,6 @@ static void semantic_bind_size_query_result_type(
           PSX_INTEGER_KIND_LONG, 1, 0));
 }
 
-static int semantic_bind_indirection_result_type(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, node_t *operand) {
-  if (!semantic_context || !node || !operand) return 0;
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(semantic_context);
-  psx_qual_type_t operand_type = ps_node_qual_type(
-      ps_ctx_resolution_store(semantic_context), operand);
-  if (operand_type.type_id == PSX_TYPE_ID_INVALID) {
-    operand_type = ps_ctx_intern_qual_type_in(
-        semantic_context,
-        ps_node_get_type(
-            ps_ctx_resolution_store(semantic_context), operand));
-  }
-  psx_qual_type_t result_type = psx_semantic_type_table_base(
-      types, operand_type.type_id);
-  const psx_type_t *canonical = psx_semantic_type_table_lookup(
-      types, result_type.type_id);
-  if (!canonical) return 0;
-  ps_node_bind_qual_type(
-      ps_ctx_resolution_store(semantic_context),
-      node, canonical, result_type);
-  return 1;
-}
-
 static int semantic_bind_address_result_type(
     psx_semantic_context_t *semantic_context,
     node_t *node, node_t *operand) {
@@ -241,13 +231,8 @@ static int semantic_bind_address_result_type(
   psx_qual_type_t pointer_type =
       ps_ctx_intern_pointer_to_qual_type_in(
           semantic_context, pointee_type);
-  const psx_type_t *pointer_canonical = psx_semantic_type_table_lookup(
-      types, pointer_type.type_id);
-  if (!pointer_canonical) return 0;
-  ps_node_bind_qual_type(
-      ps_ctx_resolution_store(semantic_context),
-      node, pointer_canonical, pointer_type);
-  return 1;
+  return semantic_bind_qual_type_result(
+      semantic_context, node, pointer_type);
 }
 
 static void semantic_resolve_explicit_address(
@@ -381,22 +366,24 @@ static void semantic_resolve_subscript(
       semantic_diagnostics(semantic_context);
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  psx_subscript_operands_resolution_t operands;
-  psx_resolve_subscript_operands(
-      store, node->lhs, node->rhs, &operands);
+  psx_subscript_qual_types_resolution_t operands;
+  psx_resolve_subscript_qual_types_in(
+      semantic_context,
+      semantic_node_qual_type_value(semantic_context, node->lhs),
+      semantic_node_qual_type_value(semantic_context, node->rhs),
+      &operands);
   if (operands.status == PSX_SUBSCRIPT_OPERANDS_INVALID) {
     ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
                 "subscript",
                 "サブスクリプトの両辺ともポインタ/配列ではありません (C11 6.5.2.1p1)");
   }
-  node->lhs = operands.base;
-  node->rhs = operands.index;
-  if (!semantic_bind_indirection_result_type(
-          semantic_context, node, node->lhs)) {
-    semantic_bind_result_type(
-        semantic_context, node, psx_resolve_indirection_result_type(
-                  semantic_context, node->lhs));
+  if (operands.swapped) {
+    node_t *base = node->rhs;
+    node->rhs = node->lhs;
+    node->lhs = base;
   }
+  semantic_bind_qual_type_result(
+      semantic_context, node, operands.result_qual_type);
   int frame_off = ps_node_vla_row_stride_frame_off(store, node->lhs);
   int remaining = ps_node_vla_strides_remaining(store, node->lhs);
   ps_node_set_vla_runtime_view(
@@ -414,8 +401,11 @@ static void semantic_resolve_unary_deref(
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(semantic_context);
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
-  psx_deref_operand_status_t status = psx_resolve_deref_operand(
-      ps_ctx_resolution_store(semantic_context), node->lhs);
+  psx_qual_type_t operand_type = semantic_node_qual_type_value(
+      semantic_context, node->lhs);
+  psx_deref_operand_status_t status =
+      psx_resolve_deref_operand_qual_type_in(
+          semantic_context, operand_type);
   if (status == PSX_DEREF_OPERAND_NOT_POINTER) {
     ps_diag_ctx_in(diagnostics, tok, "deref",
                 "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
@@ -424,11 +414,27 @@ static void semantic_resolve_unary_deref(
     ps_diag_ctx_in(diagnostics, tok, "deref",
                 "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
-  if (!semantic_bind_indirection_result_type(
-          semantic_context, node, node->lhs)) {
-    semantic_bind_result_type(
-        semantic_context, node, psx_resolve_indirection_result_type(
-                  semantic_context, node->lhs));
+  semantic_bind_qual_type_result(
+      semantic_context, node,
+      psx_resolve_indirection_result_qual_type_in(
+          semantic_context, operand_type));
+}
+
+static int semantic_arithmetic_unary_operator(
+    int kind, psx_type_arithmetic_unary_op_t *operator) {
+  if (!operator) return 0;
+  switch (kind) {
+    case ND_UNARY_NEGATE:
+      *operator = PSX_TYPE_UNARY_NEGATE;
+      return 1;
+    case ND_CREAL:
+      *operator = PSX_TYPE_UNARY_REAL;
+      return 1;
+    case ND_CIMAG:
+      *operator = PSX_TYPE_UNARY_IMAGINARY;
+      return 1;
+    default:
+      return 0;
   }
 }
 
@@ -439,9 +445,15 @@ static void semantic_resolve_arithmetic_unary(
   if (!node) return;
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(semantic_context);
-  semantic_bind_result_type(
-      semantic_context, node, psx_resolve_arithmetic_unary_result_type(
-                semantic_context, node->kind, node->lhs));
+  psx_type_arithmetic_unary_op_t operator;
+  if (semantic_arithmetic_unary_operator(node->kind, &operator)) {
+    semantic_bind_qual_type_result(
+        semantic_context, node,
+        psx_resolve_arithmetic_unary_result_qual_type_in(
+            semantic_context, operator,
+            semantic_node_qual_type_value(
+                semantic_context, node->lhs)));
+  }
   if (ps_node_get_type(
           ps_ctx_resolution_store(semantic_context), node)) return;
   ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
@@ -466,14 +478,18 @@ static void semantic_resolve_incdec(
       diagnostics, node->lhs, op, tok);
   ps_node_reject_const_assign_at_in(
       semantic_context, diagnostics, node->lhs, op, tok);
-  const psx_type_t *type = psx_resolve_incdec_result_type(
-      semantic_context, node->lhs);
-  if (!type) {
+  psx_incdec_operand_resolution_t resolution;
+  psx_resolve_incdec_operand_qual_type_in(
+      semantic_context,
+      semantic_node_qual_type_value(semantic_context, node->lhs),
+      &resolution);
+  if (resolution.status != PSX_INCDEC_OPERAND_OK) {
     ps_diag_ctx_in(diagnostics, tok, "incdec",
                 "%s のオペランドは実数型またはポインタ型でなければなりません",
                 op);
   }
-  semantic_bind_result_type(semantic_context, node, type);
+  semantic_bind_qual_type_result(
+      semantic_context, node, resolution.result_qual_type);
 }
 
 static void semantic_resolve_conditional(
@@ -805,18 +821,14 @@ static void semantic_resolve_compound_literal(
   }
   const psx_type_t *result = ps_type_clone_in(
       ps_ctx_arena(semantic_context), object_type);
+  psx_qual_type_t result_qual_type =
+      ps_ctx_intern_qual_type_in(semantic_context, result);
   if (compound->requires_addressable_object) {
-    node_t *operand = psx_resolution_node_alloc_in(
-        ps_ctx_resolution_store(semantic_context),
-        ps_ctx_arena(semantic_context), sizeof(*operand));
-    if (!operand) return;
-    ps_node_bind_type(
-        ps_ctx_resolution_store(semantic_context), operand, result);
-    result = psx_resolve_address_result_type(
-        semantic_context, operand);
+    result_qual_type = psx_resolve_address_result_qual_type_in(
+        semantic_context, result_qual_type);
   }
-  semantic_bind_result_type(
-      semantic_context, (node_t *)compound, result);
+  semantic_bind_qual_type_result(
+      semantic_context, (node_t *)compound, result_qual_type);
 }
 
 static void semantic_resolve_generic_selection(
@@ -1263,10 +1275,12 @@ static void semantic_transform_node(
       } else if (!semantic_bind_address_result_type(
                      traversal->semantic_context, node, node->lhs) &&
                  !ps_node_get_type(store, node)) {
-        semantic_bind_result_type(
+        semantic_bind_qual_type_result(
             traversal->semantic_context, node,
-            psx_resolve_address_result_type(
-                traversal->semantic_context, node->lhs));
+            psx_resolve_address_result_qual_type_in(
+                traversal->semantic_context,
+                semantic_node_qual_type_value(
+                    traversal->semantic_context, node->lhs)));
       }
       break;
     case ND_PRE_INC:
@@ -1297,11 +1311,17 @@ static void semantic_transform_node(
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
       if (!ps_node_get_type(store, node)) {
-        semantic_bind_result_type(
-            traversal->semantic_context, node,
-            psx_resolve_binary_result_type(
-                      traversal->semantic_context,
-                      node->kind, node->lhs, node->rhs));
+        psx_type_binary_op_t operator;
+        if (ps_node_binary_type_op(node->kind, &operator)) {
+          semantic_bind_qual_type_result(
+              traversal->semantic_context, node,
+              psx_resolve_binary_result_qual_type_in(
+                  traversal->semantic_context, operator,
+                  semantic_node_qual_type_value(
+                      traversal->semantic_context, node->lhs),
+                  semantic_node_qual_type_value(
+                      traversal->semantic_context, node->rhs)));
+        }
       }
       break;
     case ND_IF:
@@ -1334,10 +1354,10 @@ static void semantic_transform_node(
     case ND_STMT_EXPR: {
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
-      semantic_bind_result_type(
+      semantic_bind_qual_type_result(
           traversal->semantic_context, node,
-          psx_resolve_sequence_result_type(
-                    traversal->semantic_context, node->rhs));
+          semantic_node_qual_type_value(
+              traversal->semantic_context, node->rhs));
       break;
     }
     default:
