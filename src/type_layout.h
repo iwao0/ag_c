@@ -5,8 +5,6 @@
 #include "semantic/type_identity.h"
 #include "semantic/record_layout.h"
 
-typedef struct psx_type_t psx_type_t;
-
 typedef struct {
   int size;
   int alignment;

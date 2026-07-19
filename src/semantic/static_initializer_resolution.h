@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 #include "../parser/type.h"
 #include "../hir/hir.h"
+#include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_static_aggregate_initializer_plan_t
@@ -28,7 +29,7 @@ typedef struct {
 
 typedef struct {
   psx_static_initializer_status_t status;
-  const psx_type_t *type;
+  psx_qual_type_t object_qual_type;
   psx_decl_init_kind_t kind;
   node_t *initializer;
   const psx_hir_module_t *initializer_hir;

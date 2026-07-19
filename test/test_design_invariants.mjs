@@ -2587,18 +2587,19 @@ const aggregateRegistryHeader = await readFile(
   "utf8",
 );
 const aggregateMemberResolutionType = aggregateMemberResolutionHeader.match(
-  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_resolution_t\s*;/,
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_aggregate_member_declaration_resolution_t\s*;/,
 );
 const aggregateLayoutStateType = aggregateMemberResolutionHeader.match(
-  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_layout_state_t\s*;/,
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_aggregate_layout_state_t\s*;/,
 );
 const aggregateMemberRequestType = aggregateMemberResolutionHeader.match(
-  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_request_t\s*;/,
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_aggregate_member_declaration_request_t\s*;/,
 );
 if (!aggregateMemberResolutionType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(
       aggregateMemberResolutionType[1],
     ) ||
+    /\bpsx_type_t\b/.test(aggregateMemberResolutionType[1]) ||
     !/\bps_ctx_intern_qual_type_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
@@ -2616,6 +2617,9 @@ if (!aggregateMemberResolutionType ||
     ) ||
     /\baggregate_definition\b/.test(aggregateMemberResolutionSource) ||
     !/\bpsx_semantic_type_table_array_leaf\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/\bps_ctx_get_record_decl_in\s*\(/.test(
@@ -4894,8 +4898,10 @@ const initializerLeafType = initializerResolutionHeader.match(
 );
 if (!initializerTargetType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerTargetType[1]) ||
+    /\bpsx_type_t\b/.test(initializerTargetType[1]) ||
     !initializerLeafType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerLeafType[1]) ||
+    /\bpsx_type_t\b/.test(initializerLeafType[1]) ||
     !/\bpsx_type_id_t\s+string_array_type_id\s*;/.test(
       initializerLeafType[1],
     ) ||
@@ -5349,7 +5355,7 @@ if (/\bpsx_lower_implicit_conversions\s*\(/.test(
     !/\bhir_ir_coerce_direct_value_to_qual_type\s*\(/.test(
       hirIrBuilder,
     ) ||
-    !/semantic_target->kind\s*==\s*PSX_TYPE_BOOL/.test(
+    !/semantic_target\.kind\s*==\s*PSX_TYPE_BOOL/.test(
       hirIrBuilder,
     )) {
   throw new Error(
@@ -6273,6 +6279,22 @@ if (!tagTypeStruct ||
 
 const typeLayoutSource = await readFile("src/type_layout.c", "utf8");
 const typeLayoutHeader = await readFile("src/type_layout.h", "utf8");
+const staticHirInitializerHeader = await readFile(
+  "src/lowering/static_hir_initializer.h",
+  "utf8",
+);
+const typeShapeLoweringSources = (await Promise.all([
+  "src/lowering/hir_ir_builder.c",
+  "src/lowering/mir_type_lowering.c",
+  "src/lowering/function_type_lowering.c",
+  "src/lowering/abi_lowering.c",
+  "src/lowering/hir_ir_expression.c",
+  "src/lowering/hir_ir_call.c",
+  "src/lowering/hir_ir_aggregate.c",
+  "src/lowering/ir_symbol_lowering.c",
+  "src/lowering/static_hir_initializer.c",
+  "src/lowering/translation_unit_data_lowering.c",
+].map((path) => readFile(path, "utf8")))).join("\n");
 const typeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
 );
@@ -6280,7 +6302,9 @@ const recordTypeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id_with_records\s*\([^]*?\n\}/,
 );
 if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
-    !/\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(typeLayoutSource) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
+    /parser\/type\.h/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(typeLayoutSource) ||
     /\baggregate_definition\b/.test(typeLayoutSource) ||
     /\bps_type_(?:layout_of|sizeof_for_target|alignof_for_target)\s*\(/.test(
@@ -6312,6 +6336,36 @@ if (!recordTypeIdLayoutFunction ||
     )) {
   throw new Error(
     "record ABI layout must be an explicit RecordLayoutTable input separate from TypeId",
+  );
+}
+if (/parser\/type\.h/.test(typeShapeLoweringSources) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(typeShapeLoweringSources) ||
+    /\bpsx_type_t\b/.test(typeShapeLoweringSources) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      typeShapeLoweringSources,
+    ) ||
+    !/\bir_mir_integer_promotion_is_unsigned\s*\(/.test(
+      typeShapeLoweringSources,
+    ) ||
+    !/\bir_mir_usual_arithmetic_result_is_unsigned\s*\(/.test(
+      typeShapeLoweringSources,
+    )) {
+  throw new Error(
+    "type and ABI lowering must consume TypeId shape and target layout without parser compatibility types",
+  );
+}
+if (/parser\/type\.h/.test(
+      `${staticHirInitializerHeader}\n${staticHirInitializerSource}`,
+    ) ||
+    /\bpsx_type_t\b/.test(
+      `${staticHirInitializerHeader}\n${staticHirInitializerSource}`,
+    ) ||
+    !/\bpsx_type_id_t\s+type_id\b/.test(staticHirInitializerHeader) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      staticHirInitializerSource,
+    )) {
+  throw new Error(
+    "static HIR initializer lowering must consume canonical TypeId shapes without parser compatibility types",
   );
 }
 if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
@@ -6549,6 +6603,10 @@ if (!targetIntegerConversionSection ||
 const targetCanonicalSignatureSection = canonicalTypeSource.match(
   /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature_for_target\s*\([^]*?\n\}/,
 );
+const typeIdCanonicalSignatureSource = await readFile(
+  "src/type_signature.c",
+  "utf8",
+);
 if (!targetCanonicalSignatureSection ||
     /\bps_type_sizeof\s*\(/.test(targetCanonicalSignatureSection[0]) ||
     !/\bconst\s+ag_target_info_t\s*\*target\b/.test(
@@ -6557,7 +6615,16 @@ if (!targetCanonicalSignatureSection ||
     !/\bag_target_info_scalar_size\s*\(/.test(
       targetCanonicalSignatureSection[0],
     ) ||
-    !/\bps_type_format_canonical_signature_for_target\s*\([^]*?options->target/.test(
+    /parser\/type\.h|\bpsx_semantic_type_table_lookup\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bag_target_info_scalar_size\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bpsx_format_canonical_type_signature\s*\([^]*?options->target/.test(
       hirIrBuilder,
     )) {
   throw new Error(
@@ -6597,6 +6664,10 @@ const semanticTypeIdentitySource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
 );
+const semanticTypeShapeHeader = await readFile(
+  "src/type_system/type_shape.h",
+  "utf8",
+);
 const qualTypeStruct = typeIdsHeader.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_qual_type_t\s*;/,
 );
@@ -6606,6 +6677,7 @@ if (!qualTypeStruct ||
     !/#include\s+"\.\.\/type_system\/type_ids\.h"/.test(
       semanticTypeIdentityHeader,
     ) ||
+    /parser\/type\.h/.test(semanticTypeIdentityHeader) ||
     /#include\s+"\.\.\/semantic\/type_identity\.h"/.test(astSource) ||
     !/relation\.qualifiers\s*==\s*ps_type_qualifiers\s*\(\s*candidate\s*\)/.test(
       semanticTypeIdentitySource,
@@ -6644,9 +6716,22 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     ) ||
     !/\bpsx_semantic_type_table_bind_record_decls\s*\(/.test(
       parserSemanticContextImplementation,
+    ) ||
+    !/psx_type_shape_t\s+shape\s*;/.test(semanticTypeIdentitySource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/typedef\s+struct\s*\{[^]*?\}\s*psx_type_shape_t\s*;/.test(
+      semanticTypeShapeHeader,
+    ) ||
+    /\b(?:qualifiers|size|alignment)\s*;/.test(semanticTypeShapeHeader) ||
+    !/\brecord_tag_name\s*;/.test(semanticTypeShapeHeader) ||
+    !/\benum_tag_name\s*;/.test(semanticTypeShapeHeader) ||
+    !/\benum_tag_scope_depth_p1\s*;/.test(
+      semanticTypeShapeHeader,
     )) {
   throw new Error(
-    "semantic type interning must resolve record relations through RecordDeclTable without retaining embedded declarations",
+    "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
   );
 }
 const resolvedRecordIdentityGuard = semanticTypeIdentitySource.match(
@@ -6660,8 +6745,8 @@ if (!resolvedRecordIdentityGuard ||
       resolvedRecordIdentityGuard[0],
     ) ||
     !semanticTypeNodeMatcher ||
-    !/ps_type_record_id\s*\(\s*canonical\s*\)\s*!=\s*PSX_RECORD_ID_INVALID/.test(
-      semanticTypeNodeMatcher[0],
+    !/canonical->record_id\s*!=\s*PSX_RECORD_ID_INVALID/.test(
+      semanticTypeIdentitySource,
     ) ||
     !/psx_semantic_type_table_find\s*\([^]*?semantic_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
       semanticTypeIdentitySource,
@@ -6798,6 +6883,10 @@ const parameterVlaDimensionStruct =
   parameterDeclarationResolutionHeader.match(
     /typedef\s+struct\s*\{([^]*?)\}\s*psx_parameter_dimension_t\s*;/,
   );
+const parameterDeclarationResolutionStruct =
+  parameterDeclarationResolutionHeader.match(
+    /typedef\s+struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_parameter_declaration_resolution_t\s*;/,
+  );
 const expressionIdentityHeaderSource = await readFile(
   "src/semantic/expression_identity.h",
   "utf8",
@@ -6849,6 +6938,11 @@ if (!runtimeArrayBoundStruct ||
     /\b(?:node_t\s*\*|source_name)\b/.test(
       parameterVlaDimensionStruct[1],
     ) ||
+    !parameterDeclarationResolutionStruct ||
+    !/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
+      parameterDeclarationResolutionStruct[1],
+    ) ||
+    /\bpsx_type_t\b/.test(parameterDeclarationResolutionStruct[1]) ||
     !/\bpsx_semantic_expr_id_t\s+pointer_row_dimension_id\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
@@ -7178,12 +7272,20 @@ const staticInitializerSource = await readFile(
 const staticInitializerRequest = staticInitializerSource.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_static_initializer_resolution_request_t\s*;/,
 );
+const staticInitializerResolution = staticInitializerSource.match(
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_static_initializer_resolution_t\s*;/,
+);
 if (!staticInitializerRequest ||
     !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
       staticInitializerRequest[1],
-    )) {
+    ) ||
+    !staticInitializerResolution ||
+    !/\bpsx_qual_type_t\s+object_qual_type\s*;/.test(
+      staticInitializerResolution[1],
+    ) ||
+    /\bpsx_type_t\b/.test(staticInitializerResolution[1])) {
   throw new Error(
-    "static initializer resolution must consume a read-only canonical type",
+    "static initializer resolution must consume a read-only construction type and return only canonical QualType identity",
   );
 }
 
@@ -7195,9 +7297,6 @@ const readonlyTypeFields = [
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_definition_pipeline_result_t", "function_type"],
-  ["src/semantic/parameter_declaration_resolution.h", "psx_parameter_declaration_resolution_t", "type"],
-  ["src/semantic/aggregate_member_resolution.h", "psx_aggregate_member_declaration_resolution_t", "type"],
-  ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_t", "type"],
   ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
   ["src/lowering/static_local_lowering.h", "psx_static_local_declaration_request_t", "type"],
 ];
@@ -7369,7 +7468,7 @@ for (const functionName of [
     throw new Error(`${functionName} must consume a const type view`);
   }
 }
-if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*\)/.test(
+if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*;[^]*?\btype_size_id\s*\(\s*lowering\s*,\s*type_id\s*\)/.test(
       translationUnitDataLoweringSource,
     ) ||
     !/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*ctx->global\s*\)\s*;/.test(
@@ -7925,7 +8024,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
       typeIdentityImplementationSource,
     ) ||
     !/function->has_function_prototype/.test(callResolutionSource) ||
-    !/callable_semantic_type->has_function_prototype/.test(
+    !/callable_semantic_type\.has_function_prototype/.test(
       hirIrBuilder,
     ) ||
     /enforce_empty_parameter_count/.test(

@@ -1,5 +1,4 @@
 #include "abi_lowering.h"
-#include "../parser/type.h"
 #include "../target_info.h"
 #include "../type_layout.h"
 
@@ -47,9 +46,10 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
   if (!context || !context->semantic_types || !context->record_layouts ||
       !context->target || type_id == PSX_TYPE_ID_INVALID)
     return abi_param_unknown();
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      context->semantic_types, type_id);
-  if (!type) return abi_param_unknown();
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(
+          context->semantic_types, type_id, &type))
+    return abi_param_unknown();
 
   ir_abi_param_info_t info = {
       .type = IR_TY_VOID,
@@ -57,9 +57,9 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
       .source_size = ps_type_sizeof_id_with_records(
           context->semantic_types, context->record_layouts,
           type_id, context->target),
-      .is_unsigned = ps_type_is_unsigned(type),
+      .is_unsigned = type.is_unsigned,
   };
-  switch (type->kind) {
+  switch (type.kind) {
     case PSX_TYPE_POINTER:
     case PSX_TYPE_ARRAY:
     case PSX_TYPE_FUNCTION:
@@ -75,7 +75,7 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
       return info;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      info.type = type->floating_kind == PSX_FLOATING_KIND_FLOAT
+      info.type = type.floating_kind == PSX_FLOATING_KIND_FLOAT
                       ? IR_TY_F32 : IR_TY_F64;
       info.param_class = IR_ABI_PARAM_FLOAT;
       return info;
@@ -91,11 +91,11 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
 
 static int type_is_complex(
     const ir_abi_type_context_t *context, psx_type_id_t type_id) {
-  const psx_type_t *type = context && context->semantic_types
-                               ? psx_semantic_type_table_lookup(
-                                     context->semantic_types, type_id)
-                               : NULL;
-  return type && type->kind == PSX_TYPE_COMPLEX;
+  psx_type_shape_t type = {0};
+  return context && context->semantic_types &&
+         psx_semantic_type_table_describe(
+             context->semantic_types, type_id, &type) &&
+         type.kind == PSX_TYPE_COMPLEX;
 }
 
 static size_t type_piece_count(
@@ -109,17 +109,18 @@ static size_t type_piece_count(
 static int lower_result_pieces(
     const ir_abi_type_context_t *context, psx_type_id_t type_id,
     ir_abi_signature_t *out) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      context->semantic_types, type_id);
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_VOID) return 1;
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(
+          context->semantic_types, type_id, &type))
+    return 0;
+  if (type.kind == PSX_TYPE_VOID) return 1;
 
   ir_abi_param_info_t info = ir_abi_classify_type_id(context, type_id);
   if (info.param_class == IR_ABI_PARAM_UNKNOWN ||
       info.type == IR_TY_VOID || info.source_size <= 0)
     return 0;
 
-  size_t piece_count = type->kind == PSX_TYPE_COMPLEX &&
+  size_t piece_count = type.kind == PSX_TYPE_COMPLEX &&
                                ag_target_info_call_abi(context->target) ==
                                    AG_TARGET_CALL_ABI_AAPCS64
                            ? 2u
@@ -129,7 +130,7 @@ static int lower_result_pieces(
   if (!out->result_pieces) return 0;
   out->result_count = piece_count;
 
-  if (type->kind == PSX_TYPE_COMPLEX && piece_count == 2) {
+  if (type.kind == PSX_TYPE_COMPLEX && piece_count == 2) {
     out->result_pieces[0] = (ir_abi_piece_t){
         .type = info.type,
         .source_index = SIZE_MAX,
@@ -149,7 +150,7 @@ static int lower_result_pieces(
 
   ir_abi_piece_kind_t kind = IR_ABI_PIECE_DIRECT;
   ir_type_t piece_type = info.type;
-  if (type->kind == PSX_TYPE_COMPLEX ||
+  if (type.kind == PSX_TYPE_COMPLEX ||
       (info.param_class == IR_ABI_PARAM_AGGREGATE &&
        !aggregate_has_direct_integer_width(info.source_size))) {
     kind = IR_ABI_PIECE_INDIRECT;

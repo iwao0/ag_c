@@ -41,11 +41,9 @@ ir_val_t hir_ir_build_object_copy(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *source_node = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  const psx_type_t *target_semantic_type = target
-      ? psx_semantic_type_table_lookup(
-            context->options->semantic_types,
-            psx_hir_node_qual_type(target).type_id)
-      : NULL;
+  psx_type_shape_t target_semantic_type = {0};
+  int has_target_semantic_type = target && hir_ir_node_type_shape(
+      context, target, &target_semantic_type);
   int copy_size = target
       ? ps_type_sizeof_id_with_records(
             context->options->semantic_types,
@@ -53,11 +51,11 @@ ir_val_t hir_ir_build_object_copy(
             psx_hir_node_qual_type(target).type_id,
             context->options->target)
       : 0;
-  int is_array = target_semantic_type &&
-      target_semantic_type->kind == PSX_TYPE_ARRAY;
-  int is_record = target_semantic_type &&
-      (target_semantic_type->kind == PSX_TYPE_STRUCT ||
-       target_semantic_type->kind == PSX_TYPE_UNION);
+  int is_array = has_target_semantic_type &&
+      target_semantic_type.kind == PSX_TYPE_ARRAY;
+  int is_record = has_target_semantic_type &&
+      (target_semantic_type.kind == PSX_TYPE_STRUCT ||
+       target_semantic_type.kind == PSX_TYPE_UNION);
   if (!target || !source_node || (!is_array && !is_record) ||
       copy_size <= 0 || !hir_ir_node_is_lvalue(target))
     return hir_ir_unsupported_expr(context);

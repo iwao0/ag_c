@@ -60,15 +60,15 @@ static psx_qual_type_t atomic_pointee_type(
   const psx_hir_node_t *current = pointer_argument;
   while (current) {
     psx_qual_type_t pointer_type = psx_hir_node_qual_type(current);
-    const psx_type_t *pointer = psx_semantic_type_table_lookup(
-        context->options->semantic_types, pointer_type.type_id);
-    if (pointer && (pointer->kind == PSX_TYPE_POINTER ||
-                    pointer->kind == PSX_TYPE_ARRAY)) {
+    psx_type_shape_t pointer = {0};
+    if (hir_ir_type_shape(context, pointer_type.type_id, &pointer) &&
+        (pointer.kind == PSX_TYPE_POINTER ||
+         pointer.kind == PSX_TYPE_ARRAY)) {
       psx_qual_type_t pointee = psx_semantic_type_table_base(
           context->options->semantic_types, pointer_type.type_id);
-      const psx_type_t *pointee_type = psx_semantic_type_table_lookup(
-          context->options->semantic_types, pointee.type_id);
-      if (pointee_type && pointee_type->kind != PSX_TYPE_VOID)
+      psx_type_shape_t pointee_type = {0};
+      if (hir_ir_type_shape(context, pointee.type_id, &pointee_type) &&
+          pointee_type.kind != PSX_TYPE_VOID)
         return pointee;
     }
     if (psx_hir_node_kind(current) != PSX_HIR_CAST) break;
@@ -84,21 +84,22 @@ static int atomic_operation_width(
     const psx_hir_node_t *pointer_argument, int *is_unsigned) {
   psx_qual_type_t pointee = atomic_pointee_type(
       context, pointer_argument);
-  const psx_type_t *pointee_type = psx_semantic_type_table_lookup(
-      context->options->semantic_types, pointee.type_id);
+  psx_type_shape_t pointee_type = {0};
+  int has_pointee_type = hir_ir_type_shape(
+      context, pointee.type_id, &pointee_type);
   int width = ps_type_sizeof_id_with_records(
       context->options->semantic_types,
       context->options->record_layouts,
       pointee.type_id, context->options->target);
-  if (!pointee_type ||
-      (pointee_type->kind != PSX_TYPE_BOOL &&
-       pointee_type->kind != PSX_TYPE_INTEGER &&
-       pointee_type->kind != PSX_TYPE_POINTER) ||
+  if (!has_pointee_type ||
+      (pointee_type.kind != PSX_TYPE_BOOL &&
+       pointee_type.kind != PSX_TYPE_INTEGER &&
+       pointee_type.kind != PSX_TYPE_POINTER) ||
       (width != 1 && width != 2 && width != 4 && width != 8)) {
     return 0;
   }
   if (is_unsigned)
-    *is_unsigned = ps_type_is_unsigned(pointee_type) ? 1 : 0;
+    *is_unsigned = pointee_type.is_unsigned ? 1 : 0;
   return width;
 }
 
@@ -275,17 +276,17 @@ ir_val_t hir_ir_build_call(
   };
   size_t argument_count = hir_ir_child_count_for_edge(
       node, PSX_HIR_EDGE_ARGUMENT);
-  const psx_type_t *callable_semantic_type =
-      psx_semantic_type_table_lookup(
-          context->options->semantic_types,
-          callable_type.type_id);
+  psx_type_shape_t callable_semantic_type = {0};
+  int has_callable_semantic_type = hir_ir_type_shape(
+      context, callable_type.type_id, &callable_semantic_type);
   size_t parameter_count =
-      callable_semantic_type && callable_semantic_type->param_count >= 0
-          ? (size_t)callable_semantic_type->param_count : 0;
-  int is_variadic = callable_semantic_type &&
-      callable_semantic_type->is_variadic_function;
-  int has_prototype = callable_semantic_type &&
-      callable_semantic_type->has_function_prototype;
+      has_callable_semantic_type &&
+              callable_semantic_type.parameter_count >= 0
+          ? (size_t)callable_semantic_type.parameter_count : 0;
+  int is_variadic = has_callable_semantic_type &&
+      callable_semantic_type.is_variadic_function;
+  int has_prototype = has_callable_semantic_type &&
+      callable_semantic_type.has_function_prototype;
   psx_qual_type_t callable_result = psx_semantic_type_table_base(
       context->options->semantic_types, callable_type.type_id);
   int is_void_result =
@@ -294,8 +295,8 @@ ir_val_t hir_ir_build_call(
   int is_aggregate_result =
       result_type.type_class == IR_MIR_TYPE_AGGREGATE;
   if (callable_type.type_id == PSX_TYPE_ID_INVALID ||
-      !callable_semantic_type ||
-      callable_semantic_type->kind != PSX_TYPE_FUNCTION ||
+      !has_callable_semantic_type ||
+      callable_semantic_type.kind != PSX_TYPE_FUNCTION ||
       argument_count > INT_MAX ||
       (is_variadic
            ? argument_count < parameter_count
@@ -343,15 +344,11 @@ ir_val_t hir_ir_build_call(
       parameter_type = argument_type;
       if (argument_type.type_class == IR_MIR_TYPE_INTEGER &&
           argument_type.source_size < 4) {
-        const psx_type_t *semantic_type =
-            psx_semantic_type_table_lookup(
-                context->options->semantic_types,
-                psx_hir_node_qual_type(argument).type_id);
         parameter_type.type = IR_TY_I32;
         parameter_type.source_size = 4;
         parameter_type.is_unsigned =
-            ps_type_integer_promotion_is_unsigned_for_target(
-                semantic_type, context->options->target);
+            ir_mir_integer_promotion_is_unsigned(
+                argument_type, context->options->target);
       }
     }
     if (i >= parameter_count &&

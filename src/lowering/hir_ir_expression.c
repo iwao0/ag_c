@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../parser/type.h"
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
 
@@ -41,7 +40,7 @@ int hir_ir_node_is_lvalue(const psx_hir_node_t *node) {
          kind == PSX_HIR_MEMBER_ACCESS;
 }
 
-static int semantic_type_is_pointer_like(const psx_type_t *type) {
+static int semantic_type_is_pointer_like(const psx_type_shape_t *type) {
   return type && (type->kind == PSX_TYPE_POINTER ||
                   type->kind == PSX_TYPE_ARRAY);
 }
@@ -121,14 +120,14 @@ static int try_build_pointer_arithmetic(
     ir_mir_type_info_t result_type, ir_val_t *result) {
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   if (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB) return 0;
-  const psx_type_t *left_semantic_type =
-      hir_ir_node_semantic_type(context, lhs);
-  const psx_type_t *right_semantic_type =
-      hir_ir_node_semantic_type(context, rhs);
+  psx_type_shape_t left_type = {0};
+  psx_type_shape_t right_type = {0};
   int left_pointer =
-      semantic_type_is_pointer_like(left_semantic_type);
+      hir_ir_node_type_shape(context, lhs, &left_type) &&
+      semantic_type_is_pointer_like(&left_type);
   int right_pointer =
-      semantic_type_is_pointer_like(right_semantic_type);
+      hir_ir_node_type_shape(context, rhs, &right_type) &&
+      semantic_type_is_pointer_like(&right_type);
   if (!left_pointer && !right_pointer) return 0;
 
   ir_val_t left = hir_ir_build_expr(context, lhs);
@@ -183,11 +182,10 @@ static ir_val_t subscript_address(
   if (!base || !index) return hir_ir_unsupported_expr(context);
 
   psx_qual_type_t base_qual_type = psx_hir_node_qual_type(base);
-  const psx_type_t *base_type = psx_semantic_type_table_lookup(
-      context->options->semantic_types, base_qual_type.type_id);
-  if (!base_type ||
-      (base_type->kind != PSX_TYPE_POINTER &&
-       base_type->kind != PSX_TYPE_ARRAY))
+  psx_type_shape_t base_type = {0};
+  if (!hir_ir_type_shape(context, base_qual_type.type_id, &base_type) ||
+      (base_type.kind != PSX_TYPE_POINTER &&
+       base_type.kind != PSX_TYPE_ARRAY))
     return hir_ir_unsupported_expr(context);
 
   ir_val_t base_pointer = hir_ir_build_expr(context, base);
@@ -812,17 +810,15 @@ static ir_val_t coerce_explicit_cast_value(
     hir_ir_context_t *context, ir_val_t value,
     ir_mir_type_info_t source, ir_mir_type_info_t target,
     psx_qual_type_t target_qual_type) {
-  const psx_type_t *semantic_target =
-      psx_semantic_type_table_lookup(
-          context->options->semantic_types,
-          target_qual_type.type_id);
-  if (!semantic_target)
+  psx_type_shape_t semantic_target = {0};
+  if (!hir_ir_type_shape(
+          context, target_qual_type.type_id, &semantic_target))
     return hir_ir_unsupported_expr(context);
-  if (semantic_target->kind == PSX_TYPE_BOOL) {
+  if (semantic_target.kind == PSX_TYPE_BOOL) {
     return hir_ir_coerce_direct_value_to_qual_type(
         context, value, source, target, target_qual_type);
   }
-  if (semantic_target->kind != PSX_TYPE_INTEGER ||
+  if (semantic_target.kind != PSX_TYPE_INTEGER ||
       target.source_size >= 4)
     return hir_ir_coerce_direct_value(context, value, source, target);
 
@@ -1333,21 +1329,13 @@ static ir_val_t build_compound_assignment(
         .type_class = IR_MIR_TYPE_INTEGER,
         .source_size = operation_size >= 8 ? 8 : 4,
     };
-    const psx_type_t *target_semantic_type =
-        psx_semantic_type_table_lookup(
-            context->options->semantic_types,
-            psx_hir_node_qual_type(target).type_id);
-    const psx_type_t *rhs_semantic_type =
-        psx_semantic_type_table_lookup(
-            context->options->semantic_types,
-            psx_hir_node_qual_type(rhs_node).type_id);
     operation_type.is_unsigned =
         compound_op == PSX_HIR_COMPOUND_SHL ||
                 compound_op == PSX_HIR_COMPOUND_SHR
-            ? ps_type_integer_promotion_is_unsigned_for_target(
-                  target_semantic_type, context->options->target)
-            : ps_type_usual_arithmetic_result_is_unsigned_for_target(
-                  target_semantic_type, rhs_semantic_type,
+            ? ir_mir_integer_promotion_is_unsigned(
+                  target_type, context->options->target)
+            : ir_mir_usual_arithmetic_result_is_unsigned(
+                  target_type, rhs_type,
                   context->options->target);
     old_value = hir_ir_coerce_direct_value(
         context, old_value, target_type, operation_type);
@@ -1381,10 +1369,9 @@ static ir_val_t build_compound_assignment(
   result = hir_ir_coerce_direct_value(
       context, result, operation_type, target_type);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
-  const psx_type_t *target_semantic_type =
-      hir_ir_node_semantic_type(context, target);
-  if (target_semantic_type &&
-      target_semantic_type->kind == PSX_TYPE_BOOL) {
+  psx_type_shape_t target_semantic_type = {0};
+  if (hir_ir_node_type_shape(context, target, &target_semantic_type) &&
+      target_semantic_type.kind == PSX_TYPE_BOOL) {
     result = hir_ir_scalar_truth_value(context, result);
     if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
     result = hir_ir_coerce_direct_value(
@@ -2014,19 +2001,13 @@ ir_val_t hir_ir_build_expr(
     if (!hir_ir_append_instruction(context, instruction)) return ir_val_none();
     return instruction->dst;
   }
-  const psx_type_t *left_semantic_type = psx_semantic_type_table_lookup(
-      context->options->semantic_types,
-      psx_hir_node_qual_type(lhs).type_id);
-  const psx_type_t *right_semantic_type = psx_semantic_type_table_lookup(
-      context->options->semantic_types,
-      psx_hir_node_qual_type(rhs).type_id);
   int uac_is_unsigned =
-      ps_type_usual_arithmetic_result_is_unsigned_for_target(
-          left_semantic_type, right_semantic_type,
+      ir_mir_usual_arithmetic_result_is_unsigned(
+          left_type, right_type,
           context->options->target);
   int shift_is_unsigned =
-      ps_type_integer_promotion_is_unsigned_for_target(
-          left_semantic_type, context->options->target);
+      ir_mir_integer_promotion_is_unsigned(
+          left_type, context->options->target);
   ir_op_t op;
   switch (psx_hir_node_kind(node)) {
     case PSX_HIR_ADD: op = IR_ADD; break;

@@ -3,7 +3,6 @@
 
 #include "hir_ir_builder.h"
 #include "mir_type_lowering.h"
-#include "../parser/type.h"
 
 typedef struct {
   int object_offset;
@@ -65,8 +64,12 @@ ir_mir_type_info_t hir_ir_classify_node_type(
     const hir_ir_context_t *context, const psx_hir_node_t *node);
 psx_type_kind_t hir_ir_node_type_kind(
     const hir_ir_context_t *context, const psx_hir_node_t *node);
-const psx_type_t *hir_ir_node_semantic_type(
-    const hir_ir_context_t *context, const psx_hir_node_t *node);
+int hir_ir_type_shape(
+    const hir_ir_context_t *context, psx_type_id_t type_id,
+    psx_type_shape_t *out);
+int hir_ir_node_type_shape(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    psx_type_shape_t *out);
 ir_val_t hir_ir_unsupported_expr(hir_ir_context_t *context);
 int hir_ir_new_vreg(hir_ir_context_t *context);
 int hir_ir_append_instruction(

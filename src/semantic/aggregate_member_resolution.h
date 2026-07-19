@@ -41,7 +41,6 @@ typedef struct {
 
 typedef struct {
   psx_aggregate_member_status_t status;
-  const psx_type_t *type;
   psx_type_id_t type_id;
   int offset;
   int storage_size;

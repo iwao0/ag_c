@@ -10,9 +10,9 @@
 #include "mir_type_lowering.h"
 #include "function_type_lowering.h"
 #include "../diag/diag.h"
-#include "../parser/type.h"
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
+#include "../type_signature.h"
 
 const psx_hir_node_t *hir_ir_child_for_edge(
     const hir_ir_context_t *context, const psx_hir_node_t *node,
@@ -49,20 +49,24 @@ ir_mir_type_info_t hir_ir_classify_node_type(
 
 psx_type_kind_t hir_ir_node_type_kind(
     const hir_ir_context_t *context, const psx_hir_node_t *node) {
-  const psx_type_t *type =
-      node ? psx_semantic_type_table_lookup(
-                 context->options->semantic_types,
-                 psx_hir_node_qual_type(node).type_id)
-           : NULL;
-  return type ? type->kind : PSX_TYPE_INVALID;
+  psx_type_shape_t type = {0};
+  return hir_ir_node_type_shape(context, node, &type)
+             ? type.kind : PSX_TYPE_INVALID;
 }
 
-const psx_type_t *hir_ir_node_semantic_type(
-    const hir_ir_context_t *context, const psx_hir_node_t *node) {
-  return node ? psx_semantic_type_table_lookup(
-                    context->options->semantic_types,
-                    psx_hir_node_qual_type(node).type_id)
-              : NULL;
+int hir_ir_type_shape(
+    const hir_ir_context_t *context, psx_type_id_t type_id,
+    psx_type_shape_t *out) {
+  return context && context->options && out &&
+         psx_semantic_type_table_describe(
+             context->options->semantic_types, type_id, out);
+}
+
+int hir_ir_node_type_shape(
+    const hir_ir_context_t *context, const psx_hir_node_t *node,
+    psx_type_shape_t *out) {
+  return node && hir_ir_type_shape(
+                     context, psx_hir_node_qual_type(node).type_id, out);
 }
 
 ir_val_t hir_ir_unsupported_expr(hir_ir_context_t *context) {
@@ -471,11 +475,10 @@ ir_val_t hir_ir_coerce_direct_value_to_qual_type(
     hir_ir_context_t *context, ir_val_t value,
     ir_mir_type_info_t source, ir_mir_type_info_t target,
     psx_qual_type_t target_qual_type) {
-  const psx_type_t *semantic_target =
-      psx_semantic_type_table_lookup(
-          context->options->semantic_types,
-          target_qual_type.type_id);
-  if (semantic_target && semantic_target->kind == PSX_TYPE_BOOL) {
+  psx_type_shape_t semantic_target = {0};
+  if (hir_ir_type_shape(
+          context, target_qual_type.type_id, &semantic_target) &&
+      semantic_target.kind == PSX_TYPE_BOOL) {
     value = hir_ir_scalar_truth_value(context, value);
     source = (ir_mir_type_info_t){
         .type = IR_TY_I32,
@@ -536,18 +539,20 @@ static int exact_int_void_function(
     const psx_semantic_type_table_t *types, psx_qual_type_t qual_type) {
   psx_qual_type_t function_type =
       psx_semantic_type_table_callable_function(types, qual_type);
-  const psx_type_t *function = psx_semantic_type_table_lookup(
-      types, function_type.type_id);
   psx_qual_type_t result_qual_type = psx_semantic_type_table_base(
       types, function_type.type_id);
-  const psx_type_t *result = psx_semantic_type_table_lookup(
-      types, result_qual_type.type_id);
-  return function && function->kind == PSX_TYPE_FUNCTION &&
-         function->param_count == 0 &&
-         !function->is_variadic_function && result &&
-         result->kind == PSX_TYPE_INTEGER &&
-         result->integer_kind == PSX_INTEGER_KIND_INT &&
-         !result->is_unsigned;
+  psx_type_shape_t function = {0};
+  psx_type_shape_t result = {0};
+  return psx_semantic_type_table_describe(
+             types, function_type.type_id, &function) &&
+         psx_semantic_type_table_describe(
+             types, result_qual_type.type_id, &result) &&
+         function.kind == PSX_TYPE_FUNCTION &&
+         function.parameter_count == 0 &&
+         !function.is_variadic_function &&
+         result.kind == PSX_TYPE_INTEGER &&
+         result.integer_kind == PSX_INTEGER_KIND_INT &&
+         !result.is_unsigned;
 }
 
 typedef struct {
@@ -738,17 +743,19 @@ ir_module_t *ir_build_function_module_from_hir(
   };
   psx_type_id_t signature_id =
       psx_hir_node_attached_qual_type(root).type_id;
-  const psx_type_t *function_type = psx_semantic_type_table_lookup(
-      options->semantic_types, signature_id);
+  psx_type_shape_t function_type = {0};
   psx_type_id_t result_type_id = psx_semantic_type_table_base(
       options->semantic_types, signature_id).type_id;
   ir_mir_type_info_t return_info = ir_mir_classify_type_id(
       &type_context, result_type_id);
-  const psx_type_t *result_type = psx_semantic_type_table_lookup(
-      options->semantic_types, result_type_id);
-  int returns_void = result_type && result_type->kind == PSX_TYPE_VOID;
-  if (!function_type || function_type->kind != PSX_TYPE_FUNCTION ||
-      function_type->param_count < 0 ||
+  psx_type_shape_t result_type = {0};
+  int has_function_type = psx_semantic_type_table_describe(
+      options->semantic_types, signature_id, &function_type);
+  int has_result_type = psx_semantic_type_table_describe(
+      options->semantic_types, result_type_id, &result_type);
+  int returns_void = has_result_type && result_type.kind == PSX_TYPE_VOID;
+  if (!has_function_type || function_type.kind != PSX_TYPE_FUNCTION ||
+      function_type.parameter_count < 0 || !has_result_type ||
       (!returns_void && !hir_ir_is_complex_type(return_info) &&
        return_info.type_class != IR_MIR_TYPE_AGGREGATE &&
        !hir_ir_is_direct_value_type(return_info))) {
@@ -835,14 +842,11 @@ ir_module_t *ir_build_function_module_from_hir(
     return NULL;
   }
   context.function->is_static = psx_hir_node_is_static_function(root);
-  if ((size_t)function_type->param_count > INT_MAX) {
-    ir_module_free(context.module);
-    if (status) *status = IR_HIR_BUILD_UNSUPPORTED;
-    return NULL;
-  }
   int signature_length = context.continuation ? 0 :
-      ps_type_format_canonical_signature_for_target(
-          function_type, options->target, NULL, 0);
+      psx_format_canonical_type_signature(
+          options->semantic_types,
+          (psx_qual_type_t){signature_id, PSX_TYPE_QUALIFIER_NONE},
+          options->target, NULL, 0);
   if (signature_length < 0) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_INVALID;
@@ -851,8 +855,10 @@ ir_module_t *ir_build_function_module_from_hir(
   if (!context.continuation) {
     context.function->c_signature = malloc((size_t)signature_length + 1);
     if (!context.function->c_signature ||
-        ps_type_format_canonical_signature_for_target(
-            function_type, options->target,
+        psx_format_canonical_type_signature(
+            options->semantic_types,
+            (psx_qual_type_t){signature_id, PSX_TYPE_QUALIFIER_NONE},
+            options->target,
             context.function->c_signature,
             (size_t)signature_length + 1) != signature_length) {
       ir_module_free(context.module);

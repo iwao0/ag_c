@@ -2,43 +2,12 @@
 #define PARSER_TYPE_H
 
 #include "../type_system/type_ids.h"
+#include "../type_system/type_shape.h"
 #include "core.h"
 #include "type_fwd.h"
 #include <stddef.h>
 
 typedef struct ag_target_info_t ag_target_info_t;
-
-typedef enum {
-  PSX_TYPE_INVALID = 0,
-  PSX_TYPE_VOID,
-  PSX_TYPE_BOOL,
-  PSX_TYPE_INTEGER,
-  PSX_TYPE_FLOAT,
-  PSX_TYPE_POINTER,
-  PSX_TYPE_ARRAY,
-  PSX_TYPE_FUNCTION,
-  PSX_TYPE_STRUCT,
-  PSX_TYPE_UNION,
-  PSX_TYPE_COMPLEX,
-} psx_type_kind_t;
-
-typedef enum {
-  PSX_INTEGER_KIND_NONE = 0,
-  PSX_INTEGER_KIND_BOOL,
-  PSX_INTEGER_KIND_CHAR,
-  PSX_INTEGER_KIND_SHORT,
-  PSX_INTEGER_KIND_INT,
-  PSX_INTEGER_KIND_LONG,
-  PSX_INTEGER_KIND_LONG_LONG,
-  PSX_INTEGER_KIND_ENUM,
-} psx_integer_kind_t;
-
-typedef enum {
-  PSX_FLOATING_KIND_NONE = 0,
-  PSX_FLOATING_KIND_FLOAT,
-  PSX_FLOATING_KIND_DOUBLE,
-  PSX_FLOATING_KIND_LONG_DOUBLE,
-} psx_floating_kind_t;
 
 typedef enum {
   PSX_TYPE_BINARY_COMMA = 0,

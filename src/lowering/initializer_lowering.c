@@ -53,6 +53,15 @@ static int type_size_id(
       type_id, context->target);
 }
 
+static const psx_type_t *type_view(
+    const initializer_lowering_context_t *context,
+    psx_type_id_t type_id) {
+  return context
+             ? psx_semantic_type_table_lookup(
+                   context->semantic_types, type_id)
+             : NULL;
+}
+
 static int lvar_decl_size(
     const initializer_lowering_context_t *context, const lvar_t *var) {
   if (!context || !var) return 0;
@@ -837,7 +846,7 @@ static node_t *append_typed_object_zero_fill(
                                context->resolution_store,
                                context->arena_context, var,
                                ps_lvar_offset(var) + leaf->relative_offset,
-                               leaf->type);
+                               type_view(context, leaf->type_id));
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -876,9 +885,9 @@ static node_t *lower_flat_typed_object_initializer_list(
     }
     const typed_scalar_leaf_t *leaf = &leaves.items[leaf_index];
     if (list->entries[i].value->kind == ND_STRING &&
-        leaf->string_array_type) {
+        leaf->string_array_type_id != PSX_TYPE_ID_INVALID) {
       node_t *lowered = lower_typed_character_array_string(
-          context, var, leaf->string_array_type,
+          context, var, type_view(context, leaf->string_array_type_id),
           leaf->string_array_type_id, leaf->string_array_offset,
           (node_string_t *)list->entries[i].value, chain,
           list->entries[i].tok ? list->entries[i].tok : fallback_tok);
@@ -888,14 +897,15 @@ static node_t *lower_flat_typed_object_initializer_list(
         do {
           leaf_index++;
         } while (leaf_index < leaves.count &&
-                 leaves.items[leaf_index].string_array_type ==
-                     leaf->string_array_type &&
+                 leaves.items[leaf_index].string_array_type_id ==
+                     leaf->string_array_type_id &&
                  leaves.items[leaf_index].string_array_offset == row_offset);
         continue;
       }
     }
     chain = lower_typed_initializer_value(
-        context, var, leaf->type, leaf->type_id, leaf->relative_offset,
+        context, var, type_view(context, leaf->type_id), leaf->type_id,
+        leaf->relative_offset,
         list->entries[i].value,
         leaf->member_ref.declaration ? &leaf->member_ref : NULL,
         chain, list->entries[i].tok ? list->entries[i].tok : fallback_tok);
@@ -936,7 +946,6 @@ static int immediate_subobject_at_leaf_cursor(
     if (child_index < 0 || child_index >= type->array_len ||
         child_offset != leaf_offset) return 0;
     *out = (typed_designator_target_t){
-        .type = type->base,
         .type_id = child_type_id,
         .relative_offset = child_offset,
         .first_array_index = child_index,
@@ -956,7 +965,6 @@ static int immediate_subobject_at_leaf_cursor(
       if (member_type->kind != PSX_TYPE_ARRAY &&
           !ps_type_is_tag_aggregate(member_type)) return 0;
       *out = (typed_designator_target_t){
-          .type = member_type,
           .type_id = psx_semantic_type_table_record_member(
               context->semantic_types, type_id, i).type_id,
           .relative_offset = member_offset,
@@ -996,7 +1004,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
               context->target, entry, type_id, relative_offset,
               fallback_tok);
       chain = lower_typed_initializer_value(
-          context, var, target.type, target.type_id,
+          context, var, type_view(context, target.type_id), target.type_id,
           target.relative_offset, entry->value,
           target.member_ref.declaration ? &target.member_ref : NULL, chain,
           entry->tok ? entry->tok : fallback_tok);
@@ -1021,7 +1029,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
               &leaves, leaf_cursor,
               &target)) {
         chain = lower_typed_initializer_value(
-            context, var, target.type, target.type_id,
+            context, var, type_view(context, target.type_id),
+            target.type_id,
             target.relative_offset, entry->value,
             target.member_ref.declaration ? &target.member_ref : NULL, chain,
             entry->tok ? entry->tok : fallback_tok);
@@ -1031,9 +1040,10 @@ static node_t *lower_mixed_typed_object_initializer_list(
         continue;
       }
     }
-    if (entry->value->kind == ND_STRING && leaf->string_array_type) {
+    if (entry->value->kind == ND_STRING &&
+        leaf->string_array_type_id != PSX_TYPE_ID_INVALID) {
       node_t *lowered = lower_typed_character_array_string(
-          context, var, leaf->string_array_type,
+          context, var, type_view(context, leaf->string_array_type_id),
           leaf->string_array_type_id, leaf->string_array_offset,
           (node_string_t *)entry->value, chain,
           entry->tok ? entry->tok : fallback_tok);
@@ -1043,14 +1053,14 @@ static node_t *lower_mixed_typed_object_initializer_list(
         do {
           leaf_cursor++;
         } while (leaf_cursor < leaves.count &&
-                 leaves.items[leaf_cursor].string_array_type ==
-                     leaf->string_array_type &&
+                 leaves.items[leaf_cursor].string_array_type_id ==
+                     leaf->string_array_type_id &&
                  leaves.items[leaf_cursor].string_array_offset == row_offset);
         continue;
       }
     }
     chain = lower_typed_initializer_value(
-        context, var, leaf->type, leaf->type_id,
+        context, var, type_view(context, leaf->type_id), leaf->type_id,
         leaf->relative_offset, entry->value,
         leaf->member_ref.declaration ? &leaf->member_ref : NULL, chain,
         entry->tok ? entry->tok : fallback_tok);
@@ -1102,7 +1112,7 @@ static node_t *try_lower_typed_array_copy(
         source_offset + (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_type_at_for_in(
         context->resolution_store, context->arena_context,
-        source, leaf_source_offset, leaf->type);
+        source, leaf_source_offset, type_view(context, leaf->type_id));
     node_t *dst = leaf->member_ref.declaration
                       ? new_initializer_member_lvar_ref(
                             context, var, leaf->relative_offset,
@@ -1111,7 +1121,7 @@ static node_t *try_lower_typed_array_copy(
                             context->resolution_store,
                             context->arena_context, var,
                             ps_lvar_offset(var) + leaf->relative_offset,
-                            leaf->type);
+                            type_view(context, leaf->type_id));
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -1211,7 +1221,7 @@ static node_t *lower_typed_array_initializer_list(
               context->record_decls, context->record_layouts,
               context->target, entry, type_id, relative_offset,
               fallback_tok);
-      target_type = target.type;
+      target_type = type_view(context, target.type_id);
       target_type_id = target.type_id;
       target_offset = target.relative_offset;
       selected_index = target.first_array_index;
@@ -1319,7 +1329,7 @@ static node_t *lower_typed_aggregate_initializer_list(
               context->target, entry, type_id, relative_offset,
               fallback_tok);
       chain = lower_typed_initializer_value(
-          context, var, target.type, target.type_id,
+          context, var, type_view(context, target.type_id), target.type_id,
           target.relative_offset, entry->value,
           target.member_ref.declaration ? &target.member_ref : NULL, chain,
           entry->tok ? entry->tok : fallback_tok);

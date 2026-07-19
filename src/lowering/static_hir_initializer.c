@@ -4,7 +4,6 @@
 #include "../parser/global_registry.h"
 #include "../parser/gvar_public.h"
 #include "../parser/symtab.h"
-#include "../parser/type.h"
 #include "../semantic/initializer_resolution.h"
 #include "static_initializer_plan.h"
 #include "../semantic/type_identity.h"
@@ -38,15 +37,21 @@ static const psx_hir_node_t *child_for_edge(
   return NULL;
 }
 
-static const psx_type_t *node_type(
-    const static_hir_eval_t *eval, const psx_hir_node_t *node) {
-  if (!eval || !node) return NULL;
-  return psx_semantic_type_table_lookup(
-      ps_lowering_semantic_types(eval->lowering_context),
-      psx_hir_node_qual_type(node).type_id);
+static int type_shape(
+    const static_hir_eval_t *eval, psx_type_id_t type_id,
+    psx_type_shape_t *out) {
+  return eval && out && psx_semantic_type_table_describe(
+      ps_lowering_semantic_types(eval->lowering_context), type_id, out);
 }
 
-static int type_uses_floating_value(const psx_type_t *type) {
+static int node_type_shape(
+    const static_hir_eval_t *eval, const psx_hir_node_t *node,
+    psx_type_shape_t *out) {
+  return node && type_shape(
+      eval, psx_hir_node_qual_type(node).type_id, out);
+}
+
+static int type_uses_floating_value(const psx_type_shape_t *type) {
   return type && (type->kind == PSX_TYPE_FLOAT ||
                   type->kind == PSX_TYPE_COMPLEX);
 }
@@ -54,10 +59,10 @@ static int type_uses_floating_value(const psx_type_t *type) {
 static long long normalize_integer_cast(
     const static_hir_eval_t *eval, long long value,
     psx_qual_type_t target_type) {
-  const psx_type_t *target = psx_semantic_type_table_lookup(
-      ps_lowering_semantic_types(eval->lowering_context),
-      target_type.type_id);
-  if (!target || target->kind != PSX_TYPE_INTEGER) return value;
+  psx_type_shape_t target = {0};
+  if (!type_shape(eval, target_type.type_id, &target) ||
+      target.kind != PSX_TYPE_INTEGER)
+    return value;
   int byte_width = ps_type_sizeof_id_with_records(
       ps_lowering_semantic_types(eval->lowering_context),
       ps_lowering_record_layouts(eval->lowering_context),
@@ -66,7 +71,7 @@ static long long normalize_integer_cast(
   if (bits <= 0 || bits >= 64) return value;
   uint64_t mask = (UINT64_C(1) << bits) - 1;
   uint64_t normalized = (uint64_t)value & mask;
-  if (!ps_type_is_unsigned(target) &&
+  if (!target.is_unsigned &&
       (normalized & (UINT64_C(1) << (bits - 1))))
     normalized |= ~mask;
   return (long long)normalized;
@@ -127,17 +132,19 @@ static long long eval_const_int(
     case PSX_HIR_NUMBER:
       return psx_hir_node_integer_value(node);
     case PSX_HIR_CAST: {
-      const psx_type_t *target = node_type(eval, node);
-      const psx_type_t *source = node_type(eval, lhs);
-      long long value = type_uses_floating_value(source)
+      psx_type_shape_t target = {0};
+      psx_type_shape_t source = {0};
+      int has_target = node_type_shape(eval, node, &target);
+      int has_source = node_type_shape(eval, lhs, &source);
+      long long value = has_source && type_uses_floating_value(&source)
                             ? (long long)eval_const_fp(eval, lhs, ok)
                             : eval_const_int(eval, lhs, ok);
       if (ok && !*ok) return 0;
-      if (target && target->kind == PSX_TYPE_BOOL) return value != 0;
-      if (target && target->kind == PSX_TYPE_INTEGER)
+      if (has_target && target.kind == PSX_TYPE_BOOL) return value != 0;
+      if (has_target && target.kind == PSX_TYPE_INTEGER)
         return normalize_integer_cast(
             eval, value, psx_hir_node_qual_type(node));
-      if (target && target->kind == PSX_TYPE_FLOAT)
+      if (has_target && target.kind == PSX_TYPE_FLOAT)
         return (long long)eval_const_fp(eval, lhs, ok);
       return value;
     }
@@ -147,12 +154,13 @@ static long long eval_const_int(
     }
     case PSX_HIR_GLOBAL: {
       global_var_t *global = find_global(eval, node);
-      const psx_type_t *type =
-          global ? ps_gvar_get_decl_type(global) : NULL;
+      psx_type_shape_t type = {0};
+      int has_type = global && type_shape(
+          eval, ps_gvar_decl_type_id(global), &type);
       if (global && global->has_init && !global->init_symbol &&
-          !global->init_values && !global->init_fvalues && type &&
-          type->kind != PSX_TYPE_ARRAY && type->kind != PSX_TYPE_FLOAT &&
-          type->kind != PSX_TYPE_COMPLEX)
+          !global->init_values && !global->init_fvalues && has_type &&
+          type.kind != PSX_TYPE_ARRAY && type.kind != PSX_TYPE_FLOAT &&
+          type.kind != PSX_TYPE_COMPLEX)
         return global->init_val;
       if (ok) *ok = 0;
       return 0;
@@ -264,14 +272,18 @@ static double eval_const_fp(
   const psx_hir_node_t *rhs =
       child_for_edge(eval, node, PSX_HIR_EDGE_RHS, 0);
   switch (psx_hir_node_kind(node)) {
-    case PSX_HIR_NUMBER:
-      return type_uses_floating_value(node_type(eval, node))
+    case PSX_HIR_NUMBER: {
+      psx_type_shape_t number_type = {0};
+      return node_type_shape(eval, node, &number_type) &&
+                     type_uses_floating_value(&number_type)
                  ? psx_hir_node_floating_value(node)
                  : (double)psx_hir_node_integer_value(node);
+    }
     case PSX_HIR_CAST: {
-      const psx_type_t *target = node_type(eval, node);
-      if (target && (target->kind == PSX_TYPE_BOOL ||
-                     target->kind == PSX_TYPE_INTEGER))
+      psx_type_shape_t target = {0};
+      if (node_type_shape(eval, node, &target) &&
+          (target.kind == PSX_TYPE_BOOL ||
+           target.kind == PSX_TYPE_INTEGER))
         return (double)eval_const_int(eval, node, ok);
       return eval_const_fp(eval, lhs, ok);
     }
@@ -321,9 +333,9 @@ static int pointer_stride(
 
 static int type_is_pointer_like(
     const static_hir_eval_t *eval, const psx_hir_node_t *node) {
-  const psx_type_t *type = node_type(eval, node);
-  return type && (type->kind == PSX_TYPE_POINTER ||
-                  type->kind == PSX_TYPE_ARRAY);
+  psx_type_shape_t type = {0};
+  return node_type_shape(eval, node, &type) &&
+         (type.kind == PSX_TYPE_POINTER || type.kind == PSX_TYPE_ARRAY);
 }
 
 static int resolve_address(
@@ -418,15 +430,14 @@ typedef struct {
 
 static int aggregate_type_size(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type) {
-  return aggregate && type
+    psx_type_id_t type_id) {
+  return aggregate && type_id != PSX_TYPE_ID_INVALID
              ? ps_type_sizeof_id_with_records(
                    ps_lowering_semantic_types(
                        aggregate->eval.lowering_context),
                    ps_lowering_record_layouts(
                        aggregate->eval.lowering_context),
-                   ps_lowering_type_id(
-                       aggregate->eval.lowering_context, type),
+                   type_id,
                    ps_lowering_target(
                        aggregate->eval.lowering_context))
              : 0;
@@ -434,37 +445,44 @@ static int aggregate_type_size(
 
 static const psx_record_decl_t *aggregate_record_decl(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type) {
-  return aggregate && type && ps_type_is_tag_aggregate(type)
-             ? psx_record_decl_table_lookup(
-                   ps_lowering_record_decls(
-                       aggregate->eval.lowering_context),
-                   ps_type_record_id(type))
-             : NULL;
+    psx_type_id_t type_id) {
+  psx_type_shape_t type = {0};
+  if (!aggregate || !type_shape(&aggregate->eval, type_id, &type) ||
+      (type.kind != PSX_TYPE_STRUCT && type.kind != PSX_TYPE_UNION))
+    return NULL;
+  return psx_record_decl_table_lookup(
+      ps_lowering_record_decls(aggregate->eval.lowering_context),
+      type.record_id);
 }
 
 static const psx_record_member_layout_t *aggregate_member_layout(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type, int member_index) {
-  if (!aggregate || !type || member_index < 0) return NULL;
+    psx_type_id_t type_id, int member_index) {
+  psx_type_shape_t type = {0};
+  if (!aggregate || member_index < 0 ||
+      !type_shape(&aggregate->eval, type_id, &type) ||
+      type.record_id == PSX_RECORD_ID_INVALID)
+    return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(aggregate->eval.lowering_context),
-      ps_type_record_id(type),
+      type.record_id,
       ps_lowering_target(aggregate->eval.lowering_context));
   return psx_record_layout_member(layout, member_index);
 }
 
 static psx_initializer_member_ref_t aggregate_member_ref(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type, int member_index,
+    psx_type_id_t type_id, int member_index,
     const psx_record_member_decl_t *declaration) {
+  psx_type_shape_t type = {0};
+  (void)type_shape(&aggregate->eval, type_id, &type);
   psx_initializer_member_ref_t ref = {
       .declaration = declaration,
-      .record_id = ps_type_record_id(type),
+      .record_id = type.record_id,
       .member_index = member_index,
   };
   const psx_record_member_layout_t *layout = aggregate_member_layout(
-      aggregate, type, member_index);
+      aggregate, type_id, member_index);
   if (layout) ref.layout = *layout;
   return ref;
 }
@@ -498,7 +516,7 @@ static int aggregate_leaf_index_for_target(
 
 static psx_initializer_target_t aggregate_positional_target(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *context_type, int context_offset,
+    psx_type_id_t context_type_id, int context_offset,
     int cursor, int preserve_subobject) {
   psx_initializer_target_t target = {
       .first_array_index = -1,
@@ -506,30 +524,31 @@ static psx_initializer_target_t aggregate_positional_target(
       .union_relative_offset = -1,
       .union_member_index = -1,
   };
-  if (!aggregate || !context_type || cursor < 0 ||
+  psx_type_shape_t context_type = {0};
+  if (!aggregate || !type_shape(
+          &aggregate->eval, context_type_id, &context_type) || cursor < 0 ||
       cursor >= aggregate->leaves.count)
     return target;
   const psx_initializer_scalar_leaf_t *leaf =
       &aggregate->leaves.items[cursor];
-  target.type = leaf->type;
   target.type_id = leaf->type_id;
   target.relative_offset = leaf->relative_offset;
   target.member_ref = leaf->member_ref;
   const psx_record_decl_t *record = aggregate_record_decl(
-      aggregate, context_type);
-  if (context_type->kind == PSX_TYPE_UNION &&
+      aggregate, context_type_id);
+  if (context_type.kind == PSX_TYPE_UNION &&
       record && record->member_count > 0) {
     const psx_record_member_decl_t *member = &record->members[0];
     if (preserve_subobject) {
       const psx_record_member_layout_t *layout =
-          aggregate_member_layout(aggregate, context_type, 0);
+          aggregate_member_layout(aggregate, context_type_id, 0);
       if (!layout) return (psx_initializer_target_t){0};
-      target.type = psx_record_member_decl_type(member);
-      target.type_id = ps_lowering_type_id(
-          aggregate->eval.lowering_context, target.type);
+      target.type_id = psx_semantic_type_table_record_member(
+          ps_lowering_semantic_types(aggregate->eval.lowering_context),
+          context_type_id, 0).type_id;
       target.relative_offset = context_offset + layout->offset;
       target.member_ref = aggregate_member_ref(
-          aggregate, context_type, 0, member);
+          aggregate, context_type_id, 0, member);
     }
     target.first_member_index = 0;
     target.union_relative_offset = context_offset;
@@ -537,42 +556,46 @@ static psx_initializer_target_t aggregate_positional_target(
     return target;
   }
   if (!preserve_subobject) return target;
-  if (context_type->kind == PSX_TYPE_STRUCT && record) {
+  if (context_type.kind == PSX_TYPE_STRUCT && record) {
     for (int i = 0; i < record->member_count; i++) {
       const psx_record_member_decl_t *member = &record->members[i];
-      const psx_type_t *member_type = psx_record_member_decl_type(member);
+      psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+          ps_lowering_semantic_types(aggregate->eval.lowering_context),
+          context_type_id, i).type_id;
+      psx_type_shape_t member_type = {0};
       const psx_record_member_layout_t *layout =
-          aggregate_member_layout(aggregate, context_type, i);
-      if (!layout || !member_type ||
+          aggregate_member_layout(aggregate, context_type_id, i);
+      if (!layout || !type_shape(
+              &aggregate->eval, member_type_id, &member_type) ||
           context_offset + layout->offset != leaf->relative_offset)
         continue;
-      if (member_type->kind != PSX_TYPE_ARRAY &&
-          !ps_type_is_tag_aggregate(member_type))
+      if (member_type.kind != PSX_TYPE_ARRAY &&
+          member_type.kind != PSX_TYPE_STRUCT &&
+          member_type.kind != PSX_TYPE_UNION)
         continue;
-      target.type = member_type;
-      target.type_id = ps_lowering_type_id(
-          aggregate->eval.lowering_context, member_type);
+      target.type_id = member_type_id;
       target.relative_offset = context_offset + layout->offset;
       target.member_ref = aggregate_member_ref(
-          aggregate, context_type, i, member);
+          aggregate, context_type_id, i, member);
       target.first_member_index = i;
       return target;
     }
     return target;
   }
-  if (context_type->kind != PSX_TYPE_ARRAY || !context_type->base)
+  if (context_type.kind != PSX_TYPE_ARRAY)
     return target;
-  int child_size = aggregate_type_size(aggregate, context_type->base);
+  psx_type_id_t child_type_id = psx_semantic_type_table_base(
+      ps_lowering_semantic_types(aggregate->eval.lowering_context),
+      context_type_id).type_id;
+  int child_size = aggregate_type_size(aggregate, child_type_id);
   if (child_size <= 0 || leaf->relative_offset < context_offset)
     return target;
   int child_index = (leaf->relative_offset - context_offset) / child_size;
   int child_offset = context_offset + child_index * child_size;
-  if (child_index < 0 || child_index >= context_type->array_len ||
+  if (child_index < 0 || child_index >= context_type.array_len ||
       child_offset != leaf->relative_offset)
     return target;
-  target.type = context_type->base;
-  target.type_id = ps_lowering_type_id(
-      aggregate->eval.lowering_context, target.type);
+  target.type_id = child_type_id;
   target.relative_offset = child_offset;
   target.member_ref = (psx_initializer_member_ref_t){0};
   target.first_array_index = child_index;
@@ -582,13 +605,11 @@ static psx_initializer_target_t aggregate_positional_target(
 static psx_initializer_target_t aggregate_designated_target(
     const static_hir_aggregate_t *aggregate,
     const psx_hir_node_t *entry,
-    const psx_type_t *context_type, int context_offset,
+    psx_type_id_t context_type_id, int context_offset,
     const psx_hir_node_t *range_override,
     long long range_index) {
   psx_initializer_target_t target = {
-      .type = context_type,
-      .type_id = ps_lowering_type_id(
-          aggregate->eval.lowering_context, context_type),
+      .type_id = context_type_id,
       .relative_offset = context_offset,
       .first_array_index = -1,
       .first_member_index = -1,
@@ -600,8 +621,9 @@ static psx_initializer_target_t aggregate_designated_target(
         &aggregate->eval, entry, PSX_HIR_EDGE_DESIGNATOR, ordinal);
     if (!designator) break;
     if (psx_hir_node_kind(designator) == PSX_HIR_INDEX_DESIGNATOR) {
-      if (!target.type || target.type->kind != PSX_TYPE_ARRAY ||
-          !target.type->base)
+      psx_type_shape_t target_shape = {0};
+      if (!type_shape(&aggregate->eval, target.type_id, &target_shape) ||
+          target_shape.kind != PSX_TYPE_ARRAY)
         return (psx_initializer_target_t){0};
       const psx_hir_node_t *index_node = child_for_edge(
           &aggregate->eval, designator,
@@ -612,7 +634,7 @@ static psx_initializer_target_t aggregate_designated_target(
                             : eval_const_int(
                                   &aggregate->eval,
                                   index_node, &ok);
-      if (!ok || index < 0 || index >= target.type->array_len)
+      if (!ok || index < 0 || index >= target_shape.array_len)
         return (psx_initializer_target_t){0};
       if (target.first_array_index < 0)
         target.first_array_index = (int)index;
@@ -628,9 +650,6 @@ static psx_initializer_target_t aggregate_designated_target(
         return (psx_initializer_target_t){0};
       target.relative_offset += (int)index * element_size;
       target.type_id = element.type_id;
-      target.type = psx_semantic_type_table_lookup(
-          ps_lowering_semantic_types(aggregate->eval.lowering_context),
-          element.type_id);
       target.member_ref = (psx_initializer_member_ref_t){0};
       continue;
     }
@@ -666,25 +685,35 @@ static void aggregate_mark_union_target(
 
 static int aggregate_is_character_array_for_string(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type, const psx_hir_node_t *string) {
-  if (!aggregate || !type || type->kind != PSX_TYPE_ARRAY || !string)
+    psx_type_id_t type_id, const psx_hir_node_t *string) {
+  psx_type_shape_t type = {0};
+  if (!aggregate || !string ||
+      !type_shape(&aggregate->eval, type_id, &type) ||
+      type.kind != PSX_TYPE_ARRAY)
     return 0;
-  const psx_type_t *element = ps_type_array_leaf_type(type);
+  psx_type_id_t element_id = psx_semantic_type_table_array_leaf(
+      ps_lowering_semantic_types(aggregate->eval.lowering_context),
+      type_id).type_id;
+  psx_type_shape_t element = {0};
   int width = psx_hir_node_object_align(string);
   if (width <= 0) width = 1;
-  return element && element->kind != PSX_TYPE_POINTER &&
-         element->kind != PSX_TYPE_FUNCTION &&
-         !ps_type_is_tag_aggregate(element) &&
-         aggregate_type_size(aggregate, element) == width;
+  return type_shape(&aggregate->eval, element_id, &element) &&
+         element.kind != PSX_TYPE_POINTER &&
+         element.kind != PSX_TYPE_FUNCTION &&
+         element.kind != PSX_TYPE_STRUCT &&
+         element.kind != PSX_TYPE_UNION &&
+         aggregate_type_size(aggregate, element_id) == width;
 }
 
 static int aggregate_write_string(
     static_hir_aggregate_t *aggregate,
-    const psx_type_t *array_type, int relative_offset,
+    psx_type_id_t array_type_id, int relative_offset,
     const psx_hir_node_t *string) {
-  const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  int element_size = aggregate_type_size(aggregate, element);
-  int total_size = aggregate_type_size(aggregate, array_type);
+  psx_type_id_t element_id = psx_semantic_type_table_array_leaf(
+      ps_lowering_semantic_types(aggregate->eval.lowering_context),
+      array_type_id).type_id;
+  int element_size = aggregate_type_size(aggregate, element_id);
+  int total_size = aggregate_type_size(aggregate, array_type_id);
   int capacity = element_size > 0 ? total_size / element_size : 0;
   int start = aggregate_leaf_index_at_offset(
       &aggregate->leaves, relative_offset);
@@ -692,7 +721,7 @@ static int aggregate_write_string(
   size_t literal_length = 0;
   const char *literal = psx_hir_node_literal_contents(
       string, &literal_length);
-  if (!element || capacity <= 0 || start < 0 ||
+  if (element_id == PSX_TYPE_ID_INVALID || capacity <= 0 || start < 0 ||
       character_width <= 0 || element_size != character_width || !literal)
     return 0;
   ps_gvar_init_slots_write_string_units(
@@ -707,16 +736,17 @@ static int aggregate_write_scalar(
     const psx_hir_node_t *value) {
   int index = aggregate_leaf_index_for_target(
       &aggregate->leaves, target);
-  if (index < 0 || index >= aggregate->leaves.count ||
-      !target->type || !value)
+  psx_type_shape_t target_type = {0};
+  if (index < 0 || index >= aggregate->leaves.count || !value ||
+      !type_shape(&aggregate->eval, target->type_id, &target_type))
     return 0;
   const char *symbol = NULL;
   int symbol_len = 0;
   long long integer = 0;
   double floating = 0.0;
   long long offset = 0;
-  if (target->type->kind == PSX_TYPE_POINTER ||
-      target->type->kind == PSX_TYPE_FUNCTION) {
+  if (target_type.kind == PSX_TYPE_POINTER ||
+      target_type.kind == PSX_TYPE_FUNCTION) {
     if (resolve_address(
             &aggregate->eval, value, &symbol, &symbol_len, &offset)) {
       integer = offset;
@@ -724,7 +754,7 @@ static int aggregate_write_scalar(
           &aggregate->eval, symbol, symbol_len);
       if (!symbol) return 0;
     }
-  } else if (target->type->kind == PSX_TYPE_FLOAT) {
+  } else if (target_type.kind == PSX_TYPE_FLOAT) {
     int ok = 1;
     floating = eval_const_fp(&aggregate->eval, value, &ok);
     if (!ok) floating = 0.0;
@@ -732,17 +762,22 @@ static int aggregate_write_scalar(
     int ok = 1;
     integer = eval_const_int(&aggregate->eval, value, &ok);
     if (!ok) integer = 0;
-    if (target->type->kind == PSX_TYPE_BOOL) integer = integer != 0;
+    if (target_type.kind == PSX_TYPE_BOOL) integer = integer != 0;
   }
   ps_gvar_init_slot_write(
       aggregate->global, index, integer, floating,
       (char *)symbol, symbol_len);
-  if (!symbol && target->type->kind == PSX_TYPE_FLOAT &&
+  if (!symbol && target_type.kind == PSX_TYPE_FLOAT &&
       target->union_member_index >= 0) {
+    tk_float_kind_t floating_kind =
+        target_type.floating_kind == PSX_FLOATING_KIND_FLOAT
+            ? TK_FLOAT_KIND_FLOAT
+            : target_type.floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE
+                  ? TK_FLOAT_KIND_LONG_DOUBLE
+                  : TK_FLOAT_KIND_DOUBLE;
     ps_gvar_init_slot_write_fp_sentinel(
-        aggregate->global, index,
-        ps_type_floating_token_kind(target->type),
-        aggregate_type_size(aggregate, target->type));
+        aggregate->global, index, floating_kind,
+        aggregate_type_size(aggregate, target->type_id));
   }
   return 1;
 }
@@ -790,51 +825,55 @@ static int aggregate_entry_range(
 
 static int aggregate_lower_list(
     static_hir_aggregate_t *aggregate,
-    const psx_type_t *context_type, int context_offset,
+    psx_type_id_t context_type_id, int context_offset,
     const psx_hir_node_t *list);
 
 static int aggregate_lower_target_value(
     static_hir_aggregate_t *aggregate,
     psx_initializer_target_t *target,
     const psx_hir_node_t *value, int cursor) {
-  if (!aggregate || !target || !target->type || !value) return 0;
+  psx_type_shape_t target_type = {0};
+  if (!aggregate || !target || !value ||
+      !type_shape(&aggregate->eval, target->type_id, &target_type))
+    return 0;
   aggregate_mark_union_target(aggregate, target);
   if (psx_hir_node_kind(value) == PSX_HIR_INITIALIZER_LIST)
     return aggregate_lower_list(
-        aggregate, target->type, target->relative_offset, value);
+        aggregate, target->type_id, target->relative_offset, value);
   if (psx_hir_node_kind(value) == PSX_HIR_STRING &&
       (aggregate_is_character_array_for_string(
-           aggregate, target->type, value) ||
+           aggregate, target->type_id, value) ||
        (cursor >= 0 && cursor < aggregate->leaves.count &&
         aggregate_is_character_array_for_string(
             aggregate,
-            aggregate->leaves.items[cursor].string_array_type,
+            aggregate->leaves.items[cursor].string_array_type_id,
             value)))) {
-    const psx_type_t *string_type = target->type;
+    psx_type_id_t string_type_id = target->type_id;
     int string_offset = target->relative_offset;
-    if (string_type->kind != PSX_TYPE_ARRAY && cursor >= 0 &&
+    if (target_type.kind != PSX_TYPE_ARRAY && cursor >= 0 &&
         cursor < aggregate->leaves.count) {
       const psx_initializer_scalar_leaf_t *leaf =
           &aggregate->leaves.items[cursor];
-      if (leaf->string_array_type) {
-        string_type = leaf->string_array_type;
+      if (leaf->string_array_type_id != PSX_TYPE_ID_INVALID) {
+        string_type_id = leaf->string_array_type_id;
         string_offset = leaf->string_array_offset;
-        target->type = string_type;
         target->type_id = leaf->string_array_type_id;
         target->relative_offset = string_offset;
       }
     }
     return aggregate_write_string(
-        aggregate, string_type, string_offset, value);
+        aggregate, string_type_id, string_offset, value);
   }
   return aggregate_write_scalar(aggregate, target, value);
 }
 
 static int aggregate_lower_list(
     static_hir_aggregate_t *aggregate,
-    const psx_type_t *context_type, int context_offset,
+    psx_type_id_t context_type_id, int context_offset,
     const psx_hir_node_t *list) {
-  if (!aggregate || !context_type || !list ||
+  psx_type_shape_t context_type = {0};
+  if (!aggregate || !list ||
+      !type_shape(&aggregate->eval, context_type_id, &context_type) ||
       psx_hir_node_kind(list) != PSX_HIR_INITIALIZER_LIST)
     return 0;
   int cursor = aggregate_leaf_index_at_offset(
@@ -862,11 +901,11 @@ static int aggregate_lower_list(
     if (range_designator) {
       for (long long index = range_begin;; index++) {
         target = aggregate_designated_target(
-            aggregate, entry, context_type, context_offset,
+            aggregate, entry, context_type_id, context_offset,
             range_designator, index);
         int target_cursor = aggregate_leaf_index_for_target(
             &aggregate->leaves, &target);
-        if (!target.type ||
+        if (target.type_id == PSX_TYPE_ID_INVALID ||
             !aggregate_lower_target_value(
                 aggregate, &target, value, target_cursor))
           return 0;
@@ -875,13 +914,13 @@ static int aggregate_lower_list(
     } else {
       target = has_designator
           ? aggregate_designated_target(
-                aggregate, entry, context_type, context_offset,
+                aggregate, entry, context_type_id, context_offset,
                 NULL, 0)
           : aggregate_positional_target(
-                aggregate, context_type, context_offset, cursor,
+                aggregate, context_type_id, context_offset, cursor,
                 psx_hir_node_kind(value) ==
                     PSX_HIR_INITIALIZER_LIST);
-      if (!target.type ||
+      if (target.type_id == PSX_TYPE_ID_INVALID ||
           !aggregate_lower_target_value(
               aggregate, &target, value, cursor))
         return 0;
@@ -897,20 +936,27 @@ static int aggregate_lower_list(
 
 static int aggregate_type_contains_float(
     const static_hir_aggregate_t *aggregate,
-    const psx_type_t *type) {
-  if (!aggregate || !type) return 0;
-  if (type->kind == PSX_TYPE_FLOAT) return 1;
-  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_FUNCTION)
+    psx_type_id_t type_id) {
+  psx_type_shape_t type = {0};
+  if (!aggregate || !type_shape(&aggregate->eval, type_id, &type)) return 0;
+  if (type.kind == PSX_TYPE_FLOAT) return 1;
+  if (type.kind == PSX_TYPE_POINTER || type.kind == PSX_TYPE_FUNCTION)
     return 0;
-  if (type->kind == PSX_TYPE_ARRAY)
-    return aggregate_type_contains_float(aggregate, type->base);
+  if (type.kind == PSX_TYPE_ARRAY)
+    return aggregate_type_contains_float(
+        aggregate, psx_semantic_type_table_base(
+                       ps_lowering_semantic_types(
+                           aggregate->eval.lowering_context),
+                       type_id).type_id);
   const psx_record_decl_t *record = aggregate_record_decl(
-      aggregate, type);
+      aggregate, type_id);
   if (record) {
     for (int i = 0; i < record->member_count; i++) {
       if (aggregate_type_contains_float(
-              aggregate,
-              psx_record_member_decl_type(&record->members[i])))
+              aggregate, psx_semantic_type_table_record_member(
+                  ps_lowering_semantic_types(
+                      aggregate->eval.lowering_context),
+                  type_id, i).type_id))
         return 1;
     }
   }
@@ -920,14 +966,18 @@ static int aggregate_type_contains_float(
 int psx_build_static_aggregate_hir_initializer_plan(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context,
-    const psx_type_t *type, const psx_hir_module_t *hir,
+    psx_type_id_t type_id, const psx_hir_module_t *hir,
     psx_hir_node_id_t root, token_t *fallback_tok,
     psx_static_aggregate_initializer_plan_t *plan) {
   (void)fallback_tok;
   if (plan) *plan = (psx_static_aggregate_initializer_plan_t){0};
-  if (!global_registry || !lowering_context || !type || !hir ||
+  psx_type_shape_t type = {0};
+  if (!global_registry || !lowering_context || !hir ||
       root == PSX_HIR_NODE_ID_INVALID || !plan ||
-      (type->kind != PSX_TYPE_ARRAY && !ps_type_is_tag_aggregate(type)))
+      !psx_semantic_type_table_describe(
+          ps_lowering_semantic_types(lowering_context), type_id, &type) ||
+      (type.kind != PSX_TYPE_ARRAY && type.kind != PSX_TYPE_STRUCT &&
+       type.kind != PSX_TYPE_UNION))
     return 0;
   global_var_t temporary = {0};
   static_hir_aggregate_t aggregate = {
@@ -941,8 +991,9 @@ int psx_build_static_aggregate_hir_initializer_plan(
   const psx_hir_node_t *initializer = node_for_id(&aggregate.eval, root);
   if (!initializer ||
       psx_hir_node_kind(initializer) != PSX_HIR_INITIALIZER_LIST ||
-      !ps_global_registry_bind_decl_type(
-          global_registry, &temporary, type) ||
+      !ps_global_registry_bind_decl_qual_type(
+          global_registry, &temporary,
+          (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE}) ||
       !psx_collect_initializer_scalar_leaves_with_records(
           ps_lowering_semantic_types(lowering_context),
           ps_lowering_record_decls(lowering_context),
@@ -955,12 +1006,12 @@ int psx_build_static_aggregate_hir_initializer_plan(
   }
   ps_gvar_init_slots_alloc(
       &temporary, aggregate.leaves.count,
-      aggregate_type_contains_float(&aggregate, type));
+      aggregate_type_contains_float(&aggregate, type_id));
   temporary.init_count = aggregate.leaves.count;
   for (int i = 0; i < aggregate.leaves.count; i++)
     ps_gvar_init_slot_clear(&temporary, i);
   int lowered = aggregate_lower_list(
-      &aggregate, type, 0, initializer);
+      &aggregate, type_id, 0, initializer);
   psx_initializer_scalar_leaf_list_dispose(&aggregate.leaves);
   if (!lowered) return 0;
   *plan = (psx_static_aggregate_initializer_plan_t){
@@ -977,27 +1028,28 @@ int psx_build_static_aggregate_hir_initializer_plan(
 
 static int lower_string(
     const static_hir_eval_t *eval, global_var_t *global,
-    const psx_type_t *type, const psx_hir_node_t *node) {
+    psx_type_id_t type_id, const psx_hir_node_t *node) {
+  psx_type_shape_t type = {0};
+  if (!type_shape(eval, type_id, &type)) return 0;
   size_t name_length = 0;
   const char *name = psx_hir_node_name(node, &name_length);
-  if (type->kind == PSX_TYPE_POINTER) {
+  if (type.kind == PSX_TYPE_POINTER) {
     if (!name || name_length == 0) return 0;
     global->init_symbol = persist_symbol_name(eval, name, -1);
     if (!global->init_symbol) return 0;
     global->init_symbol_len = -1;
     return 1;
   }
-  if (type->kind != PSX_TYPE_ARRAY) return 0;
-  const psx_type_t *element = ps_type_array_leaf_type(type);
+  if (type.kind != PSX_TYPE_ARRAY) return 0;
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       ps_lowering_semantic_types(eval->lowering_context),
-      ps_lowering_type_id(eval->lowering_context, type)).type_id;
+      type_id).type_id;
   int element_size = ps_type_sizeof_id_with_records(
       ps_lowering_semantic_types(eval->lowering_context),
       ps_lowering_record_layouts(eval->lowering_context),
       element_type_id, ps_lowering_target(eval->lowering_context));
   int character_width = psx_hir_node_object_align(node);
-  if (!element || element_size <= 0 ||
+  if (element_type_id == PSX_TYPE_ID_INVALID || element_size <= 0 ||
       character_width <= 0 || element_size != character_width)
     return 0;
   size_t literal_length = 0;
@@ -1018,10 +1070,13 @@ static int lower_string(
 int psx_lower_static_scalar_hir_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context,
-    global_var_t *global, const psx_type_t *type,
+    global_var_t *global, psx_type_id_t type_id,
     const psx_hir_module_t *hir, psx_hir_node_id_t root) {
-  if (!global_registry || !lowering_context || !global || !type ||
-      !hir || root == PSX_HIR_NODE_ID_INVALID)
+  psx_type_shape_t type = {0};
+  if (!global_registry || !lowering_context || !global || !hir ||
+      root == PSX_HIR_NODE_ID_INVALID ||
+      !psx_semantic_type_table_describe(
+          ps_lowering_semantic_types(lowering_context), type_id, &type))
     return 0;
   static_hir_eval_t eval = {
       .global_registry = global_registry,
@@ -1033,11 +1088,11 @@ int psx_lower_static_scalar_hir_initializer(
                           PSX_HIR_ROLE_EXPRESSION)
     return 0;
   if (psx_hir_node_kind(initializer) == PSX_HIR_STRING)
-    return lower_string(&eval, global, type, initializer);
+    return lower_string(&eval, global, type_id, initializer);
 
   int integer_ok = 1;
   long long integer = eval_const_int(&eval, initializer, &integer_ok);
-  if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX) {
+  if (type.kind == PSX_TYPE_FLOAT || type.kind == PSX_TYPE_COMPLEX) {
     int floating_ok = 1;
     double floating = eval_const_fp(&eval, initializer, &floating_ok);
     if (floating_ok) {
@@ -1046,7 +1101,7 @@ int psx_lower_static_scalar_hir_initializer(
     }
   }
   if (integer_ok) {
-    global->init_val = type->kind == PSX_TYPE_BOOL ? integer != 0 : integer;
+    global->init_val = type.kind == PSX_TYPE_BOOL ? integer != 0 : integer;
     return 1;
   }
 

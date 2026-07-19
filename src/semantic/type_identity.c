@@ -1,6 +1,7 @@
 #include "type_identity.h"
 
 #include "../parser/arena.h"
+#include "../parser/type.h"
 #include "../parser/type_builder.h"
 #include "record_decl_table.h"
 
@@ -12,6 +13,7 @@
 enum { PSX_QUALIFIER_VIEW_COUNT = 8 };
 
 typedef struct {
+  psx_type_shape_t shape;
   psx_type_t *type;
   psx_qual_type_t base_type;
   psx_qual_type_t *parameter_types;
@@ -23,6 +25,33 @@ typedef struct {
   unsigned char relations_populating;
   unsigned char canonical_relations_materialized;
 } psx_semantic_type_entry_t;
+
+static psx_type_shape_t semantic_type_shape(const psx_type_t *type) {
+  psx_type_shape_t shape = {0};
+  if (!type) return shape;
+  shape.kind = type->kind;
+  shape.array_len = type->array_len;
+  shape.integer_kind = type->integer_kind;
+  shape.floating_kind = type->floating_kind;
+  shape.record_id = ps_type_record_id(type);
+  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
+    shape.record_tag_name = type->tag_name;
+    shape.record_tag_length = type->tag_len;
+  }
+  if (type->kind == PSX_TYPE_INTEGER &&
+      type->integer_kind == PSX_INTEGER_KIND_ENUM) {
+    shape.enum_tag_name = type->tag_name;
+    shape.enum_tag_length = type->tag_len;
+    shape.enum_tag_scope_depth_p1 = type->tag_scope_depth_p1;
+  }
+  shape.parameter_count = type->param_count;
+  shape.is_unsigned = type->is_unsigned;
+  shape.is_plain_char = type->is_plain_char;
+  shape.is_vla = type->is_vla;
+  shape.has_function_prototype = type->has_function_prototype;
+  shape.is_variadic_function = type->is_variadic_function;
+  return shape;
+}
 
 struct psx_semantic_type_table_t {
   arena_context_t *arena_context;
@@ -112,8 +141,22 @@ static int semantic_type_has_resolved_record_identity(
   return 1;
 }
 
+static int semantic_integer_rank(const psx_type_shape_t *shape) {
+  if (!shape || shape->kind != PSX_TYPE_INTEGER) return 0;
+  if (shape->is_plain_char) return 1;
+  switch (shape->integer_kind) {
+    case PSX_INTEGER_KIND_CHAR: return 1;
+    case PSX_INTEGER_KIND_SHORT: return 2;
+    case PSX_INTEGER_KIND_INT:
+    case PSX_INTEGER_KIND_ENUM: return 3;
+    case PSX_INTEGER_KIND_LONG: return 4;
+    case PSX_INTEGER_KIND_LONG_LONG: return 5;
+    default: return 0;
+  }
+}
+
 static int semantic_type_node_matches(
-    const psx_type_t *canonical, const psx_type_t *candidate) {
+    const psx_type_shape_t *canonical, const psx_type_t *candidate) {
   if (!canonical || !candidate || canonical->kind != candidate->kind)
     return 0;
   switch (canonical->kind) {
@@ -122,11 +165,23 @@ static int semantic_type_node_matches(
     case PSX_TYPE_INTEGER:
       if (canonical->integer_kind == PSX_INTEGER_KIND_ENUM ||
           candidate->integer_kind == PSX_INTEGER_KIND_ENUM) {
-        return ps_type_tag_identity_matches(canonical, candidate);
+        if (canonical->integer_kind != PSX_INTEGER_KIND_ENUM ||
+            candidate->integer_kind != PSX_INTEGER_KIND_ENUM ||
+            canonical->enum_tag_length != candidate->tag_len)
+          return 0;
+        if (canonical->enum_tag_length > 0 &&
+            (!canonical->enum_tag_name || !candidate->tag_name ||
+             strncmp(canonical->enum_tag_name, candidate->tag_name,
+                     (size_t)canonical->enum_tag_length) != 0))
+          return 0;
+        return canonical->enum_tag_scope_depth_p1 == 0 ||
+               candidate->tag_scope_depth_p1 == 0 ||
+               canonical->enum_tag_scope_depth_p1 ==
+                   candidate->tag_scope_depth_p1;
       }
       return canonical->is_unsigned == candidate->is_unsigned &&
              canonical->is_plain_char == candidate->is_plain_char &&
-             ps_type_integer_rank(canonical) ==
+             semantic_integer_rank(canonical) ==
                  ps_type_integer_rank(candidate);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
@@ -138,11 +193,10 @@ static int semantic_type_node_matches(
              canonical->is_vla == candidate->is_vla;
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      return ps_type_record_id(canonical) != PSX_RECORD_ID_INVALID &&
-             ps_type_record_id(canonical) ==
-                 ps_type_record_id(candidate);
+      return canonical->record_id != PSX_RECORD_ID_INVALID &&
+             canonical->record_id == ps_type_record_id(candidate);
     case PSX_TYPE_FUNCTION:
-      return canonical->param_count == candidate->param_count &&
+      return canonical->parameter_count == candidate->param_count &&
              canonical->has_function_prototype ==
                  candidate->has_function_prototype &&
              canonical->is_variadic_function ==
@@ -176,7 +230,7 @@ static int semantic_type_entry_matches(
     return 0;
   }
   const psx_semantic_type_entry_t *entry = &table->entries[type_id];
-  if (!semantic_type_node_matches(entry->type, candidate) ||
+  if (!semantic_type_node_matches(&entry->shape, candidate) ||
       !semantic_type_relation_matches(
           table, entry->base_type, candidate->base)) {
     return 0;
@@ -337,6 +391,7 @@ psx_qual_type_t psx_semantic_type_table_intern(
   if (!canonical) return result;
   ps_type_normalize_scalar_identity(canonical);
   ps_type_remove_all_qualifiers_recursive(canonical);
+  table->entries[id].shape = semantic_type_shape(canonical);
   table->entries[id].type = canonical;
   table->next_id = id;
   result.type_id = id;
@@ -368,6 +423,7 @@ psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
       table->arena_context, pointee_type);
   if (!pointer) return invalid_qual_type();
   table->entries[id].type = pointer;
+  table->entries[id].shape = semantic_type_shape(pointer);
   table->entries[id].base_type = pointee;
   table->entries[id].canonical_relations_materialized = 1;
   table->next_id = id;
@@ -381,6 +437,18 @@ const psx_type_t *psx_semantic_type_table_lookup(
     return NULL;
   }
   return table->entries[type_id].type;
+}
+
+int psx_semantic_type_table_describe(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id,
+    psx_type_shape_t *out) {
+  if (!table || !out || type_id == PSX_TYPE_ID_INVALID ||
+      type_id > table->next_id || (size_t)type_id >= table->capacity ||
+      !table->entries[type_id].type) {
+    return 0;
+  }
+  *out = table->entries[type_id].shape;
+  return 1;
 }
 
 static const psx_type_t *materialize_qual_type_view(

@@ -51,7 +51,7 @@ int psx_resolve_parameter_declaration(
           &resolution->storage)) {
     return 0;
   }
-  resolution->type = type;
+  resolution->declaration_qual_type = identity;
 
   const psx_type_t *leaf = ps_type_derived_leaf_type(type);
   int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);

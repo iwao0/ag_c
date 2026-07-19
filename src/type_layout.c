@@ -1,12 +1,10 @@
 #include "type_layout.h"
 
-#include "parser/type.h"
-
 #include <limits.h>
 #include <string.h>
 
 static ag_target_scalar_kind_t integer_target_kind(
-    const psx_type_t *type) {
+    const psx_type_shape_t *type) {
   switch (type ? type->integer_kind : PSX_INTEGER_KIND_INT) {
     case PSX_INTEGER_KIND_CHAR: return AG_TARGET_SCALAR_CHAR;
     case PSX_INTEGER_KIND_SHORT: return AG_TARGET_SCALAR_SHORT;
@@ -17,7 +15,7 @@ static ag_target_scalar_kind_t integer_target_kind(
 }
 
 static ag_target_scalar_kind_t floating_target_kind(
-    const psx_type_t *type) {
+    const psx_type_shape_t *type) {
   int is_complex = type && type->kind == PSX_TYPE_COMPLEX;
   if (type && type->floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE) {
     return is_complex ? AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX
@@ -31,7 +29,7 @@ static ag_target_scalar_kind_t floating_target_kind(
 }
 
 static int layout_scalar(
-    const psx_type_t *type, const ag_target_info_t *target,
+    const psx_type_shape_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
   if (type->kind == PSX_TYPE_INTEGER &&
       type->integer_kind != PSX_INTEGER_KIND_CHAR &&
@@ -57,7 +55,7 @@ static int layout_scalar(
 }
 
 static int layout_non_array(
-    const psx_type_t *type, const ag_target_info_t *target,
+    const psx_type_shape_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
   if (!type || !out) return 0;
   memset(out, 0, sizeof(*out));
@@ -89,7 +87,7 @@ static int layout_non_array(
 }
 
 static int layout_non_array_with_records(
-    const psx_type_t *type,
+    const psx_type_shape_t *type,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_layout_t *out) {
   if (!type || !out) return 0;
@@ -108,7 +106,7 @@ static int layout_non_array_with_records(
 }
 
 static int complete_array_layout(
-    const psx_type_t *array_type, const psx_type_layout_t *element,
+    const psx_type_shape_t *array_type, const psx_type_layout_t *element,
     psx_type_layout_t *out) {
   if (!array_type || !element || !out) return 0;
   memset(out, 0, sizeof(*out));
@@ -127,15 +125,16 @@ static int complete_array_layout(
 static int layout_of_id(
     const psx_semantic_type_table_t *types, psx_type_id_t type_id,
     const ag_target_info_t *target, psx_type_layout_t *out) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
-  if (!type || !out) return 0;
-  if (type->kind != PSX_TYPE_ARRAY)
-    return layout_non_array(type, target, out);
+  psx_type_shape_t type = {0};
+  if (!out || !psx_semantic_type_table_describe(types, type_id, &type))
+    return 0;
+  if (type.kind != PSX_TYPE_ARRAY)
+    return layout_non_array(&type, target, out);
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       types, type_id).type_id;
   psx_type_layout_t element = {0};
   if (!layout_of_id(types, element_type_id, target, &element)) return 0;
-  return complete_array_layout(type, &element, out);
+  return complete_array_layout(&type, &element, out);
 }
 
 static int layout_of_id_with_records(
@@ -143,18 +142,19 @@ static int layout_of_id_with_records(
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target,
     psx_type_layout_t *out) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
-  if (!type || !out) return 0;
-  if (type->kind != PSX_TYPE_ARRAY)
+  psx_type_shape_t type = {0};
+  if (!out || !psx_semantic_type_table_describe(types, type_id, &type))
+    return 0;
+  if (type.kind != PSX_TYPE_ARRAY)
     return layout_non_array_with_records(
-        type, record_layouts, target, out);
+        &type, record_layouts, target, out);
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       types, type_id).type_id;
   psx_type_layout_t element = {0};
   if (!layout_of_id_with_records(
           types, record_layouts, element_type_id, target, &element))
     return 0;
-  return complete_array_layout(type, &element, out);
+  return complete_array_layout(&type, &element, out);
 }
 
 int ps_type_layout_of_id(

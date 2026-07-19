@@ -63,7 +63,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/semantic/scope_graph.o
 PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/function_type_lowering.o $(OBJROOT)/lowering/mir_type_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/lowering/hir_ir_cfg.o $(OBJROOT)/lowering/hir_ir_expression.o $(OBJROOT)/lowering/hir_ir_call.o $(OBJROOT)/lowering/hir_ir_aggregate.o $(OBJROOT)/lowering/hir_ir_statement.o $(OBJROOT)/lowering/hir_ir_vla.o $(OBJROOT)/lowering/runtime_initializer_plan.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/name_environment.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declaration_binding_events.o
-PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
+PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/type_signature.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
 IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_print.o

@@ -2,6 +2,7 @@
 #include "../src/parser/parser_legacy.h"
 #include "../src/compilation_session_internal.h"
 #include "../src/type_layout.h"
+#include "../src/type_signature.h"
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
@@ -96,6 +97,7 @@
 #include "../src/lowering/global_object_lowering.h"
 #include "../src/lowering/abi_lowering.h"
 #include "../src/lowering/hir_ir_builder.h"
+#include "../src/lowering/mir_type_lowering.h"
 #include "../src/lowering/runtime_context.h"
 #include "../src/lowering/runtime_initializer_plan.h"
 #include "../src/lowering/semantic_lowering_pass.h"
@@ -11806,6 +11808,44 @@ static void test_target_type_layout_boundary() {
       ps_ctx_semantic_type_table_in(test_semantic_context());
   ASSERT_TRUE(types != NULL);
   ASSERT_EQ(integer_identity.type_id, stale_integer_identity.type_id);
+  char legacy_pointer_array_signature[64] = {0};
+  char type_id_pointer_array_signature[64] = {0};
+  int legacy_pointer_array_signature_length =
+      ps_type_format_canonical_signature_for_target(
+          pointer_array, &host, legacy_pointer_array_signature,
+          sizeof(legacy_pointer_array_signature));
+  ASSERT_EQ(legacy_pointer_array_signature_length,
+            psx_format_canonical_type_signature(
+                types, pointer_array_identity, &host,
+                type_id_pointer_array_signature,
+                sizeof(type_id_pointer_array_signature)));
+  ASSERT_TRUE(strcmp(legacy_pointer_array_signature,
+                     type_id_pointer_array_signature) == 0);
+  psx_qual_type_t signed_long_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_signed_long);
+  psx_qual_type_t unsigned_int_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_unsigned_int);
+  psx_qual_type_t unsigned_short_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_unsigned_short);
+  ir_mir_type_context_t mir_type_context = {
+      .semantic_types = types,
+      .record_layouts = ps_lowering_record_layouts(test_lowering_context()),
+      .target = &host,
+  };
+  ir_mir_type_info_t signed_long_mir = ir_mir_classify_type_id(
+      &mir_type_context, signed_long_identity.type_id);
+  ir_mir_type_info_t unsigned_int_mir = ir_mir_classify_type_id(
+      &mir_type_context, unsigned_int_identity.type_id);
+  ir_mir_type_info_t unsigned_short_mir = ir_mir_classify_type_id(
+      &mir_type_context, unsigned_short_identity.type_id);
+  ASSERT_TRUE(!ir_mir_usual_arithmetic_result_is_unsigned(
+      signed_long_mir, unsigned_int_mir, &host));
+  ASSERT_TRUE(ir_mir_usual_arithmetic_result_is_unsigned(
+      signed_long_mir, unsigned_int_mir, &equal_width_integer_target));
+  ASSERT_TRUE(!ir_mir_integer_promotion_is_unsigned(
+      unsigned_short_mir, &host));
+  ASSERT_TRUE(ir_mir_integer_promotion_is_unsigned(
+      unsigned_short_mir, &wide_short_target));
   const psx_type_t *canonical_pointer_array =
       psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
@@ -12504,9 +12544,13 @@ static void test_parameter_declaration_storage_plan_boundary() {
             parameter_resolution.lowering_kind);
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER,
             parameter_resolution.storage.kind);
+  const psx_type_t *resolved_parameter_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      parameter_resolution.declaration_qual_type.type_id);
+  ASSERT_TRUE(resolved_parameter_type != NULL);
   ASSERT_EQ(4,
-            ps_type_pointee_value_size(parameter_resolution.type));
-  ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
+            ps_type_pointee_value_size(resolved_parameter_type));
+  ASSERT_EQ(PSX_TYPE_POINTER, resolved_parameter_type->kind);
   const psx_type_t *runtime_stride_storage = ps_ctx_type_by_id_in(
       test_semantic_context(),
       parameter_resolution.runtime_stride_storage_type_id);
@@ -14152,8 +14196,11 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(0, transaction.offset);
   ASSERT_EQ(4, transaction.storage_size);
   ASSERT_EQ(1, transaction.registered_member_count);
-  ASSERT_TRUE(transaction.type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, transaction.type->kind);
+  psx_type_shape_t transaction_type_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      transaction.type_id, &transaction_type_shape));
+  ASSERT_EQ(PSX_TYPE_INTEGER, transaction_type_shape.kind);
   tag_member_info_t transaction_member_before = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope_in(test_semantic_context(),
       TK_STRUCT, (char *)"Txn", 3, 0, (char *)"a", 1,
@@ -14726,6 +14773,8 @@ static void test_initializer_resolution_boundary() {
   ASSERT_TRUE(define_test_record_decl(&definition));
   psx_type_id_t aggregate_type_id = ps_ctx_intern_qual_type_in(
       test_semantic_context(), aggregate).type_id;
+  psx_type_id_t integer_type_id = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), integer).type_id;
 
   psx_record_layout_table_t *record_layouts =
       psx_record_layout_table_create();
@@ -14749,8 +14798,7 @@ static void test_initializer_resolution_boundary() {
   ASSERT_EQ(0, leaves.items[0].relative_offset);
   ASSERT_EQ(4, leaves.items[1].relative_offset);
   ASSERT_EQ(8, leaves.items[2].relative_offset);
-  ASSERT_TRUE(ps_type_unqualified_semantic_matches(
-      integer, leaves.items[2].type));
+  ASSERT_EQ(integer_type_id, leaves.items[2].type_id);
   ASSERT_TRUE(leaves.items[2].type_id != PSX_TYPE_ID_INVALID);
 
   node_num_t index = {0};
@@ -14775,7 +14823,7 @@ static void test_initializer_resolution_boundary() {
           record_layouts,
           ps_ctx_target_info(test_semantic_context()),
           &entry, aggregate_type_id, 0, NULL);
-  ASSERT_TRUE(ps_type_unqualified_semantic_matches(integer, target.type));
+  ASSERT_EQ(integer_type_id, target.type_id);
   ASSERT_EQ(8, target.relative_offset);
   ASSERT_EQ(1, target.first_member_index);
   ASSERT_EQ(1, target.first_array_index);
@@ -14821,7 +14869,11 @@ static void test_initializer_resolution_boundary() {
       ps_ctx_target_info(test_semantic_context()),
       recursive_type_id, 0, &leaves));
   ASSERT_EQ(2, leaves.count);
-  ASSERT_EQ(PSX_TYPE_POINTER, leaves.items[0].type->kind);
+  psx_type_shape_t recursive_pointer_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      leaves.items[0].type_id, &recursive_pointer_shape));
+  ASSERT_EQ(PSX_TYPE_POINTER, recursive_pointer_shape.kind);
   ASSERT_EQ(8, leaves.items[1].relative_offset);
   psx_initializer_scalar_leaf_list_dispose(&leaves);
   psx_record_layout_table_destroy(record_layouts);
@@ -15122,9 +15174,12 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, inferred_resolution.status);
   ASSERT_EQ(1, inferred_resolution.type_completed);
   ASSERT_EQ(0, inferred_type->array_len);
-  ASSERT_TRUE(inferred_resolution.type != inferred_type);
-  ASSERT_EQ(3, inferred_resolution.type->array_len);
-  ASSERT_EQ(12, ps_type_sizeof(inferred_resolution.type));
+  const psx_type_t *resolved_inferred_type = ps_ctx_type_by_id_in(
+      test_semantic_context(), inferred_resolution.object_qual_type.type_id);
+  ASSERT_TRUE(resolved_inferred_type != NULL);
+  ASSERT_TRUE(resolved_inferred_type != inferred_type);
+  ASSERT_EQ(3, resolved_inferred_type->array_len);
+  ASSERT_EQ(12, ps_type_sizeof(resolved_inferred_type));
   ASSERT_EQ(0, ps_gvar_decl_sizeof(&inferred_global, 0));
 
   psx_static_declaration_initializer_result_t inferred_result = {0};
@@ -15180,7 +15235,10 @@ static void test_static_data_initializer_boundary() {
       test_global_registry(), test_lowering_context(), &pointer_array_global,
       &pointer_resolution, NULL, NULL));
   ASSERT_EQ(0, pointer_array_type->array_len);
-  ASSERT_EQ(1, pointer_resolution.type->array_len);
+  const psx_type_t *resolved_pointer_array_type = ps_ctx_type_by_id_in(
+      test_semantic_context(), pointer_resolution.object_qual_type.type_id);
+  ASSERT_TRUE(resolved_pointer_array_type != NULL);
+  ASSERT_EQ(1, resolved_pointer_array_type->array_len);
   ASSERT_EQ(1, ps_gvar_get_decl_type(&pointer_array_global)->array_len);
   ASSERT_EQ(8, ps_gvar_decl_sizeof(&pointer_array_global, 0));
   ASSERT_EQ(1, pointer_array_global.init_count);
@@ -25671,6 +25729,38 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(materialized_const_int != NULL);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(materialized_const_int));
+  psx_type_shape_t plain_int_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      plain_int_identity.type_id, &plain_int_shape));
+  ASSERT_EQ(PSX_TYPE_INTEGER, plain_int_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, plain_int_shape.integer_kind);
+
+  psx_type_t *first_enum = ps_type_new_enum_in(
+      test_arena_context(), (char *)"SemanticMode", 12, 2);
+  psx_type_t *equivalent_enum = ps_type_new_enum_in(
+      test_arena_context(), (char *)"SemanticMode", 12, 2);
+  psx_type_t *shadowed_enum = ps_type_new_enum_in(
+      test_arena_context(), (char *)"SemanticMode", 12, 3);
+  psx_qual_type_t first_enum_identity =
+      ps_ctx_intern_qual_type_in(context, first_enum);
+  psx_qual_type_t equivalent_enum_identity =
+      ps_ctx_intern_qual_type_in(context, equivalent_enum);
+  psx_qual_type_t shadowed_enum_identity =
+      ps_ctx_intern_qual_type_in(context, shadowed_enum);
+  ASSERT_EQ(first_enum_identity.type_id,
+            equivalent_enum_identity.type_id);
+  ASSERT_TRUE(first_enum_identity.type_id !=
+              shadowed_enum_identity.type_id);
+  psx_type_shape_t enum_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      first_enum_identity.type_id, &enum_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, enum_shape.integer_kind);
+  ASSERT_EQ(12, enum_shape.enum_tag_length);
+  ASSERT_EQ(2, enum_shape.enum_tag_scope_depth_p1);
+  ASSERT_TRUE(strncmp("SemanticMode", enum_shape.enum_tag_name,
+                      (size_t)enum_shape.enum_tag_length) == 0);
 
   psx_type_t *mutable_element = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *mutable_array = ps_type_new_array(
@@ -25689,6 +25779,13 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(immutable_array->base != mutable_element);
   ASSERT_EQ(0, immutable_array->array_len);
   ASSERT_TRUE(!immutable_array->is_vla);
+  psx_type_shape_t immutable_array_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      immutable_array_identity.type_id, &immutable_array_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, immutable_array_shape.kind);
+  ASSERT_EQ(0, immutable_array_shape.array_len);
+  ASSERT_TRUE(!immutable_array_shape.is_vla);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_type_qualifiers(immutable_array->base));
   ASSERT_TRUE(ps_type_complete_array(mutable_array, 7));
@@ -26438,8 +26535,8 @@ static void test_semantic_context_isolation() {
       },
       &detached_initializer);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_INVALID, detached_initializer.status);
-  ASSERT_EQ(PSX_RECORD_ID_INVALID,
-            ps_type_record_id(detached_initializer.type));
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            detached_initializer.object_qual_type.type_id);
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = second,
@@ -26449,8 +26546,11 @@ static void test_semantic_context_isolation() {
       },
       &detached_initializer);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
+  const psx_type_t *detached_initializer_type = ps_ctx_type_by_id_in(
+      second, detached_initializer.object_qual_type.type_id);
+  ASSERT_TRUE(detached_initializer_type != NULL);
   const psx_record_decl_t *initializer_record = test_record_decl_in(
-      second, detached_initializer.type);
+      second, detached_initializer_type);
   ASSERT_TRUE(initializer_record != NULL);
   ASSERT_EQ(1, initializer_record->member_count);
 

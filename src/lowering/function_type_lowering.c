@@ -1,6 +1,5 @@
 #include "function_type_lowering.h"
 
-#include "../parser/type.h"
 #include "../semantic/type_identity.h"
 
 #include <stdlib.h>
@@ -11,19 +10,21 @@ int ir_function_type_from_type_id(
   if (!semantic_types || !out) return 0;
   ir_function_type_dispose(out);
 
-  const psx_type_t *function = psx_semantic_type_table_lookup(
-      semantic_types, type_id);
-  while (function && (function->kind == PSX_TYPE_POINTER ||
-                      function->kind == PSX_TYPE_ARRAY)) {
+  psx_type_shape_t function = {0};
+  int has_function = psx_semantic_type_table_describe(
+      semantic_types, type_id, &function);
+  while (has_function && (function.kind == PSX_TYPE_POINTER ||
+                          function.kind == PSX_TYPE_ARRAY)) {
     type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
-    function = psx_semantic_type_table_lookup(semantic_types, type_id);
+    has_function = psx_semantic_type_table_describe(
+        semantic_types, type_id, &function);
   }
-  if (!function || function->kind != PSX_TYPE_FUNCTION ||
-      function->param_count < 0)
+  if (!has_function || function.kind != PSX_TYPE_FUNCTION ||
+      function.parameter_count < 0)
     return 0;
 
-  size_t param_count = (size_t)function->param_count;
+  size_t param_count = (size_t)function.parameter_count;
   psx_qual_type_t *params = NULL;
   if (param_count > 0) {
     params = calloc(param_count, sizeof(*params));
@@ -42,8 +43,8 @@ int ir_function_type_from_type_id(
       semantic_types, type_id);
   int ok = ir_function_type_set(
       out, type_id, result, params, param_count,
-      function->is_variadic_function,
-      function->has_function_prototype);
+      function.is_variadic_function,
+      function.has_function_prototype);
   free(params);
   return ok;
 }

@@ -121,6 +121,15 @@ static void diagnose_static_initializer(
   }
 }
 
+static const psx_type_t *static_initializer_type_view(
+    psx_semantic_context_t *semantic_context,
+    const psx_static_initializer_resolution_t *resolution) {
+  return semantic_context && resolution
+             ? ps_ctx_type_by_id_in(
+                   semantic_context, resolution->object_qual_type.type_id)
+             : NULL;
+}
+
 int psx_begin_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result) {
@@ -206,6 +215,9 @@ static int finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
+      const psx_type_t *initializer_type = static_initializer_type_view(
+          request->semantic_context, &initializer_resolution);
+      if (!initializer_type) return 0;
       psx_frontend_expression_hir_t expression_hir = {
           .root = PSX_HIR_NODE_ID_INVALID,
       };
@@ -215,7 +227,7 @@ static int finish_global_declaration_pipeline(
                           ? psx_build_static_aggregate_initializer_plan(
                                 request->global_registry,
                                 request->lowering_context,
-                                initializer_resolution.type,
+                                initializer_type,
                                 (node_init_list_t *)
                                     initializer_resolution.initializer,
                                 request->initializer->value_tok,
@@ -226,7 +238,7 @@ static int finish_global_declaration_pipeline(
                                 request->local_registry,
                                 request->lowering_context,
                                 request->options,
-                                initializer_resolution.type,
+                                initializer_type,
                                 initializer_resolution.initializer,
                                 request->initializer->value_tok,
                                 &aggregate_plan);
@@ -449,6 +461,14 @@ static int append_definition_parameter(
         parameter->declarator.diagnostic_token, "param",
         "canonical parameter declaration resolution failed");
   }
+  const psx_type_t *resolved_parameter_type = ps_ctx_type_by_id_in(
+      semantic_context, resolution.declaration_qual_type.type_id);
+  if (!resolved_parameter_type) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        parameter->declarator.diagnostic_token, "param",
+        "canonical parameter TypeId lookup failed");
+  }
   if (result->nargs + 1 >= *capacity) {
     *capacity = pda_next_cap_in(
         ps_ctx_diagnostics(semantic_context),
@@ -465,11 +485,11 @@ static int append_definition_parameter(
   }
   if (!name) {
     result->parameter_vars[result->nargs] = NULL;
-    result->parameter_types[result->nargs] = resolution.type;
+    result->parameter_types[result->nargs] = resolved_parameter_type;
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
             ps_lowering_resolution_store(lowering_context),
-            ps_lowering_arena(lowering_context), resolution.type);
+            ps_lowering_arena(lowering_context), resolved_parameter_type);
     result->args[result->nargs] = NULL;
     return 1;
   }
@@ -511,7 +531,7 @@ static int append_definition_parameter(
         name->len, name->str);
   }
   result->parameter_vars[result->nargs] = lowered;
-  result->parameter_types[result->nargs] = resolution.type;
+  result->parameter_types[result->nargs] = resolved_parameter_type;
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
           ps_lowering_resolution_store(lowering_context),
@@ -739,6 +759,9 @@ int psx_finish_static_local_declaration_pipeline(
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
   }
+  const psx_type_t *initializer_type = static_initializer_type_view(
+      request->semantic_context, &resolution);
+  if (!initializer_type) return 0;
   psx_frontend_expression_hir_t expression_hir = {
       .root = PSX_HIR_NODE_ID_INVALID,
   };
@@ -747,7 +770,7 @@ int psx_finish_static_local_declaration_pipeline(
     if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
             request->semantic_context, request->global_registry,
             request->local_registry, request->lowering_context,
-            request->options, resolution.type,
+            request->options, initializer_type,
             resolution.initializer, request->initializer->value_tok,
             &aggregate_plan)) {
       return 0;
@@ -777,7 +800,7 @@ int psx_finish_static_local_declaration_pipeline(
   }
   if (result->type_completed &&
       !ps_local_registry_complete_array_type(
-          request->local_registry, result->alias, resolution.type))
+          request->local_registry, result->alias, initializer_type))
     return 0;
   result->initialized = 1;
   return 1;
@@ -806,13 +829,16 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
       &resolution);
   if (resolution.status != PSX_STATIC_INITIALIZER_OK)
     return 0;
+  const psx_type_t *initializer_type = static_initializer_type_view(
+      request->semantic_context, &resolution);
+  if (!initializer_type) return 0;
 
   psx_hir_module_t *initializer_hir = NULL;
   psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
   if (resolution.is_aggregate_initializer) {
     if (!psx_materialize_static_aggregate_initializer_plan(
             initializer_typed_hir, request->global_registry,
-            request->lowering_context, resolution.type,
+            request->lowering_context, initializer_type,
             request->initializer->value_tok, &aggregate_plan))
       return 0;
     resolution.aggregate_plan = &aggregate_plan;
@@ -837,7 +863,7 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
   if (!lowered) return 0;
   if (result->type_completed &&
       !ps_local_registry_complete_array_type(
-          request->local_registry, result->alias, resolution.type))
+          request->local_registry, result->alias, initializer_type))
     return 0;
   result->initialized = 1;
   return 1;

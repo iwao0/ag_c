@@ -1061,7 +1061,7 @@ static int collect_stub_table_symbols(const char *src, symbol_set_t *out) {
 
 static int collect_stub_emit_symbols(const char *src, symbol_set_t *out) {
   const char *start = strstr(
-      src, "void wasm32_wat_emit_minimal_libc_stubs(void)");
+      src, "void wasm32_wat_emit_minimal_libc_stubs(");
   if (!start) return 1;
   const char *end = src + strlen(src);
 

@@ -18,7 +18,6 @@ static int is_aggregate_kind(psx_type_kind_t kind) {
 }
 
 typedef struct {
-  const psx_type_t *type;
   const psx_semantic_type_table_t *semantic_types;
   psx_type_id_t type_id;
   int bit_width;
@@ -49,21 +48,22 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
     psx_semantic_context_t *semantic_context, psx_type_id_t type_id) {
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      semantic_types, type_id);
-  if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(semantic_types, type_id, &type))
+    return PSX_AGGREGATE_MEMBER_INVALID;
   psx_qual_type_t stored_identity = psx_semantic_type_table_array_leaf(
       semantic_types, type_id);
-  const psx_type_t *stored = psx_semantic_type_table_lookup(
-      semantic_types, stored_identity.type_id);
-  if (!stored) return PSX_AGGREGATE_MEMBER_INVALID;
-  if (stored->kind == PSX_TYPE_POINTER)
+  psx_type_shape_t stored = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, stored_identity.type_id, &stored))
+    return PSX_AGGREGATE_MEMBER_INVALID;
+  if (stored.kind == PSX_TYPE_POINTER)
     return PSX_AGGREGATE_MEMBER_OK;
-  if (stored->kind == PSX_TYPE_FUNCTION)
+  if (stored.kind == PSX_TYPE_FUNCTION)
     return PSX_AGGREGATE_MEMBER_FUNCTION_TYPE;
-  if (ps_type_is_tag_aggregate(stored)) {
+  if (stored.kind == PSX_TYPE_STRUCT || stored.kind == PSX_TYPE_UNION) {
     const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-        semantic_context, ps_type_record_id(stored));
+        semantic_context, stored.record_id);
     if (!record || !record->is_complete)
       return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
   }
@@ -90,11 +90,16 @@ static void resolve_aggregate_bitfield_placement(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
   if (!state || !request || !is_aggregate_kind(state->record_kind) ||
-      !request->type || request->bit_width < 0) {
+      !request->semantic_types ||
+      request->type_id == PSX_TYPE_ID_INVALID ||
+      request->bit_width < 0) {
     return;
   }
-  const psx_type_t *type = request->type;
-  if (type->kind != PSX_TYPE_INTEGER && type->kind != PSX_TYPE_BOOL) {
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(
+          request->semantic_types, request->type_id, &type))
+    return;
+  if (type.kind != PSX_TYPE_INTEGER && type.kind != PSX_TYPE_BOOL) {
     resolution->status = PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE;
     return;
   }
@@ -104,8 +109,8 @@ static void resolve_aggregate_bitfield_placement(
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
   resolution->bit_is_signed =
-      type->kind != PSX_TYPE_BOOL && !ps_type_is_unsigned(type) &&
-      type->integer_kind != PSX_INTEGER_KIND_ENUM;
+      type.kind != PSX_TYPE_BOOL && !type.is_unsigned &&
+      type.integer_kind != PSX_INTEGER_KIND_ENUM;
   int storage_bits = storage_size * 8;
   if (request->bit_width > storage_bits) {
     resolution->status = PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE;
@@ -297,7 +302,6 @@ void psx_resolve_aggregate_member_declaration(
           .declarator_shape = request->declarator_shape,
       });
   if (!type) return;
-  resolution->type = type;
   int is_anonymous_aggregate =
       !has_name && ps_type_is_tag_aggregate(type);
   if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
@@ -314,7 +318,6 @@ void psx_resolve_aggregate_member_declaration(
     resolve_aggregate_bitfield_placement(
         &working_layout,
         &(aggregate_bitfield_request_t){
-            .type = type,
             .semantic_types = ps_ctx_semantic_type_table_in(
                 semantic_context),
             .type_id = identity.type_id,

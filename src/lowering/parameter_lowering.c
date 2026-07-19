@@ -51,14 +51,20 @@ lvar_t *lower_parameter_declaration(
 lvar_t *lower_resolved_parameter_declaration(
     const psx_resolved_parameter_lowering_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->resolution || !request->resolution->type ||
+      !request->resolution ||
+      request->resolution->declaration_qual_type.type_id ==
+          PSX_TYPE_ID_INVALID ||
       !request->local_registry || !request->lowering_context) return NULL;
   const psx_parameter_declaration_resolution_t *resolution =
       request->resolution;
+  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
+      ps_lowering_semantic_types(request->lowering_context),
+      resolution->declaration_qual_type);
+  if (!type) return NULL;
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_NORMAL) {
     return lower_parameter_with_plan(
         request->local_registry, request->lowering_context,
-        request->name, request->name_len, resolution->type,
+        request->name, request->name_len, type,
         &resolution->storage, request->diag_tok);
   }
 
@@ -68,7 +74,7 @@ lvar_t *lower_resolved_parameter_declaration(
       .name = request->name,
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,
-      .type = resolution->type,
+      .type = type,
       .stride_storage_type = psx_semantic_type_table_lookup(
           ps_lowering_semantic_types(request->lowering_context),
           resolution->runtime_stride_storage_type_id),

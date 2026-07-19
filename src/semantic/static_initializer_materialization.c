@@ -2,6 +2,7 @@
 
 #include "../lowering/static_hir_initializer.h"
 #include "../lowering/static_initializer_plan.h"
+#include "../lowering/runtime_context.h"
 #include "typed_hir_materialization.h"
 
 int psx_materialize_static_aggregate_initializer_plan(
@@ -21,7 +22,8 @@ int psx_materialize_static_aggregate_initializer_plan(
       hir, typed_tree, &failure);
   int built = root != PSX_HIR_NODE_ID_INVALID &&
               psx_build_static_aggregate_hir_initializer_plan(
-                  global_registry, lowering_context, type,
+                  global_registry, lowering_context,
+                  ps_lowering_type_id(lowering_context, type),
                   hir, root, diag_tok, plan);
   psx_hir_module_destroy(hir);
   return built;

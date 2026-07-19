@@ -86,7 +86,9 @@ ir_symbol_t *lower_ir_global_symbol(
   if (symbol) return symbol;
 
   psx_type_id_t type_id = ps_gvar_decl_type_id(global);
-  if (!psx_semantic_type_table_lookup(semantic_types, type_id)) return NULL;
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(semantic_types, type_id, &type))
+    return NULL;
   int storage_size = ps_type_sizeof_id_with_records(
       semantic_types, record_layouts, type_id, target);
   if (storage_size <= 0 && ps_gvar_is_extern_decl(global)) {

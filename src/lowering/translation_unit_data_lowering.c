@@ -6,7 +6,6 @@
 #include "../parser/gvar_public.h"
 #include "../parser/literal_public.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
 #include "../semantic/initializer_resolution.h"
 #include "../type_layout.h"
 #include "../tokenizer/literals.h"
@@ -62,15 +61,16 @@ static psx_type_id_t scalar_element_type_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
   if (!lowering || !lowering->semantic_types) return PSX_TYPE_ID_INVALID;
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      lowering->semantic_types, type_id);
-  while (type && type->kind == PSX_TYPE_ARRAY) {
+  psx_type_shape_t type = {0};
+  int has_type = psx_semantic_type_table_describe(
+      lowering->semantic_types, type_id, &type);
+  while (has_type && type.kind == PSX_TYPE_ARRAY) {
     type_id = psx_semantic_type_table_base(
         lowering->semantic_types, type_id).type_id;
-    type = psx_semantic_type_table_lookup(
-        lowering->semantic_types, type_id);
+    has_type = psx_semantic_type_table_describe(
+        lowering->semantic_types, type_id, &type);
   }
-  return type ? type_id : PSX_TYPE_ID_INVALID;
+  return has_type ? type_id : PSX_TYPE_ID_INVALID;
 }
 
 static void write_byte(unsigned char byte, void *user) {
@@ -334,19 +334,21 @@ static void lower_global_object(global_var_t *global, void *user) {
   if (!lowering || lowering->failed) return;
   char *name = ps_gvar_name(global);
   int name_len = ps_gvar_name_len(global);
-  const psx_type_t *type = ps_gvar_get_decl_type(global);
+  psx_type_id_t type_id = ps_gvar_decl_type_id(global);
+  psx_type_shape_t type = {0};
+  int has_type = psx_semantic_type_table_describe(
+      lowering->semantic_types, type_id, &type);
   int storage_size = type_size_id(
-      lowering, ps_gvar_decl_type_id(global));
+      lowering, type_id);
   int is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
-  if (storage_size <= 0 && is_extern && type &&
-      type->kind == PSX_TYPE_ARRAY) {
+  if (storage_size <= 0 && is_extern && has_type &&
+      type.kind == PSX_TYPE_ARRAY) {
     storage_size = type_size_id(
         lowering, psx_semantic_type_table_base(
-                      lowering->semantic_types,
-                      ps_gvar_decl_type_id(global)).type_id);
+                      lowering->semantic_types, type_id).type_id);
   }
   int alignment = type_alignment_id(
-      lowering, ps_gvar_decl_type_id(global));
+      lowering, type_id);
   ir_data_object_t *object = ir_data_module_add_object(
       lowering->module, name, name_len, IR_DATA_OBJECT);
   if (!object || storage_size <= 0 || alignment <= 0) {

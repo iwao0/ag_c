@@ -169,7 +169,9 @@ int lower_static_local_declaration(
   if (lowered.type_completed &&
       !ps_local_registry_complete_array_type(
           request->local_registry, lowered.alias,
-          request->initializer_resolution->type)) {
+          psx_semantic_type_table_lookup_qual_type(
+              ps_lowering_semantic_types(request->lowering_context),
+              request->initializer_resolution->object_qual_type))) {
     return 0;
   }
   if (result) *result = lowered;

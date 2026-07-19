@@ -52,7 +52,6 @@ typedef struct {
 } psx_initializer_member_ref_t;
 
 typedef struct {
-  const psx_type_t *type;
   psx_type_id_t type_id;
   int relative_offset;
   psx_initializer_member_ref_t member_ref;
@@ -63,11 +62,9 @@ typedef struct {
 } psx_initializer_target_t;
 
 typedef struct {
-  const psx_type_t *type;
   psx_type_id_t type_id;
   int relative_offset;
   psx_initializer_member_ref_t member_ref;
-  const psx_type_t *string_array_type;
   psx_type_id_t string_array_type_id;
   int string_array_offset;
 } psx_initializer_scalar_leaf_t;
