@@ -9564,16 +9564,16 @@ if (!parsedFunctionResolutionBoundary ||
       semanticTreeResolutionSource,
     ) ||
     allSourceFiles.includes("src/semantic/legacy_syntax_diagnostics.h") ||
-    /\$\(OBJROOT\)\/semantic\/legacy_syntax_diagnostics\.o/.test(
+    /\$\(OBJROOT\)\/semantic\/(?:legacy_syntax_diagnostics|resolution_work_tree|typed_hir_tree_materialization)\.o/.test(
       makefileSource,
     ) ||
-    !/^TEST_ONLY_SRCS=src\/semantic\/legacy_syntax_diagnostics\.c$/m.test(
+    !/^TEST_ONLY_SRCS=src\/semantic\/legacy_syntax_diagnostics\.c src\/semantic\/resolution_work_tree\.c src\/semantic\/typed_hir_tree_materialization\.c$/m.test(
       makefileSource,
     ) ||
     !/^SRCS=\$\(filter-out\s+\$\(TEST_ONLY_SRCS\),/m.test(
       makefileSource,
     ) ||
-    !/\$\(TEST_PARSER\):[^\n]*src\/semantic\/legacy_syntax_diagnostics\.c/.test(
+    !/\$\(TEST_PARSER\):[^\n]*\$\(TEST_ONLY_SRCS\)/.test(
       makefileSource,
     ) ||
     /psx_legacy_syntax_diagnostics_accept_/.test(
