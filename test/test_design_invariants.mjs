@@ -4026,17 +4026,41 @@ if (!/PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
     !/PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
       typedHirBuildStatusHeader,
     ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
+      typedHirBuildStatusHeader,
+    ) ||
     !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/note_direct_named_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/note_direct_control_flow_rejection\s*\([^]*?PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_function_rejection\s*\([^]*?psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
       semanticTreeResolutionSource,
     )) {
   throw new Error(
-    "direct function label diagnostics must bypass mutable compatibility trees",
+    "direct function control-flow diagnostics must bypass mutable compatibility trees",
   );
 }
 const hirSymbolResolutionSource = await readFile(

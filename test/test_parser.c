@@ -4655,6 +4655,54 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(7, failure.source_name_length);
   ASSERT_TRUE(memcmp(failure.source_name, "missing", 7) == 0);
 
+  node_t *invalid_break =
+      parse_direct_test_statement_syntax("{ break; }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), invalid_break, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH,
+            failure.rejection);
+  ASSERT_EQ(ND_BREAK, failure.source_node_kind);
+
+  node_t *invalid_continue =
+      parse_direct_test_statement_syntax("{ continue; }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), invalid_continue, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
+            failure.rejection);
+  ASSERT_EQ(ND_CONTINUE, failure.source_node_kind);
+
+  node_t *invalid_case =
+      parse_direct_test_statement_syntax("{ case 1: ; }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), invalid_case, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
+            failure.rejection);
+  ASSERT_EQ(ND_CASE, failure.source_node_kind);
+
+  node_t *invalid_default =
+      parse_direct_test_statement_syntax("{ default: ; }");
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), invalid_default, &invalid_hir, &failure));
+  ASSERT_TRUE(invalid_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
+            failure.rejection);
+  ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
+
   psx_hir_module_destroy(hir);
   reset_test_translation_unit_state();
 }

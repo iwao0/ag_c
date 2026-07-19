@@ -585,6 +585,16 @@ static int note_direct_named_rejection(
   return 0;
 }
 
+static int note_direct_control_flow_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source) {
+  note_direct_rejection(context, source);
+  if (context && context->failure)
+    context->failure->rejection = rejection;
+  return 0;
+}
+
 static psx_typed_hir_tree_t *wrap_typed_root(
     psx_semantic_context_t *semantic_context,
     psx_semantic_node_t *root,
@@ -4431,8 +4441,12 @@ static int preflight_direct_statement_impl(
     case ND_CASE: {
       psx_qual_type_t case_qual_type;
       long long value;
-      if (!context->switch_scope ||
-          !preflight_direct_expression(
+      if (!context->switch_scope)
+        return note_direct_control_flow_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
+            syntax);
+      if (!preflight_direct_expression(
               context, syntax->lhs, &case_qual_type))
         return 0;
       const psx_type_t *case_type = ps_ctx_type_by_id_in(
@@ -4446,8 +4460,12 @@ static int preflight_direct_statement_impl(
              preflight_direct_statement(context, syntax->rhs);
     }
     case ND_DEFAULT:
-      if (!context->switch_scope ||
-          context->switch_scope->has_default)
+      if (!context->switch_scope)
+        return note_direct_control_flow_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
+            syntax);
+      if (context->switch_scope->has_default)
         return 0;
       context->switch_scope->has_default = 1;
       return preflight_direct_statement(context, syntax->rhs);
@@ -4457,9 +4475,19 @@ static int preflight_direct_statement_impl(
       return !syntax->rhs ||
              preflight_direct_statement(context, syntax->rhs);
     case ND_BREAK:
-      return context->loop_depth > 0 || context->switch_depth > 0;
+      if (context->loop_depth == 0 && context->switch_depth == 0)
+        return note_direct_control_flow_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH,
+            syntax);
+      return 1;
     case ND_CONTINUE:
-      return context->loop_depth > 0;
+      if (context->loop_depth == 0)
+        return note_direct_control_flow_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
+            syntax);
+      return 1;
     default:
       return preflight_direct_expression(context, syntax, NULL);
   }
@@ -5603,7 +5631,10 @@ psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
-  if (failure) memset(failure, 0, sizeof(*failure));
+  if (failure) {
+    memset(failure, 0, sizeof(*failure));
+    failure->source_node_kind = PSX_SYNTAX_NODE_INVALID;
+  }
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_statement || !typed_hir) {
     set_failure(

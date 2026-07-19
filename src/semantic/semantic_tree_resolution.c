@@ -11,9 +11,7 @@ static int diagnose_direct_function_rejection(
     psx_semantic_context_t *semantic_context,
     const psx_resolved_hir_build_failure_t *failure,
     const token_t *fallback_diag_tok) {
-  if (!semantic_context || !failure || !failure->source_name ||
-      failure->source_name_length <= 0)
-    return 0;
+  if (!semantic_context || !failure) return 0;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   token_t *token = (token_t *)(failure->source_token
@@ -21,17 +19,46 @@ static int diagnose_direct_function_rejection(
                                    : fallback_diag_tok);
   switch (failure->rejection) {
     case PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
       ps_diag_duplicate_with_name_in(
           diagnostics, token,
           diag_text_for_in(diagnostics, DIAG_TEXT_LABEL),
           failure->source_name, failure->source_name_length);
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
       ps_diag_ctx_in(
           diagnostics, token, "goto",
           diag_message_for_in(
               diagnostics, DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
           failure->source_name_length, failure->source_name);
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH:
+      ps_diag_only_in_context(
+          diagnostics, token,
+          diag_text_for_in(diagnostics, DIAG_TEXT_BREAK),
+          diag_text_for_in(
+              diagnostics, DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP:
+      ps_diag_only_in_context(
+          diagnostics, token,
+          diag_text_for_in(diagnostics, DIAG_TEXT_CONTINUE),
+          diag_text_for_in(diagnostics, DIAG_TEXT_LOOP_SCOPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH:
+      ps_diag_only_in_context(
+          diagnostics, token,
+          diag_text_for_in(diagnostics, DIAG_TEXT_CASE),
+          diag_text_for_in(diagnostics, DIAG_TEXT_SWITCH_SCOPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH:
+      ps_diag_only_in_context(
+          diagnostics, token,
+          diag_text_for_in(diagnostics, DIAG_TEXT_DEFAULT),
+          diag_text_for_in(diagnostics, DIAG_TEXT_SWITCH_SCOPE));
       return 1;
     default:
       return 0;
