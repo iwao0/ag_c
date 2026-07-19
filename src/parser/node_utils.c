@@ -2274,6 +2274,7 @@ static node_t *bound_node_vla_runtime_source(
       return node->rhs;
     case ND_SUB:
     case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
     case ND_CAST:
     case ND_PRE_INC:
     case ND_PRE_DEC:

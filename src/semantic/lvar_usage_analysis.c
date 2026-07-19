@@ -206,6 +206,7 @@ void psx_collect_lvar_usage_events_in(
       return;
     }
     case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
       record_initialized(store, local_registry, node->lhs, region);
       psx_collect_lvar_usage_events_in(
           store, local_registry, node->lhs, region);

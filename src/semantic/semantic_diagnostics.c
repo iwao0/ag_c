@@ -475,7 +475,9 @@ static void warn_condition(
   if (!node || (node->kind != ND_IF && node->kind != ND_WHILE)) return;
   const char *context = node->kind == ND_IF ? "if" : "while";
   const token_t *tok = node->tok ? node->tok : fallback;
-  if (node->lhs && node->lhs->kind == ND_ASSIGN) {
+  if (node->lhs &&
+      (node->lhs->kind == ND_ASSIGN ||
+       node->lhs->kind == ND_COMPOUND_ASSIGN)) {
     diag_warn_tokf_in(diagnostics,
         DIAG_WARN_PARSER_ASSIGN_IN_CONDITION, tok,
         diag_warn_message_for_in(

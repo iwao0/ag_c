@@ -54,6 +54,7 @@ static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
     case ND_BITAND: case ND_BITXOR: case ND_BITOR:
     case ND_SHL: case ND_SHR: case ND_LOGAND: case ND_LOGOR:
     case ND_TERNARY: case ND_COMMA: case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
     case ND_LVAR: case ND_PRE_INC: case ND_PRE_DEC:
     case ND_POST_INC: case ND_POST_DEC:
     case ND_FUNCALL: case ND_FUNCREF:

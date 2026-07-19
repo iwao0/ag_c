@@ -1266,6 +1266,7 @@ static direct_vla_runtime_view_t direct_vla_runtime_view(
                  : direct_vla_runtime_view(context, syntax->rhs);
     case ND_SUB:
     case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
     case ND_ADDRESS_OF:
     case ND_CAST:
     case ND_PRE_INC:
@@ -1610,14 +1611,15 @@ static int resolve_direct_assignment_types(
     psx_assignment_types_resolution_t *resolution,
     psx_hir_compound_operator_t *hir_operator) {
   if (!context || !syntax || !resolution ||
-      syntax->kind != ND_ASSIGN)
+      (syntax->kind != ND_ASSIGN &&
+       syntax->kind != ND_COMPOUND_ASSIGN))
     return 0;
   *resolution = (psx_assignment_types_resolution_t){
       .status = PSX_ASSIGNMENT_TYPES_INVALID,
       .result_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
-  if (syntax->is_source_assignment) {
+  if (syntax->kind == ND_ASSIGN) {
     psx_resolve_assignment_qual_types_in(
         context->semantic_context, target_type, value_type,
         direct_null_pointer_constant(
@@ -1625,7 +1627,7 @@ static int resolve_direct_assignment_types(
         resolution);
     return 1;
   }
-  if (!syntax->is_source_compound_assignment) return 0;
+  if (syntax->kind != ND_COMPOUND_ASSIGN) return 0;
   psx_compound_assignment_operator_t semantic_operator;
   if (!direct_compound_assignment_operator(
           syntax->source_op, &semantic_operator, hir_operator))
@@ -1859,9 +1861,8 @@ static int preflight_direct_expression_impl(
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
-  if (syntax->kind == ND_ASSIGN &&
-      (syntax->is_source_assignment ||
-       syntax->is_source_compound_assignment)) {
+  if (syntax->kind == ND_ASSIGN ||
+      syntax->kind == ND_COMPOUND_ASSIGN) {
     psx_qual_type_t target_type;
     psx_qual_type_t value_type = {
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
@@ -2946,9 +2947,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 1, NULL, syntax->kind);
   }
 
-  if (syntax->kind == ND_ASSIGN &&
-      (syntax->is_source_assignment ||
-       syntax->is_source_compound_assignment)) {
+  if (syntax->kind == ND_ASSIGN ||
+      syntax->kind == ND_COMPOUND_ASSIGN) {
     psx_semantic_node_t *target =
         build_direct_lvalue(context, syntax->lhs);
     psx_semantic_node_t *value =
@@ -2972,14 +2972,14 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_hir_edge_kind_t edges[] = {
         PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
     psx_hir_node_spec_t spec = {
-      .kind = syntax->is_source_compound_assignment
-                    ? PSX_HIR_COMPOUND_ASSIGN
-                    : PSX_HIR_ASSIGN,
+      .kind = syntax->kind == ND_COMPOUND_ASSIGN
+                  ? PSX_HIR_COMPOUND_ASSIGN
+                  : PSX_HIR_ASSIGN,
         .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .is_source_assignment = syntax->is_source_assignment ? 1 : 0,
+      .is_source_assignment = syntax->kind == ND_ASSIGN ? 1 : 0,
     };
-    if (syntax->is_source_compound_assignment)
+    if (syntax->kind == ND_COMPOUND_ASSIGN)
       spec.integer_value = hir_operator;
     apply_direct_vla_runtime_view(
         context, syntax, resolution.result_qual_type, &spec);

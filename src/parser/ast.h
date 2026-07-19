@@ -63,7 +63,6 @@ struct node_t {
   unsigned int is_source_assignment : 1;
   unsigned int has_empty_body : 1;
   unsigned int is_source_cast : 1;
-  unsigned int is_source_compound_assignment : 1;
 };
 
 typedef struct {

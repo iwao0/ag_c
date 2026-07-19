@@ -4231,8 +4231,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   node_t *compound_assignment_syntax =
       parse_expr_input_with_existing_locals(
           "DirectAssignment += 5");
-  ASSERT_TRUE(
-      compound_assignment_syntax->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN,
+            compound_assignment_syntax->kind);
   const psx_typed_hir_tree_t *typed_compound_assignment = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
@@ -10303,17 +10303,15 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   set_test_storage_fixture_type(
       value, ps_type_new_integer(TK_INT, 4, 0));
   node_t *node = parse_expr_input_with_existing_locals("a += 2");
-  ASSERT_EQ(ND_ASSIGN, node->kind);
-  ASSERT_TRUE(node->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(TK_PLUSEQ, node->source_op);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
   node_t *assignment_syntax = node;
   node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != assignment_syntax);
-  ASSERT_TRUE(assignment_syntax->is_source_compound_assignment);
-  ASSERT_EQ(ND_ASSIGN, node->kind);
-  ASSERT_TRUE(node->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, assignment_syntax->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
   reset_test_locals();
@@ -10322,11 +10320,9 @@ static void test_compound_assignment_semantic_lowering_boundary() {
       pointer,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node = parse_expr_input_with_existing_locals("*p += 2");
-  ASSERT_EQ(ND_ASSIGN, node->kind);
-  ASSERT_TRUE(node->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   node = analyze_test_expression(node, NULL);
-  ASSERT_EQ(ND_ASSIGN, node->kind);
-  ASSERT_TRUE(node->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_UNARY_DEREF, node->lhs->kind);
 
   node_t **program = parse_program_input(
@@ -10335,8 +10331,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_TRUE(program != NULL);
   node_block_t *body =
       as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(body->body[0]->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_SUBSCRIPT, body->body[0]->lhs->kind);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -10361,8 +10356,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
       "object->value += 3; return object->value; }");
   ASSERT_TRUE(program != NULL);
   body = as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(body->body[0]->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_MEMBER_ACCESS, body->body[0]->lhs->kind);
   hir = ag_compilation_session_hir_module(test_suite_session);
   int found_member_compound = 0;
@@ -10419,8 +10413,7 @@ static void test_translation_unit_frontend_boundary() {
                   test_local_registry(), (char *)"x", 1) == NULL);
   node_block_t *parsed_body = as_block(syntax_function->body);
   ASSERT_EQ(ND_LOCAL_DECLARATION, parsed_body->body[0]->kind);
-  ASSERT_EQ(ND_ASSIGN, parsed_body->body[1]->kind);
-  ASSERT_TRUE(parsed_body->body[1]->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, parsed_body->body[1]->kind);
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
   node_t *raw_compound_assignment = parsed_body->body[1];
   ASSERT_EQ(ND_NUM, raw_compound_assignment->rhs->kind);
@@ -10438,8 +10431,7 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(
       ps_decl_find_lvar_in(
           test_local_registry(), (char *)"x", 1) != NULL);
-  ASSERT_EQ(ND_ASSIGN, raw_compound_assignment->kind);
-  ASSERT_TRUE(raw_compound_assignment->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, raw_compound_assignment->kind);
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
   ASSERT_TRUE(parsed_body->body[1] == raw_compound_assignment);
   ASSERT_TRUE(raw_compound_assignment->rhs == raw_literal);
@@ -10470,8 +10462,7 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(analyzed != NULL);
   ASSERT_TRUE(analyzed[0] != NULL);
   node_block_t *analyzed_body = as_block(as_function_definition(analyzed[0])->base.rhs);
-  ASSERT_EQ(ND_ASSIGN, analyzed_body->body[1]->kind);
-  ASSERT_TRUE(analyzed_body->body[1]->is_source_compound_assignment);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, analyzed_body->body[1]->kind);
   ASSERT_EQ(TK_PLUSEQ, analyzed_body->body[1]->source_op);
   ASSERT_EQ(ND_NUM, analyzed_body->body[1]->rhs->kind);
 }
@@ -11038,7 +11029,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(syntax_scalar_braced_value != NULL);
   ASSERT_EQ(ND_NUM, syntax_scalar_braced_value->kind);
   ASSERT_TRUE(ps_node_get_type(syntax_scalar_braced_value) == NULL);
-  ASSERT_EQ(ND_ASSIGN, nested_block->body[31]->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, nested_block->body[31]->kind);
   const node_t *syntax_aggregate_sizeof =
       nested_block->body[31]->rhs;
   ASSERT_TRUE(syntax_aggregate_sizeof != NULL);
@@ -11736,7 +11727,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int __direct_compound_assign_incompatible(void) { "
       "int *pointer = 0; pointer *= 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-      ND_ASSIGN);
+      ND_COMPOUND_ASSIGN);
   assert_direct_function_rejection(
       "int __direct_conditional_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
@@ -17675,52 +17666,52 @@ static void test_expr_compound_assign() {
   printf("test_expr_compound_assign...\n");
 
     node_t *add = parse_expr_input("a += 3");
-  ASSERT_EQ(ND_ASSIGN, add->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, add->kind);
   ASSERT_EQ(ND_NUM, add->rhs->kind);
   ASSERT_EQ(TK_PLUSEQ, add->source_op);
 
     node_t *sub = parse_expr_input("a -= 3");
-  ASSERT_EQ(ND_ASSIGN, sub->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, sub->kind);
   ASSERT_EQ(ND_NUM, sub->rhs->kind);
   ASSERT_EQ(TK_MINUSEQ, sub->source_op);
 
     node_t *mul = parse_expr_input("a *= 3");
-  ASSERT_EQ(ND_ASSIGN, mul->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, mul->kind);
   ASSERT_EQ(ND_NUM, mul->rhs->kind);
   ASSERT_EQ(TK_MULEQ, mul->source_op);
 
     node_t *div = parse_expr_input("a /= 3");
-  ASSERT_EQ(ND_ASSIGN, div->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, div->kind);
   ASSERT_EQ(ND_NUM, div->rhs->kind);
   ASSERT_EQ(TK_DIVEQ, div->source_op);
 
     node_t *mod = parse_expr_input("a %= 3");
-  ASSERT_EQ(ND_ASSIGN, mod->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, mod->kind);
   ASSERT_EQ(ND_NUM, mod->rhs->kind);
   ASSERT_EQ(TK_MODEQ, mod->source_op);
 
     node_t *shl = parse_expr_input("a <<= 3");
-  ASSERT_EQ(ND_ASSIGN, shl->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, shl->kind);
   ASSERT_EQ(ND_NUM, shl->rhs->kind);
   ASSERT_EQ(TK_SHLEQ, shl->source_op);
 
     node_t *shr = parse_expr_input("a >>= 3");
-  ASSERT_EQ(ND_ASSIGN, shr->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, shr->kind);
   ASSERT_EQ(ND_NUM, shr->rhs->kind);
   ASSERT_EQ(TK_SHREQ, shr->source_op);
 
     node_t *band = parse_expr_input("a &= 3");
-  ASSERT_EQ(ND_ASSIGN, band->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, band->kind);
   ASSERT_EQ(ND_NUM, band->rhs->kind);
   ASSERT_EQ(TK_ANDEQ, band->source_op);
 
     node_t *bxor = parse_expr_input("a ^= 3");
-  ASSERT_EQ(ND_ASSIGN, bxor->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, bxor->kind);
   ASSERT_EQ(ND_NUM, bxor->rhs->kind);
   ASSERT_EQ(TK_XOREQ, bxor->source_op);
 
     node_t *bor = parse_expr_input("a |= 3");
-  ASSERT_EQ(ND_ASSIGN, bor->kind);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, bor->kind);
   ASSERT_EQ(ND_NUM, bor->rhs->kind);
   ASSERT_EQ(TK_OREQ, bor->source_op);
 }

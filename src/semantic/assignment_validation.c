@@ -89,7 +89,11 @@ void psx_validate_assignment_in_context(
     psx_semantic_context_t *semantic_context, const node_t *node,
     ag_diagnostic_context_t *diagnostics,
     const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
+  if (!node ||
+      (node->kind != ND_ASSIGN &&
+       node->kind != ND_COMPOUND_ASSIGN) ||
+      !node->lhs || !node->rhs)
+    return;
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
@@ -144,7 +148,8 @@ void psx_validate_assignment_in_context(
   }
 
   if (!node->is_source_assignment &&
-      !node->is_source_compound_assignment) return;
+      node->kind != ND_COMPOUND_ASSIGN)
+    return;
   if (psx_resolved_object_ref_node_kind(store, node->lhs) == ND_FUNCREF) {
     diag_emit_tokf_in(
         diagnostics, DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET, tok,
@@ -166,7 +171,7 @@ void psx_validate_assignment_in_context(
             semantic_context, node, &resolution,
             diagnostics, tok))
       return;
-  } else if (node->is_source_compound_assignment) {
+  } else if (node->kind == ND_COMPOUND_ASSIGN) {
     psx_compound_assignment_operator_t operation;
     psx_assignment_types_resolution_t resolution;
     if (assignment_compound_operator(node->source_op, &operation)) {

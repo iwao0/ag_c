@@ -113,6 +113,7 @@ static int map_kind(
     MAP(ND_TERNARY, PSX_HIR_TERNARY);
     MAP(ND_COMMA, PSX_HIR_COMMA);
     MAP(ND_ASSIGN, PSX_HIR_ASSIGN);
+    MAP(ND_COMPOUND_ASSIGN, PSX_HIR_COMPOUND_ASSIGN);
     MAP(ND_IF, PSX_HIR_IF);
     MAP(ND_WHILE, PSX_HIR_WHILE);
     MAP(ND_DO_WHILE, PSX_HIR_DO_WHILE);
@@ -533,6 +534,7 @@ static int derive_structural_expression_type(
           builder, children, PSX_HIR_EDGE_RHS);
       break;
     case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
       derived = child_qual_type(
           builder, children, PSX_HIR_EDGE_LHS);
       break;
@@ -984,13 +986,12 @@ static int copy_payload(
     psx_hir_node_spec_t *spec) {
   switch (psx_resolved_object_ref_node_kind(
       materializer_resolution_store(builder), source)) {
-    case ND_ASSIGN:
-      if (source->is_source_compound_assignment) {
-        psx_hir_compound_operator_t op = PSX_HIR_COMPOUND_ADD;
-        if (compound_operator(source->source_op, &op))
-          spec->integer_value = op;
-      }
+    case ND_COMPOUND_ASSIGN: {
+      psx_hir_compound_operator_t op = PSX_HIR_COMPOUND_ADD;
+      if (compound_operator(source->source_op, &op))
+        spec->integer_value = op;
       break;
+    }
     case ND_ALIGNOF_QUERY:
       spec->integer_value =
           psx_alignof_query_resolved_alignment(
@@ -1384,9 +1385,6 @@ static psx_semantic_node_t *build_node(
     set_failure(builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
     return NULL;
   }
-  if (resolved_kind == ND_ASSIGN &&
-      source->is_source_compound_assignment)
-    spec.kind = PSX_HIR_COMPOUND_ASSIGN;
   int is_expression = psx_hir_kind_is_expression(spec.kind);
   if (is_expression) {
     qual_type = ps_node_qual_type(

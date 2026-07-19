@@ -30,6 +30,7 @@ typedef enum {
   ND_TERNARY, // ?:
   ND_COMMA,  // ,
   ND_ASSIGN, // =
+  ND_COMPOUND_ASSIGN, // +=, -=, *=, /=, %=, <<=, >>=, &=, ^=, |=
   ND_IDENTIFIER,
   ND_IF,
   ND_WHILE,

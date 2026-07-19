@@ -1417,7 +1417,8 @@ static void semantic_transform_node(
       psx_validate_assignment_in_context(
           traversal->semantic_context, node, diagnostics,
           fallback_diag_tok);
-      if (node->kind == ND_ASSIGN)
+      if (node->kind == ND_ASSIGN ||
+          node->kind == ND_COMPOUND_ASSIGN)
         ps_node_bind_type(
             store, node, ps_node_get_type(store, node->lhs));
       break;

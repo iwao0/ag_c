@@ -321,9 +321,9 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
     case TK_OREQ: {
       token_t *op_tok = curtok(ctx);
       set_curtok(ctx, curtok(ctx)->next);
-      node_t *compound = psx_node_new_raw_assign_in(
-          ctx->arena_context, node, assign_ctx(ctx));
-      compound->is_source_compound_assignment = 1;
+      node_t *compound = psx_node_new_raw_binary_in(
+          ctx->arena_context, ND_COMPOUND_ASSIGN,
+          node, assign_ctx(ctx));
       compound->source_op = op_tok->kind;
       compound->tok = op_tok;
       node = compound;

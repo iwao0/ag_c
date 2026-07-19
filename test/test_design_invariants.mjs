@@ -2003,7 +2003,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
     !/unsigned\s+char\s+is_declaration_initializer\s*;/.test(
       typedWarningHirInternalHeader,
     ) ||
-    !/\.is_source_assignment\s*=\s*syntax->is_source_assignment/.test(
+    !/\.is_source_assignment\s*=\s*syntax->kind\s*==\s*ND_ASSIGN\s*\?\s*1\s*:\s*0/.test(
       typedWarningSyntaxTypedHirResolutionSource,
     ) ||
     !/\.is_declaration_initializer\s*=\s*1/.test(
@@ -8933,9 +8933,17 @@ if (!/MAP\s*\(\s*ND_MEMBER_ACCESS\s*,\s*PSX_HIR_MEMBER_ACCESS\s*\)/.test(
     "typed member access must materialize directly into Typed HIR without parser-shaped lowering",
   );
 }
-if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
-    !/resolved_kind\s*==\s*ND_ASSIGN[^]*?is_source_compound_assignment[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
+if (!/\bND_COMPOUND_ASSIGN\b/.test(syntaxNodeKindHeader) ||
+    !/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
+    /\bis_source_compound_assignment\b/.test(astSource) ||
+    !/psx_node_new_raw_binary_in\s*\([^]*?ND_COMPOUND_ASSIGN,[^]*?node,\s*assign_ctx\s*\(\s*ctx\s*\)/.test(
+      parserExpressionSource,
+    ) ||
+    !/MAP\s*\(\s*ND_COMPOUND_ASSIGN,\s*PSX_HIR_COMPOUND_ASSIGN\s*\)/.test(
       resolvedTreeMaterialization,
+    ) ||
+    !/syntax->kind\s*==\s*ND_COMPOUND_ASSIGN[^]*?PSX_HIR_COMPOUND_ASSIGN/.test(
+      syntaxTypedHirResolutionSource,
     ) ||
     !/\bbuild_compound_assignment\s*\(/.test(hirIrBuilder) ||
     /\blower_compound_assignment_expression\s*\(/.test(
