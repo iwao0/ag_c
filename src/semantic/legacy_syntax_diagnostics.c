@@ -1,4 +1,3 @@
-#include "legacy_syntax_diagnostics.h"
 #include "semantic_tree_resolution_test_support.h"
 
 #include "../diag/diag.h"
@@ -332,49 +331,4 @@ int psx_resolve_parsed_function_compatibility_for_test_in_contexts(
   result->typed_hir = psx_resolution_work_tree_typed_hir(work_tree);
   result->compatibility_root = mutable_compatibility_root(work_tree);
   return result->typed_hir && result->compatibility_root;
-}
-
-int psx_legacy_syntax_diagnostics_accept_function_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const psx_parsed_function_definition_t *syntax_function,
-    const token_t *fallback_diag_tok) {
-  return resolve_function_compatibility_tree(
-             semantic_context, global_registry, local_registry,
-             runtime_context, lowering_context, options,
-             syntax_function, fallback_diag_tok) != NULL;
-}
-
-int psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    const node_t *syntax,
-    const token_t *fallback_diag_tok,
-    int is_initializer) {
-  psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          ps_ctx_resolution_store(semantic_context),
-          ps_ctx_arena(semantic_context), syntax);
-  if (!work_tree) {
-    ag_diagnostic_context_t *diagnostics =
-        ps_ctx_diagnostics(semantic_context);
-    diag_emit_internalf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        "%s: could not create %s compatibility diagnostic tree",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-        is_initializer ? "initializer" : "expression");
-    return 0;
-  }
-  return resolve_nonfunction_compatibility_tree(
-      semantic_context, global_registry, local_registry,
-      lowering_context, options, work_tree,
-      fallback_diag_tok, is_initializer);
 }

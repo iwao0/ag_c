@@ -2013,10 +2013,6 @@ const legacySyntaxDiagnosticsSource = await readFile(
   "src/semantic/legacy_syntax_diagnostics.c",
   "utf8",
 );
-const legacySyntaxDiagnosticsHeader = await readFile(
-  "src/semantic/legacy_syntax_diagnostics.h",
-  "utf8",
-);
 const semanticTreeResolutionTestSupportHeader = await readFile(
   "src/semantic/semantic_tree_resolution_test_support.h",
   "utf8",
@@ -4032,11 +4028,14 @@ if (directFunctionRejections.length === 0 ||
       (name) => !syntaxTypedHirResolutionSource.includes(name) ||
                 !semanticTreeResolutionSource.includes(name),
     ) ||
-    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_function_rejection\s*\([^]*?psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
+    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_syntax_rejection\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    /psx_legacy_syntax_diagnostics_accept_/.test(
       semanticTreeResolutionSource,
     )) {
   throw new Error(
-    "every direct function rejection must bypass mutable compatibility trees",
+    "every direct Syntax rejection must diagnose without a mutable compatibility tree",
   );
 }
 const hirSymbolResolutionSource = await readFile(
@@ -9077,17 +9076,17 @@ const directInitializerTypedHirDispatch =
     "psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts",
     nonfunctionTypedResolutionStart,
   );
-const compatibilityDiagnosticDispatch =
+const directDiagnosticDispatch =
   semanticTreeResolutionSource.indexOf(
-    "psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts",
+    "diagnose_direct_syntax_rejection",
     nonfunctionTypedResolutionStart,
   );
 if (nonfunctionTypedResolutionStart < 0 ||
     directSyntaxTypedHirDispatch < nonfunctionTypedResolutionStart ||
-    compatibilityDiagnosticDispatch < 0 ||
-    directSyntaxTypedHirDispatch > compatibilityDiagnosticDispatch) {
+    directDiagnosticDispatch < 0 ||
+    directSyntaxTypedHirDispatch > directDiagnosticDispatch) {
   throw new Error(
-    "expression resolution must attempt direct Syntax to Typed HIR before compatibility diagnostics",
+    "expression resolution must produce Typed HIR or a structured direct diagnostic",
   );
 }
 const incdecQualTypeResolution = expressionOperandResolutionSource.match(
@@ -9128,7 +9127,7 @@ if (!/MAP\s*\(\s*ND_COMMA\s*,\s*PSX_HIR_COMMA\s*,\s*PSX_TYPE_BINARY_COMMA\s*\)/.
   );
 }
 if (directInitializerTypedHirDispatch < nonfunctionTypedResolutionStart ||
-    directInitializerTypedHirDispatch > compatibilityDiagnosticDispatch ||
+    directInitializerTypedHirDispatch > directDiagnosticDispatch ||
     !/psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionHeader,
     ) ||
@@ -9137,7 +9136,7 @@ if (directInitializerTypedHirDispatch < nonfunctionTypedResolutionStart ||
     !/PSX_HIR_MEMBER_DESIGNATOR/.test(syntaxTypedHirResolutionSource) ||
     !/PSX_HIR_INDEX_DESIGNATOR/.test(syntaxTypedHirResolutionSource)) {
   throw new Error(
-    "initializer resolution must build structural Typed HIR from immutable Syntax before compatibility diagnostics",
+    "initializer resolution must build structural Typed HIR from immutable Syntax before direct diagnostics",
   );
 }
 if (!/designator->range_end_expr[^]*?range_end_value\s*<\s*index_value/.test(
@@ -9236,8 +9235,8 @@ const directFunctionDispatch = semanticTreeResolutionSource.indexOf(
   "psx_resolve_syntax_function_direct_to_typed_hir_in_contexts",
   directFunctionDispatchStart,
 );
-const compatibilityFunctionDispatch = semanticTreeResolutionSource.indexOf(
-  "psx_legacy_syntax_diagnostics_accept_function_in_contexts",
+const directFunctionDiagnosticDispatch = semanticTreeResolutionSource.indexOf(
+  "diagnose_direct_syntax_rejection",
   directFunctionDispatchStart,
 );
 if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
@@ -9350,10 +9349,13 @@ if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     directFunctionDispatchStart < 0 || directFunctionDispatch < 0 ||
-    compatibilityFunctionDispatch < 0 ||
-    directFunctionDispatch > compatibilityFunctionDispatch) {
+    directFunctionDiagnosticDispatch < 0 ||
+    directFunctionDispatch > directFunctionDiagnosticDispatch ||
+    /psx_legacy_syntax_diagnostics_accept_/.test(
+      semanticTreeResolutionSource,
+    )) {
   throw new Error(
-    "function resolution must build direct Typed HIR from a canonical header before compatibility fallback",
+    "function resolution must build direct Typed HIR from a canonical header without compatibility fallback",
   );
 }
 if (!/active_transaction/.test(globalRegistrySource) ||
@@ -9555,14 +9557,27 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|semantic_pass\.h|identifier_binding\.h|semantic_lowering_pass\.h|typed_hir_materialization\.h/.test(
       semanticTreeResolutionSource,
     ) ||
-    !/int\s+psx_legacy_syntax_diagnostics_accept_function_in_contexts\s*\(/.test(
-      legacySyntaxDiagnosticsHeader,
+    /legacy_syntax_diagnostics|psx_legacy_syntax_diagnostics_accept_/.test(
+      semanticTreeResolutionSource,
     ) ||
-    !/int\s+psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts\s*\(/.test(
-      legacySyntaxDiagnosticsHeader,
+    !/diagnose_direct_syntax_rejection\s*\(/.test(
+      semanticTreeResolutionSource,
     ) ||
-    /psx_typed_hir_tree_t|psx_resolved_hir_build|psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|node_t\s*\*\s*\*/.test(
-      legacySyntaxDiagnosticsHeader,
+    allSourceFiles.includes("src/semantic/legacy_syntax_diagnostics.h") ||
+    /\$\(OBJROOT\)\/semantic\/legacy_syntax_diagnostics\.o/.test(
+      makefileSource,
+    ) ||
+    !/^TEST_ONLY_SRCS=src\/semantic\/legacy_syntax_diagnostics\.c$/m.test(
+      makefileSource,
+    ) ||
+    !/^SRCS=\$\(filter-out\s+\$\(TEST_ONLY_SRCS\),/m.test(
+      makefileSource,
+    ) ||
+    !/\$\(TEST_PARSER\):[^\n]*src\/semantic\/legacy_syntax_diagnostics\.c/.test(
+      makefileSource,
+    ) ||
+    /psx_legacy_syntax_diagnostics_accept_/.test(
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\(/.test(
       parsedFunctionResolutionBoundary[1],
@@ -9579,6 +9594,9 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
       `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}\n${frontendTranslationUnitSource}\n${frontendTranslationUnitResolverHeader}`,
     ) ||
+    /ag_compilation_session_parser_runtime_context\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
     !/psx_resolve_expression_typed_hir_from_syntax_in_contexts\s*\(/.test(
       expressionResolutionBoundary[1],
     ) ||
@@ -9591,7 +9609,7 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_resolution_work_tree_(?:create_from_syntax|compatibility_root_mut|replace_compatibility_root)\s*\(/.test(
       initializerResolutionBoundary[1],
     ) ||
-    !/resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts\s*\([^]*?valid\s+%s\s+reached\s+the\s+compatibility\s+diagnostic\s+path[^]*?return\s+NULL\s*;/.test(
+    !/resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_syntax_rejection\s*\([^]*?return\s+NULL\s*;/.test(
       semanticTreeResolutionSource,
     ) ||
     /resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
@@ -9655,9 +9673,6 @@ if (!parsedFunctionResolutionBoundary ||
       legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
-      legacySyntaxDiagnosticsSource,
-    ) ||
-    /psx_legacy_syntax_diagnostics_accept_(?:function|nonfunction)_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_typed_hir\s*\(/.test(

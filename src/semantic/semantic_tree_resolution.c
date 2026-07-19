@@ -3,7 +3,6 @@
 #include "../parser/diag.h"
 #include "../parser/function_definition_syntax.h"
 #include "../parser/semantic_ctx.h"
-#include "legacy_syntax_diagnostics.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_diagnostics.h"
 
@@ -25,7 +24,7 @@ static const char *direct_control_statement_name(int node_kind) {
   }
 }
 
-static int diagnose_direct_function_rejection(
+static int diagnose_direct_syntax_rejection(
     psx_semantic_context_t *semantic_context,
     const psx_resolved_hir_build_failure_t *failure,
     const token_t *fallback_diag_tok) {
@@ -424,7 +423,6 @@ psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const psx_parsed_function_definition_t *syntax_function,
@@ -454,37 +452,21 @@ psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
         direct_failure.source_node_kind);
     return NULL;
   }
-  if (diagnose_direct_function_rejection(
+  if (diagnose_direct_syntax_rejection(
           semantic_context, &direct_failure, fallback_diag_tok))
-    return NULL;
-  if (!psx_legacy_syntax_diagnostics_accept_function_in_contexts(
-          semantic_context, global_registry, local_registry,
-          runtime_context, lowering_context, options,
-          syntax_function, fallback_diag_tok))
     return NULL;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
-  if (direct_failure.source_token) {
-    diag_emit_tokf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        direct_failure.source_token,
-        "%s: valid function '%.*s' reached the compatibility diagnostic "
-        "path (node kind %d)",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-        syntax_function->declarator.identifier->len,
-        syntax_function->declarator.identifier->str,
-        direct_failure.source_node_kind);
-  }
   diag_emit_internalf_in(
       diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-      "%s: valid function '%.*s' reached the compatibility diagnostic "
-      "path (node kind %d)",
+      "%s: direct function Syntax rejection has no diagnostic "
+      "(rejection %d, node kind %d, function '%.*s')",
       diag_message_for_in(
           diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+      (int)direct_failure.rejection,
+      direct_failure.source_node_kind,
       syntax_function->declarator.identifier->len,
-      syntax_function->declarator.identifier->str,
-      direct_failure.source_node_kind);
+      syntax_function->declarator.identifier->str);
   return NULL;
 }
 
@@ -526,19 +508,20 @@ resolve_nonfunction_typed_hir_from_syntax_in_contexts(
         direct_failure.source_node_kind);
     return NULL;
   }
-  if (!psx_legacy_syntax_diagnostics_accept_nonfunction_in_contexts(
-          semantic_context, global_registry, local_registry,
-          lowering_context, options, syntax,
-          fallback_diag_tok, is_initializer))
+  if (diagnose_direct_syntax_rejection(
+          semantic_context, &direct_failure, fallback_diag_tok))
     return NULL;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   diag_emit_internalf_in(
       diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-      "%s: valid %s reached the compatibility diagnostic path",
+      "%s: direct Syntax %s rejection has no diagnostic "
+      "(rejection %d, node kind %d)",
       diag_message_for_in(
           diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-      is_initializer ? "initializer" : "expression");
+      is_initializer ? "initializer" : "expression",
+      (int)direct_failure.rejection,
+      direct_failure.source_node_kind);
   return NULL;
 }
 

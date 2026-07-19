@@ -64,7 +64,6 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
           ag_compilation_session_semantic_context(session),
           ag_compilation_session_global_registry(session),
           ag_compilation_session_local_registry(session),
-          ag_compilation_session_parser_runtime_context(session),
           ag_compilation_session_lowering_context(session),
           ag_compilation_session_options_view(session),
           syntax_function, fallback_diag_tok);
