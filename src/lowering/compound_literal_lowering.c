@@ -5,9 +5,12 @@
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../parser/diag.h"
+#include "../parser/decl.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
 #include "../semantic/type_name_resolution.h"
+#include "../semantic/compound_literal_semantics.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -171,7 +174,16 @@ int psx_plan_compound_literal_storage_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !lowering_context || !options || !compound || !plan)
     return 0;
-  return compound->has_file_scope_storage
+  char *function_name = NULL;
+  int function_name_len = 0;
+  ps_decl_get_current_funcname_in(
+      local_registry, &function_name, &function_name_len);
+  (void)function_name_len;
+  return psx_compound_literal_storage_duration_in_scope_graph(
+             ps_ctx_scope_graph(semantic_context),
+             compound->type_name.scope_seq,
+             function_name != NULL) ==
+             PSX_COMPOUND_LITERAL_STORAGE_STATIC
              ? plan_file_scope_compound_literal(
                    semantic_context, global_registry, local_registry,
                    lowering_context, options, compound,

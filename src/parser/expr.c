@@ -172,19 +172,13 @@ static node_t *parse_compound_literal_from_type(
     psx_type_name_ref_t type_name, token_t *after_rparen,
     expr_parse_ctx_t *ctx) {
   set_curtok(ctx, after_rparen);
-  char *current_funcname = NULL;
-  int current_funcname_len = 0;
-  current_function_name(
-      ctx, &current_funcname, &current_funcname_len);
-  (void)current_funcname_len;
   token_t *initializer_tok = curtok(ctx);
   node_t *initializer = ctx->syntax.parse_initializer_list
                             ? ctx->syntax.parse_initializer_list(
                                   ctx->syntax.context)
                             : NULL;
   node_t *syntax = psx_node_new_compound_literal_in(
-      ctx->arena_context, type_name, initializer, initializer_tok,
-      current_funcname == NULL);
+      ctx->arena_context, type_name, initializer, initializer_tok);
   return apply_postfix(syntax, ctx);
 }
 

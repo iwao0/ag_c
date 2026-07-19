@@ -3161,15 +3161,13 @@ node_t *psx_node_new_raw_decl_initializer_in(
 
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
-    psx_type_name_ref_t type_name, node_t *initializer, token_t *tok,
-    int has_file_scope_storage) {
+    psx_type_name_ref_t type_name, node_t *initializer, token_t *tok) {
   node_compound_literal_t *node =
       arena_alloc_in(arena_context, sizeof(node_compound_literal_t));
   node->base.kind = ND_COMPOUND_LITERAL;
   node->base.rhs = initializer;
   node->base.tok = tok;
   node->type_name = type_name;
-  node->has_file_scope_storage = has_file_scope_storage ? 1 : 0;
   return (node_t *)node;
 }
 

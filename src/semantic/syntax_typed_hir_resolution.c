@@ -4141,7 +4141,8 @@ static int resolve_direct_compound_literal(
   binding->syntax = compound;
   if (!psx_resolve_compound_literal_qual_type_plan_in(
           context->semantic_context, object_qual_type,
-          compound->has_file_scope_storage,
+          compound->type_name.scope_seq,
+          context->function_name != NULL,
           &binding->plan))
     return 0;
   const node_string_t *string_initializer =

@@ -3130,7 +3130,16 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     !/PSX_COMPOUND_LITERAL_STORAGE_STATIC/.test(
       compoundLiteralSemanticsHeader,
     ) ||
-    /requires_address_result|result_qual_type|yields_address/.test(
+    !/psx_compound_literal_storage_duration_in_scope_graph\s*\(/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    !/psx_scope_graph_nearest_scope_of_kind\s*\([^]*?PSX_SCOPE_FUNCTION/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    !/inside_function_body\s*\|\|[^]*?function_scope\s*!=\s*PSX_SCOPE_ID_INVALID/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    /has_file_scope_storage|requires_address_result|result_qual_type|yields_address/.test(
       `${compoundLiteralSemanticsHeader}\n${compoundLiteralSemanticsSource}`,
     )) {
   throw new Error(
@@ -4771,7 +4780,7 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       compoundLiteralNode[1],
     ) ||
-    /\bobject_type\b|\brequires_addressable_object\b/.test(
+    /\bobject_type\b|\brequires_addressable_object\b|\bhas_file_scope_storage\b/.test(
       compoundLiteralNode[1],
     ) ||
     !genericAssociation ||
@@ -9107,6 +9116,31 @@ if (/requires_addressable_object/.test(parserExpressionSource) ||
     )) {
   throw new Error(
     "compound literal address syntax must remain explicit while compatibility storage requirements live in semantic resolution state",
+  );
+}
+const compoundLiteralParser = parserExpressionSource.match(
+  /static\s+node_t\s*\*parse_compound_literal_from_type\s*\([^]*?\n\}/,
+);
+if (!compoundLiteralParser ||
+    /current_function_name\s*\(/.test(compoundLiteralParser[0]) ||
+    /has_file_scope_storage/.test(parserExpressionSource) ||
+    !/compound->type_name\.scope_seq/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/context->function_name\s*!=\s*NULL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_compound_literal_storage_duration_in_scope_graph\s*\([^]*?compound->type_name\.scope_seq/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/ps_decl_get_current_funcname_in\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/function_name\s*!=\s*NULL/.test(
+      compoundLiteralLoweringSource,
+    )) {
+  throw new Error(
+    "compound literal storage duration must derive from its lexical scope during semantic resolution, not from a parser-owned flag",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(

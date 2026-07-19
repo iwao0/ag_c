@@ -6,10 +6,25 @@
 #include "../parser/type.h"
 #include "../type_layout.h"
 
+psx_compound_literal_storage_duration_t
+psx_compound_literal_storage_duration_in_scope_graph(
+    const psx_scope_graph_t *scope_graph,
+    psx_scope_id_t lexical_scope,
+    int inside_function_body) {
+  psx_scope_id_t function_scope =
+      psx_scope_graph_nearest_scope_of_kind(
+          scope_graph, lexical_scope, PSX_SCOPE_FUNCTION);
+  return inside_function_body ||
+                 function_scope != PSX_SCOPE_ID_INVALID
+             ? PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC
+             : PSX_COMPOUND_LITERAL_STORAGE_STATIC;
+}
+
 int psx_resolve_compound_literal_qual_type_plan_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t object_qual_type,
-    int has_file_scope_storage,
+    psx_scope_id_t lexical_scope,
+    int inside_function_body,
     psx_compound_literal_plan_t *plan) {
   if (plan) memset(plan, 0, sizeof(*plan));
   if (!semantic_context || !plan ||
@@ -29,9 +44,10 @@ int psx_resolve_compound_literal_qual_type_plan_in(
     return 0;
 
   *plan = (psx_compound_literal_plan_t){
-      .storage_duration = has_file_scope_storage
-                              ? PSX_COMPOUND_LITERAL_STORAGE_STATIC
-                              : PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
+      .storage_duration =
+          psx_compound_literal_storage_duration_in_scope_graph(
+              ps_ctx_scope_graph(semantic_context), lexical_scope,
+              inside_function_body),
       .object_qual_type = object_qual_type,
   };
   return 1;

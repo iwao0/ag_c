@@ -90,7 +90,6 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
-  unsigned char has_file_scope_storage;
 } node_compound_literal_t;
 
 typedef struct {

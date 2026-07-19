@@ -54,6 +54,7 @@
 #include "../src/semantic/case_label_resolution.h"
 #include "../src/semantic/call_resolution.h"
 #include "../src/semantic/compound_literal_resolution.h"
+#include "../src/semantic/compound_literal_semantics.h"
 #include "../src/semantic/constant_expression.h"
 #include "../src/semantic/control_flow_validation.h"
 #include "../src/semantic/declaration_resolution.h"
@@ -8489,6 +8490,12 @@ static void test_expr_compound_literal() {
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_TRUE(compound->type_name.syntax != NULL);
+  ASSERT_EQ(PSX_SCOPE_ID_INVALID, compound->type_name.scope_seq);
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          ps_ctx_scope_graph(test_semantic_context()),
+          compound->type_name.scope_seq, 1));
   ASSERT_TRUE(!ps_node_has_resolution_state(&compound->base));
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
@@ -10492,6 +10499,9 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       compound_scalar_declaration->declaration->initializers[0].value;
   ASSERT_TRUE(syntax_compound_scalar != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_scalar->kind);
+  ASSERT_TRUE(
+      ((const node_compound_literal_t *)syntax_compound_scalar)
+          ->type_name.scope_seq != PSX_SCOPE_ID_TRANSLATION_UNIT);
   ASSERT_TRUE(ps_node_get_type(syntax_compound_scalar) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_scalar));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[21]->kind);
@@ -11721,8 +11731,9 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(scalar_compound != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, scalar_compound->kind);
   ASSERT_EQ(ND_INIT_LIST, scalar_compound->rhs->kind);
-  ASSERT_TRUE(((const node_compound_literal_t *)scalar_compound)
-                  ->has_file_scope_storage);
+  ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
+            ((const node_compound_literal_t *)scalar_compound)
+                ->type_name.scope_seq);
   ASSERT_TRUE(ps_node_get_type(scalar_address) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(scalar_address));
   ASSERT_TRUE(ps_node_get_type(scalar_compound) == NULL);
@@ -11766,8 +11777,9 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   const node_t *array_compound = array_subscript->lhs;
   ASSERT_TRUE(array_compound != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, array_compound->kind);
-  ASSERT_TRUE(((const node_compound_literal_t *)array_compound)
-                  ->has_file_scope_storage);
+  ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
+            ((const node_compound_literal_t *)array_compound)
+                ->type_name.scope_seq);
   ASSERT_TRUE(ps_node_get_type(array_compound) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(array_compound));
   apply_test_toplevel_declaration(&item.value.declaration);
@@ -11806,8 +11818,9 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   const node_t *member_compound = member_access->lhs;
   ASSERT_TRUE(member_compound != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, member_compound->kind);
-  ASSERT_TRUE(((const node_compound_literal_t *)member_compound)
-                  ->has_file_scope_storage);
+  ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
+            ((const node_compound_literal_t *)member_compound)
+                ->type_name.scope_seq);
   ASSERT_TRUE(ps_node_get_type(member_compound) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(member_compound));
   apply_test_toplevel_declaration(&item.value.declaration);
@@ -28798,6 +28811,14 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_TRUE(graph != NULL);
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             psx_scope_graph_current_scope(graph));
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_STATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          graph, PSX_SCOPE_ID_TRANSLATION_UNIT, 0));
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          graph, PSX_SCOPE_ID_INVALID, 1));
 
   int global_payload = 1;
   int tag_payload = 2;
@@ -28829,6 +28850,10 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t prototype_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION_PROTOTYPE);
   ASSERT_TRUE(prototype_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_STATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          graph, prototype_scope, 0));
   int prototype_parameter_payload = 9;
   ASSERT_TRUE(psx_scope_graph_declare(
       graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
@@ -28843,6 +28868,10 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t function_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION);
   ASSERT_TRUE(function_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          graph, function_scope, 0));
   int local_payload = 3;
   psx_decl_id_t local_id = psx_scope_graph_declare(
       graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
@@ -28857,6 +28886,10 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t block_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_BLOCK);
   ASSERT_TRUE(block_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(
+      PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
+      psx_compound_literal_storage_duration_in_scope_graph(
+          graph, block_scope, 0));
   ASSERT_EQ(function_scope, psx_scope_graph_nearest_scope_of_kind(
       graph, block_scope, PSX_SCOPE_FUNCTION));
   psx_scope_lookup_point_t before_inner =
