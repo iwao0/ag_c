@@ -1,5 +1,5 @@
 #include "abi_lowering.h"
-#include "../target_info.h"
+#include "abi_target_policy.h"
 #include "../type_layout.h"
 
 #include <stdlib.h>
@@ -120,11 +120,12 @@ static int lower_result_pieces(
       info.type == IR_TY_VOID || info.source_size <= 0)
     return 0;
 
-  size_t piece_count = type.kind == PSX_TYPE_COMPLEX &&
-                               ag_target_info_call_abi(context->target) ==
-                                   AG_TARGET_CALL_ABI_AAPCS64
-                           ? 2u
-                           : 1u;
+  const ir_abi_target_policy_t *policy =
+      ir_abi_target_policy_for(context->target);
+  if (!policy) return 0;
+  size_t piece_count = type.kind == PSX_TYPE_COMPLEX
+                           ? policy->complex_result_piece_count : 1u;
+  if (piece_count != 1 && piece_count != 2) return 0;
   out->result_pieces = calloc(
       piece_count, sizeof(*out->result_pieces));
   if (!out->result_pieces) return 0;

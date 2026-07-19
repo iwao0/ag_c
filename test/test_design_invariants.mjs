@@ -3883,6 +3883,14 @@ const abiLoweringHeader = await readFile(
   "src/lowering/abi_lowering.h",
   "utf8",
 );
+const abiTargetPolicySource = await readFile(
+  "src/lowering/abi_target_policy.c",
+  "utf8",
+);
+const abiTargetPolicyHeader = await readFile(
+  "src/lowering/abi_target_policy.h",
+  "utf8",
+);
 const wasmMachineFunctionPlanSource = await readFile(
   "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
@@ -3974,12 +3982,15 @@ if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_
     !/ir_abi_piece_t\s*\*result_pieces\s*;/.test(abiLoweringHeader) ||
     !/size_t\s+result_count\s*;/.test(abiLoweringHeader) ||
     !/\blower_result_pieces\s*\(/.test(abiLoweringSource) ||
-    !/\bag_target_info_call_abi\s*\(/.test(abiLoweringSource) ||
+    !/\bir_abi_target_policy_for\s*\(/.test(abiLoweringSource) ||
+    /\bag_target_info_call_abi\s*\(/.test(abiLoweringSource) ||
+    !/\bag_target_info_call_abi\s*\(/.test(abiTargetPolicySource) ||
+    !/\bcomplex_result_piece_count\b/.test(abiTargetPolicyHeader) ||
     /\[[ \t]*(?:16|32)[ \t]*\]/.test(
-      `${irHeaderSource}\n${abiLoweringHeader}\n${abiLoweringSource}`,
+      `${irHeaderSource}\n${abiLoweringHeader}\n${abiLoweringSource}\n${abiTargetPolicyHeader}\n${abiTargetPolicySource}`,
     )) {
   throw new Error(
-    "AbiLowering must own dynamic target-specific parameter and result piece sequences without legacy result flags or fixed callable caps",
+    "AbiLowering must consume an explicit target ABI policy and own dynamic parameter and result piece sequences without legacy result flags or fixed callable caps",
   );
 }
 
