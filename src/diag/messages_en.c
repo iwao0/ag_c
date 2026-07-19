@@ -185,6 +185,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "Continuation entry requires one direct while(frame_condition()) loop";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "Use the frame condition only once, as the direct while-loop condition in the continuation entry; remove calls from other locations";
     case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported: %s";
+    case DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET: return "Cannot assign to a function identifier (C11 6.5.16p2)";
+    case DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE: return "Assignment target must be a modifiable lvalue (C11 6.5.16p2)";
+    case DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE: return "Assignment operands have incompatible types (C11 6.5.16.1)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

@@ -2,6 +2,7 @@
 #include "assignment_resolution.h"
 #include "resolved_node_kind.h"
 
+#include "../diag/diag.h"
 #include "../parser/ast.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
@@ -40,6 +41,47 @@ static int assignment_compound_operator(
     case TK_XOREQ: *operation = PSX_COMPOUND_ASSIGN_BITXOR; return 1;
     case TK_OREQ: *operation = PSX_COMPOUND_ASSIGN_BITOR; return 1;
     default: return 0;
+  }
+}
+
+static int diagnose_assignment_resolution(
+    psx_semantic_context_t *semantic_context,
+    const node_t *node,
+    const psx_assignment_types_resolution_t *resolution,
+    ag_diagnostic_context_t *diagnostics, token_t *tok) {
+  if (!semantic_context || !node || !resolution || !diagnostics)
+    return 0;
+  switch (resolution->status) {
+    case PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE: {
+      psx_qual_type_t target_type = assignment_node_qual_type(
+          semantic_context, node->lhs);
+      if ((target_type.qualifiers &
+           PSX_TYPE_QUALIFIER_CONST) != 0) {
+        ps_node_reject_const_assign_at_in(
+            semantic_context, diagnostics, node->lhs, "=", tok);
+        return 1;
+      }
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE, tok,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE));
+      return 1;
+    }
+    case PSX_ASSIGNMENT_DISCARDS_QUALIFIERS:
+      ps_node_reject_const_qual_discard_at_in(
+          semantic_context, diagnostics, node->lhs, node->rhs, tok);
+      return 1;
+    case PSX_ASSIGNMENT_TYPES_INCOMPATIBLE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE,
+          tok, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE));
+      return 1;
+    default:
+      return 0;
   }
 }
 
@@ -104,11 +146,13 @@ void psx_validate_assignment_in_context(
   if (!node->is_source_assignment &&
       !node->is_source_compound_assignment) return;
   if (psx_resolved_object_ref_node_kind(store, node->lhs) == ND_FUNCREF) {
-    ps_diag_ctx_in(
-        diagnostics, tok, "assign",
-        "関数識別子に代入することはできません (C11 6.5.16p2)");
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET, tok,
+        "%s", diag_message_for_in(
+                  diagnostics,
+                  DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET));
+    return;
   }
-  ps_node_expect_lvalue_at_in(store, diagnostics, node->lhs, "=", tok);
   if (node->is_source_assignment) {
     psx_assignment_types_resolution_t resolution;
     psx_resolve_assignment_qual_types_in(
@@ -118,15 +162,10 @@ void psx_validate_assignment_in_context(
         node->rhs->kind == ND_NUM &&
             ((const node_num_t *)node->rhs)->val == 0,
         &resolution);
-    if (resolution.status ==
-        PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE) {
-      ps_node_reject_const_assign_at_in(
-          semantic_context, diagnostics, node->lhs, "=", tok);
-    } else if (resolution.status ==
-               PSX_ASSIGNMENT_DISCARDS_QUALIFIERS) {
-      ps_node_reject_const_qual_discard_at_in(
-          semantic_context, diagnostics, node->lhs, node->rhs, tok);
-    }
+    if (diagnose_assignment_resolution(
+            semantic_context, node, &resolution,
+            diagnostics, tok))
+      return;
   } else if (node->is_source_compound_assignment) {
     psx_compound_assignment_operator_t operation;
     psx_assignment_types_resolution_t resolution;
@@ -136,11 +175,12 @@ void psx_validate_assignment_in_context(
           assignment_node_qual_type(semantic_context, node->lhs),
           assignment_node_qual_type(semantic_context, node->rhs),
           &resolution);
-      if (resolution.status ==
-          PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE) {
-        ps_node_reject_const_assign_at_in(
-            semantic_context, diagnostics, node->lhs, "=", tok);
-      }
+      if (diagnose_assignment_resolution(
+              semantic_context, node, &resolution,
+              diagnostics, tok))
+        return;
     }
   }
+  ps_node_expect_lvalue_at_in(
+      store, diagnostics, node->lhs, "=", tok);
 }

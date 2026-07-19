@@ -4330,6 +4330,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_local_registry(), const_assignment_syntax,
           &invalid_assignment_hir, &failure));
   ASSERT_TRUE(invalid_assignment_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET,
+            failure.rejection);
   node_t *incompatible_assignment_syntax =
       parse_expr_input_with_existing_locals(
           "DirectLocal = DirectPointer");
@@ -4339,6 +4341,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), incompatible_assignment_syntax,
           &invalid_assignment_hir, &failure));
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+            failure.rejection);
   node_t *array_assignment_syntax =
       parse_expr_input_with_existing_locals(
           "DirectLocalArray = DirectLocalArray");
@@ -4348,6 +4352,9 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), array_assignment_syntax,
           &invalid_assignment_hir, &failure));
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE,
+      failure.rejection);
   node_t *invalid_compound_assignment_syntax =
       parse_expr_input_with_existing_locals(
           "DirectPointer *= 2");
@@ -4357,6 +4364,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), invalid_compound_assignment_syntax,
           &invalid_assignment_hir, &failure));
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+            failure.rejection);
   node_t *invalid_subscript_syntax =
       parse_expr_input_with_existing_locals("DirectLocal[0]");
   ASSERT_EQ(
@@ -11110,6 +11119,41 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "_Complex double value = 0; ++value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
       ND_PRE_INC);
+  assert_direct_function_rejection(
+      "int __direct_assign_non_lvalue(void) { 1 = 2; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_assign_const(void) { "
+      "const int value = 0; value = 1; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_assign_function(void) { "
+      "int target(void); target = target; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_FUNCTION_TARGET,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_assign_array(void) { "
+      "int values[1]; values = values; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_assign_discards_qualifiers(void) { "
+      "const int source = 0; const int *from = &source; "
+      "int *to = 0; to = from; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_DISCARDS_QUALIFIERS,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_assign_incompatible(void) { "
+      "int value = 0; int *pointer = 0; value = pointer; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+      ND_ASSIGN);
+  assert_direct_function_rejection(
+      "int __direct_compound_assign_incompatible(void) { "
+      "int *pointer = 0; pointer *= 2; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
+      ND_ASSIGN);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25545,6 +25589,26 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message(
       "int main(void) { _Complex double value=0; ++value; return 0; }",
       "++ のオペランドは実数型またはポインタ型でなければなりません");
+  expect_parse_fail_with_message(
+      "int main(void) { 1=2; return 0; }",
+      "= の対象は左辺値である必要があります");
+  expect_parse_fail_with_message(
+      "int main(void) { const int value=0; value=1; return 0; }",
+      "const修飾された変数への代入はできません");
+  expect_parse_fail_with_message(
+      "int main(void) { int target(void); target=target; return 0; }",
+      "関数識別子に代入することはできません");
+  expect_parse_fail_with_message(
+      "int main(void) { const int source=0; const int *from=&source; "
+      "int *to=0; to=from; return 0; }",
+      "const修飾されたポインタからconst無しポインタへの暗黙変換はできません");
+  expect_parse_fail_with_message(
+      "int main(void) { int value=0; int *pointer=0; "
+      "value=pointer; return 0; }",
+      "代入する型に互換性がありません");
+  expect_parse_fail_with_message(
+      "int main(void) { int *pointer=0; pointer*=2; return 0; }",
+      "代入する型に互換性がありません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",

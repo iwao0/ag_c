@@ -209,6 +209,49 @@ static int diagnose_direct_function_rejection(
           operator_name);
       return 1;
     }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),
+          "=");
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CONST_ASSIGNMENT));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_FUNCTION_TARGET:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_DISCARDS_QUALIFIERS:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CONST_QUAL_DISCARD, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE));
+      return 1;
     default:
       return 0;
   }

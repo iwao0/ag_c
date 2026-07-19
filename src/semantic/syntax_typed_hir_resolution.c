@@ -1423,13 +1423,18 @@ static int resolve_direct_assignment_types(
   if (!context || !syntax || !resolution ||
       syntax->kind != ND_ASSIGN)
     return 0;
+  *resolution = (psx_assignment_types_resolution_t){
+      .status = PSX_ASSIGNMENT_TYPES_INVALID,
+      .result_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
   if (syntax->is_source_assignment) {
     psx_resolve_assignment_qual_types_in(
         context->semantic_context, target_type, value_type,
         direct_null_pointer_constant(
             context, syntax->rhs, value_type),
         resolution);
-    return resolution->status == PSX_ASSIGNMENT_TYPES_OK;
+    return 1;
   }
   if (!syntax->is_source_compound_assignment) return 0;
   psx_compound_assignment_operator_t semantic_operator;
@@ -1439,7 +1444,43 @@ static int resolve_direct_assignment_types(
   psx_resolve_compound_assignment_qual_types_in(
       context->semantic_context, semantic_operator,
       target_type, value_type, resolution);
-  return resolution->status == PSX_ASSIGNMENT_TYPES_OK;
+  return 1;
+}
+
+static int note_direct_assignment_rejection(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t target_type,
+    psx_assignment_types_status_t status) {
+  psx_syntax_typed_hir_rejection_t rejection;
+  switch (status) {
+    case PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE: {
+      if ((target_type.qualifiers &
+           PSX_TYPE_QUALIFIER_CONST) != 0) {
+        rejection =
+            PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET;
+        break;
+      }
+      const psx_type_t *target = ps_ctx_type_by_id_in(
+          context->semantic_context, target_type.type_id);
+      rejection =
+          target && target->kind == PSX_TYPE_FUNCTION
+              ? PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_FUNCTION_TARGET
+              : PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE;
+      break;
+    }
+    case PSX_ASSIGNMENT_DISCARDS_QUALIFIERS:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_DISCARDS_QUALIFIERS;
+      break;
+    case PSX_ASSIGNMENT_TYPES_INCOMPATIBLE:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES;
+      break;
+    default:
+      return 0;
+  }
+  return note_direct_semantic_rejection(
+      context, rejection, syntax);
 }
 
 static int preflight_direct_expression(
@@ -1625,8 +1666,17 @@ static int preflight_direct_expression_impl(
     psx_qual_type_t value_type = {
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     if (!preflight_direct_lvalue(
-            context, syntax->lhs, &target_type) ||
-        !preflight_direct_expression(
+            context, syntax->lhs, &target_type)) {
+      if (context->failure &&
+          context->failure->rejection !=
+              PSX_SYNTAX_TYPED_HIR_REJECTION_NONE)
+        return 0;
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
+          syntax);
+    }
+    if (!preflight_direct_expression(
             context, syntax->rhs, &value_type))
       return 0;
     psx_assignment_types_resolution_t resolution;
@@ -1634,6 +1684,9 @@ static int preflight_direct_expression_impl(
             context, syntax, target_type, value_type,
             &resolution, NULL))
       return 0;
+    if (resolution.status != PSX_ASSIGNMENT_TYPES_OK)
+      return note_direct_assignment_rejection(
+          context, syntax, target_type, resolution.status);
     mark_direct_assignment_target(context, syntax->lhs);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
@@ -2562,7 +2615,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
             context, syntax,
             psx_semantic_node_expression_qual_type(target),
             psx_semantic_node_expression_qual_type(value),
-            &resolution, &hir_operator)) {
+            &resolution, &hir_operator) ||
+        resolution.status != PSX_ASSIGNMENT_TYPES_OK) {
       set_failure(
           context->failure,
           PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE, syntax);

@@ -185,6 +185,9 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "continuation entry には while(frame_condition()) の直接ループが1つ必要です";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "フレーム条件はcontinuation entry内の直接while条件として1回だけ使用し、ほかの場所からの呼び出しは削除してください";
     case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張は使用できません: %s";
+    case DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET: return "関数識別子に代入することはできません (C11 6.5.16p2)";
+    case DIAG_ERR_PARSER_ASSIGN_TARGET_NOT_MODIFIABLE: return "代入先は変更可能な左辺値である必要があります (C11 6.5.16p2)";
+    case DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE: return "代入する型に互換性がありません (C11 6.5.16.1)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
