@@ -204,6 +204,27 @@ cat > "$out_dir/dup_data_b.c" <<'SRC'
 int dup_data = 42;
 SRC
 
+cat > "$out_dir/dup_continuation_a.c" <<'SRC'
+int main(void) { return 0; }
+SRC
+
+cat > "$out_dir/dup_continuation_b.c" <<'SRC'
+int main(void) { return 0; }
+SRC
+
+cat > "$out_dir/frame_condition_main.c" <<'SRC'
+int frame_gate(void);
+int main(void) {
+  while (frame_gate()) {}
+  return 0;
+}
+SRC
+
+cat > "$out_dir/frame_condition_extra.c" <<'SRC'
+int frame_gate(void);
+int invalid_extra_call(void) { return frame_gate(); }
+SRC
+
 cat > "$out_dir/sig_mismatch_main.c" <<'SRC'
 extern int sig_mismatch(int);
 int main(void) { return sig_mismatch(42); }
@@ -4891,7 +4912,8 @@ if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_dup_f
   echo "duplicate function definition unexpectedly linked"
   exit 1
 fi
-grep -q 'duplicate symbol definition: dup' "$out_dir/linked_dup_func.err"
+grep -q $'AGC_LINK_DIAGNOSTIC\tAGC_LINK_DUPLICATE_SYMBOL\tdup\t1\t2' \
+  "$out_dir/linked_dup_func.err"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/dup_data_main.o" "$out_dir/dup_data_main.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/dup_data_a.o" "$out_dir/dup_data_a.c"
@@ -4902,7 +4924,46 @@ if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_dup_d
   echo "duplicate data definition unexpectedly linked"
   exit 1
 fi
-grep -q 'duplicate symbol definition: dup_data' "$out_dir/linked_dup_data.err"
+grep -q $'AGC_LINK_DIAGNOSTIC\tAGC_LINK_DUPLICATE_SYMBOL\tdup_data\t1\t2' \
+  "$out_dir/linked_dup_data.err"
+
+"$root/build/ag_c_wasm" -c --continuation-entry main \
+  --continuation-frame-condition frame_gate \
+  -o "$out_dir/dup_continuation_a.o" "$out_dir/dup_continuation_a.c"
+"$root/build/ag_c_wasm" -c --continuation-entry main \
+  --continuation-frame-condition frame_gate \
+  -o "$out_dir/dup_continuation_b.o" "$out_dir/dup_continuation_b.c"
+if "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main \
+  -o "$out_dir/linked_dup_continuation.wasm" \
+  "$out_dir/dup_continuation_a.o" "$out_dir/dup_continuation_b.o" \
+  > "$out_dir/linked_dup_continuation.out" \
+  2> "$out_dir/linked_dup_continuation.err"; then
+  echo "duplicate continuation entry unexpectedly linked"
+  exit 1
+fi
+grep -q $'AGC_LINK_DIAGNOSTIC\tAGC_LINK_DUPLICATE_CONTINUATION_ENTRY\tmain\t0\t1' \
+  "$out_dir/linked_dup_continuation.err"
+if grep -q '__agc_' "$out_dir/linked_dup_continuation.err"; then
+  echo "duplicate continuation diagnostic leaked an internal symbol" >&2
+  exit 1
+fi
+
+"$root/build/ag_c_wasm" -c --continuation-entry main \
+  --continuation-frame-condition frame_gate \
+  -o "$out_dir/frame_condition_main.o" "$out_dir/frame_condition_main.c"
+"$root/build/ag_c_wasm" -c --continuation-entry main \
+  --continuation-frame-condition frame_gate \
+  -o "$out_dir/frame_condition_extra.o" "$out_dir/frame_condition_extra.c"
+if "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main \
+  -o "$out_dir/linked_frame_condition_extra.wasm" \
+  "$out_dir/frame_condition_main.o" "$out_dir/frame_condition_extra.o" \
+  > "$out_dir/linked_frame_condition_extra.out" \
+  2> "$out_dir/linked_frame_condition_extra.err"; then
+  echo "frame condition outside loop unexpectedly linked"
+  exit 1
+fi
+grep -q $'AGC_LINK_DIAGNOSTIC\tAGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP\tframe_gate\t1' \
+  "$out_dir/linked_frame_condition_extra.err"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/sig_mismatch_main.o" "$out_dir/sig_mismatch_main.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/sig_mismatch_other.o" "$out_dir/sig_mismatch_other.c"

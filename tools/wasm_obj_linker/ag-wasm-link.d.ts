@@ -5,6 +5,39 @@ export interface AgcWasmSignedExport {
 
 export type AgcWasmExport = string | AgcWasmSignedExport;
 
+export type AgcLinkErrorCode =
+  | "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY"
+  | "AGC_LINK_DUPLICATE_SYMBOL"
+  | "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP";
+
+export interface AgcLinkSourceReference {
+  readonly sourceIndex: number;
+  readonly sourceName: string;
+}
+
+export type AgcLinkErrorDetails =
+  | {
+      readonly entry: string;
+      readonly objectIndices: readonly [number, number];
+      readonly sources?: readonly AgcLinkSourceReference[];
+    }
+  | {
+      readonly symbol: string;
+      readonly objectIndices: readonly [number, number];
+      readonly sources?: readonly AgcLinkSourceReference[];
+    }
+  | {
+      readonly frameCondition: string;
+      readonly objectIndex: number;
+      readonly source?: AgcLinkSourceReference | null;
+    };
+
+export class AgcLinkError extends Error {
+  readonly name: "AgcLinkError";
+  readonly code: AgcLinkErrorCode;
+  readonly details: Readonly<AgcLinkErrorDetails>;
+}
+
 export interface AgcWasmLinkOptions {
   exports?: AgcWasmExport[];
   useStdlib?: boolean;

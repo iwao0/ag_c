@@ -1,5 +1,54 @@
 import { createAgcRuntimeImports } from "../wasm_js_api/agc-runtime-imports.js?v=runtime-object";
 
+const LINK_DIAGNOSTIC_PREFIX = "ag_wasm_link: AGC_LINK_DIAGNOSTIC\t";
+
+export class AgcLinkError extends Error {
+  constructor(code, details) {
+    super(`ag_wasm_link failed: ${code}`);
+    this.name = "AgcLinkError";
+    this.code = code;
+    this.details = Object.freeze(details);
+  }
+}
+
+function parseObjectIndex(text) {
+  if (!/^(0|[1-9][0-9]*)$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function parseLinkDiagnostic(stderr) {
+  const line = stderr.split(/\r?\n/).find((entry) =>
+    entry.startsWith(LINK_DIAGNOSTIC_PREFIX));
+  if (!line) return null;
+  const fields = line.slice(LINK_DIAGNOSTIC_PREFIX.length).split("\t");
+  const [code, subject, firstText, secondText] = fields;
+  const first = parseObjectIndex(firstText ?? "");
+  const second = parseObjectIndex(secondText ?? "");
+  if (code === "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY" &&
+      subject && first !== null && second !== null && fields.length === 4) {
+    return new AgcLinkError(code, {
+      entry: subject,
+      objectIndices: Object.freeze([first, second]),
+    });
+  }
+  if (code === "AGC_LINK_DUPLICATE_SYMBOL" &&
+      subject && first !== null && second !== null && fields.length === 4) {
+    return new AgcLinkError(code, {
+      symbol: subject,
+      objectIndices: Object.freeze([first, second]),
+    });
+  }
+  if (code === "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP" &&
+      subject && first !== null && fields.length === 3) {
+    return new AgcLinkError(code, {
+      frameCondition: subject,
+      objectIndex: first,
+    });
+  }
+  return null;
+}
+
 function asBytes(input, label) {
   if (input instanceof Uint8Array) return input;
   if (input instanceof ArrayBuffer) return new Uint8Array(input);
@@ -294,6 +343,8 @@ export async function createLinker(wasmSource, options = {}) {
       limitError.actual = maxOutputBytes + 1;
       throw limitError;
     }
+    const linkError = parseLinkDiagnostic(diag);
+    if (linkError) throw linkError;
     if (diag) throw new Error(diag);
     if (termination && termination.kind === "exit") {
       throw new Error(`ag_wasm_link exited with status ${termination.status}`);

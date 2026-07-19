@@ -7,12 +7,16 @@ import {
   utf8ByteLength,
 } from "./agc-resource-limits.js";
 import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=runtime-object";
-import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js?v=runtime-object";
+import {
+  AgcLinkError,
+  createLinker,
+} from "../wasm_obj_linker/ag-wasm-link.js?v=runtime-object";
 
 const utf8Decoder = new TextDecoder();
 const utf8Encoder = new TextEncoder();
 
 export { AgcResourceLimitError } from "./agc-resource-limits.js";
+export { AgcLinkError } from "../wasm_obj_linker/ag-wasm-link.js?v=runtime-object";
 
 export const AGC_CONTINUATION_STATUS = Object.freeze({
   INVALID: -1,
@@ -98,6 +102,66 @@ function freezeDiagnosticSnapshots(diagnostics, sourceId) {
 
 function sourceNameOf(source) {
   return typeof source === "string" ? "input.c" : source.name;
+}
+
+function linkErrorSource(normalizedSources, objectIndex) {
+  if (!Number.isInteger(objectIndex) ||
+      objectIndex < 0 || objectIndex >= normalizedSources.length) {
+    return null;
+  }
+  return Object.freeze({
+    sourceIndex: objectIndex,
+    sourceName: sourceNameOf(normalizedSources[objectIndex]),
+  });
+}
+
+function localizedSourceSuffix(locale, sources) {
+  const names = sources.map((source) => source.sourceName);
+  if (names.length === 0) return "";
+  return locale === "en"
+    ? ` Sources: ${names.join(", ")}.`
+    : ` 対象: ${names.join("、")}。`;
+}
+
+function localizeLinkError(error, normalizedSources, locale, continuation) {
+  if (!(error instanceof AgcLinkError)) return null;
+  const resolvedLocale = locale ?? "ja";
+  let details = error.details;
+  let message = error.message;
+  if (error.code === "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY") {
+    const sources = Object.freeze(error.details.objectIndices
+      .map((index) => linkErrorSource(normalizedSources, index))
+      .filter(Boolean));
+    details = Object.freeze({ ...error.details, sources });
+    const entry = error.details.entry;
+    message = resolvedLocale === "en"
+      ? `${entry}() is defined in more than one C source file. Define ${entry}() only once in the project.`
+      : `${entry}()が複数のCファイルで定義されています。${entry}()はプロジェクト内で1つだけ定義してください。`;
+    message += localizedSourceSuffix(resolvedLocale, sources);
+  } else if (error.code === "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP") {
+    const source = linkErrorSource(normalizedSources, error.details.objectIndex);
+    details = Object.freeze({ ...error.details, source });
+    const condition = error.details.frameCondition;
+    const entry = continuation?.entry ?? "main";
+    message = resolvedLocale === "en"
+      ? `Use ${condition}() only once, as the condition of while (${condition}()) in ${entry}(). Remove calls from other locations.`
+      : `${condition}()は、${entry}()内のwhile (${condition}())の条件として1回だけ使用してください。ほかの場所からの呼び出しを削除してください。`;
+    if (source) message += localizedSourceSuffix(resolvedLocale, [source]);
+  } else if (error.code === "AGC_LINK_DUPLICATE_SYMBOL") {
+    const sources = Object.freeze(error.details.objectIndices
+      .map((index) => linkErrorSource(normalizedSources, index))
+      .filter(Boolean));
+    details = Object.freeze({ ...error.details, sources });
+    const symbol = error.details.symbol;
+    message = resolvedLocale === "en"
+      ? `${symbol} is defined in more than one C source file. Define it only once in the project.`
+      : `${symbol}が複数のCファイルで定義されています。プロジェクト内で1つだけ定義してください。`;
+    message += localizedSourceSuffix(resolvedLocale, sources);
+  }
+  const localized = new AgcLinkError(error.code, details);
+  localized.message = message;
+  localized.cause = error;
+  return localized;
 }
 
 function freezeSourceDiagnosticSnapshot(source, sourceId, diagnostics) {
@@ -246,6 +310,10 @@ export async function createToolchain(options) {
         maxOutputBytes: compileResourceLimits.maxLinkedWasmBytes,
       });
     } catch (err) {
+      const linkError = localizeLinkError(
+        err, normalizedSources, diagnosticLocale, continuation,
+      );
+      if (linkError) throw linkError;
       if (err?.code !== "AGC_LIMIT_MAX_LINKED_WASM_BYTES") throw err;
       const diagnostics = withDiagnostics
         ? Object.freeze(sourceDiagnostics.flatMap((entry) => entry.diagnostics))

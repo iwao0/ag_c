@@ -183,7 +183,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ VLA を使用できません";
     case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "continuation entry ではフレームをまたぐ alloca を使用できません";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "continuation entry には while(frame_condition()) の直接ループが1つ必要です";
-    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "continuation entry 内のフレーム条件呼び出しは1回だけ許可されます";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "フレーム条件はcontinuation entry内の直接while条件として1回だけ使用し、ほかの場所からの呼び出しは削除してください";
     case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張は使用できません: %s";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";

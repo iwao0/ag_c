@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createToolchain } from "./agc-toolchain.js";
+import { AgcLinkError, createToolchain } from "./agc-toolchain.js";
 import { inlineStandardIncludes } from "./agc-include-inline.js";
 import { createAgcRuntimeImports } from "./agc-runtime-imports.js";
 
@@ -330,24 +330,136 @@ int main(void) {
   }
 }
 
+const duplicateContinuationSources = [
+  { name: "main.c", source: "int main(void) { return 0; }\n" },
+  { name: "main 2.c", source: "int main(void) { return 0; }\n" },
+];
+for (const locale of ["en", "ja", "en"]) {
+  try {
+    toolchain.compileLinkedWasm(duplicateContinuationSources, {
+      exports: ["main"],
+      useStdlib: false,
+      continuation: { entry: "main", frameCondition: "frame_gate" },
+      diagnosticLocale: locale,
+    });
+    throw new Error("duplicate continuation entry unexpectedly linked");
+  } catch (err) {
+    const sources = err.details?.sources;
+    if (!(err instanceof AgcLinkError) ||
+        err.code !== "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY" ||
+        err.details?.entry !== "main" ||
+        err.details?.objectIndices?.[0] !== 0 ||
+        err.details?.objectIndices?.[1] !== 1 ||
+        sources?.[0]?.sourceName !== "main.c" ||
+        sources?.[1]?.sourceName !== "main 2.c" ||
+        String(err.message).includes("__agc_") ||
+        String(err.message).includes("continuation_step") ||
+        String(err.message).includes("duplicate symbol definition")) {
+      throw err;
+    }
+    const hasJapanese = /[\u3040-\u30ff\u4e00-\u9fff]/.test(err.message);
+    if ((locale === "ja") !== hasJapanese) {
+      throw new Error(`duplicate continuation locale leaked across requests: ${err.message}`);
+    }
+  }
+}
+
 try {
   toolchain.compileLinkedWasm([
-    `int frame_gate(void); int main(void) {
-       while (frame_gate()) {}
-       return 0;
-     }`,
-    "int frame_gate(void); int invalid_extra_call(void) { return frame_gate(); }",
+    { name: "foo-a.c", source: "int foo(void) { return 1; } int main(void) { return foo(); }\n" },
+    { name: "foo-b.c", source: "int foo(void) { return 2; }\n" },
   ], {
     exports: ["main"],
     useStdlib: false,
-    continuation: { entry: "main", frameCondition: "frame_gate" },
+    diagnosticLocale: "en",
   });
-  throw new Error("frame condition call outside the entry unexpectedly linked");
+  throw new Error("duplicate ordinary symbol unexpectedly linked");
 } catch (err) {
-  if (!String(err.message).includes(
-    "frame condition call outside configured continuation loop: frame_gate",
-  )) {
+  if (!(err instanceof AgcLinkError) || err.code !== "AGC_LINK_DUPLICATE_SYMBOL" ||
+      err.details?.symbol !== "foo" ||
+      err.details?.sources?.[0]?.sourceName !== "foo-a.c" ||
+      err.details?.sources?.[1]?.sourceName !== "foo-b.c") {
     throw err;
+  }
+}
+
+try {
+  toolchain.compileLinkedWasm({
+    name: "same-entry-extra.c",
+    source: `int frame_gate(void);
+int main(void) {
+  while (frame_gate()) { frame_gate(); }
+  return 0;
+}
+`,
+  }, {
+    exports: ["main"],
+    useStdlib: false,
+    continuation: { entry: "main", frameCondition: "frame_gate" },
+    diagnosticLocale: "en",
+  });
+  throw new Error("same-source extra frame condition call unexpectedly compiled");
+} catch (err) {
+  if (err.diagnostics?.[0]?.code !== "E3095" ||
+      !String(err.diagnostics[0].message).includes("only once")) {
+    throw err;
+  }
+}
+
+try {
+  toolchain.compileLinkedWasm({
+    name: "same-source-other-function.c",
+    source: `int frame_gate(void);
+static int invalid_extra_call(void) { return frame_gate(); }
+int main(void) { while (frame_gate()) { invalid_extra_call(); } return 0; }
+`,
+  }, {
+    exports: ["main"],
+    useStdlib: false,
+    continuation: { entry: "main", frameCondition: "frame_gate" },
+    diagnosticLocale: "en",
+  });
+  throw new Error("same-source other-function frame condition call unexpectedly linked");
+} catch (err) {
+  if (!(err instanceof AgcLinkError) ||
+      err.code !== "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP" ||
+      err.details?.frameCondition !== "frame_gate" ||
+      err.details?.objectIndex !== 0 ||
+      err.details?.source?.sourceName !== "same-source-other-function.c") {
+    throw err;
+  }
+}
+
+for (const locale of ["en", "ja", "en"]) {
+  try {
+    toolchain.compileLinkedWasm([
+      { name: "frame-main.c", source: `int frame_gate(void); int main(void) {
+         while (frame_gate()) {}
+         return 0;
+       }` },
+      { name: "frame-extra.c", source:
+        "int frame_gate(void); int invalid_extra_call(void) { return frame_gate(); }" },
+    ], {
+      exports: ["main"],
+      useStdlib: false,
+      continuation: { entry: "main", frameCondition: "frame_gate" },
+      diagnosticLocale: locale,
+    });
+    throw new Error("frame condition call outside the entry unexpectedly linked");
+  } catch (err) {
+    if (!(err instanceof AgcLinkError) ||
+        err.code !== "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP" ||
+        err.details?.frameCondition !== "frame_gate" ||
+        err.details?.objectIndex !== 1 ||
+        err.details?.source?.sourceName !== "frame-extra.c" ||
+        String(err.message).includes("configured continuation") ||
+        String(err.message).includes("frame condition call outside")) {
+      throw err;
+    }
+    const hasJapanese = /[\u3040-\u30ff\u4e00-\u9fff]/.test(err.message);
+    if ((locale === "ja") !== hasJapanese) {
+      throw new Error(`frame condition locale leaked across requests: ${err.message}`);
+    }
   }
 }
 

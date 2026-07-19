@@ -9758,6 +9758,14 @@ const runtimeImportsSource = await readFile(
   "tools/wasm_js_api/agc-runtime-imports.js",
   "utf8",
 );
+const wasmLinkerWrapperSource = await readFile(
+  "tools/wasm_obj_linker/ag-wasm-link.js",
+  "utf8",
+);
+const wasmToolchainSource = await readFile(
+  "tools/wasm_js_api/agc-toolchain.js",
+  "utf8",
+);
 const runtimeCatalog = await readFile(
   "tools/wasm_obj_linker/runtime/generated/runtime-symbols.md",
   "utf8",
@@ -9810,6 +9818,21 @@ if (runtimeSymbolManifest.version !== 2 ||
     )) {
   throw new Error(
     "runtime manifest must own signatures, effects, availability, linker routing, JS imports, and generated docs",
+  );
+}
+
+if (/duplicate symbol definition|frame condition call outside configured continuation loop/.test(
+      runtimeLinkerSource,
+    ) ||
+    !/AGC_LINK_DUPLICATE_CONTINUATION_ENTRY/.test(runtimeLinkerSource) ||
+    !/AGC_LINK_DUPLICATE_SYMBOL/.test(runtimeLinkerSource) ||
+    !/AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP/.test(runtimeLinkerSource) ||
+    !/parseLinkDiagnostic\s*\(/.test(wasmLinkerWrapperSource) ||
+    !/localizeLinkError\s*\(/.test(wasmToolchainSource) ||
+    !/normalizedSources/.test(wasmToolchainSource) ||
+    !/diagnosticLocale/.test(wasmToolchainSource)) {
+  throw new Error(
+    "continuation linker failures must preserve structured codes and source identity without exposing raw internal diagnostics",
   );
 }
 

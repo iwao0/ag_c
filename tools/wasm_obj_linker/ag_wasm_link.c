@@ -229,6 +229,22 @@ static void dief(const char *fmt, const char *arg) {
   exit(1);
 }
 
+static void die_link_diagnostic_one_object(
+    const char *code, str_t subject, int object_index) {
+  fprintf(stderr, "ag_wasm_link: AGC_LINK_DIAGNOSTIC\t%s\t%.*s\t%d\n",
+          code, subject.len, subject.s, object_index);
+  exit(1);
+}
+
+static void die_link_diagnostic_two_objects(
+    const char *code, str_t subject,
+    int first_object_index, int second_object_index) {
+  fprintf(stderr, "ag_wasm_link: AGC_LINK_DIAGNOSTIC\t%s\t%.*s\t%d\t%d\n",
+          code, subject.len, subject.s,
+          first_object_index, second_object_index);
+  exit(1);
+}
+
 static void *xmalloc(size_t n) {
   void *p = malloc(n ? n : 1);
   if (!p) die("out of memory");
@@ -760,6 +776,19 @@ static int func_signature_matches(object_t *ref_obj, int ref_func,
 
 static void check_duplicate_definitions(object_t *objs, int obj_count) {
   for (int oi = 0; oi < obj_count; oi++) {
+    if (!objs[oi].has_continuation) continue;
+    for (int oj = oi + 1; oj < obj_count; oj++) {
+      if (!objs[oj].has_continuation ||
+          !str_eq(objs[oi].continuation_entry,
+                  objs[oj].continuation_entry)) {
+        continue;
+      }
+      die_link_diagnostic_two_objects(
+          "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY",
+          objs[oi].continuation_entry, oi, oj);
+    }
+  }
+  for (int oi = 0; oi < obj_count; oi++) {
     for (int si = 0; si < objs[oi].symbol_count; si++) {
       symbol_t *a = &objs[oi].symbols[si];
       if ((a->kind != SYM_FUNCTION && a->kind != SYM_DATA) ||
@@ -776,7 +805,9 @@ static void check_duplicate_definitions(object_t *objs, int obj_count) {
               str_empty(b->name)) {
             continue;
           }
-          if (str_eq(a->name, b->name)) dief("duplicate symbol definition: %s", a->name.s);
+          if (!str_eq(a->name, b->name)) continue;
+          die_link_diagnostic_two_objects(
+              "AGC_LINK_DUPLICATE_SYMBOL", a->name, oi, oj);
         }
       }
     }
@@ -3193,8 +3224,9 @@ static void validate_continuation_metadata(object_t *objs, int obj_count) {
       if (symbol->kind == SYM_FUNCTION &&
           (symbol->flags & SYM_UNDEFINED) &&
           str_eq(symbol->name, owner->continuation_condition)) {
-        dief("frame condition call outside configured continuation loop: %s",
-             symbol->name.s);
+        die_link_diagnostic_one_object(
+            "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP",
+            symbol->name, oi);
       }
       if (symbol->kind == SYM_FUNCTION &&
           (symbol->flags & SYM_UNDEFINED) &&

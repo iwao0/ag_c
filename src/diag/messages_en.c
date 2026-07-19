@@ -183,7 +183,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CONTINUATION_VLA_ACROSS_FRAMES: return "Continuation entry does not support VLA across frames";
     case DIAG_ERR_PARSER_CONTINUATION_ALLOCA_ACROSS_FRAMES: return "Continuation entry does not support alloca across frames";
     case DIAG_ERR_PARSER_CONTINUATION_FRAME_LOOP_REQUIRED: return "Continuation entry requires one direct while(frame_condition()) loop";
-    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "Continuation entry permits exactly one frame condition call";
+    case DIAG_ERR_PARSER_CONTINUATION_FRAME_CONDITION_CALL_COUNT: return "Use the frame condition only once, as the direct while-loop condition in the continuation entry; remove calls from other locations";
     case DIAG_ERR_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported: %s";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";

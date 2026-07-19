@@ -29,8 +29,12 @@ export interface AgcWasmToolchainOptions {
 }
 
 export { AgcResourceLimitError } from "./agc-wasm.js";
+export { AgcLinkError } from "../wasm_obj_linker/ag-wasm-link.js";
 export type { AgcResourceLimitCode, AgcResourceLimits } from "./agc-wasm.js";
 export type {
+  AgcLinkErrorCode,
+  AgcLinkErrorDetails,
+  AgcLinkSourceReference,
   AgcWasmExport,
   AgcWasmSignedExport,
 } from "../wasm_obj_linker/ag-wasm-link.js";
