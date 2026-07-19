@@ -1591,14 +1591,31 @@ static int preflight_direct_expression_impl(
   if (direct_incdec_kind(syntax->kind, &incdec_kind)) {
     psx_qual_type_t operand_type;
     if (!preflight_direct_lvalue(
-            context, syntax->lhs, &operand_type))
-      return 0;
-    psx_qual_type_t result =
-        psx_resolve_incdec_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+            context, syntax->lhs, &operand_type)) {
+      if (context->failure &&
+          context->failure->rejection !=
+              PSX_SYNTAX_TYPED_HIR_REJECTION_NONE)
+        return 0;
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
+          syntax);
+    }
+    psx_incdec_operand_resolution_t resolution;
+    psx_resolve_incdec_operand_qual_type_in(
+        context->semantic_context, operand_type, &resolution);
+    if (resolution.status == PSX_INCDEC_OPERAND_CONST)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
+          syntax);
+    if (resolution.status != PSX_INCDEC_OPERAND_OK)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
+          syntax);
     mark_direct_assignment_target(context, syntax->lhs);
-    if (qual_type) *qual_type = result;
+    if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
   if (syntax->kind == ND_ASSIGN &&

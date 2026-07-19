@@ -57,6 +57,22 @@ psx_qual_type_t psx_resolve_indirection_result_qual_type_in(
 psx_qual_type_t psx_resolve_address_result_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);
+
+typedef enum {
+  PSX_INCDEC_OPERAND_OK = 0,
+  PSX_INCDEC_OPERAND_CONST,
+  PSX_INCDEC_OPERAND_INVALID_TYPE,
+} psx_incdec_operand_status_t;
+
+typedef struct {
+  psx_incdec_operand_status_t status;
+  psx_qual_type_t result_qual_type;
+} psx_incdec_operand_resolution_t;
+
+void psx_resolve_incdec_operand_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type,
+    psx_incdec_operand_resolution_t *resolution);
 psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);

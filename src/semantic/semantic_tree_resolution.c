@@ -7,6 +7,14 @@
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_diagnostics.h"
 
+static const char *direct_incdec_operator_name(int node_kind) {
+  return node_kind == ND_PRE_INC || node_kind == ND_POST_INC
+             ? "++"
+         : node_kind == ND_PRE_DEC || node_kind == ND_POST_DEC
+             ? "--"
+             : NULL;
+}
+
 static int diagnose_direct_function_rejection(
     psx_semantic_context_t *semantic_context,
     const psx_resolved_hir_build_failure_t *failure,
@@ -170,6 +178,34 @@ static int diagnose_direct_function_rejection(
       ps_diag_ctx_in(
           diagnostics, token, "unary",
           "%s のオペランドは算術型でなければなりません",
+          operator_name);
+      return 1;
+    }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE: {
+      const char *operator_name = direct_incdec_operator_name(
+          failure->source_node_kind);
+      if (!operator_name) return 0;
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED),
+          operator_name);
+      return 1;
+    }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CONST_ASSIGNMENT));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE: {
+      const char *operator_name = direct_incdec_operator_name(
+          failure->source_node_kind);
+      if (!operator_name) return 0;
+      ps_diag_ctx_in(
+          diagnostics, token, "incdec",
+          "%s のオペランドは実数型またはポインタ型でなければなりません",
           operator_name);
       return 1;
     }

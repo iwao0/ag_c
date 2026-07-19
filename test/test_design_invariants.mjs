@@ -8902,12 +8902,14 @@ if (nonfunctionTypedResolutionStart < 0 ||
   );
 }
 const incdecQualTypeResolution = expressionOperandResolutionSource.match(
-  /psx_qual_type_t\s+psx_resolve_incdec_result_qual_type_in\s*\([^]*?\n\}/,
+  /void\s+psx_resolve_incdec_operand_qual_type_in\s*\([^]*?\n\}/,
 )?.[0] ?? "";
 if (!incdecQualTypeResolution ||
     /\bnode_t\b|\bps_node_/.test(incdecQualTypeResolution) ||
     !/PSX_TYPE_QUALIFIER_CONST/.test(incdecQualTypeResolution) ||
-    !/psx_resolve_incdec_result_qual_type_in\s*\(/.test(
+    !/PSX_INCDEC_OPERAND_CONST/.test(incdecQualTypeResolution) ||
+    !/PSX_INCDEC_OPERAND_INVALID_TYPE/.test(incdecQualTypeResolution) ||
+    !/psx_resolve_incdec_operand_qual_type_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/MAP\s*\(\s*ND_PRE_INC\s*,\s*PSX_HIR_PRE_INC\s*\)/.test(

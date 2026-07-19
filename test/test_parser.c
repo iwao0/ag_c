@@ -4315,6 +4315,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_local_registry(), const_incdec_syntax,
           &invalid_incdec_hir, &failure));
   ASSERT_TRUE(invalid_incdec_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
+            failure.rejection);
   ASSERT_TRUE(!ps_node_has_resolution_state(const_incdec_syntax));
   ASSERT_TRUE(!ps_node_has_resolution_state(
       const_incdec_syntax->lhs));
@@ -11094,6 +11096,20 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int *value = 0; return __imag__ value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_CIMAG);
+  assert_direct_function_rejection(
+      "int __direct_incdec_non_lvalue(void) { return ++1; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
+      ND_PRE_INC);
+  assert_direct_function_rejection(
+      "int __direct_incdec_const(void) { "
+      "const int value = 0; return ++value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
+      ND_PRE_INC);
+  assert_direct_function_rejection(
+      "int __direct_incdec_complex(void) { "
+      "_Complex double value = 0; ++value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
+      ND_PRE_INC);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25520,6 +25536,15 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message(
       "int main(void) { int *value=0; return __imag__ value; }",
       "__imag__ のオペランドは算術型でなければなりません");
+  expect_parse_fail_with_message(
+      "int main(void) { return ++1; }",
+      "++ の対象は左辺値である必要があります");
+  expect_parse_fail_with_message(
+      "int main(void) { const int value=0; return ++value; }",
+      "const修飾された変数への代入はできません");
+  expect_parse_fail_with_message(
+      "int main(void) { _Complex double value=0; ++value; return 0; }",
+      "++ のオペランドは実数型またはポインタ型でなければなりません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",

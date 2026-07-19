@@ -203,13 +203,21 @@ psx_qual_type_t psx_resolve_address_result_qual_type_in(
       semantic_context, operand_type);
 }
 
-psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
+void psx_resolve_incdec_operand_qual_type_in(
     const psx_semantic_context_t *semantic_context,
-    psx_qual_type_t operand_type) {
+    psx_qual_type_t operand_type,
+    psx_incdec_operand_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_INCDEC_OPERAND_INVALID_TYPE;
+  resolution->result_qual_type = invalid_qual_type();
   if (!semantic_context ||
-      operand_type.type_id == PSX_TYPE_ID_INVALID ||
-      (operand_type.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0)
-    return invalid_qual_type();
+      operand_type.type_id == PSX_TYPE_ID_INVALID)
+    return;
+  if ((operand_type.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0) {
+    resolution->status = PSX_INCDEC_OPERAND_CONST;
+    return;
+  }
   const psx_type_t *type = ps_ctx_type_by_id_in(
       semantic_context, operand_type.type_id);
   if (!type ||
@@ -217,9 +225,19 @@ psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
        type->kind != PSX_TYPE_BOOL &&
        type->kind != PSX_TYPE_INTEGER &&
        type->kind != PSX_TYPE_FLOAT))
-    return invalid_qual_type();
-  return (psx_qual_type_t){
+    return;
+  resolution->status = PSX_INCDEC_OPERAND_OK;
+  resolution->result_qual_type = (psx_qual_type_t){
       operand_type.type_id, PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
+    const psx_semantic_context_t *semantic_context,
+    psx_qual_type_t operand_type) {
+  psx_incdec_operand_resolution_t resolution;
+  psx_resolve_incdec_operand_qual_type_in(
+      semantic_context, operand_type, &resolution);
+  return resolution.result_qual_type;
 }
 
 psx_qual_type_t psx_resolve_value_decay_qual_type_in(
