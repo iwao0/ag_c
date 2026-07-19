@@ -40,7 +40,6 @@ typedef struct {
 typedef struct {
   wasm32_ir_context_t *context;
   const ir_module_t *module;
-  ir_func_t *f;
   wasm32_machine_function_t machine;
   wasm_alloca_slot_t *allocas;
   wasm_global_func_state_t *global_func_states;
@@ -272,15 +271,15 @@ static void record_function_signature(
 }
 
 static void register_function_definition(
-    wasm32_ir_context_t *context, const ir_func_t *function,
+    wasm32_ir_context_t *context,
     const wasm32_machine_function_t *machine) {
-  if (!function || !machine) return;
+  if (!machine) return;
   wasm_function_symbol_t *symbol = function_symbol_state(
-      context, function->name, function->name_len, 1);
+      context, machine->name, machine->name_len, 1);
   if (!symbol) return;
   symbol->defined = 1;
   record_function_signature(
-      context, function->name, function->name_len,
+      context, machine->name, machine->name_len,
       &machine->signature);
 }
 
@@ -547,21 +546,21 @@ static int val_is_unsigned(wasm_func_ctx_t *ctx, ir_val_t v) {
 }
 
 static void set_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, char *name, int name_len) {
-  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
+  if (vreg < 0 || vreg >= ctx->machine.vreg_count) return;
   ctx->vreg_func_ref_names[vreg] = name;
   ctx->vreg_func_ref_name_lens[vreg] = name_len;
 }
 
 static char *get_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, int *out_len) {
   if (out_len) *out_len = 0;
-  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return NULL;
+  if (vreg < 0 || vreg >= ctx->machine.vreg_count) return NULL;
   if (out_len) *out_len = ctx->vreg_func_ref_name_lens[vreg];
   return ctx->vreg_func_ref_names[vreg];
 }
 
 static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
                                 const ir_symbol_t *symbol, int offset) {
-  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
+  if (vreg < 0 || vreg >= ctx->machine.vreg_count) return;
   ctx->vreg_global_refs[vreg] = symbol;
   ctx->vreg_global_ref_offsets[vreg] = offset;
 }
@@ -569,13 +568,13 @@ static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
 static const ir_symbol_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
                                                int *out_offset) {
   if (out_offset) *out_offset = 0;
-  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return NULL;
+  if (vreg < 0 || vreg >= ctx->machine.vreg_count) return NULL;
   if (out_offset) *out_offset = ctx->vreg_global_ref_offsets[vreg];
   return ctx->vreg_global_refs[vreg];
 }
 
 static void set_vreg_const(wasm_func_ctx_t *ctx, int vreg, long long value) {
-  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
+  if (vreg < 0 || vreg >= ctx->machine.vreg_count) return;
   ctx->vreg_const_known[vreg] = 1;
   ctx->vreg_const_values[vreg] = value;
 }
@@ -585,7 +584,8 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
     if (out_value) *out_value = v.imm;
     return 1;
   }
-  if (v.id < 0 || v.id >= ctx->f->next_vreg_id || !ctx->vreg_const_known[v.id]) return 0;
+  if (v.id < 0 || v.id >= ctx->machine.vreg_count ||
+      !ctx->vreg_const_known[v.id]) return 0;
   if (out_value) *out_value = ctx->vreg_const_values[v.id];
   return 1;
 }
@@ -1680,18 +1680,18 @@ static void emit_inst(
 
 static void emit_func(
     wasm32_ir_context_t *context,
-    const ir_module_t *module, ir_func_t *f,
+    const ir_module_t *module,
     const wasm32_machine_function_t *machine) {
   wasm_func_ctx_t ctx = {0};
   ctx.context = context;
   ctx.module = module;
-  ctx.f = f;
   analyze_func(&ctx, machine);
 
   const wasm32_machine_signature_t *function_signature =
       &ctx.machine.signature;
   int nparams = function_signature->nparams;
-  wasm_emitf(2, "(func $%.*s", f->name_len, f->name);
+  wasm_emitf(
+      2, "(func $%.*s", ctx.machine.name_len, ctx.machine.name);
   for (int p = 0; p < nparams; p++) {
     const char *pt = wasm_type(function_signature->params[p]);
     if (!pt)
@@ -1776,7 +1776,8 @@ static void emit_func(
     }
   }
   wasm_emitf(2, ")\n");
-  if (f->name_len == 4 && memcmp(f->name, "main", 4) == 0) {
+  if (ctx.machine.name_len == 4 &&
+      memcmp(ctx.machine.name, "main", 4) == 0) {
     wasm_emitf(2, "(export \"main\" (func $main))\n");
   }
 
@@ -1816,20 +1817,16 @@ void wasm32_gen_machine_module_in(
   if (!machine_module || !machine_module->source)
     wasm_unsupported_msg(context, "failed to build Wasm machine module");
   const ir_module_t *module = machine_module->source;
-  size_t index = 0;
-  for (ir_func_t *function = module->funcs; function;
-       function = function->next, index++) {
+  for (size_t index = 0; index < machine_module->function_count; index++) {
     const wasm32_machine_function_t *machine =
         wasm32_machine_module_function(machine_module, index);
     if (!machine)
       wasm_unsupported_msg(context, "incomplete Wasm machine module");
-    register_function_definition(context, function, machine);
+    register_function_definition(context, machine);
   }
-  index = 0;
-  for (ir_func_t *function = module->funcs; function;
-       function = function->next, index++)
+  for (size_t index = 0; index < machine_module->function_count; index++)
     emit_func(
-        context, module, function,
+        context, module,
         wasm32_machine_module_function(machine_module, index));
 }
 

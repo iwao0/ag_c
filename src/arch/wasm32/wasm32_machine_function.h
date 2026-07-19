@@ -168,6 +168,14 @@ typedef struct {
 
 typedef struct {
   const ir_func_t *source;
+  char *name;
+  char *c_signature;
+  char *continuation_entry_name;
+  char *continuation_condition_name;
+  char *continuation_start_export;
+  char *continuation_resume_export;
+  char *continuation_status_export;
+  char *continuation_result_export;
   wasm32_machine_signature_t signature;
   ir_type_t direct_result_type;
   int result_source_size;
@@ -184,11 +192,17 @@ typedef struct {
   wasm32_machine_alloca_t *allocas;
   int alloca_count;
   int frame_size;
+  int name_len;
+  int c_signature_len;
+  int continuation_condition_block_id;
+  int is_static;
   unsigned char has_control_flow;
   unsigned char has_vla_alloc;
   unsigned char has_variadic_varargs;
   unsigned char has_atomic_cas32;
   unsigned char has_atomic_cas64;
+  unsigned char is_continuation_entry;
+  unsigned char continuation_has_suspend;
 } wasm32_machine_function_t;
 
 int wasm32_machine_function_build(

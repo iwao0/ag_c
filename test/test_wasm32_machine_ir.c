@@ -571,9 +571,31 @@ int main(void) {
       .head = &function_instructions[0],
       .tail = &function_instructions[14],
   };
+  char function_name[] = "planned_function";
+  char function_c_signature[] = "i32(i32)";
+  char continuation_entry[] = "planned_entry";
+  char continuation_condition[] = "planned_condition";
+  char continuation_start[] = "planned_start";
+  char continuation_resume[] = "planned_resume";
+  char continuation_status[] = "planned_status";
+  char continuation_result[] = "planned_result";
   ir_func_t function = {
+      .name = function_name,
+      .c_signature = function_c_signature,
+      .continuation_entry_name = continuation_entry,
+      .continuation_condition_name = continuation_condition,
+      .continuation_start_export = continuation_start,
+      .continuation_resume_export = continuation_resume,
+      .continuation_status_export = continuation_status,
+      .continuation_result_export = continuation_result,
       .entry = &function_block,
+      .name_len = 16,
+      .c_signature_len = 8,
       .next_vreg_id = 11,
+      .is_static = 1,
+      .continuation_condition_block_id = 7,
+      .is_continuation_entry = 1,
+      .continuation_has_suspend = 1,
   };
   ir_abi_piece_t function_result = {
       .type = IR_TY_PTR,
@@ -702,7 +724,23 @@ int main(void) {
           &machine_function, &function_instructions[14]);
   const wasm32_machine_block_t *selected_block =
       wasm32_machine_function_block(&machine_function, 0);
-  if (machine_function.frame_size != 32 ||
+  if (!machine_function.name ||
+      machine_function.name == function.name ||
+      machine_function.name_len != function.name_len ||
+      strcmp(machine_function.name, function.name) != 0 ||
+      !machine_function.c_signature ||
+      machine_function.c_signature == function.c_signature ||
+      machine_function.c_signature_len != function.c_signature_len ||
+      strcmp(machine_function.c_signature, function.c_signature) != 0 ||
+      machine_function.continuation_entry_name ==
+          function.continuation_entry_name ||
+      strcmp(machine_function.continuation_entry_name,
+             function.continuation_entry_name) != 0 ||
+      machine_function.continuation_condition_block_id != 7 ||
+      !machine_function.is_static ||
+      !machine_function.is_continuation_entry ||
+      !machine_function.continuation_has_suspend ||
+      machine_function.frame_size != 32 ||
       machine_function.alloca_count != 2 ||
       machine_function.instruction_count != 15 ||
       machine_function.block_count != 1 ||

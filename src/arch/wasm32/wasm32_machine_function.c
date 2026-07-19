@@ -792,9 +792,67 @@ static int propagate_forced_i32(
   return 1;
 }
 
+static int copy_string(char **destination, const char *source, int length) {
+  *destination = NULL;
+  if (!source) return length == 0;
+  if (length < 0) return 0;
+  char *copy = malloc((size_t)length + 1);
+  if (!copy) return 0;
+  memcpy(copy, source, (size_t)length);
+  copy[length] = '\0';
+  *destination = copy;
+  return 1;
+}
+
+static int copy_optional_string(char **destination, const char *source) {
+  return copy_string(
+      destination, source, source ? (int)strlen(source) : 0);
+}
+
+static int copy_function_metadata(
+    wasm32_machine_function_t *function, const ir_func_t *source) {
+  function->name_len = source->name_len;
+  function->c_signature_len = source->c_signature_len;
+  function->continuation_condition_block_id =
+      source->continuation_condition_block_id;
+  function->is_static = source->is_static;
+  function->is_continuation_entry = source->is_continuation_entry;
+  function->continuation_has_suspend = source->continuation_has_suspend;
+  return copy_string(&function->name, source->name, source->name_len) &&
+         copy_string(
+             &function->c_signature, source->c_signature,
+             source->c_signature_len) &&
+         copy_optional_string(
+             &function->continuation_entry_name,
+             source->continuation_entry_name) &&
+         copy_optional_string(
+             &function->continuation_condition_name,
+             source->continuation_condition_name) &&
+         copy_optional_string(
+             &function->continuation_start_export,
+             source->continuation_start_export) &&
+         copy_optional_string(
+             &function->continuation_resume_export,
+             source->continuation_resume_export) &&
+         copy_optional_string(
+             &function->continuation_status_export,
+             source->continuation_status_export) &&
+         copy_optional_string(
+             &function->continuation_result_export,
+             source->continuation_result_export);
+}
+
 void wasm32_machine_function_dispose(
     wasm32_machine_function_t *function) {
   if (!function) return;
+  free(function->name);
+  free(function->c_signature);
+  free(function->continuation_entry_name);
+  free(function->continuation_condition_name);
+  free(function->continuation_start_export);
+  free(function->continuation_resume_export);
+  free(function->continuation_status_export);
+  free(function->continuation_result_export);
   wasm32_machine_signature_dispose(&function->signature);
   wasm32_machine_copy_plan_dispose(&function->result_copy);
   for (int i = 0; i < function->instruction_count; i++) {
@@ -833,6 +891,10 @@ int wasm32_machine_function_build(
     return 0;
   memset(function, 0, sizeof(*function));
   function->source = source;
+  if (!copy_function_metadata(function, source)) {
+    wasm32_machine_function_dispose(function);
+    return 0;
+  }
   function->vreg_count = source->next_vreg_id;
   const ir_abi_signature_t *function_abi =
       ir_abi_function_signature(abi_module, source);

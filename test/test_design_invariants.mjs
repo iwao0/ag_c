@@ -10641,6 +10641,10 @@ const wasmMachineFunctionSource = await readFile(
   "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
 );
+const wasmMachineFunctionHeader = await readFile(
+  "src/arch/wasm32/wasm32_machine_function.h",
+  "utf8",
+);
 const wasmMachineModuleSource = await readFile(
   "src/arch/wasm32/wasm32_machine_module.c",
   "utf8",
@@ -10907,6 +10911,30 @@ if (!/wasm32_machine_function_build\s*\(/.test(
     /static\s+void\s+add_alloca_slot\s*\(/.test(wasmWatWriterSource)) {
   throw new Error(
     "Wasm backend orchestration must build one owned Machine module while WAT and object writers only consume preplanned functions",
+  );
+}
+
+if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
+    !/char\s+\*c_signature\s*;/.test(wasmMachineFunctionHeader) ||
+    !/char\s+\*continuation_entry_name\s*;/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    !/copy_function_metadata\s*\(/.test(wasmMachineFunctionSource) ||
+    !/free\(function->continuation_result_export\)/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    /\bir_func_t\b/.test(wasmWatWriterSource) ||
+    /\bir_func_t\b/.test(wasmObjectWriterSource) ||
+    /module->funcs/.test(wasmWatWriterSource) ||
+    /module->funcs/.test(wasmObjectWriterSource) ||
+    !/index\s*<\s*machine_module->function_count/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/function_index\s*<\s*machine_module->function_count/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm serializers must use Machine function identity, linkage, and continuation metadata",
   );
 }
 

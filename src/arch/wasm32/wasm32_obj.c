@@ -1292,7 +1292,6 @@ static void emit_direct_aggregate_call_result(
 static void gen_func_body(
                           wasm32_obj_context_t *context,
                           const ir_module_t *module, obj_func_t *of,
-                          ir_func_t *f,
                           const wasm32_machine_function_t *planned) {
   if (!planned)
     obj_unsupported_msg(context, "failed to build Wasm machine function");
@@ -1303,7 +1302,8 @@ static void gen_func_body(
   int frame_size = machine_function.frame_size;
   int has_variadic_varargs = machine_function.has_variadic_varargs;
   int has_persistent_continuation_frame =
-      f->is_continuation_entry && f->continuation_has_suspend;
+      machine_function.is_continuation_entry &&
+      machine_function.continuation_has_suspend;
   int has_stack_restore = !has_persistent_continuation_frame &&
       (frame_size > 0 || machine_function.has_vla_alloc ||
        has_variadic_varargs);
@@ -1321,7 +1321,7 @@ static void gen_func_body(
   int pc_local = extra_base + extra_count;
   if (has_control_flow) extra_count++;
   int resumed_local = extra_base + extra_count;
-  if (f->is_continuation_entry) extra_count++;
+  if (machine_function.is_continuation_entry) extra_count++;
   int call_result_i32_local = extra_base + extra_count++;
   int call_result_i64_local = extra_base + extra_count++;
   int atomic_tmp32_local = extra_base + extra_count;
@@ -1337,10 +1337,10 @@ static void gen_func_body(
   int continuation_frame_data = -1;
   int continuation_status_data = -1;
   int continuation_result_data = -1;
-  if (f->is_continuation_entry) {
+  if (machine_function.is_continuation_entry) {
     char name[320];
     int n = snprintf(name, sizeof(name), "__agc_cont_frame_%s",
-                     f->continuation_entry_name);
+                     machine_function.continuation_entry_name);
     if (n < 0 || n >= (int)sizeof(name))
       obj_unsupported_msg(context, "continuation data symbol name too long");
     if (has_persistent_continuation_frame) {
@@ -1350,13 +1350,13 @@ static void gen_func_body(
       frame->is_emitted = 1;
     }
     n = snprintf(name, sizeof(name), "__agc_cont_status_%s",
-                 f->continuation_entry_name);
+                 machine_function.continuation_entry_name);
     obj_data_t *status = intern_data(context, name, n, 2, 1, 0);
     continuation_status_data = data_index(context, status);
     data_note_alloc_size(status, 4);
     status->is_emitted = 1;
     n = snprintf(name, sizeof(name), "__agc_cont_result_%s",
-                 f->continuation_entry_name);
+                 machine_function.continuation_entry_name);
     obj_data_t *result = intern_data(context, name, n, 2, 1, 0);
     continuation_result_data = data_index(context, result);
     data_note_alloc_size(result, 4);
@@ -1392,7 +1392,7 @@ static void gen_func_body(
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(context, IR_TY_I32));
   }
-  if (f->is_continuation_entry) {
+  if (machine_function.is_continuation_entry) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(context, IR_TY_I32));
   }
@@ -1427,7 +1427,7 @@ static void gen_func_body(
     emit_local_get(&body, fp_local);
     emit_stack_global_set(context, &body, of, stack_pointer);
   }
-  if (f->is_continuation_entry) {
+  if (machine_function.is_continuation_entry) {
     /* command=-1 is start; all other values resume the pending condition. */
     emit_local_get(&body, 0);
     emit_const(context, &body, IR_TY_I32, -1);
@@ -1498,12 +1498,12 @@ static void gen_func_body(
                        : 0;
     emit_const(context, &body, IR_TY_I32, entry_id);
     emit_local_set(&body, pc_local);
-    if (f->is_continuation_entry) {
+    if (machine_function.is_continuation_entry) {
       emit_local_get(&body, resumed_local);
       wb_u8(&body, 0x04); wb_u8(&body, 0x40);
       emit_const(
           context, &body, IR_TY_I32,
-          f->continuation_condition_block_id);
+          machine_function.continuation_condition_block_id);
       emit_local_set(&body, pc_local);
       wb_u8(&body, 0x0b);
     }
@@ -1765,7 +1765,7 @@ static void gen_func_body(
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case WASM32_MACHINE_INST_ALIGN_POINTER: {
-          if (f->is_continuation_entry) break;
+          if (machine_function.is_continuation_entry) break;
           int align = i->alloca_align > 0 ? i->alloca_align : 16;
           emit_addr_val(context, &body, i->src1, param_count);
           emit_const(context, &body, IR_TY_I32, align - 1);
@@ -1925,7 +1925,8 @@ static void gen_func_body(
               wb_uleb(&body, 1);
               break;
             case WASM32_MACHINE_CONTROL_SUSPEND:
-              if (!f->is_continuation_entry || !has_control_flow)
+              if (!machine_function.is_continuation_entry ||
+                  !has_control_flow)
                 obj_unsupported_op(context, i->op);
               emit_local_get(&body, resumed_local);
               wb_u8(&body, 0x04); wb_u8(&body, 0x40);
@@ -1954,7 +1955,7 @@ static void gen_func_body(
               break;
             case WASM32_MACHINE_CONTROL_RETURN: {
               ir_val_t result = planned->control.value;
-              if (f->is_continuation_entry) {
+              if (machine_function.is_continuation_entry) {
                 emit_data_address(
                     context, &body, of, continuation_result_data, 0);
                 if (result.id != IR_VAL_NONE)
@@ -2129,17 +2130,19 @@ static obj_func_t *define_continuation_helper(
 }
 
 static void synthesize_continuation_helpers(
-    wasm32_obj_context_t *context, ir_func_t *f) {
-  obj_func_t *step = find_func(context, f->name, f->name_len);
+    wasm32_obj_context_t *context,
+    const wasm32_machine_function_t *function) {
+  obj_func_t *step = find_func(
+      context, function->name, function->name_len);
   if (!step || !step->defined)
     obj_unsupported_msg(context, "missing continuation step function");
   int step_index = (int)(step - g_obj.funcs);
   char data_name[320];
   int n = snprintf(data_name, sizeof(data_name), "__agc_cont_status_%s",
-                   f->continuation_entry_name);
+                   function->continuation_entry_name);
   obj_data_t *status = find_data(context, data_name, n);
   n = snprintf(data_name, sizeof(data_name), "__agc_cont_result_%s",
-               f->continuation_entry_name);
+               function->continuation_entry_name);
   obj_data_t *result = find_data(context, data_name, n);
   if (!status || !result)
     obj_unsupported_msg(context, "missing continuation state data");
@@ -2147,7 +2150,7 @@ static void synthesize_continuation_helpers(
   int result_index = data_index(context, result);
 
   obj_func_t *start = define_continuation_helper(
-      context, f->continuation_start_export, 0);
+      context, function->continuation_start_export, 0);
   int start_index = (int)(start - g_obj.funcs);
   wb_uleb(&start->body, 0);
   emit_const(context, &start->body, IR_TY_I32, -1);
@@ -2157,7 +2160,7 @@ static void synthesize_continuation_helpers(
   wb_u8(&start->body, 0x0b);
 
   obj_func_t *resume = define_continuation_helper(
-      context, f->continuation_resume_export, 1);
+      context, function->continuation_resume_export, 1);
   int resume_index = (int)(resume - g_obj.funcs);
   wb_uleb(&resume->body, 0);
   emit_local_get(&resume->body, 0);
@@ -2167,7 +2170,7 @@ static void synthesize_continuation_helpers(
   wb_u8(&resume->body, 0x0b);
 
   obj_func_t *status_fn = define_continuation_helper(
-      context, f->continuation_status_export, 0);
+      context, function->continuation_status_export, 0);
   int status_fn_index = (int)(status_fn - g_obj.funcs);
   wb_uleb(&status_fn->body, 0);
   emit_continuation_data_load(
@@ -2175,7 +2178,7 @@ static void synthesize_continuation_helpers(
   wb_u8(&status_fn->body, 0x0b);
 
   obj_func_t *result_fn = define_continuation_helper(
-      context, f->continuation_result_export, 0);
+      context, function->continuation_result_export, 0);
   int result_fn_index = (int)(result_fn - g_obj.funcs);
   wb_uleb(&result_fn->body, 0);
   emit_continuation_data_load(
@@ -2529,73 +2532,75 @@ void wasm32_obj_gen_machine_module_in(
   if (!machine_module || !machine_module->source)
     obj_unsupported_msg(context, "failed to build Wasm machine module");
   const ir_module_t *module = machine_module->source;
-  size_t function_index = 0;
-  for (ir_func_t *f = module->funcs; f;
-       f = f->next, function_index++) {
-    const wasm32_machine_function_t *machine =
+  for (size_t function_index = 0;
+       function_index < machine_module->function_count;
+       function_index++) {
+    const wasm32_machine_function_t *function =
         wasm32_machine_module_function(
             machine_module, function_index);
-    if (!machine)
+    if (!function)
       obj_unsupported_msg(context, "incomplete Wasm machine module");
-    obj_func_t *of = intern_func(context, f->name, f->name_len);
+    obj_func_t *of = intern_func(
+        context, function->name, function->name_len);
     if (of->defined)
       obj_unsupported_msg(context, "duplicate function in Wasm object mode");
     obj_sig_t def_sig = {0};
-    collect_func_sig(context, machine, &def_sig);
+    collect_func_sig(context, function, &def_sig);
     if (of->sig.nparams > 0 || of->sig.result != IR_TY_VOID) {
       if (!sig_equal(&of->sig, &def_sig) &&
           !sig_integer_width_compatible(&of->sig, &def_sig)) {
         char msg[160];
         snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
-                 f->name_len, f->name);
+                 function->name_len, function->name);
         obj_unsupported_msg(context, msg);
       }
       free(def_sig.params);
     } else {
       of->sig = def_sig;
     }
-    if (f->c_signature && f->c_signature_len > 0) {
+    if (function->c_signature && function->c_signature_len > 0) {
       of->c_signature = xrealloc(
           context->diagnostic_context, of->c_signature,
-          (size_t)f->c_signature_len + 1);
-      memcpy(of->c_signature, f->c_signature,
-             (size_t)f->c_signature_len + 1);
-      of->c_signature_len = f->c_signature_len;
+          (size_t)function->c_signature_len + 1);
+      memcpy(of->c_signature, function->c_signature,
+             (size_t)function->c_signature_len + 1);
+      of->c_signature_len = function->c_signature_len;
     }
     of->defined = 1;
-    of->is_static = f->is_static;
-    gen_func_body(context, module, of, f, machine);
-    if (f->is_continuation_entry) {
+    of->is_static = function->is_static;
+    gen_func_body(context, module, of, function);
+    if (function->is_continuation_entry) {
       if (g_obj.continuation_entry)
         obj_unsupported_msg(
             context, "multiple continuation entries in one object");
       g_obj.continuation_entry = dup_name(
           context->diagnostic_context,
-          f->continuation_entry_name,
-          (int)strlen(f->continuation_entry_name));
+          function->continuation_entry_name,
+          (int)strlen(function->continuation_entry_name));
       g_obj.continuation_condition = dup_name(
           context->diagnostic_context,
-          f->continuation_condition_name,
-          (int)strlen(f->continuation_condition_name));
+          function->continuation_condition_name,
+          (int)strlen(function->continuation_condition_name));
       g_obj.continuation_step = dup_name(
-          context->diagnostic_context, f->name, f->name_len);
+          context->diagnostic_context,
+          function->name, function->name_len);
       g_obj.continuation_start = dup_name(
           context->diagnostic_context,
-          f->continuation_start_export,
-          (int)strlen(f->continuation_start_export));
+          function->continuation_start_export,
+          (int)strlen(function->continuation_start_export));
       g_obj.continuation_resume = dup_name(
           context->diagnostic_context,
-          f->continuation_resume_export,
-          (int)strlen(f->continuation_resume_export));
+          function->continuation_resume_export,
+          (int)strlen(function->continuation_resume_export));
       g_obj.continuation_status = dup_name(
           context->diagnostic_context,
-          f->continuation_status_export,
-          (int)strlen(f->continuation_status_export));
+          function->continuation_status_export,
+          (int)strlen(function->continuation_status_export));
       g_obj.continuation_result = dup_name(
           context->diagnostic_context,
-          f->continuation_result_export,
-          (int)strlen(f->continuation_result_export));
-      synthesize_continuation_helpers(context, f);
+          function->continuation_result_export,
+          (int)strlen(function->continuation_result_export));
+      synthesize_continuation_helpers(context, function);
     }
   }
 }
