@@ -5608,6 +5608,14 @@ const aggregateCastResolutionSource = await readFile(
   "src/semantic/aggregate_cast_resolution.c",
   "utf8",
 );
+const sourceCastTypeResolutionHeader = await readFile(
+  "src/semantic/source_cast_type_resolution.h",
+  "utf8",
+);
+const sourceCastTypeResolutionSource = await readFile(
+  "src/semantic/source_cast_type_resolution.c",
+  "utf8",
+);
 const characterArrayInitializerHeader = await readFile(
   "src/semantic/character_array_initializer.h",
   "utf8",
@@ -5689,6 +5697,34 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     "aggregate cast semantics must resolve independently from Syntax AST, HIR, and temporary storage planning",
   );
 }
+if (!/\bpsx_source_cast_types_resolution_t\b/.test(
+      sourceCastTypeResolutionHeader,
+    ) ||
+    !/\bpsx_resolve_source_cast_qual_types\s*\(/.test(
+      sourceCastTypeResolutionHeader,
+    ) ||
+    /\b(?:node_t|node_source_cast_t|psx_hir_[a-zA-Z0-9_]+)\b/.test(
+      `${sourceCastTypeResolutionHeader}\n${sourceCastTypeResolutionSource}`,
+    ) ||
+    /(?:lowering_context|ps_node_new_)/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    !/target_type->kind\s*==\s*PSX_TYPE_VOID/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    !/PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    !/PSX_SOURCE_CAST_OPERAND_NOT_SCALAR/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    !/psx_resolve_aggregate_cast_qual_types\s*\(/.test(
+      sourceCastTypeResolutionSource,
+    )) {
+  throw new Error(
+    "all source-cast constraints must resolve from canonical QualTypes before HIR emission or storage planning",
+  );
+}
 if (!/\bpsx_character_array_initializer_plan_t\b/.test(
       characterArrayInitializerHeader,
     ) ||
@@ -5727,17 +5763,23 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     /\bnode_t\b|\bnode_source_cast_t\b|\bND_[A-Z0-9_]+\b/.test(
       aggregateQualTypeCastPlan,
     ) ||
-    !/psx_resolve_aggregate_cast_qual_types\s*\(/.test(
+    !/psx_resolve_source_cast_qual_types\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH/.test(
+    !/PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR[\s\S]{0,1400}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED/.test(
+    !/PSX_SOURCE_CAST_OPERAND_NOT_SCALAR[\s\S]{0,1400}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED/.test(
+    !/PSX_SOURCE_CAST_AGGREGATE_TYPE_MISMATCH[\s\S]{0,1400}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH/.test(
       syntaxTypedHirResolutionSource,
+    ) ||
+    !/psx_validate_source_cast_qual_types\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    !/psx_plan_validated_aggregate_source_cast\s*\(/.test(
+      semanticLoweringPassSource,
     ) ||
     !/context->unevaluated_depth\s*==\s*0[\s\S]*?psx_plan_aggregate_source_cast_resolution\s*\(/.test(
       syntaxTypedHirResolutionSource,
@@ -8077,7 +8119,7 @@ if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
     !/psx_resolve_global_hir_symbol_spec_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/psx_qual_type_is_scalar_in\s*\(/.test(
+    !/psx_resolve_source_cast_qual_types\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/PSX_HIR_GLOBAL/.test(syntaxTypedHirResolutionSource) ||

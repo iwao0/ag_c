@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 #include "../compilation_options.h"
 #include "../semantic/aggregate_cast_resolution.h"
+#include "../semantic/source_cast_type_resolution.h"
 #include "../type_system/type_ids.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -23,6 +24,21 @@ int psx_plan_aggregate_source_cast_resolution(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
     const psx_aggregate_cast_resolution_t *resolution,
+    psx_aggregate_source_cast_plan_t *plan);
+
+int psx_validate_source_cast_qual_types(
+    psx_lowering_context_t *lowering_context,
+    psx_qual_type_t target_qual_type,
+    psx_qual_type_t operand_qual_type,
+    token_t *diag_tok,
+    const ag_compilation_options_t *options,
+    psx_source_cast_types_resolution_t *resolution);
+
+int psx_plan_validated_aggregate_source_cast(
+    psx_lowering_context_t *lowering_context,
+    psx_local_registry_t *local_registry,
+    const psx_source_cast_types_resolution_t *resolution,
+    token_t *diag_tok,
     psx_aggregate_source_cast_plan_t *plan);
 
 int psx_plan_aggregate_source_cast_qual_types(

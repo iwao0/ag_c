@@ -385,6 +385,20 @@ static int diagnose_direct_function_rejection(
               diagnostics,
               DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR));
+      return 1;
     default:
       return 0;
   }

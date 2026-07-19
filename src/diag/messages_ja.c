@@ -198,6 +198,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER: return "switch の制御式は整数型である必要があります (C11 6.8.4.2p2)";
     case DIAG_ERR_PARSER_RETURN_TYPES_INCOMPATIBLE: return "return 式の型は関数の戻り値型と互換である必要があります (C11 6.8.6.4p3)";
     case DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS: return "return の変換で参照先型の修飾子を破棄できません (C11 6.8.6.4p3, 6.5.16.1p2)";
+    case DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR: return "キャスト先の型は void またはスカラ型である必要があります (C11 6.5.4p2)";
+    case DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR: return "void 以外へのキャストのオペランドはスカラ型である必要があります (C11 6.5.4p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

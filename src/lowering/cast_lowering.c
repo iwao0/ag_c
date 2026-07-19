@@ -96,16 +96,30 @@ int psx_plan_aggregate_source_cast_resolution(
   return 1;
 }
 
-static void diagnose_aggregate_cast_resolution(
+static void diagnose_source_cast_resolution(
     psx_lowering_context_t *lowering_context, token_t *diag_tok,
-    const psx_aggregate_cast_resolution_t *resolution) {
+    const psx_source_cast_types_resolution_t *resolution) {
   if (!lowering_context || !resolution) return;
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(lowering_context);
   token_kind_t tag_kind =
       (token_kind_t)resolution->target_tag_kind;
   switch (resolution->status) {
-    case PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH:
+    case PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR:
+      ps_diag_ctx_in(
+          diagnostics, diag_tok, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR));
+      return;
+    case PSX_SOURCE_CAST_OPERAND_NOT_SCALAR:
+      ps_diag_ctx_in(
+          diagnostics, diag_tok, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR));
+      return;
+    case PSX_SOURCE_CAST_AGGREGATE_TYPE_MISMATCH:
       ps_diag_ctx_in(
           diagnostics, diag_tok, "cast",
           diag_message_for_in(
@@ -113,21 +127,21 @@ static void diagnose_aggregate_cast_resolution(
               DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
           ps_ctx_tag_kind_spelling(tag_kind));
       return;
-    case PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED:
+    case PSX_SOURCE_CAST_STRUCT_EXTENSION_DISABLED:
       ps_diag_ctx_in(
           diagnostics, diag_tok, "cast", "%s",
           diag_message_for_in(
               diagnostics,
               DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
       return;
-    case PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED:
+    case PSX_SOURCE_CAST_UNION_EXTENSION_DISABLED:
       ps_diag_ctx_in(
           diagnostics, diag_tok, "cast", "%s",
           diag_message_for_in(
               diagnostics,
               DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
       return;
-    case PSX_AGGREGATE_CAST_STATUS_UNSUPPORTED_TARGET:
+    case PSX_SOURCE_CAST_AGGREGATE_UNSUPPORTED:
       ps_diag_ctx_in(
           diagnostics, diag_tok, "cast",
           diag_message_for_in(
@@ -135,7 +149,7 @@ static void diagnose_aggregate_cast_resolution(
               DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
           ps_ctx_tag_kind_spelling(tag_kind));
       return;
-    case PSX_AGGREGATE_CAST_STATUS_MEMBER_NOT_FOUND:
+    case PSX_SOURCE_CAST_AGGREGATE_MEMBER_NOT_FOUND:
       ps_diag_ctx_in(
           diagnostics, diag_tok, "cast", "%s",
           diag_message_for_in(
@@ -145,6 +159,50 @@ static void diagnose_aggregate_cast_resolution(
     default:
       return;
   }
+}
+
+int psx_validate_source_cast_qual_types(
+    psx_lowering_context_t *lowering_context,
+    psx_qual_type_t target_qual_type,
+    psx_qual_type_t operand_qual_type,
+    token_t *diag_tok,
+    const ag_compilation_options_t *options,
+    psx_source_cast_types_resolution_t *resolution) {
+  if (resolution) *resolution = (psx_source_cast_types_resolution_t){0};
+  if (!lowering_context || !options || !resolution) return 0;
+  psx_resolve_source_cast_qual_types(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_decls(lowering_context),
+      ps_lowering_record_layouts(lowering_context),
+      ps_lowering_target(lowering_context), target_qual_type,
+      operand_qual_type, options, resolution);
+  if (resolution->status == PSX_SOURCE_CAST_TYPES_OK) return 1;
+  diagnose_source_cast_resolution(
+      lowering_context, diag_tok, resolution);
+  return 0;
+}
+
+int psx_plan_validated_aggregate_source_cast(
+    psx_lowering_context_t *lowering_context,
+    psx_local_registry_t *local_registry,
+    const psx_source_cast_types_resolution_t *resolution,
+    token_t *diag_tok,
+    psx_aggregate_source_cast_plan_t *plan) {
+  if (plan) *plan = (psx_aggregate_source_cast_plan_t){0};
+  if (!lowering_context || !local_registry || !resolution || !plan ||
+      resolution->status != PSX_SOURCE_CAST_TYPES_OK ||
+      !resolution->target_is_aggregate)
+    return 0;
+  if (psx_plan_aggregate_source_cast_resolution(
+          lowering_context, local_registry,
+          &resolution->aggregate, plan))
+    return 1;
+  ps_diag_ctx_in(
+      ps_lowering_diagnostics(lowering_context), diag_tok, "cast", "%s",
+      diag_message_for_in(
+          ps_lowering_diagnostics(lowering_context),
+          DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  return 0;
 }
 
 int psx_plan_aggregate_source_cast_qual_types(
@@ -158,27 +216,13 @@ int psx_plan_aggregate_source_cast_qual_types(
   if (plan) *plan = (psx_aggregate_source_cast_plan_t){0};
   if (!lowering_context || !local_registry || !options || !plan)
     return 0;
-  psx_aggregate_cast_resolution_t resolution;
-  psx_resolve_aggregate_cast_qual_types(
-      ps_lowering_semantic_types(lowering_context),
-      ps_lowering_record_decls(lowering_context),
-      ps_lowering_record_layouts(lowering_context),
-      ps_lowering_target(lowering_context), target_qual_type,
-      operand_qual_type, options, &resolution);
-  if (resolution.status != PSX_AGGREGATE_CAST_STATUS_OK) {
-    diagnose_aggregate_cast_resolution(
-        lowering_context, diag_tok, &resolution);
+  psx_source_cast_types_resolution_t resolution;
+  if (!psx_validate_source_cast_qual_types(
+          lowering_context, target_qual_type, operand_qual_type,
+          diag_tok, options, &resolution))
     return 0;
-  }
-  if (psx_plan_aggregate_source_cast_resolution(
-          lowering_context, local_registry, &resolution, plan))
-    return 1;
-  ps_diag_ctx_in(
-      ps_lowering_diagnostics(lowering_context), diag_tok, "cast", "%s",
-      diag_message_for_in(
-          ps_lowering_diagnostics(lowering_context),
-          DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
-  return 0;
+  return psx_plan_validated_aggregate_source_cast(
+      lowering_context, local_registry, &resolution, diag_tok, plan);
 }
 
 int psx_plan_aggregate_source_cast(

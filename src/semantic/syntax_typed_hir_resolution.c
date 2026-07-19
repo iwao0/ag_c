@@ -21,7 +21,6 @@
 #include "../target_info.h"
 #include "../type_layout.h"
 #include "assignment_resolution.h"
-#include "aggregate_cast_resolution.h"
 #include "call_resolution.h"
 #include "character_array_initializer.h"
 #include "compound_literal_semantics.h"
@@ -39,6 +38,7 @@
 #include "integer_constant_evaluation.h"
 #include "literal_resolution.h"
 #include "semantic_node_builder.h"
+#include "source_cast_type_resolution.h"
 #include "static_assert_resolution.h"
 #include "type_name_resolution.h"
 #include "type_query_semantics.h"
@@ -122,9 +122,9 @@ struct direct_identifier_binding_t {
 struct direct_cast_binding_t {
   const node_source_cast_t *syntax;
   psx_qual_type_t target_qual_type;
-  psx_aggregate_cast_resolution_t aggregate_resolution;
+  psx_source_cast_types_resolution_t type_resolution;
   psx_aggregate_source_cast_plan_t aggregate_plan;
-  unsigned char is_aggregate;
+  unsigned char types_resolved;
   direct_cast_binding_t *next;
 };
 
@@ -306,11 +306,7 @@ static int resolve_direct_source_cast(
     return 0;
   const psx_type_t *canonical = ps_ctx_type_by_id_in(
       context->semantic_context, resolved.type_id);
-  if (!canonical ||
-      (canonical->kind != PSX_TYPE_VOID &&
-       !ps_type_is_scalar(canonical) &&
-       !ps_type_is_tag_aggregate(canonical)))
-    return 0;
+  if (!canonical) return 0;
   direct_cast_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));
   if (!binding) {
@@ -341,35 +337,43 @@ static direct_cast_binding_t *find_direct_cast_binding(
   return NULL;
 }
 
-static int note_direct_aggregate_cast_rejection(
+static int note_direct_source_cast_rejection(
     direct_resolution_context_t *context,
     const node_t *syntax,
-    const psx_aggregate_cast_resolution_t *resolution) {
+    const psx_source_cast_types_resolution_t *resolution) {
   if (!resolution) return 0;
   psx_syntax_typed_hir_rejection_t rejection;
   switch (resolution->status) {
-    case PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH:
+    case PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR;
+      break;
+    case PSX_SOURCE_CAST_OPERAND_NOT_SCALAR:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR;
+      break;
+    case PSX_SOURCE_CAST_AGGREGATE_TYPE_MISMATCH:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH;
       break;
-    case PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED:
+    case PSX_SOURCE_CAST_STRUCT_EXTENSION_DISABLED:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED;
       break;
-    case PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED:
+    case PSX_SOURCE_CAST_UNION_EXTENSION_DISABLED:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED;
       break;
-    case PSX_AGGREGATE_CAST_STATUS_UNSUPPORTED_TARGET:
+    case PSX_SOURCE_CAST_AGGREGATE_UNSUPPORTED:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_UNSUPPORTED;
       break;
-    case PSX_AGGREGATE_CAST_STATUS_MEMBER_NOT_FOUND:
+    case PSX_SOURCE_CAST_AGGREGATE_MEMBER_NOT_FOUND:
       rejection =
           PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_MEMBER_NOT_FOUND;
       break;
-    case PSX_AGGREGATE_CAST_STATUS_OK:
-    case PSX_AGGREGATE_CAST_STATUS_INVALID:
+    case PSX_SOURCE_CAST_TYPES_OK:
+    case PSX_SOURCE_CAST_TYPES_INVALID:
       return 0;
   }
   return note_direct_integer_rejection(
@@ -1354,7 +1358,8 @@ static int preflight_direct_lvalue(
       return 0;
     direct_cast_binding_t *binding = find_direct_cast_binding(
         context, (const node_source_cast_t *)syntax);
-    if (!binding || !binding->is_aggregate) return 0;
+    if (!binding || !binding->type_resolution.target_is_aggregate)
+      return 0;
     if (qual_type) *qual_type = cast_type;
     return 1;
   }
@@ -1649,42 +1654,36 @@ static int preflight_direct_expression_impl(
             context, (const node_source_cast_t *)syntax,
             &target_type))
       return 0;
-    const psx_type_t *target = ps_ctx_type_by_id_in(
-        context->semantic_context, target_type.type_id);
-    if (!target) return 0;
-    if (ps_type_is_tag_aggregate(target)) {
-      direct_cast_binding_t *binding = find_direct_cast_binding(
-          context, (const node_source_cast_t *)syntax);
-      if (!binding || !context->lowering_context || !context->options)
-        return 0;
-      if (!binding->is_aggregate) {
-        psx_resolve_aggregate_cast_qual_types(
-            ps_ctx_semantic_type_table_in(context->semantic_context),
-            ps_ctx_record_decl_table_in(context->semantic_context),
-            ps_ctx_record_layout_table_in(context->semantic_context),
-            ps_lowering_target(context->lowering_context),
-            target_type, operand_type, context->options,
-            &binding->aggregate_resolution);
-        if (binding->aggregate_resolution.status !=
-            PSX_AGGREGATE_CAST_STATUS_OK)
-          return note_direct_aggregate_cast_rejection(
-              context, syntax, &binding->aggregate_resolution);
-        binding->is_aggregate = 1;
-      }
+    direct_cast_binding_t *binding = find_direct_cast_binding(
+        context, (const node_source_cast_t *)syntax);
+    if (!binding) return 0;
+    if (!binding->types_resolved) {
+      psx_resolve_source_cast_qual_types(
+          ps_ctx_semantic_type_table_in(context->semantic_context),
+          ps_ctx_record_decl_table_in(context->semantic_context),
+          ps_ctx_record_layout_table_in(context->semantic_context),
+          context->lowering_context
+              ? ps_lowering_target(context->lowering_context)
+              : NULL,
+          target_type, operand_type, context->options,
+          &binding->type_resolution);
+      binding->types_resolved = 1;
+    }
+    if (binding->type_resolution.status !=
+        PSX_SOURCE_CAST_TYPES_OK)
+      return note_direct_source_cast_rejection(
+          context, syntax, &binding->type_resolution);
+    if (binding->type_resolution.target_is_aggregate) {
+      if (!context->lowering_context || !context->options) return 0;
       if (context->unevaluated_depth == 0 &&
           !binding->aggregate_plan.temporary &&
-          binding->aggregate_resolution.mode ==
+          binding->type_resolution.aggregate.mode ==
               PSX_AGGREGATE_CAST_INITIALIZE_MEMBER &&
           !psx_plan_aggregate_source_cast_resolution(
               context->lowering_context, context->local_registry,
-              &binding->aggregate_resolution,
+              &binding->type_resolution.aggregate,
               &binding->aggregate_plan))
         return 0;
-    } else if (target->kind != PSX_TYPE_VOID &&
-               (!ps_type_is_scalar(target) ||
-                !psx_qual_type_is_scalar_in(
-                    context->semantic_context, operand_type))) {
-      return 0;
     }
     if (qual_type) *qual_type = target_type;
     return 1;
@@ -2264,7 +2263,7 @@ static int build_direct_aggregate_cast_temporary_parts(
   if (initialization) *initialization = NULL;
   if (object) *object = NULL;
   if (!context || !syntax || !binding || !operand ||
-      !binding->is_aggregate ||
+      !binding->type_resolution.target_is_aggregate ||
       !binding->aggregate_plan.temporary ||
       !initialization || !object)
     return 0;
@@ -2336,7 +2335,7 @@ static psx_semantic_node_t *build_direct_lvalue(
   if (syntax->kind == ND_CAST && syntax->is_source_cast) {
     direct_cast_binding_t *binding = find_direct_cast_binding(
         context, (const node_source_cast_t *)syntax);
-    if (binding && binding->is_aggregate)
+    if (binding && binding->type_resolution.target_is_aggregate)
       return build_direct_expression_impl(context, syntax);
   }
   return NULL;
@@ -2574,7 +2573,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
       return NULL;
     direct_cast_binding_t *binding = find_direct_cast_binding(
         context, (const node_source_cast_t *)syntax);
-    if (binding && binding->is_aggregate &&
+    if (binding && binding->type_resolution.target_is_aggregate &&
         binding->aggregate_plan.temporary) {
       psx_semantic_node_t *initialization = NULL;
       psx_semantic_node_t *object = NULL;
@@ -2833,7 +2832,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
           (const node_source_cast_t *)syntax->lhs;
       direct_cast_binding_t *binding = find_direct_cast_binding(
           context, cast);
-      if (binding && binding->is_aggregate &&
+      if (binding && binding->type_resolution.target_is_aggregate &&
           binding->aggregate_plan.temporary) {
         psx_semantic_node_t *cast_operand = build_direct_expression(
             context, cast->base.lhs);

@@ -10230,7 +10230,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "sum += sizeof(int[3]) + _Alignof(void *) + "
       "sizeof(runtime_values) + sizeof(runtime_matrix[left]) + "
       "sizeof((int){99}) + sizeof(__DirectFn *); "
-      "sum++, --sum, (void)sum; "
+      "sum++, --sum, (void)sum, (void)pair; "
       "char direct_text[] = \"A\\n\"; "
       "unsigned short direct_wide[4] = {u\"A\\u03A9\"}; "
       "sum += direct_text[1] + direct_wide[1]; "
@@ -11065,6 +11065,16 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "struct S { int x; }; union U { int y; }; union U value={1}; "
       "(struct S)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH,
+      ND_CAST);
+  assert_direct_function_rejection(
+      "int __direct_cast_target_array(void) { "
+      "int value=1; (int[2])value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR,
+      ND_CAST);
+  assert_direct_function_rejection(
+      "int __direct_cast_aggregate_operand(void) { "
+      "struct S { int x; }; struct S value={1}; return (int)value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR,
       ND_CAST);
   test_compilation_options()->enable_struct_scalar_pointer_cast = false;
   assert_direct_function_rejection(
@@ -25559,6 +25569,14 @@ static void test_parse_invalid() {
   expect_parse_fail("int *f(void) { return 1; }");
   expect_parse_fail(
       "int *f(const int *value) { return value; }");
+  expect_parse_fail(
+      "int main(void) { int value=1; (int[2])value; return 0; }");
+  expect_parse_fail(
+      "int main(void) { struct S { int x; }; struct S value={1}; "
+      "return (int)value; }");
+  expect_parse_ok(
+      "int main(void) { struct S { int x; }; struct S value={1}; "
+      "(void)value; return 0; }");
   expect_parse_fail("int main() { return missing_value; }"); // 未定義変数
   expect_parse_fail("int main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("int main() { struct T x; return 0; }");   // 未定義タグ参照
@@ -25665,6 +25683,13 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("int main() { struct T x; return 0; }", "不完全型のオブジェクトは宣言できません");
   expect_parse_fail_with_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] struct 値へのキャストは未対応です（型不整合）");
   expect_parse_fail_with_message("int main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（型不整合）");
+  expect_parse_fail_with_message(
+      "int main(void) { int value=1; (int[2])value; return 0; }",
+      "キャスト先の型は void またはスカラ型である必要があります");
+  expect_parse_fail_with_message(
+      "int main(void) { struct S { int x; }; struct S value={1}; "
+      "return (int)value; }",
+      "void 以外へのキャストのオペランドはスカラ型である必要があります");
   expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");

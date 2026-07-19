@@ -198,6 +198,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER: return "The controlling expression of switch must have integer type (C11 6.8.4.2p2)";
     case DIAG_ERR_PARSER_RETURN_TYPES_INCOMPATIBLE: return "Return expression type is incompatible with the function return type (C11 6.8.6.4p3)";
     case DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS: return "Return conversion discards pointed-to type qualifiers (C11 6.8.6.4p3, 6.5.16.1p2)";
+    case DIAG_ERR_PARSER_CAST_TARGET_NOT_VOID_OR_SCALAR: return "Cast target type must be void or a scalar type (C11 6.5.4p2)";
+    case DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR: return "The operand of a non-void cast must have scalar type (C11 6.5.4p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

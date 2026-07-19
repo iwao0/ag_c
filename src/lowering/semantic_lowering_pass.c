@@ -93,15 +93,24 @@ static void lower_source_cast_node(
   psx_source_cast_resolution_t *resolution =
       &state->source_cast;
   if (resolution->kind != PSX_SOURCE_CAST_UNRESOLVED) return;
-  if (!ps_type_is_tag_aggregate(ps_node_get_type(store, node))) {
+  token_t *diag_tok = node->tok
+                          ? node->tok
+                          : (token_t *)fallback_diag_tok;
+  psx_source_cast_types_resolution_t types_resolution;
+  if (!psx_validate_source_cast_qual_types(
+          context->lowering_context,
+          ps_node_qual_type(store, node),
+          ps_node_qual_type(store, node->lhs),
+          diag_tok, context->options, &types_resolution))
+    return;
+  if (!types_resolution.target_is_aggregate) {
     resolution->kind = PSX_SOURCE_CAST_DIRECT_HIR;
     return;
   }
   psx_aggregate_source_cast_plan_t plan;
-  if (!psx_plan_aggregate_source_cast(
+  if (!psx_plan_validated_aggregate_source_cast(
           context->lowering_context, context->local_registry,
-          (node_source_cast_t *)node, (token_t *)fallback_diag_tok,
-          context->options, &plan))
+          &types_resolution, diag_tok, &plan))
     return;
   resolution->aggregate_temporary = plan.temporary;
   resolution->aggregate_member_qual_type = plan.member_qual_type;
