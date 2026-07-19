@@ -550,7 +550,7 @@ static void semantic_resolve_function_call(
               types, call_types.return_qual_type.type_id);
       if (canonical_function)
         psx_function_call_bind_qual_type(
-            store, call, canonical_function,
+            store, call, types,
             call_types.function_qual_type);
       if (canonical_return)
         ps_node_bind_qual_type(

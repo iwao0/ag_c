@@ -17,13 +17,18 @@ static int intern_available_type(node_t *node, void *user) {
     node_function_call_t *call = (node_function_call_t *)node;
     const psx_type_t *callee_type =
         psx_function_call_type(pass->resolution_store, call);
+    if (!callee_type && call->callee)
+      callee_type = ps_type_callable_function(
+          ps_node_get_type(pass->resolution_store, call->callee));
     psx_qual_type_t callee_qual_type = callee_type
         ? ps_ctx_intern_qual_type_in(
               pass->semantic_context, callee_type)
         : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                             PSX_TYPE_QUALIFIER_NONE};
     psx_function_call_bind_qual_type(
-        pass->resolution_store, call, callee_type, callee_qual_type);
+        pass->resolution_store, call,
+        ps_ctx_semantic_type_table_in(pass->semantic_context),
+        callee_qual_type);
     if (callee_type &&
         callee_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       pass->failed_node = node;
@@ -58,16 +63,15 @@ static int materialize_interned_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
   if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
-    const psx_type_t *callee_type =
-        psx_function_call_type(pass->resolution_store, call);
-    if (callee_type) {
-      psx_qual_type_t callee_qual_type =
-          psx_function_call_qual_type(pass->resolution_store, call);
-      callee_type = ps_ctx_type_by_id_in(
+    psx_qual_type_t callee_qual_type =
+        psx_function_call_qual_type(pass->resolution_store, call);
+    if (callee_qual_type.type_id != PSX_TYPE_ID_INVALID) {
+      const psx_type_t *callee_type = ps_ctx_type_by_id_in(
           pass->semantic_context, callee_qual_type.type_id);
       psx_function_call_bind_qual_type(
           pass->resolution_store, call,
-          callee_type, callee_qual_type);
+          ps_ctx_semantic_type_table_in(pass->semantic_context),
+          callee_qual_type);
       if (!callee_type) {
         pass->failed_node = node;
         return 0;

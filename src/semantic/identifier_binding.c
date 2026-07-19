@@ -352,12 +352,13 @@ static void bind_direct_call(
   }
   psx_qual_type_t function_qual_type =
       ps_function_symbol_qual_type(resolution.function);
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
   const psx_type_t *callee_type =
       psx_semantic_type_table_lookup_qual_type(
-          ps_ctx_semantic_type_table_in(context->semantic_context),
-          function_qual_type);
+          semantic_types, function_qual_type);
   psx_function_call_bind_qual_type(
-      binding_store(context), call, callee_type,
+      binding_store(context), call, semantic_types,
       function_qual_type);
   if (!callee_type || callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx_in(

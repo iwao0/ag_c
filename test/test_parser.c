@@ -387,8 +387,6 @@ static void test_set_invalid_vla_runtime_view(
       test_resolution_store(), (lhs), (rhs), (resolution))
 #define psx_function_call_type(call) \
   psx_function_call_type(test_resolution_store(), (call))
-#define psx_function_call_bind_type(call, type) \
-  psx_function_call_bind_type(test_resolution_store(), (call), (type))
 #define psx_function_call_qual_type(call) \
   psx_function_call_qual_type(test_resolution_store(), (call))
 #define psx_function_call_set_implicit_declaration(call, enabled) \
@@ -665,6 +663,16 @@ static int test_type_alignof_for_target(
 
 static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
+}
+
+static void bind_test_function_call_type(
+    node_function_call_t *call, const psx_type_t *type) {
+  psx_qual_type_t qual_type =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
+  ASSERT_TRUE(qual_type.type_id != PSX_TYPE_ID_INVALID);
+  (psx_function_call_bind_qual_type)(
+      test_resolution_store(), call,
+      ps_ctx_semantic_type_table_in(test_semantic_context()), qual_type);
 }
 
 static const psx_type_t *test_function_symbol_type(
@@ -25714,7 +25722,7 @@ static void test_semantic_canonical_type_invariant() {
   test_bind_node_type(
       &invalid_function_call,
       ps_type_new_integer(TK_INT, 4, 0));
-  psx_function_call_bind_type(
+  bind_test_function_call_type(
       &invalid_function_call,
       ps_type_new_function(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
@@ -25741,7 +25749,7 @@ static void test_semantic_canonical_type_invariant() {
       &invalid_indirect_function_call,
       ps_type_new_integer(TK_INT, 4, 0));
   invalid_indirect_function_call.callee = &non_callable_callee;
-  psx_function_call_bind_type(
+  bind_test_function_call_type(
       &invalid_indirect_function_call, callee_function);
   ASSERT_TRUE(psx_finalize_semantic_tree_types(
       test_semantic_context(),
@@ -26550,8 +26558,12 @@ static void test_semantic_type_identity() {
       sizeof(typed_call)));
   (ps_node_bind_type)(
       context_store, &typed_call.base, function_type->base);
-  (psx_function_call_bind_type)(
-      context_store, &typed_call, function_type);
+  psx_qual_type_t typed_call_qual_type =
+      ps_ctx_intern_qual_type_in(context, function_type);
+  ASSERT_TRUE(typed_call_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  (psx_function_call_bind_qual_type)(
+      context_store, &typed_call,
+      ps_ctx_semantic_type_table_in(context), typed_call_qual_type);
   ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
       context, (node_t *)&typed_call, &failure, 0));
   psx_qual_type_t callee_identity =

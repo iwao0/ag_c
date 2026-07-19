@@ -81,7 +81,7 @@ typedef struct {
 } psx_member_access_state_t;
 
 typedef struct {
-  const psx_type_t *callee_type;
+  const psx_semantic_type_table_t *callee_type_table;
   psx_qual_type_t callee_qual_type;
   char *direct_name;
   int direct_name_len;

@@ -4494,7 +4494,10 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bpsx_function_call_resolution_state_t\s+function_call\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*callee_type_table\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
     !/\bpsx_qual_type_t\s+callee_qual_type\s*;/.test(
@@ -4510,6 +4513,9 @@ if (/\bnode_func_t\b/.test(astSource) ||
       nodeTypePublicSource,
     ) ||
     !/\bpsx_function_call_qual_type\s*\(/.test(
+      functionCallResolutionHeader,
+    ) ||
+    /\bpsx_function_call_bind_type\s*\(/.test(
       functionCallResolutionHeader,
     ) ||
     !/\bps_node_resolution_state(?:_const)?\s*\(/.test(

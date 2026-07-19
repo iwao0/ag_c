@@ -55,29 +55,26 @@ int psx_function_call_direct_name_length(
   return state ? state->direct_name_len : 0;
 }
 
-void psx_function_call_bind_type(
-    psx_resolution_store_t *store,
-    node_function_call_t *call, const psx_type_t *callee_type) {
-  psx_function_call_resolution_state_t *state = call_state(store, call);
-  if (!state) return;
-  state->callee_type = callee_type;
-}
-
 const psx_type_t *psx_function_call_type(
     const psx_resolution_store_t *store,
     const node_function_call_t *call) {
   const psx_function_call_resolution_state_t *state =
       call_state_const(store, call);
-  return state ? state->callee_type : NULL;
+  return state && state->callee_type_table
+             ? psx_semantic_type_table_lookup(
+                   state->callee_type_table,
+                   state->callee_qual_type.type_id)
+             : NULL;
 }
 
 void psx_function_call_bind_qual_type(
     psx_resolution_store_t *store,
-    node_function_call_t *call, const psx_type_t *canonical_type,
+    node_function_call_t *call,
+    const psx_semantic_type_table_t *callee_type_table,
     psx_qual_type_t callee_qual_type) {
   psx_function_call_resolution_state_t *state = call_state(store, call);
   if (!state) return;
-  state->callee_type = canonical_type;
+  state->callee_type_table = callee_type_table;
   state->callee_qual_type = callee_qual_type;
 }
 
