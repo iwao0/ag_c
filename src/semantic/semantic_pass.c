@@ -571,59 +571,13 @@ static void semantic_resolve_function_call(
       return;
     }
   }
-  psx_function_call_resolution_t resolution;
-  psx_resolve_function_call_type(
-      bound_call_type,
-      call->callee ? ps_node_get_type(store, call->callee) : NULL,
-      is_implicit_declaration, &resolution);
-  if (resolution.status == PSX_FUNCTION_CALL_RESOLUTION_OK) {
-    if (resolution.function_type) {
-      const psx_semantic_type_table_t *types =
-          ps_ctx_semantic_type_table_in(semantic_context);
-      psx_qual_type_t callee_type = call->callee
-          ? ps_node_qual_type(store, call->callee)
-          : (psx_qual_type_t){0};
-      if (callee_type.type_id == PSX_TYPE_ID_INVALID) {
-        callee_type = ps_ctx_intern_qual_type_in(
-            semantic_context,
-            call->callee ? ps_node_get_type(store, call->callee)
-                         : bound_call_type);
-      }
-      psx_qual_type_t function_type =
-          psx_semantic_type_table_callable_function(types, callee_type);
-      if (function_type.type_id == PSX_TYPE_ID_INVALID) {
-        function_type = ps_ctx_intern_qual_type_in(
-            semantic_context, resolution.function_type);
-      }
-      const psx_type_t *canonical_function =
-          psx_semantic_type_table_lookup(types, function_type.type_id);
-      if (canonical_function &&
-          canonical_function->kind == PSX_TYPE_FUNCTION) {
-        psx_function_call_bind_type(store, call, canonical_function);
-        bound_call_type = canonical_function;
-      }
-      psx_qual_type_t return_type = psx_semantic_type_table_base(
-          types, function_type.type_id);
-      const psx_type_t *canonical_return =
-          psx_semantic_type_table_lookup(types, return_type.type_id);
-      if (canonical_return) {
-        ps_node_bind_qual_type(
-            store, (node_t *)call, canonical_return, return_type);
-      } else {
-        semantic_bind_result_type(
-            semantic_context, (node_t *)call,
-            ps_type_function_return_type(bound_call_type));
-      }
-      return;
-    }
-    if (is_implicit_declaration) {
-      semantic_bind_result_type(
-          semantic_context, (node_t *)call,
-          ps_type_new_integer_kind_in(
-              ps_ctx_arena(semantic_context),
-              PSX_INTEGER_KIND_INT, 0, 0));
-      return;
-    }
+  if (is_implicit_declaration) {
+    semantic_bind_result_type(
+        semantic_context, (node_t *)call,
+        ps_type_new_integer_kind_in(
+            ps_ctx_arena(semantic_context),
+            PSX_INTEGER_KIND_INT, 0, 0));
+    return;
   }
   ps_diag_ctx_in(diagnostics, call->base.tok
                   ? call->base.tok

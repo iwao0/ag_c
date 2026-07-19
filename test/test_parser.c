@@ -9159,13 +9159,21 @@ static void test_function_call_type_binding_boundary() {
   const psx_type_t *parameters[] = {parameter};
   ps_type_set_function_params(function, parameters, 1, 0);
 
-  psx_function_call_resolution_t resolution;
-  psx_resolve_function_call_type(function, NULL, 0, &resolution);
-  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
-  ASSERT_TRUE(resolution.function_type == function);
-  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.function_type->base->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            resolution.function_type->base->floating_kind);
+  psx_qual_type_t function_identity = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), function);
+  ASSERT_TRUE(function_identity.type_id != PSX_TYPE_ID_INVALID);
+  psx_call_types_resolution_t resolution;
+  psx_resolve_call_qual_types_in(
+      test_semantic_context(), function_identity, 1, &resolution);
+  ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
+  ASSERT_EQ(function_identity.type_id,
+            resolution.function_qual_type.type_id);
+  psx_type_shape_t return_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      resolution.return_qual_type.type_id, &return_shape));
+  ASSERT_EQ(PSX_TYPE_FLOAT, return_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, return_shape.floating_kind);
 
   psx_type_t *function_pointer = ps_type_new_pointer(
       ps_type_clone(function));
@@ -9174,38 +9182,47 @@ static void test_function_call_type_binding_boundary() {
               function_pointer->base);
   ASSERT_TRUE(ps_type_function_return_type(function_pointer) ==
               function_pointer->base->base);
-  psx_resolve_function_call_type(
-      NULL, function_pointer, 0, &resolution);
-  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, resolution.function_type->kind);
-  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.function_type->base->kind);
+  psx_qual_type_t function_pointer_identity = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), function_pointer);
+  psx_resolve_call_qual_types_in(
+      test_semantic_context(), function_pointer_identity, 1, &resolution);
+  ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
+  ASSERT_EQ(function_identity.type_id,
+            resolution.function_qual_type.type_id);
 
-  psx_resolve_function_call_type(NULL, NULL, 1, &resolution);
-  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
-  ASSERT_TRUE(resolution.function_type == NULL);
-
-  psx_resolve_function_call_type(
-      NULL, ps_type_new_integer(TK_INT, 4, 0), 0, &resolution);
-  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
-            resolution.status);
-  ASSERT_TRUE(resolution.function_type == NULL);
+  psx_qual_type_t integer_identity = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), ps_type_new_integer(TK_INT, 4, 0));
+  psx_resolve_call_qual_types_in(
+      test_semantic_context(), integer_identity, 0, &resolution);
+  ASSERT_EQ(PSX_CALL_TYPES_NOT_CALLABLE, resolution.status);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            resolution.function_qual_type.type_id);
 
   psx_type_t *double_function_pointer =
       ps_type_new_pointer(ps_type_new_pointer(ps_type_clone(function)));
   ASSERT_TRUE(ps_type_derived_function(double_function_pointer) != NULL);
   ASSERT_TRUE(ps_type_callable_function(double_function_pointer) == NULL);
   ASSERT_TRUE(ps_type_function_return_type(double_function_pointer) == NULL);
-  psx_resolve_function_call_type(
-      NULL, double_function_pointer, 0, &resolution);
-  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
-            resolution.status);
-  ASSERT_TRUE(resolution.function_type == NULL);
+  psx_qual_type_t double_pointer_identity = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), double_function_pointer);
+  psx_resolve_call_qual_types_in(
+      test_semantic_context(), double_pointer_identity, 0, &resolution);
+  ASSERT_EQ(PSX_CALL_TYPES_NOT_CALLABLE, resolution.status);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            resolution.function_qual_type.type_id);
 
   psx_type_t *function_pointer_array = ps_type_new_array(
       ps_type_clone(function_pointer), 2, 16, 0);
   ASSERT_TRUE(ps_type_derived_function(function_pointer_array) != NULL);
   ASSERT_TRUE(ps_type_callable_function(function_pointer_array) == NULL);
   ASSERT_TRUE(ps_type_function_return_type(function_pointer_array) == NULL);
+  psx_qual_type_t function_pointer_array_identity =
+      ps_ctx_intern_qual_type_in(
+          test_semantic_context(), function_pointer_array);
+  psx_resolve_call_qual_types_in(
+      test_semantic_context(), function_pointer_array_identity, 0,
+      &resolution);
+  ASSERT_EQ(PSX_CALL_TYPES_NOT_CALLABLE, resolution.status);
 
   const psx_type_t *reference_type =
       psx_resolve_function_reference_type(

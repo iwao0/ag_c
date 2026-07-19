@@ -26,28 +26,29 @@ void psx_resolve_call_qual_types_in(
   psx_qual_type_t function_type =
       psx_semantic_type_table_callable_function(
           types, callee_qual_type);
-  const psx_type_t *function = psx_semantic_type_table_lookup(
-      types, function_type.type_id);
-  if (!function || function->kind != PSX_TYPE_FUNCTION)
+  psx_type_shape_t function = {0};
+  if (!psx_semantic_type_table_describe(
+          types, function_type.type_id, &function) ||
+      function.kind != PSX_TYPE_FUNCTION)
     return;
 
   resolution->function_qual_type = function_type;
   resolution->return_qual_type = psx_semantic_type_table_base(
       types, function_type.type_id);
-  resolution->parameter_count = function->param_count;
+  resolution->parameter_count = function.parameter_count;
   resolution->is_variadic =
-      function->is_variadic_function ? 1 : 0;
+      function.is_variadic_function ? 1 : 0;
   if (resolution->return_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return;
 
-  if ((function->has_function_prototype &&
-       function->param_count == 0 && argument_count > 0) ||
-      (function->is_variadic_function &&
-       argument_count < function->param_count) ||
-      (function->has_function_prototype &&
-       !function->is_variadic_function &&
-       function->param_count > 0 &&
-       argument_count != function->param_count)) {
+  if ((function.has_function_prototype &&
+       function.parameter_count == 0 && argument_count > 0) ||
+      (function.is_variadic_function &&
+       argument_count < function.parameter_count) ||
+      (function.has_function_prototype &&
+       !function.is_variadic_function &&
+       function.parameter_count > 0 &&
+       argument_count != function.parameter_count)) {
     resolution->status = PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH;
     return;
   }

@@ -7096,8 +7096,11 @@ if (!/static\s+int\s+semantic_bind_address_result_type\s*\([^]*?ps_ctx_intern_po
     !/psx_semantic_type_table_callable_function\s*\(/.test(
       typeIdentityImplementationSource,
     ) ||
-    !/psx_semantic_type_table_callable_function\s*\([^]*?psx_semantic_type_table_base\s*\(/.test(
-      semanticPassSource,
+    !/psx_semantic_type_table_callable_function\s*\(/.test(
+      callResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_base\s*\(/.test(
+      callResolutionSource,
     )) {
   throw new Error(
     "address decay and function-call results must preserve recursive QualType relations",
@@ -8034,7 +8037,13 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
     !/canonical->has_function_prototype\s*==\s*[^;]*candidate->has_function_prototype/.test(
       typeIdentityImplementationSource,
     ) ||
-    !/function->has_function_prototype/.test(callResolutionSource) ||
+    !/function\.has_function_prototype/.test(callResolutionSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      callResolutionSource,
+    ) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+      callResolutionSource,
+    ) ||
     !/callable_semantic_type\.has_function_prototype/.test(
       hirIrBuilder,
     ) ||
@@ -8049,6 +8058,9 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       callResolutionSource,
+    ) ||
+    /\bpsx_resolve_function_call_type\b|\bpsx_function_call_resolution_t\b|\bPSX_FUNCTION_CALL_RESOLUTION_/.test(
+      `${functionCallResolutionHeader}\n${functionCallResolutionSource}\n${semanticPassSource}`,
     ) ||
     sharedCallTypeRuleUses !== 2 ||
     !/\bPSX_HIR_CALL\b/.test(syntaxTypedHirResolutionSource) ||

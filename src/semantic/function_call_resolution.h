@@ -8,16 +8,6 @@ typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_resolution_store_t psx_resolution_store_t;
 
-typedef enum {
-  PSX_FUNCTION_CALL_RESOLUTION_OK = 0,
-  PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
-} psx_function_call_resolution_status_t;
-
-typedef struct {
-  psx_function_call_resolution_status_t status;
-  const psx_type_t *function_type;
-} psx_function_call_resolution_t;
-
 int psx_function_call_prepare_resolution_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_function_call_t *call);
@@ -50,10 +40,6 @@ int psx_function_call_is_implicit_declaration(
     const psx_resolution_store_t *store,
     const node_function_call_t *call);
 
-void psx_resolve_function_call_type(
-    const psx_type_t *bound_function_type,
-    const psx_type_t *callee_type, int is_implicit_declaration,
-    psx_function_call_resolution_t *resolution);
 const psx_type_t *psx_resolve_function_reference_type(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *function_type);
