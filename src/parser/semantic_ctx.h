@@ -131,10 +131,14 @@ int ps_ctx_is_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
 const psx_type_t *psx_ctx_get_function_ret_type_in(
     psx_semantic_context_t *context, char *name, int len);
+psx_qual_type_t psx_ctx_get_function_return_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len);
 int psx_ctx_track_function_type_in(
     psx_semantic_context_t *context, char *name, int len,
     const psx_type_t *function_type);
 const psx_type_t *ps_ctx_get_function_type_in(
+    psx_semantic_context_t *context, char *name, int len);
+psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_format_function_signature_in(
     psx_semantic_context_t *context, char *name, int len,
@@ -290,7 +294,7 @@ bool psx_ctx_is_typedef_name_token_in(
 psx_name_classifier_t ps_ctx_name_classifier(
     psx_semantic_context_t *context);
 struct psx_function_registration_checkpoint_t {
-  const psx_type_t *function_type;
+  psx_qual_type_t function_qual_type;
   int existed;
   int is_defined;
 };

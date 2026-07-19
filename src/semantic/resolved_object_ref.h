@@ -12,6 +12,7 @@ typedef struct global_var_t global_var_t;
 typedef struct lvar_t lvar_t;
 typedef struct node_t node_t;
 typedef struct psx_type_t psx_type_t;
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef enum {
   PSX_RESOLVED_OBJECT_REF_NONE = 0,
@@ -34,7 +35,9 @@ int psx_bind_global_reference_in(
 int psx_bind_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
-    char *name, int name_len, const psx_type_t *function_type);
+    char *name, int name_len,
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t function_qual_type);
 int psx_bind_va_arg_area_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node);

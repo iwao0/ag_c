@@ -663,6 +663,13 @@ static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
 }
 
+static const psx_type_t *test_function_symbol_type(
+    const psx_function_symbol_t *symbol) {
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_function_symbol_qual_type(symbol));
+}
+
 static psx_global_registry_t *test_global_registry(void) {
   return ag_compilation_session_global_registry(test_suite_session);
 }
@@ -3207,7 +3214,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           (char *)"DirectFunction", 14);
   ASSERT_TRUE(direct_function_symbol != NULL);
   psx_type_t *direct_callback_type = ps_type_new_pointer(
-      ps_function_symbol_type(direct_function_symbol));
+      test_function_symbol_type(direct_function_symbol));
   lvar_t *direct_callback = register_test_typed_storage_fixture(
       (char *)"DirectCallback", 14, 8, 8,
       direct_callback_type);
@@ -7392,7 +7399,7 @@ static void test_identifier_resolution_boundary() {
               ps_ctx_find_function_symbol_in(test_semantic_context(),
                   (char *)"__identifier_function", 21));
   const psx_type_t *resolved_function_type =
-      ps_function_symbol_type(function_call.function);
+      test_function_symbol_type(function_call.function);
   ASSERT_TRUE(resolved_function_type != NULL);
   ASSERT_TRUE(resolved_function_type ==
               ps_ctx_get_function_type_in(test_semantic_context(),
@@ -12639,8 +12646,17 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &planned_function);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, planned_function.status);
   ASSERT_TRUE(planned_function.function != NULL);
+  psx_qual_type_t planned_function_qual_type =
+      ps_function_symbol_qual_type(planned_function.function);
+  ASSERT_TRUE(planned_function_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(
+      planned_function_qual_type.type_id,
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(), planned_function_name,
+          (int)sizeof(planned_function_name) - 1).type_id);
   const psx_type_t *planned_function_type =
-      ps_function_symbol_type(planned_function.function);
+      test_function_symbol_type(planned_function.function);
   ASSERT_EQ(PSX_TYPE_FUNCTION, planned_function_type->kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
             planned_function_type->base->kind);
@@ -12703,7 +12719,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(funcptr_resolution.function != NULL);
   const psx_type_t *planned_return =
       ps_type_function_return_type(
-          ps_function_symbol_type(funcptr_resolution.function));
+          test_function_symbol_type(funcptr_resolution.function));
   const psx_type_t *planned_callable = ps_type_derived_function(planned_return);
   ASSERT_TRUE(planned_callable != NULL);
   ASSERT_EQ(1, planned_callable->param_count);
@@ -12768,6 +12784,36 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
+
+  static char checkpoint_name[] = "__resolution_checkpoint";
+  psx_ctx_define_function_name_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1);
+  psx_function_registration_checkpoint_t function_checkpoint;
+  ps_ctx_checkpoint_function_registration_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1, &function_checkpoint);
+  ASSERT_TRUE(function_checkpoint.existed);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            function_checkpoint.function_qual_type.type_id);
+  ASSERT_TRUE(ps_ctx_register_function_type_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1,
+      resolution_function_type));
+  ASSERT_TRUE(ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ps_ctx_rollback_function_registration_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1, &function_checkpoint);
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+      test_semantic_context(), checkpoint_name,
+      (int)sizeof(checkpoint_name) - 1));
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_get_function_qual_type_in(
+                test_semantic_context(), checkpoint_name,
+                (int)sizeof(checkpoint_name) - 1).type_id);
 }
 
 static void test_global_declaration_resolution_boundary() {

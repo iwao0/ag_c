@@ -198,7 +198,7 @@ struct psx_function_symbol_t {
   char *name;
   int len;
   psx_decl_id_t declaration_id;
-  const psx_type_t *function_type;
+  psx_qual_type_t function_qual_type;
   /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
    * のみではこのフラグは立たない。 */
@@ -1932,9 +1932,12 @@ static psx_function_symbol_t *find_function_name_mut_in(
       context, name, len);
 }
 
-const psx_type_t *ps_function_symbol_type(
+psx_qual_type_t ps_function_symbol_qual_type(
     const psx_function_symbol_t *symbol) {
-  return symbol ? symbol->function_type : NULL;
+  return symbol
+             ? symbol->function_qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 void ps_ctx_checkpoint_function_registration_in(
@@ -1948,7 +1951,7 @@ void ps_ctx_checkpoint_function_registration_in(
   if (!function) return;
   checkpoint->existed = 1;
   checkpoint->is_defined = function->is_defined;
-  checkpoint->function_type = function->function_type;
+  checkpoint->function_qual_type = function->function_qual_type;
 }
 
 void ps_ctx_rollback_function_registration_in(
@@ -1981,7 +1984,7 @@ void ps_ctx_rollback_function_registration_in(
     return;
   }
   function->is_defined = checkpoint->is_defined;
-  function->function_type = checkpoint->function_type;
+  function->function_qual_type = checkpoint->function_qual_type;
 }
 
 static void define_function_name_in(
@@ -2041,9 +2044,10 @@ int ps_ctx_is_function_defined_in(
 
 const psx_type_t *psx_ctx_get_function_ret_type_in(
     psx_semantic_context_t *context, char *name, int len) {
-  const psx_function_symbol_t *f =
-      ps_ctx_find_function_symbol_in(context, name, len);
-  return f ? ps_type_function_return_type(f->function_type) : NULL;
+  psx_qual_type_t return_type =
+      psx_ctx_get_function_return_qual_type_in(context, name, len);
+  return psx_semantic_type_table_lookup_qual_type(
+      context ? context->semantic_types : NULL, return_type);
 }
 
 const psx_function_symbol_t *ps_ctx_register_function_type_in(
@@ -2060,14 +2064,16 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
     f = find_function_name_mut_in(context, name, len);
   }
   if (!f) return NULL;
-  if (f->function_type)
-    return ps_type_shape_matches(f->function_type, function_type)
-               ? f : NULL;
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       context, function_type);
   if (identity.type_id == PSX_TYPE_ID_INVALID) return NULL;
-  f->function_type = psx_semantic_type_table_lookup_qual_type(
-      context->semantic_types, identity);
+  if (f->function_qual_type.type_id != PSX_TYPE_ID_INVALID) {
+    const psx_type_t *existing =
+        psx_semantic_type_table_lookup_qual_type(
+            context->semantic_types, f->function_qual_type);
+    return ps_type_shape_matches(existing, function_type) ? f : NULL;
+  }
+  f->function_qual_type = identity;
   return f;
 }
 
@@ -2080,8 +2086,23 @@ int psx_ctx_track_function_type_in(
 
 const psx_type_t *ps_ctx_get_function_type_in(
     psx_semantic_context_t *context, char *name, int len) {
-  return ps_function_symbol_type(
+  return psx_semantic_type_table_lookup_qual_type(
+      context ? context->semantic_types : NULL,
+      ps_ctx_get_function_qual_type_in(context, name, len));
+}
+
+psx_qual_type_t ps_ctx_get_function_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  return ps_function_symbol_qual_type(
       ps_ctx_find_function_symbol_in(context, name, len));
+}
+
+psx_qual_type_t psx_ctx_get_function_return_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  psx_qual_type_t function_type =
+      ps_ctx_get_function_qual_type_in(context, name, len);
+  return psx_semantic_type_table_base(
+      context ? context->semantic_types : NULL, function_type.type_id);
 }
 
 int ps_ctx_format_function_signature_in(

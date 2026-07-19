@@ -119,13 +119,9 @@ static int resolve_function_definition_header(
     return 0;
   }
 
-  const psx_type_t *canonical_function_type =
-      ps_ctx_get_function_type_in(
-          semantic_context, name->str, name->len);
-  psx_qual_type_t signature = ps_ctx_intern_qual_type_in(
-      semantic_context, canonical_function_type);
-  if (!canonical_function_type ||
-      signature.type_id == PSX_TYPE_ID_INVALID) {
+  psx_qual_type_t signature = ps_ctx_get_function_qual_type_in(
+      semantic_context, name->str, name->len);
+  if (signature.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         diagnostics, (token_t *)name, "funcdef",
         "canonical function signature identity is unavailable");

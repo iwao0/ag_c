@@ -1,5 +1,7 @@
 #include "resolved_object_ref.h"
 
+#include "type_identity.h"
+
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "../parser/gvar_public.h"
@@ -71,14 +73,17 @@ int psx_bind_global_reference_in(
 int psx_bind_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
-    char *name, int name_len, const psx_type_t *function_type) {
+    char *name, int name_len,
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t function_qual_type) {
   if (!node ||
       !ps_node_prepare_resolution_state_in(store, arena_context, node))
     return 0;
-  ps_node_bind_type(
-      store, node, function_type
-                ? ps_type_clone_in(arena_context, function_type)
-                : NULL);
+  const psx_type_t *function_type =
+      psx_semantic_type_table_lookup_qual_type(
+          types, function_qual_type);
+  if (!function_type) return 0;
+  ps_node_bind_qual_type(store, node, function_type, function_qual_type);
   psx_resolved_reference_state_t *reference = reference_state(store, node);
   if (!reference) return 0;
   *reference = (psx_resolved_reference_state_t){

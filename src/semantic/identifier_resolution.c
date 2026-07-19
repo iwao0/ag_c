@@ -144,10 +144,8 @@ void psx_resolve_identifier_expression(
       break;
     case PSX_IDENTIFIER_FUNCTION:
       resolution->declaration_qual_type =
-          ps_ctx_intern_qual_type_in(
-              semantic_context,
-              ps_function_symbol_type(
-                  resolution->symbol.function));
+          ps_function_symbol_qual_type(
+              resolution->symbol.function);
       break;
     case PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA: {
       resolution->declaration_qual_type =

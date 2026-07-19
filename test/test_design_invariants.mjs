@@ -9059,6 +9059,9 @@ const functionDefinitionHeaderResolutionStruct =
   functionDefinitionResolutionHeader.match(
     /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_function_definition_header_resolution_t\s*;/,
   );
+const functionSymbolStruct = semanticContextOwnershipSource.match(
+  /struct\s+psx_function_symbol_t\s*\{([\s\S]*?)\n\};/,
+);
 if (!/psx_function_definition_header_resolution_t\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
@@ -9079,10 +9082,10 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     /parameter_types\s*\[[^\]]+\]\s*=\s*ps_node_get_type\s*\(/.test(
       explicitArenaDeclarationPipelineSource,
     ) ||
-    !/ps_ctx_get_function_type_in\s*\(/.test(
+    !/ps_ctx_get_function_qual_type_in\s*\(/.test(
       functionDefinitionResolutionSource,
     ) ||
-    !/ps_ctx_intern_qual_type_in\s*\(/.test(
+    /ps_ctx_get_function_type_in\s*\(|ps_ctx_intern_qual_type_in\s*\(/.test(
       functionDefinitionResolutionSource,
     ) ||
     !/psx_semantic_type_table_describe\s*\(/.test(
@@ -9095,17 +9098,31 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     /resolution\.function_type\b/.test(
       functionDefinitionResolutionSource,
     ) ||
-    !/f->function_type\s*=\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
-      await readFile("src/parser/semantic_ctx.c", "utf8"),
+    !functionSymbolStruct ||
+    !/psx_qual_type_t\s+function_qual_type\s*;/.test(
+      functionSymbolStruct[1],
     ) ||
-    /f->function_type\s*=\s*ctx_type_clone_persistent_in\s*\(/.test(
-      await readFile("src/parser/semantic_ctx.c", "utf8"),
+    /\bpsx_type_t\b/.test(functionSymbolStruct[1]) ||
+    !/psx_qual_type_t\s+function_qual_type\s*;/.test(
+      semanticContextSource,
+    ) ||
+    /f->function_type\b|checkpoint->function_type\b/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_function_symbol_qual_type\s*\(/.test(
+      identifierResolutionSource,
+    ) ||
+    /ps_function_symbol_type\s*\(|ps_ctx_intern_qual_type_in\s*\([^]*?resolution->symbol\.function/.test(
+      identifierResolutionSource,
+    ) ||
+    !/psx_function_call_bind_qual_type\s*\(/.test(
+      identifierBindingSource,
     ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(
       functionDefinitionResolutionSource,
     )) {
   throw new Error(
-    "function headers must resolve to canonical value data before any mutable compatibility node is projected",
+    "function symbols and headers must own canonical QualType values before any mutable compatibility node is projected",
   );
 }
 if (!parsedFunctionResolutionBoundary ||

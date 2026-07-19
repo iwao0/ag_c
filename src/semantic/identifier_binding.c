@@ -145,13 +145,16 @@ static node_t *materialize_function(
     node_identifier_t *identifier,
     const psx_identifier_resolution_t *resolution,
     const psx_identifier_binding_context_t *context) {
-  const psx_type_t *function_type =
-      ps_function_symbol_type(resolution->function);
+  psx_qual_type_t function_qual_type =
+      ps_function_symbol_qual_type(resolution->function);
   return psx_bind_function_reference_in(
              binding_store(context),
              ps_ctx_arena(context->semantic_context),
              (node_t *)identifier, identifier->name,
-             identifier->name_len, function_type)
+             identifier->name_len,
+             ps_ctx_semantic_type_table_in(
+                 context->semantic_context),
+             function_qual_type)
              ? (node_t *)identifier : NULL;
 }
 
@@ -347,13 +350,15 @@ static void bind_direct_call(
         binding_store(context), call, 1);
     return;
   }
-  const psx_type_t *function_type =
-      ps_function_symbol_type(resolution.function);
-  const psx_type_t *callee_type = function_type
-      ? ps_type_clone_in(
-            ps_ctx_arena(context->semantic_context), function_type)
-      : NULL;
-  psx_function_call_bind_type(binding_store(context), call, callee_type);
+  psx_qual_type_t function_qual_type =
+      ps_function_symbol_qual_type(resolution.function);
+  const psx_type_t *callee_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(context->semantic_context),
+          function_qual_type);
+  psx_function_call_bind_qual_type(
+      binding_store(context), call, callee_type,
+      function_qual_type);
   if (!callee_type || callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(context->semantic_context),
