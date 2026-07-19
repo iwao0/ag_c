@@ -6213,7 +6213,11 @@ if (!tagMemberStruct ||
       tagMemberStruct[1],
     ) ||
     !tagMemberDeclStruct ||
-    !/\bpsx_type_t\s*\*\s*type\s*;/.test(tagMemberDeclStruct[1]) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*type_table\s*;/.test(
+      tagMemberDeclStruct[1],
+    ) ||
+    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(tagMemberDeclStruct[1]) ||
+    /\bpsx_type_t\s*\*/.test(tagMemberDeclStruct[1]) ||
     /\b(?:offset|bit_offset)\s*;/.test(tagMemberDeclStruct[1]) ||
     !tagMemberLayoutDraftStruct ||
     !/\bconst\s+tag_member_t\s*\*\s*member\s*;/.test(

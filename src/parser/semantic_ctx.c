@@ -67,7 +67,6 @@ typedef struct tag_member_decl_t {
   int bit_is_signed;
   const psx_semantic_type_table_t *type_table;
   psx_qual_type_t qual_type;
-  const psx_type_t *type;
 } tag_member_decl_t;
 
 struct tag_member_t {
@@ -594,7 +593,8 @@ static int initialize_tag_member_record(
     tag_member_t *m,
     const psx_record_member_decl_t *declaration,
     const psx_record_member_layout_t *layout) {
-  if (!context || !m || !declaration || !layout || m->declaration.type)
+  if (!context || !m || !declaration || !layout ||
+      m->declaration.qual_type.type_id != PSX_TYPE_ID_INVALID)
     return 0;
   m->declaration.bit_width = declaration->bit_width;
   m->declaration.bit_is_signed = declaration->bit_is_signed;
@@ -606,11 +606,11 @@ static int initialize_tag_member_record(
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       context, resolved_type);
   if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
+  if (!psx_semantic_type_table_lookup_qual_type(
+          context->semantic_types, identity))
+    return 0;
   m->declaration.type_table = context->semantic_types;
   m->declaration.qual_type = identity;
-  m->declaration.type = psx_semantic_type_table_lookup(
-      context->semantic_types, identity.type_id);
-  if (!m->declaration.type) return 0;
   tag_member_layout_draft_t *draft = ctx_calloc_in(
       context, 1, sizeof(*draft));
   if (!draft) return 0;
