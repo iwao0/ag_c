@@ -9551,6 +9551,26 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     "function and typedef symbols must own canonical QualType values before any mutable compatibility node is projected",
   );
 }
+const mutableCompatibilityTestOnlySources = [
+  "src/semantic/legacy_syntax_diagnostics.c",
+  "src/semantic/resolution_work_tree.c",
+  "src/semantic/typed_hir_tree_materialization.c",
+  "src/semantic/identifier_binding.c",
+  "src/semantic/local_declaration_tree_resolution.c",
+  "src/semantic/semantic_pass.c",
+  "src/lowering/semantic_lowering_pass.c",
+  "src/semantic/lowered_tree_validation.c",
+  "src/semantic/control_flow_validation.c",
+  "src/semantic/semantic_diagnostics.c",
+  "src/semantic/semantic_invariants.c",
+  "src/semantic/type_identity_pass.c",
+  "src/semantic/tree_walk.c",
+  "src/semantic/lvar_usage_analysis.c",
+];
+const declaredTestOnlySources = new Set(
+  [...makefileSource.matchAll(/^TEST_ONLY_SRCS(?:\+)?=(.*)$/gm)]
+    .flatMap((match) => match[1].trim().split(/\s+/)),
+);
 if (!parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
@@ -9564,13 +9584,18 @@ if (!parsedFunctionResolutionBoundary ||
       semanticTreeResolutionSource,
     ) ||
     allSourceFiles.includes("src/semantic/legacy_syntax_diagnostics.h") ||
-    /\$\(OBJROOT\)\/semantic\/(?:legacy_syntax_diagnostics|resolution_work_tree|typed_hir_tree_materialization)\.o/.test(
-      makefileSource,
-    ) ||
-    !/^TEST_ONLY_SRCS=src\/semantic\/legacy_syntax_diagnostics\.c src\/semantic\/resolution_work_tree\.c src\/semantic\/typed_hir_tree_materialization\.c$/m.test(
-      makefileSource,
+    declaredTestOnlySources.size !==
+      mutableCompatibilityTestOnlySources.length ||
+    mutableCompatibilityTestOnlySources.some(
+      (source) => !declaredTestOnlySources.has(source),
     ) ||
     !/^SRCS=\$\(filter-out\s+\$\(TEST_ONLY_SRCS\),/m.test(
+      makefileSource,
+    ) ||
+    !/^TEST_ONLY_OBJS=\$\(patsubst\s+src\/%\.c,\$\(OBJROOT\)\/%\.o,\$\(TEST_ONLY_SRCS\)\)$/m.test(
+      makefileSource,
+    ) ||
+    !/^PARSER_LIB_OBJS:=\$\(filter-out\s+\$\(TEST_ONLY_OBJS\),\$\(PARSER_LIB_OBJS\)\)$/m.test(
       makefileSource,
     ) ||
     !/\$\(TEST_PARSER\):[^\n]*\$\(TEST_ONLY_SRCS\)/.test(

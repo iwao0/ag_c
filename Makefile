@@ -23,8 +23,13 @@ endif
 ARCH_SRCS=$(wildcard src/arch/*/*.c)
 LOWERING_SRCS=$(wildcard src/lowering/*.c)
 TEST_ONLY_SRCS=src/semantic/legacy_syntax_diagnostics.c src/semantic/resolution_work_tree.c src/semantic/typed_hir_tree_materialization.c
+TEST_ONLY_SRCS+=src/semantic/identifier_binding.c src/semantic/local_declaration_tree_resolution.c src/semantic/semantic_pass.c
+TEST_ONLY_SRCS+=src/lowering/semantic_lowering_pass.c src/semantic/lowered_tree_validation.c
+TEST_ONLY_SRCS+=src/semantic/control_flow_validation.c src/semantic/semantic_diagnostics.c src/semantic/semantic_invariants.c
+TEST_ONLY_SRCS+=src/semantic/type_identity_pass.c src/semantic/tree_walk.c src/semantic/lvar_usage_analysis.c
 SRCS=$(filter-out $(TEST_ONLY_SRCS),$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/hir/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(LOWERING_SRCS) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
+TEST_ONLY_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(TEST_ONLY_SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 WASM_TARGET=build/ag_c_wasm
@@ -65,6 +70,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/name_environment.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declaration_binding_events.o
 PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/type_signature.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
+PARSER_LIB_OBJS:=$(filter-out $(TEST_ONLY_OBJS),$(PARSER_LIB_OBJS))
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
 IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_print.o
