@@ -147,7 +147,7 @@ void psx_validate_assignment_in_context(
     }
   }
 
-  if (!node->is_source_assignment &&
+  if (!ps_node_is_source_assignment(store, node) &&
       node->kind != ND_COMPOUND_ASSIGN)
     return;
   if (psx_resolved_object_ref_node_kind(store, node->lhs) == ND_FUNCREF) {
@@ -158,7 +158,7 @@ void psx_validate_assignment_in_context(
                   DIAG_ERR_PARSER_ASSIGN_FUNCTION_TARGET));
     return;
   }
-  if (node->is_source_assignment) {
+  if (ps_node_is_source_assignment(store, node)) {
     psx_assignment_types_resolution_t resolution;
     psx_resolve_assignment_qual_types_in(
         semantic_context,

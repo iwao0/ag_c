@@ -304,7 +304,6 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       node_t *rhs = assign_ctx(ctx);
       node_t *assign_node = psx_node_new_raw_assign_in(
           ctx->arena_context, node, rhs);
-      assign_node->is_source_assignment = 1;
       assign_node->tok = assign_tok;
       node = (node_t *)assign_node;
       break;

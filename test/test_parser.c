@@ -279,6 +279,8 @@ static void test_set_invalid_vla_runtime_view(
       test_resolution_store(), (node))
 #define ps_node_is_decl_initializer(node) \
   ps_node_is_decl_initializer(test_resolution_store(), (node))
+#define ps_node_is_source_assignment(node) \
+  ps_node_is_source_assignment(test_resolution_store(), (node))
 #define ps_node_is_long_long_type(node) \
   ps_node_is_long_long_type(test_resolution_store(), (node))
 #define ps_node_shift_operation_is_unsigned(node) \
@@ -4094,7 +4096,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       parse_expr_input_with_existing_locals(
           "DirectAssignment = 7");
   ASSERT_EQ(ND_ASSIGN, assignment_syntax->kind);
-  ASSERT_TRUE(assignment_syntax->is_source_assignment);
+  ASSERT_TRUE(!ps_node_has_resolution_state(assignment_syntax));
   const psx_typed_hir_tree_t *typed_assignment = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
@@ -10275,7 +10277,7 @@ static void test_implicit_conversion_hir_boundary() {
 
   node_t *source_assign = main_body->body[2];
   ASSERT_EQ(ND_ASSIGN, source_assign->kind);
-  ASSERT_TRUE(source_assign->is_source_assignment);
+  ASSERT_TRUE(ps_node_is_source_assignment(source_assign));
   ASSERT_EQ(ND_IDENTIFIER, source_assign->rhs->kind);
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(source_assign->rhs));

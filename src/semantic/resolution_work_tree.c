@@ -426,6 +426,8 @@ static node_t *clone_node(
       resolution_store, arena_context, size);
   if (!copy) return NULL;
   memcpy(copy, source, size);
+  if (source->kind == ND_ASSIGN)
+    ps_node_set_source_assignment(resolution_store, copy, 1);
   copy->lhs = clone_node(resolution_store, arena_context, source->lhs);
   copy->rhs = source->kind == ND_STMT_EXPR
                   ? NULL

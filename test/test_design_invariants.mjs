@@ -132,6 +132,11 @@ const earlyNodeResolutionState = await readFile(
   "src/semantic/resolution_state.h",
   "utf8",
 );
+const resolvedNodeTypeHeader = await readFile(
+  "src/semantic/resolved_node_type.h",
+  "utf8",
+);
+const earlyAstSource = await readFile("src/parser/ast.h", "utf8");
 const earlyTypeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
@@ -2011,6 +2016,18 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
     )) {
   throw new Error(
     "Typed HIR warnings must consume semantic provenance without depending on Syntax AST kinds",
+  );
+}
+if (/\bis_source_assignment\b/.test(earlyAstSource) ||
+    !/unsigned\s+char\s+is_source_assignment\s*;/.test(
+      earlyNodeResolutionState,
+    ) ||
+    !/\bps_node_is_source_assignment\s*\(/.test(resolvedNodeTypeHeader) ||
+    !/source->kind\s*==\s*ND_ASSIGN[^]*?ps_node_set_source_assignment\s*\(\s*resolution_store\s*,\s*copy\s*,\s*1\s*\)/.test(
+      resolutionWorkTree,
+    )) {
+  throw new Error(
+    "Source assignment provenance must live in semantic resolution state, not Syntax AST",
   );
 }
 const legacySyntaxDiagnosticsSource = await readFile(

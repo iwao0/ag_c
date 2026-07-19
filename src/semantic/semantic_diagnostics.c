@@ -113,13 +113,13 @@ static void warn_assignment(
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
   if (!node || node->kind != ND_ASSIGN ||
-      (!node->is_source_assignment &&
+      (!ps_node_is_source_assignment(store, node) &&
        !ps_node_is_decl_initializer(store, node)))
     return;
   node_t *lhs = node->lhs;
   node_t *rhs = node->rhs;
   const token_t *tok = node->tok ? node->tok : fallback;
-  if (node->is_source_assignment && lhs &&
+  if (ps_node_is_source_assignment(store, node) && lhs &&
       resolved_node_kind(store, lhs) == ND_LVAR && rhs &&
       resolved_node_kind(store, rhs) == ND_LVAR &&
       ps_node_lvar_symbol(store, lhs) &&

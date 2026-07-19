@@ -106,6 +106,7 @@ typedef struct {
 } psx_lvar_usage_resolution_state_t;
 
 typedef struct {
+  unsigned char is_source_assignment;
   unsigned char is_decl_initializer;
   unsigned char is_implicit_int_return;
   unsigned char widen_zext_i64;
