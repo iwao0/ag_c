@@ -7163,7 +7163,7 @@ const gvarPublicSource = await readFile("src/parser/gvar_public.h", "utf8");
 if (!lvarStruct ||
     /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(lvarStruct[1]) ||
     !gvarStruct ||
-    !/\bconst\s+psx_type_t\s*\*\s*decl_type\s*;/.test(gvarStruct[1]) ||
+    /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(gvarStruct[1]) ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_lvar_get_decl_type\s*\(\s*const\s+lvar_t\s*\*/.test(
       lvarPublicSource,
     ) ||
@@ -7171,7 +7171,7 @@ if (!lvarStruct ||
       gvarPublicSource,
     )) {
   throw new Error(
-    "local symbols must own only QualType identity while symbol canonical types remain const views",
+    "symbols must own only QualType identity while canonical types remain const views",
   );
 }
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
@@ -7212,9 +7212,10 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
       lvarDeclTypeViewFunction[0],
     ) ||
     /return\s+var->decl_type\s*;/.test(lvarDeclTypeViewFunction[0]) ||
-    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
       gvarDeclTypeViewFunction[0],
     ) ||
+    /return\s+gv->decl_type\s*;/.test(gvarDeclTypeViewFunction[0]) ||
     !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
       localRegistrySource,
     ) ||
@@ -7223,6 +7224,8 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
       globalRegistrySource,
     ) ||
+    /\bglobal->decl_type\s*=/.test(globalRegistrySource) ||
+    /\bcanonical_type\b/.test(globalRegistrySource) ||
     /\bglobal->decl_type\b/.test(staticLocalLoweringSource) ||
     !/\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
@@ -7256,10 +7259,10 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       globalRegistrySource,
     ) ||
-    !/\bstatic\s+int\s+resolve_global_decl_type\s*\(/.test(
+    !/\bstatic\s+psx_qual_type_t\s+resolve_global_decl_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
+    !/\bpsx_semantic_type_table_lookup_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||

@@ -54,8 +54,6 @@ struct global_var_t {
   unsigned int is_thread_local : 1; // 1: _Thread_local
   unsigned int is_compiler_generated : 1;
   const psx_semantic_type_table_t *decl_type_table;
-  /* Canonical projection for legacy readers; QualType/table is authoritative. */
-  const psx_type_t *decl_type;
   psx_qual_type_t decl_qual_type;
 };
 // 文字列リテラルテーブル（連結リスト）

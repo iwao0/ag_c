@@ -209,30 +209,28 @@ psx_scope_graph_t *ps_global_registry_scope_graph(
   return registry ? registry->scope_graph : NULL;
 }
 
-static int resolve_global_decl_type(
-    const psx_global_registry_t *registry, const psx_type_t *type,
-    const psx_type_t **canonical_type, psx_qual_type_t *qual_type) {
-  if (!registry || !registry->semantic_types || !type ||
-      !canonical_type || !qual_type)
-    return 0;
-  *qual_type = psx_semantic_type_table_find(
+static psx_qual_type_t resolve_global_decl_type(
+    const psx_global_registry_t *registry, const psx_type_t *type) {
+  if (!registry || !registry->semantic_types || !type)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t qual_type = psx_semantic_type_table_find(
       registry->semantic_types, type);
-  if (qual_type->type_id == PSX_TYPE_ID_INVALID) return 0;
-  *canonical_type = psx_semantic_type_table_lookup(
-      registry->semantic_types, qual_type->type_id);
-  return *canonical_type != NULL;
+  return psx_semantic_type_table_lookup_qual_type(
+             registry->semantic_types, qual_type)
+             ? qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 int ps_global_registry_bind_decl_type(
     psx_global_registry_t *registry, global_var_t *global,
     const psx_type_t *type) {
-  if (!global || global->decl_type ||
+  if (!global ||
       global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID || !type)
     return 0;
-  const psx_type_t *canonical_type = NULL;
-  psx_qual_type_t qual_type = {0};
-  if (!resolve_global_decl_type(
-          registry, type, &canonical_type, &qual_type))
+  psx_qual_type_t qual_type = resolve_global_decl_type(registry, type);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   return ps_global_registry_bind_decl_qual_type(
       registry, global, qual_type);
@@ -242,17 +240,15 @@ int ps_global_registry_bind_decl_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t type) {
   if (!registry || !registry->semantic_types || !global ||
-      global->decl_type ||
       global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID ||
       type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  const psx_type_t *canonical = psx_semantic_type_table_lookup(
-      registry->semantic_types, type.type_id);
-  if (!canonical) return 0;
+  if (!psx_semantic_type_table_lookup_qual_type(
+          registry->semantic_types, type))
+    return 0;
   if (!psx_global_registry_note_global_mutation(registry, global))
     return 0;
   global->decl_type_table = registry->semantic_types;
-  global->decl_type = canonical;
   global->decl_qual_type = type;
   return 1;
 }
@@ -260,10 +256,9 @@ int ps_global_registry_bind_decl_qual_type(
 int ps_global_registry_complete_array_type(
     psx_global_registry_t *registry, global_var_t *global,
     const psx_type_t *complete_type) {
-  const psx_type_t *replacement = NULL;
-  psx_qual_type_t qual_type = {0};
-  if (!resolve_global_decl_type(
-          registry, complete_type, &replacement, &qual_type))
+  psx_qual_type_t qual_type = resolve_global_decl_type(
+      registry, complete_type);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   return ps_global_registry_complete_array_qual_type(
       registry, global, qual_type);
@@ -297,7 +292,6 @@ int ps_global_registry_complete_array_qual_type(
     return 0;
   if (!psx_global_registry_note_global_mutation(registry, global))
     return 0;
-  global->decl_type = replacement;
   global->decl_type_table = registry->semantic_types;
   global->decl_qual_type = complete_type;
   return 1;

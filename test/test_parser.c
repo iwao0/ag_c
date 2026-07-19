@@ -950,6 +950,25 @@ static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
   return intern_test_qual_type(type).type_id;
 }
 
+static void set_test_global_fixture_type_in(
+    psx_semantic_context_t *semantic_context, global_var_t *global,
+    const psx_type_t *type) {
+  ASSERT_TRUE(semantic_context != NULL);
+  ASSERT_TRUE(global != NULL);
+  ASSERT_TRUE(type != NULL);
+  global->decl_qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, type);
+  global->decl_type_table = ps_ctx_semantic_type_table_in(
+      semantic_context);
+  ASSERT_TRUE(ps_gvar_get_decl_type(global) != NULL);
+}
+
+static void set_test_global_fixture_type(
+    global_var_t *global, const psx_type_t *type) {
+  set_test_global_fixture_type_in(
+      test_semantic_context(), global, type);
+}
+
 static int define_test_record_decl(const psx_record_decl_t *record) {
   return psx_record_decl_table_define(
       (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(
@@ -12234,17 +12253,14 @@ static void test_wasm_target_global_pointer_data_layout() {
   global_var_t first = {
       .name = (char *)"layout_first",
       .name_len = 12,
-      .decl_type = integer,
   };
   global_var_t second = {
       .name = (char *)"layout_second",
       .name_len = 13,
-      .decl_type = integer,
   };
   global_var_t pointers = {
       .name = (char *)"layout_pointers",
       .name_len = 15,
-      .decl_type = array,
       .has_init = 1,
       .init_count = 2,
   };
@@ -12253,13 +12269,12 @@ static void test_wasm_target_global_pointer_data_layout() {
       &pointers, 0, 0, 0.0, first.name, first.name_len);
   ps_gvar_init_slot_write(
       &pointers, 1, 0, 0.0, second.name, second.name_len);
-  first.decl_qual_type = ps_ctx_intern_qual_type_in(
-      session.semantic_context, integer);
-  ASSERT_TRUE(first.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  second.decl_qual_type = first.decl_qual_type;
-  pointers.decl_qual_type = ps_ctx_intern_qual_type_in(
-      session.semantic_context, array);
-  ASSERT_TRUE(pointers.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  set_test_global_fixture_type_in(
+      session.semantic_context, &first, integer);
+  set_test_global_fixture_type_in(
+      session.semantic_context, &second, integer);
+  set_test_global_fixture_type_in(
+      session.semantic_context, &pointers, array);
   ps_register_global_var_in(session.global_registry, &first);
   ps_register_global_var_in(session.global_registry, &second);
   ps_register_global_var_in(session.global_registry, &pointers);
@@ -15150,9 +15165,6 @@ static void test_static_data_initializer_boundary() {
               ps_ctx_type_by_id_in(
                   test_semantic_context(),
                   qualified_global_identity.type_id));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            ps_type_qualifiers(ps_gvar_get_decl_type(&qualified_global)));
-  qualified_global.decl_type = NULL;
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(ps_gvar_get_decl_type(&qualified_global)));
 
@@ -18190,9 +18202,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sig_gvar != NULL);
   const psx_type_t *sig_gvar_type = ps_gvar_get_decl_type(sig_gvar);
   ASSERT_TRUE(sig_gvar_type != NULL);
-  sig_gvar->decl_type = NULL;
   ASSERT_TRUE(ps_gvar_get_decl_type(sig_gvar) == sig_gvar_type);
-  sig_gvar->decl_type = sig_gvar_type;
   global_var_t *top_fp = find_test_global_var(
       "__tm_top_fp", (int)(sizeof("__tm_top_fp") - 1));
   ASSERT_TRUE(top_fp != NULL);
@@ -18313,33 +18323,33 @@ static void test_type_metadata_bridge() {
   global_var_t *global_su_arr = find_test_global_var(
       "__tm_global_su_arr", (int)(sizeof("__tm_global_su_arr") - 1));
   ASSERT_TRUE(global_su_arr != NULL);
-  ASSERT_TRUE(global_su_arr->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(global_su_arr) != NULL);
   node_t *global_su_arr_addr = ps_node_new_gvar_array_addr_for(global_su_arr);
   ASSERT_TRUE(ps_node_get_type(global_su_arr_addr) != NULL);
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(global_su_arr_addr));
   node_t *global_su_arr_base =
       psx_node_new_gvar_array_base_for(global_su_arr);
   ASSERT_TRUE(ps_node_get_type(global_su_arr_base) ==
-              global_su_arr->decl_type);
+              ps_gvar_get_decl_type(global_su_arr));
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(global_su_arr_base));
 
   global_var_t *global_sb_arr = find_test_global_var(
       "__tm_global_sb_arr", (int)(sizeof("__tm_global_sb_arr") - 1));
   ASSERT_TRUE(global_sb_arr != NULL);
-  ASSERT_TRUE(global_sb_arr->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(global_sb_arr) != NULL);
   node_t *global_sb_arr_addr = ps_node_new_gvar_array_addr_for(global_sb_arr);
   ASSERT_TRUE(ps_node_get_type(global_sb_arr_addr) != NULL);
   ASSERT_TRUE(canonical_node_pointee_is_bool(global_sb_arr_addr));
   node_t *global_sb_arr_base =
       psx_node_new_gvar_array_base_for(global_sb_arr);
   ASSERT_TRUE(ps_node_get_type(global_sb_arr_base) ==
-              global_sb_arr->decl_type);
+              ps_gvar_get_decl_type(global_sb_arr));
   ASSERT_TRUE(canonical_node_pointee_is_bool(global_sb_arr_base));
 
   global_var_t *global_si_arr = find_test_global_var(
       "__tm_global_si_arr", (int)(sizeof("__tm_global_si_arr") - 1));
   ASSERT_TRUE(global_si_arr != NULL);
-  ASSERT_TRUE(global_si_arr->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(global_si_arr) != NULL);
   node_t *global_si_arr_addr = ps_node_new_gvar_array_addr_for(global_si_arr);
   ASSERT_TRUE(ps_node_get_type(global_si_arr_addr) != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, canonical_node_pointee_fp_kind(global_si_arr_addr));
@@ -21389,8 +21399,18 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(zero_init_cls.has_payload);
   global_var_t tmp_empty_aggregate_init = {0};
   tmp_empty_aggregate_init.has_init = 1;
-  tmp_empty_aggregate_init.decl_type =
+  const psx_record_decl_t tmp_empty_aggregate_record = {
+      .record_id = 0x1a23u,
+      .record_kind = PSX_TYPE_STRUCT,
+      .is_complete = 1,
+  };
+  ASSERT_TRUE(define_test_record_decl(&tmp_empty_aggregate_record));
+  psx_type_t *tmp_empty_aggregate_type =
       ps_type_new_tag(TK_STRUCT, NULL, 0, 0, 0);
+  tmp_empty_aggregate_type->record_id =
+      tmp_empty_aggregate_record.record_id;
+  set_test_global_fixture_type(
+      &tmp_empty_aggregate_init, tmp_empty_aggregate_type);
   psx_gvar_initializer_class_t empty_aggregate_cls =
       ps_gvar_initializer_class(&tmp_empty_aggregate_init, 1);
   ASSERT_TRUE(empty_aggregate_cls.has_explicit_initializer);
@@ -21615,15 +21635,13 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   global_var_t *gu = find_test_global_var("__tm_gu", 7);
   ASSERT_TRUE(gu != NULL);
-  ASSERT_TRUE(gu->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, gu->decl_type->kind);
-  ASSERT_EQ(4, ps_type_sizeof(gu->decl_type));
-  ASSERT_TRUE(ps_type_is_unsigned(gu->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(gu) != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_gvar_get_decl_type(gu)->kind);
+  ASSERT_EQ(4, ps_type_sizeof(ps_gvar_get_decl_type(gu)));
+  ASSERT_TRUE(ps_type_is_unsigned(ps_gvar_get_decl_type(gu)));
   const psx_type_t *gu_decl_a = ps_gvar_get_decl_type(gu);
   ASSERT_TRUE(gu_decl_a != NULL);
-  gu->decl_type = NULL;
   ASSERT_TRUE(ps_gvar_get_decl_type(gu) == gu_decl_a);
-  gu->decl_type = gu_decl_a;
 
   global_var_t tmp_gv = {0};
   psx_type_t *tmp_gv_int_type = ps_type_new_integer(TK_INT, 4, 0);
@@ -21643,13 +21661,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_global_registry_bind_decl_type(
       test_global_registry(), &tmp_gv,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
-  ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_int);
+  ASSERT_TRUE(ps_gvar_get_decl_type(&tmp_gv) == tmp_gv_int);
 
   global_var_t tmp_ptr_gv = {0};
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
       test_global_registry(), &tmp_ptr_gv,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
-  const psx_type_t *tmp_gv_ptr = tmp_ptr_gv.decl_type;
+  const psx_type_t *tmp_gv_ptr = ps_gvar_get_decl_type(&tmp_ptr_gv);
   ASSERT_TRUE(tmp_gv_ptr != NULL);
   ASSERT_TRUE(tmp_gv_ptr != tmp_gv_int);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_ptr->kind);
@@ -21659,7 +21677,8 @@ static void test_type_metadata_bridge() {
       test_global_registry(), &tmp_double_ptr_gv,
       ps_type_new_pointer(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8))));
-  const psx_type_t *tmp_gv_double_ptr = tmp_double_ptr_gv.decl_type;
+  const psx_type_t *tmp_gv_double_ptr =
+      ps_gvar_get_decl_type(&tmp_double_ptr_gv);
   ASSERT_TRUE(tmp_gv_double_ptr != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_double_ptr->kind);
   ASSERT_TRUE(tmp_gv_double_ptr->base != NULL);
@@ -21688,7 +21707,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_global_registry_complete_array_type(
       test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
   ASSERT_EQ(tmp_arr_complete_id, ps_gvar_decl_type_id(&tmp_arr_gv));
-  const psx_type_t *tmp_arr_sized = tmp_arr_gv.decl_type;
+  const psx_type_t *tmp_arr_sized = ps_gvar_get_decl_type(&tmp_arr_gv);
   ASSERT_TRUE(tmp_arr_sized != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_sized->kind);
   ASSERT_EQ(12, ps_type_sizeof(tmp_arr_sized));
@@ -21701,47 +21720,55 @@ static void test_type_metadata_bridge() {
       test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
 
   global_var_t tmp_arr_stale_size_gv = {0};
-  tmp_arr_stale_size_gv.decl_type =
-      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 16, 0);
+  set_test_global_fixture_type(
+      &tmp_arr_stale_size_gv,
+      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 16, 0));
   ASSERT_TRUE(ps_gvar_is_array(&tmp_arr_stale_size_gv));
   ASSERT_EQ(4, ps_gvar_array_element_size(&tmp_arr_stale_size_gv));
   ASSERT_EQ(0, ps_gvar_array_element_count(&tmp_arr_stale_size_gv));
   ASSERT_EQ(4, ps_gvar_initializer_element_size(&tmp_arr_stale_size_gv, 4));
   ASSERT_EQ(0, ps_gvar_initializer_element_count(&tmp_arr_stale_size_gv, 4));
 
-  global_var_t tmp_bool_scalar_decl_type_wins = {0};
-  tmp_bool_scalar_decl_type_wins.decl_type =
-      ps_type_new_integer(TK_BOOL, 1, 0);
-  ASSERT_TRUE(ps_gvar_is_bool_scalar(&tmp_bool_scalar_decl_type_wins));
+  global_var_t tmp_bool_scalar_canonical = {0};
+  set_test_global_fixture_type(
+      &tmp_bool_scalar_canonical,
+      ps_type_new_integer(TK_BOOL, 1, 0));
+  ASSERT_TRUE(ps_gvar_is_bool_scalar(&tmp_bool_scalar_canonical));
 
-  global_var_t tmp_int_scalar_decl_type_wins = {0};
-  tmp_int_scalar_decl_type_wins.decl_type =
+  global_var_t tmp_int_scalar_canonical = {0};
+  set_test_global_fixture_type(
+      &tmp_int_scalar_canonical,
+      ps_type_new_integer(TK_INT, 4, 0));
+  ASSERT_TRUE(!ps_gvar_is_bool_scalar(&tmp_int_scalar_canonical));
+
+  global_var_t tmp_bool_array_canonical = {0};
+  set_test_global_fixture_type(
+      &tmp_bool_array_canonical,
+      ps_type_new_array(ps_type_new_integer(TK_BOOL, 1, 0), 3, 3, 0));
+  ASSERT_TRUE(ps_gvar_array_element_is_bool(&tmp_bool_array_canonical));
+
+  global_var_t tmp_int_array_canonical = {0};
+  set_test_global_fixture_type(
+      &tmp_int_array_canonical,
+      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0));
+  ASSERT_TRUE(!ps_gvar_array_element_is_bool(&tmp_int_array_canonical));
+
+  global_var_t tmp_gv_canonical_scalar = {0};
+  const psx_type_t *tmp_gv_scalar_canonical =
       ps_type_new_integer(TK_INT, 4, 0);
-  ASSERT_TRUE(!ps_gvar_is_bool_scalar(&tmp_int_scalar_decl_type_wins));
-
-  global_var_t tmp_bool_array_decl_type_wins = {0};
-  tmp_bool_array_decl_type_wins.decl_type =
-      ps_type_new_array(ps_type_new_integer(TK_BOOL, 1, 0), 3, 3, 0);
-  ASSERT_TRUE(ps_gvar_array_element_is_bool(&tmp_bool_array_decl_type_wins));
-
-  global_var_t tmp_int_array_decl_type_wins = {0};
-  tmp_int_array_decl_type_wins.decl_type =
-      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
-  ASSERT_TRUE(!ps_gvar_array_element_is_bool(&tmp_int_array_decl_type_wins));
-
-  global_var_t tmp_gv_scalar_decl_type_wins = {0};
-  psx_type_t *tmp_gv_scalar_canonical =
-      ps_type_new_integer(TK_INT, 4, 0);
-  tmp_gv_scalar_decl_type_wins.name = "__tm_gv_scalar_decl_type_wins";
-  tmp_gv_scalar_decl_type_wins.name_len =
-      (int)strlen(tmp_gv_scalar_decl_type_wins.name);
-  tmp_gv_scalar_decl_type_wins.decl_type = tmp_gv_scalar_canonical;
-  ASSERT_TRUE(ps_gvar_get_decl_type(&tmp_gv_scalar_decl_type_wins) ==
+  tmp_gv_canonical_scalar.name = "__tm_gv_scalar_decl_type_wins";
+  tmp_gv_canonical_scalar.name_len =
+      (int)strlen(tmp_gv_canonical_scalar.name);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_scalar, tmp_gv_scalar_canonical);
+  tmp_gv_scalar_canonical =
+      ps_gvar_get_decl_type(&tmp_gv_canonical_scalar);
+  ASSERT_TRUE(ps_gvar_get_decl_type(&tmp_gv_canonical_scalar) ==
               tmp_gv_scalar_canonical);
-  ASSERT_TRUE(!ps_gvar_is_array(&tmp_gv_scalar_decl_type_wins));
-  ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_gv_scalar_decl_type_wins));
+  ASSERT_TRUE(!ps_gvar_is_array(&tmp_gv_canonical_scalar));
+  ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_gv_canonical_scalar));
   node_t *tmp_gv_scalar_decl_type_ref =
-      ps_node_new_gvar_for(&tmp_gv_scalar_decl_type_wins);
+      ps_node_new_gvar_for(&tmp_gv_canonical_scalar);
   ASSERT_TRUE(ps_node_get_type(tmp_gv_scalar_decl_type_ref) ==
               tmp_gv_scalar_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_gv_scalar_decl_type_ref));
@@ -21750,25 +21777,28 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER,
             ps_node_get_type(tmp_gv_scalar_decl_type_ref)->kind);
   node_t *tmp_gv_scalar_funcptr_ref =
-      ps_node_new_gvar_for(&tmp_gv_scalar_decl_type_wins);
+      ps_node_new_gvar_for(&tmp_gv_canonical_scalar);
   ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(tmp_gv_scalar_funcptr_ref)) == NULL);
 
-  global_var_t tmp_gv_ptr_array_cache_decl_type_wins = {0};
-  psx_type_t *tmp_gv_ptr_array_cache_canonical =
+  global_var_t tmp_gv_canonical_scalar_view = {0};
+  const psx_type_t *tmp_gv_ptr_array_cache_canonical =
       ps_type_new_integer(TK_INT, 4, 0);
-  tmp_gv_ptr_array_cache_decl_type_wins.name =
+  tmp_gv_canonical_scalar_view.name =
       "__tm_gv_ptr_array_cache_decl_type_wins";
-  tmp_gv_ptr_array_cache_decl_type_wins.name_len =
-      (int)strlen(tmp_gv_ptr_array_cache_decl_type_wins.name);
-  tmp_gv_ptr_array_cache_decl_type_wins.decl_type =
-      tmp_gv_ptr_array_cache_canonical;
+  tmp_gv_canonical_scalar_view.name_len =
+      (int)strlen(tmp_gv_canonical_scalar_view.name);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_scalar_view,
+      tmp_gv_ptr_array_cache_canonical);
+  tmp_gv_ptr_array_cache_canonical =
+      ps_gvar_get_decl_type(&tmp_gv_canonical_scalar_view);
   ASSERT_TRUE(ps_gvar_get_decl_type(
-                  &tmp_gv_ptr_array_cache_decl_type_wins) ==
+                  &tmp_gv_canonical_scalar_view) ==
               tmp_gv_ptr_array_cache_canonical);
-  ASSERT_TRUE(!ps_gvar_is_array(&tmp_gv_ptr_array_cache_decl_type_wins));
+  ASSERT_TRUE(!ps_gvar_is_array(&tmp_gv_canonical_scalar_view));
   node_t *tmp_gv_ptr_array_cache_ref =
-      ps_node_new_gvar_for(&tmp_gv_ptr_array_cache_decl_type_wins);
+      ps_node_new_gvar_for(&tmp_gv_canonical_scalar_view);
   ASSERT_TRUE(ps_node_get_type(tmp_gv_ptr_array_cache_ref) ==
               tmp_gv_ptr_array_cache_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_gv_ptr_array_cache_ref));
@@ -21777,16 +21807,19 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
                    tmp_gv_ptr_array_cache_ref));
 
-  global_var_t tmp_gv_ptr_decl_type_wins = {0};
-  tmp_gv_ptr_decl_type_wins.name = "__tm_gv_ptr_decl_type_wins";
-  tmp_gv_ptr_decl_type_wins.name_len =
-      (int)strlen(tmp_gv_ptr_decl_type_wins.name);
-  tmp_gv_ptr_decl_type_wins.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  global_var_t tmp_gv_canonical_pointer = {0};
+  tmp_gv_canonical_pointer.name = "__tm_gv_ptr_decl_type_wins";
+  tmp_gv_canonical_pointer.name_len =
+      (int)strlen(tmp_gv_canonical_pointer.name);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_pointer,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
+  const psx_type_t *tmp_gv_ptr_decl_type =
+      ps_gvar_get_decl_type(&tmp_gv_canonical_pointer);
   node_t *tmp_gv_ptr_decl_type_ref =
-      ps_node_new_gvar_for(&tmp_gv_ptr_decl_type_wins);
+      ps_node_new_gvar_for(&tmp_gv_canonical_pointer);
   ASSERT_TRUE(ps_node_get_type(tmp_gv_ptr_decl_type_ref) ==
-              tmp_gv_ptr_decl_type_wins.decl_type);
+              tmp_gv_ptr_decl_type);
   ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_gv_ptr_decl_type_ref));
   ASSERT_EQ(4, ps_node_deref_size(tmp_gv_ptr_decl_type_ref));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
@@ -21796,7 +21829,7 @@ static void test_type_metadata_bridge() {
   node_t *tmp_gv_ptr_decl_type_deref =
       ps_node_new_unary_deref_for(tmp_gv_ptr_decl_type_ref);
   ASSERT_TRUE(ps_node_get_type(tmp_gv_ptr_decl_type_deref) ==
-              tmp_gv_ptr_decl_type_wins.decl_type->base);
+              tmp_gv_ptr_decl_type->base);
   ASSERT_TRUE(!ps_node_value_is_pointer_like(tmp_gv_ptr_decl_type_deref));
   ASSERT_EQ(4, ps_node_type_size(tmp_gv_ptr_decl_type_deref));
   ASSERT_EQ(0, ps_node_deref_size(tmp_gv_ptr_decl_type_deref));
@@ -21805,88 +21838,68 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
                    tmp_gv_ptr_decl_type_deref, 0));
 
-  global_var_t tmp_gv_flat_ptr_mismatch_decl_type = {0};
-  tmp_gv_flat_ptr_mismatch_decl_type.name =
-      "__tm_gv_flat_ptr_mismatch_decl_type";
-  tmp_gv_flat_ptr_mismatch_decl_type.name_len =
-      (int)strlen(tmp_gv_flat_ptr_mismatch_decl_type.name);
-  tmp_gv_flat_ptr_mismatch_decl_type.decl_type =
-      ps_type_new_pointer(NULL);
-  node_t *tmp_gv_flat_ptr_mismatch_ref =
-      ps_node_new_gvar_for(&tmp_gv_flat_ptr_mismatch_decl_type);
-  ASSERT_TRUE(ps_node_get_type(tmp_gv_flat_ptr_mismatch_ref) ==
-              tmp_gv_flat_ptr_mismatch_decl_type.decl_type);
-  ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_gv_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, ps_node_deref_size(tmp_gv_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_pointer_qual_levels(tmp_gv_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_base_deref_size(tmp_gv_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
-                   tmp_gv_flat_ptr_mismatch_ref));
-  ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
-                   tmp_gv_flat_ptr_mismatch_ref, 0));
+  global_var_t tmp_gv_canonical_runtime_shape = {0};
+  tmp_gv_canonical_runtime_shape.name = "__tm_gv_cached_runtime_shape";
+  tmp_gv_canonical_runtime_shape.name_len =
+      (int)strlen(tmp_gv_canonical_runtime_shape.name);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_runtime_shape,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
+  ASSERT_TRUE(ps_gvar_get_decl_type(&tmp_gv_canonical_runtime_shape) != NULL);
 
-  global_var_t tmp_gv_cached_runtime_shape = {0};
-  tmp_gv_cached_runtime_shape.name = "__tm_gv_cached_runtime_shape";
-  tmp_gv_cached_runtime_shape.name_len =
-      (int)strlen(tmp_gv_cached_runtime_shape.name);
-  tmp_gv_cached_runtime_shape.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_TRUE(ps_gvar_get_decl_type(&tmp_gv_cached_runtime_shape) ==
-              tmp_gv_cached_runtime_shape.decl_type);
-
-  global_var_t tmp_gv_cached_stale_ptr_array_shape = {0};
-  tmp_gv_cached_stale_ptr_array_shape.name =
+  global_var_t tmp_gv_canonical_pointer_shape = {0};
+  tmp_gv_canonical_pointer_shape.name =
       "__tm_gv_cached_stale_ptr_array_shape";
-  tmp_gv_cached_stale_ptr_array_shape.name_len =
-      (int)strlen(tmp_gv_cached_stale_ptr_array_shape.name);
-  tmp_gv_cached_stale_ptr_array_shape.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  tmp_gv_canonical_pointer_shape.name_len =
+      (int)strlen(tmp_gv_canonical_pointer_shape.name);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_pointer_shape,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_gvar_get_decl_type(
-                  &tmp_gv_cached_stale_ptr_array_shape) ==
-              tmp_gv_cached_stale_ptr_array_shape.decl_type);
+                  &tmp_gv_canonical_pointer_shape) != NULL);
 
-  global_var_t tmp_gv_cached_stale_array_shape = {0};
-  tmp_gv_cached_stale_array_shape.name =
+  global_var_t tmp_gv_canonical_array_shape = {0};
+  tmp_gv_canonical_array_shape.name =
       "__tm_gv_cached_stale_array_shape";
-  tmp_gv_cached_stale_array_shape.name_len =
-      (int)strlen(tmp_gv_cached_stale_array_shape.name);
-  psx_type_t *tmp_gv_stale_array_d2 =
+  tmp_gv_canonical_array_shape.name_len =
+      (int)strlen(tmp_gv_canonical_array_shape.name);
+  psx_type_t *tmp_gv_canonical_array_d2 =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0);
-  psx_type_t *tmp_gv_stale_array_d1 =
-      ps_type_new_array(tmp_gv_stale_array_d2, 3, 48, 0);
-  tmp_gv_cached_stale_array_shape.decl_type =
-      ps_type_new_array(tmp_gv_stale_array_d1, 2, 96, 0);
+  psx_type_t *tmp_gv_canonical_array_d1 =
+      ps_type_new_array(tmp_gv_canonical_array_d2, 3, 48, 0);
+  set_test_global_fixture_type(
+      &tmp_gv_canonical_array_shape,
+      ps_type_new_array(tmp_gv_canonical_array_d1, 2, 96, 0));
   ASSERT_TRUE(ps_gvar_get_decl_type(
-                  &tmp_gv_cached_stale_array_shape) ==
-              tmp_gv_cached_stale_array_shape.decl_type);
-  node_t *tmp_gv_stale_array_addr =
-      ps_node_new_gvar_array_addr_for(&tmp_gv_cached_stale_array_shape);
-  ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_gv_stale_array_addr));
-  const psx_type_t *tmp_gv_stale_array_addr_type =
-      ps_node_get_type(tmp_gv_stale_array_addr);
-  ASSERT_TRUE(tmp_gv_stale_array_addr_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_stale_array_addr_type->kind);
-  ASSERT_EQ(8, ps_node_type_size(tmp_gv_stale_array_addr));
-  ASSERT_EQ(48, ps_node_deref_size(tmp_gv_stale_array_addr));
-  int tmp_gv_stale_array_inner =
+                  &tmp_gv_canonical_array_shape) != NULL);
+  node_t *tmp_gv_canonical_array_addr =
+      ps_node_new_gvar_array_addr_for(&tmp_gv_canonical_array_shape);
+  ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_gv_canonical_array_addr));
+  const psx_type_t *tmp_gv_canonical_array_addr_type =
+      ps_node_get_type(tmp_gv_canonical_array_addr);
+  ASSERT_TRUE(tmp_gv_canonical_array_addr_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_canonical_array_addr_type->kind);
+  ASSERT_EQ(8, ps_node_type_size(tmp_gv_canonical_array_addr));
+  ASSERT_EQ(48, ps_node_deref_size(tmp_gv_canonical_array_addr));
+  int tmp_gv_canonical_array_inner =
       canonical_node_array_subscript_stride_bytes(
-          tmp_gv_stale_array_addr, 0);
-  int tmp_gv_stale_array_next =
+          tmp_gv_canonical_array_addr, 0);
+  int tmp_gv_canonical_array_next =
       canonical_node_array_subscript_stride_bytes(
-          tmp_gv_stale_array_addr, 1);
-  ASSERT_EQ(16, tmp_gv_stale_array_inner);
-  ASSERT_EQ(4, tmp_gv_stale_array_next);
+          tmp_gv_canonical_array_addr, 1);
+  ASSERT_EQ(16, tmp_gv_canonical_array_inner);
+  ASSERT_EQ(4, tmp_gv_canonical_array_next);
 
   global_var_t *gp = find_test_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);
-  ASSERT_TRUE(gp->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, gp->decl_type->kind);
-  ASSERT_TRUE(ps_type_is_pointer(gp->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(gp) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_gvar_get_decl_type(gp)->kind);
+  ASSERT_TRUE(ps_type_is_pointer(ps_gvar_get_decl_type(gp)));
   global_var_t *ga = find_test_global_var("__tm_ga", 7);
   ASSERT_TRUE(ga != NULL);
-  ASSERT_TRUE(ga->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ga->decl_type->kind);
-  ASSERT_EQ(12, ps_type_sizeof(ga->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(ga) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_gvar_get_decl_type(ga)->kind);
+  ASSERT_EQ(12, ps_type_sizeof(ps_gvar_get_decl_type(ga)));
   ASSERT_TRUE(ps_gvar_is_array(ga));
   ASSERT_EQ(4, ps_gvar_array_element_size(ga));
   ASSERT_EQ(3, ps_gvar_array_element_count(ga));
@@ -21919,13 +21932,16 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, ps_gvar_array_element_count(tm817_gs));
   global_var_t tmp_tag_arr_gv = {0};
   const char tmp_tag_arr_name[] = "__tm_tmp_tag_arr";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)tmp_tag_arr_name,
+      (int)sizeof(tmp_tag_arr_name) - 1, 0, 8, 4);
   psx_type_t *tmp_tag_arr_type = ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)tmp_tag_arr_name,
                        (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
       2, 16, 0);
-  ASSERT_TRUE(!ps_global_registry_bind_decl_type(
-      test_global_registry(), &tmp_tag_arr_gv, tmp_tag_arr_type));
-  tmp_tag_arr_gv.decl_type = tmp_tag_arr_type;
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), tmp_tag_arr_type);
+  set_test_global_fixture_type(&tmp_tag_arr_gv, tmp_tag_arr_type);
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_tag_arr_gv));
@@ -21939,21 +21955,26 @@ static void test_type_metadata_bridge() {
           2, 16, 0)));
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
 
-  global_var_t tmp_union_arr_gv = {
-      .decl_type = ps_type_new_array(
-          ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
-                           (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
-          2, 16, 0),
+  const psx_record_decl_t tmp_union_arr_record = {
+      .record_id = 0x1a24u,
+      .record_kind = PSX_TYPE_UNION,
+      .is_complete = 1,
   };
+  ASSERT_TRUE(define_test_record_decl(&tmp_union_arr_record));
+  psx_type_t *tmp_union_arr_type =
+      ps_type_new_tag(TK_UNION, NULL, 0, 0, 8);
+  tmp_union_arr_type->record_id = tmp_union_arr_record.record_id;
+  global_var_t tmp_union_arr_gv = {0};
+  set_test_global_fixture_type(
+      &tmp_union_arr_gv,
+      ps_type_new_array(tmp_union_arr_type, 2, 16, 0));
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(&tmp_union_arr_gv));
   ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_union_arr_gv));
   ASSERT_TRUE(ps_gvar_is_union_aggregate(&tmp_union_arr_gv));
 
-  global_var_t tmp_union_ptr_gv = {
-      .decl_type = ps_type_new_pointer(
-          ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
-                           (int)sizeof(tmp_tag_arr_name) - 1, 0, 8)),
-  };
+  global_var_t tmp_union_ptr_gv = {0};
+  set_test_global_fixture_type(
+      &tmp_union_ptr_gv, ps_type_new_pointer(tmp_union_arr_type));
   ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_union_ptr_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_union_ptr_gv));
 
@@ -22164,15 +22185,14 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, &walk_outer_tail));
 
   global_var_t walk_gv = {0};
-  walk_gv.decl_type = ps_ctx_clone_tag_type_at_in_contexts(
+  psx_type_t *walk_gv_type = ps_ctx_clone_tag_type_at_in_contexts(
       test_semantic_context(), test_local_registry(),
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
-  ASSERT_TRUE(walk_gv.decl_type != NULL);
-  walk_gv.decl_qual_type = intern_test_qual_type(walk_gv.decl_type);
-  ASSERT_TRUE(walk_gv.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(walk_gv_type != NULL);
+  set_test_global_fixture_type(&walk_gv, walk_gv_type);
   psx_record_decl_t *walk_outer_record =
-      test_record_decl_mut(walk_gv.decl_type);
+      test_record_decl_mut(ps_gvar_get_decl_type(&walk_gv));
   ASSERT_TRUE(walk_outer_record != NULL);
   psx_type_t *walk_inner_type = (psx_type_t *)
       psx_record_member_decl_type(&walk_outer_record->members[0])->base;
@@ -22228,12 +22248,9 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_array_tag, walk_array_len,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(walk_array_element != NULL);
-  walk_array_gv.decl_type = ps_type_new_array(
-      walk_array_element, 2, 16, 0);
-  walk_array_gv.decl_qual_type = intern_test_qual_type(
-      walk_array_gv.decl_type);
-  ASSERT_TRUE(walk_array_gv.decl_qual_type.type_id !=
-              PSX_TYPE_ID_INVALID);
+  set_test_global_fixture_type(
+      &walk_array_gv,
+      ps_type_new_array(walk_array_element, 2, 16, 0));
   psx_record_decl_t *walk_array_record =
       test_record_decl_mut(walk_array_element);
   ASSERT_TRUE(walk_array_record != NULL);
@@ -22269,9 +22286,9 @@ static void test_type_metadata_bridge() {
       (char *)walk_anon_global_name,
       (int)sizeof(walk_anon_global_name) - 1);
   ASSERT_TRUE(walk_anon_gv != NULL);
-  ASSERT_TRUE(walk_anon_gv->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(walk_anon_gv) != NULL);
   psx_record_decl_t *walk_anon_outer_record =
-      test_record_decl_mut(walk_anon_gv->decl_type);
+      test_record_decl_mut(ps_gvar_get_decl_type(walk_anon_gv));
   ASSERT_TRUE(walk_anon_outer_record != NULL);
   ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
   const psx_type_t *walk_anon_inner_type = ps_type_array_leaf_type(
@@ -22295,9 +22312,9 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   global_var_t *gext = find_test_global_var("__tm_extern_arr", 15);
   ASSERT_TRUE(gext != NULL);
-  ASSERT_TRUE(gext->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, gext->decl_type->kind);
-  ASSERT_EQ(12, ps_type_sizeof(gext->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(gext) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_gvar_get_decl_type(gext)->kind);
+  ASSERT_EQ(12, ps_type_sizeof(ps_gvar_get_decl_type(gext)));
 
   parsed_code = parse_program_input("int __tm_static_decl_type(void) { static double sd = 1.0; return 0; }");
   fn = as_function_definition(parsed_code[0]);
@@ -22310,13 +22327,13 @@ static void test_type_metadata_bridge() {
             ps_lvar_get_decl_type(sd)->floating_kind);
   global_var_t *sd_gv = find_test_global_var(sd->static_global_name, sd->static_global_name_len);
   ASSERT_TRUE(sd_gv != NULL);
-  ASSERT_TRUE(sd_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, sd_gv->decl_type->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, sd_gv->decl_type->floating_kind);
+  ASSERT_TRUE(ps_gvar_get_decl_type(sd_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, ps_gvar_get_decl_type(sd_gv)->kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ps_gvar_get_decl_type(sd_gv)->floating_kind);
   node_t *sd_node = psx_node_new_static_local_gvar_for(sd);
   ASSERT_TRUE(sd->static_global == sd_gv);
   ASSERT_TRUE(psx_resolved_object_ref_global(sd_node) == sd_gv);
-  ASSERT_TRUE(ps_node_get_type(sd_node) == sd_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(sd_node) == ps_gvar_get_decl_type(sd_gv));
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             ps_node_get_type(sd_node)->floating_kind);
 
@@ -22330,11 +22347,11 @@ static void test_type_metadata_bridge() {
   global_var_t *static_scalar_sb_gv = find_test_global_var(
       static_scalar_sb->static_global_name, static_scalar_sb->static_global_name_len);
   ASSERT_TRUE(static_scalar_sb_gv != NULL);
-  ASSERT_TRUE(static_scalar_sb_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_BOOL, static_scalar_sb_gv->decl_type->kind);
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_scalar_sb_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_BOOL, ps_gvar_get_decl_type(static_scalar_sb_gv)->kind);
   node_t *static_scalar_sb_node =
       psx_node_new_static_local_gvar_for(static_scalar_sb);
-  ASSERT_TRUE(ps_node_get_type(static_scalar_sb_node) == static_scalar_sb_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(static_scalar_sb_node) == ps_gvar_get_decl_type(static_scalar_sb_gv));
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(static_scalar_sb_node)->kind);
 
   lvar_t *static_scalar_su = find_func_lvar(fn, "su");
@@ -22343,11 +22360,11 @@ static void test_type_metadata_bridge() {
   global_var_t *static_scalar_su_gv = find_test_global_var(
       static_scalar_su->static_global_name, static_scalar_su->static_global_name_len);
   ASSERT_TRUE(static_scalar_su_gv != NULL);
-  ASSERT_TRUE(static_scalar_su_gv->decl_type != NULL);
-  ASSERT_TRUE(ps_type_is_unsigned(static_scalar_su_gv->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_scalar_su_gv) != NULL);
+  ASSERT_TRUE(ps_type_is_unsigned(ps_gvar_get_decl_type(static_scalar_su_gv)));
   node_t *static_scalar_su_node =
       psx_node_new_static_local_gvar_for(static_scalar_su);
-  ASSERT_TRUE(ps_node_get_type(static_scalar_su_node) == static_scalar_su_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(static_scalar_su_node) == ps_gvar_get_decl_type(static_scalar_su_gv));
   ASSERT_TRUE(ps_node_is_unsigned_type(static_scalar_su_node));
 
   parsed_code = parse_program_input("int __tm_static_arr_decl_type(void) { static int sa[2] = {1,2}; return sa[0]; }");
@@ -22358,17 +22375,17 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_lvar_get_decl_type(sa) != NULL);
   global_var_t *sa_gv = find_test_global_var(sa->static_global_name, sa->static_global_name_len);
   ASSERT_TRUE(sa_gv != NULL);
-  ASSERT_TRUE(sa_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, sa_gv->decl_type->kind);
-  ASSERT_EQ(8, ps_type_sizeof(sa_gv->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(sa_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_gvar_get_decl_type(sa_gv)->kind);
+  ASSERT_EQ(8, ps_type_sizeof(ps_gvar_get_decl_type(sa_gv)));
   node_t *sa_node = psx_node_new_static_local_gvar_for(sa);
-  ASSERT_TRUE(ps_node_get_type(sa_node) == sa_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(sa_node) == ps_gvar_get_decl_type(sa_gv));
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(sa_node)->kind);
   node_t *sa_addr = psx_node_new_static_local_array_addr_for(sa);
   const psx_type_t *sa_addr_type = ps_node_get_type(sa_addr);
   ASSERT_TRUE(sa_addr_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, sa_addr_type->kind);
-  ASSERT_TRUE(sa_addr_type->base == sa_gv->decl_type->base);
+  ASSERT_TRUE(sa_addr_type->base == ps_gvar_get_decl_type(sa_gv)->base);
 
   parsed_code = parse_program_input(
       "int __tm_static_inferred_arr(void) { "
@@ -22394,8 +22411,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sm->is_static_local);
   global_var_t *sm_gv = find_test_global_var(sm->static_global_name, sm->static_global_name_len);
   ASSERT_TRUE(sm_gv != NULL);
-  ASSERT_TRUE(sm_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, sm_gv->decl_type->kind);
+  ASSERT_TRUE(ps_gvar_get_decl_type(sm_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_gvar_get_decl_type(sm_gv)->kind);
   node_t *sm_addr = psx_node_new_static_local_array_addr_for(sm);
   const psx_type_t *sm_addr_type = ps_node_get_type(sm_addr);
   ASSERT_TRUE(sm_addr_type != NULL);
@@ -22415,12 +22432,12 @@ static void test_type_metadata_bridge() {
   global_var_t *static_su_gv = find_test_global_var(
       static_su->static_global_name, static_su->static_global_name_len);
   ASSERT_TRUE(static_su_gv != NULL);
-  ASSERT_TRUE(static_su_gv->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_su_gv) != NULL);
   node_t *static_su_addr =
       psx_node_new_static_local_array_addr_for(static_su);
   ASSERT_TRUE(ps_node_get_type(static_su_addr) != NULL);
   ASSERT_TRUE(ps_node_get_type(static_su_addr)->base ==
-              static_su_gv->decl_type->base);
+              ps_gvar_get_decl_type(static_su_gv)->base);
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(static_su_addr));
 
   lvar_t *static_sb = find_func_lvar(fn, "sb");
@@ -22429,12 +22446,12 @@ static void test_type_metadata_bridge() {
   global_var_t *static_sb_gv = find_test_global_var(
       static_sb->static_global_name, static_sb->static_global_name_len);
   ASSERT_TRUE(static_sb_gv != NULL);
-  ASSERT_TRUE(static_sb_gv->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_sb_gv) != NULL);
   node_t *static_sb_addr =
       psx_node_new_static_local_array_addr_for(static_sb);
   ASSERT_TRUE(ps_node_get_type(static_sb_addr) != NULL);
   ASSERT_TRUE(ps_node_get_type(static_sb_addr)->base ==
-              static_sb_gv->decl_type->base);
+              ps_gvar_get_decl_type(static_sb_gv)->base);
   ASSERT_TRUE(canonical_node_pointee_is_bool(static_sb_addr));
 
   lvar_t *static_si = find_func_lvar(fn, "si");
@@ -22443,12 +22460,12 @@ static void test_type_metadata_bridge() {
   global_var_t *static_si_gv = find_test_global_var(
       static_si->static_global_name, static_si->static_global_name_len);
   ASSERT_TRUE(static_si_gv != NULL);
-  ASSERT_TRUE(static_si_gv->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_si_gv) != NULL);
   node_t *static_si_addr =
       psx_node_new_static_local_array_addr_for(static_si);
   ASSERT_TRUE(ps_node_get_type(static_si_addr) != NULL);
   ASSERT_TRUE(ps_node_get_type(static_si_addr)->base ==
-              static_si_gv->decl_type->base);
+              ps_gvar_get_decl_type(static_si_gv)->base);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, canonical_node_pointee_fp_kind(static_si_addr));
   ASSERT_TRUE(!canonical_node_pointee_is_bool(static_si_addr));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(static_si_addr));
@@ -22466,12 +22483,12 @@ static void test_type_metadata_bridge() {
   global_var_t *static_bp_gv = find_test_global_var(
       static_bp->static_global_name, static_bp->static_global_name_len);
   ASSERT_TRUE(static_bp_gv != NULL);
-  ASSERT_TRUE(static_bp_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, static_bp_gv->decl_type->kind);
-  ASSERT_EQ(PSX_TYPE_BOOL, static_bp_gv->decl_type->base->kind);
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_bp_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_gvar_get_decl_type(static_bp_gv)->kind);
+  ASSERT_EQ(PSX_TYPE_BOOL, ps_gvar_get_decl_type(static_bp_gv)->base->kind);
   node_t *static_bp_node =
       psx_node_new_static_local_gvar_for(static_bp);
-  ASSERT_TRUE(ps_node_get_type(static_bp_node) == static_bp_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(static_bp_node) == ps_gvar_get_decl_type(static_bp_gv));
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(static_bp_node)->kind);
   ASSERT_TRUE(canonical_node_pointee_is_bool(static_bp_node));
 
@@ -22481,12 +22498,12 @@ static void test_type_metadata_bridge() {
   global_var_t *static_up_gv = find_test_global_var(
       static_up->static_global_name, static_up->static_global_name_len);
   ASSERT_TRUE(static_up_gv != NULL);
-  ASSERT_TRUE(static_up_gv->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, static_up_gv->decl_type->kind);
-  ASSERT_TRUE(ps_type_is_unsigned(static_up_gv->decl_type->base));
+  ASSERT_TRUE(ps_gvar_get_decl_type(static_up_gv) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_gvar_get_decl_type(static_up_gv)->kind);
+  ASSERT_TRUE(ps_type_is_unsigned(ps_gvar_get_decl_type(static_up_gv)->base));
   node_t *static_up_node =
       psx_node_new_static_local_gvar_for(static_up);
-  ASSERT_TRUE(ps_node_get_type(static_up_node) == static_up_gv->decl_type);
+  ASSERT_TRUE(ps_node_get_type(static_up_node) == ps_gvar_get_decl_type(static_up_gv));
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(static_up_node));
 
   parsed_code = parse_program_input(
@@ -22509,10 +22526,10 @@ static void test_type_metadata_bridge() {
   global_var_t *local_extern_dp =
       find_test_global_var((char *)local_extern_name, (int)(sizeof("__tm_local_extern_dp") - 1));
   ASSERT_TRUE(local_extern_dp != NULL);
-  ASSERT_TRUE(local_extern_dp->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, local_extern_dp->decl_type->kind);
+  ASSERT_TRUE(ps_gvar_get_decl_type(local_extern_dp) != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, ps_gvar_get_decl_type(local_extern_dp)->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            local_extern_dp->decl_type->floating_kind);
+            ps_gvar_get_decl_type(local_extern_dp)->floating_kind);
 
   parsed_code = parse_program_input(
       "int __tm_block_extern_proto(void) { "
@@ -22574,9 +22591,9 @@ static void test_type_metadata_bridge() {
   global_var_t *compound_lit_global =
       find_test_global_var("__compound_lit_0", (int)(sizeof("__compound_lit_0") - 1));
   ASSERT_TRUE(compound_lit_global != NULL);
-  ASSERT_TRUE(compound_lit_global->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, compound_lit_global->decl_type->kind);
-  ASSERT_EQ(12, ps_type_sizeof(compound_lit_global->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(compound_lit_global) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_gvar_get_decl_type(compound_lit_global)->kind);
+  ASSERT_EQ(12, ps_type_sizeof(ps_gvar_get_decl_type(compound_lit_global)));
   node_t *compound_global_stale_addr =
       ps_node_new_gvar_array_addr_for(compound_lit_global);
   ASSERT_TRUE(ps_node_get_type(compound_global_stale_addr) != NULL);
@@ -22593,7 +22610,7 @@ static void test_type_metadata_bridge() {
   global_var_t *compound_global_u =
       find_test_global_var("__compound_lit_0", (int)(sizeof("__compound_lit_0") - 1));
   ASSERT_TRUE(compound_global_u != NULL);
-  ASSERT_TRUE(compound_global_u->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(compound_global_u) != NULL);
   node_t *compound_global_u_addr =
       ps_node_new_gvar_array_addr_for(compound_global_u);
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(compound_global_u_addr));
@@ -22601,7 +22618,7 @@ static void test_type_metadata_bridge() {
   global_var_t *compound_global_b =
       find_test_global_var("__compound_lit_1", (int)(sizeof("__compound_lit_1") - 1));
   ASSERT_TRUE(compound_global_b != NULL);
-  ASSERT_TRUE(compound_global_b->decl_type != NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(compound_global_b) != NULL);
   node_t *compound_global_b_addr =
       ps_node_new_gvar_array_addr_for(compound_global_b);
   ASSERT_TRUE(canonical_node_pointee_is_bool(compound_global_b_addr));
@@ -22614,9 +22631,9 @@ static void test_type_metadata_bridge() {
   global_var_t *mix_a = find_test_global_var("__tm_mix_a", 10);
   ASSERT_TRUE(mix_a != NULL);
   ASSERT_EQ(4, ps_gvar_storage_size(mix_a, 99));
-  ASSERT_TRUE(mix_a->decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, mix_a->decl_type->kind);
-  ASSERT_EQ(4, ps_type_sizeof(mix_a->decl_type));
+  ASSERT_TRUE(ps_gvar_get_decl_type(mix_a) != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_gvar_get_decl_type(mix_a)->kind);
+  ASSERT_EQ(4, ps_type_sizeof(ps_gvar_get_decl_type(mix_a)));
 
   parsed_code = parse_program_input("char *__tm_ptr_s = (char[6]){\"hi\"}; "
                                     "int main(void) { return __tm_ptr_s[0]; }");
@@ -22963,23 +22980,30 @@ static void test_type_metadata_bridge() {
   global_var_t gvar_view_sync = {0};
   gvar_view_sync.name = "__tm_gvar_view_sync";
   gvar_view_sync.name_len = (int)strlen(gvar_view_sync.name);
-  gvar_view_sync.decl_type =
-      ps_type_new_array(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 2, 16, 0);
-  ASSERT_EQ(16, ps_type_sizeof(gvar_view_sync.decl_type));
-  ASSERT_EQ(PSX_TYPE_ARRAY, gvar_view_sync.decl_type->kind);
-  ASSERT_TRUE(gvar_view_sync.decl_type->base != NULL);
+  set_test_global_fixture_type(
+      &gvar_view_sync,
+      ps_type_new_array(
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 2, 16, 0));
+  const psx_type_t *gvar_view_sync_type =
+      ps_gvar_get_decl_type(&gvar_view_sync);
+  ASSERT_EQ(16, ps_type_sizeof(gvar_view_sync_type));
+  ASSERT_EQ(PSX_TYPE_ARRAY, gvar_view_sync_type->kind);
+  ASSERT_TRUE(gvar_view_sync_type->base != NULL);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            gvar_view_sync.decl_type->base->floating_kind);
+            gvar_view_sync_type->base->floating_kind);
 
   global_var_t gvar_view_array_shape = {0};
   gvar_view_array_shape.name = "__tm_gvar_view_array_shape";
   gvar_view_array_shape.name_len = (int)strlen(gvar_view_array_shape.name);
   psx_type_t *gvar_view_array_row =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 5, 20, 0);
-  gvar_view_array_shape.decl_type =
-      ps_type_new_array(gvar_view_array_row, 3, 60, 0);
-  ASSERT_EQ(60, ps_type_sizeof(gvar_view_array_shape.decl_type));
-  ASSERT_EQ(20, ps_type_sizeof(gvar_view_array_shape.decl_type->base));
+  set_test_global_fixture_type(
+      &gvar_view_array_shape,
+      ps_type_new_array(gvar_view_array_row, 3, 60, 0));
+  const psx_type_t *gvar_view_array_shape_type =
+      ps_gvar_get_decl_type(&gvar_view_array_shape);
+  ASSERT_EQ(60, ps_type_sizeof(gvar_view_array_shape_type));
+  ASSERT_EQ(20, ps_type_sizeof(gvar_view_array_shape_type->base));
 
   global_var_t gvar_view_deep_array_shape = {0};
   gvar_view_deep_array_shape.name = "__tm_gvar_view_deep_array_shape";
@@ -22991,24 +23015,30 @@ static void test_type_metadata_bridge() {
       ps_type_new_array(gvar_view_deep_d3, 4, 80, 0);
   psx_type_t *gvar_view_deep_d1 =
       ps_type_new_array(gvar_view_deep_d2, 3, 240, 0);
-  gvar_view_deep_array_shape.decl_type =
-      ps_type_new_array(gvar_view_deep_d1, 2, 480, 0);
-  ASSERT_EQ(480, ps_type_sizeof(gvar_view_deep_array_shape.decl_type));
-  ASSERT_EQ(240, ps_type_sizeof(gvar_view_deep_array_shape.decl_type->base));
+  set_test_global_fixture_type(
+      &gvar_view_deep_array_shape,
+      ps_type_new_array(gvar_view_deep_d1, 2, 480, 0));
+  const psx_type_t *gvar_view_deep_array_shape_type =
+      ps_gvar_get_decl_type(&gvar_view_deep_array_shape);
+  ASSERT_EQ(480, ps_type_sizeof(gvar_view_deep_array_shape_type));
+  ASSERT_EQ(240, ps_type_sizeof(gvar_view_deep_array_shape_type->base));
   ASSERT_EQ(80, ps_type_sizeof(
-                    gvar_view_deep_array_shape.decl_type->base->base));
+                    gvar_view_deep_array_shape_type->base->base));
 
   global_var_t gvar_view_scalar_stale_tag = {0};
   gvar_view_scalar_stale_tag.name = "__tm_gvar_view_scalar_stale_tag";
   gvar_view_scalar_stale_tag.name_len =
       (int)strlen(gvar_view_scalar_stale_tag.name);
-  gvar_view_scalar_stale_tag.decl_type =
-      ps_type_new_integer(TK_INT, 4, 0);
-  ASSERT_EQ(4, ps_type_sizeof(gvar_view_scalar_stale_tag.decl_type));
+  set_test_global_fixture_type(
+      &gvar_view_scalar_stale_tag,
+      ps_type_new_integer(TK_INT, 4, 0));
+  const psx_type_t *gvar_view_scalar_type =
+      ps_gvar_get_decl_type(&gvar_view_scalar_stale_tag);
+  ASSERT_EQ(4, ps_type_sizeof(gvar_view_scalar_type));
   ASSERT_TRUE(!ps_type_is_tag_aggregate(
-      gvar_view_scalar_stale_tag.decl_type));
+      gvar_view_scalar_type));
   ASSERT_EQ(TK_EOF,
-            ps_type_tag_token_kind(gvar_view_scalar_stale_tag.decl_type));
+            ps_type_tag_token_kind(gvar_view_scalar_type));
 
   const char gvar_view_tag_name[] = "__tm_gvar_view_tag";
   global_var_t gvar_view_tag_ptr = {0};
@@ -23018,21 +23048,31 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)gvar_view_tag_name,
       (int)sizeof(gvar_view_tag_name) - 1, 0, 12);
   gvar_view_tag_type->record_id = 0x6a11u;
-  gvar_view_tag_ptr.decl_type = ps_type_new_pointer(gvar_view_tag_type);
-  ASSERT_EQ(8, ps_type_sizeof(gvar_view_tag_ptr.decl_type));
-  ASSERT_EQ(PSX_TYPE_POINTER, gvar_view_tag_ptr.decl_type->kind);
-  ASSERT_TRUE(gvar_view_tag_ptr.decl_type->base != NULL);
+  const psx_record_decl_t gvar_view_tag_record = {
+      .record_id = gvar_view_tag_type->record_id,
+      .record_kind = PSX_TYPE_STRUCT,
+      .is_complete = 1,
+  };
+  ASSERT_TRUE(define_test_record_decl(&gvar_view_tag_record));
+  set_test_global_fixture_type(
+      &gvar_view_tag_ptr, ps_type_new_pointer(gvar_view_tag_type));
+  const psx_type_t *gvar_view_tag_ptr_type =
+      ps_gvar_get_decl_type(&gvar_view_tag_ptr);
+  ASSERT_EQ(8, ps_type_sizeof(gvar_view_tag_ptr_type));
+  ASSERT_EQ(PSX_TYPE_POINTER, gvar_view_tag_ptr_type->kind);
+  ASSERT_TRUE(gvar_view_tag_ptr_type->base != NULL);
   ASSERT_EQ(TK_STRUCT,
-            ps_type_tag_token_kind(gvar_view_tag_ptr.decl_type->base));
+            ps_type_tag_token_kind(gvar_view_tag_ptr_type->base));
   ASSERT_EQ((int)sizeof(gvar_view_tag_name) - 1,
-            gvar_view_tag_ptr.decl_type->base->tag_len);
+            gvar_view_tag_ptr_type->base->tag_len);
 
   const char stale_node_tag_name[] = "__tm_stale_node_tag";
   global_var_t gvar_node_scalar_sync = {0};
   gvar_node_scalar_sync.name = "__tm_gvar_node_scalar";
   gvar_node_scalar_sync.name_len = (int)strlen(gvar_node_scalar_sync.name);
-  gvar_node_scalar_sync.decl_type =
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  set_test_global_fixture_type(
+      &gvar_node_scalar_sync,
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   node_t *gvar_node_scalar_sync_node =
       ps_node_new_gvar_for(&gvar_node_scalar_sync);
   ASSERT_EQ(8, ps_node_type_size(gvar_node_scalar_sync_node));
@@ -23045,18 +23085,25 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_bool(gvar_node_scalar_sync_node));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(gvar_node_scalar_sync_node));
   global_var_t gvar_materialized_scalar_stale_tag = gvar_node_scalar_sync;
-  gvar_materialized_scalar_stale_tag.decl_type = NULL;
   const psx_type_t *gvar_materialized_scalar_type =
       ps_gvar_get_decl_type(&gvar_materialized_scalar_stale_tag);
-  ASSERT_TRUE(gvar_materialized_scalar_type == NULL);
+  ASSERT_TRUE(gvar_materialized_scalar_type ==
+              ps_gvar_get_decl_type(&gvar_node_scalar_sync));
 
   const char gvar_node_tag_name[] = "__tm_gvar_node_tag";
   global_var_t gvar_node_tag_sync = {0};
   gvar_node_tag_sync.name = "__tm_gvar_node_tag_obj";
   gvar_node_tag_sync.name_len = (int)strlen(gvar_node_tag_sync.name);
-  gvar_node_tag_sync.decl_type =
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, (char *)gvar_node_tag_name,
+      (int)sizeof(gvar_node_tag_name) - 1, 0, 12, 4);
+  psx_type_t *gvar_node_tag_type =
       ps_type_new_tag(TK_STRUCT, (char *)gvar_node_tag_name,
                        (int)sizeof(gvar_node_tag_name) - 1, 0, 12);
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), gvar_node_tag_type);
+  set_test_global_fixture_type(
+      &gvar_node_tag_sync, gvar_node_tag_type);
   node_t *gvar_node_tag_sync_node =
       ps_node_new_gvar_for(&gvar_node_tag_sync);
   ASSERT_EQ(0, ps_node_type_size(gvar_node_tag_sync_node));
@@ -23069,8 +23116,9 @@ static void test_type_metadata_bridge() {
   global_var_t gvar_node_ptr_scalar_sync = {0};
   gvar_node_ptr_scalar_sync.name = "__tm_gvar_node_ptr_scalar";
   gvar_node_ptr_scalar_sync.name_len = (int)strlen(gvar_node_ptr_scalar_sync.name);
-  gvar_node_ptr_scalar_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  set_test_global_fixture_type(
+      &gvar_node_ptr_scalar_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *gvar_node_ptr_scalar_sync_node =
       ps_node_new_gvar_for(&gvar_node_ptr_scalar_sync);
   ASSERT_TRUE(ps_node_value_is_pointer_like(gvar_node_ptr_scalar_sync_node));
@@ -23085,8 +23133,9 @@ static void test_type_metadata_bridge() {
   global_var_t gvar_node_ptr_bool_sync = {0};
   gvar_node_ptr_bool_sync.name = "__tm_gvar_node_ptr_bool";
   gvar_node_ptr_bool_sync.name_len = (int)strlen(gvar_node_ptr_bool_sync.name);
-  gvar_node_ptr_bool_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_BOOL, 1, 0));
+  set_test_global_fixture_type(
+      &gvar_node_ptr_bool_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_BOOL, 1, 0)));
   node_t *gvar_node_ptr_bool_sync_node =
       ps_node_new_gvar_for(&gvar_node_ptr_bool_sync);
   ASSERT_TRUE(ps_node_value_is_pointer_like(gvar_node_ptr_bool_sync_node));
@@ -23097,8 +23146,9 @@ static void test_type_metadata_bridge() {
   gvar_node_ptr_unsigned_sync.name = "__tm_gvar_node_ptr_unsigned";
   gvar_node_ptr_unsigned_sync.name_len =
       (int)strlen(gvar_node_ptr_unsigned_sync.name);
-  gvar_node_ptr_unsigned_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_UNSIGNED, 4, 1));
+  set_test_global_fixture_type(
+      &gvar_node_ptr_unsigned_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_UNSIGNED, 4, 1)));
   node_t *gvar_node_ptr_unsigned_sync_node =
       ps_node_new_gvar_for(&gvar_node_ptr_unsigned_sync);
   ASSERT_TRUE(ps_node_value_is_pointer_like(gvar_node_ptr_unsigned_sync_node));
@@ -24354,7 +24404,7 @@ static void test_type_metadata_bridge() {
   global_var_t *tm700_gfp = find_test_global_var("__tm700_gfp", 11);
   ASSERT_TRUE(tm700_gfp != NULL);
   assert_canonical_type_signature(
-      tm700_gfp->decl_type, "p<p<f64>()>");
+      ps_gvar_get_decl_type(tm700_gfp), "p<p<f64>()>");
 
   parsed_code = parse_program_input(
       "int __tm814_inc(int x){ return x + 1; } "
@@ -24377,9 +24427,9 @@ static void test_type_metadata_bridge() {
       "int main(void){ return (*__tm815_gpp)(41) + __tm815_apply(__tm815_gpp); }");
   global_var_t *tm815_gpp = find_test_global_var("__tm815_gpp", 11);
   ASSERT_TRUE(tm815_gpp != NULL);
-  ASSERT_EQ(2, ps_type_pointer_depth(tm815_gpp->decl_type));
+  ASSERT_EQ(2, ps_type_pointer_depth(ps_gvar_get_decl_type(tm815_gpp)));
   assert_canonical_type_signature(
-      tm815_gpp->decl_type, "p<p<i32(i32)>>");
+      ps_gvar_get_decl_type(tm815_gpp), "p<p<i32(i32)>>");
   fn = as_function_definition(parsed_code[1]);
   lvar_t *tm815_param_pp = find_func_lvar(fn, "pp");
   ASSERT_TRUE(tm815_param_pp != NULL);
@@ -24398,7 +24448,7 @@ static void test_type_metadata_bridge() {
   global_var_t *tm816_gfp = find_test_global_var("__tm816_gfp", 11);
   ASSERT_TRUE(tm816_gfp != NULL);
   assert_canonical_type_signature(
-      tm816_gfp->decl_type, "p<p<i32>()>");
+      ps_gvar_get_decl_type(tm816_gfp), "p<p<i32>()>");
   fn = as_function_definition(parsed_code[2]);
   lvar_t *tm816_param_fp = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm816_param_fp != NULL);
@@ -26955,17 +27005,19 @@ static void test_compilation_session_registry_isolation() {
       second.global_registry, second.scope_graph);
   ASSERT_TRUE(ag_compilation_session_is_complete(&second));
 
+  psx_type_t *first_global_type =
+      ps_type_new_integer(TK_INT, 4, 0);
   global_var_t first_global = {
       .name = (char *)"shared_global",
       .name_len = 13,
-      .decl_type = ps_type_new_integer(TK_INT, 4, 0),
       .init_val = 41,
       .has_init = 1,
   };
+  psx_type_t *second_global_type =
+      ps_type_new_integer(TK_LONG, 8, 0);
   global_var_t second_global = {
       .name = (char *)"shared_global",
       .name_len = 13,
-      .decl_type = ps_type_new_integer(TK_LONG, 8, 0),
       .init_val = 99,
       .has_init = 1,
   };
@@ -26977,7 +27029,6 @@ static void test_compilation_session_registry_isolation() {
       .init_symbol = (char *)"session_fn",
       .init_symbol_len = 10,
       .has_init = 1,
-      .decl_type = session_callback_type,
   };
   global_var_t second_callback = {
       .name = (char *)"session_callback",
@@ -26985,13 +27036,10 @@ static void test_compilation_session_registry_isolation() {
       .init_symbol = (char *)"session_fn",
       .init_symbol_len = 10,
       .has_init = 1,
-      .decl_type = session_callback_type,
   };
   char session_aggregate_name[] = "SessionAggregate";
-  psx_type_t *first_aggregate_type = ps_type_new_tag(
-      TK_STRUCT, session_aggregate_name, 16, 0, 8);
-  psx_type_t *second_aggregate_type = ps_type_new_tag(
-      TK_STRUCT, session_aggregate_name, 16, 0, 12);
+  psx_type_t *first_aggregate_type = NULL;
+  psx_type_t *second_aggregate_type = NULL;
   long long first_aggregate_values[2] = {11, 22};
   long long second_aggregate_values[2] = {33, 44};
   global_var_t first_aggregate = {
@@ -27000,7 +27048,6 @@ static void test_compilation_session_registry_isolation() {
       .init_values = first_aggregate_values,
       .init_count = 2,
       .has_init = 1,
-      .decl_type = first_aggregate_type,
   };
   global_var_t second_aggregate = {
       .name = (char *)"session_aggregate",
@@ -27008,7 +27055,6 @@ static void test_compilation_session_registry_isolation() {
       .init_values = second_aggregate_values,
       .init_count = 2,
       .has_init = 1,
-      .decl_type = second_aggregate_type,
   };
   string_lit_t first_literal = {
       .label = (char *)".Lshared",
@@ -27038,6 +27084,14 @@ static void test_compilation_session_registry_isolation() {
       .offset = 24,
   };
 
+  set_test_global_fixture_type_in(
+      first.semantic_context, &first_global, first_global_type);
+  set_test_global_fixture_type_in(
+      second.semantic_context, &second_global, second_global_type);
+  set_test_global_fixture_type_in(
+      first.semantic_context, &first_callback, session_callback_type);
+  set_test_global_fixture_type_in(
+      second.semantic_context, &second_callback, session_callback_type);
   ps_register_global_var_in(first.global_registry, &first_global);
   ps_register_global_var_in(second.global_registry, &second_global);
   ps_register_global_var_in(first.global_registry, &first_callback);
@@ -27106,31 +27160,14 @@ static void test_compilation_session_registry_isolation() {
       ps_local_registry_capture_lookup_point_in(second.local_registry));
   ASSERT_TRUE(first_aggregate_type != NULL);
   ASSERT_TRUE(second_aggregate_type != NULL);
-  first_aggregate.decl_type = first_aggregate_type;
-  second_aggregate.decl_type = second_aggregate_type;
-  first_global.decl_qual_type = ps_ctx_intern_qual_type_in(
-      first.semantic_context, first_global.decl_type);
-  ASSERT_TRUE(first_global.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  first_callback.decl_qual_type = ps_ctx_intern_qual_type_in(
-      first.semantic_context, session_callback_type);
-  ASSERT_TRUE(first_callback.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  first_aggregate.decl_qual_type = ps_ctx_intern_qual_type_in(
-      first.semantic_context, first_aggregate_type);
-  ASSERT_TRUE(first_aggregate.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  set_test_global_fixture_type_in(
+      first.semantic_context, &first_aggregate, first_aggregate_type);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
                   first.semantic_context,
                   first_aggregate_members[0].decl_type).type_id !=
               PSX_TYPE_ID_INVALID);
-  second_global.decl_qual_type = ps_ctx_intern_qual_type_in(
-      second.semantic_context, second_global.decl_type);
-  ASSERT_TRUE(second_global.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  second_callback.decl_qual_type = ps_ctx_intern_qual_type_in(
-      second.semantic_context, session_callback_type);
-  ASSERT_TRUE(second_callback.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  second_aggregate.decl_qual_type = ps_ctx_intern_qual_type_in(
-      second.semantic_context, second_aggregate_type);
-  ASSERT_TRUE(second_aggregate.decl_qual_type.type_id !=
-              PSX_TYPE_ID_INVALID);
+  set_test_global_fixture_type_in(
+      second.semantic_context, &second_aggregate, second_aggregate_type);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
                   second.semantic_context,
                   second_aggregate_members[0].decl_type).type_id !=

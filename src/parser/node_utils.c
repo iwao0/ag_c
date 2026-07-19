@@ -125,12 +125,8 @@ static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
 
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
   if (!gv) return NULL;
-  if (gv->decl_type_table &&
-      gv->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    return psx_semantic_type_table_lookup_qual_type(
-        gv->decl_type_table, gv->decl_qual_type);
-  }
-  return gv->decl_type;
+  return psx_semantic_type_table_lookup_qual_type(
+      gv->decl_type_table, gv->decl_qual_type);
 }
 
 int ps_lvar_value_is_pointer_like(const lvar_t *var) {
