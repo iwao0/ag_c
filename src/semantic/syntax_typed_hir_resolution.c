@@ -254,7 +254,14 @@ static int resolve_direct_compound_literal(
     direct_resolution_context_t *context,
     const node_compound_literal_t *compound,
     direct_compound_literal_binding_t **out_binding);
+static direct_compound_literal_binding_t *
+find_direct_compound_literal_binding(
+    direct_resolution_context_t *context,
+    const node_compound_literal_t *compound);
 static psx_semantic_node_t *build_direct_compound_literal(
+    direct_resolution_context_t *context,
+    const node_compound_literal_t *compound);
+static psx_semantic_node_t *build_direct_addressable_compound_literal(
     direct_resolution_context_t *context,
     const node_compound_literal_t *compound);
 static void set_failure(
@@ -604,6 +611,26 @@ static int resolve_direct_generic_selection(
   if (out_binding) *out_binding = binding;
   return 1;
 }
+
+static const node_t *direct_selected_expression(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  const node_t *selected = syntax;
+  while (selected && selected->kind == ND_GENERIC_SELECTION) {
+    const node_generic_selection_t *selection =
+        (const node_generic_selection_t *)selected;
+    direct_generic_binding_t *binding = NULL;
+    if (!resolve_direct_generic_selection(
+            context, selection, &binding) || !binding ||
+        binding->selected_index < 0 ||
+        binding->selected_index >= selection->association_count)
+      return NULL;
+    selected = selection->associations[
+        binding->selected_index].expression;
+  }
+  return selected;
+}
+
 static psx_semantic_node_t *build_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax);
@@ -1313,6 +1340,12 @@ static int preflight_direct_lvalue(
     *qual_type = (psx_qual_type_t){
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (!context || !syntax) return 0;
+  if (syntax->kind == ND_GENERIC_SELECTION) {
+    const node_t *selected = direct_selected_expression(
+        context, syntax);
+    return selected && preflight_direct_lvalue(
+                           context, selected, qual_type);
+  }
   if (syntax->kind == ND_IDENTIFIER) {
     psx_identifier_expression_resolution_t resolution;
     if (!resolve_direct_identifier(
@@ -1384,6 +1417,13 @@ static void mark_direct_assignment_target(
     const node_t *syntax) {
   if (!context || !syntax || context->unevaluated_depth != 0)
     return;
+  if (syntax->kind == ND_GENERIC_SELECTION) {
+    const node_t *selected = direct_selected_expression(
+        context, syntax);
+    if (selected)
+      mark_direct_assignment_target(context, selected);
+    return;
+  }
   if (syntax->kind == ND_IDENTIFIER) {
     direct_identifier_binding_t *binding =
         direct_identifier_binding(
@@ -1796,18 +1836,21 @@ static int preflight_direct_expression_impl(
         context, syntax, qual_type);
   }
   if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
+    const node_t *operand_syntax = direct_selected_expression(
+        context, syntax->lhs);
+    if (!operand_syntax) return 0;
     psx_qual_type_t operand_type = {
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     psx_address_operand_category_t category =
         PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE;
     if (preflight_direct_lvalue(
-            context, syntax->lhs, &operand_type)) {
+            context, operand_syntax, &operand_type)) {
       category = PSX_ADDRESS_OPERAND_OBJECT_LVALUE;
-      if (syntax->lhs->kind == ND_IDENTIFIER) {
+      if (operand_syntax->kind == ND_IDENTIFIER) {
         psx_identifier_expression_resolution_t identifier;
         if (resolve_direct_identifier(
                 context,
-                (const node_identifier_t *)syntax->lhs,
+                (const node_identifier_t *)operand_syntax,
                 &identifier) &&
             identifier.symbol.kind == PSX_IDENTIFIER_FUNCTION)
           category = PSX_ADDRESS_OPERAND_FUNCTION_DESIGNATOR;
@@ -1816,19 +1859,18 @@ static int preflight_direct_expression_impl(
       if ((context->failure &&
            context->failure->rejection !=
                PSX_SYNTAX_TYPED_HIR_REJECTION_NONE) ||
-          syntax->lhs->kind == ND_GENERIC_SELECTION ||
-          syntax->lhs->kind == ND_COMPOUND_LITERAL)
+          operand_syntax->kind == ND_COMPOUND_LITERAL)
         return 0;
       if (!preflight_direct_expression(
               context, syntax->lhs, &operand_type))
         return 0;
     }
     int operand_is_bitfield = 0;
-    if (syntax->lhs->kind == ND_MEMBER_ACCESS) {
+    if (operand_syntax->kind == ND_MEMBER_ACCESS) {
       psx_hir_member_resolution_t member;
       if (!resolve_direct_member_access(
               context,
-              (const node_member_access_t *)syntax->lhs,
+              (const node_member_access_t *)operand_syntax,
               1, &member))
         return 0;
       operand_is_bitfield =
@@ -2351,6 +2393,11 @@ static psx_semantic_node_t *build_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax) {
   if (!context || !syntax) return NULL;
+  if (syntax->kind == ND_GENERIC_SELECTION) {
+    const node_t *selected = direct_selected_expression(
+        context, syntax);
+    return selected ? build_direct_lvalue(context, selected) : NULL;
+  }
   if (syntax->kind == ND_IDENTIFIER)
     return build_direct_identifier(
         context, (const node_identifier_t *)syntax, 1);
@@ -2849,22 +2896,33 @@ static psx_semantic_node_t *build_direct_expression_impl(
   }
 
   if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
-    if (syntax->lhs && syntax->lhs->kind == ND_IDENTIFIER) {
+    const node_t *operand_syntax = direct_selected_expression(
+        context, syntax->lhs);
+    if (!operand_syntax) return NULL;
+    if (operand_syntax->kind == ND_IDENTIFIER) {
       psx_identifier_expression_resolution_t resolution;
       if (resolve_direct_identifier(
               context,
-              (const node_identifier_t *)syntax->lhs,
+              (const node_identifier_t *)operand_syntax,
               &resolution) &&
           resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION) {
-        return build_direct_identifier(
-            context,
-            (const node_identifier_t *)syntax->lhs, 0);
+        return build_direct_expression(context, syntax->lhs);
       }
     }
-    if (syntax->lhs && syntax->lhs->kind == ND_CAST &&
-        syntax->lhs->is_source_cast) {
+    if (operand_syntax->kind == ND_COMPOUND_LITERAL) {
+      direct_compound_literal_binding_t *binding =
+          find_direct_compound_literal_binding(
+              context,
+              (const node_compound_literal_t *)operand_syntax);
+      if (binding && !binding->plan.yields_address)
+        return build_direct_addressable_compound_literal(
+            context,
+            (const node_compound_literal_t *)operand_syntax);
+    }
+    if (operand_syntax->kind == ND_CAST &&
+        operand_syntax->is_source_cast) {
       const node_source_cast_t *cast =
-          (const node_source_cast_t *)syntax->lhs;
+          (const node_source_cast_t *)operand_syntax;
       direct_cast_binding_t *binding = find_direct_cast_binding(
           context, cast);
       if (binding && binding->type_resolution.target_is_aggregate &&
@@ -5103,9 +5161,10 @@ static psx_semantic_node_t *build_direct_character_array_initializer(
       unit_count, source_node_kind);
 }
 
-static psx_semantic_node_t *build_direct_compound_literal(
+static psx_semantic_node_t *build_direct_compound_literal_value(
     direct_resolution_context_t *context,
-    const node_compound_literal_t *compound) {
+    const node_compound_literal_t *compound,
+    int force_address_result) {
   direct_compound_literal_binding_t *binding =
       find_direct_compound_literal_binding(context, compound);
   if (!binding ||
@@ -5137,8 +5196,18 @@ static psx_semantic_node_t *build_direct_compound_literal(
   if ((binding->local_object && !initialization) || !object)
     return NULL;
 
+  psx_qual_type_t result_qual_type =
+      binding->plan.result_qual_type;
+  int yields_address = binding->plan.yields_address ||
+                       force_address_result;
+  if (force_address_result && !binding->plan.yields_address)
+    result_qual_type = psx_resolve_address_result_qual_type_in(
+        context->semantic_context,
+        binding->plan.object_qual_type);
+  if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
+
   psx_semantic_node_t *value = object;
-  if (binding->plan.yields_address) {
+  if (yields_address) {
     psx_semantic_node_t *address_children[] = {object};
     psx_hir_edge_kind_t address_edges[] = {PSX_HIR_EDGE_LHS};
     psx_hir_node_spec_t address_spec = {
@@ -5148,7 +5217,7 @@ static psx_semantic_node_t *build_direct_compound_literal(
     };
     value = psx_semantic_node_builder_expression(
         &context->builder, &address_spec,
-        binding->plan.result_qual_type,
+        result_qual_type,
         address_children, address_edges, 1, NULL,
         ND_COMPOUND_LITERAL);
     if (!value) return NULL;
@@ -5168,8 +5237,22 @@ static psx_semantic_node_t *build_direct_compound_literal(
       context->local_registry, binding->local_object,
       PSX_LVAR_USAGE_INITIALIZED, NULL);
   return psx_semantic_node_builder_expression(
-      &context->builder, &spec, binding->plan.result_qual_type,
+      &context->builder, &spec, result_qual_type,
       children, edges, 2, NULL, ND_COMPOUND_LITERAL);
+}
+
+static psx_semantic_node_t *build_direct_compound_literal(
+    direct_resolution_context_t *context,
+    const node_compound_literal_t *compound) {
+  return build_direct_compound_literal_value(
+      context, compound, 0);
+}
+
+static psx_semantic_node_t *build_direct_addressable_compound_literal(
+    direct_resolution_context_t *context,
+    const node_compound_literal_t *compound) {
+  return build_direct_compound_literal_value(
+      context, compound, 1);
 }
 
 static psx_semantic_node_t *build_direct_local_declaration(

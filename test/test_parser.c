@@ -7115,6 +7115,35 @@ static void assert_direct_function_rejection(
   reset_test_translation_unit_state();
 }
 
+static void assert_direct_function_resolution(const char *source) {
+  reset_test_translation_unit_state();
+  psx_parser_stream_t stream = {0};
+  begin_test_parser_stream(
+      &stream, NULL, tk_tokenize((char *)source));
+  psx_parsed_toplevel_item_t item;
+  ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+
+  const node_t *syntax_body = item.value.function_header.body;
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_resolved_hir_build_failure_t failure;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), test_lowering_context(),
+          ag_compilation_session_options_view(test_suite_session),
+          &item.value.function_header, &typed_hir, &failure));
+  ASSERT_TRUE(typed_hir != NULL);
+  ASSERT_TRUE(item.value.function_header.body == syntax_body);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_body));
+
+  ps_dispose_function_definition_syntax(
+      &item.value.function_header);
+  ps_parser_stream_end(&stream);
+  reset_test_translation_unit_state();
+}
+
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
 static node_t *selected_generic_expression(node_t *node) {
@@ -11039,6 +11068,16 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ps_parser_stream_end(&stream);
   reset_test_translation_unit_state();
 
+  assert_direct_function_resolution(
+      "int __direct_generic_address(int choose) { "
+      "struct S { int value; }; int local=7; int helper(int); "
+      "_Generic(choose, int: local, default: local)=12; "
+      "++_Generic(choose, int: local, default: local); "
+      "return *&_Generic(choose, int: local, default: local) + "
+      "*&_Generic(choose, int: (int){8}, default: (int){9}) + "
+      "(&_Generic(choose, int: (struct S)10, "
+      "default: (struct S)11))->value + "
+      "(&_Generic(choose, int: helper, default: helper) != 0); }");
   assert_direct_function_rejection(
       "int __direct_return_value_required(void) { return; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED,
@@ -11082,8 +11121,19 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
       ND_ADDR);
   assert_direct_function_rejection(
+      "int __direct_address_generic_rvalue(void) { "
+      "return &_Generic(0, int: 1, default: 2) != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+      ND_ADDR);
+  assert_direct_function_rejection(
       "int __direct_address_bitfield(void) { "
       "struct S { int bits:3; } value={1}; return &value.bits != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
+      ND_ADDR);
+  assert_direct_function_rejection(
+      "int __direct_address_generic_bitfield(void) { "
+      "struct S { int bits:3; } value={1}; "
+      "return &_Generic(0, int: value.bits, default: value.bits) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
       ND_ADDR);
   test_compilation_options()->enable_struct_scalar_pointer_cast = false;

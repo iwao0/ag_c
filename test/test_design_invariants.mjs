@@ -8422,6 +8422,9 @@ const sharedAddressOperandRuleUses = [
 ].filter((source) =>
   /\bpsx_resolve_address_operand_qual_type_in\s*\(/.test(source)
 ).length;
+const directAddressPreflight = syntaxTypedHirResolutionSource.match(
+  /if\s*\(syntax->kind\s*==\s*ND_ADDR\s*&&\s*syntax->is_explicit_addr_expr\)\s*\{[^]*?\n\s*if\s*\(syntax->kind\s*==\s*ND_UNARY_NEGATE/,
+);
 if (
   !addressOperandQualTypeRule ||
   /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
@@ -8436,6 +8439,19 @@ if (
   ) ||
   !/int\s+ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
   !/if\s*\(\s*!ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
+  !/static\s+const\s+node_t\s*\*direct_selected_expression\s*\(/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/if\s*\(syntax->kind\s*==\s*ND_GENERIC_SELECTION\)\s*\{[^]*?preflight_direct_lvalue\s*\(\s*context,\s*selected,/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !directAddressPreflight ||
+  !/direct_selected_expression\s*\(\s*context,\s*syntax->lhs\)/.test(
+    directAddressPreflight[0],
+  ) ||
+  /syntax->lhs->kind\s*==\s*ND_GENERIC_SELECTION/.test(
+    directAddressPreflight[0],
+  ) ||
   /ビットフィールドのアドレスは取得できません/.test(
     semanticPassSource,
   )
