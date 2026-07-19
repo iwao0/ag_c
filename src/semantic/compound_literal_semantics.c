@@ -22,7 +22,7 @@ int psx_resolve_compound_literal_qual_type_plan_in(
       object_type->kind == PSX_TYPE_FUNCTION ||
       ps_type_is_incomplete_array(object_type) ||
       ps_type_contains_vla_array(object_type) ||
-      ps_type_sizeof_id_with_records(
+      ps_type_sizeof_id(
           ps_ctx_semantic_type_table_in(semantic_context),
           ps_ctx_record_layout_table_in(semantic_context),
           object_qual_type.type_id,

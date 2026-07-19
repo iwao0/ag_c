@@ -799,7 +799,7 @@ static int resolve_direct_sizeof_type_name(
   psx_qual_type_t factor_base_qual_type = ps_ctx_intern_qual_type_in(
       context->semantic_context, factor_base_type);
   if (factor_base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
-  long long factor = ps_type_sizeof_id_with_records(
+  long long factor = ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(context->semantic_context),
       ps_ctx_record_layout_table_in(context->semantic_context),
       factor_base_qual_type.type_id,

@@ -87,7 +87,7 @@ static int atomic_operation_width(
   psx_type_shape_t pointee_type = {0};
   int has_pointee_type = hir_ir_type_shape(
       context, pointee.type_id, &pointee_type);
-  int width = ps_type_sizeof_id_with_records(
+  int width = ps_type_sizeof_id(
       context->options->semantic_types,
       context->options->record_layouts,
       pointee.type_id, context->options->target);

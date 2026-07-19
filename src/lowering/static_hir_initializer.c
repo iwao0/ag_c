@@ -63,7 +63,7 @@ static long long normalize_integer_cast(
   if (!type_shape(eval, target_type.type_id, &target) ||
       target.kind != PSX_TYPE_INTEGER)
     return value;
-  int byte_width = ps_type_sizeof_id_with_records(
+  int byte_width = ps_type_sizeof_id(
       ps_lowering_semantic_types(eval->lowering_context),
       ps_lowering_record_layouts(eval->lowering_context),
       target_type.type_id, ps_lowering_target(eval->lowering_context));
@@ -325,7 +325,7 @@ static int pointer_stride(
       ps_lowering_semantic_types(eval->lowering_context),
       psx_hir_node_qual_type(pointer).type_id);
   if (element.type_id == PSX_TYPE_ID_INVALID) return 0;
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_lowering_semantic_types(eval->lowering_context),
       ps_lowering_record_layouts(eval->lowering_context),
       element.type_id, ps_lowering_target(eval->lowering_context));
@@ -432,7 +432,7 @@ static int aggregate_type_size(
     const static_hir_aggregate_t *aggregate,
     psx_type_id_t type_id) {
   return aggregate && type_id != PSX_TYPE_ID_INVALID
-             ? ps_type_sizeof_id_with_records(
+             ? ps_type_sizeof_id(
                    ps_lowering_semantic_types(
                        aggregate->eval.lowering_context),
                    ps_lowering_record_layouts(
@@ -641,7 +641,7 @@ static psx_initializer_target_t aggregate_designated_target(
       psx_qual_type_t element = psx_semantic_type_table_base(
           ps_lowering_semantic_types(aggregate->eval.lowering_context),
           target.type_id);
-      int element_size = ps_type_sizeof_id_with_records(
+      int element_size = ps_type_sizeof_id(
           ps_lowering_semantic_types(aggregate->eval.lowering_context),
           ps_lowering_record_layouts(aggregate->eval.lowering_context),
           element.type_id,
@@ -1044,7 +1044,7 @@ static int lower_string(
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       ps_lowering_semantic_types(eval->lowering_context),
       type_id).type_id;
-  int element_size = ps_type_sizeof_id_with_records(
+  int element_size = ps_type_sizeof_id(
       ps_lowering_semantic_types(eval->lowering_context),
       ps_lowering_record_layouts(eval->lowering_context),
       element_type_id, ps_lowering_target(eval->lowering_context));

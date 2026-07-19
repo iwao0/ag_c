@@ -50,7 +50,7 @@ static int canonical_type_size(
   if (!walk || !walk->semantic_context ||
       qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(walk->semantic_context),
       ps_ctx_record_layout_table_in(walk->semantic_context),
       qual_type.type_id, ps_ctx_target_info(walk->semantic_context));

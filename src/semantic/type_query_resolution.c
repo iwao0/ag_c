@@ -23,7 +23,7 @@
 static int query_type_size(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context),
       qual_type.type_id, ps_ctx_target_info(semantic_context));
@@ -32,7 +32,7 @@ static int query_type_size(
 static int query_type_alignment(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return ps_type_alignof_id_with_records(
+  return ps_type_alignof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context),
       qual_type.type_id, ps_ctx_target_info(semantic_context));

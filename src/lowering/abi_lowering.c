@@ -54,7 +54,7 @@ static ir_abi_param_info_t ir_abi_classify_type_id(
   ir_abi_param_info_t info = {
       .type = IR_TY_VOID,
       .param_class = IR_ABI_PARAM_UNKNOWN,
-      .source_size = ps_type_sizeof_id_with_records(
+      .source_size = ps_type_sizeof_id(
           context->semantic_types, context->record_layouts,
           type_id, context->target),
       .is_unsigned = type.is_unsigned,

@@ -19,6 +19,7 @@ static int is_aggregate_kind(psx_type_kind_t kind) {
 
 typedef struct {
   const psx_semantic_type_table_t *semantic_types;
+  const psx_record_layout_table_t *record_layouts;
   psx_type_id_t type_id;
   int bit_width;
 } aggregate_bitfield_request_t;
@@ -91,6 +92,7 @@ static void resolve_aggregate_bitfield_placement(
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
   if (!state || !request || !is_aggregate_kind(state->record_kind) ||
       !request->semantic_types ||
+      !request->record_layouts ||
       request->type_id == PSX_TYPE_ID_INVALID ||
       request->bit_width < 0) {
     return;
@@ -103,8 +105,9 @@ static void resolve_aggregate_bitfield_placement(
     resolution->status = PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE;
     return;
   }
-  int storage_size = ps_type_sizeof_id_for_target(
-      request->semantic_types, request->type_id, target);
+  int storage_size = ps_type_sizeof_id(
+      request->semantic_types, request->record_layouts,
+      request->type_id, target);
   if (storage_size <= 0) return;
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
@@ -320,6 +323,8 @@ void psx_resolve_aggregate_member_declaration(
         &(aggregate_bitfield_request_t){
             .semantic_types = ps_ctx_semantic_type_table_in(
                 semantic_context),
+            .record_layouts = ps_ctx_record_layout_table_in(
+                semantic_context),
             .type_id = identity.type_id,
             .bit_width = request->bit_width,
         },
@@ -344,9 +349,9 @@ void psx_resolve_aggregate_member_declaration(
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
     const psx_record_layout_table_t *record_layouts =
         ps_ctx_record_layout_table_in(semantic_context);
-    int storage_size = ps_type_sizeof_id_with_records(
+    int storage_size = ps_type_sizeof_id(
         semantic_types, record_layouts, identity.type_id, target);
-    int storage_alignment = ps_type_alignof_id_with_records(
+    int storage_alignment = ps_type_alignof_id(
         semantic_types, record_layouts, identity.type_id, target);
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;

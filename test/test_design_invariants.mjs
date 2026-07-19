@@ -756,7 +756,7 @@ if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
     !/ps_gvar_init_member_value\s*\([^;]*type_size_id\s*\(/s.test(
       translationUnitDataLoweringSourceForMemberLayout,
     ) ||
-    !/int\s+value_size\s*=\s*ps_type_sizeof_id_with_records\s*\(/.test(
+    !/int\s+value_size\s*=\s*ps_type_sizeof_id\s*\(/.test(
       irSymbolLoweringSourceForMemberLayout,
     ) ||
     !/ps_gvar_init_member_value\s*\(\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
@@ -1996,7 +1996,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typedHirDiagnosticsSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       typedHirDiagnosticsSource,
     ) ||
     !/unsigned\s+char\s+is_source_assignment\s*;/.test(
@@ -2643,13 +2643,13 @@ if (!aggregateMemberResolutionType ||
     !/\bps_ctx_intern_qual_type_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+    /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
+    !/\bps_type_alignof_id\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/\bps_ctx_record_layout_table_in\s*\(/.test(
@@ -3070,10 +3070,10 @@ const compoundLiteralSemanticsSource = await readFile(
 if (/\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
+    !/\bps_type_alignof_id\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
@@ -3089,10 +3089,10 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
+    !/\bps_type_alignof_id\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
     !/psx_type_query_plan_kind_t/.test(typeQuerySemanticsHeader) ||
@@ -3738,7 +3738,7 @@ if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test
       irSymbolLoweringSource,
     ) ||
     /\bps_type_sizeof\s*\(/.test(abiLoweringSource) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(abiLoweringSource)) {
+    !/\bps_type_sizeof_id\s*\(/.test(abiLoweringSource)) {
   throw new Error(
     "generic IR must retain resolved function TypeId while ABI lowering owns target classification",
   );
@@ -5025,7 +5025,7 @@ if (!initializerTargetType ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     /\bps_type_sizeof_id_for_target\s*\(/.test(
@@ -5611,7 +5611,7 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     !/psx_record_decl_table_lookup\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
-    !/ps_type_sizeof_id_with_records\s*\(/.test(
+    !/ps_type_sizeof_id\s*\(/.test(
       aggregateCastResolutionSource,
     )) {
   throw new Error(
@@ -5728,7 +5728,7 @@ const directSizeofTypeName = syntaxTypedHirResolutionSource.match(
 );
 if (!directSizeofTypeName ||
     /\bps_ctx_type_sizeof_in\s*\(/.test(directSizeofTypeName[0]) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       directSizeofTypeName[0],
     ) ||
     /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
@@ -6423,9 +6423,6 @@ const typeShapeLoweringSources = (await Promise.all([
 const typeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
 );
-const recordTypeIdLayoutFunction = typeLayoutSource.match(
-  /int\s+ps_type_layout_of_id_with_records\s*\([^]*?\n\}/,
-);
 if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(typeLayoutSource) ||
     /\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
@@ -6437,8 +6434,14 @@ if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     ) ||
     /\btype\s*->\s*(?:size|align)\b/.test(typeLayoutSource) ||
     !typeIdLayoutFunction ||
-    !/\blayout_of_id\s*\(/.test(typeIdLayoutFunction[0]) ||
+    !/\bconst\s+psx_record_layout_table_t\s*\*/.test(
+      typeIdLayoutFunction[0],
+    ) ||
+    !/\blayout_of_id_recursive\s*\(/.test(typeIdLayoutFunction[0]) ||
     /\bps_type_layout_of\s*\(/.test(typeIdLayoutFunction[0]) ||
+    /\bps_type_(?:layout_of_id_with_records|(?:size|align)of_id_with_records|(?:size|align)of_id_for_target)\s*\(/.test(
+      `${typeLayoutHeader}\n${typeLayoutSource}`,
+    ) ||
     /out->is_complete\s*=\s*type->aggregate_definition->align/.test(
       typeLayoutSource,
     ) ||
@@ -6449,11 +6452,7 @@ if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     "layout must resolve TypeId with an explicit target and get record completeness from RecordLayoutTable",
   );
 }
-if (!recordTypeIdLayoutFunction ||
-    !/\blayout_of_id_with_records\s*\(/.test(
-      recordTypeIdLayoutFunction[0],
-    ) ||
-    !/\bpsx_record_layout_table_lookup\s*\(/.test(typeLayoutSource) ||
+if (!/\bpsx_record_layout_table_lookup\s*\(/.test(typeLayoutSource) ||
     /aggregate_definition\s*->\s*(?:size|align)/.test(
       typeLayoutSource.match(
         /static\s+int\s+layout_non_array_with_records\s*\([^]*?\n\}/,
@@ -6462,6 +6461,14 @@ if (!recordTypeIdLayoutFunction ||
   throw new Error(
     "record ABI layout must be an explicit RecordLayoutTable input separate from TypeId",
   );
+}
+for (const path of allSourceFiles) {
+  const source = await readFile(path, "utf8");
+  if (/\bps_type_(?:layout_of_id_with_records|(?:size|align)of_id_with_records|(?:size|align)of_id_for_target)\s*\(/.test(source)) {
+    throw new Error(
+      `${path} must use the single record-aware TypeId layout API`,
+    );
+  }
 }
 if (/parser\/type\.h/.test(typeShapeLoweringSources) ||
     /\bpsx_semantic_type_table_lookup\s*\(/.test(typeShapeLoweringSources) ||
@@ -6552,7 +6559,7 @@ for (const [name, header, source, functionName] of [
     `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*const\\s+psx_record_layout_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
   );
   if (!signature.test(header) || !signature.test(source) ||
-      !/\bps_type_sizeof_id_with_records\s*\(/.test(source) ||
+      !/\bps_type_sizeof_id\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
@@ -6566,12 +6573,12 @@ for (const [name, header, source, functionName] of [
 }
 
 for (const [name, source, requiredLayoutCall] of [
-  ["pointer arithmetic", hirIrBuilder, /\bps_type_sizeof_id_with_records\s*\(/],
-  ["subscript", hirIrBuilder, /\bps_type_sizeof_id_with_records\s*\(/],
-  ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
-  ["VLA", vlaLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
-  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bps_type_sizeof_id_with_records\s*\(/],
-  ["translation unit data", translationUnitDataLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["pointer arithmetic", hirIrBuilder, /\bps_type_sizeof_id\s*\(/],
+  ["subscript", hirIrBuilder, /\bps_type_sizeof_id\s*\(/],
+  ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id\s*\(/],
+  ["VLA", vlaLoweringSource, /\bps_type_sizeof_id\s*\(/],
+  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bps_type_sizeof_id\s*\(/],
+  ["translation unit data", translationUnitDataLoweringSource, /\bps_type_sizeof_id\s*\(/],
 ]) {
   if (!requiredLayoutCall.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
@@ -6641,13 +6648,13 @@ if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_alignment\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_deref_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_alignment\s*\(/.test(loweringRuntimeHeader) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       loweringRuntimeSource,
     ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
+    !/\bps_type_alignof_id\s*\(/.test(
       loweringRuntimeSource,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(hirIrBuilder) ||
+    !/\bps_type_sizeof_id\s*\(/.test(hirIrBuilder) ||
     /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",
@@ -6931,10 +6938,10 @@ if (!/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       `${semanticContextSource}\n${parserSemanticContextImplementation}`,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
+    !/\bps_type_alignof_id\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
     /\bps_ctx_refresh_type_completeness_in\s*\(/.test(
@@ -7250,7 +7257,7 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
@@ -7672,7 +7679,7 @@ if (!aggregateWalkerLayoutSection ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+    !/\bps_type_sizeof_id\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bgvar_get_record_member_layout\s*\(/.test(
@@ -7697,7 +7704,7 @@ if (!aggregateWalkerLayoutSection ||
     /\bps_gvar_storage_size\s*\(|\bsymbol_alignment\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    !/\bps_type_(?:size|align)of_id_with_records\s*\(/.test(
+    !/\bps_type_(?:size|align)of_id\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
@@ -8075,13 +8082,13 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
     !/psx_resolve_global_hir_symbol_spec_in\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
-    /ps_type_(?:sizeof|alignof)_id_with_records\s*\(/.test(
+    /ps_type_(?:sizeof|alignof)_id\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/ps_type_sizeof_id_with_records\s*\(/.test(
+    !/ps_type_sizeof_id\s*\(/.test(
       hirSymbolResolutionSource,
     ) ||
-    !/ps_type_alignof_id_with_records\s*\(/.test(
+    !/ps_type_alignof_id\s*\(/.test(
       hirSymbolResolutionSource,
     )) {
   throw new Error(
@@ -8517,7 +8524,7 @@ if (!/MAP\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
 if (!/try_build_pointer_arithmetic\s*\(/.test(hirIrBuilder) ||
     !/pointer_stride_value\s*\(/.test(hirIrBuilder) ||
     !/psx_hir_node_vla_stride_frame_offset\s*\(/.test(hirIrBuilder) ||
-    !/ps_type_sizeof_id_with_records\s*\(/.test(hirIrBuilder) ||
+    !/ps_type_sizeof_id\s*\(/.test(hirIrBuilder) ||
     /\blower_additive_expression\s*\(/.test(
       semanticLoweringPassSource,
     ) ||

@@ -1831,11 +1831,11 @@ bool psx_ctx_find_typedef_layout_in(
   if (!t) return false;
   psx_qual_type_t qual_type = typedef_record_decl_qual_type(t);
   if (out_size)
-    *out_size = ps_type_sizeof_id_with_records(
+    *out_size = ps_type_sizeof_id(
         context->semantic_types, context->record_layouts,
         qual_type.type_id, ps_ctx_target_info(context));
   if (out_alignment)
-    *out_alignment = ps_type_alignof_id_with_records(
+    *out_alignment = ps_type_alignof_id(
         context->semantic_types, context->record_layouts,
         qual_type.type_id, ps_ctx_target_info(context));
   return true;

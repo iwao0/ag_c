@@ -198,7 +198,7 @@ static int flat_initializer_child_span(
         context->semantic_types, parent->type_id).type_id;
     int child_leaf_count = flat_initializer_leaf_count(
         context, child_type_id);
-    int child_size = ps_type_sizeof_id_with_records(
+    int child_size = ps_type_sizeof_id(
         context->semantic_types, context->record_layouts,
         child_type_id, context->target);
     if (child_leaf_count <= 0 || child_size < 0) return 0;
@@ -227,7 +227,7 @@ static int flat_initializer_child_span(
           child_index).type_id;
   int member_offset = flat_initializer_member_offset(
       context, parent_type, child_index);
-  int member_size = ps_type_sizeof_id_with_records(
+  int member_size = ps_type_sizeof_id(
       context->semantic_types, context->record_layouts,
       member_type_id, context->target);
   int member_leaf_count = flat_initializer_leaf_count(
@@ -833,7 +833,7 @@ static int initializer_type_size(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       semantic_types, record_layouts, type_id, target);
 }
 

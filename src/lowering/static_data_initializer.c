@@ -41,7 +41,7 @@ static ag_diagnostic_context_t *diagnostics(
 static int lowering_type_size(
     const psx_lowering_context_t *lowering_context,
     const psx_type_t *type) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(lowering_context, type),
@@ -98,7 +98,7 @@ static int static_pointer_stride(
   psx_qual_type_t element_type = psx_semantic_type_table_base(
       ps_lowering_semantic_types(lowering_context), pointer_type_id);
   if (element_type.type_id == PSX_TYPE_ID_INVALID) return 0;
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       element_type.type_id, ps_lowering_target(lowering_context));
@@ -157,7 +157,7 @@ static int resolve_static_address_constant(
           psx_semantic_type_table_base(
               ps_lowering_semantic_types(lowering_context),
               base_type_id);
-      int stride = ps_type_sizeof_id_with_records(
+      int stride = ps_type_sizeof_id(
           ps_lowering_semantic_types(lowering_context),
           ps_lowering_record_layouts(lowering_context),
           element_type.type_id,

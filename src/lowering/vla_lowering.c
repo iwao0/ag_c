@@ -19,7 +19,7 @@
 static int type_size(
     const psx_lowering_context_t *lowering_context,
     const psx_type_t *type) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(lowering_context, type),

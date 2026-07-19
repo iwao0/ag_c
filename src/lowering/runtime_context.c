@@ -71,14 +71,14 @@ psx_type_id_t ps_lowering_type_id(
 
 int ps_lowering_type_id_size(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
       type_id, ps_lowering_target(ctx));
 }
 
 int ps_lowering_type_id_alignment(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
-  return ps_type_alignof_id_with_records(
+  return ps_type_alignof_id(
       ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
       type_id, ps_lowering_target(ctx));
 }

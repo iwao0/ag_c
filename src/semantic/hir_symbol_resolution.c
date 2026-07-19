@@ -20,9 +20,9 @@ int psx_resolve_global_hir_symbol_spec_in(
       ps_ctx_record_layout_table_in(semantic_context);
   const ag_target_info_t *target =
       ps_ctx_target_info(semantic_context);
-  int byte_size = ps_type_sizeof_id_with_records(
+  int byte_size = ps_type_sizeof_id(
       semantic_types, record_layouts, qual_type.type_id, target);
-  int alignment = ps_type_alignof_id_with_records(
+  int alignment = ps_type_alignof_id(
       semantic_types, record_layouts, qual_type.type_id, target);
   if ((byte_size <= 0 || alignment <= 0) &&
       ps_gvar_is_extern_decl(global)) {
@@ -30,10 +30,10 @@ int psx_resolve_global_hir_symbol_spec_in(
         semantic_types, qual_type.type_id);
     if (base.type_id != PSX_TYPE_ID_INVALID) {
       if (byte_size <= 0)
-        byte_size = ps_type_sizeof_id_with_records(
+        byte_size = ps_type_sizeof_id(
             semantic_types, record_layouts, base.type_id, target);
       if (alignment <= 0)
-        alignment = ps_type_alignof_id_with_records(
+        alignment = ps_type_alignof_id(
             semantic_types, record_layouts, base.type_id, target);
     }
   }

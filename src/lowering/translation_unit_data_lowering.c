@@ -40,7 +40,7 @@ typedef struct {
 static int type_size_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_sizeof_id_with_records(
+  return ps_type_sizeof_id(
       lowering ? lowering->semantic_types : NULL,
       lowering ? lowering->record_layouts : NULL,
       type_id,
@@ -50,7 +50,7 @@ static int type_size_id(
 static int type_alignment_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_alignof_id_with_records(
+  return ps_type_alignof_id(
       lowering ? lowering->semantic_types : NULL,
       lowering ? lowering->record_layouts : NULL,
       type_id,

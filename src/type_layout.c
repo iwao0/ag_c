@@ -122,22 +122,7 @@ static int complete_array_layout(
   return 1;
 }
 
-static int layout_of_id(
-    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
-    const ag_target_info_t *target, psx_type_layout_t *out) {
-  psx_type_shape_t type = {0};
-  if (!out || !psx_semantic_type_table_describe(types, type_id, &type))
-    return 0;
-  if (type.kind != PSX_TYPE_ARRAY)
-    return layout_non_array(&type, target, out);
-  psx_type_id_t element_type_id = psx_semantic_type_table_base(
-      types, type_id).type_id;
-  psx_type_layout_t element = {0};
-  if (!layout_of_id(types, element_type_id, target, &element)) return 0;
-  return complete_array_layout(&type, &element, out);
-}
-
-static int layout_of_id_with_records(
+static int layout_of_id_recursive(
     const psx_semantic_type_table_t *types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target,
@@ -151,65 +136,40 @@ static int layout_of_id_with_records(
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       types, type_id).type_id;
   psx_type_layout_t element = {0};
-  if (!layout_of_id_with_records(
+  if (!layout_of_id_recursive(
           types, record_layouts, element_type_id, target, &element))
     return 0;
   return complete_array_layout(&type, &element, out);
 }
 
 int ps_type_layout_of_id(
-    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
-    const ag_target_info_t *target, psx_type_layout_t *out) {
-  return layout_of_id(types, type_id, target, out);
-}
-
-int ps_type_sizeof_id_for_target(
-    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
-    const ag_target_info_t *target) {
-  psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(types, type_id, target, &layout) &&
-                 layout.is_complete
-             ? layout.size
-             : 0;
-}
-
-int ps_type_alignof_id_for_target(
-    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
-    const ag_target_info_t *target) {
-  psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(types, type_id, target, &layout)
-             ? layout.alignment
-             : 0;
-}
-
-int ps_type_layout_of_id_with_records(
     const psx_semantic_type_table_t *types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target,
     psx_type_layout_t *out) {
   if (!types || !record_layouts || !target || !out) return 0;
-  return layout_of_id_with_records(
+  return layout_of_id_recursive(
       types, record_layouts, type_id, target, out);
 }
 
-int ps_type_sizeof_id_with_records(
+int ps_type_sizeof_id(
     const psx_semantic_type_table_t *types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id_with_records(
+  return ps_type_layout_of_id(
              types, record_layouts, type_id, target, &layout) &&
                  layout.is_complete
              ? layout.size
              : 0;
 }
 
-int ps_type_alignof_id_with_records(
+int ps_type_alignof_id(
     const psx_semantic_type_table_t *types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id_with_records(
+  return ps_type_layout_of_id(
              types, record_layouts, type_id, target, &layout)
              ? layout.alignment
              : 0;
