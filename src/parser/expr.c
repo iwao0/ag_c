@@ -973,24 +973,7 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
       ctx, merged, (int)total_len, merged_width, merged_prefix_kind);
 }
 
-// GCC __builtin_expect(exp, c): 第1引数 exp をそのまま返す (分岐ヒントは無視)。
-static node_t *try_parse_builtin_expect_call(token_ident_t *tok, expr_parse_ctx_t *ctx) {
-  if (tok->len != 16 || memcmp(tok->str, "__builtin_expect", 16) != 0) return NULL;
-  if (curtok(ctx)->kind != TK_LPAREN) return NULL;
-  set_curtok(ctx, curtok(ctx)->next); // skip '('
-  node_t *exp = assign_ctx(ctx);
-  tk_expect_ctx(ctx->tokenizer_context, ',');
-  (void)assign_ctx(ctx); // discard hint
-  tk_expect_ctx(ctx->tokenizer_context, ')');
-  return exp;
-}
-
 static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx) {
-  if (curtok(ctx)->kind == TK_LPAREN) {
-    node_t *builtin = try_parse_builtin_expect_call(tok, ctx);
-    if (builtin) return builtin;
-  }
-
   unsigned scope_seq = 0;
   unsigned declaration_seq = 0;
   capture_lookup_point(ctx, &scope_seq, &declaration_seq);

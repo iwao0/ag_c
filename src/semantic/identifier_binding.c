@@ -21,6 +21,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
 #include "../parser/type_builder.h"
+#include "../diag/diag.h"
 
 #include <string.h>
 
@@ -443,6 +444,26 @@ static node_t *bind_node(
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
+      if (psx_function_call_builtin_kind(call) ==
+          PSX_BUILTIN_CALL_EXPECT) {
+        const node_t *value =
+            psx_builtin_expect_value_operand(call);
+        if (!value) {
+          ag_diagnostic_context_t *diagnostics =
+              ps_ctx_diagnostics(context->semantic_context);
+          diag_emit_tokf_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH,
+              call->base.tok
+                  ? call->base.tok
+                  : (token_t *)context->fallback_diag_tok,
+              "%s", diag_message_for_in(
+                        diagnostics,
+                        DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
+          return NULL;
+        }
+        return bind_node((node_t *)value, context);
+      }
       for (int i = 0; i < call->argument_count; i++)
         bind_slot(&call->arguments[i], context);
       if (call->callee && call->callee->kind == ND_IDENTIFIER)

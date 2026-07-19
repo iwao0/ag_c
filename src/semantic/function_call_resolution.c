@@ -8,6 +8,32 @@
 
 #include <string.h>
 
+psx_builtin_call_kind_t psx_function_call_builtin_kind(
+    const node_function_call_t *call) {
+  static const char builtin_expect[] = "__builtin_expect";
+  if (!call || !call->callee ||
+      call->callee->kind != ND_IDENTIFIER)
+    return PSX_BUILTIN_CALL_NONE;
+  const node_identifier_t *identifier =
+      (const node_identifier_t *)call->callee;
+  if (identifier->name_len ==
+          (int)(sizeof(builtin_expect) - 1) &&
+      memcmp(
+          identifier->name, builtin_expect,
+          sizeof(builtin_expect) - 1) == 0)
+    return PSX_BUILTIN_CALL_EXPECT;
+  return PSX_BUILTIN_CALL_NONE;
+}
+
+const node_t *psx_builtin_expect_value_operand(
+    const node_function_call_t *call) {
+  return psx_function_call_builtin_kind(call) ==
+                 PSX_BUILTIN_CALL_EXPECT &&
+             call->argument_count == 2 && call->arguments &&
+             call->arguments[0] && call->arguments[1]
+         ? call->arguments[0] : NULL;
+}
+
 static psx_function_call_resolution_state_t *call_state(
     psx_resolution_store_t *store, node_function_call_t *call) {
   psx_node_resolution_state_t *state =

@@ -8206,6 +8206,27 @@ if (!identifierSyntaxParser ||
   );
 }
 
+const builtinExpectDirectUses =
+  syntaxTypedHirResolutionSource.match(
+    /psx_builtin_expect_value_operand\s*\(/g,
+  ) ?? [];
+if (/__builtin_expect|try_parse_builtin_expect/.test(
+      parserExpressionSource,
+    ) ||
+    !/PSX_BUILTIN_CALL_EXPECT/.test(functionCallResolutionHeader) ||
+    !/psx_function_call_builtin_kind\s*\(/.test(
+      functionCallResolutionSource,
+    ) ||
+    !/__builtin_expect/.test(functionCallResolutionSource) ||
+    !/psx_builtin_expect_value_operand\s*\(/.test(
+      identifierBindingSource,
+    ) ||
+    builtinExpectDirectUses.length < 3) {
+  throw new Error(
+    "builtin calls must remain ordinary call Syntax and fold only through shared semantic classification",
+  );
+}
+
 if (!/psx_resolve_number_literal_semantics_in_contexts\s*\(/.test(
       semanticPassSource,
     ) ||

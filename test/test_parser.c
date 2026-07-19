@@ -7244,6 +7244,85 @@ static void test_predefined_function_name_typed_hir_boundary() {
   reset_test_translation_unit_state();
 }
 
+static void test_builtin_expect_syntax_boundary() {
+  printf("test_builtin_expect_syntax_boundary...\n");
+  reset_test_translation_unit_state();
+
+  node_t *syntax = parse_expr_input_with_existing_locals(
+      "__builtin_expect(1 + 2, 0)");
+  ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  node_function_call_t *call = (node_function_call_t *)syntax;
+  ASSERT_EQ(2, call->argument_count);
+  ASSERT_TRUE(call->callee != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, call->callee->kind);
+  const node_identifier_t *callee =
+      (const node_identifier_t *)call->callee;
+  ASSERT_EQ(16, callee->name_len);
+  ASSERT_TRUE(memcmp(callee->name, "__builtin_expect", 16) == 0);
+  ASSERT_EQ(ND_ADD, call->arguments[0]->kind);
+  ASSERT_EQ(ND_NUM, call->arguments[1]->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+
+  node_t *resolved = analyze_test_expression(syntax, syntax->tok);
+  ASSERT_TRUE(resolved != syntax);
+  ASSERT_EQ(ND_ADD, resolved->kind);
+  ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  ASSERT_EQ(2, call->argument_count);
+  ASSERT_EQ(ND_ADD, call->arguments[0]->kind);
+  ASSERT_EQ(ND_NUM, call->arguments[1]->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_resolved_hir_build_failure_t failure;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), syntax, &typed_hir, &failure));
+  ASSERT_TRUE(typed_hir != NULL);
+  ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+
+  psx_hir_module_t *hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t root_id = psx_typed_hir_tree_emit(
+      hir, typed_hir, &failure);
+  ASSERT_TRUE(root_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(root));
+  ASSERT_EQ(3, psx_hir_module_node_count(hir));
+  psx_hir_module_destroy(hir);
+
+  const psx_typed_hir_tree_t *constant_hir = NULL;
+  psx_syntax_integer_constant_result_t constant = {0};
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), NULL, syntax,
+          &constant_hir, &constant, &failure));
+  ASSERT_TRUE(constant_hir != NULL);
+  ASSERT_TRUE(constant.is_constant);
+  ASSERT_EQ(3, constant.value);
+
+  node_t *invalid = parse_expr_input_with_existing_locals(
+      "__builtin_expect(1)");
+  ASSERT_EQ(ND_FUNCALL, invalid->kind);
+  typed_hir = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), invalid, &typed_hir, &failure));
+  ASSERT_TRUE(typed_hir == NULL);
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
+      failure.rejection);
+
+  reset_test_translation_unit_state();
+}
+
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
 static node_t *selected_generic_expression(node_t *node) {
@@ -29115,6 +29194,7 @@ int main() {
   test_syntax_literal_type_boundary();
   test_direct_literal_typed_hir_resolution_boundary();
   test_predefined_function_name_typed_hir_boundary();
+  test_builtin_expect_syntax_boundary();
   test_direct_statement_typed_hir_resolution_boundary();
   test_expr_number();
   test_expr_add_sub();

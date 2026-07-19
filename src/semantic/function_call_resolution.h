@@ -8,6 +8,16 @@ typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_resolution_store_t psx_resolution_store_t;
 
+typedef enum {
+  PSX_BUILTIN_CALL_NONE = 0,
+  PSX_BUILTIN_CALL_EXPECT,
+} psx_builtin_call_kind_t;
+
+psx_builtin_call_kind_t psx_function_call_builtin_kind(
+    const node_function_call_t *call);
+const node_t *psx_builtin_expect_value_operand(
+    const node_function_call_t *call);
+
 int psx_function_call_prepare_resolution_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_function_call_t *call);

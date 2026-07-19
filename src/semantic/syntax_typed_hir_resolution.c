@@ -29,6 +29,7 @@
 #include "typedef_declaration_resolution.h"
 #include "expression_operand_resolution.h"
 #include "function_definition_resolution.h"
+#include "function_call_resolution.h"
 #include "generic_selection_resolution.h"
 #include "hir_local_resolution.h"
 #include "hir_member_resolution.h"
@@ -1802,9 +1803,21 @@ static int preflight_direct_expression_impl(
     return 1;
   }
   if (syntax->kind == ND_FUNCALL) {
+    const node_function_call_t *call =
+        (const node_function_call_t *)syntax;
+    if (psx_function_call_builtin_kind(call) ==
+        PSX_BUILTIN_CALL_EXPECT) {
+      const node_t *value = psx_builtin_expect_value_operand(call);
+      if (!value)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
+            syntax);
+      return preflight_direct_expression(context, value, qual_type);
+    }
     direct_call_binding_t *binding = NULL;
     if (!resolve_direct_function_call(
-            context, (const node_function_call_t *)syntax,
+            context, call,
             &binding))
       return 0;
     if (qual_type)
@@ -2809,6 +2822,11 @@ static psx_semantic_node_t *build_direct_expression_impl(
   if (syntax->kind == ND_FUNCALL) {
     const node_function_call_t *call =
         (const node_function_call_t *)syntax;
+    if (psx_function_call_builtin_kind(call) ==
+        PSX_BUILTIN_CALL_EXPECT) {
+      const node_t *value = psx_builtin_expect_value_operand(call);
+      return value ? build_direct_expression(context, value) : NULL;
+    }
     direct_call_binding_t *binding = NULL;
     if (!resolve_direct_function_call(
             context, call, &binding))
@@ -3294,6 +3312,13 @@ static int direct_integer_constant(
     long long discarded;
     return direct_integer_constant(context, syntax->lhs, &discarded) &&
            direct_integer_constant(context, syntax->rhs, value);
+  }
+  if (syntax->kind == ND_FUNCALL) {
+    const node_function_call_t *call =
+        (const node_function_call_t *)syntax;
+    const node_t *operand = psx_builtin_expect_value_operand(call);
+    return operand &&
+           direct_integer_constant(context, operand, value);
   }
 
   long long lhs;
