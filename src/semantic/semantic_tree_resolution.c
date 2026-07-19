@@ -268,6 +268,20 @@ static int diagnose_direct_function_rejection(
                            diagnostics,
                            DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_NOT_CALLABLE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE, token,
+          "%s", diag_message_for_in(
+                    diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
+      return 1;
     default:
       return 0;
   }

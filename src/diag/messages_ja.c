@@ -190,6 +190,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE: return "代入する型に互換性がありません (C11 6.5.16.1)";
     case DIAG_ERR_PARSER_CONDITIONAL_CONDITION_NOT_SCALAR: return "条件演算子の第1オペランドはスカラ型である必要があります (C11 6.5.15p2)";
     case DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE: return "条件演算子の第2・第3オペランドの型に互換性がありません (C11 6.5.15)";
+    case DIAG_ERR_PARSER_CALL_NOT_CALLABLE: return "呼び出す式は関数型または関数へのポインタ型である必要があります (C11 6.5.2.2p1)";
+    case DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH: return "関数呼び出しの引数数が関数プロトタイプと一致しません (C11 6.5.2.2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

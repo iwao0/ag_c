@@ -261,6 +261,10 @@ static void set_failure(
     psx_resolved_hir_build_failure_t *failure,
     psx_resolved_hir_build_status_t status,
     const node_t *source);
+static int note_direct_semantic_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source);
 static int resolve_direct_identifier(
     direct_resolution_context_t *context,
     const node_identifier_t *identifier,
@@ -373,8 +377,16 @@ static int resolve_direct_function_call(
       callee_type,
       call->argument_count,
       &resolution);
-  if (resolution.status != PSX_CALL_TYPES_OK)
-    return 0;
+  if (resolution.status == PSX_CALL_TYPES_NOT_CALLABLE)
+    return note_direct_semantic_rejection(
+        context, PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_NOT_CALLABLE,
+        &call->base);
+  if (resolution.status == PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
+        &call->base);
+  if (resolution.status != PSX_CALL_TYPES_OK) return 0;
   for (int i = 0; i < call->argument_count; i++) {
     psx_qual_type_t argument_type;
     if (!preflight_direct_expression(

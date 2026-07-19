@@ -189,6 +189,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE, "E3099", "parser.assign_types_incompatible"},
     {DIAG_ERR_PARSER_CONDITIONAL_CONDITION_NOT_SCALAR, "E3100", "parser.conditional_condition_not_scalar"},
     {DIAG_ERR_PARSER_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE, "E3101", "parser.conditional_branch_types_incompatible"},
+    {DIAG_ERR_PARSER_CALL_NOT_CALLABLE, "E3102", "parser.call_not_callable"},
+    {DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH, "E3103", "parser.call_argument_count_mismatch"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

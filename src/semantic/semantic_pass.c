@@ -630,18 +630,14 @@ static void semantic_resolve_function_call(
       return;
     if (call_types.status ==
         PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH) {
-      char *name = psx_function_call_direct_name(store, call);
-      int name_len = psx_function_call_direct_name_length(store, call);
-      ps_diag_ctx_in(
-          diagnostics,
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH,
           call->base.tok
               ? call->base.tok
               : (token_t *)fallback_diag_tok,
-          "funcall",
-          "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
-          name_len, name ? name : "",
-          call_types.is_variadic ? ">=" : "",
-          call_types.parameter_count, call->argument_count);
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
       return;
     }
   }
@@ -653,10 +649,11 @@ static void semantic_resolve_function_call(
             PSX_INTEGER_KIND_INT, 0, 0));
     return;
   }
-  ps_diag_ctx_in(diagnostics, call->base.tok
-                  ? call->base.tok
-                  : (token_t *)fallback_diag_tok,
-              "funcall", "canonical callable type is not bound");
+  diag_emit_tokf_in(
+      diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE,
+      call->base.tok ? call->base.tok : (token_t *)fallback_diag_tok,
+      "%s", diag_message_for_in(
+                diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE));
 }
 
 static const psx_type_t *semantic_resolve_type_name_ref(
