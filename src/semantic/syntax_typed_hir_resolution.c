@@ -56,7 +56,6 @@ typedef struct direct_compound_literal_binding_t
 typedef struct direct_case_binding_t direct_case_binding_t;
 typedef struct direct_case_value_t direct_case_value_t;
 typedef struct direct_switch_scope_t direct_switch_scope_t;
-typedef struct direct_label_binding_t direct_label_binding_t;
 typedef struct direct_goto_binding_t direct_goto_binding_t;
 typedef struct direct_local_declaration_binding_t
     direct_local_declaration_binding_t;
@@ -181,11 +180,6 @@ struct direct_switch_scope_t {
   unsigned char has_default;
 };
 
-struct direct_label_binding_t {
-  psx_decl_id_t declaration_id;
-  direct_label_binding_t *next;
-};
-
 struct direct_goto_binding_t {
   const node_jump_t *syntax;
   direct_goto_binding_t *next;
@@ -208,7 +202,7 @@ typedef struct {
   direct_compound_literal_binding_t *compound_literal_bindings;
   direct_case_binding_t *case_bindings;
   direct_switch_scope_t *switch_scope;
-  direct_label_binding_t *labels;
+  size_t label_declaration_start;
   direct_goto_binding_t *gotos;
   direct_local_declaration_binding_t *local_declarations;
   direct_function_declaration_checkpoint_t *function_declarations;
@@ -3697,10 +3691,17 @@ static void forget_direct_label_declarations(
   psx_scope_graph_t *graph = context
       ? ps_ctx_scope_graph(context->semantic_context) : NULL;
   if (!graph) return;
-  for (direct_label_binding_t *label = context->labels;
-       label; label = label->next) {
-    psx_scope_graph_forget_declaration(
-        graph, label->declaration_id);
+  size_t declaration_count = psx_scope_graph_declaration_count(graph);
+  if (context->label_declaration_start > declaration_count) return;
+  for (size_t index = context->label_declaration_start;
+       index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(graph, index);
+    if (!declaration ||
+        declaration->name_space != PSX_NAMESPACE_LABEL ||
+        declaration->kind != PSX_DECL_LABEL)
+      continue;
+    psx_scope_graph_forget_declaration(graph, declaration->id);
   }
 }
 
@@ -3756,21 +3757,6 @@ static int collect_direct_function_jumps(
             syntax);
         return 0;
       }
-      direct_label_binding_t *binding = arena_alloc_in(
-          ps_ctx_arena(context->semantic_context), sizeof(*binding));
-      if (!binding) {
-        psx_scope_graph_forget_declaration(graph, declaration_id);
-        context->preflight_failed = 1;
-        set_failure(
-            context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
-            syntax);
-        return 0;
-      }
-      *binding = (direct_label_binding_t){
-          .declaration_id = declaration_id,
-          .next = context->labels,
-      };
-      context->labels = binding;
       return !syntax->rhs ||
              collect_direct_function_jumps(context, syntax->rhs);
     }
@@ -6282,6 +6268,8 @@ psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .failure = failure,
+      .label_declaration_start = psx_scope_graph_declaration_count(
+          ps_ctx_scope_graph(semantic_context)),
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),

@@ -4159,7 +4159,13 @@ if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL
     !/psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/forget_direct_label_declarations\s*\(/.test(
+    /\bdirect_label_binding_t\b|context->labels\b/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/forget_direct_label_declarations\s*\([^]*?label_declaration_start[^]*?psx_scope_graph_declaration_at\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/label_declaration_start\s*=\s*psx_scope_graph_declaration_count\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     /direct_jump_name_equal\s*\(/.test(syntaxTypedHirResolutionSource) ||

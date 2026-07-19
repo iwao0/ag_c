@@ -4761,6 +4761,16 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(ND_GOTO, syntax_block->body[3]->kind);
   ASSERT_EQ(ND_LABEL, syntax_block->body[4]->kind);
 
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(test_semantic_context());
+  psx_scope_id_t label_scope =
+      psx_scope_graph_current_scope(scope_graph);
+  int preexisting_label_payload = 1;
+  psx_decl_id_t preexisting_label = psx_scope_graph_declare_at(
+      scope_graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
+      "preexisting", 11, &preexisting_label_payload);
+  ASSERT_TRUE(preexisting_label != PSX_DECL_ID_INVALID);
+
   const psx_typed_hir_tree_t *typed_statement = NULL;
   psx_resolved_hir_build_failure_t failure = {0};
   ASSERT_EQ(
@@ -4773,12 +4783,14 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_block->body[0]));
   ASSERT_TRUE(!ps_node_has_resolution_state(
       syntax_block->body[0]->lhs));
-  psx_scope_graph_t *scope_graph =
-      ps_ctx_scope_graph(test_semantic_context());
   ASSERT_EQ(PSX_DECL_ID_INVALID,
             psx_scope_graph_lookup_in_scope(
                 scope_graph, psx_scope_graph_current_scope(scope_graph),
                 PSX_NAMESPACE_LABEL, "done", 4));
+  ASSERT_EQ(preexisting_label,
+            psx_scope_graph_lookup_in_scope(
+                scope_graph, label_scope, PSX_NAMESPACE_LABEL,
+                "preexisting", 11));
 
   psx_hir_module_t *hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);
