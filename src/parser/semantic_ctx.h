@@ -86,12 +86,6 @@ void ps_ctx_reset_function_diag_state_in(
     psx_semantic_context_t *context);
 void ps_ctx_reset_tag_diag_state_in(
     psx_semantic_context_t *context);
-void ps_ctx_reset_function_scope_in(
-    psx_semantic_context_t *context);
-void ps_ctx_enter_block_scope_in(
-    psx_semantic_context_t *context);
-void ps_ctx_leave_block_scope_in(
-    psx_semantic_context_t *context);
 void ps_ctx_record_unsupported_gnu_extension_in(
     psx_semantic_context_t *context,
     const token_t *tok, const char *name);

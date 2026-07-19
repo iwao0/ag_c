@@ -22,15 +22,10 @@ struct deferred_parser_diagnostic_t {
 
 typedef struct tag_type_t tag_type_t;
 struct tag_type_t {
-  tag_type_t *next_all;
   token_kind_t kind;
   char *name;
   int len;
   unsigned char enum_is_complete;
-  int scope_depth;
-  unsigned scope_seq;
-  unsigned declaration_seq;
-  psx_decl_id_t declaration_id;
   psx_scope_id_t member_scope_id;
   psx_record_decl_t *record_decl;
   psx_record_member_decl_t *record_decl_members;
@@ -180,11 +175,35 @@ struct psx_semantic_context_t {
   psx_record_layout_table_t *record_layouts;
   psx_ctx_allocation_t *allocations;
   deferred_parser_diagnostic_t *pending_diagnostics_all;
-  tag_type_t *tags_all;
   tag_member_layout_draft_t *aggregate_member_layout_drafts;
   psx_function_symbol_t *function_symbols_all;
-  int scope_depth;
 };
+
+static const psx_scope_declaration_t *tag_declaration_for_payload_in(
+    const psx_semantic_context_t *context, const tag_type_t *tag) {
+  if (!context || !context->scope_graph || !tag) return NULL;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = declaration_count; index > 0; index--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index - 1);
+    if (declaration && declaration->name_space == PSX_NAMESPACE_TAG &&
+        declaration->kind == PSX_DECL_TAG &&
+        declaration->payload == tag)
+      return declaration;
+  }
+  return NULL;
+}
+
+static int tag_scope_depth_in(
+    const psx_semantic_context_t *context, const tag_type_t *tag) {
+  const psx_scope_declaration_t *declaration =
+      tag_declaration_for_payload_in(context, tag);
+  return declaration
+             ? psx_scope_graph_scope_depth(
+                   context->scope_graph, declaration->scope_id)
+             : -1;
+}
 
 static int collect_tag_member_declarations_in(
     psx_semantic_context_t *context, const tag_type_t *tag,
@@ -657,8 +676,16 @@ void ps_ctx_emit_deferred_parser_diagnostics_in(
  * duplicate判定を正しく行うと前回翻訳単位のmemberを誤検出していた。 */
 void ps_ctx_reset_tag_diag_state_in(
     psx_semantic_context_t *context) {
-  if (!context) return;
-  for (tag_type_t *t = context->tags_all; t; t = t->next_all) {
+  if (!context || !context->scope_graph) return;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = 0; index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index);
+    if (!declaration || declaration->name_space != PSX_NAMESPACE_TAG ||
+        declaration->kind != PSX_DECL_TAG || !declaration->payload)
+      continue;
+    tag_type_t *t = declaration->payload;
     t->enum_is_complete = 0;
     /* Published record declarations remain valid for canonical types from the
      * previous parse. A later parse starts a new registry-owned generation. */
@@ -678,31 +705,6 @@ void ps_ctx_reset_function_diag_state_in(
   for (psx_function_symbol_t *f = context->function_symbols_all;
        f; f = f->next_all)
     f->is_defined = 0;
-}
-
-void ps_ctx_reset_function_scope_in(
-    psx_semantic_context_t *context) {
-  if (!context) return;
-  context->scope_depth = 0;
-  tag_type_t **all_tag = &context->tags_all;
-  while (*all_tag) {
-    if ((*all_tag)->scope_depth > 0 || (*all_tag)->scope_seq != 0) {
-      *all_tag = (*all_tag)->next_all;
-      continue;
-    }
-    all_tag = &(*all_tag)->next_all;
-  }
-}
-
-void ps_ctx_enter_block_scope_in(
-    psx_semantic_context_t *context) {
-  if (context) context->scope_depth++;
-}
-
-void ps_ctx_leave_block_scope_in(
-    psx_semantic_context_t *context) {
-  if (!context || context->scope_depth <= 0) return;
-  context->scope_depth--;
 }
 
 static tag_type_t *tag_type_from_declaration_in(
@@ -733,8 +735,11 @@ static int ensure_tag_member_scope_in(
       (tag->kind != TK_STRUCT && tag->kind != TK_UNION))
     return 0;
   if (tag->member_scope_id != PSX_SCOPE_ID_INVALID) return 1;
+  const psx_scope_declaration_t *declaration =
+      tag_declaration_for_payload_in(context, tag);
+  if (!declaration) return 0;
   tag->member_scope_id = psx_scope_graph_create_scope_at(
-      context->scope_graph, tag->scope_seq, PSX_SCOPE_RECORD);
+      context->scope_graph, declaration->scope_id, PSX_SCOPE_RECORD);
   return tag->member_scope_id != PSX_SCOPE_ID_INVALID;
 }
 
@@ -762,7 +767,9 @@ static tag_type_t *find_tag_type_at_scope_in(
         memcmp(declaration->name, name, (size_t)len) != 0)
       continue;
     tag_type_t *tag = declaration->payload;
-    if (tag && tag->kind == kind && tag->scope_depth == scope_depth)
+    if (tag && tag->kind == kind &&
+        psx_scope_graph_scope_depth(
+            context->scope_graph, declaration->scope_id) == scope_depth)
       return tag;
   }
   return NULL;
@@ -770,8 +777,18 @@ static tag_type_t *find_tag_type_at_scope_in(
 
 static tag_type_t *find_tag_type_by_record_id_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
-  if (!context || record_id == PSX_RECORD_ID_INVALID) return NULL;
-  for (tag_type_t *tag = context->tags_all; tag; tag = tag->next_all) {
+  if (!context || !context->scope_graph ||
+      record_id == PSX_RECORD_ID_INVALID)
+    return NULL;
+  size_t declaration_count = psx_scope_graph_declaration_count(
+      context->scope_graph);
+  for (size_t index = declaration_count; index > 0; index--) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(context->scope_graph, index - 1);
+    if (!declaration || declaration->name_space != PSX_NAMESPACE_TAG ||
+        declaration->kind != PSX_DECL_TAG || !declaration->payload)
+      continue;
+    tag_type_t *tag = declaration->payload;
     if (tag->record_decl && tag->record_decl->record_id == record_id)
       return tag;
   }
@@ -808,8 +825,10 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
       context, declaration_id);
   if (!tag || tag->kind != kind) return NULL;
   if (kind == TK_ENUM) {
+    int scope_depth = tag_scope_depth_in(context, tag);
     return ps_type_new_enum_in(
-        context->arena_context, name, len, tag->scope_depth + 1);
+        context->arena_context, name, len,
+        scope_depth >= 0 ? scope_depth + 1 : 0);
   }
   return ps_type_new_record_in(
       context->arena_context, tag->record_decl);
@@ -857,7 +876,6 @@ int ps_ctx_register_tag_type_in_contexts(
   t->name = name;
   t->len = len;
   t->enum_is_complete = kind == TK_ENUM && is_complete ? 1 : 0;
-  t->scope_depth = context->scope_depth;
   t->member_scope_id = PSX_SCOPE_ID_INVALID;
   if (kind == TK_STRUCT || kind == TK_UNION) {
     t->record_decl = ctx_calloc_in(
@@ -870,34 +888,34 @@ int ps_ctx_register_tag_type_in_contexts(
     t->record_decl->is_complete = is_complete ? 1 : 0;
     t->record_decl->member_count = member_count;
   }
-  t->declaration_id = psx_scope_graph_declare(
+  declaration_id = psx_scope_graph_declare(
       scope_graph, PSX_NAMESPACE_TAG, PSX_DECL_TAG,
       name, len, t);
   const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(scope_graph, t->declaration_id);
+      psx_scope_graph_declaration(scope_graph, declaration_id);
   if (!declaration) return 0;
-  t->scope_seq = declaration->scope_id;
-  t->declaration_seq = declaration->declaration_order;
   if (t->record_decl && !psx_record_decl_table_define(
                             context->record_decls, t->record_decl)) {
     psx_scope_graph_forget_declaration(
-        scope_graph, t->declaration_id);
+        scope_graph, declaration_id);
     return 0;
   }
   if (is_complete && t->record_decl &&
       !ensure_tag_member_scope_in(context, t)) {
     psx_scope_graph_forget_declaration(
-        scope_graph, t->declaration_id);
+        scope_graph, declaration_id);
     return 0;
   }
-  t->next_all = context->tags_all;
-  context->tags_all = t;
   refresh_cached_record_decl(context, t);
   return 1;
 }
 
 int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context) {
-  return context ? context->scope_depth : 0;
+  return context && context->scope_graph
+             ? psx_scope_graph_scope_depth(
+                   context->scope_graph,
+                   psx_scope_graph_current_scope(context->scope_graph))
+             : -1;
 }
 
 int ps_ctx_find_tag_kind_at_current_scope_in(
@@ -1342,27 +1360,20 @@ int ps_ctx_get_tag_scope_depth_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
-  return t ? t->scope_depth : -1;
+  return tag_scope_depth_in(context, t);
 }
 
 void ps_ctx_promote_tag_to_file_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
-  if (!t || t->scope_depth == 0) return;
-  if (context->scope_graph) {
-    if (!psx_scope_graph_rehome_declaration_at(
-            context->scope_graph, t->declaration_id,
-            PSX_SCOPE_ID_TRANSLATION_UNIT))
-      return;
-    const psx_scope_declaration_t *declaration =
-        psx_scope_graph_declaration(
-            context->scope_graph, t->declaration_id);
-    if (!declaration) return;
-    t->scope_seq = declaration->scope_id;
-    t->declaration_seq = declaration->declaration_order;
-  }
-  t->scope_depth = 0;
+  const psx_scope_declaration_t *declaration =
+      tag_declaration_for_payload_in(context, t);
+  if (!declaration || declaration->scope_id == PSX_SCOPE_ID_TRANSLATION_UNIT)
+    return;
+  psx_scope_graph_rehome_declaration_at(
+      context->scope_graph, declaration->id,
+      PSX_SCOPE_ID_TRANSLATION_UNIT);
 }
 
 int ps_ctx_get_tag_member_count_at_scope_in(

@@ -4861,7 +4861,6 @@ static int preflight_direct_statement_impl(
     case ND_BLOCK: {
       const node_block_t *block = (const node_block_t *)syntax;
       int nested_scope = context->block_depth > 0;
-      ps_ctx_enter_block_scope_in(context->semantic_context);
       if (nested_scope)
         ps_decl_enter_scope_in(context->local_registry);
       context->block_depth++;
@@ -4870,14 +4869,12 @@ static int preflight_direct_statement_impl(
           context->block_depth--;
           if (nested_scope)
             ps_decl_leave_scope_in(context->local_registry);
-          ps_ctx_leave_block_scope_in(context->semantic_context);
           return 0;
         }
       }
       context->block_depth--;
       if (nested_scope)
         ps_decl_leave_scope_in(context->local_registry);
-      ps_ctx_leave_block_scope_in(context->semantic_context);
       return 1;
     }
     case ND_LOCAL_DECLARATION:
@@ -4994,7 +4991,6 @@ static int preflight_direct_statement_impl(
       int declaration_scope = control->init &&
           control->init->kind == ND_LOCAL_DECLARATION;
       if (declaration_scope) {
-        ps_ctx_enter_block_scope_in(context->semantic_context);
         ps_decl_enter_scope_in(context->local_registry);
       }
       int resolved = !control->init ||
@@ -5018,7 +5014,6 @@ static int preflight_direct_statement_impl(
       }
       if (declaration_scope) {
         ps_decl_leave_scope_in(context->local_registry);
-        ps_ctx_leave_block_scope_in(context->semantic_context);
       }
       return resolved;
     }

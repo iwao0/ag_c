@@ -76,6 +76,8 @@ psx_scope_id_t psx_scope_graph_next_scope_id(
     const psx_scope_graph_t *graph);
 psx_scope_kind_t psx_scope_graph_scope_kind(
     const psx_scope_graph_t *graph, psx_scope_id_t scope_id);
+int psx_scope_graph_scope_depth(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id);
 psx_scope_id_t psx_scope_graph_enter_scope(
     psx_scope_graph_t *graph, psx_scope_kind_t kind);
 psx_scope_id_t psx_scope_graph_create_scope_at(

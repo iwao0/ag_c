@@ -37,7 +37,6 @@ static int resolve_function_definition_header(
       ps_ctx_diagnostics(semantic_context);
   ps_local_registry_prepare_function_resolution_in(local_registry);
   local_storage_reset(lowering_context);
-  ps_ctx_reset_function_scope_in(semantic_context);
 
   const psx_type_t *base_type =
       psx_apply_parsed_decl_specifier_in_contexts(

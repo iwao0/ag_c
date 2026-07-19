@@ -251,7 +251,6 @@ int psx_frontend_next_function_with_resolver(
       ps_decl_reset_locals_in(local_registry);
       local_storage_reset(
           ag_compilation_session_lowering_context(session));
-      ps_ctx_reset_function_scope_in(semantic_context);
       ps_decl_set_current_funcname_in(
           local_registry,
           function_name ? function_name->str : NULL,
@@ -288,7 +287,6 @@ int psx_frontend_next_function_with_resolver(
             local_registry, NULL, 0);
         local_storage_reset(
             ag_compilation_session_lowering_context(session));
-        ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_syntax(
             &item.value.function_header);
         arena_rollback_in(

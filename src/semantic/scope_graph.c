@@ -96,6 +96,20 @@ psx_scope_kind_t psx_scope_graph_scope_kind(
              : PSX_SCOPE_TRANSLATION_UNIT;
 }
 
+int psx_scope_graph_scope_depth(
+    const psx_scope_graph_t *graph, psx_scope_id_t scope_id) {
+  if (!graph || scope_id >= graph->scope_count) return -1;
+  int depth = 0;
+  while (scope_id != PSX_SCOPE_ID_TRANSLATION_UNIT) {
+    scope_id = graph->scopes[scope_id].parent_id;
+    if (scope_id == PSX_SCOPE_ID_INVALID ||
+        scope_id >= graph->scope_count)
+      return -1;
+    depth++;
+  }
+  return depth;
+}
+
 psx_scope_id_t psx_scope_graph_create_scope_at(
     psx_scope_graph_t *graph, psx_scope_id_t parent_scope,
     psx_scope_kind_t kind) {

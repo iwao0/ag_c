@@ -248,6 +248,10 @@ const scopeGraphSemanticContextSource = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
+const scopeGraphSemanticContextHeader = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
 const scopeGraphIdentifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",
   "utf8",
@@ -401,6 +405,32 @@ if (!aggregateMemberPayload ||
     )) {
   throw new Error(
     "record scopes must own named and unnamed member identity and declaration order",
+  );
+}
+const tagPayload =
+  scopeGraphSemanticContextSource.match(
+    /struct\s+tag_type_t\s*\{([^}]*)\};/,
+  )?.[1] ?? "";
+if (!tagPayload ||
+    /\b(?:next_all|scope_depth|scope_seq|declaration_seq|declaration_id)\b/.test(
+      tagPayload,
+    ) ||
+    /\btags_all\b/.test(scopeGraphSemanticContextSource) ||
+    /\bint\s+scope_depth\s*;/.test(scopeGraphSemanticContextSource) ||
+    /\bps_ctx_(?:reset_function_scope|enter_block_scope|leave_block_scope)_in\s*\(/.test(
+      `${scopeGraphSemanticContextSource}\n${scopeGraphSemanticContextHeader}`,
+    ) ||
+    !/tag_declaration_for_payload_in\s*\([^]*?psx_scope_graph_declaration_at\s*\([^]*?declaration->payload\s*==\s*tag/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_current_tag_scope_depth_in\s*\([^]*?psx_scope_graph_scope_depth\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/find_tag_type_by_record_id_in\s*\([^]*?psx_scope_graph_declaration_at\s*\(/.test(
+      scopeGraphSemanticContextSource,
+    )) {
+  throw new Error(
+    "tag identity and lexical depth must come exclusively from scope graph declarations",
   );
 }
 const semanticIntegerConstructionSource = (
@@ -3636,9 +3666,6 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
     !/psx_frontend_reset_translation_unit_state_in_session\s*\(/.test(
       compilerMainSource,
-    ) ||
-    !/ps_ctx_reset_function_scope_in\s*\(/.test(
-      frontendFunctionDefinitionSource,
     ) ||
     !/ps_ctx_emit_deferred_parser_diagnostics_in\s*\(/.test(
       frontendTranslationUnitSource,
@@ -8798,10 +8825,13 @@ if (!/#include\s+"static_assert_resolution\.h"/.test(
 if (!/control->init->kind\s*==\s*ND_LOCAL_DECLARATION/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/declaration_scope[^]*?ps_ctx_enter_block_scope_in\s*\([^]*?ps_decl_enter_scope_in\s*\([^]*?preflight_direct_statement\s*\(\s*context,\s*control->init\s*\)/.test(
+    !/declaration_scope[^]*?ps_decl_enter_scope_in\s*\([^]*?preflight_direct_statement\s*\(\s*context,\s*control->init\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/ps_decl_leave_scope_in\s*\([^]*?ps_ctx_leave_block_scope_in\s*\(/.test(
+    !/ps_decl_leave_scope_in\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /ps_ctx_(?:enter|leave)_block_scope_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/children\[count\]\s*=\s*build_direct_statement\s*\(\s*context,\s*control->init\s*\)/.test(

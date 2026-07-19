@@ -7299,7 +7299,6 @@ static int parse_raw_function_item(
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
   ps_decl_reset_locals_in(test_local_registry());
   local_storage_reset(test_lowering_context());
-  ps_ctx_reset_function_scope_in(test_semantic_context());
   token_ident_t *function_name =
       item->value.function_header.declarator.identifier;
   ps_decl_set_current_funcname_in(
@@ -8223,7 +8222,6 @@ static void test_persistent_local_scope_lookup_boundary() {
                   other_sibling) == outer);
   ps_decl_leave_scope_in(test_local_registry());
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t before_enum =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
@@ -8232,7 +8230,6 @@ static void test_persistent_local_scope_lookup_boundary() {
   psx_local_lookup_point_t after_enum =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
   long long enum_value = 0;
   ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, before_enum, &enum_value));
@@ -8240,14 +8237,12 @@ static void test_persistent_local_scope_lookup_boundary() {
       (char *)"__scoped_enum", 13, after_enum, &enum_value));
   ASSERT_EQ(29, enum_value);
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t enum_sibling =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
 }
 
 static void test_member_access_resolution_boundary() {
@@ -14294,7 +14289,6 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   request.kind = TK_STRUCT;
   request.mode = PSX_TAG_DECLARATION_FORWARD;
@@ -14312,7 +14306,6 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_EQ(1, resolution.scope_depth);
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
   ASSERT_EQ(0, ps_ctx_get_tag_scope_depth_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
@@ -15875,7 +15868,6 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
@@ -15889,7 +15881,6 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
 
   psx_global_object_result_t object;
   ASSERT_TRUE(lower_global_object_declaration(
@@ -15955,7 +15946,6 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_DUPLICATE, resolution.status);
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   request.value = 11;
   psx_resolve_enum_constant(&request, &resolution);
@@ -15967,7 +15957,6 @@ static void test_enum_constant_resolution_boundary() {
       (char *)"__EnumBoundary", 14, &value));
   ASSERT_EQ(11, value);
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
   ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"__EnumBoundary", 14, &value));
   ASSERT_EQ(7, value);
@@ -16023,7 +16012,6 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope_in(test_semantic_context());
   ps_decl_enter_scope_in(test_local_registry());
   ASSERT_TRUE(register_test_storage_fixture(
       (char *)"__EnumLocal", 11, 4, 4, 0) != NULL);
@@ -16032,7 +16020,6 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT, resolution.status);
   ps_decl_leave_scope_in(test_local_registry());
-  ps_ctx_leave_block_scope_in(test_semantic_context());
 }
 
 static void test_initializer_resolution_boundary() {
@@ -28217,10 +28204,10 @@ static void test_semantic_context_isolation() {
 
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
-  ps_ctx_enter_block_scope_in(second);
+  ps_decl_enter_scope_in(second_locals);
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
   ASSERT_EQ(1, ps_ctx_current_tag_scope_depth_in(second));
-  ps_ctx_leave_block_scope_in(second);
+  ps_decl_leave_scope_in(second_locals);
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
 
   char direct_label_name[] = "direct_label";
@@ -28284,7 +28271,6 @@ static void test_semantic_context_isolation() {
       first, enum_name, 12, &value));
   ASSERT_EQ(11, value);
 
-  ps_ctx_reset_function_scope_in(second);
   psx_typedef_declaration_resolution_t streamed_typedef_resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
@@ -28573,7 +28559,6 @@ static void test_compilation_session_registry_isolation() {
 
   ps_local_registry_reset_in(second.local_registry);
   ps_local_registry_reset_in(first.local_registry);
-  ps_ctx_enter_block_scope_in(first.semantic_context);
   ps_decl_enter_scope_in(first.local_registry);
   const psx_type_t *isolated_typedef_decl_type =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -28785,7 +28770,6 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       second.semantic_context, TK_STRUCT, (char *)"FirstTag", 8));
   ps_decl_leave_scope_in(first.local_registry);
-  ps_ctx_leave_block_scope_in(first.semantic_context);
   lvar_t *lowered_into_first = lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = first.local_registry,
@@ -29276,6 +29260,8 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_TRUE(graph != NULL);
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             psx_scope_graph_current_scope(graph));
+  ASSERT_EQ(0, psx_scope_graph_scope_depth(
+                   graph, PSX_SCOPE_ID_TRANSLATION_UNIT));
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_STATIC,
       psx_compound_literal_storage_duration_in_scope_graph(
@@ -29315,6 +29301,7 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t prototype_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION_PROTOTYPE);
   ASSERT_TRUE(prototype_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(1, psx_scope_graph_scope_depth(graph, prototype_scope));
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_STATIC,
       psx_compound_literal_storage_duration_in_scope_graph(
@@ -29333,6 +29320,7 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t function_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_FUNCTION);
   ASSERT_TRUE(function_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(1, psx_scope_graph_scope_depth(graph, function_scope));
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
       psx_compound_literal_storage_duration_in_scope_graph(
@@ -29351,6 +29339,7 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t block_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_BLOCK);
   ASSERT_TRUE(block_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(2, psx_scope_graph_scope_depth(graph, block_scope));
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
       psx_compound_literal_storage_duration_in_scope_graph(
@@ -29405,6 +29394,7 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   psx_scope_id_t record_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_RECORD);
   ASSERT_TRUE(record_scope != PSX_SCOPE_ID_INVALID);
+  ASSERT_EQ(1, psx_scope_graph_scope_depth(graph, record_scope));
   int member_payload = 7;
   psx_decl_id_t member_id = psx_scope_graph_declare(
       graph, PSX_NAMESPACE_MEMBER, PSX_DECL_MEMBER,

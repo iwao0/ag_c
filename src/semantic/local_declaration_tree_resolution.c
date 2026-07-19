@@ -412,7 +412,6 @@ static int resolve_initializer_declarations(
 static int resolve_block_declarations(
     psx_local_declaration_resolver_t *resolver,
     node_block_t *block) {
-  ps_ctx_enter_block_scope_in(resolver->semantic_context);
   ps_decl_enter_scope_in(resolver->local_registry);
   int ok = 1;
   for (int i = 0; block && block->body && block->body[i]; i++) {
@@ -431,7 +430,6 @@ static int resolve_block_declarations(
     if (!ok) break;
   }
   ps_decl_leave_scope_in(resolver->local_registry);
-  ps_ctx_leave_block_scope_in(resolver->semantic_context);
   return ok;
 }
 
@@ -442,7 +440,6 @@ static int resolve_function_body_declarations(
   if ((*body_slot)->kind != ND_BLOCK)
     return resolve_local_declarations_in_slot(
         resolver, body_slot);
-  ps_ctx_enter_block_scope_in(resolver->semantic_context);
   node_block_t *body = (node_block_t *)*body_slot;
   int ok = 1;
   for (int i = 0; body->body && body->body[i]; i++) {
@@ -460,7 +457,6 @@ static int resolve_function_body_declarations(
         resolver->local_registry, region);
     if (!ok) break;
   }
-  ps_ctx_leave_block_scope_in(resolver->semantic_context);
   return ok;
 }
 

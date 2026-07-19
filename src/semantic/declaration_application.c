@@ -720,7 +720,6 @@ void psx_apply_parsed_function_parameters_in_contexts(
                 "function parameter type allocation failed");
   }
   int resolved_count = 0;
-  ps_ctx_enter_block_scope_in(semantic_context);
   ps_local_registry_enter_prototype_scope_in(local_registry);
   for (int i = 0; i < parameters->count; i++) {
     const psx_parsed_function_parameter_t *parameter =
@@ -772,7 +771,6 @@ void psx_apply_parsed_function_parameters_in_contexts(
     }
   }
   ps_decl_leave_scope_in(local_registry);
-  ps_ctx_leave_block_scope_in(semantic_context);
   psx_set_resolved_function_parameter_types(
       ps_ctx_arena(semantic_context), function_op,
       resolved_types, resolved_count,
