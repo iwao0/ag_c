@@ -127,11 +127,24 @@ typedef struct {
   unsigned char is_thread_local;
 } psx_resolved_reference_state_t;
 
+typedef enum {
+  PSX_TYPE_NAME_UNBOUND = 0,
+  PSX_TYPE_NAME_BOUND,
+  PSX_TYPE_NAME_RESOLVED,
+} psx_type_name_resolution_kind_t;
+
 typedef struct psx_type_name_resolution_state_t {
-  const psx_type_t *bound_base_type;
-  const psx_semantic_type_table_t *resolved_type_table;
-  psx_qual_type_t resolved_qual_type;
-  const psx_runtime_declarator_application_t *bound_runtime_application;
+  psx_type_name_resolution_kind_t kind;
+  union {
+    struct {
+      const psx_type_t *base_type;
+      const psx_runtime_declarator_application_t *runtime_application;
+    } bound;
+    struct {
+      const psx_semantic_type_table_t *type_table;
+      psx_qual_type_t qual_type;
+    } resolved;
+  } value;
 } psx_type_name_resolution_state_t;
 
 typedef enum {

@@ -9012,6 +9012,19 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(PSX_TYPE_ARRAY,
             direct_type->kind);
   ASSERT_EQ(12, psx_sizeof_query_resolved_size(direct_type_query));
+  const psx_type_name_resolution_state_t *direct_type_state =
+      psx_node_type_name_state(
+          test_resolution_store(), &direct_type_query->base);
+  ASSERT_TRUE(direct_type_state != NULL);
+  ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, direct_type_state->kind);
+  ASSERT_TRUE(psx_type_name_bound_base_type(direct_type_state) == NULL);
+  resolve_test_sizeof_query(direct_type_query, &direct_resolution);
+  ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
+  ASSERT_EQ(12, psx_sizeof_query_resolved_size(direct_type_query));
+  direct_type_state = psx_node_type_name_state(
+      test_resolution_store(), &direct_type_query->base);
+  ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, direct_type_state->kind);
+  ASSERT_TRUE(psx_type_name_bound_base_type(direct_type_state) == NULL);
 
   node_sizeof_query_t *negative_type_query =
       (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
@@ -13733,6 +13746,27 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE(syntax.end != NULL);
   ASSERT_EQ(TK_COMMA, syntax.end->kind);
   ASSERT_TRUE(syntax.atomic_inner == NULL);
+
+  psx_type_name_ref_t reference = {.syntax = &syntax};
+  psx_type_name_resolution_state_t state = {0};
+  ASSERT_EQ(PSX_TYPE_NAME_UNBOUND, state.kind);
+  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(), &reference, &state));
+  ASSERT_EQ(PSX_TYPE_NAME_BOUND, state.kind);
+  ASSERT_TRUE(psx_type_name_bound_base_type(&state) != NULL);
+  ASSERT_TRUE(psx_type_name_resolved_type(&state) == NULL);
+  const psx_type_t *resolved =
+      psx_resolve_bound_type_name_ref_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), &reference, &state);
+  ASSERT_TRUE(resolved != NULL);
+  ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, state.kind);
+  ASSERT_TRUE(psx_type_name_bound_base_type(&state) == NULL);
+  ASSERT_TRUE(psx_type_name_bound_runtime_application(&state) == NULL);
+  ASSERT_TRUE(psx_type_name_resolved_type(&state) == resolved);
+  ASSERT_TRUE(psx_type_name_resolved_qual_type(&state).type_id !=
+              PSX_TYPE_ID_INVALID);
 
   const psx_type_t *type = apply_test_parsed_type_name(&syntax);
   ASSERT_TRUE(type != NULL);

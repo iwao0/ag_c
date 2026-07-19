@@ -4457,9 +4457,6 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
     /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    /\bpsx_qual_type_t\s+qual_type\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
     !/psx_semantic_type_table_lookup_qual_type\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
     )) {
@@ -4575,16 +4572,28 @@ if (!typeNameRef ||
     /\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
       typeNameRef[1],
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
+    !/\bPSX_TYPE_NAME_BOUND\b/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*resolved_type_table\s*;/.test(
+    !/\bPSX_TYPE_NAME_RESOLVED\b/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bpsx_qual_type_t\s+resolved_qual_type\s*;/.test(
+    !/\bpsx_type_name_resolution_kind_t\s+kind\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    /\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
+    !/\bconst\s+psx_type_t\s*\*\s*base_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bconst\s+psx_runtime_declarator_application_t\s*\*\s*runtime_application\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*type_table\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    /\b(?:bound_base_type|resolved_type_table|resolved_qual_type|bound_runtime_application)\b/.test(
       nodeResolutionStateSource,
     ) ||
     !compoundLiteralNode ||
@@ -5665,7 +5674,7 @@ const directSizeofTypeName = syntaxTypedHirResolutionSource.match(
   /static int resolve_direct_sizeof_type_name\s*\([\s\S]*?\n\}/,
 );
 if (!directSizeofTypeName ||
-    /base_state\.bound_base_type\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
+    /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
       directSizeofTypeName[0],
     ) ||
     !/op->array_len\s*<=\s*0\s*\|\|\s*factor\s*<=\s*0/.test(
@@ -5696,13 +5705,13 @@ if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
     /const\s+node_t\s*\*\*runtime_factors\s*;/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/base_state\.bound_runtime_application/.test(
+    !/psx_type_name_bound_runtime_application\s*\(\s*&base_state\s*\)/.test(
       directSizeofTypeName[0],
     ) ||
     !/ps_ctx_semantic_expression_in\s*\([^]*?runtime_factor_ids\[i\]/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/bound_runtime_application/.test(nodeResolutionStateSource) ||
+    !/runtime_application/.test(nodeResolutionStateSource) ||
     !/ps_ctx_find_typedef_name_at_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     )) {

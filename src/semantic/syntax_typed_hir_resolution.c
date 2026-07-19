@@ -749,8 +749,13 @@ static int resolve_direct_sizeof_type_name(
   if (!psx_bind_type_name_ref_in_contexts(
           context->semantic_context, context->global_registry,
           context->local_registry, &query->type_name,
-          &base_state) || !base_state.bound_base_type)
+          &base_state))
     return 0;
+  const psx_type_t *base_type =
+      psx_type_name_bound_base_type(&base_state);
+  const psx_runtime_declarator_application_t *runtime_application =
+      psx_type_name_bound_runtime_application(&base_state);
+  if (!base_type) return 0;
 
   const psx_parsed_declarator_t *declarator =
       &query->type_name.syntax->declarator;
@@ -761,12 +766,12 @@ static int resolve_direct_sizeof_type_name(
   psx_runtime_declarator_application_t effective_application;
   if (!psx_compose_runtime_declarator_applications_in(
           ps_ctx_arena(context->semantic_context), &application,
-          base_state.bound_runtime_application,
+          runtime_application,
           &effective_application))
     return 0;
   const psx_type_t *resolved_type =
       psx_apply_runtime_declarator_type_in_context(
-          context->semantic_context, base_state.bound_base_type,
+          context->semantic_context, base_type,
           &application);
   psx_qual_type_t queried_qual_type = ps_ctx_intern_qual_type_in(
       context->semantic_context, resolved_type);
@@ -788,8 +793,7 @@ static int resolve_direct_sizeof_type_name(
   }
 
   const psx_type_t *factor_base_type = direct_type_before_application(
-      base_state.bound_base_type,
-      base_state.bound_runtime_application);
+      base_type, runtime_application);
   if (!factor_base_type) return 0;
   long long factor = ps_ctx_type_sizeof_in(
       context->semantic_context, factor_base_type);

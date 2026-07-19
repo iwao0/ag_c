@@ -76,15 +76,24 @@ static void resolve_sizeof_type_name(
       ps_ctx_resolution_store(semantic_context);
   psx_type_name_resolution_state_t *type_name_state =
       psx_node_type_name_state_mut(store, &query->base);
+  psx_type_name_resolution_state_t rebound_state = {0};
+  psx_type_name_resolution_state_t *bound_state =
+      type_name_state && type_name_state->kind == PSX_TYPE_NAME_RESOLVED
+          ? &rebound_state : type_name_state;
   if (!psx_bind_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
-          &query->type_name, type_name_state) ||
-      !type_name_state || !type_name_state->bound_base_type) {
+          &query->type_name, bound_state) ||
+      !type_name_state) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
 
-  const psx_type_t *base_type = type_name_state->bound_base_type;
+  const psx_type_t *base_type =
+      psx_type_name_bound_base_type(bound_state);
+  if (!base_type) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
   psx_declarator_shape_t shape_storage;
   if (!ps_declarator_shape_copy_in(
           ps_ctx_arena(semantic_context), &shape_storage,

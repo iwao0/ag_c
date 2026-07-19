@@ -38,6 +38,11 @@ int psx_type_name_bind_resolved_type_in(
     psx_semantic_context_t *semantic_context,
     psx_type_name_resolution_state_t *state,
     const psx_type_t *resolved_type);
+const psx_type_t *psx_type_name_bound_base_type(
+    const psx_type_name_resolution_state_t *state);
+const psx_runtime_declarator_application_t *
+psx_type_name_bound_runtime_application(
+    const psx_type_name_resolution_state_t *state);
 const psx_type_t *psx_type_name_resolved_type(
     const psx_type_name_resolution_state_t *state);
 psx_qual_type_t psx_type_name_resolved_qual_type(
