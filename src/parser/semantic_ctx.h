@@ -250,17 +250,27 @@ int ps_ctx_has_enum_const_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
 
 typedef struct {
+  psx_qual_type_t decl_qual_type;
+  /* Compatibility view materialized from decl_qual_type on lookup. */
   const psx_type_t *decl_type;
   const psx_runtime_declarator_application_t *runtime_application;
 } psx_typedef_info_t;
+
+static inline psx_qual_type_t ps_ctx_typedef_decl_qual_type(
+    const psx_typedef_info_t *info) {
+  return info ? info->decl_qual_type
+              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                  PSX_TYPE_QUALIFIER_NONE};
+}
 
 static inline const psx_type_t *ps_ctx_typedef_decl_type(
     const psx_typedef_info_t *info) {
   return info ? info->decl_type : NULL;
 }
 
-/* typedef 名を登録する。info->decl_type は正本として必須。
- * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = decl_type欠落または型衝突。 */
+/* typedef 名を登録する。decl_qual_type が正本で、未設定の旧入力は
+ * decl_type を intern して正本化する。
+ * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = 型欠落または型衝突。 */
 int ps_ctx_register_typedef_name_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,

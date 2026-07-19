@@ -6884,7 +6884,7 @@ const runtimeDeclaratorApplicationStruct =
     /typedef\s+struct\s+psx_runtime_declarator_application_t\s*\{([^]*?)\}\s*psx_runtime_declarator_application_t\s*;/,
   );
 const typedefInfoStruct = semanticContextHeaderSource.match(
-  /typedef\s+struct\s*\{([^]*?)\}\s*psx_typedef_info_t\s*;/,
+  /typedef\s+struct\s*\{((?:(?!typedef\s+struct)[^])*?)\}\s*psx_typedef_info_t\s*;/,
 );
 const localDeclarationResolutionSource = await readFile(
   "src/semantic/local_declaration_resolution.h",
@@ -9062,6 +9062,9 @@ const functionDefinitionHeaderResolutionStruct =
 const functionSymbolStruct = semanticContextOwnershipSource.match(
   /struct\s+psx_function_symbol_t\s*\{([\s\S]*?)\n\};/,
 );
+const typedefSymbolStruct = semanticContextOwnershipSource.match(
+  /struct\s+typedef_name_t\s*\{([\s\S]*?)\n\};/,
+);
 if (!/psx_function_definition_header_resolution_t\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
@@ -9118,11 +9121,24 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/psx_function_call_bind_qual_type\s*\(/.test(
       identifierBindingSource,
     ) ||
+    !typedefSymbolStruct ||
+    !/psx_qual_type_t\s+decl_qual_type\s*;/.test(
+      typedefSymbolStruct[1],
+    ) ||
+    /\bpsx_type_t\b/.test(typedefSymbolStruct[1]) ||
+    !typedefInfoStruct ||
+    !/psx_qual_type_t\s+decl_qual_type\s*;/.test(
+      typedefInfoStruct[1],
+    ) ||
+    /\bt->decl_type\b/.test(semanticContextOwnershipSource) ||
+    !/typedef_record_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(
       functionDefinitionResolutionSource,
     )) {
   throw new Error(
-    "function symbols and headers must own canonical QualType values before any mutable compatibility node is projected",
+    "function and typedef symbols must own canonical QualType values before any mutable compatibility node is projected",
   );
 }
 if (!parsedFunctionResolutionBoundary ||

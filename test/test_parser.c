@@ -22858,10 +22858,43 @@ static void test_type_metadata_bridge() {
                                         (int)sizeof(typedef_sync_name) - 1,
                                         &typedef_sync_out));
   ASSERT_TRUE(ps_ctx_typedef_decl_type(&typedef_sync_out) != NULL);
+  psx_qual_type_t typedef_sync_qual_type =
+      ps_ctx_typedef_decl_qual_type(&typedef_sync_out);
+  ASSERT_TRUE(typedef_sync_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(
+      ps_ctx_typedef_decl_type(&typedef_sync_out) ==
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          typedef_sync_qual_type));
   ASSERT_EQ(PSX_TYPE_POINTER,
             ps_ctx_typedef_decl_type(&typedef_sync_out)->kind);
   ASSERT_EQ(1, ps_type_pointer_depth(
                    ps_ctx_typedef_decl_type(&typedef_sync_out)));
+
+  const char typedef_identity_name[] = "__tm_typedef_identity";
+  const psx_typedef_info_t typedef_identity = {
+      .decl_qual_type = typedef_sync_qual_type,
+  };
+  ASSERT_TRUE(test_semantic_define_typedef_name(
+      (char *)typedef_identity_name,
+      (int)sizeof(typedef_identity_name) - 1,
+      &typedef_identity));
+  psx_typedef_info_t typedef_identity_out = {0};
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(
+      test_semantic_context(), (char *)typedef_identity_name,
+      (int)sizeof(typedef_identity_name) - 1,
+      &typedef_identity_out));
+  ASSERT_EQ(typedef_sync_qual_type.type_id,
+            ps_ctx_typedef_decl_qual_type(
+                &typedef_identity_out).type_id);
+  const psx_typedef_info_t typedef_identity_mismatch = {
+      .decl_qual_type = typedef_sync_qual_type,
+      .decl_type = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
+  };
+  ASSERT_TRUE(!test_semantic_define_typedef_name(
+      (char *)typedef_identity_name,
+      (int)sizeof(typedef_identity_name) - 1,
+      &typedef_identity_mismatch));
 
   const char tag_member_desc_tag[] = "__tm_tag_member_desc_sync";
   const char tag_member_desc_name[] = "rows";

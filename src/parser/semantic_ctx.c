@@ -171,7 +171,7 @@ struct typedef_name_t {
   typedef_name_t *next_all;
   char *name;
   int len;
-  psx_type_t *decl_type;
+  psx_qual_type_t decl_qual_type;
   psx_runtime_declarator_application_t *runtime_application;
   int scope_depth;
   unsigned scope_seq;
@@ -184,8 +184,18 @@ static const psx_type_t *tag_member_record_decl_type(
   return m ? m->declaration.type : NULL;
 }
 
-static const psx_type_t *typedef_record_decl_type(const typedef_name_t *t) {
-  return t ? t->decl_type : NULL;
+static psx_qual_type_t typedef_record_decl_qual_type(
+    const typedef_name_t *t) {
+  return t ? t->decl_qual_type
+           : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                               PSX_TYPE_QUALIFIER_NONE};
+}
+
+static const psx_type_t *typedef_record_decl_type(
+    const psx_semantic_context_t *context, const typedef_name_t *t) {
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(context),
+      typedef_record_decl_qual_type(t));
 }
 
 static const psx_runtime_declarator_application_t *
@@ -1740,19 +1750,57 @@ clone_typedef_runtime_application(
   return copy;
 }
 
+static psx_qual_type_t intern_typedef_decl_type(
+    psx_semantic_context_t *context,
+    const psx_type_t *decl_type) {
+  if (!context || !decl_type)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_type_t *resolved_type = ctx_type_clone_persistent_in(
+      context, decl_type);
+  if (!resolved_type)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  ps_ctx_bind_record_ids_in(context, resolved_type);
+  return ps_ctx_intern_qual_type_in(context, resolved_type);
+}
+
+static psx_qual_type_t resolve_typedef_decl_qual_type(
+    psx_semantic_context_t *context,
+    const psx_typedef_info_t *info) {
+  psx_qual_type_t identity = ps_ctx_typedef_decl_qual_type(info);
+  const psx_type_t *decl_type = ps_ctx_typedef_decl_type(info);
+  if (identity.type_id == PSX_TYPE_ID_INVALID)
+    return intern_typedef_decl_type(context, decl_type);
+  if (!psx_semantic_type_table_lookup_qual_type(
+          context ? context->semantic_types : NULL, identity))
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  if (decl_type) {
+    psx_qual_type_t projected = intern_typedef_decl_type(
+        context, decl_type);
+    if (projected.type_id != identity.type_id ||
+        projected.qualifiers != identity.qualifiers)
+      return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                               PSX_TYPE_QUALIFIER_NONE};
+  }
+  return identity;
+}
+
 static int initialize_typedef_record(
     psx_semantic_context_t *context,
-    typedef_name_t *t, const psx_typedef_info_t *info) {
-  if (!t || !info || t->decl_type) return 0;
-  t->decl_type = ctx_type_clone_persistent_in(
-      context, ps_ctx_typedef_decl_type(info));
-  if (!t->decl_type) return 0;
+    typedef_name_t *t, const psx_typedef_info_t *info,
+    psx_qual_type_t identity) {
+  if (!t || !info ||
+      t->decl_qual_type.type_id != PSX_TYPE_ID_INVALID ||
+      identity.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  t->decl_qual_type = identity;
   if (info->runtime_application) {
     t->runtime_application = clone_typedef_runtime_application(
         context, info->runtime_application);
     if (!t->runtime_application) return 0;
   }
-  ps_ctx_bind_record_ids_in(context, t->decl_type);
   return 1;
 }
 
@@ -1763,12 +1811,15 @@ int ps_ctx_register_typedef_name_in_contexts(
     int *out_created, int *out_redeclared) {
   if (out_created) *out_created = 0;
   if (out_redeclared) *out_redeclared = 0;
-  if (!context || !local_registry || !name || len <= 0 || !info ||
-      !ps_ctx_typedef_decl_type(info)) return 0;
+  if (!context || !local_registry || !name || len <= 0 || !info)
+    return 0;
   psx_scope_graph_t *scope_graph = context->scope_graph;
   if (!scope_graph ||
       scope_graph != ps_local_registry_scope_graph(local_registry))
     return 0;
+  psx_qual_type_t identity = resolve_typedef_decl_qual_type(
+      context, info);
+  if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
   typedef_name_t *existing = NULL;
   psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
       scope_graph, psx_scope_graph_current_scope(scope_graph),
@@ -1778,12 +1829,13 @@ int ps_ctx_register_typedef_name_in_contexts(
   if (declaration && declaration->kind != PSX_DECL_TYPEDEF) return 0;
   if (declaration) existing = declaration->payload;
   /* C11 6.7p3: typedef は同じ型なら再宣言可。違う型なら error。
-   * 比較するフィールドは「型の identity」を成すもの。tag_name は同じ ptr で
-   * あるはずなので ptr 比較で十分 (parser が tag を共有させている)。 */
+   * canonical type identity が一致する場合だけ同じ宣言として扱う。 */
   if (existing) {
-    const psx_type_t *new_decl_type = ps_ctx_typedef_decl_type(info);
-    const psx_type_t *existing_decl_type = typedef_record_decl_type(existing);
-    if (!ps_type_shape_matches(existing_decl_type, new_decl_type)) return 0;
+    psx_qual_type_t existing_identity =
+        typedef_record_decl_qual_type(existing);
+    if (existing_identity.type_id != identity.type_id ||
+        existing_identity.qualifiers != identity.qualifiers)
+      return 0;
     if (out_redeclared) *out_redeclared = 1;
     return 1;  /* 同じ型なら登録済みのままで OK */
   }
@@ -1793,7 +1845,7 @@ int ps_ctx_register_typedef_name_in_contexts(
   t->name = name;
   t->len = len;
   t->scope_depth = context->scope_depth;
-  if (!initialize_typedef_record(context, t, info)) return 0;
+  if (!initialize_typedef_record(context, t, info, identity)) return 0;
   t->declaration_id = psx_scope_graph_declare(
       scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_TYPEDEF, name, len, t);
@@ -1813,7 +1865,7 @@ bool psx_ctx_find_typedef_layout_in(
     char *name, int len, int *out_size, int *out_alignment) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  const psx_type_t *type = typedef_record_decl_type(t);
+  const psx_type_t *type = typedef_record_decl_type(context, t);
   if (out_size) *out_size = ps_ctx_type_sizeof_in(context, type);
   if (out_alignment)
     *out_alignment = ps_ctx_type_alignof_in(context, type);
@@ -1827,7 +1879,8 @@ bool ps_ctx_find_typedef_name_in(
   if (!t) return false;
   if (out) {
     memset(out, 0, sizeof(*out));
-    out->decl_type = typedef_record_decl_type(t);
+    out->decl_qual_type = typedef_record_decl_qual_type(t);
+    out->decl_type = typedef_record_decl_type(context, t);
     out->runtime_application =
         typedef_record_runtime_application(t);
   }
@@ -1839,7 +1892,7 @@ bool ps_ctx_find_typedef_decl_type_in(
     char *name, int len, const psx_type_t **out_type) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  if (out_type) *out_type = typedef_record_decl_type(t);
+  if (out_type) *out_type = typedef_record_decl_type(context, t);
   return true;
 }
 
@@ -1882,7 +1935,8 @@ bool ps_ctx_find_typedef_name_at_in_contexts(
   typedef_name_t *type = declaration->payload;
   if (out) {
     *out = (psx_typedef_info_t){
-        .decl_type = typedef_record_decl_type(type),
+        .decl_qual_type = typedef_record_decl_qual_type(type),
+        .decl_type = typedef_record_decl_type(context, type),
         .runtime_application =
             typedef_record_runtime_application(type),
     };
