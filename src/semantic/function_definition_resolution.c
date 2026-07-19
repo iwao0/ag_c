@@ -131,6 +131,16 @@ static int resolve_function_definition_header(
         "canonical function signature identity is unavailable");
     return 0;
   }
+  psx_type_shape_t function_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          signature.type_id, &function_shape) ||
+      function_shape.kind != PSX_TYPE_FUNCTION) {
+    ps_diag_ctx_in(
+        diagnostics, (token_t *)name, "funcdef",
+        "canonical function signature shape is unavailable");
+    return 0;
+  }
 
   lvar_t **resolved_parameters = NULL;
   if (applied.nargs > 0) {
@@ -147,8 +157,7 @@ static int resolve_function_definition_header(
   resolution->parameter_count = applied.nargs;
   resolution->locals = ps_decl_get_locals_in(local_registry);
   resolution->is_static = definition->is_static;
-  resolution->is_variadic =
-      canonical_function_type->is_variadic_function;
+  resolution->is_variadic = function_shape.is_variadic_function;
   resolution->has_implicit_int_return =
       definition->has_implicit_int_return;
 
@@ -192,11 +201,6 @@ psx_prepare_function_definition_resolution_in_contexts(
           lowering_context, definition, &resolution,
           &compatibility_parameters))
     return NULL;
-  const psx_type_t *compatibility_signature =
-      psx_semantic_type_table_lookup_qual_type(
-          ps_ctx_semantic_type_table_in(semantic_context),
-          resolution.signature_qual_type);
-  if (!compatibility_signature) return NULL;
   node_function_definition_t *node =
       psx_resolution_node_alloc_in(
           ps_ctx_resolution_store(semantic_context),
@@ -218,7 +222,6 @@ psx_prepare_function_definition_resolution_in_contexts(
   node->is_static = resolution.is_static;
   node->parameters = compatibility_parameters;
   node->parameter_count = resolution.parameter_count;
-  node->signature = compatibility_signature;
   node->signature_qual_type = resolution.signature_qual_type;
   node->lvars = resolution.locals;
   return node;

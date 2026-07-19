@@ -218,13 +218,18 @@ static void semantic_transform_initializer_syntax(
 }
 
 static void semantic_transform_return(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t return_qual_type =
+      ps_function_definition_return_qual_type(types, current_func);
   const psx_type_t *return_type =
-      ps_function_definition_return_type(current_func);
+      psx_semantic_type_table_lookup_qual_type(types, return_qual_type);
   int returns_void = return_type && return_type->kind == PSX_TYPE_VOID;
 
   if (!node->lhs) {
@@ -946,7 +951,8 @@ static void semantic_transform_node(
     }
     case ND_RETURN:
       semantic_transform_return(
-          diagnostics, node, current_func, fallback_diag_tok);
+          traversal->semantic_context, diagnostics, node,
+          current_func, fallback_diag_tok);
       semantic_transform_node(node->lhs, traversal);
       break;
     case ND_CASE: {

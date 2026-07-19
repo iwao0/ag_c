@@ -3,8 +3,6 @@
 #include "../parser/node_utils.h"
 #include "function_call_resolution.h"
 #include "tree_walk.h"
-#include "resolved_function.h"
-#include "resolved_node_kind.h"
 #include "../parser/semantic_ctx.h"
 
 typedef struct {
@@ -15,17 +13,7 @@ typedef struct {
 
 static int intern_available_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
-  if (psx_resolution_node_kind(
-          pass->resolution_store, node) == ND_FUNCDEF) {
-    node_function_definition_t *function =
-        (node_function_definition_t *)node;
-    function->signature_qual_type = ps_ctx_intern_qual_type_in(
-        pass->semantic_context, function->signature);
-    if (function->signature_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      pass->failed_node = node;
-      return 0;
-    }
-  } else if (node->kind == ND_FUNCALL) {
+  if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
     const psx_type_t *callee_type =
         psx_function_call_type(pass->resolution_store, call);
@@ -68,17 +56,7 @@ static int intern_available_type(node_t *node, void *user) {
 
 static int materialize_interned_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
-  if (psx_resolution_node_kind(
-          pass->resolution_store, node) == ND_FUNCDEF) {
-    node_function_definition_t *function =
-        (node_function_definition_t *)node;
-    function->signature = ps_ctx_type_by_id_in(
-        pass->semantic_context, function->signature_qual_type.type_id);
-    if (!function->signature) {
-      pass->failed_node = node;
-      return 0;
-    }
-  } else if (node->kind == ND_FUNCALL) {
+  if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
     const psx_type_t *callee_type =
         psx_function_call_type(pass->resolution_store, call);

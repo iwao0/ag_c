@@ -4475,10 +4475,10 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bnode_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionStruct[1],
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*signature\s*;/.test(
+    !/\bpsx_qual_type_t\s+signature_qual_type\s*;/.test(
       functionDefinitionStruct[1],
     ) ||
-    !/\bpsx_qual_type_t\s+signature_qual_type\s*;/.test(
+    /\bpsx_type_t\b|\bsignature\s*;/.test(
       functionDefinitionStruct[1],
     ) ||
     /\b(?:arguments|callee|callee_type|direct_name)\b/.test(
@@ -4965,6 +4965,10 @@ const declarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
 );
+const declarationPipelineHeader = await readFile(
+  "src/declaration_pipeline.h",
+  "utf8",
+);
 const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",
@@ -5397,26 +5401,33 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     "semantic type finalization must intern QualType and materialize canonical TypeId objects in one AST traversal",
   );
 }
-const functionNodeBinding = declarationPipelineSource.match(
-  /if\s*\(request->function_node\)\s*\{([^{}]*)\}/,
-);
 if (/\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
       nodeTypePublicSource,
     ) ||
     /\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
       nodeUtilsSource,
     ) ||
-    !/\bps_function_definition_return_type\s*\(/.test(
+    !/\bps_function_definition_return_qual_type\s*\(/.test(
       resolvedFunctionHeader,
     ) ||
-    !/return\s+function->signature->base\s*;/.test(
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
       resolvedFunctionSource,
     ) ||
-    !functionNodeBinding ||
-    /ps_node_bind_type\s*\(/.test(functionNodeBinding[1]) ||
+    /\bconst\s+psx_type_t\s*\*\s*signature\s*;/.test(
+      resolvedFunctionHeader,
+    ) ||
+    /function->signature\b/.test(
+      resolvedFunctionSource + semanticInvariantsSource,
+    ) ||
+    /\bfunction_node\b/.test(
+      declarationPipelineHeader + declarationPipelineSource,
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
     !/node_type\s*!=\s*NULL/.test(semanticInvariantsSource)) {
   throw new Error(
-    "function definition return types must be owned only by the canonical signature",
+    "function definition signatures and return types must be owned only by canonical QualType relations",
   );
 }
 const castLoweringSource = await readFile(
@@ -9074,9 +9085,13 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/ps_ctx_intern_qual_type_in\s*\(/.test(
       functionDefinitionResolutionSource,
     ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/psx_semantic_type_table_describe\s*\(/.test(
       functionDefinitionResolutionSource,
     ) ||
+    !/node->signature_qual_type\s*=\s*resolution\.signature_qual_type\s*;/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    /node->signature\b/.test(functionDefinitionResolutionSource) ||
     /resolution\.function_type\b/.test(
       functionDefinitionResolutionSource,
     ) ||

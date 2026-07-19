@@ -143,27 +143,28 @@ static int validate_node(const node_t *node, void *user) {
   if (resolved_kind == ND_FUNCDEF) {
     const node_function_definition_t *function =
         (const node_function_definition_t *)node;
-    if (!function->signature ||
-        function->signature->kind != PSX_TYPE_FUNCTION ||
-        !ps_type_is_well_formed(function->signature) ||
-        node_type != NULL) {
+    psx_qual_type_t actual =
+        ps_function_definition_signature_qual_type(function);
+    if (node_type != NULL) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
-    if (semantic_context) {
-      psx_qual_type_t actual =
-          ps_function_definition_signature_qual_type(function);
-      if (actual.type_id == PSX_TYPE_ID_INVALID) {
-        return fail(
-            failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
-            node);
-      }
-      if (function->signature != ps_ctx_type_by_id_in(
-                                     semantic_context, actual.type_id)) {
-        return fail(
-            failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT,
-            node);
-      }
+    if (actual.type_id == PSX_TYPE_ID_INVALID || !semantic_context) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+          node);
+    }
+    psx_type_shape_t signature = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(semantic_context),
+            actual.type_id, &signature)) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+          node);
+    }
+    if (signature.kind != PSX_TYPE_FUNCTION) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
   }
   if (node->kind == ND_FUNCALL) {
@@ -238,10 +239,15 @@ static int validate_tree(
 }
 
 int psx_semantic_tree_has_canonical_expression_types(
-    const psx_resolution_store_t *store, const node_t *root,
+    psx_semantic_context_t *semantic_context, const node_t *root,
     psx_semantic_invariant_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  return validate_tree(NULL, store, root, failure, 0);
+  if (!semantic_context)
+    return fail(failure,
+                PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, root);
+  return validate_tree(
+      semantic_context, ps_ctx_resolution_store(semantic_context),
+      root, failure, 0);
 }
 
 int psx_finalize_semantic_tree_type_identities(
@@ -319,21 +325,25 @@ static void emit_semantic_invariant_failure(
 }
 
 void psx_require_semantic_tree_has_canonical_expression_types(
-    const psx_resolution_store_t *store,
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure;
-  if (validate_tree(NULL, store, root, &failure, 0)) return;
+  const psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  if (validate_tree(semantic_context, store, root, &failure, 0)) return;
   emit_semantic_invariant_failure(
       store, diagnostics, &failure, fallback_diag_tok);
 }
 
 void psx_require_semantic_initializer_has_canonical_expression_types(
-    const psx_resolution_store_t *store,
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
-  if (validate_tree(NULL, store, root, &failure, 1)) return;
+  const psx_resolution_store_t *store =
+      ps_ctx_resolution_store(semantic_context);
+  if (validate_tree(semantic_context, store, root, &failure, 1)) return;
   emit_semantic_invariant_failure(
       store, diagnostics, &failure, fallback_diag_tok);
 }

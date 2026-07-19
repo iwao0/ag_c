@@ -78,6 +78,7 @@
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/type_query_resolution.h"
+#include "../src/semantic/type_identity_pass.h"
 #include "../src/semantic/vla_runtime_plan.h"
 #include "../src/semantic/type_name_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
@@ -332,7 +333,7 @@ static void test_set_invalid_vla_runtime_view(
       (kind), (tok))
 #define psx_semantic_tree_has_canonical_expression_types(root, failure) \
   psx_semantic_tree_has_canonical_expression_types(                     \
-      test_resolution_store(), (root), (failure))
+      test_semantic_context(), (root), (failure))
 #define psx_string_literal_label(literal) \
   psx_string_literal_label(test_resolution_store(), (literal))
 #define psx_resolution_node_kind(node) \
@@ -374,7 +375,7 @@ static void test_set_invalid_vla_runtime_view(
 #define psx_require_semantic_tree_has_canonical_expression_types( \
     diagnostics, root, tok)                                       \
   psx_require_semantic_tree_has_canonical_expression_types(       \
-      test_resolution_store(), (diagnostics), (root), (tok))
+      test_semantic_context(), (diagnostics), (root), (tok))
 #define psx_resolve_deref_operand(operand) \
   psx_resolve_deref_operand(test_resolution_store(), (operand))
 #define psx_resolve_subscript_operands(lhs, rhs, resolution) \
@@ -6928,6 +6929,19 @@ static node_function_definition_t *as_function_definition(node_t *n) {
   ASSERT_TRUE(n != NULL);
   ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(n));
   return (node_function_definition_t *)n;
+}
+static const psx_type_t *test_function_definition_signature_type(
+    const node_function_definition_t *function) {
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_function_definition_signature_qual_type(function));
+}
+static const psx_type_t *test_function_definition_return_type(
+    const node_function_definition_t *function) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  return psx_semantic_type_table_lookup_qual_type(
+      types, ps_function_definition_return_qual_type(types, function));
 }
 static node_function_call_t *as_function_call(node_t *n) {
   ASSERT_TRUE(n != NULL);
@@ -16584,10 +16598,12 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input(
       "int sum_variadic(int first, ...) { return first; }");
   node_function_definition_t *variadic = as_function_definition(parsed_code[0]);
+  const psx_type_t *variadic_signature =
+      test_function_definition_signature_type(variadic);
   ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(&variadic->base));
-  ASSERT_TRUE(variadic->signature != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic->signature->kind);
-  ASSERT_TRUE(variadic->signature->is_variadic_function);
+  ASSERT_TRUE(variadic_signature != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic_signature->kind);
+  ASSERT_TRUE(variadic_signature->is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
   parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
@@ -16816,7 +16832,7 @@ static void test_stmt_return() {
   ret = as_block(ret_meta_fn->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   const psx_type_t *ret_meta_type =
-      ps_function_definition_return_type(ret_meta_fn);
+      test_function_definition_return_type(ret_meta_fn);
   ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ret_meta_type->kind);
@@ -16825,21 +16841,21 @@ static void test_stmt_return() {
                    test_semantic_context(), ret_meta_type));
   ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
   ASSERT_TRUE(ret_meta_type ==
-              ps_function_definition_return_type(ret_meta_fn));
+              test_function_definition_return_type(ret_meta_fn));
 
   parsed_code =
       parse_program_input("_Complex double __ret_meta_complex(void) { return 1; }");
   ret_meta_fn = as_function_definition(parsed_code[0]);
   ret = as_block(ret_meta_fn->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ret_meta_type = ps_function_definition_return_type(ret_meta_fn);
+  ret_meta_type = test_function_definition_return_type(ret_meta_fn);
   ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ret_meta_type->floating_kind);
   ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
   ASSERT_TRUE(ret_meta_type ==
-              ps_function_definition_return_type(ret_meta_fn));
+              test_function_definition_return_type(ret_meta_fn));
 }
 
 static void test_stmt_block() {
@@ -20638,7 +20654,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input("long __tm_funcdef_long(void) { return 1; }");
   node_function_definition_t *typed_long_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_long_funcdef_ty =
-      ps_function_definition_return_type(typed_long_funcdef);
+      test_function_definition_return_type(typed_long_funcdef);
   ASSERT_TRUE(ps_node_get_type((node_t *)typed_long_funcdef) == NULL);
   ASSERT_TRUE(typed_long_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, typed_long_funcdef_ty->kind);
@@ -20648,7 +20664,7 @@ static void test_type_metadata_bridge() {
       parse_program_input("int *__tm_funcdef_ptr(int *p) { return p; }");
   node_function_definition_t *typed_ptr_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_ptr_funcdef_ty =
-      ps_function_definition_return_type(typed_ptr_funcdef);
+      test_function_definition_return_type(typed_ptr_funcdef);
   ASSERT_TRUE(ps_node_get_type((node_t *)typed_ptr_funcdef) == NULL);
   ASSERT_TRUE(typed_ptr_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, typed_ptr_funcdef_ty->kind);
@@ -20657,7 +20673,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input("void __tm_funcdef_void(void) { }");
   node_function_definition_t *typed_void_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_void_funcdef_ty =
-      ps_function_definition_return_type(typed_void_funcdef);
+      test_function_definition_return_type(typed_void_funcdef);
   ASSERT_TRUE(ps_node_get_type((node_t *)typed_void_funcdef) == NULL);
   ASSERT_TRUE(typed_void_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_VOID, typed_void_funcdef_ty->kind);
@@ -20667,7 +20683,7 @@ static void test_type_metadata_bridge() {
       "struct __tm_fdr r; return r; }");
   node_function_definition_t *typed_struct_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_struct_funcdef_ty =
-      ps_function_definition_return_type(typed_struct_funcdef);
+      test_function_definition_return_type(typed_struct_funcdef);
   ASSERT_TRUE(ps_node_get_type((node_t *)typed_struct_funcdef) == NULL);
   ASSERT_TRUE(typed_struct_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, typed_struct_funcdef_ty->kind);
@@ -20679,7 +20695,7 @@ static void test_type_metadata_bridge() {
       parse_program_input("_Complex double __tm_funcdef_complex(void) { return 1; }");
   node_function_definition_t *typed_complex_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_complex_funcdef_ty =
-      ps_function_definition_return_type(typed_complex_funcdef);
+      test_function_definition_return_type(typed_complex_funcdef);
   ASSERT_TRUE(ps_node_get_type((node_t *)typed_complex_funcdef) == NULL);
   ASSERT_TRUE(typed_complex_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, typed_complex_funcdef_ty->kind);
@@ -24326,12 +24342,14 @@ static void test_type_metadata_bridge() {
       "__tm_fty __tm_go(void){ return __tm_anon; } "
       "int main(void){ __tm_go()(); return 0; }");
   node_function_definition_t *go_def = as_function_definition(parsed_code[2]);
-  ASSERT_TRUE(go_def->signature != NULL);
+  const psx_type_t *go_signature =
+      test_function_definition_signature_type(go_def);
+  ASSERT_TRUE(go_signature != NULL);
   assert_canonical_type_signature(
-      go_def->signature, "p<p<s{2:FS}>()>()");
+      go_signature, "p<p<s{2:FS}>()>()");
   ASSERT_TRUE(ps_node_get_type((node_t *)go_def) == NULL);
   const psx_type_t *go_return_type =
-      ps_function_definition_return_type(go_def);
+      test_function_definition_return_type(go_def);
   ASSERT_TRUE(go_return_type != NULL);
   assert_canonical_type_signature(
       go_return_type, "p<p<s{2:FS}>()>");
@@ -24367,16 +24385,18 @@ static void test_type_metadata_bridge() {
       "TM698_DF __tm698_pick(void){ return __tm698_add; } "
       "int main(void){ return __tm698_pick()(3.0) == 3.5; }");
   node_function_definition_t *pick_def = as_function_definition(parsed_code[1]);
-  ASSERT_TRUE(pick_def->signature != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, pick_def->signature->kind);
-  ASSERT_TRUE(pick_def->signature->base != NULL);
+  const psx_type_t *pick_signature =
+      test_function_definition_signature_type(pick_def);
+  ASSERT_TRUE(pick_signature != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, pick_signature->kind);
+  ASSERT_TRUE(pick_signature->base != NULL);
   ASSERT_TRUE(ps_node_get_type((node_t *)pick_def) == NULL);
-  ASSERT_TRUE(ps_function_definition_return_type(pick_def) ==
-              pick_def->signature->base);
+  ASSERT_TRUE(test_function_definition_return_type(pick_def) ==
+              pick_signature->base);
   assert_canonical_type_signature(
-      pick_def->signature, "p<f64(f64)>()");
+      pick_signature, "p<f64(f64)>()");
   assert_canonical_type_signature(
-      pick_def->signature->base, "p<f64(f64)>");
+      pick_signature->base, "p<f64(f64)>");
   node_identifier_t pick_identifier = {0};
   pick_identifier.base.kind = ND_IDENTIFIER;
   pick_identifier.name = "__tm698_pick";
@@ -24404,7 +24424,7 @@ static void test_type_metadata_bridge() {
       psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm698_pick", 12);
   ASSERT_TRUE(pick_ctx_return != NULL);
   ASSERT_TRUE(ps_type_shape_matches(
-      pick_ctx_return, pick_def->signature->base));
+      pick_ctx_return, pick_signature->base));
   node_identifier_t pick_add_identifier = {0};
   pick_add_identifier.base.kind = ND_IDENTIFIER;
   pick_add_identifier.name = "__tm698_add";
@@ -24434,7 +24454,8 @@ static void test_type_metadata_bridge() {
       "int main(void){ return (*__tm818_getpp())(20) + (**__tm818_getpp())(30); }");
   node_function_definition_t *tm818_getpp_def = as_function_definition(parsed_code[1]);
   assert_canonical_type_signature(
-      tm818_getpp_def->signature, "p<p<i32(i32)>>()");
+      test_function_definition_signature_type(tm818_getpp_def),
+      "p<p<i32(i32)>>()");
   ASSERT_EQ(2, ps_type_pointer_depth(
                    psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm818_getpp", 13)));
 }
@@ -25274,7 +25295,7 @@ static void test_semantic_canonical_type_invariant() {
     node_function_definition_t *function =
         as_function_definition(program[i]);
     ASSERT_TRUE(ps_node_get_type((node_t *)function) == NULL);
-    ASSERT_TRUE(ps_function_definition_return_type(function) != NULL);
+    ASSERT_TRUE(test_function_definition_return_type(function) != NULL);
     psx_semantic_invariant_failure_t failure;
     ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
         program[i], &failure));
@@ -25298,11 +25319,22 @@ static void test_semantic_canonical_type_invariant() {
   node_function_definition_t duplicated_return_type = {0};
   test_set_resolved_node_kind(
       &duplicated_return_type, ND_FUNCDEF);
-  duplicated_return_type.signature = ps_type_new_function(
+  const psx_type_t *duplicated_signature = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
-  test_bind_node_type(
-      &duplicated_return_type,
-      duplicated_return_type.signature->base);
+  duplicated_return_type.signature_qual_type =
+      ps_ctx_intern_qual_type_in(
+          test_semantic_context(), duplicated_signature);
+  const psx_semantic_type_table_t *duplicated_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_qual_type_t duplicated_return_qual_type =
+      psx_semantic_type_table_base(
+          duplicated_types,
+          duplicated_return_type.signature_qual_type.type_id);
+  ps_node_bind_qual_type(
+      (node_t *)&duplicated_return_type,
+      psx_semantic_type_table_lookup_qual_type(
+          duplicated_types, duplicated_return_qual_type),
+      duplicated_return_qual_type);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&duplicated_return_type, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -25344,6 +25376,8 @@ static void test_semantic_canonical_type_invariant() {
   test_bind_node_type(
       &invalid_vla_view,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(), &invalid_vla_view, NULL));
   test_set_invalid_vla_runtime_view(&invalid_vla_view, 24);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &invalid_vla_view, &failure));
@@ -25356,6 +25390,8 @@ static void test_semantic_canonical_type_invariant() {
           test_arena_context(), "invalid", 7,
           ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_TRUE(invalid_function_reference != NULL);
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(), invalid_function_reference, NULL));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       invalid_function_reference, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -25371,6 +25407,9 @@ static void test_semantic_canonical_type_invariant() {
       &invalid_function_call,
       ps_type_new_function(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(),
+      (node_t *)&invalid_function_call, NULL));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -25393,6 +25432,9 @@ static void test_semantic_canonical_type_invariant() {
   invalid_indirect_function_call.callee = &non_callable_callee;
   psx_function_call_bind_type(
       &invalid_indirect_function_call, callee_function);
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(),
+      (node_t *)&invalid_indirect_function_call, NULL));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_indirect_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -25407,6 +25449,9 @@ static void test_semantic_canonical_type_invariant() {
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_function_call_set_implicit_declaration(
       &invalid_implicit_function_call, 1);
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(),
+      (node_t *)&invalid_implicit_function_call, NULL));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_implicit_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -25421,6 +25466,9 @@ static void test_semantic_canonical_type_invariant() {
       ps_type_new_integer(TK_INT, 4, 0));
   psx_function_call_set_implicit_declaration(
       &valid_implicit_function_call, 1);
+  ASSERT_TRUE(psx_finalize_semantic_tree_types(
+      test_semantic_context(),
+      (node_t *)&valid_implicit_function_call, NULL));
   ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&valid_implicit_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
@@ -25477,6 +25525,9 @@ static void test_recursive_declarator_capacity_boundary() {
   test_set_resolved_node_kind(&deep_pointer_node, ND_LVAR);
   test_bind_node_type(&deep_pointer_node, deep_pointer_type);
   psx_semantic_invariant_failure_t invariant_failure;
+  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
+      test_semantic_context(), &deep_pointer_node,
+      &invariant_failure, 0));
   ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
       &deep_pointer_node, &invariant_failure));
 
@@ -26160,14 +26211,18 @@ static void test_semantic_type_identity() {
       sizeof(typed_function)));
   ASSERT_TRUE((psx_resolution_node_set_kind)(
       context_store, &typed_function.base, ND_FUNCDEF));
-  typed_function.signature = function_type;
+  typed_function.signature_qual_type =
+      ps_ctx_intern_qual_type_in(context, function_type);
   ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
       context, (node_t *)&typed_function, &failure, 0));
   psx_qual_type_t signature_identity =
       ps_function_definition_signature_qual_type(&typed_function);
   ASSERT_TRUE(signature_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(typed_function.signature ==
-              ps_ctx_type_by_id_in(context, signature_identity.type_id));
+  psx_type_shape_t signature_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      signature_identity.type_id, &signature_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, signature_shape.kind);
   ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
                 context, function_type).type_id,
             signature_identity.type_id);

@@ -135,14 +135,19 @@ static void warn_assignment(
 }
 
 static void warn_return(
+    psx_semantic_context_t *semantic_context,
     const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback) {
   if (!node || node->kind != ND_RETURN || !node->lhs || !current_func)
     return;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t return_qual_type =
+      ps_function_definition_return_qual_type(types, current_func);
   const psx_type_t *ret_type =
-      ps_function_definition_return_type(current_func);
+      psx_semantic_type_table_lookup_qual_type(types, return_qual_type);
   tk_float_kind_t ret_fp = type_fp_kind(ret_type);
   int ret_pointer = ps_type_is_pointer(ret_type);
   int ret_void = ret_type && ret_type->kind == PSX_TYPE_VOID;
@@ -503,7 +508,8 @@ static void emit_node_warning(
       break;
     case ND_RETURN:
       warn_return(
-          store, diagnostics, node, current_func, fallback_diag_tok);
+          semantic_context, store, diagnostics, node,
+          current_func, fallback_diag_tok);
       break;
     case ND_LOGOR:
     case ND_LOGAND:

@@ -148,14 +148,14 @@ static int finalize_expression_compatibility_tree(
         semantic_context, ps_ctx_diagnostics(semantic_context), root,
         fallback_diag_tok);
     psx_require_semantic_initializer_has_canonical_expression_types(
-        ps_ctx_resolution_store(semantic_context),
+        semantic_context,
         ps_ctx_diagnostics(semantic_context), root, fallback_diag_tok);
   } else {
     psx_require_semantic_tree_has_interned_expression_types(
         semantic_context, ps_ctx_diagnostics(semantic_context), root,
         fallback_diag_tok);
     psx_require_semantic_tree_has_canonical_expression_types(
-        ps_ctx_resolution_store(semantic_context),
+        semantic_context,
         ps_ctx_diagnostics(semantic_context), root, fallback_diag_tok);
   }
   if (!advance_with_compatibility_root(
@@ -257,7 +257,7 @@ static int resolve_function_compatibility_tree_in_contexts(
       semantic_context, ps_ctx_diagnostics(semantic_context), function,
       fallback_diag_tok);
   psx_require_semantic_tree_has_canonical_expression_types(
-      ps_ctx_resolution_store(semantic_context),
+      semantic_context,
       ps_ctx_diagnostics(semantic_context), function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
       ps_ctx_resolution_store(semantic_context),

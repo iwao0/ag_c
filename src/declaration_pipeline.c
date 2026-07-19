@@ -362,12 +362,6 @@ int psx_apply_function_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
     diagnose_function_declaration(request, resolution.status);
-  if (request->function_node) {
-    const psx_type_t *function_type =
-        ps_function_symbol_type(resolution.function);
-    request->function_node->signature = ps_type_clone_in(
-        ps_ctx_arena(request->semantic_context), function_type);
-  }
   return 1;
 }
 
