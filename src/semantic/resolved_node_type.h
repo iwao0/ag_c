@@ -88,6 +88,10 @@ int ps_node_records_lvar_usage(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_record_lvar_usage(
     psx_resolution_store_t *store, node_t *node, lvar_t *local);
+int ps_node_lvar_usage_is_unevaluated(
+    const psx_resolution_store_t *store, const node_t *node);
+void ps_node_set_lvar_usage_unevaluated(
+    psx_resolution_store_t *store, node_t *node, int enabled);
 int ps_node_is_decl_initializer(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_set_decl_initializer(

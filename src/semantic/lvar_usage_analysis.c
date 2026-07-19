@@ -177,7 +177,7 @@ void psx_collect_lvar_usage_events_in(
   if (ps_node_records_lvar_usage(store, node) && usage_lvar) {
     ps_decl_record_lvar_usage_in_region_in(
         local_registry, usage_lvar,
-        node->lvar_usage_unevaluated
+        ps_node_lvar_usage_is_unevaluated(store, node)
             ? PSX_LVAR_USAGE_UNEVALUATED
             : PSX_LVAR_USAGE_EVALUATED,
         region);

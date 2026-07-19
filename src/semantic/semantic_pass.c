@@ -916,7 +916,7 @@ static void semantic_mark_usage_evaluated(
     psx_resolution_store_t *store, node_t *node) {
   if (!node) return;
   if (ps_node_records_lvar_usage(store, node))
-    node->lvar_usage_unevaluated = 0;
+    ps_node_set_lvar_usage_unevaluated(store, node, 0);
   switch (psx_resolved_object_ref_node_kind(store, node)) {
     case ND_BLOCK:
       for (node_t **body = ((node_block_t *)node)->body;

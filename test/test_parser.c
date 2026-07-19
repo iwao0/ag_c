@@ -273,6 +273,9 @@ static void test_set_invalid_vla_runtime_view(
   ps_node_value_fp_kind(test_resolution_store(), (node))
 #define ps_node_records_lvar_usage(node) \
   ps_node_records_lvar_usage(test_resolution_store(), (node))
+#define ps_node_lvar_usage_is_unevaluated(node) \
+  ps_node_lvar_usage_is_unevaluated(              \
+      test_resolution_store(), (node))
 #define ps_node_is_decl_initializer(node) \
   ps_node_is_decl_initializer(test_resolution_store(), (node))
 #define ps_node_is_long_long_type(node) \
@@ -9106,7 +9109,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
       psx_generic_selection_selected_expression(selection) == NULL);
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
   ASSERT_TRUE(!ps_node_records_lvar_usage(selection->control));
-  ASSERT_TRUE(selection->control->lvar_usage_unevaluated);
+  ASSERT_TRUE(!ps_node_lvar_usage_is_unevaluated(selection->control));
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
   ASSERT_TRUE(
       psx_generic_selection_type_name_state(selection, 0) == NULL);
@@ -9114,6 +9117,19 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(selection->associations[1].is_default);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
+
+  node_t *usage_raw = parse_expr_input_with_existing_locals(
+      "_Generic(x, int: x + 1, default: x + 2)");
+  node_generic_selection_t *usage_selection =
+      (node_generic_selection_t *)bind_test_identifier_tree(
+          usage_raw, NULL);
+  ASSERT_TRUE(ps_node_records_lvar_usage(usage_selection->control));
+  ASSERT_TRUE(
+      ps_node_lvar_usage_is_unevaluated(usage_selection->control));
+  node_t *selected_usage =
+      usage_selection->associations[0].expression->lhs;
+  ASSERT_TRUE(ps_node_records_lvar_usage(selected_usage));
+  ASSERT_TRUE(!ps_node_lvar_usage_is_unevaluated(selected_usage));
 
   node_t *typed = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(typed != raw);
@@ -9185,7 +9201,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(expr_query->operand));
   ASSERT_TRUE(ps_node_records_lvar_usage(expr_query->operand));
-  ASSERT_TRUE(expr_query->operand->lvar_usage_unevaluated);
+  ASSERT_TRUE(ps_node_lvar_usage_is_unevaluated(expr_query->operand));
   psx_sizeof_query_resolution_t direct_resolution;
   resolve_test_sizeof_query(expr_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);

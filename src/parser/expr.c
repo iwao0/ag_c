@@ -25,7 +25,6 @@ typedef struct {
   psx_parser_runtime_context_t *runtime_context;
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
-  int unevaluated_operand_depth;
   int expr_nest_depth;
   int paren_nest_depth;
 } expr_parse_ctx_t;
@@ -61,13 +60,6 @@ static expr_parse_ctx_t expr_parse_ctx_default(
       .arena_context = ps_parser_runtime_arena(runtime_context),
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
   };
-  return ctx;
-}
-
-static expr_parse_ctx_t expr_parse_ctx_unevaluated_child(const expr_parse_ctx_t *parent) {
-  expr_parse_ctx_t ctx = parent
-      ? *parent : (expr_parse_ctx_t){0};
-  ctx.unevaluated_operand_depth++;
   return ctx;
 }
 
@@ -111,10 +103,6 @@ static void enter_paren_nest_or_die(expr_parse_ctx_t *ctx) {
 
 static void leave_paren_nest(expr_parse_ctx_t *ctx) {
   if (ctx && ctx->paren_nest_depth > 0) ctx->paren_nest_depth--;
-}
-
-static int in_unevaluated_operand(const expr_parse_ctx_t *ctx) {
-  return ctx && ctx->unevaluated_operand_depth > 0;
 }
 
 static node_t *new_binary_with_source_op(
@@ -572,14 +560,12 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
     }
 
     set_curtok(ctx, curtok(ctx)->next);
-    expr_parse_ctx_t child_ctx = expr_parse_ctx_unevaluated_child(ctx);
-    query->operand = expr_internal_ctx(&child_ctx);
+    query->operand = expr_internal_ctx(ctx);
     tk_expect_ctx(ctx->tokenizer_context, ')');
     return (node_t *)query;
   }
 
-  expr_parse_ctx_t child_ctx = expr_parse_ctx_unevaluated_child(ctx);
-  query->operand = unary_ctx(&child_ctx);
+  query->operand = unary_ctx(ctx);
   return (node_t *)query;
 }
 
@@ -855,8 +841,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
   set_curtok(ctx, curtok(ctx)->next);
   tk_expect_ctx(ctx->tokenizer_context, '(');
 
-  expr_parse_ctx_t control_ctx = expr_parse_ctx_unevaluated_child(ctx);
-  node_t *control = assign_ctx(&control_ctx);
+  node_t *control = assign_ctx(ctx);
   tk_expect_ctx(ctx->tokenizer_context, ',');
 
   int count = 0;
@@ -1050,8 +1035,6 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
       ctx->arena_context, sizeof(*identifier));
   identifier->base.kind = ND_IDENTIFIER;
   identifier->base.tok = (token_t *)tok;
-  identifier->base.lvar_usage_unevaluated =
-      in_unevaluated_operand(ctx) ? 1 : 0;
   identifier->name = tok->str;
   identifier->name_len = tok->len;
   identifier->scope_seq = scope_seq;

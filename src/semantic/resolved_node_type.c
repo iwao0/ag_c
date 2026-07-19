@@ -71,6 +71,20 @@ void ps_node_record_lvar_usage(
   state->lvar_usage.records_usage = local ? 1 : 0;
 }
 
+int ps_node_lvar_usage_is_unevaluated(
+    const psx_resolution_store_t *store, const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(store, node);
+  return state && state->lvar_usage.is_unevaluated;
+}
+
+void ps_node_set_lvar_usage_unevaluated(
+    psx_resolution_store_t *store, node_t *node, int enabled) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(store, node);
+  if (state) state->lvar_usage.is_unevaluated = enabled ? 1 : 0;
+}
+
 int ps_node_is_decl_initializer(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_node_resolution_state_t *state =

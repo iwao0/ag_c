@@ -30,6 +30,7 @@ typedef struct {
   const token_t *fallback_diag_tok;
   psx_local_lookup_point_t lookup_point;
   int has_lookup_point_override;
+  int usage_is_unevaluated;
 } psx_identifier_binding_context_t;
 
 static psx_resolution_store_t *binding_store(
@@ -50,6 +51,15 @@ static void bind_slot(
 static int is_static_local_array(const lvar_t *var) {
   return var && var->is_static_local && var->static_global_name &&
          ps_lvar_is_array(var) && !ps_lvar_is_vla(var) && !var->is_param;
+}
+
+static void record_lvar_usage(
+    const psx_identifier_binding_context_t *context,
+    node_t *node, lvar_t *var) {
+  psx_resolution_store_t *store = binding_store(context);
+  ps_node_record_lvar_usage(store, node, var);
+  ps_node_set_lvar_usage_unevaluated(
+      store, node, context && context->usage_is_unevaluated);
 }
 
 static node_t *wrap_array_decay(
@@ -85,8 +95,11 @@ static int bind_static_local_reference(
 }
 
 static node_t *materialize_local(
-    psx_resolution_store_t *store, arena_context_t *arena_context,
+    const psx_identifier_binding_context_t *context,
     node_identifier_t *identifier, lvar_t *var) {
+  psx_resolution_store_t *store = binding_store(context);
+  arena_context_t *arena_context =
+      ps_ctx_arena(context->semantic_context);
   node_t *node = (node_t *)identifier;
   if (is_static_local_array(var)) {
     if (!bind_static_local_reference(store, arena_context, node, var))
@@ -117,7 +130,7 @@ static node_t *materialize_local(
             var ? ps_lvar_get_decl_type(var) : NULL))
       return NULL;
   }
-  ps_node_record_lvar_usage(store, node, var);
+  record_lvar_usage(context, node, var);
   return node;
 }
 
@@ -206,9 +219,7 @@ static node_t *materialize_identifier(
   switch (resolution.kind) {
     case PSX_IDENTIFIER_LOCAL:
       return materialize_local(
-          binding_store(context),
-          ps_ctx_arena(context->semantic_context),
-          identifier, resolution.local);
+          context, identifier, resolution.local);
     case PSX_IDENTIFIER_ENUM_CONSTANT: {
       node_t *node = ps_node_new_num_in(
           binding_store(context),
@@ -218,8 +229,6 @@ static node_t *materialize_identifier(
           binding_store(context), node,
           ps_node_lvar_usage_region(
               binding_store(context), &identifier->base));
-      node->lvar_usage_unevaluated =
-          identifier->base.lvar_usage_unevaluated;
       return node;
     }
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
@@ -268,7 +277,7 @@ static node_t *materialize_address_operand(
       return materialize_identifier(
           identifier, 0, context, NULL);
     }
-    ps_node_record_lvar_usage(binding_store(context), node, var);
+    record_lvar_usage(context, node, var);
     return node;
   }
   if (resolution.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&
@@ -455,7 +464,9 @@ static node_t *bind_node(
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
-      bind_slot(&selection->control, context);
+      psx_identifier_binding_context_t unevaluated = *context;
+      unevaluated.usage_is_unevaluated = 1;
+      bind_slot(&selection->control, &unevaluated);
       for (int i = 0; i < selection->association_count; i++) {
         if (!selection->associations[i].is_default)
           bind_type_name(
@@ -479,7 +490,9 @@ static node_t *bind_node(
                binding_store(context), &query->base)))
         return node;
       bind_type_name(&query->type_name, context);
-      bind_slot(&query->operand, context);
+      psx_identifier_binding_context_t unevaluated = *context;
+      unevaluated.usage_is_unevaluated = 1;
+      bind_slot(&query->operand, &unevaluated);
       return node;
     }
     case ND_ALIGNOF_QUERY:

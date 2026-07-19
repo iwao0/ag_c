@@ -4087,12 +4087,44 @@ if (!nodeStruct ||
     /\b(?:is_resolution_work_node|has_external_resolution_state)\b/.test(
       nodeStruct[1],
     ) ||
+    /\blvar_usage_unevaluated\b/.test(nodeStruct[1]) ||
     /(?:type_system\/type_ids|parser\/type|["<]type\.h[">])/.test(
       astSource,
     ) ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
     "syntax node_t must be typeless and must not own semantic resolution state",
+  );
+}
+if (/\b(?:unevaluated_operand_depth|in_unevaluated_operand)\b/.test(
+      parserExpressionSource,
+    ) ||
+    !/unsigned\s+char\s+is_unevaluated\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/ps_node_lvar_usage_is_unevaluated\s*\(/.test(
+      nodeTypePublicSource,
+    ) ||
+    !/ps_node_set_lvar_usage_unevaluated\s*\(/.test(
+      nodeTypePublicSource,
+    ) ||
+    !/case\s+ND_GENERIC_SELECTION:[^]*?usage_is_unevaluated\s*=\s*1[^]*?bind_slot\s*\(\s*&selection->control,\s*&unevaluated\s*\)/.test(
+      identifierBindingSource,
+    ) ||
+    !/case\s+ND_SIZEOF_QUERY:[^]*?usage_is_unevaluated\s*=\s*1[^]*?bind_slot\s*\(\s*&query->operand,\s*&unevaluated\s*\)/.test(
+      identifierBindingSource,
+    ) ||
+    !/ps_node_set_lvar_usage_unevaluated\s*\(\s*store,\s*node,\s*0\s*\)/.test(
+      semanticPassSource,
+    ) ||
+    !/ps_node_lvar_usage_is_unevaluated\s*\(\s*store,\s*node\s*\)/.test(
+      lvarUsageAnalysisSource,
+    ) ||
+    /(?:->|\.)lvar_usage_unevaluated\b/.test(
+      `${parserExpressionSource}\n${semanticPassSource}\n${lvarUsageAnalysisSource}`,
+    )) {
+  throw new Error(
+    "unevaluated local-usage state must be derived by semantic binding and stored outside Syntax AST",
   );
 }
 if (!/\bpsx_resolved_node_kind_t\s+node_kind\s*;/.test(

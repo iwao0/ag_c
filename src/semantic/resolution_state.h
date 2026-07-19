@@ -101,6 +101,7 @@ typedef struct {
   struct psx_lvar_usage_region_t *region;
   struct lvar_t *local;
   unsigned char records_usage;
+  unsigned char is_unevaluated;
 } psx_lvar_usage_resolution_state_t;
 
 typedef struct {
