@@ -3129,9 +3129,12 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     ) ||
     !/PSX_COMPOUND_LITERAL_STORAGE_STATIC/.test(
       compoundLiteralSemanticsHeader,
+    ) ||
+    /requires_address_result|result_qual_type|yields_address/.test(
+      `${compoundLiteralSemanticsHeader}\n${compoundLiteralSemanticsSource}`,
     )) {
   throw new Error(
-    "compound literal semantics must resolve storage duration and canonical result QualType without Syntax AST dependencies",
+    "compound literal semantics must resolve storage duration and canonical object QualType without Syntax AST dependencies",
   );
 }
 const declarationResolutionSource = await readFile(
@@ -4768,7 +4771,9 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       compoundLiteralNode[1],
     ) ||
-    /\bobject_type\b/.test(compoundLiteralNode[1]) ||
+    /\bobject_type\b|\brequires_addressable_object\b/.test(
+      compoundLiteralNode[1],
+    ) ||
     !genericAssociation ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       genericAssociation[1],
@@ -9063,6 +9068,12 @@ if (!/direct_compound_literal_binding_t/.test(
     !/build_direct_global_reference\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/operand_syntax->kind\s*==\s*ND_COMPOUND_LITERAL/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/build_direct_addressable_compound_literal\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/__compound_lit_%d/.test(syntaxTypedHirResolutionSource) ||
     /psx_compound_literal_(?:resolution|direct_initializer)/.test(
       syntaxTypedHirResolutionSource,
@@ -9081,6 +9092,21 @@ if (!/direct_compound_literal_binding_t/.test(
     )) {
   throw new Error(
     "direct compound literals must use Syntax-external QualType plans, internal automatic storage, and registered static global storage without perturbing source name binding",
+  );
+}
+if (/requires_addressable_object/.test(parserExpressionSource) ||
+    !/psx_node_new_unary_addr_syntax_for_in\s*\(/.test(
+      parserExpressionSource,
+    ) ||
+    !/requires_addressable_storage/.test(nodeResolutionStateSource) ||
+    !/psx_compound_literal_require_addressable_storage\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    !/psx_compound_literal_requires_addressable_storage\s*\(/.test(
+      compoundLiteralLoweringSource,
+    )) {
+  throw new Error(
+    "compound literal address syntax must remain explicit while compatibility storage requirements live in semantic resolution state",
   );
 }
 if (!/session->hir_module\s*=\s*psx_hir_module_create\(\)/.test(

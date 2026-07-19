@@ -35,6 +35,7 @@ typedef struct {
   struct psx_runtime_initializer_plan_t *runtime_initializer;
   int direct_initializer_index;
   psx_compound_literal_resolution_kind_t kind;
+  unsigned char requires_addressable_storage;
 } psx_compound_literal_resolution_t;
 
 typedef struct {

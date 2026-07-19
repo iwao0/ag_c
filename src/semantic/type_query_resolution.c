@@ -237,8 +237,6 @@ static const psx_type_t *sizeof_operand_type(
               compound_type_name);
       }
     }
-    if (compound->requires_addressable_object)
-      return ps_node_get_type(store, operand);
     return object_type;
   }
   int depth = 0;

@@ -175,10 +175,6 @@ static node_t *lower_tree(
           plan.direct_initializer_index;
       resolution->kind = plan.kind;
       const psx_type_t *result_type = plan.object_type;
-      if (compound->requires_addressable_object && result_type) {
-        result_type = ps_type_address_result_in(
-            ps_lowering_arena(context->lowering_context), result_type);
-      }
       if (result_type) {
         psx_qual_type_t result_qual_type =
             ps_ctx_intern_qual_type_in(
@@ -272,6 +268,15 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;
     case ND_UNARY_NEGATE:
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      break;
+    case ND_ADDR:
+      if (node->is_explicit_addr_expr && node->lhs &&
+          node->lhs->kind == ND_COMPOUND_LITERAL) {
+        psx_compound_literal_require_addressable_storage(
+            store, node->lhs);
+      }
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;

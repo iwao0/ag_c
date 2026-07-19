@@ -85,6 +85,22 @@ void ps_node_set_lvar_usage_unevaluated(
   if (state) state->lvar_usage.is_unevaluated = enabled ? 1 : 0;
 }
 
+int psx_compound_literal_requires_addressable_storage(
+    const psx_resolution_store_t *store, const node_t *node) {
+  const psx_node_resolution_state_t *state =
+      ps_node_resolution_state_const(store, node);
+  return state &&
+         state->compound_literal.requires_addressable_storage;
+}
+
+void psx_compound_literal_require_addressable_storage(
+    psx_resolution_store_t *store, node_t *node) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(store, node);
+  if (state)
+    state->compound_literal.requires_addressable_storage = 1;
+}
+
 int ps_node_is_decl_initializer(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_node_resolution_state_t *state =

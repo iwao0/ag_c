@@ -92,6 +92,10 @@ int ps_node_lvar_usage_is_unevaluated(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_set_lvar_usage_unevaluated(
     psx_resolution_store_t *store, node_t *node, int enabled);
+int psx_compound_literal_requires_addressable_storage(
+    const psx_resolution_store_t *store, const node_t *node);
+void psx_compound_literal_require_addressable_storage(
+    psx_resolution_store_t *store, node_t *node);
 int ps_node_is_decl_initializer(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_set_decl_initializer(

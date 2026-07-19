@@ -45,7 +45,10 @@ static int plan_file_scope_compound_literal(
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
                                ? (node_init_list_t *)initializer
                                : NULL;
-  if (!is_array && !compound->requires_addressable_object &&
+  if (!is_array &&
+      !psx_compound_literal_requires_addressable_storage(
+          ps_lowering_resolution_store(lowering_context),
+          &compound->base) &&
       !ps_type_is_tag_aggregate(type) && list &&
       list->entry_count == 1 &&
       list->entries[0].designator_count == 0 &&

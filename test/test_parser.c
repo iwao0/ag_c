@@ -10501,11 +10501,18 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       compound_address_declaration->declaration->initializers[0].value;
   ASSERT_TRUE(syntax_compound_deref != NULL);
   ASSERT_EQ(ND_UNARY_DEREF, syntax_compound_deref->kind);
-  const node_t *syntax_compound_address = syntax_compound_deref->lhs;
+  const node_t *syntax_compound_address_expr =
+      syntax_compound_deref->lhs;
+  ASSERT_TRUE(syntax_compound_address_expr != NULL);
+  ASSERT_EQ(ND_ADDR, syntax_compound_address_expr->kind);
+  ASSERT_TRUE(syntax_compound_address_expr->is_explicit_addr_expr);
+  const node_t *syntax_compound_address =
+      syntax_compound_address_expr->lhs;
   ASSERT_TRUE(syntax_compound_address != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_address->kind);
-  ASSERT_TRUE(((const node_compound_literal_t *)syntax_compound_address)
-                  ->requires_addressable_object);
+  ASSERT_TRUE(ps_node_get_type(syntax_compound_address_expr) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(
+      syntax_compound_address_expr));
   ASSERT_TRUE(ps_node_get_type(syntax_compound_address) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_address));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[22]->kind);
@@ -10748,10 +10755,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_aggregate_cast));
   ASSERT_TRUE(ps_node_get_type(syntax_compound_scalar) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_scalar));
+  ASSERT_TRUE(ps_node_get_type(syntax_compound_address_expr) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(
+      syntax_compound_address_expr));
   ASSERT_TRUE(ps_node_get_type(syntax_compound_address) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_address));
-  ASSERT_TRUE(((const node_compound_literal_t *)syntax_compound_address)
-                  ->requires_addressable_object);
   ASSERT_TRUE(ps_node_get_type(syntax_compound_array) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_array));
   ASSERT_TRUE(ps_node_get_type(syntax_compound_record) == NULL);
@@ -11705,14 +11713,18 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
       &item.value.declaration.initializers[0];
   ASSERT_TRUE(scalar_initializer->has_initializer);
   ASSERT_EQ(PSX_DECL_INIT_EXPR, scalar_initializer->kind);
-  const node_t *scalar_compound = scalar_initializer->value;
+  const node_t *scalar_address = scalar_initializer->value;
+  ASSERT_TRUE(scalar_address != NULL);
+  ASSERT_EQ(ND_ADDR, scalar_address->kind);
+  ASSERT_TRUE(scalar_address->is_explicit_addr_expr);
+  const node_t *scalar_compound = scalar_address->lhs;
   ASSERT_TRUE(scalar_compound != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, scalar_compound->kind);
   ASSERT_EQ(ND_INIT_LIST, scalar_compound->rhs->kind);
   ASSERT_TRUE(((const node_compound_literal_t *)scalar_compound)
                   ->has_file_scope_storage);
-  ASSERT_TRUE(((const node_compound_literal_t *)scalar_compound)
-                  ->requires_addressable_object);
+  ASSERT_TRUE(ps_node_get_type(scalar_address) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_address));
   ASSERT_TRUE(ps_node_get_type(scalar_compound) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(scalar_compound));
   ASSERT_TRUE(find_test_global_var("__phase_scalar", 14) == NULL);
@@ -11733,6 +11745,8 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(memcmp(
       scalar_pointer->init_symbol, "__compound_lit_0", 16) == 0);
   ASSERT_EQ(0, scalar_pointer->init_symbol_offset);
+  ASSERT_TRUE(ps_node_get_type(scalar_address) == NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_address));
   ASSERT_TRUE(ps_node_get_type(scalar_compound) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(scalar_compound));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);

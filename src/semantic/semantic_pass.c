@@ -823,10 +823,6 @@ static void semantic_resolve_compound_literal(
       ps_ctx_arena(semantic_context), object_type);
   psx_qual_type_t result_qual_type =
       ps_ctx_intern_qual_type_in(semantic_context, result);
-  if (compound->requires_addressable_object) {
-    result_qual_type = psx_resolve_address_result_qual_type_in(
-        semantic_context, result_qual_type);
-  }
   semantic_bind_qual_type_result(
       semantic_context, (node_t *)compound, result_qual_type);
 }

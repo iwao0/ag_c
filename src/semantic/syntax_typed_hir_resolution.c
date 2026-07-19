@@ -1379,7 +1379,7 @@ static int preflight_direct_lvalue(
     direct_compound_literal_binding_t *binding = NULL;
     if (!resolve_direct_compound_literal(
             context, (const node_compound_literal_t *)syntax,
-            &binding) || !binding || binding->plan.yields_address)
+            &binding) || !binding)
       return 0;
     if (qual_type) *qual_type = binding->plan.object_qual_type;
     return 1;
@@ -1689,7 +1689,7 @@ static int preflight_direct_expression_impl(
             context, (const node_compound_literal_t *)syntax,
             &binding) || !binding)
       return 0;
-    if (qual_type) *qual_type = binding->plan.result_qual_type;
+    if (qual_type) *qual_type = binding->plan.object_qual_type;
     return 1;
   }
   if (syntax->kind == ND_SIZEOF_QUERY ||
@@ -2441,7 +2441,7 @@ static psx_semantic_node_t *build_direct_lvalue(
     direct_compound_literal_binding_t *binding = NULL;
     if (resolve_direct_compound_literal(
             context, (const node_compound_literal_t *)syntax,
-            &binding) && binding && !binding->plan.yields_address)
+            &binding) && binding)
       return build_direct_expression_impl(context, syntax);
   }
   if (syntax->kind == ND_CAST && syntax->is_source_cast) {
@@ -2953,7 +2953,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
           find_direct_compound_literal_binding(
               context,
               (const node_compound_literal_t *)operand_syntax);
-      if (binding && !binding->plan.yields_address)
+      if (binding)
         return build_direct_addressable_compound_literal(
             context,
             (const node_compound_literal_t *)operand_syntax);
@@ -4142,7 +4142,6 @@ static int resolve_direct_compound_literal(
   if (!psx_resolve_compound_literal_qual_type_plan_in(
           context->semantic_context, object_qual_type,
           compound->has_file_scope_storage,
-          compound->requires_addressable_object,
           &binding->plan))
     return 0;
   const node_string_t *string_initializer =
@@ -5239,17 +5238,15 @@ static psx_semantic_node_t *build_direct_compound_literal_value(
     return NULL;
 
   psx_qual_type_t result_qual_type =
-      binding->plan.result_qual_type;
-  int yields_address = binding->plan.yields_address ||
-                       force_address_result;
-  if (force_address_result && !binding->plan.yields_address)
+      binding->plan.object_qual_type;
+  if (force_address_result)
     result_qual_type = psx_resolve_address_result_qual_type_in(
         context->semantic_context,
         binding->plan.object_qual_type);
   if (result_qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
 
   psx_semantic_node_t *value = object;
-  if (yields_address) {
+  if (force_address_result) {
     psx_semantic_node_t *address_children[] = {object};
     psx_hir_edge_kind_t address_edges[] = {PSX_HIR_EDGE_LHS};
     psx_hir_node_spec_t address_spec = {

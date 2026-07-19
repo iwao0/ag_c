@@ -3162,15 +3162,13 @@ node_t *psx_node_new_raw_decl_initializer_in(
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *tok,
-    int requires_addressable_object, int has_file_scope_storage) {
+    int has_file_scope_storage) {
   node_compound_literal_t *node =
       arena_alloc_in(arena_context, sizeof(node_compound_literal_t));
   node->base.kind = ND_COMPOUND_LITERAL;
   node->base.rhs = initializer;
   node->base.tok = tok;
   node->type_name = type_name;
-  node->requires_addressable_object =
-      requires_addressable_object ? 1 : 0;
   node->has_file_scope_storage = has_file_scope_storage ? 1 : 0;
   return (node_t *)node;
 }

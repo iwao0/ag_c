@@ -184,7 +184,7 @@ static node_t *parse_compound_literal_from_type(
                             : NULL;
   node_t *syntax = psx_node_new_compound_literal_in(
       ctx->arena_context, type_name, initializer, initializer_tok,
-      0, current_funcname == NULL);
+      current_funcname == NULL);
   return apply_postfix(syntax, ctx);
 }
 
@@ -627,12 +627,6 @@ static node_t *build_unary_deref_syntax(
 // `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
 static node_t *build_unary_addr_node(
     node_t *operand, expr_parse_ctx_t *ctx) {
-  if (operand && operand->kind == ND_COMPOUND_LITERAL) {
-    node_compound_literal_t *compound =
-        (node_compound_literal_t *)operand;
-    compound->requires_addressable_object = 1;
-    return operand;
-  }
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
     /* Preserve the comma prefix while applying address-of to its value. */
     return psx_node_new_raw_binary_in(

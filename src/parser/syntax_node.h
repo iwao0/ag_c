@@ -25,6 +25,6 @@ node_t *psx_node_new_static_assert_syntax_in(
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *token,
-    int requires_addressable_object, int has_file_scope_storage);
+    int has_file_scope_storage);
 
 #endif

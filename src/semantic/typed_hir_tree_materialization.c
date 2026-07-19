@@ -787,11 +787,7 @@ static psx_semantic_node_t *materialize_compound_literal(
           : materialize_global_object_reference(
                 builder, resolution->global_object, source);
   if (!object) return NULL;
-  psx_semantic_node_t *value =
-      compound->requires_addressable_object
-          ? materialize_address_of_object(
-                builder, object, result_type, source)
-          : object;
+  psx_semantic_node_t *value = object;
   if (!value) return NULL;
   if (!resolution->runtime_initializer) return value;
   psx_semantic_node_t *initialization =
