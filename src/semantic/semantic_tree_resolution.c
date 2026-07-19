@@ -332,6 +332,20 @@ static int diagnose_direct_function_rejection(
                          diagnostics,
                          DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_RETURN_TYPES_INCOMPATIBLE,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_RETURN_TYPES_INCOMPATIBLE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS));
+      return 1;
     default:
       return 0;
   }

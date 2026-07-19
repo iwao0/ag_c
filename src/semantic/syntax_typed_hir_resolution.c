@@ -4554,14 +4554,22 @@ static int preflight_direct_statement_impl(
           direct_integer_constant(
               context, syntax->lhs, &constant_value) &&
           constant_value == 0;
-      psx_assignment_types_resolution_t assignment;
-      psx_resolve_assignment_qual_types_in(
+      psx_return_types_status_t return_status;
+      psx_resolve_return_qual_types_in(
           context->semantic_context,
-          (psx_qual_type_t){
-              context->function_return_qual_type.type_id,
-              PSX_TYPE_QUALIFIER_NONE},
-          value_type, is_null_pointer_constant, &assignment);
-      return assignment.status == PSX_ASSIGNMENT_TYPES_OK;
+          context->function_return_qual_type, value_type,
+          is_null_pointer_constant, &return_status);
+      if (return_status == PSX_RETURN_TYPES_INCOMPATIBLE)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE,
+            syntax);
+      if (return_status == PSX_RETURN_TYPES_DISCARDS_QUALIFIERS)
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS,
+            syntax);
+      return return_status == PSX_RETURN_TYPES_OK;
     }
     case ND_IF: {
       const node_ctrl_t *control = (const node_ctrl_t *)syntax;

@@ -195,6 +195,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_GENERIC_DUPLICATE_COMPATIBLE_TYPE, "E3105", "parser.generic_duplicate_compatible_type"},
     {DIAG_ERR_PARSER_CONTROL_CONDITION_NOT_SCALAR, "E3106", "parser.control_condition_not_scalar"},
     {DIAG_ERR_PARSER_SWITCH_CONDITION_NOT_INTEGER, "E3107", "parser.switch_condition_not_integer"},
+    {DIAG_ERR_PARSER_RETURN_TYPES_INCOMPATIBLE, "E3108", "parser.return_types_incompatible"},
+    {DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS, "E3109", "parser.return_discards_qualifiers"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

@@ -310,19 +310,6 @@ static void semantic_transform_return(
                    "%s",
                    diag_message_for_in(diagnostics, DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
   }
-
-  /* C11 6.8.6.4 / 6.5.16.1: NULL pointer constant 0 is allowed, but a nonzero
-   * integer constant cannot be returned from a pointer-returning function. */
-  if (return_type && ps_type_is_pointer(return_type) &&
-      node->lhs->kind == ND_NUM) {
-    node_num_t *num = (node_num_t *)node->lhs;
-    if (num->val != 0) {
-      ps_diag_ctx_in(diagnostics, (token_t *)tok, "return",
-                   "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
-                   num->val);
-    }
-  }
-
 }
 
 static void semantic_transform_node_array(

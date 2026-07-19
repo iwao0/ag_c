@@ -11047,6 +11047,20 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
       ND_RETURN);
   assert_direct_function_rejection(
+      "int __direct_return_pointer_as_integer(void) { "
+      "int *value = 0; return value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE,
+      ND_RETURN);
+  assert_direct_function_rejection(
+      "int *__direct_return_nonzero_integer(void) { return 1; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE,
+      ND_RETURN);
+  assert_direct_function_rejection(
+      "int *__direct_return_discards_qualifiers(const int *value) { "
+      "return value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS,
+      ND_RETURN);
+  assert_direct_function_rejection(
       "int __direct_static_assert_not_constant(void) { "
       "int value = 1; _Static_assert(value, \"ng\"); return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,
@@ -25520,6 +25534,11 @@ static void test_parse_invalid() {
   expect_parse_fail("int main() { 1 += 2; }");               // lvalueでない
   expect_parse_fail("int main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
+  expect_parse_fail(
+      "int f(void) { int *value = 0; return value; }");
+  expect_parse_fail("int *f(void) { return 1; }");
+  expect_parse_fail(
+      "int *f(const int *value) { return value; }");
   expect_parse_fail("int main() { return missing_value; }"); // 未定義変数
   expect_parse_fail("int main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("int main() { struct T x; return 0; }");   // 未定義タグ参照

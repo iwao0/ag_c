@@ -8331,6 +8331,36 @@ if (
   );
 }
 
+const returnQualTypeRule = assignmentResolutionSource.match(
+  /void\s+psx_resolve_return_qual_types_in\s*\([^]*?\n\}/,
+);
+const sharedReturnTypeRuleUses = [
+  syntaxTypedHirResolutionSource,
+  loweredTreeValidationSource,
+].filter((source) =>
+  /\bpsx_resolve_return_qual_types_in\s*\(/.test(source)
+).length;
+if (
+  !returnQualTypeRule ||
+  /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
+    returnQualTypeRule[0],
+  ) ||
+  sharedReturnTypeRuleUses !== 2 ||
+  /\bpsx_resolve_return_qual_types_in\s*\(/.test(
+    semanticPassSource,
+  ) ||
+  !/PSX_RETURN_TYPES_INCOMPATIBLE/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/PSX_RETURN_TYPES_DISCARDS_QUALIFIERS/.test(
+    syntaxTypedHirResolutionSource,
+  )
+) {
+  throw new Error(
+    "return conversion must be an AST-independent QualType rule shared by direct Typed HIR and compatibility diagnostics",
+  );
+}
+
 const subscriptQualTypeCore = expressionOperandResolutionSource.match(
   /static\s+int\s+qual_type_is_subscript_base\s*\([^]*?void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
 );
