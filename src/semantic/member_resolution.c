@@ -49,27 +49,30 @@ void psx_resolve_member_access_qual_type_in(
 
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
-  const psx_type_t *base_type = psx_semantic_type_table_lookup(
-      semantic_types, base_qual_type.type_id);
-  if (!base_type) return;
+  psx_type_shape_t base_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, base_qual_type.type_id, &base_shape))
+    return;
   psx_qual_type_t object_qual_type = base_qual_type;
   if (from_pointer) {
-    if (base_type->kind != PSX_TYPE_POINTER &&
-        base_type->kind != PSX_TYPE_ARRAY)
+    if (base_shape.kind != PSX_TYPE_POINTER &&
+        base_shape.kind != PSX_TYPE_ARRAY)
       return;
     object_qual_type = psx_semantic_type_table_base(
         semantic_types, base_qual_type.type_id);
-  } else if (!ps_type_is_tag_aggregate(base_type)) {
+  } else if (base_shape.kind != PSX_TYPE_STRUCT &&
+             base_shape.kind != PSX_TYPE_UNION) {
     return;
   }
-  const psx_type_t *object_type = psx_semantic_type_table_lookup(
-      semantic_types, object_qual_type.type_id);
-  if (!object_type || !ps_type_is_tag_aggregate(object_type))
+  psx_type_shape_t object_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_shape) ||
+      (object_shape.kind != PSX_TYPE_STRUCT &&
+       object_shape.kind != PSX_TYPE_UNION))
     return;
 
   resolution->base_object_qual_type = object_qual_type;
-  resolution->base_object_type = object_type;
-  resolution->record_id = ps_type_record_id(object_type);
+  resolution->record_id = object_shape.record_id;
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, resolution->record_id);
   const psx_record_member_decl_t *member = aggregate_member_named(

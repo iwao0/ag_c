@@ -7554,12 +7554,12 @@ static void test_member_access_resolution_boundary() {
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             resolution.base_object_qual_type.qualifiers);
-  ASSERT_TRUE(
-      psx_semantic_type_table_lookup(
-          ps_ctx_semantic_type_table_in(test_semantic_context()),
-          resolution.base_object_qual_type.type_id) ==
-      resolution.base_object_type);
-  ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
+  psx_type_shape_t base_object_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      resolution.base_object_qual_type.type_id, &base_object_shape));
+  ASSERT_EQ(PSX_TYPE_STRUCT, base_object_shape.kind);
+  ASSERT_EQ(resolution.record_id, base_object_shape.record_id);
 
   node_t *const_object_base =
       psx_node_new_lvar_identifier_ref_for(const_object);

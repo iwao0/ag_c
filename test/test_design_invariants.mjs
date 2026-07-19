@@ -2809,6 +2809,9 @@ const memberTypeIdentitySource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
 );
+const memberAccessResolutionType = memberResolutionHeader.match(
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_member_access_resolution_t\s*;/,
+);
 if (/\bps_node_new_tag_member_(?:deref|lvar_ref)_for_in\s*\(/.test(
       memberNodeUtilsSource,
     ) ||
@@ -2904,11 +2907,19 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
       memberResolutionHeader,
     ) ||
     !memberQualTypeCore ||
+    !memberAccessResolutionType ||
+    /\bpsx_type_t\b/.test(memberAccessResolutionType[1]) ||
     /\bnode_t\b|\bps_node_|\bPSX_HIR_/.test(memberQualTypeCore[0]) ||
     /parser\/ast\.h|member_access_resolution\.h/.test(
       `${memberResolutionHeader}\n${memberResolutionSource}`,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
+      memberQualTypeCore[0],
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      memberQualTypeCore[0],
+    ) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(
       memberQualTypeCore[0],
     ) ||
     !/\bpsx_semantic_type_table_record_member\s*\(/.test(
