@@ -346,6 +346,45 @@ static int diagnose_direct_function_rejection(
                          diagnostics,
                          DIAG_ERR_PARSER_RETURN_DISCARDS_QUALIFIERS));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
+          ps_ctx_tag_kind_spelling(
+              (token_kind_t)failure->source_integer_value));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_UNSUPPORTED:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+          ps_ctx_tag_kind_spelling(
+              (token_kind_t)failure->source_integer_value));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_MEMBER_NOT_FOUND:
+      ps_diag_ctx_in(
+          diagnostics, token, "cast", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+      return 1;
     default:
       return 0;
   }

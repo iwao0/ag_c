@@ -5730,6 +5730,15 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     !/psx_resolve_aggregate_cast_qual_types\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
+    !/PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED[\s\S]{0,1200}PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/context->unevaluated_depth\s*==\s*0[\s\S]*?psx_plan_aggregate_source_cast_resolution\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||

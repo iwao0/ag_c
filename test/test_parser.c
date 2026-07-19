@@ -11061,6 +11061,26 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS,
       ND_RETURN);
   assert_direct_function_rejection(
+      "int __direct_cast_aggregate_mismatch(void) { "
+      "struct S { int x; }; union U { int y; }; union U value={1}; "
+      "(struct S)value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH,
+      ND_CAST);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
+  assert_direct_function_rejection(
+      "int __direct_cast_struct_extension_disabled(void) { "
+      "struct S { int x; }; int value=1; (struct S)value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED,
+      ND_CAST);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options()->enable_union_scalar_pointer_cast = false;
+  assert_direct_function_rejection(
+      "int __direct_cast_union_extension_disabled(void) { "
+      "union U { int x; }; int value=1; (union U)value; return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED,
+      ND_CAST);
+  test_compilation_options()->enable_union_scalar_pointer_cast = true;
+  assert_direct_function_rejection(
       "int __direct_static_assert_not_constant(void) { "
       "int value = 1; _Static_assert(value, \"ng\"); return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,

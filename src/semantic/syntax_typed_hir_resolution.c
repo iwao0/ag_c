@@ -265,6 +265,10 @@ static int note_direct_semantic_rejection(
     direct_resolution_context_t *context,
     psx_syntax_typed_hir_rejection_t rejection,
     const node_t *source);
+static int note_direct_integer_rejection(
+    direct_resolution_context_t *context,
+    psx_syntax_typed_hir_rejection_t rejection,
+    const node_t *source, long long value);
 static int resolve_direct_identifier(
     direct_resolution_context_t *context,
     const node_identifier_t *identifier,
@@ -335,6 +339,41 @@ static direct_cast_binding_t *find_direct_cast_binding(
     if (binding->syntax == cast) return binding;
   }
   return NULL;
+}
+
+static int note_direct_aggregate_cast_rejection(
+    direct_resolution_context_t *context,
+    const node_t *syntax,
+    const psx_aggregate_cast_resolution_t *resolution) {
+  if (!resolution) return 0;
+  psx_syntax_typed_hir_rejection_t rejection;
+  switch (resolution->status) {
+    case PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH;
+      break;
+    case PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED;
+      break;
+    case PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED;
+      break;
+    case PSX_AGGREGATE_CAST_STATUS_UNSUPPORTED_TARGET:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_UNSUPPORTED;
+      break;
+    case PSX_AGGREGATE_CAST_STATUS_MEMBER_NOT_FOUND:
+      rejection =
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_MEMBER_NOT_FOUND;
+      break;
+    case PSX_AGGREGATE_CAST_STATUS_OK:
+    case PSX_AGGREGATE_CAST_STATUS_INVALID:
+      return 0;
+  }
+  return note_direct_integer_rejection(
+      context, rejection, syntax, resolution->target_tag_kind);
 }
 
 static int resolve_direct_function_call(
@@ -1628,7 +1667,8 @@ static int preflight_direct_expression_impl(
             &binding->aggregate_resolution);
         if (binding->aggregate_resolution.status !=
             PSX_AGGREGATE_CAST_STATUS_OK)
-          return 0;
+          return note_direct_aggregate_cast_rejection(
+              context, syntax, &binding->aggregate_resolution);
         binding->is_aggregate = 1;
       }
       if (context->unevaluated_depth == 0 &&
