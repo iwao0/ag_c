@@ -137,6 +137,10 @@ const resolvedNodeTypeHeader = await readFile(
   "utf8",
 );
 const earlyAstSource = await readFile("src/parser/ast.h", "utf8");
+const earlyNodeUtilsSource = await readFile(
+  "src/parser/node_utils.c",
+  "utf8",
+);
 const earlyTypeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
@@ -176,7 +180,7 @@ if (!/\bclone_type_name_ref\s*\(/.test(resolutionWorkTree) ||
     !/case\s+ND_COMPOUND_LITERAL:[^]*?clone_type_name_ref/.test(
       resolutionWorkTree,
     ) ||
-    !/case\s+ND_CAST:[^]*?clone_type_name_ref/.test(
+    !/case\s+ND_SOURCE_CAST:[^]*?clone_type_name_ref/.test(
       resolutionWorkTree,
     ) ||
     !/case\s+ND_SIZEOF_QUERY:[^]*?clone_type_name_ref/.test(
@@ -4125,6 +4129,30 @@ if (!nodeStruct ||
     "syntax node_t must be typeless and must not own semantic resolution state",
   );
 }
+if (/\bis_source_cast\b/.test(astSource) ||
+    !/\bND_SOURCE_CAST\b/.test(syntaxNodeKindHeader) ||
+    /\bND_CAST\b/.test(syntaxNodeKindHeader) ||
+    !/\bND_CAST\b/.test(resolvedNodeKindHeader) ||
+    !/unsigned\s+char\s+is_source_cast\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bps_node_is_source_cast\s*\(/.test(nodeTypePublicSource) ||
+    !/cast->base\.kind\s*=\s*ND_SOURCE_CAST/.test(
+      earlyNodeUtilsSource,
+    ) ||
+    !/source->kind\s*==\s*ND_SOURCE_CAST[^]*?ps_node_set_source_cast\s*\(\s*resolution_store\s*,\s*copy\s*,\s*1\s*\)/.test(
+      resolutionWorkTree,
+    ) ||
+    !/case\s+ND_SOURCE_CAST\s*:[^]*?semantic_resolve_source_cast\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_resolution_node_set_kind\s*\([^]*?ND_CAST\s*\)/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "source casts must use Syntax ND_SOURCE_CAST and semantic conversions must use resolved ND_CAST",
+  );
+}
 if (/\b(?:unevaluated_operand_depth|in_unevaluated_operand)\b/.test(
       parserExpressionSource,
     ) ||
@@ -5914,9 +5942,6 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     ) ||
     !/PSX_HIR_ASSIGN/.test(syntaxTypedHirResolutionSource) ||
     /\blower_source_cast_expression\s*\(/.test(
-      castLoweringSource,
-    ) ||
-    /\bnode->is_source_cast\s*=\s*0\s*;/.test(
       castLoweringSource,
     ) ||
     !/\bmaterialize_source_cast\s*\(/.test(

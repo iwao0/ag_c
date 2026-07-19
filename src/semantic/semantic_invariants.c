@@ -43,6 +43,7 @@ static node_semantic_role_t semantic_role(psx_resolution_node_kind_t kind) {
       return NODE_SEMANTIC_ROLE_NON_EXPRESSION;
 
     case ND_IDENTIFIER:
+    case ND_SOURCE_CAST:
     case ND_LOCAL_DECLARATION:
       return NODE_SEMANTIC_ROLE_RAW_EXPRESSION;
 

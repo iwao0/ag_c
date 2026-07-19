@@ -563,9 +563,8 @@ static int resolve_local_declarations_in_slot(
                  &((node_compound_literal_t *)node)->type_name) &&
              resolve_initializer_declarations(
                  resolver, &node->rhs);
-    case ND_CAST:
-      if (node->is_source_cast &&
-          !resolve_type_name_declarations(
+    case ND_SOURCE_CAST:
+      if (!resolve_type_name_declarations(
               resolver,
               &((node_source_cast_t *)node)->type_name))
         return 0;

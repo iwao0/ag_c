@@ -31,7 +31,7 @@ long long psx_eval_const_int(
         if (ok) *ok = 0;
         return 0;
       }
-      if (!node->is_source_cast)
+      if (!ps_node_is_source_cast(store, node))
         return psx_eval_const_int(store, node->lhs, ok);
       const psx_type_t *target = ps_node_get_type(store, node);
       const psx_type_t *source = ps_node_get_type(store, node->lhs);
@@ -188,7 +188,7 @@ double psx_eval_const_fp(
                  ? number->fval : (double)number->val;
     }
     case ND_CAST: {
-      if (!node->is_source_cast)
+      if (!ps_node_is_source_cast(store, node))
         return psx_eval_const_fp(store, node->lhs, ok);
       const psx_type_t *target = ps_node_get_type(store, node);
       if (target && (target->kind == PSX_TYPE_BOOL ||

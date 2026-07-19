@@ -2266,7 +2266,7 @@ static node_t *bound_node_vla_runtime_source(
   if (!node) return NULL;
   if (psx_resolution_node_kind(store, node) == ND_ADDR)
     return node->lhs;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(store, node)) {
     case ND_ADD:
       if (node->lhs &&
           ps_node_vla_row_stride_frame_off(store, node->lhs) != 0)
@@ -2743,7 +2743,8 @@ node_t *ps_node_new_semantic_cast_result_in(
     const psx_type_t *cast_type) {
   node_t *wrap = resolution_node_alloc_in(
       store, arena_context, sizeof(node_t));
-  wrap->kind = ND_CAST;
+  if (!wrap || !psx_resolution_node_set_kind(store, wrap, ND_CAST))
+    return NULL;
   wrap->lhs = operand;
   return annotate_explicit_type(store, wrap, cast_type);
 }
@@ -2762,7 +2763,8 @@ node_t *ps_node_new_integer_cast_result_ex_in(
     const psx_type_t *cast_type, int widen_zext_i64) {
   node_t *wrap = resolution_node_alloc_in(
       store, arena_context, sizeof(node_t));
-  wrap->kind = ND_CAST;
+  if (!wrap || !psx_resolution_node_set_kind(store, wrap, ND_CAST))
+    return NULL;
   wrap->lhs = operand;
   ps_node_set_widen_zext_i64(store, wrap, widen_zext_i64);
   return annotate_explicit_type(store, wrap, cast_type);
@@ -2809,9 +2811,8 @@ node_t *psx_node_new_source_cast_in(
     node_t *operand, psx_type_name_ref_t type_name) {
   node_source_cast_t *cast = arena_alloc_in(
       arena_context, sizeof(node_source_cast_t));
-  cast->base.kind = ND_CAST;
+  cast->base.kind = ND_SOURCE_CAST;
   cast->base.lhs = operand;
-  cast->base.is_source_cast = 1;
   cast->type_name = type_name;
   return (node_t *)cast;
 }
@@ -3323,7 +3324,8 @@ int ps_node_is_lvalue_in(
           resolved_kind == ND_SUBSCRIPT ||
           resolved_kind == ND_DEREF || resolved_kind == ND_GVAR ||
           resolved_kind == ND_COMPOUND_LITERAL ||
-          (resolved_kind == ND_CAST && node->is_source_cast &&
+          (resolved_kind == ND_CAST &&
+           ps_node_is_source_cast(store, node) &&
            ps_type_is_tag_aggregate(ps_node_get_type(store, node))));
 }
 

@@ -5,6 +5,7 @@
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
+#include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node_type.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
@@ -232,14 +233,17 @@ int psx_plan_aggregate_source_cast(
     const ag_compilation_options_t *options,
     psx_aggregate_source_cast_plan_t *plan) {
   node_t *node = cast ? &cast->base : NULL;
-  if (!node || node->kind != ND_CAST || !node->is_source_cast ||
+  psx_resolution_store_t *store =
+      ps_lowering_resolution_store(lowering_context);
+  if (!node || psx_resolution_node_kind(store, node) != ND_CAST ||
+      !ps_node_is_source_cast(store, node) ||
       !node->lhs)
     return 0;
   return psx_plan_aggregate_source_cast_qual_types(
       lowering_context, local_registry,
       ps_node_qual_type(
-          ps_lowering_resolution_store(lowering_context), node),
+          store, node),
       ps_node_qual_type(
-          ps_lowering_resolution_store(lowering_context), node->lhs),
+          store, node->lhs),
       node->tok ? node->tok : fallback_diag_tok, options, plan);
 }

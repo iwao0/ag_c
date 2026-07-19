@@ -23,9 +23,7 @@ static size_t node_storage_size(const node_t *node) {
   switch (node->kind) {
     case ND_IDENTIFIER: return sizeof(node_identifier_t);
     case ND_COMPOUND_LITERAL: return sizeof(node_compound_literal_t);
-    case ND_CAST:
-      return node->is_source_cast ? sizeof(node_source_cast_t)
-                                  : sizeof(node_t);
+    case ND_SOURCE_CAST: return sizeof(node_source_cast_t);
     case ND_MEMBER_ACCESS: return sizeof(node_member_access_t);
     case ND_GENERIC_SELECTION: return sizeof(node_generic_selection_t);
     case ND_SIZEOF_QUERY: return sizeof(node_sizeof_query_t);
@@ -428,6 +426,8 @@ static node_t *clone_node(
   memcpy(copy, source, size);
   if (source->kind == ND_ASSIGN)
     ps_node_set_source_assignment(resolution_store, copy, 1);
+  if (source->kind == ND_SOURCE_CAST)
+    ps_node_set_source_cast(resolution_store, copy, 1);
   copy->lhs = clone_node(resolution_store, arena_context, source->lhs);
   copy->rhs = source->kind == ND_STMT_EXPR
                   ? NULL
@@ -454,9 +454,8 @@ static node_t *clone_node(
         return NULL;
       break;
     }
-    case ND_CAST:
-      if (source->is_source_cast &&
-          !clone_type_name_ref(
+    case ND_SOURCE_CAST:
+      if (!clone_type_name_ref(
               resolution_store, arena_context,
               &((node_source_cast_t *)copy)->type_name,
               &((const node_source_cast_t *)source)->type_name))

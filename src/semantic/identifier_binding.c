@@ -517,11 +517,10 @@ static node_t *bind_node(
       node->rhs = bind_initializer(node->rhs, context);
       return node;
     }
-    case ND_CAST:
-      if (node->is_source_cast)
-        bind_type_name(
-            &((node_source_cast_t *)node)->type_name,
-            context);
+    case ND_SOURCE_CAST:
+      bind_type_name(
+          &((node_source_cast_t *)node)->type_name,
+          context);
       bind_slot(&node->lhs, context);
       return node;
     case ND_GENERIC_SELECTION: {

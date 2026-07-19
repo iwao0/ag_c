@@ -277,7 +277,8 @@ static long long eval_static_const_int(
           lowering_context, direct, ok);
     }
   }
-  if (node->kind == ND_CAST) {
+  if (psx_resolution_node_kind(
+          resolution_store(lowering_context), node) == ND_CAST) {
     return eval_static_const_int(
         lowering_context, node->lhs, ok);
   }

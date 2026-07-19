@@ -297,7 +297,7 @@ static int resolve_direct_source_cast(
     direct_resolution_context_t *context,
     const node_source_cast_t *cast,
     psx_qual_type_t *target_qual_type) {
-  if (!context || !cast || !cast->base.is_source_cast ||
+  if (!context || !cast || cast->base.kind != ND_SOURCE_CAST ||
       !target_qual_type)
     return 0;
   for (direct_cast_binding_t *binding = context->cast_bindings;
@@ -1268,7 +1268,7 @@ static direct_vla_runtime_view_t direct_vla_runtime_view(
     case ND_ASSIGN:
     case ND_COMPOUND_ASSIGN:
     case ND_ADDRESS_OF:
-    case ND_CAST:
+    case ND_SOURCE_CAST:
     case ND_PRE_INC:
     case ND_PRE_DEC:
     case ND_POST_INC:
@@ -1431,7 +1431,7 @@ static int preflight_direct_lvalue(
     if (qual_type) *qual_type = binding->plan.object_qual_type;
     return 1;
   }
-  if (syntax->kind == ND_CAST && syntax->is_source_cast) {
+  if (syntax->kind == ND_SOURCE_CAST) {
     psx_qual_type_t cast_type;
     if (!preflight_direct_expression(context, syntax, &cast_type))
       return 0;
@@ -1765,7 +1765,7 @@ static int preflight_direct_expression_impl(
     if (qual_type) *qual_type = binding->result_qual_type;
     return 1;
   }
-  if (syntax->kind == ND_CAST && syntax->is_source_cast) {
+  if (syntax->kind == ND_SOURCE_CAST) {
     psx_qual_type_t operand_type;
     psx_qual_type_t target_type;
     if (!preflight_direct_expression(
@@ -2582,7 +2582,7 @@ static psx_semantic_node_t *build_direct_lvalue(
             &binding) && binding)
       return build_direct_expression_impl(context, syntax);
   }
-  if (syntax->kind == ND_CAST && syntax->is_source_cast) {
+  if (syntax->kind == ND_SOURCE_CAST) {
     direct_cast_binding_t *binding = find_direct_cast_binding(
         context, (const node_source_cast_t *)syntax);
     if (binding && binding->type_resolution.target_is_aggregate)
@@ -2821,7 +2821,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
     return selected;
   }
 
-  if (syntax->kind == ND_CAST && syntax->is_source_cast) {
+  if (syntax->kind == ND_SOURCE_CAST) {
     psx_semantic_node_t *operand =
         build_direct_expression(context, syntax->lhs);
     psx_qual_type_t target_type;
@@ -3100,8 +3100,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
             context,
             (const node_compound_literal_t *)operand_syntax);
     }
-    if (operand_syntax->kind == ND_CAST &&
-        operand_syntax->is_source_cast) {
+    if (operand_syntax->kind == ND_SOURCE_CAST) {
       const node_source_cast_t *cast =
           (const node_source_cast_t *)operand_syntax;
       direct_cast_binding_t *binding = find_direct_cast_binding(
@@ -3395,7 +3394,7 @@ static int direct_integer_constant(
     *value = ~operand;
     return 1;
   }
-  if (syntax->kind == ND_CAST && syntax->is_source_cast) {
+  if (syntax->kind == ND_SOURCE_CAST) {
     long long operand;
     psx_qual_type_t target_qual_type;
     if (!direct_integer_constant(context, syntax->lhs, &operand) ||

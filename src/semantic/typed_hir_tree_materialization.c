@@ -822,8 +822,8 @@ static int address_requires_typed_hir_lowering(
          (source->kind == ND_ADDRESS_OF ||
           psx_resolution_node_kind(store, source) == ND_ADDR) &&
          source->lhs &&
-         source->lhs->kind == ND_CAST &&
-         source->lhs->is_source_cast &&
+         psx_resolution_node_kind(store, source->lhs) == ND_CAST &&
+         ps_node_is_source_cast(store, source->lhs) &&
          source_cast_is_aggregate(
              store,
              (const node_source_cast_t *)source->lhs);
@@ -894,8 +894,12 @@ static psx_semantic_node_t *materialize_aggregate_cast_address(
           materializer_resolution_store(builder), cast);
   if (kind == PSX_SOURCE_CAST_AGGREGATE_DIRECT_HIR) {
     if (cast->base.lhs &&
-        cast->base.lhs->kind == ND_CAST &&
-        cast->base.lhs->is_source_cast &&
+        psx_resolution_node_kind(
+            materializer_resolution_store(builder),
+            cast->base.lhs) == ND_CAST &&
+        ps_node_is_source_cast(
+            materializer_resolution_store(builder),
+            cast->base.lhs) &&
         source_cast_is_aggregate(
             materializer_resolution_store(builder),
             (const node_source_cast_t *)cast->base.lhs)) {
@@ -1374,7 +1378,9 @@ static psx_semantic_node_t *build_node(
     }
     return build_node(builder, selected);
   }
-  if (resolved_kind == ND_CAST && source->is_source_cast) {
+  if (resolved_kind == ND_CAST &&
+      ps_node_is_source_cast(
+          materializer_resolution_store(builder), source)) {
     return materialize_source_cast(
         builder, (const node_source_cast_t *)source);
   }

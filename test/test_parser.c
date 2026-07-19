@@ -281,6 +281,8 @@ static void test_set_invalid_vla_runtime_view(
   ps_node_is_decl_initializer(test_resolution_store(), (node))
 #define ps_node_is_source_assignment(node) \
   ps_node_is_source_assignment(test_resolution_store(), (node))
+#define ps_node_is_source_cast(node) \
+  ps_node_is_source_cast(test_resolution_store(), (node))
 #define ps_node_is_long_long_type(node) \
   ps_node_is_long_long_type(test_resolution_store(), (node))
 #define ps_node_shift_operation_is_unsigned(node) \
@@ -2576,7 +2578,7 @@ static void test_syntax_literal_type_boundary() {
   node_t *unary_plus =
       parse_expr_input_with_existing_locals("+(unsigned char)1");
   ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
-  ASSERT_EQ(ND_CAST, unary_plus->lhs->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, unary_plus->lhs->kind);
   ASSERT_TRUE(unary_plus->rhs == NULL);
   ASSERT_TRUE(unary_plus->tok != NULL);
   ASSERT_EQ(TK_PLUS, unary_plus->tok->kind);
@@ -3652,7 +3654,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       "((DirectCallbackType)DirectCallback)(8)");
   node_function_call_t *cast_call =
       (node_function_call_t *)cast_call_syntax;
-  ASSERT_EQ(ND_CAST, cast_call->callee->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, cast_call->callee->kind);
   const psx_typed_hir_tree_t *typed_cast_call = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
@@ -3685,8 +3687,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   node_t *cast_syntax =
       parse_expr_input_with_existing_names(
           "(DirectWord)DirectLocal");
-  ASSERT_EQ(ND_CAST, cast_syntax->kind);
-  ASSERT_TRUE(cast_syntax->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, cast_syntax->kind);
   const node_t *cast_operand_syntax = cast_syntax->lhs;
   const psx_typed_hir_tree_t *typed_cast = NULL;
   ASSERT_EQ(
@@ -3696,7 +3697,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           test_local_registry(), cast_syntax,
           &typed_cast, &failure));
   ASSERT_TRUE(typed_cast != NULL);
-  ASSERT_EQ(ND_CAST, cast_syntax->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, cast_syntax->kind);
   ASSERT_TRUE(cast_syntax->lhs == cast_operand_syntax);
   ASSERT_TRUE(!ps_node_has_resolution_state(cast_syntax));
   ASSERT_TRUE(!ps_node_has_resolution_state(cast_syntax->lhs));
@@ -10147,15 +10148,13 @@ static void test_cast_semantic_lowering_boundary() {
   preregister_test_locals();
   node_t *node =
       parse_expr_input_with_existing_locals("(int)(unsigned long)a");
-  ASSERT_EQ(ND_CAST, node->kind);
-  ASSERT_TRUE(node->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, node->kind);
   node_source_cast_t *outer = (node_source_cast_t *)node;
   ASSERT_TRUE(outer->type_name.syntax != NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(&outer->base));
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_EQ(ND_CAST, node->lhs->kind);
-  ASSERT_TRUE(node->lhs->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, node->lhs->kind);
   node_source_cast_t *inner = (node_source_cast_t *)node->lhs;
   ASSERT_TRUE(inner->type_name.syntax != NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(&inner->base));
@@ -10163,12 +10162,11 @@ static void test_cast_semantic_lowering_boundary() {
   node_t *syntax = node;
   node = analyze_test_expression(syntax, NULL);
   ASSERT_TRUE(node != syntax);
-  ASSERT_EQ(ND_CAST, syntax->kind);
-  ASSERT_TRUE(syntax->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
 
-  ASSERT_EQ(ND_CAST, node->kind);
-  ASSERT_TRUE(node->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(node));
+  ASSERT_TRUE(ps_node_is_source_cast(node));
   node_source_cast_t *typed_outer = (node_source_cast_t *)node;
   ASSERT_TRUE(
       psx_node_resolved_type_name(&typed_outer->base) != NULL);
@@ -10176,8 +10174,8 @@ static void test_cast_semantic_lowering_boundary() {
       PSX_SOURCE_CAST_DIRECT_HIR,
       psx_source_cast_resolution_kind(typed_outer));
 
-  ASSERT_EQ(ND_CAST, node->lhs->kind);
-  ASSERT_TRUE(node->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(node->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(node->lhs));
   node_source_cast_t *typed_inner =
       (node_source_cast_t *)node->lhs;
   ASSERT_EQ(
@@ -10219,8 +10217,8 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   ASSERT_EQ(ND_RETURN, body->body[return_index]->kind);
   node_t *member = body->body[return_index]->lhs;
   ASSERT_EQ(ND_MEMBER_ACCESS, member->kind);
-  ASSERT_EQ(ND_CAST, member->lhs->kind);
-  ASSERT_TRUE(member->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(member->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(member->lhs));
   node_source_cast_t *aggregate_cast =
       (node_source_cast_t *)member->lhs;
   ASSERT_EQ(
@@ -10243,8 +10241,8 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(((node_member_access_t *)member)->from_pointer);
   node_t *address = member->lhs;
   ASSERT_EQ(ND_ADDRESS_OF, address->kind);
-  ASSERT_EQ(ND_CAST, address->lhs->kind);
-  ASSERT_TRUE(address->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(address->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(address->lhs));
   aggregate_cast = (node_source_cast_t *)address->lhs;
   ASSERT_EQ(
       PSX_SOURCE_CAST_AGGREGATE_TEMPORARY,
@@ -10310,8 +10308,8 @@ static void test_implicit_conversion_hir_boundary() {
 
   node_t *ret = main_body->body[3];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
-  ASSERT_TRUE(ret->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(ret->lhs));
   ASSERT_EQ(
       PSX_SOURCE_CAST_DIRECT_HIR,
       psx_source_cast_resolution_kind(
@@ -10929,8 +10927,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_EQ(ND_MEMBER_ACCESS, syntax_aggregate_cast_member->kind);
   const node_t *syntax_aggregate_cast = syntax_aggregate_cast_member->lhs;
   ASSERT_TRUE(syntax_aggregate_cast != NULL);
-  ASSERT_EQ(ND_CAST, syntax_aggregate_cast->kind);
-  ASSERT_TRUE(syntax_aggregate_cast->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax_aggregate_cast->kind);
   ASSERT_TRUE(ps_node_get_type(syntax_aggregate_cast) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_aggregate_cast));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[20]->kind);
@@ -11065,8 +11062,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_unevaluated_aggregate_cast =
       ((const node_sizeof_query_t *)syntax_aggregate_sizeof)->operand;
   ASSERT_TRUE(syntax_unevaluated_aggregate_cast != NULL);
-  ASSERT_EQ(ND_CAST, syntax_unevaluated_aggregate_cast->kind);
-  ASSERT_TRUE(syntax_unevaluated_aggregate_cast->is_source_cast);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax_unevaluated_aggregate_cast->kind);
   ASSERT_TRUE(ps_node_get_type(syntax_unevaluated_aggregate_cast) ==
               NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(
@@ -11240,7 +11236,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_node_get_type(syntax_scalar_braced_value) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(
       syntax_scalar_braced_value));
-  ASSERT_EQ(ND_CAST, syntax_unevaluated_aggregate_cast->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax_unevaluated_aggregate_cast->kind);
   ASSERT_TRUE(ps_node_get_type(syntax_unevaluated_aggregate_cast) ==
               NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(
@@ -11583,17 +11579,17 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "struct S { int x; }; union U { int y; }; union U value={1}; "
       "(struct S)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH,
-      ND_CAST);
+      ND_SOURCE_CAST);
   assert_direct_function_rejection(
       "int __direct_cast_target_array(void) { "
       "int value=1; (int[2])value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR,
-      ND_CAST);
+      ND_SOURCE_CAST);
   assert_direct_function_rejection(
       "int __direct_cast_aggregate_operand(void) { "
       "struct S { int x; }; struct S value={1}; return (int)value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR,
-      ND_CAST);
+      ND_SOURCE_CAST);
   assert_direct_function_rejection(
       "int __direct_address_rvalue(void) { return &1 != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
@@ -11624,14 +11620,14 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int __direct_cast_struct_extension_disabled(void) { "
       "struct S { int x; }; int value=1; (struct S)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED,
-      ND_CAST);
+      ND_SOURCE_CAST);
   test_compilation_options()->enable_struct_scalar_pointer_cast = true;
   test_compilation_options()->enable_union_scalar_pointer_cast = false;
   assert_direct_function_rejection(
       "int __direct_cast_union_extension_disabled(void) { "
       "union U { int x; }; int value=1; (union U)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED,
-      ND_CAST);
+      ND_SOURCE_CAST);
   test_compilation_options()->enable_union_scalar_pointer_cast = true;
   assert_direct_function_rejection(
       "int __direct_static_assert_not_constant(void) { "
@@ -16690,28 +16686,28 @@ static void test_expr_shift() {
   ASSERT_TRUE(ps_node_shift_operation_is_unsigned(promoted_unsigned_shift));
 
     node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
-  ASSERT_EQ(ND_CAST, forced_signed_shift->kind);
-  ASSERT_TRUE(forced_signed_shift->is_source_cast);
-  ASSERT_EQ(ND_CAST, forced_signed_shift->lhs->kind);
-  ASSERT_TRUE(forced_signed_shift->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_shift));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_shift));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_shift->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_shift->lhs));
   ASSERT_TRUE(ps_type_is_unsigned(
       ps_node_get_type(forced_signed_shift->lhs)));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(forced_signed_shift));
 
     node_t *forced_signed_keyword_shift = parse_expr_input("(signed)(unsigned long)a");
-  ASSERT_EQ(ND_CAST, forced_signed_keyword_shift->kind);
-  ASSERT_TRUE(forced_signed_keyword_shift->is_source_cast);
-  ASSERT_EQ(ND_CAST, forced_signed_keyword_shift->lhs->kind);
-  ASSERT_TRUE(forced_signed_keyword_shift->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_keyword_shift));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_keyword_shift));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_keyword_shift->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_keyword_shift->lhs));
   ASSERT_TRUE(ps_type_is_unsigned(
       ps_node_get_type(forced_signed_keyword_shift->lhs)));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(forced_signed_keyword_shift));
 
     node_t *forced_unsigned_shift = parse_expr_input("(unsigned)(long)a");
-  ASSERT_EQ(ND_CAST, forced_unsigned_shift->kind);
-  ASSERT_TRUE(forced_unsigned_shift->is_source_cast);
-  ASSERT_EQ(ND_CAST, forced_unsigned_shift->lhs->kind);
-  ASSERT_TRUE(forced_unsigned_shift->lhs->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_unsigned_shift));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_unsigned_shift));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_unsigned_shift->lhs));
+  ASSERT_TRUE(ps_node_is_source_cast(forced_unsigned_shift->lhs));
   ASSERT_TRUE(!ps_type_is_unsigned(
       ps_node_get_type(forced_unsigned_shift->lhs)));
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(forced_unsigned_shift));
@@ -16761,19 +16757,19 @@ static void test_expr_unary_ops() {
             ps_node_get_type(bitnot)->integer_kind);
 
   node_t *voidcast = parse_expr_input("(void)1");
-  ASSERT_EQ(ND_CAST, voidcast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(voidcast));
   ASSERT_TRUE(ps_node_get_type(voidcast)->kind == PSX_TYPE_VOID);
   ASSERT_EQ(ND_NUM, voidcast->lhs->kind);
   ASSERT_EQ(1, as_num(voidcast->lhs)->val);
 
   node_t *ptr_const_cast = parse_expr_input("(int *)0x1000");
-  ASSERT_EQ(ND_CAST, ptr_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptr_const_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(ptr_const_cast));
   ASSERT_EQ(ND_NUM, ptr_const_cast->lhs->kind);
   ASSERT_EQ(0x1000, as_num(ptr_const_cast->lhs)->val);
 
   node_t *ptrarr_cast = parse_expr_input("(double (*)[2])0");
-  ASSERT_EQ(ND_CAST, ptrarr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptrarr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(ptrarr_cast));
   ASSERT_EQ(8, ps_node_type_size(ptrarr_cast));
   ASSERT_EQ(16, ps_node_deref_size(ptrarr_cast));
@@ -16785,7 +16781,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptrarr_cast)->base->kind);
 
   node_t *ptrptr_cast = parse_expr_input("(int **)0");
-  ASSERT_EQ(ND_CAST, ptrptr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptrptr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(ptrptr_cast));
   ASSERT_EQ(8, ps_node_deref_size(ptrptr_cast));
   ASSERT_TRUE(ps_node_get_type(ptrptr_cast) != NULL);
@@ -16798,7 +16794,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(ptrptr_cast)->base->base->kind);
 
   node_t *long_ptrarr_cast = parse_expr_input("(long (*)[2])0");
-  ASSERT_EQ(ND_CAST, long_ptrarr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_ptrarr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(long_ptrarr_cast));
   ASSERT_EQ(16, ps_node_deref_size(long_ptrarr_cast));
   ASSERT_TRUE(ps_node_get_type(long_ptrarr_cast) != NULL);
@@ -16809,7 +16805,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(long_ptrarr_cast)->base->base->kind);
 
   node_t *long_ptr_elem_cast = parse_expr_input("(long * (*)[2])0");
-  ASSERT_EQ(ND_CAST, long_ptr_elem_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_ptr_elem_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(long_ptr_elem_cast));
   ASSERT_EQ(16, ps_node_deref_size(long_ptr_elem_cast));
   ASSERT_TRUE(ps_node_get_type(long_ptr_elem_cast) != NULL);
@@ -16820,7 +16816,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(long_ptr_elem_cast)->base->base->kind);
 
   node_t *ptr_elem_2d_cast = parse_expr_input("(int * (*)[2][3])0");
-  ASSERT_EQ(ND_CAST, ptr_elem_2d_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptr_elem_2d_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(ptr_elem_2d_cast));
   ASSERT_EQ(8, ps_node_type_size(ptr_elem_2d_cast));
   ASSERT_EQ(48, ps_node_deref_size(ptr_elem_2d_cast));
@@ -16842,112 +16838,112 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(8, ptr_elem_2d_next);
 
   node_t *uchar_ptrarr_cast = parse_expr_input("(unsigned char (*)[3])0");
-  ASSERT_EQ(ND_CAST, uchar_ptrarr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(uchar_ptrarr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(uchar_ptrarr_cast));
   ASSERT_EQ(3, ps_node_deref_size(uchar_ptrarr_cast));
   ASSERT_EQ(1, canonical_node_base_deref_size(uchar_ptrarr_cast));
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(uchar_ptrarr_cast));
 
   node_t *bool_ptrarr_cast = parse_expr_input("(_Bool (*)[2])0");
-  ASSERT_EQ(ND_CAST, bool_ptrarr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(bool_ptrarr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(bool_ptrarr_cast));
   ASSERT_EQ(2, ps_node_deref_size(bool_ptrarr_cast));
   ASSERT_EQ(1, canonical_node_base_deref_size(bool_ptrarr_cast));
   ASSERT_TRUE(canonical_node_pointee_is_bool(bool_ptrarr_cast));
 
   node_t *bool_ptr_cast = parse_expr_input("(_Bool *)0");
-  ASSERT_EQ(ND_CAST, bool_ptr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(bool_ptr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(bool_ptr_cast));
   ASSERT_TRUE(canonical_node_pointee_is_bool(bool_ptr_cast));
   ASSERT_EQ(1, ps_node_deref_size(bool_ptr_cast));
 
   node_t *boolcast = parse_expr_input("(_Bool)3");
-  ASSERT_EQ(ND_CAST, boolcast->kind);
-  ASSERT_TRUE(boolcast->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(boolcast));
+  ASSERT_TRUE(ps_node_is_source_cast(boolcast));
   ASSERT_EQ(ND_NUM, boolcast->lhs->kind);
 
     node_t *const_cast = parse_expr_input("(const int)7");
-  ASSERT_EQ(ND_CAST, const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(const_cast));
   ASSERT_EQ(7, as_num(const_cast->lhs)->val);
 
     node_t *volatile_cast = parse_expr_input("(volatile int)8");
-  ASSERT_EQ(ND_CAST, volatile_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(volatile_cast));
   ASSERT_EQ(8, as_num(volatile_cast->lhs)->val);
 
     node_t *post_const_cast = parse_expr_input("(int const)12");
-  ASSERT_EQ(ND_CAST, post_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(post_const_cast));
   ASSERT_EQ(12, as_num(post_const_cast->lhs)->val);
 
     node_t *post_dup_const_cast = parse_expr_input("(int const const)21");
-  ASSERT_EQ(ND_CAST, post_dup_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(post_dup_const_cast));
   ASSERT_EQ(21, as_num(post_dup_const_cast->lhs)->val);
 
     node_t *multi_ptr_qual_cast = parse_expr_input("(int const * volatile * restrict)0");
-  ASSERT_EQ(ND_CAST, multi_ptr_qual_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(multi_ptr_qual_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(multi_ptr_qual_cast));
   ASSERT_EQ(ND_NUM, multi_ptr_qual_cast->lhs->kind);
   ASSERT_EQ(0, as_num(multi_ptr_qual_cast->lhs)->val);
 
     node_t *unsigned_int_const_cast = parse_expr_input("(unsigned int const)13");
-  ASSERT_EQ(ND_CAST, unsigned_int_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_int_const_cast));
   ASSERT_EQ(13, as_num(unsigned_int_const_cast->lhs)->val);
 
     node_t *funcptr_const_cast = parse_expr_input("(int (*const)(int))0");
-  ASSERT_EQ(ND_CAST, funcptr_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(funcptr_const_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(funcptr_const_cast));
   ASSERT_EQ(ND_NUM, funcptr_const_cast->lhs->kind);
   ASSERT_EQ(0, as_num(funcptr_const_cast->lhs)->val);
 
     node_t *long_long_cast = parse_expr_input("(long long)14");
-  ASSERT_EQ(ND_CAST, long_long_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_long_cast));
   ASSERT_EQ(14, as_num(long_long_cast->lhs)->val);
 
     node_t *unsigned_long_cast = parse_expr_input("(unsigned long)15");
-  ASSERT_EQ(ND_CAST, unsigned_long_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_long_cast));
   ASSERT_EQ(15, as_num(unsigned_long_cast->lhs)->val);
 
   node_t *long_unsigned_int_cast = parse_expr_input("(long)(unsigned int)a");
-  ASSERT_EQ(ND_CAST, long_unsigned_int_cast->kind);
-  ASSERT_EQ(ND_CAST, long_unsigned_int_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_int_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_int_cast->lhs));
   ASSERT_TRUE(ps_type_is_unsigned(
       ps_node_get_type(long_unsigned_int_cast->lhs)));
 
   node_t *long_signed_int_cast = parse_expr_input("(long)(int)a");
-  ASSERT_EQ(ND_CAST, long_signed_int_cast->kind);
-  ASSERT_EQ(ND_CAST, long_signed_int_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_int_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_int_cast->lhs));
   ASSERT_TRUE(!ps_type_is_unsigned(
       ps_node_get_type(long_signed_int_cast->lhs)));
 
     // 定数の short/char キャストは目的幅へ切り詰めて ND_NUM へ定数畳み込みする
     // (16/17/18 は範囲内なので値は不変)。
     node_t *unsigned_short_int_cast = parse_expr_input("(unsigned short int)16");
-  ASSERT_EQ(ND_CAST, unsigned_short_int_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_short_int_cast));
   ASSERT_EQ(16, as_num(unsigned_short_int_cast->lhs)->val);
 
     node_t *signed_char_cast = parse_expr_input("(signed char)17");
-  ASSERT_EQ(ND_CAST, signed_char_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(signed_char_cast));
   ASSERT_EQ(17, as_num(signed_char_cast->lhs)->val);
 
     node_t *unsigned_char_cast = parse_expr_input("(unsigned char)18");
-  ASSERT_EQ(ND_CAST, unsigned_char_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_char_cast));
   ASSERT_EQ(18, as_num(unsigned_char_cast->lhs)->val);
 
   node_t *long_unsigned_char_cast = parse_expr_input("(long)(unsigned char)a");
-  ASSERT_EQ(ND_CAST, long_unsigned_char_cast->kind);
-  ASSERT_EQ(ND_CAST, long_unsigned_char_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_char_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_char_cast->lhs));
   ASSERT_TRUE(ps_node_integer_value_is_unsigned(
       long_unsigned_char_cast->lhs));
 
   node_t *long_unsigned_short_cast = parse_expr_input("(long)(unsigned short)a");
-  ASSERT_EQ(ND_CAST, long_unsigned_short_cast->kind);
-  ASSERT_EQ(ND_CAST, long_unsigned_short_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_short_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_short_cast->lhs));
   ASSERT_TRUE(ps_node_integer_value_is_unsigned(
       long_unsigned_short_cast->lhs));
 
   node_t *unsigned_signed_short_cast =
       parse_expr_input("(unsigned)(short)a");
-  ASSERT_EQ(ND_CAST, unsigned_signed_short_cast->kind);
-  ASSERT_EQ(ND_CAST, unsigned_signed_short_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_signed_short_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_signed_short_cast->lhs));
   ASSERT_TRUE(!ps_type_is_unsigned(
       ps_node_get_type(unsigned_signed_short_cast->lhs)));
   ASSERT_TRUE(ps_type_is_unsigned(
@@ -16969,33 +16965,33 @@ static void test_expr_unary_ops() {
       unsigned_short_return->lhs));
 
   node_t *long_signed_short_cast = parse_expr_input("(long)(short)a");
-  ASSERT_EQ(ND_CAST, long_signed_short_cast->kind);
-  ASSERT_EQ(ND_CAST, long_signed_short_cast->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_short_cast));
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_short_cast->lhs));
   ASSERT_TRUE(!ps_node_integer_value_is_unsigned(
       long_signed_short_cast->lhs));
 
     node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
-  ASSERT_EQ(ND_CAST, restrict_ptr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(restrict_ptr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(restrict_ptr_cast));
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->lhs->kind);
   ASSERT_EQ(0, as_num(restrict_ptr_cast->lhs)->val);
 
     node_t *dup_restrict_ptr_cast = parse_expr_input("(restrict restrict int*)0");
-  ASSERT_EQ(ND_CAST, dup_restrict_ptr_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(dup_restrict_ptr_cast));
   ASSERT_TRUE(ps_node_value_is_pointer_like(dup_restrict_ptr_cast));
   ASSERT_EQ(ND_NUM, dup_restrict_ptr_cast->lhs->kind);
   ASSERT_EQ(0, as_num(dup_restrict_ptr_cast->lhs)->val);
 
     node_t *atomic_cast = parse_expr_input("(_Atomic int)9");
-  ASSERT_EQ(ND_CAST, atomic_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(atomic_cast));
   ASSERT_EQ(9, as_num(atomic_cast->lhs)->val);
 
     node_t *atomic_const_cast = parse_expr_input("(_Atomic const int)10");
-  ASSERT_EQ(ND_CAST, atomic_const_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(atomic_const_cast));
   ASSERT_EQ(10, as_num(atomic_const_cast->lhs)->val);
 
     node_t *nested_atomic_cast = parse_expr_input("(_Atomic(_Atomic(int)))11");
-  ASSERT_EQ(ND_CAST, nested_atomic_cast->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(nested_atomic_cast));
   ASSERT_EQ(11, as_num(nested_atomic_cast->lhs)->val);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
@@ -17033,11 +17029,11 @@ static void test_expr_generic() {
   assert_selected_generic_number(canonical_generic_return->lhs, 53);
   node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
       "(int (*)(ExprCanonicalParam, int *, ...))0");
-  ASSERT_EQ(ND_CAST, canonical_expr_funcptr->kind);
-  ASSERT_TRUE(ps_node_get_type(canonical_expr_funcptr) == NULL);
+  ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
   ASSERT_TRUE(ps_node_get_type(canonical_expr_funcptr) == NULL);
   canonical_expr_funcptr = analyze_test_expression(
       canonical_expr_funcptr, NULL);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(canonical_expr_funcptr));
   const psx_type_t *canonical_expr_function =
       ps_type_derived_function(ps_node_get_type(canonical_expr_funcptr));
   ASSERT_TRUE(canonical_expr_function != NULL);
@@ -17481,13 +17477,13 @@ static void test_expr_sizeof() {
 
     // Source cast stays intact; Typed HIR owns the value conversion.
     node_t *c1 = parse_expr_input("(char)300");
-  ASSERT_EQ(ND_CAST, c1->kind);
-  ASSERT_TRUE(c1->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c1));
+  ASSERT_TRUE(ps_node_is_source_cast(c1));
   ASSERT_EQ(ND_NUM, c1->lhs->kind);
 
     node_t *c2 = parse_expr_input("(_Complex double)1");
-  ASSERT_EQ(ND_CAST, c2->kind);
-  ASSERT_TRUE(c2->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c2));
+  ASSERT_TRUE(ps_node_is_source_cast(c2));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(c2));
   ASSERT_EQ(ND_NUM, c2->lhs->kind);
   const psx_type_t *c2_ty = ps_node_get_type(c2);
@@ -17497,8 +17493,8 @@ static void test_expr_sizeof() {
   ASSERT_EQ(16, ps_node_type_size(c2));
 
     node_t *c3 = parse_expr_input("(float _Imaginary)1");
-  ASSERT_EQ(ND_CAST, c3->kind);
-  ASSERT_TRUE(c3->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c3));
+  ASSERT_TRUE(ps_node_is_source_cast(c3));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(c3));
   ASSERT_EQ(ND_NUM, c3->lhs->kind);
   const psx_type_t *c3_ty = ps_node_get_type(c3);
@@ -17508,17 +17504,17 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, ps_node_type_size(c3));
 
     node_t *c4 = parse_expr_input("(long double)1");
-  ASSERT_EQ(ND_CAST, c4->kind);
-  ASSERT_TRUE(c4->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c4));
+  ASSERT_TRUE(ps_node_is_source_cast(c4));
   ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, ps_node_value_fp_kind(c4));
   ASSERT_EQ(ND_NUM, c4->lhs->kind);
 
     node_t *c5 = parse_expr_input("(_Atomic(int))1");
-  ASSERT_EQ(ND_CAST, c5->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c5));
   ASSERT_EQ(ND_NUM, c5->lhs->kind);
 
     node_t *c6 = parse_expr_input("(_Atomic(int*))0");
-  ASSERT_EQ(ND_CAST, c6->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c6));
   ASSERT_TRUE(ps_node_value_is_pointer_like(c6));
   ASSERT_EQ(ND_NUM, c6->lhs->kind);
 
@@ -17803,7 +17799,7 @@ static void test_funcall() {
       "int main(void){ int (*fp)(int)=inc; (*(int (*)(int))fp)(1); }");
   node_t *cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, as_function_call(cast_deref_call)->callee->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(as_function_call(cast_deref_call)->callee));
   ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(as_function_call(cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(cast_deref_call)->callee));
@@ -17814,7 +17810,7 @@ static void test_funcall() {
       "int main(void){ int (*fp)(int)=inc; (*(Fn)fp)(1); }");
   node_t *typedef_cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, typedef_cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, as_function_call(typedef_cast_deref_call)->callee->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(as_function_call(typedef_cast_deref_call)->callee));
   ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(as_function_call(typedef_cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(typedef_cast_deref_call)->callee));
@@ -18015,7 +18011,7 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("int cast_unsigned_local(void) { unsigned u; return (int)u; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(ret->lhs));
   ASSERT_EQ(ND_LVAR,
             psx_resolved_object_ref_node_kind(ret->lhs->lhs));
@@ -18024,7 +18020,7 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("int cast_pointer_int(int *p) { return (int)p; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
   ASSERT_EQ(4, ps_node_type_size(ret->lhs));
   ASSERT_EQ(ND_LVAR,
@@ -18034,7 +18030,7 @@ static void test_stmt_return() {
   parsed_code = parse_program_input("long cast_pointer_long(int *p) { return (long)p; }");
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
   ASSERT_EQ(8, ps_node_type_size(ret->lhs));
   ASSERT_EQ(ND_LVAR,
@@ -18045,7 +18041,7 @@ static void test_stmt_return() {
   ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_UNARY_DEREF, ret->lhs->kind);
-  ASSERT_EQ(ND_CAST, ret->lhs->lhs->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs->lhs));
   ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
   ASSERT_EQ(4, ps_node_deref_size(ret->lhs->lhs));
   ASSERT_EQ(ND_LVAR,
@@ -18054,7 +18050,7 @@ static void test_stmt_return() {
 
   parsed_code = parse_program_input("double void_cast_keeps_operand_fp(double d) { (void)d; return d; }");
   node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_CAST, body->body[0]->kind);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(body->body[0]));
   ASSERT_TRUE(ps_node_get_type(body->body[0])->kind == PSX_TYPE_VOID);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(body->body[0]));
   ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
@@ -18206,7 +18202,8 @@ static void test_expr_member_access() {
   }
   ASSERT_TRUE(ret != NULL);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
-      ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs));
+      psx_resolution_node_kind(ret->lhs) == ND_CAST
+          ? ret->lhs->lhs : ret->lhs));
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
@@ -18221,7 +18218,8 @@ static void test_expr_member_access() {
   }
   ASSERT_TRUE(ret != NULL);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
-      ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs));
+      psx_resolution_node_kind(ret->lhs) == ND_CAST
+          ? ret->lhs->lhs : ret->lhs));
 
   parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
@@ -22300,7 +22298,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_aggregate_value_size(&canonical_aggregate));
 
   node_t typed_cast_long = {0};
-  typed_cast_long.kind = ND_CAST;
+  test_set_resolved_node_kind(&typed_cast_long, ND_CAST);
   test_bind_node_type(&typed_cast_long, ps_type_new_integer(TK_LONG, 8, 0));
   int cast_target_size = 0;
   int cast_widen_zext = 0;
@@ -22382,8 +22380,8 @@ static void test_type_metadata_bridge() {
   node_t *fp_to_unsigned_result =
       test_effective_semantic_expression(fp_to_unsigned_ret->lhs);
   ASSERT_TRUE(ps_node_is_unsigned_type(fp_to_unsigned_result));
-  ASSERT_EQ(ND_CAST, fp_to_unsigned_result->kind);
-  ASSERT_TRUE(fp_to_unsigned_result->is_source_cast);
+  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(fp_to_unsigned_result));
+  ASSERT_TRUE(ps_node_is_source_cast(fp_to_unsigned_result));
   ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
                          fp_to_unsigned_result->lhs));
   ASSERT_TRUE(ps_node_get_type(fp_to_unsigned_result) != NULL);
@@ -22393,7 +22391,7 @@ static void test_type_metadata_bridge() {
       fp_to_unsigned_result));
 
   node_t typed_cast_ptr = {0};
-  typed_cast_ptr.kind = ND_CAST;
+  test_set_resolved_node_kind(&typed_cast_ptr, ND_CAST);
   test_bind_node_type(&typed_cast_ptr, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_node_cast_i64_extension_info(
@@ -22404,7 +22402,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, cast_needs_i64);
 
   node_t typed_incomplete_cast = {0};
-  typed_incomplete_cast.kind = ND_CAST;
+  test_set_resolved_node_kind(&typed_incomplete_cast, ND_CAST);
   test_bind_node_type(&typed_incomplete_cast, ps_type_new_tag(TK_STRUCT, "Incomplete", 10, 0, 0));
   ASSERT_TRUE(ps_node_cast_i64_extension_info(
       &typed_incomplete_cast, &cast_target_size, &cast_widen_zext,
@@ -24824,7 +24822,7 @@ static void test_type_metadata_bridge() {
   for (int i = 0; body->body[i]; i++) {
     node_t *candidate = body->body[i];
     if (candidate->kind == ND_ASSIGN && candidate->rhs &&
-        candidate->rhs->kind == ND_CAST) {
+        psx_resolution_node_kind(candidate->rhs) == ND_CAST) {
       void_ptr_call = candidate->rhs->lhs;
       break;
     }

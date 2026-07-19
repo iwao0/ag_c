@@ -815,7 +815,7 @@ static void semantic_resolve_source_cast(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_source_cast_t *cast) {
-  if (!cast || !cast->base.is_source_cast) return;
+  if (!cast || cast->base.kind != ND_SOURCE_CAST) return;
   if (!ps_node_prepare_resolution_state_for_size_in(
           ps_ctx_resolution_store(semantic_context),
           ps_ctx_arena(semantic_context), (node_t *)cast,
@@ -831,10 +831,14 @@ static void semantic_resolve_source_cast(
     return;
   const psx_type_t *canonical =
       ps_ctx_type_by_id_in(semantic_context, target_type.type_id);
-  if (canonical)
+  if (canonical) {
     ps_node_bind_qual_type(
         ps_ctx_resolution_store(semantic_context),
         (node_t *)cast, canonical, target_type);
+    psx_resolution_node_set_kind(
+        ps_ctx_resolution_store(semantic_context),
+        (node_t *)cast, ND_CAST);
+  }
 }
 
 static void semantic_resolve_compound_literal(
@@ -1299,7 +1303,7 @@ static void semantic_transform_node(
       semantic_bind_size_query_result_type(
           traversal->semantic_context, node);
       break;
-    case ND_CAST:
+    case ND_SOURCE_CAST:
       semantic_transform_node(node->lhs, traversal);
       semantic_resolve_source_cast(
           traversal->semantic_context, traversal->global_registry,

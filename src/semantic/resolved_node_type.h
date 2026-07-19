@@ -104,6 +104,10 @@ int ps_node_is_source_assignment(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_set_source_assignment(
     psx_resolution_store_t *store, node_t *node, int enabled);
+int ps_node_is_source_cast(
+    const psx_resolution_store_t *store, const node_t *node);
+void ps_node_set_source_cast(
+    psx_resolution_store_t *store, node_t *node, int enabled);
 int ps_node_is_implicit_int_return(
     const psx_resolution_store_t *store, const node_t *node);
 void ps_node_set_implicit_int_return(

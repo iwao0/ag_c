@@ -107,6 +107,7 @@ typedef struct {
 
 typedef struct {
   unsigned char is_source_assignment;
+  unsigned char is_source_cast;
   unsigned char is_decl_initializer;
   unsigned char is_implicit_int_return;
   unsigned char widen_zext_i64;

@@ -87,7 +87,8 @@ static void lower_source_cast_node(
       ps_lowering_resolution_store(context->lowering_context);
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
-  if (!node || node->kind != ND_CAST || !node->is_source_cast ||
+  if (!node || psx_resolution_node_kind(store, node) != ND_CAST ||
+      !ps_node_is_source_cast(store, node) ||
       !state)
     return;
   psx_source_cast_resolution_t *resolution =

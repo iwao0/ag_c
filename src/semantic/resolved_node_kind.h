@@ -19,6 +19,7 @@ typedef enum {
   ND_VLA_ALLOC,
   ND_FP_TO_INT,
   ND_INT_TO_FP,
+  ND_CAST,
   ND_VARARG_CURSOR,
 } psx_resolved_node_kind_t;
 
