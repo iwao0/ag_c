@@ -11079,6 +11079,21 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "int value = 1; return value[0]; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS,
       ND_SUBSCRIPT);
+  assert_direct_function_rejection(
+      "int __direct_negate_pointer(void) { "
+      "int *value = 0; return -value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+      ND_UNARY_NEGATE);
+  assert_direct_function_rejection(
+      "int __direct_real_pointer(void) { "
+      "int *value = 0; return __real__ value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+      ND_CREAL);
+  assert_direct_function_rejection(
+      "int __direct_imag_pointer(void) { "
+      "int *value = 0; return __imag__ value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+      ND_CIMAG);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25496,6 +25511,15 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message(
       "int main(void) { int value=1; return value[0]; }",
       "サブスクリプトの両辺ともポインタ/配列ではありません");
+  expect_parse_fail_with_message(
+      "int main(void) { int *value=0; return -value; }",
+      "単項 - のオペランドは算術型でなければなりません");
+  expect_parse_fail_with_message(
+      "int main(void) { int *value=0; return __real__ value; }",
+      "__real__ のオペランドは算術型でなければなりません");
+  expect_parse_fail_with_message(
+      "int main(void) { int *value=0; return __imag__ value; }",
+      "__imag__ のオペランドは算術型でなければなりません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",

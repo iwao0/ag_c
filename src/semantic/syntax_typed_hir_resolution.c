@@ -1701,7 +1701,11 @@ static int preflight_direct_expression_impl(
         psx_resolve_arithmetic_unary_result_qual_type_in(
             context->semantic_context, syntax->kind,
             operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+    if (result.type_id == PSX_TYPE_ID_INVALID)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+          syntax);
     if (qual_type) *qual_type = result;
     return 1;
   }

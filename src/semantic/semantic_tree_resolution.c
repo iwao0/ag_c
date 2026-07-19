@@ -157,6 +157,22 @@ static int diagnose_direct_function_rejection(
           "サブスクリプトの両辺ともポインタ/配列ではありません "
           "(C11 6.5.2.1p1)");
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC: {
+      const char *operator_name =
+          failure->source_node_kind == ND_UNARY_NEGATE
+              ? "単項 -"
+              : failure->source_node_kind == ND_CREAL
+                    ? "__real__"
+                    : failure->source_node_kind == ND_CIMAG
+                          ? "__imag__"
+                          : NULL;
+      if (!operator_name) return 0;
+      ps_diag_ctx_in(
+          diagnostics, token, "unary",
+          "%s のオペランドは算術型でなければなりません",
+          operator_name);
+      return 1;
+    }
     default:
       return 0;
   }
