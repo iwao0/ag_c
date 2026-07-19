@@ -11064,6 +11064,16 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "struct S { int x; } value = {0}; return value.y; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND,
       ND_MEMBER_ACCESS);
+  assert_direct_function_rejection(
+      "int __direct_deref_nonpointer(void) { "
+      "int value = 1; return *value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_REQUIRES_POINTER,
+      ND_UNARY_DEREF);
+  assert_direct_function_rejection(
+      "int __direct_deref_void_pointer(void) { "
+      "void *value = 0; return *value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_VOID_POINTER,
+      ND_UNARY_DEREF);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {
@@ -25475,6 +25485,9 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
   expect_parse_fail_with_message("int main() { int x; int *p=&x; return *(void *)p; }",
                                  "void* の deref はできません");
+  expect_parse_fail_with_message(
+      "int main(void) { int value=1; return *value; }",
+      "deref のオペランドはポインタ型でなければなりません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",

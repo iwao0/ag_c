@@ -1201,6 +1201,37 @@ static int resolve_direct_member_access(
   return 0;
 }
 
+static int resolve_direct_deref_operand(
+    direct_resolution_context_t *context,
+    const node_t *syntax, psx_qual_type_t *result_type) {
+  if (!context || !syntax || syntax->kind != ND_UNARY_DEREF ||
+      !syntax->lhs)
+    return 0;
+  psx_qual_type_t operand_type;
+  if (!preflight_direct_expression(
+          context, syntax->lhs, &operand_type))
+    return 0;
+  psx_deref_operand_status_t status =
+      psx_resolve_deref_operand_qual_type_in(
+          context->semantic_context, operand_type);
+  if (status == PSX_DEREF_OPERAND_NOT_POINTER)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_REQUIRES_POINTER,
+        syntax);
+  if (status == PSX_DEREF_OPERAND_VOID_POINTER)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_VOID_POINTER,
+        syntax);
+  psx_qual_type_t result =
+      psx_resolve_indirection_result_qual_type_in(
+          context->semantic_context, operand_type);
+  if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
+  if (result_type) *result_type = result;
+  return 1;
+}
+
 static int preflight_direct_lvalue(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type) {
@@ -1220,19 +1251,8 @@ static int preflight_direct_lvalue(
     return 1;
   }
   if (syntax->kind == ND_UNARY_DEREF) {
-    psx_qual_type_t operand_type;
-    if (!preflight_direct_expression(
-            context, syntax->lhs, &operand_type) ||
-        psx_resolve_deref_operand_qual_type_in(
-            context->semantic_context, operand_type) !=
-            PSX_DEREF_OPERAND_OK)
-      return 0;
-    psx_qual_type_t result =
-        psx_resolve_indirection_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
-    if (qual_type) *qual_type = result;
-    return 1;
+    return resolve_direct_deref_operand(
+        context, syntax, qual_type);
   }
   if (syntax->kind == ND_SUBSCRIPT) {
     return preflight_direct_expression(
@@ -1630,19 +1650,8 @@ static int preflight_direct_expression_impl(
     return 1;
   }
   if (syntax->kind == ND_UNARY_DEREF) {
-    psx_qual_type_t operand_type;
-    if (!preflight_direct_expression(
-            context, syntax->lhs, &operand_type) ||
-        psx_resolve_deref_operand_qual_type_in(
-            context->semantic_context, operand_type) !=
-            PSX_DEREF_OPERAND_OK)
-      return 0;
-    psx_qual_type_t result =
-        psx_resolve_indirection_result_qual_type_in(
-            context->semantic_context, operand_type);
-    if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
-    if (qual_type) *qual_type = result;
-    return 1;
+    return resolve_direct_deref_operand(
+        context, syntax, qual_type);
   }
   if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
     psx_qual_type_t operand_type;

@@ -139,6 +139,18 @@ static int diagnose_direct_function_rejection(
               diagnostics, DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
           failure->source_name_length, failure->source_name);
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_REQUIRES_POINTER:
+      ps_diag_ctx_in(
+          diagnostics, token, "deref",
+          "deref のオペランドはポインタ型でなければなりません "
+          "(C11 6.5.3.2p2)");
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_VOID_POINTER:
+      ps_diag_ctx_in(
+          diagnostics, token, "deref",
+          "void* の deref はできません — キャストが必要です "
+          "(C11 6.5.3.2)");
+      return 1;
     default:
       return 0;
   }
