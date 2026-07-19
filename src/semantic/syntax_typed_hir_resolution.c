@@ -4483,11 +4483,15 @@ static int preflight_direct_statement_impl(
         return 0;
       const psx_type_t *case_type = ps_ctx_type_by_id_in(
           context->semantic_context, case_qual_type.type_id);
-      return case_type &&
-             (case_type->kind == PSX_TYPE_BOOL ||
-              case_type->kind == PSX_TYPE_INTEGER) &&
-             direct_integer_constant(context, syntax->lhs, &value) &&
-             bind_direct_case_value(
+      if (!case_type ||
+          (case_type->kind != PSX_TYPE_BOOL &&
+           case_type->kind != PSX_TYPE_INTEGER) ||
+          !direct_integer_constant(context, syntax->lhs, &value))
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
+            syntax);
+      return bind_direct_case_value(
                  context, (const node_case_t *)syntax, value) &&
              preflight_direct_statement(context, syntax->rhs);
     }

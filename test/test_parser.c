@@ -11039,6 +11039,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "_Static_assert(0, \"ng\"); return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED,
       ND_STATIC_ASSERT);
+  assert_direct_function_rejection(
+      "int __direct_case_not_constant(int value) { "
+      "switch (value) { case value: return 1; } return 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
+      ND_CASE);
 }
 
 static void test_direct_string_pointer_initializer_boundary() {

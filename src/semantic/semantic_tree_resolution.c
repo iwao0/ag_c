@@ -102,6 +102,14 @@ static int diagnose_direct_function_rejection(
           "%s", diag_message_for_in(
                     diagnostics, DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT:
+      ps_diag_ctx_in(
+          diagnostics, token, "case",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+          "case label");
+      return 1;
     default:
       return 0;
   }
