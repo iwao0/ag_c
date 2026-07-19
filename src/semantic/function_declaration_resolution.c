@@ -1,6 +1,7 @@
 #include "function_declaration_resolution.h"
 
-#include "../parser/gvar_public.h"
+#include "scope_graph.h"
+
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 
@@ -20,17 +21,25 @@ void psx_resolve_function_declaration(
   }
   psx_global_registry_t *global_registry = request->global_registry;
   psx_semantic_context_t *semantic_context = request->semantic_context;
-  if (!ps_ctx_scope_graph(semantic_context) ||
-      ps_ctx_scope_graph(semantic_context) !=
-          ps_global_registry_scope_graph(global_registry))
+  psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
+  if (!scope_graph ||
+      scope_graph != ps_global_registry_scope_graph(global_registry))
     return;
-  if (ps_find_global_var_in(
-          global_registry, request->name, request->name_len)) {
+  const psx_scope_declaration_t *existing =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name, request->name_len);
+  if (existing && (existing->kind == PSX_DECL_GLOBAL_OBJECT ||
+                   existing->kind == PSX_DECL_LOCAL_OBJECT)) {
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
     return;
   }
   if (!request->function_type->base ||
       !ps_type_is_well_formed(request->function_type)) {
+    return;
+  }
+  if (existing && existing->kind != PSX_DECL_FUNCTION) {
+    resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
   resolution->function = ps_ctx_register_function_type_in(

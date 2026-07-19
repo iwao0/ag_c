@@ -1,5 +1,7 @@
 #include "global_declaration_resolution.h"
 
+#include "scope_graph.h"
+
 #include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
@@ -64,9 +66,9 @@ void psx_resolve_global_declaration(
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_global_registry_t *global_registry = request->global_registry;
-  if (!ps_ctx_scope_graph(semantic_context) ||
-      ps_ctx_scope_graph(semantic_context) !=
-          ps_global_registry_scope_graph(global_registry))
+  psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
+  if (!scope_graph ||
+      scope_graph != ps_global_registry_scope_graph(global_registry))
     return;
 
   if (type_contains_incomplete_record(
@@ -92,28 +94,29 @@ void psx_resolve_global_declaration(
       PSX_TYPE_ID_INVALID) {
     return;
   }
-  if (ps_ctx_has_function_name_in(
-          semantic_context, request->name, request->name_len)) {
-    resolution->status = PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;
-    return;
+  const psx_scope_declaration_t *existing =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, request->name, request->name_len);
+  if (existing) {
+    switch (existing->kind) {
+    case PSX_DECL_FUNCTION:
+      resolution->status = PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;
+      return;
+    case PSX_DECL_TYPEDEF:
+      resolution->status = PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
+      return;
+    case PSX_DECL_ENUM_CONSTANT:
+      resolution->status = PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
+      return;
+    case PSX_DECL_GLOBAL_OBJECT:
+      resolution->existing = existing->payload;
+      if (!resolution->existing) return;
+      break;
+    default:
+      return;
+    }
   }
-  psx_typedef_info_t typedef_info;
-  if (ps_ctx_find_typedef_name_in(
-          semantic_context, request->name, request->name_len,
-          &typedef_info)) {
-    resolution->status = PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
-    return;
-  }
-  long long enum_value = 0;
-  if (ps_ctx_find_enum_const_in(
-          semantic_context, request->name, request->name_len,
-          &enum_value)) {
-    resolution->status = PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
-    return;
-  }
-
-  resolution->existing = ps_find_global_var_in(
-      global_registry, request->name, request->name_len);
   if (resolution->existing) {
     const psx_type_t *existing_type =
         ps_gvar_get_decl_type(resolution->existing);

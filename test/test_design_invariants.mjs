@@ -3310,9 +3310,6 @@ if (contextFreeOrdinaryNamespaceCall.test(
     !/ps_ctx_enum_const_value_by_declaration_id_in\s*\(/.test(
       identifierResolutionSource,
     ) ||
-    !/ps_ctx_find_typedef_name_in\s*\(/.test(
-      globalDeclarationResolutionSource,
-    ) ||
     !/psx_apply_parsed_typedef_declaration_in_contexts\s*\(/.test(
       frontendDeclarationSources,
     ) ||
@@ -3331,10 +3328,16 @@ const semanticLoweringPassSource = await readFile(
   "src/lowering/semantic_lowering_pass.c",
   "utf8",
 );
-if (!/ps_find_global_var_in\s*\(/.test(
+if (!/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
       globalDeclarationResolutionSource,
     ) ||
-    !/ps_find_global_var_in\s*\(/.test(
+    !/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
+      functionDeclarationResolutionSource,
+    ) ||
+    /\b(?:ps_find_global_var_in|ps_ctx_has_function_name_in|ps_ctx_find_typedef_name_in|ps_ctx_find_enum_const_in)\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    /\bps_find_global_var_in\s*\(/.test(
       functionDeclarationResolutionSource,
     ) ||
     !/ps_register_global_var_in\s*\(/.test(
@@ -3357,7 +3360,7 @@ if (!/ps_find_global_var_in\s*\(/.test(
       semanticLoweringPassSource,
     )) {
   throw new Error(
-    "global declaration and semantic lowering must use explicit registries",
+    "global declarations must classify names through the scope graph and lowering must use explicit registries",
   );
 }
 const parserSource = await readFile("src/parser/parser.c", "utf8");

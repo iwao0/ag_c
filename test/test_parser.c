@@ -12928,6 +12928,33 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
 
+  static char resolution_typedef_name[] = "__resolution_typedef";
+  psx_typedef_declaration_resolution_t typedef_resolution;
+  psx_resolve_typedef_declaration(
+      &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = resolution_typedef_name,
+          .name_len = (int)sizeof(resolution_typedef_name) - 1,
+          .type = integer,
+      },
+      &typedef_resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
+  resolution_request.name = resolution_typedef_name;
+  resolution_request.name_len = (int)sizeof(resolution_typedef_name) - 1;
+  resolution_request.is_definition = 0;
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_TYPE_CONFLICT, resolution.status);
+
+  static char resolution_enum_name[] = "__resolution_enum";
+  ASSERT_TRUE(test_semantic_define_enum_const(
+      resolution_enum_name, (int)sizeof(resolution_enum_name) - 1, 3));
+  resolution_request.name = resolution_enum_name;
+  resolution_request.name_len = (int)sizeof(resolution_enum_name) - 1;
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_TYPE_CONFLICT, resolution.status);
+
   static char checkpoint_name[] = "__resolution_checkpoint";
   psx_ctx_define_function_name_in(
       test_semantic_context(), checkpoint_name,
@@ -13154,6 +13181,82 @@ static void test_global_declaration_resolution_boundary() {
       &internal));
   ASSERT_TRUE(internal.global->is_static);
   ASSERT_EQ(8, ps_gvar_decl_sizeof(internal.global, 0));
+
+  static char boundary_function_name[] = "__boundary_function_name";
+  psx_type_t *function_type =
+      ps_type_new_function(ps_type_clone(integer));
+  psx_function_declaration_resolution_t function_resolution;
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = boundary_function_name,
+          .name_len = (int)sizeof(boundary_function_name) - 1,
+          .function_type = function_type,
+      },
+      &function_resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = boundary_function_name,
+          .name_len = (int)sizeof(boundary_function_name) - 1,
+          .type = integer,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT,
+            rejected_resolution.status);
+
+  static char boundary_typedef_name[] = "__boundary_typedef_name";
+  psx_typedef_declaration_resolution_t typedef_resolution;
+  psx_resolve_typedef_declaration(
+      &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = boundary_typedef_name,
+          .name_len = (int)sizeof(boundary_typedef_name) - 1,
+          .type = integer,
+      },
+      &typedef_resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = boundary_typedef_name,
+          .name_len = (int)sizeof(boundary_typedef_name) - 1,
+          .type = integer,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT,
+            rejected_resolution.status);
+
+  static char boundary_enum_name[] = "__boundary_enum_name";
+  psx_enum_constant_resolution_t enum_resolution;
+  psx_resolve_enum_constant(
+      &(psx_enum_constant_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = boundary_enum_name,
+          .name_len = (int)sizeof(boundary_enum_name) - 1,
+          .value = 5,
+      },
+      &enum_resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OK, enum_resolution.status);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = boundary_enum_name,
+          .name_len = (int)sizeof(boundary_enum_name) - 1,
+          .type = integer,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT,
+            rejected_resolution.status);
 }
 
 static void test_declaration_pipeline_order_boundary() {
