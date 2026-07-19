@@ -3224,6 +3224,33 @@ const typedefDeclarationResolutionSource = await readFile(
   "src/semantic/typedef_declaration_resolution.c",
   "utf8",
 );
+const ordinarySemanticContextHeaderSource = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
+const functionPublicHeaderSource = await readFile(
+  "src/parser/function_public.h",
+  "utf8",
+);
+const ordinaryNodeUtilsSource = await readFile(
+  "src/parser/node_utils.c",
+  "utf8",
+);
+const obsoleteOrdinaryNameApi =
+  /\b(?:psx_resolve_global_object_symbol_in|ps_ctx_has_function_name_in|ps_ctx_has_typedef_in_current_scope_in|ps_ctx_has_enum_const_in_current_scope_in)\s*\(/;
+if (obsoleteOrdinaryNameApi.test([
+      identifierResolutionHeader,
+      identifierResolutionSource,
+      semanticContextOwnershipSource,
+      ordinarySemanticContextHeaderSource,
+      functionPublicHeaderSource,
+      ordinaryNodeUtilsSource,
+    ].join("\n")) ||
+    !/ps_ctx_find_function_symbol_in\s*\(/.test(ordinaryNodeUtilsSource)) {
+  throw new Error(
+    "obsolete registry-specific ordinary-name APIs must not survive the scope graph migration",
+  );
+}
 const globalDeclarationResolutionSource = await readFile(
   "src/semantic/global_declaration_resolution.c",
   "utf8",

@@ -3,14 +3,11 @@
 
 #include "core.h"
 #include "type.h"
-#include <stdbool.h>
 #include <stddef.h>
 
 typedef struct psx_function_symbol_t psx_function_symbol_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
-bool ps_ctx_has_function_name_in(
-    psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_is_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
 const psx_function_symbol_t *ps_ctx_find_function_symbol_in(

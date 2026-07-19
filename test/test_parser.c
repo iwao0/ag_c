@@ -12896,7 +12896,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   resolution_request.function_type = resolution_function_type;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
-  ASSERT_TRUE(ps_ctx_has_function_name_in(test_semantic_context(), "__resolution_fn", 15));
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+      test_semantic_context(), "__resolution_fn", 15) != NULL);
   ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(), "__resolution_fn", 15) != NULL);
 
   psx_resolve_function_declaration(&resolution_request, &resolution);

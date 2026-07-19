@@ -110,8 +110,6 @@ void psx_ctx_validate_goto_refs_in(
 void ps_ctx_reset_function_names_in(psx_semantic_context_t *context);
 const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
     psx_semantic_context_t *context, char *name, int len);
-bool ps_ctx_has_function_name_in(
-    psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_track_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
 const psx_function_symbol_t *ps_ctx_register_function_type_in(
@@ -244,8 +242,6 @@ bool ps_ctx_find_enum_const_at_in_contexts(
 bool ps_ctx_enum_const_value_by_declaration_id_in(
     psx_semantic_context_t *context, psx_decl_id_t declaration_id,
     long long *out_value);
-int ps_ctx_has_enum_const_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len);
 
 typedef struct {
   const psx_semantic_type_table_t *decl_type_table;
@@ -293,8 +289,6 @@ bool ps_ctx_find_typedef_name_at_in_contexts(
     psx_local_registry_t *local_registry,
     char *name, int len, psx_local_lookup_point_t point,
     psx_typedef_info_t *out);
-int ps_ctx_has_typedef_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len);
 bool psx_ctx_find_typedef_layout_in(
     psx_semantic_context_t *context,
     char *name, int len, int *out_size, int *out_alignment);

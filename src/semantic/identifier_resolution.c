@@ -8,13 +8,6 @@
 
 #include <string.h>
 
-global_var_t *psx_resolve_global_object_symbol_in(
-    psx_global_registry_t *global_registry,
-    char *name, int name_len) {
-  if (!name || name_len <= 0) return NULL;
-  return ps_find_global_var_in(global_registry, name, name_len);
-}
-
 static psx_scope_graph_t *shared_identifier_scope_graph(
     const psx_identifier_resolution_request_t *request) {
   if (!request) return NULL;

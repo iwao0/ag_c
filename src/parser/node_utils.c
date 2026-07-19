@@ -378,7 +378,7 @@ int ps_gvar_symbol_ref_named_function_in(
     if (out_len) *out_len = 0;
     return 0;
   }
-  if (!ps_ctx_has_function_name_in(semantic_context, name, len)) {
+  if (!ps_ctx_find_function_symbol_in(semantic_context, name, len)) {
     if (out_name) *out_name = NULL;
     if (out_len) *out_len = 0;
     return 0;

@@ -1542,21 +1542,6 @@ static enum_const_t *find_enum_const_in(
              : NULL;
 }
 
-// 現スコープ深度に限った検索（同名再定義の検出用）。
-static enum_const_t *find_enum_const_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  if (!context || !context->scope_graph || !name || len <= 0) return NULL;
-  psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
-      context->scope_graph,
-      psx_scope_graph_current_scope(context->scope_graph),
-      PSX_NAMESPACE_ORDINARY, name, len);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(context->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_ENUM_CONSTANT
-             ? declaration->payload
-             : NULL;
-}
-
 /* enum 定数を登録する。
  * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
  * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
@@ -1647,11 +1632,6 @@ bool ps_ctx_find_enum_const_at_in_contexts(
   return true;
 }
 
-int ps_ctx_has_enum_const_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  return find_enum_const_in_current_scope_in(context, name, len) != NULL;
-}
-
 static typedef_name_t *find_typedef_in(
     psx_semantic_context_t *context, char *name, int len) {
   if (!context || !context->scope_graph || !name || len <= 0) return NULL;
@@ -1663,26 +1643,6 @@ static typedef_name_t *find_typedef_in(
   return declaration && declaration->kind == PSX_DECL_TYPEDEF
              ? declaration->payload
              : NULL;
-}
-
-// 現スコープ深度に限った検索（同名再定義の検出用）。
-static typedef_name_t *find_typedef_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  if (!context || !context->scope_graph || !name || len <= 0) return NULL;
-  psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
-      context->scope_graph,
-      psx_scope_graph_current_scope(context->scope_graph),
-      PSX_NAMESPACE_ORDINARY, name, len);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(context->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_TYPEDEF
-             ? declaration->payload
-             : NULL;
-}
-
-int ps_ctx_has_typedef_in_current_scope_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  return find_typedef_in_current_scope_in(context, name, len) != NULL;
 }
 
 static psx_runtime_declarator_application_t *
@@ -2040,11 +2000,6 @@ static void define_function_name_in(
 void psx_ctx_define_function_name_in(
     psx_semantic_context_t *context, char *name, int len) {
   define_function_name_in(context, name, len);
-}
-
-bool ps_ctx_has_function_name_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  return ps_ctx_find_function_symbol_in(context, name, len) != NULL;
 }
 
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
