@@ -53,6 +53,8 @@ const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
     psx_semantic_expr_id_t expression_id);
 psx_qual_type_t ps_ctx_intern_qual_type_in(
     psx_semantic_context_t *context, const psx_type_t *type);
+psx_qual_type_t ps_ctx_intern_declaration_qual_type_in(
+    psx_semantic_context_t *context, const psx_type_t *type);
 psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     psx_semantic_context_t *context,
     psx_integer_kind_t integer_kind, int is_unsigned,
@@ -250,9 +252,8 @@ int ps_ctx_has_enum_const_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
 
 typedef struct {
+  const psx_semantic_type_table_t *decl_type_table;
   psx_qual_type_t decl_qual_type;
-  /* Compatibility view materialized from decl_qual_type on lookup. */
-  const psx_type_t *decl_type;
   const psx_runtime_declarator_application_t *runtime_application;
 } psx_typedef_info_t;
 
@@ -265,11 +266,13 @@ static inline psx_qual_type_t ps_ctx_typedef_decl_qual_type(
 
 static inline const psx_type_t *ps_ctx_typedef_decl_type(
     const psx_typedef_info_t *info) {
-  return info ? info->decl_type : NULL;
+  return info
+             ? psx_semantic_type_table_lookup_qual_type(
+                   info->decl_type_table, info->decl_qual_type)
+             : NULL;
 }
 
-/* typedef 名を登録する。decl_qual_type が正本で、未設定の旧入力は
- * decl_type を intern して正本化する。
+/* typedef 名を登録する。decl_type_table + decl_qual_type が正本。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = 型欠落または型衝突。 */
 int ps_ctx_register_typedef_name_in_contexts(
     psx_semantic_context_t *context,

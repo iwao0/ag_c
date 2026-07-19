@@ -950,6 +950,16 @@ static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
   return intern_test_qual_type(type).type_id;
 }
 
+static void set_test_typedef_fixture_type(
+    psx_typedef_info_t *info, const psx_type_t *type) {
+  ASSERT_TRUE(info != NULL);
+  ASSERT_TRUE(type != NULL);
+  info->decl_type_table = ps_ctx_semantic_type_table_in(
+      test_semantic_context());
+  info->decl_qual_type = intern_test_qual_type(type);
+  ASSERT_TRUE(ps_ctx_typedef_decl_type(info) != NULL);
+}
+
 static void set_test_global_fixture_type_in(
     psx_semantic_context_t *semantic_context, global_var_t *global,
     const psx_type_t *type) {
@@ -13507,12 +13517,14 @@ static void test_aggregate_body_phase_boundary() {
       (char *)"DeferredAlias", 13, &deferred_alias_type));
 
   psx_typedef_info_t deferred_alias = {0};
-  deferred_alias.decl_type = ps_type_new_integer(TK_INT, 4, 0);
+  set_test_typedef_fixture_type(
+      &deferred_alias, ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_TRUE(test_semantic_define_typedef_name(
       (char *)"DeferredAlias", 13, &deferred_alias));
   psx_typedef_info_t deferred_parameter = {0};
-  deferred_parameter.decl_type =
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  set_test_typedef_fixture_type(
+      &deferred_parameter,
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   ASSERT_TRUE(test_semantic_define_typedef_name(
       (char *)"DeferredParam", 13, &deferred_parameter));
 
@@ -22877,7 +22889,8 @@ static void test_type_metadata_bridge() {
   psx_type_t *typedef_shape_int_ptr =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   psx_typedef_info_t typedef_shape_a = {0};
-  typedef_shape_a.decl_type = typedef_shape_int_ptr;
+  set_test_typedef_fixture_type(
+      &typedef_shape_a, typedef_shape_int_ptr);
   ASSERT_TRUE(test_semantic_define_typedef_name((char *)typedef_shape_name,
                                           (int)sizeof(typedef_shape_name) - 1,
                                           &typedef_shape_a));
@@ -22886,15 +22899,17 @@ static void test_type_metadata_bridge() {
       (char *)typedef_shape_name, (int)sizeof(typedef_shape_name) - 1,
       &typedef_shape_same_type));
   psx_typedef_info_t typedef_shape_different = typedef_shape_a;
-  typedef_shape_different.decl_type =
-      ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  set_test_typedef_fixture_type(
+      &typedef_shape_different,
+      ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
   ASSERT_TRUE(!test_semantic_define_typedef_name((char *)typedef_shape_name,
                                            (int)sizeof(typedef_shape_name) - 1,
                                            &typedef_shape_different));
   const char typedef_sync_name[] = "__tm_typedef_sync_from_type";
   psx_typedef_info_t typedef_sync = {0};
-  typedef_sync.decl_type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
+  set_test_typedef_fixture_type(
+      &typedef_sync,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(test_semantic_define_typedef_name((char *)typedef_sync_name,
                                           (int)sizeof(typedef_sync_name) - 1,
                                           &typedef_sync));
@@ -22918,6 +22933,8 @@ static void test_type_metadata_bridge() {
 
   const char typedef_identity_name[] = "__tm_typedef_identity";
   const psx_typedef_info_t typedef_identity = {
+      .decl_type_table = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
       .decl_qual_type = typedef_sync_qual_type,
   };
   ASSERT_TRUE(test_semantic_define_typedef_name(
@@ -22932,9 +22949,18 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(typedef_sync_qual_type.type_id,
             ps_ctx_typedef_decl_qual_type(
                 &typedef_identity_out).type_id);
-  const psx_typedef_info_t typedef_identity_mismatch = {
+  const psx_typedef_info_t typedef_identity_without_table = {
       .decl_qual_type = typedef_sync_qual_type,
-      .decl_type = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
+  };
+  ASSERT_TRUE(!test_semantic_define_typedef_name(
+      (char *)"__tm_typedef_identity_without_table",
+      (int)sizeof("__tm_typedef_identity_without_table") - 1,
+      &typedef_identity_without_table));
+  const psx_typedef_info_t typedef_identity_mismatch = {
+      .decl_type_table = ps_ctx_semantic_type_table_in(
+          test_semantic_context()),
+      .decl_qual_type = intern_test_qual_type(
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)),
   };
   ASSERT_TRUE(!test_semantic_define_typedef_name(
       (char *)typedef_identity_name,
@@ -24316,17 +24342,17 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   psx_typedef_info_t td_dp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_DP", 8, &td_dp));
-  ASSERT_TRUE(td_dp.decl_type != NULL && td_dp.decl_type->base != NULL);
+  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_dp) != NULL && ps_ctx_typedef_decl_type(&td_dp)->base != NULL);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            td_dp.decl_type->base->floating_kind);
-  assert_canonical_type_signature(td_dp.decl_type, "p<f64>");
+            ps_ctx_typedef_decl_type(&td_dp)->base->floating_kind);
+  assert_canonical_type_signature(ps_ctx_typedef_decl_type(&td_dp), "p<f64>");
   psx_typedef_info_t td_fp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_FP", 8, &td_fp));
-  ASSERT_TRUE(td_fp.decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, td_fp.decl_type->kind);
-  assert_canonical_type_signature(td_fp.decl_type, "p<f64()>");
-  const psx_type_t *td_fp_decl_type = td_fp.decl_type;
-  ASSERT_TRUE(td_fp.decl_type == td_fp_decl_type);
+  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_fp) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_ctx_typedef_decl_type(&td_fp)->kind);
+  assert_canonical_type_signature(ps_ctx_typedef_decl_type(&td_fp), "p<f64()>");
+  const psx_type_t *td_fp_decl_type = ps_ctx_typedef_decl_type(&td_fp);
+  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_fp) == td_fp_decl_type);
   fn = as_function_definition(parsed_code[1]);
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
@@ -24353,18 +24379,18 @@ static void test_type_metadata_bridge() {
   psx_typedef_info_t tm817_get_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET", 9, &tm817_get_td));
   assert_canonical_type_signature(
-      tm817_get_td.decl_type, "p<p<i32>()>");
-  ASSERT_EQ(1, ps_type_pointer_depth(tm817_get_td.decl_type));
+      ps_ctx_typedef_decl_type(&tm817_get_td), "p<p<i32>()>");
+  ASSERT_EQ(1, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_get_td)));
   psx_typedef_info_t tm817_get2_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET2", 10, &tm817_get2_td));
   assert_canonical_type_signature(
-      tm817_get2_td.decl_type, "p<p<i32>()>");
-  ASSERT_EQ(1, ps_type_pointer_depth(tm817_get2_td.decl_type));
+      ps_ctx_typedef_decl_type(&tm817_get2_td), "p<p<i32>()>");
+  ASSERT_EQ(1, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_get2_td)));
   psx_typedef_info_t tm817_pp_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_PP", 8, &tm817_pp_td));
   assert_canonical_type_signature(
-      tm817_pp_td.decl_type, "p<p<i32(i32)>>");
-  ASSERT_EQ(2, ps_type_pointer_depth(tm817_pp_td.decl_type));
+      ps_ctx_typedef_decl_type(&tm817_pp_td), "p<p<i32(i32)>>");
+  ASSERT_EQ(2, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_pp_td)));
   fn = as_function_definition(parsed_code[2]);
   lvar_t *tm817_get_lvar = find_func_lvar(fn, "get");
   ASSERT_TRUE(tm817_get_lvar != NULL);
@@ -27189,8 +27215,13 @@ static void test_compilation_session_registry_isolation() {
   ps_local_registry_reset_in(first.local_registry);
   ps_ctx_enter_block_scope_in(first.semantic_context);
   ps_decl_enter_scope_in(first.local_registry);
+  const psx_type_t *isolated_typedef_decl_type =
+      ps_type_new_integer(TK_INT, 4, 0);
   const psx_typedef_info_t isolated_typedef = {
-      .decl_type = ps_type_new_integer(TK_INT, 4, 0),
+      .decl_type_table = ps_ctx_semantic_type_table_in(
+          first.semantic_context),
+      .decl_qual_type = ps_ctx_intern_qual_type_in(
+          first.semantic_context, isolated_typedef_decl_type),
   };
   ASSERT_TRUE(ps_ctx_register_typedef_name_in_contexts(
       first.semantic_context, first.local_registry,

@@ -9133,12 +9133,25 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     ) ||
     /\bpsx_type_t\b/.test(typedefSymbolStruct[1]) ||
     !typedefInfoStruct ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
+      typedefInfoStruct[1],
+    ) ||
     !/psx_qual_type_t\s+decl_qual_type\s*;/.test(
       typedefInfoStruct[1],
+    ) ||
+    /\bpsx_type_t\b/.test(typedefInfoStruct[1]) ||
+    !/ps_ctx_typedef_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      semanticContextHeaderSource,
     ) ||
     /\bt->decl_type\b/.test(semanticContextOwnershipSource) ||
     !/typedef_record_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
       semanticContextOwnershipSource,
+    ) ||
+    !/resolve_typedef_decl_qual_type\s*\([^]*?info->decl_type_table\s*!=\s*context->semantic_types/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_intern_declaration_qual_type_in\s*\([^]*?request->type/.test(
+      typedefDeclarationResolutionSource,
     ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(
       functionDefinitionResolutionSource,

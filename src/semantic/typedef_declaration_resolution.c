@@ -56,8 +56,16 @@ void psx_resolve_typedef_declaration(
     }
   }
 
+  psx_qual_type_t decl_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          semantic_context, request->type);
+  if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;
+    return;
+  }
   const psx_typedef_info_t info = {
-      .decl_type = request->type,
+      .decl_type_table = ps_ctx_semantic_type_table_in(semantic_context),
+      .decl_qual_type = decl_qual_type,
       .runtime_application = request->runtime_application,
   };
   if (!ps_ctx_register_typedef_name_in_contexts(

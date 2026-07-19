@@ -1750,14 +1750,13 @@ clone_typedef_runtime_application(
   return copy;
 }
 
-static psx_qual_type_t intern_typedef_decl_type(
-    psx_semantic_context_t *context,
-    const psx_type_t *decl_type) {
-  if (!context || !decl_type)
+psx_qual_type_t ps_ctx_intern_declaration_qual_type_in(
+    psx_semantic_context_t *context, const psx_type_t *type) {
+  if (!context || !type)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   psx_type_t *resolved_type = ctx_type_clone_persistent_in(
-      context, decl_type);
+      context, type);
   if (!resolved_type)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
@@ -1769,21 +1768,13 @@ static psx_qual_type_t resolve_typedef_decl_qual_type(
     psx_semantic_context_t *context,
     const psx_typedef_info_t *info) {
   psx_qual_type_t identity = ps_ctx_typedef_decl_qual_type(info);
-  const psx_type_t *decl_type = ps_ctx_typedef_decl_type(info);
-  if (identity.type_id == PSX_TYPE_ID_INVALID)
-    return intern_typedef_decl_type(context, decl_type);
-  if (!psx_semantic_type_table_lookup_qual_type(
-          context ? context->semantic_types : NULL, identity))
+  if (!context || !info ||
+      info->decl_type_table != context->semantic_types ||
+      identity.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_lookup_qual_type(
+          context->semantic_types, identity))
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
-  if (decl_type) {
-    psx_qual_type_t projected = intern_typedef_decl_type(
-        context, decl_type);
-    if (projected.type_id != identity.type_id ||
-        projected.qualifiers != identity.qualifiers)
-      return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                               PSX_TYPE_QUALIFIER_NONE};
-  }
   return identity;
 }
 
@@ -1879,8 +1870,8 @@ bool ps_ctx_find_typedef_name_in(
   if (!t) return false;
   if (out) {
     memset(out, 0, sizeof(*out));
+    out->decl_type_table = context->semantic_types;
     out->decl_qual_type = typedef_record_decl_qual_type(t);
-    out->decl_type = typedef_record_decl_type(context, t);
     out->runtime_application =
         typedef_record_runtime_application(t);
   }
@@ -1905,7 +1896,7 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
   if (!ps_ctx_find_typedef_name_at_in_contexts(
           context, local_registry, name, len, point, &info))
     return false;
-  if (out_type) *out_type = info.decl_type;
+  if (out_type) *out_type = ps_ctx_typedef_decl_type(&info);
   return true;
 }
 
@@ -1935,8 +1926,8 @@ bool ps_ctx_find_typedef_name_at_in_contexts(
   typedef_name_t *type = declaration->payload;
   if (out) {
     *out = (psx_typedef_info_t){
+        .decl_type_table = context->semantic_types,
         .decl_qual_type = typedef_record_decl_qual_type(type),
-        .decl_type = typedef_record_decl_type(context, type),
         .runtime_application =
             typedef_record_runtime_application(type),
     };

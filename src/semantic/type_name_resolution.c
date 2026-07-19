@@ -65,7 +65,8 @@ static const psx_type_t *bind_base_type(
     state->bound_runtime_application = info.runtime_application;
     return apply_reference_qualifiers(
         ps_type_clone_in(
-            ps_ctx_arena(semantic_context), info.decl_type),
+            ps_ctx_arena(semantic_context),
+            ps_ctx_typedef_decl_type(&info)),
         specifier);
   }
   if (specifier->source == PSX_PARSED_DECL_TYPE_TAG &&
