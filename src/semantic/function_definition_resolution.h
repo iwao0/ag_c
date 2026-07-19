@@ -15,7 +15,6 @@ typedef struct lvar_t lvar_t;
 typedef struct {
   char *name;
   int name_len;
-  const psx_type_t *function_type;
   psx_qual_type_t signature_qual_type;
   lvar_t **parameters;
   int parameter_count;

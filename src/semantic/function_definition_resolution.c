@@ -142,7 +142,6 @@ static int resolve_function_definition_header(
   }
   resolution->name = name->str;
   resolution->name_len = name->len;
-  resolution->function_type = canonical_function_type;
   resolution->signature_qual_type = signature;
   resolution->parameters = resolved_parameters;
   resolution->parameter_count = applied.nargs;
@@ -193,6 +192,11 @@ psx_prepare_function_definition_resolution_in_contexts(
           lowering_context, definition, &resolution,
           &compatibility_parameters))
     return NULL;
+  const psx_type_t *compatibility_signature =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          resolution.signature_qual_type);
+  if (!compatibility_signature) return NULL;
   node_function_definition_t *node =
       psx_resolution_node_alloc_in(
           ps_ctx_resolution_store(semantic_context),
@@ -214,7 +218,7 @@ psx_prepare_function_definition_resolution_in_contexts(
   node->is_static = resolution.is_static;
   node->parameters = compatibility_parameters;
   node->parameter_count = resolution.parameter_count;
-  node->signature = resolution.function_type;
+  node->signature = compatibility_signature;
   node->signature_qual_type = resolution.signature_qual_type;
   node->lvars = resolution.locals;
   return node;

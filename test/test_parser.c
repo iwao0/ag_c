@@ -9733,21 +9733,33 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_TRUE(strncmp(
       resolution.name, "__direct_header_value",
       (size_t)resolution.name_len) == 0);
-  ASSERT_TRUE(resolution.function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, resolution.function_type->kind);
-  ASSERT_TRUE(resolution.function_type ==
+  ASSERT_TRUE(resolution.signature_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  const psx_type_t *resolved_function_type =
+      psx_semantic_type_table_lookup_qual_type(
+          types, resolution.signature_qual_type);
+  ASSERT_TRUE(resolved_function_type != NULL);
+  ASSERT_TRUE(resolved_function_type ==
       ps_ctx_get_function_type_in(
           test_semantic_context(), resolution.name,
           resolution.name_len));
-  ASSERT_TRUE(resolution.signature_qual_type.type_id !=
-              PSX_TYPE_ID_INVALID);
+  psx_type_shape_t function_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, resolution.signature_qual_type.type_id, &function_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  psx_qual_type_t return_qual_type = psx_semantic_type_table_base(
+      types, resolution.signature_qual_type.type_id);
+  psx_type_shape_t return_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, return_qual_type.type_id, &return_shape));
+  ASSERT_EQ(PSX_TYPE_INTEGER, return_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, return_shape.integer_kind);
+  ASSERT_EQ(2, function_shape.parameter_count);
   ASSERT_TRUE(psx_semantic_type_table_lookup_qual_type(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
-      resolution.signature_qual_type) == resolution.function_type);
-  ASSERT_EQ(PSX_TYPE_INTEGER, resolution.function_type->base->kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            resolution.function_type->base->integer_kind);
-  ASSERT_EQ(2, resolution.function_type->param_count);
+      resolution.signature_qual_type) == resolved_function_type);
   ASSERT_EQ(2, resolution.parameter_count);
   ASSERT_TRUE(resolution.parameters != NULL);
   ASSERT_TRUE(resolution.parameters[0] != NULL);
@@ -9761,14 +9773,12 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_TRUE(strncmp(
       ps_lvar_name(resolution.parameters[1]), "right", 5) == 0);
   ASSERT_EQ(
-      ps_ctx_intern_qual_type_in(
-          test_semantic_context(),
-          resolution.function_type->param_types[0]).type_id,
+      psx_semantic_type_table_parameter(
+          types, resolution.signature_qual_type.type_id, 0).type_id,
       ps_lvar_decl_type_id(resolution.parameters[0]));
   ASSERT_EQ(
-      ps_ctx_intern_qual_type_in(
-          test_semantic_context(),
-          resolution.function_type->param_types[1]).type_id,
+      psx_semantic_type_table_parameter(
+          types, resolution.signature_qual_type.type_id, 1).type_id,
       ps_lvar_decl_type_id(resolution.parameters[1]));
   ASSERT_TRUE(!resolution.is_static);
   ASSERT_TRUE(!resolution.is_variadic);

@@ -9032,6 +9032,10 @@ const functionDefinitionResolutionSource = await readFile(
   "src/semantic/function_definition_resolution.c",
   "utf8",
 );
+const functionDefinitionHeaderResolutionStruct =
+  functionDefinitionResolutionHeader.match(
+    /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_function_definition_header_resolution_t\s*;/,
+  );
 if (!/psx_function_definition_header_resolution_t\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
@@ -9041,6 +9045,8 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/psx_qual_type_t\s+signature_qual_type\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
+    !functionDefinitionHeaderResolutionStruct ||
+    /\bpsx_type_t\b/.test(functionDefinitionHeaderResolutionStruct[1]) ||
     !/lvar_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
@@ -9054,6 +9060,12 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
       functionDefinitionResolutionSource,
     ) ||
     !/ps_ctx_intern_qual_type_in\s*\(/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      functionDefinitionResolutionSource,
+    ) ||
+    /resolution\.function_type\b/.test(
       functionDefinitionResolutionSource,
     ) ||
     !/f->function_type\s*=\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
