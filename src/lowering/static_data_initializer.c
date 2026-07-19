@@ -279,6 +279,9 @@ static long long eval_static_const_int(
     return eval_static_const_int(
         lowering_context, node->lhs, ok);
   }
+  if (node->kind == ND_UNARY_PLUS)
+    return eval_static_const_int(
+        lowering_context, node->lhs, ok);
   if (node->kind == ND_UNARY_NEGATE) {
     long long value =
         eval_static_const_int(lowering_context, node->lhs, ok);

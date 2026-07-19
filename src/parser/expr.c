@@ -658,7 +658,16 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return build_pre_inc_dec_node(
         k == TK_INC ? ND_PRE_INC : ND_PRE_DEC, op_tok, ctx);
   }
-  if (k == TK_PLUS)  { set_curtok(ctx, curtok(ctx)->next); return cast_ctx(ctx); }
+  if (k == TK_PLUS) {
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
+    node_t *unary_plus = arena_alloc_in(
+        ctx->arena_context, sizeof(node_t));
+    unary_plus->kind = ND_UNARY_PLUS;
+    unary_plus->lhs = cast_ctx(ctx);
+    unary_plus->tok = op_tok;
+    return unary_plus;
+  }
   if (k == TK_MINUS) {
     token_t *op_tok = curtok(ctx);
     set_curtok(ctx, curtok(ctx)->next);

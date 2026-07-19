@@ -2562,6 +2562,23 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_TRUE(ps_node_get_type(function_name) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(function_name));
 
+  node_t *unary_plus =
+      parse_expr_input_with_existing_locals("+(unsigned char)1");
+  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
+  ASSERT_EQ(ND_CAST, unary_plus->lhs->kind);
+  ASSERT_TRUE(unary_plus->rhs == NULL);
+  ASSERT_TRUE(unary_plus->tok != NULL);
+  ASSERT_EQ(TK_PLUS, unary_plus->tok->kind);
+  ASSERT_TRUE(ps_node_get_type(unary_plus) == NULL);
+  node_t *resolved_unary_plus =
+      analyze_test_expression(unary_plus, unary_plus->tok);
+  ASSERT_TRUE(resolved_unary_plus != unary_plus);
+  ASSERT_EQ(ND_UNARY_PLUS, resolved_unary_plus->kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(resolved_unary_plus)->integer_kind);
+  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
+  ASSERT_TRUE(ps_node_get_type(unary_plus) == NULL);
+
   node_t *logical_not =
       parse_expr_input_with_existing_locals("!0");
   ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
@@ -2635,6 +2652,39 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(integer_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_ctx_type_by_id_in(
                   test_semantic_context(), integer_type.type_id) != NULL);
+  psx_hir_module_destroy(hir);
+
+  node_t *unary_plus =
+      parse_expr_input_with_existing_locals("+(unsigned char)1");
+  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(unary_plus));
+  const psx_typed_hir_tree_t *typed_unary_plus = NULL;
+  ASSERT_EQ(
+      PSX_SYNTAX_TYPED_HIR_RESOLVED,
+      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
+          test_semantic_context(), test_global_registry(),
+          test_local_registry(), unary_plus,
+          &typed_unary_plus, &failure));
+  ASSERT_TRUE(typed_unary_plus != NULL);
+  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
+  ASSERT_TRUE(ps_node_get_type(unary_plus) == NULL);
+  hir = psx_hir_module_create();
+  ASSERT_TRUE(hir != NULL);
+  psx_hir_node_id_t unary_plus_id = psx_typed_hir_tree_emit(
+      hir, typed_unary_plus, &failure);
+  ASSERT_TRUE(unary_plus_id != PSX_HIR_NODE_ID_INVALID);
+  const psx_hir_node_t *unary_plus_hir =
+      psx_hir_module_lookup(hir, unary_plus_id);
+  ASSERT_EQ(PSX_HIR_UNARY_PLUS,
+            psx_hir_node_kind(unary_plus_hir));
+  ASSERT_EQ(1, psx_hir_node_child_count(unary_plus_hir));
+  const psx_type_t *unary_plus_type = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      psx_hir_node_qual_type(unary_plus_hir).type_id);
+  ASSERT_TRUE(unary_plus_type != NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            unary_plus_type->integer_kind);
+  ASSERT_TRUE(!ps_type_is_unsigned(unary_plus_type));
   psx_hir_module_destroy(hir);
 
   node_t *logical_not =
@@ -11512,6 +11562,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS,
       ND_SUBSCRIPT);
   assert_direct_function_rejection(
+      "int __direct_plus_pointer(void) { "
+      "int *value = 0; return +value; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
+      ND_UNARY_PLUS);
+  assert_direct_function_rejection(
       "int __direct_negate_pointer(void) { "
       "int *value = 0; return -value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
@@ -16557,11 +16612,14 @@ static void test_expr_ternary() {
 static void test_expr_unary_ops() {
   printf("test_expr_unary_ops...\n");
 
-    node_t *pos = parse_expr_input("+42");
-  ASSERT_EQ(ND_NUM, pos->kind);
-  ASSERT_EQ(42, as_num(pos)->val);
+  node_t *pos = parse_expr_input("+42");
+  ASSERT_EQ(ND_UNARY_PLUS, pos->kind);
+  ASSERT_EQ(ND_NUM, pos->lhs->kind);
+  ASSERT_EQ(42, as_num(pos->lhs)->val);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            ps_node_get_type(pos)->integer_kind);
 
-    node_t *neg = parse_expr_input("-42");
+  node_t *neg = parse_expr_input("-42");
   ASSERT_EQ(ND_UNARY_NEGATE, neg->kind);
   ASSERT_EQ(ND_NUM, neg->lhs->kind);
   ASSERT_EQ(42, as_num(neg->lhs)->val);

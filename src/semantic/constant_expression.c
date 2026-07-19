@@ -54,6 +54,8 @@ long long psx_eval_const_int(
         return (long long)psx_eval_const_fp(store, node->lhs, ok);
       return result;
     }
+    case ND_UNARY_PLUS:
+      return psx_eval_const_int(store, node->lhs, ok);
     case ND_UNARY_NEGATE: {
       long long value = psx_eval_const_int(store, node->lhs, ok);
       return !ok || *ok ? -value : 0;
@@ -194,6 +196,8 @@ double psx_eval_const_fp(
         return (double)psx_eval_const_int(store, node, ok);
       return psx_eval_const_fp(store, node->lhs, ok);
     }
+    case ND_UNARY_PLUS:
+      return psx_eval_const_fp(store, node->lhs, ok);
     case ND_UNARY_NEGATE: {
       double value = psx_eval_const_fp(store, node->lhs, ok);
       return !ok || *ok ? -value : 0.0;

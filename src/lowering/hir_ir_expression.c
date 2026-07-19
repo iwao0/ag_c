@@ -764,6 +764,22 @@ static ir_val_t build_scalar_negate(
       context, IR_SUB, ir_val_imm(type.type, 0), value, type.type);
 }
 
+static ir_val_t build_unary_plus(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t type) {
+  const psx_hir_node_t *operand = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  if (!operand) return hir_ir_unsupported_expr(context);
+  if (hir_ir_is_complex_type(type))
+    return hir_ir_materialize_complex_operand(context, operand, type);
+  if (!hir_ir_is_direct_value_type(type))
+    return hir_ir_unsupported_expr(context);
+  ir_val_t value = hir_ir_build_expr(context, operand);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return hir_ir_coerce_direct_value(
+      context, value, hir_ir_classify_node_type(context, operand), type);
+}
+
 static ir_val_t build_bitwise_not(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t type) {
@@ -1705,6 +1721,8 @@ ir_val_t hir_ir_build_expr(
       if (!operand) return hir_ir_unsupported_expr(context);
       return hir_ir_materialize_complex_operand(context, operand, type);
     }
+    if (kind == PSX_HIR_UNARY_PLUS)
+      return build_unary_plus(context, node, type);
     if (kind == PSX_HIR_ASSIGN)
       return build_complex_assignment(context, node, type);
     if (kind == PSX_HIR_NEGATE)
@@ -1950,6 +1968,8 @@ ir_val_t hir_ir_build_expr(
                      context, value, source_type, type);
   }
 
+  if (psx_hir_node_kind(node) == PSX_HIR_UNARY_PLUS)
+    return build_unary_plus(context, node, type);
   if (psx_hir_node_kind(node) == PSX_HIR_NEGATE)
     return build_scalar_negate(context, node, type);
   if (psx_hir_node_kind(node) == PSX_HIR_BITWISE_NOT)

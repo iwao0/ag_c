@@ -148,6 +148,8 @@ static long long eval_const_int(
         return (long long)eval_const_fp(eval, lhs, ok);
       return value;
     }
+    case PSX_HIR_UNARY_PLUS:
+      return eval_const_int(eval, lhs, ok);
     case PSX_HIR_NEGATE: {
       long long value = eval_const_int(eval, lhs, ok);
       return !ok || *ok ? -value : 0;
@@ -300,6 +302,8 @@ static double eval_const_fp(
         return (double)eval_const_int(eval, node, ok);
       return eval_const_fp(eval, lhs, ok);
     }
+    case PSX_HIR_UNARY_PLUS:
+      return eval_const_fp(eval, lhs, ok);
     case PSX_HIR_NEGATE: {
       double value = eval_const_fp(eval, lhs, ok);
       return !ok || *ok ? -value : 0.0;

@@ -424,6 +424,9 @@ static int semantic_arithmetic_unary_operator(
     int kind, psx_type_arithmetic_unary_op_t *operator) {
   if (!operator) return 0;
   switch (kind) {
+    case ND_UNARY_PLUS:
+      *operator = PSX_TYPE_UNARY_PLUS;
+      return 1;
     case ND_UNARY_NEGATE:
       *operator = PSX_TYPE_UNARY_NEGATE;
       return 1;
@@ -1238,11 +1241,13 @@ static void semantic_transform_node(
       semantic_resolve_unary_deref(
           traversal->semantic_context, node, fallback_diag_tok);
       break;
+    case ND_UNARY_PLUS:
     case ND_UNARY_NEGATE:
       semantic_transform_node(node->lhs, traversal);
       semantic_resolve_arithmetic_unary(
           traversal->semantic_context,
-          node, "単項 -", fallback_diag_tok);
+          node, node->kind == ND_UNARY_PLUS ? "単項 +" : "単項 -",
+          fallback_diag_tok);
       break;
     case ND_LOGICAL_NOT:
       semantic_transform_node(node->lhs, traversal);

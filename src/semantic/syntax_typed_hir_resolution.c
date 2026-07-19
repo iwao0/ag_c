@@ -1531,6 +1531,9 @@ static int direct_arithmetic_unary_operator(
     psx_type_arithmetic_unary_op_t *type_operator) {
   if (!type_operator) return 0;
   switch (syntax_kind) {
+    case ND_UNARY_PLUS:
+      *type_operator = PSX_TYPE_UNARY_PLUS;
+      return 1;
     case ND_UNARY_NEGATE:
       *type_operator = PSX_TYPE_UNARY_NEGATE;
       return 1;
@@ -1994,7 +1997,8 @@ static int preflight_direct_expression_impl(
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
-  if (syntax->kind == ND_UNARY_NEGATE ||
+  if (syntax->kind == ND_UNARY_PLUS ||
+      syntax->kind == ND_UNARY_NEGATE ||
       syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
     psx_type_arithmetic_unary_op_t type_operator;
@@ -3167,7 +3171,8 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 1, NULL, syntax->kind);
   }
 
-  if (syntax->kind == ND_UNARY_NEGATE ||
+  if (syntax->kind == ND_UNARY_PLUS ||
+      syntax->kind == ND_UNARY_NEGATE ||
       syntax->kind == ND_CREAL ||
       syntax->kind == ND_CIMAG) {
     psx_type_arithmetic_unary_op_t type_operator;
@@ -3189,11 +3194,13 @@ static psx_semantic_node_t *build_direct_expression_impl(
     psx_semantic_node_t *children[] = {operand};
     psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
     psx_hir_node_spec_t spec = {
-        .kind = syntax->kind == ND_CREAL
-                    ? PSX_HIR_CREAL
-                    : syntax->kind == ND_CIMAG
-                          ? PSX_HIR_CIMAG
-                          : PSX_HIR_NEGATE,
+        .kind = syntax->kind == ND_UNARY_PLUS
+                    ? PSX_HIR_UNARY_PLUS
+                    : syntax->kind == ND_CREAL
+                          ? PSX_HIR_CREAL
+                          : syntax->kind == ND_CIMAG
+                                ? PSX_HIR_CIMAG
+                                : PSX_HIR_NEGATE,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
     };
@@ -3361,6 +3368,10 @@ static int direct_integer_constant(
         context,
         selection->associations[binding->selected_index].expression,
         value);
+  }
+  if (syntax->kind == ND_UNARY_PLUS) {
+    return direct_integer_constant(
+        context, syntax->lhs, value);
   }
   if (syntax->kind == ND_UNARY_NEGATE) {
     long long operand;

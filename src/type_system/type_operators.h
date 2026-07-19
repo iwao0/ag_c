@@ -18,7 +18,8 @@ typedef enum {
 } psx_type_binary_op_t;
 
 typedef enum {
-  PSX_TYPE_UNARY_NEGATE = 0,
+  PSX_TYPE_UNARY_PLUS = 0,
+  PSX_TYPE_UNARY_NEGATE,
   PSX_TYPE_UNARY_REAL,
   PSX_TYPE_UNARY_IMAGINARY,
 } psx_type_arithmetic_unary_op_t;

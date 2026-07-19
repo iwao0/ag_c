@@ -40,7 +40,8 @@ static const psx_type_t *resolve_arithmetic_unary_result_type_value(
     psx_type_arithmetic_unary_op_t operator,
     const psx_type_t *type) {
   if (!semantic_context || !type) return NULL;
-  if (operator == PSX_TYPE_UNARY_NEGATE) {
+  if (operator == PSX_TYPE_UNARY_PLUS ||
+      operator == PSX_TYPE_UNARY_NEGATE) {
     if (type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER)
       return resolve_integer_promotion_type_value(
           semantic_context, type);

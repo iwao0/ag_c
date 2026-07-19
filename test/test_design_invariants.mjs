@@ -8940,6 +8940,29 @@ if (!/\bPSX_HIR_COMPOUND_ASSIGN\b/.test(hirHeader) ||
     "compound assignment must preserve one lvalue evaluation directly through Typed HIR",
   );
 }
+const unaryPlusParser = parserExpressionSource.match(
+  /if\s*\(\s*k\s*==\s*TK_PLUS\s*\)\s*\{[^]*?\n\s*\}/,
+)?.[0] ?? "";
+if (!/\bND_UNARY_PLUS\b/.test(syntaxNodeKindHeader) ||
+    !/\bPSX_HIR_UNARY_PLUS\b/.test(hirHeader) ||
+    !/unary_plus->kind\s*=\s*ND_UNARY_PLUS/.test(unaryPlusParser) ||
+    /return\s+cast_ctx\s*\(/.test(unaryPlusParser) ||
+    !/MAP\s*\(\s*ND_UNARY_PLUS\s*,\s*PSX_HIR_UNARY_PLUS\s*\)/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    !/syntax->kind\s*==\s*ND_UNARY_PLUS[^]*?PSX_HIR_UNARY_PLUS/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/case\s+ND_UNARY_PLUS\s*:[^]*?semantic_resolve_arithmetic_unary/.test(
+      semanticPassSource,
+    ) ||
+    !/PSX_HIR_UNARY_PLUS[^]*?build_unary_plus\s*\(/.test(
+      hirIrBuilder,
+    )) {
+  throw new Error(
+    "unary plus must preserve arithmetic promotion through Typed HIR",
+  );
+}
 if (!/MAP\s*\(\s*ND_UNARY_NEGATE\s*,\s*PSX_HIR_NEGATE\s*\)/.test(
       resolvedTreeMaterialization,
     ) ||

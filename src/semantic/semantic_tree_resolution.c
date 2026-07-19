@@ -177,8 +177,10 @@ static int diagnose_direct_syntax_rejection(
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC: {
       const char *operator_name =
-          failure->source_node_kind == ND_UNARY_NEGATE
-              ? "単項 -"
+          failure->source_node_kind == ND_UNARY_PLUS
+              ? "単項 +"
+              : failure->source_node_kind == ND_UNARY_NEGATE
+                    ? "単項 -"
               : failure->source_node_kind == ND_CREAL
                     ? "__real__"
                     : failure->source_node_kind == ND_CIMAG
