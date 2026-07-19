@@ -673,7 +673,10 @@ static int resolve_direct_identifier_with_usage(
       if (is_call) break;
       return 0;
     case PSX_IDENTIFIER_UNDEFINED:
-      return 0;
+      return note_direct_named_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_IDENTIFIER,
+          &identifier->base, identifier->name, identifier->name_len);
   }
   if (resolved.expression_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;

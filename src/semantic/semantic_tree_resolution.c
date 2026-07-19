@@ -110,6 +110,13 @@ static int diagnose_direct_function_rejection(
               DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
           "case label");
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_IDENTIFIER:
+      if (!failure->source_name || failure->source_name_length <= 0)
+        return 0;
+      psx_diag_undefined_with_name_in(
+          diagnostics, token, "variable", failure->source_name,
+          failure->source_name_length);
+      return 1;
     default:
       return 0;
   }

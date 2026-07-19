@@ -11003,6 +11003,12 @@ static void test_direct_function_typed_hir_resolution_boundary() {
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir == NULL);
+  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_IDENTIFIER,
+            failure.rejection);
+  ASSERT_EQ(ND_IDENTIFIER, failure.source_node_kind);
+  ASSERT_EQ(27, failure.source_name_length);
+  ASSERT_TRUE(memcmp(
+      failure.source_name, "__direct_missing_identifier", 27) == 0);
   ASSERT_TRUE(ps_ctx_get_function_type_in(
       test_semantic_context(),
       (char *)"__direct_function_rollback",
@@ -25340,6 +25346,7 @@ static void test_parse_invalid() {
   expect_parse_fail("int main() { 1 += 2; }");               // lvalueでない
   expect_parse_fail("int main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
+  expect_parse_fail("int main() { return missing_value; }"); // 未定義変数
   expect_parse_fail("int main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("int main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_ok(
