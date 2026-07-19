@@ -1972,6 +1972,10 @@ const semanticTreeResolutionSource = await readFile(
   "src/semantic/semantic_tree_resolution.c",
   "utf8",
 );
+const semanticTreeResolutionHeader = await readFile(
+  "src/semantic/semantic_tree_resolution.h",
+  "utf8",
+);
 const typedHirDiagnosticsSource = await readFile(
   "src/semantic/typed_hir_diagnostics.c",
   "utf8",
@@ -2055,8 +2059,11 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
     ) ||
-    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts/.test(
+    !/psx_resolve_parsed_function_hir_from_syntax_in_contexts/.test(
       semanticPipelineSource,
+    ) ||
+    /\bpsx_typed_hir_tree_t\b|psx_typed_hir_tree_emit|typed_hir_materialization/.test(
+      `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}`,
     ) ||
     /\bpsx_resolution_work_tree_t\b|psx_resolution_work_tree_/.test(
       `${semanticPipelineSource}\n${semanticPipelineHeader}\n${semanticPipelineInternalHeader}`,
@@ -2069,7 +2076,7 @@ if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     ) ||
     /semantic_pipeline_internal\.h/.test(compilerMainSource)) {
   throw new Error(
-    "frontend semantic pipeline APIs must consume Typed HIR without exposing work-tree state",
+    "frontend semantic pipeline APIs must consume resolved HIR without exposing intermediate tree state",
   );
 }
 const semanticPassSource = await readFile(
@@ -2527,7 +2534,13 @@ const staticAggregateFrontendBoundary =
   semanticPipelineSource.match(
     /int\s+psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts\s*\([^)]*\)\s*\{([^]*?)\n\}/,
   )?.[1] ?? "";
-if (!/psx_materialize_static_aggregate_initializer_plan\s*\(/.test(
+if (!/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
+      staticAggregateFrontendBoundary,
+    ) ||
+    !/psx_build_static_aggregate_hir_initializer_plan\s*\(/.test(
+      staticAggregateFrontendBoundary,
+    ) ||
+    /\bpsx_typed_hir_tree_t\b|psx_typed_hir_tree_emit|psx_materialize_static_aggregate_initializer_plan/.test(
       staticAggregateFrontendBoundary,
     ) ||
     /psx_resolution_work_tree_export_compatibility_ast\s*\(/.test(
@@ -4028,7 +4041,7 @@ if (directFunctionRejections.length === 0 ||
       (name) => !syntaxTypedHirResolutionSource.includes(name) ||
                 !semanticTreeResolutionSource.includes(name),
     ) ||
-    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_syntax_rejection\s*\(/.test(
+    !/resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?diagnose_direct_syntax_rejection\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
     /psx_legacy_syntax_diagnostics_accept_/.test(
@@ -9229,7 +9242,7 @@ if (!/psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts\s*\(/.test(
   );
 }
 const directFunctionDispatchStart = semanticTreeResolutionSource.indexOf(
-  "psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts",
+  "resolve_parsed_function_typed_hir_from_syntax_in_contexts",
 );
 const directFunctionDispatch = semanticTreeResolutionSource.indexOf(
   "psx_resolve_syntax_function_direct_to_typed_hir_in_contexts",
@@ -9574,8 +9587,20 @@ const declaredTestOnlySources = new Set(
 if (!parsedFunctionResolutionBoundary ||
     !expressionResolutionBoundary ||
     !initializerResolutionBoundary ||
-    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|semantic_pass\.h|identifier_binding\.h|semantic_lowering_pass\.h|typed_hir_materialization\.h/.test(
+    /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root|semantic_pass\.h|identifier_binding\.h|semantic_lowering_pass\.h/.test(
       semanticTreeResolutionSource,
+    ) ||
+    /\bpsx_typed_hir_tree_t\b|typed_hir_materialization/.test(
+      semanticTreeResolutionHeader,
+    ) ||
+    !/psx_resolve_parsed_function_hir_from_syntax_in_contexts\s*\(/.test(
+      semanticTreeResolutionHeader,
+    ) ||
+    !/psx_resolve_expression_hir_from_syntax_in_contexts\s*\(/.test(
+      semanticTreeResolutionHeader,
+    ) ||
+    !/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
+      semanticTreeResolutionHeader,
     ) ||
     /legacy_syntax_diagnostics|psx_legacy_syntax_diagnostics_accept_/.test(
       semanticTreeResolutionSource,
@@ -9604,7 +9629,7 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_legacy_syntax_diagnostics_accept_/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
-    !/psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\(/.test(
+    !/psx_resolve_parsed_function_hir_from_syntax_in_contexts\s*\(/.test(
       parsedFunctionResolutionBoundary[1],
     ) ||
     /psx_resolution_work_tree_|\bpsx_resolution_work_tree_t\b|compatibility_root/.test(
@@ -9622,13 +9647,13 @@ if (!parsedFunctionResolutionBoundary ||
     /ag_compilation_session_parser_runtime_context\s*\(/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_resolve_expression_typed_hir_from_syntax_in_contexts\s*\(/.test(
+    !/psx_resolve_expression_hir_from_syntax_in_contexts\s*\(/.test(
       expressionResolutionBoundary[1],
     ) ||
     /psx_resolution_work_tree_(?:create_from_syntax|compatibility_root_mut|replace_compatibility_root)\s*\(/.test(
       expressionResolutionBoundary[1],
     ) ||
-    !/psx_resolve_initializer_typed_hir_from_syntax_in_contexts\s*\(/.test(
+    !/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
       initializerResolutionBoundary[1],
     ) ||
     /psx_resolution_work_tree_(?:create_from_syntax|compatibility_root_mut|replace_compatibility_root)\s*\(/.test(
@@ -9640,7 +9665,7 @@ if (!parsedFunctionResolutionBoundary ||
     /resolve_nonfunction_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
-    /psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
+    /resolve_parsed_function_typed_hir_from_syntax_in_contexts\s*\([^]*?return\s+psx_resolution_work_tree_typed_hir\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
     !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\(/.test(
@@ -9769,7 +9794,13 @@ if (!parsedFunctionResolutionBoundary ||
     /psx_resolution_work_tree_build_typed_hir\s*\(/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_typed_hir_tree_emit\s*\(/.test(semanticPipelineSource) ||
+    /psx_typed_hir_tree_emit\s*\(/.test(semanticPipelineSource) ||
+    !/static\s+int\s+emit_resolved_typed_hir\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/psx_typed_hir_tree_emit\s*\(/.test(
+      semanticTreeResolutionSource,
+    ) ||
     /typed_hir_builder/.test(
       `${semanticPipelineSource}\n${semanticPipelineInternalHeader}`,
     ) ||

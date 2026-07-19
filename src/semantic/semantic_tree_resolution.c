@@ -5,6 +5,7 @@
 #include "../parser/semantic_ctx.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_diagnostics.h"
+#include "typed_hir_materialization.h"
 
 static const char *direct_incdec_operator_name(int node_kind) {
   return node_kind == ND_PRE_INC || node_kind == ND_POST_INC
@@ -418,8 +419,8 @@ static int diagnose_direct_syntax_rejection(
   }
 }
 
-const psx_typed_hir_tree_t *
-psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
+static const psx_typed_hir_tree_t *
+resolve_parsed_function_typed_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
@@ -525,32 +526,101 @@ resolve_nonfunction_typed_hir_from_syntax_in_contexts(
   return NULL;
 }
 
-const psx_typed_hir_tree_t *
-psx_resolve_expression_typed_hir_from_syntax_in_contexts(
+static int emit_resolved_typed_hir(
+    psx_semantic_context_t *semantic_context,
+    const psx_typed_hir_tree_t *typed_hir,
+    const token_t *fallback_diag_tok, const char *subject,
+    psx_hir_module_t *hir, psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (!semantic_context || !typed_hir || !subject || !hir || !hir_root)
+    return 0;
+  psx_resolved_hir_build_failure_t failure;
+  *hir_root = psx_typed_hir_tree_emit(hir, typed_hir, &failure);
+  if (*hir_root != PSX_HIR_NODE_ID_INVALID) return 1;
+
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  if (fallback_diag_tok) {
+    diag_emit_tokf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        fallback_diag_tok,
+        "%s: %s Typed HIR emission failed (status %d, node kind %d)",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+        subject, (int)failure.status, failure.source_node_kind);
+  }
+  diag_emit_internalf_in(
+      diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+      "%s: %s Typed HIR emission failed (status %d, node kind %d)",
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
+      subject, (int)failure.status, failure.source_node_kind);
+  return 0;
+}
+
+int psx_resolve_parsed_function_hir_from_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const psx_parsed_function_definition_t *syntax_function,
+    const token_t *fallback_diag_tok,
+    psx_hir_module_t *hir, psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (!semantic_context || !syntax_function || !syntax_function->body ||
+      !hir || !hir_root)
+    return 0;
+  const psx_typed_hir_tree_t *typed_hir =
+      resolve_parsed_function_typed_hir_from_syntax_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_function,
+          fallback_diag_tok);
+  return emit_resolved_typed_hir(
+      semantic_context, typed_hir, fallback_diag_tok,
+      "function", hir, hir_root);
+}
+
+int psx_resolve_expression_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const node_t *syntax_expression,
-    const token_t *fallback_diag_tok) {
-  return resolve_nonfunction_typed_hir_from_syntax_in_contexts(
-      semantic_context, global_registry, local_registry,
-      lowering_context, options, syntax_expression,
-      fallback_diag_tok, 0);
+    const token_t *fallback_diag_tok,
+    psx_hir_module_t *hir, psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (!semantic_context || !syntax_expression || !hir || !hir_root)
+    return 0;
+  const psx_typed_hir_tree_t *typed_hir =
+      resolve_nonfunction_typed_hir_from_syntax_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_expression,
+          fallback_diag_tok, 0);
+  return emit_resolved_typed_hir(
+      semantic_context, typed_hir, fallback_diag_tok,
+      "expression", hir, hir_root);
 }
 
-const psx_typed_hir_tree_t *
-psx_resolve_initializer_typed_hir_from_syntax_in_contexts(
+int psx_resolve_initializer_hir_from_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const node_t *syntax_initializer,
-    const token_t *fallback_diag_tok) {
-  return resolve_nonfunction_typed_hir_from_syntax_in_contexts(
-      semantic_context, global_registry, local_registry,
-      lowering_context, options, syntax_initializer,
-      fallback_diag_tok, 1);
+    const token_t *fallback_diag_tok,
+    psx_hir_module_t *hir, psx_hir_node_id_t *hir_root) {
+  if (hir_root) *hir_root = PSX_HIR_NODE_ID_INVALID;
+  if (!semantic_context || !syntax_initializer || !hir || !hir_root)
+    return 0;
+  const psx_typed_hir_tree_t *typed_hir =
+      resolve_nonfunction_typed_hir_from_syntax_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_initializer,
+          fallback_diag_tok, 1);
+  return emit_resolved_typed_hir(
+      semantic_context, typed_hir, fallback_diag_tok,
+      "initializer", hir, hir_root);
 }

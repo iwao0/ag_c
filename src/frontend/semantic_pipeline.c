@@ -1,47 +1,11 @@
 #include "semantic_pipeline.h"
 #include "semantic_pipeline_internal.h"
 
-#include "../diag/diag.h"
+#include "../lowering/runtime_context.h"
+#include "../lowering/static_hir_initializer.h"
 #include "../parser/semantic_ctx.h"
 #include "../semantic/semantic_tree_resolution.h"
 #include "../semantic/continuation_syntax_validation.h"
-#include "../semantic/static_initializer_materialization.h"
-#include "../semantic/typed_hir_materialization.h"
-
-static psx_hir_node_id_t build_session_hir(
-    ag_compilation_session_t *session,
-    const psx_typed_hir_tree_t *typed_tree,
-    const token_t *fallback_diag_tok) {
-  psx_hir_module_t *hir = ag_compilation_session_hir_module(session);
-  psx_resolved_hir_build_failure_t failure = {
-      .status = PSX_RESOLVED_HIR_BUILD_UNMATERIALIZED,
-      .source_node_kind = -1,
-  };
-  psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
-  if (typed_tree) {
-    hir_root = psx_typed_hir_tree_emit(
-        hir, typed_tree, &failure);
-  }
-  if (hir_root != PSX_HIR_NODE_ID_INVALID) return hir_root;
-  ag_diagnostic_context_t *diagnostics =
-      ag_compilation_session_diagnostic_context(session);
-  if (fallback_diag_tok) {
-    diag_emit_tokf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        fallback_diag_tok,
-        "%s: Typed HIR build failed (status %d, node kind %d)",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-        (int)failure.status, failure.source_node_kind);
-  }
-  diag_emit_internalf_in(
-      diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-      "%s: Typed HIR build failed (status %d, node kind %d)",
-      diag_message_for_in(
-          diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-      (int)failure.status, failure.source_node_kind);
-  return PSX_HIR_NODE_ID_INVALID;
-}
 
 int psx_frontend_resolve_parsed_function_to_hir_in_session(
     ag_compilation_session_t *session,
@@ -59,42 +23,14 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
           ag_compilation_session_continuation(session),
           syntax_function))
     return 0;
-  const psx_typed_hir_tree_t *typed_tree =
-      psx_resolve_parsed_function_typed_hir_from_syntax_in_contexts(
-          ag_compilation_session_semantic_context(session),
-          ag_compilation_session_global_registry(session),
-          ag_compilation_session_local_registry(session),
-          ag_compilation_session_lowering_context(session),
-          ag_compilation_session_options_view(session),
-          syntax_function, fallback_diag_tok);
-  if (!typed_tree) return 0;
-  *hir_root = build_session_hir(
-      session, typed_tree, fallback_diag_tok);
-  return *hir_root != PSX_HIR_NODE_ID_INVALID;
-}
-
-static void diagnose_typed_expression_hir_failure(
-    psx_semantic_context_t *semantic_context,
-    const token_t *fallback_diag_tok,
-    const psx_resolved_hir_build_failure_t *failure) {
-  if (!semantic_context || !failure) return;
-  ag_diagnostic_context_t *diagnostics =
-      ps_ctx_diagnostics(semantic_context);
-  if (fallback_diag_tok) {
-    diag_emit_tokf_in(
-        diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-        fallback_diag_tok,
-        "%s: expression Typed HIR build failed (status %d, node kind %d)",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-        (int)failure->status, failure->source_node_kind);
-  }
-  diag_emit_internalf_in(
-      diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
-      "%s: expression Typed HIR build failed (status %d, node kind %d)",
-      diag_message_for_in(
-          diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
-      (int)failure->status, failure->source_node_kind);
+  return psx_resolve_parsed_function_hir_from_syntax_in_contexts(
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session),
+      ag_compilation_session_local_registry(session),
+      ag_compilation_session_lowering_context(session),
+      ag_compilation_session_options_view(session),
+      syntax_function, fallback_diag_tok,
+      ag_compilation_session_hir_module(session), hir_root);
 }
 
 int psx_frontend_resolve_expression_to_hir_in_contexts(
@@ -112,20 +48,13 @@ int psx_frontend_resolve_expression_to_hir_in_contexts(
     };
   }
   if (!result) return 0;
-  const psx_typed_hir_tree_t *typed_tree =
-      psx_resolve_expression_typed_hir_from_syntax_in_contexts(
-          semantic_context, global_registry, local_registry,
-          lowering_context, options, syntax_expression,
-          fallback_diag_tok);
-  if (!typed_tree) return 0;
-  psx_resolved_hir_build_failure_t failure;
   psx_hir_module_t *module = psx_hir_module_create();
   if (!module) return 0;
-  psx_hir_node_id_t root = psx_typed_hir_tree_emit(
-      module, typed_tree, &failure);
-  if (root == PSX_HIR_NODE_ID_INVALID) {
-    diagnose_typed_expression_hir_failure(
-        semantic_context, fallback_diag_tok, &failure);
+  psx_hir_node_id_t root = PSX_HIR_NODE_ID_INVALID;
+  if (!psx_resolve_expression_hir_from_syntax_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, options, syntax_expression,
+          fallback_diag_tok, module, &root)) {
     psx_hir_module_destroy(module);
     return 0;
   }
@@ -154,11 +83,18 @@ int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
     psx_static_aggregate_initializer_plan_t *plan) {
   if (plan) *plan = (psx_static_aggregate_initializer_plan_t){0};
   if (!type || !plan) return 0;
-  const psx_typed_hir_tree_t *typed_tree =
-      psx_resolve_initializer_typed_hir_from_syntax_in_contexts(
-          semantic_context, global_registry, local_registry,
-          lowering_context, options, syntax, fallback_diag_tok);
-  return psx_materialize_static_aggregate_initializer_plan(
-      typed_tree, global_registry, lowering_context, type,
-      (token_t *)fallback_diag_tok, plan);
+  psx_hir_module_t *hir = psx_hir_module_create();
+  if (!hir) return 0;
+  psx_hir_node_id_t root = PSX_HIR_NODE_ID_INVALID;
+  int resolved = psx_resolve_initializer_hir_from_syntax_in_contexts(
+      semantic_context, global_registry, local_registry,
+      lowering_context, options, syntax, fallback_diag_tok,
+      hir, &root);
+  int built = resolved &&
+              psx_build_static_aggregate_hir_initializer_plan(
+                  global_registry, lowering_context,
+                  ps_lowering_type_id(lowering_context, type),
+                  hir, root, (token_t *)fallback_diag_tok, plan);
+  psx_hir_module_destroy(hir);
+  return built;
 }
