@@ -109,7 +109,8 @@ static int resolve_static_address_constant(
     char **symbol, int *symbol_len, long long *offset) {
   if (!lowering_context || !node || !symbol || !symbol_len || !offset)
     return 0;
-  switch (node->kind) {
+  switch (psx_resolution_node_kind(
+      resolution_store(lowering_context), node)) {
     case ND_COMPOUND_LITERAL: {
       const psx_node_resolution_state_t *state =
           ps_node_resolution_state_const(
@@ -124,6 +125,7 @@ static int resolve_static_address_constant(
       *symbol_len = ps_gvar_name_len(resolution->global_object);
       return *symbol != NULL && *symbol_len > 0;
     }
+    case ND_ADDRESS_OF:
     case ND_ADDR:
       if (node->lhs &&
           (node->lhs->kind == ND_SUBSCRIPT ||

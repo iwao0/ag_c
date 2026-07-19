@@ -2264,6 +2264,8 @@ static int node_type_accepts_vla_runtime_view(
 static node_t *bound_node_vla_runtime_source(
     const psx_resolution_store_t *store, node_t *node) {
   if (!node) return NULL;
+  if (psx_resolution_node_kind(store, node) == ND_ADDR)
+    return node->lhs;
   switch (node->kind) {
     case ND_ADD:
       if (node->lhs &&
@@ -2272,7 +2274,6 @@ static node_t *bound_node_vla_runtime_source(
       return node->rhs;
     case ND_SUB:
     case ND_ASSIGN:
-    case ND_ADDR:
     case ND_CAST:
     case ND_PRE_INC:
     case ND_PRE_DEC:
@@ -2817,7 +2818,8 @@ static node_t *new_addr_node(psx_resolution_store_t *store,
                              node_t *base) {
   node_t *addr = resolution_node_alloc_in(
       store, arena_context, sizeof(node_t));
-  addr->kind = ND_ADDR;
+  if (!addr || !psx_resolution_node_set_kind(store, addr, ND_ADDR))
+    return NULL;
   addr->lhs = base;
   return addr;
 }
@@ -2827,6 +2829,7 @@ node_t *ps_node_new_addr_value_for_in(
                                       arena_context_t *arena_context,
                                       node_t *operand) {
   node_t *addr = new_addr_node(store, arena_context, operand);
+  if (!addr) return NULL;
   ps_node_bind_type(
       store, addr, ps_type_address_result_in(
                 arena_context, ps_node_get_type(store, operand)));
@@ -2836,9 +2839,11 @@ node_t *ps_node_new_addr_value_for_in(
 node_t *ps_node_new_explicit_addr_value_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *operand) {
-  if (!operand || operand->kind != ND_ADDR) return operand;
+  if (!operand || psx_resolution_node_kind(store, operand) != ND_ADDR)
+    return operand;
   node_t *cp = resolution_node_alloc_in(
       store, arena_context, sizeof(node_t));
+  if (!cp) return NULL;
   *cp = *operand;
   ps_node_copy_resolution_state_in(
       store, arena_context, cp, operand);
@@ -2846,7 +2851,6 @@ node_t *ps_node_new_explicit_addr_value_for_in(
   ps_node_bind_type(
       store, cp, ps_type_address_result_in(
               arena_context, ps_node_get_type(store, operand->lhs)));
-  cp->is_explicit_addr_expr = 1;
   return cp;
 }
 
@@ -2855,10 +2859,10 @@ node_t *ps_node_new_unary_addr_for_in(
                                       arena_context_t *arena_context,
                                       node_t *operand) {
   node_t *node = new_addr_node(store, arena_context, operand);
+  if (!node) return NULL;
   ps_node_bind_type(
       store, node, ps_type_address_result_in(
                 arena_context, ps_node_get_type(store, operand)));
-  node->is_explicit_addr_expr = 1;
   return node;
 }
 
@@ -2961,9 +2965,8 @@ node_t *psx_node_new_unary_addr_syntax_for_in(
     arena_context_t *arena_context, node_t *operand) {
   node_t *result = arena_alloc_in(
       arena_context, sizeof(node_t));
-  result->kind = ND_ADDR;
+  result->kind = ND_ADDRESS_OF;
   result->lhs = operand;
-  result->is_explicit_addr_expr = 1;
   return result;
 }
 
@@ -3035,7 +3038,7 @@ const psx_type_t *ps_node_array_decay_pointer_arith_type_in(
     arena_context_t *arena_context, node_t *node) {
   if (!node ||
       (psx_resolution_node_kind(store, node) != ND_DEREF &&
-       node->kind != ND_ADDR))
+       psx_resolution_node_kind(store, node) != ND_ADDR))
     return NULL;
   const psx_type_t *type = ps_node_get_type(store, node);
   const psx_type_t *base =
@@ -3074,7 +3077,7 @@ int ps_node_bitfield_info(
 int ps_node_value_is_pointer_like(
     const psx_resolution_store_t *store, node_t *node) {
   if (!node) return 0;
-  if (node->kind == ND_ADDR ||
+  if (psx_resolution_node_kind(store, node) == ND_ADDR ||
       psx_resolved_object_ref_node_kind(store, node) == ND_FUNCREF)
     return 1;
   if (ps_type_is_pointer_like(ps_node_get_type(store, node))) return 1;

@@ -52,7 +52,8 @@ static node_t *sizeof_base(node_t *operand, int *subscript_depth) {
 static lvar_t *sizeof_lvar(
     const psx_resolution_store_t *store, node_t *base) {
   lvar_t *var = ps_node_lvar_symbol(store, base);
-  if (!var && base && base->kind == ND_ADDR)
+  if (!var && base &&
+      psx_resolution_node_kind(store, base) == ND_ADDR)
     var = ps_node_lvar_symbol(store, base->lhs);
   return var;
 }
@@ -242,11 +243,11 @@ static const psx_type_t *sizeof_operand_type(
   int depth = 0;
   node_t *base = sizeof_base(operand, &depth);
   lvar_t *var = sizeof_lvar(store, base);
-  int explicit_addr =
-      operand->kind == ND_ADDR && operand->is_explicit_addr_expr;
+  int explicit_addr = operand->kind == ND_ADDRESS_OF;
   if (depth == 0 && !explicit_addr && var && ps_lvar_is_array(var))
     return ps_lvar_get_decl_type(var);
-  if (depth == 0 && operand->kind == ND_ADDR && !explicit_addr &&
+  if (depth == 0 &&
+      psx_resolution_node_kind(store, operand) == ND_ADDR &&
       operand->lhs) {
     const psx_type_t *object_type =
         ps_node_get_type(store, operand->lhs);

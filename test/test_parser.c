@@ -1110,7 +1110,8 @@ static int test_node_atomic_pointer_info(
   }
   if (width) *width = pointee_width;
   if (is_unsigned) {
-    *is_unsigned = pointer->kind == ND_ADDR && pointer->lhs
+    *is_unsigned = psx_resolution_node_kind(pointer) == ND_ADDR &&
+                           pointer->lhs
                        ? ps_node_is_unsigned_type(pointer->lhs)
                        : ps_type_is_unsigned(pointee);
   }
@@ -1310,7 +1311,13 @@ static int test_node_compound_literal_array_size(node_t *node) {
   if (node->kind == ND_COMMA) {
     return test_node_compound_literal_array_size(node->rhs);
   }
-  if (node->kind != ND_ADDR || node->is_explicit_addr_expr || !node->lhs) {
+  if (psx_resolution_node_kind(node) != ND_ADDR ||
+      !node->lhs) {
+    return 0;
+  }
+  const psx_type_t *address_type = ps_node_get_type(node);
+  if (address_type && address_type->kind == PSX_TYPE_POINTER &&
+      address_type->base && address_type->base->kind == PSX_TYPE_ARRAY) {
     return 0;
   }
   const psx_type_t *object_type = ps_node_get_type(node->lhs);
@@ -2057,7 +2064,7 @@ static void test_parser_name_classifier_boundary() {
       ag_compilation_session_parser_runtime_context(test_suite_session),
       &classifier, NULL);
   ASSERT_TRUE(address_syntax != NULL);
-  ASSERT_EQ(ND_ADDR, address_syntax->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, address_syntax->kind);
   ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax));
   ASSERT_TRUE(address_syntax->lhs != NULL);
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
@@ -3878,8 +3885,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       direct_address_only, ps_type_new_integer(TK_INT, 4, 0));
   node_t *address_syntax =
       parse_expr_input_with_existing_locals("&DirectAddressOnly");
-  ASSERT_EQ(ND_ADDR, address_syntax->kind);
-  ASSERT_TRUE(address_syntax->is_explicit_addr_expr);
+  ASSERT_EQ(ND_ADDRESS_OF, address_syntax->kind);
   const psx_typed_hir_tree_t *typed_address = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
@@ -3909,6 +3915,16 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(address_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, address_type->base->kind);
   psx_hir_module_destroy(hir);
+
+  node_t *comma_address_syntax =
+      parse_expr_input_with_existing_locals(
+          "&(DirectAddressOnly, DirectAddressOnly)");
+  ASSERT_EQ(ND_ADDRESS_OF, comma_address_syntax->kind);
+  ASSERT_EQ(ND_COMMA, comma_address_syntax->lhs->kind);
+  ASSERT_EQ(ND_IDENTIFIER, comma_address_syntax->lhs->lhs->kind);
+  ASSERT_EQ(ND_IDENTIFIER, comma_address_syntax->lhs->rhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_address_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(comma_address_syntax->lhs));
 
   node_t *array_address_syntax =
       parse_expr_input_with_existing_locals("&DirectLocalArray");
@@ -9205,12 +9221,12 @@ static void test_unary_deref_semantic_lowering_boundary() {
 
   node_t *subscript_address =
       parse_expr_input_with_existing_locals("&p[0]");
-  ASSERT_EQ(ND_ADDR, subscript_address->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, subscript_address->kind);
   ASSERT_EQ(ND_SUBSCRIPT, subscript_address->lhs->kind);
   ASSERT_TRUE(ps_node_get_type(subscript_address) == NULL);
   subscript_address = analyze_test_expression(
       subscript_address, NULL);
-  ASSERT_EQ(ND_ADDR, subscript_address->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, subscript_address->kind);
   ASSERT_TRUE(ps_node_get_type(subscript_address) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(subscript_address)->kind);
   ASSERT_TRUE(ps_node_get_type(subscript_address)->base != NULL);
@@ -9676,7 +9692,8 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_t *raw_addr =
       parse_expr_input_with_existing_locals("sizeof(&a)");
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_addr->kind);
-  ASSERT_TRUE(((node_sizeof_query_t *)raw_addr)->operand->is_explicit_addr_expr);
+  ASSERT_EQ(ND_ADDRESS_OF,
+            ((node_sizeof_query_t *)raw_addr)->operand->kind);
   node_t *typed_addr = analyze_test_expression(raw_addr, NULL);
   assert_typed_sizeof(typed_addr, 8);
 
@@ -10121,7 +10138,7 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   ASSERT_EQ(ND_MEMBER_ACCESS, member->kind);
   ASSERT_TRUE(((node_member_access_t *)member)->from_pointer);
   node_t *address = member->lhs;
-  ASSERT_EQ(ND_ADDR, address->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, address->kind);
   ASSERT_EQ(ND_CAST, address->lhs->kind);
   ASSERT_TRUE(address->lhs->is_source_cast);
   aggregate_cast = (node_source_cast_t *)address->lhs;
@@ -10843,8 +10860,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_compound_address_expr =
       syntax_compound_deref->lhs;
   ASSERT_TRUE(syntax_compound_address_expr != NULL);
-  ASSERT_EQ(ND_ADDR, syntax_compound_address_expr->kind);
-  ASSERT_TRUE(syntax_compound_address_expr->is_explicit_addr_expr);
+  ASSERT_EQ(ND_ADDRESS_OF, syntax_compound_address_expr->kind);
   const node_t *syntax_compound_address =
       syntax_compound_address_expr->lhs;
   ASSERT_TRUE(syntax_compound_address != NULL);
@@ -11486,23 +11502,28 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   assert_direct_function_rejection(
       "int __direct_address_rvalue(void) { return &1 != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
-      ND_ADDR);
+      ND_ADDRESS_OF);
+  assert_direct_function_rejection(
+      "int __direct_address_comma(void) { "
+      "int left=1, right=2; return &(left, right) != 0; }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
+      ND_ADDRESS_OF);
   assert_direct_function_rejection(
       "int __direct_address_generic_rvalue(void) { "
       "return &_Generic(0, int: 1, default: 2) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
-      ND_ADDR);
+      ND_ADDRESS_OF);
   assert_direct_function_rejection(
       "int __direct_address_bitfield(void) { "
       "struct S { int bits:3; } value={1}; return &value.bits != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
-      ND_ADDR);
+      ND_ADDRESS_OF);
   assert_direct_function_rejection(
       "int __direct_address_generic_bitfield(void) { "
       "struct S { int bits:3; } value={1}; "
       "return &_Generic(0, int: value.bits, default: value.bits) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
-      ND_ADDR);
+      ND_ADDRESS_OF);
   test_compilation_options()->enable_struct_scalar_pointer_cast = false;
   assert_direct_function_rejection(
       "int __direct_cast_struct_extension_disabled(void) { "
@@ -12064,8 +12085,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR, scalar_initializer->kind);
   const node_t *scalar_address = scalar_initializer->value;
   ASSERT_TRUE(scalar_address != NULL);
-  ASSERT_EQ(ND_ADDR, scalar_address->kind);
-  ASSERT_TRUE(scalar_address->is_explicit_addr_expr);
+  ASSERT_EQ(ND_ADDRESS_OF, scalar_address->kind);
   const node_t *scalar_compound = scalar_address->lhs;
   ASSERT_TRUE(scalar_compound != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, scalar_compound->kind);
@@ -12109,7 +12129,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR, array_initializer->kind);
   const node_t *array_address = array_initializer->value;
   ASSERT_TRUE(array_address != NULL);
-  ASSERT_EQ(ND_ADDR, array_address->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, array_address->kind);
   const node_t *array_subscript = array_address->lhs;
   ASSERT_TRUE(array_subscript != NULL);
   ASSERT_EQ(ND_SUBSCRIPT, array_subscript->kind);
@@ -12150,7 +12170,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR, member_initializer->kind);
   const node_t *member_address = member_initializer->value;
   ASSERT_TRUE(member_address != NULL);
-  ASSERT_EQ(ND_ADDR, member_address->kind);
+  ASSERT_EQ(ND_ADDRESS_OF, member_address->kind);
   const node_t *member_access = member_address->lhs;
   ASSERT_TRUE(member_access != NULL);
   ASSERT_EQ(ND_MEMBER_ACCESS, member_access->kind);
@@ -18011,8 +18031,8 @@ static void test_stmt_goto_label() {
 static void test_expr_deref_addr() {
   printf("test_expr_deref_addr...\n");
   // &a
-    node_t *addr = parse_expr_input("&a");
-  ASSERT_EQ(ND_ADDR, addr->kind);
+  node_t *addr = parse_expr_input("&a");
+  ASSERT_EQ(ND_ADDRESS_OF, addr->kind);
   ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(addr->lhs));
 
   // *a (a は実際に pointer 型として登録する)
@@ -19110,6 +19130,8 @@ static void test_type_metadata_bridge() {
             ps_node_get_type(decayed_array_addr)->base->kind);
   node_t *explicit_array_addr =
       ps_node_new_explicit_addr_value_for(decayed_array_addr);
+  ASSERT_EQ(ND_ADDR,
+            psx_resolution_node_kind(explicit_array_addr));
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(explicit_array_addr)->kind);
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(explicit_array_addr)->base->kind);
   ASSERT_EQ(12, ps_node_deref_size(explicit_array_addr));
@@ -19993,7 +20015,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_storage_type_size(&typed_incomplete_size_mem));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(&typed_mem));
   node_t type_free_address = {0};
-  type_free_address.kind = ND_ADDR;
+  test_set_resolved_node_kind(&type_free_address, ND_ADDR);
   ASSERT_TRUE(ps_node_value_is_pointer_like(&type_free_address));
   node_t type_free_function_reference = {0};
   test_set_resolved_node_kind(&type_free_function_reference, ND_FUNCREF);
@@ -20250,7 +20272,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, canonical_node_array_subscript_stride_bytes(
                    &typed_scalar_array_stale_stride, 0));
   node_t typed_addr_stale_mem_stride = {0};
-  typed_addr_stale_mem_stride.kind = ND_ADDR;
+  test_set_resolved_node_kind(&typed_addr_stale_mem_stride, ND_ADDR);
   test_bind_node_type(&typed_addr_stale_mem_stride, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
@@ -21421,7 +21443,7 @@ static void test_type_metadata_bridge() {
   test_bind_node_type(&compound_lit_object, ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0));
   node_t compound_lit_addr = {0};
-  compound_lit_addr.kind = ND_ADDR;
+  test_set_resolved_node_kind(&compound_lit_addr, ND_ADDR);
   compound_lit_addr.lhs = &compound_lit_object;
   ASSERT_EQ(12, ps_node_compound_literal_array_size(&compound_lit_addr));
   node_t compound_lit_comma = {0};
@@ -21433,7 +21455,7 @@ static void test_type_metadata_bridge() {
   test_bind_node_type(&compound_lit_nonaddr, ps_node_get_type(&compound_lit_object));
   ASSERT_EQ(0, ps_node_compound_literal_array_size(&compound_lit_nonaddr));
   node_t typed_noncompound_addr = {0};
-  typed_noncompound_addr.kind = ND_ADDR;
+  test_set_resolved_node_kind(&typed_noncompound_addr, ND_ADDR);
   test_bind_node_type(&typed_noncompound_addr, ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_EQ(0, ps_node_compound_literal_array_size(

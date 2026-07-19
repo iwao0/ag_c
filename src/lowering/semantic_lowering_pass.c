@@ -274,12 +274,15 @@ static node_t *lower_tree(
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;
-    case ND_ADDR:
-      if (node->is_explicit_addr_expr && node->lhs &&
-          node->lhs->kind == ND_COMPOUND_LITERAL) {
+    case ND_ADDRESS_OF:
+      if (node->lhs && node->lhs->kind == ND_COMPOUND_LITERAL) {
         psx_compound_literal_require_addressable_storage(
             store, node->lhs);
       }
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      break;
+    case ND_ADDR:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       break;

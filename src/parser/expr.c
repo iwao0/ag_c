@@ -609,19 +609,6 @@ static node_t *build_unary_deref_syntax(
   return syntax;
 }
 
-// `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
-static node_t *build_unary_addr_node(
-    node_t *operand, expr_parse_ctx_t *ctx) {
-  if (operand && operand->kind == ND_COMMA && operand->rhs) {
-    /* Preserve the comma prefix while applying address-of to its value. */
-    return psx_node_new_raw_binary_in(
-        ctx->arena_context, ND_COMMA, operand->lhs,
-        build_unary_addr_node(operand->rhs, ctx));
-  }
-  return psx_node_new_unary_addr_syntax_for_in(
-      ctx->arena_context, operand);
-}
-
 static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
   token_kind_t k = curtok(ctx)->kind;
   if (k == TK_SIZEOF) {
@@ -704,9 +691,13 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return build_unary_deref_syntax(cast_ctx(ctx), op_tok, ctx);
   }
   if (k == TK_AMP) {
+    token_t *op_tok = curtok(ctx);
     set_curtok(ctx, curtok(ctx)->next);
     node_t *operand = cast_ctx(ctx);
-    return build_unary_addr_node(operand, ctx);
+    node_t *address = psx_node_new_unary_addr_syntax_for_in(
+        ctx->arena_context, operand);
+    address->tok = op_tok;
+    return address;
   }
   return apply_postfix(primary_ctx(ctx), ctx);
 }

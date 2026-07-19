@@ -1266,7 +1266,7 @@ static direct_vla_runtime_view_t direct_vla_runtime_view(
                  : direct_vla_runtime_view(context, syntax->rhs);
     case ND_SUB:
     case ND_ASSIGN:
-    case ND_ADDR:
+    case ND_ADDRESS_OF:
     case ND_CAST:
     case ND_PRE_INC:
     case ND_PRE_DEC:
@@ -1480,8 +1480,7 @@ static void mark_direct_assignment_target(
     return;
   }
   if (syntax->kind == ND_UNARY_DEREF && syntax->lhs &&
-      syntax->lhs->kind == ND_ADDR &&
-      syntax->lhs->is_explicit_addr_expr)
+      syntax->lhs->kind == ND_ADDRESS_OF)
     mark_direct_assignment_target(context, syntax->lhs->lhs);
   if (syntax->kind == ND_MEMBER_ACCESS) {
     const node_member_access_t *access =
@@ -1925,7 +1924,7 @@ static int preflight_direct_expression_impl(
     return resolve_direct_deref_operand(
         context, syntax, qual_type);
   }
-  if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
+  if (syntax->kind == ND_ADDRESS_OF) {
     const node_t *operand_syntax = direct_selected_expression(
         context, syntax->lhs);
     if (!operand_syntax) return 0;
@@ -3075,7 +3074,7 @@ static psx_semantic_node_t *build_direct_expression_impl(
         children, edges, 1, NULL, syntax->kind);
   }
 
-  if (syntax->kind == ND_ADDR && syntax->is_explicit_addr_expr) {
+  if (syntax->kind == ND_ADDRESS_OF) {
     const node_t *operand_syntax = direct_selected_expression(
         context, syntax->lhs);
     if (!operand_syntax) return NULL;

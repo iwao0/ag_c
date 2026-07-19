@@ -42,7 +42,7 @@ static node_t *assigned_aggregate_lvar_from_member_address(
     return assigned_aggregate_lvar_from_member_address(store, address->rhs);
   if ((address->kind == ND_ADD || address->kind == ND_SUB) && address->lhs)
     return assigned_aggregate_lvar_from_member_address(store, address->lhs);
-  if (address->kind == ND_ADDR && address->lhs)
+  if (resolved_node_kind(store, address) == ND_ADDR && address->lhs)
     return assigned_aggregate_lvar_from_member_base(store, address->lhs);
   return NULL;
 }
@@ -76,7 +76,9 @@ static node_t *assigned_lvar_from_target(
                      store, target->lhs);
   }
   if (is_dereference(store, target) && target->lhs &&
-      target->lhs->kind == ND_ADDR && target->lhs->lhs &&
+      (target->lhs->kind == ND_ADDRESS_OF ||
+       resolved_node_kind(store, target->lhs) == ND_ADDR) &&
+      target->lhs->lhs &&
       resolved_node_kind(store, target->lhs->lhs) == ND_LVAR)
     return target->lhs->lhs;
   if (is_dereference(store, target))
@@ -123,7 +125,9 @@ static void record_address_taken(
     }
     return;
   }
-  if (operand->kind == ND_ADDR && operand->lhs) {
+  if ((operand->kind == ND_ADDRESS_OF ||
+       resolved_node_kind(store, operand) == ND_ADDR) &&
+      operand->lhs) {
     if (resolved_node_kind(store, operand->lhs) == ND_LVAR) {
       lvar_t *var = ps_node_lvar_symbol(store, operand->lhs);
       if (var)
@@ -208,11 +212,14 @@ void psx_collect_lvar_usage_events_in(
       psx_collect_lvar_usage_events_in(
           store, local_registry, node->rhs, region);
       return;
+    case ND_ADDRESS_OF:
+      psx_collect_lvar_usage_events_in(
+          store, local_registry, node->lhs, region);
+      record_address_taken(store, local_registry, node, region);
+      return;
     case ND_ADDR:
       psx_collect_lvar_usage_events_in(
           store, local_registry, node->lhs, region);
-      if (node->is_explicit_addr_expr)
-        record_address_taken(store, local_registry, node, region);
       return;
     case ND_BLOCK:
       collect_array(

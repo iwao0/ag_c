@@ -8558,10 +8558,18 @@ const sharedAddressOperandRuleUses = [
   /\bpsx_resolve_address_operand_qual_type_in\s*\(/.test(source)
 ).length;
 const directAddressPreflight = syntaxTypedHirResolutionSource.match(
-  /if\s*\(syntax->kind\s*==\s*ND_ADDR\s*&&\s*syntax->is_explicit_addr_expr\)\s*\{[^]*?\n\s*if\s*\(syntax->kind\s*==\s*ND_UNARY_NEGATE/,
+  /if\s*\(syntax->kind\s*==\s*ND_ADDRESS_OF\s*\)\s*\{[^]*?\n\s*if\s*\(syntax->kind\s*==\s*ND_UNARY_PLUS/,
 );
 if (
   !addressOperandQualTypeRule ||
+  !/\bND_ADDRESS_OF\b/.test(syntaxNodeKindHeader) ||
+  /\bND_ADDR\b/.test(syntaxNodeKindHeader) ||
+  !/\bND_ADDR\b/.test(resolvedNodeKindHeader) ||
+  /\bis_explicit_addr_expr\b/.test(astSource) ||
+  /\bbuild_unary_addr_node\b/.test(parserExpressionSource) ||
+  !/MAP\s*\(\s*ND_ADDRESS_OF\s*,\s*PSX_HIR_ADDRESS\s*\)/.test(
+    resolvedTreeMaterialization,
+  ) ||
   /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
     addressOperandQualTypeRule[0],
   ) ||

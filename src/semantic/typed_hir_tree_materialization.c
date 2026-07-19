@@ -140,6 +140,7 @@ static int map_kind(
     MAP(ND_SUBSCRIPT, PSX_HIR_SUBSCRIPT);
     MAP(ND_MEMBER_ACCESS, PSX_HIR_MEMBER_ACCESS);
     MAP(ND_ALIGNOF_QUERY, PSX_HIR_NUMBER);
+    MAP(ND_ADDRESS_OF, PSX_HIR_ADDRESS);
     MAP(ND_ADDR, PSX_HIR_ADDRESS);
     MAP(ND_VLA_ALLOC, PSX_HIR_VLA_ALLOC);
     MAP(ND_FP_TO_INT, PSX_HIR_FP_TO_INT);
@@ -812,7 +813,10 @@ static int source_cast_is_aggregate(
 
 static int address_requires_typed_hir_lowering(
     const psx_resolution_store_t *store, const node_t *source) {
-  return source && source->kind == ND_ADDR && source->lhs &&
+  return source &&
+         (source->kind == ND_ADDRESS_OF ||
+          psx_resolution_node_kind(store, source) == ND_ADDR) &&
+         source->lhs &&
          source->lhs->kind == ND_CAST &&
          source->lhs->is_source_cast &&
          source_cast_is_aggregate(

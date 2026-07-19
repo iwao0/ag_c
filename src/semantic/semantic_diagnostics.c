@@ -166,7 +166,10 @@ static void warn_return(
       ret_fp == TK_FLOAT_KIND_NONE && !ret_pointer && !ret_void) {
     warn_float_to_int(store, diagnostics, node->lhs, tok);
   }
-  if (ret_pointer && node->lhs->kind == ND_ADDR && node->lhs->lhs &&
+  if (ret_pointer &&
+      (node->lhs->kind == ND_ADDRESS_OF ||
+       resolved_node_kind(store, node->lhs) == ND_ADDR) &&
+      node->lhs->lhs &&
       resolved_node_kind(store, node->lhs->lhs) == ND_LVAR) {
     lvar_t *src = ps_node_lvar_symbol(store, node->lhs->lhs);
     if (src && !ps_lvar_is_static_local(src)) {

@@ -283,7 +283,9 @@ static lvar_t *array_copy_source_local(
   if (initialization) *initialization = NULL;
   if (!value) return NULL;
   if (value->kind == ND_COMMA && value->rhs &&
-      value->rhs->kind == ND_ADDR && value->rhs->lhs &&
+      psx_resolution_node_kind(
+          context->resolution_store, value->rhs) == ND_ADDR &&
+      value->rhs->lhs &&
       psx_resolved_object_ref_node_kind(
           context->resolution_store, value->rhs->lhs) == ND_LVAR) {
     node_t *source = value->rhs->lhs;
@@ -798,7 +800,9 @@ static int initializer_list_is_flat_positional_scalar(
     const psx_type_t *value_type = ps_node_get_type(
         context->resolution_store, entry->value);
     const psx_type_t *addressed_type =
-        entry->value && entry->value->kind == ND_ADDR
+        entry->value &&
+        psx_resolution_node_kind(
+            context->resolution_store, entry->value) == ND_ADDR
             ? ps_node_get_type(
                   context->resolution_store, entry->value->lhs)
             : NULL;
@@ -920,7 +924,10 @@ static int initializer_value_requires_immediate_subobject(
   const psx_type_t *value_type =
       ps_node_get_type(context->resolution_store, value);
   if (ps_type_is_tag_aggregate(value_type)) return 1;
-  if (value && value->kind == ND_ADDR && value->lhs) {
+  if (value &&
+      psx_resolution_node_kind(
+          context->resolution_store, value) == ND_ADDR &&
+      value->lhs) {
     const psx_type_t *addressed =
         ps_node_get_type(context->resolution_store, value->lhs);
     return addressed && addressed->kind == PSX_TYPE_ARRAY;
@@ -1080,7 +1087,9 @@ static node_t *try_lower_typed_array_copy(
   int source_offset = 0;
   node_t *source_initialization = NULL;
   lvar_t *source = NULL;
-  if (value->kind == ND_ADDR && value->lhs &&
+  if (psx_resolution_node_kind(
+          context->resolution_store, value) == ND_ADDR &&
+      value->lhs &&
       psx_resolved_object_ref_node_kind(
           context->resolution_store, value->lhs) == ND_LVAR) {
     source = psx_resolved_object_ref_local(

@@ -312,8 +312,9 @@ static node_t *new_address_node(
     arena_context_t *arena_context, node_t *base) {
   node_t *address = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*address));
-  if (!address) return NULL;
-  address->kind = ND_ADDR;
+  if (!address ||
+      !psx_resolution_node_set_kind(store, address, ND_ADDR))
+    return NULL;
   address->lhs = base;
   return address;
 }

@@ -245,6 +245,7 @@ int psx_resolve_static_address_constant(
     char **symbol, int *symbol_len, long long *offset) {
   if (!node || !symbol || !symbol_len || !offset) return 0;
   switch (psx_resolved_object_ref_node_kind(store, node)) {
+    case ND_ADDRESS_OF:
     case ND_ADDR:
       if (node->lhs &&
           psx_resolved_object_ref_node_kind(store, node->lhs) == ND_GVAR) {

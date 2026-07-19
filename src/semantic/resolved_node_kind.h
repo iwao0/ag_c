@@ -14,6 +14,7 @@ typedef enum {
   ND_LVAR,
   ND_FUNCREF,
   ND_DEREF,
+  ND_ADDR,
   ND_GVAR,
   ND_VLA_ALLOC,
   ND_FP_TO_INT,

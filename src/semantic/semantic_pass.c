@@ -223,8 +223,7 @@ static int semantic_bind_address_result_type(
   if (!operand_canonical) return 0;
 
   psx_qual_type_t pointee_type = operand_type;
-  if (!node->is_explicit_addr_expr &&
-      operand_canonical->kind == PSX_TYPE_ARRAY) {
+  if (operand_canonical->kind == PSX_TYPE_ARRAY) {
     pointee_type = psx_semantic_type_table_base(
         types, operand_type.type_id);
   }
@@ -238,8 +237,7 @@ static int semantic_bind_address_result_type(
 static void semantic_resolve_explicit_address(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !node || !node->lhs ||
-      !node->is_explicit_addr_expr)
+  if (!semantic_context || !node || !node->lhs)
     return;
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
@@ -1316,14 +1314,16 @@ static void semantic_transform_node(
       semantic_transform_initializer_syntax(
           node->rhs, traversal);
       break;
+    case ND_ADDRESS_OF:
+      semantic_transform_node(node->lhs, traversal);
+      semantic_resolve_explicit_address(
+          traversal->semantic_context, node, fallback_diag_tok);
+      break;
     case ND_ADDR:
       semantic_transform_node(node->lhs, traversal);
-      if (node->is_explicit_addr_expr) {
-        semantic_resolve_explicit_address(
-            traversal->semantic_context, node, fallback_diag_tok);
-      } else if (!semantic_bind_address_result_type(
-                     traversal->semantic_context, node, node->lhs) &&
-                 !ps_node_get_type(store, node)) {
+      if (!semantic_bind_address_result_type(
+              traversal->semantic_context, node, node->lhs) &&
+          !ps_node_get_type(store, node)) {
         semantic_bind_qual_type_result(
             traversal->semantic_context, node,
             psx_resolve_address_result_qual_type_in(

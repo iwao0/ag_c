@@ -72,8 +72,9 @@ static node_t *wrap_array_decay(
     const psx_type_t *array_type) {
   node_t *address = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*address));
-  if (!address) return NULL;
-  address->kind = ND_ADDR;
+  if (!address ||
+      !psx_resolution_node_set_kind(store, address, ND_ADDR))
+    return NULL;
   address->lhs = reference;
   ps_node_bind_type(
       store, address,
@@ -474,9 +475,8 @@ static node_t *bind_node(
         bind_slot(&call->callee, context);
       return node;
     }
-    case ND_ADDR:
-      if (node->is_explicit_addr_expr && node->lhs &&
-          node->lhs->kind == ND_IDENTIFIER) {
+    case ND_ADDRESS_OF:
+      if (node->lhs && node->lhs->kind == ND_IDENTIFIER) {
         node->lhs = materialize_address_operand(
             (node_identifier_t *)node->lhs,
             context);
@@ -486,6 +486,9 @@ static node_t *bind_node(
           return node->lhs;
         return node;
       }
+      bind_slot(&node->lhs, context);
+      return node;
+    case ND_ADDR:
       bind_slot(&node->lhs, context);
       return node;
     case ND_DECL_INIT: {
