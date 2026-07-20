@@ -12,6 +12,7 @@
 #include "lowering/runtime_context.h"
 #include "hir/hir.h"
 #include "semantic/scope_graph.h"
+#include "source_manager.h"
 #include "codegen_emit.h"
 #include <string.h>
 #include <stdlib.h>
@@ -53,19 +54,20 @@ int ag_compilation_session_init(
   if (!ag_target_info_is_valid(target)) return 0;
   ag_compilation_options_init_defaults(&session->options);
   session->target = *target;
-  session->diagnostic_context = diag_context_create();
+  session->source_manager = ag_source_manager_create();
+  session->diagnostic_context = diag_context_create(
+      session->source_manager);
   session->token_allocator_context = tk_allocator_context_create(
       session->diagnostic_context);
   if (!tk_context_init(
           &session->tokenizer, session->diagnostic_context,
-          session->token_allocator_context)) {
+          session->token_allocator_context, session->source_manager)) {
     tk_allocator_context_destroy(session->token_allocator_context);
     diag_context_destroy(session->diagnostic_context);
+    ag_source_manager_destroy(session->source_manager);
     memset(session, 0, sizeof(*session));
     return 0;
   }
-  diag_context_bind_tokenizer(
-      session->diagnostic_context, &session->tokenizer);
   session->arena_context = arena_context_create();
   session->resolution_store = psx_resolution_store_create();
   session->scope_graph = psx_scope_graph_create();
@@ -124,6 +126,7 @@ int ag_compilation_session_init(
     tk_context_dispose(&session->tokenizer);
     tk_allocator_context_destroy(session->token_allocator_context);
     diag_context_destroy(session->diagnostic_context);
+    ag_source_manager_destroy(session->source_manager);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -156,7 +159,12 @@ int ag_compilation_session_is_complete(
          psx_resolution_store_semantic_types(
              session->resolution_store) ==
              ps_ctx_semantic_type_table_in(session->semantic_context) &&
-         session->diagnostic_context && session->token_allocator_context &&
+         session->source_manager && session->diagnostic_context &&
+         session->token_allocator_context &&
+         diag_context_source_manager(session->diagnostic_context) ==
+             session->source_manager &&
+         tk_context_source_manager(&session->tokenizer) ==
+             session->source_manager &&
          tk_context_diagnostics(&session->tokenizer) ==
              session->diagnostic_context &&
          tk_context_allocator(&session->tokenizer) ==
@@ -217,6 +225,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   arena_context_destroy(session->arena_context);
   psx_resolution_store_destroy(session->resolution_store);
   diag_context_destroy(session->diagnostic_context);
+  ag_source_manager_destroy(session->source_manager);
   memset(session, 0, sizeof(*session));
   return 1;
 }
@@ -280,6 +289,12 @@ ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
   return ag_compilation_session_is_complete(session)
              ? session->diagnostic_context
              : NULL;
+}
+
+ag_source_manager_t *ag_compilation_session_source_manager(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->source_manager : NULL;
 }
 
 ag_codegen_emit_context_t *ag_compilation_session_codegen_emit_context(

@@ -2435,8 +2435,8 @@ struct pp_include_frame {
   int                 buf_owned;    // physical include buffer; virtual source is borrowed
   char               *path_owned;   // normalize 済みパス (pop_include() の後に free)
   token_t            *saved_pb_head; // 親の pushback 列 (指令行の次行頭トークン等)。pop で復元
-  const char *saved_input;          // 親 ctx->user_input
-  const char *saved_filename;       // 親 ctx->current_filename
+  const char *saved_input;          // parent SourceManager input
+  const char *saved_filename;       // parent SourceManager name
   int         saved_line_delta;     // 親の #line 状態 (Stage 4)
   int         saved_file_override_set;
   uint16_t    saved_file_override;

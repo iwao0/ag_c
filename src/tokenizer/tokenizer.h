@@ -7,22 +7,20 @@
 typedef struct tokenizer_context_t tokenizer_context_t;
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct ag_source_manager_t ag_source_manager_t;
 typedef void (*tk_cursor_hook_t)(void *user_data, token_t *cursor);
 typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
-
-#define TK_FILENAME_TABLE_CAP 256
 
 /** @brief Tokenizerの実行時設定コンテキスト。 */
 struct tokenizer_context_t {
   tk_allocator_context_t *allocator_context;
   ag_diagnostic_context_t *diagnostic_context;
+  ag_source_manager_t *source_manager;
   bool strict_c11_mode;
   bool enable_trigraphs;
   bool enable_binary_literals;
   bool enable_c11_audit_extensions;
   token_t *current_token;
-  const char *user_input;
-  const char *current_filename;
   tk_cursor_hook_t cursor_hook;
   void *cursor_hook_user_data;
   tk_ensure_lookahead_hook_t ensure_lookahead_hook;
@@ -32,8 +30,6 @@ struct tokenizer_context_t {
   size_t stats_base_chunks;
   size_t stats_base_reserved_bytes;
   size_t max_token_len_for_test;
-  char *filename_table[TK_FILENAME_TABLE_CAP];
-  uint16_t filename_table_count;
 };
 
 /**
@@ -172,12 +168,14 @@ void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name);
  * @param ctx 初期化対象コンテキスト。
  * @param diagnostic_context 呼び出し側が所有する診断コンテキスト。
  * @param allocator_context 呼び出し側が所有する token allocator。
+ * @param source_manager 呼び出し側が所有する source manager。
  * @return 初期化できた場合は 1、必須依存が無い場合は 0。
  */
 int tk_context_init(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context,
-    tk_allocator_context_t *allocator_context);
+    tk_allocator_context_t *allocator_context,
+    ag_source_manager_t *source_manager);
 /**
  * @brief 既存 token 列の走査専用コンテキストを初期化する。
  * @warning token を生成する tokenize/stream API には渡さないこと。
@@ -188,6 +186,8 @@ int tk_cursor_context_init(
 ag_diagnostic_context_t *tk_context_diagnostics(
     const tokenizer_context_t *ctx);
 tk_allocator_context_t *tk_context_allocator(
+    const tokenizer_context_t *ctx);
+ag_source_manager_t *tk_context_source_manager(
     const tokenizer_context_t *ctx);
 /** @brief コンテキスト自身が所有する実行時領域を解放する。 */
 void tk_context_dispose(tokenizer_context_t *ctx);

@@ -277,7 +277,7 @@ static void parse_integer_literal_with_base(
 static void tk_audit_extension(
     tokenizer_context_t *ctx, char *loc, diag_text_id_t text_id) {
   if (!tk_ctx_get_enable_c11_audit_extensions(ctx)) return;
-  const char *input = ctx ? ctx->user_input : NULL;
+  const char *input = tk_get_user_input_ctx(ctx);
   int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",

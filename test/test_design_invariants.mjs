@@ -1157,6 +1157,10 @@ const compilationSessionSource = await readFile(
   "src/compilation_session.c",
   "utf8",
 );
+const sourceManagerHeader = await readFile("src/source_manager.h", "utf8");
+const sourceManagerSource = await readFile("src/source_manager.c", "utf8");
+const diagnosticContextHeader = await readFile("src/diag/diag.h", "utf8");
+const diagnosticContextSource = await readFile("src/diag/diag.c", "utf8");
 if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*session->resolution_store\s*,\s*session->scope_graph\s*,\s*&session->target\s*\)/s.test(
       compilationSessionSource,
     )) {
@@ -1331,6 +1335,7 @@ const sessionContextAccessorNames = [
   "preprocessor_context",
   "arena_context",
   "diagnostic_context",
+  "source_manager",
   "codegen_emit_context",
   "token_allocator_context",
   "parser_runtime_context",
@@ -1368,6 +1373,8 @@ if (sessionContextAccessorNames.some((name) =>
     /diag_context_activate\s*\(/.test(compilationSessionSource) ||
     /previous_diagnostic_context/.test(compilationSessionInternalHeader) ||
     !/diag_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/ag_source_manager_create\s*\(/.test(compilationSessionSource) ||
+    !/ag_source_manager_destroy\s*\(/.test(compilationSessionSource) ||
     /tk_context_activate\s*\(/.test(compilationSessionSource) ||
     /previous_tokenizer_context/.test(compilationSessionSource) ||
     !/tk_context_dispose\s*\(&session->tokenizer\)/.test(
@@ -1739,19 +1746,31 @@ if (explicitCodegenEmitSources.some((source) =>
   );
 }
 
-if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
-      tokenizerFilenameSource,
+if (/\b(?:user_input|current_filename|filename_table|filename_table_count)\b/.test(
+      tokenizerHeader,
     ) ||
-    !/ctx->filename_table_count/.test(tokenizerFilenameSource) ||
     /\btk_filename_(?:intern|lookup|reset_translation_unit)\s*\(/.test(
       `${tokenizerFilenameSource}\n${tokenizerSource}\n${preprocessSource}`,
+    ) ||
+    !/ag_source_manager_intern_name\s*\(/.test(tokenizerFilenameSource) ||
+    !/ag_source_manager_name\s*\(/.test(tokenizerFilenameSource) ||
+    !/ag_source_manager_reset_translation_unit\s*\(/.test(
+      tokenizerFilenameSource,
+    ) ||
+    !/uint16_t\s+ag_source_manager_intern_name\s*\(/.test(
+      sourceManagerHeader + sourceManagerSource,
+    ) ||
+    /char\s*\*\s*names\s*\[[^\]]+\]/.test(sourceManagerSource) ||
+    !/realloc\s*\(\s*manager->names/.test(sourceManagerSource) ||
+    !/if\s*\(\s*!manager\s*\|\|\s*!name\s*\|\|\s*!name\[0\]\s*\)\s*return\s+0/.test(
+      sourceManagerSource,
     ) ||
     !/tk_filename_intern_ctx\s*\(\s*ctx\s*,/.test(tokenizerSource) ||
     !/tk_filename_reset_translation_unit_ctx\s*\(/.test(
       tokenizerFilenameSource,
     )) {
   throw new Error(
-    "token filename interning must be owned and reset by tokenizer context",
+    "token source identity must be owned and reset by SourceManager",
   );
 }
 
@@ -1772,14 +1791,30 @@ if (/owns_(?:allocator|diagnostic)_context/.test(tokenizerHeader) ||
     /(?:diag_context_create|tk_allocator_context_create)\s*\(/.test(
       tokenizerConfigRuntimeSource,
     ) ||
-    !/int\s+tk_context_init\s*\(\s*tokenizer_context_t\s*\*ctx\s*,\s*ag_diagnostic_context_t\s*\*diagnostic_context\s*,\s*tk_allocator_context_t\s*\*allocator_context\s*\)/s.test(
+    !/int\s+tk_context_init\s*\(\s*tokenizer_context_t\s*\*ctx\s*,\s*ag_diagnostic_context_t\s*\*diagnostic_context\s*,\s*tk_allocator_context_t\s*\*allocator_context\s*,\s*ag_source_manager_t\s*\*source_manager\s*\)/s.test(
       tokenizerHeader + tokenizerConfigRuntimeSource,
     ) ||
     !/tk_allocator_diagnostics\s*\(\s*allocator_context\s*\)\s*!=\s*diagnostic_context/.test(
       tokenizerConfigRuntimeSource,
     ) ||
-    !/tk_context_init\s*\(\s*&session->tokenizer\s*,\s*session->diagnostic_context\s*,\s*session->token_allocator_context\s*\)/s.test(
+    !/tk_context_init\s*\(\s*&session->tokenizer\s*,\s*session->diagnostic_context\s*,\s*session->token_allocator_context\s*,\s*session->source_manager\s*\)/s.test(
       compilationSessionSource,
+    ) ||
+    /diag_context_bind_tokenizer\s*\(/.test(
+      diagnosticContextSource + diagnosticContextHeader +
+        compilationSessionSource,
+    ) ||
+    /tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
+      diagnosticContextSource,
+    ) ||
+    !/diag_context_create\s*\(\s*ag_source_manager_t\s*\*source_manager\s*\)/s.test(
+      diagnosticContextSource + diagnosticContextHeader,
+    ) ||
+    !/context->source_manager\s*=\s*source_manager\s*;/.test(
+      diagnosticContextSource,
+    ) ||
+    !/diag_context_source_manager\s*\(\s*diagnostic_context\s*\)\s*!=\s*source_manager/.test(
+      tokenizerConfigRuntimeSource,
     )) {
   throw new Error(
     "tokenizer dependencies must be session-owned, immutable, and supplied at initialization",
@@ -2156,6 +2191,12 @@ if (!/ps_local_registry_diagnostics\s*\(/.test(
       )
     ) ||
     !/tk_context_allocator\s*\(\s*&session->tokenizer\s*\)\s*==\s*session->token_allocator_context/.test(
+      compilationSessionSource,
+    ) ||
+    !/tk_context_source_manager\s*\(\s*&session->tokenizer\s*\)\s*==\s*session->source_manager/.test(
+      compilationSessionSource,
+    ) ||
+    !/diag_context_source_manager\s*\(\s*session->diagnostic_context\s*\)\s*==\s*session->source_manager/.test(
       compilationSessionSource,
     ) ||
     !/ps_ctx_arena\s*\(\s*session->semantic_context\s*\)\s*==\s*session->arena_context/.test(

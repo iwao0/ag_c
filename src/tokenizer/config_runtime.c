@@ -1,18 +1,22 @@
 #include "tokenizer.h"
 #include "allocator.h"
+#include "../source_manager.h"
+#include "../diag/diag.h"
 
 #include <limits.h>
 
 static int init_context(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context,
-    tk_allocator_context_t *allocator_context) {
+    tk_allocator_context_t *allocator_context,
+    ag_source_manager_t *source_manager) {
   if (!ctx) return 0;
   *ctx = (tokenizer_context_t){0};
   if (!diagnostic_context) return 0;
   *ctx = (tokenizer_context_t){
       .allocator_context = allocator_context,
       .diagnostic_context = diagnostic_context,
+      .source_manager = source_manager,
       .enable_trigraphs = true,
       .enable_binary_literals = true,
       .max_token_len_for_test = (size_t)INT_MAX,
@@ -23,19 +27,23 @@ static int init_context(
 int tk_context_init(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context,
-    tk_allocator_context_t *allocator_context) {
+    tk_allocator_context_t *allocator_context,
+    ag_source_manager_t *source_manager) {
   if (!allocator_context ||
-      tk_allocator_diagnostics(allocator_context) != diagnostic_context) {
+      !source_manager ||
+      tk_allocator_diagnostics(allocator_context) != diagnostic_context ||
+      diag_context_source_manager(diagnostic_context) != source_manager) {
     if (ctx) *ctx = (tokenizer_context_t){0};
     return 0;
   }
-  return init_context(ctx, diagnostic_context, allocator_context);
+  return init_context(
+      ctx, diagnostic_context, allocator_context, source_manager);
 }
 
 int tk_cursor_context_init(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context) {
-  return init_context(ctx, diagnostic_context, NULL);
+  return init_context(ctx, diagnostic_context, NULL, NULL);
 }
 
 ag_diagnostic_context_t *tk_context_diagnostics(
@@ -48,9 +56,13 @@ tk_allocator_context_t *tk_context_allocator(
   return ctx ? ctx->allocator_context : NULL;
 }
 
+ag_source_manager_t *tk_context_source_manager(
+    const tokenizer_context_t *ctx) {
+  return ctx ? ctx->source_manager : NULL;
+}
+
 void tk_context_dispose(tokenizer_context_t *ctx) {
   if (!ctx) return;
-  tk_filename_reset_translation_unit_ctx(ctx);
   *ctx = (tokenizer_context_t){0};
 }
 

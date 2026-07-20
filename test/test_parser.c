@@ -3,6 +3,7 @@
 #include "../src/compilation_session_internal.h"
 #include "../src/type_layout.h"
 #include "../src/type_signature.h"
+#include "../src/source_manager.h"
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
@@ -8895,8 +8896,10 @@ static void test_diagnostic_catalog_localization(void) {
         diag_message_en(localized_error_ids[i]));
   }
 
-  ag_diagnostic_context_t *en = diag_context_create();
-  ag_diagnostic_context_t *ja = diag_context_create();
+  ag_source_manager_t *en_sources = ag_source_manager_create();
+  ag_source_manager_t *ja_sources = ag_source_manager_create();
+  ag_diagnostic_context_t *en = diag_context_create(en_sources);
+  ag_diagnostic_context_t *ja = diag_context_create(ja_sources);
   ASSERT_TRUE(en != NULL);
   ASSERT_TRUE(ja != NULL);
   diag_context_set_locale(en, "en");
@@ -8934,6 +8937,8 @@ static void test_diagnostic_catalog_localization(void) {
 
   diag_context_destroy(en);
   diag_context_destroy(ja);
+  ag_source_manager_destroy(en_sources);
+  ag_source_manager_destroy(ja_sources);
 
   diag_context_set_locale(test_diagnostics(), "en");
   expect_parse_ok_with_message(
@@ -29148,9 +29153,21 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
   tokenizer_context_t invalid_tokenizer;
   ASSERT_TRUE(!tk_context_init(
-      &invalid_tokenizer, NULL, host.token_allocator_context));
+      &invalid_tokenizer, NULL, host.token_allocator_context,
+      host.source_manager));
   ASSERT_TRUE(!tk_context_init(
-      &invalid_tokenizer, host.diagnostic_context, NULL));
+      &invalid_tokenizer, host.diagnostic_context, NULL,
+      host.source_manager));
+  ASSERT_TRUE(!tk_context_init(
+      &invalid_tokenizer, host.diagnostic_context,
+      host.token_allocator_context, NULL));
+  ag_source_manager_t *foreign_sources = ag_source_manager_create();
+  ASSERT_TRUE(foreign_sources != NULL);
+  ASSERT_TRUE(!tk_context_init(
+      &invalid_tokenizer, host.diagnostic_context,
+      host.token_allocator_context, foreign_sources));
+  ag_source_manager_destroy(foreign_sources);
+  ASSERT_TRUE(diag_context_create(NULL) == NULL);
   ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&host) ==
               &host.ir_allocation_stats);
   ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&wasm) ==
@@ -29323,6 +29340,15 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.diagnostic_context != NULL);
   ASSERT_TRUE(wasm.diagnostic_context != NULL);
   ASSERT_TRUE(host.diagnostic_context != wasm.diagnostic_context);
+  ASSERT_TRUE(host.source_manager != NULL);
+  ASSERT_TRUE(wasm.source_manager != NULL);
+  ASSERT_TRUE(host.source_manager != wasm.source_manager);
+  ASSERT_TRUE(ag_compilation_session_source_manager(&host) ==
+              host.source_manager);
+  ASSERT_TRUE(diag_context_source_manager(host.diagnostic_context) ==
+              host.source_manager);
+  ASSERT_TRUE(tk_context_source_manager(&host.tokenizer) ==
+              host.source_manager);
   diag_context_set_locale(host.diagnostic_context, "en");
   diag_context_set_locale(wasm.diagnostic_context, "ja");
   ASSERT_TRUE(strcmp(

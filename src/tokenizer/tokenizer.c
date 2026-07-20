@@ -10,6 +10,7 @@
 #include "number.h"
 #include "punctuator.h"
 #include "scanner.h"
+#include "../source_manager.h"
 #include "trigraph.h"
 #if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
 #include <setjmp.h>
@@ -93,14 +94,14 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
 
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  return use_ctx ? use_ctx->user_input : NULL;
+  return ag_source_manager_current_input(
+      tk_context_source_manager(use_ctx));
 }
 
 void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  if (use_ctx) {
-    use_ctx->user_input = p;
-  }
+  ag_source_manager_set_current_input(
+      tk_context_source_manager(use_ctx), p);
 }
 
 /** @brief Tokenizer統計の計測基準点をリセットする。 */
@@ -129,14 +130,14 @@ tokenizer_stats_t tk_get_tokenizer_stats_ctx(
 
 const char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  return use_ctx ? use_ctx->current_filename : NULL;
+  return ag_source_manager_current_name(
+      tk_context_source_manager(use_ctx));
 }
 
 void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name) {
   tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
-  if (use_ctx) {
-    use_ctx->current_filename = name;
-  }
+  ag_source_manager_set_current_name(
+      tk_context_source_manager(use_ctx), name);
 }
 
 static void *tcalloc(tokenizer_context_t *ctx, size_t n, size_t size) {
@@ -170,7 +171,7 @@ static void init_token_base(
     const char *loc, int byte_length) {
   tok->kind = kind;
   tok->file_name_id = tk_filename_intern_ctx(
-      ctx, ctx ? ctx->current_filename : NULL);
+      ctx, tk_get_filename_ctx(ctx));
   tok->line_no = line_no;
   tok->byte_offset = -1;
   tok->byte_length = byte_length < 0 ? 0 : byte_length;

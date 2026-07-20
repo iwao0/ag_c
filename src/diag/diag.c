@@ -3,6 +3,7 @@
 #include "messages.h"
 #include "ui_texts.h"
 #include "../tokenizer/tokenizer.h"
+#include "../source_manager.h"
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -32,7 +33,7 @@ typedef struct {
 } agc_diag_record_t;
 
 struct ag_diagnostic_context_t {
-  tokenizer_context_t *tokenizer_context;
+  ag_source_manager_t *source_manager;
   char locale[3];
   agc_diag_record_t initial_records[AGC_DIAG_DEFAULT_RECORD_LIMIT];
   agc_diag_record_t *records;
@@ -180,20 +181,24 @@ static int diag_store_at_v(
   int end_column = 0;
   diag_line_column(input, start_offset, &start_line, &start_column);
   diag_line_column(input, end_offset, &end_line, &end_column);
-  tokenizer_context_t *tokenizer = context ? context->tokenizer_context : NULL;
-  return diag_store_v(context, severity, code, tk_get_filename_ctx(tokenizer),
-                      start_line, start_column, start_offset,
-                      end_line, end_column, end_offset, fmt, ap);
+  const ag_source_manager_t *source_manager =
+      context ? context->source_manager : NULL;
+  return diag_store_v(
+      context, severity, code,
+      ag_source_manager_current_name(source_manager),
+      start_line, start_column, start_offset,
+      end_line, end_column, end_offset, fmt, ap);
 }
 
 static int diag_store_tok_v(
                             ag_diagnostic_context_t *context,
                             int severity, const char *code, const token_t *tok,
                             const char *fmt, va_list ap) {
-  tokenizer_context_t *tokenizer = context ? context->tokenizer_context : NULL;
+  const ag_source_manager_t *source_manager =
+      context ? context->source_manager : NULL;
   const char *input = tok && tok->source_input
                           ? tok->source_input
-                          : tk_get_user_input_ctx(tokenizer);
+                          : ag_source_manager_current_input(source_manager);
   int start_offset = tok ? tok->byte_offset : -1;
   int byte_length = tok && tok->byte_length > 0 ? tok->byte_length : 0;
   int end_offset = start_offset < 0 ? -1 : start_offset + byte_length;
@@ -201,8 +206,8 @@ static int diag_store_tok_v(
   int start_column = diag_byte_column(input, start_offset);
   int end_line = start_line;
   int end_column = start_column ? start_column + byte_length : 0;
-  const char *source_name = tk_filename_lookup_ctx(
-      tokenizer, tok ? tok->file_name_id : 0);
+  const char *source_name = ag_source_manager_name(
+      source_manager, tok ? tok->file_name_id : 0);
   return diag_store_v(context, severity, code, source_name,
                       start_line, start_column, start_offset,
                       end_line, end_column, end_offset, fmt, ap);
@@ -220,9 +225,12 @@ void diag_reset_records_in(ag_diagnostic_context_t *context) {
   context->limit_kind = 0;
 }
 
-ag_diagnostic_context_t *diag_context_create(void) {
+ag_diagnostic_context_t *diag_context_create(
+    ag_source_manager_t *source_manager) {
+  if (!source_manager) return NULL;
   ag_diagnostic_context_t *context = calloc(1, sizeof(*context));
   if (!context) return NULL;
+  context->source_manager = source_manager;
   memcpy(context->locale, "ja", sizeof(context->locale));
   context->records = context->initial_records;
   context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
@@ -231,10 +239,9 @@ ag_diagnostic_context_t *diag_context_create(void) {
   return context;
 }
 
-void diag_context_bind_tokenizer(
-    ag_diagnostic_context_t *context,
-    tokenizer_context_t *tokenizer_context) {
-  if (context) context->tokenizer_context = tokenizer_context;
+ag_source_manager_t *diag_context_source_manager(
+    const ag_diagnostic_context_t *context) {
+  return context ? context->source_manager : NULL;
 }
 
 static void diag_context_release_records(ag_diagnostic_context_t *context) {
@@ -603,8 +610,8 @@ static void print_token_actual(
  */
 static const char *diag_token_filename(
     const ag_diagnostic_context_t *context, const token_t *tok) {
-  return tk_filename_lookup_ctx(
-      context ? context->tokenizer_context : NULL,
+  return ag_source_manager_name(
+      context ? context->source_manager : NULL,
       tok ? tok->file_name_id : 0);
 }
 

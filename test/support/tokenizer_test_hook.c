@@ -2,10 +2,12 @@
 #include "../../src/tokenizer/test_hook.h"
 #include "../../src/tokenizer/allocator.h"
 #include "../../src/diag/diag.h"
+#include "../../src/source_manager.h"
 
 #include <stdlib.h>
 
 static tokenizer_context_t default_test_context;
+static ag_source_manager_t *default_test_sources;
 static ag_diagnostic_context_t *default_test_diagnostics;
 static tk_allocator_context_t *default_test_allocator;
 static tokenizer_context_t *active_test_context;
@@ -13,16 +15,15 @@ static int default_test_context_initialized;
 
 static tokenizer_context_t *ensure_default_test_context(void) {
   if (!default_test_context_initialized) {
-    default_test_diagnostics = diag_context_create();
+    default_test_sources = ag_source_manager_create();
+    default_test_diagnostics = diag_context_create(default_test_sources);
     default_test_allocator = tk_allocator_context_create(
         default_test_diagnostics);
     if (!tk_context_init(
             &default_test_context, default_test_diagnostics,
-            default_test_allocator)) {
+            default_test_allocator, default_test_sources)) {
       abort();
     }
-    diag_context_bind_tokenizer(
-        default_test_diagnostics, &default_test_context);
     default_test_context_initialized = 1;
   }
   return &default_test_context;
@@ -49,8 +50,10 @@ void tk_test_context_shutdown(void) {
     tk_context_dispose(&default_test_context);
     tk_allocator_context_destroy(default_test_allocator);
     diag_context_destroy(default_test_diagnostics);
+    ag_source_manager_destroy(default_test_sources);
     default_test_allocator = NULL;
     default_test_diagnostics = NULL;
+    default_test_sources = NULL;
     default_test_context_initialized = 0;
   }
 }

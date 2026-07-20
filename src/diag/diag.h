@@ -7,13 +7,13 @@
 #include "../tokenizer/token.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
-typedef struct tokenizer_context_t tokenizer_context_t;
+typedef struct ag_source_manager_t ag_source_manager_t;
 
-ag_diagnostic_context_t *diag_context_create(void);
+ag_diagnostic_context_t *diag_context_create(
+    ag_source_manager_t *source_manager);
 void diag_context_destroy(ag_diagnostic_context_t *context);
-void diag_context_bind_tokenizer(
-    ag_diagnostic_context_t *context,
-    tokenizer_context_t *tokenizer_context);
+ag_source_manager_t *diag_context_source_manager(
+    const ag_diagnostic_context_t *context);
 int diag_context_set_limits(
     ag_diagnostic_context_t *context, int max_records, int max_bytes);
 void diag_context_set_locale(

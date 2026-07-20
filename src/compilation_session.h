@@ -12,6 +12,7 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct ag_preprocessor_context_t ag_preprocessor_context_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct ag_source_manager_t ag_source_manager_t;
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
@@ -44,6 +45,8 @@ ag_preprocessor_context_t *ag_compilation_session_preprocessor_context(
 arena_context_t *ag_compilation_session_arena_context(
     const ag_compilation_session_t *session);
 ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
+    const ag_compilation_session_t *session);
+ag_source_manager_t *ag_compilation_session_source_manager(
     const ag_compilation_session_t *session);
 ag_codegen_emit_context_t *ag_compilation_session_codegen_emit_context(
     const ag_compilation_session_t *session);

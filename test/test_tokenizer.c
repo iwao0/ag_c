@@ -2,6 +2,7 @@
 #include "../src/tokenizer/tokenizer_test.h"
 #include "../src/tokenizer/allocator.h"
 #include "../src/diag/diag.h"
+#include "../src/source_manager.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -20,18 +21,20 @@ static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 #define EXPLICIT_CONTEXT_CAP 16
 static ag_diagnostic_context_t *explicit_diagnostics[EXPLICIT_CONTEXT_CAP];
 static tk_allocator_context_t *explicit_allocators[EXPLICIT_CONTEXT_CAP];
+static ag_source_manager_t *explicit_sources[EXPLICIT_CONTEXT_CAP];
 static size_t explicit_context_count;
 
 static void init_explicit_context(tokenizer_context_t *ctx) {
   ASSERT_TRUE(explicit_context_count < EXPLICIT_CONTEXT_CAP);
-  ag_diagnostic_context_t *diagnostics = diag_context_create();
+  ag_source_manager_t *sources = ag_source_manager_create();
+  ag_diagnostic_context_t *diagnostics = diag_context_create(sources);
   tk_allocator_context_t *allocator =
       tk_allocator_context_create(diagnostics);
   ASSERT_TRUE(tk_context_init(
-      ctx, diagnostics, allocator));
-  diag_context_bind_tokenizer(diagnostics, ctx);
+      ctx, diagnostics, allocator, sources));
   explicit_diagnostics[explicit_context_count] = diagnostics;
   explicit_allocators[explicit_context_count] = allocator;
+  explicit_sources[explicit_context_count] = sources;
   explicit_context_count++;
 }
 
@@ -39,8 +42,57 @@ static void dispose_explicit_context_dependencies(void) {
   for (size_t i = 0; i < explicit_context_count; i++) {
     tk_allocator_context_destroy(explicit_allocators[i]);
     diag_context_destroy(explicit_diagnostics[i]);
+    ag_source_manager_destroy(explicit_sources[i]);
   }
   explicit_context_count = 0;
+}
+
+static void test_source_manager_dynamic_names(void) {
+  printf("test_source_manager_dynamic_names...\n");
+  ag_source_manager_t *sources = ag_source_manager_create();
+  ASSERT_TRUE(sources != NULL);
+  ag_diagnostic_context_t *diagnostics = diag_context_create(sources);
+  ASSERT_TRUE(diagnostics != NULL);
+  ASSERT_EQ(0, ag_source_manager_intern_name(sources, NULL));
+  ASSERT_TRUE(ag_source_manager_name(sources, 0) == NULL);
+  ag_source_manager_set_current_input(sources, "int value;");
+  ag_source_manager_set_current_name(sources, "input.c");
+  ASSERT_TRUE(strcmp(
+      ag_source_manager_current_input(sources), "int value;") == 0);
+  ASSERT_TRUE(strcmp(
+      ag_source_manager_current_name(sources), "input.c") == 0);
+  uint16_t last_id = 0;
+  char name[32];
+  for (int i = 0; i < 300; i++) {
+    snprintf(name, sizeof(name), "include-%03d.h", i);
+    last_id = ag_source_manager_intern_name(sources, name);
+    ASSERT_TRUE(last_id != 0);
+    ASSERT_TRUE(strcmp(ag_source_manager_name(sources, last_id), name) == 0);
+  }
+  ASSERT_TRUE(last_id > 256);
+  token_t source_token = {
+      .source_input = "value;",
+      .line_no = 7,
+      .byte_offset = 0,
+      .byte_length = 1,
+      .file_name_id = last_id,
+      .kind = TK_SEMI,
+  };
+  ASSERT_TRUE(diag_report_tokf_in(
+      diagnostics, DIAG_ERR_INTERNAL_USAGE, &source_token,
+      "%s", "source manager diagnostic"));
+  ASSERT_TRUE(strcmp(
+      diag_context_record_source_name(diagnostics, 0),
+      "include-299.h") == 0);
+  ag_source_manager_reset_translation_unit(sources);
+  ASSERT_TRUE(ag_source_manager_name(sources, last_id) == NULL);
+  ASSERT_TRUE(ag_source_manager_current_input(sources) == NULL);
+  ASSERT_TRUE(ag_source_manager_current_name(sources) == NULL);
+  ASSERT_TRUE(strcmp(
+      diag_context_record_source_name(diagnostics, 0),
+      "include-299.h") == 0);
+  diag_context_destroy(diagnostics);
+  ag_source_manager_destroy(sources);
 }
 
 static void expect_tokenize_fail(const char *input) {
@@ -1404,6 +1456,7 @@ static void test_c11_long_escape_sequences(void) {
 int main() {
   printf("Running tests for Tokenizer...\n");
 
+  test_source_manager_dynamic_names();
   test_tokenize();
   test_tokenize_int_literals();
   test_tokenize_invalid();
