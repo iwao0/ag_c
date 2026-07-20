@@ -589,6 +589,32 @@ int psx_semantic_type_table_array_flat_element_count(
   return count;
 }
 
+int psx_semantic_type_table_array_subscript_stride_elements(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id,
+    int depth) {
+  psx_type_shape_t shape = {0};
+  if (depth < 0 ||
+      !psx_semantic_type_table_describe(table, type_id, &shape) ||
+      shape.kind != PSX_TYPE_ARRAY)
+    return 0;
+  while (depth-- > 0) {
+    psx_qual_type_t base = psx_semantic_type_table_base(table, type_id);
+    if (base.type_id == PSX_TYPE_ID_INVALID ||
+        !psx_semantic_type_table_describe(table, base.type_id, &shape) ||
+        shape.kind != PSX_TYPE_ARRAY)
+      return 0;
+    type_id = base.type_id;
+  }
+  psx_qual_type_t selected = psx_semantic_type_table_base(table, type_id);
+  if (selected.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_describe(table, selected.type_id, &shape))
+    return 0;
+  return shape.kind == PSX_TYPE_ARRAY
+             ? psx_semantic_type_table_array_flat_element_count(
+                   table, selected.type_id)
+             : 1;
+}
+
 psx_qual_type_t psx_semantic_type_table_pointee_value(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
   psx_type_shape_t type = {0};

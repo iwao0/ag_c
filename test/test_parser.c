@@ -28413,6 +28413,22 @@ static void test_semantic_type_identity() {
             const_int_array_element.type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             const_int_array_element.qualifiers);
+  psx_qual_type_t const_int_matrix_row =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int_identity, 3, 0);
+  psx_qual_type_t const_int_matrix =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int_matrix_row, 2, 0);
+  ASSERT_EQ(6, psx_semantic_type_table_array_flat_element_count(
+                   semantic_types, const_int_matrix.type_id));
+  ASSERT_EQ(3, psx_semantic_type_table_array_subscript_stride_elements(
+                   semantic_types, const_int_matrix.type_id, 0));
+  ASSERT_EQ(1, psx_semantic_type_table_array_subscript_stride_elements(
+                   semantic_types, const_int_matrix.type_id, 1));
+  ASSERT_EQ(0, psx_semantic_type_table_array_subscript_stride_elements(
+                   semantic_types, const_int_matrix.type_id, 2));
+  ASSERT_EQ(0, psx_semantic_type_table_array_subscript_stride_elements(
+                   semantic_types, plain_int_identity.type_id, 0));
   const psx_type_t *interned_int =
       ps_ctx_type_by_id_in(context, plain_int_identity.type_id);
   ASSERT_TRUE(interned_int != NULL);

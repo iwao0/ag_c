@@ -9431,7 +9431,7 @@ const symtabSource = await readFile("src/parser/symtab.h", "utf8");
 const gvarStruct = symtabSource.match(
   /struct global_var_t\s*\{([\s\S]*?)\n\};/,
 );
-const lvarDeclTypeViewFunction = nodeUtilsSource.match(
+const lvarDeclTypeViewFunction = parserDeclSource.match(
   /static\s+const\s+psx_type_t\s*\*lvar_decl_type_consistent\s*\([^)]*\)\s*\{[^]*?\n\}/,
 );
 const gvarDeclTypeViewFunction = nodeUtilsSource.match(
@@ -9544,6 +9544,36 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     !/\bps_gvar_decl_qual_type\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
     "production symbol type views must materialize from declaration QualType identity",
+  );
+}
+const lvarSemanticTypeQueries = parserDeclSource.match(
+  /int\s+ps_lvar_array_flat_element_count\s*\([^]*?int\s+ps_lvar_vla_row_stride_frame_off\s*\(/,
+);
+const gvarSemanticTypeQueries = nodeUtilsSource.match(
+  /static\s+int\s+gvar_decl_shape\s*\([^]*?int\s+ps_gvar_has_aggregate_initializer\s*\(/,
+);
+if (!/\bpsx_semantic_type_table_array_subscript_stride_elements\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/psx_semantic_type_table_array_subscript_stride_elements\s*\([^]*?psx_semantic_type_table_base\s*\([^]*?psx_semantic_type_table_array_flat_element_count\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !lvarSemanticTypeQueries ||
+    /\bps_lvar_get_decl_type\s*\(|\bps_type_[a-z_]+\s*\(/.test(
+      lvarSemanticTypeQueries[0],
+    ) ||
+    !/\bpsx_semantic_type_table_(?:describe|array_leaf|array_flat_element_count|array_subscript_stride_elements|contains_vla_array)\s*\(/.test(
+      lvarSemanticTypeQueries[0],
+    ) ||
+    !gvarSemanticTypeQueries ||
+    /\bgvar_decl_type_view\s*\(|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_type_[a-z_]+\s*\(/.test(
+      gvarSemanticTypeQueries[0],
+    ) ||
+    !/\bpsx_semantic_type_table_(?:describe|array_leaf)\s*\(/.test(
+      gvarSemanticTypeQueries[0],
+    )) {
+  throw new Error(
+    "local and global symbol type queries must consume QualType and TypeShape without compatibility views",
   );
 }
 if (!recordMemberDeclStruct ||

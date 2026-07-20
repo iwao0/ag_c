@@ -10,6 +10,7 @@
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../semantic/resolved_object_ref.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -33,23 +34,58 @@ void ps_decl_get_current_funcname_in(
       registry, out_name, out_len);
 }
 
-static const psx_type_t *lvar_public_decl_type(const lvar_t *var) {
-  return var ? ps_lvar_get_decl_type(var) : NULL;
+static int lvar_decl_shape(const lvar_t *var, psx_type_shape_t *shape) {
+  return var && shape && psx_semantic_type_table_describe(
+      var->decl_type_table, var->decl_qual_type.type_id, shape);
 }
 
-static const psx_type_t *lvar_public_pointee_type(const psx_type_t *type) {
-  return type && type->kind == PSX_TYPE_POINTER ? type->base : NULL;
+static int lvar_array_leaf_shape(const lvar_t *var,
+                                 psx_type_shape_t *shape) {
+  if (!var || !shape) return 0;
+  psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
+      var->decl_type_table, var->decl_qual_type.type_id);
+  return psx_semantic_type_table_describe(
+      var->decl_type_table, leaf.type_id, shape);
 }
 
-static token_kind_t lvar_public_tag_kind_from_type(const psx_type_t *type) {
-  if (!type) return TK_EOF;
-  type = ps_type_array_leaf_type(type);
-  if (type && type->kind == PSX_TYPE_POINTER) type = type->base;
-  type = ps_type_array_leaf_type(type);
-  if (!type) return TK_EOF;
-  if (type->kind == PSX_TYPE_STRUCT) return TK_STRUCT;
-  if (type->kind == PSX_TYPE_UNION) return TK_UNION;
+static token_kind_t semantic_record_kind(psx_type_kind_t kind) {
+  if (kind == PSX_TYPE_STRUCT) return TK_STRUCT;
+  if (kind == PSX_TYPE_UNION) return TK_UNION;
   return TK_EOF;
+}
+
+static tk_float_kind_t semantic_floating_kind(
+    const psx_type_shape_t *shape) {
+  if (!shape || (shape->kind != PSX_TYPE_FLOAT &&
+                 shape->kind != PSX_TYPE_COMPLEX))
+    return TK_FLOAT_KIND_NONE;
+  if (shape->floating_kind == PSX_FLOATING_KIND_FLOAT)
+    return TK_FLOAT_KIND_FLOAT;
+  if (shape->floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE)
+    return TK_FLOAT_KIND_LONG_DOUBLE;
+  return shape->floating_kind == PSX_FLOATING_KIND_DOUBLE
+             ? TK_FLOAT_KIND_DOUBLE
+             : TK_FLOAT_KIND_NONE;
+}
+
+static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
+  return var ? psx_type_compatibility_view_for(
+                   var->decl_type_table, var->decl_qual_type)
+             : NULL;
+}
+
+const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
+  return lvar_decl_type_consistent(var);
+}
+
+psx_qual_type_t ps_lvar_decl_qual_type(const lvar_t *var) {
+  return var ? var->decl_qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var) {
+  return ps_lvar_decl_qual_type(var).type_id;
 }
 
 int ps_lvar_frame_storage_size(const lvar_t *var) {
@@ -57,13 +93,16 @@ int ps_lvar_frame_storage_size(const lvar_t *var) {
 }
 
 int ps_lvar_array_flat_element_count(const lvar_t *var) {
-  return var ? ps_type_array_flat_element_count(lvar_public_decl_type(var)) : 0;
+  return var ? psx_semantic_type_table_array_flat_element_count(
+                   var->decl_type_table, var->decl_qual_type.type_id)
+             : 0;
 }
 
 int ps_lvar_array_designator_stride_elements(const lvar_t *var, int depth) {
   if (depth < 0) return 1;
-  int stride = var ? ps_type_array_subscript_stride_elements(
-                         lvar_public_decl_type(var), depth)
+  int stride = var ? psx_semantic_type_table_array_subscript_stride_elements(
+                         var->decl_type_table, var->decl_qual_type.type_id,
+                         depth)
                    : 0;
   return stride > 0 ? stride : 1;
 }
@@ -85,39 +124,82 @@ global_var_t *ps_lvar_static_storage_global(const lvar_t *var) {
 }
 
 int ps_lvar_is_vla(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_contains_vla_array(type) ||
+  return (var && psx_semantic_type_table_contains_vla_array(
+                     var->decl_type_table, var->decl_qual_type.type_id)) ||
          (var && var->vla_runtime.view.row_stride_frame_off != 0);
 }
 
 int ps_lvar_is_array(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return type && type->kind == PSX_TYPE_ARRAY ? 1 : 0;
+  psx_type_shape_t shape = {0};
+  return lvar_decl_shape(var, &shape) && shape.kind == PSX_TYPE_ARRAY;
 }
 
 int ps_lvar_is_complex(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *leaf = ps_type_array_leaf_type(type);
-  return leaf && leaf->kind == PSX_TYPE_COMPLEX ? 1 : 0;
+  psx_type_shape_t shape = {0};
+  return lvar_array_leaf_shape(var, &shape) &&
+         shape.kind == PSX_TYPE_COMPLEX;
 }
 
 int ps_lvar_is_tag_pointer(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *base = lvar_public_pointee_type(type);
-  return base ? ps_type_is_tag_aggregate(ps_type_array_leaf_type(base)) : 0;
+  psx_type_shape_t shape = {0};
+  if (!lvar_decl_shape(var, &shape) || shape.kind != PSX_TYPE_POINTER)
+    return 0;
+  psx_qual_type_t base = psx_semantic_type_table_base(
+      var->decl_type_table, var->decl_qual_type.type_id);
+  psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
+      var->decl_type_table, base.type_id);
+  return psx_semantic_type_table_describe(
+             var->decl_type_table, leaf.type_id, &shape) &&
+         psx_type_kind_is_aggregate(shape.kind);
 }
 
 token_kind_t ps_lvar_tag_kind(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return lvar_public_tag_kind_from_type(type);
+  if (!var) return TK_EOF;
+  psx_qual_type_t type = psx_semantic_type_table_array_leaf(
+      var->decl_type_table, var->decl_qual_type.type_id);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          var->decl_type_table, type.type_id, &shape))
+    return TK_EOF;
+  if (shape.kind == PSX_TYPE_POINTER) {
+    type = psx_semantic_type_table_base(
+        var->decl_type_table, type.type_id);
+    type = psx_semantic_type_table_array_leaf(
+        var->decl_type_table, type.type_id);
+    if (!psx_semantic_type_table_describe(
+            var->decl_type_table, type.type_id, &shape))
+      return TK_EOF;
+  }
+  return semantic_record_kind(shape.kind);
 }
 
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *leaf = ps_type_array_leaf_type(type);
-  if (leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX))
-    return ps_type_floating_token_kind(leaf);
-  return TK_FLOAT_KIND_NONE;
+  psx_type_shape_t shape = {0};
+  return lvar_array_leaf_shape(var, &shape)
+             ? semantic_floating_kind(&shape)
+             : TK_FLOAT_KIND_NONE;
+}
+
+int ps_lvar_value_is_pointer_like(const lvar_t *var) {
+  psx_type_shape_t shape = {0};
+  return lvar_decl_shape(var, &shape) &&
+         (shape.kind == PSX_TYPE_POINTER || shape.kind == PSX_TYPE_ARRAY);
+}
+
+int ps_lvar_is_struct_aggregate(const lvar_t *var) {
+  psx_type_shape_t shape = {0};
+  return lvar_array_leaf_shape(var, &shape) &&
+         shape.kind == PSX_TYPE_STRUCT;
+}
+
+int ps_lvar_is_union_aggregate(const lvar_t *var) {
+  psx_type_shape_t shape = {0};
+  return lvar_array_leaf_shape(var, &shape) &&
+         shape.kind == PSX_TYPE_UNION;
+}
+
+int ps_lvar_is_tag_aggregate(const lvar_t *var) {
+  return ps_lvar_is_struct_aggregate(var) || ps_lvar_is_union_aggregate(var);
 }
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var) {

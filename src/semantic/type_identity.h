@@ -56,6 +56,9 @@ psx_qual_type_t psx_semantic_type_table_array_leaf(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 int psx_semantic_type_table_array_flat_element_count(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
+int psx_semantic_type_table_array_subscript_stride_elements(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id,
+    int depth);
 psx_qual_type_t psx_semantic_type_table_pointee_value(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 psx_qual_type_t psx_semantic_type_table_callable_function(

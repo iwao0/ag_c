@@ -24,8 +24,9 @@
 #include <string.h>
 
 static int type_is_pointer_view_type(const psx_type_t *type);
-static const psx_type_t *lvar_decl_type_view(const lvar_t *var);
 static const psx_type_t *gvar_decl_type_view(const global_var_t *gv);
+static tk_float_kind_t semantic_shape_fp_kind(
+    const psx_type_shape_t *shape);
 
 typedef enum {
   NODE_SCALAR_UNSIGNED,
@@ -100,30 +101,10 @@ static psx_type_t *type_with_self_qualifiers_in(
   return copy;
 }
 
-static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var);
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv);
-
-static const psx_type_t *lvar_decl_type_view(const lvar_t *var) {
-  return var ? lvar_decl_type_consistent(var) : NULL;
-}
 
 static const psx_type_t *gvar_decl_type_view(const global_var_t *gv) {
   return gv ? gvar_decl_type_consistent(gv) : NULL;
-}
-
-static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
-  if (!type) return TK_EOF;
-  type = ps_type_array_leaf_type(type);
-  if (!type) return TK_EOF;
-  if (type->kind == PSX_TYPE_STRUCT) return TK_STRUCT;
-  if (type->kind == PSX_TYPE_UNION) return TK_UNION;
-  return TK_EOF;
-}
-
-static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
-  if (!var) return NULL;
-  return psx_type_compatibility_view_for(
-      var->decl_type_table, var->decl_qual_type);
 }
 
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
@@ -132,52 +113,36 @@ static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
       gv->decl_type_table, gv->decl_qual_type);
 }
 
-int ps_lvar_value_is_pointer_like(const lvar_t *var) {
-  const psx_type_t *type = lvar_decl_type_view(var);
-  return type ? ps_type_is_pointer_like(type) : 0;
+static int gvar_decl_shape(const global_var_t *gv,
+                           psx_type_shape_t *shape) {
+  return gv && shape && psx_semantic_type_table_describe(
+      gv->decl_type_table, gv->decl_qual_type.type_id, shape);
 }
 
-int ps_lvar_is_struct_aggregate(const lvar_t *var) {
-  const psx_type_t *type = lvar_decl_type_view(var);
-  return type ? type_tag_aggregate_kind(type) == TK_STRUCT : 0;
-}
-
-int ps_lvar_is_union_aggregate(const lvar_t *var) {
-  const psx_type_t *type = lvar_decl_type_view(var);
-  return type ? type_tag_aggregate_kind(type) == TK_UNION : 0;
-}
-
-int ps_lvar_is_tag_aggregate(const lvar_t *var) {
-  return ps_lvar_is_struct_aggregate(var) || ps_lvar_is_union_aggregate(var);
-}
-
-const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
-  return lvar_decl_type_consistent(var);
-}
-
-psx_qual_type_t ps_lvar_decl_qual_type(const lvar_t *var) {
-  return var ? var->decl_qual_type
-             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
-}
-
-psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var) {
-  return ps_lvar_decl_qual_type(var).type_id;
+static int gvar_array_leaf_shape(const global_var_t *gv,
+                                 psx_type_shape_t *shape) {
+  if (!gv || !shape) return 0;
+  psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
+      gv->decl_type_table, gv->decl_qual_type.type_id);
+  return psx_semantic_type_table_describe(
+      gv->decl_type_table, leaf.type_id, shape);
 }
 
 int ps_gvar_is_array(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  return type && type->kind == PSX_TYPE_ARRAY ? 1 : 0;
+  psx_type_shape_t shape = {0};
+  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_ARRAY;
 }
 
 int ps_gvar_is_struct_aggregate(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  return type ? type_tag_aggregate_kind(type) == TK_STRUCT : 0;
+  psx_type_shape_t shape = {0};
+  return gvar_array_leaf_shape(gv, &shape) &&
+         shape.kind == PSX_TYPE_STRUCT;
 }
 
 int ps_gvar_is_union_aggregate(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  return type ? type_tag_aggregate_kind(type) == TK_UNION : 0;
+  psx_type_shape_t shape = {0};
+  return gvar_array_leaf_shape(gv, &shape) &&
+         shape.kind == PSX_TYPE_UNION;
 }
 
 int ps_gvar_is_tag_aggregate(const global_var_t *gv) {
@@ -185,24 +150,22 @@ int ps_gvar_is_tag_aggregate(const global_var_t *gv) {
 }
 
 static tk_float_kind_t gvar_initializer_fp_kind(const global_var_t *gv) {
-  const psx_type_t *type =
-      ps_type_array_leaf_type(gvar_decl_type_view(gv));
-  if (!type || (type->kind != PSX_TYPE_FLOAT &&
-                type->kind != PSX_TYPE_COMPLEX))
-    return TK_FLOAT_KIND_NONE;
-  return ps_type_floating_token_kind(type);
+  psx_type_shape_t shape = {0};
+  return gvar_array_leaf_shape(gv, &shape)
+             ? semantic_shape_fp_kind(&shape)
+             : TK_FLOAT_KIND_NONE;
 }
 
 int ps_gvar_is_bool_scalar(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  return type && type->kind == PSX_TYPE_BOOL ? 1 : 0;
+  psx_type_shape_t shape = {0};
+  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_BOOL;
 }
 
 int ps_gvar_array_element_is_bool(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-  const psx_type_t *leaf = ps_type_array_leaf_type(type);
-  return leaf && leaf->kind == PSX_TYPE_BOOL ? 1 : 0;
+  psx_type_shape_t root = {0};
+  psx_type_shape_t leaf = {0};
+  return gvar_decl_shape(gv, &root) && root.kind == PSX_TYPE_ARRAY &&
+         gvar_array_leaf_shape(gv, &leaf) && leaf.kind == PSX_TYPE_BOOL;
 }
 
 psx_gvar_initializer_class_t
@@ -510,10 +473,11 @@ int ps_gvar_visit_initializer_classified(
 }
 
 int ps_gvar_array_element_count(const global_var_t *gv) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  if (type && type->kind == PSX_TYPE_ARRAY && type->array_len > 0)
-    return type->array_len;
-  return 0;
+  psx_type_shape_t shape = {0};
+  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_ARRAY &&
+         shape.array_len > 0
+             ? shape.array_len
+             : 0;
 }
 
 static int gvar_tag_identity_from_type(const global_var_t *gv, token_kind_t *kind,
