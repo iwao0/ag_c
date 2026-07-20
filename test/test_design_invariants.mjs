@@ -3937,7 +3937,7 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     !/ps_ctx_tag_qual_type_at_in\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    !/psx_resolve_bound_type_name_ref_in_contexts\s*\(/.test(
+    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
       genericSelectionResolutionSource,
     ) ||
     !/psx_bind_type_name_ref_in_contexts\s*\(/.test(
@@ -4349,7 +4349,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/ps_ctx_record_unsupported_gnu_extension_in\s*\(/.test(
       functionParameterResolutionSource,
     ) ||
-    !/psx_apply_parsed_declarator_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     )) {
   throw new Error(
@@ -10466,6 +10466,19 @@ if (!/control->init->kind\s*==\s*ND_LOCAL_DECLARATION/.test(
 const typeNameQualTypeValueAdapter = typeNameResolutionSource.match(
   /int\s+psx_resolve_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
 );
+const boundTypeNameQualTypeCore = typeNameResolutionSource.match(
+  /int\s+psx_resolve_bound_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
+);
+const boundTypeNameRefAdapter = typeNameResolutionSource.match(
+  /const psx_type_t\s*\*psx_resolve_bound_type_name_ref_in_contexts\s*\([^]*?\n\}/,
+);
+const compatibilityGenericSelectionResolver =
+  genericSelectionResolutionSource.match(
+    /void\s+psx_resolve_generic_selection_in_contexts\s*\([^]*?\n\}/,
+  );
+const compatibilityGenericSemanticPass = semanticPassSource.match(
+  /static void semantic_resolve_generic_selection\s*\([^]*?\n\}/,
+);
 if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
       typeNameResolutionHeader,
     ) ||
@@ -10478,6 +10491,40 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
     ) ||
     !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
       typeNameQualTypeValueAdapter[0],
+    ) ||
+    !boundTypeNameQualTypeCore ||
+    /#include[^\n]*parser\/(?:global_registry|local_registry|type_builder)\.h/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
+      boundTypeNameQualTypeCore[0],
+    ) ||
+    !/psx_type_name_bind_resolved_qual_type_in\s*\(/.test(
+      boundTypeNameQualTypeCore[0],
+    ) ||
+    /psx_resolve_bound_type_name_ref_in_contexts\s*\(|psx_build_decl_type\s*\(|ps_type_clone_in\s*\(/.test(
+      boundTypeNameQualTypeCore[0],
+    ) ||
+    !boundTypeNameRefAdapter ||
+    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      boundTypeNameRefAdapter[0],
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      boundTypeNameRefAdapter[0],
+    ) ||
+    !compatibilityGenericSelectionResolver ||
+    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      compatibilityGenericSelectionResolver[0],
+    ) ||
+    /psx_resolve_bound_type_name_ref_in_contexts\s*\(|ps_type_clone_in\s*\(|ps_type_normalize_scalar_identity\s*\(|ps_node_get_type\s*\(/.test(
+      compatibilityGenericSelectionResolver[0],
+    ) ||
+    !compatibilityGenericSemanticPass ||
+    !/semantic_bind_qual_type_result\s*\(/.test(
+      compatibilityGenericSemanticPass[0],
+    ) ||
+    /ps_type_clone_in\s*\(|ps_node_get_type\s*\(/.test(
+      compatibilityGenericSemanticPass[0],
     ) ||
     !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
       semanticPassSource,
@@ -10492,7 +10539,7 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "source cast type names must resolve to QualType values for direct Typed HIR while compatibility state uses the same core",
+    "type names and generic selection must resolve through a canonical QualType core while compatibility type views remain outward-only adapters",
   );
 }
 

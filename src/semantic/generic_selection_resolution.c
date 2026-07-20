@@ -6,7 +6,6 @@
 #include "resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 
 #include <string.h>
 
@@ -130,31 +129,11 @@ void psx_resolve_generic_selection_in_contexts(
     if (association->is_default) {
       continue;
     }
-    const psx_type_t *resolved =
-        psx_resolve_bound_type_name_ref_in_contexts(
+    if (!psx_resolve_bound_type_name_qual_type_in_contexts(
             semantic_context, global_registry, local_registry,
             &association->type_name,
-            &selection_state->association_type_names[i]);
-    if (resolved) {
-      psx_type_t *normalized = ps_type_clone_in(
-          ps_ctx_arena(semantic_context), resolved);
-      ps_type_normalize_scalar_identity(normalized);
-      if (!psx_type_name_bind_resolved_type_in(
-              semantic_context,
-              &selection_state->association_type_names[i], normalized)) {
-        resolution->conflict_index = i;
-        return;
-      }
-      resolved = psx_type_name_resolved_type(
-          &selection_state->association_type_names[i]);
-    }
-    if (!resolved) {
-      resolution->conflict_index = i;
-      return;
-    }
-    association_types[i] = psx_type_name_resolved_qual_type(
-        &selection_state->association_type_names[i]);
-    if (association_types[i].type_id == PSX_TYPE_ID_INVALID) {
+            &selection_state->association_type_names[i],
+            &association_types[i])) {
       resolution->conflict_index = i;
       return;
     }
@@ -162,19 +141,16 @@ void psx_resolve_generic_selection_in_contexts(
 
   psx_qual_type_t control_type = ps_node_qual_type(
       store, selection->control);
-  if (control_type.type_id == PSX_TYPE_ID_INVALID) {
-    control_type = ps_ctx_intern_qual_type_in(
-        semantic_context, ps_node_get_type(store, selection->control));
-  }
+  if (control_type.type_id == PSX_TYPE_ID_INVALID) return;
   psx_resolve_generic_selection_qual_types_in(
       control_type, association_types, is_default,
       selection->association_count, resolution);
   if (resolution->status != PSX_GENERIC_SELECTION_RESOLUTION_OK)
     return;
   int selected = resolution->selected_index;
-  const psx_type_t *selected_type = ps_node_get_type(
+  psx_qual_type_t selected_type = ps_node_qual_type(
       store, selection->associations[selected].expression);
-  if (!selected_type) {
+  if (selected_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status =
         PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
     resolution->conflict_index = selected;

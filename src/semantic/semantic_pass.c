@@ -950,11 +950,12 @@ static void semantic_resolve_generic_selection(
   selection_resolution->is_resolved = 1;
   node_t *selected_expression =
       selection->associations[resolution.selected_index].expression;
-  semantic_bind_result_type(
-      semantic_context, (node_t *)selection,
-      ps_type_clone_in(
-          ps_ctx_arena(semantic_context),
-          ps_node_get_type(store, selected_expression)));
+  if (!semantic_bind_qual_type_result(
+          semantic_context, (node_t *)selection,
+          ps_node_qual_type(store, selected_expression))) {
+    selection_resolution->is_resolved = 0;
+    selection_resolution->selected_index = -1;
+  }
 }
 
 static void semantic_mark_usage_evaluated(

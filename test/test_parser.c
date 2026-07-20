@@ -15478,6 +15478,27 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE(psx_type_name_resolved_qual_type(&state).type_id !=
               PSX_TYPE_ID_INVALID);
 
+  ag_target_info_t isolated_target = ag_target_info_host();
+  ag_compilation_session_t *isolated_session =
+      ag_compilation_session_create(&isolated_target);
+  ASSERT_TRUE(isolated_session != NULL);
+  ASSERT_TRUE(ag_compilation_session_is_complete(isolated_session));
+  psx_type_name_resolution_state_t foreign_state = state;
+  ASSERT_TRUE(!psx_bind_type_name_ref_in_contexts(
+      ag_compilation_session_semantic_context(isolated_session),
+      ag_compilation_session_global_registry(isolated_session),
+      ag_compilation_session_local_registry(isolated_session),
+      &reference, &foreign_state));
+  psx_qual_type_t foreign_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(!psx_resolve_bound_type_name_qual_type_in_contexts(
+      ag_compilation_session_semantic_context(isolated_session),
+      ag_compilation_session_global_registry(isolated_session),
+      ag_compilation_session_local_registry(isolated_session),
+      &reference, &foreign_state, &foreign_qual_type));
+  ASSERT_EQ(PSX_TYPE_ID_INVALID, foreign_qual_type.type_id);
+  ASSERT_TRUE(ag_compilation_session_destroy(isolated_session));
+
   const psx_type_t *type = apply_test_parsed_type_name(&syntax);
   ASSERT_TRUE(type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, type->kind);
