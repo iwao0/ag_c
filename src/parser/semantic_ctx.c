@@ -338,6 +338,19 @@ psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
   return ps_ctx_intern_qual_type_in(context, type);
 }
 
+psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
+    psx_semantic_context_t *context,
+    psx_floating_kind_t floating_kind, int is_complex) {
+  if (!context) {
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  }
+  return ps_ctx_intern_qual_type_in(
+      context,
+      ps_type_new_floating_in(
+          context->arena_context, floating_kind, is_complex));
+}
+
 psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     psx_semantic_context_t *context) {
   if (!context) {

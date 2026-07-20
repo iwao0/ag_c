@@ -61,6 +61,9 @@ psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     psx_semantic_context_t *context,
     psx_integer_kind_t integer_kind, int is_unsigned,
     int is_plain_char);
+psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
+    psx_semantic_context_t *context,
+    psx_floating_kind_t floating_kind, int is_complex);
 psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(

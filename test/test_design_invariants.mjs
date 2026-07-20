@@ -6636,14 +6636,22 @@ if (
     "expression QualType rules and operators must be AST-independent while semantic pass adapts syntax directly",
   );
 }
-if (!/\bps_type_integer_rank\s*\(/.test(
+if (/\bpsx_type_t\b|\bps_type_[A-Za-z0-9_]*\s*\(|parser\/type(?:_builder)?\.h/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_type_shape_t\b/.test(expressionOperandResolutionSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\binteger_rank\s*\(/.test(expressionOperandResolutionSource) ||
+    !/\bps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
     /\bps_type_sizeof\s*\(/.test(expressionOperandResolutionSource) ||
     /\bps_type_sizeof\s*\(/.test(semanticDiagnosticsSource) ||
     /\bps_type_sizeof\s*\(/.test(semanticPassSource)) {
   throw new Error(
-    "semantic rank and category checks must not use target layout size",
+    "semantic rank and category checks must use TypeShape while target-sensitive conversions receive explicit DataLayout",
   );
 }
 const functionParameterSyntaxSource = await readFile(
@@ -8448,11 +8456,11 @@ for (const [name, source] of [
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
-const dataLayoutIntegerConversionSection = canonicalTypeSource.match(
-  /static\s+int\s+integer_rank_size\s*\([^]*?static\s+ag_target_scalar_kind_t\s+floating_target_kind/,
+const dataLayoutIntegerConversionSection = expressionOperandResolutionSource.match(
+  /static\s+int\s+integer_rank_size\s*\([^]*?static\s+psx_qual_type_t\s+integer_result/,
 );
 if (!dataLayoutIntegerConversionSection ||
-    /\bps_type_sizeof\s*\(|->(?:size|align)\b/.test(
+    /\bps_type_[A-Za-z0-9_]*\s*\(|->(?:size|align)\b/.test(
       dataLayoutIntegerConversionSection[0],
     ) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(
@@ -8461,10 +8469,13 @@ if (!dataLayoutIntegerConversionSection ||
     /\bag_target_info_t\b|\bag_target_info_(?:scalar_size|data_layout)\s*\(/.test(
       dataLayoutIntegerConversionSection[0],
     ) ||
-    !/\bps_type_binary_result_for_data_layout_in\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/\busual_integer_conversion\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
-    !/\bps_type_conditional_result_for_data_layout_in\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/\bpsx_resolve_binary_result_qual_type_in\s*\([^]*?usual_arithmetic_result\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_resolve_conditional_result_qual_type_in\s*\([^]*?usual_arithmetic_result\s*\(/.test(
       expressionOperandResolutionSource,
     )) {
   throw new Error(
@@ -10503,7 +10514,7 @@ if (
 }
 
 const subscriptQualTypeCore = expressionOperandResolutionSource.match(
-  /static\s+int\s+qual_type_is_subscript_base\s*\([^]*?void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
+  /void\s+psx_resolve_subscript_qual_types_in\s*\([^]*?\n\}/,
 );
 if (!/\bpsx_subscript_qual_types_resolution_t\b/.test(
       expressionOperandResolutionHeader,
@@ -10515,6 +10526,8 @@ if (!/\bpsx_subscript_qual_types_resolution_t\b/.test(
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       subscriptQualTypeCore[0],
     ) ||
+    !/\bpsx_type_shape_t\b/.test(subscriptQualTypeCore[0]) ||
+    !/\bdescribe_type\s*\(/.test(subscriptQualTypeCore[0]) ||
     !/\bpsx_resolve_subscript_qual_types_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -10678,16 +10691,31 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
   );
 }
 
-const sharedOperandTypeRuleCores = [
+const obsoleteOperandTypeViewCores = [
   "resolve_arithmetic_unary_result_type_value",
   "resolve_binary_result_type_value",
   "resolve_conditional_result_type_value",
 ];
-for (const core of sharedOperandTypeRuleCores) {
+for (const core of obsoleteOperandTypeViewCores) {
+  if (new RegExp(`\\b${core}\\s*\\(`).test(expressionOperandResolutionSource)) {
+    throw new Error(
+      `${core} must not rebuild a parser type view inside the QualType core`,
+    );
+  }
+}
+const sharedOperandQualTypeRuleCores = new Map([
+  ["promoted_integer_result", 4],
+  ["usual_arithmetic_result", 3],
+  ["decay_pointer_like", 6],
+]);
+for (const [core, expectedCalls] of sharedOperandQualTypeRuleCores) {
   const calls = expressionOperandResolutionSource.match(
     new RegExp(`\\b${core}\\s*\\(`, "g"),
   ) ?? [];
-  if (calls.length !== 2) {
+  if (calls.length !== expectedCalls ||
+      !new RegExp(`static\\s+psx_qual_type_t\\s+${core}\\s*\\(`).test(
+        expressionOperandResolutionSource,
+      )) {
     throw new Error(
       `${core} must remain private to the AST-independent QualType core`,
     );
@@ -10723,10 +10751,10 @@ const binaryTargetRuleCalls = expressionOperandResolutionSource.match(
 const conditionalTargetRuleCalls = expressionOperandResolutionSource.match(
   /\bps_type_conditional_result_for_data_layout_in\s*\(/g,
 ) ?? [];
-if (binaryTargetRuleCalls.length !== 1 ||
-    conditionalTargetRuleCalls.length !== 1) {
+if (binaryTargetRuleCalls.length !== 0 ||
+    conditionalTargetRuleCalls.length !== 0) {
   throw new Error(
-    "operand result rules must be implemented once below the QualType and compatibility adapters",
+    "operand result rules must stay in the QualType core without delegating to parser type views",
   );
 }
 

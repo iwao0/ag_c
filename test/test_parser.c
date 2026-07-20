@@ -13447,6 +13447,80 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_data_layout(
       stale_unsigned_short, ag_target_info_data_layout(&host)));
 
+  psx_qual_type_t host_signed_long = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), stale_signed_long);
+  psx_qual_type_t host_unsigned_int = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), stale_unsigned_int);
+  psx_qual_type_t host_result = psx_resolve_binary_result_qual_type_in(
+      test_semantic_context(), PSX_TYPE_BINARY_ADD,
+      host_signed_long, host_unsigned_int);
+  psx_type_shape_t host_result_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      host_result.type_id, &host_result_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_result_shape.integer_kind);
+  ASSERT_TRUE(!host_result_shape.is_unsigned);
+
+  test_semantic_context_fixture_t equal_width_semantic_fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(
+      &equal_width_semantic_fixture, &equal_width_integer_target));
+  psx_semantic_context_t *equal_width_semantic_context =
+      equal_width_semantic_fixture.context;
+  psx_qual_type_t equal_width_signed_long = ps_ctx_intern_qual_type_in(
+      equal_width_semantic_context, stale_signed_long);
+  psx_qual_type_t equal_width_unsigned_int = ps_ctx_intern_qual_type_in(
+      equal_width_semantic_context, stale_unsigned_int);
+  psx_qual_type_t equal_width_result =
+      psx_resolve_binary_result_qual_type_in(
+          equal_width_semantic_context, PSX_TYPE_BINARY_ADD,
+          equal_width_signed_long, equal_width_unsigned_int);
+  psx_type_shape_t equal_width_result_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(equal_width_semantic_context),
+      equal_width_result.type_id, &equal_width_result_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            equal_width_result_shape.integer_kind);
+  ASSERT_TRUE(equal_width_result_shape.is_unsigned);
+  test_semantic_context_fixture_dispose(
+      &equal_width_semantic_fixture);
+
+  test_semantic_context_fixture_t wide_short_semantic_fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(
+      &wide_short_semantic_fixture, &wide_short_target));
+  psx_semantic_context_t *wide_short_semantic_context =
+      wide_short_semantic_fixture.context;
+  psx_qual_type_t wide_unsigned_short = ps_ctx_intern_qual_type_in(
+      wide_short_semantic_context, stale_unsigned_short);
+  psx_qual_type_t wide_short_result =
+      psx_resolve_arithmetic_unary_result_qual_type_in(
+          wide_short_semantic_context, PSX_TYPE_UNARY_PLUS,
+          wide_unsigned_short);
+  psx_type_shape_t wide_short_result_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(wide_short_semantic_context),
+      wide_short_result.type_id, &wide_short_result_shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            wide_short_result_shape.integer_kind);
+  ASSERT_TRUE(wide_short_result_shape.is_unsigned);
+  psx_qual_type_t float_identity = ps_ctx_intern_qual_type_in(
+      wide_short_semantic_context, semantic_float);
+  psx_qual_type_t long_double_complex_identity =
+      ps_ctx_intern_qual_type_in(
+          wide_short_semantic_context, semantic_long_double_complex);
+  psx_qual_type_t complex_result =
+      psx_resolve_binary_result_qual_type_in(
+          wide_short_semantic_context, PSX_TYPE_BINARY_ADD,
+          float_identity, long_double_complex_identity);
+  psx_type_shape_t complex_result_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(wide_short_semantic_context),
+      complex_result.type_id, &complex_result_shape));
+  ASSERT_EQ(PSX_TYPE_COMPLEX, complex_result_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE,
+            complex_result_shape.floating_kind);
+  test_semantic_context_fixture_dispose(
+      &wide_short_semantic_fixture);
+
   psx_qual_type_t pointer_identity =
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
   psx_qual_type_t pointer_array_identity =
