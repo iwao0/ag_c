@@ -14,7 +14,7 @@ const psx_type_t *psx_record_member_decl_type(
       types, member->decl_qual_type);
 }
 
-static int record_member_leaf_shape(
+int psx_record_member_decl_leaf_shape(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member, psx_type_shape_t *shape) {
   if (!types || !member || !shape ||
@@ -31,7 +31,7 @@ int psx_record_member_decl_is_tag_aggregate(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member) {
   psx_type_shape_t shape;
-  return record_member_leaf_shape(types, member, &shape) &&
+  return psx_record_member_decl_leaf_shape(types, member, &shape) &&
          (shape.kind == PSX_TYPE_STRUCT || shape.kind == PSX_TYPE_UNION);
 }
 
@@ -39,7 +39,7 @@ int psx_record_member_decl_is_struct_aggregate(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member) {
   psx_type_shape_t shape;
-  return record_member_leaf_shape(types, member, &shape) &&
+  return psx_record_member_decl_leaf_shape(types, member, &shape) &&
          shape.kind == PSX_TYPE_STRUCT;
 }
 
@@ -47,7 +47,7 @@ int psx_record_member_decl_is_union_aggregate(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member) {
   psx_type_shape_t shape;
-  return record_member_leaf_shape(types, member, &shape) &&
+  return psx_record_member_decl_leaf_shape(types, member, &shape) &&
          shape.kind == PSX_TYPE_UNION;
 }
 

@@ -9568,6 +9568,16 @@ if (!recordMemberDeclStruct ||
     "record members must store QualType only and materialize views through an explicit semantic type table",
   );
 }
+if (!/\bpsx_record_member_decl_leaf_shape\s*\(/.test(
+      recordDeclHeaderSource,
+    ) ||
+    !/psx_record_member_decl_leaf_shape\s*\([^]*?psx_semantic_type_table_array_leaf\s*\([^]*?psx_semantic_type_table_describe\s*\(/.test(
+      recordDeclImplementationSource,
+    )) {
+  throw new Error(
+    "record member leaf meaning must be exposed as TypeShape without materializing parser type views",
+  );
+}
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     /\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
     !/\bpsx_qual_type_t\s+ps_gvar_decl_qual_type\s*\(/.test(
@@ -10074,6 +10084,18 @@ if (!aggregateWalkerLayoutSection ||
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    /\bpsx_record_member_decl_type\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bpsx_record_member_decl_leaf_shape\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bpsx_semantic_type_table_array_flat_element_count\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_value_size\s*\(/.test(

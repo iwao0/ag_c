@@ -28,6 +28,9 @@ typedef struct psx_record_decl_t {
 const psx_type_t *psx_record_member_decl_type(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
+int psx_record_member_decl_leaf_shape(
+    const psx_semantic_type_table_t *types,
+    const psx_record_member_decl_t *member, psx_type_shape_t *shape);
 int psx_record_member_decl_is_tag_aggregate(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
