@@ -2584,6 +2584,10 @@ const legacySyntaxDiagnosticsSource = await readFile(
   "src/semantic/legacy_syntax_diagnostics.c",
   "utf8",
 );
+const parserUnitTestSource = await readFile(
+  "test/test_parser.c",
+  "utf8",
+);
 const semanticTreeResolutionTestSupportHeader = await readFile(
   "src/semantic/semantic_tree_resolution_test_support.h",
   "utf8",
@@ -2621,6 +2625,31 @@ if (mutableCompatibilityCallers.length > 0 ||
     "mutable compatibility resolution must remain diagnostic-only; callers: " +
       (mutableCompatibilityCallers.join(", ") || "none"),
   );
+}
+if (!/static\s+psx_frontend_expression_hir_t\s+resolve_test_expression_hir\s*\([^]*?psx_frontend_resolve_expression_to_hir_in_contexts\s*\(/.test(
+      parserUnitTestSource,
+    )) {
+  throw new Error(
+    "parser expression boundary tests must resolve through the production frontend HIR API",
+  );
+}
+for (const testName of [
+  "test_syntax_literal_type_boundary",
+  "test_additive_typed_hir_boundary",
+  "test_subscript_typed_hir_boundary",
+  "test_unary_deref_typed_hir_boundary",
+  "test_unary_operator_typed_hir_boundary",
+]) {
+  const body = parserUnitTestSource.match(
+    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+  );
+  if (!body || /\banalyze_test_expression\s*\(/.test(body[1]) ||
+      (testName !== "test_syntax_literal_type_boundary" &&
+       !/\bresolve_test_expression_hir\s*\(/.test(body[1]))) {
+    throw new Error(
+      `${testName} must validate immutable Syntax or production Typed HIR without the compatibility analyzer`,
+    );
+  }
 }
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
