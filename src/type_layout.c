@@ -28,9 +28,9 @@ static ag_target_scalar_kind_t floating_target_kind(
                     : AG_TARGET_SCALAR_DOUBLE;
 }
 
-static int layout_scalar(
-    const psx_type_shape_t *type, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
+static int layout_scalar(const psx_type_shape_t *type,
+                         const ag_data_layout_t *data_layout,
+                         psx_type_layout_t *out) {
   if (type->kind == PSX_TYPE_INTEGER &&
       type->integer_kind != PSX_INTEGER_KIND_CHAR &&
       type->integer_kind != PSX_INTEGER_KIND_SHORT &&
@@ -48,15 +48,15 @@ static int layout_scalar(
   } else {
     kind = floating_target_kind(type);
   }
-  out->size = ag_target_info_scalar_size(target, kind);
-  out->alignment = ag_target_info_scalar_alignment(target, kind);
+  out->size = ag_data_layout_scalar_size(data_layout, kind);
+  out->alignment = ag_data_layout_scalar_alignment(data_layout, kind);
   out->is_complete = 1;
   return 1;
 }
 
-static int layout_non_array(
-    const psx_type_shape_t *type, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
+static int layout_non_array(const psx_type_shape_t *type,
+                            const ag_data_layout_t *data_layout,
+                            psx_type_layout_t *out) {
   if (!type || !out) return 0;
   memset(out, 0, sizeof(*out));
   out->alignment = 1;
@@ -67,8 +67,8 @@ static int layout_non_array(
     case PSX_TYPE_INVALID:
       return 1;
     case PSX_TYPE_POINTER:
-      out->size = ag_target_info_pointer_size(target);
-      out->alignment = ag_target_info_pointer_alignment(target);
+      out->size = ag_data_layout_pointer_size(data_layout);
+      out->alignment = ag_data_layout_pointer_alignment(data_layout);
       out->is_complete = 1;
       return 1;
     case PSX_TYPE_ARRAY:
@@ -77,7 +77,7 @@ static int layout_non_array(
     case PSX_TYPE_INTEGER:
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return layout_scalar(type, target, out);
+      return layout_scalar(type, data_layout, out);
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
       return 1;
@@ -86,18 +86,19 @@ static int layout_non_array(
   }
 }
 
-static int layout_non_array_with_records(
-    const psx_type_shape_t *type,
-    const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_layout_t *out) {
+static int
+layout_non_array_with_records(const psx_type_shape_t *type,
+                              const psx_record_layout_table_t *record_layouts,
+                              const ag_data_layout_t *data_layout,
+                              psx_type_layout_t *out) {
   if (!type || !out) return 0;
   if (type->kind != PSX_TYPE_STRUCT && type->kind != PSX_TYPE_UNION)
-    return layout_non_array(type, target, out);
+    return layout_non_array(type, data_layout, out);
   memset(out, 0, sizeof(*out));
   out->alignment = 1;
   if (type->record_id == PSX_RECORD_ID_INVALID) return 1;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, type->record_id, target);
+      record_layouts, type->record_id, data_layout);
   if (!layout) return 1;
   out->size = layout->size;
   out->alignment = layout->alignment;
@@ -124,53 +125,54 @@ static int complete_array_layout(
 
 static int layout_of_id_recursive(
     const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t type_id, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
+    const psx_record_layout_table_t *record_layouts, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout, psx_type_layout_t *out) {
   psx_type_shape_t type = {0};
   if (!out || !psx_semantic_type_table_describe(types, type_id, &type))
     return 0;
   if (type.kind != PSX_TYPE_ARRAY)
-    return layout_non_array_with_records(
-        &type, record_layouts, target, out);
+    return layout_non_array_with_records(&type, record_layouts, data_layout,
+                                         out);
   psx_type_id_t element_type_id = psx_semantic_type_table_base(
       types, type_id).type_id;
   psx_type_layout_t element = {0};
-  if (!layout_of_id_recursive(
-          types, record_layouts, element_type_id, target, &element))
+  if (!layout_of_id_recursive(types, record_layouts, element_type_id,
+                              data_layout, &element))
     return 0;
   return complete_array_layout(&type, &element, out);
 }
 
-int ps_type_layout_of_id(
-    const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t type_id, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
-  if (!types || !record_layouts || !target || !out) return 0;
-  return layout_of_id_recursive(
-      types, record_layouts, type_id, target, out);
+int ps_type_layout_of_id(const psx_semantic_type_table_t *types,
+                         const psx_record_layout_table_t *record_layouts,
+                         psx_type_id_t type_id,
+                         const ag_data_layout_t *data_layout,
+                         psx_type_layout_t *out) {
+  if (!types || !record_layouts || !ag_data_layout_is_valid(data_layout) ||
+      !out)
+    return 0;
+  return layout_of_id_recursive(types, record_layouts, type_id, data_layout,
+                                out);
 }
 
-int ps_type_sizeof_id(
-    const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t type_id, const ag_target_info_t *target) {
+int ps_type_sizeof_id(const psx_semantic_type_table_t *types,
+                      const psx_record_layout_table_t *record_layouts,
+                      psx_type_id_t type_id,
+                      const ag_data_layout_t *data_layout) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(
-             types, record_layouts, type_id, target, &layout) &&
+  return ps_type_layout_of_id(types, record_layouts, type_id, data_layout,
+                              &layout) &&
                  layout.is_complete
              ? layout.size
              : 0;
 }
 
-int ps_type_alignof_id(
-    const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t type_id, const ag_target_info_t *target) {
+int ps_type_alignof_id(const psx_semantic_type_table_t *types,
+                       const psx_record_layout_table_t *record_layouts,
+                       psx_type_id_t type_id,
+                       const ag_data_layout_t *data_layout) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(
-             types, record_layouts, type_id, target, &layout)
+  return ps_type_layout_of_id(types, record_layouts, type_id, data_layout,
+                              &layout)
              ? layout.alignment
              : 0;
 }

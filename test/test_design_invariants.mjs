@@ -7417,6 +7417,12 @@ const recordLayoutImplementationSource = await readFile(
   "src/semantic/record_layout.c",
   "utf8",
 );
+const layoutBoundarySource = [
+  typeLayoutHeader,
+  typeLayoutSource,
+  recordLayoutHeaderSource,
+  recordLayoutImplementationSource,
+].join("\n");
 const typeIdentityImplementationSource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
@@ -7442,6 +7448,16 @@ if (!/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?\bscalar\s*\[\s*AG_TARGET_SCA
     !/\blayout_scalar\s*\(/.test(await readFile("src/type_layout.c", "utf8")) ||
     !/\bAG_TARGET_SCALAR_FLOAT_COMPLEX\b/.test(targetInfoImplementationSource) ||
     !/\bag_data_layout_equal\s*\(/.test(recordLayoutImplementationSource) ||
+    /\bag_target_info_t\b/.test(layoutBoundarySource) ||
+    /\bag_target_info_(?:pointer|scalar)_(?:size|alignment)\s*\(/.test(
+      typeLayoutSource,
+    ) ||
+    !/ps_type_layout_of_id\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
+      typeLayoutHeader,
+    ) ||
+    !/psx_record_layout_table_(?:define|lookup)\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
+      recordLayoutHeaderSource,
+    ) ||
     /\bag_target_info_t\s+target\s*;/.test(recordLayoutHeaderSource) ||
     !/\bag_data_layout_t\s+data_layout\s*;/.test(recordLayoutHeaderSource) ||
     /\bps_type_clear_(?:cached_layout|record_layout_cache)\s*\(/.test(
@@ -7450,7 +7466,7 @@ if (!/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?\bscalar\s*\[\s*AG_TARGET_SCA
         await readFile("src/semantic/declaration_resolution.c", "utf8"),
     )) {
   throw new Error(
-    "scalar size and alignment must be selected by TargetSpec instead of semantic type caches",
+    "TypeLayout and RecordLayout must consume DataLayout without ABI policy or semantic type caches",
   );
 }
 for (const [name, source] of [

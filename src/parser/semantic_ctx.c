@@ -984,8 +984,9 @@ int ps_ctx_publish_record_layout_in(
     }
   }
   int published = psx_record_layout_table_define(
-      context->record_layouts, record_id, context->target,
-      size, alignment, members, record->member_count);
+      context->record_layouts, record_id,
+      ag_target_info_data_layout(context->target), size, alignment, members,
+      record->member_count);
   free(source_members);
   free(members);
   return published;
@@ -1002,7 +1003,8 @@ int ps_ctx_get_tag_size_in(
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, t->record_decl->record_id, context->target);
+      context->record_layouts, t->record_decl->record_id,
+      ag_target_info_data_layout(context->target));
   return layout ? layout->size : 0;
 }
 
@@ -1017,7 +1019,8 @@ int ps_ctx_get_tag_align_in(
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return -1;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, t->record_decl->record_id, context->target);
+      context->record_layouts, t->record_decl->record_id,
+      ag_target_info_data_layout(context->target));
   return layout ? layout->alignment : -1;
 }
 
@@ -1143,7 +1146,7 @@ static int register_tag_members_for_owner_in(
     refresh_cached_record_decl(context, tag);
     const psx_record_layout_t *layout = psx_record_layout_table_lookup(
         context->record_layouts, tag->record_decl->record_id,
-        context->target);
+        ag_target_info_data_layout(context->target));
     if (tag->record_decl->is_complete && layout) {
       int size = layout->size;
       int alignment = layout->alignment;
@@ -1603,12 +1606,12 @@ bool psx_ctx_find_typedef_layout_in(
   psx_qual_type_t qual_type = typedef_record_decl_qual_type(t);
   if (out_size)
     *out_size = ps_type_sizeof_id(
-        context->semantic_types, context->record_layouts,
-        qual_type.type_id, ps_ctx_target_info(context));
+        context->semantic_types, context->record_layouts, qual_type.type_id,
+        ag_target_info_data_layout(ps_ctx_target_info(context)));
   if (out_alignment)
     *out_alignment = ps_type_alignof_id(
-        context->semantic_types, context->record_layouts,
-        qual_type.type_id, ps_ctx_target_info(context));
+        context->semantic_types, context->record_layouts, qual_type.type_id,
+        ag_target_info_data_layout(ps_ctx_target_info(context)));
   return true;
 }
 

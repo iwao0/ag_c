@@ -65,7 +65,7 @@ static int flat_initializer_member_offset(
     const psx_type_t *aggregate_type, int member_index) {
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       context->record_layouts, ps_type_record_id(aggregate_type),
-      context->target);
+      ag_target_info_data_layout(context->target));
   const psx_record_member_layout_t *member =
       psx_record_layout_member(layout, member_index);
   return member ? member->offset : -1;
@@ -80,11 +80,12 @@ static psx_initializer_member_ref_t flat_initializer_member_ref(
       .record_id = ps_type_record_id(aggregate_type),
       .member_index = member_index,
   };
-  const psx_record_layout_t *layout = context && aggregate_type
-      ? psx_record_layout_table_lookup(
-            context->record_layouts, ps_type_record_id(aggregate_type),
-            context->target)
-      : NULL;
+  const psx_record_layout_t *layout =
+      context && aggregate_type
+          ? psx_record_layout_table_lookup(
+                context->record_layouts, ps_type_record_id(aggregate_type),
+                ag_target_info_data_layout(context->target))
+          : NULL;
   const psx_record_member_layout_t *member =
       psx_record_layout_member(layout, member_index);
   if (member) ref.layout = *member;
@@ -199,8 +200,8 @@ static int flat_initializer_child_span(
     int child_leaf_count = flat_initializer_leaf_count(
         context, child_type_id);
     int child_size = ps_type_sizeof_id(
-        context->semantic_types, context->record_layouts,
-        child_type_id, context->target);
+        context->semantic_types, context->record_layouts, child_type_id,
+        ag_target_info_data_layout(context->target));
     if (child_leaf_count <= 0 || child_size < 0) return 0;
     *child = (psx_initializer_object_span_t){
         .type_id = child_type_id,
@@ -228,8 +229,8 @@ static int flat_initializer_child_span(
   int member_offset = flat_initializer_member_offset(
       context, parent_type, child_index);
   int member_size = ps_type_sizeof_id(
-      context->semantic_types, context->record_layouts,
-      member_type_id, context->target);
+      context->semantic_types, context->record_layouts, member_type_id,
+      ag_target_info_data_layout(context->target));
   int member_leaf_count = flat_initializer_leaf_count(
       context, member_type_id);
   if (member_type_id == PSX_TYPE_ID_INVALID ||
@@ -833,8 +834,8 @@ static int initializer_type_size(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
-  return ps_type_sizeof_id(
-      semantic_types, record_layouts, type_id, target);
+  return ps_type_sizeof_id(semantic_types, record_layouts, type_id,
+                           ag_target_info_data_layout(target));
 }
 
 static const psx_record_member_layout_t *initializer_member_layout(
@@ -845,8 +846,9 @@ static const psx_record_member_layout_t *initializer_member_layout(
   if (!aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
     return NULL;
-  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, aggregate_type->record_id, target);
+  const psx_record_layout_t *layout =
+      psx_record_layout_table_lookup(record_layouts, aggregate_type->record_id,
+                                     ag_target_info_data_layout(target));
   return psx_record_layout_member(layout, member_index);
 }
 

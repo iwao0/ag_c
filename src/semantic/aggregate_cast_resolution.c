@@ -47,10 +47,12 @@ void psx_resolve_aggregate_cast_qual_types(
   if (options->enable_size_compatible_nonscalar_cast &&
       ps_type_is_tag_aggregate(operand_type) && target &&
       record_layouts) {
-    int target_size = ps_type_sizeof_id(
-        types, record_layouts, target_qual_type.type_id, target);
-    int operand_size = ps_type_sizeof_id(
-        types, record_layouts, operand_qual_type.type_id, target);
+    int target_size =
+        ps_type_sizeof_id(types, record_layouts, target_qual_type.type_id,
+                          ag_target_info_data_layout(target));
+    int operand_size =
+        ps_type_sizeof_id(types, record_layouts, operand_qual_type.type_id,
+                          ag_target_info_data_layout(target));
     if (target_size > 0 && target_size == operand_size &&
         (int)ps_type_tag_token_kind(operand_type) ==
             resolution->target_tag_kind) {

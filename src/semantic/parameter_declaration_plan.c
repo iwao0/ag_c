@@ -20,8 +20,8 @@ int psx_plan_parameter_storage_for_type_id(
     return 1;
   }
 
-  int size = ps_type_sizeof_id(
-      types, record_layouts, type_id, target);
+  int size = ps_type_sizeof_id(types, record_layouts, type_id,
+                               ag_target_info_data_layout(target));
   if (size <= 0) return 0;
   if (ps_type_is_tag_aggregate(type)) {
     if (size > 16) {
@@ -32,18 +32,16 @@ int psx_plan_parameter_storage_for_type_id(
     } else {
       plan->kind = PSX_PARAMETER_STORAGE_AGGREGATE_VALUE;
       plan->storage_size = size;
-      plan->alignment =
-          ps_type_alignof_id(
-              types, record_layouts, type_id, target);
+      plan->alignment = ps_type_alignof_id(types, record_layouts, type_id,
+                                           ag_target_info_data_layout(target));
     }
     return 1;
   }
   if (type->kind == PSX_TYPE_COMPLEX) {
     plan->kind = PSX_PARAMETER_STORAGE_COMPLEX;
     plan->storage_size = size;
-    plan->alignment =
-        ps_type_alignof_id(
-            types, record_layouts, type_id, target);
+    plan->alignment = ps_type_alignof_id(types, record_layouts, type_id,
+                                         ag_target_info_data_layout(target));
     return 1;
   }
   if (!ps_type_is_scalar(type)) return 0;

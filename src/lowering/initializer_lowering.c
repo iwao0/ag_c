@@ -39,18 +39,18 @@ static int type_size(
     const initializer_lowering_context_t *context,
     const psx_type_t *type) {
   if (!context) return 0;
-  return ps_type_sizeof_id(
-      context->semantic_types, context->record_layouts,
-      type_id(context, type), context->target);
+  return ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+                           type_id(context, type),
+                           ag_target_info_data_layout(context->target));
 }
 
 static int type_size_id(
     const initializer_lowering_context_t *context,
     psx_type_id_t type_id) {
   if (!context) return 0;
-  return ps_type_sizeof_id(
-      context->semantic_types, context->record_layouts,
-      type_id, context->target);
+  return ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+                           type_id,
+                           ag_target_info_data_layout(context->target));
 }
 
 static const psx_type_t *type_view(
@@ -87,7 +87,8 @@ static const psx_record_member_layout_t *record_member_layout(
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
     return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, aggregate_type->record_id, context->target);
+      context->record_layouts, aggregate_type->record_id,
+      ag_target_info_data_layout(context->target));
   return psx_record_layout_member(layout, member_index);
 }
 

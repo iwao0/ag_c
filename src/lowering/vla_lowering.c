@@ -23,7 +23,7 @@ static int type_size(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(lowering_context, type),
-      ps_lowering_target(lowering_context));
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
 }
 
 static lvar_t *create_vla_storage(

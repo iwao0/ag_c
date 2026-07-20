@@ -21,11 +21,10 @@ int psx_resolve_member_hir_node_spec_in(
   if (resolution->member.status != PSX_MEMBER_ACCESS_OK)
     return 0;
 
-  const psx_record_layout_t *layout =
-      psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(semantic_context),
-          resolution->member.record_id,
-          ps_ctx_target_info(semantic_context));
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(semantic_context),
+      resolution->member.record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(
           layout, resolution->member.member_index);

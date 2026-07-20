@@ -11,12 +11,12 @@ int psx_plan_local_storage_for_type_id(
   if (!type || !out || type->kind == PSX_TYPE_FUNCTION ||
       type->kind == PSX_TYPE_VOID ||
       ps_type_contains_vla_array(type)) return 0;
-  int storage_size = ps_type_sizeof_id(
-      types, record_layouts, type_id, target);
+  int storage_size = ps_type_sizeof_id(types, record_layouts, type_id,
+                                       ag_target_info_data_layout(target));
   if (storage_size <= 0) return 0;
 
-  int alignment = ps_type_alignof_id(
-      types, record_layouts, type_id, target);
+  int alignment = ps_type_alignof_id(types, record_layouts, type_id,
+                                     ag_target_info_data_layout(target));
   if (alignment <= 0) return 0;
   out->storage_size = storage_size;
   out->alignment = alignment;

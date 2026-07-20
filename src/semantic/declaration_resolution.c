@@ -180,7 +180,7 @@ static int object_scalar_slots_by_id(
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, record_id, target);
+      record_layouts, record_id, ag_target_info_data_layout(target));
   if (!record || !layout || record->member_count <= 0 ||
       layout->member_count < record->member_count)
     return 0;
@@ -193,8 +193,9 @@ static int object_scalar_slots_by_id(
               semantic_types, type_id, i).type_id;
       int slots = object_scalar_slots_by_id(
           semantic_context, member_type_id);
-      int bytes = ps_type_sizeof_id(
-          semantic_types, record_layouts, member_type_id, target);
+      int bytes =
+          ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
+                            ag_target_info_data_layout(target));
       if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
         max_bytes = bytes;
         max_slots = slots;
@@ -218,8 +219,9 @@ static int object_scalar_slots_by_id(
     if (member_slots <= 0 || slots > INT_MAX - member_slots) return 0;
     slots += member_slots;
     if (member->len <= 0) {
-      int size = ps_type_sizeof_id(
-          semantic_types, record_layouts, member_type_id, target);
+      int size =
+          ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
+                            ag_target_info_data_layout(target));
       int end = member_layout->offset + size;
       if (size > 0 && end > covered_end) covered_end = end;
     }

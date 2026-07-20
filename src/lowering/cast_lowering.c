@@ -47,11 +47,10 @@ int psx_plan_aggregate_source_cast_resolution(
       ps_lowering_semantic_types(lowering_context),
       resolution->target_qual_type.type_id);
   if (!ps_type_is_tag_aggregate(target_type)) return 0;
-  const psx_record_layout_t *record_layout =
-      psx_record_layout_table_lookup(
-          ps_lowering_record_layouts(lowering_context),
-          ps_type_record_id(target_type),
-          ps_lowering_target(lowering_context));
+  const psx_record_layout_t *record_layout = psx_record_layout_table_lookup(
+      ps_lowering_record_layouts(lowering_context),
+      ps_type_record_id(target_type),
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(
           record_layout, resolution->member_index);

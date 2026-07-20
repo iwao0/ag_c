@@ -105,9 +105,9 @@ static void resolve_aggregate_bitfield_placement(
     resolution->status = PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE;
     return;
   }
-  int storage_size = ps_type_sizeof_id(
-      request->semantic_types, request->record_layouts,
-      request->type_id, target);
+  int storage_size =
+      ps_type_sizeof_id(request->semantic_types, request->record_layouts,
+                        request->type_id, ag_target_info_data_layout(target));
   if (storage_size <= 0) return;
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
@@ -235,10 +235,9 @@ static int collect_promoted_aggregate_members(
   if (record_id == PSX_RECORD_ID_INVALID) return 0;
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
-  const psx_record_layout_t *record_layout =
-      psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(semantic_context), record_id,
-          ps_ctx_target_info(semantic_context));
+  const psx_record_layout_t *record_layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(semantic_context), record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
   if (!record || !record_layout || !record->is_complete ||
       (record->member_count > 0 && !record->members) ||
       record_layout->member_count < record->member_count)
@@ -349,10 +348,12 @@ void psx_resolve_aggregate_member_declaration(
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
     const psx_record_layout_table_t *record_layouts =
         ps_ctx_record_layout_table_in(semantic_context);
-    int storage_size = ps_type_sizeof_id(
-        semantic_types, record_layouts, identity.type_id, target);
-    int storage_alignment = ps_type_alignof_id(
-        semantic_types, record_layouts, identity.type_id, target);
+    int storage_size =
+        ps_type_sizeof_id(semantic_types, record_layouts, identity.type_id,
+                          ag_target_info_data_layout(target));
+    int storage_alignment =
+        ps_type_alignof_id(semantic_types, record_layouts, identity.type_id,
+                           ag_target_info_data_layout(target));
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;

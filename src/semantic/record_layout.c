@@ -33,10 +33,9 @@ void psx_record_layout_table_destroy(psx_record_layout_table_t *table) {
   free(table);
 }
 
-static psx_record_layout_entry_t *find_entry(
-    psx_record_layout_table_t *table, psx_record_id_t record_id,
-    const ag_target_info_t *target) {
-  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+static psx_record_layout_entry_t *
+find_entry(psx_record_layout_table_t *table, psx_record_id_t record_id,
+           const ag_data_layout_t *data_layout) {
   if (!table || record_id == PSX_RECORD_ID_INVALID || !data_layout)
     return NULL;
   for (size_t i = 0; i < table->count; i++) {
@@ -48,10 +47,10 @@ static psx_record_layout_entry_t *find_entry(
   return NULL;
 }
 
-static const psx_record_layout_entry_t *find_entry_const(
-    const psx_record_layout_table_t *table, psx_record_id_t record_id,
-    const ag_target_info_t *target) {
-  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+static const psx_record_layout_entry_t *
+find_entry_const(const psx_record_layout_table_t *table,
+                 psx_record_id_t record_id,
+                 const ag_data_layout_t *data_layout) {
   if (!table || record_id == PSX_RECORD_ID_INVALID || !data_layout)
     return NULL;
   for (size_t i = 0; i < table->count; i++) {
@@ -81,11 +80,12 @@ static psx_record_layout_entry_t *append_entry(
   return &table->entries[table->count++];
 }
 
-int psx_record_layout_table_define(
-    psx_record_layout_table_t *table, psx_record_id_t record_id,
-    const ag_target_info_t *target, int size, int alignment,
-    const psx_record_member_layout_t *members, int member_count) {
-  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+int psx_record_layout_table_define(psx_record_layout_table_t *table,
+                                   psx_record_id_t record_id,
+                                   const ag_data_layout_t *data_layout,
+                                   int size, int alignment,
+                                   const psx_record_member_layout_t *members,
+                                   int member_count) {
   if (!table || record_id == PSX_RECORD_ID_INVALID ||
       !ag_data_layout_is_valid(data_layout) || size < 0 ||
       alignment <= 0 || member_count < 0 ||
@@ -99,7 +99,7 @@ int psx_record_layout_table_define(
     memcpy(member_copy, members,
            (size_t)member_count * sizeof(*member_copy));
   }
-  psx_record_layout_entry_t *entry = find_entry(table, record_id, target);
+  psx_record_layout_entry_t *entry = find_entry(table, record_id, data_layout);
   if (!entry) entry = append_entry(table);
   if (!entry) {
     free(member_copy);
@@ -118,11 +118,12 @@ int psx_record_layout_table_define(
   return 1;
 }
 
-const psx_record_layout_t *psx_record_layout_table_lookup(
-    const psx_record_layout_table_t *table, psx_record_id_t record_id,
-    const ag_target_info_t *target) {
-  const psx_record_layout_entry_t *entry = find_entry_const(
-      table, record_id, target);
+const psx_record_layout_t *
+psx_record_layout_table_lookup(const psx_record_layout_table_t *table,
+                               psx_record_id_t record_id,
+                               const ag_data_layout_t *data_layout) {
+  const psx_record_layout_entry_t *entry =
+      find_entry_const(table, record_id, data_layout);
   return entry ? &entry->layout : NULL;
 }
 

@@ -1041,11 +1041,11 @@ static int copy_payload(
             builder, PSX_RESOLVED_HIR_BUILD_RAW_SYNTAX_REMAINS, source);
         return 0;
       }
-      const psx_record_layout_t *layout =
-          psx_record_layout_table_lookup(
-              ps_ctx_record_layout_table_in(builder->semantic_context),
-              state->record_id,
-              ps_ctx_target_info(builder->semantic_context));
+      const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+          ps_ctx_record_layout_table_in(builder->semantic_context),
+          state->record_id,
+          ag_target_info_data_layout(
+              ps_ctx_target_info(builder->semantic_context)));
       const psx_record_member_layout_t *member =
           psx_record_layout_member(layout, state->member_index);
       if (!member) {

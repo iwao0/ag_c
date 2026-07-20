@@ -1100,8 +1100,8 @@ static psx_record_decl_t *test_record_decl_mut(const psx_type_t *type) {
 static int test_type_size_id(psx_type_id_t type_id) {
   return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_ctx_record_layout_table_in(test_semantic_context()),
-      type_id, ps_ctx_target_info(test_semantic_context()));
+      ps_ctx_record_layout_table_in(test_semantic_context()), type_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
 }
 
 static int test_semantic_type_sizeof_in(
@@ -1111,8 +1111,8 @@ static int test_semantic_type_sizeof_in(
       semantic_context, type);
   return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context),
-      qual_type.type_id, ps_ctx_target_info(semantic_context));
+      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
+      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
 }
 
 static int test_semantic_type_alignof_in(
@@ -1122,8 +1122,8 @@ static int test_semantic_type_alignof_in(
       semantic_context, type);
   return ps_type_alignof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context),
-      qual_type.type_id, ps_ctx_target_info(semantic_context));
+      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
+      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
 }
 
 static int test_tag_member_decl_value_size(const tag_member_info_t *member) {
@@ -7754,9 +7754,8 @@ static int test_type_layout_of(
   }
   psx_qual_type_t identity = psx_semantic_type_table_intern(types, type);
   int resolved = identity.type_id != PSX_TYPE_ID_INVALID &&
-                 ps_type_layout_of_id(
-                     types, record_layouts,
-                     identity.type_id, target, out);
+                 ps_type_layout_of_id(types, record_layouts, identity.type_id,
+                                      ag_target_info_data_layout(target), out);
   psx_record_layout_table_destroy(record_layouts);
   psx_semantic_type_table_destroy(types);
   return resolved;
@@ -8342,11 +8341,10 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(2, member_record->member_count);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       test_semantic_context(), member_record->record_id, 8, 4));
-  const psx_record_layout_t *member_layout =
-      psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(test_semantic_context()),
-          member_record->record_id,
-          ps_ctx_target_info(test_semantic_context()));
+  const psx_record_layout_t *member_layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(test_semantic_context()),
+      member_record->record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(member_layout != NULL);
   ASSERT_EQ(4, psx_record_layout_member(member_layout, 1)->offset);
   psx_member_access_resolution_t resolution;
@@ -12709,7 +12707,8 @@ static void test_local_declaration_storage_plan_boundary() {
                     ps_ctx_semantic_type_table_in(test_semantic_context()),
                     ps_ctx_record_layout_table_in(test_semantic_context()),
                     ps_lvar_decl_type_id(lowered),
-                    ps_ctx_target_info(test_semantic_context())));
+                    ag_target_info_data_layout(
+                        ps_ctx_target_info(test_semantic_context()))));
   ASSERT_EQ(lowered, ps_decl_find_lvar_in(test_local_registry(), (char *)"matrix", 6));
 
   reset_test_locals();
@@ -13088,18 +13087,20 @@ static void test_target_type_layout_boundary() {
   const psx_type_t *canonical_pointer_array =
       psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
-  ASSERT_EQ(8, ps_type_sizeof_id(
-                   types, layouts, pointer_identity.type_id, &host));
-  ASSERT_EQ(4, ps_type_sizeof_id(
-                   types, layouts, pointer_identity.type_id, &wasm));
-  ASSERT_EQ(8, ps_type_alignof_id(
-                   types, layouts, pointer_identity.type_id, &host));
-  ASSERT_EQ(4, ps_type_alignof_id(
-                   types, layouts, pointer_identity.type_id, &wasm));
-  ASSERT_EQ(24, ps_type_sizeof_id(
-                    types, layouts, pointer_array_identity.type_id, &host));
-  ASSERT_EQ(12, ps_type_sizeof_id(
-                    types, layouts, pointer_array_identity.type_id, &wasm));
+  ASSERT_EQ(8, ps_type_sizeof_id(types, layouts, pointer_identity.type_id,
+                                 ag_target_info_data_layout(&host)));
+  ASSERT_EQ(4, ps_type_sizeof_id(types, layouts, pointer_identity.type_id,
+                                 ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, ps_type_alignof_id(types, layouts, pointer_identity.type_id,
+                                  ag_target_info_data_layout(&host)));
+  ASSERT_EQ(4, ps_type_alignof_id(types, layouts, pointer_identity.type_id,
+                                  ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(24,
+            ps_type_sizeof_id(types, layouts, pointer_array_identity.type_id,
+                              ag_target_info_data_layout(&host)));
+  ASSERT_EQ(12,
+            ps_type_sizeof_id(types, layouts, pointer_array_identity.type_id,
+                              ag_target_info_data_layout(&wasm)));
   psx_semantic_context_t *host_semantic_context = test_semantic_context();
   psx_name_classifier_t host_name_classifier =
       ps_ctx_name_classifier(host_semantic_context);
@@ -13227,20 +13228,25 @@ static void test_target_type_layout_boundary() {
   const psx_record_member_layout_t wasm_members[] = {
       {.offset = 0}, {.offset = 4},
   };
-  ASSERT_TRUE(psx_record_layout_table_define(
-      record_layouts, record->record_id, &host, 16, 8,
-      host_members, 2));
-  ASSERT_TRUE(psx_record_layout_table_define(
-      record_layouts, record->record_id, &wasm, 8, 4,
-      wasm_members, 2));
-  ASSERT_EQ(0, ps_type_sizeof_id(
-                    types, layouts, record_identity.type_id, &host));
+  ASSERT_TRUE(psx_record_layout_table_define(record_layouts, record->record_id,
+                                             ag_target_info_data_layout(&host),
+                                             16, 8, host_members, 2));
+  ASSERT_TRUE(psx_record_layout_table_define(record_layouts, record->record_id,
+                                             ag_target_info_data_layout(&wasm),
+                                             8, 4, wasm_members, 2));
+  ASSERT_EQ(0, ps_type_sizeof_id(types, layouts, record_identity.type_id,
+                                 ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16,
+            ps_type_sizeof_id(types, record_layouts, record_identity.type_id,
+                              ag_target_info_data_layout(&host)));
   ASSERT_EQ(16, ps_type_sizeof_id(
-                    types, record_layouts, record_identity.type_id, &host));
-  ASSERT_EQ(8, ps_type_alignof_id(
-                   types, record_layouts, record_identity.type_id, &host));
-  ASSERT_EQ(8, ps_type_sizeof_id(
-                   types, record_layouts, record_identity.type_id, &wasm));
+                    types, record_layouts, record_identity.type_id,
+                    ag_target_info_data_layout(&alternate_host_abi)));
+  ASSERT_EQ(8,
+            ps_type_alignof_id(types, record_layouts, record_identity.type_id,
+                               ag_target_info_data_layout(&host)));
+  ASSERT_EQ(8, ps_type_sizeof_id(types, record_layouts, record_identity.type_id,
+                                 ag_target_info_data_layout(&wasm)));
   ir_abi_type_context_t host_abi = {
       .semantic_types = types,
       .record_layouts = record_layouts,
@@ -13278,17 +13284,19 @@ static void test_target_type_layout_boundary() {
   ir_abi_module_free(host_lowered);
   ir_abi_module_free(wasm_lowered);
   ir_module_free(abi_probe_module);
-  ASSERT_EQ(4, ps_type_alignof_id(
-                   types, record_layouts, record_identity.type_id, &wasm));
+  ASSERT_EQ(4,
+            ps_type_alignof_id(types, record_layouts, record_identity.type_id,
+                               ag_target_info_data_layout(&wasm)));
   const psx_record_layout_t *host_record_layout =
-      psx_record_layout_table_lookup(
-          record_layouts, record->record_id, &host);
+      psx_record_layout_table_lookup(record_layouts, record->record_id,
+                                     ag_target_info_data_layout(&host));
   const psx_record_layout_t *alternate_abi_record_layout =
       psx_record_layout_table_lookup(
-          record_layouts, record->record_id, &alternate_host_abi);
+          record_layouts, record->record_id,
+          ag_target_info_data_layout(&alternate_host_abi));
   const psx_record_layout_t *wasm_record_layout =
-      psx_record_layout_table_lookup(
-          record_layouts, record->record_id, &wasm);
+      psx_record_layout_table_lookup(record_layouts, record->record_id,
+                                     ag_target_info_data_layout(&wasm));
   ASSERT_TRUE(host_record_layout != NULL);
   ASSERT_TRUE(alternate_abi_record_layout == host_record_layout);
   ASSERT_TRUE(wasm_record_layout != NULL);
@@ -14472,7 +14480,8 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_TRUE(psx_record_layout_table_lookup(
                   ps_ctx_record_layout_table_in(test_semantic_context()),
                   outer_record_id,
-                  ps_ctx_target_info(test_semantic_context())) == NULL);
+                  ag_target_info_data_layout(
+                      ps_ctx_target_info(test_semantic_context()))) == NULL);
 
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
   psx_resolve_tag_declaration(&request, &resolution);
@@ -14483,18 +14492,15 @@ static void test_tag_declaration_resolution_boundary() {
                 TK_STRUCT, (char *)"__TagBoundary", 13));
   ASSERT_TRUE(cached_definition->is_complete);
   ASSERT_EQ(outer_record_id, cached_definition->record_id);
-  const psx_record_layout_t *outer_layout =
-      psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(test_semantic_context()),
-          outer_record_id,
-          ps_ctx_target_info(test_semantic_context()));
+  const psx_record_layout_t *outer_layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(test_semantic_context()), outer_record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(outer_layout == NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       test_semantic_context(), outer_record_id, 0, 1));
   outer_layout = psx_record_layout_table_lookup(
-      ps_ctx_record_layout_table_in(test_semantic_context()),
-      outer_record_id,
-      ps_ctx_target_info(test_semantic_context()));
+      ps_ctx_record_layout_table_in(test_semantic_context()), outer_record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(outer_layout != NULL);
   ASSERT_EQ(1, outer_layout->alignment);
   psx_resolve_tag_declaration(&request, &resolution);
@@ -14620,11 +14626,10 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_EQ(2, order_record->member_count);
   ASSERT_TRUE(strncmp(order_record->members[0].name, "first", 5) == 0);
   ASSERT_TRUE(strncmp(order_record->members[1].name, "second", 6) == 0);
-  const psx_record_layout_t *order_layout =
-      psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(test_semantic_context()),
-          order_record->record_id,
-          ps_ctx_target_info(test_semantic_context()));
+  const psx_record_layout_t *order_layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(test_semantic_context()),
+      order_record->record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
   ASSERT_TRUE(order_layout != NULL);
   ASSERT_EQ(4, psx_record_layout_member(order_layout, 0)->offset);
   ASSERT_EQ(0, psx_record_layout_member(order_layout, 1)->offset);
@@ -15360,7 +15365,8 @@ static void test_aggregate_member_resolution_boundary() {
                    ps_ctx_semantic_type_table_in(test_semantic_context()),
                    ps_ctx_record_layout_table_in(test_semantic_context()),
                    boundary.type_id,
-                   ps_ctx_target_info(test_semantic_context())));
+                   ag_target_info_data_layout(
+                       ps_ctx_target_info(test_semantic_context()))));
 
   psx_type_t *bitfield_integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_resolve_aggregate_member_declaration(
@@ -16271,8 +16277,8 @@ static void test_initializer_resolution_boundary() {
   };
   ASSERT_TRUE(psx_record_layout_table_define(
       record_layouts, definition.record_id,
-      ps_ctx_target_info(test_semantic_context()), 12, 4,
-      aggregate_members, 2));
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
+      12, 4, aggregate_members, 2));
 
   psx_initializer_scalar_leaf_list_t leaves = {0};
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
@@ -16348,8 +16354,8 @@ static void test_initializer_resolution_boundary() {
   };
   ASSERT_TRUE(psx_record_layout_table_define(
       record_layouts, recursive_definition.record_id,
-      ps_ctx_target_info(test_semantic_context()), 16, 8,
-      recursive_layout_members, 2));
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
+      16, 8, recursive_layout_members, 2));
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_decl_table_in(test_semantic_context()),
@@ -16397,7 +16403,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_TRUE(psx_record_layout_table_define(
       (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
           test_semantic_context()),
-      definition.record_id, ps_ctx_target_info(test_semantic_context()),
+      definition.record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
       16, 8, aggregate_layout_members, 2));
 
   lvar_t *object = register_test_storage_fixture(
@@ -16454,8 +16461,8 @@ static void test_local_initializer_parse_lowering_boundary() {
       (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
           test_semantic_context()),
       union_definition.record_id,
-      ps_ctx_target_info(test_semantic_context()), 4, 4,
-      union_layout_members, 1));
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
+      4, 4, union_layout_members, 1));
   lvar_t *union_object = register_test_storage_fixture(
       (char *)"u", 1, 4, 4, 0);
   set_test_storage_fixture_type(union_object, union_type);
@@ -16588,8 +16595,8 @@ static void test_static_data_initializer_boundary() {
       (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
           test_semantic_context()),
       union_definition.record_id,
-      ps_ctx_target_info(test_semantic_context()), 8, 8,
-      union_layout_members, 2));
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
+      8, 8, union_layout_members, 2));
   node_num_t union_index = {0};
   union_index.base.kind = ND_NUM;
   union_index.val = 1;

@@ -45,7 +45,7 @@ static int lowering_type_size(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(lowering_context, type),
-      ps_lowering_target(lowering_context));
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
 }
 
 static int type_size(
@@ -74,9 +74,8 @@ static int resolved_member_offset(
       state->member_index < 0)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      ps_lowering_record_layouts(lowering_context),
-      state->record_id,
-      ps_lowering_target(lowering_context));
+      ps_lowering_record_layouts(lowering_context), state->record_id,
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
   const psx_record_member_layout_t *layout_member =
       psx_record_layout_member(layout, state->member_index);
   if (!layout_member) return 0;
@@ -100,8 +99,8 @@ static int static_pointer_stride(
   if (element_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   return ps_type_sizeof_id(
       ps_lowering_semantic_types(lowering_context),
-      ps_lowering_record_layouts(lowering_context),
-      element_type.type_id, ps_lowering_target(lowering_context));
+      ps_lowering_record_layouts(lowering_context), element_type.type_id,
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
 }
 
 static int resolve_static_address_constant(
@@ -161,9 +160,8 @@ static int resolve_static_address_constant(
               base_type_id);
       int stride = ps_type_sizeof_id(
           ps_lowering_semantic_types(lowering_context),
-          ps_lowering_record_layouts(lowering_context),
-          element_type.type_id,
-          ps_lowering_target(lowering_context));
+          ps_lowering_record_layouts(lowering_context), element_type.type_id,
+          ag_target_info_data_layout(ps_lowering_target(lowering_context)));
       if (!ok || stride <= 0) return 0;
       *offset += index * stride;
       return 1;
@@ -414,7 +412,7 @@ static const psx_record_member_layout_t *record_member_layout(
     return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(context), aggregate_type->record_id,
-      ps_lowering_target(context));
+      ag_target_info_data_layout(ps_lowering_target(context)));
   return psx_record_layout_member(layout, member_index);
 }
 

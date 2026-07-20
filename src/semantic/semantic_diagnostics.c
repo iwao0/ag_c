@@ -43,8 +43,8 @@ static int semantic_type_size(
     psx_qual_type_t qual_type) {
   return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context),
-      qual_type.type_id, ps_ctx_target_info(semantic_context));
+      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
+      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
 }
 
 static void warn_float_to_int(

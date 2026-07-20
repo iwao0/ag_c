@@ -42,9 +42,8 @@ static int type_size_id(
     psx_type_id_t type_id) {
   return ps_type_sizeof_id(
       lowering ? lowering->semantic_types : NULL,
-      lowering ? lowering->record_layouts : NULL,
-      type_id,
-      lowering ? lowering->target : NULL);
+      lowering ? lowering->record_layouts : NULL, type_id,
+      ag_target_info_data_layout(lowering ? lowering->target : NULL));
 }
 
 static int type_alignment_id(
@@ -52,9 +51,8 @@ static int type_alignment_id(
     psx_type_id_t type_id) {
   return ps_type_alignof_id(
       lowering ? lowering->semantic_types : NULL,
-      lowering ? lowering->record_layouts : NULL,
-      type_id,
-      lowering ? lowering->target : NULL);
+      lowering ? lowering->record_layouts : NULL, type_id,
+      ag_target_info_data_layout(lowering ? lowering->target : NULL));
 }
 
 static psx_type_id_t scalar_element_type_id(

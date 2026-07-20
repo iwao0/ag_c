@@ -618,16 +618,16 @@ static int gvar_member_value_size_for_target(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t value_type_id, const ag_target_info_t *target) {
-  return ps_type_sizeof_id(
-      semantic_types, record_layouts, value_type_id, target);
+  return ps_type_sizeof_id(semantic_types, record_layouts, value_type_id,
+                           ag_target_info_data_layout(target));
 }
 
 static int gvar_member_storage_size_for_target(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t member_type_id, const ag_target_info_t *target) {
-  return ps_type_sizeof_id(
-      semantic_types, record_layouts, member_type_id, target);
+  return ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
+                           ag_target_info_data_layout(target));
 }
 
 static int gvar_get_record_member_layout(
@@ -640,8 +640,9 @@ static int gvar_get_record_member_layout(
   if (!aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID || !out_layout)
     return 0;
-  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, aggregate_type->record_id, target);
+  const psx_record_layout_t *layout =
+      psx_record_layout_table_lookup(record_layouts, aggregate_type->record_id,
+                                     ag_target_info_data_layout(target));
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(layout, member_ordinal);
   if (!member_layout) return 0;
@@ -662,8 +663,9 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
   gvar_tag_identity(gv, &tag_kind, &tag_name, &tag_len, &tag_scope_depth_p1);
   const psx_type_t *decl_type = psx_semantic_type_table_lookup(
       semantic_types, root_type_id);
-  int type_size = ps_type_sizeof_id(
-      semantic_types, record_layouts, root_type_id, target);
+  int type_size =
+      ps_type_sizeof_id(semantic_types, record_layouts, root_type_id,
+                        ag_target_info_data_layout(target));
   psx_type_id_t aggregate_type_id =
       psx_semantic_type_table_array_leaf(
           semantic_types, root_type_id).type_id;
@@ -687,8 +689,9 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
               : NULL,
   };
   if (layout.is_array) {
-    layout.elem_size = ps_type_sizeof_id(
-        semantic_types, record_layouts, aggregate_type_id, target);
+    layout.elem_size =
+        ps_type_sizeof_id(semantic_types, record_layouts, aggregate_type_id,
+                          ag_target_info_data_layout(target));
     layout.elem_count = ps_type_array_flat_element_count(decl_type);
   }
   return layout;
@@ -835,8 +838,9 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
   if (!aggregate_type || !record_decl ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
     return 0;
-  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, aggregate_type->record_id, target);
+  const psx_record_layout_t *layout =
+      psx_record_layout_table_lookup(record_layouts, aggregate_type->record_id,
+                                     ag_target_info_data_layout(target));
   if (!layout) return 0;
   int member_count = record_decl->member_count;
   if (layout->member_count < member_count) member_count = layout->member_count;
@@ -850,8 +854,9 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
       continue;
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
         semantic_types, aggregate_type_id, i).type_id;
-    int member_size = ps_type_sizeof_id(
-        semantic_types, record_layouts, member_type_id, target);
+    int member_size =
+        ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
+                          ag_target_info_data_layout(target));
     int start = base_offset + member_layout.offset;
     if (member_size <= 0 || target_offset < start ||
         target_offset >= start + member_size)
@@ -891,7 +896,7 @@ static void gvar_aggregate_member_iter_note_cover(
   if (ps_record_member_decl_is_unnamed_union(declaration)) {
     int member_size = ps_type_sizeof_id(
         iter->semantic_types, iter->record_layouts, member_type_id,
-        iter->target);
+        ag_target_info_data_layout(iter->target));
     if (member_size > 0) {
       iter->cover_state.covered_union_off = layout->offset;
       iter->cover_state.covered_union_size = member_size;
@@ -1468,7 +1473,8 @@ static int record_member_declaration_storage_size_in(
                       member->decl_type_table,
                       ps_ctx_record_layout_table_in(semantic_context),
                       member->decl_qual_type.type_id,
-                      ps_ctx_target_info(semantic_context))
+                      ag_target_info_data_layout(
+                          ps_ctx_target_info(semantic_context)))
                 : 0;
 }
 
@@ -1523,8 +1529,9 @@ static int gvar_init_cursor_pack_bitfield_unit(
   int unit_off = first_layout.offset;
   psx_type_id_t unit_type_id = gvar_member_value_type_id(
       semantic_types, aggregate_type_id, member_index);
-  int unit_size = ps_type_sizeof_id(
-      semantic_types, record_layouts, unit_type_id, target);
+  int unit_size =
+      ps_type_sizeof_id(semantic_types, record_layouts, unit_type_id,
+                        ag_target_info_data_layout(target));
   if (unit_size <= 0) return 0;
   unsigned long long packed = 0;
   int m = member_index;

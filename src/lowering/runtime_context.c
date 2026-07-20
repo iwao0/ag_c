@@ -54,16 +54,16 @@ psx_type_id_t ps_lowering_type_id(
 
 int ps_lowering_type_id_size(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
-  return ps_type_sizeof_id(
-      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
-      type_id, ps_lowering_target(ctx));
+  return ps_type_sizeof_id(ps_lowering_semantic_types(ctx),
+                           ps_lowering_record_layouts(ctx), type_id,
+                           ag_target_info_data_layout(ps_lowering_target(ctx)));
 }
 
 int ps_lowering_type_id_alignment(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
   return ps_type_alignof_id(
-      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
-      type_id, ps_lowering_target(ctx));
+      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx), type_id,
+      ag_target_info_data_layout(ps_lowering_target(ctx)));
 }
 
 int ps_lowering_type_size(

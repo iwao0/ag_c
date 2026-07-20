@@ -44,13 +44,13 @@ ir_val_t hir_ir_build_object_copy(
   psx_type_shape_t target_semantic_type = {0};
   int has_target_semantic_type = target && hir_ir_node_type_shape(
       context, target, &target_semantic_type);
-  int copy_size = target
-      ? ps_type_sizeof_id(
-            context->options->semantic_types,
-            context->options->record_layouts,
-            psx_hir_node_qual_type(target).type_id,
-            context->options->target)
-      : 0;
+  int copy_size =
+      target ? ps_type_sizeof_id(
+                   context->options->semantic_types,
+                   context->options->record_layouts,
+                   psx_hir_node_qual_type(target).type_id,
+                   ag_target_info_data_layout(context->options->target))
+             : 0;
   int is_array = has_target_semantic_type &&
       target_semantic_type.kind == PSX_TYPE_ARRAY;
   int is_record = has_target_semantic_type &&

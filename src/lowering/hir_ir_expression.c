@@ -70,10 +70,10 @@ static ir_val_t pointer_stride_value(
   psx_qual_type_t element_type = psx_semantic_type_table_base(
       context->options->semantic_types,
       psx_hir_node_qual_type(pointer).type_id);
-  int stride_bytes = ps_type_sizeof_id(
-      context->options->semantic_types,
-      context->options->record_layouts,
-      element_type.type_id, context->options->target);
+  int stride_bytes =
+      ps_type_sizeof_id(context->options->semantic_types,
+                        context->options->record_layouts, element_type.type_id,
+                        ag_target_info_data_layout(context->options->target));
   if (stride_bytes <= 0) return hir_ir_unsupported_expr(context);
   return ir_val_imm(IR_TY_I64, stride_bytes);
 }
@@ -1237,9 +1237,9 @@ static ir_val_t build_inc_dec(
           context->options->semantic_types,
           psx_hir_node_qual_type(target).type_id);
       step = ps_type_sizeof_id(
-          context->options->semantic_types,
-          context->options->record_layouts,
-          pointee.type_id, context->options->target);
+          context->options->semantic_types, context->options->record_layouts,
+          pointee.type_id,
+          ag_target_info_data_layout(context->options->target));
       if (step <= 0) return hir_ir_unsupported_expr(context);
     }
   }
@@ -1369,9 +1369,9 @@ static ir_val_t build_compound_assignment(
           context->options->semantic_types,
           psx_hir_node_qual_type(target).type_id);
       int stride_bytes = ps_type_sizeof_id(
-          context->options->semantic_types,
-          context->options->record_layouts,
-          pointee.type_id, context->options->target);
+          context->options->semantic_types, context->options->record_layouts,
+          pointee.type_id,
+          ag_target_info_data_layout(context->options->target));
       if (stride_bytes <= 0) return hir_ir_unsupported_expr(context);
       stride = ir_val_imm(IR_TY_I64, stride_bytes);
     }
