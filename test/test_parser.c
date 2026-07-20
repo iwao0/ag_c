@@ -21143,13 +21143,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             returned_nested_param_function->param_types[0]->floating_kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __tm_sig_gf(int x){ return x; } "
       "int (*__tm_sig_gfp)(int); "
       "typedef double __tm_top_param_t; "
       "int (*__tm_top_fp)(__tm_top_param_t, int *, ...); "
-      "int __tm_sig_global(void) { return __tm_sig_gfp(1); }");
-  (void)parsed_code;
+      "int __tm_sig_global(void) { return __tm_sig_gfp(1); }"));
   global_var_t *sig_gvar = find_test_global_var("__tm_sig_gfp", 12);
   ASSERT_TRUE(sig_gvar != NULL);
   const psx_type_t *sig_gvar_type = test_gvar_decl_type(sig_gvar);
@@ -21169,13 +21168,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, top_function->param_types[1]->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, top_function->param_types[1]->base->kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef const struct __tm_ret_tag { int value; } __tm_ret_alias; "
       "__tm_ret_alias *__tm_ret_alias_fn(void); "
       "struct __tm_ret_tag *__tm_ret_tag_fn(void); "
       "int (*__tm_ret_nested(void))(double); "
-      "int __tm_ret_explicit(void);");
-  (void)parsed_code;
+      "int __tm_ret_explicit(void);"));
   const psx_type_t *alias_return_function = test_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_alias_fn",
       (int)(sizeof("__tm_ret_alias_fn") - 1));
@@ -21218,10 +21216,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
             explicit_return_function->base->integer_kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int (*(*__tm_sig_nested_gfp)(void))(double); "
-      "int __tm_sig_nested_global(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_sig_nested_global(void) { return 0; }"));
   global_var_t *sig_nested_gvar =
       find_test_global_var("__tm_sig_nested_gfp",
                           (int)(sizeof("__tm_sig_nested_gfp") - 1));
@@ -21238,10 +21235,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(ps_gvar_decl_qual_type(sig_nested_gvar).qualifiers,
             ps_node_qual_type(sig_nested_gvar_node).qualifiers);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int **__tm_gpp; int *__tm_gptrs[2]; "
-      "int __tm_gpp_use(void) { return *__tm_gpp[1]; }");
-  (void)parsed_code;
+      "int __tm_gpp_use(void) { return *__tm_gpp[1]; }"));
   global_var_t *gpp = find_test_global_var("__tm_gpp", 8);
   ASSERT_TRUE(gpp != NULL);
   const psx_type_t *gpp_type = test_gvar_decl_type(gpp);
@@ -21254,9 +21250,8 @@ static void test_type_metadata_bridge() {
   node_t *gpp_node = ps_node_new_gvar_for(gpp);
   ASSERT_EQ(8, ps_node_deref_size(gpp_node));
 
-  parsed_code = parse_program_input(
-      "double __tm_gda[2][3]; int __tm_gda_use(void) { return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "double __tm_gda[2][3]; int __tm_gda_use(void) { return 0; }"));
   global_var_t *gda = find_test_global_var("__tm_gda", 8);
   ASSERT_TRUE(gda != NULL);
   node_t *gda_node = ps_node_new_gvar_for(gda);
@@ -21271,11 +21266,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(gda_base)->base->kind);
   ASSERT_EQ(3, ps_node_get_type(gda_base)->base->array_len);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned char __tm_global_su_arr[2]; _Bool __tm_global_sb_arr[2]; "
       "int __tm_global_si_arr[2]; "
-      "int __tm_global_array_addr_flags(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_global_array_addr_flags(void) { return 0; }"));
   global_var_t *global_su_arr = find_test_global_var(
       "__tm_global_su_arr", (int)(sizeof("__tm_global_su_arr") - 1));
   ASSERT_TRUE(global_su_arr != NULL);
@@ -21314,11 +21308,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_deref_size(global_si_arr_addr));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(global_si_arr_addr));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_gsa_S { int x; int y; }; "
       "struct __tm_gsa_S __tm_gsa[2][2]; "
-      "int __tm_gsa_use(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_gsa_use(void) { return 0; }"));
   global_var_t *gsa = find_test_global_var("__tm_gsa", 8);
   ASSERT_TRUE(gsa != NULL);
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(gsa));
@@ -21339,10 +21332,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, gptrs_type->base->kind);
   ASSERT_EQ(8, ps_type_sizeof(gptrs_type->base));
   ASSERT_EQ(4, ps_type_deref_size(gptrs_type->base));
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __tm_rows_a[2][3]; typedef int (*__tm_RowPtr3)[3]; "
-      "__tm_RowPtr3 __tm_rows[2];");
-  (void)parsed_code;
+      "__tm_RowPtr3 __tm_rows[2];"));
   global_var_t *rows_array = find_test_global_var("__tm_rows", 9);
   ASSERT_TRUE(rows_array != NULL);
   const psx_type_t *rows_array_type = test_gvar_decl_type(rows_array);
@@ -21415,14 +21407,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(bool_matrix_elem_type != NULL);
   ASSERT_EQ(PSX_TYPE_BOOL, bool_matrix_elem_type->kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __tm_grid_a[2][3]; int __tm_grid_b[2][3]; "
       "typedef int (*__tm_RowPtr)[3]; "
       "int (*(*__tm_grid_ptrs)[2])[3] = &(int (*[2])[3]){__tm_grid_a, __tm_grid_b}; "
       "__tm_RowPtr *__tm_grid_ptr_list = (__tm_RowPtr[]){__tm_grid_a, __tm_grid_b}; "
       "int __tm_grid_use(void) { "
-      "  return (*__tm_grid_ptrs)[0][0][1] + __tm_grid_ptr_list[1][0][2]; }");
-  (void)parsed_code;
+      "  return (*__tm_grid_ptrs)[0][0][1] + __tm_grid_ptr_list[1][0][2]; }"));
   global_var_t *grid_ptrs = find_test_global_var("__tm_grid_ptrs", 14);
   ASSERT_TRUE(grid_ptrs != NULL);
   const psx_type_t *grid_ptrs_type = test_gvar_decl_type(grid_ptrs);
@@ -21523,10 +21514,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, canonical_cb_type->base->base->kind);
   assert_canonical_type_signature(canonical_cb_type, "p<i32(i32)>");
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_member_canonical { int a[2][3]; int (*p)[3]; "
-      "int *q[3]; int (**cb)(int); }; ");
-  (void)parsed_code;
+      "int *q[3]; int (**cb)(int); }; "));
   tag_member_info_t canonical_member_a = {0};
   tag_member_info_t canonical_member_p = {0};
   tag_member_info_t canonical_member_q = {0};
@@ -21557,11 +21547,10 @@ static void test_type_metadata_bridge() {
       canonical_member_cb.decl_type, "p<p<i32(i32)>>");
 
   const char *qualified_member_tag = "__tm_member_qualified";
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_member_qualified { const int c; "
       "volatile unsigned long long v; _Atomic int a; char pad; "
-      "_Alignas(8) int y; }; ");
-  (void)parsed_code;
+      "_Alignas(8) int y; }; "));
   tag_member_info_t qualified_member_c = {0};
   tag_member_info_t qualified_member_v = {0};
   tag_member_info_t qualified_member_a = {0};
@@ -22313,10 +22302,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(3, typedef_ptrarr_type->base->array_len);
   ASSERT_EQ(12, ps_type_deref_size(typedef_ptrarr_type));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int *TMDArrayPtr[3]; typedef int (*TMDPtrArray)[3]; "
-      "int __tm_toplevel_decl_shape(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_toplevel_decl_shape(void) { return 0; }"));
   psx_typedef_info_t tm_decl_array_ptr = {0};
   psx_typedef_info_t tm_decl_ptr_array = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMDArrayPtr", 11,
@@ -22384,11 +22372,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(leaf_scalar_b_node)->kind);
   ASSERT_TRUE(!canonical_node_pointee_is_bool(leaf_scalar_b_node));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned char __tm_guc[1][3]; unsigned char (*__tm_gup)[3] = __tm_guc; "
       "_Bool __tm_gb[1][2]; _Bool (*__tm_gbp)[2] = __tm_gb; "
-      "int __tm_gptrarr_leaf_flags(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_gptrarr_leaf_flags(void) { return 0; }"));
   global_var_t *leaf_gup = find_test_global_var("__tm_gup", 8);
   ASSERT_TRUE(leaf_gup != NULL);
   node_t *leaf_gup_node = ps_node_new_gvar_for(leaf_gup);
@@ -22401,10 +22388,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_bool(leaf_gbp_node));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(leaf_gbp_node));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned char *__tm_gucp; _Bool *__tm_gbp_scalar; "
-      "int __tm_gptr_leaf_flags(void) { return 0; }");
-  (void)parsed_code;
+      "int __tm_gptr_leaf_flags(void) { return 0; }"));
   global_var_t *leaf_gucp = find_test_global_var("__tm_gucp",
                                                 sizeof("__tm_gucp") - 1);
   ASSERT_TRUE(leaf_gucp != NULL);
@@ -22419,9 +22405,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_bool(leaf_gbp_scalar_node));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(leaf_gbp_scalar_node));
 
-  parsed_code = parse_program_input(
-      "unsigned char __tm_gscalar_u; int __tm_gscalar_use(void) { return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "unsigned char __tm_gscalar_u; int __tm_gscalar_use(void) { return 0; }"));
   global_var_t *leaf_gscalar_u = find_test_global_var(
       "__tm_gscalar_u", sizeof("__tm_gscalar_u") - 1);
   ASSERT_TRUE(leaf_gscalar_u != NULL);
@@ -22430,9 +22415,8 @@ static void test_type_metadata_bridge() {
   ps_node_clear_type(leaf_gscalar_u_node);
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(leaf_gscalar_u_node));
 
-  parsed_code = parse_program_input(
-      "_Bool __tm_gscalar_b; int __tm_gscalar_bool_use(void) { return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "_Bool __tm_gscalar_b; int __tm_gscalar_bool_use(void) { return 0; }"));
   global_var_t *leaf_gscalar_b = find_test_global_var(
       "__tm_gscalar_b", sizeof("__tm_gscalar_b") - 1);
   ASSERT_TRUE(leaf_gscalar_b != NULL);
@@ -24352,13 +24336,12 @@ static void test_type_metadata_bridge() {
   psx_type_t *tmp_invalid_tag_type = ps_type_new_tag(TK_ENUM, "TE", 2, 1, 4);
   ASSERT_TRUE(!ps_type_is_tag_aggregate(tmp_invalid_tag_type));
   ASSERT_EQ(PSX_TYPE_INVALID, tmp_invalid_tag_type->kind);
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct FlatIn { int a; int b; };"
       "struct FlatOut { int x; struct FlatIn in; union { int u; int v; }; int y; };"
       "union FlatU { int i; struct FlatIn in; };"
       "union FlatFpU { int i; float f; double d; };"
-      "int main(){ return 0; }");
-  (void)parsed_code;
+      "int main(){ return 0; }"));
   ASSERT_EQ(2, test_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
   ASSERT_EQ(5, test_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
   ASSERT_EQ(2, test_tag_flat_slot_count(TK_UNION, "FlatU", 5));
@@ -24609,10 +24592,9 @@ static void test_type_metadata_bridge() {
                                               &flat_ordinal));
   ASSERT_EQ(1, flat_ordinal);
 
-  parsed_code = parse_program_input("union LongMemberU { int a; long b; }; "
+  ASSERT_TRUE(resolve_program_input_hir("union LongMemberU { int a; long b; }; "
                                     "static union LongMemberU __tm_lu = {.b = 0x1122334455L}; "
-                                    "int main(){ return 0; }");
-  (void)parsed_code;
+                                    "int main(){ return 0; }"));
   global_var_t *__tm_lu = find_test_global_var("__tm_lu", 7);
   ASSERT_TRUE(__tm_lu != NULL);
   ASSERT_TRUE(ps_gvar_is_union_aggregate(__tm_lu));
@@ -24628,7 +24610,7 @@ static void test_type_metadata_bridge() {
                        (size_t)long_union_member.len));
   ASSERT_EQ(8, test_tag_member_decl_value_size(&long_union_member));
 
-  parsed_code = parse_program_input("struct P { int x, y; }; "
+  ASSERT_TRUE(resolve_program_input_hir("struct P { int x, y; }; "
                                     "union U { int a; long b; }; "
                                     "enum E { E0, E1, E9 = 9 }; "
                                     "static struct P sp = {3, 4}; "
@@ -24641,8 +24623,7 @@ static void test_type_metadata_bridge() {
                                     "static struct P make_p(int a, int b) { struct P p = {a, b}; return p; } "
                                     "static struct P arr[3] = {{1, 2}, {3, 4}, {5, 6}}; "
                                     "static struct P *get_arr(void) { return arr; } "
-                                    "int main(){ return get_u()->b == 0x1122334455L ? 0 : 1; }");
-  (void)parsed_code;
+                                    "int main(){ return get_u()->b == 0x1122334455L ? 0 : 1; }"));
   global_var_t *short_union_su = find_test_global_var("su", 2);
   ASSERT_TRUE(short_union_su != NULL);
   ASSERT_TRUE(ps_gvar_is_union_aggregate(short_union_su));
@@ -24658,8 +24639,7 @@ static void test_type_metadata_bridge() {
                        (size_t)short_union_member.len));
   ASSERT_EQ(8, test_tag_member_decl_value_size(&short_union_member));
 
-  parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; int main(){ return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; int main(){ return 0; }"));
   global_var_t *gu = find_test_global_var("__tm_gu", 7);
   ASSERT_TRUE(gu != NULL);
   ASSERT_TRUE(test_gvar_decl_type(gu) != NULL);
@@ -24931,9 +24911,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_gvar_array_element_size(ga));
   ASSERT_EQ(3, ps_gvar_array_element_count(ga));
 
-  parsed_code = parse_program_input("static short __tm_sha[2][2] = {{10,20},{30,40}}; "
-                                    "int main(void){ return __tm_sha[1][0]; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("static short __tm_sha[2][2] = {{10,20},{30,40}}; "
+                                    "int main(void){ return __tm_sha[1][0]; }"));
   global_var_t *sha = find_test_global_var("__tm_sha", 8);
   ASSERT_TRUE(sha != NULL);
   ASSERT_TRUE(ps_gvar_is_array(sha));
@@ -24942,11 +24921,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, ps_gvar_initializer_element_size(sha, 4));
   ASSERT_EQ(4, ps_gvar_initializer_element_count(sha, 4));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm817_S { char tag[3]; int n; }; "
       "struct __tm817_S __tm817_gs[2] = {{{1,2,3},4},{{5,6,7},8}}; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   global_var_t *tm817_gs = find_test_global_var("__tm817_gs", 10);
   ASSERT_TRUE(tm817_gs != NULL);
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(tm817_gs));
@@ -25141,10 +25119,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(6, test_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
                                        (int)sizeof(flat_decl_union_tag) - 1));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_bf_decl_type { unsigned long wide:40; _Bool flag:1; }; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   tag_member_info_t bf_wide_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_bf_decl_type", 17,
                                            "wide", 4, &bf_wide_info));
@@ -25353,13 +25330,12 @@ static void test_type_metadata_bridge() {
   }
   ASSERT_EQ(0, walk_array_trace.padding_count);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_walk_anon { "
       "  struct { union { int a; int b; }; }; int tail; "
       "}; "
       "struct __tm_walk_anon __tm_walk_anon_g = {1, 2}; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   const char walk_anon_global_name[] = "__tm_walk_anon_g";
   global_var_t *walk_anon_gv = find_test_global_var(
       (char *)walk_anon_global_name,
@@ -25389,8 +25365,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, walk_anon_trace.scalar_values[1]);
   ASSERT_EQ(0, walk_anon_trace.padding_count);
 
-  parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; int main(){ return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; int main(){ return 0; }"));
   global_var_t *gext = find_test_global_var("__tm_extern_arr", 15);
   ASSERT_TRUE(gext != NULL);
   ASSERT_TRUE(test_gvar_decl_type(gext) != NULL);
@@ -25611,8 +25586,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(static_self_gv->init_symbol == static_self_gv->name);
   ASSERT_EQ(static_self_gv->name_len, static_self_gv->init_symbol_len);
 
-  parsed_code = parse_program_input("int __tm_local_extern_decl_type(void) { extern double __tm_local_extern_dp; return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("int __tm_local_extern_decl_type(void) { extern double __tm_local_extern_dp; return 0; }"));
   const char *local_extern_name = "__tm_local_extern_dp";
   global_var_t *local_extern_dp =
       find_test_global_var((char *)local_extern_name, (int)(sizeof("__tm_local_extern_dp") - 1));
@@ -25622,10 +25596,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             test_gvar_decl_type(local_extern_dp)->floating_kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __tm_block_extern_proto(void) { "
-      "extern double __tm_block_declared_fn(int); return 0; }");
-  (void)parsed_code;
+      "extern double __tm_block_declared_fn(int); return 0; }"));
   const psx_type_t *block_declared_function = test_function_type_in(test_semantic_context(),
       (char *)"__tm_block_declared_fn", 22);
   ASSERT_TRUE(block_declared_function != NULL);
@@ -25677,8 +25650,7 @@ static void test_type_metadata_bridge() {
   }
 
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input("int *__tm_compound_lit_global = (int[]){1,2,3}; int main(void) { return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("int *__tm_compound_lit_global = (int[]){1,2,3}; int main(void) { return 0; }"));
   global_var_t *compound_lit_global =
       find_test_global_var("__compound_lit_0", (int)(sizeof("__compound_lit_0") - 1));
   ASSERT_TRUE(compound_lit_global != NULL);
@@ -25694,10 +25666,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(compound_global_stale_addr));
 
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned char *__tm_compound_u = (unsigned char[]){1,2}; "
-      "_Bool *__tm_compound_b = (_Bool[]){0,1}; int main(void) { return 0; }");
-  (void)parsed_code;
+      "_Bool *__tm_compound_b = (_Bool[]){0,1}; int main(void) { return 0; }"));
   global_var_t *compound_global_u =
       find_test_global_var("__compound_lit_0", (int)(sizeof("__compound_lit_0") - 1));
   ASSERT_TRUE(compound_global_u != NULL);
@@ -25714,11 +25685,10 @@ static void test_type_metadata_bridge() {
       ps_node_new_gvar_array_addr_for(compound_global_b);
   ASSERT_TRUE(canonical_node_pointee_is_bool(compound_global_b_addr));
 
-  parsed_code = parse_program_input("int __tm_mix_f(int a), __tm_mix_g(int a), __tm_mix_a; "
+  ASSERT_TRUE(resolve_program_input_hir("int __tm_mix_f(int a), __tm_mix_g(int a), __tm_mix_a; "
                                     "int __tm_mix_f(int a) { return a; } "
                                     "int __tm_mix_g(int a) { return a; } "
-                                    "int main(void) { __tm_mix_a = 5; return __tm_mix_a; }");
-  (void)parsed_code;
+                                    "int main(void) { __tm_mix_a = 5; return __tm_mix_a; }"));
   global_var_t *mix_a = find_test_global_var("__tm_mix_a", 10);
   ASSERT_TRUE(mix_a != NULL);
   ASSERT_EQ(4, ps_gvar_storage_size(mix_a, 99));
@@ -25726,9 +25696,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, test_gvar_decl_type(mix_a)->kind);
   ASSERT_EQ(4, ps_type_sizeof(test_gvar_decl_type(mix_a)));
 
-  parsed_code = parse_program_input("char *__tm_ptr_s = (char[6]){\"hi\"}; "
-                                    "int main(void) { return __tm_ptr_s[0]; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir("char *__tm_ptr_s = (char[6]){\"hi\"}; "
+                                    "int main(void) { return __tm_ptr_s[0]; }"));
   global_var_t *ptr_s = find_test_global_var("__tm_ptr_s", 10);
   ASSERT_TRUE(ptr_s != NULL);
   ASSERT_TRUE(!ps_gvar_is_array(ptr_s));
@@ -26784,9 +26753,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER,
             test_lvar_decl_type(tm_local_ptr_array)->base->base->kind);
 
-  parsed_code = parse_program_input(
-      "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }"));
   tag_member_info_t dp_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
   ASSERT_TRUE(dp_info.decl_type != NULL && dp_info.decl_type->base != NULL);
@@ -26840,9 +26808,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
             partial_sig_node_function->param_types[0]->floating_kind);
 
-  parsed_code = parse_program_input(
-      "struct TM695F { int (*fns[2])(int, int); }; int main(void){ return 0; }");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "struct TM695F { int (*fns[2])(int, int); }; int main(void){ return 0; }"));
   tag_member_info_t fns_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695F", 6, "fns", 3, &fns_info));
   ASSERT_TRUE(fns_info.decl_type != NULL);
@@ -26858,12 +26825,11 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       fns_info.decl_type, "a2<p<i32(i32,i32)>>");
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct TM695Ops { double (*d)(double); }; "
       "struct TM695Holder { struct TM695Ops ops[2]; }; "
       "double __tm695_d(double x){ return x; } "
-      "int main(void){ struct TM695Holder h; h.ops[0].d = __tm695_d; return 0; }");
-  (void)parsed_code;
+      "int main(void){ struct TM695Holder h; h.ops[0].d = __tm695_d; return 0; }"));
   tag_member_info_t ops_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695Holder", 11,
                                            "ops", 3, &ops_info));
@@ -26874,12 +26840,11 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(ops_info.decl_type->base));
   ASSERT_EQ(8, ops_info.decl_type->base->tag_len);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int (*__tm695RowPtr)[3]; "
       "struct TM695RowHolder { struct { __tm695RowPtr rows[2]; }; int z; }; "
       "int main(void){ int a[2][3]; struct TM695RowHolder h = {.rows = {a, a}}; "
-      "return h.rows[0][1][2]; }");
-  (void)parsed_code;
+      "return h.rows[0][1][2]; }"));
   tag_member_info_t rows_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695RowHolder", 14,
                                            "rows", 4, &rows_info));
@@ -26897,9 +26862,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(3, rows_info.decl_type->base->base->array_len);
   ASSERT_EQ(4, ps_type_deref_size(rows_info.decl_type->base->base));
 
-  parsed_code = parse_program_input(
-      "struct TMPtrRows { int (*p[2])[3]; }; int main(void){return 0;}");
-  (void)parsed_code;
+  ASSERT_TRUE(resolve_program_input_hir(
+      "struct TMPtrRows { int (*p[2])[3]; }; int main(void){return 0;}"));
   tag_member_info_t ptr_rows_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "TMPtrRows", 9, "p", 1, &ptr_rows_info));
@@ -27000,10 +26964,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_deref_size(member_ip_ptrarr_elem));
   ASSERT_TRUE(ps_node_value_is_pointer_like(member_ip_ptrarr_elem));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm_member_pp { int **pp; }; "
-      "int main(void){ struct __tm_member_pp h; return 0; }");
-  (void)parsed_code;
+      "int main(void){ struct __tm_member_pp h; return 0; }"));
   tag_member_info_t member_pp_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_pp", (int)sizeof("__tm_member_pp") - 1,
@@ -27293,10 +27256,9 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       test_gvar_decl_type(gfp), "p<f64()>");
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int *__tm696_GPI; int __tm696_gia[3]; "
-      "__tm696_GPI __tm696_gpi = __tm696_gia; int main(void){ return 0; }");
-  (void)parsed_code;
+      "__tm696_GPI __tm696_gpi = __tm696_gia; int main(void){ return 0; }"));
   global_var_t *typedef_gpi = find_test_global_var("__tm696_gpi", 11);
   ASSERT_TRUE(typedef_gpi != NULL);
   const psx_type_t *typedef_gpi_type = test_gvar_decl_type(typedef_gpi);
@@ -27306,10 +27268,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(typedef_gpi_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, typedef_gpi_type->base->kind);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "double __tm696_rows[2][2]; double (*__tm696_gpa)[2]=__tm696_rows; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   global_var_t *gpa = find_test_global_var("__tm696_gpa", 11);
   ASSERT_TRUE(gpa != NULL);
   node_t *gpa_node = ps_node_new_gvar_for(gpa);
@@ -27320,13 +27281,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_node_deref_size(gpa_row));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, canonical_node_pointee_fp_kind(gpa_row));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int *__tm696_GIP; "
       "int __tm696_ga, __tm696_gb, __tm696_gc; "
       "__tm696_GIP __tm696_grow[3] = { &__tm696_ga, &__tm696_gb, &__tm696_gc }; "
       "__tm696_GIP (*__tm696_gpia)[3] = &__tm696_grow; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   global_var_t *gpia = find_test_global_var("__tm696_gpia", 12);
   ASSERT_TRUE(gpia != NULL);
   node_t *gpia_node = ps_node_new_gvar_for(gpia);
@@ -27352,12 +27312,11 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_deref_size(gpia_elem));
   ASSERT_TRUE(ps_node_value_is_pointer_like(gpia_elem));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __tm696_S { int a; int b; }; "
       "struct __tm696_S __tm696_sa[3]; "
       "struct __tm696_S (*__tm696_gap)[3] = &__tm696_sa; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   global_var_t *gap = find_test_global_var("__tm696_gap", 11);
   ASSERT_TRUE(gap != NULL);
   node_t *gap_node = ps_node_new_gvar_for(gap);
@@ -27386,11 +27345,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_STRUCT, gap_elem_type->kind);
   ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(gap_elem_type));
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __tm696_int_rows[2][3][4]; "
       "int (*__tm696_gpi2)[3][4] = __tm696_int_rows; "
-      "int main(void){ return 0; }");
-  (void)parsed_code;
+      "int main(void){ return 0; }"));
   global_var_t *gpi = find_test_global_var("__tm696_gpi2", 12);
   ASSERT_TRUE(gpi != NULL);
   node_t *gpi_node = ps_node_new_gvar_for(gpi);
@@ -27431,7 +27389,7 @@ static void test_type_metadata_bridge() {
       "int main(void){ double d; TM697_DP dp=&d; TM697_FP fp=__tm697_ret_d; "
       "{ typedef double (*TM697_BFP)(void); TM697_BFP bfp=__tm697_ret_d; bfp(); } "
       "return fp() == *dp; }");
-  (void)parsed_code;
+  ASSERT_TRUE(parsed_code != NULL);
   psx_typedef_info_t td_dp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_DP", 8, &td_dp));
   ASSERT_TRUE(test_typedef_decl_type(&td_dp) != NULL && test_typedef_decl_type(&td_dp)->base != NULL);

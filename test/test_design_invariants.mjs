@@ -2720,6 +2720,11 @@ for (const testName of directProgramHirTests) {
     );
   }
 }
+if (/\(void\)\s*parsed_code\s*;/.test(parserUnitTestSource)) {
+  throw new Error(
+    "parser tests that discard compatibility ASTs must use the production Typed HIR frontend",
+  );
+}
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
