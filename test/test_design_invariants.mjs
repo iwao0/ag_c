@@ -2645,6 +2645,12 @@ for (const testName of [
   "test_function_call_typed_hir_boundary",
   "test_cast_typed_hir_boundary",
   "test_compound_assignment_typed_hir_boundary",
+  "test_builtin_expect_typed_hir_boundary",
+  "test_member_access_typed_hir_boundary",
+  "test_expr_compound_literal_typed_hir_boundary",
+  "test_expr_inc_dec_typed_hir_boundary",
+  "test_expr_deref_address_typed_hir_boundary",
+  "test_bool_assignment_typed_hir_boundary",
 ]) {
   const body = parserUnitTestSource.match(
     new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),

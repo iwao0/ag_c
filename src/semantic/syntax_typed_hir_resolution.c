@@ -15,6 +15,7 @@
 #include "../parser/function_definition_syntax.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_declaration_syntax.h"
+#include "../parser/local_registry.h"
 #include "../parser/lvar_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
@@ -6074,6 +6075,11 @@ resolve_syntax_expression_direct_to_typed_hir(
     return PSX_SYNTAX_TYPED_HIR_FAILED;
   }
 
+  char *current_function_name = NULL;
+  int current_function_name_len = 0;
+  ps_local_registry_get_current_function_in(
+      local_registry, &current_function_name,
+      &current_function_name_len);
   direct_resolution_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -6082,6 +6088,9 @@ resolve_syntax_expression_direct_to_typed_hir(
       .options = options,
       .failure = failure,
       .identifier_lookup_point = lookup_point,
+      .function_name = current_function_name,
+      .function_name_len = current_function_name_len,
+      .block_depth = current_function_name ? 1 : 0,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),
