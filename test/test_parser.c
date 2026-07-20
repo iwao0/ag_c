@@ -8350,6 +8350,22 @@ static void assert_canonical_type_signature(const psx_type_t *type,
   }
 }
 
+static void assert_canonical_qual_type_signature(
+    psx_qual_type_t type, const char *expected) {
+  char actual[512];
+  int len = psx_format_canonical_type_signature(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), type,
+      ps_ctx_data_layout(test_semantic_context()), actual,
+      sizeof(actual));
+  ASSERT_TRUE(len >= 0);
+  ASSERT_TRUE((size_t)len < sizeof(actual));
+  if (strcmp(expected, actual) != 0) {
+    fprintf(stderr, "canonical TypeId mismatch: expected %s, got %s\n",
+            expected, actual);
+    exit(1);
+  }
+}
+
 static lvar_t *find_func_lvar(
     node_function_definition_t *fn, const char *name) {
   int len = (int)strlen(name);
@@ -18318,20 +18334,52 @@ static void test_expr_generic() {
       "(int (*)(ExprCanonicalParam, int *, ...))0");
   ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
   ASSERT_TRUE(ps_node_get_type(canonical_expr_funcptr) == NULL);
-  canonical_expr_funcptr = analyze_test_expression(
-      canonical_expr_funcptr, NULL);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(canonical_expr_funcptr));
-  const psx_type_t *canonical_expr_function =
-      ps_type_derived_function(ps_node_get_type(canonical_expr_funcptr));
-  ASSERT_TRUE(canonical_expr_function != NULL);
-  ASSERT_EQ(2, canonical_expr_function->param_count);
-  ASSERT_TRUE(canonical_expr_function->is_variadic_function);
-  ASSERT_EQ(PSX_TYPE_FLOAT,
-            canonical_expr_function->param_types[0]->kind);
+  node_t *canonical_expr_operand = canonical_expr_funcptr->lhs;
+  psx_frontend_expression_hir_t canonical_funcptr_expression =
+      resolve_test_expression_hir(canonical_expr_funcptr);
+  const psx_hir_node_t *canonical_funcptr_hir =
+      test_expression_hir_root(&canonical_funcptr_expression);
+  ASSERT_EQ(PSX_HIR_CAST,
+            psx_hir_node_kind(canonical_funcptr_hir));
+  psx_type_shape_t pointer_shape =
+      test_hir_type_shape(canonical_funcptr_hir);
+  ASSERT_EQ(PSX_TYPE_POINTER, pointer_shape.kind);
+  const psx_semantic_type_table_t *canonical_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_qual_type_t canonical_function = psx_semantic_type_table_base(
+      canonical_types,
+      psx_hir_node_qual_type(canonical_funcptr_hir).type_id);
+  psx_type_shape_t function_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      canonical_types, canonical_function.type_id, &function_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(2, function_shape.parameter_count);
+  ASSERT_TRUE(function_shape.is_variadic_function);
+  psx_qual_type_t first_parameter =
+      psx_semantic_type_table_parameter(
+          canonical_types, canonical_function.type_id, 0);
+  psx_qual_type_t second_parameter =
+      psx_semantic_type_table_parameter(
+          canonical_types, canonical_function.type_id, 1);
+  psx_type_shape_t first_parameter_shape = {0};
+  psx_type_shape_t second_parameter_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      canonical_types, first_parameter.type_id,
+      &first_parameter_shape));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      canonical_types, second_parameter.type_id,
+      &second_parameter_shape));
+  ASSERT_EQ(PSX_TYPE_FLOAT, first_parameter_shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            canonical_expr_function->param_types[0]->floating_kind);
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            canonical_expr_function->param_types[1]->kind);
+            first_parameter_shape.floating_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, second_parameter_shape.kind);
+  ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
+  ASSERT_TRUE(canonical_expr_funcptr->lhs == canonical_expr_operand);
+  ASSERT_TRUE(!ps_node_has_resolution_state(canonical_expr_funcptr));
+  ASSERT_TRUE(!ps_node_has_resolution_state(canonical_expr_operand));
+  ASSERT_TRUE(ps_node_get_type(canonical_expr_funcptr) == NULL);
+  psx_frontend_expression_hir_dispose(
+      &canonical_funcptr_expression);
 
   parsed_code = parse_program_input(
       "typedef int (*unary_fn)(int); int generic_id(int x){return x;} "
@@ -27327,55 +27375,55 @@ static void test_type_metadata_bridge() {
       pick_signature, "p<f64(f64)>()");
   assert_canonical_type_signature(
       pick_signature->base, "p<f64(f64)>");
-  node_identifier_t pick_identifier = {0};
-  pick_identifier.base.kind = ND_IDENTIFIER;
-  pick_identifier.name = "__tm698_pick";
-  pick_identifier.name_len = 12;
-  node_function_call_t pick_call = {0};
-  pick_call.base.kind = ND_FUNCALL;
-  pick_call.callee = (node_t *)&pick_identifier;
-  ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
-  node_t *resolved_pick_call =
-      analyze_test_expression((node_t *)&pick_call, NULL);
-  ASSERT_TRUE(resolved_pick_call != (node_t *)&pick_call);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
-  const psx_type_t *pick_call_type =
-      ps_node_get_type(resolved_pick_call);
-  const psx_type_t *pick_callee_type =
-      test_function_call_type(
-          (node_function_call_t *)resolved_pick_call);
-  ASSERT_TRUE(pick_call_type != NULL);
-  ASSERT_TRUE(pick_callee_type != NULL);
-  ASSERT_TRUE(ps_type_shape_matches(
-      pick_call_type, pick_callee_type->base));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(resolved_pick_call));
-  assert_canonical_type_signature(pick_call_type, "p<f64(f64)>");
+  node_t *pick_call_syntax =
+      parse_expr_input_with_existing_locals("__tm698_pick()");
+  ASSERT_EQ(ND_FUNCALL, pick_call_syntax->kind);
+  node_function_call_t *pick_call =
+      (node_function_call_t *)pick_call_syntax;
+  ASSERT_TRUE(pick_call->callee != NULL);
+  ASSERT_EQ(ND_IDENTIFIER, pick_call->callee->kind);
+  node_t *pick_callee_syntax = pick_call->callee;
+  psx_frontend_expression_hir_t pick_call_expression =
+      resolve_test_expression_hir(pick_call_syntax);
+  const psx_hir_node_t *pick_call_hir =
+      test_expression_hir_root(&pick_call_expression);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(pick_call_hir));
+  ASSERT_EQ(0, psx_hir_node_child_count(pick_call_hir));
+  size_t pick_name_length = 0;
+  const char *pick_name = psx_hir_node_name(
+      pick_call_hir, &pick_name_length);
+  ASSERT_TRUE(pick_name != NULL);
+  ASSERT_EQ(12, pick_name_length);
+  ASSERT_TRUE(strncmp(pick_name, "__tm698_pick", 12) == 0);
+  assert_canonical_qual_type_signature(
+      psx_hir_node_qual_type(pick_call_hir), "p<f64(f64)>");
+  assert_canonical_qual_type_signature(
+      psx_hir_node_attached_qual_type(pick_call_hir),
+      "p<f64(f64)>()");
+  ASSERT_TRUE(pick_call->callee == pick_callee_syntax);
+  ASSERT_TRUE(!ps_node_has_resolution_state(pick_call_syntax));
+  ASSERT_TRUE(!ps_node_has_resolution_state(pick_callee_syntax));
+  ASSERT_TRUE(ps_node_get_type(pick_call_syntax) == NULL);
+  psx_frontend_expression_hir_dispose(&pick_call_expression);
   const psx_type_t *pick_ctx_return =
       test_function_return_type_in(test_semantic_context(), "__tm698_pick", 12);
   ASSERT_TRUE(pick_ctx_return != NULL);
   ASSERT_TRUE(ps_type_shape_matches(
       pick_ctx_return, pick_signature->base));
-  node_identifier_t pick_add_identifier = {0};
-  pick_add_identifier.base.kind = ND_IDENTIFIER;
-  pick_add_identifier.name = "__tm698_add";
-  pick_add_identifier.name_len = 11;
-  node_t *pick_add_ref = &pick_add_identifier.base;
+  node_t *pick_add_ref =
+      parse_expr_input_with_existing_locals("__tm698_add");
+  ASSERT_EQ(ND_IDENTIFIER, pick_add_ref->kind);
+  psx_frontend_expression_hir_t pick_add_expression =
+      resolve_test_expression_hir(pick_add_ref);
+  const psx_hir_node_t *pick_add_hir =
+      test_expression_hir_root(&pick_add_expression);
+  ASSERT_EQ(PSX_HIR_FUNCTION_REF,
+            psx_hir_node_kind(pick_add_hir));
+  assert_canonical_qual_type_signature(
+      psx_hir_node_qual_type(pick_add_hir), "p<f64(f64)>");
+  ASSERT_TRUE(!ps_node_has_resolution_state(pick_add_ref));
   ASSERT_TRUE(ps_node_get_type(pick_add_ref) == NULL);
-  node_t *resolved_pick_add_ref =
-      analyze_test_expression(pick_add_ref, NULL);
-  ASSERT_TRUE(resolved_pick_add_ref != pick_add_ref);
-  ASSERT_TRUE(ps_node_get_type(pick_add_ref) == NULL);
-  const psx_type_t *pick_add_ref_type =
-      ps_node_get_type(resolved_pick_add_ref);
-  ASSERT_TRUE(pick_add_ref_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, pick_add_ref_type->kind);
-  ASSERT_TRUE(pick_add_ref_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, pick_add_ref_type->base->kind);
-  ASSERT_TRUE(pick_add_ref_type->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, pick_add_ref_type->base->base->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            pick_add_ref_type->base->base->floating_kind);
-  assert_canonical_type_signature(pick_add_ref_type, "p<f64(f64)>");
+  psx_frontend_expression_hir_dispose(&pick_add_expression);
 
   parsed_code = parse_program_input(
       "int __tm818_inc(int x){ return x + 1; } "

@@ -2663,6 +2663,24 @@ for (const testName of [
     );
   }
 }
+const compatibilityAnalyzerCalls = callBodies(
+  parserUnitTestSource,
+  "analyze_test_expression",
+);
+if (compatibilityAnalyzerCalls.length !== 3 ||
+    !/static\s+node_t\s*\*analyze_test_expression\s*\(/.test(
+      parserUnitTestSource,
+    ) ||
+    !/static\s+node_t\s*\*parse_expr_input\s*\([^]*?analyze_test_expression\s*\(\s*expr\s*,\s*head\s*\)/.test(
+      parserUnitTestSource,
+    ) ||
+    !/static\s+node_t\s*\*parse_analyzed_expr_input_with_existing_locals\s*\([^]*?analyze_test_expression\s*\(\s*expr\s*,\s*expr\s*\?\s*expr->tok\s*:\s*NULL\s*\)/.test(
+      parserUnitTestSource,
+    )) {
+  throw new Error(
+    "the mutable compatibility analyzer must remain centralized in the two explicit legacy test helpers",
+  );
+}
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
