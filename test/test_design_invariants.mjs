@@ -2648,16 +2648,20 @@ for (const testName of [
   "test_builtin_expect_typed_hir_boundary",
   "test_member_access_typed_hir_boundary",
   "test_expr_compound_literal_typed_hir_boundary",
+  "test_expr_compound_literal_array_subscript",
   "test_expr_inc_dec_typed_hir_boundary",
   "test_expr_deref_address_typed_hir_boundary",
   "test_bool_assignment_typed_hir_boundary",
+  "test_expr_number",
+  "test_expr_float",
+  "test_expr_long_double_suffix_metadata",
 ]) {
   const body = parserUnitTestSource.match(
     new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
   );
   if (!body || /\banalyze_test_expression\s*\(/.test(body[1]) ||
       (testName !== "test_syntax_literal_type_boundary" &&
-       !/\bresolve_test_expression_hir\s*\(/.test(body[1]))) {
+       !/\bresolve_test_expression(?:_input)?_hir\s*\(/.test(body[1]))) {
     throw new Error(
       `${testName} must validate immutable Syntax or production Typed HIR without the compatibility analyzer`,
     );
@@ -2676,6 +2680,15 @@ if (compatibilityAnalyzerCalls.length !== 2 ||
     )) {
   throw new Error(
     "the mutable compatibility analyzer must remain centralized in the explicit legacy parse helper",
+  );
+}
+const legacyAnalyzedExpressionParseSites = callBodies(
+  parserUnitTestSource,
+  "parse_expr_input",
+);
+if (legacyAnalyzedExpressionParseSites.length > 125) {
+  throw new Error(
+    "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
 }
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
