@@ -14375,7 +14375,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .local_registry = test_local_registry(),
           .name = resolution_typedef_name,
           .name_len = (int)sizeof(resolution_typedef_name) - 1,
-          .type = integer,
+          .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              test_semantic_context(), integer),
       },
       &typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
@@ -14671,7 +14672,8 @@ static void test_global_declaration_resolution_boundary() {
           .local_registry = test_local_registry(),
           .name = boundary_typedef_name,
           .name_len = (int)sizeof(boundary_typedef_name) - 1,
-          .type = integer,
+          .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              test_semantic_context(), integer),
       },
       &typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
@@ -16319,7 +16321,8 @@ static void test_typedef_declaration_resolution_boundary() {
       .local_registry = test_local_registry(),
       .name = (char *)"__TypeBoundary",
       .name_len = 14,
-      .type = integer,
+      .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+          test_semantic_context(), integer),
   };
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(&request, &resolution);
@@ -16331,7 +16334,8 @@ static void test_typedef_declaration_resolution_boundary() {
       request.name, request.name_len, &canonical_typedef_type));
   ASSERT_TRUE(canonical_typedef_type != NULL);
 
-  request.type = ps_type_new_integer(TK_INT, 4, 0);
+  request.decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+      test_semantic_context(), ps_type_new_integer(TK_INT, 4, 0));
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.redeclared);
@@ -16356,7 +16360,8 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_TRUE(ps_type_contains_vla_array(vla_type));
   request.name = (char *)"__VlaTypeBoundary";
   request.name_len = 17;
-  request.type = vla_type;
+  request.decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+      test_semantic_context(), vla_type);
   request.runtime_application = &vla_application;
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
@@ -16394,7 +16399,8 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_type_t *long_type = ps_type_new_integer(TK_LONG, 8, 0);
   request.name = (char *)"__TypeBoundary";
   request.name_len = 14;
-  request.type = long_type;
+  request.decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+      test_semantic_context(), long_type);
   request.runtime_application = NULL;
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT, resolution.status);
@@ -16425,7 +16431,8 @@ static void test_typedef_declaration_resolution_boundary() {
       &object));
   request.name = (char *)"__TypeObject";
   request.name_len = 12;
-  request.type = integer;
+  request.decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+      test_semantic_context(), integer);
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
@@ -16534,7 +16541,8 @@ static void test_enum_constant_resolution_boundary() {
           .local_registry = test_local_registry(),
           .name = (char *)"__EnumType",
           .name_len = 10,
-          .type = integer,
+          .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              test_semantic_context(), integer),
       },
       &typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
@@ -28676,7 +28684,8 @@ static void test_semantic_context_isolation() {
           .local_registry = second_locals,
           .name = direct_typedef_name,
           .name_len = 13,
-          .type = direct_typedef_type,
+          .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              second, direct_typedef_type),
       },
       &direct_typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
@@ -28986,7 +28995,8 @@ static void test_semantic_context_isolation() {
           .local_registry = second_locals,
           .name = (char *)"StreamType",
           .name_len = 10,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              second, ps_type_new_integer(TK_INT, 4, 0)),
       },
       &streamed_typedef_resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
@@ -30210,10 +30220,16 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_TRUE(psx_scope_graph_rehome_declaration_at(
       graph, promoted_tag_id, PSX_SCOPE_ID_TRANSLATION_UNIT));
 
+  psx_scope_lookup_point_t before_label =
+      psx_scope_graph_capture_lookup_point(graph);
   int label_payload = 5;
-  psx_decl_id_t label_id = psx_scope_graph_declare_at(
+  psx_decl_id_t label_id = psx_scope_graph_declare_synthetic_at(
       graph, function_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
       "same", 4, &label_payload);
+  psx_scope_lookup_point_t after_label =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_EQ(before_label.declaration_order,
+            after_label.declaration_order);
   ASSERT_EQ(label_id, psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_LABEL, "same", 4, after_inner));
 

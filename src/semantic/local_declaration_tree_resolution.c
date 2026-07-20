@@ -169,7 +169,10 @@ static void begin_declarator(
     psx_apply_parsed_typedef_declaration_in_contexts(
         application->semantic_context, application->global_registry,
         application->local_registry,
-        name->str, name->len, application->current_type, (token_t *)name);
+        name->str, name->len,
+        ps_ctx_intern_declaration_qual_type_in(
+            application->semantic_context, application->current_type),
+        (token_t *)name);
     application->current_kind = PSX_LOCAL_APPLY_TYPEDEF;
     return;
   }

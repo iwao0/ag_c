@@ -3747,9 +3747,10 @@ static int collect_direct_function_jumps(
             context, PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
             syntax, label->name, label->name_len);
       }
-      psx_decl_id_t declaration_id = psx_scope_graph_declare_at(
-          graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
-          label->name, label->name_len, (void *)label);
+      psx_decl_id_t declaration_id =
+          psx_scope_graph_declare_synthetic_at(
+              graph, label_scope, PSX_NAMESPACE_LABEL, PSX_DECL_LABEL,
+              label->name, label->name_len, (void *)label);
       if (declaration_id == PSX_DECL_ID_INVALID) {
         context->preflight_failed = 1;
         set_failure(
@@ -4536,6 +4537,10 @@ static int preflight_direct_local_declaration(
           psx_apply_runtime_declarator_type_in_context(
               context->semantic_context, base_type, &application);
       if (!type) return 0;
+      psx_qual_type_t decl_qual_type =
+          ps_ctx_intern_declaration_qual_type_in(
+              context->semantic_context, type);
+      if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
       psx_typedef_declaration_resolution_t resolution;
       psx_resolve_typedef_declaration(
           &(psx_typedef_declaration_resolution_request_t){
@@ -4544,7 +4549,7 @@ static int preflight_direct_local_declaration(
               .local_registry = context->local_registry,
               .name = name->str,
               .name_len = name->len,
-              .type = type,
+              .decl_qual_type = decl_qual_type,
               .runtime_application =
                   ps_type_contains_vla_array(type)
                       ? &effective_application : NULL,

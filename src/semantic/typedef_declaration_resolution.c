@@ -16,7 +16,7 @@ void psx_resolve_typedef_declaration(
   resolution->status = PSX_TYPEDEF_DECLARATION_INVALID;
   if (!request || !request->semantic_context || !request->global_registry ||
       !request->local_registry || !request->name || request->name_len <= 0 ||
-      !request->type) {
+      request->decl_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
@@ -53,16 +53,15 @@ void psx_resolve_typedef_declaration(
     }
   }
 
-  psx_qual_type_t decl_qual_type =
-      ps_ctx_intern_declaration_qual_type_in(
-          semantic_context, request->type);
-  if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+  if (!psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          request->decl_qual_type)) {
     resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;
     return;
   }
   const psx_typedef_info_t info = {
       .decl_type_table = ps_ctx_semantic_type_table_in(semantic_context),
-      .decl_qual_type = decl_qual_type,
+      .decl_qual_type = request->decl_qual_type,
       .runtime_application = request->runtime_application,
   };
   if (!ps_ctx_register_typedef_name_in_contexts(

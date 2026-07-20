@@ -4656,7 +4656,7 @@ const syntaxTypedHirResolutionSource = await readFile(
 );
 const legacySemanticLabelApi =
   /\b(?:psx_ctx_register_goto_ref_in|psx_ctx_register_label_def_in|psx_ctx_validate_goto_refs_in)\s*\(/;
-if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
+if (!/psx_scope_graph_declare_synthetic_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
@@ -4665,7 +4665,7 @@ if (!/psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL
     /\bdirect_label_binding_t\b|context->labels\b/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/forget_direct_label_declarations\s*\([^]*?label_declaration_start[^]*?psx_scope_graph_declaration_at\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
+    !/forget_direct_label_declarations\s*\([^]*?label_declaration_start[^]*?psx_scope_graph_declare_synthetic_at\s*\([^]*?PSX_NAMESPACE_LABEL/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/label_declaration_start\s*=\s*psx_scope_graph_declaration_count\s*\(/.test(
@@ -8995,6 +8995,7 @@ const canonicalLoweringTypeFields = [
   ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
   ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_request_t", "type"],
   ["src/semantic/function_declaration_resolution.h", "psx_function_declaration_resolution_request_t", "function_qual_type"],
+  ["src/semantic/typedef_declaration_resolution.h", "psx_typedef_declaration_resolution_request_t", "decl_qual_type"],
   ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_declaration_pipeline_request_t", "function_qual_type"],
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
@@ -11224,7 +11225,11 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/resolve_typedef_decl_qual_type\s*\([^]*?info->decl_type_table\s*!=\s*context->semantic_types/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_intern_declaration_qual_type_in\s*\([^]*?request->type/.test(
+    /ps_ctx_intern_declaration_qual_type_in\s*\(/.test(
+      typedefDeclarationResolutionSource,
+    ) ||
+    /request->type\b/.test(typedefDeclarationResolutionSource) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?request->decl_qual_type/.test(
       typedefDeclarationResolutionSource,
     ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(

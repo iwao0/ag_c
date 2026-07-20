@@ -13,7 +13,8 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    char *name, int name_len, const psx_type_t *type, token_t *diag_tok);
+    char *name, int name_len, psx_qual_type_t decl_qual_type,
+    token_t *diag_tok);
 void psx_apply_parsed_enum_constant_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

@@ -16,7 +16,8 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
+    char *name, int name_len, psx_qual_type_t decl_qual_type,
+    token_t *diag_tok) {
   if (!semantic_context || !global_registry || !local_registry) return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
@@ -28,7 +29,7 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
           .local_registry = local_registry,
           .name = name,
           .name_len = name_len,
-          .type = type,
+          .decl_qual_type = decl_qual_type,
       },
       &resolution);
   if (resolution.status == PSX_TYPEDEF_DECLARATION_OK) return;

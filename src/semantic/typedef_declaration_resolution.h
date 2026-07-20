@@ -23,7 +23,7 @@ typedef struct {
   psx_local_registry_t *local_registry;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t decl_qual_type;
   const psx_runtime_declarator_application_t *runtime_application;
 } psx_typedef_declaration_resolution_request_t;
 
