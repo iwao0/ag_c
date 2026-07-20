@@ -201,11 +201,23 @@ psx_qual_type_t ps_node_qual_type(
                                  PSX_TYPE_QUALIFIER_NONE};
 }
 
+int ps_node_type_shape(
+    const psx_resolution_store_t *store, const node_t *node,
+    psx_type_shape_t *shape) {
+  psx_qual_type_t type = ps_node_qual_type(store, node);
+  return shape && type.type_id != PSX_TYPE_ID_INVALID &&
+         psx_semantic_type_table_describe(
+             psx_resolution_store_semantic_types(store),
+             type.type_id, shape);
+}
+
 static int bound_type_accepts_vla_runtime_view(
     const psx_resolution_store_t *store, const node_t *node) {
-  const psx_type_t *type = ps_node_get_type(store, node);
-  return type && ps_type_is_well_formed(type) &&
-         ps_type_contains_vla_array(type);
+  psx_qual_type_t type = ps_node_qual_type(store, node);
+  const psx_semantic_type_table_t *types =
+      psx_resolution_store_semantic_types(store);
+  return psx_semantic_type_table_qual_type_is_valid(types, type) &&
+         psx_semantic_type_table_contains_vla_array(types, type.type_id);
 }
 
 static node_t *bound_type_vla_runtime_source(

@@ -12,9 +12,11 @@
 #include "../parser/symtab.h"
 #include <string.h>
 
-static int type_uses_floating_value(const psx_type_t *type) {
-  return type && (type->kind == PSX_TYPE_FLOAT ||
-                  type->kind == PSX_TYPE_COMPLEX);
+static int node_uses_floating_value(
+    const psx_resolution_store_t *store, const node_t *node) {
+  psx_type_shape_t type = {0};
+  return ps_node_type_shape(store, node, &type) &&
+         (type.kind == PSX_TYPE_FLOAT || type.kind == PSX_TYPE_COMPLEX);
 }
 
 long long psx_eval_const_int(
@@ -33,24 +35,24 @@ long long psx_eval_const_int(
       }
       if (!ps_node_is_source_cast(store, node))
         return psx_eval_const_int(store, node->lhs, ok);
-      const psx_type_t *target = ps_node_get_type(store, node);
-      const psx_type_t *source = ps_node_get_type(store, node->lhs);
-      long long result = type_uses_floating_value(source)
+      psx_type_shape_t target = {0};
+      int has_target = ps_node_type_shape(store, node, &target);
+      long long result = node_uses_floating_value(store, node->lhs)
                              ? (long long)psx_eval_const_fp(
                                    store, node->lhs, ok)
                              : psx_eval_const_int(store, node->lhs, ok);
       if (ok && !*ok) return 0;
-      if (target && (target->kind == PSX_TYPE_BOOL ||
-                     target->kind == PSX_TYPE_INTEGER)) {
+      if (has_target && (target.kind == PSX_TYPE_BOOL ||
+                         target.kind == PSX_TYPE_INTEGER)) {
         long long normalized;
         if (!psx_normalize_integer_constant_cast(
-                target, result, &normalized)) {
+                &target, result, &normalized)) {
           if (ok) *ok = 0;
           return 0;
         }
         return normalized;
       }
-      if (target && target->kind == PSX_TYPE_FLOAT)
+      if (has_target && target.kind == PSX_TYPE_FLOAT)
         return (long long)psx_eval_const_fp(store, node->lhs, ok);
       return result;
     }
@@ -61,8 +63,7 @@ long long psx_eval_const_int(
       return !ok || *ok ? -value : 0;
     }
     case ND_LOGICAL_NOT: {
-      const psx_type_t *operand_type = ps_node_get_type(store, node->lhs);
-      long long value = type_uses_floating_value(operand_type)
+      long long value = node_uses_floating_value(store, node->lhs)
                             ? psx_eval_const_fp(store, node->lhs, ok) != 0.0
                             : psx_eval_const_int(store, node->lhs, ok) != 0;
       return !ok || *ok ? !value : 0;
@@ -191,9 +192,10 @@ double psx_eval_const_fp(
     case ND_CAST: {
       if (!ps_node_is_source_cast(store, node))
         return psx_eval_const_fp(store, node->lhs, ok);
-      const psx_type_t *target = ps_node_get_type(store, node);
-      if (target && (target->kind == PSX_TYPE_BOOL ||
-                     target->kind == PSX_TYPE_INTEGER))
+      psx_type_shape_t target = {0};
+      if (ps_node_type_shape(store, node, &target) &&
+          (target.kind == PSX_TYPE_BOOL ||
+           target.kind == PSX_TYPE_INTEGER))
         return (double)psx_eval_const_int(store, node, ok);
       return psx_eval_const_fp(store, node->lhs, ok);
     }

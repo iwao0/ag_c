@@ -2,9 +2,7 @@
 
 #include <stdint.h>
 
-#include "../parser/type.h"
-
-static int integer_cast_width(const psx_type_t *type) {
+static int integer_cast_width(const psx_type_shape_t *type) {
   if (!type || type->kind != PSX_TYPE_INTEGER) return 0;
   switch (type->integer_kind) {
     case PSX_INTEGER_KIND_CHAR: return 1;
@@ -22,7 +20,7 @@ static int integer_cast_width(const psx_type_t *type) {
 }
 
 int psx_normalize_integer_constant_cast(
-    const psx_type_t *target, long long operand, long long *result) {
+    const psx_type_shape_t *target, long long operand, long long *result) {
   if (!target || !result) return 0;
   if (target->kind == PSX_TYPE_BOOL) {
     *result = operand != 0;
@@ -36,7 +34,7 @@ int psx_normalize_integer_constant_cast(
   }
   uint64_t mask = (UINT64_C(1) << bits) - 1;
   uint64_t normalized = (uint64_t)operand & mask;
-  if (!ps_type_is_unsigned(target) &&
+  if (!target->is_unsigned &&
       (normalized & (UINT64_C(1) << (bits - 1))))
     normalized |= ~mask;
   *result = (long long)normalized;

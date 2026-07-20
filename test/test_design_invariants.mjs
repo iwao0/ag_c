@@ -5814,6 +5814,12 @@ if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_node_get_type\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
+    !/\bint\s+ps_node_type_shape\s*\(/.test(
+      resolvedNodeTypeHeader,
+    ) ||
+    !/\bint\s+ps_node_type_shape\s*\([^]*?ps_node_qual_type\s*\([^]*?psx_semantic_type_table_describe\s*\(/.test(
+      resolvedNodeTypeSource,
+    ) ||
     !/\bint\s+ps_node_prepare_resolution_state_in\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
@@ -7122,6 +7128,30 @@ const runtimeInitializerPlanSource = await readFile(
   "src/lowering/runtime_initializer_plan.c",
   "utf8",
 );
+const canonicalNodeTypeConsumers = new Map([
+  ["assignment validation", assignmentValidationSource],
+  ["constant expression evaluation", constantExpressionSource],
+  ["lowered tree validation", loweredTreeValidationSource],
+  ["local usage analysis", lvarUsageAnalysisSource],
+  ["runtime initializer planning", runtimeInitializerPlanSource],
+]);
+for (const [name, source] of canonicalNodeTypeConsumers) {
+  if (/\bps_node_get_type\s*\(|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+        source,
+      )) {
+    throw new Error(
+      `${name} must consume resolved node QualType and TypeShape without compatibility views`,
+    );
+  }
+}
+if (/\bpsx_type_t\b|parser\/type\.h/.test(
+      integerConstantEvaluationSource,
+    ) ||
+    !/\bpsx_type_shape_t\b/.test(integerConstantEvaluationSource)) {
+  throw new Error(
+    "integer constant normalization must consume canonical TypeShape without parser type views",
+  );
+}
 const typedHirMaterializationSource = await readFile(
   "src/semantic/typed_hir_tree_materialization.c",
   "utf8",

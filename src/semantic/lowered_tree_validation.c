@@ -26,11 +26,7 @@ static psx_qual_type_t lowered_node_qual_type(
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  psx_qual_type_t type = ps_node_qual_type(store, node);
-  return type.type_id != PSX_TYPE_ID_INVALID
-             ? type
-             : ps_ctx_intern_qual_type_in(
-                   semantic_context, ps_node_get_type(store, node));
+  return ps_node_qual_type(store, node);
 }
 
 static void validate_lowered_return(

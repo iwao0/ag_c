@@ -3414,11 +3414,13 @@ static int direct_integer_constant(
             context, (const node_source_cast_t *)syntax,
             &target_qual_type))
       return 0;
-    const psx_type_t *target = ps_ctx_type_by_id_in(
-        context->semantic_context, target_qual_type.type_id);
-    if (!target) return 0;
+    psx_type_shape_t target = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(context->semantic_context),
+            target_qual_type.type_id, &target))
+      return 0;
     return psx_normalize_integer_constant_cast(
-        target, operand, value);
+        &target, operand, value);
   }
   if (syntax->kind == ND_TERNARY) {
     const node_ctrl_t *conditional = (const node_ctrl_t *)syntax;

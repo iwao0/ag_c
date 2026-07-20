@@ -18,11 +18,7 @@ static psx_qual_type_t assignment_node_qual_type(
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  psx_qual_type_t type = ps_node_qual_type(store, node);
-  return type.type_id != PSX_TYPE_ID_INVALID
-             ? type
-             : ps_ctx_intern_qual_type_in(
-                   semantic_context, ps_node_get_type(store, node));
+  return ps_node_qual_type(store, node);
 }
 
 static int assignment_compound_operator(
@@ -98,8 +94,9 @@ void psx_validate_assignment_in_context(
       ps_ctx_resolution_store(semantic_context);
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
 
-  const psx_type_t *rhs_type = ps_node_get_type(store, node->rhs);
-  if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
+  psx_type_shape_t rhs_type = {0};
+  int has_rhs_type = ps_node_type_shape(store, node->rhs, &rhs_type);
+  if (has_rhs_type && rhs_type.kind == PSX_TYPE_VOID) {
     if (node->rhs->kind == ND_FUNCALL) {
       node_function_call_t *call =
           (node_function_call_t *)node->rhs;
@@ -118,8 +115,10 @@ void psx_validate_assignment_in_context(
   }
 
   if (ps_node_is_decl_initializer(store, node)) {
-    const psx_type_t *lhs_type = ps_node_get_type(store, node->lhs);
-    int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
+    psx_type_shape_t lhs_type = {0};
+    int has_lhs_type = ps_node_type_shape(store, node->lhs, &lhs_type);
+    int lhs_is_pointer = has_lhs_type &&
+                         lhs_type.kind == PSX_TYPE_POINTER;
     ps_node_reject_const_qual_discard_at_in(
         semantic_context, diagnostics, node->lhs, node->rhs, tok);
     if (lhs_is_pointer && node->rhs->kind == ND_NUM &&
@@ -129,20 +128,20 @@ void psx_validate_assignment_in_context(
           "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
           ((node_num_t *)node->rhs)->val);
     }
-    if (!lhs_is_pointer && lhs_type &&
-        !ps_type_is_tag_aggregate(lhs_type) &&
-        lhs_type->kind != PSX_TYPE_ARRAY) {
+    if (!lhs_is_pointer && has_lhs_type &&
+        !psx_type_kind_is_aggregate(lhs_type.kind) &&
+        lhs_type.kind != PSX_TYPE_ARRAY) {
       if (ps_node_value_is_pointer_like(store, node->rhs)) {
         ps_diag_ctx_in(
             diagnostics, tok, "init",
             "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
-      if (ps_type_is_tag_aggregate(rhs_type)) {
+      if (has_rhs_type && psx_type_kind_is_aggregate(rhs_type.kind)) {
         ps_diag_ctx_in(
             diagnostics, tok, "init",
             "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
             ps_ctx_tag_kind_spelling(
-                ps_type_tag_token_kind(rhs_type)));
+                rhs_type.kind == PSX_TYPE_STRUCT ? TK_STRUCT : TK_UNION));
       }
     }
   }

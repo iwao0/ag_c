@@ -5,6 +5,7 @@
 
 #include "../tokenizer/token.h"
 #include "../type_system/type_ids.h"
+#include "../type_system/type_shape.h"
 #include "../parser/node_fwd.h"
 
 typedef struct arena_context_t arena_context_t;
@@ -18,6 +19,9 @@ const psx_type_t *ps_node_get_type(
     const psx_resolution_store_t *store, const node_t *node);
 psx_qual_type_t ps_node_qual_type(
     const psx_resolution_store_t *store, const node_t *node);
+int ps_node_type_shape(
+    const psx_resolution_store_t *store, const node_t *node,
+    psx_type_shape_t *shape);
 psx_node_resolution_state_t *ps_node_resolution_state(
     psx_resolution_store_t *store, node_t *node);
 const psx_node_resolution_state_t *ps_node_resolution_state_const(

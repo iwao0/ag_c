@@ -18,20 +18,17 @@ static int fp_literal_fractional_part_known(double value) {
   return value != (double)(long long)value;
 }
 
-static tk_float_kind_t type_fp_kind(const psx_type_t *type) {
-  if (type && !ps_type_is_pointer(type) &&
-      (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
-    return ps_type_floating_token_kind(type) != TK_FLOAT_KIND_NONE
-               ? ps_type_floating_token_kind(type)
-               : TK_FLOAT_KIND_DOUBLE;
-  }
-  return TK_FLOAT_KIND_NONE;
-}
-
 static tk_float_kind_t node_fp_kind(
     const psx_resolution_store_t *store, node_t *node) {
-  return node ? type_fp_kind(ps_node_get_type(store, node))
-              : TK_FLOAT_KIND_NONE;
+  psx_type_shape_t type = {0};
+  if (!node || !ps_node_type_shape(store, node, &type) ||
+      (type.kind != PSX_TYPE_FLOAT && type.kind != PSX_TYPE_COMPLEX))
+    return TK_FLOAT_KIND_NONE;
+  if (type.floating_kind == PSX_FLOATING_KIND_FLOAT)
+    return TK_FLOAT_KIND_FLOAT;
+  if (type.floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE)
+    return TK_FLOAT_KIND_LONG_DOUBLE;
+  return TK_FLOAT_KIND_DOUBLE;
 }
 
 static tk_float_kind_t semantic_fp_kind(
@@ -90,13 +87,14 @@ static void warn_decl_initializer_overflow(
   if (!lhs || !rhs || resolved_node_kind(store, lhs) != ND_LVAR ||
       rhs->kind != ND_NUM)
     return;
+  psx_type_shape_t lhs_type = {0};
+  int has_lhs_type = ps_node_type_shape(store, lhs, &lhs_type);
   if (node_fp_kind(store, lhs) != TK_FLOAT_KIND_NONE ||
       node_fp_kind(store, rhs) != TK_FLOAT_KIND_NONE ||
       ps_node_value_is_pointer_like(store, lhs) ||
-      ps_type_is_tag_aggregate(ps_node_get_type(store, lhs)))
+      (has_lhs_type && psx_type_kind_is_aggregate(lhs_type.kind)))
     return;
-  const psx_type_t *lhs_type = ps_node_get_type(store, lhs);
-  if (lhs_type && lhs_type->kind == PSX_TYPE_BOOL) return;
+  if (has_lhs_type && lhs_type.kind == PSX_TYPE_BOOL) return;
   int type_size = semantic_type_size(
       semantic_context, ps_node_qual_type(store, lhs));
   if (type_size <= 0 || type_size >= 4) return;
@@ -397,10 +395,11 @@ static int is_plain_int_literal(
       node_fp_kind(store, node) != TK_FLOAT_KIND_NONE ||
       ps_node_integer_value_is_unsigned(store, node))
     return 0;
-  const psx_type_t *type = ps_node_get_type(store, node);
+  psx_type_shape_t type = {0};
   node_num_t *number = (node_num_t *)node;
-  return type && type->kind == PSX_TYPE_INTEGER &&
-         type->integer_kind == PSX_INTEGER_KIND_INT &&
+  return ps_node_type_shape(store, node, &type) &&
+         type.kind == PSX_TYPE_INTEGER &&
+         type.integer_kind == PSX_INTEGER_KIND_INT &&
          number->val >= -2147483648LL && number->val <= 2147483647LL;
 }
 

@@ -6,7 +6,6 @@
 #include "../parser/node_utils.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
-#include "../semantic/type_compatibility_view.h"
 
 static int count_items(const node_t *node) {
   if (!node) return 0;
@@ -20,11 +19,7 @@ static psx_qual_type_t resolved_node_qual_type(
     const node_t *node) {
   const psx_resolution_store_t *store =
       ps_lowering_resolution_store(lowering_context);
-  psx_qual_type_t qual_type = ps_node_qual_type(store, node);
-  if (qual_type.type_id != PSX_TYPE_ID_INVALID) return qual_type;
-  return psx_semantic_type_table_find(
-      ps_lowering_semantic_types(lowering_context),
-      ps_node_get_type(store, node));
+  return ps_node_qual_type(store, node);
 }
 
 static int local_ref_from_node(

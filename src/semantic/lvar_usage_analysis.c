@@ -21,8 +21,10 @@ static psx_resolution_node_kind_t resolved_node_kind(
 
 static int is_aggregate_lvar(
     const psx_resolution_store_t *store, node_t *node) {
+  psx_type_shape_t type = {0};
   return node && resolved_node_kind(store, node) == ND_LVAR &&
-         ps_type_is_tag_aggregate(ps_node_get_type(store, node));
+         ps_node_type_shape(store, node, &type) &&
+         psx_type_kind_is_aggregate(type.kind);
 }
 
 static int is_dereference(
