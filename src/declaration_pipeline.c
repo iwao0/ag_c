@@ -529,7 +529,8 @@ static int append_definition_parameter(
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
           ps_lowering_resolution_store(lowering_context),
-          ps_lowering_arena(lowering_context), lowered);
+          ps_lowering_arena(lowering_context),
+          ps_ctx_semantic_type_table_in(semantic_context), lowered);
   result->args[result->nargs] = NULL;
   return 0;
 }
@@ -1118,6 +1119,7 @@ int psx_finish_automatic_local_declaration_pipeline(
     node_t *initializer = psx_bind_local_initializer_target_in(
         ps_lowering_resolution_store(request->lowering_context),
         ps_lowering_arena(request->lowering_context),
+        ps_ctx_semantic_type_table_in(request->semantic_context),
         result->var, request->initializer->value,
         request->initializer->kind,
         request->initializer->value_tok);

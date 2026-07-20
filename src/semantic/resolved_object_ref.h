@@ -25,7 +25,8 @@ typedef enum {
 int psx_bind_local_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node, lvar_t *var,
-    int storage_offset, const psx_type_t *type);
+    int storage_offset, const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t qual_type);
 int psx_bind_global_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
@@ -79,22 +80,29 @@ node_t *ps_node_new_unsigned_lvar_typed_in(
     arena_context_t *arena_context, int offset, int type_size);
 node_t *psx_node_new_lvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *psx_node_new_lvar_object_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *ps_node_new_lvar_expr_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *psx_node_new_lvar_identifier_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *psx_node_new_vla_decay_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var,
+    psx_qual_type_t decay_qual_type);
 node_t *ps_node_new_param_lvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 
 node_t *ps_node_new_gvar_array_addr_for_in(
     psx_resolution_store_t *store,
@@ -104,7 +112,8 @@ node_t *psx_node_new_static_local_array_addr_for_in(
     arena_context_t *arena_context, lvar_t *var);
 node_t *ps_node_new_lvar_array_addr_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,

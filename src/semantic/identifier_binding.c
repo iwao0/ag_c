@@ -105,6 +105,8 @@ static node_t *materialize_local(
   psx_resolution_store_t *store = binding_store(context);
   arena_context_t *arena_context =
       ps_ctx_arena(context->semantic_context);
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
   node_t *node = (node_t *)identifier;
   if (is_static_local_array(var)) {
     if (!bind_static_local_reference(store, arena_context, node, var))
@@ -114,17 +116,20 @@ static node_t *materialize_local(
   } else if (ps_lvar_is_array(var) && !ps_lvar_is_vla(var)) {
     if (!psx_bind_local_reference_in(
             store, arena_context, node, var, var->offset,
-            ps_lvar_get_decl_type(var)))
+            semantic_types, ps_lvar_decl_qual_type(var)))
       return NULL;
     node = wrap_array_decay(
         store, arena_context, node, ps_lvar_get_decl_type(var));
   } else if (ps_lvar_is_vla(var)) {
-    const psx_type_t *decl_type = ps_lvar_get_decl_type(var);
-    const psx_type_t *decay_type = ps_type_decay_array_in(
-        arena_context, decl_type);
+    psx_qual_type_t decl_type = ps_lvar_decl_qual_type(var);
+    psx_qual_type_t element_type = psx_semantic_type_table_base(
+        semantic_types, decl_type.type_id);
+    psx_qual_type_t decay_type = ps_ctx_intern_pointer_to_qual_type_in(
+        context->semantic_context, element_type);
+    if (decay_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
     if (!psx_bind_local_reference_in(
             store, arena_context, node, var, var->offset,
-            decay_type ? decay_type : decl_type))
+            semantic_types, decay_type))
       return NULL;
   } else if (var && var->is_static_local && var->static_global_name) {
     if (!bind_static_local_reference(store, arena_context, node, var))
@@ -132,7 +137,7 @@ static node_t *materialize_local(
   } else {
     if (!psx_bind_local_reference_in(
             store, arena_context, node, var, var ? var->offset : 0,
-            var ? ps_lvar_get_decl_type(var) : NULL))
+            semantic_types, ps_lvar_decl_qual_type(var)))
       return NULL;
   }
   record_lvar_usage(context, node, var);
@@ -309,7 +314,9 @@ static node_t *materialize_address_operand(
       if (!psx_bind_local_reference_in(
               binding_store(context),
               ps_ctx_arena(context->semantic_context), node, var,
-              var->offset, ps_lvar_get_decl_type(var)))
+              var->offset,
+              ps_ctx_semantic_type_table_in(context->semantic_context),
+              ps_lvar_decl_qual_type(var)))
         return NULL;
     } else {
       return materialize_identifier(

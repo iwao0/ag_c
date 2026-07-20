@@ -5536,6 +5536,50 @@ if (!floatingSlotConstructor ||
     "complex initializer slots must derive floating kind from the local declaration TypeId graph",
   );
 }
+const localReferenceBinder = resolvedObjectRefSource.match(
+  /int\s+psx_bind_local_reference_in\s*\([^]*?\n\}/,
+);
+const declarationLocalConstructor = resolvedObjectRefSource.match(
+  /static\s+node_t\s*\*new_decl_lvar_symbol_node\s*\([^]*?\n\}/,
+);
+const vlaDecayConstructor = resolvedObjectRefSource.match(
+  /node_t\s*\*psx_node_new_vla_decay_ref_for_in\s*\([^]*?\n\}/,
+);
+if (!localReferenceBinder ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      localReferenceBinder[0],
+    ) ||
+    !/psx_qual_type_t\s+qual_type/.test(localReferenceBinder[0]) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      localReferenceBinder[0],
+    ) ||
+    !/ps_node_bind_qual_type\s*\(/.test(localReferenceBinder[0]) ||
+    !/ps_node_bind_qual_type\s*\([^;]+;[^]*bind_local_reference_vla_runtime\s*\(/s.test(
+      localReferenceBinder[0],
+    ) ||
+    /ps_lvar_get_decl_type\s*\(/.test(localReferenceBinder[0]) ||
+    !declarationLocalConstructor ||
+    !/ps_lvar_decl_qual_type\s*\(/.test(declarationLocalConstructor[0]) ||
+    /ps_lvar_get_decl_type\s*\(/.test(declarationLocalConstructor[0]) ||
+    !vlaDecayConstructor ||
+    !/psx_qual_type_t\s+decay_qual_type/.test(vlaDecayConstructor[0]) ||
+    !/psx_bind_local_reference_in\s*\(/.test(vlaDecayConstructor[0]) ||
+    /ps_type_decay_array_in\s*\(|ps_node_bind_type\s*\(/.test(
+      vlaDecayConstructor[0],
+    ) ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      localInitializerBindingSource,
+    ) ||
+    !/psx_node_new_lvar_object_ref_for_in\s*\([^;]*semantic_types/s.test(
+      localInitializerBindingSource,
+    ) ||
+    !/ps_node_new_lvar_expr_ref_for_in\s*\([^;]*semantic_types/s.test(
+      localInitializerBindingSource,
+    )) {
+  throw new Error(
+    "local declaration references must preserve canonical QualType identity without rebuilding parser type views",
+  );
+}
 const resolvedObjectRefFactories = [
   "psx_node_new_lvar_in",
   "ps_node_new_lvar_typed_in",
