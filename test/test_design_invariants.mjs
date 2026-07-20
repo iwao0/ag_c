@@ -2000,6 +2000,10 @@ const localRegistrySource = await readFile(
   "src/parser/local_registry.c",
   "utf8",
 );
+const localRegistryHeader = await readFile(
+  "src/parser/local_registry.h",
+  "utf8",
+);
 const legacyLocalRegistryGlobals =
   /^static\s+.*\b(?:locals|all_locals|all_bindings|lvar_scope_stack|lvar_scope_seq_stack|lvar_scope_depth|next_scope_seq|current_scope_seq|next_declaration_seq|scope_parent_by_seq|scope_parent_capacity|lvars_by_bucket|lvars_by_offset|usage_events_head|usage_events_tail|current_usage_region)\b/gm;
 const legacyActiveLocalRegistryMacros =
@@ -2026,6 +2030,43 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     )) {
   throw new Error(
     "function-local symbols, scopes, and usage events must be owned by an explicit registry",
+  );
+}
+const sessionDiagnosticIdentityChecks = [
+  "tk_context_diagnostics\\s*\\(\\s*&session->tokenizer\\s*\\)",
+  "tk_allocator_diagnostics\\s*\\(\\s*session->token_allocator_context\\s*\\)",
+  "ps_ctx_diagnostics\\s*\\(\\s*session->semantic_context\\s*\\)",
+  "ps_local_registry_diagnostics\\s*\\(\\s*session->local_registry\\s*\\)",
+  "pp_context_diagnostics\\s*\\(\\s*session->preprocessor_context\\s*\\)",
+  "ps_parser_runtime_diagnostics\\s*\\(\\s*session->parser_runtime_context\\s*\\)",
+  "ps_lowering_diagnostics\\s*\\(\\s*session->lowering_context\\s*\\)",
+  "cg_context_diagnostics\\s*\\(\\s*session->codegen_emit_context\\s*\\)",
+];
+if (!/ps_local_registry_diagnostics\s*\(/.test(
+      localRegistryHeader + localRegistrySource,
+    ) ||
+    !/tk_allocator_diagnostics\s*\(/.test(
+      tokenizerAllocatorHeader + tokenizerAllocatorSource,
+    ) ||
+    sessionDiagnosticIdentityChecks.some((check) =>
+      !new RegExp(`${check}\\s*==\\s*session->diagnostic_context`).test(
+        compilationSessionSource,
+      )
+    ) ||
+    !/ps_ctx_arena\s*\(\s*session->semantic_context\s*\)\s*==\s*session->arena_context/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_parser_runtime_arena\s*\(\s*session->parser_runtime_context\s*\)\s*==\s*session->arena_context/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_parser_runtime_tokenizer\s*\(\s*session->parser_runtime_context\s*\)\s*==\s*&session->tokenizer/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_lowering_arena\s*\(\s*session->lowering_context\s*\)\s*==\s*session->arena_context/.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "CompilationSession completeness must reject split phase-owned diagnostics, arenas, and tokenizers",
   );
 }
 const contextFreeLocalRegistryApis =

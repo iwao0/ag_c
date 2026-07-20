@@ -142,6 +142,8 @@ int ag_compilation_session_is_complete(
          session->local_registry && session->preprocessor_context &&
          ps_ctx_scope_graph(session->semantic_context) ==
              session->scope_graph &&
+         ps_ctx_arena(session->semantic_context) ==
+             session->arena_context &&
          ps_ctx_target_info(session->semantic_context) ==
              &session->target &&
          ps_global_registry_scope_graph(session->global_registry) ==
@@ -156,8 +158,28 @@ int ag_compilation_session_is_complete(
              session->resolution_store) ==
              ps_ctx_semantic_type_table_in(session->semantic_context) &&
          session->diagnostic_context && session->token_allocator_context &&
+         tk_context_diagnostics(&session->tokenizer) ==
+             session->diagnostic_context &&
+         tk_allocator_diagnostics(session->token_allocator_context) ==
+             session->diagnostic_context &&
+         ps_ctx_diagnostics(session->semantic_context) ==
+             session->diagnostic_context &&
+         ps_local_registry_diagnostics(session->local_registry) ==
+             session->diagnostic_context &&
+         pp_context_diagnostics(session->preprocessor_context) ==
+             session->diagnostic_context &&
          session->parser_runtime_context &&
+         ps_parser_runtime_arena(session->parser_runtime_context) ==
+             session->arena_context &&
+         ps_parser_runtime_tokenizer(session->parser_runtime_context) ==
+             &session->tokenizer &&
+         ps_parser_runtime_diagnostics(session->parser_runtime_context) ==
+             session->diagnostic_context &&
          session->lowering_context &&
+         ps_lowering_arena(session->lowering_context) ==
+             session->arena_context &&
+         ps_lowering_diagnostics(session->lowering_context) ==
+             session->diagnostic_context &&
          ps_lowering_resolution_store(session->lowering_context) ==
              session->resolution_store &&
          ps_lowering_target(session->lowering_context) ==
@@ -167,6 +189,8 @@ int ag_compilation_session_is_complete(
          ps_lowering_record_decls(session->lowering_context) &&
          ps_lowering_record_layouts(session->lowering_context) &&
          session->codegen_emit_context &&
+         cg_context_diagnostics(session->codegen_emit_context) ==
+             session->diagnostic_context &&
          ag_target_info_is_valid(&session->target);
 }
 

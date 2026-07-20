@@ -34,7 +34,7 @@ void tk_context_bind_diagnostic_context(
 }
 
 ag_diagnostic_context_t *tk_context_diagnostics(
-    tokenizer_context_t *ctx) {
+    const tokenizer_context_t *ctx) {
   return ctx ? ctx->diagnostic_context : NULL;
 }
 

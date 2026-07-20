@@ -95,6 +95,11 @@ void ps_local_registry_destroy(psx_local_registry_t *registry) {
   free(registry);
 }
 
+ag_diagnostic_context_t *ps_local_registry_diagnostics(
+    const psx_local_registry_t *registry) {
+  return registry ? registry->diagnostic_context : NULL;
+}
+
 int psx_local_registry_checkpoint_begin(
     psx_local_registry_t *registry,
     psx_local_registry_checkpoint_t *checkpoint) {

@@ -178,7 +178,7 @@ void tk_context_bind_diagnostic_context(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context);
 ag_diagnostic_context_t *tk_context_diagnostics(
-    tokenizer_context_t *ctx);
+    const tokenizer_context_t *ctx);
 void tk_context_set_allocator(
     tokenizer_context_t *ctx, tk_allocator_context_t *allocator_context);
 tk_allocator_context_t *tk_context_allocator(
