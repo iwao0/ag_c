@@ -5551,6 +5551,36 @@ for (const factory of resolvedObjectRefFactories) {
     );
   }
 }
+const tagMemberLvarFactory = resolvedObjectRefSource.match(
+  /node_t\s*\*ps_node_new_tag_member_lvar_ref_with_layout_for_in\s*\([^]*?\n\}/,
+);
+const initializerMemberLvarFactory =
+  initializerLoweringSourceForLocalLayout.match(
+    /static\s+node_t\s*\*new_initializer_member_lvar_ref\s*\([^]*?\n\}/,
+  );
+if (!tagMemberLvarFactory ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      tagMemberLvarFactory[0],
+    ) ||
+    !/psx_qual_type_t\s+member_qual_type/.test(tagMemberLvarFactory[0]) ||
+    !/ps_lvar_decl_qual_type\s*\(\s*owner\s*\)/.test(
+      tagMemberLvarFactory[0],
+    ) ||
+    !/psx_semantic_type_table_array_leaf\s*\(/.test(
+      tagMemberLvarFactory[0],
+    ) ||
+    /ps_type_has_qualifier\s*\(/.test(tagMemberLvarFactory[0]) ||
+    !initializerMemberLvarFactory ||
+    !/member_ref->declaration->decl_qual_type/.test(
+      initializerMemberLvarFactory[0],
+    ) ||
+    /psx_record_member_decl_type\s*\([^]*?member_ref->declaration/.test(
+      initializerMemberLvarFactory[0],
+    )) {
+  throw new Error(
+    "member lvalue construction must consume QualType identity and resolve owner qualifiers through the semantic type graph",
+  );
+}
 if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
     !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_LVAR\s*\)/.test(
       resolvedObjectRefSource,

@@ -693,8 +693,10 @@ static int test_type_alignof_for_target(
       ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_node_new_tag_member_lvar_ref_for(owner, member_offset, info) \
   ps_node_new_tag_member_lvar_ref_with_layout_for_in( \
-      test_resolution_store(), test_arena_context(), (owner), (member_offset), \
-      ps_tag_member_decl_type(info), (info)->bit_is_signed, \
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), \
+      (owner), (member_offset), intern_test_qual_type( \
+          ps_tag_member_decl_type(info)), (info)->bit_is_signed, \
       (info)->bit_width, (info)->bit_offset)
 #define ps_node_new_gvar_for(...) \
   ps_node_new_gvar_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
@@ -24990,6 +24992,30 @@ static void test_type_metadata_bridge() {
       ps_node_get_type((node_t *)member_const_owner_node),
       PSX_TYPE_QUALIFIER_VOLATILE));
   expect_const_assign_fail_for_node((node_t *)member_const_owner_node);
+
+  lvar_t member_const_array_owner = {0};
+  member_const_array_owner.offset = 56;
+  psx_type_t *member_const_array_element = ps_type_new_tag(
+      TK_STRUCT, (char *)stale_node_tag_name,
+      (int)sizeof(stale_node_tag_name) - 1, 0, 4);
+  ps_type_add_qualifiers(
+      member_const_array_element,
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
+  ps_ctx_bind_record_ids_in(
+      test_semantic_context(), member_const_array_element);
+  set_test_storage_fixture_type(
+      &member_const_array_owner,
+      ps_type_new_array(member_const_array_element, 2, 8, 0));
+  node_t *member_const_array_owner_node =
+      as_lvar(ps_node_new_tag_member_lvar_ref_for(
+          &member_const_array_owner, member_const_owner_info.offset,
+          &member_const_owner_info));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type((node_t *)member_const_array_owner_node),
+      PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type((node_t *)member_const_array_owner_node),
+      PSX_TYPE_QUALIFIER_VOLATILE));
 
   tag_member_info_t member_pointer_decl_type_wins = {0};
   member_pointer_decl_type_wins.offset = 8;

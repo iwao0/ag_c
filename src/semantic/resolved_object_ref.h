@@ -106,8 +106,9 @@ node_t *ps_node_new_lvar_array_addr_for_in(
     arena_context_t *arena_context, lvar_t *var);
 node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner,
-    int member_offset, const psx_type_t *member_type,
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *owner,
+    int member_offset, psx_qual_type_t member_qual_type,
     int bit_is_signed, int bit_width, int bit_offset);
 node_t *ps_node_new_gvar_for_in(
     psx_resolution_store_t *store,

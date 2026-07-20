@@ -393,19 +393,26 @@ static psx_type_t *type_with_object_qualifiers_in(
 
 node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner,
-    int member_offset, const psx_type_t *member_type,
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *owner,
+    int member_offset, psx_qual_type_t member_qual_type,
     int bit_is_signed, int bit_width, int bit_offset) {
+  const psx_type_t *member_type =
+      psx_semantic_type_table_lookup_qual_type(
+          semantic_types, member_qual_type);
   if (member_type) {
-    const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
-    const psx_type_t *owner_value =
-        ps_type_array_leaf_type(owner_type);
+    psx_qual_type_t owner_value = ps_lvar_decl_qual_type(owner);
+    psx_type_shape_t owner_shape = {0};
+    if (psx_semantic_type_table_describe(
+            semantic_types, owner_value.type_id, &owner_shape) &&
+        owner_shape.kind == PSX_TYPE_ARRAY) {
+      owner_value = psx_semantic_type_table_array_leaf(
+          semantic_types, owner_value.type_id);
+    }
     member_type = type_with_object_qualifiers_in(
         arena_context, member_type,
-        ps_type_has_qualifier(
-            owner_value, PSX_TYPE_QUALIFIER_CONST),
-        ps_type_has_qualifier(
-            owner_value, PSX_TYPE_QUALIFIER_VOLATILE));
+        (owner_value.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0,
+        (owner_value.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0);
   }
   if (!member_type) {
     member_type = ps_type_new_integer_kind_in(
