@@ -277,6 +277,7 @@ static const psx_type_t *ps_tag_member_decl_tag_type(
 
 static node_t **parsed_code;
 static node_t **parse_program_input(const char *input);
+static int resolve_program_input_hir(const char *input);
 static ag_compilation_session_t *test_suite_session;
 static node_t *test_node_new_lvar_type_at_for_in(
     arena_context_t *arena_context, lvar_t *owner, int offset,
@@ -2281,12 +2282,11 @@ static void test_parser_name_environment_boundary() {
       &classifier, alias));
   ps_parser_name_environment_dispose(&environment);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int T; int main(void) { "
       "int T = 3; "
       "{ typedef int T; T value = 4; if (value != 4) return 1; } "
-      "return T == 3 ? 0 : 2; }");
-  ASSERT_TRUE(parsed_code != NULL);
+      "return T == 3 ? 0 : 2; }"));
 }
 
 typedef struct {
@@ -3498,7 +3498,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
               PSX_TYPE_ID_INVALID);
   psx_hir_module_destroy(hir);
 
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "long DirectGlobal = 9; int DirectArray[3]; "
       "double _Complex DirectComplex; "
       "int DirectFunction(int); "
@@ -3508,8 +3508,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       "int (*callback)(int); }; "
       "struct DirectRecord DirectRecordObject; "
       "struct DirectRecord *DirectRecordPointer; "
-      "const struct DirectRecord DirectConstRecord;");
-  ASSERT_TRUE(parsed_code != NULL);
+      "const struct DirectRecord DirectConstRecord;"));
 
   int float_count_before = 0;
   iter_test_float_literals(
@@ -9704,7 +9703,7 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   }
   ASSERT_TRUE(found_compound_sequence);
 
-  node_t **anonymous_union_program = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __CompoundValue {"
       "  int kind;"
       "  union {"
@@ -9716,8 +9715,7 @@ static void test_expr_compound_literal_typed_hir_boundary() {
       "const int *__typed_hir_promoted_union_compound(const int *value) {"
       "  return ((struct __CompoundValue){"
       "      .kind = 0, .expression = value}).expression;"
-      "}");
-  ASSERT_TRUE(anonymous_union_program != NULL);
+      "}"));
 }
 
 static void test_expr_compound_literal_array_subscript() {
@@ -10248,12 +10246,11 @@ static void test_unary_operator_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  node_t **program = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __typed_hir_neg_i(int x) { return -x; } "
       "double __typed_hir_neg_d(double x) { return -x; } "
       "double _Complex __typed_hir_neg_z(double _Complex x) { "
-      "return -x; }");
-  ASSERT_TRUE(program != NULL);
+      "return -x; }"));
   int found_integer_negate = 0;
   int found_float_negate = 0;
   int found_complex_negate = 0;
@@ -13282,11 +13279,11 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
 
 static void test_toplevel_point_of_declaration_boundary() {
   printf("test_toplevel_point_of_declaration_boundary...\n");
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __point_self = sizeof __point_self; "
       "int __point_first = sizeof __point_first, "
       "__point_second = sizeof __point_second; "
-      "int main(void) { return 0; }");
+      "int main(void) { return 0; }"));
   global_var_t *self = find_test_global_var("__point_self", 12);
   global_var_t *first = find_test_global_var("__point_first", 13);
   global_var_t *second = find_test_global_var("__point_second", 14);
@@ -15183,7 +15180,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION,
             resolution.status);
 
-  parsed_code = parse_program_input("int __resolution_object;");
+  ASSERT_TRUE(resolve_program_input_hir("int __resolution_object;"));
   ASSERT_TRUE(find_test_global_var("__resolution_object", 19) != NULL);
   resolution_request.name = (char *)"__resolution_object";
   resolution_request.name_len = 19;
@@ -16315,7 +16312,8 @@ static void test_toplevel_declarator_phase_boundary() {
   printf("test_toplevel_declarator_phase_boundary...\n");
   reset_test_translation_unit_state();
 
-  parse_program_input("int __phase_fn(int), __phase_object;");
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __phase_fn(int), __phase_object;"));
 
   const psx_type_t *function =
       test_function_type_in(test_semantic_context(), (char *)"__phase_fn", 10);
@@ -28264,7 +28262,8 @@ static void test_parse_evil_edge_cases() {
   psx_frontend_expression_hir_dispose(&expression);
 
   // x+++y の式解析: (x++) + y
-  parsed_code = parse_program_input("int main() { int x=1; int y=2; return x+++y; }");
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main() { int x=1; int y=2; return x+++y; }"));
   // パースが成功すればOK
 
   // キャストと単項マイナスのネスト: (int)-(char)5
@@ -28316,7 +28315,8 @@ static void test_parse_evil_edge_cases() {
   }
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
-  parsed_code = parse_program_input("int main() { int a; int b; a=1,b=2; }");
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main() { int a; int b; a=1,b=2; }"));
   // パースが成功すればOK
 
   // 複雑な式文のパース
