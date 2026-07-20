@@ -29069,6 +29069,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       &wide_pointer, &wide_pointer_target));
   ASSERT_EQ(16, ag_target_info_pointer_size(
                     &wide_pointer.target));
+  ASSERT_TRUE(ps_ctx_target_info(wide_pointer.semantic_context) ==
+              &wide_pointer.target);
+  ASSERT_TRUE(ps_lowering_target(wide_pointer.lowering_context) ==
+              &wide_pointer.target);
   ASSERT_EQ(16, ag_target_info_pointer_size(
                     ps_ctx_target_info(wide_pointer.semantic_context)));
   ASSERT_EQ(16, ag_target_info_pointer_size(

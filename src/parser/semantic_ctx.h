@@ -23,6 +23,7 @@ typedef struct node_t node_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
 
+/* target must outlive the semantic context. */
 psx_semantic_context_t *ps_ctx_create(
     arena_context_t *arena_context, const ag_target_info_t *target);
 void ps_ctx_destroy(psx_semantic_context_t *context);

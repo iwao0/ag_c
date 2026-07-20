@@ -1088,6 +1088,15 @@ if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource)
     !/ag_target_info_is_valid\s*\(target\)/.test(
       semanticContextOwnershipSource,
     ) ||
+    !/const\s+ag_target_info_t\s*\*target\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/context->target\s*=\s*target\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    /context->target\s*=\s*\*target\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
     /ps_ctx_bind_target_info\s*\(/.test(
       semanticContextOwnershipSource + semanticContextOwnershipHeader,
     ) ||
@@ -1806,6 +1815,11 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeSource,
     ) ||
     !/ag_target_info_is_valid\s*\(target\)/.test(loweringRuntimeSource) ||
+    !/const\s+ag_target_info_t\s*\*target\s*;/.test(
+      loweringRuntimeHeader,
+    ) ||
+    !/ctx->target\s*=\s*target\s*;/.test(loweringRuntimeSource) ||
+    /ctx->target\s*=\s*\*target\s*;/.test(loweringRuntimeSource) ||
     /ps_lowering_context_bind_target\s*\(/.test(
       loweringRuntimeHeader + loweringRuntimeSource,
     ) ||

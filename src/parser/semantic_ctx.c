@@ -163,7 +163,7 @@ struct psx_semantic_context_t {
   unsigned char owns_resolution_store;
   psx_scope_graph_t *scope_graph;
   unsigned char owns_scope_graph;
-  ag_target_info_t target;
+  const ag_target_info_t *target;
   psx_record_id_t next_record_id;
   psx_semantic_expression_table_t *semantic_expressions;
   psx_semantic_type_table_t *semantic_types;
@@ -434,7 +434,7 @@ psx_semantic_context_t *ps_ctx_create(
     psx_resolution_store_bind_semantic_types(
         context->resolution_store, context->semantic_types);
     context->arena_context = arena_context;
-    context->target = *target;
+    context->target = target;
   }
   return context;
 }
@@ -504,7 +504,7 @@ ag_diagnostic_context_t *ps_ctx_diagnostics(
 
 const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context) {
-  return context ? &context->target : NULL;
+  return context ? context->target : NULL;
 }
 
 static psx_type_t *ctx_type_clone_persistent_in(
@@ -535,7 +535,7 @@ static const psx_record_member_layout_t *find_tag_member_layout_draft(
            context->aggregate_member_layout_drafts;
        draft; draft = draft->next) {
     if (draft->member == member &&
-        ag_target_info_equal(&draft->target, &context->target))
+        ag_target_info_equal(&draft->target, context->target))
       return &draft->placement;
   }
   return NULL;
@@ -568,7 +568,7 @@ static int initialize_tag_member_record(
       context, 1, sizeof(*draft));
   if (!draft) return 0;
   draft->member = m;
-  draft->target = context->target;
+  draft->target = *context->target;
   draft->placement = *layout;
   draft->next = context->aggregate_member_layout_drafts;
   context->aggregate_member_layout_drafts = draft;
@@ -604,7 +604,7 @@ void ps_ctx_reset_translation_unit_scope_in(
   unsigned char owns_resolution_store = context->owns_resolution_store;
   psx_scope_graph_t *scope_graph = context->scope_graph;
   unsigned char owns_scope_graph = context->owns_scope_graph;
-  ag_target_info_t target = context->target;
+  const ag_target_info_t *target = context->target;
   psx_semantic_expression_table_t *semantic_expressions =
       context->semantic_expressions;
   psx_semantic_type_table_t *semantic_types = context->semantic_types;
@@ -1018,7 +1018,7 @@ int ps_ctx_publish_record_layout_in(
     }
   }
   int published = psx_record_layout_table_define(
-      context->record_layouts, record_id, &context->target,
+      context->record_layouts, record_id, context->target,
       size, alignment, members, record->member_count);
   free(source_members);
   free(members);
@@ -1032,11 +1032,11 @@ int ps_ctx_get_tag_size_in(
   if (!t) return -1;
   if (kind == TK_ENUM)
     return ag_target_info_scalar_size(
-        &context->target, AG_TARGET_SCALAR_INT);
+        context->target, AG_TARGET_SCALAR_INT);
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, t->record_decl->record_id, &context->target);
+      context->record_layouts, t->record_decl->record_id, context->target);
   return layout ? layout->size : 0;
 }
 
@@ -1047,11 +1047,11 @@ int ps_ctx_get_tag_align_in(
   if (!t) return -1;
   if (kind == TK_ENUM)
     return ag_target_info_scalar_alignment(
-        &context->target, AG_TARGET_SCALAR_INT);
+        context->target, AG_TARGET_SCALAR_INT);
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return -1;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, t->record_decl->record_id, &context->target);
+      context->record_layouts, t->record_decl->record_id, context->target);
   return layout ? layout->alignment : -1;
 }
 
@@ -1177,7 +1177,7 @@ static int register_tag_members_for_owner_in(
     refresh_cached_record_decl(context, tag);
     const psx_record_layout_t *layout = psx_record_layout_table_lookup(
         context->record_layouts, tag->record_decl->record_id,
-        &context->target);
+        context->target);
     if (tag->record_decl->is_complete && layout) {
       int size = layout->size;
       int alignment = layout->alignment;

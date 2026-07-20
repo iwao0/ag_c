@@ -142,6 +142,8 @@ int ag_compilation_session_is_complete(
          session->local_registry && session->preprocessor_context &&
          ps_ctx_scope_graph(session->semantic_context) ==
              session->scope_graph &&
+         ps_ctx_target_info(session->semantic_context) ==
+             &session->target &&
          ps_global_registry_scope_graph(session->global_registry) ==
              session->scope_graph &&
          ps_local_registry_scope_graph(session->local_registry) ==
@@ -158,6 +160,8 @@ int ag_compilation_session_is_complete(
          session->lowering_context &&
          ps_lowering_resolution_store(session->lowering_context) ==
              session->resolution_store &&
+         ps_lowering_target(session->lowering_context) ==
+             &session->target &&
          session->hir_module &&
          ps_lowering_semantic_types(session->lowering_context) &&
          ps_lowering_record_decls(session->lowering_context) &&

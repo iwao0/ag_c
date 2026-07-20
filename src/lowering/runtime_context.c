@@ -16,7 +16,7 @@ psx_lowering_context_t *ps_lowering_context_create(
   if (ctx) {
     ctx->arena_context = arena_context;
     ctx->diagnostic_context = diagnostic_context;
-    ctx->target = *target;
+    ctx->target = target;
   }
   return ctx;
 }
@@ -101,7 +101,7 @@ int ps_lowering_type_alignment(
 
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx) {
-  return ctx ? &ctx->target : NULL;
+  return ctx ? ctx->target : NULL;
 }
 
 arena_context_t *ps_lowering_arena(

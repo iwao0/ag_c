@@ -16,7 +16,7 @@ typedef struct psx_lowering_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   psx_resolution_store_t *resolution_store;
-  ag_target_info_t target;
+  const ag_target_info_t *target;
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
@@ -43,6 +43,7 @@ typedef struct {
   int vla_typedef_bound_sequence;
 } psx_lowering_context_checkpoint_t;
 
+/* target must outlive the lowering context. */
 psx_lowering_context_t *ps_lowering_context_create(
     arena_context_t *arena_context,
     ag_diagnostic_context_t *diagnostic_context,
