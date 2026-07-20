@@ -2923,15 +2923,6 @@ static node_t *parse_expr_input_with_existing_names(const char *input) {
       &local_declarations, NULL, head);
 }
 
-static node_t *parse_analyzed_expr_input_with_existing_locals(
-    const char *input) {
-  node_t *expr = parse_expr_input_with_existing_locals(input);
-  node_t *analyzed =
-      analyze_test_expression(expr, expr ? expr->tok : NULL);
-  assert_semantic_tree_invariants(analyzed);
-  return test_effective_semantic_expression(analyzed);
-}
-
 static void test_syntax_literal_type_boundary() {
   printf("test_syntax_literal_type_boundary...\n");
   reset_test_locals();
@@ -7978,6 +7969,25 @@ static void assert_selected_generic_number(
   ASSERT_TRUE(selected != NULL);
   ASSERT_EQ(ND_NUM, selected->kind);
   ASSERT_EQ(expected, as_num(selected)->val);
+}
+
+static void assert_typed_hir_generic_number(
+    const char *input, long long expected) {
+  node_t *syntax = parse_expr_input_with_existing_locals(input);
+  ASSERT_EQ(ND_GENERIC_SELECTION, syntax->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+  ASSERT_TRUE(ps_node_get_type(syntax) == NULL);
+
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_hir(syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_TRUE(root != NULL);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(root));
+  ASSERT_EQ(expected, psx_hir_node_integer_value(root));
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+  ASSERT_TRUE(ps_node_get_type(syntax) == NULL);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static node_t *find_binary_tree_node_kind(
@@ -18483,9 +18493,8 @@ static void test_expr_generic() {
   lvar_t *synthetic_nested = register_test_typed_storage_fixture(
       synthetic_nested_name, 1, 8, 0, synthetic_nested_type);
   ASSERT_TRUE(synthetic_nested != NULL);
-  node_t *ret_structural_nested_fp = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(p, int (*(*)(void))[3]: 31, default: 7)");
-  assert_selected_generic_number(ret_structural_nested_fp, 31);
+  assert_typed_hir_generic_number(
+      "_Generic(p, int (*(*)(void))[3]: 31, default: 7)", 31);
 
   reset_test_locals();
   char synthetic_ret_funcptr_name[] = "q";
@@ -18509,16 +18518,12 @@ static void test_expr_generic() {
       psx_node_new_lvar_identifier_ref_for(synthetic_ret_funcptr);
   assert_canonical_type_signature(
       ps_node_get_type(synthetic_ret_funcptr_ref), "p<p<i32(i32)>()>");
-  node_t *ret_structural_ret_funcptr = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(q, int (*(*)(void))(int): 37, default: 7)");
-  assert_selected_generic_number(ret_structural_ret_funcptr, 37);
-  node_t *ret_structural_ret_funcptr_nomatch = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(q, int (*(*)(void))(double): 41, default: 7)");
-  assert_selected_generic_number(ret_structural_ret_funcptr_nomatch, 7);
-  node_t *ret_structural_ret_funcptr_ret_nomatch = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(q, double (*(*)(void))(int): 43, default: 7)");
-  assert_selected_generic_number(
-      ret_structural_ret_funcptr_ret_nomatch, 7);
+  assert_typed_hir_generic_number(
+      "_Generic(q, int (*(*)(void))(int): 37, default: 7)", 37);
+  assert_typed_hir_generic_number(
+      "_Generic(q, int (*(*)(void))(double): 41, default: 7)", 7);
+  assert_typed_hir_generic_number(
+      "_Generic(q, double (*(*)(void))(int): 43, default: 7)", 7);
 
   reset_test_locals();
   char synthetic_double_ret_funcptr_name[] = "r";
@@ -18540,14 +18545,10 @@ static void test_expr_generic() {
   ASSERT_TRUE(synthetic_double_ret_funcptr_ty != NULL);
   assert_canonical_type_signature(
       synthetic_double_ret_funcptr_ty, "p<p<f64(i32)>()>");
-  node_t *ret_structural_double_ret_funcptr = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(r, double (*(*)(void))(int): 47, default: 7)");
-  assert_selected_generic_number(
-      ret_structural_double_ret_funcptr, 47);
-  node_t *ret_structural_double_ret_funcptr_nomatch = parse_analyzed_expr_input_with_existing_locals(
-      "_Generic(r, int (*(*)(void))(int): 49, default: 7)");
-  assert_selected_generic_number(
-      ret_structural_double_ret_funcptr_nomatch, 7);
+  assert_typed_hir_generic_number(
+      "_Generic(r, double (*(*)(void))(int): 47, default: 7)", 47);
+  assert_typed_hir_generic_number(
+      "_Generic(r, int (*(*)(void))(int): 49, default: 7)", 7);
 
   expect_parse_ok(
       "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
