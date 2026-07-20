@@ -990,7 +990,7 @@ static int begin_automatic_local_declaration_pipeline(
           .name = request->name,
           .name_len = request->name_len,
           .dimension_count = resolution.dimension_count,
-          .type = request->type,
+          .type = declaration_identity,
           .requested_alignment = request->requested_alignment,
           .diag_tok = request->diag_tok,
       };
@@ -1038,7 +1038,7 @@ static int begin_automatic_local_declaration_pipeline(
               .name = request->name,
               .name_len = request->name_len,
               .row_dimension = row_dimension,
-              .type = request->type,
+              .type = declaration_identity,
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
       };

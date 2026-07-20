@@ -18,23 +18,41 @@
 
 static int type_size(
     const psx_lowering_context_t *lowering_context,
-    const psx_type_t *type) {
+    psx_type_id_t type_id) {
   return ps_type_sizeof_id(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
-      ps_lowering_type_id(lowering_context, type),
+      type_id,
       ag_target_info_data_layout(ps_lowering_target(lowering_context)));
+}
+
+static int type_alignment(
+    const psx_lowering_context_t *lowering_context,
+    psx_type_id_t type_id) {
+  return ps_type_alignof_id(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context), type_id,
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
+}
+
+static psx_qual_type_t pointee_value_type(
+    const psx_lowering_context_t *lowering_context,
+    psx_qual_type_t type) {
+  return psx_semantic_type_table_pointee_value(
+      ps_lowering_semantic_types(lowering_context), type.type_id);
 }
 
 static lvar_t *create_vla_storage(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     char *name, int name_len, int storage_size, int alignment,
-    const psx_type_t *type, token_t *diagnostic_token) {
-  if (!local_registry || !lowering_context || !type) return NULL;
+    psx_qual_type_t type, token_t *diagnostic_token) {
+  if (!local_registry || !lowering_context ||
+      type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
   int offset = local_storage_allocate(
       lowering_context, storage_size, alignment);
-  return ps_local_registry_create_storage_object_in(
+  return ps_local_registry_create_storage_object_qual_type_in(
       local_registry,
       name, name_len, offset, storage_size, alignment, type,
       diagnostic_token);
@@ -44,11 +62,13 @@ static lvar_t *create_internal_vla_storage(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     char *name, int name_len, int storage_size,
-    const psx_type_t *type) {
-  if (!local_registry || !lowering_context || !type) return NULL;
+    psx_qual_type_t type) {
+  if (!local_registry || !lowering_context ||
+      type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
   int offset = local_storage_allocate(
       lowering_context, storage_size, 0);
-  return ps_local_registry_create_internal_storage_object_in(
+  return ps_local_registry_create_internal_storage_object_qual_type_in(
       local_registry, name, name_len, offset, storage_size, 0, type);
 }
 
@@ -59,11 +79,12 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->dimension_count;
+  psx_qual_type_t element_type = pointee_value_type(
+      request->lowering_context, request->type);
   int element_size = type_size(
-      request->lowering_context,
-      ps_type_pointee_value_type(request->type));
+      request->lowering_context, element_type.type_id);
   if (!request->local_registry ||
-      !request->type || count <= 0 ||
+      request->type.type_id == PSX_TYPE_ID_INVALID || count <= 0 ||
       element_size <= 0 || !request->dimensions) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
@@ -170,11 +191,12 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
   if (!request || !request->lowering_context) return result;
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
+  psx_qual_type_t element_type = pointee_value_type(
+      request->lowering_context, request->type);
   int element_size = type_size(
-      request->lowering_context,
-      ps_type_pointee_value_type(request->type));
+      request->lowering_context, element_type.type_id);
   if (!request->local_registry ||
-      !request->type ||
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->name || request->name_len <= 0 ||
       element_size <= 0 || !request->row_dimension) {
     ps_diag_ctx_in(
@@ -256,15 +278,16 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->inner_dimension_count;
+  psx_qual_type_t element_type = pointee_value_type(
+      request->lowering_context, request->type);
   int element_size = type_size(
-      request->lowering_context,
-      ps_type_pointee_value_type(request->type));
+      request->lowering_context, element_type.type_id);
   int parameter_storage_size = type_size(
-      request->lowering_context, request->type);
-  int parameter_alignment = ps_lowering_type_alignment(
-      request->lowering_context, request->type);
+      request->lowering_context, request->type.type_id);
+  int parameter_alignment = type_alignment(
+      request->lowering_context, request->type.type_id);
   if (!request->local_registry ||
-      !request->type ||
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->name || request->name_len <= 0 ||
       element_size <= 0 || parameter_storage_size <= 0 ||
       parameter_alignment <= 0 || count < 0 ||
@@ -291,10 +314,12 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   }
 
   if (has_runtime_dimension) {
-    const psx_type_t *stride_slot_type = ps_type_array_leaf_type(
-        request->stride_storage_type);
-    if (!stride_slot_type ||
-        type_size(request->lowering_context, stride_slot_type) !=
+    psx_qual_type_t stride_slot_type =
+        psx_semantic_type_table_array_leaf(
+            ps_lowering_semantic_types(request->lowering_context),
+            request->stride_storage_type.type_id);
+    if (stride_slot_type.type_id == PSX_TYPE_ID_INVALID ||
+        type_size(request->lowering_context, stride_slot_type.type_id) !=
             PSX_VLA_RUNTIME_SLOT_SIZE) {
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, "vla-lowering",

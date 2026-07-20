@@ -2649,8 +2649,16 @@ const parameterLoweringSource = await readFile(
   "src/lowering/parameter_lowering.c",
   "utf8",
 );
+const parameterLoweringHeader = await readFile(
+  "src/lowering/parameter_lowering.h",
+  "utf8",
+);
 const vlaLoweringSource = await readFile(
   "src/lowering/vla_lowering.c",
+  "utf8",
+);
+const vlaLoweringHeader = await readFile(
+  "src/lowering/vla_lowering.h",
   "utf8",
 );
 const vlaRuntimeHeaderSource = await readFile(
@@ -2962,10 +2970,10 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     !/ps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
       localObjectLoweringSource,
     ) ||
-    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
       parameterLoweringSource,
     ) ||
-    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
       vlaLoweringSource,
     ) ||
     !/ps_local_registry_create_static_alias_qual_type_in\s*\(/.test(
@@ -5225,7 +5233,7 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     !/psx_record_declarator_binding_events\s*\(/.test(
       localDeclarationSyntaxSource,
     ) ||
-    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
       vlaLoweringSource,
     ) ||
     !/registry->all_locals\s*=\s*var/.test(
@@ -8538,11 +8546,26 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
       localDeclarationPipelineSource,
     ) ||
     !parameterVlaLoweringFunction ||
-    !/parameter_storage_size\s*=\s*type_size\s*\(/.test(
+    !/parameter_storage_size\s*=\s*type_size\s*\([^]*?request->type\.type_id/.test(
       parameterVlaLoweringFunction[0],
     ) ||
-    !/parameter_alignment\s*=\s*ps_lowering_type_alignment\s*\(/.test(
+    !/parameter_alignment\s*=\s*type_alignment\s*\([^]*?request->type\.type_id/.test(
       parameterVlaLoweringFunction[0],
+    ) ||
+    !/psx_qual_type_t\s+type\s*;/.test(vlaLoweringHeader) ||
+    !/psx_qual_type_t\s+stride_storage_type\s*;/.test(
+      vlaLoweringHeader,
+    ) ||
+    /\bpsx_type_t\b/.test(vlaLoweringHeader) ||
+    /\bps_lowering_type_(?:id|alignment)\s*\(/.test(vlaLoweringSource) ||
+    /ps_local_registry_create_(?:internal_)?storage_object_in\s*\(/.test(
+      vlaLoweringSource,
+    ) ||
+    /\bpsx_parameter_lowering_request_t\b|\blower_parameter_declaration\s*\(/.test(
+      `${parameterLoweringHeader}\n${parameterLoweringSource}`,
+    ) ||
+    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+      parameterLoweringSource,
     ) ||
     /request->name_len\s*,\s*8\b/.test(parameterVlaLoweringFunction[0]) ||
     /ps_decl_find_lvar_in\s*\(/.test(parameterVlaLoweringFunction[0])) {

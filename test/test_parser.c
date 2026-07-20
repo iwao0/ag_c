@@ -13666,9 +13666,9 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_lowering_type_deref_size(wasm_lowering, pointer_array));
   psx_type_t *record_vla_type = ps_type_new_array(
       record_type, 0, 0, 1);
-  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
-                  test_semantic_context(), record_vla_type).type_id !=
-              PSX_TYPE_ID_INVALID);
+  psx_qual_type_t record_vla_qual_type =
+      intern_test_qual_type(record_vla_type);
+  ASSERT_TRUE(record_vla_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_vla_runtime_dimension_t record_vla_dimensions[1] = {{
       .expression = build_test_typed_number(3),
   }};
@@ -13680,7 +13680,7 @@ static void test_target_type_layout_boundary() {
       .name_len = 10,
       .dimensions = record_vla_dimensions,
       .dimension_count = 1,
-      .type = record_vla_type,
+      .type = record_vla_qual_type,
       .requested_alignment = 8,
   };
   reset_test_locals();
@@ -13702,12 +13702,14 @@ static void test_target_type_layout_boundary() {
   wasm_dimension->is_param = 1;
   psx_type_t *wasm_vla_parameter_type = ps_type_new_pointer(
       ps_type_new_array(integer, 0, 0, 1));
-  ASSERT_TRUE(intern_test_type_id(wasm_vla_parameter_type) !=
-              PSX_TYPE_ID_INVALID);
+  psx_qual_type_t wasm_vla_parameter_qual_type =
+      intern_test_qual_type(wasm_vla_parameter_type);
+  ASSERT_TRUE(wasm_vla_parameter_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_t *wasm_stride_storage_type =
       ps_type_new_integer(TK_LONG, 8, 0);
-  ASSERT_TRUE(intern_test_type_id(wasm_stride_storage_type) !=
-              PSX_TYPE_ID_INVALID);
+  psx_qual_type_t wasm_stride_storage_qual_type =
+      intern_test_qual_type(wasm_stride_storage_type);
+  ASSERT_TRUE(wasm_stride_storage_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_parameter_vla_dimension_t wasm_parameter_dimension = {
       .expression = build_test_typed_local(wasm_dimension),
   };
@@ -13721,8 +13723,8 @@ static void test_target_type_layout_boundary() {
               .name_len = 13,
               .inner_dimensions = &wasm_parameter_dimension,
               .inner_dimension_count = 1,
-              .type = wasm_vla_parameter_type,
-              .stride_storage_type = wasm_stride_storage_type,
+              .type = wasm_vla_parameter_qual_type,
+              .stride_storage_type = wasm_stride_storage_qual_type,
           });
   ASSERT_TRUE(wasm_parameter_vla.var != NULL);
   ASSERT_EQ(4, ps_lvar_frame_storage_size(wasm_parameter_vla.var));
@@ -13854,7 +13856,8 @@ static void test_vla_lowering_request_boundary() {
   reset_test_locals();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *vla_type = ps_type_new_array(integer, 0, 0, 1);
-  ASSERT_TRUE(intern_test_type_id(vla_type) != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t vla_qual_type = intern_test_qual_type(vla_type);
+  ASSERT_TRUE(vla_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_vla_runtime_dimension_t request_dimensions[3] = {0};
   psx_vla_lowering_request_t request = {
       .local_registry = test_local_registry(),
@@ -13866,7 +13869,7 @@ static void test_vla_lowering_request_boundary() {
   request_dimensions[0].expression = build_test_typed_number(3);
   ASSERT_TRUE(request_dimensions[0].expression != NULL);
   request.dimension_count = 1;
-  request.type = vla_type;
+  request.type = vla_qual_type;
   request.requested_alignment = 16;
   psx_vla_lowering_result_t result = lower_vla_declaration(&request);
   ASSERT_TRUE(result.var != NULL);
@@ -13889,12 +13892,13 @@ static void test_vla_lowering_request_boundary() {
   request_dimensions[0].expression = build_test_typed_number(3);
   ASSERT_TRUE(request_dimensions[0].expression != NULL);
   request.dimension_count = 1;
-  request.type = ps_type_new_array(
+  psx_type_t *pointer_vla_type = ps_type_new_array(
       ps_type_new_pointer(ps_type_clone(integer)), 0, 0, 1);
-  ASSERT_TRUE(intern_test_type_id(request.type) != PSX_TYPE_ID_INVALID);
+  request.type = intern_test_qual_type(pointer_vla_type);
+  ASSERT_TRUE(request.type.type_id != PSX_TYPE_ID_INVALID);
   result = lower_vla_declaration(&request);
   ASSERT_TRUE(result.var != NULL);
-  ASSERT_EQ(8, ps_type_pointee_value_size(request.type));
+  ASSERT_EQ(8, ps_type_pointee_value_size(pointer_vla_type));
   ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_EQ(8, result.runtime_plan->element_size);
 
@@ -13917,11 +13921,12 @@ static void test_vla_lowering_request_boundary() {
       test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0);
   ASSERT_TRUE(request.constant_qual_type.type_id != PSX_TYPE_ID_INVALID);
   request.dimension_count = 3;
-  request.type = ps_type_new_array(
+  psx_type_t *matrix_vla_type = ps_type_new_array(
       ps_type_new_array(
           ps_type_new_array(integer, 0, 0, 1), 0, 0, 1),
       0, 0, 1);
-  ASSERT_TRUE(intern_test_type_id(request.type) != PSX_TYPE_ID_INVALID);
+  request.type = intern_test_qual_type(matrix_vla_type);
+  ASSERT_TRUE(request.type.type_id != PSX_TYPE_ID_INVALID);
   request.requested_alignment = 0;
   result = lower_vla_declaration(&request);
   ASSERT_EQ(32, ps_lvar_storage_size(result.var, 0));
@@ -13944,7 +13949,8 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(row_dimension != NULL);
   psx_type_t *row_type = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
-  ASSERT_TRUE(intern_test_type_id(pointer_type) != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t pointer_qual_type = intern_test_qual_type(pointer_type);
+  ASSERT_TRUE(pointer_qual_type.type_id != PSX_TYPE_ID_INVALID);
   result = lower_pointer_to_vla_declaration(
       &(psx_pointer_vla_lowering_request_t){
           .local_registry = test_local_registry(),
@@ -13952,7 +13958,7 @@ static void test_vla_lowering_request_boundary() {
           .name = (char *)"p",
           .name_len = 1,
           .row_dimension = row_dimension,
-          .type = pointer_type,
+          .type = pointer_qual_type,
           .requested_alignment = 32,
       });
   ASSERT_TRUE(result.var != NULL);
@@ -13989,10 +13995,12 @@ static void test_vla_lowering_request_boundary() {
   k->is_param = 1;
   psx_type_t *parameter_type = ps_type_new_pointer(
       ps_type_new_array(integer, 0, 0, 1));
-  ASSERT_TRUE(intern_test_type_id(parameter_type) != PSX_TYPE_ID_INVALID);
-  psx_type_id_t stride_storage_type_id = intern_test_type_id(
+  psx_qual_type_t parameter_qual_type =
+      intern_test_qual_type(parameter_type);
+  ASSERT_TRUE(parameter_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t stride_storage_qual_type = intern_test_qual_type(
       ps_type_new_array(ps_type_new_integer(TK_LONG, 8, 0), 3, 0, 0));
-  ASSERT_TRUE(stride_storage_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(stride_storage_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_parameter_vla_dimension_t parameter_dimensions[3] = {0};
   psx_parameter_vla_lowering_request_t parameter_request = {
       .local_registry = test_local_registry(),
@@ -14001,9 +14009,8 @@ static void test_vla_lowering_request_boundary() {
       .name_len = 6,
       .inner_dimensions = parameter_dimensions,
       .inner_dimension_count = 3,
-      .type = parameter_type,
-      .stride_storage_type = ps_ctx_type_by_id_in(
-          test_semantic_context(), stride_storage_type_id),
+      .type = parameter_qual_type,
+      .stride_storage_type = stride_storage_qual_type,
   };
   parameter_request.inner_dimensions[0].expression =
       build_test_typed_local(n);
@@ -14099,13 +14106,19 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(8, plan.alignment);
 
   reset_test_locals();
-  lvar_t *lowered = lower_parameter_declaration(
-      &(psx_parameter_lowering_request_t){
+  psx_parameter_declaration_resolution_t large_parameter_resolution = {
+      .declaration_qual_type = intern_test_qual_type(large_aggregate),
+      .lowering_kind = PSX_PARAMETER_LOWER_NORMAL,
+  };
+  ASSERT_TRUE(large_parameter_resolution.declaration_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  lvar_t *lowered = lower_resolved_parameter_declaration(
+      &(psx_resolved_parameter_lowering_request_t){
           .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"value",
           .name_len = 5,
-          .type = large_aggregate,
+          .resolution = &large_parameter_resolution,
       });
   ASSERT_TRUE(lowered != NULL);
   ASSERT_TRUE(lowered->is_param);
