@@ -295,12 +295,15 @@ static psx_semantic_node_t *materialize_sizeof_value(
         builder, &number_spec, qual_type, NULL, NULL, &query->base);
     if (!value) return NULL;
     for (int i = 0; i < plan->runtime_bound_count; i++) {
-      node_t *bound_source = plan->runtime_bounds[i];
-      psx_semantic_node_t *bound =
-          build_node(builder, bound_source);
+      const psx_typed_hir_tree_t *bound_tree =
+          ps_ctx_semantic_expression_in(
+              builder->semantic_context,
+              plan->runtime_bound_ids[i]);
+      psx_semantic_node_t *bound = bound_tree
+          ? (psx_semantic_node_t *)bound_tree->root : NULL;
       if (!bound) return NULL;
       bound = materialize_cast_expression(
-          builder, bound_source, bound, qual_type);
+          builder, &query->base, bound, qual_type);
       if (!bound) return NULL;
       psx_semantic_node_t *items[] = {value, bound};
       psx_hir_edge_kind_t edges[] = {

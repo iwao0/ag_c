@@ -200,12 +200,6 @@ static node_t *lower_tree(
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      psx_sizeof_runtime_plan_t *plan =
-          psx_sizeof_query_runtime_plan(store, query);
-      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
-        plan->runtime_bounds[i] = lower_tree(
-            context, plan->runtime_bounds[i], fallback_diag_tok);
-      }
       if (psx_sizeof_query_evaluates_vla_operand(store, query)) {
         lower_sizeof_vla_indices(
             context, query->operand, fallback_diag_tok);

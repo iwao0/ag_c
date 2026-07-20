@@ -1,6 +1,7 @@
 #include "type_query_resolution.h"
 
 #include "constant_expression.h"
+#include "declarator_bound_resolution.h"
 #include "declaration_resolution.h"
 #include "alignof_query_resolution.h"
 #include "sizeof_query_resolution.h"
@@ -161,21 +162,26 @@ static psx_qual_type_t resolve_sizeof_type_name(
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   psx_sizeof_runtime_plan_t *runtime_plan =
       arena_alloc_in(arena_context, sizeof(*runtime_plan));
-  node_t **runtime_bounds = syntax->declarator.array_bound_count > 0
-                                ? arena_alloc_in(
-                                      arena_context,
-                                      (size_t)syntax->declarator
-                                          .array_bound_count *
-                                          sizeof(*runtime_bounds))
-                                : NULL;
+  psx_semantic_expr_id_t *runtime_bound_ids =
+      syntax->declarator.array_bound_count > 0
+          ? arena_alloc_in(
+                arena_context,
+                (size_t)syntax->declarator.array_bound_count *
+                    sizeof(*runtime_bound_ids))
+          : NULL;
   if (!runtime_plan ||
-      (syntax->declarator.array_bound_count > 0 && !runtime_bounds)) {
+      (syntax->declarator.array_bound_count > 0 &&
+       !runtime_bound_ids)) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return invalid_qual_type();
   }
   *runtime_plan = (psx_sizeof_runtime_plan_t){
-      .runtime_bounds = runtime_bounds,
+      .runtime_bound_ids = runtime_bound_ids,
       .constant_factor = base_size,
+  };
+  psx_scope_lookup_point_t lookup_point = {
+      .scope_id = query->type_name.scope_seq,
+      .declaration_order = query->type_name.declaration_seq,
   };
   int is_runtime = 0;
   for (int i = shape->count - 1; i >= 0; i--) {
@@ -190,8 +196,25 @@ static psx_qual_type_t resolve_sizeof_type_name(
     if (op->kind != PSX_DECL_OP_ARRAY) continue;
     node_t *bound = sizeof_type_bound_for_op(query, i);
     if (op->is_vla_array && bound) {
-      runtime_plan->runtime_bounds[
-          runtime_plan->runtime_bound_count++] = bound;
+      psx_declarator_bound_resolution_t bound_resolution;
+      if (!psx_resolve_declarator_bound_in_contexts(
+              semantic_context, global_registry, local_registry,
+              bound, &lookup_point, bound->tok, &bound_resolution) ||
+          bound_resolution.is_constant) {
+        resolution->status =
+            PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+        return invalid_qual_type();
+      }
+      psx_semantic_expr_id_t expression_id =
+          ps_ctx_register_semantic_expression_in(
+              semantic_context, bound_resolution.typed_expression);
+      if (expression_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
+        resolution->status =
+            PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+        return invalid_qual_type();
+      }
+      runtime_plan->runtime_bound_ids[
+          runtime_plan->runtime_bound_count++] = expression_id;
       is_runtime = 1;
     } else {
       runtime_plan->constant_factor *= op->array_len;

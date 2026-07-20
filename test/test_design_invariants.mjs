@@ -3770,6 +3770,10 @@ const typeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
 );
+const sizeofQueryResolutionHeader = await readFile(
+  "src/semantic/sizeof_query_resolution.h",
+  "utf8",
+);
 const typeQuerySemanticsHeader = await readFile(
   "src/semantic/type_query_semantics.h",
   "utf8",
@@ -11134,7 +11138,25 @@ if (!/resolved_kind\s*==\s*ND_SIZEOF_QUERY/.test(
       resolvedTreeMaterialization,
     ) ||
     !/psx_sizeof_runtime_plan_t/.test(typeQueryResolutionSource) ||
-    !/runtime_bounds/.test(typeQueryResolutionSource) ||
+    !/runtime_bound_ids/.test(typeQueryResolutionSource) ||
+    !/psx_semantic_expr_id_t\s*\*\s*runtime_bound_ids\s*;/.test(
+      sizeofQueryResolutionHeader,
+    ) ||
+    /node_t\s*\*\s*\*\s*runtime_bounds\s*;/.test(
+      sizeofQueryResolutionHeader,
+    ) ||
+    !/psx_resolve_declarator_bound_in_contexts\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/ps_ctx_register_semantic_expression_in\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/ps_ctx_semantic_expression_in\s*\([^]*?plan->runtime_bound_ids\[i\]/.test(
+      resolvedTreeMaterialization,
+    ) ||
+    /plan->runtime_bound_ids/.test(
+      `${semanticLoweringPassSource}\n${semanticTreeWalkSource}\n${lvarUsageAnalysisSource}`,
+    ) ||
     /\bps_node_new_[A-Za-z0-9_]*\s*\(/.test(
       typeQueryResolutionSource,
     ) ||

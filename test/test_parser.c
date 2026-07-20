@@ -10181,7 +10181,15 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(runtime_plan != NULL);
   ASSERT_EQ(1, runtime_plan->runtime_bound_count);
   ASSERT_EQ(4, runtime_plan->constant_factor);
-  ASSERT_TRUE(runtime_plan->runtime_bounds[0] == typed_vla_bound);
+  ASSERT_TRUE(runtime_plan->runtime_bound_ids[0] !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
+  const psx_typed_hir_tree_t *runtime_bound_tree =
+      ps_ctx_semantic_expression_in(
+          test_semantic_context(),
+          runtime_plan->runtime_bound_ids[0]);
+  ASSERT_TRUE(runtime_bound_tree != NULL);
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_typed_hir_tree_root_kind(runtime_bound_tree));
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);

@@ -264,12 +264,6 @@ void psx_collect_lvar_usage_events_in(
       return;
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      const psx_sizeof_runtime_plan_t *plan =
-          psx_sizeof_query_runtime_plan_const(store, query);
-      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
-        psx_collect_lvar_usage_events_in(
-            store, local_registry, plan->runtime_bounds[i], region);
-      }
       if (psx_sizeof_query_evaluates_vla_operand(store, query)) {
         collect_sizeof_vla_indices(
             store, local_registry, query->operand, region);

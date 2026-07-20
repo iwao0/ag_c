@@ -79,12 +79,6 @@ static int walk_node(
     case ND_SIZEOF_QUERY: {
       const node_sizeof_query_t *query =
           (const node_sizeof_query_t *)node;
-      const psx_sizeof_runtime_plan_t *plan =
-          psx_sizeof_query_runtime_plan_const(store, query);
-      for (int i = 0; plan && i < plan->runtime_bound_count; i++) {
-        if (!walk_node(store, plan->runtime_bounds[i], visitor, user))
-          return 0;
-      }
       return !psx_sizeof_query_evaluates_vla_operand(store, query) ||
              walk_sizeof_vla_indices(
                  store, query->operand, visitor, user);

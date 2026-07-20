@@ -6,7 +6,7 @@
 #include "resolved_node_type.h"
 
 typedef struct psx_sizeof_runtime_plan_t {
-  node_t **runtime_bounds;
+  psx_semantic_expr_id_t *runtime_bound_ids;
   int runtime_bound_count;
   long long constant_factor;
 } psx_sizeof_runtime_plan_t;
