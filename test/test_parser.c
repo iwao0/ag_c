@@ -26310,6 +26310,9 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(NULL);
   const psx_type_t *member_plain_ptr_missing_base =
       member_plain_ptr_p_flat_mismatch_info.decl_type;
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            intern_test_qual_type(
+                member_plain_ptr_missing_base).type_id);
   ASSERT_EQ(0, ps_type_pointer_view_structural_ptr_array_pointee_bytes(
                    member_plain_ptr_missing_base));
   ASSERT_EQ(0, canonical_pointer_qual_levels(
@@ -26321,26 +26324,12 @@ static void test_type_metadata_bridge() {
           member_plain_ptr_h,
           member_plain_ptr_p_flat_mismatch_info.offset,
           &member_plain_ptr_p_flat_mismatch_info);
-  ASSERT_TRUE(ps_node_value_is_pointer_like(member_plain_ptr_p_flat_mismatch_node));
-  ASSERT_EQ(0, ps_node_deref_size(member_plain_ptr_p_flat_mismatch_node));
-  ASSERT_EQ(0, canonical_node_pointer_qual_levels(member_plain_ptr_p_flat_mismatch_node));
-  ASSERT_EQ(0, canonical_node_base_deref_size(member_plain_ptr_p_flat_mismatch_node));
-  ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
-                   member_plain_ptr_p_flat_mismatch_node));
-  ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
-                   member_plain_ptr_p_flat_mismatch_node, 0));
+  ASSERT_TRUE(member_plain_ptr_p_flat_mismatch_node == NULL);
   node_t *member_plain_ptr_p_flat_mismatch_deref =
       ps_node_new_tag_member_deref_for(
           ps_node_new_num(0), psx_node_new_lvar_for(member_plain_ptr_h),
           &member_plain_ptr_p_flat_mismatch_info);
-  ASSERT_TRUE(ps_node_value_is_pointer_like(member_plain_ptr_p_flat_mismatch_deref));
-  ASSERT_EQ(0, ps_node_deref_size(member_plain_ptr_p_flat_mismatch_deref));
-  ASSERT_EQ(0, canonical_node_pointer_qual_levels(member_plain_ptr_p_flat_mismatch_deref));
-  ASSERT_EQ(0, canonical_node_base_deref_size(member_plain_ptr_p_flat_mismatch_deref));
-  ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
-                   member_plain_ptr_p_flat_mismatch_deref));
-  ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
-                   member_plain_ptr_p_flat_mismatch_deref, 0));
+  ASSERT_TRUE(member_plain_ptr_p_flat_mismatch_deref == NULL);
 
   parsed_code = parse_program_input(
       "struct __tm_member_scalar { unsigned int u; _Bool b; _Atomic int a; "

@@ -2816,6 +2816,9 @@ node_t *ps_node_new_tag_member_deref_with_layout_for_in(
     const psx_type_t *member_type, int bit_is_signed,
     int bit_width, int bit_offset) {
   if (!member_type) return NULL;
+  psx_qual_type_t member_identity =
+      psx_resolution_store_intern_type(store, member_type);
+  if (member_identity.type_id == PSX_TYPE_ID_INVALID) return NULL;
   node_t *addr = ps_node_new_binary_for_data_layout_in(
       store, arena_context, ag_target_info_data_layout(target), ND_ADD,
       addr_base, ps_node_new_num_in(store, arena_context, member_offset));

@@ -7627,7 +7627,6 @@ const typeBuilderUsers = new Set([
   "src/semantic/type_query_resolution.c",
   "src/semantic/function_call_resolution.c",
   "src/semantic/expression_operand_resolution.c",
-  "src/semantic/type_identity.c",
   "src/lowering/vla_lowering.c",
   "src/lowering/cast_lowering.c",
   "test/test_parser.c",
@@ -8591,6 +8590,10 @@ const semanticTypeIdentitySource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
 );
+const typeCompatibilityViewSource = await readFile(
+  "src/semantic/type_compatibility_view.c",
+  "utf8",
+);
 const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
@@ -8621,20 +8624,39 @@ if (!qualTypeStruct ||
     "QualType must pair an interned TypeId with qualifiers, independent of target layout",
   );
 }
-if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id\s*;[^]*?populate_type_relations\s*\(\s*table\s*,\s*id\s*,\s*type\s*\)/.test(
+const semanticTypeEntry = semanticTypeIdentitySource.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_semantic_type_entry_t\s*;/,
+);
+if (!semanticTypeEntry ||
+    !/psx_type_shape_t\s+shape\s*;/.test(semanticTypeEntry[1]) ||
+    !/psx_qual_type_t\s+base_type\s*;/.test(semanticTypeEntry[1]) ||
+    !/psx_qual_type_t\s*\*\s*parameter_types\s*;/.test(
+      semanticTypeEntry[1],
+    ) ||
+    /\bpsx_type_t\b|qualified_views|materializ/.test(semanticTypeEntry[1]) ||
+    /type_builder\.h|\bps_type_(?:clone|normalize_scalar_identity|remove_all_qualifiers_recursive)\b/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/table->entries\[id\]\.shape\s*=\s*owned_shape\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/table->entries\[id\]\.base_type\s*=\s*base_type\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/table->entries\[id\]\.parameter_types\s*=\s*owned_parameters\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_lookup\s*\([^]*?psx_type_compatibility_canonical_view\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?psx_type_compatibility_view\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
     !/psx_semantic_type_table_record_member\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->members\[member_index\]\.decl_qual_type/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/psx_semantic_type_table_intern\s*\([^]*?ps_type_clone_in\s*\(\s*table->arena_context\s*,\s*type\s*\)/.test(
-      semanticTypeIdentitySource,
-    ) ||
     !/\bconst\s+psx_type_t\s*\*\s*psx_semantic_type_table_lookup\s*\(\s*const\s+psx_semantic_type_table_t\s*\*table\s*,\s*psx_type_id_t\s+type_id\s*\)\s*;/.test(
       semanticTypeIdentityHeader,
-    ) ||
-    !/\bps_type_remove_all_qualifiers_recursive\s*\(/.test(
-      semanticTypeIdentitySource,
     ) ||
     !/\bsemantic_type_entry_matches\s*\(/.test(
       semanticTypeIdentitySource,
@@ -8666,6 +8688,34 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     )) {
   throw new Error(
     "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
+  );
+}
+if (!/const\s+psx_type_t\s*\*canonical_view\s*;/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/const\s+psx_type_t\s*\*views\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/arena_context_t\s*\*arena_context\s*;/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_base\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_parameter\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_type_compatibility_view_identity\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_type_compatibility_cache_remember_import\s*\(/.test(
+      typeCompatibilityViewSource,
+    )) {
+  throw new Error(
+    "mutable parser type views must be isolated in the compatibility adapter",
   );
 }
 for (const [contextInterner, tableInterner] of [
@@ -9423,8 +9473,8 @@ if (!recordMemberDeclStruct ||
     !/ps_ctx_intern_qual_type_in\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/.test(
       parserSemanticContextImplementation,
     ) ||
-    !/qualified_views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
-      semanticTypeIdentitySource,
+    !/views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
+      typeCompatibilityViewSource,
     )) {
   throw new Error(
     "record members must store QualType only and materialize views through an explicit semantic type table",

@@ -2,26 +2,19 @@
 
 #include "../parser/arena.h"
 #include "../parser/type.h"
-#include "../parser/type_builder.h"
 #include "record_decl_table.h"
+#include "type_compatibility_view.h"
 
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-enum { PSX_QUALIFIER_VIEW_COUNT = 8 };
-
 typedef struct {
   psx_type_shape_t shape;
-  psx_type_t *type;
   psx_qual_type_t base_type;
   psx_qual_type_t *parameter_types;
   int parameter_count;
-  psx_type_t *qualified_views[PSX_QUALIFIER_VIEW_COUNT];
-  unsigned char qualified_view_materializing[PSX_QUALIFIER_VIEW_COUNT];
-  unsigned char relations_populating;
-  unsigned char canonical_relations_materialized;
 } psx_semantic_type_entry_t;
 
 static psx_type_shape_t semantic_type_shape(const psx_type_t *type) {
@@ -30,6 +23,9 @@ static psx_type_shape_t semantic_type_shape(const psx_type_t *type) {
   shape.kind = type->kind;
   shape.array_len = type->array_len;
   shape.integer_kind = type->integer_kind;
+  if (shape.kind == PSX_TYPE_INTEGER &&
+      shape.integer_kind == PSX_INTEGER_KIND_NONE)
+    shape.integer_kind = PSX_INTEGER_KIND_INT;
   shape.floating_kind = type->floating_kind;
   shape.record_id = ps_type_record_id(type);
   if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
@@ -53,6 +49,7 @@ static psx_type_shape_t semantic_type_shape(const psx_type_t *type) {
 
 struct psx_semantic_type_table_t {
   arena_context_t *arena_context;
+  psx_type_compatibility_cache_t *compatibility_views;
   const psx_record_decl_table_t *record_decls;
   psx_semantic_type_entry_t *entries;
   size_t capacity;
@@ -76,6 +73,12 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
     free(table);
     return NULL;
   }
+  table->compatibility_views = psx_type_compatibility_cache_create();
+  if (!table->compatibility_views) {
+    arena_context_destroy(table->arena_context);
+    free(table);
+    return NULL;
+  }
   if (!seed_fundamental_types(table)) {
     psx_semantic_type_table_destroy(table);
     return NULL;
@@ -85,6 +88,7 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
 
 void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table) {
   if (!table) return;
+  psx_type_compatibility_cache_destroy(table->compatibility_views);
   arena_context_destroy(table->arena_context);
   free(table->entries);
   free(table);
@@ -92,6 +96,7 @@ void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table) {
 
 void psx_semantic_type_table_reset(psx_semantic_type_table_t *table) {
   if (!table) return;
+  psx_type_compatibility_cache_reset(table->compatibility_views);
   arena_free_all_in(table->arena_context);
   free(table->entries);
   table->entries = NULL;
@@ -127,16 +132,6 @@ static int reserve_type_id(
 static psx_qual_type_t invalid_qual_type(void) {
   return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                            PSX_TYPE_QUALIFIER_NONE};
-}
-
-static psx_type_id_t canonical_type_id(
-    const psx_semantic_type_table_t *table, const psx_type_t *type) {
-  if (!table || !type) return PSX_TYPE_ID_INVALID;
-  for (psx_type_id_t id = 1; id <= table->next_id; id++) {
-    if ((size_t)id < table->capacity && table->entries[id].type == type)
-      return id;
-  }
-  return PSX_TYPE_ID_INVALID;
 }
 
 static int semantic_type_has_resolved_record_identity(
@@ -263,56 +258,6 @@ static psx_type_id_t semantic_type_shape_id(
   return PSX_TYPE_ID_INVALID;
 }
 
-static psx_type_t *semantic_type_compatibility_view(
-    psx_semantic_type_table_t *table,
-    const psx_type_shape_t *shape, psx_qual_type_t base_type,
-    const psx_qual_type_t *parameter_types, int parameter_count) {
-  if (!table || !shape) return NULL;
-  psx_type_t *type = arena_alloc_in(
-      table->arena_context, sizeof(*type));
-  if (!type) return NULL;
-  *type = (psx_type_t){
-      .kind = shape->kind,
-      .array_len = shape->array_len,
-      .integer_kind = shape->integer_kind,
-      .floating_kind = shape->floating_kind,
-      .is_unsigned = shape->is_unsigned,
-      .is_plain_char = shape->is_plain_char,
-      .is_vla = shape->is_vla,
-      .param_count = parameter_count,
-      .has_function_prototype = shape->has_function_prototype,
-      .is_variadic_function = shape->is_variadic_function,
-      .record_id = shape->record_id,
-  };
-  if (shape->kind == PSX_TYPE_STRUCT || shape->kind == PSX_TYPE_UNION) {
-    type->tag_name = (char *)shape->record_tag_name;
-    type->tag_len = shape->record_tag_length;
-  } else if (shape->kind == PSX_TYPE_INTEGER &&
-             shape->integer_kind == PSX_INTEGER_KIND_ENUM) {
-    type->tag_name = (char *)shape->enum_tag_name;
-    type->tag_len = shape->enum_tag_length;
-    type->tag_scope_depth_p1 = shape->enum_tag_scope_depth_p1;
-  }
-  if (base_type.type_id != PSX_TYPE_ID_INVALID) {
-    type->base = psx_semantic_type_table_lookup(
-        table, base_type.type_id);
-    if (!type->base) return NULL;
-  }
-  if (parameter_count > 0) {
-    const psx_type_t **parameters = arena_alloc_in(
-        table->arena_context,
-        (size_t)parameter_count * sizeof(*parameters));
-    if (!parameters) return NULL;
-    for (int i = 0; i < parameter_count; i++) {
-      parameters[i] = psx_semantic_type_table_lookup(
-          table, parameter_types[i].type_id);
-      if (!parameters[i]) return NULL;
-    }
-    type->param_types = parameters;
-  }
-  return type;
-}
-
 static int semantic_type_shape_own_name(
     psx_semantic_type_table_t *table, const char *source, int length,
     const char **owned) {
@@ -373,10 +318,6 @@ static psx_qual_type_t semantic_type_table_intern_shape(
   psx_type_shape_t owned_shape = *shape;
   if (!semantic_type_shape_own_names(table, &owned_shape))
     return invalid_qual_type();
-  psx_type_t *compatibility_type =
-      semantic_type_compatibility_view(
-          table, &owned_shape, base_type, parameter_types, parameter_count);
-  if (!compatibility_type) return invalid_qual_type();
   psx_qual_type_t *owned_parameters = NULL;
   if (parameter_count > 0) {
     owned_parameters = arena_alloc_in(
@@ -387,11 +328,9 @@ static psx_qual_type_t semantic_type_table_intern_shape(
            (size_t)parameter_count * sizeof(*owned_parameters));
   }
   table->entries[id].shape = owned_shape;
-  table->entries[id].type = compatibility_type;
   table->entries[id].base_type = base_type;
   table->entries[id].parameter_types = owned_parameters;
   table->entries[id].parameter_count = parameter_count;
-  table->entries[id].canonical_relations_materialized = 1;
   table->next_id = id;
   return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
 }
@@ -606,8 +545,11 @@ psx_qual_type_t psx_semantic_type_table_find(
     return result;
   }
   result.qualifiers = ps_type_qualifiers(type);
-  result.type_id = canonical_type_id(table, type);
-  if (result.type_id != PSX_TYPE_ID_INVALID) return result;
+  psx_qual_type_t compatibility_identity =
+      psx_type_compatibility_view_identity(
+          table->compatibility_views, type);
+  if (compatibility_identity.type_id != PSX_TYPE_ID_INVALID)
+    return compatibility_identity;
   for (psx_type_id_t id = 1; id <= table->next_id; id++) {
     if (semantic_type_entry_matches(table, id, type)) {
       result.type_id = id;
@@ -617,81 +559,6 @@ psx_qual_type_t psx_semantic_type_table_find(
   return invalid_qual_type();
 }
 
-static int populate_type_relations_body(
-    psx_semantic_type_table_t *table, psx_type_id_t id,
-    const psx_type_t *type) {
-  if (!table || id == PSX_TYPE_ID_INVALID || !type) return 0;
-  if (type->base) {
-    psx_qual_type_t base = psx_semantic_type_table_intern(
-        table, type->base);
-    if (base.type_id == PSX_TYPE_ID_INVALID) return 0;
-    table->entries[id].base_type = base;
-  }
-  if (type->param_count > table->entries[id].parameter_count) {
-    psx_qual_type_t *parameter_types = arena_alloc_in(
-        table->arena_context,
-        (size_t)type->param_count * sizeof(*parameter_types));
-    if (!parameter_types) return 0;
-    table->entries[id].parameter_types = parameter_types;
-    table->entries[id].parameter_count = type->param_count;
-  }
-  for (int i = 0; i < type->param_count; i++) {
-    if (!type->param_types) return 0;
-    psx_qual_type_t parameter = psx_semantic_type_table_intern(
-        table, type->param_types[i]);
-    if (parameter.type_id == PSX_TYPE_ID_INVALID) return 0;
-    table->entries[id].parameter_types[i] = parameter;
-  }
-  return 1;
-}
-
-static int materialize_canonical_type_relations(
-    psx_semantic_type_table_t *table, psx_type_id_t id) {
-  if (!table || id == PSX_TYPE_ID_INVALID || id > table->next_id ||
-      (size_t)id >= table->capacity || !table->entries[id].type) {
-    return 0;
-  }
-  psx_semantic_type_entry_t *entry = &table->entries[id];
-  if (entry->canonical_relations_materialized) return 1;
-  psx_type_t *canonical = entry->type;
-  if (entry->base_type.type_id != PSX_TYPE_ID_INVALID) {
-    canonical->base = psx_semantic_type_table_lookup(
-        table, entry->base_type.type_id);
-    if (!canonical->base) return 0;
-  } else {
-    canonical->base = NULL;
-  }
-  if (canonical->param_count != entry->parameter_count ||
-      (canonical->param_count > 0 && !canonical->param_types)) {
-    return 0;
-  }
-  const psx_type_t **parameters = canonical->param_count > 0
-      ? arena_alloc_in(
-            table->arena_context,
-            (size_t)canonical->param_count * sizeof(*parameters))
-      : NULL;
-  if (canonical->param_count > 0 && !parameters) return 0;
-  for (int i = 0; i < canonical->param_count; i++) {
-    parameters[i] = psx_semantic_type_table_lookup(
-        table, entry->parameter_types[i].type_id);
-    if (!parameters[i]) return 0;
-  }
-  canonical->param_types = parameters;
-  entry->canonical_relations_materialized = 1;
-  return 1;
-}
-
-static int populate_type_relations(
-    psx_semantic_type_table_t *table, psx_type_id_t id,
-    const psx_type_t *type) {
-  if (!table || id == PSX_TYPE_ID_INVALID || !type) return 0;
-  if (table->entries[id].relations_populating) return 1;
-  table->entries[id].relations_populating = 1;
-  int result = populate_type_relations_body(table, id, type);
-  table->entries[id].relations_populating = 0;
-  return result && materialize_canonical_type_relations(table, id);
-}
-
 psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type) {
   if (!table || !type || type->kind == PSX_TYPE_INVALID ||
@@ -699,43 +566,50 @@ psx_qual_type_t psx_semantic_type_table_intern(
       !semantic_type_has_resolved_record_identity(type)) {
     return invalid_qual_type();
   }
-  psx_type_id_t canonical_id = canonical_type_id(table, type);
-  if (canonical_id != PSX_TYPE_ID_INVALID) {
-    return (psx_qual_type_t){canonical_id, ps_type_qualifiers(type)};
-  }
   psx_qual_type_t result = psx_semantic_type_table_find(table, type);
   if (result.type_id != PSX_TYPE_ID_INVALID) {
-    return populate_type_relations(table, result.type_id, type)
+    return psx_type_compatibility_cache_remember_import(
+               table->compatibility_views, result, type)
                ? result
                : invalid_qual_type();
   }
-  result.qualifiers = ps_type_qualifiers(type);
-  if (table->next_id == UINT_MAX) return result;
-  psx_type_id_t id = table->next_id + 1;
-  if (!reserve_type_id(table, id)) return result;
-  psx_type_t *canonical = ps_type_clone_in(
-      table->arena_context, type);
-  if (!canonical) return result;
-  ps_type_normalize_scalar_identity(canonical);
-  ps_type_remove_all_qualifiers_recursive(canonical);
-  psx_type_shape_t owned_shape = semantic_type_shape(canonical);
-  if (!semantic_type_shape_own_names(table, &owned_shape)) return result;
-  if (canonical->kind == PSX_TYPE_STRUCT ||
-      canonical->kind == PSX_TYPE_UNION) {
-    canonical->tag_name = (char *)owned_shape.record_tag_name;
-    canonical->tag_len = owned_shape.record_tag_length;
-  } else if (canonical->kind == PSX_TYPE_INTEGER &&
-             canonical->integer_kind == PSX_INTEGER_KIND_ENUM) {
-    canonical->tag_name = (char *)owned_shape.enum_tag_name;
-    canonical->tag_len = owned_shape.enum_tag_length;
+
+  psx_qual_type_t base_type = invalid_qual_type();
+  if (type->base) {
+    base_type = psx_semantic_type_table_intern(table, type->base);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  } else if (type->kind == PSX_TYPE_COMPLEX) {
+    base_type = psx_semantic_type_table_fundamental_floating(
+        table, type->floating_kind, 0);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
   }
-  table->entries[id].shape = owned_shape;
-  table->entries[id].type = canonical;
-  table->next_id = id;
-  result.type_id = id;
-  return populate_type_relations(table, id, type)
-             ? result
-             : invalid_qual_type();
+  psx_qual_type_t *parameter_types = NULL;
+  if (type->param_count > 0) {
+    parameter_types = malloc(
+        (size_t)type->param_count * sizeof(*parameter_types));
+    if (!parameter_types) return invalid_qual_type();
+    for (int i = 0; i < type->param_count; i++) {
+      parameter_types[i] = psx_semantic_type_table_intern(
+          table, type->param_types[i]);
+      if (parameter_types[i].type_id == PSX_TYPE_ID_INVALID) {
+        free(parameter_types);
+        return invalid_qual_type();
+      }
+    }
+  }
+  psx_type_shape_t shape = semantic_type_shape(type);
+  result = semantic_type_table_intern_shape(
+      table, &shape, base_type, parameter_types, type->param_count);
+  free(parameter_types);
+  if (result.type_id != PSX_TYPE_ID_INVALID) {
+    result.qualifiers = ps_type_qualifiers(type);
+    if (!psx_type_compatibility_cache_remember_import(
+            table->compatibility_views, result, type))
+      return invalid_qual_type();
+  }
+  return result;
 }
 
 psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
@@ -777,11 +651,10 @@ psx_qual_type_t psx_semantic_type_table_intern_function(
 
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
-  if (!table || type_id == PSX_TYPE_ID_INVALID ||
-      type_id > table->next_id || (size_t)type_id >= table->capacity) {
-    return NULL;
-  }
-  return table->entries[type_id].type;
+  return table
+             ? psx_type_compatibility_canonical_view(
+                   table->compatibility_views, table, type_id)
+             : NULL;
 }
 
 int psx_semantic_type_table_describe(
@@ -794,82 +667,12 @@ int psx_semantic_type_table_describe(
   return 1;
 }
 
-static const psx_type_t *materialize_qual_type_view(
-    psx_semantic_type_table_t *table, psx_qual_type_t type) {
-  const psx_type_qualifiers_t supported =
-      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
-      PSX_TYPE_QUALIFIER_ATOMIC;
-  if (!table || type.type_id == PSX_TYPE_ID_INVALID ||
-      (type.qualifiers & ~supported) != 0 ||
-      type.type_id > table->next_id ||
-      (size_t)type.type_id >= table->capacity) {
-    return NULL;
-  }
-  psx_semantic_type_entry_t *entry = &table->entries[type.type_id];
-  unsigned view_index = type.qualifiers;
-  if (entry->qualified_views[view_index])
-    return entry->qualified_views[view_index];
-  if (!entry->type ||
-      entry->qualified_view_materializing[view_index])
-    return NULL;
-  entry->qualified_view_materializing[view_index] = 1;
-
-  const psx_type_t *base_view = NULL;
-  if (entry->base_type.type_id != PSX_TYPE_ID_INVALID) {
-    base_view = materialize_qual_type_view(
-        table, entry->base_type);
-    if (!base_view) goto fail;
-  }
-  int needs_view = type.qualifiers != PSX_TYPE_QUALIFIER_NONE ||
-                   base_view != entry->type->base;
-  for (int i = 0; i < entry->parameter_count; i++) {
-    const psx_type_t *parameter = materialize_qual_type_view(
-        table, entry->parameter_types[i]);
-    if (!parameter) goto fail;
-    if (!entry->type->param_types ||
-        parameter != entry->type->param_types[i])
-      needs_view = 1;
-  }
-  if (!needs_view) {
-    entry->qualified_views[view_index] = entry->type;
-    entry->qualified_view_materializing[view_index] = 0;
-    return entry->type;
-  }
-
-  psx_type_t *view = arena_alloc_in(
-      table->arena_context, sizeof(*view));
-  if (!view) goto fail;
-  *view = *entry->type;
-  view->qualifiers = type.qualifiers;
-  view->base = base_view;
-  if (entry->parameter_count > 0) {
-    const psx_type_t **parameters = arena_alloc_in(
-        table->arena_context,
-        (size_t)entry->parameter_count * sizeof(*parameters));
-    if (!parameters) goto fail;
-    for (int i = 0; i < entry->parameter_count; i++) {
-      parameters[i] = materialize_qual_type_view(
-          table, entry->parameter_types[i]);
-      if (!parameters[i]) goto fail;
-    }
-    view->param_types = parameters;
-  } else {
-    view->param_types = NULL;
-  }
-  entry->qualified_views[view_index] = view;
-  entry->qualified_view_materializing[view_index] = 0;
-  return view;
-
-fail:
-  entry->qualified_view_materializing[view_index] = 0;
-  entry->qualified_views[view_index] = NULL;
-  return NULL;
-}
-
 const psx_type_t *psx_semantic_type_table_lookup_qual_type(
     const psx_semantic_type_table_t *table, psx_qual_type_t type) {
-  return materialize_qual_type_view(
-      (psx_semantic_type_table_t *)table, type);
+  return table
+             ? psx_type_compatibility_view(
+                   table->compatibility_views, table, type)
+             : NULL;
 }
 
 static psx_qual_type_t related_type(
