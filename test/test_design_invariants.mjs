@@ -316,9 +316,8 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     /\b(?:current_scope_seq|next_declaration_seq|scope_parent_by_seq)\s*;/.test(
       scopeGraphLocalRegistrySource,
     ) ||
-    !/psx_scope_graph_lookup\s*\(/.test(scopeGraphLocalRegistrySource) ||
-    !/psx_scope_graph_lookup_in_scope\s*\(/.test(
-      scopeGraphGlobalRegistrySource,
+    !/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
+      scopeGraphLocalRegistrySource,
     ) ||
     !/psx_scope_graph_declare\s*\([^]*?PSX_DECL_ENUM_CONSTANT/.test(
       scopeGraphSemanticContextSource,
@@ -2205,7 +2204,7 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     !/void\s+ps_local_registry_destroy\s*\(/.test(
       localRegistrySource,
     ) ||
-    !/ps_local_registry_find_visible_in\s*\(/.test(localRegistrySource) ||
+    /ps_local_registry_find_visible_in\s*\(/.test(localRegistrySource) ||
     !/ps_decl_record_lvar_usage_in_region_in\s*\(/.test(
       localRegistrySource,
     ) ||
@@ -3860,7 +3859,7 @@ const ordinaryNodeUtilsSource = await readFile(
   "utf8",
 );
 const obsoleteOrdinaryNameApi =
-  /\b(?:psx_resolve_global_object_symbol_in|ps_ctx_has_function_name_in|ps_ctx_has_typedef_in_current_scope_in|ps_ctx_has_enum_const_in_current_scope_in)\s*\(/;
+  /\b(?:psx_resolve_global_object_symbol_in|ps_ctx_has_function_name_in|ps_ctx_has_typedef_in_current_scope_in|ps_ctx_has_enum_const_in_current_scope_in|ps_find_global_var_in|ps_decl_find_lvar_in|ps_local_registry_find_visible_in)\s*\(/;
 if (obsoleteOrdinaryNameApi.test([
       identifierResolutionHeader,
       identifierResolutionSource,
@@ -3868,6 +3867,10 @@ if (obsoleteOrdinaryNameApi.test([
       ordinarySemanticContextHeaderSource,
       functionPublicHeaderSource,
       ordinaryNodeUtilsSource,
+      globalRegistrySource,
+      globalRegistryHeader,
+      localRegistrySource,
+      localRegistryHeader,
     ].join("\n")) ||
     !/ps_ctx_find_function_symbol_in\s*\(/.test(ordinaryNodeUtilsSource)) {
   throw new Error(

@@ -1142,8 +1142,46 @@ static long test_reference_abi_value(
   return value;
 }
 
+static global_var_t *find_test_global_var_in(
+    psx_global_registry_t *registry, char *name, int len) {
+  psx_scope_graph_t *scope_graph =
+      ps_global_registry_scope_graph(registry);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, name, len);
+  return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
+             ? declaration->payload
+             : NULL;
+}
+
+static lvar_t *find_test_visible_local_var_in(
+    const psx_local_registry_t *registry, char *name, int len,
+    psx_local_lookup_point_t point) {
+  psx_scope_graph_t *scope_graph =
+      ps_local_registry_scope_graph(registry);
+  psx_decl_id_t declaration_id = psx_scope_graph_lookup(
+      scope_graph, PSX_NAMESPACE_ORDINARY, name, len,
+      (psx_scope_lookup_point_t){
+          .scope_id = point.scope_seq,
+          .declaration_order = point.declaration_seq,
+      });
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_declaration(scope_graph, declaration_id);
+  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
+             ? declaration->payload
+             : NULL;
+}
+
+static lvar_t *find_test_local_var_in(
+    const psx_local_registry_t *registry, char *name, int len) {
+  return find_test_visible_local_var_in(
+      registry, name, len,
+      ps_local_registry_capture_lookup_point_in(registry));
+}
+
 static global_var_t *find_test_global_var(char *name, int len) {
-  return ps_find_global_var_in(test_global_registry(), name, len);
+  return find_test_global_var_in(test_global_registry(), name, len);
 }
 
 static bool iter_test_float_literals(
@@ -8465,15 +8503,15 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_TRUE(inner != NULL);
   psx_local_lookup_point_t after_inner =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, before_inner) == outer);
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, after_inner) == inner);
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t nested =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, nested) == inner);
   ps_decl_leave_scope_in(test_local_registry());
   ps_decl_leave_scope_in(test_local_registry());
@@ -8512,10 +8550,10 @@ static void test_persistent_local_scope_lookup_boundary() {
   lvar_t *sibling = register_test_storage_fixture(
       (char *)"__sibling_only", 14, 4, 4, 0);
   ASSERT_TRUE(sibling != NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
                   sibling_before_decl) == NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13,
                   sibling_before_decl) == outer);
   ps_decl_leave_scope_in(test_local_registry());
@@ -8523,10 +8561,10 @@ static void test_persistent_local_scope_lookup_boundary() {
   ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t other_sibling =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
                   other_sibling) == NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13,
                   other_sibling) == outer);
   ps_decl_leave_scope_in(test_local_registry());
@@ -10758,9 +10796,9 @@ static void test_translation_unit_frontend_boundary() {
       &item.value.function_header;
   ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__frontend_boundary", 19) == NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
                   test_local_registry(), (char *)"input", 5) == NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
                   test_local_registry(), (char *)"x", 1) == NULL);
   node_block_t *parsed_body = as_block(syntax_function->body);
   ASSERT_EQ(ND_LOCAL_DECLARATION, parsed_body->body[0]->kind);
@@ -10777,10 +10815,10 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
   ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__frontend_boundary", 19) != NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
                   test_local_registry(), (char *)"input", 5) != NULL);
   ASSERT_TRUE(
-      ps_decl_find_lvar_in(
+      find_test_local_var_in(
           test_local_registry(), (char *)"x", 1) != NULL);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, raw_compound_assignment->kind);
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
@@ -10951,10 +10989,10 @@ static void test_global_registry_checkpoint_boundary() {
       test_global_registry(), &checkpoint);
   ASSERT_TRUE(!psx_global_registry_checkpoint_is_active(
       test_global_registry()));
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       test_global_registry(), existing.name, existing.name_len) ==
               &existing);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       test_global_registry(), added.name, added.name_len) == NULL);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
       test_global_registry(), literal.label) == NULL);
@@ -10974,7 +11012,7 @@ static void test_global_registry_checkpoint_boundary() {
   ASSERT_TRUE(!psx_global_registry_checkpoint_is_active(
       test_global_registry()));
   ASSERT_TRUE(existing.is_static);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       test_global_registry(), added.name, added.name_len) == &added);
 
   psx_local_registry_checkpoint_t local_checkpoint = {0};
@@ -11581,7 +11619,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_node_get_type(syntax_vla_typedef_bound) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(
       syntax_vla_typedef_bound));
-  global_var_t *direct_external = ps_find_global_var_in(
+  global_var_t *direct_external = find_test_global_var_in(
       test_global_registry(), (char *)"__direct_external_value",
       (int)strlen("__direct_external_value"));
   ASSERT_TRUE(direct_external != NULL);
@@ -11589,14 +11627,14 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
       test_semantic_context(), (char *)"__direct_declared_function",
       (int)strlen("__direct_declared_function")) != NULL);
-  global_var_t *direct_static = ps_find_global_var_in(
+  global_var_t *direct_static = find_test_global_var_in(
       test_global_registry(),
       (char *)"__direct_function_hir.__direct_static_counter.0",
       (int)strlen(
           "__direct_function_hir.__direct_static_counter.0"));
   ASSERT_TRUE(direct_static != NULL);
   ASSERT_TRUE(ps_gvar_is_static_storage(direct_static));
-  global_var_t *direct_static_initialized = ps_find_global_var_in(
+  global_var_t *direct_static_initialized = find_test_global_var_in(
       test_global_registry(),
       (char *)"__direct_function_hir.__direct_static_initialized.1",
       (int)strlen(
@@ -11605,7 +11643,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_gvar_is_static_storage(direct_static_initialized));
   ASSERT_TRUE(direct_static_initialized->has_init);
   ASSERT_EQ(17, direct_static_initialized->init_val);
-  global_var_t *direct_static_values = ps_find_global_var_in(
+  global_var_t *direct_static_values = find_test_global_var_in(
       test_global_registry(),
       (char *)"__direct_function_hir.__direct_static_values.ac0",
       (int)strlen(
@@ -11853,13 +11891,13 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       test_semantic_context(),
       (char *)"__direct_function_rollback",
       (int)strlen("__direct_function_rollback")) == NULL);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       test_global_registry(), (char *)"__direct_fallback_external",
       (int)strlen("__direct_fallback_external")) == NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
       test_semantic_context(), (char *)"__direct_fallback_declared",
       (int)strlen("__direct_fallback_declared")) == NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
       test_local_registry(), (char *)"__direct_fallback_transient",
       (int)strlen("__direct_fallback_transient")) == NULL);
   ASSERT_EQ(0, test_lowering_context()->local_frame_layout.next_offset);
@@ -12967,7 +13005,7 @@ static void test_local_declaration_storage_plan_boundary() {
                     ps_lvar_decl_type_id(lowered),
                     ag_target_info_data_layout(
                         ps_ctx_target_info(test_semantic_context()))));
-  ASSERT_EQ(lowered, ps_decl_find_lvar_in(test_local_registry(), (char *)"matrix", 6));
+  ASSERT_EQ(lowered, find_test_local_var_in(test_local_registry(), (char *)"matrix", 6));
 
   reset_test_locals();
   psx_type_t *deferred_type =
@@ -12987,7 +13025,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(incomplete_type_id, ps_lvar_decl_type_id(declared));
   ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(declared,
-            ps_decl_find_lvar_in(test_local_registry(), (char *)"deferred", 8));
+            find_test_local_var_in(test_local_registry(), (char *)"deferred", 8));
   ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
       test_local_registry(), declared,
       intern_test_qual_type(ps_type_new_integer(TK_INT, 4, 0))));
@@ -14076,7 +14114,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(24, ps_lvar_storage_size(
                     parameter_result.stride_storage, 0));
   ASSERT_TRUE(
-      ps_decl_find_lvar_in(
+      find_test_local_var_in(
           test_local_registry(), (char *)"__rs_tensor", 11) == NULL);
   ASSERT_EQ(
       parameter_result.stride_storage,
@@ -26678,9 +26716,9 @@ static void test_translation_unit_reset_decl_locals_state() {
   char name[] = "x";
   reset_test_locals();
   ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(test_local_registry(), name, 1) != NULL);
+  ASSERT_TRUE(find_test_local_var_in(test_local_registry(), name, 1) != NULL);
   reset_test_translation_unit_state();
-  ASSERT_TRUE(ps_decl_find_lvar_in(test_local_registry(), name, 1) == NULL);
+  ASSERT_TRUE(find_test_local_var_in(test_local_registry(), name, 1) == NULL);
 }
 
 static void test_translation_unit_reset_pragma_pack_state() {
@@ -29339,10 +29377,10 @@ static void test_compilation_session_registry_isolation() {
                   second.semantic_context,
                   second_aggregate_members[0].decl_type).type_id !=
               PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
                   second.global_registry,
                   (char *)"shared_global", 13) == &second_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
@@ -29557,10 +29595,10 @@ static void test_compilation_session_registry_isolation() {
       },
       &isolated_global_result));
   ASSERT_TRUE(isolated_global_result.global != NULL);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       first.global_registry, (char *)"pipeline_first", 14) ==
       isolated_global_result.global);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
       second.global_registry, (char *)"pipeline_first", 14) == NULL);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
       second.semantic_context, (char *)"FirstType", 9, NULL));
@@ -29580,35 +29618,35 @@ static void test_compilation_session_registry_isolation() {
           .type = first_local_type,
       });
   ASSERT_TRUE(lowered_into_first != NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(second.local_registry,
                   (char *)"lowered_into_first", 18) == NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
                   first.local_registry,
                   (char *)"lowered_into_first", 18) ==
               lowered_into_first);
   psx_local_registry_add_in(
       first.local_registry, &explicit_first_local);
-  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(second.local_registry,
                   (char *)"explicit_first_local", 20) == NULL);
-  ASSERT_TRUE(ps_decl_find_lvar_in(
+  ASSERT_TRUE(find_test_local_var_in(
                   first.local_registry,
                   (char *)"explicit_first_local", 20) ==
               &explicit_first_local);
   psx_local_lookup_point_t explicit_first_point =
       ps_local_registry_capture_lookup_point_in(first.local_registry);
-  ASSERT_TRUE(ps_local_registry_find_visible_in(
+  ASSERT_TRUE(find_test_visible_local_var_in(
                   first.local_registry,
                   (char *)"explicit_first_local", 20,
                   explicit_first_point) == &explicit_first_local);
   psx_register_string_lit_in(second.global_registry, &second_literal);
   psx_local_registry_add_in(second.local_registry, &second_local);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
                   second.global_registry,
                   (char *)"shared_global", 13) == &second_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
                   second.global_registry,
                   (char *)".Lshared") == &second_literal);
-  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(second.local_registry,
                   (char *)"shared_local", 12) == &second_local);
   ir_data_module_t *first_data =
       lower_ir_translation_unit_data_in_session(&first);
@@ -29651,16 +29689,16 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(memcmp(first_literal_data->bytes, "first\0", 6) == 0);
   ir_data_module_free(first_data);
   ps_local_registry_reset_in(first.local_registry);
-  ASSERT_TRUE(ps_find_global_var_in(
+  ASSERT_TRUE(find_test_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
                   first.global_registry,
                   (char *)".Lshared") == &first_literal);
-  ASSERT_TRUE(ps_decl_find_lvar_in(first.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(first.local_registry,
                   (char *)"shared_local", 12) == NULL);
   psx_local_registry_add_in(first.local_registry, &first_local);
-  ASSERT_TRUE(ps_decl_find_lvar_in(first.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(first.local_registry,
                   (char *)"shared_local", 12) == &first_local);
   ir_data_module_t *second_data =
       lower_ir_translation_unit_data_in_session(&second);
@@ -29684,7 +29722,7 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_EQ(99, second_global_data->bytes[0]);
   ASSERT_TRUE(memcmp(second_literal_data->bytes, "second\0", 7) == 0);
   ir_data_module_free(second_data);
-  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
+  ASSERT_TRUE(find_test_local_var_in(second.local_registry,
                   (char *)"shared_local", 12) == &second_local);
 
   ag_compilation_session_dispose(&first);

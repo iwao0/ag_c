@@ -266,23 +266,6 @@ psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
   };
 }
 
-lvar_t *ps_local_registry_find_visible_in(
-    const psx_local_registry_t *registry,
-    char *name, int name_len, psx_local_lookup_point_t point) {
-  if (!registry || !name || name_len <= 0) return NULL;
-  psx_decl_id_t id = psx_scope_graph_lookup(
-      registry->scope_graph, PSX_NAMESPACE_ORDINARY, name, name_len,
-      (psx_scope_lookup_point_t){
-          .scope_id = point.scope_seq,
-          .declaration_order = point.declaration_seq,
-      });
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(registry->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
-             ? declaration->payload
-             : NULL;
-}
-
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var) {
   if (!registry || !var) return;
@@ -808,17 +791,4 @@ lvar_t *psx_decl_find_lvar_by_offset_in(
     if (var->offset == offset) return var;
   }
   return NULL;
-}
-
-lvar_t *ps_decl_find_lvar_in(
-    const psx_local_registry_t *registry, char *name, int len) {
-  if (!registry || !name || len <= 0) return NULL;
-  psx_decl_id_t id = psx_scope_graph_lookup(
-      registry->scope_graph, PSX_NAMESPACE_ORDINARY, name, len,
-      psx_scope_graph_capture_lookup_point(registry->scope_graph));
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(registry->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
-             ? declaration->payload
-             : NULL;
 }

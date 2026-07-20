@@ -32,8 +32,6 @@ void ps_register_global_var_in(
     psx_global_registry_t *registry, global_var_t *global);
 char *ps_global_registry_copy_name_in(
     psx_global_registry_t *registry, const char *name, int len);
-global_var_t *ps_find_global_var_in(
-    psx_global_registry_t *registry, char *name, int len);
 void ps_iter_globals_in(
     psx_global_registry_t *registry,
     global_var_visitor_t visitor, void *user);

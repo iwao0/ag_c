@@ -50,9 +50,6 @@ unsigned ps_local_registry_next_scope_seq_in(
     const psx_local_registry_t *registry);
 psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
     const psx_local_registry_t *registry);
-lvar_t *ps_local_registry_find_visible_in(
-    const psx_local_registry_t *registry,
-    char *name, int name_len, psx_local_lookup_point_t point);
 void ps_local_registry_reset_in(psx_local_registry_t *registry);
 void ps_local_registry_reset_translation_unit_in(
     psx_local_registry_t *registry);

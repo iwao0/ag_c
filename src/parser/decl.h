@@ -27,8 +27,6 @@ void ps_decl_enter_scope_in(psx_local_registry_t *registry);
 void ps_decl_leave_scope_in(psx_local_registry_t *registry);
 lvar_t *ps_decl_get_storage_objects_in(
     const psx_local_registry_t *registry);
-lvar_t *ps_decl_find_lvar_in(
-    const psx_local_registry_t *registry, char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset_in(
     const psx_local_registry_t *registry, int offset);
 void ps_decl_replay_lvar_usage_events_in(

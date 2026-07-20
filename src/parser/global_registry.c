@@ -348,19 +348,6 @@ void psx_register_float_lit_in(
   registry->float_literals = lit;
 }
 
-global_var_t *ps_find_global_var_in(
-    psx_global_registry_t *registry, char *name, int len) {
-  if (!registry || !name || len <= 0) return NULL;
-  psx_decl_id_t id = psx_scope_graph_lookup_in_scope(
-      registry->scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
-      PSX_NAMESPACE_ORDINARY, name, len);
-  const psx_scope_declaration_t *declaration =
-      psx_scope_graph_declaration(registry->scope_graph, id);
-  return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
-             ? declaration->payload
-             : NULL;
-}
-
 string_lit_t *ps_find_string_lit_by_label_in(
     psx_global_registry_t *registry, char *label) {
   if (!registry || !label) return NULL;

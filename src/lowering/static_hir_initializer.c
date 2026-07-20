@@ -89,6 +89,21 @@ static int pointer_stride(
 static int type_is_pointer_like(
     const static_hir_eval_t *eval, const psx_hir_node_t *node);
 
+static global_var_t *find_global_named(
+    const static_hir_eval_t *eval, const char *name, int name_len) {
+  if (!eval || !eval->global_registry || !name || name_len <= 0)
+    return NULL;
+  psx_scope_graph_t *scope_graph =
+      ps_global_registry_scope_graph(eval->global_registry);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, name, name_len);
+  return declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT
+             ? declaration->payload
+             : NULL;
+}
+
 static global_var_t *find_global(
     const static_hir_eval_t *eval, const psx_hir_node_t *node) {
   size_t name_length = 0;
@@ -96,8 +111,7 @@ static global_var_t *find_global(
   if (!eval || !eval->global_registry || !name ||
       name_length == 0 || name_length > INT32_MAX)
     return NULL;
-  return ps_find_global_var_in(
-      eval->global_registry, (char *)name, (int)name_length);
+  return find_global_named(eval, name, (int)name_length);
 }
 
 static char *persist_symbol_name(
@@ -106,8 +120,7 @@ static char *persist_symbol_name(
   if (name_len == -1) {
     name_len = (int)strlen(name);
   } else {
-    global_var_t *global = ps_find_global_var_in(
-        eval->global_registry, (char *)name, name_len);
+    global_var_t *global = find_global_named(eval, name, name_len);
     if (global) return ps_gvar_name(global);
   }
   if (name_len <= 0) return NULL;
