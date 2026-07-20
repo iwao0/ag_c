@@ -6,7 +6,6 @@
 #include "type_identity.h"
 
 typedef struct arena_context_t arena_context_t;
-typedef struct ag_target_info_t ag_target_info_t;
 
 typedef enum {
   PSX_LOCAL_DECLARATION_OK = 0,
@@ -35,7 +34,7 @@ typedef struct {
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_layout_table_t *record_layouts;
   psx_type_id_t type_id;
-  const ag_target_info_t *target;
+  const ag_data_layout_t *data_layout;
   const psx_runtime_declarator_application_t *application;
   int has_initializer;
 } psx_local_declaration_resolution_request_t;

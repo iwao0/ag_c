@@ -968,16 +968,15 @@ static int resolve_direct_sizeof_type_name(
       ps_ctx_semantic_type_table_in(context->semantic_context),
       ps_ctx_record_layout_table_in(context->semantic_context),
       factor_base_qual_type.type_id,
-      ag_target_info_data_layout(
-          ps_ctx_target_info(context->semantic_context)));
+      ps_ctx_data_layout(context->semantic_context));
   if (factor_base_type->kind == PSX_TYPE_VOID) factor = 1;
   for (int i = effective_application.shape.count - 1;
        i >= 0; i--) {
     const psx_declarator_op_t *op =
         &effective_application.shape.ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
-      factor = ag_target_info_pointer_size(
-          ps_ctx_target_info(context->semantic_context));
+      factor = ag_data_layout_pointer_size(
+          ps_ctx_data_layout(context->semantic_context));
       binding->runtime_factor_count = 0;
       continue;
     }

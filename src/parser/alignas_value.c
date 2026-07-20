@@ -39,8 +39,8 @@ int psx_parse_alignas_value_in_contexts(
     while (curtok(tokenizer_context)->kind != TK_RPAREN &&
            curtok(tokenizer_context)->kind != TK_EOF) {
       if (curtok(tokenizer_context)->kind == TK_MUL) {
-        val = ag_target_info_pointer_alignment(
-            ps_ctx_target_info(semantic_context));
+        val = ag_data_layout_pointer_alignment(
+            ps_ctx_data_layout(semantic_context));
       }
       set_curtok(
           tokenizer_context, curtok(tokenizer_context)->next);
@@ -77,8 +77,8 @@ int psx_eval_parsed_alignas_value_in_context(
     for (token_t *token = start; token && token != end;
          token = token->next) {
       if (token->kind == TK_MUL) {
-        value = ag_target_info_pointer_alignment(
-            ps_ctx_target_info(semantic_context));
+        value = ag_data_layout_pointer_alignment(
+            ps_ctx_data_layout(semantic_context));
         break;
       }
     }

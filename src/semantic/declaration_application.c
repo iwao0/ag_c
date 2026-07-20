@@ -423,7 +423,7 @@ static int resolve_parsed_alignas_type_name(
   int alignment = ps_type_alignof_id(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
-      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
+      ps_ctx_data_layout(semantic_context));
   return alignment > 0 ? alignment : 1;
 }
 

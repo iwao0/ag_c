@@ -22,8 +22,8 @@ void psx_resolve_local_declaration(
   resolution->status = PSX_LOCAL_DECLARATION_INVALID;
   if (!request || !request->arena_context || !request->semantic_types ||
       !request->record_layouts ||
-      request->type_id == PSX_TYPE_ID_INVALID ||
-      !request->application)
+      !ag_data_layout_is_valid(request->data_layout) ||
+      request->type_id == PSX_TYPE_ID_INVALID || !request->application)
     return;
 
   const psx_type_t *type = psx_semantic_type_table_lookup(
@@ -62,9 +62,9 @@ void psx_resolve_local_declaration(
   psx_qual_type_t element_identity =
       psx_semantic_type_table_pointee_value(
           request->semantic_types, request->type_id);
-  int element_size = ps_type_sizeof_id(
-      request->semantic_types, request->record_layouts,
-      element_identity.type_id, ag_target_info_data_layout(request->target));
+  int element_size =
+      ps_type_sizeof_id(request->semantic_types, request->record_layouts,
+                        element_identity.type_id, request->data_layout);
 
   if (type->kind == PSX_TYPE_ARRAY && leading_array_has_vla) {
     if (element_size <= 0) {
@@ -113,8 +113,7 @@ void psx_resolve_local_declaration(
   }
 
   if (ps_type_sizeof_id(request->semantic_types, request->record_layouts,
-                        request->type_id,
-                        ag_target_info_data_layout(request->target)) <= 0) {
+                        request->type_id, request->data_layout) <= 0) {
     resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }

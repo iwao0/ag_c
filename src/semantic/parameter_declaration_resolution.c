@@ -66,8 +66,8 @@ int psx_resolve_parameter_declaration(
 
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_VLA &&
       has_runtime_inner_dimension(request)) {
-    if (ag_target_info_scalar_size(
-            ps_ctx_target_info(request->type.semantic_context),
+    if (ag_data_layout_scalar_size(
+            ps_ctx_data_layout(request->type.semantic_context),
             AG_TARGET_SCALAR_LONG_LONG) != PSX_VLA_RUNTIME_SLOT_SIZE)
       return 0;
     psx_type_t *slot = ps_type_new_integer_kind_in(

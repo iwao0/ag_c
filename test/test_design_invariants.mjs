@@ -7283,17 +7283,17 @@ if (/parser\/type\.h/.test(
 if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
     /\bps_ctx_scalar_type_size\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_get_type_token_layout_in\s*\(/.test(tagContextSource) ||
-    !/\bag_target_info_scalar_size\s*\(/.test(tagContextSource) ||
-    !/\bag_target_info_scalar_alignment\s*\(/.test(tagContextSource) ||
+    !/\bag_data_layout_scalar_size\s*\(/.test(tagContextSource) ||
+    !/\bag_data_layout_scalar_alignment\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
-    !/\bag_target_info_pointer_alignment\s*\(/.test(
+    !/\bag_data_layout_pointer_alignment\s*\(/.test(
       alignasValueSource,
     ) ||
     !/wants_alignment\s*\?\s*alignment\s*:\s*size/.test(
       enumConstSource,
     )) {
   throw new Error(
-    "parser type-name constants must derive size and alignment independently from TargetSpec",
+    "parser type-name constants must derive size and alignment independently from DataLayout",
   );
 }
 
@@ -7721,7 +7721,13 @@ const semanticContextSource = await readFile(
   "src/parser/semantic_ctx.h",
   "utf8",
 );
-if (!/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.test(
+if (!/\bconst\s+ag_data_layout_t\s*\*\s*ps_ctx_data_layout\s*\(/.test(
+      semanticContextSource,
+    ) ||
+    !/\bps_ctx_data_layout\s*\([^]*?ag_target_info_data_layout\s*\(\s*ps_ctx_target_info\s*\(/.test(
+      parserSemanticContextImplementation,
+    ) ||
+    !/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.test(
       semanticContextSource,
     ) ||
     !/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_get_record_decl_in\s*\(/.test(
@@ -7761,6 +7767,14 @@ for (const path of allSourceFiles) {
   if (/\bps_ctx_type_(?:size|align)of_in\s*\(/.test(source)) {
     throw new Error(
       `${path} must query target layout by canonical TypeId instead of a raw parser type`,
+    );
+  }
+  if (path.startsWith("src/semantic/") &&
+      /\bag_target_info_data_layout\s*\(\s*ps_ctx_target_info\s*\(/.test(
+        source,
+      )) {
+    throw new Error(
+      `${path} must obtain semantic layout through ps_ctx_data_layout`,
     );
   }
 }
@@ -8052,6 +8066,10 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     !/\bconst\s+psx_record_layout_table_t\s*\*\s*record_layouts\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
+    !/\bconst\s+ag_data_layout_t\s*\*\s*data_layout\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    /\bag_target_info_t\b/.test(localDeclarationResolutionSource) ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
@@ -8064,6 +8082,9 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     !/\bps_type_sizeof_id\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
+    /\bag_target_info_data_layout\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
@@ -8071,7 +8092,7 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       localDeclarationResolutionImplementation,
     )) {
   throw new Error(
-    "local declaration resolution must derive layout from TypeId and record layouts",
+    "local declaration resolution must derive layout from TypeId, record layouts, and explicit DataLayout",
   );
 }
 

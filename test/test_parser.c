@@ -12861,6 +12861,10 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(ag_data_layout_equal(
       ag_target_info_data_layout(&host),
       ag_target_info_data_layout(&alternate_host_abi)));
+  ASSERT_TRUE(ag_data_layout_equal(
+      ps_ctx_data_layout(test_semantic_context()),
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session))));
   ag_target_info_t invalid_abi_target = host;
   invalid_abi_target.call_abi = AG_TARGET_CALL_ABI_INVALID;
   ASSERT_TRUE(!ag_target_info_is_valid(&invalid_abi_target));
@@ -15182,12 +15186,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(integer),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
       },
       &resolution);
@@ -15202,12 +15207,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(incomplete),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
       },
       &resolution);
@@ -15217,12 +15223,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(incomplete),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
           .has_initializer = 1,
       },
@@ -15260,12 +15267,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(vla),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
       },
       &resolution);
@@ -15296,12 +15304,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(pointer_to_vla),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
       },
       &resolution);
@@ -15330,12 +15339,13 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .semantic_types = ps_ctx_semantic_type_table_in(
-              test_semantic_context()),
-          .record_layouts = ps_ctx_record_layout_table_in(
-              test_semantic_context()),
+          .semantic_types =
+              ps_ctx_semantic_type_table_in(test_semantic_context()),
+          .record_layouts =
+              ps_ctx_record_layout_table_in(test_semantic_context()),
           .type_id = intern_test_type_id(incomplete_record_array),
-          .target = ag_compilation_session_target(test_suite_session),
+          .data_layout = ag_target_info_data_layout(
+              ag_compilation_session_target(test_suite_session)),
           .application = &application,
           .has_initializer = 1,
       },

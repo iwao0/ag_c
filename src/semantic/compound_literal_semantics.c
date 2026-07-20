@@ -39,8 +39,7 @@ int psx_resolve_compound_literal_qual_type_plan_in(
       ps_type_sizeof_id(ps_ctx_semantic_type_table_in(semantic_context),
                         ps_ctx_record_layout_table_in(semantic_context),
                         object_qual_type.type_id,
-                        ag_target_info_data_layout(
-                            ps_ctx_target_info(semantic_context))) <= 0)
+                        ps_ctx_data_layout(semantic_context)) <= 0)
     return 0;
 
   *plan = (psx_compound_literal_plan_t){

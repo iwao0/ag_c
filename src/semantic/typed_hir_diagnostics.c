@@ -53,7 +53,7 @@ static int canonical_type_size(
   return ps_type_sizeof_id(
       ps_ctx_semantic_type_table_in(walk->semantic_context),
       ps_ctx_record_layout_table_in(walk->semantic_context), qual_type.type_id,
-      ag_target_info_data_layout(ps_ctx_target_info(walk->semantic_context)));
+      ps_ctx_data_layout(walk->semantic_context));
 }
 
 static int type_is_pointer_like(

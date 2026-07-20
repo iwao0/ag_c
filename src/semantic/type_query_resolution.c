@@ -23,19 +23,19 @@
 static int query_type_size(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return ps_type_sizeof_id(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
-      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
+  return ps_type_sizeof_id(ps_ctx_semantic_type_table_in(semantic_context),
+                           ps_ctx_record_layout_table_in(semantic_context),
+                           qual_type.type_id,
+                           ps_ctx_data_layout(semantic_context));
 }
 
 static int query_type_alignment(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return ps_type_alignof_id(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
-      ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
+  return ps_type_alignof_id(ps_ctx_semantic_type_table_in(semantic_context),
+                            ps_ctx_record_layout_table_in(semantic_context),
+                            qual_type.type_id,
+                            ps_ctx_data_layout(semantic_context));
 }
 
 static node_t *sizeof_base(node_t *operand, int *subscript_depth) {
@@ -158,7 +158,6 @@ static void resolve_sizeof_type_name(
     return;
   }
 
-  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
   psx_qual_type_t base_qual_type = ps_ctx_intern_qual_type_in(
       semantic_context, base_type);
   int base_size = query_type_size(semantic_context, base_qual_type);
@@ -187,7 +186,7 @@ static void resolve_sizeof_type_name(
     psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
       runtime_plan->constant_factor =
-          ag_target_info_pointer_size(target);
+          ag_data_layout_pointer_size(ps_ctx_data_layout(semantic_context));
       runtime_plan->runtime_bound_count = 0;
       is_runtime = 0;
       continue;

@@ -162,7 +162,7 @@ static int object_scalar_slots_by_id(
       ps_ctx_semantic_type_table_in(semantic_context);
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(semantic_context);
-  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+  const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
   const psx_type_t *type = psx_semantic_type_table_lookup(
       semantic_types, type_id);
   if (!type) return 0;
@@ -179,8 +179,8 @@ static int object_scalar_slots_by_id(
   psx_record_id_t record_id = ps_type_record_id(type);
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
-  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      record_layouts, record_id, ag_target_info_data_layout(target));
+  const psx_record_layout_t *layout =
+      psx_record_layout_table_lookup(record_layouts, record_id, data_layout);
   if (!record || !layout || record->member_count <= 0 ||
       layout->member_count < record->member_count)
     return 0;
@@ -193,9 +193,8 @@ static int object_scalar_slots_by_id(
               semantic_types, type_id, i).type_id;
       int slots = object_scalar_slots_by_id(
           semantic_context, member_type_id);
-      int bytes =
-          ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
-                            ag_target_info_data_layout(target));
+      int bytes = ps_type_sizeof_id(semantic_types, record_layouts,
+                                    member_type_id, data_layout);
       if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
         max_bytes = bytes;
         max_slots = slots;
@@ -219,9 +218,8 @@ static int object_scalar_slots_by_id(
     if (member_slots <= 0 || slots > INT_MAX - member_slots) return 0;
     slots += member_slots;
     if (member->len <= 0) {
-      int size =
-          ps_type_sizeof_id(semantic_types, record_layouts, member_type_id,
-                            ag_target_info_data_layout(target));
+      int size = ps_type_sizeof_id(semantic_types, record_layouts,
+                                   member_type_id, data_layout);
       int end = member_layout->offset + size;
       if (size > 0 && end > covered_end) covered_end = end;
     }

@@ -286,10 +286,10 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
             set_curtok(ctx, curtok(ctx)->next);
         }
         while (curtok(ctx)->kind == TK_MUL) {
-          const ag_target_info_t *target =
-              ps_ctx_target_info(ctx->semantic_context);
-          size = ag_target_info_pointer_size(target);
-          alignment = ag_target_info_pointer_alignment(target);
+          const ag_data_layout_t *data_layout =
+              ps_ctx_data_layout(ctx->semantic_context);
+          size = ag_data_layout_pointer_size(data_layout);
+          alignment = ag_data_layout_pointer_alignment(data_layout);
           set_curtok(ctx, curtok(ctx)->next);
         }
       }

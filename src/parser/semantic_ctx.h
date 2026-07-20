@@ -19,6 +19,7 @@ typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
+typedef struct ag_data_layout_t ag_data_layout_t;
 typedef struct node_t node_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
@@ -41,6 +42,8 @@ ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context);
 const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context);
+const ag_data_layout_t *
+ps_ctx_data_layout(const psx_semantic_context_t *context);
 psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
     psx_semantic_context_t *context,
     const psx_typed_hir_tree_t *expression);

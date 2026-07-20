@@ -476,6 +476,11 @@ const ag_target_info_t *ps_ctx_target_info(
   return context ? context->target : NULL;
 }
 
+const ag_data_layout_t *
+ps_ctx_data_layout(const psx_semantic_context_t *context) {
+  return ag_target_info_data_layout(ps_ctx_target_info(context));
+}
+
 static psx_type_t *ctx_type_clone_persistent_in(
     psx_semantic_context_t *context, const psx_type_t *src) {
   if (!src) return NULL;
@@ -504,9 +509,7 @@ static const psx_record_member_layout_t *find_tag_member_layout_draft(
            context->aggregate_member_layout_drafts;
        draft; draft = draft->next) {
     if (draft->member == member &&
-        ag_data_layout_equal(
-            &draft->data_layout,
-            ag_target_info_data_layout(context->target)))
+        ag_data_layout_equal(&draft->data_layout, ps_ctx_data_layout(context)))
       return &draft->placement;
   }
   return NULL;
@@ -539,7 +542,7 @@ static int initialize_tag_member_record(
       context, 1, sizeof(*draft));
   if (!draft) return 0;
   draft->member = m;
-  draft->data_layout = *ag_target_info_data_layout(context->target);
+  draft->data_layout = *ps_ctx_data_layout(context);
   draft->placement = *layout;
   draft->next = context->aggregate_member_layout_drafts;
   context->aggregate_member_layout_drafts = draft;
@@ -984,9 +987,8 @@ int ps_ctx_publish_record_layout_in(
     }
   }
   int published = psx_record_layout_table_define(
-      context->record_layouts, record_id,
-      ag_target_info_data_layout(context->target), size, alignment, members,
-      record->member_count);
+      context->record_layouts, record_id, ps_ctx_data_layout(context), size,
+      alignment, members, record->member_count);
   free(source_members);
   free(members);
   return published;
@@ -998,13 +1000,13 @@ int ps_ctx_get_tag_size_in(
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   if (!t) return -1;
   if (kind == TK_ENUM)
-    return ag_target_info_scalar_size(
-        context->target, AG_TARGET_SCALAR_INT);
+    return ag_data_layout_scalar_size(ps_ctx_data_layout(context),
+                                      AG_TARGET_SCALAR_INT);
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       context->record_layouts, t->record_decl->record_id,
-      ag_target_info_data_layout(context->target));
+      ps_ctx_data_layout(context));
   return layout ? layout->size : 0;
 }
 
@@ -1014,13 +1016,13 @@ int ps_ctx_get_tag_align_in(
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   if (!t) return -1;
   if (kind == TK_ENUM)
-    return ag_target_info_scalar_alignment(
-        context->target, AG_TARGET_SCALAR_INT);
+    return ag_data_layout_scalar_alignment(ps_ctx_data_layout(context),
+                                           AG_TARGET_SCALAR_INT);
   if (!t->record_decl || t->record_decl->record_id == PSX_RECORD_ID_INVALID)
     return -1;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       context->record_layouts, t->record_decl->record_id,
-      ag_target_info_data_layout(context->target));
+      ps_ctx_data_layout(context));
   return layout ? layout->alignment : -1;
 }
 
@@ -1146,7 +1148,7 @@ static int register_tag_members_for_owner_in(
     refresh_cached_record_decl(context, tag);
     const psx_record_layout_t *layout = psx_record_layout_table_lookup(
         context->record_layouts, tag->record_decl->record_id,
-        ag_target_info_data_layout(context->target));
+        ps_ctx_data_layout(context));
     if (tag->record_decl->is_complete && layout) {
       int size = layout->size;
       int alignment = layout->alignment;
@@ -1605,13 +1607,13 @@ bool psx_ctx_find_typedef_layout_in(
   if (!t) return false;
   psx_qual_type_t qual_type = typedef_record_decl_qual_type(t);
   if (out_size)
-    *out_size = ps_type_sizeof_id(
-        context->semantic_types, context->record_layouts, qual_type.type_id,
-        ag_target_info_data_layout(ps_ctx_target_info(context)));
+    *out_size =
+        ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+                          qual_type.type_id, ps_ctx_data_layout(context));
   if (out_alignment)
-    *out_alignment = ps_type_alignof_id(
-        context->semantic_types, context->record_layouts, qual_type.type_id,
-        ag_target_info_data_layout(ps_ctx_target_info(context)));
+    *out_alignment =
+        ps_type_alignof_id(context->semantic_types, context->record_layouts,
+                           qual_type.type_id, ps_ctx_data_layout(context));
   return true;
 }
 
@@ -1946,10 +1948,10 @@ bool psx_ctx_get_type_token_layout_in(
     default:
       return false;
   }
-  const ag_target_info_t *target = ps_ctx_target_info(context);
+  const ag_data_layout_t *data_layout = ps_ctx_data_layout(context);
   if (out_size)
-    *out_size = ag_target_info_scalar_size(target, scalar_kind);
+    *out_size = ag_data_layout_scalar_size(data_layout, scalar_kind);
   if (out_alignment)
-    *out_alignment = ag_target_info_scalar_alignment(target, scalar_kind);
+    *out_alignment = ag_data_layout_scalar_alignment(data_layout, scalar_kind);
   return true;
 }

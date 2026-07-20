@@ -18,27 +18,22 @@ int psx_resolve_global_hir_symbol_spec_in(
       ps_ctx_semantic_type_table_in(semantic_context);
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(semantic_context);
-  const ag_target_info_t *target =
-      ps_ctx_target_info(semantic_context);
-  int byte_size =
-      ps_type_sizeof_id(semantic_types, record_layouts, qual_type.type_id,
-                        ag_target_info_data_layout(target));
-  int alignment =
-      ps_type_alignof_id(semantic_types, record_layouts, qual_type.type_id,
-                         ag_target_info_data_layout(target));
+  const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
+  int byte_size = ps_type_sizeof_id(semantic_types, record_layouts,
+                                    qual_type.type_id, data_layout);
+  int alignment = ps_type_alignof_id(semantic_types, record_layouts,
+                                     qual_type.type_id, data_layout);
   if ((byte_size <= 0 || alignment <= 0) &&
       ps_gvar_is_extern_decl(global)) {
     psx_qual_type_t base = psx_semantic_type_table_base(
         semantic_types, qual_type.type_id);
     if (base.type_id != PSX_TYPE_ID_INVALID) {
       if (byte_size <= 0)
-        byte_size =
-            ps_type_sizeof_id(semantic_types, record_layouts, base.type_id,
-                              ag_target_info_data_layout(target));
+        byte_size = ps_type_sizeof_id(semantic_types, record_layouts,
+                                      base.type_id, data_layout);
       if (alignment <= 0)
-        alignment =
-            ps_type_alignof_id(semantic_types, record_layouts, base.type_id,
-                               ag_target_info_data_layout(target));
+        alignment = ps_type_alignof_id(semantic_types, record_layouts,
+                                       base.type_id, data_layout);
     }
   }
   *symbol = (psx_hir_symbol_spec_t){
