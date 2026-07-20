@@ -3,6 +3,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
+#include "type_identity.h"
 
 int psx_resolve_global_hir_symbol_spec_in(
     const psx_semantic_context_t *semantic_context,
@@ -10,19 +11,18 @@ int psx_resolve_global_hir_symbol_spec_in(
     psx_hir_symbol_spec_t *symbol) {
   if (!semantic_context || !global || !symbol) return 0;
   psx_qual_type_t qual_type = ps_gvar_decl_qual_type(global);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID ||
-      !ps_ctx_type_by_id_in(semantic_context, qual_type.type_id))
-    return 0;
-
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
+  if (!psx_semantic_type_table_qual_type_is_valid(
+          semantic_types, qual_type))
+    return 0;
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(semantic_context);
   const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
   int byte_size = psx_type_layout_sizeof(semantic_types, record_layouts,
-                                    qual_type.type_id, data_layout);
+                                         qual_type.type_id, data_layout);
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts,
-                                     qual_type.type_id, data_layout);
+                                          qual_type.type_id, data_layout);
   if ((byte_size <= 0 || alignment <= 0) &&
       ps_gvar_is_extern_decl(global)) {
     psx_qual_type_t base = psx_semantic_type_table_base(
@@ -30,10 +30,10 @@ int psx_resolve_global_hir_symbol_spec_in(
     if (base.type_id != PSX_TYPE_ID_INVALID) {
       if (byte_size <= 0)
         byte_size = psx_type_layout_sizeof(semantic_types, record_layouts,
-                                      base.type_id, data_layout);
+                                           base.type_id, data_layout);
       if (alignment <= 0)
         alignment = psx_type_layout_alignof(semantic_types, record_layouts,
-                                       base.type_id, data_layout);
+                                            base.type_id, data_layout);
     }
   }
   *symbol = (psx_hir_symbol_spec_t){

@@ -6,6 +6,7 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/vla_runtime.h"
 #include "semantic_node_internal.h"
+#include "type_identity.h"
 #include "typed_hir_tree_internal.h"
 #include "vla_runtime_plan.h"
 
@@ -37,9 +38,9 @@ int psx_semantic_node_builder_has_canonical_type(
     const psx_semantic_node_builder_t *builder,
     psx_qual_type_t qual_type) {
   return builder && builder->semantic_context &&
-         qual_type.type_id != PSX_TYPE_ID_INVALID &&
-         ps_ctx_type_by_id_in(
-             builder->semantic_context, qual_type.type_id) != NULL;
+         psx_semantic_type_table_qual_type_is_valid(
+             ps_ctx_semantic_type_table_in(builder->semantic_context),
+             qual_type);
 }
 
 static psx_semantic_node_t *allocate_node(

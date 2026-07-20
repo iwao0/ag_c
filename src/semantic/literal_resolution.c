@@ -7,8 +7,9 @@
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
+#include "resolution_state_access.h"
 #include "resolution_state.h"
-#include "resolved_node_type.h"
+#include "type_identity.h"
 
 static psx_floating_kind_t literal_floating_kind(
     tk_float_kind_t token_kind) {
@@ -33,9 +34,9 @@ static int finish_literal_resolution(
       qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   resolution->qual_type = qual_type;
-  return resolution->qual_type.type_id != PSX_TYPE_ID_INVALID &&
-         ps_ctx_type_by_id_in(
-             semantic_context, resolution->qual_type.type_id) != NULL;
+  return psx_semantic_type_table_qual_type_is_valid(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      resolution->qual_type);
 }
 
 int psx_resolve_number_literal_semantics_in_contexts(

@@ -136,6 +136,10 @@ const resolvedNodeTypeHeader = await readFile(
   "src/semantic/resolved_node_type.h",
   "utf8",
 );
+const resolutionStateAccessHeader = await readFile(
+  "src/semantic/resolution_state_access.h",
+  "utf8",
+);
 const earlyAstSource = await readFile("src/parser/ast.h", "utf8");
 const earlyNodeUtilsSource = await readFile(
   "src/parser/node_utils.c",
@@ -5584,6 +5588,24 @@ if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\
     "case label expressions must remain Syntax while resolved values live in semantic state and Typed HIR",
   );
 }
+if (!/\bps_node_resolution_state\s*\(/.test(
+      resolutionStateAccessHeader,
+    ) ||
+    !/\bpsx_resolution_node_alloc_in\s*\(/.test(
+      resolutionStateAccessHeader,
+    ) ||
+    !/#include\s+"resolution_state_access\.h"/.test(
+      resolvedNodeTypeHeader,
+    ) ||
+    /\bps_node_resolution_state\s*\(/.test(resolvedNodeTypeHeader) ||
+    !/#include\s+"resolution_state_access\.h"/.test(
+      literalResolutionSource,
+    ) ||
+    /resolved_node_type\.h/.test(literalResolutionSource)) {
+  throw new Error(
+    "resolution state access must be independent from parser type compatibility views",
+  );
+}
 const canonicalQualTypeBinder = resolvedNodeTypeSource.match(
   /int\s+ps_node_bind_qual_type\s*\([^]*?\n\}/,
 );
@@ -10573,6 +10595,10 @@ if (!parsedNumberLiteral ||
     !/\bps_node_resolution_state(?:_const)?\s*\(/.test(
       literalResolutionSource,
     ) ||
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      literalResolutionSource,
+    ) ||
+    /\bps_ctx_type_by_id_in\s*\(/.test(literalResolutionSource) ||
     !/\bpsx_string_literal_bind_label\s*\(/.test(
       semanticPassSource,
     ) ||
@@ -10781,7 +10807,11 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
     ) ||
     !/psx_type_layout_alignof\s*\(/.test(
       hirSymbolResolutionSource,
-    )) {
+    ) ||
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      hirSymbolResolutionSource,
+    ) ||
+    /\bps_ctx_type_by_id_in\s*\(/.test(hirSymbolResolutionSource)) {
   throw new Error(
     "identifier decay and global HIR layout must be canonical semantic values shared by direct and compatibility materialization",
   );
@@ -11339,6 +11369,10 @@ if (!/psx_qual_type_t\s+psx_hir_node_qual_type/.test(hirHeader) ||
     !/psx_semantic_node_builder_has_canonical_type\s*\([^]*?qual_type/.test(
       semanticNodeBuilderSource,
     ) ||
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      semanticNodeBuilderSource,
+    ) ||
+    /\bps_ctx_type_by_id_in\s*\(/.test(semanticNodeBuilderSource) ||
     !/PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE/.test(
       semanticNodeBuilderSource,
     ) ||

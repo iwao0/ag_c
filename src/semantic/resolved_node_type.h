@@ -1,17 +1,12 @@
 #ifndef SEMANTIC_RESOLVED_NODE_TYPE_H
 #define SEMANTIC_RESOLVED_NODE_TYPE_H
 
-#include <stddef.h>
-
 #include "../tokenizer/token.h"
 #include "../type_system/type_ids.h"
 #include "../type_system/type_shape.h"
-#include "../parser/node_fwd.h"
+#include "resolution_state_access.h"
 
-typedef struct arena_context_t arena_context_t;
 typedef struct psx_type_t psx_type_t;
-typedef struct psx_node_resolution_state_t psx_node_resolution_state_t;
-typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 typedef struct lvar_t lvar_t;
 
@@ -22,32 +17,12 @@ psx_qual_type_t ps_node_qual_type(
 int ps_node_type_shape(
     const psx_resolution_store_t *store, const node_t *node,
     psx_type_shape_t *shape);
-psx_node_resolution_state_t *ps_node_resolution_state(
-    psx_resolution_store_t *store, node_t *node);
-const psx_node_resolution_state_t *ps_node_resolution_state_const(
-    const psx_resolution_store_t *store, const node_t *node);
-int ps_node_has_resolution_state(
-    const psx_resolution_store_t *store, const node_t *node);
-size_t psx_resolution_node_storage_size(
-    const psx_resolution_store_t *store, const node_t *node);
-void *psx_resolution_node_alloc_in(
-    psx_resolution_store_t *store, arena_context_t *arena_context,
-    size_t node_size);
 void ps_node_bind_type(
     psx_resolution_store_t *store, node_t *node,
     const psx_type_t *type);
 int ps_node_bind_qual_type(
     psx_resolution_store_t *store, node_t *node,
     psx_qual_type_t qual_type);
-int ps_node_prepare_resolution_state_in(
-    psx_resolution_store_t *store, arena_context_t *arena_context,
-    node_t *node);
-int ps_node_prepare_resolution_state_for_size_in(
-    psx_resolution_store_t *store, arena_context_t *arena_context,
-    node_t *node, size_t node_size);
-int ps_node_copy_resolution_state_in(
-    psx_resolution_store_t *store, arena_context_t *arena_context,
-    node_t *destination, const node_t *source);
 void ps_node_clear_type(psx_resolution_store_t *store, node_t *node);
 void ps_node_clear_expr_type_state(
     psx_resolution_store_t *store, node_t *node);
