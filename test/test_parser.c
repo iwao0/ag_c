@@ -30215,6 +30215,21 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_TRUE(tag_id != PSX_DECL_ID_INVALID);
   ASSERT_TRUE(global_id != tag_id);
 
+  char borrowed_name[] = "borrowed";
+  int borrowed_payload = 12;
+  psx_decl_id_t borrowed_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_GLOBAL_OBJECT,
+      borrowed_name, 8, &borrowed_payload);
+  ASSERT_TRUE(borrowed_id != PSX_DECL_ID_INVALID);
+  const psx_scope_declaration_t *borrowed_declaration =
+      psx_scope_graph_declaration(graph, borrowed_id);
+  ASSERT_TRUE(borrowed_declaration != NULL);
+  ASSERT_TRUE(borrowed_declaration->name != borrowed_name);
+  borrowed_name[0] = 'x';
+  ASSERT_EQ(borrowed_id, psx_scope_graph_lookup_in_scope(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, "borrowed", 8));
+
   psx_scope_lookup_point_t before_synthetic =
       psx_scope_graph_capture_lookup_point(graph);
   int synthetic_payload = 8;

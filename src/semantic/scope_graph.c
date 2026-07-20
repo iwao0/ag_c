@@ -21,6 +21,16 @@ struct psx_scope_graph_t {
   psx_scope_id_t current_scope;
 };
 
+static void release_declarations_from(
+    psx_scope_graph_t *graph, size_t first) {
+  if (!graph || first > graph->declaration_count) return;
+  for (size_t index = first; index < graph->declaration_count; index++) {
+    free((void *)graph->declarations[index].name);
+    graph->declarations[index] = (psx_scope_declaration_t){0};
+  }
+  graph->declaration_count = first;
+}
+
 static int ensure_scope_capacity(psx_scope_graph_t *graph, size_t count) {
   if (count <= graph->scope_capacity) return 1;
   size_t capacity = graph->scope_capacity ? graph->scope_capacity * 2 : 16;
@@ -60,6 +70,7 @@ psx_scope_graph_t *psx_scope_graph_create(void) {
 
 void psx_scope_graph_destroy(psx_scope_graph_t *graph) {
   if (!graph) return;
+  release_declarations_from(graph, 0);
   free(graph->declarations);
   free(graph->scopes);
   free(graph);
@@ -67,8 +78,8 @@ void psx_scope_graph_destroy(psx_scope_graph_t *graph) {
 
 void psx_scope_graph_reset(psx_scope_graph_t *graph) {
   if (!graph || !ensure_scope_capacity(graph, 1)) return;
+  release_declarations_from(graph, 0);
   graph->scope_count = 1;
-  graph->declaration_count = 0;
   graph->current_scope = PSX_SCOPE_ID_TRANSLATION_UNIT;
   graph->scopes[0] = (psx_scope_node_t){
       .id = PSX_SCOPE_ID_TRANSLATION_UNIT,
@@ -226,6 +237,13 @@ static psx_decl_id_t declare_at(
       graph->declaration_count >= (size_t)UINT32_MAX - 1 ||
       !ensure_declaration_capacity(graph, graph->declaration_count + 1))
     return PSX_DECL_ID_INVALID;
+  char *owned_name = NULL;
+  if (!is_unnamed_member) {
+    owned_name = malloc((size_t)name_len + 1);
+    if (!owned_name) return PSX_DECL_ID_INVALID;
+    memcpy(owned_name, name, (size_t)name_len);
+    owned_name[name_len] = '\0';
+  }
   psx_decl_id_t id = (psx_decl_id_t)graph->declaration_count + 1;
   graph->declarations[graph->declaration_count++] =
       (psx_scope_declaration_t){
@@ -233,7 +251,7 @@ static psx_decl_id_t declare_at(
           .scope_id = scope_id,
           .name_space = name_space,
           .kind = kind,
-          .name = name,
+          .name = owned_name,
           .name_len = name_len,
           .declaration_order = advances_source_order
                                    ? reserve_declaration_order_at(
@@ -302,6 +320,7 @@ void psx_scope_graph_forget_declaration(
     return;
   psx_scope_declaration_t *declaration =
       &graph->declarations[declaration_id - 1];
+  free((void *)declaration->name);
   declaration->kind = PSX_DECL_UNKNOWN;
   declaration->name = NULL;
   declaration->name_len = 0;
@@ -411,8 +430,8 @@ void psx_scope_graph_checkpoint_commit(
 void psx_scope_graph_checkpoint_rollback(
     psx_scope_graph_t *graph, psx_scope_graph_checkpoint_t *checkpoint) {
   if (!graph || !checkpoint || !checkpoint->active) return;
+  release_declarations_from(graph, checkpoint->declaration_count);
   graph->scope_count = checkpoint->scope_count;
-  graph->declaration_count = checkpoint->declaration_count;
   graph->current_scope = checkpoint->current_scope;
   size_t order_count = checkpoint->declaration_order_count;
   if (order_count > graph->scope_count) order_count = graph->scope_count;
