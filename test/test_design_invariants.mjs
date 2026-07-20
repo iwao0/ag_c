@@ -8521,7 +8521,7 @@ for (const [name, source, requiredLayoutCall] of [
   ["subscript", hirIrBuilder, /\bpsx_type_layout_sizeof\s*\(/],
   ["initializer", explicitDiagnosticInitializerLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
   ["VLA", vlaLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
-  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bpsx_type_layout_sizeof\s*\(/],
+  ["static HIR initializer", staticHirInitializerSource, /\bpsx_type_layout_sizeof\s*\(/],
   ["translation unit data", translationUnitDataLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
 ]) {
   if (!requiredLayoutCall.test(source) ||
@@ -10216,20 +10216,11 @@ if (!staticInitializerResolutionResult ||
     "static initializer semantics must return AST-free classification while lowering consumes only aggregate plans or HIR",
   );
 }
-if (!/#ifdef\s+AGC_STATIC_INITIALIZER_COMPAT[^]*?psx_build_static_aggregate_initializer_plan\s*\([^]*?#endif[^]*?#ifndef\s+AGC_STATIC_INITIALIZER_COMPAT_ONLY[^]*?lower_resolved_static_initializer\s*\(/.test(
-      staticDataInitializerSource,
-    ) ||
-    !/^STATIC_DATA_INITIALIZER_COMPAT_OBJ=\$\(OBJROOT\)\/test\/static_data_initializer_compat\.o$/m.test(
-      makefileSource,
-    ) ||
-    !/\$\(STATIC_DATA_INITIALIZER_COMPAT_OBJ\):\s+src\/lowering\/static_data_initializer\.c[^]*?-DAGC_STATIC_INITIALIZER_COMPAT\s+-DAGC_STATIC_INITIALIZER_COMPAT_ONLY/.test(
-      makefileSource,
-    ) ||
-    !/\$\(TEST_PARSER\):[^\n]*\$\(STATIC_DATA_INITIALIZER_COMPAT_OBJ\)/.test(
-      makefileSource,
+if (/AGC_STATIC_INITIALIZER_COMPAT|static_data_initializer_compat|\bnode_t\b|\bND_[A-Z0-9_]+\b|lower_static_(?:object|scalar_array)_initializer|psx_build_static_aggregate_initializer_plan/.test(
+      `${staticDataInitializerSource}\n${staticDataInitializerHeader}\n${makefileSource}`,
     )) {
   throw new Error(
-    "legacy AST static initializer helpers must compile only into the parser compatibility test object",
+    "legacy AST static initializer lowering must not remain in source or build contracts",
   );
 }
 const initializerLoweringSource = await readFile(
@@ -10265,16 +10256,16 @@ if (/\bmember->offset\b/.test(initializerLoweringSource) ||
       initializerLoweringSource,
     ) ||
     /\baggregate_definition\b/.test(initializerLoweringSource) ||
-    /\bmember->offset\b/.test(staticDataInitializerSource) ||
-    /\baggregate_definition\b/.test(staticDataInitializerSource) ||
+    /\bmember->offset\b/.test(staticHirInitializerSource) ||
+    /\baggregate_definition\b/.test(staticHirInitializerSource) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       initializerLoweringSource,
     ) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
-      staticDataInitializerSource,
+      staticHirInitializerSource,
     ) ||
     !/\brecord_member_offset\s*\(/.test(initializerLoweringSource) ||
-    !/\brecord_member_offset\s*\(/.test(staticDataInitializerSource)) {
+    !/\baggregate_member_layout\s*\(/.test(staticHirInitializerSource)) {
   throw new Error(
     "initializer lowering must resolve member offsets from RecordLayoutTable",
   );
@@ -10309,28 +10300,21 @@ if (!/\bpsx_record_decl_table_define\s*\(/.test(recordDeclTableHeader) ||
     "RecordDeclTable must be an explicit semantic-to-lowering phase input",
   );
 }
-if (/\bpsx_type_t\b/.test(staticDataInitializerSource) ||
-    /\bpsx_type_t\b/.test(staticDataInitializerHeader) ||
-    /\bps_lowering_type_id\s*\(/.test(staticDataInitializerSource) ||
-    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+if (/\bpsx_type_t\b|\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
+      `${staticDataInitializerSource}\n${staticDataInitializerHeader}`,
+    ) ||
+    /\bps_lowering_type_id\s*\(|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_node_get_type\s*\(/.test(
       staticDataInitializerSource,
     ) ||
-    /\bps_node_get_type\s*\(/.test(staticDataInitializerSource) ||
-    /\bpsx_record_member_decl_type\s*\(/.test(
+    !/\bps_gvar_decl_type_id\s*\(/.test(staticDataInitializerSource) ||
+    !/\bps_global_registry_complete_array_qual_type\s*\(/.test(
       staticDataInitializerSource,
     ) ||
-    !/\bps_gvar_decl_qual_type\s*\(/.test(staticDataInitializerSource) ||
-    !/\bpsx_semantic_type_table_describe\s*\(/.test(
-      staticDataInitializerSource,
-    ) ||
-    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
-      staticDataInitializerSource,
-    ) ||
-    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+    !/\bpsx_lower_static_scalar_hir_initializer\s*\(/.test(
       staticDataInitializerSource,
     )) {
   throw new Error(
-    "static initializer lowering must use declaration QualType, TypeShape, RecordId, and DataLayout without compatibility type views",
+    "static initializer phase bridge must consume canonical classification and HIR without compatibility types or AST",
   );
 }
 if (!/\bpsx_qual_type_t\s+object_qual_type\b/.test(
@@ -10366,11 +10350,11 @@ if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*
     !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bps_gvar_decl_qual_type\s*\(\s*ctx->global\s*\)\s*,\s*0\s*,/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/\bpsx_qual_type_t\s+object_type\s*=\s*ps_gvar_decl_qual_type\s*\(\s*global\s*\)\s*;[^]*?\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bobject_type\s*,\s*0\s*,/.test(
-      staticDataInitializerSource,
+    !/\bps_global_registry_bind_decl_qual_type\s*\([^]*?\(psx_qual_type_t\)\{type_id,\s*PSX_TYPE_QUALIFIER_NONE\}[^]*?\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bps_gvar_decl_qual_type\s*\(\s*&temporary\s*\)\s*,\s*0\s*,/.test(
+      staticHirInitializerSource,
     )) {
   throw new Error(
-    "global data and static initializer root layout must consume the symbol declaration QualType",
+    "global data and static HIR initializer root layout must consume canonical declaration type identity",
   );
 }
 if (/\bstorage_alignment\s*\(/.test(translationUnitDataLoweringSource) ||
