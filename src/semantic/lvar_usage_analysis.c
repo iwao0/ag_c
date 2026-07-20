@@ -305,7 +305,8 @@ static void record_preinitialized_locals(
     psx_local_registry_t *local_registry,
     node_function_definition_t *function) {
   if (!function) return;
-  for (lvar_t *var = function->lvars; var; var = ps_lvar_next_all(var)) {
+  for (lvar_t *var = function->lvars; var;
+       var = ps_lvar_next_storage(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
     if (view.is_param) {
       ps_decl_record_lvar_usage_in_region_in(
@@ -323,7 +324,8 @@ static void emit_usage_warnings(
     node_function_definition_t *function,
     const token_t *fallback) {
   if (!function) return;
-  for (lvar_t *var = function->lvars; var; var = ps_lvar_next_all(var)) {
+  for (lvar_t *var = function->lvars; var;
+       var = ps_lvar_next_storage(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
     if (view.suppress_unreachable_warnings) continue;
     if (!view.is_used && !view.is_unevaluated_used &&

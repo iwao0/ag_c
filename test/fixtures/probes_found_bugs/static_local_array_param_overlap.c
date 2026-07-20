@@ -2,7 +2,7 @@
 //
 // 修正前: `void f(int *out) { static int data[5]={..}; int i; ... }` のような関数で、
 // `find_owning_lvar` が offset=0 を検索すると static-local-lowering の alias lvar
-// (offset=0, size=0) が next_all リストの先頭にあるため先に拾われ、本来の仮引数
+// (offset=0, size=0) が storage リストの先頭にあるため先に拾われ、本来の仮引数
 // `out` (size=8) の代わりに alias が「所有者」として 4 バイト alloca を発行していた。
 // 結果、`out` のスロットが 4 バイト幅で確保され、後続ローカル `i` がフレーム上で
 // out と重なり、`i = 2` が `out` の上位 32bit を破壊して `out[i] = data[i]` が

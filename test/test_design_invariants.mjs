@@ -5321,7 +5321,7 @@ if (!/node_t\s*\*body\s*;/.test(functionDefinitionSyntaxHeader) ||
     !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
       vlaLoweringSource,
     ) ||
-    !/registry->all_locals\s*=\s*var/.test(
+    !/registry->storage_objects\s*=\s*var/.test(
       internalStorageRegistration,
     ) ||
     !/registry->lvars_by_offset\[bucket\]\s*=\s*var/.test(
@@ -8911,6 +8911,8 @@ if (!lvarStruct ||
 if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
       lvarStruct[1],
     ) ||
+    /\b(?:next_all|next_binding)\b/.test(lvarStruct[1]) ||
+    !/\blvar_t\s*\*next_storage\s*;/.test(lvarStruct[1]) ||
     /\blvar_t\s*\*next\s*;/.test(lvarStruct[1]) ||
     /\bglobal_var_t\s*\*next\s*;/.test(gvarStruct[1]) ||
     /\bdeclaration_id\b/.test(gvarStruct[1]) ||
@@ -8922,6 +8924,8 @@ if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
       `${localRegistrySource}\n${globalRegistrySource}`,
     ) ||
     /\bglobal_var_t\s*\*global_vars\s*;/.test(globalRegistrySource) ||
+    /\b(?:all_locals|all_bindings)\b/.test(localRegistrySource) ||
+    !/\blvar_t\s*\*storage_objects\s*;/.test(localRegistrySource) ||
     !/ps_iter_globals_in\s*\([^]*?psx_scope_graph_declaration_at\s*\([^]*?PSX_DECL_GLOBAL_OBJECT/.test(
       globalRegistrySource,
     ) ||

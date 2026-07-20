@@ -159,7 +159,7 @@ static int resolve_function_definition_header(
   resolution->signature_qual_type = signature;
   resolution->parameters = resolved_parameters;
   resolution->parameter_count = applied.nargs;
-  resolution->locals = ps_decl_get_locals_in(local_registry);
+  resolution->locals = ps_decl_get_storage_objects_in(local_registry);
   resolution->is_static = definition->is_static;
   resolution->is_variadic = function_shape.is_variadic_function;
   resolution->has_implicit_int_return =

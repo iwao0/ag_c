@@ -3551,7 +3551,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_node_get_type(sizeof_local_query->operand) == NULL);
   ps_decl_replay_lvar_usage_events_in(
       test_local_registry(),
-      ps_decl_get_locals_in(test_local_registry()));
+      ps_decl_get_storage_objects_in(test_local_registry()));
   ASSERT_TRUE(!ps_lvar_registry_view(direct_unevaluated).is_used);
   hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);
@@ -3629,7 +3629,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(ps_node_get_type(sizeof_vla_bound) == NULL);
   ps_decl_replay_lvar_usage_events_in(
       test_local_registry(),
-      ps_decl_get_locals_in(test_local_registry()));
+      ps_decl_get_storage_objects_in(test_local_registry()));
   ASSERT_TRUE(ps_lvar_registry_view(direct_size_bound).is_used);
   hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);
@@ -4890,7 +4890,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
 
   ps_decl_replay_lvar_usage_events_in(
       test_local_registry(),
-      ps_decl_get_locals_in(test_local_registry()));
+      ps_decl_get_storage_objects_in(test_local_registry()));
   ASSERT_TRUE(ps_lvar_registry_view(direct_local).is_used);
   ASSERT_TRUE(!ps_lvar_registry_view(direct_generic_control).is_used);
   ASSERT_TRUE(!ps_lvar_registry_view(
@@ -8181,7 +8181,7 @@ static void assert_canonical_type_signature(const psx_type_t *type,
 static lvar_t *find_func_lvar(
     node_function_definition_t *fn, const char *name) {
   int len = (int)strlen(name);
-  for (lvar_t *v = fn ? fn->lvars : NULL; v; v = v->next_all) {
+  for (lvar_t *v = fn ? fn->lvars : NULL; v; v = v->next_storage) {
     if (v->len == len && strncmp(v->name, name, (size_t)len) == 0) return v;
   }
   return NULL;
@@ -10511,7 +10511,7 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
 
   node_function_definition_t *fn = as_function_definition(program[0]);
   lvar_t *temp = NULL;
-  for (lvar_t *var = fn->lvars; var; var = var->next_all) {
+  for (lvar_t *var = fn->lvars; var; var = var->next_storage) {
     if (var->len >= 17 &&
         strncmp(var->name, "__aggregate_cast_", 17) == 0) {
       temp = var;
@@ -29140,7 +29140,7 @@ static void test_semantic_context_isolation() {
           second_lowering_context, test_compilation_options(),
           &parsed_function_syntax));
   parsed_function.lvars =
-      ps_decl_get_locals_in(second_locals);
+      ps_decl_get_storage_objects_in(second_locals);
   parsed_function.base.rhs = parsed_function_syntax;
   ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
   psx_validate_control_flow(

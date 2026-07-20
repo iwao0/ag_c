@@ -30,8 +30,9 @@ struct lvar_usage_event_t {
 struct psx_local_registry_t {
   ag_diagnostic_context_t *diagnostic_context;
   const psx_semantic_type_table_t *semantic_types;
-  lvar_t *all_locals;
-  lvar_t *all_bindings;
+  /* Name lookup and declaration identity live in scope_graph; this list is
+   * only storage and analysis order. */
+  lvar_t *storage_objects;
   psx_scope_graph_t *scope_graph;
   lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
@@ -44,8 +45,7 @@ struct psx_local_registry_t {
 
 typedef struct {
   psx_local_registry_t *registry;
-  lvar_t *all_locals;
-  lvar_t *all_bindings;
+  lvar_t *storage_objects;
   psx_scope_graph_checkpoint_t scope_graph_checkpoint;
   lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
@@ -59,8 +59,8 @@ static int local_transaction_contains_original(
     const psx_local_registry_transaction_t *transaction,
     const lvar_t *var) {
   if (!transaction || !var) return 0;
-  for (const lvar_t *current = transaction->all_locals;
-       current; current = current->next_all) {
+  for (const lvar_t *current = transaction->storage_objects;
+       current; current = current->next_storage) {
     if (current == var) return 1;
   }
   return 0;
@@ -111,8 +111,7 @@ int psx_local_registry_checkpoint_begin(
       calloc(1, sizeof(*transaction));
   if (!transaction) return 0;
   transaction->registry = registry;
-  transaction->all_locals = registry->all_locals;
-  transaction->all_bindings = registry->all_bindings;
+  transaction->storage_objects = registry->storage_objects;
   if (!psx_scope_graph_checkpoint_begin(
           registry->scope_graph, &transaction->scope_graph_checkpoint)) {
     free(transaction);
@@ -167,8 +166,7 @@ void psx_local_registry_checkpoint_rollback(
   if (!transaction) return;
   if (transaction->usage_events_tail)
     transaction->usage_events_tail->next = NULL;
-  registry->all_locals = transaction->all_locals;
-  registry->all_bindings = transaction->all_bindings;
+  registry->storage_objects = transaction->storage_objects;
   memcpy(registry->lvars_by_offset, transaction->lvars_by_offset,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = transaction->usage_events_head;
@@ -288,10 +286,8 @@ lvar_t *ps_local_registry_find_visible_in(
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var) {
   if (!registry || !var) return;
-  var->next_all = registry->all_locals;
-  var->next_binding = registry->all_bindings;
-  registry->all_locals = var;
-  registry->all_bindings = var;
+  var->next_storage = registry->storage_objects;
+  registry->storage_objects = var;
   index_add(registry, var);
 }
 
@@ -368,8 +364,8 @@ lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
   var->align_bytes = alignment;
   var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = decl_qual_type;
-  var->next_all = registry->all_locals;
-  registry->all_locals = var;
+  var->next_storage = registry->storage_objects;
+  registry->storage_objects = var;
   unsigned bucket = offset_hash(offset);
   var->next_offhash = registry->lvars_by_offset[bucket];
   registry->lvars_by_offset[bucket] = var;
@@ -399,8 +395,6 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = qual_type;
   var->is_param = 1;
-  var->next_binding = registry->all_bindings;
-  registry->all_bindings = var;
   return var;
 }
 
@@ -555,12 +549,12 @@ void ps_local_registry_set_vla_param_inner_dims(
   var->vla_runtime.param_inner_dim_count = inner_dim_count;
 }
 
-lvar_t *ps_lvar_next_all(const lvar_t *var) {
-  return var ? var->next_all : NULL;
+lvar_t *ps_lvar_next_storage(const lvar_t *var) {
+  return var ? var->next_storage : NULL;
 }
 
 lvar_t *ps_lvar_find_owner(lvar_t *head, int offset) {
-  for (lvar_t *var = head; var; var = var->next_all) {
+  for (lvar_t *var = head; var; var = var->next_storage) {
     if (var->is_static_local) continue;
     int size = var->size > 0 ? var->size : 1;
     if (var->offset <= offset && offset < var->offset + size) return var;
@@ -602,8 +596,8 @@ static void clear_local_registry_state(psx_local_registry_t *registry) {
   if (!registry) return;
   const psx_local_registry_transaction_t *transaction =
       registry->active_transaction;
-  for (lvar_t *var = registry->all_locals;
-       var; var = var->next_all) {
+  for (lvar_t *var = registry->storage_objects;
+       var; var = var->next_storage) {
     if (local_transaction_contains_original(transaction, var))
       continue;
     free(var->vla_runtime.param_inner_dim_consts);
@@ -612,8 +606,7 @@ static void clear_local_registry_state(psx_local_registry_t *registry) {
     var->vla_runtime.param_inner_dim_src_offsets = NULL;
     var->vla_runtime.param_inner_dim_count = 0;
   }
-  registry->all_locals = NULL;
-  registry->all_bindings = NULL;
+  registry->storage_objects = NULL;
   memset(registry->lvars_by_offset, 0,
          sizeof(registry->lvars_by_offset));
   registry->usage_events_head = NULL;
@@ -719,8 +712,9 @@ void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
   psx_scope_graph_leave_scope(registry->scope_graph);
 }
 
-lvar_t *ps_decl_get_locals_in(const psx_local_registry_t *registry) {
-  return registry ? registry->all_locals : NULL;
+lvar_t *ps_decl_get_storage_objects_in(
+    const psx_local_registry_t *registry) {
+  return registry ? registry->storage_objects : NULL;
 }
 
 psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region_in(
@@ -767,9 +761,10 @@ void ps_decl_record_lvar_usage_in_region_in(
 }
 
 void ps_decl_replay_lvar_usage_events_in(
-    psx_local_registry_t *registry, lvar_t *all) {
+    psx_local_registry_t *registry, lvar_t *storage_objects) {
   if (!registry) return;
-  for (lvar_t *var = all; var; var = var->next_all) {
+  for (lvar_t *var = storage_objects;
+       var; var = var->next_storage) {
     var->is_used = 0;
     var->is_unevaluated_used = 0;
     var->is_address_taken = 0;

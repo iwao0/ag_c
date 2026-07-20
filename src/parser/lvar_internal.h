@@ -5,8 +5,7 @@
 #include "vla_runtime.h"
 
 struct lvar_t {
-  lvar_t *next_all;
-  lvar_t *next_binding;
+  lvar_t *next_storage;
   lvar_t *next_offhash;
   char *name;
   int len;
