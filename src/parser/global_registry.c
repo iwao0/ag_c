@@ -21,7 +21,6 @@ typedef struct psx_global_registry_global_snapshot_t {
 
 typedef struct {
   psx_global_registry_t *registry;
-  global_var_t *global_vars;
   string_lit_t *string_literals;
   float_lit_t *float_literals;
   int next_string_literal_id;
@@ -36,7 +35,6 @@ struct psx_global_registry_t {
   psx_scope_graph_t *scope_graph;
   string_lit_t *string_literals;
   float_lit_t *float_literals;
-  global_var_t *global_vars;
   int next_string_literal_id;
   int next_float_literal_id;
   psx_global_registry_name_t *owned_names;
@@ -104,7 +102,6 @@ int psx_global_registry_checkpoint_begin(
       calloc(1, sizeof(*transaction));
   if (!transaction) return 0;
   transaction->registry = registry;
-  transaction->global_vars = registry->global_vars;
   transaction->string_literals = registry->string_literals;
   transaction->float_literals = registry->float_literals;
   transaction->next_string_literal_id = registry->next_string_literal_id;
@@ -130,9 +127,16 @@ static int transaction_contains_original_global(
     const psx_global_registry_transaction_t *transaction,
     const global_var_t *global) {
   if (!transaction || !global) return 0;
-  for (const global_var_t *current = transaction->global_vars;
-       current; current = current->next) {
-    if (current == global) return 1;
+  const psx_scope_graph_t *scope_graph =
+      transaction->registry->scope_graph;
+  size_t declaration_count =
+      transaction->scope_graph_checkpoint.declaration_count;
+  for (size_t index = 0; index < declaration_count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, index);
+    if (declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT &&
+        declaration->payload == global)
+      return 1;
   }
   return 0;
 }
@@ -193,7 +197,6 @@ void psx_global_registry_checkpoint_rollback(
            transaction->global_snapshots;
        snapshot; snapshot = snapshot->next)
     *snapshot->global = snapshot->value;
-  registry->global_vars = transaction->global_vars;
   registry->string_literals = transaction->string_literals;
   registry->float_literals = transaction->float_literals;
   registry->next_string_literal_id = transaction->next_string_literal_id;
@@ -316,8 +319,6 @@ void ps_register_global_var_in(
           gv->name, gv->name_len, gv);
     }
   }
-  gv->next = registry->global_vars;
-  registry->global_vars = gv;
 }
 
 char *ps_global_registry_copy_name_in(
@@ -384,8 +385,14 @@ void ps_iter_globals_in(
     psx_global_registry_t *registry,
     global_var_visitor_t fn, void *user) {
   if (!registry || !fn) return;
-  for (global_var_t *gv = registry->global_vars; gv; gv = gv->next)
-    fn(gv, user);
+  size_t count = psx_scope_graph_declaration_count(
+      registry->scope_graph);
+  while (count > 0) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(registry->scope_graph, --count);
+    if (declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT)
+      fn(declaration->payload, user);
+  }
 }
 
 bool ps_iter_string_literals_in(
@@ -410,7 +417,6 @@ void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
   free_owned_names_until(registry, NULL);
-  registry->global_vars = NULL;
   registry->string_literals = NULL;
   registry->float_literals = NULL;
   registry->next_string_literal_id = 0;
@@ -420,6 +426,12 @@ void ps_global_registry_reset_translation_unit_in(
 void ps_global_registry_reset_diag_state_in(
     psx_global_registry_t *registry) {
   if (!registry) return;
-  for (global_var_t *gv = registry->global_vars; gv; gv = gv->next)
-    gv->has_init = 0;
+  size_t count = psx_scope_graph_declaration_count(
+      registry->scope_graph);
+  for (size_t index = 0; index < count; index++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(registry->scope_graph, index);
+    if (declaration && declaration->kind == PSX_DECL_GLOBAL_OBJECT)
+      ((global_var_t *)declaration->payload)->has_init = 0;
+  }
 }

@@ -1,9 +1,9 @@
 #ifndef SYMTAB_H
 #define SYMTAB_H
 
-/* parser のシンボルテーブル定義 (Phase C1 リファクタリング)。
- * グローバル変数 / 文字列リテラル / 浮動小数リテラルの連結リスト型と
- * その extern グローバルを集約。AST node 定義は ast.h に残す。 */
+/* parser のシンボル payload とリテラル表の定義。
+ * global_var_t の identity と列挙順は scope graph が所有する。
+ * AST node 定義は ast.h に残す。 */
 
 #include "../tokenizer/token.h"
 #include "gvar_public.h"
@@ -12,16 +12,12 @@
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 
-// グローバル変数テーブル（連結リスト）
+// グローバル変数の宣言 payload
 //
 // フィールドはアライメント降順 (8→4→2→1 バイト) に寄せ、真偽フラグをビットフィールドに
 // 集約してパディングを抑えている。
-// 検索ホットパスである try_build_global_var_node の線形走査は先頭の next/name/name_len
-// のみ読むので、それらを最初のキャッシュラインに置いている。並べ替えはレイアウトのみの
-// 変更で、全確保箇所が calloc + フィールド代入のため挙動には影響しない。
 struct global_var_t {
   // --- 8 バイト (ポインタ / long long / double) ---
-  global_var_t *next;
   char *name;
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   // 配列の `{...}` 初期化子: flat 化した値列を保持する。

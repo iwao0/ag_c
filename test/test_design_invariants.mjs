@@ -8912,6 +8912,7 @@ if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
       lvarStruct[1],
     ) ||
     /\blvar_t\s*\*next\s*;/.test(lvarStruct[1]) ||
+    /\bglobal_var_t\s*\*next\s*;/.test(gvarStruct[1]) ||
     /\bdeclaration_id\b/.test(gvarStruct[1]) ||
     /\b(?:scope_seq|declaration_id)\b/.test(lvarPublicSource) ||
     !/has_local_object_in_current_scope\s*\([^]*?psx_scope_graph_lookup_declaration_in_scope\s*\([^]*?PSX_NAMESPACE_ORDINARY/.test(
@@ -8919,6 +8920,13 @@ if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
     ) ||
     /previous->scope_seq|var->(?:scope_seq|declaration_seq|declaration_id)|gv->declaration_id/.test(
       `${localRegistrySource}\n${globalRegistrySource}`,
+    ) ||
+    /\bglobal_var_t\s*\*global_vars\s*;/.test(globalRegistrySource) ||
+    !/ps_iter_globals_in\s*\([^]*?psx_scope_graph_declaration_at\s*\([^]*?PSX_DECL_GLOBAL_OBJECT/.test(
+      globalRegistrySource,
+    ) ||
+    !/transaction_contains_original_global\s*\([^]*?scope_graph_checkpoint\.declaration_count[^]*?psx_scope_graph_declaration_at\s*\(/.test(
+      globalRegistrySource,
     ) ||
     /\b(?:LVAR_SCOPE_STACK_MAX|lvar_scope_stack|lvar_scope_depth)\b|\blvar_t\s*\*locals\s*;/.test(
       localRegistrySource,
