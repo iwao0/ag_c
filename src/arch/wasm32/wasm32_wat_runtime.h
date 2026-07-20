@@ -3,6 +3,7 @@
 
 #include "../../codegen_emit.h"
 #include "../../ir/ir.h"
+#include "wasm32_machine_function.h"
 
 typedef struct {
   char *name;
@@ -23,6 +24,29 @@ typedef struct {
 } wasm_function_symbol_t;
 
 typedef struct wasm32_ir_context_t wasm32_ir_context_t;
+
+typedef enum {
+  WASM32_WAT_RUNTIME_ARGUMENT_SOURCE = 0,
+  WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64,
+} wasm32_wat_runtime_argument_kind_t;
+
+typedef struct {
+  wasm32_wat_runtime_argument_kind_t kind;
+  int source_index;
+  ir_type_t value_type;
+} wasm32_wat_runtime_argument_t;
+
+typedef struct {
+  wasm32_wat_runtime_argument_t *arguments;
+  int argument_count;
+} wasm32_wat_runtime_call_plan_t;
+
+int wasm32_wat_runtime_plan_call(
+    const char *name, int name_len, int is_undefined,
+    const wasm32_machine_call_t *call,
+    wasm32_wat_runtime_call_plan_t *plan);
+void wasm32_wat_runtime_call_plan_dispose(
+    wasm32_wat_runtime_call_plan_t *plan);
 
 ag_codegen_emit_context_t *wasm32_ir_emit_context(
     wasm32_ir_context_t *context);

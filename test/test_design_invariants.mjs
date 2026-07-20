@@ -13683,6 +13683,30 @@ if (!/void\s+wasm32_wat_emit_minimal_libc_stubs\s*\(\s*wasm32_ir_context_t\s*\*c
   );
 }
 
+const wasmWatCallSerializer = wasmWatWriterSource.match(
+  /static\s+void\s+emit_call\s*\([^]*?\)\s*\{([^]*?)\n\}/,
+);
+if (!wasmWatCallSerializer ||
+    !/int\s+wasm32_wat_runtime_plan_call\s*\(/.test(
+      wasmWatRuntimeSource,
+    ) ||
+    !/wasm32_wat_runtime_call_plan_dispose\s*\(/.test(
+      wasmWatRuntimeSource,
+    ) ||
+    !/wasm32_wat_runtime_plan_call\s*\(/.test(
+      wasmWatCallSerializer[1],
+    ) ||
+    !/wasm32_wat_runtime_call_plan_dispose\s*\(/.test(
+      wasmWatCallSerializer[1],
+    ) ||
+    /"(?:printf|fprintf|snprintf|swprintf|sscanf|swscanf|scalbln|scalblnf|scalblnl)"/.test(
+      wasmWatCallSerializer[1],
+    )) {
+  throw new Error(
+    "Wasm WAT writer must serialize runtime bridge call plans without selecting symbol-specific argument ABI",
+  );
+}
+
 if (!/result_source_size/.test(wasmMachineFunctionSource) ||
     !/direct_result_type/.test(wasmMachineFunctionSource) ||
     !/machine\.result_copy/.test(wasmWatWriterSource) ||

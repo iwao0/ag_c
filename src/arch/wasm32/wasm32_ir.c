@@ -1276,79 +1276,32 @@ static void emit_call(
   } else {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
   }
-  int is_minimal_snprintf =
-      i->sym_len == 8 && memcmp(i->sym, "snprintf", 8) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_swprintf =
-      i->sym_len == 8 && memcmp(i->sym, "swprintf", 8) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_printf =
-      i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_fprintf =
-      i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_sscanf =
-      i->sym_len == 6 && memcmp(i->sym, "sscanf", 6) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_swscanf =
-      i->sym_len == 7 && memcmp(i->sym, "swscanf", 7) == 0 &&
-      !has_defined_function(context, i->sym, i->sym_len);
-  int is_minimal_fixed2_format = is_minimal_snprintf || is_minimal_swprintf;
-  int is_minimal_output_count = is_minimal_printf || is_minimal_fprintf;
-  int planned_argument_count =
-      call_signature->nparams - (returns_hidden ? 1 : 0);
-  int call_nargs = is_minimal_fixed2_format ? 5 :
-                   (is_minimal_printf ? 3 :
-                    (is_minimal_fprintf ? 4 :
-                     ((is_minimal_sscanf || is_minimal_swscanf) ? 4 :
-                      planned_argument_count)));
-  for (int a = 0; a < call_nargs; a++) {
-    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
-        a >= argument_count) {
+  wasm32_wat_runtime_call_plan_t runtime_plan;
+  if (!wasm32_wat_runtime_plan_call(
+          i->sym, i->sym_len,
+          !has_defined_function(context, i->sym, i->sym_len),
+          call, &runtime_plan))
+    wasm_unsupported_msg(
+        context, "failed to plan Wasm runtime call arguments");
+  for (int index = 0; index < runtime_plan.argument_count; index++) {
+    const wasm32_wat_runtime_argument_t *argument =
+        &runtime_plan.arguments[index];
+    if (argument->kind == WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64) {
       wasm_cg_emitf(" (i64.const 0)");
       continue;
     }
-    ir_type_t arg_ty = a < planned_argument_count
-                           ? call_signature->params[
-                                 a + (returns_hidden ? 1 : 0)]
-                           : arguments[a].value_type;
-    ir_type_t abi_arg_ty = arg_ty;
-    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
-        a >= call->fixed_argument_count && is_fp_type(arg_ty)) {
-      wasm_cg_emitf(" (i64.const 0)");
-      continue;
-    }
-    int minimal_stub_ptr_arg =
-        (i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 && a == 0) ||
-        (i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 && (a == 0 || a == 1)) ||
-        (i->sym_len == 4 && memcmp(i->sym, "puts", 4) == 0 && a == 0) ||
-        (i->sym_len == 6 && memcmp(i->sym, "strlen", 6) == 0 && a == 0) ||
-        (is_minimal_fixed2_format && (a == 0 || a == 2)) ||
-        (is_minimal_sscanf && (a == 0 || a == 1 || a >= 2)) ||
-        (is_minimal_swscanf && (a == 0 || a == 1 || a >= 2));
-    int pointer_arg = abi_arg_ty == IR_TY_PTR || arg_ty == IR_TY_PTR;
-    if (minimal_stub_ptr_arg ||
-        ((is_minimal_sscanf || is_minimal_swscanf) && pointer_arg)) {
-      arg_ty = IR_TY_PTR;
-    } else if ((is_minimal_fixed2_format || is_minimal_output_count) &&
-               a >= call->fixed_argument_count) {
-      arg_ty = IR_TY_I64;
-    } else if (pointer_arg) {
-      arg_ty = IR_TY_PTR;
-    } else if (is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) {
-      arg_ty = IR_TY_I64;
-    } else if (a == 1 &&
-               ((i->sym_len == 7 && memcmp(i->sym, "scalbln", 7) == 0) ||
-                (i->sym_len == 8 && (memcmp(i->sym, "scalblnf", 8) == 0 ||
-                                      memcmp(i->sym, "scalblnl", 8) == 0)))) {
-      arg_ty = IR_TY_I64;
-    } else if (abi_arg_ty == IR_TY_I64 || arg_ty == IR_TY_I64) {
-      arg_ty = IR_TY_I64;
+    if (argument->source_index < 0 ||
+        argument->source_index >= argument_count) {
+      wasm32_wat_runtime_call_plan_dispose(&runtime_plan);
+      wasm_unsupported_msg(
+          context, "invalid Wasm runtime call argument plan");
     }
     wasm_cg_emitf(" ");
-    emit_abi_argument_expr_as(ctx, &arguments[a], arg_ty);
+    emit_abi_argument_expr_as(
+        ctx, &arguments[argument->source_index],
+        argument->value_type);
   }
+  wasm32_wat_runtime_call_plan_dispose(&runtime_plan);
   wasm_cg_emitf(")");
   if ((!returns_hidden &&
        !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) ||

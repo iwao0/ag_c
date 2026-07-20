@@ -67,6 +67,122 @@ static void wasm_emitf_impl(
 #define wasm32_wat_require_function_table() \
   wasm32_wat_require_function_table(context)
 
+static int runtime_call_name_eq(
+    const char *name, int name_len, const char *expected) {
+  int expected_len = (int)strlen(expected);
+  return name && name_len == expected_len &&
+         memcmp(name, expected, (size_t)expected_len) == 0;
+}
+
+void wasm32_wat_runtime_call_plan_dispose(
+    wasm32_wat_runtime_call_plan_t *plan) {
+  if (!plan) return;
+  free(plan->arguments);
+  *plan = (wasm32_wat_runtime_call_plan_t){0};
+}
+
+int wasm32_wat_runtime_plan_call(
+    const char *name, int name_len, int is_undefined,
+    const wasm32_machine_call_t *call,
+    wasm32_wat_runtime_call_plan_t *plan) {
+  if (plan) *plan = (wasm32_wat_runtime_call_plan_t){0};
+  if (!name || name_len <= 0 || !call || !plan) return 0;
+  const wasm32_machine_signature_t *signature = &call->signature;
+  int hidden_result = signature->has_hidden_result ? 1 : 0;
+  int planned_count = signature->nparams - hidden_result;
+  if (planned_count < 0 ||
+      (planned_count > 0 && !signature->params) ||
+      call->argument_count < 0 ||
+      (call->argument_count > 0 && !call->arguments))
+    return 0;
+
+  int minimal_fixed2 = is_undefined &&
+      (runtime_call_name_eq(name, name_len, "snprintf") ||
+       runtime_call_name_eq(name, name_len, "swprintf"));
+  int minimal_printf = is_undefined &&
+      runtime_call_name_eq(name, name_len, "printf");
+  int minimal_fprintf = is_undefined &&
+      runtime_call_name_eq(name, name_len, "fprintf");
+  int minimal_sscanf = is_undefined &&
+      runtime_call_name_eq(name, name_len, "sscanf");
+  int minimal_swscanf = is_undefined &&
+      runtime_call_name_eq(name, name_len, "swscanf");
+  int minimal_output = minimal_printf || minimal_fprintf;
+  int special_runtime = minimal_fixed2 || minimal_output ||
+                        minimal_sscanf || minimal_swscanf;
+  int argument_count = minimal_fixed2 ? 5 :
+                       (minimal_printf ? 3 :
+                        (minimal_fprintf ? 4 :
+                         ((minimal_sscanf || minimal_swscanf)
+                              ? 4 : planned_count)));
+  if (argument_count > 0) {
+    plan->arguments = calloc(
+        (size_t)argument_count, sizeof(*plan->arguments));
+    if (!plan->arguments) return 0;
+  }
+  plan->argument_count = argument_count;
+
+  for (int index = 0; index < argument_count; index++) {
+    wasm32_wat_runtime_argument_t *argument =
+        &plan->arguments[index];
+    argument->source_index = index;
+    if (special_runtime && index >= call->argument_count) {
+      argument->kind = WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64;
+      argument->value_type = IR_TY_I64;
+      continue;
+    }
+    if (index >= call->argument_count) goto fail;
+    ir_type_t value_type =
+        index < planned_count
+            ? signature->params[index + hidden_result]
+            : call->arguments[index].value_type;
+    ir_type_t abi_type = value_type;
+    if (special_runtime &&
+        index >= call->fixed_argument_count &&
+        (value_type == IR_TY_F32 || value_type == IR_TY_F64)) {
+      argument->kind = WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64;
+      argument->value_type = IR_TY_I64;
+      continue;
+    }
+    int pointer_argument =
+        (runtime_call_name_eq(name, name_len, "printf") && index == 0) ||
+        (runtime_call_name_eq(name, name_len, "fprintf") &&
+         (index == 0 || index == 1)) ||
+        (runtime_call_name_eq(name, name_len, "puts") && index == 0) ||
+        (runtime_call_name_eq(name, name_len, "strlen") && index == 0) ||
+        (minimal_fixed2 && (index == 0 || index == 2)) ||
+        (minimal_sscanf && (index == 0 || index == 1 || index >= 2)) ||
+        (minimal_swscanf && (index == 0 || index == 1 || index >= 2));
+    int canonical_pointer =
+        abi_type == IR_TY_PTR || value_type == IR_TY_PTR;
+    if (pointer_argument ||
+        ((minimal_sscanf || minimal_swscanf) && canonical_pointer)) {
+      value_type = IR_TY_PTR;
+    } else if ((minimal_fixed2 || minimal_output) &&
+               index >= call->fixed_argument_count) {
+      value_type = IR_TY_I64;
+    } else if (canonical_pointer) {
+      value_type = IR_TY_PTR;
+    } else if (special_runtime) {
+      value_type = IR_TY_I64;
+    } else if (index == 1 &&
+               (runtime_call_name_eq(name, name_len, "scalbln") ||
+                runtime_call_name_eq(name, name_len, "scalblnf") ||
+                runtime_call_name_eq(name, name_len, "scalblnl"))) {
+      value_type = IR_TY_I64;
+    } else if (abi_type == IR_TY_I64 || value_type == IR_TY_I64) {
+      value_type = IR_TY_I64;
+    }
+    argument->kind = WASM32_WAT_RUNTIME_ARGUMENT_SOURCE;
+    argument->value_type = value_type;
+  }
+  return 1;
+
+fail:
+  wasm32_wat_runtime_call_plan_dispose(plan);
+  return 0;
+}
+
 static void emit_minimal_static_data_if_needed(
     wasm32_ir_context_t *context) {
   if (has_undefined_function("setlocale", 9) || has_undefined_function("localeconv", 10)) {
