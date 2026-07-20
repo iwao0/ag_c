@@ -447,6 +447,21 @@ void wasm32_machine_copy_plan_dispose(
   memset(plan, 0, sizeof(*plan));
 }
 
+int wasm32_machine_alignment_plan_build(
+    int requested_alignment, int default_alignment,
+    wasm32_machine_alignment_t *plan) {
+  if (plan) memset(plan, 0, sizeof(*plan));
+  if (!plan || default_alignment <= 0) return 0;
+  int alignment = requested_alignment > 0
+                      ? requested_alignment
+                      : default_alignment;
+  if ((alignment & (alignment - 1)) != 0) return 0;
+  plan->alignment = alignment;
+  plan->addend = alignment - 1;
+  plan->mask = -alignment;
+  return 1;
+}
+
 int wasm32_machine_primitive_plan_build(
     wasm32_machine_primitive_plan_t *plan) {
   if (!plan) return 0;

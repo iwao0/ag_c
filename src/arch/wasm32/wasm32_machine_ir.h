@@ -145,6 +145,12 @@ typedef struct {
 } wasm32_machine_copy_chunk_t;
 
 typedef struct {
+  int alignment;
+  int addend;
+  int mask;
+} wasm32_machine_alignment_t;
+
+typedef struct {
   wasm32_machine_copy_chunk_t *chunks;
   int chunk_count;
 } wasm32_machine_copy_plan_t;
@@ -188,6 +194,9 @@ int wasm32_machine_copy_plan_build(
     int size, wasm32_machine_copy_plan_t *plan);
 void wasm32_machine_copy_plan_dispose(
     wasm32_machine_copy_plan_t *plan);
+int wasm32_machine_alignment_plan_build(
+    int requested_alignment, int default_alignment,
+    wasm32_machine_alignment_t *plan);
 int wasm32_machine_primitive_plan_build(
     wasm32_machine_primitive_plan_t *plan);
 const wasm32_machine_conversion_t *wasm32_machine_planned_conversion(

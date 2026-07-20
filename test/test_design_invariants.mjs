@@ -13388,6 +13388,27 @@ if (!/wasm32_machine_copy_plan_build\s*\(/.test(wasmMachineIrSource) ||
   );
 }
 
+if (!/wasm32_machine_alignment_plan_build\s*\(/.test(
+      wasmMachineIrSource,
+    ) ||
+    !/case\s+IR_ALIGN_PTR\s*:[^]*?wasm32_machine_alignment_plan_build\s*\(\s*instruction->alloca_align,\s*16,\s*&selected->alignment\s*\)/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/case\s+IR_VLA_ALLOC\s*:[^]*?wasm32_machine_alignment_plan_build\s*\(\s*0,\s*16,\s*&selected->alignment\s*\)/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/alignment\.addend/.test(wasmWatWriterSource) ||
+    !/alignment\.mask/.test(wasmWatWriterSource) ||
+    !/alignment\.addend/.test(wasmObjectWriterSource) ||
+    !/alignment\.mask/.test(wasmObjectWriterSource) ||
+    /\balloca_align\b/.test(wasmWatWriterSource) ||
+    /\balloca_align\b/.test(wasmObjectWriterSource) ||
+    /int\s+alloca_(?:size|align)\s*;/.test(wasmMachineFunctionHeader)) {
+  throw new Error(
+    "Wasm serializers must encode preplanned pointer and dynamic-allocation alignment",
+  );
+}
+
 for (const [name, source] of [
   ["Wasm text", wasmWatWriterSource],
   ["Wasm object", wasmObjectWriterSource],

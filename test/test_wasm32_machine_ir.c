@@ -201,6 +201,18 @@ static const unary_case_t unary_cases[] = {
 };
 
 int main(void) {
+  wasm32_machine_alignment_t alignment_plan;
+  if (!wasm32_machine_alignment_plan_build(32, 16, &alignment_plan) ||
+      alignment_plan.alignment != 32 ||
+      alignment_plan.addend != 31 || alignment_plan.mask != -32 ||
+      !wasm32_machine_alignment_plan_build(0, 16, &alignment_plan) ||
+      alignment_plan.alignment != 16 ||
+      alignment_plan.addend != 15 || alignment_plan.mask != -16 ||
+      wasm32_machine_alignment_plan_build(24, 16, &alignment_plan)) {
+    fprintf(stderr, "FAIL: machine alignment plan\n");
+    return 1;
+  }
+
   wasm32_machine_copy_plan_t copy_plan;
   if (!wasm32_machine_copy_plan_build(15, &copy_plan) ||
       copy_plan.chunk_count != 4 ||
@@ -756,6 +768,9 @@ int main(void) {
           WASM32_MACHINE_INST_SYMBOL_ADDRESS ||
       machine_function.instructions[6].kind !=
           WASM32_MACHINE_INST_DYNAMIC_ALLOCA ||
+      machine_function.instructions[6].alignment.alignment != 16 ||
+      machine_function.instructions[6].alignment.addend != 15 ||
+      machine_function.instructions[6].alignment.mask != -16 ||
       machine_function.signature.nparams != 3 ||
       !machine_function.signature.has_hidden_result ||
       machine_function.direct_result_type != IR_TY_VOID ||

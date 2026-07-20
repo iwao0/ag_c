@@ -140,8 +140,6 @@ typedef struct {
   char *sym;
   int sym_len;
   int object_size;
-  int alloca_size;
-  int alloca_align;
   size_t parameter_index;
   unsigned char is_unsigned;
   unsigned char is_function_symbol;
@@ -155,6 +153,7 @@ typedef struct {
   wasm32_machine_memory_t store;
   wasm32_machine_atomic_t atomic;
   wasm32_machine_copy_plan_t copy;
+  wasm32_machine_alignment_t alignment;
   wasm32_machine_call_t call;
   wasm32_machine_parameter_bind_t parameter_bind;
   wasm32_machine_control_t control;

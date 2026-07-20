@@ -390,10 +390,12 @@ static int select_instruction(
           instruction->alloca_size, &selected->copy);
     case IR_ALIGN_PTR:
       selected->kind = WASM32_MACHINE_INST_ALIGN_POINTER;
-      return 1;
+      return wasm32_machine_alignment_plan_build(
+          instruction->alloca_align, 16, &selected->alignment);
     case IR_VLA_ALLOC:
       selected->kind = WASM32_MACHINE_INST_DYNAMIC_ALLOCA;
-      return 1;
+      return wasm32_machine_alignment_plan_build(
+          0, 16, &selected->alignment);
     case IR_VARARG_CURSOR:
       selected->kind = WASM32_MACHINE_INST_VARARG_AREA;
       return 1;
@@ -578,8 +580,6 @@ static int initialize_instructions(
               instruction->sym, instruction->sym_len))
         return 0;
       machine_instruction->object_size = instruction->object_size;
-      machine_instruction->alloca_size = instruction->alloca_size;
-      machine_instruction->alloca_align = instruction->alloca_align;
       machine_instruction->parameter_index = instruction->parameter_index;
       machine_instruction->is_unsigned = instruction->is_unsigned;
       machine_instruction->is_function_symbol =

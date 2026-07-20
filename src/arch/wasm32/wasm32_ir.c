@@ -1452,17 +1452,20 @@ static void emit_inst(
       emit_memcpy(ctx, i, indent);
       return;
     case WASM32_MACHINE_INST_ALIGN_POINTER: {
-      int align = i->alloca_align > 0 ? i->alloca_align : 16;
       wasm_emitf(indent, "(local.set $v%d (i32.and (i32.add ", i->dst.id);
       emit_addr_expr(ctx, i->src1);
-      wasm_cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
+      wasm_cg_emitf(
+          " (i32.const %d)) (i32.const %d)))\n",
+          i->alignment.addend, i->alignment.mask);
       return;
     }
     case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
       wasm_emitf(indent, "(local.set $v%d (i32.sub (global.get $__stack_pointer) ", i->dst.id);
       wasm_cg_emitf("(i32.and (i32.add ");
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
-      wasm_cg_emitf(" (i32.const 15)) (i32.const -16))))\n");
+      wasm_cg_emitf(
+          " (i32.const %d)) (i32.const %d))))\n",
+          i->alignment.addend, i->alignment.mask);
       wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
       return;
     case WASM32_MACHINE_INST_VARARG_AREA:

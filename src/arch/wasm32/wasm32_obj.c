@@ -1470,10 +1470,12 @@ static void gen_func_body(
           continue;
         emit_addr_val(context, &body, instruction->src1, param_count);
         emit_const(
-            context, &body, IR_TY_I32, instruction->alloca_align - 1);
+            context, &body, IR_TY_I32,
+            instruction->alignment.addend);
         wb_u8(&body, 0x6a);
         emit_const(
-            context, &body, IR_TY_I32, -instruction->alloca_align);
+            context, &body, IR_TY_I32,
+            instruction->alignment.mask);
         wb_u8(&body, 0x71);
         emit_local_set(
             &body, local_index(param_count, instruction->dst.id));
@@ -1730,9 +1732,11 @@ static void gen_func_body(
         case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
           emit_stack_global_get(context, &body, of, stack_pointer);
           emit_val(context, &body, i->src1, IR_TY_I32, param_count);
-          emit_const(context, &body, IR_TY_I32, 15);
+          emit_const(
+              context, &body, IR_TY_I32, i->alignment.addend);
           wb_u8(&body, 0x6a);
-          emit_const(context, &body, IR_TY_I32, -16);
+          emit_const(
+              context, &body, IR_TY_I32, i->alignment.mask);
           wb_u8(&body, 0x71);
           wb_u8(&body, 0x6b);
           emit_local_set(&body, local_index(param_count, i->dst.id));
@@ -1754,11 +1758,12 @@ static void gen_func_body(
           break;
         case WASM32_MACHINE_INST_ALIGN_POINTER: {
           if (machine_function.is_continuation_entry) break;
-          int align = i->alloca_align > 0 ? i->alloca_align : 16;
           emit_addr_val(context, &body, i->src1, param_count);
-          emit_const(context, &body, IR_TY_I32, align - 1);
+          emit_const(
+              context, &body, IR_TY_I32, i->alignment.addend);
           wb_u8(&body, 0x6a);
-          emit_const(context, &body, IR_TY_I32, -align);
+          emit_const(
+              context, &body, IR_TY_I32, i->alignment.mask);
           wb_u8(&body, 0x71);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
