@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "target_info.h"
+#include "type_system/integer_conversion.h"
 
 typedef struct {
   char *out;
@@ -58,28 +59,6 @@ static void write_unsigned(
   while (count > 0) write_bytes(writer, &digits[--count], 1);
 }
 
-static int integer_rank(const psx_type_shape_t *shape) {
-  if (!shape || shape->kind != PSX_TYPE_INTEGER) return 0;
-  if (shape->is_plain_char) return 1;
-  switch (shape->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR: return 1;
-    case PSX_INTEGER_KIND_SHORT: return 2;
-    case PSX_INTEGER_KIND_INT:
-    case PSX_INTEGER_KIND_ENUM: return 3;
-    case PSX_INTEGER_KIND_LONG: return 4;
-    case PSX_INTEGER_KIND_LONG_LONG: return 5;
-    default: return 0;
-  }
-}
-
-static ag_target_scalar_kind_t integer_target_kind(int rank) {
-  if (rank >= 5) return AG_TARGET_SCALAR_LONG_LONG;
-  if (rank == 4) return AG_TARGET_SCALAR_LONG;
-  if (rank == 2) return AG_TARGET_SCALAR_SHORT;
-  if (rank == 1) return AG_TARGET_SCALAR_CHAR;
-  return AG_TARGET_SCALAR_INT;
-}
-
 static ag_target_scalar_kind_t floating_target_kind(
     psx_floating_kind_t kind, int is_complex) {
   if (kind == PSX_FLOATING_KIND_LONG_DOUBLE)
@@ -119,12 +98,12 @@ static void write_type(signature_writer_t *writer,
       write_literal(writer, "b");
       return;
     case PSX_TYPE_INTEGER: {
-      int rank = integer_rank(&shape);
-      if (rank <= 0) rank = 3;
-      unsigned int bits =
-          (unsigned int)(ag_data_layout_scalar_size(data_layout,
-                                                    integer_target_kind(rank)) *
-                         8);
+      psx_integer_conversion_t conversion =
+          psx_integer_conversion_from_shape(&shape);
+      if (conversion.rank <= 0) conversion.rank = 3;
+      unsigned int bits = (unsigned int)(
+          psx_integer_conversion_size_for_data_layout(
+              conversion, data_layout) * 8);
       if (shape.integer_kind == PSX_INTEGER_KIND_ENUM) {
         write_literal(writer, "e{");
         write_unsigned(writer, (unsigned int)(

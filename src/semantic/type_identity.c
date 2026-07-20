@@ -1,6 +1,7 @@
 #include "type_identity_internal.h"
 
 #include "../parser/arena.h"
+#include "../type_system/integer_conversion.h"
 #include "record_decl_table.h"
 
 #include <limits.h>
@@ -108,20 +109,6 @@ static psx_qual_type_t invalid_qual_type(void) {
                            PSX_TYPE_QUALIFIER_NONE};
 }
 
-static int semantic_integer_rank(const psx_type_shape_t *shape) {
-  if (!shape || shape->kind != PSX_TYPE_INTEGER) return 0;
-  if (shape->is_plain_char) return 1;
-  switch (shape->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR: return 1;
-    case PSX_INTEGER_KIND_SHORT: return 2;
-    case PSX_INTEGER_KIND_INT:
-    case PSX_INTEGER_KIND_ENUM: return 3;
-    case PSX_INTEGER_KIND_LONG: return 4;
-    case PSX_INTEGER_KIND_LONG_LONG: return 5;
-    default: return 0;
-  }
-}
-
 static int semantic_type_shapes_match(
     const psx_type_shape_t *canonical,
     const psx_type_shape_t *candidate) {
@@ -149,8 +136,8 @@ static int semantic_type_shapes_match(
       }
       return canonical->is_unsigned == candidate->is_unsigned &&
              canonical->is_plain_char == candidate->is_plain_char &&
-             semantic_integer_rank(canonical) ==
-                 semantic_integer_rank(candidate);
+             psx_integer_conversion_from_shape(canonical).rank ==
+                 psx_integer_conversion_from_shape(candidate).rank;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       return canonical->floating_kind == candidate->floating_kind;

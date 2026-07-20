@@ -13559,6 +13559,8 @@ static void test_target_type_layout_boundary() {
 
   psx_type_t *stale_signed_long =
       ps_type_new_integer(TK_LONG, 1, 0);
+  psx_type_t *stale_unsigned_long =
+      ps_type_new_integer(TK_LONG, 1, 1);
   psx_type_t *stale_unsigned_int =
       ps_type_new_integer(TK_INT, 64, 1);
   const psx_type_t *host_conversion =
@@ -13568,6 +13570,12 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_conversion->integer_kind);
   ASSERT_EQ(8, ps_type_sizeof_for_target(host_conversion, &host));
   ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
+  const psx_type_t *shift_conversion =
+      ps_type_binary_result_for_data_layout_in(
+          test_arena_context(), ag_target_info_data_layout(&host),
+          PSX_TYPE_BINARY_SHL, stale_unsigned_long, stale_integer);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, shift_conversion->integer_kind);
+  ASSERT_TRUE(ps_type_is_unsigned(shift_conversion));
 
   ag_target_info_t equal_width_integer_target = host;
   equal_width_integer_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =

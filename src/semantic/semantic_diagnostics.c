@@ -6,6 +6,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
+#include "../type_system/integer_conversion.h"
 #include "resolved_node_kind.h"
 #include "resolved_object_ref.h"
 #include "type_identity.h"
@@ -272,19 +273,30 @@ static void warn_sign_compare(
   if (!lhs || !rhs) return;
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  if (!ps_node_type_shape(store, lhs, &lhs_type) ||
+      !ps_node_type_shape(store, rhs, &rhs_type))
+    return;
   const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
-      ps_node_get_type(store, lhs), data_layout);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
-      ps_node_get_type(store, rhs), data_layout);
+  psx_integer_conversion_t lhs_conversion =
+      psx_integer_conversion_from_shape(&lhs_type);
+  psx_integer_conversion_t rhs_conversion =
+      psx_integer_conversion_from_shape(&rhs_type);
+  int lhs_unsigned = psx_integer_promotion_for_data_layout(
+                         lhs_conversion, data_layout)
+                         .is_unsigned;
+  int rhs_unsigned = psx_integer_promotion_for_data_layout(
+                         rhs_conversion, data_layout)
+                         .is_unsigned;
   if (lhs_unsigned == rhs_unsigned) return;
   node_t *signed_side = lhs_unsigned ? rhs : lhs;
   if (signed_side->kind == ND_NUM &&
       ((node_num_t *)signed_side)->val >= 0)
     return;
-  if (!ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
-          ps_node_get_type(store, lhs), ps_node_get_type(store, rhs),
-          data_layout)) {
+  if (!psx_usual_integer_conversion_for_data_layout(
+           lhs_conversion, rhs_conversion, data_layout)
+           .is_unsigned) {
     return;
   }
   diag_warn_tokf_in(diagnostics,

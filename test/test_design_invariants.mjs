@@ -2530,7 +2530,19 @@ const typedWarningSyntaxTypedHirResolutionSource = await readFile(
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
       typedHirDiagnosticsSource,
     ) ||
+    /\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_(?:integer_promotion|usual_arithmetic|is_unsigned)\w*\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
+    !/\bpsx_integer_promotion_for_data_layout\s*\(/.test(
+      typedHirDiagnosticsSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
       typedHirDiagnosticsSource,
     ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
@@ -6661,6 +6673,14 @@ const expressionOperandResolutionSource = await readFile(
   "src/semantic/expression_operand_resolution.c",
   "utf8",
 );
+const integerConversionHeader = await readFile(
+  "src/type_system/integer_conversion.h",
+  "utf8",
+);
+const integerConversionSource = await readFile(
+  "src/type_system/integer_conversion.c",
+  "utf8",
+);
 const expressionOperandResolutionHeader = await readFile(
   "src/semantic/expression_operand_resolution.h",
   "utf8",
@@ -6701,7 +6721,18 @@ if (/\bpsx_type_t\b|\bps_type_[A-Za-z0-9_]*\s*\(|parser\/type(?:_builder)?\.h/.t
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
-    !/\binteger_rank\s*\(/.test(expressionOperandResolutionSource) ||
+    !/\bpsx_integer_conversion_from_shape\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_integer_promotion_for_data_layout\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    /\b(?:integer_rank|integer_rank_size|promoted_integer_conversion|usual_integer_conversion)\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
     !/\bps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
@@ -6711,7 +6742,16 @@ if (/\bpsx_type_t\b|\bps_type_[A-Za-z0-9_]*\s*\(|parser\/type(?:_builder)?\.h/.t
     /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       semanticDiagnosticsSource,
     ) ||
+    /\bps_node_get_type\s*\(|\bps_type_(?:integer_promotion|usual_arithmetic)\w*\s*\(/.test(
+      semanticDiagnosticsSource,
+    ) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      semanticDiagnosticsSource,
+    ) ||
+    !/\bpsx_integer_promotion_for_data_layout\s*\(/.test(
+      semanticDiagnosticsSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
       semanticDiagnosticsSource,
     )) {
   throw new Error(
@@ -8253,14 +8293,23 @@ if (/parser\/type\.h/.test(typeShapeLoweringSources) ||
     !/\bir_mir_usual_arithmetic_result_is_unsigned\s*\(/.test(
       typeShapeLoweringSources,
     ) ||
+    !/\bpsx_integer_conversion_from_shape\s*\(/.test(
+      mirTypeLoweringSource,
+    ) ||
+    !/\bpsx_integer_promotion_for_data_layout\s*\(/.test(
+      mirTypeLoweringSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      mirTypeLoweringSource,
+    ) ||
+    /\b(?:integer_rank|integer_size_for_rank|scalar_kind_for_rank|promoted_integer)\s*\(/.test(
+      mirTypeLoweringSource,
+    ) ||
     !/const\s+struct\s+ag_data_layout_t\s*\*data_layout\s*;/.test(
       mirTypeLoweringHeader,
     ) ||
     /\bag_target_info_t\b|\bag_target_info_(?:pointer_size|pointer_alignment|scalar_size|scalar_alignment)\s*\(/.test(
       `${mirTypeLoweringHeader}\n${mirTypeLoweringSource}`,
-    ) ||
-    !/\bag_data_layout_scalar_size\s*\(/.test(
-      mirTypeLoweringSource,
     )) {
   throw new Error(
     "type and ABI lowering must consume TypeId shape and target layout without parser compatibility types",
@@ -8556,22 +8605,67 @@ for (const [name, source] of [
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
-const dataLayoutIntegerConversionSection = expressionOperandResolutionSource.match(
-  /static\s+int\s+integer_rank_size\s*\([^]*?static\s+psx_qual_type_t\s+integer_result/,
+const typeIdCanonicalSignatureSource = await readFile(
+  "src/type_signature.c",
+  "utf8",
 );
-if (!dataLayoutIntegerConversionSection ||
-    /\bps_type_[A-Za-z0-9_]*\s*\(|->(?:size|align)\b/.test(
-      dataLayoutIntegerConversionSection[0],
+if (!/\bpsx_type_shape_t\b/.test(integerConversionHeader) ||
+    !/\bconst\s+ag_data_layout_t\s*\*data_layout\b/.test(
+      integerConversionHeader,
+    ) ||
+    /parser\/|\bpsx_type_t\b|\bps_ctx_|\bps_type_[A-Za-z0-9_]*\s*\(|->(?:size|align)\b/.test(
+      `${integerConversionHeader}\n${integerConversionSource}`,
     ) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(
-      dataLayoutIntegerConversionSection[0],
+      integerConversionSource,
     ) ||
     /\bag_target_info_t\b|\bag_target_info_(?:scalar_size|data_layout)\s*\(/.test(
-      dataLayoutIntegerConversionSection[0],
+      integerConversionSource,
     ) ||
-    !/\busual_integer_conversion\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/\bpsx_integer_conversion_from_shape\s*\(/.test(
+      integerConversionSource,
+    ) ||
+    !/\bpsx_integer_promotion_for_data_layout\s*\(/.test(
+      integerConversionSource,
+    ) ||
+    !/\bpsx_integer_conversion_size_for_data_layout\s*\(/.test(
+      integerConversionSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      integerConversionSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      canonicalTypeSource,
+    ) ||
+    !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
+      mirTypeLoweringSource,
+    ) ||
+    !/\bpsx_integer_conversion_from_shape\s*\(/.test(
+      typeIdentityImplementationSource,
+    ) ||
+    /\bsemantic_integer_rank\s*\(/.test(typeIdentityImplementationSource) ||
+    !/\bpsx_integer_conversion_from_shape\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bpsx_integer_conversion_size_for_data_layout\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    /\b(?:integer_rank|integer_target_kind)\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bint\s+ps_type_integer_rank\s*\([^]*?integer_conversion_type\s*\(/.test(
+      canonicalTypeSource,
+    ) ||
+    !/static\s+psx_integer_conversion_t\s+integer_conversion_type\s*\([^]*?psx_integer_conversion_from_shape\s*\(/.test(
+      canonicalTypeSource,
+    ) ||
+    !/^TYPE_SYSTEM_SRCS=\$\(wildcard src\/type_system\/\*\.c\)$/m.test(
+      makefileSource,
+    ) ||
+    !/\$\(TYPE_SYSTEM_SRCS\)/.test(makefileSource) ||
     !/\bpsx_resolve_binary_result_qual_type_in\s*\([^]*?usual_arithmetic_result\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
@@ -8579,15 +8673,11 @@ if (!dataLayoutIntegerConversionSection ||
       expressionOperandResolutionSource,
     )) {
   throw new Error(
-    "semantic arithmetic conversion must use scalar rank and explicit DataLayout instead of TargetInfo or cached type layout",
+    "integer promotion and usual arithmetic conversion must have one TypeShape and DataLayout source of truth",
   );
 }
 const dataLayoutCanonicalSignatureSection = canonicalTypeSource.match(
   /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature_for_data_layout\s*\([^]*?\n\}/,
-);
-const typeIdCanonicalSignatureSource = await readFile(
-  "src/type_signature.c",
-  "utf8",
 );
 if (!dataLayoutCanonicalSignatureSection ||
     /\bps_type_sizeof\s*\(/.test(dataLayoutCanonicalSignatureSection[0]) ||

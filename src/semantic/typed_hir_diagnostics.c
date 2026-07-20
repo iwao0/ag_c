@@ -9,6 +9,7 @@
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
+#include "../type_system/integer_conversion.h"
 #include "semantic_node_builder.h"
 #include "semantic_node_internal.h"
 #include "typed_hir_tree_internal.h"
@@ -20,28 +21,28 @@ typedef struct {
   psx_qual_type_t function_return_type;
 } typed_hir_diagnostic_walk_t;
 
+static int describe_type(
+    const typed_hir_diagnostic_walk_t *walk,
+    psx_qual_type_t qual_type, psx_type_shape_t *shape) {
+  return walk && walk->semantic_context && shape &&
+         qual_type.type_id != PSX_TYPE_ID_INVALID &&
+         psx_semantic_type_table_describe(
+             ps_ctx_semantic_type_table_in(walk->semantic_context),
+             qual_type.type_id, shape);
+}
+
 static int type_is_floating(
     const typed_hir_diagnostic_walk_t *walk, psx_qual_type_t qual_type) {
-  const psx_type_t *type = ps_ctx_type_by_id_in(
-      walk->semantic_context, qual_type.type_id);
-  return type && !ps_type_is_pointer(type) &&
-         (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX);
+  psx_type_shape_t shape = {0};
+  return describe_type(walk, qual_type, &shape) &&
+         (shape.kind == PSX_TYPE_FLOAT || shape.kind == PSX_TYPE_COMPLEX);
 }
 
 static int type_is_integer(
     const typed_hir_diagnostic_walk_t *walk, psx_qual_type_t qual_type) {
-  const psx_type_t *type = ps_ctx_type_by_id_in(
-      walk->semantic_context, qual_type.type_id);
-  return type && !ps_type_is_pointer(type) &&
-         (type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER);
-}
-
-static const psx_type_t *canonical_type(
-    const typed_hir_diagnostic_walk_t *walk, psx_qual_type_t qual_type) {
-  return walk && walk->semantic_context
-             ? ps_ctx_type_by_id_in(
-                   walk->semantic_context, qual_type.type_id)
-             : NULL;
+  psx_type_shape_t shape = {0};
+  return describe_type(walk, qual_type, &shape) &&
+         (shape.kind == PSX_TYPE_BOOL || shape.kind == PSX_TYPE_INTEGER);
 }
 
 static int canonical_type_size(
@@ -58,10 +59,10 @@ static int canonical_type_size(
 
 static int type_is_pointer_like(
     const typed_hir_diagnostic_walk_t *walk, psx_qual_type_t qual_type) {
-  const psx_type_t *type = canonical_type(walk, qual_type);
-  return type && (type->kind == PSX_TYPE_POINTER ||
-                  type->kind == PSX_TYPE_ARRAY ||
-                  type->kind == PSX_TYPE_FUNCTION);
+  psx_type_shape_t shape = {0};
+  return describe_type(walk, qual_type, &shape) &&
+         (shape.kind == PSX_TYPE_POINTER || shape.kind == PSX_TYPE_ARRAY ||
+          shape.kind == PSX_TYPE_FUNCTION);
 }
 
 static const psx_semantic_node_t *child_with_edge(
@@ -184,27 +185,35 @@ static void warn_sign_compare(
     const psx_semantic_node_t *node,
     const psx_semantic_node_t *lhs,
     const psx_semantic_node_t *rhs) {
-  const psx_type_t *lhs_type = lhs
-      ? canonical_type(walk, psx_semantic_node_expression_qual_type(lhs))
-      : NULL;
-  const psx_type_t *rhs_type = rhs
-      ? canonical_type(walk, psx_semantic_node_expression_qual_type(rhs))
-      : NULL;
-  if (!lhs_type || !rhs_type) return;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  if (!lhs || !rhs ||
+      !describe_type(
+          walk, psx_semantic_node_expression_qual_type(lhs), &lhs_type) ||
+      !describe_type(
+          walk, psx_semantic_node_expression_qual_type(rhs), &rhs_type))
+    return;
   const ag_data_layout_t *data_layout =
       ps_ctx_data_layout(walk->semantic_context);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
-      lhs_type, data_layout);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
-      rhs_type, data_layout);
+  psx_integer_conversion_t lhs_conversion =
+      psx_integer_conversion_from_shape(&lhs_type);
+  psx_integer_conversion_t rhs_conversion =
+      psx_integer_conversion_from_shape(&rhs_type);
+  int lhs_unsigned = psx_integer_promotion_for_data_layout(
+                         lhs_conversion, data_layout)
+                         .is_unsigned;
+  int rhs_unsigned = psx_integer_promotion_for_data_layout(
+                         rhs_conversion, data_layout)
+                         .is_unsigned;
   if (lhs_unsigned == rhs_unsigned) return;
   const psx_semantic_node_t *signed_side = lhs_unsigned ? rhs : lhs;
   long long signed_literal = 0;
   if (integer_literal_value(walk, signed_side, &signed_literal) &&
       signed_literal >= 0)
     return;
-  if (!ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
-          lhs_type, rhs_type, data_layout))
+  if (!psx_usual_integer_conversion_for_data_layout(
+           lhs_conversion, rhs_conversion, data_layout)
+           .is_unsigned)
     return;
   diag_warn_tokf_in(
       walk->diagnostics, DIAG_WARN_PARSER_SIGN_COMPARE,
@@ -225,20 +234,20 @@ static void warn_unsigned_zero(
                  lhs_value == 0;
   int rhs_zero = integer_literal_value(walk, rhs, &rhs_value) &&
                  rhs_value == 0;
-  const psx_type_t *lhs_type = lhs
-      ? canonical_type(walk, psx_semantic_node_expression_qual_type(lhs))
-      : NULL;
-  const psx_type_t *rhs_type = rhs
-      ? canonical_type(walk, psx_semantic_node_expression_qual_type(rhs))
-      : NULL;
+  psx_type_shape_t lhs_type = {0};
+  psx_type_shape_t rhs_type = {0};
+  int has_lhs_type = lhs && describe_type(
+      walk, psx_semantic_node_expression_qual_type(lhs), &lhs_type);
+  int has_rhs_type = rhs && describe_type(
+      walk, psx_semantic_node_expression_qual_type(rhs), &rhs_type);
   const char *op = binary_operator_text(node->spec.kind);
   int always_true = 0;
   int warn = 0;
-  if (rhs_zero && ps_type_is_unsigned(lhs_type)) {
+  if (rhs_zero && has_lhs_type && lhs_type.is_unsigned) {
     warn = node->spec.kind == PSX_HIR_LT ||
            node->spec.kind == PSX_HIR_GE;
     always_true = node->spec.kind == PSX_HIR_GE;
-  } else if (lhs_zero && ps_type_is_unsigned(rhs_type)) {
+  } else if (lhs_zero && has_rhs_type && rhs_type.is_unsigned) {
     warn = node->spec.kind == PSX_HIR_LE ||
            node->spec.kind == PSX_HIR_GT;
     always_true = node->spec.kind == PSX_HIR_LE;
@@ -319,13 +328,12 @@ static void warn_comparison(
 static int plain_int_literal(
     const typed_hir_diagnostic_walk_t *walk,
     const psx_semantic_node_t *node, long long *value) {
-  const psx_type_t *type = node
-      ? canonical_type(walk, psx_semantic_node_expression_qual_type(node))
-      : NULL;
-  return integer_literal_value(walk, node, value) && type &&
-         type->kind == PSX_TYPE_INTEGER &&
-         type->integer_kind == PSX_INTEGER_KIND_INT &&
-         !ps_type_is_unsigned(type);
+  psx_type_shape_t type = {0};
+  return node && integer_literal_value(walk, node, value) &&
+         describe_type(
+             walk, psx_semantic_node_expression_qual_type(node), &type) &&
+         type.kind == PSX_TYPE_INTEGER &&
+         type.integer_kind == PSX_INTEGER_KIND_INT && !type.is_unsigned;
 }
 
 static void warn_arithmetic(
@@ -399,9 +407,12 @@ static void warn_decl_initializer_overflow(
     return;
   long long integer_value = 0;
   if (!integer_literal_value(walk, value, &integer_value)) return;
-  const psx_type_t *target_type = canonical_type(
-      walk, psx_semantic_node_expression_qual_type(target));
-  if (!target_type || target_type->kind == PSX_TYPE_BOOL) return;
+  psx_type_shape_t target_type = {0};
+  if (!describe_type(
+          walk, psx_semantic_node_expression_qual_type(target),
+          &target_type) ||
+      target_type.kind == PSX_TYPE_BOOL)
+    return;
   int type_size = canonical_type_size(
       walk, psx_semantic_node_expression_qual_type(target));
   if (type_size <= 0 || type_size >= 4) return;
@@ -409,12 +420,12 @@ static void warn_decl_initializer_overflow(
   long long max_signed = (1LL << (bits - 1)) - 1;
   long long min_signed = -(1LL << (bits - 1));
   long long max_unsigned = (1LL << bits) - 1;
-  int out_of_range = ps_type_is_unsigned(target_type)
+  int out_of_range = target_type.is_unsigned
                          ? integer_value < 0 ||
                                integer_value > max_unsigned
                          : integer_value < min_signed ||
                                integer_value > max_signed;
-  if (ps_type_is_unsigned(target_type) && integer_value < 0 &&
+  if (target_type.is_unsigned && integer_value < 0 &&
       integer_value >= min_signed)
     out_of_range = 0;
   if (out_of_range)

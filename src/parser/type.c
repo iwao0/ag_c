@@ -7,6 +7,7 @@
 #include "../semantic/type_identity.h"
 #include "../target_info.h"
 #include "../type_layout.h"
+#include "../type_system/integer_conversion.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -208,26 +209,20 @@ psx_type_t *ps_type_new_float_in(
       arena_context, floating_kind_from_token(fp_kind), 0);
 }
 
+static psx_integer_conversion_t integer_conversion_type(
+    const psx_type_t *type) {
+  if (!type) return (psx_integer_conversion_t){0};
+  psx_type_shape_t shape = {
+      .kind = type->kind,
+      .integer_kind = type->integer_kind,
+      .is_unsigned = type->is_unsigned,
+      .is_plain_char = type->is_plain_char,
+  };
+  return psx_integer_conversion_from_shape(&shape);
+}
+
 int ps_type_integer_rank(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_BOOL) return 0;
-  if (type->kind != PSX_TYPE_INTEGER) return 0;
-  if (type->is_plain_char) return 1;
-  switch (type->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR:
-      return 1;
-    case PSX_INTEGER_KIND_SHORT:
-      return 2;
-    case PSX_INTEGER_KIND_INT:
-    case PSX_INTEGER_KIND_ENUM:
-      return 3;
-    case PSX_INTEGER_KIND_LONG:
-      return 4;
-    case PSX_INTEGER_KIND_LONG_LONG:
-      return 5;
-    default:
-      return 0;
-  }
+  return integer_conversion_type(type).rank;
 }
 
 int ps_type_character_code_unit_width(const psx_type_t *type) {
@@ -246,77 +241,11 @@ int ps_type_character_code_unit_width(const psx_type_t *type) {
   }
 }
 
-static ag_target_scalar_kind_t integer_target_kind_for_rank(int rank) {
-  if (rank >= 5) return AG_TARGET_SCALAR_LONG_LONG;
-  if (rank == 4) return AG_TARGET_SCALAR_LONG;
-  if (rank == 2) return AG_TARGET_SCALAR_SHORT;
-  if (rank == 1) return AG_TARGET_SCALAR_CHAR;
-  return AG_TARGET_SCALAR_INT;
-}
-
-static int integer_rank_size(int rank, const ag_data_layout_t *data_layout) {
-  return ag_data_layout_scalar_size(data_layout,
-                                    integer_target_kind_for_rank(rank));
-}
-
 int ps_type_integer_promotion_is_unsigned_for_data_layout(
     const psx_type_t *type, const ag_data_layout_t *data_layout) {
-  if (!type || (type->kind != PSX_TYPE_BOOL &&
-                type->kind != PSX_TYPE_INTEGER)) {
-    return 0;
-  }
-  if (type->kind == PSX_TYPE_BOOL) return 0;
-  int rank = ps_type_integer_rank(type);
-  if (rank >= 3) return ps_type_is_unsigned(type);
-  return ps_type_is_unsigned(type) && integer_rank_size(rank, data_layout) >=
-                                          integer_rank_size(3, data_layout);
-}
-
-typedef struct {
-  int rank;
-  int is_unsigned;
-} integer_conversion_t;
-
-static integer_conversion_t
-promoted_integer_conversion(const psx_type_t *type,
-                            const ag_data_layout_t *data_layout) {
-  int rank = ps_type_integer_rank(type);
-  integer_conversion_t result = {
-      .rank = rank < 3 ? 3 : rank,
-      .is_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
-          type, data_layout),
-  };
-  if (result.rank < 3) result.rank = 3;
-  return result;
-}
-
-static integer_conversion_t
-usual_integer_conversion(const psx_type_t *lhs, const psx_type_t *rhs,
-                         const ag_data_layout_t *data_layout) {
-  integer_conversion_t left = promoted_integer_conversion(lhs, data_layout);
-  integer_conversion_t right = promoted_integer_conversion(rhs, data_layout);
-  integer_conversion_t result = {
-      .rank = left.rank > right.rank ? left.rank : right.rank,
-      .is_unsigned = 0,
-  };
-  if (left.is_unsigned == right.is_unsigned) {
-    result.is_unsigned = left.is_unsigned;
-    return result;
-  }
-  integer_conversion_t unsigned_type = left.is_unsigned ? left : right;
-  integer_conversion_t signed_type = left.is_unsigned ? right : left;
-  if (unsigned_type.rank >= signed_type.rank) {
-    result.is_unsigned = 1;
-    return result;
-  }
-  if (integer_rank_size(signed_type.rank, data_layout) >
-      integer_rank_size(unsigned_type.rank, data_layout)) {
-    result.is_unsigned = 0;
-    return result;
-  }
-  result.rank = signed_type.rank;
-  result.is_unsigned = 1;
-  return result;
+  return psx_integer_promotion_for_data_layout(
+             integer_conversion_type(type), data_layout)
+      .is_unsigned;
 }
 
 int ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
@@ -328,7 +257,10 @@ int ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
                rhs->kind == PSX_TYPE_COMPLEX))) {
     return 0;
   }
-  return usual_integer_conversion(lhs, rhs, data_layout).is_unsigned;
+  return psx_usual_integer_conversion_for_data_layout(
+             integer_conversion_type(lhs), integer_conversion_type(rhs),
+             data_layout)
+      .is_unsigned;
 }
 
 static ag_target_scalar_kind_t floating_target_kind(
@@ -369,7 +301,15 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_data_layout_in(
     return ps_type_new_floating_in(arena_context, fp, 0);
   }
 
-  integer_conversion_t result = usual_integer_conversion(lhs, rhs, data_layout);
+  psx_integer_conversion_t lhs_conversion = integer_conversion_type(lhs);
+  psx_integer_conversion_t rhs_conversion = integer_conversion_type(rhs);
+  psx_integer_conversion_t result =
+      lhs_conversion.is_integer && rhs_conversion.is_integer
+          ? psx_usual_integer_conversion_for_data_layout(
+                lhs_conversion, rhs_conversion, data_layout)
+          : psx_integer_promotion_for_data_layout(
+                lhs_conversion.is_integer ? lhs_conversion : rhs_conversion,
+                data_layout);
   psx_integer_kind_t result_kind =
       result.rank >= 5 ? PSX_INTEGER_KIND_LONG_LONG
       : result.rank >= 4 ? PSX_INTEGER_KIND_LONG
@@ -1226,8 +1166,11 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
     case PSX_TYPE_INTEGER: {
       int rank = ps_type_integer_rank(type);
       if (rank <= 0) rank = 3;
-      unsigned int bits =
-          (unsigned int)(integer_rank_size(rank, data_layout) * 8);
+      psx_integer_conversion_t conversion = integer_conversion_type(type);
+      conversion.rank = rank;
+      unsigned int bits = (unsigned int)(
+          psx_integer_conversion_size_for_data_layout(
+              conversion, data_layout) * 8);
       if (type->integer_kind == PSX_INTEGER_KIND_ENUM) {
         canonical_sig_lit(w, "e{");
         canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));

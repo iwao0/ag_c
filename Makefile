@@ -22,12 +22,13 @@ endif
 
 ARCH_SRCS=$(wildcard src/arch/*/*.c)
 LOWERING_SRCS=$(wildcard src/lowering/*.c)
+TYPE_SYSTEM_SRCS=$(wildcard src/type_system/*.c)
 TEST_ONLY_SRCS=src/semantic/legacy_syntax_diagnostics.c src/semantic/resolution_work_tree.c src/semantic/typed_hir_tree_materialization.c
 TEST_ONLY_SRCS+=src/semantic/identifier_binding.c src/semantic/local_declaration_tree_resolution.c src/semantic/semantic_pass.c
 TEST_ONLY_SRCS+=src/lowering/semantic_lowering_pass.c src/semantic/lowered_tree_validation.c
 TEST_ONLY_SRCS+=src/semantic/control_flow_validation.c src/semantic/semantic_diagnostics.c src/semantic/semantic_invariants.c
 TEST_ONLY_SRCS+=src/semantic/type_identity_pass.c src/semantic/tree_walk.c src/semantic/lvar_usage_analysis.c
-SRCS=$(filter-out $(TEST_ONLY_SRCS),$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/hir/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(LOWERING_SRCS) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
+SRCS=$(filter-out $(TEST_ONLY_SRCS),$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/hir/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(TYPE_SYSTEM_SRCS) $(LOWERING_SRCS) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 TEST_ONLY_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(TEST_ONLY_SRCS))
 DEPS=$(OBJS:.o=.d)
@@ -66,6 +67,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/semantic/aggregate_cast_resolution.o $(OBJROOT)/sema
 PARSER_LIB_OBJS+=$(OBJROOT)/hir/hir.o $(OBJROOT)/semantic/typed_hir_tree.o $(OBJROOT)/semantic/typed_hir_emission.o $(OBJROOT)/semantic/typed_hir_diagnostics.o $(OBJROOT)/semantic/syntax_typed_hir_resolution.o $(OBJROOT)/lowering/static_hir_initializer.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/record_decl.o $(OBJROOT)/semantic/record_decl_table.o $(OBJROOT)/semantic/record_layout.o $(OBJROOT)/semantic/resolution_store.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/scope_graph.o $(OBJROOT)/semantic/prototype_parameter.o
+PARSER_LIB_OBJS+=$(OBJROOT)/type_system/integer_conversion.o
 PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/lowering/abi_target_policy.o $(OBJROOT)/arch/arm64_apple/arm64_apple_abi_policy.o $(OBJROOT)/arch/wasm32/wasm32_abi_policy.o $(OBJROOT)/lowering/function_type_lowering.o $(OBJROOT)/lowering/mir_type_lowering.o $(OBJROOT)/lowering/hir_ir_builder.o $(OBJROOT)/lowering/hir_ir_cfg.o $(OBJROOT)/lowering/hir_ir_expression.o $(OBJROOT)/lowering/hir_ir_call.o $(OBJROOT)/lowering/hir_ir_aggregate.o $(OBJROOT)/lowering/hir_ir_statement.o $(OBJROOT)/lowering/hir_ir_vla.o $(OBJROOT)/lowering/runtime_initializer_plan.o $(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/name_environment.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declaration_binding_events.o

@@ -1,13 +1,9 @@
 #include "expression_operand_resolution.h"
 
 #include "../parser/semantic_ctx.h"
+#include "../type_system/integer_conversion.h"
 
 #include <string.h>
-
-typedef struct {
-  int rank;
-  int is_unsigned;
-} integer_conversion_t;
 
 static psx_qual_type_t invalid_qual_type(void) {
   return (psx_qual_type_t){
@@ -41,81 +37,6 @@ static int kind_is_pointer_like(psx_type_kind_t kind) {
   return kind == PSX_TYPE_POINTER || kind == PSX_TYPE_ARRAY;
 }
 
-static int integer_rank(const psx_type_shape_t *shape) {
-  if (!shape || shape->kind == PSX_TYPE_BOOL) return 0;
-  if (shape->kind != PSX_TYPE_INTEGER) return 0;
-  if (shape->is_plain_char) return 1;
-  switch (shape->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR: return 1;
-    case PSX_INTEGER_KIND_SHORT: return 2;
-    case PSX_INTEGER_KIND_INT:
-    case PSX_INTEGER_KIND_ENUM: return 3;
-    case PSX_INTEGER_KIND_LONG: return 4;
-    case PSX_INTEGER_KIND_LONG_LONG: return 5;
-    default: return 0;
-  }
-}
-
-static ag_target_scalar_kind_t integer_target_kind_for_rank(int rank) {
-  if (rank >= 5) return AG_TARGET_SCALAR_LONG_LONG;
-  if (rank == 4) return AG_TARGET_SCALAR_LONG;
-  if (rank == 2) return AG_TARGET_SCALAR_SHORT;
-  if (rank == 1) return AG_TARGET_SCALAR_CHAR;
-  return AG_TARGET_SCALAR_INT;
-}
-
-static int integer_rank_size(
-    int rank, const ag_data_layout_t *data_layout) {
-  return ag_data_layout_scalar_size(
-      data_layout, integer_target_kind_for_rank(rank));
-}
-
-static integer_conversion_t promoted_integer_conversion(
-    const psx_type_shape_t *shape,
-    const ag_data_layout_t *data_layout) {
-  int rank = integer_rank(shape);
-  int promoted_unsigned = 0;
-  if (shape && shape->kind == PSX_TYPE_INTEGER) {
-    promoted_unsigned = rank >= 3
-                            ? shape->is_unsigned
-                            : shape->is_unsigned &&
-                                  integer_rank_size(rank, data_layout) >=
-                                      integer_rank_size(3, data_layout);
-  }
-  return (integer_conversion_t){
-      .rank = rank < 3 ? 3 : rank,
-      .is_unsigned = promoted_unsigned,
-  };
-}
-
-static integer_conversion_t usual_integer_conversion(
-    const psx_type_shape_t *lhs, const psx_type_shape_t *rhs,
-    const ag_data_layout_t *data_layout) {
-  integer_conversion_t left =
-      promoted_integer_conversion(lhs, data_layout);
-  integer_conversion_t right =
-      promoted_integer_conversion(rhs, data_layout);
-  integer_conversion_t result = {
-      .rank = left.rank > right.rank ? left.rank : right.rank,
-  };
-  if (left.is_unsigned == right.is_unsigned) {
-    result.is_unsigned = left.is_unsigned;
-    return result;
-  }
-  integer_conversion_t unsigned_type =
-      left.is_unsigned ? left : right;
-  integer_conversion_t signed_type =
-      left.is_unsigned ? right : left;
-  if (unsigned_type.rank >= signed_type.rank) {
-    result.is_unsigned = 1;
-  } else if (integer_rank_size(signed_type.rank, data_layout) <=
-             integer_rank_size(unsigned_type.rank, data_layout)) {
-    result.rank = signed_type.rank;
-    result.is_unsigned = 1;
-  }
-  return result;
-}
-
 static psx_qual_type_t integer_result(
     psx_semantic_context_t *semantic_context,
     psx_integer_kind_t kind, int is_unsigned) {
@@ -134,8 +55,10 @@ static psx_qual_type_t promoted_integer_result(
     const psx_type_shape_t *shape) {
   if (!shape || !kind_is_integer(shape->kind))
     return invalid_qual_type();
-  integer_conversion_t conversion = promoted_integer_conversion(
-      shape, ps_ctx_data_layout(semantic_context));
+  psx_integer_conversion_t conversion =
+      psx_integer_promotion_for_data_layout(
+          psx_integer_conversion_from_shape(shape),
+          ps_ctx_data_layout(semantic_context));
   return integer_result(
       semantic_context, integer_kind_for_rank(conversion.rank),
       conversion.is_unsigned);
@@ -179,8 +102,11 @@ static psx_qual_type_t usual_arithmetic_result(
     return ps_ctx_intern_floating_qual_type_in(
         semantic_context, floating_kind, is_complex);
   }
-  integer_conversion_t conversion = usual_integer_conversion(
-      lhs, rhs, ps_ctx_data_layout(semantic_context));
+  psx_integer_conversion_t conversion =
+      psx_usual_integer_conversion_for_data_layout(
+          psx_integer_conversion_from_shape(lhs),
+          psx_integer_conversion_from_shape(rhs),
+          ps_ctx_data_layout(semantic_context));
   return integer_result(
       semantic_context, integer_kind_for_rank(conversion.rank),
       conversion.is_unsigned);
