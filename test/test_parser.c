@@ -10208,8 +10208,8 @@ static void test_generic_selection_typed_hir_boundary() {
   ASSERT_TRUE(!found_unselected_literal);
 }
 
-static void test_sizeof_semantic_lowering_boundary() {
-  printf("test_sizeof_semantic_lowering_boundary...\n");
+static void test_sizeof_typed_hir_boundary() {
+  printf("test_sizeof_typed_hir_boundary...\n");
   reset_test_locals();
   lvar_t *value = register_test_storage_fixture(
       (char *)"x", 1, 4, 4, 0);
@@ -10238,8 +10238,27 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(4, psx_sizeof_query_resolved_size(expr_query));
   node_t *syntax_expr =
       parse_expr_input_with_existing_locals("sizeof(x)");
-  node_t *typed_expr = analyze_test_expression(syntax_expr, NULL);
-  assert_typed_sizeof(typed_expr, 4);
+  node_sizeof_query_t *syntax_expr_query =
+      (node_sizeof_query_t *)syntax_expr;
+  node_t *syntax_expr_operand = syntax_expr_query->operand;
+  psx_frontend_expression_hir_t typed_expr =
+      resolve_test_expression_hir(syntax_expr);
+  const psx_hir_node_t *typed_expr_root =
+      test_expression_hir_root(&typed_expr);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_expr_root));
+  ASSERT_EQ(4, psx_hir_node_integer_value(typed_expr_root));
+  psx_type_shape_t sizeof_result_shape =
+      test_hir_type_shape(typed_expr_root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, sizeof_result_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            sizeof_result_shape.integer_kind);
+  ASSERT_TRUE(sizeof_result_shape.is_unsigned);
+  ASSERT_TRUE(syntax_expr_query->operand == syntax_expr_operand);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expr));
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expr_operand));
+  ASSERT_TRUE(ps_node_get_type(syntax_expr) == NULL);
+  ASSERT_TRUE(ps_node_get_type(syntax_expr_operand) == NULL);
+  psx_frontend_expression_hir_dispose(&typed_expr);
 
   node_t *direct_type_raw =
       parse_expr_input_with_existing_locals("sizeof(int[3])");
@@ -10314,23 +10333,22 @@ static void test_sizeof_semantic_lowering_boundary() {
       raw_type_syntax->declarator.declarator_shape.ops;
   node_t *raw_type_bound =
       raw_type_syntax->declarator.array_bounds[0].expression.node;
-  node_t *typed_type = analyze_test_expression(raw_type, NULL);
+  psx_frontend_expression_hir_t typed_type =
+      resolve_test_expression_hir(raw_type);
+  const psx_hir_node_t *typed_type_root =
+      test_expression_hir_root(&typed_type);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_type_root));
+  ASSERT_EQ(12, psx_hir_node_integer_value(typed_type_root));
   ASSERT_TRUE(!ps_node_has_resolution_state(&type_query->base));
-  node_sizeof_query_t *typed_type_query =
-      (node_sizeof_query_t *)typed_type;
-  ASSERT_TRUE(
-      typed_type_query->type_name.syntax != raw_type_syntax);
-  ASSERT_TRUE(
-      typed_type_query->type_name.syntax->declarator
-          .declarator_shape.ops != raw_type_ops);
-  ASSERT_TRUE(
-      typed_type_query->type_name.syntax->declarator
-          .array_bounds[0].expression.node != raw_type_bound);
+  ASSERT_TRUE(type_query->type_name.syntax == raw_type_syntax);
+  ASSERT_TRUE(type_query->type_name.syntax->declarator
+                  .declarator_shape.ops == raw_type_ops);
+  ASSERT_TRUE(type_query->type_name.syntax->declarator
+                  .array_bounds[0].expression.node == raw_type_bound);
   ASSERT_TRUE(!ps_node_has_resolution_state(raw_type_bound));
-  ASSERT_TRUE(ps_node_has_resolution_state(
-      typed_type_query->type_name.syntax->declarator
-          .array_bounds[0].expression.node));
-  assert_typed_sizeof(typed_type, 12);
+  ASSERT_TRUE(ps_node_get_type(raw_type) == NULL);
+  ASSERT_TRUE(ps_node_get_type(raw_type_bound) == NULL);
+  psx_frontend_expression_hir_dispose(&typed_type);
 
   lvar_t *runtime_bound = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
@@ -10345,36 +10363,38 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_t *raw_vla_bound =
       raw_vla_syntax->declarator.array_bounds[0].expression.node;
   ASSERT_EQ(ND_IDENTIFIER, raw_vla_bound->kind);
-  node_t *typed_vla_type =
-      analyze_test_expression(raw_vla_type, NULL);
-  node_sizeof_query_t *typed_vla_query =
-      (node_sizeof_query_t *)typed_vla_type;
-  node_t *typed_vla_bound =
-      typed_vla_query->type_name.syntax->declarator
-          .array_bounds[0].expression.node;
-  ASSERT_TRUE(
-      typed_vla_query->type_name.syntax != raw_vla_syntax);
-  ASSERT_TRUE(typed_vla_bound != raw_vla_bound);
+  psx_frontend_expression_hir_t typed_vla_type =
+      resolve_test_expression_hir(raw_vla_type);
+  const psx_hir_node_t *typed_vla_root =
+      test_expression_hir_root(&typed_vla_type);
+  ASSERT_EQ(PSX_HIR_MUL, psx_hir_node_kind(typed_vla_root));
+  ASSERT_EQ(2, psx_hir_node_child_count(typed_vla_root));
+  const psx_hir_node_t *typed_vla_factor = psx_hir_module_lookup(
+      typed_vla_type.module,
+      psx_hir_node_child_at(typed_vla_root, 0));
+  const psx_hir_node_t *typed_vla_bound_cast = psx_hir_module_lookup(
+      typed_vla_type.module,
+      psx_hir_node_child_at(typed_vla_root, 1));
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_vla_factor));
+  ASSERT_EQ(4, psx_hir_node_integer_value(typed_vla_factor));
+  ASSERT_EQ(PSX_HIR_CAST,
+            psx_hir_node_kind(typed_vla_bound_cast));
+  ASSERT_EQ(1, psx_hir_node_child_count(typed_vla_bound_cast));
+  const psx_hir_node_t *typed_vla_bound = psx_hir_module_lookup(
+      typed_vla_type.module,
+      psx_hir_node_child_at(typed_vla_bound_cast, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(typed_vla_bound));
+  ASSERT_EQ(ps_lvar_offset(runtime_bound),
+            psx_hir_node_storage_offset(typed_vla_bound));
+  ASSERT_TRUE(raw_vla_query->type_name.syntax == raw_vla_syntax);
+  ASSERT_TRUE(raw_vla_syntax->declarator.array_bounds[0]
+                  .expression.node == raw_vla_bound);
   ASSERT_EQ(ND_IDENTIFIER, raw_vla_bound->kind);
   ASSERT_TRUE(!ps_node_has_resolution_state(raw_vla_bound));
-  ASSERT_EQ(ND_IDENTIFIER, typed_vla_bound->kind);
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(typed_vla_bound));
-  ASSERT_TRUE(ps_node_has_resolution_state(typed_vla_bound));
-  const psx_sizeof_runtime_plan_t *runtime_plan =
-      psx_sizeof_query_runtime_plan_const(typed_vla_query);
-  ASSERT_TRUE(runtime_plan != NULL);
-  ASSERT_EQ(1, runtime_plan->runtime_bound_count);
-  ASSERT_EQ(4, runtime_plan->constant_factor);
-  ASSERT_TRUE(runtime_plan->runtime_bound_ids[0] !=
-              PSX_SEMANTIC_EXPR_ID_INVALID);
-  const psx_typed_hir_tree_t *runtime_bound_tree =
-      ps_ctx_semantic_expression_in(
-          test_semantic_context(),
-          runtime_plan->runtime_bound_ids[0]);
-  ASSERT_TRUE(runtime_bound_tree != NULL);
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_typed_hir_tree_root_kind(runtime_bound_tree));
+  ASSERT_TRUE(!ps_node_has_resolution_state(raw_vla_type));
+  ASSERT_TRUE(ps_node_get_type(raw_vla_type) == NULL);
+  ASSERT_TRUE(ps_node_get_type(raw_vla_bound) == NULL);
+  psx_frontend_expression_hir_dispose(&typed_vla_type);
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
@@ -10386,8 +10406,21 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_addr->kind);
   ASSERT_EQ(ND_ADDRESS_OF,
             ((node_sizeof_query_t *)raw_addr)->operand->kind);
-  node_t *typed_addr = analyze_test_expression(raw_addr, NULL);
-  assert_typed_sizeof(typed_addr, 8);
+  node_t *raw_addr_operand =
+      ((node_sizeof_query_t *)raw_addr)->operand;
+  psx_frontend_expression_hir_t typed_addr =
+      resolve_test_expression_hir(raw_addr);
+  const psx_hir_node_t *typed_addr_root =
+      test_expression_hir_root(&typed_addr);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_addr_root));
+  ASSERT_EQ(8, psx_hir_node_integer_value(typed_addr_root));
+  ASSERT_TRUE(((node_sizeof_query_t *)raw_addr)->operand ==
+              raw_addr_operand);
+  ASSERT_EQ(ND_ADDRESS_OF, raw_addr_operand->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(raw_addr));
+  ASSERT_TRUE(!ps_node_has_resolution_state(raw_addr_operand));
+  ASSERT_TRUE(ps_node_get_type(raw_addr) == NULL);
+  psx_frontend_expression_hir_dispose(&typed_addr);
 
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -10475,10 +10508,23 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(4, psx_alignof_query_resolved_alignment(align_query));
   node_t *syntax_align =
       parse_expr_input_with_existing_locals("_Alignof(int[3])");
-  node_t *typed_align = analyze_test_expression(syntax_align, NULL);
+  node_alignof_query_t *syntax_align_query =
+      (node_alignof_query_t *)syntax_align;
+  psx_parsed_type_name_t *syntax_align_type_name =
+      syntax_align_query->type_name.syntax;
+  psx_frontend_expression_hir_t typed_align =
+      resolve_test_expression_hir(syntax_align);
+  const psx_hir_node_t *typed_align_root =
+      test_expression_hir_root(&typed_align);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_align_root));
+  ASSERT_EQ(4, psx_hir_node_integer_value(typed_align_root));
   ASSERT_TRUE(
       psx_node_resolved_type_name(&align_query->base) != NULL);
-  assert_typed_alignof(typed_align, 4);
+  ASSERT_TRUE(syntax_align_query->type_name.syntax ==
+              syntax_align_type_name);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_align));
+  ASSERT_TRUE(ps_node_get_type(syntax_align) == NULL);
+  psx_frontend_expression_hir_dispose(&typed_align);
 
   node_t **program = parse_program_input(
       "unsigned long __typed_hir_alignof(void) { "
@@ -31349,7 +31395,7 @@ int main() {
   test_unary_deref_typed_hir_boundary();
   test_unary_operator_typed_hir_boundary();
   test_generic_selection_typed_hir_boundary();
-  test_sizeof_semantic_lowering_boundary();
+  test_sizeof_typed_hir_boundary();
   test_expression_typed_hir_type_boundary();
   test_function_call_typed_hir_boundary();
   test_function_prototype_type_identity_boundary();

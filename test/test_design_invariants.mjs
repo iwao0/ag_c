@@ -2640,6 +2640,7 @@ for (const testName of [
   "test_unary_deref_typed_hir_boundary",
   "test_unary_operator_typed_hir_boundary",
   "test_generic_selection_typed_hir_boundary",
+  "test_sizeof_typed_hir_boundary",
   "test_expression_typed_hir_type_boundary",
   "test_function_call_typed_hir_boundary",
   "test_cast_typed_hir_boundary",
