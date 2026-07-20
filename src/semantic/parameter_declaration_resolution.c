@@ -39,19 +39,39 @@ int psx_resolve_parameter_declaration(
   memset(resolution, 0, sizeof(*resolution));
   psx_type_t *type = psx_build_decl_type(&request->type);
   if (!type) return 0;
-  type = ps_type_adjust_parameter_type_in(
-      ps_ctx_arena(request->type.semantic_context), type);
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       request->type.semantic_context, type);
-  if (!type || identity.type_id == PSX_TYPE_ID_INVALID ||
+  psx_type_shape_t shape = {0};
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(request->type.semantic_context);
+  if (identity.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_describe(
+          types, identity.type_id, &shape)) {
+    return 0;
+  }
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element =
+        psx_semantic_type_table_base(types, identity.type_id);
+    identity = ps_ctx_intern_pointer_to_qual_type_in(
+        request->type.semantic_context, element);
+  } else if (shape.kind == PSX_TYPE_FUNCTION) {
+    identity = ps_ctx_intern_pointer_to_qual_type_in(
+        request->type.semantic_context, identity);
+  }
+  if (identity.type_id == PSX_TYPE_ID_INVALID ||
       ps_type_sizeof_id(
-          ps_ctx_semantic_type_table_in(request->type.semantic_context),
+          types,
           ps_ctx_record_layout_table_in(request->type.semantic_context),
           identity.type_id,
           ps_ctx_data_layout(request->type.semantic_context)) <= 0) {
     return 0;
   }
   resolution->declaration_qual_type = identity;
+  resolution->function_qual_type = identity;
+  /* C11 6.7.6.3p15 removes top-level qualifiers from the function
+   * type, while the parameter object in a definition remains qualified. */
+  resolution->function_qual_type.qualifiers =
+      PSX_TYPE_QUALIFIER_NONE;
 
   const psx_type_t *leaf = ps_type_derived_leaf_type(type);
   int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);

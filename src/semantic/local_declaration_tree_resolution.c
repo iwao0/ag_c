@@ -36,7 +36,7 @@ typedef struct {
   psx_local_registry_t *local_registry;
   psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   int requested_alignment;
   int is_typedef;
   int is_extern;
@@ -44,7 +44,6 @@ typedef struct {
   node_t *initialization;
 
   psx_local_apply_kind_t current_kind;
-  const psx_type_t *current_type;
   psx_qual_type_t current_qual_type;
   psx_runtime_declarator_application_t current_application;
   psx_parsed_initializer_t current_initializer;
@@ -106,15 +105,25 @@ static void *begin_declaration(
         specifier);
     return application;
   }
-  application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
+  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
       application->semantic_context, application->global_registry,
       application->local_registry,
       specifier);
-  if (!application->base_type) {
+  if (!base_type) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         specifier->diagnostic_token, "local-declaration",
         "canonical local declaration type resolution failed");
+    return application;
+  }
+  application->base_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          application->semantic_context, base_type);
+  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        specifier->diagnostic_token, "local-declaration",
+        "canonical local declaration type interning failed");
   }
   application->requested_alignment =
       psx_resolve_parsed_decl_alignment_in_contexts(
@@ -138,18 +147,22 @@ static void begin_declarator(
       application->local_registry,
       declarator,
       &application->current_application);
-  application->current_type = psx_apply_runtime_declarator_type_in_context(
-      application->semantic_context, application->base_type,
-      &application->current_application);
-  if (!application->current_type) {
+  application->current_qual_type =
+      psx_apply_runtime_declarator_qual_type_in_context(
+          application->semantic_context, application->base_qual_type,
+          &application->current_application);
+  const psx_type_t *current_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(application->semantic_context),
+          application->current_qual_type);
+  if (!current_type) {
     ps_diag_ctx_in(
         application_diagnostics(application), (token_t *)name,
         "local-declaration",
         "canonical declarator type resolution failed for '%.*s'",
         name->len, name->str);
+    return;
   }
-  application->current_qual_type = ps_ctx_intern_qual_type_in(
-      application->semantic_context, application->current_type);
   if (application->current_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         application_diagnostics(application), (token_t *)name,
@@ -170,15 +183,14 @@ static void begin_declarator(
         application->semantic_context, application->global_registry,
         application->local_registry,
         name->str, name->len,
-        ps_ctx_intern_declaration_qual_type_in(
-            application->semantic_context, application->current_type),
+        application->current_qual_type,
         (token_t *)name);
     application->current_kind = PSX_LOCAL_APPLY_TYPEDEF;
     return;
   }
 
   if (application->is_extern ||
-      application->current_type->kind == PSX_TYPE_FUNCTION) {
+      current_type->kind == PSX_TYPE_FUNCTION) {
     if (!psx_apply_block_extern_declaration_pipeline(
             &(psx_block_extern_declaration_pipeline_request_t){
                 .semantic_context = application->semantic_context,

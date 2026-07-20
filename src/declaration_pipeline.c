@@ -602,9 +602,22 @@ int psx_finish_function_definition_pipeline(
   psx_function_definition_pipeline_result_t *result = state->result;
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
+  psx_qual_type_t *function_parameter_qual_types =
+      result->nargs > 0
+          ? arena_alloc_in(
+                ps_ctx_arena(state->semantic_context),
+                (size_t)result->nargs *
+                    sizeof(*function_parameter_qual_types))
+          : NULL;
+  if (result->nargs > 0 && !function_parameter_qual_types) return 0;
+  for (int i = 0; i < result->nargs; i++) {
+    function_parameter_qual_types[i] = result->parameter_qual_types[i];
+    function_parameter_qual_types[i].qualifiers =
+        PSX_TYPE_QUALIFIER_NONE;
+  }
   psx_set_resolved_function_parameter_qual_types(
       ps_ctx_arena(state->semantic_context), primary,
-      result->parameter_qual_types, result->nargs,
+      function_parameter_qual_types, result->nargs,
       primary->function_is_variadic,
       state->parameter_count > 0 || primary->function_is_variadic);
 

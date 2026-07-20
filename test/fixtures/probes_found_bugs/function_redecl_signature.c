@@ -35,6 +35,17 @@ int count_args(int n, ...) { return n; }
 int with_signed(signed int x);
 int with_signed(int x) { return x; }
 
+/* (f) parameter最上位のqualifierは関数型の互換性に影響しない。 */
+int pointer_top_const(char *);
+int pointer_top_const(char * const text) { return text[0]; }
+
+/* (g) pointerの内側のqualifierは宣言と定義の両方で保持する。 */
+int qualified_pointee(const char *);
+int qualified_pointee(const char *text) { return text[0]; }
+
+int volatile_pointee(volatile char *);
+int volatile_pointee(volatile char *text) { return text[0]; }
+
 int main(void) {
     int arr[] = {1, 2, 3, 4, 5};
     assert(add(3, 4) == 7);
@@ -42,5 +53,9 @@ int main(void) {
     assert(scale(2.0, 3.5) == 7.0);
     assert(count_args(3, 10, 20, 30) == 3);
     assert(with_signed(42) == 42);
+    char text[] = "abc";
+    assert(pointer_top_const(text) == 'a');
+    assert(qualified_pointee(text) == 'a');
+    assert(volatile_pointee(text) == 'a');
     return 0;
 }

@@ -22,9 +22,9 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   const ag_compilation_options_t *options;
   psx_parsed_toplevel_declaration_t *declaration;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   psx_toplevel_apply_kind_t current_kind;
-  const psx_type_t *current_type;
+  psx_qual_type_t current_qual_type;
   psx_parsed_initializer_t current_initializer;
   psx_global_declaration_pipeline_request_t global_request;
   psx_global_declaration_pipeline_result_t global_result;
@@ -38,16 +38,21 @@ static ag_diagnostic_context_t *application_diagnostics(
 static void apply_function_prototype(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    token_ident_t *name, const psx_type_t *type) {
-  if (!name || !type || type->kind != PSX_TYPE_FUNCTION) return;
+    token_ident_t *name, psx_qual_type_t function_qual_type) {
+  psx_type_shape_t function_shape = {0};
+  if (!name ||
+      !psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          function_qual_type.type_id, &function_shape) ||
+      function_shape.kind != PSX_TYPE_FUNCTION)
+    return;
   if (!psx_apply_function_declaration_pipeline(
       &(psx_function_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
               .global_registry = global_registry,
               .name = name->str,
               .name_len = name->len,
-              .function_qual_type = ps_ctx_intern_qual_type_in(
-                  semantic_context, type),
+              .function_qual_type = function_qual_type,
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
           })) {
@@ -85,15 +90,25 @@ static int begin_declaration(
     return 1;
   }
 
-  application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
+  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
       application->semantic_context, application->global_registry,
       application->local_registry,
       &declaration->specifier);
-  if (!application->base_type) {
+  if (!base_type) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         declaration->diagnostic_token, "decl",
         "canonical top-level base type resolution failed");
+    return 0;
+  }
+  application->base_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          application->semantic_context, base_type);
+  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        declaration->diagnostic_token, "decl",
+        "canonical top-level base type interning failed");
   }
   return 1;
 }
@@ -106,15 +121,21 @@ static void begin_declarator(
   token_ident_t *name = declarator->identifier;
   application->current_kind = PSX_TOPLEVEL_APPLY_NONE;
   application->current_initializer = *initializer;
-  application->current_type = psx_apply_parsed_declarator_type_in_contexts(
+  application->current_qual_type =
+      psx_apply_parsed_declarator_qual_type_in_contexts(
       application->semantic_context, application->global_registry,
       application->local_registry,
-      application->base_type, declarator);
-  if (!application->current_type) {
+      application->base_qual_type, declarator);
+  const psx_type_t *current_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(application->semantic_context),
+          application->current_qual_type);
+  if (!current_type) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         declarator->diagnostic_token, "decl",
         "canonical top-level declarator type resolution failed");
+    return;
   }
 
   if (declaration->is_typedef) {
@@ -129,13 +150,12 @@ static void begin_declarator(
         application->semantic_context, application->global_registry,
         application->local_registry,
         name->str, name->len,
-        ps_ctx_intern_declaration_qual_type_in(
-            application->semantic_context, application->current_type),
+        application->current_qual_type,
         declarator->diagnostic_token);
     application->current_kind = PSX_TOPLEVEL_APPLY_TYPEDEF;
     return;
   }
-  if (application->current_type->kind == PSX_TYPE_FUNCTION) {
+  if (current_type->kind == PSX_TYPE_FUNCTION) {
     if (initializer->has_initializer) {
       ps_diag_ctx_in(
           application_diagnostics(application), (token_t *)name,
@@ -145,7 +165,7 @@ static void begin_declarator(
     }
     apply_function_prototype(
         application->semantic_context, application->global_registry,
-        name, application->current_type);
+        name, application->current_qual_type);
     application->current_kind = PSX_TOPLEVEL_APPLY_FUNCTION;
     return;
   }
@@ -159,9 +179,7 @@ static void begin_declarator(
           .options = application->options,
           .name = name->str,
           .name_len = name->len,
-          .type = ps_ctx_intern_qual_type_in(
-              application->semantic_context,
-              application->current_type),
+          .type = application->current_qual_type,
           .is_extern_decl = declaration->is_extern,
           .is_static = declaration->is_static,
           .is_thread_local = declaration->is_thread_local,
@@ -183,11 +201,16 @@ static void finish_declarator(
     psx_parsed_initializer_t *initializer) {
   if (application->current_kind != PSX_TOPLEVEL_APPLY_GLOBAL) return;
   application->current_initializer = *initializer;
+  const psx_type_t *current_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(application->semantic_context),
+          application->current_qual_type);
+  if (!current_type) return;
   if (initializer->has_initializer &&
       initializer->kind == PSX_DECL_INIT_EXPR && initializer->value &&
       initializer->value->kind == ND_COMPOUND_LITERAL &&
-      (application->current_type->kind == PSX_TYPE_ARRAY ||
-       ps_type_is_tag_aggregate(application->current_type))) {
+      (current_type->kind == PSX_TYPE_ARRAY ||
+       ps_type_is_tag_aggregate(current_type))) {
     application->current_initializer.kind = PSX_DECL_INIT_LIST;
     application->current_initializer.value = initializer->value->rhs;
   }

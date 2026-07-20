@@ -22,6 +22,7 @@ typedef struct {
 
 typedef struct {
   psx_qual_type_t declaration_qual_type;
+  psx_qual_type_t function_qual_type;
   psx_parameter_lowering_kind_t lowering_kind;
   psx_type_id_t runtime_stride_storage_type_id;
   psx_parameter_dimension_t *inner_dimensions;

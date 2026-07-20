@@ -2904,7 +2904,7 @@ if (!/psx_name_classifier_t\s+name_classifier\s*;/.test(
     !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
       toplevelDeclarationFrontendSource,
     ) ||
-    !/psx_apply_parsed_declarator_type_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
       toplevelDeclarationFrontendSource,
     ) ||
     /psx_frontend_init_toplevel_declaration_callbacks_in_contexts\s*\(/.test(
@@ -8581,6 +8581,9 @@ if (!runtimeArrayBoundStruct ||
     !/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
       parameterDeclarationResolutionStruct[1],
     ) ||
+    !/\bpsx_qual_type_t\s+function_qual_type\s*;/.test(
+      parameterDeclarationResolutionStruct[1],
+    ) ||
     /\bpsx_parameter_storage_plan_t\b/.test(
       parameterDeclarationResolutionStruct[1],
     ) ||
@@ -8704,6 +8707,25 @@ if (!/typedef\s+struct\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\s*expression\s
     )) {
   throw new Error(
     "VLA declarations must lower through an immutable runtime plan and Typed HIR without generated semantic arithmetic or assignment AST",
+  );
+}
+if (!/\bpsx_resolve_parameter_declaration\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/\bpsx_resolve_parameter_declaration\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
+    !/resolution->declaration_qual_type\s*=\s*identity\s*;/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/resolution->function_qual_type\s*=\s*identity\s*;[^]*?resolution->function_qual_type\.qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE\s*;/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    /\bps_type_adjust_parameter_type_in\s*\(/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "prototype and definition parameter types must share canonical adjustment while preserving definition-object qualifiers",
   );
 }
 if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
@@ -8998,29 +9020,9 @@ if (!staticInitializerRequest ||
   );
 }
 
-const readonlyTypeFields = [
-  ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_type"],
-];
 const readonlyTypeSources = new Map();
-for (const [file, typeName, fieldName] of readonlyTypeFields) {
-  let source = readonlyTypeSources.get(file);
-  if (!source) {
-    source = await readFile(file, "utf8");
-    readonlyTypeSources.set(file, source);
-  }
-  const body = source.match(
-    new RegExp(
-      `typedef struct\\s*\\{((?:(?!typedef struct)[\\s\\S])*?)\\}\\s*${typeName}\\s*;`,
-    ),
-  );
-  const field = new RegExp(
-    `\\bconst\\s+psx_type_t\\s*\\*\\s*${fieldName}\\s*;`,
-  );
-  if (!body || !field.test(body[1])) {
-    throw new Error(`${typeName}.${fieldName} must be a const type view`);
-  }
-}
 const canonicalLoweringTypeFields = [
+  ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_qual_type"],
   ["src/semantic/declaration_resolution.h", "psx_decl_type_request_t", "base_qual_type"],
   ["src/semantic/aggregate_member_resolution.h", "psx_aggregate_member_declaration_request_t", "base_qual_type"],
   ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
@@ -9057,6 +9059,55 @@ for (const [file, typeName, fieldName] of canonicalLoweringTypeFields) {
   if (!body || !field.test(body[1]) || /\bpsx_type_t\b/.test(body[1])) {
     throw new Error(`${typeName}.${fieldName} must be a canonical QualType`);
   }
+}
+
+const canonicalDeclarationApplicationStates = [
+  [
+    "psx_toplevel_declaration_application_t",
+    toplevelDeclarationFrontendSource,
+  ],
+  [
+    "psx_local_declaration_application_t",
+    localDeclarationTreeResolutionSource,
+  ],
+];
+for (const [typeName, source] of canonicalDeclarationApplicationStates) {
+  const body = source.match(
+    new RegExp(
+      `typedef struct\\s*\\{((?:(?!typedef struct)[\\s\\S])*?)\\}\\s*${typeName}\\s*;`,
+    ),
+  );
+  if (!body ||
+      !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(body[1]) ||
+      !/\bpsx_qual_type_t\s+current_qual_type\s*;/.test(body[1]) ||
+      /\bconst\s+psx_type_t\s*\*\s*(?:base_type|current_type)\s*;/.test(
+        body[1],
+      )) {
+    throw new Error(
+      `${typeName} must retain declaration base and current types as canonical QualType`,
+    );
+  }
+}
+
+const declarationApplicationHeader = await readFile(
+  "src/semantic/declaration_application.h",
+  "utf8",
+);
+if (!/\bpsx_qual_type_t\s+psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
+      declarationApplicationHeader,
+    ) ||
+    !/\bpsx_qual_type_t\s+psx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+      declarationApplicationHeader,
+    ) ||
+    !/psx_apply_parsed_declarator_type_in_contexts\s*\([^]*?psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_apply_runtime_declarator_type_in_context\s*\([^]*?psx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+      declarationApplicationSource,
+    )) {
+  throw new Error(
+    "declarator application must use canonical QualType cores with explicit compatibility view adapters",
+  );
 }
 
 const readonlySemanticTypeResults = [
@@ -11195,7 +11246,10 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/lvar_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
-    !/result->parameter_qual_types\s*,\s*result->nargs/.test(
+    !/function_parameter_qual_types\s*,\s*result->nargs/.test(
+      explicitArenaDeclarationPipelineSource,
+    ) ||
+    !/function_parameter_qual_types\[i\]\.qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE\s*;/.test(
       explicitArenaDeclarationPipelineSource,
     ) ||
     /parameter_types\s*\[[^\]]+\]\s*=\s*ps_node_get_type\s*\(/.test(

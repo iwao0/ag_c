@@ -15323,7 +15323,9 @@ static void test_declaration_phase_boundary() {
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(PSX_PARSED_DECL_TYPE_NONE, syntax.source);
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
-  ASSERT_TRUE(phase.base_type == NULL);
+  ASSERT_TRUE(psx_declaration_phase_base_type(&phase) == NULL);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_declaration_phase_base_qual_type(&phase).type_id);
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
@@ -15337,9 +15339,13 @@ static void test_declaration_phase_boundary() {
 
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(PSX_DECLARATION_PHASE_RESOLVED_TYPE, phase.state);
-  ASSERT_TRUE(phase.base_type != NULL);
-  ASSERT_EQ(PSX_TYPE_STRUCT, phase.base_type->kind);
-  const psx_record_decl_t *phase_record = test_record_decl(phase.base_type);
+  const psx_type_t *phase_base_type =
+      psx_declaration_phase_base_type(&phase);
+  ASSERT_TRUE(phase_base_type != NULL);
+  ASSERT_TRUE(psx_declaration_phase_base_qual_type(&phase).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(PSX_TYPE_STRUCT, phase_base_type->kind);
+  const psx_record_decl_t *phase_record = test_record_decl(phase_base_type);
   ASSERT_TRUE(phase_record != NULL);
   ASSERT_EQ(1, phase_record->member_count);
   ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
@@ -15353,7 +15359,8 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(0, phase.requested_alignment);
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(16, phase.requested_alignment);
-  ASSERT_EQ(PSX_TYPE_INTEGER, phase.base_type->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            psx_declaration_phase_base_type(&phase)->kind);
   psx_dispose_declaration_phase(&phase);
 
   tokens = tk_tokenize((char *)"_Alignas(int *) char");
@@ -15369,7 +15376,8 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(test_target_pointer_alignment(
                 ps_ctx_target_info(test_semantic_context())),
             phase.requested_alignment);
-  ASSERT_EQ(PSX_TYPE_INTEGER, phase.base_type->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            psx_declaration_phase_base_type(&phase)->kind);
   psx_dispose_declaration_phase(&phase);
 }
 
@@ -27343,6 +27351,12 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("static const char *__const_leak_roots[]={\"\"}; typedef struct __ConstLeakFrame __ConstLeakFrame; struct __ConstLeakFrame{__ConstLeakFrame *next; const char *path;}; static __ConstLeakFrame *__const_leak_g; void f(void){ __ConstLeakFrame *p=0; __const_leak_g=p; }");
   expect_parse_ok("static const char *__const_ptr_tbl[4]; void f(const char *name){ __const_ptr_tbl[0]=name; }");
   expect_parse_ok("struct __ConstMemberPtr{const char *path;}; void f(struct __ConstMemberPtr *m,const char *path){ m->path=path; }");
+  expect_parse_ok("void f(const char *); void f(const char *p){(void)p;}");
+  expect_parse_ok("void f(const int *); void f(const int *p){(void)p;}");
+  expect_parse_ok("void f(volatile char *); void f(volatile char *p){(void)p;}");
+  expect_parse_ok("void f(char *); void f(char * const p){(void)p;}");
+  expect_parse_fail("void f(char *); void f(const char *p){(void)p;}");
+  expect_parse_fail("void f(const char **); void f(char **p){(void)p;}");
   expect_parse_ok("struct __PtrSubSym814{char *name; int len;}; struct __PtrSubData814{struct __PtrSubSym814 *symbols;}; static struct __PtrSubData814 __ptr_sub_g814; int main(void){__ptr_sub_g814.symbols[0].name=\"main\";return __ptr_sub_g814.symbols[0].name[0];}");
   // 後置const (int const x) は変数宣言で現在パースエラー
   // expect_parse_ok("int main() { int const x = 42; return x; }");

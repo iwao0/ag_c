@@ -829,14 +829,21 @@ psx_type_t *ps_type_apply_declarator_shape_in(
 psx_type_t *ps_type_adjust_parameter_type_in(
     arena_context_t *arena_context, psx_type_t *type) {
   if (!type) return NULL;
+  psx_type_t *adjusted = NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    psx_type_t *adjusted = ps_type_new_pointer_in(
+    adjusted = ps_type_new_pointer_in(
         arena_context, type->base);
-    return adjusted;
+  } else if (type->kind == PSX_TYPE_FUNCTION) {
+    adjusted = ps_type_new_pointer_in(arena_context, type);
+  } else {
+    adjusted = ps_type_clone_in(arena_context, type);
   }
-  if (type->kind == PSX_TYPE_FUNCTION)
-    return ps_type_new_pointer_in(arena_context, type);
-  return type;
+  if (adjusted)
+    ps_type_remove_qualifiers(
+        adjusted, PSX_TYPE_QUALIFIER_CONST |
+                      PSX_TYPE_QUALIFIER_VOLATILE |
+                      PSX_TYPE_QUALIFIER_ATOMIC);
+  return adjusted;
 }
 
 psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
