@@ -12,7 +12,7 @@ typedef struct {
   int scope_stack_capacity;
   int scope_depth;
   unsigned current_scope_seq;
-  unsigned next_scope_seq;
+  unsigned next_scope_id;
   unsigned next_declaration_seq;
 } psx_parser_name_environment_t;
 
@@ -25,7 +25,7 @@ void ps_parser_name_environment_reset(
 void ps_parser_name_environment_reset_at(
     psx_parser_name_environment_t *environment,
     psx_name_classifier_t outer_names,
-    unsigned scope_seq, unsigned next_scope_seq,
+    unsigned scope_seq, unsigned next_scope_id,
     unsigned declaration_seq);
 void ps_parser_name_environment_dispose(
     psx_parser_name_environment_t *environment);

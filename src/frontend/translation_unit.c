@@ -124,6 +124,8 @@ int psx_frontend_stream_begin(
   stream->session = session;
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(session);
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(semantic_context);
   psx_global_registry_t *global_registry =
       ag_compilation_session_global_registry(session);
   psx_local_registry_t *local_registry =
@@ -160,11 +162,11 @@ int psx_frontend_stream_begin(
   ps_parser_stream_begin_with_syntax(
       &stream->parser, tk_ctx, start, &stream->parser_syntax);
   psx_scope_lookup_point_t translation_unit_lookup_point =
-      ps_local_registry_capture_lookup_point_in(local_registry);
+      psx_scope_graph_capture_lookup_point(scope_graph);
   ps_parser_name_environment_reset_at(
       &stream->parser.name_environment, empty_classifier,
       translation_unit_lookup_point.scope_id,
-      ps_local_registry_next_scope_seq_in(local_registry),
+      psx_scope_graph_next_scope_id(scope_graph),
       translation_unit_lookup_point.declaration_order);
   stream->parser.syntax.name_classifier =
       ps_parser_name_environment_classifier(
@@ -186,6 +188,8 @@ int psx_frontend_next_function_with_resolver(
   ag_compilation_session_t *session = stream->session;
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(session);
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(semantic_context);
   psx_global_registry_t *global_registry =
       ag_compilation_session_global_registry(session);
   psx_local_registry_t *local_registry =
@@ -224,12 +228,12 @@ int psx_frontend_next_function_with_resolver(
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0);
       psx_scope_lookup_point_t function_lookup_point =
-          ps_local_registry_capture_lookup_point_in(local_registry);
+          psx_scope_graph_capture_lookup_point(scope_graph);
       ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
           stream->parser.syntax.name_classifier,
           function_lookup_point.scope_id,
-          ps_local_registry_next_scope_seq_in(local_registry),
+          psx_scope_graph_next_scope_id(scope_graph),
           function_lookup_point.declaration_order);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(

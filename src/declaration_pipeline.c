@@ -405,7 +405,8 @@ static int append_definition_parameter(
         "canonical parameter base type resolution failed");
   }
   psx_scope_lookup_point_t parameter_lookup_point =
-      ps_local_registry_capture_lookup_point_in(local_registry);
+      psx_scope_graph_capture_lookup_point(
+          ps_ctx_scope_graph(semantic_context));
   psx_runtime_declarator_application_t applied;
   psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
       semantic_context, global_registry, local_registry,

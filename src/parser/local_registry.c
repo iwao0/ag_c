@@ -239,31 +239,6 @@ static void offset_index_remove(
   }
 }
 
-unsigned ps_local_registry_current_scope_seq_in(
-    const psx_local_registry_t *registry) {
-  psx_scope_id_t scope = registry
-      ? psx_scope_graph_current_scope(registry->scope_graph)
-      : PSX_SCOPE_ID_INVALID;
-  return scope == PSX_SCOPE_ID_INVALID ? 0 : scope;
-}
-
-unsigned ps_local_registry_next_scope_seq_in(
-    const psx_local_registry_t *registry) {
-  psx_scope_id_t next = registry
-      ? psx_scope_graph_next_scope_id(registry->scope_graph)
-      : PSX_SCOPE_ID_INVALID;
-  return next == PSX_SCOPE_ID_INVALID || next == 0 ? 0 : next - 1;
-}
-
-psx_scope_lookup_point_t ps_local_registry_capture_lookup_point_in(
-    const psx_local_registry_t *registry) {
-  return registry
-             ? psx_scope_graph_capture_lookup_point(registry->scope_graph)
-             : (psx_scope_lookup_point_t){
-                   .scope_id = PSX_SCOPE_ID_INVALID,
-               };
-}
-
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var) {
   if (!registry || !var) return;

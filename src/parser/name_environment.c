@@ -51,21 +51,21 @@ void ps_parser_name_environment_reset(
     psx_parser_name_environment_t *environment,
     psx_name_classifier_t outer_names) {
   ps_parser_name_environment_reset_at(
-      environment, outer_names, 0, 0, 0);
+      environment, outer_names, 0, 1, 0);
 }
 
 void ps_parser_name_environment_reset_at(
     psx_parser_name_environment_t *environment,
     psx_name_classifier_t outer_names,
-    unsigned scope_seq, unsigned next_scope_seq,
+    unsigned scope_seq, unsigned next_scope_id,
     unsigned declaration_seq) {
   if (!environment) return;
   clear_entries(environment);
   environment->outer_names = outer_names;
   environment->scope_depth = 0;
   environment->current_scope_seq = scope_seq;
-  environment->next_scope_seq =
-      next_scope_seq >= scope_seq ? next_scope_seq : scope_seq;
+  environment->next_scope_id =
+      next_scope_id > scope_seq ? next_scope_id : scope_seq + 1;
   environment->next_declaration_seq = declaration_seq;
 }
 
@@ -120,7 +120,7 @@ static void environment_enter_scope(void *context) {
     return;
   environment->scope_stack[environment->scope_depth++] =
       environment->current_scope_seq;
-  environment->current_scope_seq = ++environment->next_scope_seq;
+  environment->current_scope_seq = environment->next_scope_id++;
 }
 
 static void environment_leave_scope(void *context) {
@@ -157,7 +157,7 @@ static void environment_record_binding_event(void *context) {
 
 static void environment_reserve_scope(void *context) {
   psx_parser_name_environment_t *environment = context;
-  if (environment) environment->next_scope_seq++;
+  if (environment) environment->next_scope_id++;
 }
 
 psx_name_classifier_t ps_parser_name_environment_classifier(

@@ -39,12 +39,6 @@ void psx_local_registry_checkpoint_rollback(
     psx_local_registry_t *registry,
     psx_local_registry_checkpoint_t *checkpoint);
 
-unsigned ps_local_registry_current_scope_seq_in(
-    const psx_local_registry_t *registry);
-unsigned ps_local_registry_next_scope_seq_in(
-    const psx_local_registry_t *registry);
-psx_scope_lookup_point_t ps_local_registry_capture_lookup_point_in(
-    const psx_local_registry_t *registry);
 void ps_local_registry_reset_in(psx_local_registry_t *registry);
 void ps_local_registry_reset_translation_unit_in(
     psx_local_registry_t *registry);

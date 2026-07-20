@@ -818,6 +818,14 @@ static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
 }
 
+static psx_scope_graph_t *test_scope_graph(void) {
+  return ps_ctx_scope_graph(test_semantic_context());
+}
+
+static psx_scope_lookup_point_t test_scope_lookup_point(void) {
+  return psx_scope_graph_capture_lookup_point(test_scope_graph());
+}
+
 static const psx_type_t *resolve_test_qual_type_view(
     void *context, psx_qual_type_t qual_type) {
   psx_semantic_context_t *semantic_context = context;
@@ -1173,7 +1181,8 @@ static lvar_t *find_test_local_var_in(
     const psx_local_registry_t *registry, char *name, int len) {
   return find_test_visible_local_var_in(
       registry, name, len,
-      ps_local_registry_capture_lookup_point_in(registry));
+      psx_scope_graph_capture_lookup_point(
+          ps_local_registry_scope_graph(registry)));
 }
 
 static global_var_t *find_test_global_var(char *name, int len) {
@@ -7568,12 +7577,12 @@ static int parse_raw_function_item(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()));
   psx_scope_lookup_point_t function_lookup_point =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ps_parser_name_environment_reset_at(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()),
       function_lookup_point.scope_id,
-      ps_local_registry_next_scope_seq_in(test_local_registry()),
+      psx_scope_graph_next_scope_id(test_scope_graph()),
       function_lookup_point.declaration_order);
   local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
@@ -8500,12 +8509,12 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t before_inner =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   lvar_t *inner = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(inner != NULL);
   psx_scope_lookup_point_t after_inner =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, before_inner) == outer);
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
@@ -8513,7 +8522,7 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t nested =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, nested) == inner);
   ps_decl_leave_scope_in(test_local_registry());
@@ -8545,7 +8554,7 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t sibling_before_decl =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   lvar_t *sibling = register_test_storage_fixture(
       (char *)"__sibling_only", 14, 4, 4, 0);
   ASSERT_TRUE(sibling != NULL);
@@ -8559,7 +8568,7 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t other_sibling =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
                   other_sibling) == NULL);
@@ -8570,11 +8579,11 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t before_enum =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ASSERT_TRUE(test_semantic_define_enum_const(
       (char *)"__scoped_enum", 13, 29));
   psx_scope_lookup_point_t after_enum =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ps_decl_leave_scope_in(test_local_registry());
   long long enum_value = 0;
   ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
@@ -8585,7 +8594,7 @@ static void test_persistent_local_scope_lookup_boundary() {
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t enum_sibling =
-      ps_local_registry_capture_lookup_point_in(test_local_registry());
+      test_scope_lookup_point();
   ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
   ps_decl_leave_scope_in(test_local_registry());
@@ -14154,7 +14163,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_type_t *small_aggregate = ps_ctx_clone_tag_type_at_in(
       test_semantic_context(),
       TK_STRUCT, small_parameter_tag, 10,
-      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+      test_scope_lookup_point());
   ASSERT_TRUE(small_aggregate != NULL);
   ASSERT_TRUE(plan_test_parameter_storage(small_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE, plan.kind);
@@ -14168,7 +14177,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_type_t *large_aggregate = ps_ctx_clone_tag_type_at_in(
       test_semantic_context(),
       TK_STRUCT, large_parameter_tag, 10,
-      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+      test_scope_lookup_point());
   ASSERT_TRUE(large_aggregate != NULL);
   ASSERT_EQ(0, ps_type_sizeof(large_aggregate));
   ASSERT_EQ(24, ps_ctx_get_tag_size_in(
@@ -15669,7 +15678,7 @@ static void test_local_declaration_resolution_boundary() {
   psx_type_t *record_element = ps_ctx_clone_tag_type_at_in(
       test_semantic_context(),
       TK_STRUCT, record_element_tag, 18,
-      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+      test_scope_lookup_point());
   ASSERT_TRUE(record_element != NULL);
   ASSERT_TRUE(test_record_decl(record_element) != NULL);
   psx_type_t *incomplete_record_array = ps_type_new_array(
@@ -24108,7 +24117,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *walk_gv_type = ps_ctx_clone_tag_type_at_in(
       test_semantic_context(),
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
-      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+      test_scope_lookup_point());
   ASSERT_TRUE(walk_gv_type != NULL);
   set_test_global_fixture_type(&walk_gv, walk_gv_type);
   psx_record_decl_t *walk_outer_record =
@@ -24168,7 +24177,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *walk_array_element = ps_ctx_clone_tag_type_at_in(
       test_semantic_context(),
       TK_STRUCT, (char *)walk_array_tag, walk_array_len,
-      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+      test_scope_lookup_point());
   ASSERT_TRUE(walk_array_element != NULL);
   set_test_global_fixture_type(
       &walk_array_gv,
@@ -29307,11 +29316,13 @@ static void test_compilation_session_registry_isolation() {
   first_aggregate_type = ps_ctx_clone_tag_type_at_in(
       first.semantic_context,
       TK_STRUCT, session_aggregate_name, 16,
-      ps_local_registry_capture_lookup_point_in(first.local_registry));
+      psx_scope_graph_capture_lookup_point(
+          ps_ctx_scope_graph(first.semantic_context)));
   second_aggregate_type = ps_ctx_clone_tag_type_at_in(
       second.semantic_context,
       TK_STRUCT, session_aggregate_name, 16,
-      ps_local_registry_capture_lookup_point_in(second.local_registry));
+      psx_scope_graph_capture_lookup_point(
+          ps_ctx_scope_graph(second.semantic_context)));
   ASSERT_TRUE(first_aggregate_type != NULL);
   ASSERT_TRUE(second_aggregate_type != NULL);
   set_test_global_fixture_type_in(
@@ -29360,7 +29371,8 @@ static void test_compilation_session_registry_isolation() {
       first.semantic_context,
       TK_STRUCT, (char *)"FirstTag", 8, 0, 0));
   psx_scope_lookup_point_t first_namespace_point =
-      ps_local_registry_capture_lookup_point_in(first.local_registry);
+      psx_scope_graph_capture_lookup_point(
+          ps_ctx_scope_graph(first.semantic_context));
   const psx_type_t *isolated_typedef_type = NULL;
   long long isolated_enum_value = 0;
   ASSERT_TRUE(ps_ctx_find_typedef_decl_type_at_in(
@@ -29616,7 +29628,8 @@ static void test_compilation_session_registry_isolation() {
                   (char *)"explicit_first_local", 20) ==
               &explicit_first_local);
   psx_scope_lookup_point_t explicit_first_point =
-      ps_local_registry_capture_lookup_point_in(first.local_registry);
+      psx_scope_graph_capture_lookup_point(
+          ps_ctx_scope_graph(first.semantic_context));
   ASSERT_TRUE(find_test_visible_local_var_in(
                   first.local_registry,
                   (char *)"explicit_first_local", 20,

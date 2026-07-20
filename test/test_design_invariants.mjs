@@ -244,6 +244,18 @@ const scopeGraphLocalRegistryHeader = await readFile(
   "src/parser/local_registry.h",
   "utf8",
 );
+const scopeGraphNameEnvironmentHeader = await readFile(
+  "src/parser/name_environment.h",
+  "utf8",
+);
+const scopeGraphNameEnvironmentSource = await readFile(
+  "src/parser/name_environment.c",
+  "utf8",
+);
+const scopeGraphFrontendTranslationUnitSource = await readFile(
+  "src/frontend/translation_unit.c",
+  "utf8",
+);
 const scopeGraphGlobalRegistrySource = await readFile(
   "src/parser/global_registry.c",
   "utf8",
@@ -282,8 +294,23 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     /\bpsx_local_lookup_point_t\b/.test(
       scopeGraphLocalRegistryHeader + scopeGraphSemanticContextHeader,
     ) ||
-    !/psx_scope_lookup_point_t\s+ps_local_registry_capture_lookup_point_in\s*\(/.test(
-      scopeGraphLocalRegistryHeader,
+    /ps_local_registry_(?:current_scope_seq|next_scope_seq|capture_lookup_point)_in\s*\(/.test(
+      scopeGraphLocalRegistryHeader + scopeGraphLocalRegistrySource,
+    ) ||
+    !/unsigned\s+next_scope_id\s*;/.test(
+      scopeGraphNameEnvironmentHeader,
+    ) ||
+    /next_scope_seq/.test(
+      scopeGraphNameEnvironmentHeader + scopeGraphNameEnvironmentSource,
+    ) ||
+    !/current_scope_seq\s*=\s*environment->next_scope_id\+\+\s*;/.test(
+      scopeGraphNameEnvironmentSource,
+    ) ||
+    !/psx_scope_graph_capture_lookup_point\s*\(scope_graph\)/.test(
+      scopeGraphFrontendTranslationUnitSource,
+    ) ||
+    !/psx_scope_graph_next_scope_id\s*\(scope_graph\)/.test(
+      scopeGraphFrontendTranslationUnitSource,
     ) ||
     !/PSX_NAMESPACE_ORDINARY/.test(scopeGraphHeader) ||
     !/PSX_NAMESPACE_TAG/.test(scopeGraphHeader) ||

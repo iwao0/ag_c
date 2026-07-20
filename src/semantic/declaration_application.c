@@ -816,7 +816,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     psx_scope_lookup_point_t parameter_lookup_point =
-        ps_local_registry_capture_lookup_point_in(local_registry);
+        psx_scope_graph_capture_lookup_point(
+            ps_ctx_scope_graph(semantic_context));
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
         semantic_context, global_registry, local_registry,
