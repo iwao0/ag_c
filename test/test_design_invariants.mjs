@@ -4940,6 +4940,19 @@ const syntaxTypedHirResolutionSource = await readFile(
   "src/semantic/syntax_typed_hir_resolution.c",
   "utf8",
 );
+if (/\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "Syntax-to-Typed-HIR resolution must follow canonical QualType edges without materializing parser type views",
+  );
+}
 const legacySemanticLabelApi =
   /\b(?:psx_ctx_register_goto_ref_in|psx_ctx_register_label_def_in|psx_ctx_validate_goto_refs_in)\s*\(/;
 if (!/psx_scope_graph_declare_synthetic_at\s*\([^]*?PSX_NAMESPACE_LABEL[^]*?PSX_DECL_LABEL/.test(
@@ -11131,7 +11144,7 @@ if (!/\bpsx_subscript_qual_types_resolution_t\b/.test(
     !/view\.stride_frame_offset\s*\+=\s*PSX_VLA_RUNTIME_SLOT_SIZE/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/ps_type_contains_vla_array\s*\(result_type\)/.test(
+    !/psx_semantic_type_table_contains_vla_array\s*\(\s*direct_semantic_types\s*\(context\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     /direct_subscript_binding_t|resolve_direct_vla_subscript_binding/.test(

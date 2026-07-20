@@ -230,6 +230,47 @@ typedef struct {
   psx_lowering_context_checkpoint_t lowering_checkpoint;
 } direct_function_transaction_t;
 
+static const psx_semantic_type_table_t *direct_semantic_types(
+    const direct_resolution_context_t *context) {
+  return context && context->semantic_context
+             ? ps_ctx_semantic_type_table_in(context->semantic_context)
+             : NULL;
+}
+
+static int direct_qual_type_is_valid(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t type) {
+  return psx_semantic_type_table_qual_type_is_valid(
+      direct_semantic_types(context), type);
+}
+
+static int direct_describe_qual_type(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t type, psx_type_shape_t *shape) {
+  const psx_semantic_type_table_t *types =
+      direct_semantic_types(context);
+  return shape &&
+         psx_semantic_type_table_qual_type_is_valid(types, type) &&
+         psx_semantic_type_table_describe(types, type.type_id, shape);
+}
+
+static int direct_qual_type_has_kind(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t type, psx_type_kind_t kind) {
+  psx_type_shape_t shape = {0};
+  return direct_describe_qual_type(context, type, &shape) &&
+         shape.kind == kind;
+}
+
+static int direct_qual_type_is_integer(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  return direct_describe_qual_type(context, type, &shape) &&
+         (shape.kind == PSX_TYPE_BOOL ||
+          shape.kind == PSX_TYPE_INTEGER);
+}
+
 static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type);
@@ -306,9 +347,7 @@ static int resolve_direct_source_cast(
           context->semantic_context, context->global_registry,
           context->local_registry, &cast->type_name, &resolved))
     return 0;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      context->semantic_context, resolved.type_id);
-  if (!canonical) return 0;
+  if (!direct_qual_type_is_valid(context, resolved)) return 0;
   direct_cast_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));
   if (!binding) {
@@ -1068,22 +1107,25 @@ static int resolve_direct_sizeof_vla_subscript(
             context, binding->evaluated_prefixes[i],
             &index_qual_type))
       return 0;
-    const psx_type_t *index_type = ps_ctx_type_by_id_in(
-        context->semantic_context, index_qual_type.type_id);
-    if (!index_type ||
-        (index_type->kind != PSX_TYPE_BOOL &&
-         index_type->kind != PSX_TYPE_INTEGER))
+    if (!direct_qual_type_is_integer(context, index_qual_type))
       return 0;
   }
 
-  const psx_type_t *queried_type = ps_ctx_type_by_id_in(
-      context->semantic_context,
-      identifier.declaration_qual_type.type_id);
-  for (int i = 0; queried_type && i < depth; i++)
-    queried_type = ps_type_subscript_result_in(
-        ps_ctx_arena(context->semantic_context), queried_type);
-  psx_qual_type_t queried_qual_type = ps_ctx_intern_qual_type_in(
-      context->semantic_context, queried_type);
+  const psx_semantic_type_table_t *semantic_types =
+      direct_semantic_types(context);
+  psx_qual_type_t queried_qual_type =
+      identifier.declaration_qual_type;
+  for (int i = 0; i < depth; i++) {
+    psx_type_shape_t queried_shape = {0};
+    if (!direct_describe_qual_type(
+            context, queried_qual_type, &queried_shape) ||
+        (queried_shape.kind != PSX_TYPE_POINTER &&
+         queried_shape.kind != PSX_TYPE_ARRAY)) {
+      return 0;
+    }
+    queried_qual_type = psx_semantic_type_table_base(
+        semantic_types, queried_qual_type.type_id);
+  }
   if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   lvar_t *local = identifier.symbol.local;
@@ -1309,9 +1351,8 @@ static void apply_direct_vla_runtime_view(
   if (!context || !syntax || !spec ||
       result_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return;
-  const psx_type_t *result_type = ps_ctx_type_by_id_in(
-      context->semantic_context, result_qual_type.type_id);
-  if (!result_type || !ps_type_contains_vla_array(result_type))
+  if (!psx_semantic_type_table_contains_vla_array(
+          direct_semantic_types(context), result_qual_type.type_id))
     return;
   direct_vla_runtime_view_t view =
       direct_vla_runtime_view(context, syntax);
@@ -1457,11 +1498,7 @@ static int direct_null_pointer_constant(
   if (!context || !syntax || syntax->kind != ND_NUM ||
       ((const node_num_t *)syntax)->val != 0)
     return 0;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      context->semantic_context, type.type_id);
-  return canonical &&
-         (canonical->kind == PSX_TYPE_BOOL ||
-          canonical->kind == PSX_TYPE_INTEGER);
+  return direct_qual_type_is_integer(context, type);
 }
 
 static void mark_direct_assignment_target(
@@ -1656,10 +1693,9 @@ static int note_direct_assignment_rejection(
             PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET;
         break;
       }
-      const psx_type_t *target = ps_ctx_type_by_id_in(
-          context->semantic_context, target_type.type_id);
       rejection =
-          target && target->kind == PSX_TYPE_FUNCTION
+          direct_qual_type_has_kind(
+              context, target_type, PSX_TYPE_FUNCTION)
               ? PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_FUNCTION_TARGET
               : PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE;
       break;
@@ -3494,11 +3530,7 @@ static int preflight_direct_initializer(
       if (!preflight_direct_expression(
               context, designator->index_expr, &index_type))
         return 0;
-      const psx_type_t *canonical_index_type = ps_ctx_type_by_id_in(
-          context->semantic_context, index_type.type_id);
-      if (!canonical_index_type ||
-          (canonical_index_type->kind != PSX_TYPE_BOOL &&
-           canonical_index_type->kind != PSX_TYPE_INTEGER) ||
+      if (!direct_qual_type_is_integer(context, index_type) ||
           !direct_integer_constant(
               context, designator->index_expr, &index_value) ||
           index_value < 0)
@@ -3511,13 +3543,7 @@ static int preflight_direct_initializer(
                 context, designator->range_end_expr,
                 &range_end_type))
           return 0;
-        const psx_type_t *canonical_range_end_type =
-            ps_ctx_type_by_id_in(
-                context->semantic_context,
-                range_end_type.type_id);
-        if (!canonical_range_end_type ||
-            (canonical_range_end_type->kind != PSX_TYPE_BOOL &&
-             canonical_range_end_type->kind != PSX_TYPE_INTEGER) ||
+        if (!direct_qual_type_is_integer(context, range_end_type) ||
             !direct_integer_constant(
                 context, designator->range_end_expr,
                 &range_end_value) ||
@@ -3867,11 +3893,7 @@ static int resolve_direct_declarator_application(
         !preflight_direct_expression(
             context, bound->expression.node, &bound_qual_type))
       return 0;
-    const psx_type_t *bound_type = ps_ctx_type_by_id_in(
-        context->semantic_context, bound_qual_type.type_id);
-    if (!bound_type ||
-        (bound_type->kind != PSX_TYPE_BOOL &&
-         bound_type->kind != PSX_TYPE_INTEGER))
+    if (!direct_qual_type_is_integer(context, bound_qual_type))
       return 0;
     int is_constant = direct_integer_constant(
         context, bound->expression.node, &value);
@@ -4037,9 +4059,8 @@ static int resolve_direct_initializer_value_type(
   psx_qual_type_t object_type;
   if (preflight_direct_lvalue(
           context, expression, &object_type)) {
-    const psx_type_t *canonical = ps_ctx_type_by_id_in(
-        context->semantic_context, object_type.type_id);
-    if (canonical && canonical->kind == PSX_TYPE_ARRAY) {
+    if (direct_qual_type_has_kind(
+            context, object_type, PSX_TYPE_ARRAY)) {
       if (type) *type = object_type;
       return 1;
     }
@@ -4049,10 +4070,9 @@ static int resolve_direct_initializer_value_type(
     if (resolve_direct_compound_literal(
             context, (const node_compound_literal_t *)expression,
             &binding) && binding) {
-      const psx_type_t *canonical = ps_ctx_type_by_id_in(
-          context->semantic_context,
-          binding->plan.object_qual_type.type_id);
-      if (canonical && canonical->kind == PSX_TYPE_ARRAY) {
+      if (direct_qual_type_has_kind(
+              context, binding->plan.object_qual_type,
+              PSX_TYPE_ARRAY)) {
         if (type) *type = binding->plan.object_qual_type;
         return 1;
       }
@@ -4943,11 +4963,8 @@ static int preflight_direct_statement_impl(
           !preflight_direct_unevaluated_expression(
               context, assertion->condition, &condition_type))
         return 0;
-      const psx_type_t *canonical = ps_ctx_type_by_id_in(
-          context->semantic_context, condition_type.type_id);
-      int is_constant = canonical &&
-          (canonical->kind == PSX_TYPE_BOOL ||
-           canonical->kind == PSX_TYPE_INTEGER) &&
+      int is_constant =
+          direct_qual_type_is_integer(context, condition_type) &&
           direct_integer_constant(
               context, assertion->condition, &value);
       psx_static_assert_resolution_t resolution;
@@ -4974,11 +4991,12 @@ static int preflight_direct_statement_impl(
         return !syntax->lhs ||
                preflight_direct_expression(
                    context, syntax->lhs, NULL);
-      const psx_type_t *return_type = ps_ctx_type_by_id_in(
-          context->semantic_context,
-          context->function_return_qual_type.type_id);
-      if (!return_type) return 0;
-      if (return_type->kind == PSX_TYPE_VOID) {
+      if (!direct_qual_type_is_valid(
+              context, context->function_return_qual_type))
+        return 0;
+      if (direct_qual_type_has_kind(
+              context, context->function_return_qual_type,
+              PSX_TYPE_VOID)) {
         if (syntax->lhs)
           return note_direct_semantic_rejection(
               context,
@@ -5096,11 +5114,7 @@ static int preflight_direct_statement_impl(
       if (!preflight_direct_expression(
               context, syntax->lhs, &case_qual_type))
         return 0;
-      const psx_type_t *case_type = ps_ctx_type_by_id_in(
-          context->semantic_context, case_qual_type.type_id);
-      if (!case_type ||
-          (case_type->kind != PSX_TYPE_BOOL &&
-           case_type->kind != PSX_TYPE_INTEGER) ||
+      if (!direct_qual_type_is_integer(context, case_qual_type) ||
           !direct_integer_constant(context, syntax->lhs, &value))
         return note_direct_semantic_rejection(
             context,
@@ -6095,12 +6109,8 @@ resolve_syntax_expression_direct_to_typed_hir(
       return status;
     }
     if (constant_result) {
-      const psx_type_t *canonical = ps_ctx_type_by_id_in(
-          semantic_context, preflight_type.type_id);
       long long value = 0;
-      if (canonical &&
-          (canonical->kind == PSX_TYPE_BOOL ||
-           canonical->kind == PSX_TYPE_INTEGER) &&
+      if (direct_qual_type_is_integer(&context, preflight_type) &&
           direct_integer_constant(
               &context, syntax_expression, &value)) {
         constant_result->value = value;
