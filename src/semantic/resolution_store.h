@@ -2,20 +2,24 @@
 #define SEMANTIC_RESOLUTION_STORE_H
 
 #include <stddef.h>
+#include "../type_system/type_ids.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct node_t node_t;
 typedef struct psx_node_resolution_state_t psx_node_resolution_state_t;
 typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+typedef struct psx_type_t psx_type_t;
 
 psx_resolution_store_t *psx_resolution_store_create(void);
 void psx_resolution_store_destroy(psx_resolution_store_t *store);
 void psx_resolution_store_bind_semantic_types(
     psx_resolution_store_t *store,
-    const psx_semantic_type_table_t *semantic_types);
+    psx_semantic_type_table_t *semantic_types);
 const psx_semantic_type_table_t *psx_resolution_store_semantic_types(
     const psx_resolution_store_t *store);
+psx_qual_type_t psx_resolution_store_intern_type(
+    psx_resolution_store_t *store, const psx_type_t *type);
 
 psx_node_resolution_state_t *psx_resolution_store_lookup(
     psx_resolution_store_t *store, const node_t *node);

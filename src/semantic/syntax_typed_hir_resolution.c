@@ -4164,7 +4164,10 @@ static int preflight_direct_flat_initializer(
             item->target_qual_type.type_id,
             PSX_TYPE_QUALIFIER_NONE},
         value_type, is_null_pointer_constant, &assignment);
-    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK) return 0;
+    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
+      return note_direct_assignment_rejection(
+          context, item->value, item->target_qual_type,
+          assignment.status);
   }
 
   if (plan->evaluation_group_count <= 0 ||
@@ -4813,8 +4816,9 @@ static int preflight_direct_local_declaration(
                 PSX_TYPE_QUALIFIER_NONE},
             value_type, is_null_pointer_constant, &assignment);
         if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
-          return note_direct_rejection(
-              context, initializer->value);
+          return note_direct_assignment_rejection(
+              context, initializer->value,
+              declaration_qual_type, assignment.status);
       }
     }
     declarators[i] = (direct_local_declarator_binding_t){

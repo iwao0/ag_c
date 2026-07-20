@@ -23,10 +23,6 @@ static int intern_available_type(node_t *node, void *user) {
     if (callee_qual_type.type_id == PSX_TYPE_ID_INVALID && callee_view) {
       psx_qual_type_t expression_type =
           ps_node_qual_type(pass->resolution_store, call->callee);
-      if (expression_type.type_id == PSX_TYPE_ID_INVALID) {
-        expression_type = ps_ctx_intern_qual_type_in(
-            pass->semantic_context, callee_view);
-      }
       callee_qual_type = psx_semantic_type_table_callable_function(
           ps_ctx_semantic_type_table_in(pass->semantic_context),
           expression_type);
@@ -52,12 +48,6 @@ static int intern_available_type(node_t *node, void *user) {
                        ps_ctx_semantic_type_table_in(
                            pass->semantic_context),
                        node_qual_type)) {
-    return 1;
-  }
-  psx_qual_type_t type =
-      ps_ctx_intern_qual_type_in(pass->semantic_context, node_type);
-  if (type.type_id != PSX_TYPE_ID_INVALID) {
-    ps_node_set_qual_type_identity(pass->resolution_store, node, type);
     return 1;
   }
   pass->failed_node = node;

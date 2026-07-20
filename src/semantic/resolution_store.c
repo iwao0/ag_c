@@ -6,6 +6,7 @@
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "resolution_state.h"
+#include "type_identity.h"
 
 enum { PSX_RESOLUTION_STORE_BUCKET_COUNT = 4096 };
 
@@ -20,7 +21,7 @@ typedef struct psx_resolution_binding_t {
 struct psx_resolution_store_t {
   psx_resolution_binding_t
       *buckets[PSX_RESOLUTION_STORE_BUCKET_COUNT];
-  const psx_semantic_type_table_t *semantic_types;
+  psx_semantic_type_table_t *semantic_types;
 };
 
 static size_t resolution_bucket(const node_t *node) {
@@ -60,13 +61,22 @@ psx_resolution_store_t *psx_resolution_store_create(void) {
 
 void psx_resolution_store_bind_semantic_types(
     psx_resolution_store_t *store,
-    const psx_semantic_type_table_t *semantic_types) {
+    psx_semantic_type_table_t *semantic_types) {
   if (store) store->semantic_types = semantic_types;
 }
 
 const psx_semantic_type_table_t *psx_resolution_store_semantic_types(
     const psx_resolution_store_t *store) {
   return store ? store->semantic_types : NULL;
+}
+
+psx_qual_type_t psx_resolution_store_intern_type(
+    psx_resolution_store_t *store, const psx_type_t *type) {
+  return store && store->semantic_types && type
+             ? psx_semantic_type_table_intern(
+                   store->semantic_types, type)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 void psx_resolution_store_destroy(psx_resolution_store_t *store) {

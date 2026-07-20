@@ -277,6 +277,18 @@ static void test_bind_node_type_sized(
 #define test_bind_node_type(node, type) \
   test_bind_node_type_sized((node), sizeof(*(node)), (type))
 
+static psx_type_t *test_new_record_type(
+    token_kind_t token_kind, const char *tag_name, size_t tag_len,
+    int tag_scope_depth_p1, int size) {
+  static psx_record_id_t next_record_id = 1000000;
+  (void)size;
+  psx_type_t *type = ps_type_new_tag_in(
+      test_arena_context(), token_kind, (char *)tag_name, tag_len,
+      tag_scope_depth_p1);
+  type->record_id = next_record_id++;
+  return type;
+}
+
 static void test_set_resolved_node_kind_sized(
     void *storage, size_t storage_size,
     psx_resolved_node_kind_t kind) {
@@ -19632,7 +19644,8 @@ static void test_type_metadata_bridge() {
   test_bind_node_type(&typed_atomic_ptr_mem, ps_type_new_pointer(typed_atomic_int));
   node_t *typed_atomic_deref =
       ps_node_new_unary_deref_for(&typed_atomic_ptr_mem);
-  ASSERT_TRUE(ps_node_get_type(typed_atomic_deref) == typed_atomic_int);
+  ASSERT_TRUE(ps_node_get_type(typed_atomic_deref) != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(typed_atomic_deref)->kind);
   ASSERT_TRUE(ps_type_has_qualifier(
       ps_node_get_type(typed_atomic_deref), PSX_TYPE_QUALIFIER_ATOMIC));
 
@@ -20731,7 +20744,8 @@ static void test_type_metadata_bridge() {
   test_set_resolved_node_kind(&typed_mem, ND_LVAR);
   psx_type_t *typed_mem_type = ps_type_new_integer(TK_LONG, 8, 0);
   test_bind_node_type(&typed_mem, typed_mem_type);
-  ASSERT_TRUE(ps_node_get_type(&typed_mem) == typed_mem_type);
+  ASSERT_TRUE(ps_node_get_type(&typed_mem) != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(&typed_mem)->kind);
   ASSERT_EQ(8, ps_node_type_size(&typed_mem));
   node_t typed_stale_scalar_size_mem = {0};
   test_set_resolved_node_kind(&typed_stale_scalar_size_mem, ND_LVAR);
@@ -20740,7 +20754,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_storage_type_size(&typed_stale_scalar_size_mem));
   node_t typed_incomplete_size_mem = {0};
   test_set_resolved_node_kind(&typed_incomplete_size_mem, ND_LVAR);
-  test_bind_node_type(&typed_incomplete_size_mem, ps_type_new_tag(TK_STRUCT, "Incomplete", 10, 0, 0));
+  test_bind_node_type(
+      &typed_incomplete_size_mem,
+      test_new_record_type(TK_STRUCT, "Incomplete", 10, 0, 0));
   ASSERT_EQ(0, ps_node_storage_type_size(&typed_incomplete_size_mem));
   ASSERT_TRUE(!ps_node_value_is_pointer_like(&typed_mem));
   node_t type_free_address = {0};
@@ -20898,7 +20914,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_deref_size(typed_deref_ptr));
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(typed_deref_ptr));
   ASSERT_EQ(4, canonical_node_base_deref_size(typed_deref_ptr));
-  ASSERT_TRUE(ps_node_get_type(typed_deref_ptr) == typed_deref_inner_ptr);
+  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(typed_deref_ptr)->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type(typed_deref_ptr)->base->kind);
 
   node_t typed_deref_flat_ptrptr_operand_mem = {0};
   test_set_resolved_node_kind(&typed_deref_flat_ptrptr_operand_mem, ND_DEREF);
@@ -20911,8 +20929,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_node_type_size(typed_deref_flat_ptr));
   ASSERT_EQ(0, ps_node_deref_size(typed_deref_flat_ptr));
   ASSERT_EQ(0, canonical_node_pointer_qual_levels(typed_deref_flat_ptr));
-  ASSERT_TRUE(ps_node_get_type(typed_deref_flat_ptr) ==
-              typed_deref_flat_ptrptr->base);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type(typed_deref_flat_ptr)->kind);
 
   node_t typed_nested_ptr_stale_quals_mem = {0};
   test_set_resolved_node_kind(&typed_nested_ptr_stale_quals_mem, ND_LVAR);
@@ -20951,8 +20969,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(raw_nested_ptr_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, raw_nested_ptr_type->base->base->kind);
   ASSERT_EQ(4, ps_type_deref_size(raw_nested_ptr_type->base->base));
-  ASSERT_TRUE(ps_node_get_type(&canonical_nested_ptr) ==
-              raw_nested_ptr_type);
+  ASSERT_TRUE(ps_node_get_type(&canonical_nested_ptr) != NULL);
   ASSERT_EQ(3, ps_type_pointer_depth(
                    ps_node_get_type(&canonical_nested_ptr)));
 
@@ -21080,7 +21097,8 @@ static void test_type_metadata_bridge() {
       ps_node_row_decay_pointer_arith_type(&typed_row_array);
   ASSERT_TRUE(typed_row_decay != NULL);
   ASSERT_TRUE(typed_row_decay->kind == PSX_TYPE_POINTER);
-  ASSERT_TRUE(typed_row_decay->base == typed_row_base);
+  ASSERT_TRUE(typed_row_decay->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, typed_row_decay->base->kind);
   ASSERT_TRUE(!ps_type_is_unsigned(typed_row_decay->base));
   ASSERT_EQ(4, ps_type_deref_size(typed_row_decay));
   ASSERT_EQ(4, ps_type_pointer_view_structural_base_deref_size(
@@ -21119,7 +21137,7 @@ static void test_type_metadata_bridge() {
 
   node_t canonical_struct_scalar = {0};
   test_set_resolved_node_kind(&canonical_struct_scalar, ND_DEREF);
-  test_bind_node_type(&canonical_struct_scalar, ps_type_new_tag(
+  test_bind_node_type(&canonical_struct_scalar, test_new_record_type(
       TK_STRUCT, "ScalarStruct", 12, 0, 32));
   ASSERT_TRUE(!ps_node_deref_decays_to_address(&canonical_struct_scalar));
   ASSERT_EQ(PSX_TYPE_STRUCT, ps_node_get_type(&canonical_struct_scalar)->kind);
@@ -22269,7 +22287,7 @@ static void test_type_metadata_bridge() {
   node_t typed_tag_array_ptr = {0};
   test_set_resolved_node_kind(&typed_tag_array_ptr, ND_LVAR);
   psx_type_t *typed_array_tag =
-      ps_type_new_tag(TK_STRUCT, "TMFlatTag", 9, 0, 4);
+      test_new_record_type(TK_STRUCT, "TMFlatTag", 9, 0, 4);
   psx_type_t *typed_tag_array =
       ps_type_new_array(typed_array_tag, 4, 16, 0);
   test_bind_node_type(&typed_tag_array_ptr, ps_type_new_pointer(typed_tag_array));
@@ -22391,7 +22409,9 @@ static void test_type_metadata_bridge() {
 
   node_t typed_const_view_mem = {0};
   test_set_resolved_node_kind(&typed_const_view_mem, ND_LVAR);
-  test_bind_node_type(&typed_const_view_mem, ps_type_new_tag(TK_STRUCT, "TypedView", 9, 1, 4));
+  test_bind_node_type(
+      &typed_const_view_mem,
+      test_new_record_type(TK_STRUCT, "TypedView", 9, 1, 4));
   ASSERT_EQ(0, ps_node_aggregate_value_size(&typed_const_view_mem));
   ASSERT_EQ(0, canonical_node_pointer_qual_levels(&typed_const_view_mem));
   ASSERT_EQ(0, canonical_node_base_deref_size(&typed_const_view_mem));
@@ -22499,7 +22519,8 @@ static void test_type_metadata_bridge() {
 
   node_t typed_tag_ret_funcptr_callee_mem = {0};
   test_set_resolved_node_kind(&typed_tag_ret_funcptr_callee_mem, ND_LVAR);
-  psx_type_t *typed_tag_ret = ps_type_new_tag(TK_STRUCT, "Ret", 3, 7, 4);
+  psx_type_t *typed_tag_ret =
+      test_new_record_type(TK_STRUCT, "Ret", 3, 7, 4);
   test_bind_node_type(&typed_tag_ret_funcptr_callee_mem, ps_type_new_pointer(typed_tag_ret));
   node_function_call_t typed_tag_ret_indirect_call = {0};
   typed_tag_ret_indirect_call.base.kind = ND_FUNCALL;
@@ -22512,8 +22533,8 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   test_bind_node_type(
       &typed_cached_ptr_call, typed_cached_ptr_type);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_ptr_call) ==
-              typed_cached_ptr_type);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            ps_node_get_type((node_t *)&typed_cached_ptr_call)->kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             ps_node_value_fp_kind((node_t *)&typed_cached_ptr_call));
   ASSERT_TRUE(!ps_node_value_is_complex((node_t *)&typed_cached_ptr_call));
@@ -22530,8 +22551,8 @@ static void test_type_metadata_bridge() {
   typed_cached_complex_type->floating_kind = PSX_FLOATING_KIND_FLOAT;
   test_bind_node_type(
       &typed_cached_complex_call, typed_cached_complex_type);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_complex_call) ==
-              typed_cached_complex_type);
+  ASSERT_EQ(PSX_TYPE_COMPLEX,
+            ps_node_get_type((node_t *)&typed_cached_complex_call)->kind);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
             ps_node_value_fp_kind((node_t *)&typed_cached_complex_call));
   ASSERT_TRUE(ps_node_value_is_complex((node_t *)&typed_cached_complex_call));
@@ -22540,7 +22561,7 @@ static void test_type_metadata_bridge() {
   typed_cached_struct_call.base.kind = ND_FUNCALL;
   test_bind_node_type(
       &typed_cached_struct_call,
-      ps_type_new_tag(TK_STRUCT, "CallRet", 7, 0, 12));
+      test_new_record_type(TK_STRUCT, "CallRet", 7, 0, 12));
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_struct_call) != NULL);
   ASSERT_EQ(0, ps_node_aggregate_value_size(
                    (node_t *)&typed_cached_struct_call));
@@ -22558,8 +22579,8 @@ static void test_type_metadata_bridge() {
   typed_cached_unsigned_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   test_bind_node_type(
       &typed_cached_unsigned_call, typed_cached_unsigned_type);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_unsigned_call) ==
-              typed_cached_unsigned_type);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type((node_t *)&typed_cached_unsigned_call)->kind);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
       (node_t *)&typed_cached_unsigned_call));
   ASSERT_TRUE(ps_node_is_long_long_type(
@@ -22705,8 +22726,8 @@ static void test_type_metadata_bridge() {
   typed_cached_ternary_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   test_bind_node_type(
       &typed_cached_ternary, typed_cached_ternary_type);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_ternary) ==
-              typed_cached_ternary_type);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type((node_t *)&typed_cached_ternary)->kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             ps_node_value_fp_kind((node_t *)&typed_cached_ternary));
   ASSERT_TRUE(!ps_node_value_is_complex((node_t *)&typed_cached_ternary));
@@ -22757,7 +22778,8 @@ static void test_type_metadata_bridge() {
   node_t *typed_comma = ps_node_new_binary(
       ND_COMMA, ps_node_new_num(0), &typed_float_rhs);
   ASSERT_TRUE(ps_node_get_type(typed_comma) != NULL);
-  ASSERT_TRUE(ps_node_get_type(typed_comma) != ps_node_get_type(&typed_float_rhs));
+  ASSERT_TRUE(ps_node_get_type(typed_comma) ==
+              ps_node_get_type(&typed_float_rhs));
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(typed_comma)->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(typed_comma));
   ps_node_bind_type(typed_comma, ps_node_get_type(typed_comma));
@@ -22916,11 +22938,11 @@ static void test_type_metadata_bridge() {
   cached_tag_add.lhs = &cached_scalar_rhs;
   cached_tag_add.rhs = ps_node_new_num(1);
   psx_type_t *cached_own_tag =
-      ps_type_new_tag(TK_STRUCT, "OwnTag", 6, 5, 12);
+      test_new_record_type(TK_STRUCT, "OwnTag", 6, 5, 12);
   test_bind_node_type(&cached_tag_add, ps_type_new_pointer(cached_own_tag));
   const psx_type_t *cached_tag_type = ps_node_get_type(&cached_tag_add);
   ASSERT_EQ(PSX_TYPE_POINTER, cached_tag_type->kind);
-  ASSERT_TRUE(cached_tag_type->base == cached_own_tag);
+  ASSERT_TRUE(cached_tag_type->base != NULL);
   ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(cached_tag_type->base));
   ASSERT_EQ(6, cached_tag_type->base->tag_len);
   ASSERT_TRUE(strncmp(cached_tag_type->base->tag_name,
@@ -22929,11 +22951,12 @@ static void test_type_metadata_bridge() {
 
   node_t typed_tag_mem = {0};
   test_set_resolved_node_kind(&typed_tag_mem, ND_LVAR);
-  psx_type_t *typed_tag = ps_type_new_tag(TK_STRUCT, "Typed", 5, 3, 4);
+  psx_type_t *typed_tag =
+      test_new_record_type(TK_STRUCT, "Typed", 5, 3, 4);
   test_bind_node_type(&typed_tag_mem, ps_type_new_pointer(typed_tag));
   const psx_type_t *typed_tag_ptr_type = ps_node_get_type(&typed_tag_mem);
   ASSERT_EQ(PSX_TYPE_POINTER, typed_tag_ptr_type->kind);
-  ASSERT_TRUE(typed_tag_ptr_type->base == typed_tag);
+  ASSERT_TRUE(typed_tag_ptr_type->base != NULL);
   ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(typed_tag_ptr_type->base));
   ASSERT_EQ(5, typed_tag_ptr_type->base->tag_len);
   ASSERT_TRUE(strncmp(typed_tag_ptr_type->base->tag_name,
@@ -22943,7 +22966,7 @@ static void test_type_metadata_bridge() {
 
   node_t canonical_aggregate = {0};
   test_set_resolved_node_kind(&canonical_aggregate, ND_DEREF);
-  test_bind_node_type(&canonical_aggregate, ps_type_new_tag(
+  test_bind_node_type(&canonical_aggregate, test_new_record_type(
       TK_STRUCT, "CanonicalAgg", 12, 0, 6));
   ASSERT_EQ(0, ps_node_aggregate_value_size(&canonical_aggregate));
 
@@ -22983,41 +23006,41 @@ static void test_type_metadata_bridge() {
   psx_type_t *typed_unsigned_cast_type = ps_type_new_integer(TK_UNSIGNED, 4, 1);
   node_t *typed_unsigned_cast_node = ps_node_new_integer_cast_result_ex(
       ps_node_new_num(1), typed_unsigned_cast_type, 0);
-  ASSERT_TRUE(ps_node_get_type(typed_unsigned_cast_node) == typed_unsigned_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_unsigned_cast_node) != NULL);
   ASSERT_TRUE(ps_node_is_unsigned_type(typed_unsigned_cast_node));
 
   psx_type_t *typed_bool_cast_type = ps_type_new(PSX_TYPE_BOOL);
   node_t *typed_bool_cast_node = ps_node_new_integer_cast_result_ex(
       ps_node_new_num(1), typed_bool_cast_type, 0);
-  ASSERT_TRUE(ps_node_get_type(typed_bool_cast_node) == typed_bool_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_bool_cast_node) != NULL);
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(typed_bool_cast_node)->kind);
 
   psx_type_t *typed_atomic_cast_type = ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_atomic_cast_type, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t *typed_atomic_cast_node = ps_node_new_integer_cast_result_ex(
       ps_node_new_num(1), typed_atomic_cast_type, 0);
-  ASSERT_TRUE(ps_node_get_type(typed_atomic_cast_node) == typed_atomic_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_atomic_cast_node) != NULL);
   ASSERT_TRUE(ps_type_has_qualifier(
       ps_node_get_type(typed_atomic_cast_node), PSX_TYPE_QUALIFIER_ATOMIC));
 
   psx_type_t *typed_fp_to_unsigned_type = ps_type_new_integer(TK_UNSIGNED, 4, 1);
   node_t *typed_fp_to_unsigned = ps_node_new_fp_to_int_cast(
       ps_node_new_num(1), typed_fp_to_unsigned_type);
-  ASSERT_TRUE(ps_node_get_type(typed_fp_to_unsigned) == typed_fp_to_unsigned_type);
+  ASSERT_TRUE(ps_node_get_type(typed_fp_to_unsigned) != NULL);
   ASSERT_TRUE(ps_node_is_unsigned_type(typed_fp_to_unsigned));
   ASSERT_EQ(4, ps_node_storage_type_size(typed_fp_to_unsigned));
 
   psx_type_t *typed_fp_to_bool_type = ps_type_new(PSX_TYPE_BOOL);
   node_t *typed_fp_to_bool = ps_node_new_fp_to_int_cast(
       ps_node_new_num(1), typed_fp_to_bool_type);
-  ASSERT_TRUE(ps_node_get_type(typed_fp_to_bool) == typed_fp_to_bool_type);
+  ASSERT_TRUE(ps_node_get_type(typed_fp_to_bool) != NULL);
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(typed_fp_to_bool)->kind);
 
   psx_type_t *typed_fp_to_atomic_type = ps_type_new_integer(TK_INT, 4, 0);
   ps_type_add_qualifiers(typed_fp_to_atomic_type, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t *typed_fp_to_atomic = ps_node_new_fp_to_int_cast(
       ps_node_new_num(1), typed_fp_to_atomic_type);
-  ASSERT_TRUE(ps_node_get_type(typed_fp_to_atomic) == typed_fp_to_atomic_type);
+  ASSERT_TRUE(ps_node_get_type(typed_fp_to_atomic) != NULL);
   ASSERT_TRUE(ps_type_has_qualifier(
       ps_node_get_type(typed_fp_to_atomic), PSX_TYPE_QUALIFIER_ATOMIC));
 
@@ -23053,7 +23076,9 @@ static void test_type_metadata_bridge() {
 
   node_t typed_incomplete_cast = {0};
   test_set_resolved_node_kind(&typed_incomplete_cast, ND_CAST);
-  test_bind_node_type(&typed_incomplete_cast, ps_type_new_tag(TK_STRUCT, "Incomplete", 10, 0, 0));
+  test_bind_node_type(
+      &typed_incomplete_cast,
+      test_new_record_type(TK_STRUCT, "Incomplete", 10, 0, 0));
   ASSERT_TRUE(ps_node_cast_i64_extension_info(
       &typed_incomplete_cast, &cast_target_size, &cast_widen_zext,
       &cast_needs_i64));
@@ -23065,14 +23090,14 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_INT, 4, 0));
   node_t *typed_signed_ptr_cast = ps_node_new_pointer_cast_result(
       ps_node_new_num(0), typed_signed_ptr_cast_type);
-  ASSERT_TRUE(ps_node_get_type(typed_signed_ptr_cast) == typed_signed_ptr_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_signed_ptr_cast) != NULL);
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(typed_signed_ptr_cast));
 
-  psx_type_t *typed_flat_ptr_stale_cast_type = ps_type_new_pointer(NULL);
+  psx_type_t *typed_flat_ptr_stale_cast_type =
+      ps_type_new_pointer(ps_type_new(PSX_TYPE_VOID));
   node_t *typed_flat_ptr_stale_cast = ps_node_new_pointer_cast_result(
       ps_node_new_num(0), typed_flat_ptr_stale_cast_type);
-  ASSERT_TRUE(ps_node_get_type(typed_flat_ptr_stale_cast) ==
-              typed_flat_ptr_stale_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_flat_ptr_stale_cast) != NULL);
   ASSERT_TRUE(ps_node_value_is_pointer_like(typed_flat_ptr_stale_cast));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(typed_flat_ptr_stale_cast));
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(
@@ -23082,17 +23107,16 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(ps_type_new(PSX_TYPE_BOOL));
   node_t *typed_bool_ptr_cast = ps_node_new_pointer_cast_result(
       ps_node_new_num(0), typed_bool_ptr_cast_type);
-  ASSERT_TRUE(ps_node_get_type(typed_bool_ptr_cast) == typed_bool_ptr_cast_type);
+  ASSERT_TRUE(ps_node_get_type(typed_bool_ptr_cast) != NULL);
   ASSERT_TRUE(canonical_node_pointee_is_bool(typed_bool_ptr_cast));
 
   psx_type_t *typed_tag_ptr_cast_type = ps_type_new_pointer(
-      ps_type_new_tag(TK_STRUCT, "PCast", 5, 0, 4));
+      test_new_record_type(TK_STRUCT, "PCast", 5, 0, 4));
   node_t *typed_tag_ptr_cast = ps_node_new_pointer_cast_result(
       ps_node_new_num(0), typed_tag_ptr_cast_type);
   const psx_type_t *typed_tag_ptr_cast_result_type =
       ps_node_get_type(typed_tag_ptr_cast);
-  ASSERT_TRUE(typed_tag_ptr_cast_result_type ==
-              typed_tag_ptr_cast_type);
+  ASSERT_TRUE(typed_tag_ptr_cast_result_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER,
             typed_tag_ptr_cast_result_type->kind);
   ASSERT_TRUE(typed_tag_ptr_cast_result_type->base != NULL);
@@ -27798,9 +27822,10 @@ static void test_recursive_declarator_capacity_boundary() {
   node_t cyclic_pointer_node = {0};
   test_set_resolved_node_kind(&cyclic_pointer_node, ND_LVAR);
   test_bind_node_type(&cyclic_pointer_node, cyclic_pointer);
+  ASSERT_TRUE(ps_node_get_type(&cyclic_pointer_node) == NULL);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &cyclic_pointer_node, &invariant_failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE,
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE,
             invariant_failure.status);
   psx_dispose_declarator_syntax(&pointer_syntax);
 
@@ -28477,10 +28502,10 @@ static void test_semantic_type_identity() {
       context_store, test_arena_context(), &typed_expression,
       sizeof(typed_expression)));
   (ps_node_bind_type)(context_store, &typed_expression, const_int);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).type_id);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+  psx_qual_type_t bound_expression_type =
+      (ps_node_qual_type)(context_store, &typed_expression);
+  ASSERT_TRUE(bound_expression_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(bound_expression_type.type_id,
             ps_ctx_find_interned_qual_type_in(
                 context, (ps_node_get_type)(
                              context_store, &typed_expression)).type_id);
@@ -28496,6 +28521,9 @@ static void test_semantic_type_identity() {
                              context_store, &typed_expression)).type_id,
             (ps_node_qual_type)(
                 context_store, &typed_expression).type_id);
+  ASSERT_EQ(bound_expression_type.type_id,
+            (ps_node_qual_type)(
+                context_store, &typed_expression).type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             (ps_node_qual_type)(
                 context_store, &typed_expression).qualifiers);
@@ -28504,9 +28532,9 @@ static void test_semantic_type_identity() {
                   ps_ctx_semantic_type_table_in(context),
                   (ps_node_qual_type)(context_store, &typed_expression)));
   (ps_node_bind_type)(context_store, &typed_expression, plain_int);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).type_id);
+  ASSERT_TRUE((ps_node_qual_type)(
+                  context_store, &typed_expression).type_id !=
+              PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
       context, &typed_expression, &failure, 0));
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,

@@ -1,8 +1,8 @@
 #ifndef SEMANTIC_RESOLUTION_STATE_H
 #define SEMANTIC_RESOLUTION_STATE_H
 
-#include "../parser/type.h"
 #include "../parser/vla_runtime.h"
+#include "../type_system/type_ids.h"
 #include "declarator_application_types.h"
 #include "record_decl.h"
 #include "resolved_node_kind.h"
@@ -154,16 +154,12 @@ typedef struct psx_type_name_resolution_state_t {
 
 typedef enum {
   PSX_NODE_TYPE_NONE = 0,
-  PSX_NODE_TYPE_PENDING,
   PSX_NODE_TYPE_CANONICAL,
 } psx_node_type_binding_kind_t;
 
 typedef struct {
   psx_node_type_binding_kind_t kind;
-  union {
-    const psx_type_t *pending_type;
-    psx_qual_type_t canonical_type;
-  } value;
+  psx_qual_type_t canonical_type;
 } psx_node_type_binding_t;
 
 typedef struct psx_node_resolution_state_t {

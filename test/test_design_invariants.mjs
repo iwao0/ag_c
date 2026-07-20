@@ -5368,22 +5368,24 @@ if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\
 if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bPSX_NODE_TYPE_PENDING\b/.test(nodeResolutionStateSource) ||
     !/\bPSX_NODE_TYPE_CANONICAL\b/.test(nodeResolutionStateSource) ||
-    !/\bconst\s+psx_type_t\s*\*\s*pending_type\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
     !/\bpsx_qual_type_t\s+canonical_type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+    /\bPSX_NODE_TYPE_PENDING\b|\bpending_type\b|\bconst\s+psx_type_t\s*\*/.test(
       nodeResolutionStateSource,
+    ) ||
+    !/psx_resolution_store_intern_type\s*\([^]*?psx_semantic_type_table_intern\s*\(/.test(
+      resolutionStoreSource,
+    ) ||
+    !/ps_node_bind_type\s*\([^]*?psx_resolution_store_intern_type\s*\(/.test(
+      nodeUtilsSourceForRegistry,
     ) ||
     !/psx_semantic_type_table_lookup_qual_type\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
     )) {
   throw new Error(
-    "node resolution state must use a tagged pending-or-canonical type binding",
+    "node resolution state must canonicalize every bound type immediately",
   );
 }
 const numberNodeStruct = astSource.match(
@@ -6709,7 +6711,13 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bpsx_walk_semantic_tree_mut\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/\bps_node_set_qual_type_identity\s*\(\s*pass->resolution_store\s*,\s*node\s*,\s*type\s*\)/.test(
+    !/\bps_node_qual_type\s*\(\s*pass->resolution_store\s*,\s*node\s*\)/.test(
+      semanticTypeIdentityPassSource,
+    ) ||
+    !/node_type\s*==\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      semanticTypeIdentityPassSource,
+    ) ||
+    /\bps_ctx_intern_qual_type_in\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
     !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
@@ -6726,7 +6734,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
       semanticInvariantsSource,
     )) {
   throw new Error(
-    "semantic type finalization must intern QualType and materialize canonical TypeId objects in one AST traversal",
+    "semantic type finalization must validate canonical QualType identities in one AST traversal",
   );
 }
 if (/\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
