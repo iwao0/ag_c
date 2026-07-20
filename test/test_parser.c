@@ -621,7 +621,9 @@ static int test_type_alignof_for_target(
 #define psx_node_new_lvar_fp_slot_at(...) \
   psx_node_new_lvar_fp_slot_at_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_lvar_fp_slot_for(...) \
-  ps_node_new_lvar_fp_slot_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  ps_node_new_lvar_fp_slot_for_in( \
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
 #define ps_node_new_param_placeholder(...) \
   ps_node_new_param_placeholder_in(            \
       test_resolution_store(), test_arena_context(), __VA_ARGS__)
@@ -20387,6 +20389,20 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(tmp_complex_slot)->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             ps_node_get_type(tmp_complex_slot)->floating_kind);
+
+  lvar_t tmp_complex_array_lvar = {0};
+  tmp_complex_array_lvar.size = 32;
+  set_test_storage_fixture_type(
+      &tmp_complex_array_lvar,
+      ps_type_new_array(canonical_complex, 2, 32, 0));
+  node_t *tmp_complex_array_slot = ps_node_new_lvar_fp_slot_for(
+      &tmp_complex_array_lvar, tmp_complex_array_lvar.offset, 8);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            ps_node_value_fp_kind(tmp_complex_array_slot));
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            ps_node_get_type(tmp_complex_array_slot)->kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            ps_node_get_type(tmp_complex_array_slot)->floating_kind);
 
   node_t typed_complex_ptr_mem = {0};
   test_set_resolved_node_kind(&typed_complex_ptr_mem, ND_DEREF);

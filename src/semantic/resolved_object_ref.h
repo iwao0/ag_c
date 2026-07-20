@@ -68,8 +68,9 @@ node_t *psx_node_new_lvar_fp_slot_at_in(
     psx_floating_kind_t floating_kind);
 node_t *ps_node_new_lvar_fp_slot_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    int type_size);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *owner, int offset, int type_size);
 node_t *ps_node_new_param_placeholder_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, const psx_type_t *type);

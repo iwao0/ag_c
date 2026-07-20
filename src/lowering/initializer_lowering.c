@@ -1615,10 +1615,10 @@ static node_t *lower_complex_list_initializer(
   int half = complex_size > 0 ? complex_size / 2 : 8;
   node_t *real_lhs = ps_node_new_lvar_fp_slot_for_in(
       context->resolution_store, context->arena_context,
-      var, ps_lvar_offset(var), half);
+      context->semantic_types, var, ps_lvar_offset(var), half);
   node_t *imag_lhs = ps_node_new_lvar_fp_slot_for_in(
       context->resolution_store, context->arena_context,
-      var, ps_lvar_offset(var) + half, half);
+      context->semantic_types, var, ps_lvar_offset(var) + half, half);
   node_t *real_assign = new_decl_initializer_assign(
       context, real_lhs, list->entries[0].value, initializer->base.tok);
   node_t *imag_assign = new_decl_initializer_assign(

@@ -211,14 +211,18 @@ node_t *psx_node_new_lvar_fp_slot_at_in(
 
 node_t *ps_node_new_lvar_fp_slot_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    int type_size) {
-  const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
-  const psx_type_t *leaf = ps_type_array_leaf_type(owner_type);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *owner, int offset, int type_size) {
+  psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
+      semantic_types, ps_lvar_decl_type_id(owner));
+  psx_type_shape_t leaf_shape = {0};
+  int has_leaf = psx_semantic_type_table_describe(
+      semantic_types, leaf.type_id, &leaf_shape);
   psx_floating_kind_t floating_kind =
-      leaf && (leaf->kind == PSX_TYPE_FLOAT ||
-               leaf->kind == PSX_TYPE_COMPLEX)
-          ? leaf->floating_kind
+      has_leaf && (leaf_shape.kind == PSX_TYPE_FLOAT ||
+                   leaf_shape.kind == PSX_TYPE_COMPLEX)
+          ? leaf_shape.floating_kind
           : PSX_FLOATING_KIND_NONE;
   psx_type_t *type = floating_kind != PSX_FLOATING_KIND_NONE
                          ? ps_type_new_floating_in(

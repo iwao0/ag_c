@@ -5496,6 +5496,9 @@ for (const removedApi of [
 const storageSlotConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*ps_node_new_lvar_storage_slot_for_in\s*\([^]*?\n\}/,
 );
+const floatingSlotConstructor = resolvedObjectRefSource.match(
+  /node_t\s*\*ps_node_new_lvar_fp_slot_for_in\s*\([^]*?\n\}/,
+);
 if (!storageSlotConstructor ||
     /\bps_(?:lvar|type)_[A-Za-z0-9_]*(?:size|sizeof)\s*\(/.test(
       storageSlotConstructor[0],
@@ -5508,6 +5511,29 @@ if (!storageSlotConstructor ||
     )) {
   throw new Error(
     "local initializer lowering must pass semantic element types directly and label byte-wise zero fill as storage slots",
+  );
+}
+if (!floatingSlotConstructor ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      floatingSlotConstructor[0],
+    ) ||
+    !/ps_lvar_decl_type_id\s*\(\s*owner\s*\)/.test(
+      floatingSlotConstructor[0],
+    ) ||
+    !/psx_semantic_type_table_array_leaf\s*\(/.test(
+      floatingSlotConstructor[0],
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      floatingSlotConstructor[0],
+    ) ||
+    /ps_lvar_get_decl_type\s*\(|ps_type_array_leaf_type\s*\(/.test(
+      floatingSlotConstructor[0],
+    ) ||
+    !/ps_node_new_lvar_fp_slot_for_in\s*\([^;]*context->semantic_types\s*,\s*var/s.test(
+      initializerLoweringSourceForLocalLayout,
+    )) {
+  throw new Error(
+    "complex initializer slots must derive floating kind from the local declaration TypeId graph",
   );
 }
 const resolvedObjectRefFactories = [
