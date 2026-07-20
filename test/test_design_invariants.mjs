@@ -3786,17 +3786,33 @@ const compoundLiteralSemanticsSource = await readFile(
 if (/\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_resolve_sizeof_qual_type_plan_in\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/\bps_type_alignof_id\s*\(/.test(
+    !/\bpsx_resolve_alignof_qual_type_plan_in\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    /\bps_type_(?:size|align)of_for_target\s*\(/.test(
+    /\bps_type_(?:sizeof_id|alignof_id|size|align)of_for_target\s*\(/.test(
       typeQueryResolutionSource,
     )) {
   throw new Error(
-    "sizeof and alignof resolution must intern semantic types and query target layout by TypeId",
+    "sizeof and alignof syntax resolution must delegate target layout to canonical QualType plans",
+  );
+}
+if (/\bpsx_type_t\b|\bps_node_get_type\s*\(|\bps_type_clone_in\s*\(|\bpsx_build_decl_type\s*\(|\bpsx_resolve_bound_type_name_ref_in_contexts\s*\(|declaration_type_builder\.h|parser\/type_builder\.h/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bpsx_resolve_decl_qual_type\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bpsx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bps_node_qual_type\s*\(/.test(
+      typeQueryResolutionSource,
+    )) {
+  throw new Error(
+    "sizeof and alignof compatibility resolution must preserve canonical QualType identities without mutable type views",
   );
 }
 if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
@@ -9422,7 +9438,6 @@ const declarationTypeBuilderUsers = new Set([
   "src/semantic/declaration_resolution.c",
   "src/semantic/declaration_application.c",
   "src/semantic/type_name_resolution.c",
-  "src/semantic/type_query_resolution.c",
   "src/semantic/aggregate_member_resolution.c",
   "src/semantic/parameter_declaration_resolution.c",
 ]);
@@ -9438,6 +9453,35 @@ if (declarationTypeBuilderViolations.length) {
   throw new Error(
     "mutable declaration type builders must stay inside semantic construction owners:\n" +
       declarationTypeBuilderViolations.sort().join("\n"),
+  );
+}
+
+const declarationResolutionHeader = await readFile(
+  "src/semantic/declaration_resolution.h",
+  "utf8",
+);
+const declarationQualTypeCore = declarationResolutionSource.match(
+  /psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\([^]*?\n\}/,
+);
+const declarationTypeViewAdapter = declarationResolutionSource.match(
+  /const psx_type_t\s*\*psx_resolve_decl_type\s*\([^]*?\n\}/,
+);
+if (!/psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\(/.test(
+      declarationResolutionHeader,
+    ) ||
+    !declarationQualTypeCore ||
+    !/ps_ctx_intern_declaration_qual_type_in\s*\(/.test(
+      declarationQualTypeCore[0],
+    ) ||
+    !declarationTypeViewAdapter ||
+    !/psx_resolve_decl_qual_type\s*\(/.test(
+      declarationTypeViewAdapter[0],
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      declarationTypeViewAdapter[0],
+    )) {
+  throw new Error(
+    "declaration type resolution must publish canonical QualType before projecting compatibility views",
   );
 }
 

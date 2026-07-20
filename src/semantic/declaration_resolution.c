@@ -117,7 +117,23 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
 
 const psx_type_t *psx_resolve_decl_type(
     const psx_decl_type_request_t *request) {
-  return psx_build_decl_type(request);
+  psx_qual_type_t resolved = psx_resolve_decl_qual_type(request);
+  return request && request->semantic_context
+             ? psx_semantic_type_table_lookup_qual_type(
+                   ps_ctx_semantic_type_table_in(
+                       request->semantic_context),
+                   resolved)
+             : NULL;
+}
+
+psx_qual_type_t psx_resolve_decl_qual_type(
+    const psx_decl_type_request_t *request) {
+  if (!request || !request->semantic_context)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_type_t *resolved = psx_build_decl_type(request);
+  return ps_ctx_intern_declaration_qual_type_in(
+      request->semantic_context, resolved);
 }
 
 psx_type_t *psx_build_decl_specifier_type_in_context(
@@ -414,4 +430,35 @@ int psx_resolve_incomplete_array_initializer(
              &resolution) &&
          psx_resolve_incomplete_array_type(
              semantic_context, type, &resolution);
+}
+
+int psx_resolve_incomplete_array_initializer_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
+    psx_decl_init_kind_t initializer_kind,
+    node_t *initializer,
+    psx_qual_type_t *completed_type) {
+  if (completed_type)
+    *completed_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || !completed_type ||
+      incomplete_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  const psx_type_t *incomplete_view =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          incomplete_type);
+  psx_incomplete_array_resolution_t resolution;
+  if (!psx_resolve_incomplete_array_initializer_shape(
+          incomplete_view, initializer_kind, initializer,
+          legacy_incomplete_array_constant_index, semantic_context,
+          &resolution))
+    return 0;
+  const psx_type_t *completed_view =
+      psx_resolve_completed_incomplete_array_type(
+          semantic_context, incomplete_view, &resolution);
+  if (!completed_view) return 0;
+  *completed_type = ps_ctx_find_interned_qual_type_in(
+      semantic_context, completed_view);
+  return completed_type->type_id != PSX_TYPE_ID_INVALID;
 }

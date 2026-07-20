@@ -10069,6 +10069,15 @@ static void test_sizeof_semantic_lowering_boundary() {
           test_resolution_store(), &direct_type_query->base);
   ASSERT_TRUE(direct_type_state != NULL);
   ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, direct_type_state->kind);
+  psx_qual_type_t direct_qual_type =
+      psx_type_name_resolved_qual_type(direct_type_state);
+  psx_type_shape_t direct_shape = {0};
+  ASSERT_TRUE(direct_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      direct_qual_type.type_id, &direct_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, direct_shape.kind);
+  ASSERT_EQ(3, direct_shape.array_len);
   ASSERT_TRUE(psx_type_name_bound_base_type(direct_type_state) == NULL);
   resolve_test_sizeof_query(direct_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
@@ -10258,6 +10267,12 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(align_query->type_name.syntax != NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(&align_query->base));
   resolve_test_alignof_query(align_query);
+  const psx_type_name_resolution_state_t *align_type_state =
+      psx_node_type_name_state(
+          test_resolution_store(), &align_query->base);
+  ASSERT_TRUE(align_type_state != NULL);
+  ASSERT_TRUE(psx_type_name_resolved_qual_type(
+                  align_type_state).type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(
       psx_node_resolved_type_name(&align_query->base) != NULL);
   ASSERT_EQ(4, psx_alignof_query_resolved_alignment(align_query));
