@@ -2,6 +2,7 @@
 
 #include "../parser/arena.h"
 #include "../parser/type.h"
+#include "type_compatibility_cache_internal.h"
 #include "type_identity_internal.h"
 
 #include <stdint.h>
@@ -23,6 +24,13 @@ struct psx_type_compatibility_cache_t {
   psx_type_compatibility_entry_t *entries;
   size_t capacity;
 };
+
+static int psx_type_compatibility_cache_remember_import(
+    psx_type_compatibility_cache_t *cache, psx_qual_type_t identity,
+    const psx_type_t *source);
+static psx_qual_type_t psx_type_compatibility_view_identity(
+    const psx_type_compatibility_cache_t *cache,
+    const psx_type_t *view);
 
 psx_type_compatibility_cache_t *psx_type_compatibility_cache_create(void) {
   psx_type_compatibility_cache_t *cache = calloc(1, sizeof(*cache));
@@ -130,7 +138,7 @@ psx_qual_type_t psx_semantic_type_table_find(
     return invalid_qual_type();
   psx_qual_type_t compatibility_identity =
       psx_type_compatibility_view_identity(
-          psx_semantic_type_table_compatibility_cache_const(table), type);
+          psx_semantic_type_table_compatibility_cache(table), type);
   if (compatibility_identity.type_id != PSX_TYPE_ID_INVALID)
     return compatibility_identity;
 
@@ -216,7 +224,7 @@ psx_qual_type_t psx_semantic_type_table_intern(
   return result;
 }
 
-int psx_type_compatibility_cache_remember_import(
+static int psx_type_compatibility_cache_remember_import(
     psx_type_compatibility_cache_t *cache, psx_qual_type_t identity,
     const psx_type_t *source) {
   if (!cache || !source || identity.type_id == PSX_TYPE_ID_INVALID ||
@@ -353,13 +361,13 @@ fail:
   return NULL;
 }
 
-const psx_type_t *psx_type_compatibility_view(
+static const psx_type_t *compatibility_view(
     psx_type_compatibility_cache_t *cache,
     const psx_semantic_type_table_t *types, psx_qual_type_t type) {
   return materialize_view(cache, types, type, 1);
 }
 
-const psx_type_t *psx_type_compatibility_canonical_view(
+static const psx_type_t *compatibility_canonical_view(
     psx_type_compatibility_cache_t *cache,
     const psx_semantic_type_table_t *types, psx_type_id_t type_id) {
   return materialize_view(
@@ -367,7 +375,25 @@ const psx_type_t *psx_type_compatibility_canonical_view(
       (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE}, 0);
 }
 
-psx_qual_type_t psx_type_compatibility_view_identity(
+const psx_type_t *psx_type_compatibility_canonical_view_for(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id) {
+  return types
+             ? compatibility_canonical_view(
+                   psx_semantic_type_table_compatibility_cache(types),
+                   types, type_id)
+             : NULL;
+}
+
+const psx_type_t *psx_type_compatibility_view_for(
+    const psx_semantic_type_table_t *types, psx_qual_type_t type) {
+  return types
+             ? compatibility_view(
+                   psx_semantic_type_table_compatibility_cache(types),
+                   types, type)
+             : NULL;
+}
+
+static psx_qual_type_t psx_type_compatibility_view_identity(
     const psx_type_compatibility_cache_t *cache,
     const psx_type_t *view) {
   if (!cache || !view)

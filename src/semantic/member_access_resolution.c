@@ -1,5 +1,6 @@
 #include "member_access_resolution.h"
 #include "resolved_node_kind.h"
+#include "type_compatibility_view.h"
 
 #include "../parser/node_utils.h"
 
@@ -35,7 +36,7 @@ void psx_resolve_member_access(
   const psx_type_t *base_type = ps_node_get_type(store, request->base);
   psx_qual_type_t base_qual_type = ps_node_qual_type(store, request->base);
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
-      base_type != psx_semantic_type_table_lookup(
+      base_type != psx_type_compatibility_canonical_view_for(
                        semantic_types, base_qual_type.type_id)) {
     base_qual_type = ps_ctx_intern_qual_type_in(
         semantic_context, base_type);

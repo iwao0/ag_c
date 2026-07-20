@@ -2,9 +2,7 @@
 #define SEMANTIC_TYPE_IDENTITY_INTERNAL_H
 
 #include "type_identity.h"
-
-typedef struct psx_type_compatibility_cache_t
-    psx_type_compatibility_cache_t;
+#include "type_compatibility_cache_internal.h"
 
 /* Structural core boundary: no parser type or target layout enters here. */
 psx_qual_type_t psx_semantic_type_table_find_shape(
@@ -17,9 +15,6 @@ psx_qual_type_t psx_semantic_type_table_intern_shape(
     const psx_qual_type_t *parameter_types, int parameter_count);
 psx_type_compatibility_cache_t *
 psx_semantic_type_table_compatibility_cache(
-    psx_semantic_type_table_t *table);
-const psx_type_compatibility_cache_t *
-psx_semantic_type_table_compatibility_cache_const(
     const psx_semantic_type_table_t *table);
 
 #endif

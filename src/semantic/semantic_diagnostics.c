@@ -8,6 +8,7 @@
 #include "../type_layout.h"
 #include "resolved_node_kind.h"
 #include "resolved_object_ref.h"
+#include "type_compatibility_view.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -157,7 +158,7 @@ static void warn_return(
   psx_qual_type_t return_qual_type =
       ps_function_definition_return_qual_type(types, current_func);
   const psx_type_t *ret_type =
-      psx_semantic_type_table_lookup_qual_type(types, return_qual_type);
+      psx_type_compatibility_view_for(types, return_qual_type);
   tk_float_kind_t ret_fp = type_fp_kind(ret_type);
   int ret_pointer = ps_type_is_pointer(ret_type);
   int ret_void = ret_type && ret_type->kind == PSX_TYPE_VOID;

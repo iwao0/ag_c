@@ -138,7 +138,7 @@ static psx_qual_type_t typedef_record_decl_qual_type(
 
 static const psx_type_t *typedef_record_decl_type(
     const psx_semantic_context_t *context, const typedef_name_t *t) {
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(context),
       typedef_record_decl_qual_type(t));
 }
@@ -436,7 +436,7 @@ psx_qual_type_t ps_ctx_find_interned_qual_type_in(
 const psx_type_t *ps_ctx_type_by_id_in(
     const psx_semantic_context_t *context, psx_type_id_t type_id) {
   return context
-             ? psx_semantic_type_table_lookup(context->semantic_types, type_id)
+             ? psx_type_compatibility_canonical_view_for(context->semantic_types, type_id)
              : NULL;
 }
 
@@ -590,7 +590,7 @@ static int initialize_tag_member_record(
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       context, resolved_type);
   if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
-  if (!psx_semantic_type_table_lookup_qual_type(
+  if (!psx_type_compatibility_view_for(
           context->semantic_types, identity))
     return 0;
   m->declaration.type_table = context->semantic_types;
@@ -1580,7 +1580,7 @@ static psx_qual_type_t resolve_typedef_decl_qual_type(
   if (!context || !info ||
       info->decl_type_table != context->semantic_types ||
       identity.type_id == PSX_TYPE_ID_INVALID ||
-      !psx_semantic_type_table_lookup_qual_type(
+      !psx_type_compatibility_view_for(
           context->semantic_types, identity))
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
@@ -1865,7 +1865,7 @@ const psx_type_t *psx_ctx_get_function_ret_type_in(
     psx_semantic_context_t *context, char *name, int len) {
   psx_qual_type_t return_type =
       psx_ctx_get_function_return_qual_type_in(context, name, len);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       context ? context->semantic_types : NULL, return_type);
 }
 
@@ -1920,7 +1920,7 @@ int psx_ctx_track_function_type_in(
 
 const psx_type_t *ps_ctx_get_function_type_in(
     psx_semantic_context_t *context, char *name, int len) {
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       context ? context->semantic_types : NULL,
       ps_ctx_get_function_qual_type_in(context, name, len));
 }

@@ -11,6 +11,7 @@
 #include "resolved_object_ref.h"
 #include "resolved_function.h"
 #include "tree_walk.h"
+#include "type_compatibility_view.h"
 #include "type_identity_pass.h"
 
 typedef enum {
@@ -136,7 +137,7 @@ static int validate_node(const node_t *node, void *user) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
     }
-    if (node_type != psx_semantic_type_table_lookup_qual_type(
+    if (node_type != psx_type_compatibility_view_for(
                          ps_ctx_semantic_type_table_in(semantic_context),
                          actual)) {
       return fail(

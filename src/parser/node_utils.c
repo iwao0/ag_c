@@ -5,6 +5,7 @@
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
 #include "../semantic/type_name_resolution.h"
+#include "../semantic/type_compatibility_view.h"
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
@@ -121,13 +122,13 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
 
 static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
   if (!var) return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       var->decl_type_table, var->decl_qual_type);
 }
 
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
   if (!gv) return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       gv->decl_type_table, gv->decl_qual_type);
 }
 
@@ -641,7 +642,7 @@ static int gvar_get_record_member_layout(
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     int member_ordinal, psx_record_member_layout_t *out_layout) {
-  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+  const psx_type_t *aggregate_type = psx_type_compatibility_canonical_view_for(
       semantic_types, aggregate_type_id);
   if (!aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID || !out_layout)
@@ -667,7 +668,7 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
   int tag_len = 0;
   int tag_scope_depth_p1 = 0;
   gvar_tag_identity(gv, &tag_kind, &tag_name, &tag_len, &tag_scope_depth_p1);
-  const psx_type_t *decl_type = psx_semantic_type_table_lookup(
+  const psx_type_t *decl_type = psx_type_compatibility_canonical_view_for(
       semantic_types, root_type_id);
   int type_size =
       ps_type_sizeof_id(semantic_types, record_layouts, root_type_id,
@@ -675,7 +676,7 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
   psx_type_id_t aggregate_type_id =
       psx_semantic_type_table_array_leaf(
           semantic_types, root_type_id).type_id;
-  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+  const psx_type_t *aggregate_type = psx_type_compatibility_canonical_view_for(
       semantic_types, aggregate_type_id);
   gvar_aggregate_layout_t layout = {
       .tag_kind = tag_kind,
@@ -843,7 +844,7 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
     const psx_record_decl_t *record_decl,
     int base_offset, int target_offset,
     int *out_offset, int *out_size) {
-  const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
+  const psx_type_t *aggregate_type = psx_type_compatibility_canonical_view_for(
       semantic_types, aggregate_type_id);
   if (!aggregate_type || !record_decl ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
@@ -940,7 +941,7 @@ static psx_type_id_t gvar_member_value_type_id(
     psx_type_id_t aggregate_type_id, int member_ordinal) {
   psx_type_id_t member_type_id = gvar_member_type_id(
       semantic_types, aggregate_type_id, member_ordinal);
-  const psx_type_t *member_type = psx_semantic_type_table_lookup(
+  const psx_type_t *member_type = psx_type_compatibility_canonical_view_for(
       semantic_types, member_type_id);
   return member_type && member_type->kind == PSX_TYPE_ARRAY
              ? psx_semantic_type_table_array_leaf(

@@ -2,7 +2,6 @@
 
 #include "../parser/arena.h"
 #include "record_decl_table.h"
-#include "type_compatibility_view.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -82,12 +81,6 @@ void psx_semantic_type_table_bind_record_decls(
 
 psx_type_compatibility_cache_t *
 psx_semantic_type_table_compatibility_cache(
-    psx_semantic_type_table_t *table) {
-  return table ? table->compatibility_views : NULL;
-}
-
-const psx_type_compatibility_cache_t *
-psx_semantic_type_table_compatibility_cache_const(
     const psx_semantic_type_table_t *table) {
   return table ? table->compatibility_views : NULL;
 }
@@ -513,14 +506,6 @@ psx_qual_type_t psx_semantic_type_table_intern_function(
       table, &shape, result, parameters, parameter_count);
 }
 
-const psx_type_t *psx_semantic_type_table_lookup(
-    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
-  return table
-             ? psx_type_compatibility_canonical_view(
-                   table->compatibility_views, table, type_id)
-             : NULL;
-}
-
 int psx_semantic_type_table_describe(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     psx_type_shape_t *out) {
@@ -529,14 +514,6 @@ int psx_semantic_type_table_describe(
   }
   *out = table->entries[type_id].shape;
   return 1;
-}
-
-const psx_type_t *psx_semantic_type_table_lookup_qual_type(
-    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
-  return table
-             ? psx_type_compatibility_view(
-                   table->compatibility_views, table, type)
-             : NULL;
 }
 
 static psx_qual_type_t related_type(

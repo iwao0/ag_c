@@ -222,7 +222,7 @@ static psx_qual_type_t resolve_global_decl_type(
                              PSX_TYPE_QUALIFIER_NONE};
   psx_qual_type_t qual_type = psx_semantic_type_table_find(
       registry->semantic_types, type);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
              registry->semantic_types, qual_type)
              ? qual_type
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
@@ -249,7 +249,7 @@ int ps_global_registry_bind_decl_qual_type(
       global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID ||
       type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  if (!psx_semantic_type_table_lookup_qual_type(
+  if (!psx_type_compatibility_view_for(
           registry->semantic_types, type))
     return 0;
   if (!psx_global_registry_note_global_mutation(registry, global))

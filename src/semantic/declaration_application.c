@@ -19,6 +19,7 @@
 #include "parameter_declaration_resolution.h"
 #include "prototype_parameter.h"
 #include "syntax_typed_hir_resolution.h"
+#include "type_compatibility_view.h"
 #include "type_name_resolution.h"
 #include "typed_hir_materialization.h"
 #include "../diag/diag.h"
@@ -216,7 +217,7 @@ const psx_type_t *psx_apply_parsed_type_name_in_contexts(
   if (!semantic_context || !global_registry || !local_registry) return NULL;
   psx_qual_type_t resolved = resolve_parsed_type_name_qual_type(
       semantic_context, global_registry, local_registry, type_name);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
@@ -234,7 +235,7 @@ const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
           ps_ctx_intern_declaration_qual_type_in(
               semantic_context, base_type),
           declarator);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
@@ -273,7 +274,7 @@ const psx_type_t *psx_apply_runtime_declarator_type_in_context(
           ps_ctx_intern_declaration_qual_type_in(
               semantic_context, base_type),
           application);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
@@ -405,7 +406,7 @@ psx_qual_type_t psx_declaration_phase_base_qual_type(
 const psx_type_t *psx_declaration_phase_base_type(
     const psx_declaration_phase_t *phase) {
   return phase && phase->state == PSX_DECLARATION_PHASE_RESOLVED_TYPE
-             ? psx_semantic_type_table_lookup_qual_type(
+             ? psx_type_compatibility_view_for(
                    phase->type_table, phase->base_qual_type)
              : NULL;
 }

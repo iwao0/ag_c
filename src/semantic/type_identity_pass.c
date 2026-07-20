@@ -3,6 +3,7 @@
 #include "../parser/node_utils.h"
 #include "function_call_resolution.h"
 #include "tree_walk.h"
+#include "type_compatibility_view.h"
 #include "../parser/semantic_ctx.h"
 
 typedef struct {
@@ -44,7 +45,7 @@ static int intern_available_type(node_t *node, void *user) {
   psx_qual_type_t node_qual_type =
       ps_node_qual_type(pass->resolution_store, node);
   if (node_qual_type.type_id != PSX_TYPE_ID_INVALID &&
-      node_type == psx_semantic_type_table_lookup_qual_type(
+      node_type == psx_type_compatibility_view_for(
                        ps_ctx_semantic_type_table_in(
                            pass->semantic_context),
                        node_qual_type)) {
@@ -62,7 +63,7 @@ static int materialize_interned_type(node_t *node, void *user) {
         psx_function_call_qual_type(pass->resolution_store, call);
     if (callee_qual_type.type_id != PSX_TYPE_ID_INVALID) {
       const psx_type_t *callee_type =
-          psx_semantic_type_table_lookup_qual_type(
+          psx_type_compatibility_view_for(
               ps_ctx_semantic_type_table_in(pass->semantic_context),
               callee_qual_type);
       psx_function_call_bind_qual_type(

@@ -195,7 +195,7 @@ static psx_qual_type_t resolve_local_decl_type(
                              PSX_TYPE_QUALIFIER_NONE};
   psx_qual_type_t qual_type = psx_semantic_type_table_find(
       registry->semantic_types, type);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
              registry->semantic_types, qual_type)
              ? qual_type
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,

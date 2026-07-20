@@ -463,7 +463,7 @@ static void test_set_invalid_vla_runtime_view(
   psx_require_semantic_tree_has_canonical_expression_types(       \
       test_semantic_context(), (diagnostics), (root), (tok))
 #define test_function_call_type(call)                              \
-  psx_semantic_type_table_lookup_qual_type(                        \
+  psx_type_compatibility_view_for(                        \
       ps_ctx_semantic_type_table_in(test_semantic_context()),      \
       (psx_function_call_qual_type)(test_resolution_store(), (call)))
 #define psx_function_call_qual_type(call) \
@@ -810,7 +810,7 @@ static psx_scope_lookup_point_t test_scope_lookup_point(void) {
 static const psx_type_t *resolve_test_qual_type_view(
     void *context, psx_qual_type_t qual_type) {
   psx_semantic_context_t *semantic_context = context;
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), qual_type);
 }
 
@@ -832,7 +832,7 @@ static void bind_test_function_call_type(
 
 static const psx_type_t *test_function_symbol_type(
     const psx_function_symbol_t *symbol) {
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_function_symbol_qual_type(symbol));
 }
@@ -2489,7 +2489,7 @@ static const psx_type_t *resolve_test_decl_specifier_syntax(
   psx_qual_type_t resolved =
       psx_resolve_decl_specifier_qual_type_in_context(
           semantic_context, specifier);
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
@@ -7909,7 +7909,7 @@ static node_function_definition_t *as_function_definition(node_t *n) {
 }
 static const psx_type_t *test_function_definition_signature_type(
     const node_function_definition_t *function) {
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_function_definition_signature_qual_type(function));
 }
@@ -7917,7 +7917,7 @@ static const psx_type_t *test_function_definition_return_type(
     const node_function_definition_t *function) {
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       types, ps_function_definition_return_qual_type(types, function));
 }
 static node_function_call_t *as_function_call(node_t *n) {
@@ -8138,7 +8138,7 @@ static void assert_node_pointer_qualifiers(
       ps_ctx_semantic_type_table_in(test_semantic_context());
   psx_qual_type_t current = ps_node_qual_type(node);
   for (int i = 0; i < levels; i++) {
-    const psx_type_t *pointer = psx_semantic_type_table_lookup(
+    const psx_type_t *pointer = psx_type_compatibility_canonical_view_for(
         types, current.type_id);
     ASSERT_TRUE(pointer != NULL);
     ASSERT_EQ(PSX_TYPE_POINTER, pointer->kind);
@@ -10413,7 +10413,7 @@ static void test_function_call_type_binding_boundary() {
       psx_resolve_function_reference_qual_type(
           test_semantic_context(), function_identity);
   const psx_type_t *reference_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           reference_identity);
   ASSERT_TRUE(reference_type != NULL);
@@ -10944,7 +10944,7 @@ static void test_function_definition_header_resolution_boundary() {
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
   const psx_type_t *resolved_function_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           types, resolution.signature_qual_type);
   ASSERT_TRUE(resolved_function_type != NULL);
   ASSERT_TRUE(resolved_function_type ==
@@ -10963,7 +10963,7 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, return_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, return_shape.integer_kind);
   ASSERT_EQ(2, function_shape.parameter_count);
-  ASSERT_TRUE(psx_semantic_type_table_lookup_qual_type(
+  ASSERT_TRUE(psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       resolution.signature_qual_type) == resolved_function_type);
   ASSERT_EQ(2, resolution.parameter_count);
@@ -12994,7 +12994,7 @@ static void test_local_declaration_storage_plan_boundary() {
       },
       &completed_incomplete));
   const psx_type_t *completed_incomplete_view =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           completed_incomplete);
   ASSERT_TRUE(completed_incomplete_view != NULL);
@@ -13013,7 +13013,7 @@ static void test_local_declaration_storage_plan_boundary() {
       },
       &completed_partial_flat_matrix));
   const psx_type_t *completed_partial_flat_matrix_view =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           completed_partial_flat_matrix);
   ASSERT_TRUE(completed_partial_flat_matrix_view != NULL);
@@ -13031,7 +13031,7 @@ static void test_local_declaration_storage_plan_boundary() {
       },
       &completed_nested_matrix));
   const psx_type_t *completed_nested_matrix_view =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           completed_nested_matrix);
   ASSERT_TRUE(completed_nested_matrix_view != NULL);
@@ -13568,7 +13568,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(ir_mir_integer_promotion_is_unsigned(
       unsigned_short_mir, ag_target_info_data_layout(&wide_short_target)));
   const psx_type_t *canonical_pointer_array =
-      psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
+      psx_type_compatibility_canonical_view_for(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
   ASSERT_EQ(8, ps_type_sizeof_id(types, layouts, pointer_identity.type_id,
                                  ag_target_info_data_layout(&host)));
@@ -15669,7 +15669,7 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            psx_semantic_type_table_lookup(
+            psx_type_compatibility_canonical_view_for(
                 ps_ctx_semantic_type_table_in(test_semantic_context()),
                 qualified_base.type_id)->kind);
   psx_dispose_type_name_syntax(&syntax);
@@ -15707,7 +15707,7 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_EQ(PSX_TYPE_STRUCT,
-            psx_semantic_type_table_lookup(
+            psx_type_compatibility_canonical_view_for(
                 ps_ctx_semantic_type_table_in(test_semantic_context()),
                 qualified_base.type_id)->kind);
   psx_dispose_type_name_syntax(&syntax);
@@ -16196,7 +16196,7 @@ static void test_aggregate_member_resolution_boundary() {
           .declarator_shape = &member_shape,
       });
   const psx_type_t *member_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           member_qual_type);
   ASSERT_TRUE(member_type != NULL);
@@ -16232,7 +16232,7 @@ static void test_aggregate_member_resolution_boundary() {
               .declarator_shape = &pointer_array_shape,
           });
   const psx_type_t *pointer_array_member =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           pointer_array_member_qual_type);
   ASSERT_TRUE(pointer_array_member != NULL);
@@ -16311,7 +16311,7 @@ static void test_aggregate_member_resolution_boundary() {
               .declarator_shape = &incomplete_pointer_shape,
           });
   const psx_type_t *incomplete_pointer =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           incomplete_pointer_qual_type);
   psx_resolve_aggregate_member_declaration(
@@ -25149,7 +25149,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(typedef_sync_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(
       ps_ctx_typedef_decl_type(&typedef_sync_out) ==
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           typedef_sync_qual_type));
   ASSERT_EQ(PSX_TYPE_POINTER,
@@ -28406,7 +28406,7 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(interned_int != plain_int);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, ps_type_qualifiers(interned_int));
   const psx_type_t *materialized_const_int =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(context), const_int_identity);
   ASSERT_TRUE(materialized_const_int != NULL);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
@@ -28614,7 +28614,7 @@ static void test_semantic_type_identity() {
             ps_type_qualifiers(canonical_pointer_to_const->base));
   ASSERT_TRUE(canonical_pointer_to_const->base == interned_int);
   const psx_type_t *materialized_pointer_to_const =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(context),
           pointer_to_const_identity);
   ASSERT_TRUE(materialized_pointer_to_const != NULL);
@@ -28767,7 +28767,7 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(canonical_function->param_types[1] ==
               ps_ctx_type_by_id_in(context, host_pointer_identity.type_id));
   const psx_type_t *materialized_function =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(context), function_identity);
   ASSERT_TRUE(materialized_function != NULL);
   ASSERT_TRUE(materialized_function != canonical_function);
@@ -28982,7 +28982,7 @@ static void test_semantic_type_identity() {
             (ps_node_qual_type)(
                 context_store, &typed_expression).qualifiers);
   ASSERT_TRUE((ps_node_get_type)(context_store, &typed_expression) ==
-              psx_semantic_type_table_lookup_qual_type(
+              psx_type_compatibility_view_for(
                   ps_ctx_semantic_type_table_in(context),
                   (ps_node_qual_type)(context_store, &typed_expression)));
   (ps_node_bind_type)(context_store, &typed_expression, plain_int);
@@ -29034,11 +29034,11 @@ static void test_semantic_type_identity() {
   psx_qual_type_t callee_identity =
       (psx_function_call_qual_type)(context_store, &typed_call);
   ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
-  ASSERT_TRUE(psx_semantic_type_table_lookup_qual_type(
+  ASSERT_TRUE(psx_type_compatibility_view_for(
                   ps_ctx_semantic_type_table_in(context),
                   callee_identity) != NULL);
   ASSERT_TRUE((ps_node_get_type)(context_store, (node_t *)&typed_call) ==
-              psx_semantic_type_table_lookup_qual_type(
+              psx_type_compatibility_view_for(
                   ps_ctx_semantic_type_table_in(context),
                   (ps_node_qual_type)(context_store,
                                       (node_t *)&typed_call)));
@@ -29301,7 +29301,7 @@ static void test_semantic_context_isolation() {
           second, second_globals,
           second_locals, &direct_tag_specifier);
   const psx_type_t *direct_tag_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(second),
           direct_tag_qual_type);
   ASSERT_TRUE(direct_tag_type != NULL);

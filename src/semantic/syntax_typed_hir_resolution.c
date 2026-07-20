@@ -22,6 +22,7 @@
 #include "../type_layout.h"
 #include "assignment_resolution.h"
 #include "call_resolution.h"
+#include "type_compatibility_view.h"
 #include "character_array_initializer.h"
 #include "compound_literal_semantics.h"
 #include "declaration_application.h"
@@ -4252,7 +4253,7 @@ static psx_qual_type_t resolve_direct_completed_array_qual_type(
   psx_qual_type_t invalid = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   const psx_type_t *type_view = context
-      ? psx_semantic_type_table_lookup_qual_type(
+      ? psx_type_compatibility_view_for(
             ps_ctx_semantic_type_table_in(context->semantic_context),
             type)
       : NULL;
@@ -4363,7 +4364,7 @@ static int resolve_direct_compound_literal(
   if (object_type && ps_type_is_incomplete_array(object_type)) {
     object_qual_type = resolve_direct_completed_array_qual_type(
         context, object_qual_type, &initializer);
-    object_type = psx_semantic_type_table_lookup_qual_type(
+    object_type = psx_type_compatibility_view_for(
         ps_ctx_semantic_type_table_in(context->semantic_context),
         object_qual_type);
   }
@@ -4635,7 +4636,7 @@ static int preflight_direct_local_declaration(
         psx_apply_runtime_declarator_qual_type_in_context(
             context->semantic_context, base_qual_type, &application);
     const psx_type_t *type =
-        psx_semantic_type_table_lookup_qual_type(
+        psx_type_compatibility_view_for(
             ps_ctx_semantic_type_table_in(context->semantic_context),
             decl_qual_type);
     if (type && (declaration->is_extern ||
@@ -4746,7 +4747,7 @@ static int preflight_direct_local_declaration(
     if (type && ps_type_is_incomplete_array(type)) {
       decl_qual_type = resolve_direct_completed_array_qual_type(
           context, decl_qual_type, initializer);
-      type = psx_semantic_type_table_lookup_qual_type(
+      type = psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(context->semantic_context),
           decl_qual_type);
     }

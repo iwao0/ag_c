@@ -1,5 +1,6 @@
 #include "record_decl.h"
 
+#include "type_compatibility_view.h"
 #include "type_identity.h"
 #include <stddef.h>
 
@@ -9,7 +10,7 @@ const psx_type_t *psx_record_member_decl_type(
   if (!types || !member ||
       member->decl_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       types, member->decl_qual_type);
 }
 

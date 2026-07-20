@@ -2,6 +2,7 @@
 
 #include "../semantic/declaration_application.h"
 #include "../semantic/declaration_registration.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../declaration_pipeline.h"
 #include "../parser/diag.h"
 #include "../parser/global_registry.h"
@@ -117,7 +118,7 @@ static void begin_declarator(
       application->local_registry,
       application->base_qual_type, declarator);
   const psx_type_t *current_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(application->semantic_context),
           application->current_qual_type);
   if (!current_type) {
@@ -191,7 +192,7 @@ static void finish_declarator(
   if (application->current_kind != PSX_TOPLEVEL_APPLY_GLOBAL) return;
   application->current_initializer = *initializer;
   const psx_type_t *current_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(application->semantic_context),
           application->current_qual_type);
   if (!current_type) return;

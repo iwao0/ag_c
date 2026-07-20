@@ -10,6 +10,7 @@
 #include "../semantic/declarator_application_types.h"
 #include "../semantic/record_decl_table.h"
 #include "../semantic/record_layout.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../semantic/type_identity.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
@@ -265,7 +266,7 @@ static inline psx_qual_type_t ps_ctx_typedef_decl_qual_type(
 static inline const psx_type_t *ps_ctx_typedef_decl_type(
     const psx_typedef_info_t *info) {
   return info
-             ? psx_semantic_type_table_lookup_qual_type(
+             ? psx_type_compatibility_view_for(
                    info->decl_type_table, info->decl_qual_type)
              : NULL;
 }

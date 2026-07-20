@@ -3096,7 +3096,7 @@ const resolvedGlobalObjectRequest = globalObjectLoweringHeader.match(
 );
 if (/\bpsx_type_t\b/.test(localObjectLoweringHeader) ||
     /\bpsx_type_t\b/.test(staticLocalLoweringHeader) ||
-    /\bps_lowering_type_id\s*\(|\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+    /\bps_lowering_type_id\s*\(|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       `${localObjectLoweringSource}\n${staticLocalLoweringSource}`,
     ) ||
     /\bps_local_registry_(?:create_storage_object_in|create_internal_storage_object_in|create_static_alias_in|complete_array_type)\s*\(/.test(
@@ -3136,7 +3136,7 @@ if (!/\bps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       canonicalLocalArrayCompletion[0],
     ) ||
-    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       canonicalLocalArrayCompletion[0],
     )) {
   throw new Error(
@@ -3678,7 +3678,7 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       memberQualTypeCore[0],
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       memberQualTypeCore[0],
     ) ||
     !/\bpsx_semantic_type_table_record_member\s*\(/.test(
@@ -5587,7 +5587,7 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
     !/ps_node_bind_type\s*\([^]*?psx_resolution_store_intern_type\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
+    !/psx_type_compatibility_view_for\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
     ) ||
     !canonicalQualTypeBinder ||
@@ -5598,7 +5598,7 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
     /const\s+psx_type_t\s*\*|canonical_type\s*,/.test(
       canonicalQualTypeBinderDeclaration[1],
     ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/psx_type_compatibility_view_for\s*\(/.test(
       canonicalQualTypeBinder[0],
     ) ||
     !/PSX_NODE_TYPE_CANONICAL/.test(canonicalQualTypeBinder[0]) ||
@@ -5753,7 +5753,7 @@ if (!typeNameRef ||
     !/\bpsx_type_name_bound_base_qual_type\s*\(/.test(
       typeNameResolutionHeader,
     ) ||
-    !/psx_type_name_bound_base_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\([^]*?base_qual_type/.test(
+    !/psx_type_name_bound_base_type\s*\([^]*?psx_type_compatibility_view_for\s*\([^]*?base_qual_type/.test(
       typeNameResolutionSource,
     ) ||
     !/static\s+psx_qual_type_t\s+bind_base_qual_type\s*\(/.test(
@@ -5964,7 +5964,7 @@ if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
     !/new_lvar_qual_type_node\s*\(/.test(
       canonicalTypeSlotConstructor[0],
     ) ||
-    /psx_semantic_type_table_lookup\s*\(|ps_lvar_get_decl_type\s*\(/.test(
+    /psx_type_compatibility_canonical_view_for\s*\(|ps_lvar_get_decl_type\s*\(/.test(
       canonicalTypeSlotConstructor[0],
     ) ||
     /\bps_type_(?:new|clone|add_qualifiers)\s*\(|type_builder\.h/.test(
@@ -6452,7 +6452,7 @@ if (!initializerTargetType ||
     /\bpsx_initializer_leaf_cursor_after_target\s*\(/.test(
       initializerResolutionHeader,
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
@@ -6979,7 +6979,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bps_node_qual_type\s*\(\s*pass->resolution_store\s*,\s*node\s*\)/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/node_type\s*==\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/node_type\s*==\s*psx_type_compatibility_view_for\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
     /\bps_ctx_intern_qual_type_in\s*\(/.test(
@@ -6988,7 +6988,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       semanticInvariantsSource,
     ) ||
-    !/node_type\s*!=\s*psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/node_type\s*!=\s*psx_type_compatibility_view_for\s*\(/.test(
       semanticInvariantsSource,
     ) ||
     !/\bpsx_finalize_semantic_tree_types\s*\(/.test(
@@ -7139,7 +7139,7 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     !/psx_semantic_type_table_describe\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
-    /psx_semantic_type_table_lookup\s*\(|ps_type_(?:is_tag_aggregate|tag_identity_matches|tag_token_kind|record_id)\s*\(/.test(
+    /psx_type_compatibility_canonical_view_for\s*\(|ps_type_(?:is_tag_aggregate|tag_identity_matches|tag_token_kind|record_id)\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
     /#include\s+"\.\.\/parser\/type\.h"/.test(
@@ -7180,7 +7180,7 @@ if (!/\bpsx_source_cast_types_resolution_t\b/.test(
     !/psx_semantic_type_table_describe\s*\(/.test(
       sourceCastTypeResolutionSource,
     ) ||
-    /psx_semantic_type_table_lookup\s*\(|ps_type_(?:is_tag_aggregate|tag_token_kind|is_scalar)\s*\(/.test(
+    /psx_type_compatibility_canonical_view_for\s*\(|ps_type_(?:is_tag_aggregate|tag_token_kind|is_scalar)\s*\(/.test(
       sourceCastTypeResolutionSource,
     ) ||
     /#include\s+"\.\.\/parser\/type\.h"/.test(
@@ -7218,7 +7218,7 @@ if (!/\bpsx_character_array_initializer_plan_t\b/.test(
       characterArrayInitializerSource,
     ) ||
     /\bpsx_type_t\b/.test(characterArrayInitializerHeader) ||
-    /\bpsx_semantic_type_table_lookup\s*\(|\bps_type_character_code_unit_width\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(|\bps_type_character_code_unit_width\s*\(/.test(
       characterArrayInitializerSource,
     ) ||
     !/psx_semantic_type_table_describe\s*\(/.test(
@@ -7274,7 +7274,7 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     !/psx_plan_validated_aggregate_source_cast\s*\(/.test(
       semanticLoweringPassSource,
     ) ||
-    /psx_semantic_type_table_lookup\s*\(|ps_lowering_type_(?:size|alignment)\s*\(/.test(
+    /psx_type_compatibility_canonical_view_for\s*\(|ps_lowering_type_(?:size|alignment)\s*\(/.test(
       castLoweringSource,
     ) ||
     !/ps_lowering_type_id_size\s*\(/.test(castLoweringSource) ||
@@ -8131,7 +8131,7 @@ const typeIdLayoutFunction = typeLayoutSource.match(
 );
 if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(typeLayoutSource) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(typeLayoutSource) ||
     /parser\/type\.h/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(typeLayoutSource) ||
     /\baggregate_definition\b/.test(typeLayoutSource) ||
@@ -8177,7 +8177,7 @@ for (const path of allSourceFiles) {
   }
 }
 if (/parser\/type\.h/.test(typeShapeLoweringSources) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(typeShapeLoweringSources) ||
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(typeShapeLoweringSources) ||
     /\bpsx_type_t\b/.test(typeShapeLoweringSources) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       typeShapeLoweringSources,
@@ -8257,7 +8257,7 @@ const semanticTypeIdTraversalImplementation =
   semanticTypeTraversalSource.slice(
     semanticTypeTraversalSource.indexOf("static psx_qual_type_t related_type"),
   );
-if (/\bpsx_semantic_type_table_lookup\s*\(/.test(
+if (/\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       semanticTypeIdTraversalImplementation,
     )) {
   throw new Error(
@@ -8288,7 +8288,7 @@ for (const [name, header, source, functionName] of [
   if (!signature.test(header) || !signature.test(source) ||
       !/\bps_type_sizeof_id\s*\(/.test(source) ||
       !/\bpsx_semantic_type_table_describe\s*\(/.test(source) ||
-      /\bpsx_semantic_type_table_lookup\s*\(/.test(source) ||
+      /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(source) ||
       /#include\s+"\.\.\/parser\/type\.h"/.test(source) ||
       (name === "local" &&
        !/\bpsx_semantic_type_table_contains_vla_array\s*\(/.test(source)) ||
@@ -8535,7 +8535,7 @@ if (!dataLayoutCanonicalSignatureSection ||
     /\bag_target_info_t\b|\bag_target_info_(?:scalar_size|data_layout)\s*\(/.test(
       dataLayoutCanonicalSignatureSection[0],
     ) ||
-    /parser\/type\.h|\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /parser\/type\.h|\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       typeIdCanonicalSignatureSource,
     ) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
@@ -8602,6 +8602,10 @@ const semanticTypeIdentityInternalHeader = await readFile(
   "src/semantic/type_identity_internal.h",
   "utf8",
 );
+const typeCompatibilityCacheInternalHeader = await readFile(
+  "src/semantic/type_compatibility_cache_internal.h",
+  "utf8",
+);
 const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
@@ -8620,6 +8624,9 @@ if (!qualTypeStruct ||
       semanticTypeIdentityHeader,
     ) ||
     /parser\/type\.h/.test(semanticTypeIdentityHeader) ||
+    /\bpsx_type_t\b|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
     /#include\s+"\.\.\/semantic\/type_identity\.h"/.test(astSource) ||
     /parser\/type\.h|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       semanticTypeIdentitySource,
@@ -8632,6 +8639,21 @@ if (!qualTypeStruct ||
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(
       typeCompatibilityViewHeader,
+    ) ||
+    !/\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
+      typeCompatibilityViewHeader,
+    ) ||
+    !/\bpsx_type_compatibility_view_for\s*\(/.test(
+      typeCompatibilityViewHeader,
+    ) ||
+    /\bpsx_type_compatibility_cache_(?:create|destroy|reset)\s*\(/.test(
+      typeCompatibilityViewHeader,
+    ) ||
+    !/\bpsx_type_compatibility_cache_create\s*\(/.test(
+      typeCompatibilityCacheInternalHeader,
+    ) ||
+    !/#include\s+"type_compatibility_cache_internal\.h"/.test(
+      semanticTypeIdentityInternalHeader,
     ) ||
     /#include\s+"\.\.\/(?:target_info|type_layout)\.h"/.test(
       semanticTypeIdentitySource,
@@ -8663,17 +8685,11 @@ if (!semanticTypeEntry ||
     !/table->entries\[id\]\.parameter_types\s*=\s*owned_parameters\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/psx_semantic_type_table_lookup\s*\([^]*?psx_type_compatibility_canonical_view\s*\(/.test(
-      semanticTypeIdentitySource,
-    ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?psx_type_compatibility_view\s*\(/.test(
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
     !/psx_semantic_type_table_record_member\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->members\[member_index\]\.decl_qual_type/.test(
       semanticTypeIdentitySource,
-    ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*psx_semantic_type_table_lookup\s*\(\s*const\s+psx_semantic_type_table_t\s*\*table\s*,\s*psx_type_id_t\s+type_id\s*\)\s*;/.test(
-      semanticTypeIdentityHeader,
     ) ||
     !/\bpsx_semantic_type_table_find_shape\s*\(/.test(
       semanticTypeIdentitySource,
@@ -8738,6 +8754,12 @@ if (!/const\s+psx_type_t\s*\*canonical_view\s*;/.test(
       typeCompatibilityViewSource,
     ) ||
     !/psx_type_compatibility_cache_remember_import\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_type_compatibility_canonical_view_for\s*\([^]*?compatibility_canonical_view\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_type_compatibility_view_for\s*\([^]*?compatibility_view\s*\(/.test(
       typeCompatibilityViewSource,
     ) ||
     !/#include\s+"\.\.\/parser\/type\.h"/.test(
@@ -8829,7 +8851,7 @@ for (const derivedInterner of [
       !/\bpsx_semantic_type_table_intern_shape\s*\(/.test(
         implementation[0],
       ) ||
-      /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_semantic_type_table_lookup\s*\(/.test(
+      /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
         implementation[0],
       )) {
     throw new Error(
@@ -8860,7 +8882,7 @@ if (!exactIntVoidTypePredicate ||
     !/psx_semantic_type_table_describe\s*\(/.test(
       exactIntVoidTypePredicate[0],
     ) ||
-    /psx_semantic_type_table_lookup\s*\(/.test(
+    /psx_type_compatibility_canonical_view_for\s*\(/.test(
       exactIntVoidTypePredicate[0],
     ) ||
     /static\s+int\s+exact_int_void_function\s*\(/.test(
@@ -9205,7 +9227,7 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     /\bpsx_parameter_lowering_request_t\b|\blower_parameter_declaration\s*\(/.test(
       `${parameterLoweringHeader}\n${parameterLoweringSource}`,
     ) ||
-    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       parameterLoweringSource,
     ) ||
     /request->name_len\s*,\s*8\b/.test(parameterVlaLoweringFunction[0]) ||
@@ -9354,7 +9376,7 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
@@ -9450,7 +9472,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     !/\bstatic\s+psx_qual_type_t\s+resolve_local_decl_type\s*\(/.test(
       localRegistrySource,
     ) ||
-    !/\bpsx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/\bpsx_type_compatibility_view_for\s*\(/.test(
       localRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
@@ -9470,11 +9492,11 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     ) ||
     !lvarDeclTypeViewFunction ||
     !gvarDeclTypeViewFunction ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
+    !/psx_type_compatibility_view_for\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
       lvarDeclTypeViewFunction[0],
     ) ||
     /return\s+var->decl_type\s*;/.test(lvarDeclTypeViewFunction[0]) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
+    !/psx_type_compatibility_view_for\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
       gvarDeclTypeViewFunction[0],
     ) ||
     /return\s+gv->decl_type\s*;/.test(gvarDeclTypeViewFunction[0]) ||
@@ -9499,7 +9521,7 @@ if (!recordMemberDeclStruct ||
     /decl_type_table/.test(recordMemberDeclStruct[1]) ||
     !/decl_qual_type/.test(recordMemberDeclStruct[1]) ||
     /\bpsx_type_t\b/.test(recordMemberDeclStruct[1]) ||
-    !/psx_record_member_decl_type\s*\(\s*const\s+psx_semantic_type_table_t\s*\*\s*types\s*,[^]*?psx_semantic_type_table_lookup_qual_type\s*\(\s*types\s*,\s*member->decl_qual_type/s.test(
+    !/psx_record_member_decl_type\s*\(\s*const\s+psx_semantic_type_table_t\s*\*\s*types\s*,[^]*?psx_type_compatibility_view_for\s*\(\s*types\s*,\s*member->decl_qual_type/s.test(
       recordDeclImplementationSource,
     ) ||
     /member->decl_type_table/.test(recordDeclImplementationSource) ||
@@ -9531,7 +9553,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bstatic\s+psx_qual_type_t\s+resolve_global_decl_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bpsx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/\bpsx_type_compatibility_view_for\s*\(/.test(
       globalRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
@@ -9911,7 +9933,7 @@ if (!/\bpsx_record_decl_table_define\s*\(/.test(recordDeclTableHeader) ||
 if (/\bpsx_type_t\b/.test(staticDataInitializerSource) ||
     /\bpsx_type_t\b/.test(staticDataInitializerHeader) ||
     /\bps_lowering_type_id\s*\(/.test(staticDataInitializerSource) ||
-    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       staticDataInitializerSource,
     ) ||
     /\bps_node_get_type\s*\(/.test(staticDataInitializerSource) ||
@@ -9949,7 +9971,7 @@ if (!canonicalArrayCompletion ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       canonicalArrayCompletion[0],
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       canonicalArrayCompletion[0],
     )) {
   throw new Error(
@@ -10070,7 +10092,7 @@ if (!typedInitializerSection ||
     /\bconst\s+psx_type_t\s*\*|\bpsx_type_t\s*\*/.test(
       initializerLoweringSource,
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(|\bpsx_record_member_decl_type\s*\(|\bps_lvar_get_decl_type\s*\(|\bps_node_get_type\s*\(|\bps_type_(?:array_leaf_type|array_flat_element_count|is_tag_aggregate|record_id|tag_identity_matches)\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(|\bpsx_record_member_decl_type\s*\(|\bps_lvar_get_decl_type\s*\(|\bps_node_get_type\s*\(|\bps_type_(?:array_leaf_type|array_flat_element_count|is_tag_aggregate|record_id|tag_identity_matches)\s*\(/.test(
       initializerLoweringSource,
     ) ||
     !/\bps_lvar_decl_type_id\s*\(/.test(initializerLoweringSource) ||
@@ -10593,7 +10615,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       callResolutionSource,
     ) ||
-    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       callResolutionSource,
     ) ||
     !/callable_semantic_type\.has_function_prototype/.test(
@@ -10893,7 +10915,7 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
     !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
       boundTypeNameRefAdapter[0],
     ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/psx_type_compatibility_view_for\s*\(/.test(
       boundTypeNameRefAdapter[0],
     ) ||
     !compatibilityGenericSelectionResolver ||
@@ -12056,11 +12078,11 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
       typedefInfoStruct[1],
     ) ||
     /\bpsx_type_t\b/.test(typedefInfoStruct[1]) ||
-    !/ps_ctx_typedef_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/ps_ctx_typedef_decl_type\s*\([^]*?psx_type_compatibility_view_for\s*\(/.test(
       semanticContextHeaderSource,
     ) ||
     /\bt->decl_type\b/.test(semanticContextOwnershipSource) ||
-    !/typedef_record_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/typedef_record_decl_type\s*\([^]*?psx_type_compatibility_view_for\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/resolve_typedef_decl_qual_type\s*\([^]*?info->decl_type_table\s*!=\s*context->semantic_types/.test(
@@ -12070,7 +12092,7 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
       typedefDeclarationResolutionSource,
     ) ||
     /request->type\b/.test(typedefDeclarationResolutionSource) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\([^]*?request->decl_qual_type/.test(
+    !/psx_type_compatibility_view_for\s*\([^]*?request->decl_qual_type/.test(
       typedefDeclarationResolutionSource,
     ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(

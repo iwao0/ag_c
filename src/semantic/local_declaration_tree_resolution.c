@@ -6,6 +6,7 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node_type.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../parser/decl.h"
@@ -143,7 +144,7 @@ static void begin_declarator(
           application->semantic_context, application->base_qual_type,
           &application->current_application);
   const psx_type_t *current_type =
-      psx_semantic_type_table_lookup_qual_type(
+      psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(application->semantic_context),
           application->current_qual_type);
   if (!current_type) {

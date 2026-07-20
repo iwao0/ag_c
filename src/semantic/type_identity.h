@@ -6,7 +6,6 @@
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
-typedef struct psx_type_t psx_type_t;
 
 psx_semantic_type_table_t *psx_semantic_type_table_create(void);
 void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table);
@@ -44,16 +43,9 @@ psx_qual_type_t psx_semantic_type_table_intern_function(
     psx_semantic_type_table_t *table, psx_qual_type_t result,
     const psx_qual_type_t *parameters, int parameter_count,
     int has_prototype, int is_variadic);
-const psx_type_t *psx_semantic_type_table_lookup(
-    const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 int psx_semantic_type_table_describe(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     psx_type_shape_t *out);
-/* Compatibility view for consumers still reading psx_type_t. The returned
- * immutable view restores qualifiers from QualType, including derived
- * relations, while TypeId remains the semantic identity. */
-const psx_type_t *psx_semantic_type_table_lookup_qual_type(
-    const psx_semantic_type_table_t *table, psx_qual_type_t type);
 psx_qual_type_t psx_semantic_type_table_base(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 int psx_semantic_type_table_contains_vla_array(

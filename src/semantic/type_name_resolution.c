@@ -1,6 +1,7 @@
 #include "type_name_resolution.h"
 
 #include "declaration_application.h"
+#include "type_compatibility_view.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/semantic_ctx.h"
 
@@ -28,7 +29,7 @@ const psx_type_t *psx_type_name_resolved_type(
     const psx_type_name_resolution_state_t *state) {
   return state && state->kind == PSX_TYPE_NAME_RESOLVED &&
                  state->value.resolved.type_table
-             ? psx_semantic_type_table_lookup_qual_type(
+             ? psx_type_compatibility_view_for(
                    state->value.resolved.type_table,
                    state->value.resolved.qual_type)
              : NULL;
@@ -45,7 +46,7 @@ psx_qual_type_t psx_type_name_resolved_qual_type(
 const psx_type_t *psx_type_name_bound_base_type(
     const psx_type_name_resolution_state_t *state) {
   return state && state->kind == PSX_TYPE_NAME_BOUND
-             ? psx_semantic_type_table_lookup_qual_type(
+             ? psx_type_compatibility_view_for(
                    state->value.bound.type_table,
                    state->value.bound.base_qual_type)
              : NULL;
@@ -217,7 +218,7 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
           type_name, state, &resolved))
     return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
+  return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
