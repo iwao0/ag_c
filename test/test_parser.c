@@ -23611,6 +23611,38 @@ static void test_type_metadata_bridge() {
                                                         &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
             ps_tag_member_decl_fp_kind(&selected_union_member));
+  global_var_t resolved_union_init = {0};
+  resolved_union_init.init_count = 1;
+  resolved_union_init.init_value_symbols = init_syms;
+  resolved_union_init.init_value_symbol_lens = init_sym_lens;
+  psx_type_t *resolved_union_type = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(), TK_UNION, "FlatFpU", 7,
+      test_scope_lookup_point());
+  ASSERT_TRUE(resolved_union_type != NULL);
+  set_test_global_fixture_type(&resolved_union_init, resolved_union_type);
+  aggregate_walk_trace_t resolved_union_trace = {
+      .gv = &resolved_union_init,
+  };
+  const psx_gvar_aggregate_walk_ops_t resolved_union_ops = {
+      .scalar = aggregate_walk_trace_scalar,
+      .padding = aggregate_walk_trace_padding,
+  };
+  ASSERT_TRUE(ps_gvar_walk_resolved_aggregate_initializer(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_decl_table_in(test_semantic_context()),
+      ps_ctx_record_layout_table_in(test_semantic_context()),
+      ps_ctx_target_info(test_semantic_context()),
+      ps_gvar_decl_type_id(&resolved_union_init), &resolved_union_init,
+      0, &resolved_union_ops, &resolved_union_trace));
+  ASSERT_EQ(1, resolved_union_trace.scalar_count);
+  psx_type_shape_t resolved_union_value_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      resolved_union_trace.scalar_type_ids[0],
+      &resolved_union_value_shape));
+  ASSERT_EQ(PSX_TYPE_FLOAT, resolved_union_value_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
+            resolved_union_value_shape.floating_kind);
   selected_union_member = (tag_member_info_t){0};
   selected_union_member.decl_type = ps_type_new_integer(TK_INT, 4, 0);
   ASSERT_TRUE(test_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,

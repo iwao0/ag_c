@@ -5817,8 +5817,7 @@ if (allSourceFiles.includes("src/parser/node_type_public.h") ||
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
       nodeUtilsSource,
     ) ||
-    !/\bps_ctx_get_tag_member_in\s*\(/.test(nodeUtilsSource) ||
-    !/\bps_ctx_get_tag_member_at_scope_in\s*\(/.test(nodeUtilsSource)) {
+    !/\bps_ctx_get_tag_member_in\s*\(/.test(nodeUtilsSource)) {
   throw new Error(
     "parser node utilities must query member declarations and layouts through the split API",
   );
@@ -10095,6 +10094,12 @@ if (!/void\s*\(\s*\*scalar\s*\)\s*\([^;]*\bpsx_type_id_t\s+value_type_id\b/.test
 const aggregateWalkerLayoutSection = nodeUtilsSource.match(
   /static\s+int\s+gvar_member_value_size_for_target\s*\([^]*?psx_gvar_init_slot_t\s+ps_gvar_init_slot_view\s*\(/,
 );
+const recordIdentityAggregateWalker = nodeUtilsSource.match(
+  /static\s+int\s+gvar_walk_aggregate_initializer\s*\([^]*?\n\}/,
+);
+const recordUnionInitializerSelector = nodeUtilsSource.match(
+  /static\s+int\s+record_union_init_member_for_slot\s*\([^;]*?\)\s*\{[^]*?\n\}/,
+);
 if (!aggregateWalkerLayoutSection ||
     /->\s*aggregate_definition\b/.test(nodeUtilsSource) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
@@ -10126,6 +10131,26 @@ if (!aggregateWalkerLayoutSection ||
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bpsx_semantic_type_table_array_flat_element_count\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    /\b(?:ctx_get_tag_member_scoped|gvar_tag_identity|tag_scope_depth_p1)\b/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    /\bps_ctx_(?:get|find)_tag_member/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !recordIdentityAggregateWalker ||
+    /\bpsx_semantic_context_t\b|\btag_(?:kind|name|len|scope_depth_p1)\b|\bps_ctx_(?:get|find)_tag_member/.test(
+      recordIdentityAggregateWalker[0],
+    ) ||
+    !recordUnionInitializerSelector ||
+    !/\brecord_union_init_member_for_slot\s*\(\s*const\s+psx_semantic_type_table_t\s*\*/.test(
+      recordUnionInitializerSelector[0],
+    ) ||
+    /\bpsx_semantic_context_t\b|\bps_ctx_(?:get|find)_tag_member/.test(
+      recordUnionInitializerSelector[0],
+    ) ||
+    !/if\s*\(\s*!layout\.record_decl\s*\)\s*return\s+0\s*;/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_value_size\s*\(/.test(
