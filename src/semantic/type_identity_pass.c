@@ -3,7 +3,7 @@
 #include "../parser/node_utils.h"
 #include "function_call_resolution.h"
 #include "tree_walk.h"
-#include "type_compatibility_view.h"
+#include "type_identity.h"
 #include "../parser/semantic_ctx.h"
 
 typedef struct {
@@ -18,65 +18,59 @@ static int intern_available_type(node_t *node, void *user) {
     node_function_call_t *call = (node_function_call_t *)node;
     psx_qual_type_t callee_qual_type =
         psx_function_call_qual_type(pass->resolution_store, call);
-    const psx_type_t *callee_view = call->callee
-        ? ps_node_get_type(pass->resolution_store, call->callee)
-        : NULL;
-    if (callee_qual_type.type_id == PSX_TYPE_ID_INVALID && callee_view) {
-      psx_qual_type_t expression_type =
-          ps_node_qual_type(pass->resolution_store, call->callee);
+    psx_qual_type_t expression_type = call->callee
+        ? ps_node_qual_type(pass->resolution_store, call->callee)
+        : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                            PSX_TYPE_QUALIFIER_NONE};
+    if (callee_qual_type.type_id == PSX_TYPE_ID_INVALID &&
+        expression_type.type_id != PSX_TYPE_ID_INVALID) {
       callee_qual_type = psx_semantic_type_table_callable_function(
           ps_ctx_semantic_type_table_in(pass->semantic_context),
           expression_type);
     }
     psx_function_call_bind_qual_type(
         pass->resolution_store, call, callee_qual_type);
-    if (callee_view &&
+    if (expression_type.type_id != PSX_TYPE_ID_INVALID &&
         callee_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       pass->failed_node = node;
       return 0;
     }
   }
-  const psx_type_t *node_type =
-      ps_node_get_type(pass->resolution_store, node);
-  if (!node_type) {
+  psx_qual_type_t node_qual_type =
+      ps_node_qual_type(pass->resolution_store, node);
+  if (node_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_node_clear_type(pass->resolution_store, node);
     return 1;
   }
-  psx_qual_type_t node_qual_type =
-      ps_node_qual_type(pass->resolution_store, node);
-  if (node_qual_type.type_id != PSX_TYPE_ID_INVALID &&
-      node_type == psx_type_compatibility_view_for(
-                       ps_ctx_semantic_type_table_in(
-                           pass->semantic_context),
-                       node_qual_type)) {
+  if (psx_semantic_type_table_qual_type_is_valid(
+          ps_ctx_semantic_type_table_in(pass->semantic_context),
+          node_qual_type)) {
     return 1;
   }
   pass->failed_node = node;
   return 0;
 }
 
-static int materialize_interned_type(node_t *node, void *user) {
+static int validate_interned_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
   if (node->kind == ND_FUNCALL) {
     node_function_call_t *call = (node_function_call_t *)node;
     psx_qual_type_t callee_qual_type =
         psx_function_call_qual_type(pass->resolution_store, call);
     if (callee_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-      const psx_type_t *callee_type =
-          psx_type_compatibility_view_for(
-              ps_ctx_semantic_type_table_in(pass->semantic_context),
-              callee_qual_type);
       psx_function_call_bind_qual_type(
           pass->resolution_store, call, callee_qual_type);
-      if (!callee_type) {
+      if (!psx_semantic_type_table_qual_type_is_valid(
+              ps_ctx_semantic_type_table_in(pass->semantic_context),
+              callee_qual_type)) {
         pass->failed_node = node;
         return 0;
       }
     }
   }
-  if (!ps_node_get_type(pass->resolution_store, node)) return 1;
   psx_qual_type_t qual_type =
       ps_node_qual_type(pass->resolution_store, node);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return 1;
   if (ps_node_bind_qual_type(
           pass->resolution_store, node, qual_type)) {
     return 1;
@@ -87,7 +81,7 @@ static int materialize_interned_type(node_t *node, void *user) {
 
 static int finalize_type(node_t *node, void *user) {
   return intern_available_type(node, user) &&
-         materialize_interned_type(node, user);
+         validate_interned_type(node, user);
 }
 
 int psx_intern_available_semantic_tree_types(

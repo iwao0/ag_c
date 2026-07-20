@@ -6985,16 +6985,31 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/\bps_node_qual_type\s*\(\s*pass->resolution_store\s*,\s*node\s*\)/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/node_type\s*==\s*psx_type_compatibility_view_for\s*\(/.test(
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      semanticTypeIdentityPassSource,
+    ) ||
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_node_get_type\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
     /\bps_ctx_intern_qual_type_in\s*\(/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
+    !/node_type\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       semanticInvariantsSource,
     ) ||
-    !/node_type\s*!=\s*psx_type_compatibility_view_for\s*\(/.test(
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_contains_vla_array\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_node_get_type\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       semanticInvariantsSource,
     ) ||
     !/\bpsx_finalize_semantic_tree_types\s*\(/.test(
@@ -7032,7 +7047,9 @@ if (/\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
     !/psx_semantic_type_table_describe\s*\(/.test(
       semanticInvariantsSource,
     ) ||
-    !/node_type\s*!=\s*NULL/.test(semanticInvariantsSource)) {
+    !/node_type\.type_id\s*!=\s*PSX_TYPE_ID_INVALID/.test(
+      semanticInvariantsSource,
+    )) {
   throw new Error(
     "function definition signatures and return types must be owned only by canonical QualType relations",
   );

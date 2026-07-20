@@ -11,7 +11,7 @@
 #include "resolved_object_ref.h"
 #include "resolved_function.h"
 #include "tree_walk.h"
-#include "type_compatibility_view.h"
+#include "type_identity.h"
 #include "type_identity_pass.h"
 
 typedef enum {
@@ -93,10 +93,14 @@ static int fail(psx_semantic_invariant_failure_t *failure,
   return 0;
 }
 
-static int is_implicit_function_result_type(const psx_type_t *type) {
-  return type && type->kind == PSX_TYPE_INTEGER &&
-         type->integer_kind == PSX_INTEGER_KIND_INT &&
-         !type->is_unsigned;
+static int is_implicit_function_result_type(
+    const psx_semantic_type_table_t *types, psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  return psx_semantic_type_table_describe(
+             types, type.type_id, &shape) &&
+         shape.kind == PSX_TYPE_INTEGER &&
+         shape.integer_kind == PSX_INTEGER_KIND_INT &&
+         !shape.is_unsigned;
 }
 
 typedef struct {
@@ -126,35 +130,41 @@ static int validate_node(const node_t *node, void *user) {
     return fail(
         failure,
         PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX, node);
-  const psx_type_t *node_type = ps_node_get_type(store, node);
-  if (role == NODE_SEMANTIC_ROLE_TYPED_EXPRESSION && !node_type)
+  psx_qual_type_t node_type = ps_node_qual_type(store, node);
+  if (role == NODE_SEMANTIC_ROLE_TYPED_EXPRESSION &&
+      node_type.type_id == PSX_TYPE_ID_INVALID)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
-  if (node_type && !ps_type_is_well_formed(node_type))
-    return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
-  if (semantic_context && node_type) {
-    psx_qual_type_t actual = ps_node_qual_type(store, node);
-    if (actual.type_id == PSX_TYPE_ID_INVALID) {
-      return fail(
-          failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
-    }
-    if (node_type != psx_type_compatibility_view_for(
-                         ps_ctx_semantic_type_table_in(semantic_context),
-                         actual)) {
-      return fail(
-          failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT, node);
-    }
+  const psx_semantic_type_table_t *types = semantic_context
+      ? ps_ctx_semantic_type_table_in(semantic_context)
+      : NULL;
+  if (node_type.type_id != PSX_TYPE_ID_INVALID &&
+      !psx_semantic_type_table_qual_type_is_valid(types, node_type)) {
+    return fail(failure, semantic_context
+                             ? PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE
+                             : PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+                node);
   }
-  if (resolved_kind == ND_FUNCREF &&
-      (node_type->kind != PSX_TYPE_POINTER || !node_type->base ||
-       node_type->base->kind != PSX_TYPE_FUNCTION)) {
-    return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+  if (resolved_kind == ND_FUNCREF) {
+    psx_type_shape_t reference_shape = {0};
+    psx_qual_type_t callable = psx_semantic_type_table_base(
+        types, node_type.type_id);
+    psx_type_shape_t callable_shape = {0};
+    if (!psx_semantic_type_table_describe(
+            types, node_type.type_id, &reference_shape) ||
+        reference_shape.kind != PSX_TYPE_POINTER ||
+        !psx_semantic_type_table_describe(
+            types, callable.type_id, &callable_shape) ||
+        callable_shape.kind != PSX_TYPE_FUNCTION) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+    }
   }
   if (resolved_kind == ND_FUNCDEF) {
     const node_function_definition_t *function =
         (const node_function_definition_t *)node;
     psx_qual_type_t actual =
         ps_function_definition_signature_qual_type(function);
-    if (node_type != NULL) {
+    if (node_type.type_id != PSX_TYPE_ID_INVALID) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
@@ -187,8 +197,6 @@ static int validate_node(const node_t *node, void *user) {
             failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
             node);
       }
-      const psx_semantic_type_table_t *types =
-          ps_ctx_semantic_type_table_in(semantic_context);
       psx_type_shape_t function_shape = {0};
       if (!psx_semantic_type_table_describe(
               types, actual.type_id, &function_shape) ||
@@ -220,7 +228,7 @@ static int validate_node(const node_t *node, void *user) {
             node);
       }
     } else if (!psx_function_call_is_implicit_declaration(store, call) ||
-               !is_implicit_function_result_type(node_type)) {
+               !is_implicit_function_result_type(types, node_type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
@@ -230,8 +238,9 @@ static int validate_node(const node_t *node, void *user) {
   int runtime_stride_off = runtime_view.row_stride_frame_off;
   int runtime_strides_remaining = runtime_view.strides_remaining;
   if ((runtime_stride_off != 0 &&
-       (runtime_stride_off < 0 || !node_type ||
-        !ps_type_contains_vla_array(node_type))) ||
+       (runtime_stride_off < 0 ||
+        !psx_semantic_type_table_contains_vla_array(
+            types, node_type.type_id))) ||
       (runtime_stride_off == 0 && runtime_strides_remaining != 0) ||
       runtime_strides_remaining < 0) {
     return fail(
@@ -304,8 +313,6 @@ static const char *semantic_invariant_status_name(
       return "expression has an invalid canonical type";
     case PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE:
       return "expression type could not be interned as a TypeId";
-    case PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT:
-      return "expression type is not the canonical TypeId object";
     case PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE:
       return "callable has inconsistent canonical types";
     case PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW:
