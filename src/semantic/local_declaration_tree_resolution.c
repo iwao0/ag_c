@@ -185,7 +185,7 @@ static void begin_declarator(
                 .options = application->options,
                 .name = name->str,
                 .name_len = name->len,
-                .type = application->current_type,
+                .type = application->current_qual_type,
                 .has_initializer = initializer->has_initializer,
                 .diag_tok = (token_t *)name,
             })) {

@@ -58,7 +58,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   char *name;
   int name_len;
-  const psx_type_t *function_type;
+  psx_qual_type_t function_qual_type;
   int is_definition;
   const char *diag_context;
   token_t *diag_tok;
@@ -82,7 +82,7 @@ typedef struct {
   node_t **args;
   int nargs;
   int has_unnamed_parameter;
-  const psx_type_t *function_type;
+  psx_qual_type_t function_qual_type;
 } psx_function_definition_pipeline_result_t;
 
 typedef struct {
@@ -184,7 +184,7 @@ typedef struct {
   const ag_compilation_options_t *options;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int has_initializer;
   token_t *diag_tok;
 } psx_block_extern_declaration_pipeline_request_t;

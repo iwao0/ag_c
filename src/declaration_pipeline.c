@@ -324,8 +324,7 @@ int psx_apply_function_declaration_pipeline(
     const psx_function_declaration_pipeline_request_t *request) {
   if (!request || !request->semantic_context || !request->global_registry ||
       !request->name || request->name_len <= 0 ||
-      !request->function_type ||
-      request->function_type->kind != PSX_TYPE_FUNCTION) return 0;
+      request->function_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   psx_function_declaration_resolution_t resolution;
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
@@ -333,7 +332,7 @@ int psx_apply_function_declaration_pipeline(
           .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
-          .function_type = request->function_type,
+          .function_qual_type = request->function_qual_type,
           .is_definition = request->is_definition,
       },
       &resolution);
@@ -596,15 +595,24 @@ int psx_finish_function_definition_pipeline(
       primary->function_is_variadic,
       state->parameter_count > 0 || primary->function_is_variadic);
 
-  result->function_type = psx_resolve_decl_type(
+  const psx_type_t *function_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = state->semantic_context,
           .base_type = state->base_type,
           .declarator_shape = &state->application.shape,
       });
-  return result->function_type &&
-         result->function_type->kind == PSX_TYPE_FUNCTION &&
-         result->function_type->base;
+  result->function_qual_type = ps_ctx_intern_qual_type_in(
+      state->semantic_context, function_type);
+  psx_type_shape_t function_shape = {0};
+  return result->function_qual_type.type_id != PSX_TYPE_ID_INVALID &&
+         psx_semantic_type_table_describe(
+             ps_ctx_semantic_type_table_in(state->semantic_context),
+             result->function_qual_type.type_id, &function_shape) &&
+         function_shape.kind == PSX_TYPE_FUNCTION &&
+         psx_semantic_type_table_base(
+             ps_ctx_semantic_type_table_in(state->semantic_context),
+             result->function_qual_type.type_id).type_id !=
+             PSX_TYPE_ID_INVALID;
 }
 
 int psx_begin_static_local_declaration_pipeline(
@@ -1137,7 +1145,7 @@ int psx_apply_block_extern_declaration_pipeline(
       !request->local_registry || !request->lowering_context ||
       !request->options ||
       !request->name || request->name_len <= 0 ||
-      !request->type) return 0;
+      request->type.type_id == PSX_TYPE_ID_INVALID) return 0;
   if (request->has_initializer) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),
@@ -1146,14 +1154,19 @@ int psx_apply_block_extern_declaration_pipeline(
         request->name_len, request->name);
   }
 
-  if (request->type->kind == PSX_TYPE_FUNCTION) {
+  psx_type_shape_t declaration_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(request->semantic_context),
+          request->type.type_id, &declaration_shape))
+    return 0;
+  if (declaration_shape.kind == PSX_TYPE_FUNCTION) {
     if (!psx_apply_function_declaration_pipeline(
             &(psx_function_declaration_pipeline_request_t){
                 .semantic_context = request->semantic_context,
                 .global_registry = request->global_registry,
                 .name = request->name,
                 .name_len = request->name_len,
-                .function_type = request->type,
+                .function_qual_type = request->type,
                 .diag_context = "block-extern",
                 .diag_tok = request->diag_tok,
             })) {
@@ -1164,9 +1177,6 @@ int psx_apply_block_extern_declaration_pipeline(
 
   psx_parsed_initializer_t initializer = {0};
   psx_global_declaration_pipeline_result_t global;
-  psx_qual_type_t object_type = ps_ctx_intern_qual_type_in(
-      request->semantic_context, request->type);
-  if (object_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   if (!psx_apply_global_declaration_pipeline(
           &(psx_global_declaration_pipeline_request_t){
               .semantic_context = request->semantic_context,
@@ -1176,7 +1186,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .options = request->options,
               .name = request->name,
               .name_len = request->name_len,
-              .type = object_type,
+              .type = request->type,
               .is_extern_decl = 1,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,

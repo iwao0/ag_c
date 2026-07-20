@@ -19,7 +19,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   char *name;
   int name_len;
-  const psx_type_t *function_type;
+  psx_qual_type_t function_qual_type;
   int is_definition;
 } psx_function_declaration_resolution_request_t;
 

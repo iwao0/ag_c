@@ -14215,7 +14215,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .global_registry = test_global_registry(),
           .name = planned_function_name,
           .name_len = (int)sizeof(planned_function_name) - 1,
-          .function_type = function_input,
+          .function_qual_type = intern_test_qual_type(function_input),
       },
       &planned_function);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, planned_function.status);
@@ -14249,7 +14249,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__cyclic_function",
           .name_len = 17,
-          .function_type = cyclic_function_type,
+          .function_qual_type = intern_test_qual_type(
+              cyclic_function_type),
       },
       &planned_function);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_INVALID, planned_function.status);
@@ -14286,7 +14287,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .global_registry = test_global_registry(),
           .name = funcptr_function_name,
           .name_len = (int)sizeof(funcptr_function_name) - 1,
-          .function_type = funcptr_function_input,
+          .function_qual_type = intern_test_qual_type(
+              funcptr_function_input),
       },
       &funcptr_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, funcptr_resolution.status);
@@ -14318,13 +14320,14 @@ static void test_parameter_declaration_storage_plan_boundary() {
       .global_registry = test_global_registry(),
       .name = (char *)"__resolution_fn",
       .name_len = 15,
-      .function_type = integer,
+      .function_qual_type = intern_test_qual_type(integer),
   };
   psx_function_declaration_resolution_t resolution = {0};
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_INVALID, resolution.status);
 
-  resolution_request.function_type = resolution_function_type;
+  resolution_request.function_qual_type =
+      intern_test_qual_type(resolution_function_type);
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
@@ -14338,11 +14341,13 @@ static void test_parameter_declaration_storage_plan_boundary() {
       ps_type_new_function(ps_type_clone(pointer));
   ps_type_set_function_params(
       pointer_return_function_type, parameter_types, 2, 1);
-  resolution_request.function_type = pointer_return_function_type;
+  resolution_request.function_qual_type =
+      intern_test_qual_type(pointer_return_function_type);
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_TYPE_CONFLICT, resolution.status);
 
-  resolution_request.function_type = resolution_function_type;
+  resolution_request.function_qual_type =
+      intern_test_qual_type(resolution_function_type);
   resolution_request.is_definition = 1;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
@@ -14355,7 +14360,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(find_test_global_var("__resolution_object", 19) != NULL);
   resolution_request.name = (char *)"__resolution_object";
   resolution_request.name_len = 19;
-  resolution_request.function_type = resolution_function_type;
+  resolution_request.function_qual_type =
+      intern_test_qual_type(resolution_function_type);
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
@@ -14640,7 +14646,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = boundary_function_name,
           .name_len = (int)sizeof(boundary_function_name) - 1,
-          .function_type = function_type,
+          .function_qual_type = intern_test_qual_type(function_type),
       },
       &function_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
@@ -16433,7 +16439,7 @@ static void test_typedef_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__TypeFunction",
           .name_len = 14,
-          .function_type = function_type,
+          .function_qual_type = intern_test_qual_type(function_type),
       },
       &function_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
@@ -16511,7 +16517,7 @@ static void test_enum_constant_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__EnumFunction",
           .name_len = 14,
-          .function_type = function_type,
+          .function_qual_type = intern_test_qual_type(function_type),
       },
       &function_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);

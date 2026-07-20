@@ -3134,7 +3134,11 @@ if (!/case\s+PSX_DECL_FUNCTION:[^]*?resolution->function\s*=\s*declaration->payl
       identifierResolutionSource,
     ) ||
     /ps_ctx_find_function_symbol\s*\(/.test(identifierResolutionSource) ||
-    !/ps_ctx_register_function_type_in\s*\(/.test(
+    !/ps_ctx_register_function_qual_type_in\s*\(/.test(
+      functionDeclarationResolutionSource,
+    ) ||
+    /\bpsx_type_t\b/.test(functionDeclarationResolutionSource) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
       functionDeclarationResolutionSource,
     ) ||
     !/ps_ctx_track_function_defined_in\s*\(/.test(
@@ -8967,8 +8971,6 @@ if (!staticInitializerRequest ||
 
 const readonlyTypeFields = [
   ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_type"],
-  ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
-  ["src/declaration_pipeline.h", "psx_function_definition_pipeline_result_t", "function_type"],
 ];
 const readonlyTypeSources = new Map();
 for (const [file, typeName, fieldName] of readonlyTypeFields) {
@@ -8992,9 +8994,12 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
 const canonicalLoweringTypeFields = [
   ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
   ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_request_t", "type"],
+  ["src/semantic/function_declaration_resolution.h", "psx_function_declaration_resolution_request_t", "function_qual_type"],
   ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
+  ["src/declaration_pipeline.h", "psx_function_declaration_pipeline_request_t", "function_qual_type"],
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
+  ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
   ["src/lowering/global_object_lowering.h", "psx_global_object_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
@@ -11127,6 +11132,9 @@ const functionDefinitionHeaderResolutionStruct =
 const functionSymbolStruct = semanticContextOwnershipSource.match(
   /struct\s+psx_function_symbol_t\s*\{([\s\S]*?)\n\};/,
 );
+const functionDefinitionPipelineResultStruct = declarationPipelineHeader.match(
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_function_definition_pipeline_result_t\s*;/,
+);
 const typedefSymbolStruct = semanticContextOwnershipSource.match(
   /struct\s+typedef_name_t\s*\{([\s\S]*?)\n\};/,
 );
@@ -11141,6 +11149,13 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     ) ||
     !functionDefinitionHeaderResolutionStruct ||
     /\bpsx_type_t\b/.test(functionDefinitionHeaderResolutionStruct[1]) ||
+    !functionDefinitionPipelineResultStruct ||
+    !/psx_qual_type_t\s+function_qual_type\s*;/.test(
+      functionDefinitionPipelineResultStruct[1],
+    ) ||
+    /const\s+psx_type_t\s*\*\s*function_type\s*;/.test(
+      functionDefinitionPipelineResultStruct[1],
+    ) ||
     !/lvar_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||

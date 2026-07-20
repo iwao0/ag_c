@@ -46,7 +46,8 @@ static void apply_function_prototype(
               .global_registry = global_registry,
               .name = name->str,
               .name_len = name->len,
-              .function_type = type,
+              .function_qual_type = ps_ctx_intern_qual_type_in(
+                  semantic_context, type),
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
           })) {

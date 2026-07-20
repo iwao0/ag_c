@@ -4625,7 +4625,8 @@ static int preflight_direct_local_declaration(
                   .options = context->options,
                   .name = name->str,
                   .name_len = name->len,
-                  .type = type,
+                  .type = ps_ctx_intern_qual_type_in(
+                      context->semantic_context, type),
                   .has_initializer = initializer->has_initializer,
                   .diag_tok = (token_t *)name,
               }))

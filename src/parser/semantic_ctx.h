@@ -100,6 +100,9 @@ int ps_ctx_track_function_defined_in(
 const psx_function_symbol_t *ps_ctx_register_function_type_in(
     psx_semantic_context_t *context, char *name, int len,
     const psx_type_t *function_type);
+const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_qual_type_t function_type);
 void ps_ctx_checkpoint_function_registration_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_function_registration_checkpoint_t *checkpoint);

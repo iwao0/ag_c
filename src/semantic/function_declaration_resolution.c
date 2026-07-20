@@ -15,8 +15,7 @@ void psx_resolve_function_declaration(
   resolution->status = PSX_FUNCTION_DECLARATION_INVALID;
   if (!request || !request->semantic_context || !request->global_registry ||
       !request->name || request->name_len <= 0 ||
-      !request->function_type ||
-      request->function_type->kind != PSX_TYPE_FUNCTION) {
+      request->function_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     return;
   }
   psx_global_registry_t *global_registry = request->global_registry;
@@ -25,6 +24,17 @@ void psx_resolve_function_declaration(
   if (!scope_graph ||
       scope_graph != ps_global_registry_scope_graph(global_registry))
     return;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t function_shape = {0};
+  psx_qual_type_t return_type = psx_semantic_type_table_base(
+      types, request->function_qual_type.type_id);
+  if (!psx_semantic_type_table_describe(
+          types, request->function_qual_type.type_id, &function_shape) ||
+      function_shape.kind != PSX_TYPE_FUNCTION ||
+      return_type.type_id == PSX_TYPE_ID_INVALID) {
+    return;
+  }
   const psx_scope_declaration_t *existing =
       psx_scope_graph_lookup_declaration_in_scope(
           scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
@@ -34,17 +44,13 @@ void psx_resolve_function_declaration(
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
     return;
   }
-  if (!request->function_type->base ||
-      !ps_type_is_well_formed(request->function_type)) {
-    return;
-  }
   if (existing && existing->kind != PSX_DECL_FUNCTION) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
-  resolution->function = ps_ctx_register_function_type_in(
+  resolution->function = ps_ctx_register_function_qual_type_in(
       semantic_context, request->name, request->name_len,
-      request->function_type);
+      request->function_qual_type);
   if (!resolution->function) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;

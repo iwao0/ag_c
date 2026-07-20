@@ -1835,6 +1835,23 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
       function_type->kind != PSX_TYPE_FUNCTION) {
     return NULL;
   }
+  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
+      context, function_type);
+  return ps_ctx_register_function_qual_type_in(
+      context, name, len, identity);
+}
+
+const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_qual_type_t function_type) {
+  psx_type_shape_t shape = {0};
+  if (!context || !name || len <= 0 ||
+      function_type.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_describe(
+          context->semantic_types, function_type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_FUNCTION) {
+    return NULL;
+  }
   psx_function_symbol_t *f =
       find_function_name_mut_in(context, name, len);
   if (!f) {
@@ -1842,16 +1859,14 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
     f = find_function_name_mut_in(context, name, len);
   }
   if (!f) return NULL;
-  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
-      context, function_type);
-  if (identity.type_id == PSX_TYPE_ID_INVALID) return NULL;
   if (f->function_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    const psx_type_t *existing =
-        psx_semantic_type_table_lookup_qual_type(
-            context->semantic_types, f->function_qual_type);
-    return ps_type_shape_matches(existing, function_type) ? f : NULL;
+    return f->function_qual_type.type_id == function_type.type_id &&
+                   f->function_qual_type.qualifiers ==
+                       function_type.qualifiers
+               ? f
+               : NULL;
   }
-  f->function_qual_type = identity;
+  f->function_qual_type = function_type;
   return f;
 }
 

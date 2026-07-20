@@ -93,7 +93,7 @@ static int resolve_function_definition_header(
         diag_text_for_in(diagnostics, DIAG_TEXT_PARAMETER));
     return 0;
   }
-  if (!applied.function_type->base) {
+  if (applied.function_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         diagnostics, definition->diagnostic_token, "funcdef",
         "canonical function return type construction failed");
@@ -107,7 +107,7 @@ static int resolve_function_definition_header(
               .global_registry = global_registry,
               .name = name ? name->str : NULL,
               .name_len = name ? name->len : 0,
-              .function_type = applied.function_type,
+              .function_qual_type = applied.function_qual_type,
               .is_definition = 1,
               .diag_context = "funcdef",
               .diag_tok = (token_t *)name,
