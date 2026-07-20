@@ -109,11 +109,12 @@ long long psx_eval_const_int(
       char *name = psx_resolved_object_ref_name(store, node, &name_len);
       if (global && name && global->name_len == name_len &&
           memcmp(global->name, name, (size_t)global->name_len) == 0) {
-        const psx_type_t *type = ps_gvar_get_decl_type(global);
+        psx_type_shape_t type = {0};
         if (global->has_init && !global->init_symbol &&
-            !global->init_values && !global->init_fvalues && type &&
-            type->kind != PSX_TYPE_ARRAY && type->kind != PSX_TYPE_FLOAT &&
-            type->kind != PSX_TYPE_COMPLEX) {
+            !global->init_values && !global->init_fvalues &&
+            ps_gvar_decl_type_shape(global, &type) &&
+            type.kind != PSX_TYPE_ARRAY && type.kind != PSX_TYPE_FLOAT &&
+            type.kind != PSX_TYPE_COMPLEX) {
           return global->init_val;
         }
       }

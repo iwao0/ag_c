@@ -6,7 +6,6 @@
 #include "../semantic/resolved_object_ref.h"
 #include "../semantic/generic_selection_resolution.h"
 #include "../semantic/type_name_resolution.h"
-#include "../semantic/type_compatibility_view.h"
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
@@ -67,16 +66,8 @@ static psx_type_t *type_with_self_qualifiers_in(
   return copy;
 }
 
-static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv);
-
-static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
-  if (!gv) return NULL;
-  return psx_type_compatibility_view_for(
-      gv->decl_type_table, gv->decl_qual_type);
-}
-
-static int gvar_decl_shape(const global_var_t *gv,
-                           psx_type_shape_t *shape) {
+int ps_gvar_decl_type_shape(const global_var_t *gv,
+                            psx_type_shape_t *shape) {
   return gv && shape && psx_semantic_type_table_describe(
       gv->decl_type_table, gv->decl_qual_type.type_id, shape);
 }
@@ -92,7 +83,8 @@ static int gvar_array_leaf_shape(const global_var_t *gv,
 
 int ps_gvar_is_array(const global_var_t *gv) {
   psx_type_shape_t shape = {0};
-  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_ARRAY;
+  return ps_gvar_decl_type_shape(gv, &shape) &&
+         shape.kind == PSX_TYPE_ARRAY;
 }
 
 int ps_gvar_is_struct_aggregate(const global_var_t *gv) {
@@ -120,13 +112,14 @@ static tk_float_kind_t gvar_initializer_fp_kind(const global_var_t *gv) {
 
 int ps_gvar_is_bool_scalar(const global_var_t *gv) {
   psx_type_shape_t shape = {0};
-  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_BOOL;
+  return ps_gvar_decl_type_shape(gv, &shape) && shape.kind == PSX_TYPE_BOOL;
 }
 
 int ps_gvar_array_element_is_bool(const global_var_t *gv) {
   psx_type_shape_t root = {0};
   psx_type_shape_t leaf = {0};
-  return gvar_decl_shape(gv, &root) && root.kind == PSX_TYPE_ARRAY &&
+  return ps_gvar_decl_type_shape(gv, &root) &&
+         root.kind == PSX_TYPE_ARRAY &&
          gvar_array_leaf_shape(gv, &leaf) && leaf.kind == PSX_TYPE_BOOL;
 }
 
@@ -418,7 +411,8 @@ int ps_gvar_visit_initializer_classified(
 
 int ps_gvar_array_element_count(const global_var_t *gv) {
   psx_type_shape_t shape = {0};
-  return gvar_decl_shape(gv, &shape) && shape.kind == PSX_TYPE_ARRAY &&
+  return ps_gvar_decl_type_shape(gv, &shape) &&
+         shape.kind == PSX_TYPE_ARRAY &&
          shape.array_len > 0
              ? shape.array_len
              : 0;
@@ -1975,10 +1969,6 @@ int ps_tag_member_designator_slot_in(
         semantic_context, &declaration);
   }
   return -1;
-}
-
-const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv) {
-  return gvar_decl_type_consistent(gv);
 }
 
 psx_qual_type_t ps_gvar_decl_qual_type(const global_var_t *gv) {

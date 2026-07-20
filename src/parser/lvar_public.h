@@ -6,7 +6,6 @@
 
 typedef struct lvar_t lvar_t;
 typedef struct global_var_t global_var_t;
-typedef struct psx_type_t psx_type_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 
 typedef struct {
@@ -26,7 +25,6 @@ typedef struct {
 lvar_t *ps_lvar_next_storage(const lvar_t *var);
 lvar_t *ps_lvar_find_owner(lvar_t *head, int offset);
 psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var);
-const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var);
 psx_qual_type_t ps_lvar_decl_qual_type(const lvar_t *var);
 psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var);
 

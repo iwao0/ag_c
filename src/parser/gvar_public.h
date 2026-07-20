@@ -9,7 +9,6 @@
 #include "../semantic/type_identity.h"
 
 typedef struct global_var_t global_var_t;
-typedef struct psx_type_t psx_type_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 typedef struct psx_record_layout_table_t psx_record_layout_table_t;
@@ -189,7 +188,8 @@ int ps_gvar_is_thread_local(const global_var_t *gv);
 int ps_gvar_is_static_storage(const global_var_t *gv);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
-const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv);
+int ps_gvar_decl_type_shape(const global_var_t *gv,
+                            psx_type_shape_t *shape);
 psx_qual_type_t ps_gvar_decl_qual_type(const global_var_t *gv);
 psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv);
 

@@ -9443,26 +9443,20 @@ const symtabSource = await readFile("src/parser/symtab.h", "utf8");
 const gvarStruct = symtabSource.match(
   /struct global_var_t\s*\{([\s\S]*?)\n\};/,
 );
-const lvarDeclTypeViewFunction = parserDeclSource.match(
-  /static\s+const\s+psx_type_t\s*\*lvar_decl_type_consistent\s*\([^)]*\)\s*\{[^]*?\n\}/,
-);
-const gvarDeclTypeViewFunction = nodeUtilsSource.match(
-  /static\s+const\s+psx_type_t\s*\*gvar_decl_type_consistent\s*\([^)]*\)\s*\{[^]*?\n\}/,
-);
 const lvarPublicSource = await readFile("src/parser/lvar_public.h", "utf8");
 const gvarPublicSource = await readFile("src/parser/gvar_public.h", "utf8");
 if (!lvarStruct ||
     /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(lvarStruct[1]) ||
     !gvarStruct ||
     /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(gvarStruct[1]) ||
-    !/\bconst\s+psx_type_t\s*\*\s*ps_lvar_get_decl_type\s*\(\s*const\s+lvar_t\s*\*/.test(
+    /\bps_lvar_get_decl_type\b|\bpsx_type_t\b/.test(
       lvarPublicSource,
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*ps_gvar_get_decl_type\s*\(\s*const\s+global_var_t\s*\*/.test(
+    /\bps_gvar_get_decl_type\b/.test(
       gvarPublicSource,
     )) {
   throw new Error(
-    "symbols must own only QualType identity while canonical types remain const views",
+    "symbols must own only QualType identity without publishing compatibility type views",
   );
 }
 if (/\b(?:scope_seq|declaration_seq|declaration_id)\b/.test(
@@ -9531,16 +9525,21 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
       gvarStruct[1],
     ) ||
-    !lvarDeclTypeViewFunction ||
-    !gvarDeclTypeViewFunction ||
-    !/psx_type_compatibility_view_for\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
-      lvarDeclTypeViewFunction[0],
+    /\bpsx_type_compatibility_view_for\s*\(|\bps_lvar_get_decl_type\s*\(/.test(
+      parserDeclSource,
     ) ||
-    /return\s+var->decl_type\s*;/.test(lvarDeclTypeViewFunction[0]) ||
-    !/psx_type_compatibility_view_for\s*\([^]*?decl_type_table[^]*?decl_qual_type/.test(
-      gvarDeclTypeViewFunction[0],
+    /\bpsx_type_compatibility_view_for\s*\(|\bps_gvar_get_decl_type\s*\(/.test(
+      nodeUtilsSource,
     ) ||
-    /return\s+gv->decl_type\s*;/.test(gvarDeclTypeViewFunction[0]) ||
+    !/\bint\s+ps_gvar_decl_type_shape\s*\(\s*const\s+global_var_t\s*\*/.test(
+      gvarPublicSource,
+    ) ||
+    !/\bint\s+ps_gvar_decl_type_shape\s*\([^]*?psx_semantic_type_table_describe\s*\([^]*?decl_type_table[^]*?decl_qual_type\.type_id/.test(
+      nodeUtilsSource,
+    ) ||
+    !/\bps_gvar_decl_type_shape\s*\([^]*?PSX_TYPE_ARRAY[^]*?PSX_TYPE_FLOAT[^]*?PSX_TYPE_COMPLEX/.test(
+      constantExpressionSource,
+    ) ||
     !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
       localRegistrySource,
     ) ||
@@ -9555,14 +9554,14 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     /\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource) ||
     !/\bps_gvar_decl_qual_type\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
-    "production symbol type views must materialize from declaration QualType identity",
+    "production symbol type queries must consume declaration QualType identity without compatibility views",
   );
 }
 const lvarSemanticTypeQueries = parserDeclSource.match(
   /int\s+ps_lvar_array_flat_element_count\s*\([^]*?int\s+ps_lvar_vla_row_stride_frame_off\s*\(/,
 );
 const gvarSemanticTypeQueries = nodeUtilsSource.match(
-  /static\s+int\s+gvar_decl_shape\s*\([^]*?int\s+ps_gvar_has_aggregate_initializer\s*\(/,
+  /int\s+ps_gvar_decl_type_shape\s*\([^]*?int\s+ps_gvar_has_aggregate_initializer\s*\(/,
 );
 if (!/\bpsx_semantic_type_table_array_subscript_stride_elements\s*\(/.test(
       semanticTypeIdentityHeader,

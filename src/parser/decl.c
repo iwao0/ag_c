@@ -10,7 +10,6 @@
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../semantic/resolved_object_ref.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -66,16 +65,6 @@ static tk_float_kind_t semantic_floating_kind(
   return shape->floating_kind == PSX_FLOATING_KIND_DOUBLE
              ? TK_FLOAT_KIND_DOUBLE
              : TK_FLOAT_KIND_NONE;
-}
-
-static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
-  return var ? psx_type_compatibility_view_for(
-                   var->decl_type_table, var->decl_qual_type)
-             : NULL;
-}
-
-const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
-  return lvar_decl_type_consistent(var);
 }
 
 psx_qual_type_t ps_lvar_decl_qual_type(const lvar_t *var) {
