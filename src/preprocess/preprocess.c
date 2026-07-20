@@ -909,7 +909,8 @@ static void add_string_macro(
 
 static void pp_init_predefined_macros(
     ag_preprocessor_context_t *context, const ag_target_info_t *target) {
-  int pointer_size = ag_target_info_pointer_size(target);
+  int pointer_size =
+      ag_data_layout_pointer_size(ag_target_info_data_layout(target));
   add_int_macro(context, "__STDC__", 1);
   add_int_macro(context, "__STDC_VERSION__", 201112LL);
   if (pointer_size == 8) {

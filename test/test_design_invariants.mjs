@@ -1326,8 +1326,8 @@ if (!/ag_target_info_is_valid\s*\(/.test(targetInfoHeader) ||
     ) ||
     /\bag_target_info_host\s*\(\)/.test(compilationSessionSource) ||
     (targetInfoSource.match(/\bstandard_target\b/g) ?? []).length !== 3 ||
-    /:\s*ag_target_info_pointer_size\s*\(target\)/.test(
-      targetInfoSource,
+    /\bag_target_info_(?:pointer_size|pointer_alignment|scalar_size|scalar_alignment)\s*\(/.test(
+      `${targetInfoHeader}\n${targetInfoSource}`,
     )) {
   throw new Error(
     "target layout queries must reject incomplete inputs instead of falling back to the host ABI",
@@ -7227,6 +7227,14 @@ const typeShapeLoweringSources = (await Promise.all([
   "src/lowering/static_hir_initializer.c",
   "src/lowering/translation_unit_data_lowering.c",
 ].map((path) => readFile(path, "utf8")))).join("\n");
+const mirTypeLoweringHeader = await readFile(
+  "src/lowering/mir_type_lowering.h",
+  "utf8",
+);
+const mirTypeLoweringSource = await readFile(
+  "src/lowering/mir_type_lowering.c",
+  "utf8",
+);
 const typeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
 );
@@ -7288,6 +7296,15 @@ if (/parser\/type\.h/.test(typeShapeLoweringSources) ||
     ) ||
     !/\bir_mir_usual_arithmetic_result_is_unsigned\s*\(/.test(
       typeShapeLoweringSources,
+    ) ||
+    !/const\s+struct\s+ag_data_layout_t\s*\*data_layout\s*;/.test(
+      mirTypeLoweringHeader,
+    ) ||
+    /\bag_target_info_t\b|\bag_target_info_(?:pointer_size|pointer_alignment|scalar_size|scalar_alignment)\s*\(/.test(
+      `${mirTypeLoweringHeader}\n${mirTypeLoweringSource}`,
+    ) ||
+    !/\bag_data_layout_scalar_size\s*\(/.test(
+      mirTypeLoweringSource,
     )) {
   throw new Error(
     "type and ABI lowering must consume TypeId shape and target layout without parser compatibility types",
@@ -7505,8 +7522,11 @@ if (!/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?\bscalar\s*\[\s*AG_TARGET_SCA
     !/\bpointer_alignment\s*;/.test(targetInfoHeaderSource) ||
     !/\bag_data_layout_equal\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_data_layout\s*\(/.test(targetInfoHeaderSource) ||
-    !/\bag_target_info_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
-    !/\bag_target_info_scalar_alignment\s*\(/.test(targetInfoHeaderSource) ||
+    !/\bag_data_layout_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
+    !/\bag_data_layout_scalar_alignment\s*\(/.test(targetInfoHeaderSource) ||
+    /\bag_target_info_(?:pointer_size|pointer_alignment|scalar_size|scalar_alignment)\s*\(/.test(
+      targetInfoHeaderSource + targetInfoImplementationSource,
+    ) ||
     !/\bag_target_info_equal\s*\(/.test(targetInfoHeaderSource) ||
     !/layout\s*&&\s*layout->pointer_size\s*>\s*0/.test(
       targetInfoImplementationSource,

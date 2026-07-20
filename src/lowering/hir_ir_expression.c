@@ -1423,10 +1423,11 @@ static ir_val_t build_compound_assignment(
         compound_op == PSX_HIR_COMPOUND_SHL ||
                 compound_op == PSX_HIR_COMPOUND_SHR
             ? ir_mir_integer_promotion_is_unsigned(
-                  target_type, context->options->target)
+                  target_type,
+                  ag_target_info_data_layout(context->options->target))
             : ir_mir_usual_arithmetic_result_is_unsigned(
                   target_type, rhs_type,
-                  context->options->target);
+                  ag_target_info_data_layout(context->options->target));
     old_value = hir_ir_coerce_direct_value(
         context, old_value, target_type, operation_type);
     rhs = hir_ir_coerce_direct_value(
@@ -2104,13 +2105,11 @@ ir_val_t hir_ir_build_expr(
     if (!hir_ir_append_instruction(context, instruction)) return ir_val_none();
     return instruction->dst;
   }
-  int uac_is_unsigned =
-      ir_mir_usual_arithmetic_result_is_unsigned(
-          left_type, right_type,
-          context->options->target);
-  int shift_is_unsigned =
-      ir_mir_integer_promotion_is_unsigned(
-          left_type, context->options->target);
+  int uac_is_unsigned = ir_mir_usual_arithmetic_result_is_unsigned(
+      left_type, right_type,
+      ag_target_info_data_layout(context->options->target));
+  int shift_is_unsigned = ir_mir_integer_promotion_is_unsigned(
+      left_type, ag_target_info_data_layout(context->options->target));
   ir_op_t op;
   switch (kind) {
     case PSX_HIR_ADD: op = IR_ADD; break;

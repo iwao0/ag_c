@@ -56,14 +56,8 @@ int ag_data_layout_scalar_size(
     const ag_data_layout_t *layout, ag_target_scalar_kind_t kind);
 int ag_data_layout_scalar_alignment(
     const ag_data_layout_t *layout, ag_target_scalar_kind_t kind);
-int ag_target_info_pointer_size(const ag_target_info_t *target);
-int ag_target_info_pointer_alignment(const ag_target_info_t *target);
 ag_target_call_abi_t ag_target_info_call_abi(
     const ag_target_info_t *target);
-int ag_target_info_scalar_size(
-    const ag_target_info_t *target, ag_target_scalar_kind_t kind);
-int ag_target_info_scalar_alignment(
-    const ag_target_info_t *target, ag_target_scalar_kind_t kind);
 int ag_target_info_equal(
     const ag_target_info_t *lhs, const ag_target_info_t *rhs);
 #endif

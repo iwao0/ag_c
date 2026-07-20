@@ -271,7 +271,7 @@ ir_val_t hir_ir_build_call(
   ir_mir_type_context_t type_context = {
       .semantic_types = context->options->semantic_types,
       .record_layouts = context->options->record_layouts,
-      .target = context->options->target,
+      .data_layout = ag_target_info_data_layout(context->options->target),
   };
   size_t argument_count = hir_ir_child_count_for_edge(
       node, PSX_HIR_EDGE_ARGUMENT);
@@ -345,9 +345,9 @@ ir_val_t hir_ir_build_call(
           argument_type.source_size < 4) {
         parameter_type.type = IR_TY_I32;
         parameter_type.source_size = 4;
-        parameter_type.is_unsigned =
-            ir_mir_integer_promotion_is_unsigned(
-                argument_type, context->options->target);
+        parameter_type.is_unsigned = ir_mir_integer_promotion_is_unsigned(
+            argument_type,
+            ag_target_info_data_layout(context->options->target));
       }
     }
     if (i >= parameter_count &&

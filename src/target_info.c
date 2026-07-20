@@ -103,33 +103,12 @@ int ag_data_layout_equal(
   return 1;
 }
 
-int ag_target_info_pointer_size(const ag_target_info_t *target) {
-  return ag_data_layout_pointer_size(ag_target_info_data_layout(target));
-}
-
-int ag_target_info_pointer_alignment(const ag_target_info_t *target) {
-  return ag_data_layout_pointer_alignment(
-      ag_target_info_data_layout(target));
-}
-
 ag_target_call_abi_t ag_target_info_call_abi(
     const ag_target_info_t *target) {
   return target &&
                  (target->call_abi == AG_TARGET_CALL_ABI_AAPCS64 ||
                   target->call_abi == AG_TARGET_CALL_ABI_WASM32)
              ? target->call_abi : AG_TARGET_CALL_ABI_INVALID;
-}
-
-int ag_target_info_scalar_size(
-    const ag_target_info_t *target, ag_target_scalar_kind_t kind) {
-  return ag_data_layout_scalar_size(
-      ag_target_info_data_layout(target), kind);
-}
-
-int ag_target_info_scalar_alignment(
-    const ag_target_info_t *target, ag_target_scalar_kind_t kind) {
-  return ag_data_layout_scalar_alignment(
-      ag_target_info_data_layout(target), kind);
 }
 
 int ag_target_info_equal(

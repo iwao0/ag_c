@@ -41,7 +41,7 @@ ir_mir_type_info_t hir_ir_classify_node_type(
   ir_mir_type_context_t type_context = {
       .semantic_types = context->options->semantic_types,
       .record_layouts = context->options->record_layouts,
-      .target = context->options->target,
+      .data_layout = ag_target_info_data_layout(context->options->target),
   };
   return ir_mir_classify_type_id(
       &type_context, psx_hir_node_qual_type(node).type_id);
@@ -387,8 +387,8 @@ static ir_val_t coerce_scalar(
       return value;
     if (source.type_class == IR_MIR_TYPE_INTEGER) {
       int source_size = source.source_size;
-      int target_size = ag_target_info_pointer_size(
-          context->options->target);
+      int target_size = ag_data_layout_pointer_size(
+          ag_target_info_data_layout(context->options->target));
       if (source_size == target_size) {
         value.type = IR_TY_PTR;
         return value;
@@ -409,8 +409,8 @@ static ir_val_t coerce_scalar(
     return hir_ir_unsupported_expr(context);
   }
   if (source.type_class == IR_MIR_TYPE_POINTER) {
-    int source_size = ag_target_info_pointer_size(
-        context->options->target);
+    int source_size = ag_data_layout_pointer_size(
+        ag_target_info_data_layout(context->options->target));
     int target_size = target.source_size;
     if (source_size == target_size) {
       value.type = target.type;
@@ -739,7 +739,7 @@ ir_module_t *ir_build_function_module_from_hir(
   ir_mir_type_context_t type_context = {
       .semantic_types = options->semantic_types,
       .record_layouts = options->record_layouts,
-      .target = options->target,
+      .data_layout = ag_target_info_data_layout(options->target),
   };
   psx_type_id_t signature_id =
       psx_hir_node_attached_qual_type(root).type_id;

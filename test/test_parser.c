@@ -128,6 +128,25 @@
 #include "test_common.h"
 #include "support/parser_compatibility_test_hook.h"
 
+static int test_target_pointer_size(const ag_target_info_t *target) {
+  return ag_data_layout_pointer_size(ag_target_info_data_layout(target));
+}
+
+static int test_target_pointer_alignment(const ag_target_info_t *target) {
+  return ag_data_layout_pointer_alignment(ag_target_info_data_layout(target));
+}
+
+static int test_target_scalar_size(const ag_target_info_t *target,
+                                   ag_target_scalar_kind_t kind) {
+  return ag_data_layout_scalar_size(ag_target_info_data_layout(target), kind);
+}
+
+static int test_target_scalar_alignment(const ag_target_info_t *target,
+                                        ag_target_scalar_kind_t kind) {
+  return ag_data_layout_scalar_alignment(ag_target_info_data_layout(target),
+                                         kind);
+}
+
 typedef struct {
   char *name;
   int len;
@@ -3454,10 +3473,9 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   const psx_hir_node_t *alignof_hir =
       psx_hir_module_lookup(hir, alignof_id);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(alignof_hir));
-  ASSERT_EQ(
-      ag_target_info_pointer_alignment(
-          ps_ctx_target_info(test_semantic_context())),
-      psx_hir_node_integer_value(alignof_hir));
+  ASSERT_EQ(test_target_pointer_alignment(
+                ps_ctx_target_info(test_semantic_context())),
+            psx_hir_node_integer_value(alignof_hir));
   psx_hir_module_destroy(hir);
 
   lvar_t *direct_size_bound = register_test_storage_fixture(
@@ -12859,12 +12877,11 @@ static void test_target_type_layout_boundary() {
       ir_abi_policy_parameter_aggregate_is_indirect(wasm_abi_policy, 17));
   ASSERT_TRUE(!ir_abi_policy_parameter_aggregate_is_indirect(NULL, 17));
   ASSERT_TRUE(!ag_target_info_is_valid(NULL));
-  ASSERT_EQ(0, ag_target_info_pointer_size(NULL));
-  ASSERT_EQ(0, ag_target_info_pointer_alignment(NULL));
+  ASSERT_EQ(0, test_target_pointer_size(NULL));
+  ASSERT_EQ(0, test_target_pointer_alignment(NULL));
   ASSERT_EQ(AG_TARGET_CALL_ABI_INVALID, ag_target_info_call_abi(NULL));
-  ASSERT_EQ(0, ag_target_info_scalar_size(NULL, AG_TARGET_SCALAR_INT));
-  ASSERT_EQ(0, ag_target_info_scalar_alignment(
-                   NULL, AG_TARGET_SCALAR_INT));
+  ASSERT_EQ(0, test_target_scalar_size(NULL, AG_TARGET_SCALAR_INT));
+  ASSERT_EQ(0, test_target_scalar_alignment(NULL, AG_TARGET_SCALAR_INT));
   ASSERT_TRUE(!ag_target_info_equal(NULL, &host));
   ASSERT_TRUE(ag_data_layout_is_valid(
       ag_target_info_data_layout(&host)));
@@ -12978,7 +12995,7 @@ static void test_target_type_layout_boundary() {
   ag_target_info_t wide_pointer_target = host;
   wide_pointer_target.data_layout.pointer_size = 16;
   wide_pointer_target.data_layout.pointer_alignment = 16;
-  ASSERT_EQ(16, ag_target_info_pointer_size(&wide_pointer_target));
+  ASSERT_EQ(16, test_target_pointer_size(&wide_pointer_target));
   ASSERT_EQ(16, ps_type_sizeof_for_target(
                     pointer, &wide_pointer_target));
   ASSERT_EQ(16, ps_type_alignof_for_target(
@@ -13102,7 +13119,7 @@ static void test_target_type_layout_boundary() {
   ir_mir_type_context_t mir_type_context = {
       .semantic_types = types,
       .record_layouts = ps_lowering_record_layouts(test_lowering_context()),
-      .target = &host,
+      .data_layout = ag_target_info_data_layout(&host),
   };
   ir_mir_type_info_t signed_long_mir = ir_mir_classify_type_id(
       &mir_type_context, signed_long_identity.type_id);
@@ -13111,13 +13128,14 @@ static void test_target_type_layout_boundary() {
   ir_mir_type_info_t unsigned_short_mir = ir_mir_classify_type_id(
       &mir_type_context, unsigned_short_identity.type_id);
   ASSERT_TRUE(!ir_mir_usual_arithmetic_result_is_unsigned(
-      signed_long_mir, unsigned_int_mir, &host));
+      signed_long_mir, unsigned_int_mir, ag_target_info_data_layout(&host)));
   ASSERT_TRUE(ir_mir_usual_arithmetic_result_is_unsigned(
-      signed_long_mir, unsigned_int_mir, &equal_width_integer_target));
+      signed_long_mir, unsigned_int_mir,
+      ag_target_info_data_layout(&equal_width_integer_target)));
   ASSERT_TRUE(!ir_mir_integer_promotion_is_unsigned(
-      unsigned_short_mir, &host));
+      unsigned_short_mir, ag_target_info_data_layout(&host)));
   ASSERT_TRUE(ir_mir_integer_promotion_is_unsigned(
-      unsigned_short_mir, &wide_short_target));
+      unsigned_short_mir, ag_target_info_data_layout(&wide_short_target)));
   const psx_type_t *canonical_pointer_array =
       psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
@@ -15091,10 +15109,9 @@ static void test_declaration_phase_boundary() {
   ASSERT_TRUE(syntax.alignas_specifiers[0].expression == NULL);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
-  ASSERT_EQ(
-      ag_target_info_pointer_alignment(
-          ps_ctx_target_info(test_semantic_context())),
-      phase.requested_alignment);
+  ASSERT_EQ(test_target_pointer_alignment(
+                ps_ctx_target_info(test_semantic_context())),
+            phase.requested_alignment);
   ASSERT_EQ(PSX_TYPE_INTEGER, phase.base_type->kind);
   psx_dispose_declaration_phase(&phase);
 }
@@ -29221,15 +29238,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_init(&wasm, &wasm_target));
   ASSERT_TRUE(ag_compilation_session_init(
       &wide_pointer, &wide_pointer_target));
-  ASSERT_EQ(16, ag_target_info_pointer_size(
-                    &wide_pointer.target));
+  ASSERT_EQ(16, test_target_pointer_size(&wide_pointer.target));
   ASSERT_TRUE(ps_ctx_target_info(wide_pointer.semantic_context) ==
               &wide_pointer.target);
   ASSERT_TRUE(ps_lowering_target(wide_pointer.lowering_context) ==
               &wide_pointer.target);
-  ASSERT_EQ(16, ag_target_info_pointer_size(
+  ASSERT_EQ(16, test_target_pointer_size(
                     ps_ctx_target_info(wide_pointer.semantic_context)));
-  ASSERT_EQ(16, ag_target_info_pointer_size(
+  ASSERT_EQ(16, test_target_pointer_size(
                     ps_lowering_target(wide_pointer.lowering_context)));
   ASSERT_TRUE(ag_compilation_session_dispose(&wide_pointer));
   ASSERT_TRUE(ag_compilation_session_set_backend_context(
@@ -29404,18 +29420,16 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               ps_ctx_record_layout_table_in(host.semantic_context));
   ASSERT_TRUE(ps_lowering_record_layouts(wasm.lowering_context) ==
               ps_ctx_record_layout_table_in(wasm.semantic_context));
-  ASSERT_EQ(8, ag_target_info_pointer_size(
-                   ag_compilation_session_target(&host)));
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ag_compilation_session_target(&wasm)));
-  ASSERT_EQ(8, ag_target_info_pointer_size(
-                   ps_ctx_target_info(host.semantic_context)));
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ps_ctx_target_info(wasm.semantic_context)));
-  ASSERT_EQ(8, ag_target_info_pointer_size(
-                   ps_lowering_target(host.lowering_context)));
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ps_lowering_target(wasm.lowering_context)));
+  ASSERT_EQ(8, test_target_pointer_size(ag_compilation_session_target(&host)));
+  ASSERT_EQ(4, test_target_pointer_size(ag_compilation_session_target(&wasm)));
+  ASSERT_EQ(
+      8, test_target_pointer_size(ps_ctx_target_info(host.semantic_context)));
+  ASSERT_EQ(
+      4, test_target_pointer_size(ps_ctx_target_info(wasm.semantic_context)));
+  ASSERT_EQ(
+      8, test_target_pointer_size(ps_lowering_target(host.lowering_context)));
+  ASSERT_EQ(
+      4, test_target_pointer_size(ps_lowering_target(wasm.lowering_context)));
   ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&host));
   ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&wasm));
   ASSERT_TRUE(ps_ctx_resolution_store(host.semantic_context) ==
@@ -29426,14 +29440,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.resolution_store);
   ASSERT_TRUE(ps_lowering_resolution_store(wasm.lowering_context) ==
               wasm.resolution_store);
-  ASSERT_EQ(8, ag_target_info_pointer_size(
-                   ps_ctx_target_info(host.semantic_context)));
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ps_ctx_target_info(wasm.semantic_context)));
-  ASSERT_EQ(8, ag_target_info_pointer_size(
-                   ps_lowering_target(host.lowering_context)));
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ps_lowering_target(wasm.lowering_context)));
+  ASSERT_EQ(
+      8, test_target_pointer_size(ps_ctx_target_info(host.semantic_context)));
+  ASSERT_EQ(
+      4, test_target_pointer_size(ps_ctx_target_info(wasm.semantic_context)));
+  ASSERT_EQ(
+      8, test_target_pointer_size(ps_lowering_target(host.lowering_context)));
+  ASSERT_EQ(
+      4, test_target_pointer_size(ps_lowering_target(wasm.lowering_context)));
   ASSERT_TRUE(host.preprocessor_context != NULL);
   ASSERT_TRUE(wasm.preprocessor_context != NULL);
   ASSERT_TRUE(host.preprocessor_context != wasm.preprocessor_context);
@@ -29615,8 +29629,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_ctx_get_strict_c11_mode(host_tokenizer));
   ASSERT_TRUE(!tk_ctx_get_strict_c11_mode(wasm_tokenizer));
 
-  ASSERT_EQ(4, ag_target_info_pointer_size(
-                   ag_compilation_session_target(&wasm)));
+  ASSERT_EQ(4, test_target_pointer_size(ag_compilation_session_target(&wasm)));
   ASSERT_EQ(8, ag_compilation_session_target(previous_session)->data_layout.pointer_size);
   ASSERT_TRUE(ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_dispose(&wasm));
