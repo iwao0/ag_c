@@ -289,6 +289,7 @@ int psx_hir_kind_is_expression(psx_hir_node_kind_t kind) {
     case PSX_HIR_OBJECT_COPY:
     case PSX_HIR_COMPOUND_ASSIGN:
     case PSX_HIR_LOCAL:
+    case PSX_HIR_PROTOTYPE_PARAMETER_REF:
     case PSX_HIR_PRE_INC:
     case PSX_HIR_PRE_DEC:
     case PSX_HIR_POST_INC:

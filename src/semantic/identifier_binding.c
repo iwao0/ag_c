@@ -257,6 +257,8 @@ static node_t *materialize_identifier(
   switch (resolution.symbol.kind) {
     case PSX_IDENTIFIER_LOCAL:
       return materialize_local(context, identifier, &resolution);
+    case PSX_IDENTIFIER_PARAMETER:
+      return NULL;
     case PSX_IDENTIFIER_ENUM_CONSTANT: {
       node_t *node = ps_node_new_num_in(
           binding_store(context),

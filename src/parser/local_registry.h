@@ -44,8 +44,6 @@ void ps_local_registry_reset_translation_unit_in(
     psx_local_registry_t *registry);
 void ps_local_registry_prepare_function_resolution_in(
     psx_local_registry_t *registry);
-void ps_local_registry_enter_prototype_scope_in(
-    psx_local_registry_t *registry);
 void ps_local_registry_enter_translation_unit_in(
     psx_local_registry_t *registry);
 void ps_local_registry_set_current_function_in(
@@ -77,10 +75,6 @@ lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
     int alignment, psx_qual_type_t decl_qual_type);
-lvar_t *ps_local_registry_create_type_binding_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, const psx_type_t *type,
-    token_t *diagnostic_token);
 lvar_t *ps_local_registry_create_static_alias_in(
     psx_local_registry_t *registry,
     global_var_t *global,

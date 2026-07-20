@@ -328,32 +328,6 @@ lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
   return var;
 }
 
-lvar_t *ps_local_registry_create_type_binding_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, const psx_type_t *type,
-    token_t *diagnostic_token) {
-  if (!registry || !name || name_len <= 0 || !type) return NULL;
-  psx_qual_type_t qual_type = resolve_local_decl_type(registry, type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
-  if (has_local_object_in_current_scope(registry, name, name_len)) {
-    ps_diag_duplicate_with_name_in(
-        registry->diagnostic_context, diagnostic_token,
-        "parameter", name, name_len);
-  }
-  lvar_t *var = calloc(1, sizeof(*var));
-  if (!var) return NULL;
-  var->name = name;
-  var->len = name_len;
-  (void)psx_scope_graph_declare(
-      registry->scope_graph, PSX_NAMESPACE_ORDINARY,
-      PSX_DECL_LOCAL_OBJECT, name, name_len, var);
-  var->decl_type_table = registry->semantic_types;
-  var->decl_qual_type = qual_type;
-  var->is_param = 1;
-  return var;
-}
-
 lvar_t *ps_local_registry_create_static_alias_in(
     psx_local_registry_t *registry,
     global_var_t *global,
@@ -612,11 +586,6 @@ static void enter_local_scope(
     ps_diag_ctx_in(
         registry->diagnostic_context, NULL, "scope",
         "scope graph allocation failed");
-}
-
-void ps_local_registry_enter_prototype_scope_in(
-    psx_local_registry_t *registry) {
-  enter_local_scope(registry, PSX_SCOPE_FUNCTION_PROTOTYPE);
 }
 
 void ps_local_registry_enter_translation_unit_in(

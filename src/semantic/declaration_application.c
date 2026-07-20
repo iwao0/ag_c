@@ -19,6 +19,7 @@
 #include "enum_constant_resolution.h"
 #include "function_parameter_resolution.h"
 #include "parameter_declaration_resolution.h"
+#include "prototype_parameter.h"
 #include "syntax_typed_hir_resolution.h"
 #include "type_name_resolution.h"
 #include "typed_hir_materialization.h"
@@ -803,7 +804,19 @@ void psx_apply_parsed_function_parameters_in_contexts(
                 "function parameter type allocation failed");
   }
   int resolved_count = 0;
-  ps_local_registry_enter_prototype_scope_in(local_registry);
+  psx_scope_graph_t *scope_graph =
+      ps_ctx_scope_graph(semantic_context);
+  if (!scope_graph ||
+      psx_scope_graph_enter_scope(
+          scope_graph, PSX_SCOPE_FUNCTION_PROTOTYPE) ==
+          PSX_SCOPE_ID_INVALID) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declarator-application",
+        "prototype scope allocation failed");
+    free(resolved_qual_types);
+    return;
+  }
   for (int i = 0; i < parameters->count; i++) {
     const psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
@@ -847,27 +860,23 @@ void psx_apply_parsed_function_parameters_in_contexts(
     }
     psx_qual_type_t adjusted_qual_type =
         parameter_resolution.function_qual_type;
-    const psx_type_t *adjusted =
-        psx_semantic_type_table_lookup_qual_type(
-            ps_ctx_semantic_type_table_in(semantic_context),
-            parameter_resolution.declaration_qual_type);
-    if (!adjusted) {
-      ps_diag_ctx_in(
-          ps_ctx_diagnostics(semantic_context),
-          parameter->specifier.diagnostic_token, "param",
-          "canonical prototype parameter TypeId lookup failed");
-    }
     resolved_qual_types[resolved_count] = adjusted_qual_type;
     resolved_count++;
     token_ident_t *name = parameter->declarator.identifier;
-    if (name && !ps_local_registry_create_type_binding_in(
-                    local_registry, name->str, name->len, adjusted,
+    if (name && !psx_declare_prototype_parameter_in(
+                    semantic_context, name->str, name->len,
+                    parameter_resolution.declaration_qual_type,
                     (token_t *)name)) {
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), (token_t *)name, "param",
                   "prototype parameter binding failed");
     }
   }
-  ps_decl_leave_scope_in(local_registry);
+  if (!psx_scope_graph_leave_scope(scope_graph)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declarator-application",
+        "prototype scope finalization failed");
+  }
   psx_set_resolved_function_parameter_qual_types(
       ps_ctx_arena(semantic_context), function_op,
       resolved_qual_types, resolved_count,

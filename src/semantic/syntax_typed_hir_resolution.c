@@ -792,6 +792,7 @@ static int resolve_direct_identifier_with_usage(
   switch (resolved.symbol.kind) {
     case PSX_IDENTIFIER_ENUM_CONSTANT:
     case PSX_IDENTIFIER_LOCAL:
+    case PSX_IDENTIFIER_PARAMETER:
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
     case PSX_IDENTIFIER_FUNCTION:
     case PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA:
@@ -2341,6 +2342,13 @@ static psx_semantic_node_t *build_direct_identifier(
     return psx_semantic_node_builder_leaf_expression(
         &context->builder, &spec,
         resolution.expression_qual_type, NULL,
+        identifier->base.kind);
+  }
+  if (resolution.symbol.kind == PSX_IDENTIFIER_PARAMETER) {
+    spec.kind = PSX_HIR_PROTOTYPE_PARAMETER_REF;
+    return psx_semantic_node_builder_leaf_expression(
+        &context->builder, &spec,
+        resolution.declaration_qual_type, NULL,
         identifier->base.kind);
   }
 

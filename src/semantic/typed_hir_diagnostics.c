@@ -97,6 +97,7 @@ static int node_identity_equal(
              lhs->spec.name && rhs->spec.name &&
              memcmp(lhs->spec.name, rhs->spec.name,
                     lhs->spec.name_length) == 0;
+    case PSX_HIR_PROTOTYPE_PARAMETER_REF:
     case PSX_HIR_GLOBAL:
     case PSX_HIR_FUNCTION_REF:
       return lhs->spec.name_length == rhs->spec.name_length &&

@@ -83,6 +83,7 @@
 #include "../src/semantic/local_initializer_binding.h"
 #include "../src/semantic/member_access_resolution.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
+#include "../src/semantic/prototype_parameter.h"
 #include "../src/semantic/resolution_state.h"
 #include "../src/semantic/resolution_store.h"
 #include "../src/semantic/resolution_work_tree_internal.h"
@@ -8279,6 +8280,31 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_TRUE(m != NULL);
   ASSERT_TRUE(k != NULL);
   ASSERT_TRUE(t != NULL);
+  psx_scope_graph_t *scope_graph = test_scope_graph();
+  const psx_scope_declaration_t *prototype_m = NULL;
+  for (size_t i = 0;
+       i < psx_scope_graph_declaration_count(scope_graph); i++) {
+    const psx_scope_declaration_t *declaration =
+        psx_scope_graph_declaration_at(scope_graph, i);
+    if (!declaration || declaration->name_len != 1 ||
+        declaration->name[0] != 'm' ||
+        psx_scope_graph_scope_kind(
+            scope_graph, declaration->scope_id) !=
+            PSX_SCOPE_FUNCTION_PROTOTYPE)
+      continue;
+    ASSERT_TRUE(declaration->kind != PSX_DECL_LOCAL_OBJECT);
+    if (declaration->kind == PSX_DECL_PARAMETER)
+      prototype_m = declaration;
+  }
+  ASSERT_TRUE(prototype_m != NULL);
+  ASSERT_TRUE(prototype_m->payload != m);
+  psx_qual_type_t prototype_m_type =
+      psx_prototype_parameter_qual_type(prototype_m->payload);
+  psx_type_shape_t prototype_m_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      prototype_m_type.type_id, &prototype_m_shape));
+  ASSERT_EQ(PSX_TYPE_INTEGER, prototype_m_shape.kind);
   ASSERT_TRUE(ps_lvar_get_decl_type(t) != NULL);
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(t));
   ASSERT_EQ(m->offset,

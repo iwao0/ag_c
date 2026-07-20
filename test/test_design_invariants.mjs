@@ -244,6 +244,22 @@ const scopeGraphLocalRegistryHeader = await readFile(
   "src/parser/local_registry.h",
   "utf8",
 );
+const prototypeParameterHeader = await readFile(
+  "src/semantic/prototype_parameter.h",
+  "utf8",
+);
+const prototypeParameterSource = await readFile(
+  "src/semantic/prototype_parameter.c",
+  "utf8",
+);
+const prototypeDeclarationApplicationSource = await readFile(
+  "src/semantic/declaration_application.c",
+  "utf8",
+);
+const prototypeSyntaxResolutionSource = await readFile(
+  "src/semantic/syntax_typed_hir_resolution.c",
+  "utf8",
+);
 const scopeGraphNameEnvironmentHeader = await readFile(
   "src/parser/name_environment.h",
   "utf8",
@@ -399,6 +415,45 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     )) {
   throw new Error(
     "CompilationSession must own one ScopeId/DeclId graph with all C namespaces",
+  );
+}
+const prototypeParameterStruct = prototypeParameterSource.match(
+  /struct\s+psx_prototype_parameter_t\s*\{([^{}]*)\};/,
+);
+if (!/PSX_DECL_PARAMETER/.test(scopeGraphHeader) ||
+    !prototypeParameterStruct ||
+    !/psx_qual_type_t\s+declaration_qual_type\s*;/.test(
+      prototypeParameterStruct[1],
+    ) ||
+    /\blvar_t\b|storage|offset/.test(prototypeParameterStruct[1]) ||
+    !/psx_scope_graph_declare\s*\([^]*?PSX_DECL_PARAMETER/.test(
+      prototypeParameterSource,
+    ) ||
+    !/PSX_SCOPE_FUNCTION_PROTOTYPE/.test(prototypeParameterSource) ||
+    !/case\s+PSX_DECL_PARAMETER:[^]*?PSX_IDENTIFIER_PARAMETER/.test(
+      scopeGraphIdentifierResolutionSource,
+    ) ||
+    !/case\s+PSX_IDENTIFIER_PARAMETER:[^]*?psx_prototype_parameter_qual_type/.test(
+      scopeGraphIdentifierResolutionSource,
+    ) ||
+    !/psx_scope_graph_enter_scope\s*\([^]*?PSX_SCOPE_FUNCTION_PROTOTYPE/.test(
+      prototypeDeclarationApplicationSource,
+    ) ||
+    !/psx_declare_prototype_parameter_in\s*\(/.test(
+      prototypeDeclarationApplicationSource,
+    ) ||
+    /ps_local_registry_(?:create_type_binding|enter_prototype_scope)_in\s*\(/.test(
+      scopeGraphLocalRegistryHeader + scopeGraphLocalRegistrySource +
+        prototypeDeclarationApplicationSource,
+    ) ||
+    !/PSX_HIR_PROTOTYPE_PARAMETER_REF/.test(hirHeader) ||
+    !/case\s+PSX_HIR_PROTOTYPE_PARAMETER_REF:/.test(hirImplementation) ||
+    !/PSX_IDENTIFIER_PARAMETER[^]*?PSX_HIR_PROTOTYPE_PARAMETER_REF/.test(
+      prototypeSyntaxResolutionSource,
+    ) ||
+    /PSX_HIR_PROTOTYPE_PARAMETER_REF/.test(hirIrBuilder)) {
+  throw new Error(
+    "prototype parameters must be QualType-only scope declarations and must not masquerade as local storage",
   );
 }
 const enumConstantPayload =

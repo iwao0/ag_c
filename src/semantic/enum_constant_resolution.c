@@ -40,6 +40,7 @@ void psx_resolve_enum_constant(
       resolution->status = PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT;
       return;
     case PSX_DECL_LOCAL_OBJECT:
+    case PSX_DECL_PARAMETER:
     case PSX_DECL_GLOBAL_OBJECT:
       resolution->status = PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT;
       return;

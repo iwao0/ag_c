@@ -36,6 +36,9 @@ typedef enum {
   PSX_HIR_OBJECT_COPY,
   PSX_HIR_COMPOUND_ASSIGN,
   PSX_HIR_LOCAL,
+  /* Type-only reference in function prototype scope. This node must not
+   * survive into target-independent IR lowering. */
+  PSX_HIR_PROTOTYPE_PARAMETER_REF,
   PSX_HIR_IF,
   PSX_HIR_WHILE,
   PSX_HIR_DO_WHILE,

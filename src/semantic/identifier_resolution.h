@@ -7,11 +7,13 @@
 #include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_prototype_parameter_t psx_prototype_parameter_t;
 typedef struct lvar_t lvar_t;
 
 typedef enum {
   PSX_IDENTIFIER_UNDEFINED = 0,
   PSX_IDENTIFIER_LOCAL,
+  PSX_IDENTIFIER_PARAMETER,
   PSX_IDENTIFIER_ENUM_CONSTANT,
   PSX_IDENTIFIER_GLOBAL_OBJECT,
   PSX_IDENTIFIER_FUNCTION,
@@ -31,6 +33,7 @@ typedef struct {
 typedef struct {
   psx_identifier_resolution_kind_t kind;
   lvar_t *local;
+  const psx_prototype_parameter_t *parameter;
   global_var_t *global;
   const psx_function_symbol_t *function;
   long long enum_value;

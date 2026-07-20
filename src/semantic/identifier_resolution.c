@@ -4,6 +4,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
 #include "../parser/semantic_ctx.h"
+#include "prototype_parameter.h"
 
 #include <string.h>
 
@@ -34,6 +35,10 @@ static void resolve_identifier_from_scope_graph(
     case PSX_DECL_LOCAL_OBJECT:
       resolution->kind = PSX_IDENTIFIER_LOCAL;
       resolution->local = declaration->payload;
+      return;
+    case PSX_DECL_PARAMETER:
+      resolution->kind = PSX_IDENTIFIER_PARAMETER;
+      resolution->parameter = declaration->payload;
       return;
     case PSX_DECL_GLOBAL_OBJECT:
       resolution->kind = PSX_IDENTIFIER_GLOBAL_OBJECT;
@@ -110,6 +115,11 @@ void psx_resolve_identifier_expression(
           ps_lvar_static_storage_global(resolution->symbol.local);
       resolution->local_has_static_storage =
           ps_lvar_is_static_local(resolution->symbol.local);
+      break;
+    case PSX_IDENTIFIER_PARAMETER:
+      resolution->declaration_qual_type =
+          psx_prototype_parameter_qual_type(
+              resolution->symbol.parameter);
       break;
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
       resolution->declaration_qual_type =
