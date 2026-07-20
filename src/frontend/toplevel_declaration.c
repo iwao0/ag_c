@@ -2,7 +2,6 @@
 
 #include "../semantic/declaration_application.h"
 #include "../semantic/declaration_registration.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../declaration_pipeline.h"
 #include "../parser/diag.h"
 #include "../parser/global_registry.h"
@@ -117,11 +116,10 @@ static void begin_declarator(
       application->semantic_context, application->global_registry,
       application->local_registry,
       application->base_qual_type, declarator);
-  const psx_type_t *current_type =
-      psx_type_compatibility_view_for(
+  psx_type_shape_t current_shape = {0};
+  if (!psx_semantic_type_table_describe(
           ps_ctx_semantic_type_table_in(application->semantic_context),
-          application->current_qual_type);
-  if (!current_type) {
+          application->current_qual_type.type_id, &current_shape)) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         declarator->diagnostic_token, "decl",
@@ -145,7 +143,7 @@ static void begin_declarator(
     application->current_kind = PSX_TOPLEVEL_APPLY_TYPEDEF;
     return;
   }
-  if (current_type->kind == PSX_TYPE_FUNCTION) {
+  if (current_shape.kind == PSX_TYPE_FUNCTION) {
     if (initializer->has_initializer) {
       ps_diag_ctx_in(
           application_diagnostics(application), (token_t *)name,
@@ -191,16 +189,17 @@ static void finish_declarator(
     psx_parsed_initializer_t *initializer) {
   if (application->current_kind != PSX_TOPLEVEL_APPLY_GLOBAL) return;
   application->current_initializer = *initializer;
-  const psx_type_t *current_type =
-      psx_type_compatibility_view_for(
+  psx_type_shape_t current_shape = {0};
+  if (!psx_semantic_type_table_describe(
           ps_ctx_semantic_type_table_in(application->semantic_context),
-          application->current_qual_type);
-  if (!current_type) return;
+          application->current_qual_type.type_id, &current_shape))
+    return;
   if (initializer->has_initializer &&
       initializer->kind == PSX_DECL_INIT_EXPR && initializer->value &&
       initializer->value->kind == ND_COMPOUND_LITERAL &&
-      (current_type->kind == PSX_TYPE_ARRAY ||
-       ps_type_is_tag_aggregate(current_type))) {
+      (current_shape.kind == PSX_TYPE_ARRAY ||
+       current_shape.kind == PSX_TYPE_STRUCT ||
+       current_shape.kind == PSX_TYPE_UNION)) {
     application->current_initializer.kind = PSX_DECL_INIT_LIST;
     application->current_initializer.value = initializer->value->rhs;
   }

@@ -6,7 +6,6 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node_type.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../parser/decl.h"
@@ -143,11 +142,10 @@ static void begin_declarator(
       psx_apply_runtime_declarator_qual_type_in_context(
           application->semantic_context, application->base_qual_type,
           &application->current_application);
-  const psx_type_t *current_type =
-      psx_type_compatibility_view_for(
+  psx_type_shape_t current_shape = {0};
+  if (!psx_semantic_type_table_describe(
           ps_ctx_semantic_type_table_in(application->semantic_context),
-          application->current_qual_type);
-  if (!current_type) {
+          application->current_qual_type.type_id, &current_shape)) {
     ps_diag_ctx_in(
         application_diagnostics(application), (token_t *)name,
         "local-declaration",
@@ -181,7 +179,7 @@ static void begin_declarator(
   }
 
   if (application->is_extern ||
-      current_type->kind == PSX_TYPE_FUNCTION) {
+      current_shape.kind == PSX_TYPE_FUNCTION) {
     if (!psx_apply_block_extern_declaration_pipeline(
             &(psx_block_extern_declaration_pipeline_request_t){
                 .semantic_context = application->semantic_context,

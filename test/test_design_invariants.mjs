@@ -3709,6 +3709,13 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
         /void\s+psx_resolve_member_access\s*\([^]*?\n\}/,
       )?.[0] || "",
     ) ||
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_ctx_intern_qual_type_in\s*\(|\bps_node_get_type\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/\bps_node_qual_type\s*\(/.test(memberAccessResolutionSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
     /ps_type_has_qualifier\s*\(\s*object_type/.test(
       semanticPassSource,
     )) {
@@ -9744,6 +9751,15 @@ for (const [typeName, source] of canonicalDeclarationApplicationStates) {
       )) {
     throw new Error(
       `${typeName} must retain declaration base and current types as canonical QualType`,
+    );
+  }
+}
+
+for (const [typeName, source] of canonicalDeclarationApplicationStates) {
+  if (!/\bpsx_semantic_type_table_describe\s*\(/.test(source) ||
+      /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(source)) {
+    throw new Error(
+      `${typeName} must classify declaration types directly from canonical TypeShape`,
     );
   }
 }

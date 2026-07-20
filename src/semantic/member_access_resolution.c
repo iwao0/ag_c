@@ -1,19 +1,27 @@
 #include "member_access_resolution.h"
 #include "resolved_node_kind.h"
-#include "type_compatibility_view.h"
-
-#include "../parser/node_utils.h"
 
 #include <string.h>
 
-static int node_is_single_tag_array_view(
-    const psx_resolution_store_t *store, node_t *node) {
-  const psx_type_t *type = ps_node_get_type(store, node);
-  return node &&
-         (node->kind == ND_UNARY_DEREF ||
-          psx_resolution_node_kind(store, node) == ND_DEREF) && type &&
-         type->kind == PSX_TYPE_ARRAY && type->base &&
-         ps_type_is_tag_aggregate(type->base);
+static int node_is_single_record_array(
+    const psx_semantic_type_table_t *types,
+    const psx_resolution_store_t *store, const node_t *node,
+    psx_qual_type_t type) {
+  psx_type_shape_t array_shape = {0};
+  if (!types || !node || type.type_id == PSX_TYPE_ID_INVALID ||
+      (node->kind != ND_UNARY_DEREF &&
+       psx_resolution_node_kind(store, node) != ND_DEREF) ||
+      !psx_semantic_type_table_describe(
+          types, type.type_id, &array_shape) ||
+      array_shape.kind != PSX_TYPE_ARRAY)
+    return 0;
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      types, type.type_id);
+  psx_type_shape_t element_shape = {0};
+  return psx_semantic_type_table_describe(
+             types, element.type_id, &element_shape) &&
+         (element_shape.kind == PSX_TYPE_STRUCT ||
+          element_shape.kind == PSX_TYPE_UNION);
 }
 
 void psx_resolve_member_access(
@@ -33,20 +41,14 @@ void psx_resolve_member_access(
       ps_ctx_resolution_store(semantic_context);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
-  const psx_type_t *base_type = ps_node_get_type(store, request->base);
   psx_qual_type_t base_qual_type = ps_node_qual_type(store, request->base);
-  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
-      base_type != psx_type_compatibility_canonical_view_for(
-                       semantic_types, base_qual_type.type_id)) {
-    base_qual_type = ps_ctx_intern_qual_type_in(
-        semantic_context, base_type);
-  }
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
     return;
   }
   if (!request->from_pointer &&
-      node_is_single_tag_array_view(store, request->base)) {
+      node_is_single_record_array(
+          semantic_types, store, request->base, base_qual_type)) {
     base_qual_type = psx_semantic_type_table_base(
         semantic_types, base_qual_type.type_id);
   }
