@@ -10826,8 +10826,18 @@ if (!/ps_lvar_static_storage_global\s*\(/.test(
   );
 }
 
-if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
+if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/(?:ast|type)\.h|\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       `${assignmentResolutionHeader}\n${assignmentResolutionSource}`,
+    ) ||
+    !/\bpsx_type_shape_t\b/.test(assignmentResolutionSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      assignmentResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_unqualified_types_match\s*\(/.test(
+      assignmentResolutionSource,
+    ) ||
+    !/static\s+int\s+semantic_qual_types_match\s*\([^]*?case\s+PSX_TYPE_POINTER:[^]*?case\s+PSX_TYPE_ARRAY:[^]*?case\s+PSX_TYPE_FUNCTION:/.test(
+      typeIdentityImplementationSource,
     ) ||
     !/psx_resolve_assignment_qual_types_in\s*\(/.test(
       syntaxTypedHirResolutionSource,
@@ -10849,7 +10859,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "assignment typing must be an AST-independent QualType rule shared by direct Typed HIR and compatibility diagnostics",
+    "assignment typing must be an AST-independent canonical QualType rule shared by direct Typed HIR and compatibility diagnostics",
   );
 }
 

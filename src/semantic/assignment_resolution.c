@@ -3,54 +3,74 @@
 #include <string.h>
 
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
 #include "type_identity.h"
 
-static int is_arithmetic_type(const psx_type_t *type) {
-  return type &&
-         (type->kind == PSX_TYPE_BOOL ||
-          type->kind == PSX_TYPE_INTEGER ||
-          type->kind == PSX_TYPE_FLOAT ||
-          type->kind == PSX_TYPE_COMPLEX);
+static int describe_type(
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t type, psx_type_shape_t *shape) {
+  return shape && psx_semantic_type_table_qual_type_is_valid(types, type) &&
+         psx_semantic_type_table_describe(types, type.type_id, shape);
 }
 
-static int is_integer_type(const psx_type_t *type) {
-  return type &&
-         (type->kind == PSX_TYPE_BOOL ||
-          type->kind == PSX_TYPE_INTEGER);
+static int kind_is_arithmetic(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_BOOL || kind == PSX_TYPE_INTEGER ||
+         kind == PSX_TYPE_FLOAT || kind == PSX_TYPE_COMPLEX;
+}
+
+static int kind_is_integer(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_BOOL || kind == PSX_TYPE_INTEGER;
+}
+
+static int kind_is_scalar(psx_type_kind_t kind) {
+  return kind_is_arithmetic(kind) || kind == PSX_TYPE_POINTER;
+}
+
+static int kind_is_aggregate(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
 }
 
 static int pointed_types_are_compatible(
-    const psx_type_t *target, const psx_type_t *value) {
-  if (!target || !value || target->kind != value->kind) return 0;
-  if (target->kind != PSX_TYPE_ARRAY)
-    return ps_type_unqualified_semantic_matches(target, value);
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t target, psx_qual_type_t value) {
+  psx_type_shape_t target_shape = {0};
+  psx_type_shape_t value_shape = {0};
+  if (!describe_type(types, target, &target_shape) ||
+      !describe_type(types, value, &value_shape) ||
+      target_shape.kind != value_shape.kind)
+    return 0;
+  if (target_shape.kind != PSX_TYPE_ARRAY)
+    return psx_semantic_type_table_unqualified_types_match(
+        types, target, value);
 
   int target_has_constant_bound =
-      !target->is_vla && target->array_len > 0;
+      !target_shape.is_vla && target_shape.array_len > 0;
   int value_has_constant_bound =
-      !value->is_vla && value->array_len > 0;
+      !value_shape.is_vla && value_shape.array_len > 0;
   if (target_has_constant_bound && value_has_constant_bound &&
-      target->array_len != value->array_len)
+      target_shape.array_len != value_shape.array_len)
     return 0;
-  return pointed_types_are_compatible(target->base, value->base);
+  return pointed_types_are_compatible(
+      types, psx_semantic_type_table_base(types, target.type_id),
+      psx_semantic_type_table_base(types, value.type_id));
 }
 
 static int resolve_modifiable_target(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t target_type,
     psx_assignment_types_resolution_t *resolution,
-    const psx_type_t **target) {
+    psx_type_shape_t *target) {
   if (!semantic_context ||
       target_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, target_type.type_id);
-  if (!canonical) return 0;
+  psx_type_shape_t canonical = {0};
+  if (!describe_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          target_type, &canonical))
+    return 0;
   if ((target_type.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0 ||
-      canonical->kind == PSX_TYPE_ARRAY ||
-      canonical->kind == PSX_TYPE_FUNCTION ||
-      canonical->kind == PSX_TYPE_VOID) {
+      canonical.kind == PSX_TYPE_ARRAY ||
+      canonical.kind == PSX_TYPE_FUNCTION ||
+      canonical.kind == PSX_TYPE_VOID) {
     resolution->status = PSX_ASSIGNMENT_TARGET_NOT_MODIFIABLE;
     return 0;
   }
@@ -59,21 +79,30 @@ static int resolve_modifiable_target(
 }
 
 static int pointer_targets_are_compatible(
-    const psx_type_t *target, const psx_type_t *value) {
-  if (!target || !value || !target->base || !value->base)
+    const psx_semantic_type_table_t *types,
+    psx_qual_type_t target, psx_qual_type_t value) {
+  psx_qual_type_t target_base =
+      psx_semantic_type_table_base(types, target.type_id);
+  psx_qual_type_t value_base =
+      psx_semantic_type_table_base(types, value.type_id);
+  psx_type_shape_t target_shape = {0};
+  psx_type_shape_t value_shape = {0};
+  if (!describe_type(types, target_base, &target_shape) ||
+      !describe_type(types, value_base, &value_shape))
     return 0;
-  int target_function = target->base->kind == PSX_TYPE_FUNCTION;
-  int value_function = value->base->kind == PSX_TYPE_FUNCTION;
+  int target_function = target_shape.kind == PSX_TYPE_FUNCTION;
+  int value_function = value_shape.kind == PSX_TYPE_FUNCTION;
   if (target_function || value_function) {
     if (target_function && value_function)
-      return ps_type_unqualified_semantic_matches(
-          target->base, value->base);
+      return psx_semantic_type_table_unqualified_types_match(
+          types, target_base, value_base);
     return 0;
   }
-  if (target->base->kind == PSX_TYPE_VOID ||
-      value->base->kind == PSX_TYPE_VOID)
+  if (target_shape.kind == PSX_TYPE_VOID ||
+      value_shape.kind == PSX_TYPE_VOID)
     return 1;
-  return pointed_types_are_compatible(target->base, value->base);
+  return pointed_types_are_compatible(
+      types, target_base, value_base);
 }
 
 void psx_resolve_assignment_qual_types_in(
@@ -92,31 +121,32 @@ void psx_resolve_assignment_qual_types_in(
       value_type.type_id == PSX_TYPE_ID_INVALID)
     return;
 
-  const psx_type_t *value = ps_ctx_type_by_id_in(
-      semantic_context, value_type.type_id);
-  const psx_type_t *target = NULL;
-  if (!value || !resolve_modifiable_target(
-                    semantic_context, target_type,
-                    resolution, &target))
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t value = {0};
+  psx_type_shape_t target = {0};
+  if (!describe_type(types, value_type, &value) ||
+      !resolve_modifiable_target(
+          semantic_context, target_type, resolution, &target))
     return;
 
   int compatible = 0;
-  if (target->kind == PSX_TYPE_BOOL && ps_type_is_scalar(value)) {
+  if (target.kind == PSX_TYPE_BOOL && kind_is_scalar(value.kind)) {
     compatible = 1;
-  } else if (is_arithmetic_type(target) && is_arithmetic_type(value)) {
+  } else if (kind_is_arithmetic(target.kind) &&
+             kind_is_arithmetic(value.kind)) {
     compatible = 1;
-  } else if (target->kind == PSX_TYPE_POINTER &&
-             value->kind == PSX_TYPE_POINTER) {
-    compatible = pointer_targets_are_compatible(target, value);
+  } else if (target.kind == PSX_TYPE_POINTER &&
+             value.kind == PSX_TYPE_POINTER) {
+    compatible = pointer_targets_are_compatible(
+        types, target_type, value_type);
     if (compatible) {
       psx_qual_type_t target_pointee =
           psx_semantic_type_table_pointee_value(
-              ps_ctx_semantic_type_table_in(semantic_context),
-              target_type.type_id);
+              types, target_type.type_id);
       psx_qual_type_t value_pointee =
           psx_semantic_type_table_pointee_value(
-              ps_ctx_semantic_type_table_in(semantic_context),
-              value_type.type_id);
+              types, value_type.type_id);
       if ((value_pointee.qualifiers &
            ~target_pointee.qualifiers) != 0) {
         resolution->status =
@@ -124,14 +154,14 @@ void psx_resolve_assignment_qual_types_in(
         return;
       }
     }
-  } else if (target->kind == PSX_TYPE_POINTER &&
-             is_arithmetic_type(value) &&
+  } else if (target.kind == PSX_TYPE_POINTER &&
+             kind_is_arithmetic(value.kind) &&
              value_is_null_pointer_constant) {
     compatible = 1;
-  } else if (ps_type_is_tag_aggregate(target) &&
-             ps_type_is_tag_aggregate(value)) {
-    compatible = ps_type_unqualified_semantic_matches(
-        target, value);
+  } else if (kind_is_aggregate(target.kind) &&
+             kind_is_aggregate(value.kind)) {
+    compatible = psx_semantic_type_table_unqualified_types_match(
+        types, target_type, value_type);
   }
 
   if (!compatible) {
@@ -187,27 +217,28 @@ void psx_resolve_compound_assignment_qual_types_in(
       value_type.type_id == PSX_TYPE_ID_INVALID)
     return;
 
-  const psx_type_t *target = NULL;
-  const psx_type_t *value = ps_ctx_type_by_id_in(
-      semantic_context, value_type.type_id);
-  if (!value || !resolve_modifiable_target(
-                    semantic_context, target_type,
-                    resolution, &target))
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t target = {0};
+  psx_type_shape_t value = {0};
+  if (!describe_type(types, value_type, &value) ||
+      !resolve_modifiable_target(
+          semantic_context, target_type, resolution, &target))
     return;
 
   int compatible = 0;
   switch (operation) {
     case PSX_COMPOUND_ASSIGN_ADD:
     case PSX_COMPOUND_ASSIGN_SUB:
-      compatible = target->kind == PSX_TYPE_POINTER
-                       ? is_integer_type(value)
-                       : is_arithmetic_type(target) &&
-                             is_arithmetic_type(value);
+      compatible = target.kind == PSX_TYPE_POINTER
+                       ? kind_is_integer(value.kind)
+                       : kind_is_arithmetic(target.kind) &&
+                             kind_is_arithmetic(value.kind);
       break;
     case PSX_COMPOUND_ASSIGN_MUL:
     case PSX_COMPOUND_ASSIGN_DIV:
-      compatible = is_arithmetic_type(target) &&
-                   is_arithmetic_type(value);
+      compatible = kind_is_arithmetic(target.kind) &&
+                   kind_is_arithmetic(value.kind);
       break;
     case PSX_COMPOUND_ASSIGN_MOD:
     case PSX_COMPOUND_ASSIGN_SHL:
@@ -215,8 +246,8 @@ void psx_resolve_compound_assignment_qual_types_in(
     case PSX_COMPOUND_ASSIGN_BITAND:
     case PSX_COMPOUND_ASSIGN_BITXOR:
     case PSX_COMPOUND_ASSIGN_BITOR:
-      compatible = is_integer_type(target) &&
-                   is_integer_type(value);
+      compatible = kind_is_integer(target.kind) &&
+                   kind_is_integer(value.kind);
       break;
   }
   if (!compatible) {

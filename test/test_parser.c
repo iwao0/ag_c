@@ -28589,6 +28589,12 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(!psx_semantic_type_table_qual_type_is_valid(
       semantic_types,
       (psx_qual_type_t){plain_int_identity.type_id, 1u << 3}));
+  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
+      semantic_types, plain_int_identity, const_int_identity));
+  ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(
+      semantic_types, plain_int_identity,
+      (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                        PSX_TYPE_QUALIFIER_NONE}));
   psx_qual_type_t const_int_array_identity =
       ps_ctx_intern_array_of_qual_type_in(
           context, const_int_identity, 4, 0);
@@ -28831,6 +28837,9 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_pointee_value(
                 ps_ctx_semantic_type_table_in(context),
                 pointer_to_const_identity.type_id).qualifiers);
+  ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(
+      semantic_types, host_pointer_identity,
+      pointer_to_const_identity));
   const psx_type_t *canonical_pointer_to_const =
       ps_ctx_type_by_id_in(context, pointer_to_const_identity.type_id);
   ASSERT_TRUE(canonical_pointer_to_const != NULL);
@@ -29041,6 +29050,14 @@ static void test_semantic_type_identity() {
   psx_qual_type_t exact_int_void_pointer_identity =
       ps_ctx_intern_qual_type_in(
           context, ps_type_new_pointer(exact_int_void_function));
+  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
+      semantic_types, implicit_function_identity,
+      exact_int_void_identity));
+  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
+      semantic_types,
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, implicit_function_identity),
+      exact_int_void_pointer_identity));
   ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
       ps_ctx_semantic_type_table_in(context), exact_int_void_identity));
   ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(

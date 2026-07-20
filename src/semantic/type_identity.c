@@ -512,6 +512,58 @@ int psx_semantic_type_table_qual_type_is_valid(
          semantic_type_id_is_valid(table, type.type_id);
 }
 
+static int semantic_qual_types_match(
+    const psx_semantic_type_table_t *table,
+    psx_qual_type_t left, psx_qual_type_t right,
+    int compare_qualifiers) {
+  if (!psx_semantic_type_table_qual_type_is_valid(table, left) ||
+      !psx_semantic_type_table_qual_type_is_valid(table, right))
+    return 0;
+  if (compare_qualifiers && left.qualifiers != right.qualifiers) return 0;
+  if (left.type_id == right.type_id) return 1;
+
+  const psx_semantic_type_entry_t *left_entry =
+      &table->entries[left.type_id];
+  const psx_semantic_type_entry_t *right_entry =
+      &table->entries[right.type_id];
+  const psx_type_shape_t *left_shape = &left_entry->shape;
+  const psx_type_shape_t *right_shape = &right_entry->shape;
+  if (left_shape->kind != right_shape->kind) return 0;
+
+  switch (left_shape->kind) {
+    case PSX_TYPE_POINTER:
+      return semantic_qual_types_match(
+          table, left_entry->base_type, right_entry->base_type, 1);
+    case PSX_TYPE_ARRAY:
+      return left_shape->array_len == right_shape->array_len &&
+             left_shape->is_vla == right_shape->is_vla &&
+             semantic_qual_types_match(
+                 table, left_entry->base_type, right_entry->base_type, 1);
+    case PSX_TYPE_FUNCTION:
+      if (left_entry->parameter_count != right_entry->parameter_count ||
+          left_shape->is_variadic_function !=
+              right_shape->is_variadic_function ||
+          !semantic_qual_types_match(
+              table, left_entry->base_type, right_entry->base_type, 1))
+        return 0;
+      for (int i = 0; i < left_entry->parameter_count; i++) {
+        if (!semantic_qual_types_match(
+                table, left_entry->parameter_types[i],
+                right_entry->parameter_types[i], 1))
+          return 0;
+      }
+      return 1;
+    default:
+      return semantic_type_shapes_match(left_shape, right_shape);
+  }
+}
+
+int psx_semantic_type_table_unqualified_types_match(
+    const psx_semantic_type_table_t *table,
+    psx_qual_type_t left, psx_qual_type_t right) {
+  return semantic_qual_types_match(table, left, right, 0);
+}
+
 static psx_qual_type_t related_type(
     const psx_semantic_type_table_t *table, psx_qual_type_t relation) {
   if (!semantic_type_id_is_valid(table, relation.type_id))
