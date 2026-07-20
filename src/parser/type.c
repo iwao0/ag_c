@@ -262,14 +262,13 @@ static ag_target_scalar_kind_t integer_target_kind_for_rank(int rank) {
   return AG_TARGET_SCALAR_INT;
 }
 
-static int integer_rank_size(
-    int rank, const ag_target_info_t *target) {
-  return ag_target_info_scalar_size(
-      target, integer_target_kind_for_rank(rank));
+static int integer_rank_size(int rank, const ag_data_layout_t *data_layout) {
+  return ag_data_layout_scalar_size(data_layout,
+                                    integer_target_kind_for_rank(rank));
 }
 
-int ps_type_integer_promotion_is_unsigned_for_target(
-    const psx_type_t *type, const ag_target_info_t *target) {
+int ps_type_integer_promotion_is_unsigned_for_data_layout(
+    const psx_type_t *type, const ag_data_layout_t *data_layout) {
   if (!type || (type->kind != PSX_TYPE_BOOL &&
                 type->kind != PSX_TYPE_INTEGER)) {
     return 0;
@@ -277,9 +276,8 @@ int ps_type_integer_promotion_is_unsigned_for_target(
   if (type->kind == PSX_TYPE_BOOL) return 0;
   int rank = ps_type_integer_rank(type);
   if (rank >= 3) return ps_type_is_unsigned(type);
-  return ps_type_is_unsigned(type) &&
-         integer_rank_size(rank, target) >=
-             integer_rank_size(3, target);
+  return ps_type_is_unsigned(type) && integer_rank_size(rank, data_layout) >=
+                                          integer_rank_size(3, data_layout);
 }
 
 typedef struct {
@@ -287,23 +285,24 @@ typedef struct {
   int is_unsigned;
 } integer_conversion_t;
 
-static integer_conversion_t promoted_integer_conversion(
-    const psx_type_t *type, const ag_target_info_t *target) {
+static integer_conversion_t
+promoted_integer_conversion(const psx_type_t *type,
+                            const ag_data_layout_t *data_layout) {
   int rank = ps_type_integer_rank(type);
   integer_conversion_t result = {
       .rank = rank < 3 ? 3 : rank,
-      .is_unsigned =
-          ps_type_integer_promotion_is_unsigned_for_target(type, target),
+      .is_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
+          type, data_layout),
   };
   if (result.rank < 3) result.rank = 3;
   return result;
 }
 
-static integer_conversion_t usual_integer_conversion(
-    const psx_type_t *lhs, const psx_type_t *rhs,
-    const ag_target_info_t *target) {
-  integer_conversion_t left = promoted_integer_conversion(lhs, target);
-  integer_conversion_t right = promoted_integer_conversion(rhs, target);
+static integer_conversion_t
+usual_integer_conversion(const psx_type_t *lhs, const psx_type_t *rhs,
+                         const ag_data_layout_t *data_layout) {
+  integer_conversion_t left = promoted_integer_conversion(lhs, data_layout);
+  integer_conversion_t right = promoted_integer_conversion(rhs, data_layout);
   integer_conversion_t result = {
       .rank = left.rank > right.rank ? left.rank : right.rank,
       .is_unsigned = 0,
@@ -318,8 +317,8 @@ static integer_conversion_t usual_integer_conversion(
     result.is_unsigned = 1;
     return result;
   }
-  if (integer_rank_size(signed_type.rank, target) >
-      integer_rank_size(unsigned_type.rank, target)) {
+  if (integer_rank_size(signed_type.rank, data_layout) >
+      integer_rank_size(unsigned_type.rank, data_layout)) {
     result.is_unsigned = 0;
     return result;
   }
@@ -328,16 +327,16 @@ static integer_conversion_t usual_integer_conversion(
   return result;
 }
 
-int ps_type_usual_arithmetic_result_is_unsigned_for_target(
+int ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
     const psx_type_t *lhs, const psx_type_t *rhs,
-    const ag_target_info_t *target) {
+    const ag_data_layout_t *data_layout) {
   if ((lhs && (lhs->kind == PSX_TYPE_FLOAT ||
                lhs->kind == PSX_TYPE_COMPLEX)) ||
       (rhs && (rhs->kind == PSX_TYPE_FLOAT ||
                rhs->kind == PSX_TYPE_COMPLEX))) {
     return 0;
   }
-  return usual_integer_conversion(lhs, rhs, target).is_unsigned;
+  return usual_integer_conversion(lhs, rhs, data_layout).is_unsigned;
 }
 
 static ag_target_scalar_kind_t floating_target_kind(
@@ -352,8 +351,8 @@ static ag_target_scalar_kind_t floating_target_kind(
                     : AG_TARGET_SCALAR_DOUBLE;
 }
 
-const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
+const psx_type_t *ps_type_usual_arithmetic_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
     const psx_type_t *lhs, const psx_type_t *rhs,
     psx_floating_kind_t fallback_floating_kind, int force_complex) {
   int result_is_complex =
@@ -378,7 +377,7 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     return ps_type_new_floating_in(arena_context, fp, 0);
   }
 
-  integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
+  integer_conversion_t result = usual_integer_conversion(lhs, rhs, data_layout);
   psx_integer_kind_t result_kind =
       result.rank >= 5 ? PSX_INTEGER_KIND_LONG_LONG
       : result.rank >= 4 ? PSX_INTEGER_KIND_LONG
@@ -387,19 +386,17 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
       arena_context, result_kind, result.is_unsigned, 0);
 }
 
-const psx_type_t *ps_type_binary_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
-    psx_type_binary_op_t op,
-    const psx_type_t *lhs,
-    const psx_type_t *rhs) {
+const psx_type_t *ps_type_binary_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
+    psx_type_binary_op_t op, const psx_type_t *lhs, const psx_type_t *rhs) {
   if (op == PSX_TYPE_BINARY_COMMA)
     return ps_type_clone_in(arena_context, rhs);
   if (op == PSX_TYPE_BINARY_COMPARE || op == PSX_TYPE_BINARY_LOGICAL)
     return ps_type_new_integer_kind_in(
         arena_context, PSX_INTEGER_KIND_INT, 0, 0);
   if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
-    return ps_type_usual_arithmetic_result_for_target_in(
-        arena_context, target, lhs, NULL, PSX_FLOATING_KIND_NONE, 0);
+    return ps_type_usual_arithmetic_result_for_data_layout_in(
+        arena_context, data_layout, lhs, NULL, PSX_FLOATING_KIND_NONE, 0);
 
   int lhs_pointer = ps_type_is_pointer_like(lhs);
   int rhs_pointer = ps_type_is_pointer_like(rhs);
@@ -418,14 +415,14 @@ const psx_type_t *ps_type_binary_result_for_target_in(
                  ? ps_type_decay_array_in(arena_context, lhs)
                  : ps_type_clone_in(arena_context, lhs);
   }
-  return ps_type_usual_arithmetic_result_for_target_in(
-      arena_context, target, lhs, rhs, PSX_FLOATING_KIND_NONE,
+  return ps_type_usual_arithmetic_result_for_data_layout_in(
+      arena_context, data_layout, lhs, rhs, PSX_FLOATING_KIND_NONE,
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_conditional_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
+const psx_type_t *ps_type_conditional_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
     const psx_type_t *then_type, const psx_type_t *else_type) {
   int then_is_void = then_type && then_type->kind == PSX_TYPE_VOID;
   int else_is_void = else_type && else_type->kind == PSX_TYPE_VOID;
@@ -444,8 +441,8 @@ const psx_type_t *ps_type_conditional_result_for_target_in(
   if (then_type && else_type && then_type->kind == else_type->kind &&
       ps_type_is_tag_aggregate(then_type))
     return ps_type_clone_in(arena_context, then_type);
-  return ps_type_usual_arithmetic_result_for_target_in(
-      arena_context, target, then_type, else_type, PSX_FLOATING_KIND_NONE,
+  return ps_type_usual_arithmetic_result_for_data_layout_in(
+      arena_context, data_layout, then_type, else_type, PSX_FLOATING_KIND_NONE,
       (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }
@@ -1200,7 +1197,10 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
     case PSX_TYPE_INTEGER: {
       int rank = ps_type_integer_rank(type);
       if (rank <= 0) rank = 3;
-      unsigned int bits = (unsigned int)(integer_rank_size(rank, target) * 8);
+      unsigned int bits =
+          (unsigned int)(integer_rank_size(rank,
+                                           ag_target_info_data_layout(target)) *
+                         8);
       if (type->integer_kind == PSX_INTEGER_KIND_ENUM) {
         canonical_sig_lit(w, "e{");
         canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));

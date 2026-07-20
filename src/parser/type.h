@@ -9,6 +9,7 @@
 #include <stddef.h>
 
 typedef struct ag_target_info_t ag_target_info_t;
+typedef struct ag_data_layout_t ag_data_layout_t;
 
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
@@ -60,21 +61,20 @@ struct psx_type_t {
 
 };
 
-const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
+const psx_type_t *ps_type_usual_arithmetic_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
     const psx_type_t *lhs, const psx_type_t *rhs,
     psx_floating_kind_t fallback_floating_kind, int force_complex);
-int ps_type_integer_promotion_is_unsigned_for_target(
-    const psx_type_t *type, const ag_target_info_t *target);
-int ps_type_usual_arithmetic_result_is_unsigned_for_target(
+int ps_type_integer_promotion_is_unsigned_for_data_layout(
+    const psx_type_t *type, const ag_data_layout_t *data_layout);
+int ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
     const psx_type_t *lhs, const psx_type_t *rhs,
-    const ag_target_info_t *target);
-const psx_type_t *ps_type_binary_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
-    psx_type_binary_op_t op,
-    const psx_type_t *lhs, const psx_type_t *rhs);
-const psx_type_t *ps_type_conditional_result_for_target_in(
-    arena_context_t *arena_context, const ag_target_info_t *target,
+    const ag_data_layout_t *data_layout);
+const psx_type_t *ps_type_binary_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
+    psx_type_binary_op_t op, const psx_type_t *lhs, const psx_type_t *rhs);
+const psx_type_t *ps_type_conditional_result_for_data_layout_in(
+    arena_context_t *arena_context, const ag_data_layout_t *data_layout,
     const psx_type_t *then_type, const psx_type_t *else_type);
 /* Returns the function node contained in a pointer/array derivation chain.
  * This does not imply that the original expression type is callable. */

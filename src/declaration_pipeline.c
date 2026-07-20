@@ -915,11 +915,11 @@ static void diagnose_local_declaration(
 static node_t *append_local_initialization(
     psx_lowering_context_t *lowering_context, node_t *chain, node_t *node) {
   if (!node) return chain;
-  return chain ? ps_node_new_binary_for_target_in(
+  return chain ? ps_node_new_binary_for_data_layout_in(
                      ps_lowering_resolution_store(lowering_context),
                      ps_lowering_arena(lowering_context),
-                     ps_lowering_target(lowering_context),
-                     ND_COMMA, chain, node)
+                     ps_lowering_data_layout(lowering_context), ND_COMMA, chain,
+                     node)
                : node;
 }
 

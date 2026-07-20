@@ -72,9 +72,9 @@ static const psx_type_t *resolve_binary_result_type_value(
     const psx_type_t *lhs,
     const psx_type_t *rhs) {
   if (!semantic_context) return NULL;
-  return ps_type_binary_result_for_target_in(
-      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context),
-      operator, lhs, rhs);
+  return ps_type_binary_result_for_data_layout_in(
+      ps_ctx_arena(semantic_context),
+      ps_ctx_data_layout(semantic_context), operator, lhs, rhs);
 }
 
 static const psx_type_t *resolve_conditional_result_type_value(
@@ -82,8 +82,8 @@ static const psx_type_t *resolve_conditional_result_type_value(
     const psx_type_t *then_type,
     const psx_type_t *else_type) {
   if (!semantic_context) return NULL;
-  return ps_type_conditional_result_for_target_in(
-      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context),
+  return ps_type_conditional_result_for_data_layout_in(
+      ps_ctx_arena(semantic_context), ps_ctx_data_layout(semantic_context),
       then_type, else_type);
 }
 

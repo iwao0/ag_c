@@ -256,19 +256,19 @@ static void warn_sign_compare(
   if (!lhs || !rhs) return;
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      ps_node_get_type(store, lhs), target);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      ps_node_get_type(store, rhs), target);
+  const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
+  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
+      ps_node_get_type(store, lhs), data_layout);
+  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
+      ps_node_get_type(store, rhs), data_layout);
   if (lhs_unsigned == rhs_unsigned) return;
   node_t *signed_side = lhs_unsigned ? rhs : lhs;
   if (signed_side->kind == ND_NUM &&
       ((node_num_t *)signed_side)->val >= 0)
     return;
-  if (!ps_type_usual_arithmetic_result_is_unsigned_for_target(
-          ps_node_get_type(store, lhs),
-          ps_node_get_type(store, rhs), target)) {
+  if (!ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
+          ps_node_get_type(store, lhs), ps_node_get_type(store, rhs),
+          data_layout)) {
     return;
   }
   diag_warn_tokf_in(diagnostics,

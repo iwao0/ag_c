@@ -5639,21 +5639,21 @@ if (!explicitWidthShiftConstructor ||
     "shift truncation must consume a width already resolved against the active target",
   );
 }
-const targetAwareBinaryConstructor = nodeUtilsSource.match(
-  /node_t\s*\*ps_node_new_binary_for_target_in\s*\([^]*?\n\}/,
+const dataLayoutAwareBinaryConstructor = nodeUtilsSource.match(
+  /node_t\s*\*ps_node_new_binary_for_data_layout_in\s*\([^]*?\n\}/,
 );
-if (!targetAwareBinaryConstructor ||
-    !/const\s+ag_target_info_t\s*\*target/.test(
-      targetAwareBinaryConstructor[0],
+if (!dataLayoutAwareBinaryConstructor ||
+    !/const\s+ag_data_layout_t\s*\*data_layout/.test(
+      dataLayoutAwareBinaryConstructor[0],
     ) ||
-    !/ps_type_binary_result_for_target_in\s*\(\s*arena_context\s*,\s*target\s*,/s.test(
-      targetAwareBinaryConstructor[0],
+    !/ps_type_binary_result_for_data_layout_in\s*\(\s*arena_context\s*,\s*data_layout\s*,/s.test(
+      dataLayoutAwareBinaryConstructor[0],
     ) ||
     /ps_type_binary_result_in\s*\(/.test(
-      targetAwareBinaryConstructor[0],
+      dataLayoutAwareBinaryConstructor[0],
     )) {
   throw new Error(
-    "typed binary construction must resolve result types against an explicit target",
+    "typed binary construction must resolve result types against an explicit DataLayout",
   );
 }
 const explicitDiagnosticInitializerResolutionSource = await readFile(
@@ -6854,9 +6854,9 @@ if (declaratorShapeBuilderViolations.length) {
 }
 
 for (const functionName of [
-  "ps_type_usual_arithmetic_result_for_target_in",
-  "ps_type_binary_result_for_target_in",
-  "ps_type_conditional_result_for_target_in",
+  "ps_type_usual_arithmetic_result_for_data_layout_in",
+  "ps_type_binary_result_for_data_layout_in",
+  "ps_type_conditional_result_for_data_layout_in",
   "ps_type_address_result_in",
   "ps_type_decay_array_in",
   "ps_type_subscript_result_in",
@@ -6867,6 +6867,21 @@ for (const functionName of [
   );
   if (!signature.test(typeSource)) {
     throw new Error(`${functionName} must publish a const type view`);
+  }
+}
+for (const legacyFunctionName of [
+  "ps_type_usual_arithmetic_result_for_target_in",
+  "ps_type_integer_promotion_is_unsigned_for_target",
+  "ps_type_usual_arithmetic_result_is_unsigned_for_target",
+  "ps_type_binary_result_for_target_in",
+  "ps_type_conditional_result_for_target_in",
+]) {
+  if (new RegExp(`\\b${legacyFunctionName}\\s*\\(`).test(
+        `${typeSource}\n${parserTypeImplementationSource}`,
+      )) {
+    throw new Error(
+      `${legacyFunctionName} must not couple C arithmetic rules to TargetInfo`,
+    );
   }
 }
 
@@ -7516,24 +7531,27 @@ for (const [name, source] of [
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
-const targetIntegerConversionSection = canonicalTypeSource.match(
+const dataLayoutIntegerConversionSection = canonicalTypeSource.match(
   /static\s+int\s+integer_rank_size\s*\([^]*?static\s+ag_target_scalar_kind_t\s+floating_target_kind/,
 );
-if (!targetIntegerConversionSection ||
+if (!dataLayoutIntegerConversionSection ||
     /\bps_type_sizeof\s*\(|->(?:size|align)\b/.test(
-      targetIntegerConversionSection[0],
+      dataLayoutIntegerConversionSection[0],
     ) ||
-    !/\bag_target_info_scalar_size\s*\(/.test(
-      targetIntegerConversionSection[0],
+    !/\bag_data_layout_scalar_size\s*\(/.test(
+      dataLayoutIntegerConversionSection[0],
     ) ||
-    !/\bps_type_binary_result_for_target_in\s*\([^]*?ps_ctx_target_info\s*\(/.test(
+    /\bag_target_info_t\b|\bag_target_info_(?:scalar_size|data_layout)\s*\(/.test(
+      dataLayoutIntegerConversionSection[0],
+    ) ||
+    !/\bps_type_binary_result_for_data_layout_in\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     ) ||
-    !/\bps_type_conditional_result_for_target_in\s*\([^]*?ps_ctx_target_info\s*\(/.test(
+    !/\bps_type_conditional_result_for_data_layout_in\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       expressionOperandResolutionSource,
     )) {
   throw new Error(
-    "semantic arithmetic conversion must use scalar rank and explicit TargetSpec instead of cached type layout",
+    "semantic arithmetic conversion must use scalar rank and explicit DataLayout instead of TargetInfo or cached type layout",
   );
 }
 const targetCanonicalSignatureSection = canonicalTypeSource.match(
@@ -9408,10 +9426,10 @@ if (!indirectionQualTypeAdapter ||
   );
 }
 const binaryTargetRuleCalls = expressionOperandResolutionSource.match(
-  /\bps_type_binary_result_for_target_in\s*\(/g,
+  /\bps_type_binary_result_for_data_layout_in\s*\(/g,
 ) ?? [];
 const conditionalTargetRuleCalls = expressionOperandResolutionSource.match(
-  /\bps_type_conditional_result_for_target_in\s*\(/g,
+  /\bps_type_conditional_result_for_data_layout_in\s*\(/g,
 ) ?? [];
 if (binaryTargetRuleCalls.length !== 1 ||
     conditionalTargetRuleCalls.length !== 1) {

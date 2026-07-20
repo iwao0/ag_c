@@ -2626,10 +2626,10 @@ int ps_node_binary_type_op(
   }
 }
 
-node_t *ps_node_new_binary_for_target_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, const ag_target_info_t *target,
-    psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs) {
+node_t *ps_node_new_binary_for_data_layout_in(
+    psx_resolution_store_t *store, arena_context_t *arena_context,
+    const ag_data_layout_t *data_layout, psx_resolution_node_kind_t kind,
+    node_t *lhs, node_t *rhs) {
   node_t *node = resolution_node_alloc_in(
       store, arena_context, sizeof(*node));
   if (!node) return NULL;
@@ -2637,12 +2637,12 @@ node_t *ps_node_new_binary_for_target_in(
   node->lhs = lhs;
   node->rhs = rhs;
   psx_type_binary_op_t op;
-  const psx_type_t *type = ps_node_binary_type_op(kind, &op)
-                               ? ps_type_binary_result_for_target_in(
-                                     arena_context, target, op,
-                                     ps_node_get_type(store, lhs),
-                                     ps_node_get_type(store, rhs))
-                               : NULL;
+  const psx_type_t *type =
+      ps_node_binary_type_op(kind, &op)
+          ? ps_type_binary_result_for_data_layout_in(
+                arena_context, data_layout, op, ps_node_get_type(store, lhs),
+                ps_node_get_type(store, rhs))
+          : NULL;
   if (type) {
     ps_node_bind_type(store, node, type);
   }
@@ -2904,9 +2904,9 @@ node_t *ps_node_new_tag_member_deref_with_layout_for_in(
     const psx_type_t *member_type, int bit_is_signed,
     int bit_width, int bit_offset) {
   if (!member_type) return NULL;
-  node_t *addr = ps_node_new_binary_for_target_in(
-      store, arena_context, target, ND_ADD, addr_base,
-      ps_node_new_num_in(store, arena_context, member_offset));
+  node_t *addr = ps_node_new_binary_for_data_layout_in(
+      store, arena_context, ag_target_info_data_layout(target), ND_ADD,
+      addr_base, ps_node_new_num_in(store, arena_context, member_offset));
   node_t *deref = resolution_node_alloc_in(
       store, arena_context, sizeof(node_t));
   if (!deref ||
@@ -3002,8 +3002,9 @@ node_t *ps_node_new_subscript_deref_for_in(
   if (!result ||
       !psx_resolution_node_set_kind(store, result, ND_DEREF))
     return NULL;
-  result->lhs = ps_node_new_binary_for_target_in(
-      store, arena_context, target, ND_ADD, base_addr, scaled_offset);
+  result->lhs = ps_node_new_binary_for_data_layout_in(
+      store, arena_context, ag_target_info_data_layout(target), ND_ADD,
+      base_addr, scaled_offset);
   if (result_type) {
     ps_node_bind_type(store, result, result_type);
     advance_subscript_vla_runtime_view(store, result, base);

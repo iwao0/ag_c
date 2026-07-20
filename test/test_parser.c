@@ -485,18 +485,18 @@ static void test_set_invalid_vla_runtime_view(
   ps_type_apply_declarator_shape_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_adjust_parameter_type(...) \
   ps_type_adjust_parameter_type_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_usual_arithmetic_result(...) \
-  ps_type_usual_arithmetic_result_for_target_in( \
-      test_arena_context(), \
-      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
-#define ps_type_binary_result(...) \
-  ps_type_binary_result_for_target_in( \
-      test_arena_context(), \
-      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
-#define ps_type_conditional_result(...) \
-  ps_type_conditional_result_for_target_in( \
-      test_arena_context(), \
-      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
+#define ps_type_usual_arithmetic_result(...)                                   \
+  ps_type_usual_arithmetic_result_for_data_layout_in(                          \
+      test_arena_context(), ps_ctx_data_layout(test_semantic_context()),       \
+      __VA_ARGS__)
+#define ps_type_binary_result(...)                                             \
+  ps_type_binary_result_for_data_layout_in(                                    \
+      test_arena_context(), ps_ctx_data_layout(test_semantic_context()),       \
+      __VA_ARGS__)
+#define ps_type_conditional_result(...)                                        \
+  ps_type_conditional_result_for_data_layout_in(                               \
+      test_arena_context(), ps_ctx_data_layout(test_semantic_context()),       \
+      __VA_ARGS__)
 #define ps_type_format_canonical_signature(...) \
   test_type_format_canonical_signature(__VA_ARGS__)
 #define ps_type_layout_of(...) test_type_layout_of(__VA_ARGS__)
@@ -552,10 +552,10 @@ static int test_type_alignof_for_target(
 #define ps_declarator_shape_copy(...) \
   ps_declarator_shape_copy_in(test_arena_context(), __VA_ARGS__)
 
-#define ps_node_new_binary(...) \
-  ps_node_new_binary_for_target_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
+#define ps_node_new_binary(...)                                                \
+  ps_node_new_binary_for_data_layout_in(                                       \
+      test_resolution_store(), test_arena_context(),                           \
+      ps_ctx_data_layout(test_semantic_context()), __VA_ARGS__)
 #define ps_node_row_decay_pointer_arith_type(...) \
   ps_node_array_decay_pointer_arith_type_in( \
       test_resolution_store(), test_arena_context(), __VA_ARGS__)
@@ -7863,9 +7863,9 @@ static int test_node_usual_arith_is_unsigned(node_t *node) {
     case ND_GE:
     case ND_EQ:
     case ND_NE:
-      return ps_type_usual_arithmetic_result_is_unsigned_for_target(
+      return ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
           ps_node_get_type(node->lhs), ps_node_get_type(node->rhs),
-          ps_ctx_target_info(test_semantic_context()));
+          ps_ctx_data_layout(test_semantic_context()));
     default:
       return ps_type_is_unsigned(ps_node_get_type(node));
   }
@@ -13004,10 +13004,9 @@ static void test_target_type_layout_boundary() {
   psx_type_t *stale_unsigned_int =
       ps_type_new_integer(TK_INT, 64, 1);
   const psx_type_t *host_conversion =
-      ps_type_usual_arithmetic_result_for_target_in(
-          test_arena_context(), &host,
-          stale_signed_long, stale_unsigned_int,
-          PSX_FLOATING_KIND_NONE, 0);
+      ps_type_usual_arithmetic_result_for_data_layout_in(
+          test_arena_context(), ag_target_info_data_layout(&host),
+          stale_signed_long, stale_unsigned_int, PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_conversion->integer_kind);
   ASSERT_EQ(8, ps_type_sizeof_for_target(host_conversion, &host));
   ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
@@ -13016,10 +13015,10 @@ static void test_target_type_layout_boundary() {
   equal_width_integer_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){4, 4};
   const psx_type_t *equal_width_conversion =
-      ps_type_usual_arithmetic_result_for_target_in(
-          test_arena_context(), &equal_width_integer_target,
-          stale_signed_long, stale_unsigned_int,
-          PSX_FLOATING_KIND_NONE, 0);
+      ps_type_usual_arithmetic_result_for_data_layout_in(
+          test_arena_context(),
+          ag_target_info_data_layout(&equal_width_integer_target),
+          stale_signed_long, stale_unsigned_int, PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, equal_width_conversion->integer_kind);
   ASSERT_EQ(4, ps_type_sizeof_for_target(
                    equal_width_conversion, &equal_width_integer_target));
@@ -13030,10 +13029,10 @@ static void test_target_type_layout_boundary() {
       (ag_target_scalar_layout_t){4, 4};
   psx_type_t *stale_unsigned_short =
       ps_type_new_integer(TK_SHORT, 1, 1);
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
-      stale_unsigned_short, &wide_short_target));
-  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_target(
-      stale_unsigned_short, &host));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
+      stale_unsigned_short, ag_target_info_data_layout(&wide_short_target)));
+  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_data_layout(
+      stale_unsigned_short, ag_target_info_data_layout(&host)));
 
   psx_qual_type_t pointer_identity =
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
@@ -16917,16 +16916,16 @@ static void test_expr_shift() {
 
     node_t *promoted_signed_shift = parse_expr_input("(unsigned char)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
-  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_target(
+  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_data_layout(
       ps_node_get_type(promoted_signed_shift->lhs),
-      ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_data_layout(test_semantic_context())));
   ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(promoted_signed_shift));
 
     node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
       ps_node_get_type(promoted_unsigned_shift->lhs),
-      ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_data_layout(test_semantic_context())));
   ASSERT_TRUE(ps_node_shift_operation_is_unsigned(promoted_unsigned_shift));
 
     node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
@@ -27550,15 +27549,13 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
             stale_narrow_unsigned_int->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_narrow_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
-      stale_narrow_unsigned_int,
-      ps_ctx_target_info(test_semantic_context())));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
+      stale_narrow_unsigned_int, ps_ctx_data_layout(test_semantic_context())));
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
             stale_wide_unsigned_int->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_wide_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
-      stale_wide_unsigned_int,
-      ps_ctx_target_info(test_semantic_context())));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
+      stale_wide_unsigned_int, ps_ctx_data_layout(test_semantic_context())));
   psx_type_t *stale_wide_short =
       ps_type_new_integer(TK_SHORT, 64, 1);
   psx_type_t *stale_narrow_int =

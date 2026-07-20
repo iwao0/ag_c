@@ -38,10 +38,10 @@ const psx_type_t *ps_node_array_decay_pointer_arith_type_in(
 int ps_node_bitfield_width(
     const psx_resolution_store_t *store, node_t *node);
 
-node_t *ps_node_new_binary_for_target_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, const ag_target_info_t *target,
-    psx_resolution_node_kind_t kind, node_t *lhs, node_t *rhs);
+node_t *ps_node_new_binary_for_data_layout_in(
+    psx_resolution_store_t *store, arena_context_t *arena_context,
+    const ag_data_layout_t *data_layout, psx_resolution_node_kind_t kind,
+    node_t *lhs, node_t *rhs);
 int ps_node_binary_type_op(
     psx_resolution_node_kind_t kind, psx_type_binary_op_t *op);
 struct psx_vla_runtime_plan_t;

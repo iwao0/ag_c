@@ -190,20 +190,20 @@ static void warn_sign_compare(
       ? canonical_type(walk, psx_semantic_node_expression_qual_type(rhs))
       : NULL;
   if (!lhs_type || !rhs_type) return;
-  const ag_target_info_t *target =
-      ps_ctx_target_info(walk->semantic_context);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      lhs_type, target);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_target(
-      rhs_type, target);
+  const ag_data_layout_t *data_layout =
+      ps_ctx_data_layout(walk->semantic_context);
+  int lhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
+      lhs_type, data_layout);
+  int rhs_unsigned = ps_type_integer_promotion_is_unsigned_for_data_layout(
+      rhs_type, data_layout);
   if (lhs_unsigned == rhs_unsigned) return;
   const psx_semantic_node_t *signed_side = lhs_unsigned ? rhs : lhs;
   long long signed_literal = 0;
   if (integer_literal_value(walk, signed_side, &signed_literal) &&
       signed_literal >= 0)
     return;
-  if (!ps_type_usual_arithmetic_result_is_unsigned_for_target(
-          lhs_type, rhs_type, target))
+  if (!ps_type_usual_arithmetic_result_is_unsigned_for_data_layout(
+          lhs_type, rhs_type, data_layout))
     return;
   diag_warn_tokf_in(
       walk->diagnostics, DIAG_WARN_PARSER_SIGN_COMPARE,

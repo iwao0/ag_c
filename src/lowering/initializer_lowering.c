@@ -143,12 +143,11 @@ static ag_diagnostic_context_t *diagnostics(
 static node_t *append_init(
     const initializer_lowering_context_t *context,
     node_t *chain, node_t *item) {
-  return chain
-             ? ps_node_new_binary_for_target_in(
-                   context->resolution_store,
-                   context->arena_context, context->target,
-                   ND_COMMA, chain, item)
-             : item;
+  return chain ? ps_node_new_binary_for_data_layout_in(
+                     context->resolution_store, context->arena_context,
+                     ag_target_info_data_layout(context->target), ND_COMMA,
+                     chain, item)
+               : item;
 }
 
 static int initializer_value_is_zero(
@@ -1625,10 +1624,10 @@ static node_t *lower_complex_list_initializer(
                 context->resolution_store,
                 context->arena_context, 0),
       initializer->base.tok);
-  return ps_node_new_binary_for_target_in(
-      context->resolution_store,
-      context->arena_context, context->target,
-      ND_COMMA, real_assign, imag_assign);
+  return ps_node_new_binary_for_data_layout_in(
+      context->resolution_store, context->arena_context,
+      ag_target_info_data_layout(context->target), ND_COMMA, real_assign,
+      imag_assign);
 }
 
 static node_t *lower_typed_list_initializer(
