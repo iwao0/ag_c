@@ -140,7 +140,7 @@ struct wasm32_obj_context_t {
   ir_type_t *emit_local_types;
   unsigned char *emit_local_unsigned;
   int emit_local_count;
-  wasm32_machine_primitive_plan_t primitives;
+  const wasm32_machine_primitive_plan_t *primitives;
 };
 
 static void wasm32_obj_clear_module(obj_ctx_t *obj) {
@@ -867,7 +867,7 @@ static void emit_conversion_opcode(
     int is_unsigned) {
   const wasm32_machine_conversion_t *selected =
       wasm32_machine_planned_conversion(
-          &g_obj_machine_primitives,
+          g_obj_machine_primitives,
           wasm_ir_type(source_type), wasm_ir_type(result_type),
           is_unsigned);
   if (!selected)
@@ -924,7 +924,7 @@ static wasm32_machine_memory_t planned_load_or_unsupported(
     ir_type_t memory_type, int is_unsigned) {
   const wasm32_machine_memory_t *selected =
       wasm32_machine_planned_load(
-          &g_obj_machine_primitives, memory_type, is_unsigned);
+          g_obj_machine_primitives, memory_type, is_unsigned);
   if (!selected)
     obj_unsupported_msg(context, "unsupported Wasm object load type");
   return *selected;
@@ -935,7 +935,7 @@ static wasm32_machine_memory_t planned_store_or_unsupported(
     ir_type_t memory_type) {
   const wasm32_machine_memory_t *selected =
       wasm32_machine_planned_store(
-          &g_obj_machine_primitives, memory_type);
+          g_obj_machine_primitives, memory_type);
   if (!selected)
     obj_unsupported_msg(context, "unsupported Wasm object store type");
   return *selected;
@@ -2507,9 +2507,7 @@ void wasm32_obj_begin_in(wasm32_obj_context_t *ctx) {
   wasm32_obj_clear_module(&g_obj);
   g_obj.out = out;
   g_obj.capture_output = capture_output;
-  if (!wasm32_machine_primitive_plan_build(&g_obj_machine_primitives))
-    obj_unsupported_msg(
-        context, "failed to build Wasm object Machine primitive plan");
+  g_obj_machine_primitives = NULL;
 }
 
 void wasm32_obj_gen_machine_module_in(
@@ -2519,6 +2517,11 @@ void wasm32_obj_gen_machine_module_in(
   wasm32_obj_context_t *context = ctx;
   if (!machine_module)
     obj_unsupported_msg(context, "failed to build Wasm machine module");
+  g_obj_machine_primitives =
+      wasm32_machine_module_primitives(machine_module);
+  if (!g_obj_machine_primitives)
+    obj_unsupported_msg(
+        context, "Wasm machine module has no primitive plan");
   for (size_t function_index = 0;
        function_index < machine_module->function_count;
        function_index++) {
@@ -2590,6 +2593,7 @@ void wasm32_obj_gen_machine_module_in(
       synthesize_continuation_helpers(context, function);
     }
   }
+  g_obj_machine_primitives = NULL;
 }
 
 static void emit_obj_string_literal(

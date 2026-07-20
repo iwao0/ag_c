@@ -13445,6 +13445,36 @@ if (!/WASM32_MACHINE_INST_CONVERSION/.test(wasmMachineFunctionSource) ||
     !/wasm32_machine_primitive_plan_build\s*\(/.test(
       wasmMachineIrSource,
     ) ||
+    !/wasm32_machine_primitive_plan_t\s+primitives\s*;/.test(
+      wasmMachineModuleHeader,
+    ) ||
+    !/unsigned\s+char\s+has_primitive_plan\s*;/.test(
+      wasmMachineModuleHeader,
+    ) ||
+    !/wasm32_machine_primitive_plan_build\s*\(\s*&module->primitives\s*\)/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/wasm32_machine_module_primitives\s*\(/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/wasm32_machine_module_primitives\s*\(\s*machine_module\s*\)/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_machine_module_primitives\s*\(\s*machine_module\s*\)/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /wasm32_machine_primitive_plan_build\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /wasm32_machine_primitive_plan_build\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /wasm32_machine_primitive_plan_t\s+primitives\s*;/.test(
+      wasmWatWriterSource,
+    ) ||
+    /wasm32_machine_primitive_plan_t\s+primitives\s*;/.test(
+      wasmObjectWriterSource,
+    ) ||
     !/wasm32_machine_planned_conversion\s*\(/.test(
       wasmWatWriterSource,
     ) ||

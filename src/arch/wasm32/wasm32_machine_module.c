@@ -81,6 +81,16 @@ static void clear_data_objects(wasm32_machine_module_t *module) {
   module->data_object_count = 0;
 }
 
+static int ensure_primitive_plan(
+    wasm32_machine_module_t *module) {
+  if (!module) return 0;
+  if (module->has_primitive_plan) return 1;
+  if (!wasm32_machine_primitive_plan_build(&module->primitives))
+    return 0;
+  module->has_primitive_plan = 1;
+  return 1;
+}
+
 static wasm32_machine_data_object_kind_t machine_data_kind(
     ir_data_object_kind_t kind) {
   switch (kind) {
@@ -170,7 +180,7 @@ int wasm32_machine_module_build_data(
     wasm32_machine_module_t *module,
     const ir_data_module_t *source,
     const ir_abi_data_module_t *data_abi) {
-  if (!module) return 0;
+  if (!ensure_primitive_plan(module)) return 0;
   clear_data_objects(module);
   if (!source) return 1;
   for (const ir_data_object_t *object = source->objects; object;
@@ -216,6 +226,7 @@ int wasm32_machine_module_build(
     wasm32_machine_module_t *module) {
   if (!source || !abi_module || !module) return 0;
   memset(module, 0, sizeof(*module));
+  if (!ensure_primitive_plan(module)) goto fail;
   for (const ir_func_t *function = source->funcs; function;
        function = function->next)
     module->function_count++;
@@ -308,4 +319,11 @@ const wasm32_machine_data_object_t *wasm32_machine_module_data_object(
       return object;
   }
   return NULL;
+}
+
+const wasm32_machine_primitive_plan_t *
+wasm32_machine_module_primitives(
+    const wasm32_machine_module_t *module) {
+  return module && module->has_primitive_plan
+             ? &module->primitives : NULL;
 }

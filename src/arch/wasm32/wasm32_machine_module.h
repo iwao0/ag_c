@@ -71,9 +71,11 @@ typedef struct {
   wasm32_machine_function_t *functions;
   wasm32_machine_symbol_t *symbols;
   wasm32_machine_data_object_t *data_objects;
+  wasm32_machine_primitive_plan_t primitives;
   size_t function_count;
   size_t symbol_count;
   size_t data_object_count;
+  unsigned char has_primitive_plan;
 } wasm32_machine_module_t;
 
 int wasm32_machine_module_build(
@@ -95,5 +97,8 @@ wasm32_machine_symbol_find_func_ref(
 const wasm32_machine_data_object_t *wasm32_machine_module_data_object(
     const wasm32_machine_module_t *module,
     const char *name, int name_len);
+const wasm32_machine_primitive_plan_t *
+wasm32_machine_module_primitives(
+    const wasm32_machine_module_t *module);
 
 #endif

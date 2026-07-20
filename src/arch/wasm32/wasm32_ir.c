@@ -81,7 +81,7 @@ struct wasm32_ir_context_t {
   wasm_data_ctx_t data;
   wasm_func_table_ctx_t func_table;
   wasm_function_symbol_ctx_t function_symbols;
-  wasm32_machine_primitive_plan_t primitives;
+  const wasm32_machine_primitive_plan_t *primitives;
 };
 
 wasm32_ir_context_t *wasm32_ir_context_create(
@@ -700,7 +700,7 @@ static wasm32_machine_conversion_t planned_conversion_or_unsupported(
     ir_type_t source_type, ir_type_t result_type, int is_unsigned) {
   const wasm32_machine_conversion_t *selected =
       wasm32_machine_planned_conversion(
-          &g_machine_primitives, source_type, result_type, is_unsigned);
+          g_machine_primitives, source_type, result_type, is_unsigned);
   if (!selected)
     wasm_unsupported_msg(context, "unsupported Wasm value conversion");
   return *selected;
@@ -1783,9 +1783,7 @@ static void emit_func(
 void wasm32_module_begin_in(wasm32_ir_context_t *ctx) {
   if (!ctx) abort();
   wasm32_ir_context_t *context = ctx;
-  if (!wasm32_machine_primitive_plan_build(&g_machine_primitives))
-    wasm_unsupported_msg(
-        context, "failed to build Wasm Machine primitive plan");
+  g_machine_primitives = NULL;
   for (int i = 0; i < g_data.symbol_count; i++)
     free(g_data.symbols[i].name);
   for (int i = 0; i < g_func_table.ref_count; i++)
@@ -1805,6 +1803,11 @@ void wasm32_gen_machine_module_in(
   wasm32_ir_context_t *context = ctx;
   if (!machine_module)
     wasm_unsupported_msg(context, "failed to build Wasm machine module");
+  g_machine_primitives =
+      wasm32_machine_module_primitives(machine_module);
+  if (!g_machine_primitives)
+    wasm_unsupported_msg(
+        context, "Wasm machine module has no primitive plan");
   for (size_t index = 0; index < machine_module->function_count; index++) {
     const wasm32_machine_function_t *machine =
         wasm32_machine_module_function(machine_module, index);
@@ -1816,6 +1819,7 @@ void wasm32_gen_machine_module_in(
     emit_func(
         context,
         wasm32_machine_module_function(machine_module, index));
+  g_machine_primitives = NULL;
 }
 
 static void emit_wat_escaped_byte(

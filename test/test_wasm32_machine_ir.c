@@ -986,6 +986,11 @@ int main(void) {
       wasm32_machine_symbol_find_func_ref(machine_symbol, 8);
   const wasm32_machine_function_t *module_function =
       wasm32_machine_module_function(&machine_module, 0);
+  const wasm32_machine_primitive_plan_t *module_primitives =
+      wasm32_machine_module_primitives(&machine_module);
+  const wasm32_machine_conversion_t *module_conversion =
+      wasm32_machine_planned_conversion(
+          module_primitives, IR_TY_I32, IR_TY_I64, 1);
   const wasm32_machine_data_object_t *machine_target =
       wasm32_machine_module_data_object(
           &machine_module, "target_data", 11);
@@ -995,6 +1000,9 @@ int main(void) {
   if (machine_module.function_count != 1 ||
       machine_module.symbol_count != 1 ||
       machine_module.data_object_count != 2 ||
+      !machine_module.has_primitive_plan || !module_primitives ||
+      !module_conversion ||
+      module_conversion->opcode != WASM32_MI_I64_EXTEND_I32_U ||
       !machine_symbol || machine_symbol->name == source_symbol_name ||
       strcmp(machine_symbol->name, "global_slot") != 0 ||
       machine_symbol->byte_size != 16 || machine_symbol->alignment != 8 ||
@@ -1029,7 +1037,9 @@ int main(void) {
       machine_module.data_objects ||
       machine_module.function_count != 0 ||
       machine_module.symbol_count != 0 ||
-      machine_module.data_object_count != 0) {
+      machine_module.data_object_count != 0 ||
+      machine_module.has_primitive_plan ||
+      wasm32_machine_module_primitives(&machine_module) != NULL) {
     fprintf(stderr, "FAIL: machine module plan disposal\n");
     return 1;
   }
