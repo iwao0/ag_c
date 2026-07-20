@@ -878,12 +878,14 @@ static const node_t *direct_bound_syntax_for_op(
   return NULL;
 }
 
-static const psx_type_t *direct_type_before_application(
-    const psx_type_t *type,
+static psx_qual_type_t direct_type_before_application(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t type,
     const psx_runtime_declarator_application_t *application) {
-  const psx_type_t *current = type;
-  for (int i = 0; current && application &&
-                  i < application->shape.count; i++) {
+  psx_qual_type_t current = type;
+  for (int i = 0;
+       current.type_id != PSX_TYPE_ID_INVALID && application &&
+       i < application->shape.count; i++) {
     psx_type_kind_t expected_kind;
     switch (application->shape.ops[i].kind) {
       case PSX_DECL_OP_POINTER:
@@ -896,10 +898,18 @@ static const psx_type_t *direct_type_before_application(
         expected_kind = PSX_TYPE_FUNCTION;
         break;
       default:
-        return NULL;
+        return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
     }
-    if (current->kind != expected_kind) return NULL;
-    current = current->base;
+    psx_type_shape_t shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, current.type_id, &shape) ||
+        shape.kind != expected_kind) {
+      return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                               PSX_TYPE_QUALIFIER_NONE};
+    }
+    current = psx_semantic_type_table_base(
+        semantic_types, current.type_id);
   }
   return current;
 }
@@ -916,11 +926,11 @@ static int resolve_direct_sizeof_type_name(
           context->local_registry, &query->type_name,
           &base_state))
     return 0;
-  const psx_type_t *base_type =
-      psx_type_name_bound_base_type(&base_state);
+  psx_qual_type_t base_qual_type =
+      psx_type_name_bound_base_qual_type(&base_state);
   const psx_runtime_declarator_application_t *runtime_application =
       psx_type_name_bound_runtime_application(&base_state);
-  if (!base_type) return 0;
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   const psx_parsed_declarator_t *declarator =
       &query->type_name.syntax->declarator;
@@ -934,12 +944,9 @@ static int resolve_direct_sizeof_type_name(
           runtime_application,
           &effective_application))
     return 0;
-  const psx_type_t *resolved_type =
-      psx_apply_runtime_declarator_type_in_context(
-          context->semantic_context, base_type,
-          &application);
-  psx_qual_type_t queried_qual_type = ps_ctx_intern_qual_type_in(
-      context->semantic_context, resolved_type);
+  psx_qual_type_t queried_qual_type =
+      psx_apply_runtime_declarator_qual_type_in_context(
+          context->semantic_context, base_qual_type, &application);
   if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   int maximum_factors = effective_application.array_bound_count;
@@ -957,18 +964,23 @@ static int resolve_direct_sizeof_type_name(
     }
   }
 
-  const psx_type_t *factor_base_type = direct_type_before_application(
-      base_type, runtime_application);
-  if (!factor_base_type) return 0;
-  psx_qual_type_t factor_base_qual_type = ps_ctx_intern_qual_type_in(
-      context->semantic_context, factor_base_type);
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
+  psx_qual_type_t factor_base_qual_type =
+      direct_type_before_application(
+          semantic_types, base_qual_type, runtime_application);
   if (factor_base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  psx_type_shape_t factor_base_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, factor_base_qual_type.type_id,
+          &factor_base_shape))
+    return 0;
   long long factor = ps_type_sizeof_id(
-      ps_ctx_semantic_type_table_in(context->semantic_context),
+      semantic_types,
       ps_ctx_record_layout_table_in(context->semantic_context),
       factor_base_qual_type.type_id,
       ps_ctx_data_layout(context->semantic_context));
-  if (factor_base_type->kind == PSX_TYPE_VOID) factor = 1;
+  if (factor_base_shape.kind == PSX_TYPE_VOID) factor = 1;
   for (int i = effective_application.shape.count - 1;
        i >= 0; i--) {
     const psx_declarator_op_t *op =

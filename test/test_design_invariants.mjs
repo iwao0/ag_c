@@ -7280,8 +7280,27 @@ if (/declaration->is_typedef[\s\S]{0,1200}declarator->function_suffix_count\s*>\
 const directSizeofTypeName = syntaxTypedHirResolutionSource.match(
   /static int resolve_direct_sizeof_type_name\s*\([\s\S]*?\n\}/,
 );
+const directTypeBeforeApplication = syntaxTypedHirResolutionSource.match(
+  /static psx_qual_type_t direct_type_before_application\s*\([\s\S]*?\n\}/,
+);
 if (!directSizeofTypeName ||
+    !directTypeBeforeApplication ||
     /\bps_ctx_type_sizeof_in\s*\(/.test(directSizeofTypeName[0]) ||
+    /\bpsx_type_name_bound_base_type\s*\(|\bpsx_apply_runtime_declarator_type_in_context\s*\(|\bps_ctx_intern_qual_type_in\s*\(/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/\bpsx_type_name_bound_base_qual_type\s*\(/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/\bpsx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      directTypeBeforeApplication[0],
+    ) ||
+    /\bpsx_type_t\b|->(?:kind|base)\b/.test(
+      directTypeBeforeApplication[0],
+    ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
       directSizeofTypeName[0],
     ) ||
@@ -7292,7 +7311,7 @@ if (!directSizeofTypeName ||
       directSizeofTypeName[0],
     )) {
   throw new Error(
-    "direct sizeof(type-name) must apply pointer declarators before rejecting an unsized function base",
+    "direct sizeof(type-name) must stay on canonical QualType edges and apply pointer declarators before rejecting an unsized function base",
   );
 }
 if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
