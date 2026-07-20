@@ -15,13 +15,12 @@ typedef struct {
   void *state;
 } psx_global_registry_checkpoint_t;
 
-psx_global_registry_t *ps_global_registry_create(void);
+psx_global_registry_t *ps_global_registry_create(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_scope_graph_t *scope_graph);
 void ps_global_registry_destroy(psx_global_registry_t *registry);
-void ps_global_registry_bind_semantic_types(
-    psx_global_registry_t *registry,
-    const psx_semantic_type_table_t *semantic_types);
-void ps_global_registry_bind_scope_graph(
-    psx_global_registry_t *registry, psx_scope_graph_t *scope_graph);
+const psx_semantic_type_table_t *ps_global_registry_semantic_types(
+    const psx_global_registry_t *registry);
 psx_scope_graph_t *ps_global_registry_scope_graph(
     const psx_global_registry_t *registry);
 

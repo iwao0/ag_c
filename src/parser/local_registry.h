@@ -22,15 +22,14 @@ typedef struct psx_local_lookup_point_t {
 } psx_local_lookup_point_t;
 
 psx_local_registry_t *ps_local_registry_create(
-    ag_diagnostic_context_t *diagnostic_context);
+    ag_diagnostic_context_t *diagnostic_context,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_scope_graph_t *scope_graph);
 void ps_local_registry_destroy(psx_local_registry_t *registry);
 ag_diagnostic_context_t *ps_local_registry_diagnostics(
     const psx_local_registry_t *registry);
-void ps_local_registry_bind_semantic_types(
-    psx_local_registry_t *registry,
-    const psx_semantic_type_table_t *semantic_types);
-void ps_local_registry_bind_scope_graph(
-    psx_local_registry_t *registry, psx_scope_graph_t *scope_graph);
+const psx_semantic_type_table_t *ps_local_registry_semantic_types(
+    const psx_local_registry_t *registry);
 psx_scope_graph_t *ps_local_registry_scope_graph(
     const psx_local_registry_t *registry);
 int psx_local_registry_checkpoint_begin(

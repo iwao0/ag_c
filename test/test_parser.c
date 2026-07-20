@@ -27969,12 +27969,27 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(first_store != NULL);
   ASSERT_TRUE(second_store != NULL);
   ASSERT_TRUE(first_store != second_store);
-  psx_global_registry_t *first_globals = ps_global_registry_create();
-  psx_global_registry_t *second_globals = ps_global_registry_create();
+  ASSERT_TRUE(ps_global_registry_create(
+                  NULL, ps_ctx_scope_graph(first)) == NULL);
+  ASSERT_TRUE(ps_global_registry_create(
+                  ps_ctx_semantic_type_table_in(first), NULL) == NULL);
+  ASSERT_TRUE(ps_local_registry_create(
+                  diagnostics, NULL, ps_ctx_scope_graph(first)) == NULL);
+  ASSERT_TRUE(ps_local_registry_create(
+                  diagnostics, ps_ctx_semantic_type_table_in(first),
+                  NULL) == NULL);
+  psx_global_registry_t *first_globals = ps_global_registry_create(
+      ps_ctx_semantic_type_table_in(first), ps_ctx_scope_graph(first));
+  psx_global_registry_t *second_globals = ps_global_registry_create(
+      ps_ctx_semantic_type_table_in(second), ps_ctx_scope_graph(second));
   psx_local_registry_t *first_locals =
-      ps_local_registry_create(diagnostics);
+      ps_local_registry_create(
+          diagnostics, ps_ctx_semantic_type_table_in(first),
+          ps_ctx_scope_graph(first));
   psx_local_registry_t *second_locals =
-      ps_local_registry_create(diagnostics);
+      ps_local_registry_create(
+          diagnostics, ps_ctx_semantic_type_table_in(second),
+          ps_ctx_scope_graph(second));
   ASSERT_TRUE(first_globals != NULL);
   ASSERT_TRUE(second_globals != NULL);
   ASSERT_TRUE(first_locals != NULL);
@@ -27988,23 +28003,6 @@ static void test_semantic_context_isolation() {
     ps_ctx_destroy(second);
     return;
   }
-  ps_global_registry_bind_semantic_types(
-      first_globals, ps_ctx_semantic_type_table_in(first));
-  ps_global_registry_bind_semantic_types(
-      second_globals, ps_ctx_semantic_type_table_in(second));
-  ps_local_registry_bind_semantic_types(
-      first_locals, ps_ctx_semantic_type_table_in(first));
-  ps_local_registry_bind_semantic_types(
-      second_locals, ps_ctx_semantic_type_table_in(second));
-  ps_global_registry_bind_scope_graph(
-      first_globals, ps_ctx_scope_graph(first));
-  ps_global_registry_bind_scope_graph(
-      second_globals, ps_ctx_scope_graph(second));
-  ps_local_registry_bind_scope_graph(
-      first_locals, ps_ctx_scope_graph(first));
-  ps_local_registry_bind_scope_graph(
-      second_locals, ps_ctx_scope_graph(second));
-
   char enum_name[] = "ContextValue";
   char tag_name[] = "ContextTag";
   long long value = 0;
@@ -28506,12 +28504,10 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ag_compilation_session_init(&second, target));
   ASSERT_TRUE(ag_compilation_session_is_complete(&first));
   ASSERT_TRUE(ag_compilation_session_is_complete(&second));
-  ps_global_registry_bind_scope_graph(
-      second.global_registry, first.scope_graph);
-  ASSERT_TRUE(!ag_compilation_session_is_complete(&second));
-  ps_global_registry_bind_scope_graph(
-      second.global_registry, second.scope_graph);
-  ASSERT_TRUE(ag_compilation_session_is_complete(&second));
+  ASSERT_TRUE(ps_global_registry_scope_graph(first.global_registry) ==
+              first.scope_graph);
+  ASSERT_TRUE(ps_global_registry_scope_graph(second.global_registry) ==
+              second.scope_graph);
 
   psx_type_t *first_global_type =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -29120,8 +29116,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.semantic_context);
   ASSERT_TRUE(ag_compilation_session_global_registry(&host) ==
               host.global_registry);
+  ASSERT_TRUE(ps_global_registry_semantic_types(host.global_registry) ==
+              ps_ctx_semantic_type_table_in(host.semantic_context));
   ASSERT_TRUE(ag_compilation_session_local_registry(&host) ==
               host.local_registry);
+  ASSERT_TRUE(ps_local_registry_semantic_types(host.local_registry) ==
+              ps_ctx_semantic_type_table_in(host.semantic_context));
   ASSERT_TRUE(ag_compilation_session_preprocessor_context(&host) ==
               host.preprocessor_context);
   ASSERT_TRUE(ag_compilation_session_arena_context(&host) ==
@@ -29169,8 +29169,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               wasm.semantic_context);
   ASSERT_TRUE(ag_compilation_session_global_registry(&wasm) ==
               wasm.global_registry);
+  ASSERT_TRUE(ps_global_registry_semantic_types(wasm.global_registry) ==
+              ps_ctx_semantic_type_table_in(wasm.semantic_context));
   ASSERT_TRUE(ag_compilation_session_local_registry(&wasm) ==
               wasm.local_registry);
+  ASSERT_TRUE(ps_local_registry_semantic_types(wasm.local_registry) ==
+              ps_ctx_semantic_type_table_in(wasm.semantic_context));
   ASSERT_TRUE(ag_compilation_session_preprocessor_context(&wasm) ==
               wasm.preprocessor_context);
   ASSERT_TRUE(ps_ctx_diagnostics(wasm.semantic_context) ==

@@ -67,19 +67,13 @@ int ag_compilation_session_init(
   ps_ctx_bind_resolution_store(
       session->semantic_context, session->resolution_store);
   session->hir_module = psx_hir_module_create();
-  session->global_registry = ps_global_registry_create();
-  ps_global_registry_bind_semantic_types(
-      session->global_registry,
-      ps_ctx_semantic_type_table_in(session->semantic_context));
-  ps_global_registry_bind_scope_graph(
-      session->global_registry, session->scope_graph);
+  session->global_registry = ps_global_registry_create(
+      ps_ctx_semantic_type_table_in(session->semantic_context),
+      session->scope_graph);
   session->local_registry = ps_local_registry_create(
-      session->diagnostic_context);
-  ps_local_registry_bind_semantic_types(
-      session->local_registry,
-      ps_ctx_semantic_type_table_in(session->semantic_context));
-  ps_local_registry_bind_scope_graph(
-      session->local_registry, session->scope_graph);
+      session->diagnostic_context,
+      ps_ctx_semantic_type_table_in(session->semantic_context),
+      session->scope_graph);
   ps_ctx_bind_scope_graph(session->semantic_context, session->scope_graph);
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
@@ -148,8 +142,12 @@ int ag_compilation_session_is_complete(
              &session->target &&
          ps_global_registry_scope_graph(session->global_registry) ==
              session->scope_graph &&
+         ps_global_registry_semantic_types(session->global_registry) ==
+             ps_ctx_semantic_type_table_in(session->semantic_context) &&
          ps_local_registry_scope_graph(session->local_registry) ==
              session->scope_graph &&
+         ps_local_registry_semantic_types(session->local_registry) ==
+             ps_ctx_semantic_type_table_in(session->semantic_context) &&
          session->arena_context &&
          session->resolution_store &&
          ps_ctx_resolution_store(session->semantic_context) ==

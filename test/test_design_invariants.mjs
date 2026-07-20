@@ -285,8 +285,15 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/session->scope_graph\s*=\s*psx_scope_graph_create\s*\(/.test(
       compilationSession,
     ) ||
-    !/ps_local_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
-    !/ps_global_registry_bind_scope_graph\s*\(/.test(compilationSession) ||
+    !/session->global_registry\s*=\s*ps_global_registry_create\s*\(\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)\s*,\s*session->scope_graph\s*\)/.test(
+      compilationSession,
+    ) ||
+    !/session->local_registry\s*=\s*ps_local_registry_create\s*\(\s*session->diagnostic_context\s*,\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)\s*,\s*session->scope_graph\s*\)/.test(
+      compilationSession,
+    ) ||
+    /ps_(?:global|local)_registry_bind_scope_graph\s*\(/.test(
+      scopeGraphRegistrySources + compilationSession,
+    ) ||
     !/ps_ctx_bind_scope_graph\s*\(/.test(compilationSession) ||
     !/context->scope_graph\s*=\s*psx_scope_graph_create\s*\(/.test(
       scopeGraphSemanticContextSource,
@@ -1320,13 +1327,15 @@ if (sessionContextAccessorNames.some((name) =>
         compilationSessionSource,
       )
     ) ||
-    !/ps_global_registry_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_global_registry_create\s*\(\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)\s*,\s*session->scope_graph\s*\)/.test(
+      compilationSessionSource,
+    ) ||
     !/ps_global_registry_destroy\s*\(/.test(compilationSessionSource) ||
     /ps_global_registry_activate\s*\(/.test(compilationSessionSource) ||
     /previous_global_registry/.test(compilationSessionSource) ||
     /ps_ctx_activate\s*\(/.test(compilationSessionSource) ||
     /previous_semantic_context/.test(compilationSessionSource) ||
-    !/ps_local_registry_create\s*\(\s*session->diagnostic_context\s*\)/.test(
+    !/ps_local_registry_create\s*\(\s*session->diagnostic_context\s*,\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)\s*,\s*session->scope_graph\s*\)/.test(
       compilationSessionSource,
     ) ||
     !/ps_local_registry_destroy\s*\(/.test(compilationSessionSource) ||
@@ -1970,9 +1979,25 @@ const globalRegistrySource = await readFile(
   "src/parser/global_registry.c",
   "utf8",
 );
+const globalRegistryHeader = await readFile(
+  "src/parser/global_registry.h",
+  "utf8",
+);
 if (!/struct\s+psx_global_registry_t\s*\{/.test(globalRegistrySource) ||
     !/psx_global_registry_t\s*\*ps_global_registry_create\s*\(/.test(
       globalRegistrySource,
+    ) ||
+    !/registry->semantic_types\s*=\s*semantic_types\s*;/.test(
+      globalRegistrySource,
+    ) ||
+    !/registry->scope_graph\s*=\s*scope_graph\s*;/.test(
+      globalRegistrySource,
+    ) ||
+    !/ps_global_registry_semantic_types\s*\(/.test(
+      globalRegistryHeader + globalRegistrySource,
+    ) ||
+    /ps_global_registry_bind_(?:semantic_types|scope_graph)\s*\(/.test(
+      globalRegistryHeader + globalRegistrySource,
     ) ||
     !/void\s+ps_global_registry_destroy\s*\(/.test(
       globalRegistrySource,
@@ -2014,6 +2039,19 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     ) ||
     !/psx_local_registry_t\s*\*ps_local_registry_create\s*\(/.test(
       localRegistrySource,
+    ) ||
+    !/registry->semantic_types\s*=\s*semantic_types\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/registry->scope_graph\s*=\s*scope_graph\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/ps_local_registry_semantic_types\s*\(/.test(
+      localRegistryHeader + localRegistrySource,
+    ) ||
+    /owns_scope_graph/.test(localRegistrySource) ||
+    /ps_local_registry_bind_(?:semantic_types|scope_graph)\s*\(/.test(
+      localRegistryHeader + localRegistrySource,
     ) ||
     !/void\s+ps_local_registry_destroy\s*\(/.test(
       localRegistrySource,
@@ -2064,9 +2102,15 @@ if (!/ps_local_registry_diagnostics\s*\(/.test(
     ) ||
     !/ps_lowering_arena\s*\(\s*session->lowering_context\s*\)\s*==\s*session->arena_context/.test(
       compilationSessionSource,
+    ) ||
+    !/ps_global_registry_semantic_types\s*\(\s*session->global_registry\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_local_registry_semantic_types\s*\(\s*session->local_registry\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
     )) {
   throw new Error(
-    "CompilationSession completeness must reject split phase-owned diagnostics, arenas, and tokenizers",
+    "CompilationSession completeness must reject split phase-owned dependencies",
   );
 }
 const contextFreeLocalRegistryApis =
@@ -7885,7 +7929,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
     /\bps_type_clone_persistent\s*\(/.test(localRegistrySource) ||
-    !/\bps_local_registry_bind_semantic_types\s*\(/.test(
+    !/ps_local_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
     )) {
   throw new Error(
@@ -7964,7 +8008,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bps_global_registry_bind_semantic_types\s*\(/.test(
+    !/ps_global_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
     )) {
   throw new Error(

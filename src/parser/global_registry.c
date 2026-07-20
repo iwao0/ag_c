@@ -69,8 +69,17 @@ static void free_owned_names_until(
   }
 }
 
-psx_global_registry_t *ps_global_registry_create(void) {
-  return calloc(1, sizeof(psx_global_registry_t));
+psx_global_registry_t *ps_global_registry_create(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_scope_graph_t *scope_graph) {
+  if (!semantic_types || !scope_graph) return NULL;
+  psx_global_registry_t *registry =
+      calloc(1, sizeof(psx_global_registry_t));
+  if (registry) {
+    registry->semantic_types = semantic_types;
+    registry->scope_graph = scope_graph;
+  }
+  return registry;
 }
 
 void ps_global_registry_destroy(psx_global_registry_t *registry) {
@@ -78,6 +87,11 @@ void ps_global_registry_destroy(psx_global_registry_t *registry) {
   free_global_registry_transaction(registry->active_transaction);
   free_owned_names_until(registry, NULL);
   free(registry);
+}
+
+const psx_semantic_type_table_t *ps_global_registry_semantic_types(
+    const psx_global_registry_t *registry) {
+  return registry ? registry->semantic_types : NULL;
 }
 
 int psx_global_registry_checkpoint_begin(
@@ -190,18 +204,6 @@ void psx_global_registry_checkpoint_rollback(
   psx_scope_graph_checkpoint_rollback(
       registry->scope_graph, &transaction->scope_graph_checkpoint);
   free_global_registry_transaction(transaction);
-}
-
-void ps_global_registry_bind_semantic_types(
-    psx_global_registry_t *registry,
-    const psx_semantic_type_table_t *semantic_types) {
-  if (registry) registry->semantic_types = semantic_types;
-}
-
-void ps_global_registry_bind_scope_graph(
-    psx_global_registry_t *registry, psx_scope_graph_t *scope_graph) {
-  if (registry && !registry->active_transaction)
-    registry->scope_graph = scope_graph;
 }
 
 psx_scope_graph_t *ps_global_registry_scope_graph(

@@ -33,7 +33,6 @@ struct psx_local_registry_t {
   lvar_t *all_locals;
   lvar_t *all_bindings;
   psx_scope_graph_t *scope_graph;
-  unsigned char owns_scope_graph;
   lvar_t *lvars_by_offset[LVAR_OFFSET_BUCKETS];
   lvar_usage_event_t *usage_events_head;
   lvar_usage_event_t *usage_events_tail;
@@ -68,17 +67,16 @@ static int local_transaction_contains_original(
 }
 
 psx_local_registry_t *ps_local_registry_create(
-    ag_diagnostic_context_t *diagnostic_context) {
+    ag_diagnostic_context_t *diagnostic_context,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_scope_graph_t *scope_graph) {
+  if (!diagnostic_context || !semantic_types || !scope_graph) return NULL;
   psx_local_registry_t *registry =
       calloc(1, sizeof(psx_local_registry_t));
   if (registry) {
     registry->diagnostic_context = diagnostic_context;
-    registry->scope_graph = psx_scope_graph_create();
-    registry->owns_scope_graph = registry->scope_graph ? 1 : 0;
-    if (!registry->scope_graph) {
-      free(registry);
-      return NULL;
-    }
+    registry->semantic_types = semantic_types;
+    registry->scope_graph = scope_graph;
   }
   return registry;
 }
@@ -90,14 +88,17 @@ void ps_local_registry_destroy(psx_local_registry_t *registry) {
   if (transaction)
     psx_scope_graph_checkpoint_commit(&transaction->scope_graph_checkpoint);
   free(registry->active_transaction);
-  if (registry->owns_scope_graph)
-    psx_scope_graph_destroy(registry->scope_graph);
   free(registry);
 }
 
 ag_diagnostic_context_t *ps_local_registry_diagnostics(
     const psx_local_registry_t *registry) {
   return registry ? registry->diagnostic_context : NULL;
+}
+
+const psx_semantic_type_table_t *ps_local_registry_semantic_types(
+    const psx_local_registry_t *registry) {
+  return registry ? registry->semantic_types : NULL;
 }
 
 int psx_local_registry_checkpoint_begin(
@@ -181,21 +182,6 @@ void psx_local_registry_checkpoint_rollback(
   psx_scope_graph_checkpoint_rollback(
       registry->scope_graph, &transaction->scope_graph_checkpoint);
   free(transaction);
-}
-
-void ps_local_registry_bind_semantic_types(
-    psx_local_registry_t *registry,
-    const psx_semantic_type_table_t *semantic_types) {
-  if (registry) registry->semantic_types = semantic_types;
-}
-
-void ps_local_registry_bind_scope_graph(
-    psx_local_registry_t *registry, psx_scope_graph_t *scope_graph) {
-  if (!registry || !scope_graph || registry->active_transaction) return;
-  if (registry->owns_scope_graph)
-    psx_scope_graph_destroy(registry->scope_graph);
-  registry->scope_graph = scope_graph;
-  registry->owns_scope_graph = 0;
 }
 
 psx_scope_graph_t *ps_local_registry_scope_graph(
