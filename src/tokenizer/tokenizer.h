@@ -16,8 +16,6 @@ typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 struct tokenizer_context_t {
   tk_allocator_context_t *allocator_context;
   ag_diagnostic_context_t *diagnostic_context;
-  bool owns_allocator_context;
-  bool owns_diagnostic_context;
   bool strict_c11_mode;
   bool enable_trigraphs;
   bool enable_binary_literals;
@@ -170,20 +168,28 @@ const char *tk_get_filename_ctx(tokenizer_context_t *ctx);
 void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name);
 
 /**
- * @brief コンテキストを既定値で初期化する。
+ * @brief コンテキストを明示的な外部依存で初期化する。
  * @param ctx 初期化対象コンテキスト。
+ * @param diagnostic_context 呼び出し側が所有する診断コンテキスト。
+ * @param allocator_context 呼び出し側が所有する token allocator。
+ * @return 初期化できた場合は 1、必須依存が無い場合は 0。
  */
-void tk_context_init(tokenizer_context_t *ctx);
-void tk_context_bind_diagnostic_context(
+int tk_context_init(
+    tokenizer_context_t *ctx,
+    ag_diagnostic_context_t *diagnostic_context,
+    tk_allocator_context_t *allocator_context);
+/**
+ * @brief 既存 token 列の走査専用コンテキストを初期化する。
+ * @warning token を生成する tokenize/stream API には渡さないこと。
+ */
+int tk_cursor_context_init(
     tokenizer_context_t *ctx,
     ag_diagnostic_context_t *diagnostic_context);
 ag_diagnostic_context_t *tk_context_diagnostics(
     const tokenizer_context_t *ctx);
-void tk_context_set_allocator(
-    tokenizer_context_t *ctx, tk_allocator_context_t *allocator_context);
 tk_allocator_context_t *tk_context_allocator(
     const tokenizer_context_t *ctx);
-/** @brief コンテキストが所有する実行時領域を解放する。 */
+/** @brief コンテキスト自身が所有する実行時領域を解放する。 */
 void tk_context_dispose(tokenizer_context_t *ctx);
 uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name);
 const char *tk_filename_lookup_ctx(

@@ -52,13 +52,20 @@ int ag_compilation_session_init(
   memset(session, 0, sizeof(*session));
   if (!ag_target_info_is_valid(target)) return 0;
   ag_compilation_options_init_defaults(&session->options);
-  tk_context_init(&session->tokenizer);
   session->target = *target;
   session->diagnostic_context = diag_context_create();
+  session->token_allocator_context = tk_allocator_context_create(
+      session->diagnostic_context);
+  if (!tk_context_init(
+          &session->tokenizer, session->diagnostic_context,
+          session->token_allocator_context)) {
+    tk_allocator_context_destroy(session->token_allocator_context);
+    diag_context_destroy(session->diagnostic_context);
+    memset(session, 0, sizeof(*session));
+    return 0;
+  }
   diag_context_bind_tokenizer(
       session->diagnostic_context, &session->tokenizer);
-  tk_context_bind_diagnostic_context(
-      &session->tokenizer, session->diagnostic_context);
   session->arena_context = arena_context_create();
   session->resolution_store = psx_resolution_store_create();
   session->scope_graph = psx_scope_graph_create();
@@ -76,10 +83,6 @@ int ag_compilation_session_init(
       session->scope_graph);
   session->preprocessor_context = pp_context_create(
       session->diagnostic_context);
-  session->token_allocator_context = tk_allocator_context_create(
-      session->diagnostic_context);
-  tk_context_set_allocator(
-      &session->tokenizer, session->token_allocator_context);
   session->parser_runtime_context = ps_parser_runtime_context_create(
       session->arena_context, &session->tokenizer,
       session->diagnostic_context);
@@ -113,13 +116,14 @@ int ag_compilation_session_init(
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
     pp_context_destroy(session->preprocessor_context);
-    diag_context_destroy(session->diagnostic_context);
-    tk_allocator_context_destroy(session->token_allocator_context);
     ps_parser_runtime_context_destroy(session->parser_runtime_context);
     ps_lowering_context_destroy(session->lowering_context);
     cg_context_destroy(session->codegen_emit_context);
     arena_context_destroy(session->arena_context);
     psx_resolution_store_destroy(session->resolution_store);
+    tk_context_dispose(&session->tokenizer);
+    tk_allocator_context_destroy(session->token_allocator_context);
+    diag_context_destroy(session->diagnostic_context);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -155,6 +159,8 @@ int ag_compilation_session_is_complete(
          session->diagnostic_context && session->token_allocator_context &&
          tk_context_diagnostics(&session->tokenizer) ==
              session->diagnostic_context &&
+         tk_context_allocator(&session->tokenizer) ==
+             session->token_allocator_context &&
          tk_allocator_diagnostics(session->token_allocator_context) ==
              session->diagnostic_context &&
          ps_ctx_diagnostics(session->semantic_context) ==
@@ -200,17 +206,17 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_local_registry_destroy(session->local_registry);
   psx_scope_graph_destroy(session->scope_graph);
   pp_context_destroy(session->preprocessor_context);
-  diag_context_destroy(session->diagnostic_context);
-  tk_allocator_context_destroy(session->token_allocator_context);
   ps_parser_runtime_context_destroy(session->parser_runtime_context);
   ps_lowering_context_destroy(session->lowering_context);
   tk_context_dispose(&session->tokenizer);
+  tk_allocator_context_destroy(session->token_allocator_context);
   cg_context_destroy(session->codegen_emit_context);
   dispose_continuation_options(&session->continuation);
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   arena_context_destroy(session->arena_context);
   psx_resolution_store_destroy(session->resolution_store);
+  diag_context_destroy(session->diagnostic_context);
   memset(session, 0, sizeof(*session));
   return 1;
 }

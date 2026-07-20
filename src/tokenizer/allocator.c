@@ -43,6 +43,7 @@ struct tk_allocator_context_t {
 
 tk_allocator_context_t *tk_allocator_context_create(
     ag_diagnostic_context_t *diagnostic_context) {
+  if (!diagnostic_context) return NULL;
   tk_allocator_context_t *ctx = calloc(1, sizeof(*ctx));
   if (ctx) {
     ctx->diagnostic_context = diagnostic_context;
@@ -64,12 +65,6 @@ void tk_allocator_context_destroy(tk_allocator_context_t *ctx) {
   free_chunk_list(ctx->arena_head);
   free_chunk_list(ctx->recyc_oldest);
   free(ctx);
-}
-
-void tk_allocator_bind_diagnostic_context_in(
-    tk_allocator_context_t *ctx,
-    ag_diagnostic_context_t *diagnostic_context) {
-  if (ctx) ctx->diagnostic_context = diagnostic_context;
 }
 
 ag_diagnostic_context_t *tk_allocator_diagnostics(

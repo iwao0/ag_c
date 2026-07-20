@@ -1,5 +1,7 @@
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/tokenizer_test.h"
+#include "../src/tokenizer/allocator.h"
+#include "../src/diag/diag.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -14,6 +16,32 @@ static token_num_int_t *as_num_i(token_t *tok) { return (token_num_int_t *)tok; 
 static token_num_float_t *as_num_f(token_t *tok) { return (token_num_float_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
+
+#define EXPLICIT_CONTEXT_CAP 16
+static ag_diagnostic_context_t *explicit_diagnostics[EXPLICIT_CONTEXT_CAP];
+static tk_allocator_context_t *explicit_allocators[EXPLICIT_CONTEXT_CAP];
+static size_t explicit_context_count;
+
+static void init_explicit_context(tokenizer_context_t *ctx) {
+  ASSERT_TRUE(explicit_context_count < EXPLICIT_CONTEXT_CAP);
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
+  tk_allocator_context_t *allocator =
+      tk_allocator_context_create(diagnostics);
+  ASSERT_TRUE(tk_context_init(
+      ctx, diagnostics, allocator));
+  diag_context_bind_tokenizer(diagnostics, ctx);
+  explicit_diagnostics[explicit_context_count] = diagnostics;
+  explicit_allocators[explicit_context_count] = allocator;
+  explicit_context_count++;
+}
+
+static void dispose_explicit_context_dependencies(void) {
+  for (size_t i = 0; i < explicit_context_count; i++) {
+    tk_allocator_context_destroy(explicit_allocators[i]);
+    diag_context_destroy(explicit_diagnostics[i]);
+  }
+  explicit_context_count = 0;
+}
 
 static void expect_tokenize_fail(const char *input) {
   fflush(NULL);
@@ -991,7 +1019,7 @@ static void test_tokenize_with_explicit_context() {
   tk_set_enable_binary_literals(true);
 
   tokenizer_context_t ctx;
-  tk_context_init(&ctx);
+  init_explicit_context(&ctx);
   tk_ctx_set_strict_c11_mode(&ctx, true);
   tk_ctx_set_enable_binary_literals(&ctx, true);
 
@@ -1020,8 +1048,8 @@ static void test_context_config_isolation_and_switch_timing() {
 
   tokenizer_context_t ctx_strict;
   tokenizer_context_t ctx_relaxed;
-  tk_context_init(&ctx_strict);
-  tk_context_init(&ctx_relaxed);
+  init_explicit_context(&ctx_strict);
+  init_explicit_context(&ctx_relaxed);
 
   tk_ctx_set_strict_c11_mode(&ctx_strict, true);
   tk_ctx_set_enable_binary_literals(&ctx_strict, true);
@@ -1058,8 +1086,8 @@ static void test_interleaved_stream_context_isolation() {
 
   tokenizer_context_t relaxed;
   tokenizer_context_t strict;
-  tk_context_init(&relaxed);
-  tk_context_init(&strict);
+  init_explicit_context(&relaxed);
+  init_explicit_context(&strict);
   tk_ctx_set_strict_c11_mode(&relaxed, false);
   tk_ctx_set_enable_binary_literals(&relaxed, true);
   tk_ctx_set_strict_c11_mode(&strict, true);
@@ -1096,7 +1124,7 @@ static void test_context_failure_path_isolation() {
   tk_set_enable_trigraphs(true);
 
   tokenizer_context_t ctx_fail;
-  tk_context_init(&ctx_fail);
+  init_explicit_context(&ctx_fail);
   tk_ctx_set_strict_c11_mode(&ctx_fail, true);
   tk_ctx_set_enable_binary_literals(&ctx_fail, true);
   tk_ctx_set_enable_trigraphs(&ctx_fail, false);
@@ -1121,7 +1149,7 @@ static void test_context_failure_path_unterminated_and_invalid_token() {
   tk_set_enable_trigraphs(true);
 
   tokenizer_context_t ctx;
-  tk_context_init(&ctx);
+  init_explicit_context(&ctx);
   tk_ctx_set_enable_trigraphs(&ctx, false);
 
   expect_tokenize_ctx_fail(&ctx, "\"unterminated");
@@ -1145,7 +1173,7 @@ static void test_context_success_path_default_non_interference() {
   tk_set_enable_trigraphs(true);
 
   tokenizer_context_t ctx;
-  tk_context_init(&ctx);
+  init_explicit_context(&ctx);
   tk_ctx_set_strict_c11_mode(&ctx, true);
   tk_ctx_set_enable_binary_literals(&ctx, false);
   tk_ctx_set_enable_trigraphs(&ctx, false);
@@ -1420,6 +1448,7 @@ int main() {
   test_tokenize_float_literal();
   test_tokenize_len_guard_boundaries();
 
+  dispose_explicit_context_dependencies();
   tk_test_context_shutdown();
   printf("OK: All unit tests passed!\n");
   return 0;

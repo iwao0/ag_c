@@ -29146,15 +29146,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               &wasm_backend);
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
-  ag_diagnostic_context_t *foreign_diagnostics = diag_context_create();
-  ASSERT_TRUE(foreign_diagnostics != NULL);
-  tk_context_bind_diagnostic_context(
-      &host.tokenizer, foreign_diagnostics);
-  ASSERT_TRUE(!ag_compilation_session_is_complete(&host));
-  tk_context_bind_diagnostic_context(
-      &host.tokenizer, host.diagnostic_context);
-  ASSERT_TRUE(ag_compilation_session_is_complete(&host));
-  diag_context_destroy(foreign_diagnostics);
+  tokenizer_context_t invalid_tokenizer;
+  ASSERT_TRUE(!tk_context_init(
+      &invalid_tokenizer, NULL, host.token_allocator_context));
+  ASSERT_TRUE(!tk_context_init(
+      &invalid_tokenizer, host.diagnostic_context, NULL));
   ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&host) ==
               &host.ir_allocation_stats);
   ASSERT_TRUE(ag_compilation_session_ir_allocation_stats(&wasm) ==
@@ -29192,6 +29188,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.diagnostic_context);
   ASSERT_TRUE(tk_context_diagnostics(&host.tokenizer) ==
               host.diagnostic_context);
+  ASSERT_TRUE(tk_context_allocator(&host.tokenizer) ==
+              host.token_allocator_context);
   ASSERT_TRUE(tk_allocator_diagnostics(host.token_allocator_context) ==
               host.diagnostic_context);
   ASSERT_TRUE(ps_ctx_diagnostics(host.semantic_context) ==

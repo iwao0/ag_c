@@ -3,6 +3,8 @@
 #include "../src/tokenizer/literals.h"
 #include "../src/tokenizer/punctuator.h"
 #include "../src/tokenizer/scanner.h"
+#include "../src/tokenizer/allocator.h"
+#include "../src/diag/diag.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -214,7 +216,15 @@ static void run_hotpath_punctuator_case(void) {
 
 int main(void) {
   tokenizer_context_t context;
-  tk_context_init(&context);
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
+  tk_allocator_context_t *allocator =
+      tk_allocator_context_create(diagnostics);
+  if (!tk_context_init(&context, diagnostics, allocator)) {
+    tk_allocator_context_destroy(allocator);
+    diag_context_destroy(diagnostics);
+    return 1;
+  }
+  diag_context_bind_tokenizer(diagnostics, &context);
   const char *mixed_pattern =
       "int main(){int x=0;for(int i=0;i<100;i++){x+=i;}if(x>=10){x=x-1;}return x;}\n";
   const char *ident_pattern =
@@ -261,6 +271,8 @@ int main(void) {
   } else {
     fprintf(stderr, "unknown TOKENIZER_BENCH_MODE: %s\n", mode);
     tk_context_dispose(&context);
+    tk_allocator_context_destroy(allocator);
+    diag_context_destroy(diagnostics);
     return 2;
   }
 
@@ -271,5 +283,7 @@ int main(void) {
     free(content);
   }
   tk_context_dispose(&context);
+  tk_allocator_context_destroy(allocator);
+  diag_context_destroy(diagnostics);
   return 0;
 }

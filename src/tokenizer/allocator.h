@@ -6,12 +6,10 @@
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
+/** @brief 必須の診断コンテキストを借用して allocator を生成する。 */
 tk_allocator_context_t *tk_allocator_context_create(
     ag_diagnostic_context_t *diagnostic_context);
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx);
-void tk_allocator_bind_diagnostic_context_in(
-    tk_allocator_context_t *ctx,
-    ag_diagnostic_context_t *diagnostic_context);
 ag_diagnostic_context_t *tk_allocator_diagnostics(
     const tk_allocator_context_t *ctx);
 

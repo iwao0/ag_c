@@ -84,9 +84,12 @@ long long psx_eval_parsed_enum_const_expr_in_context(
         "constant-expression", "missing parsed constant expression range");
   }
   tokenizer_context_t tokenizer_context;
-  tk_context_init(&tokenizer_context);
-  tk_context_bind_diagnostic_context(
-      &tokenizer_context, ps_ctx_diagnostics(semantic_context));
+  if (!tk_cursor_context_init(
+          &tokenizer_context, ps_ctx_diagnostics(semantic_context))) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), start,
+        "constant-expression", "missing tokenizer diagnostics");
+  }
   tk_set_current_token_ctx(&tokenizer_context, start);
   long long value = psx_parse_enum_const_expr_in_contexts(
       semantic_context, name_classifier, &tokenizer_context);

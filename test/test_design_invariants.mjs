@@ -1762,6 +1762,29 @@ const tokenizerProductionContextSources = [
   tokenizerAllocatorSource,
   tokenizerAllocatorHeader,
 ].join("\n");
+if (/owns_(?:allocator|diagnostic)_context/.test(tokenizerHeader) ||
+    /tk_context_(?:bind_diagnostic_context|set_allocator)\s*\(/.test(
+      tokenizerHeader + tokenizerConfigRuntimeSource,
+    ) ||
+    /tk_allocator_bind_diagnostic_context_in\s*\(/.test(
+      tokenizerAllocatorHeader + tokenizerAllocatorSource,
+    ) ||
+    /(?:diag_context_create|tk_allocator_context_create)\s*\(/.test(
+      tokenizerConfigRuntimeSource,
+    ) ||
+    !/int\s+tk_context_init\s*\(\s*tokenizer_context_t\s*\*ctx\s*,\s*ag_diagnostic_context_t\s*\*diagnostic_context\s*,\s*tk_allocator_context_t\s*\*allocator_context\s*\)/s.test(
+      tokenizerHeader + tokenizerConfigRuntimeSource,
+    ) ||
+    !/tk_allocator_diagnostics\s*\(\s*allocator_context\s*\)\s*!=\s*diagnostic_context/.test(
+      tokenizerConfigRuntimeSource,
+    ) ||
+    !/tk_context_init\s*\(\s*&session->tokenizer\s*,\s*session->diagnostic_context\s*,\s*session->token_allocator_context\s*\)/s.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "tokenizer dependencies must be session-owned, immutable, and supplied at initialization",
+  );
+}
 if (/\btk_(?:get_default_context|context_active|context_activate|runtime_ctx|allocator_default_context)\s*\(/.test(
       tokenizerProductionContextSources,
     ) ||
@@ -2131,6 +2154,9 @@ if (!/ps_local_registry_diagnostics\s*\(/.test(
       !new RegExp(`${check}\\s*==\\s*session->diagnostic_context`).test(
         compilationSessionSource,
       )
+    ) ||
+    !/tk_context_allocator\s*\(\s*&session->tokenizer\s*\)\s*==\s*session->token_allocator_context/.test(
+      compilationSessionSource,
     ) ||
     !/ps_ctx_arena\s*\(\s*session->semantic_context\s*\)\s*==\s*session->arena_context/.test(
       compilationSessionSource,
