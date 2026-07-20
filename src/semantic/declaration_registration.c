@@ -25,8 +25,6 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = semantic_context,
-          .global_registry = global_registry,
-          .local_registry = local_registry,
           .name = name,
           .name_len = name_len,
           .decl_qual_type = decl_qual_type,
@@ -70,8 +68,6 @@ void psx_apply_parsed_enum_constant_in_contexts(
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = semantic_context,
-          .global_registry = global_registry,
-          .local_registry = local_registry,
           .name = name,
           .name_len = name_len,
           .value = value,
@@ -115,7 +111,6 @@ void psx_apply_parsed_tag_declaration_in_contexts(
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = semantic_context,
-          .local_registry = local_registry,
           .kind = kind,
           .name = name,
           .name_len = name_len,

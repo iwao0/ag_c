@@ -21,18 +21,13 @@ void psx_resolve_enum_constant(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_ENUM_CONSTANT_INVALID;
-  if (!request || !request->semantic_context || !request->global_registry ||
-      !request->local_registry || !request->name || request->name_len <= 0) {
+  if (!request || !request->semantic_context || !request->name ||
+      request->name_len <= 0) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
-  psx_local_registry_t *local_registry = request->local_registry;
-  psx_global_registry_t *global_registry = request->global_registry;
   psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
-  if (!scope_graph ||
-      scope_graph != ps_local_registry_scope_graph(local_registry) ||
-      scope_graph != ps_global_registry_scope_graph(global_registry))
-    return;
+  if (!scope_graph) return;
 
   int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
   const psx_scope_declaration_t *existing =
@@ -60,8 +55,8 @@ void psx_resolve_enum_constant(
     }
   }
 
-  if (!ps_ctx_register_enum_const_in_contexts(
-          semantic_context, local_registry,
+  if (!ps_ctx_register_enum_const_in(
+          semantic_context,
           request->name, request->name_len, request->value,
           &resolution->created)) {
     resolution->status = PSX_ENUM_CONSTANT_DUPLICATE;

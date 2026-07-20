@@ -4,7 +4,6 @@
 #include "../parser/type.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef enum {
   PSX_TAG_DECLARATION_REFERENCE = 0,
@@ -21,7 +20,6 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_local_registry_t *local_registry;
   token_kind_t kind;
   char *name;
   int name_len;

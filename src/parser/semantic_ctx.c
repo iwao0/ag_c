@@ -803,15 +803,13 @@ psx_type_t *ps_ctx_clone_tag_type_at_in(
       context->arena_context, tag->record_decl);
 }
 
-int ps_ctx_register_tag_type_in_contexts(
+int ps_ctx_register_tag_type_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count) {
-  if (!context || !local_registry || !name || len <= 0) return 0;
+  if (!context || !name || len <= 0) return 0;
   psx_scope_graph_t *scope_graph = context->scope_graph;
-  if (scope_graph != ps_local_registry_scope_graph(local_registry))
-    return 0;
+  if (!scope_graph) return 0;
   tag_type_t *existing = NULL;
   psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
       scope_graph, psx_scope_graph_current_scope(scope_graph),
@@ -1372,16 +1370,13 @@ static enum_const_t *find_enum_const_in(
 /* enum 定数を登録する。
  * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
  * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
-int ps_ctx_register_enum_const_in_contexts(
+int ps_ctx_register_enum_const_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, long long value, int *out_created) {
   if (out_created) *out_created = 0;
-  if (!context || !local_registry || !name || len <= 0) return 0;
+  if (!context || !name || len <= 0) return 0;
   psx_scope_graph_t *scope_graph = context->scope_graph;
-  if (!scope_graph ||
-      scope_graph != ps_local_registry_scope_graph(local_registry))
-    return 0;
+  if (!scope_graph) return 0;
   if (psx_scope_graph_lookup_in_scope(
           scope_graph, psx_scope_graph_current_scope(scope_graph),
           PSX_NAMESPACE_ORDINARY, name, len) != PSX_DECL_ID_INVALID) {
@@ -1540,19 +1535,16 @@ static int initialize_typedef_record(
   return 1;
 }
 
-int ps_ctx_register_typedef_name_in_contexts(
+int ps_ctx_register_typedef_name_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared) {
   if (out_created) *out_created = 0;
   if (out_redeclared) *out_redeclared = 0;
-  if (!context || !local_registry || !name || len <= 0 || !info)
+  if (!context || !name || len <= 0 || !info)
     return 0;
   psx_scope_graph_t *scope_graph = context->scope_graph;
-  if (!scope_graph ||
-      scope_graph != ps_local_registry_scope_graph(local_registry))
-    return 0;
+  if (!scope_graph) return 0;
   psx_qual_type_t identity = resolve_typedef_decl_qual_type(
       context, info);
   if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;

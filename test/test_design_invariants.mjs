@@ -1152,10 +1152,12 @@ if (contextFreeSemanticRegistryApis.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registry operations must require an explicit context");
 }
 const splitSemanticLocalContextApis =
-  /\bps_ctx_(?:register_tag_type|register_enum_const|register_typedef_name)_in\s*\(/;
-if (splitSemanticLocalContextApis.test(semanticContextOwnershipSource)) {
+  /\bps_ctx_(?:register_tag_type|register_enum_const|register_typedef_name)_in_contexts\s*\(/;
+if (splitSemanticLocalContextApis.test(
+      semanticContextOwnershipSource + semanticContextOwnershipHeader,
+    )) {
   throw new Error(
-    "semantic namespace declarations must receive semantic and local contexts together",
+    "semantic namespace declarations must be owned by the semantic context scope graph",
   );
 }
 const compilationSessionHeader = await readFile(
@@ -2304,19 +2306,19 @@ if (/psx_decl_find_lvar_by_offset\s*\(/.test(nodeUtilsSourceForRegistry)) {
     "local variable nodes must retain their symbol instead of resolving through an implicit registry",
   );
 }
-if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
+if (!/ps_ctx_register_tag_type_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
+    !/ps_ctx_register_enum_const_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_find_enum_const_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
+    !/ps_ctx_register_typedef_name_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_find_typedef_decl_type_at_in\s*\(/.test(
@@ -2325,17 +2327,14 @@ if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
     /ps_ctx_(?:clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in_contexts\s*\(/.test(
       semanticContextOwnershipSource + semanticContextOwnershipHeader,
     ) ||
-    /ps_ctx_(?:clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in\s*\([^)]*psx_local_registry_t/.test(
+    /ps_ctx_(?:register_tag_type|register_enum_const|register_typedef_name|clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in\s*\([^)]*psx_local_registry_t/.test(
       semanticContextOwnershipSource + semanticContextOwnershipHeader,
-    ) ||
-    !/scope_graph\s*!=\s*ps_local_registry_scope_graph\s*\(/.test(
-      semanticContextOwnershipSource,
     ) ||
     !/psx_scope_graph_lookup\s*\(/.test(
       semanticContextOwnershipSource,
     )) {
   throw new Error(
-    "semantic namespace declarations must share scope ownership while lookups read the semantic context graph directly",
+    "semantic namespace operations must use the semantic context scope graph directly",
   );
 }
 const frontendTranslationUnitHeader = await readFile(
@@ -3867,8 +3866,16 @@ const enumConstantResolutionSource = await readFile(
   "src/semantic/enum_constant_resolution.c",
   "utf8",
 );
+const enumConstantResolutionHeader = await readFile(
+  "src/semantic/enum_constant_resolution.h",
+  "utf8",
+);
 const typedefDeclarationResolutionSource = await readFile(
   "src/semantic/typedef_declaration_resolution.c",
+  "utf8",
+);
+const typedefDeclarationResolutionHeader = await readFile(
+  "src/semantic/typedef_declaration_resolution.h",
   "utf8",
 );
 const ordinarySemanticContextHeaderSource = await readFile(
@@ -3938,11 +3945,11 @@ const ordinaryDeclarationConflictSources = [
 ];
 const strictResolverRequestSources = [
   [identifierResolutionSource, ["semantic_context"]],
-  [enumConstantResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
-  [typedefDeclarationResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
+  [enumConstantResolutionSource, ["semantic_context"]],
+  [typedefDeclarationResolutionSource, ["semantic_context"]],
   [functionDeclarationResolutionSource, ["semantic_context", "global_registry"]],
   [globalDeclarationResolutionSource, ["semantic_context", "global_registry"]],
-  [tagDeclarationResolutionSource, ["semantic_context", "local_registry"]],
+  [tagDeclarationResolutionSource, ["semantic_context"]],
   [declarationResolutionSource, ["semantic_context"]],
   [aggregateMemberResolutionSource, ["semantic_context"]],
   [memberAccessResolutionSource, ["semantic_context"]],
@@ -3955,6 +3962,22 @@ for (const [source, fields] of strictResolverRequestSources) {
         `semantic resolver request must require an explicit ${field}`,
       );
     }
+  }
+}
+const namespaceDeclarationRequestStructs = [
+  [enumConstantResolutionHeader, "enum_constant"],
+  [typedefDeclarationResolutionHeader, "typedef_declaration"],
+  [tagDeclarationResolutionHeader, "tag_declaration"],
+];
+for (const [header, name] of namespaceDeclarationRequestStructs) {
+  const requestStruct = header.match(
+    new RegExp(`typedef\\s+struct\\s*\\{([^]*?)\\}\\s*psx_${name}_resolution_request_t\\s*;`),
+  );
+  if (!requestStruct ||
+      /\b(?:global_registry|local_registry)\b/.test(requestStruct[1])) {
+    throw new Error(
+      "semantic namespace resolver requests must be owned by semantic context",
+    );
   }
 }
 const implicitResolverContextFallback =
@@ -3976,10 +3999,10 @@ if (contextFreeOrdinaryNamespaceCall.test(
         source,
       )
     ) ||
-    !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
+    !/ps_ctx_register_enum_const_in\s*\(/.test(
       enumConstantResolutionSource,
     ) ||
-    !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
+    !/ps_ctx_register_typedef_name_in\s*\(/.test(
       typedefDeclarationResolutionSource,
     ) ||
     !/psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_ORDINARY/.test(
@@ -7650,7 +7673,7 @@ const publishRecordLayoutFunction = tagContextSource.match(
   /int\s+ps_ctx_publish_record_layout_in\s*\([^]*?\n\}/,
 );
 const registerTagTypeFunction = tagContextSource.match(
-  /int\s+ps_ctx_register_tag_type_in_contexts\s*\([^]*?\n\}/,
+  /int\s+ps_ctx_register_tag_type_in\s*\([^]*?\n\}/,
 );
 const tagDeclarationRequestStruct =
   tagDeclarationResolutionHeader.match(

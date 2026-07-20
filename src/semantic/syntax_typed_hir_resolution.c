@@ -4545,8 +4545,6 @@ static int preflight_direct_local_declaration(
       psx_resolve_typedef_declaration(
           &(psx_typedef_declaration_resolution_request_t){
               .semantic_context = context->semantic_context,
-              .global_registry = context->global_registry,
-              .local_registry = context->local_registry,
               .name = name->str,
               .name_len = name->len,
               .decl_qual_type = decl_qual_type,

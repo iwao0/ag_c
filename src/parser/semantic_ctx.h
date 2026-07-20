@@ -136,9 +136,8 @@ psx_type_t *ps_ctx_clone_tag_type_at_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     psx_scope_lookup_point_t point);
-int ps_ctx_register_tag_type_in_contexts(
+int ps_ctx_register_tag_type_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count);
 int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context);
@@ -214,9 +213,8 @@ void ps_ctx_promote_tag_to_file_scope_in(
     token_kind_t kind, char *name, int len);
 
 /* Explicit-context ordinary namespace operations. */
-int ps_ctx_register_enum_const_in_contexts(
+int ps_ctx_register_enum_const_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, long long value, int *out_created);
 bool ps_ctx_find_enum_const_in(
     psx_semantic_context_t *context,
@@ -252,9 +250,8 @@ static inline const psx_type_t *ps_ctx_typedef_decl_type(
 
 /* typedef 名を登録する。decl_type_table + decl_qual_type が正本。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = 型欠落または型衝突。 */
-int ps_ctx_register_typedef_name_in_contexts(
+int ps_ctx_register_typedef_name_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared);
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。

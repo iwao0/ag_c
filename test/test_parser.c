@@ -929,8 +929,8 @@ static void test_semantic_define_tag_type_with_layout(
 static int test_semantic_register_tag_type(
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count, int tag_size, int tag_align) {
-  if (!ps_ctx_register_tag_type_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  if (!ps_ctx_register_tag_type_in(
+      test_semantic_context(),
       kind, name, len, is_complete, member_count))
     return 0;
   if (!is_complete || (kind != TK_STRUCT && kind != TK_UNION)) return 1;
@@ -1036,15 +1036,15 @@ static int test_register_tag_members_in_context(
 
 static int test_semantic_define_enum_const(
     char *name, int len, long long value) {
-  return ps_ctx_register_enum_const_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  return ps_ctx_register_enum_const_in(
+      test_semantic_context(),
       name, len, value, NULL);
 }
 
 static int test_semantic_define_typedef_name(
     char *name, int len, const psx_typedef_info_t *info) {
-  return ps_ctx_register_typedef_name_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  return ps_ctx_register_typedef_name_in(
+      test_semantic_context(),
       name, len, info, NULL, NULL);
 }
 
@@ -3172,8 +3172,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   psx_hir_module_destroy(hir);
 
   char enum_name[] = "DirectTypedEnum";
-  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  ASSERT_TRUE(ps_ctx_register_enum_const_in(
+      test_semantic_context(),
       enum_name, 15, 41, NULL));
   node_t *enum_syntax =
       parse_expr_input_with_existing_locals(enum_name);
@@ -14432,8 +14432,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = resolution_typedef_name,
           .name_len = (int)sizeof(resolution_typedef_name) - 1,
           .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -14512,8 +14510,8 @@ static void test_global_declaration_resolution_boundary() {
 
   char *incomplete_tag_name = (char *)"__BoundaryIncompleteRecord";
   int incomplete_tag_len = 26;
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      test_semantic_context(), test_local_registry(), TK_STRUCT,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      test_semantic_context(), TK_STRUCT,
       incomplete_tag_name, incomplete_tag_len, 0, 0));
   const psx_record_decl_t *incomplete_record =
       ps_ctx_ensure_tag_record_decl_in(
@@ -14539,8 +14537,8 @@ static void test_global_declaration_resolution_boundary() {
 
   char *complete_tag_name = (char *)"__BoundaryCompleteRecord";
   int complete_tag_len = 24;
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      test_semantic_context(), test_local_registry(), TK_STRUCT,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      test_semantic_context(), TK_STRUCT,
       complete_tag_name, complete_tag_len, 1, 0));
   const psx_record_decl_t *complete_record = ps_ctx_ensure_tag_record_decl_in(
       test_semantic_context(), TK_STRUCT,
@@ -14729,8 +14727,6 @@ static void test_global_declaration_resolution_boundary() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = boundary_typedef_name,
           .name_len = (int)sizeof(boundary_typedef_name) - 1,
           .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -14755,8 +14751,6 @@ static void test_global_declaration_resolution_boundary() {
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = boundary_enum_name,
           .name_len = (int)sizeof(boundary_enum_name) - 1,
           .value = 5,
@@ -14819,7 +14813,6 @@ static void test_tag_declaration_resolution_boundary() {
   reset_test_translation_unit_state();
   psx_tag_declaration_resolution_request_t request = {
       .semantic_context = test_semantic_context(),
-      .local_registry = test_local_registry(),
       .kind = TK_STRUCT,
       .name = (char *)"__TagBoundary",
       .name_len = 13,
@@ -15136,7 +15129,6 @@ static void test_aggregate_body_phase_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__ParsedBody",
           .name_len = 12,
@@ -15958,7 +15950,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__AlignedMember",
           .name_len = 15,
@@ -15985,7 +15976,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__IncompleteMember",
           .name_len = 18,
@@ -16227,7 +16217,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"PromSrc",
           .name_len = 7,
@@ -16239,7 +16228,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"PromDst",
           .name_len = 7,
@@ -16298,7 +16286,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchSrc",
           .name_len = 8,
@@ -16310,7 +16297,6 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchDst",
           .name_len = 8,
@@ -16391,8 +16377,6 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_typedef_declaration_resolution_request_t request = {
       .semantic_context = test_semantic_context(),
-      .global_registry = test_global_registry(),
-      .local_registry = test_local_registry(),
       .name = (char *)"__TypeBoundary",
       .name_len = 14,
       .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -16544,8 +16528,6 @@ static void test_enum_constant_resolution_boundary() {
   reset_test_translation_unit_state();
   psx_enum_constant_resolution_request_t request = {
       .semantic_context = test_semantic_context(),
-      .global_registry = test_global_registry(),
-      .local_registry = test_local_registry(),
       .name = (char *)"__EnumBoundary",
       .name_len = 14,
       .value = 7,
@@ -16611,8 +16593,6 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__EnumType",
           .name_len = 10,
           .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -28682,18 +28662,18 @@ static void test_semantic_context_isolation() {
   char enum_name[] = "ContextValue";
   char tag_name[] = "ContextTag";
   long long value = 0;
-  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      first, first_locals, enum_name, 12, 11, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      first, first_locals,
+  ASSERT_TRUE(ps_ctx_register_enum_const_in(
+      first, enum_name, 12, 11, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      first,
       TK_STRUCT, tag_name, 10, 0, 0));
 
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
       second, enum_name, 12, &value));
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       second, TK_STRUCT, tag_name, 10));
-  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      second, second_locals, enum_name, 12, 22, NULL));
+  ASSERT_TRUE(ps_ctx_register_enum_const_in(
+      second, enum_name, 12, 22, NULL));
   ASSERT_TRUE(ps_ctx_find_enum_const_in(
       second, enum_name, 12, &value));
   ASSERT_EQ(22, value);
@@ -28733,8 +28713,6 @@ static void test_semantic_context_isolation() {
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = second,
-          .global_registry = second_globals,
-          .local_registry = second_locals,
           .name = direct_enum_name,
           .name_len = 10,
           .value = 37,
@@ -28774,8 +28752,6 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
-          .global_registry = second_globals,
-          .local_registry = second_locals,
           .name = direct_typedef_name,
           .name_len = 13,
           .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -28827,14 +28803,14 @@ static void test_semantic_context_isolation() {
       .offset = 0,
       .decl_type = ps_type_new_integer(TK_INT, 4, 0),
   };
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, second_locals,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second,
       TK_STRUCT, direct_tag_name, 9, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, second_locals,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second,
       TK_STRUCT, direct_tag_name, 9, 1, 1));
   const psx_record_decl_t *direct_layout_record =
       ps_ctx_ensure_tag_record_decl_in(
@@ -29085,8 +29061,6 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
-          .global_registry = second_globals,
-          .local_registry = second_locals,
           .name = (char *)"StreamType",
           .name_len = 10,
           .decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
@@ -29298,15 +29272,15 @@ static void test_compilation_session_registry_isolation() {
       {.name = (char *)"right", .len = 5, .offset = 8,
        .decl_type = ps_type_new_integer(TK_INT, 4, 0)},
   };
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      first.semantic_context,
       TK_STRUCT, session_aggregate_name, 16, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       first.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       first_aggregate_members, 2, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      first.semantic_context,
       TK_STRUCT, session_aggregate_name, 16, 1, 2));
   const psx_record_decl_t *first_session_record =
       ps_ctx_ensure_tag_record_decl_in(
@@ -29315,15 +29289,15 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(first_session_record != NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       first.semantic_context, first_session_record->record_id, 8, 4));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second.semantic_context, second.local_registry,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second.semantic_context,
       TK_STRUCT, session_aggregate_name, 16, 0, 0));
   ASSERT_TRUE(test_register_tag_members_in_context(
       second.semantic_context, TK_STRUCT,
       session_aggregate_name, 16,
       second_aggregate_members, 2, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second.semantic_context, second.local_registry,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second.semantic_context,
       TK_STRUCT, session_aggregate_name, 16, 1, 2));
   const psx_record_decl_t *second_session_record =
       ps_ctx_ensure_tag_record_decl_in(
@@ -29378,14 +29352,14 @@ static void test_compilation_session_registry_isolation() {
       .decl_qual_type = ps_ctx_intern_qual_type_in(
           first.semantic_context, isolated_typedef_decl_type),
   };
-  ASSERT_TRUE(ps_ctx_register_typedef_name_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_register_typedef_name_in(
+      first.semantic_context,
       (char *)"FirstType", 9, &isolated_typedef, NULL, NULL));
-  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_register_enum_const_in(
+      first.semantic_context,
       (char *)"FIRST_ENUM", 10, 37, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      first.semantic_context,
       TK_STRUCT, (char *)"FirstTag", 8, 0, 0));
   psx_scope_lookup_point_t first_namespace_point =
       ps_local_registry_capture_lookup_point_in(first.local_registry);
@@ -29511,19 +29485,25 @@ static void test_compilation_session_registry_isolation() {
       &mismatched_global_declaration);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_INVALID,
             mismatched_global_declaration.status);
-  psx_enum_constant_resolution_t mismatched_enum_declaration;
+  long long first_only_enum_value = 0;
+  psx_enum_constant_resolution_t first_only_enum_declaration;
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = first.semantic_context,
-          .global_registry = first.global_registry,
-          .local_registry = second.local_registry,
-          .name = (char *)"MismatchedEnum",
-          .name_len = 14,
+          .name = (char *)"FirstOnlyEnum",
+          .name_len = 13,
           .value = 9,
       },
-      &mismatched_enum_declaration);
-  ASSERT_EQ(PSX_ENUM_CONSTANT_INVALID,
-            mismatched_enum_declaration.status);
+      &first_only_enum_declaration);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OK,
+            first_only_enum_declaration.status);
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(
+      first.semantic_context, (char *)"FirstOnlyEnum", 13,
+      &first_only_enum_value));
+  ASSERT_EQ(9, first_only_enum_value);
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(
+      second.semantic_context, (char *)"FirstOnlyEnum", 13,
+      &first_only_enum_value));
   node_identifier_t isolated_global_identifier = {
       .base = {.kind = ND_IDENTIFIER},
       .name = (char *)"shared_global",
