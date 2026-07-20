@@ -688,8 +688,8 @@ static psx_initializer_target_t aggregate_designated_target(
             ps_lowering_semantic_types(aggregate->eval.lowering_context),
             ps_lowering_record_decls(aggregate->eval.lowering_context),
             ps_lowering_record_layouts(aggregate->eval.lowering_context),
-            ps_lowering_target(aggregate->eval.lowering_context),
-            name, (int)name_length, &target))
+            ps_lowering_data_layout(aggregate->eval.lowering_context), name,
+            (int)name_length, &target))
       return (psx_initializer_target_t){0};
   }
   return target;
@@ -953,7 +953,7 @@ static int aggregate_lower_list(
     cursor = psx_initializer_leaf_cursor_after_target_with_records(
         ps_lowering_semantic_types(aggregate->eval.lowering_context),
         ps_lowering_record_layouts(aggregate->eval.lowering_context),
-        ps_lowering_target(aggregate->eval.lowering_context),
+        ps_lowering_data_layout(aggregate->eval.lowering_context),
         &aggregate->leaves, &target);
   }
   return 1;
@@ -1023,7 +1023,7 @@ int psx_build_static_aggregate_hir_initializer_plan(
           ps_lowering_semantic_types(lowering_context),
           ps_lowering_record_decls(lowering_context),
           ps_lowering_record_layouts(lowering_context),
-          ps_lowering_target(lowering_context),
+          ps_lowering_data_layout(lowering_context),
           ps_gvar_decl_type_id(&temporary), 0, &aggregate.leaves) ||
       aggregate.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&aggregate.leaves);

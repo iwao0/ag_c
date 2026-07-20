@@ -4078,11 +4078,9 @@ static int preflight_direct_flat_initializer(
           ps_ctx_semantic_type_table_in(context->semantic_context),
           ps_ctx_record_decl_table_in(context->semantic_context),
           ps_ctx_record_layout_table_in(context->semantic_context),
-          ps_lowering_target(context->lowering_context),
-          object_qual_type, list,
-          resolve_direct_initializer_index,
-          resolve_direct_initializer_value_type,
-          context, plan);
+          ps_lowering_data_layout(context->lowering_context), object_qual_type,
+          list, resolve_direct_initializer_index,
+          resolve_direct_initializer_value_type, context, plan);
   if (status == PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY) {
     context->preflight_failed = 1;
     set_failure(

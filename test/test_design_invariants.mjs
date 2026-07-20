@@ -5391,9 +5391,10 @@ if (removedContextBoundSlotHelpers.some((source) => source) ||
     !/\bpsx_semantic_type_table_t\b/.test(canonicalSlotCounter) ||
     !/\bpsx_record_decl_table_t\b/.test(canonicalSlotCounter) ||
     !/\bpsx_record_layout_table_t\b/.test(canonicalSlotCounter) ||
-    !/\bag_target_info_t\b/.test(canonicalSlotCounter)) {
+    !/\bag_data_layout_t\b/.test(canonicalSlotCounter) ||
+    /\bag_target_info_t\b/.test(canonicalSlotCounter)) {
   throw new Error(
-    "resolved aggregate slot traversal must use the canonical TypeId and target-layout calculation",
+    "resolved aggregate slot traversal must use canonical TypeId and DataLayout inputs",
   );
 }
 const splitTagTraversalFunctions = [
@@ -5669,6 +5670,14 @@ const initializerTargetType = initializerResolutionHeader.match(
 const initializerLeafType = initializerResolutionHeader.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_initializer_scalar_leaf_t\s*;/,
 );
+const initializerLayoutApis = [
+  "psx_resolve_flat_local_initializer_plan",
+  "psx_resolve_initializer_designator_path_with_records",
+  "psx_resolve_initializer_member_target_with_records",
+  "psx_collect_initializer_scalar_leaves_with_records",
+  "psx_initializer_flat_slot_count_with_records",
+  "psx_initializer_leaf_cursor_after_target_with_records",
+];
 if (!initializerTargetType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerTargetType[1]) ||
     /\bpsx_type_t\b/.test(initializerTargetType[1]) ||
@@ -5698,6 +5707,17 @@ if (!initializerTargetType ||
     ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /\bag_target_info_t\b/.test(
+      `${initializerResolutionHeader}\n${explicitDiagnosticInitializerResolutionSource}`,
+    ) ||
+    /\bag_target_info_data_layout\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    initializerLayoutApis.some(
+      (name) => !new RegExp(
+        `\\b${name}\\s*\\([^]*?const\\s+ag_data_layout_t\\s*\\*data_layout`,
+      ).test(initializerResolutionHeader),
     ) ||
     /\bps_type_sizeof_id_for_target\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,

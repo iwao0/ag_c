@@ -1487,8 +1487,8 @@ static int gvar_init_cursor_consume_resolved_type_zero_padding(
   return gvar_init_cursor_consume_plain_zero_padding(
       cur, start_idx,
       psx_initializer_flat_slot_count_with_records(
-          semantic_types, record_decls, record_layouts, target,
-          aggregate_type_id));
+          semantic_types, record_decls, record_layouts,
+          ag_target_info_data_layout(target), aggregate_type_id));
 }
 
 unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,

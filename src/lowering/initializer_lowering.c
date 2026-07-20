@@ -25,6 +25,7 @@ typedef struct {
   const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
+  const ag_data_layout_t *data_layout;
 } initializer_lowering_context_t;
 
 static psx_type_id_t type_id(
@@ -40,8 +41,7 @@ static int type_size(
     const psx_type_t *type) {
   if (!context) return 0;
   return ps_type_sizeof_id(context->semantic_types, context->record_layouts,
-                           type_id(context, type),
-                           ag_target_info_data_layout(context->target));
+                           type_id(context, type), context->data_layout);
 }
 
 static int type_size_id(
@@ -49,8 +49,7 @@ static int type_size_id(
     psx_type_id_t type_id) {
   if (!context) return 0;
   return ps_type_sizeof_id(context->semantic_types, context->record_layouts,
-                           type_id,
-                           ag_target_info_data_layout(context->target));
+                           type_id, context->data_layout);
 }
 
 static const psx_type_t *type_view(
@@ -87,8 +86,7 @@ static const psx_record_member_layout_t *record_member_layout(
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
     return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      context->record_layouts, aggregate_type->record_id,
-      ag_target_info_data_layout(context->target));
+      context->record_layouts, aggregate_type->record_id, context->data_layout);
   return psx_record_layout_member(layout, member_index);
 }
 
@@ -837,7 +835,7 @@ static node_t *append_typed_object_zero_fill(
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
           context->semantic_types, context->record_decls,
-          context->record_layouts, context->target, type_id, 0, &leaves)) {
+          context->record_layouts, context->data_layout, type_id, 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(context, var, chain);
   }
@@ -872,7 +870,7 @@ static node_t *lower_flat_typed_object_initializer_list(
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
           context->semantic_types, context->record_decls,
-          context->record_layouts, context->target, type_id,
+          context->record_layouts, context->data_layout, type_id,
           relative_offset, &leaves)) {
     free(leaves.items);
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
@@ -995,7 +993,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
           context->semantic_types, context->record_decls,
-          context->record_layouts, context->target, type_id,
+          context->record_layouts, context->data_layout, type_id,
           relative_offset, &leaves)) {
     free(leaves.items);
     return chain;
@@ -1006,11 +1004,10 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (entry->designator_count > 0) {
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
-              context->resolution_store,
-              diagnostics(context), context->semantic_types,
-              context->record_decls, context->record_layouts,
-              context->target, entry, type_id, relative_offset,
-              fallback_tok);
+              context->resolution_store, diagnostics(context),
+              context->semantic_types, context->record_decls,
+              context->record_layouts, context->data_layout, entry, type_id,
+              relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, type_view(context, target.type_id), target.type_id,
           target.relative_offset, entry->value,
@@ -1018,7 +1015,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
           entry->tok ? entry->tok : fallback_tok);
       leaf_cursor = psx_initializer_leaf_cursor_after_target_with_records(
           context->semantic_types, context->record_layouts,
-          context->target, &leaves, &target);
+          context->data_layout, &leaves, &target);
       continue;
     }
     if (leaf_cursor >= leaves.count) {
@@ -1044,7 +1041,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
             entry->tok ? entry->tok : fallback_tok);
         leaf_cursor = psx_initializer_leaf_cursor_after_target_with_records(
             context->semantic_types, context->record_layouts,
-            context->target, &leaves, &target);
+            context->data_layout, &leaves, &target);
         continue;
       }
     }
@@ -1111,7 +1108,7 @@ static node_t *try_lower_typed_array_copy(
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
           context->semantic_types, context->record_decls,
-          context->record_layouts, context->target, type_id,
+          context->record_layouts, context->data_layout, type_id,
           relative_offset, &leaves)) {
     free(leaves.items);
     return NULL;
@@ -1226,11 +1223,10 @@ static node_t *lower_typed_array_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
-              context->resolution_store,
-              diagnostics(context), context->semantic_types,
-              context->record_decls, context->record_layouts,
-              context->target, entry, type_id, relative_offset,
-              fallback_tok);
+              context->resolution_store, diagnostics(context),
+              context->semantic_types, context->record_decls,
+              context->record_layouts, context->data_layout, entry, type_id,
+              relative_offset, fallback_tok);
       target_type = type_view(context, target.type_id);
       target_type_id = target.type_id;
       target_offset = target.relative_offset;
@@ -1333,11 +1329,10 @@ static node_t *lower_typed_aggregate_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
-              context->resolution_store,
-              diagnostics(context), context->semantic_types,
-              context->record_decls, context->record_layouts,
-              context->target, entry, type_id, relative_offset,
-              fallback_tok);
+              context->resolution_store, diagnostics(context),
+              context->semantic_types, context->record_decls,
+              context->record_layouts, context->data_layout, entry, type_id,
+              relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, type_view(context, target.type_id), target.type_id,
           target.relative_offset, entry->value,
@@ -1684,8 +1679,7 @@ node_t *lower_decl_initializer(
       !options)
     return node;
   initializer_lowering_context_t context = {
-      .resolution_store =
-          ps_lowering_resolution_store(lowering_context),
+      .resolution_store = ps_lowering_resolution_store(lowering_context),
       .arena_context = ps_lowering_arena(lowering_context),
       .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,
@@ -1693,6 +1687,7 @@ node_t *lower_decl_initializer(
       .record_decls = ps_lowering_record_decls(lowering_context),
       .record_layouts = ps_lowering_record_layouts(lowering_context),
       .target = ps_lowering_target(lowering_context),
+      .data_layout = ps_lowering_data_layout(lowering_context),
   };
 
   psx_decl_init_kind_t init_kind = ((node_decl_init_t *)node)->init_kind;

@@ -21,6 +21,7 @@ typedef struct {
   const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
+  const ag_data_layout_t *data_layout;
   int failed;
 } translation_unit_data_lowering_t;
 
@@ -40,19 +41,17 @@ typedef struct {
 static int type_size_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_sizeof_id(
-      lowering ? lowering->semantic_types : NULL,
-      lowering ? lowering->record_layouts : NULL, type_id,
-      ag_target_info_data_layout(lowering ? lowering->target : NULL));
+  return ps_type_sizeof_id(lowering ? lowering->semantic_types : NULL,
+                           lowering ? lowering->record_layouts : NULL, type_id,
+                           lowering ? lowering->data_layout : NULL);
 }
 
 static int type_alignment_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_alignof_id(
-      lowering ? lowering->semantic_types : NULL,
-      lowering ? lowering->record_layouts : NULL, type_id,
-      ag_target_info_data_layout(lowering ? lowering->target : NULL));
+  return ps_type_alignof_id(lowering ? lowering->semantic_types : NULL,
+                            lowering ? lowering->record_layouts : NULL, type_id,
+                            lowering ? lowering->data_layout : NULL);
 }
 
 static psx_type_id_t scalar_element_type_id(
@@ -298,10 +297,9 @@ static int lower_global_slots(
   psx_initializer_scalar_leaf_list_t leaves = {0};
   psx_type_id_t type_id = ps_gvar_decl_type_id(ctx->global);
   if (!psx_collect_initializer_scalar_leaves_with_records(
-          ctx->lowering->semantic_types,
-          ctx->lowering->record_decls, ctx->lowering->record_layouts,
-          ctx->lowering->target,
-          type_id, 0, &leaves)) {
+          ctx->lowering->semantic_types, ctx->lowering->record_decls,
+          ctx->lowering->record_layouts, ctx->lowering->data_layout, type_id, 0,
+          &leaves)) {
     return 0;
   }
   ctx->leaves = &leaves;
@@ -404,6 +402,7 @@ static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
       .record_decls = ps_ctx_record_decl_table_in(semantic_context),
       .record_layouts = ps_ctx_record_layout_table_in(semantic_context),
       .target = target,
+      .data_layout = ag_target_info_data_layout(target),
   };
   ps_iter_string_literals_in(registry, lower_string_literal, &lowering);
   ps_iter_float_literals_in(registry, lower_float_literal, &lowering);

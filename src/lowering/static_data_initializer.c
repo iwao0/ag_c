@@ -653,21 +653,20 @@ static void lower_array_list(
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
     token_t *tok = entry->tok ? entry->tok : lowering->fallback_tok;
-    psx_initializer_target_t target = entry->designator_count > 0
-        ? psx_resolve_initializer_designator_path_with_records(
-              resolution_store(lowering->lowering_context),
-              diagnostics(lowering),
-              ps_lowering_semantic_types(lowering->lowering_context),
-              ps_lowering_record_decls(lowering->lowering_context),
-              ps_lowering_record_layouts(lowering->lowering_context),
-              ps_lowering_target(lowering->lowering_context), entry,
-              ps_lowering_type_id(
-                  lowering->lowering_context, context_type),
-              context_offset, tok)
-        : positional_target(
-              lowering, context_type, context_offset,
-              &lowering->leaves, cursor,
-              entry->value && entry->value->kind == ND_INIT_LIST);
+    psx_initializer_target_t target =
+        entry->designator_count > 0
+            ? psx_resolve_initializer_designator_path_with_records(
+                  resolution_store(lowering->lowering_context),
+                  diagnostics(lowering),
+                  ps_lowering_semantic_types(lowering->lowering_context),
+                  ps_lowering_record_decls(lowering->lowering_context),
+                  ps_lowering_record_layouts(lowering->lowering_context),
+                  ps_lowering_data_layout(lowering->lowering_context), entry,
+                  ps_lowering_type_id(lowering->lowering_context, context_type),
+                  context_offset, tok)
+            : positional_target(
+                  lowering, context_type, context_offset, &lowering->leaves,
+                  cursor, entry->value && entry->value->kind == ND_INIT_LIST);
     const psx_type_t *target_type = type_view(lowering, target.type_id);
     if (!target_type) {
       ps_diag_ctx_in(
@@ -716,8 +715,8 @@ static void lower_array_list(
     cursor = psx_initializer_leaf_cursor_after_target_with_records(
         ps_lowering_semantic_types(lowering->lowering_context),
         ps_lowering_record_layouts(lowering->lowering_context),
-        ps_lowering_target(lowering->lowering_context),
-        &lowering->leaves, &target);
+        ps_lowering_data_layout(lowering->lowering_context), &lowering->leaves,
+        &target);
   }
 }
 
@@ -757,9 +756,9 @@ int lower_static_object_initializer(
           ps_lowering_semantic_types(lowering_context),
           ps_lowering_record_decls(lowering_context),
           ps_lowering_record_layouts(lowering_context),
-          ps_lowering_target(lowering_context),
-          ps_gvar_decl_type_id(global), 0,
-          &lowering.leaves) || lowering.leaves.count <= 0) {
+          ps_lowering_data_layout(lowering_context),
+          ps_gvar_decl_type_id(global), 0, &lowering.leaves) ||
+      lowering.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&lowering.leaves);
     return 0;
   }
