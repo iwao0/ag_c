@@ -5614,6 +5614,52 @@ if (!identifierArrayDecay ||
     "identifier binding must consume resolver-owned declaration and expression QualTypes for array decay",
   );
 }
+const identifierExpressionResolver = identifierResolutionSource.match(
+  /void\s+psx_resolve_identifier_expression\s*\([^]*?\n\}/,
+);
+const identifierLocalMaterializer = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_local\s*\([^]*?\n\}/,
+);
+const identifierGlobalMaterializer = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_global\s*\([^]*?\n\}/,
+);
+const identifierAddressMaterializer = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_address_operand\s*\([^]*?\n\}/,
+);
+if (!identifierExpressionResolver ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      identifierExpressionResolver[0],
+    ) ||
+    !/psx_semantic_type_table_contains_vla_array\s*\(/.test(
+      identifierExpressionResolver[0],
+    ) ||
+    /ps_ctx_type_by_id_in\s*\(|declared_type->kind|ps_lvar_is_vla\s*\(/.test(
+      identifierExpressionResolver[0],
+    ) ||
+    !identifierLocalMaterializer || !identifierGlobalMaterializer ||
+    !identifierAddressMaterializer ||
+    !/resolution->local_has_static_storage/.test(
+      identifierLocalMaterializer[0],
+    ) ||
+    !/resolution->decays_array_to_address/.test(
+      identifierLocalMaterializer[0],
+    ) ||
+    !/resolution->local_is_vla_object/.test(
+      identifierLocalMaterializer[0],
+    ) ||
+    !/resolution->decays_array_to_address/.test(
+      identifierGlobalMaterializer[0],
+    ) ||
+    !/resolve_identifier_expression\s*\(/.test(
+      identifierAddressMaterializer[0],
+    ) ||
+    /ps_lvar_is_[A-Za-z0-9_]*\s*\(|ps_gvar_is_[A-Za-z0-9_]*\s*\(|is_static_local_array\s*\(/.test(
+      identifierBindingSource,
+    )) {
+  throw new Error(
+    "identifier binding must consume resolver classification instead of re-reading parser symbol types",
+  );
+}
 const globalReferenceBinder = resolvedObjectRefSource.match(
   /int\s+psx_bind_global_reference_in\s*\([^]*?\n\}/,
 );

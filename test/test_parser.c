@@ -8254,6 +8254,13 @@ static void test_identifier_resolution_boundary() {
   lvar_t *local = register_test_default_storage_fixture(
       (char *)"__identifier_local", 18);
   ASSERT_TRUE(local != NULL);
+  lvar_t *local_array = register_test_default_storage_fixture(
+      (char *)"__identifier_local_array", 24);
+  ASSERT_TRUE(local_array != NULL);
+  set_test_storage_fixture_type(
+      local_array,
+      ps_type_new_array(
+          ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0));
 
   assert_identifier_resolution_kind(
       (char *)"__identifier_local", 18, 0, PSX_IDENTIFIER_LOCAL);
@@ -8359,6 +8366,34 @@ static void test_identifier_resolution_boundary() {
       semantic_types, array_expression.expression_qual_type.type_id);
   ASSERT_EQ(array_element.type_id, pointer_pointee.type_id);
   ASSERT_EQ(array_element.qualifiers, pointer_pointee.qualifiers);
+  psx_identifier_expression_resolution_t local_array_expression;
+  psx_resolve_identifier_expression(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = (char *)"__identifier_local_array",
+          .name_len = 24,
+      },
+      &local_array_expression);
+  ASSERT_EQ(PSX_IDENTIFIER_LOCAL,
+            local_array_expression.symbol.kind);
+  ASSERT_TRUE(local_array_expression.symbol.local == local_array);
+  ASSERT_TRUE(local_array_expression.decays_array_to_address);
+  ASSERT_TRUE(!local_array_expression.local_is_vla_object);
+  ASSERT_TRUE(!local_array_expression.local_has_static_storage);
+  psx_type_shape_t local_array_declaration_shape = {0};
+  psx_type_shape_t local_array_expression_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types,
+      local_array_expression.declaration_qual_type.type_id,
+      &local_array_declaration_shape));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types,
+      local_array_expression.expression_qual_type.type_id,
+      &local_array_expression_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, local_array_declaration_shape.kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, local_array_expression_shape.kind);
   assert_identifier_resolution_kind(
       (char *)"__identifier_missing", 20, 0,
       PSX_IDENTIFIER_UNDEFINED);

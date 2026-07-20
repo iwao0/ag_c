@@ -51,11 +51,6 @@ static void bind_slot(
   if (slot && *slot) *slot = bind_node(*slot, context);
 }
 
-static int is_static_local_array(const lvar_t *var) {
-  return var && var->is_static_local && var->static_global_name &&
-         ps_lvar_is_array(var) && !ps_lvar_is_vla(var) && !var->is_param;
-}
-
 static void record_lvar_usage(
     const psx_identifier_binding_context_t *context,
     node_t *node, lvar_t *var) {
@@ -110,15 +105,16 @@ static node_t *materialize_local(
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(context->semantic_context);
   node_t *node = (node_t *)identifier;
-  if (is_static_local_array(var)) {
+  if (resolution->local_has_static_storage) {
     if (!bind_static_local_reference(
             store, arena_context, semantic_types, node, var,
             resolution->declaration_qual_type))
       return NULL;
-    node = wrap_array_decay(
-        store, arena_context, semantic_types, node,
-        resolution->expression_qual_type);
-  } else if (ps_lvar_is_array(var) && !ps_lvar_is_vla(var)) {
+    if (resolution->decays_array_to_address)
+      node = wrap_array_decay(
+          store, arena_context, semantic_types, node,
+          resolution->expression_qual_type);
+  } else if (resolution->decays_array_to_address) {
     if (!psx_bind_local_reference_in(
             store, arena_context, node, var, var->offset,
             semantic_types, resolution->declaration_qual_type))
@@ -126,15 +122,10 @@ static node_t *materialize_local(
     node = wrap_array_decay(
         store, arena_context, semantic_types, node,
         resolution->expression_qual_type);
-  } else if (ps_lvar_is_vla(var)) {
+  } else if (resolution->local_is_vla_object) {
     if (!psx_bind_local_reference_in(
             store, arena_context, node, var, var->offset,
             semantic_types, resolution->expression_qual_type))
-      return NULL;
-  } else if (var && var->is_static_local && var->static_global_name) {
-    if (!bind_static_local_reference(
-            store, arena_context, semantic_types, node, var,
-            resolution->declaration_qual_type))
       return NULL;
   } else {
     if (!psx_bind_local_reference_in(
@@ -160,7 +151,7 @@ static node_t *materialize_global(
           semantic_types, resolution->declaration_qual_type,
           global && global->is_thread_local))
     return NULL;
-  return global && ps_gvar_is_array(global)
+  return resolution->decays_array_to_address
              ? wrap_array_decay(
                    store, arena_context, semantic_types, node,
                    resolution->expression_qual_type)
@@ -219,15 +210,6 @@ static psx_identifier_resolution_request_t identifier_resolution_request(
       .has_local_lookup_point = has_lookup_point,
       .local_lookup_point = point,
   };
-}
-
-static void resolve_identifier(
-    const node_identifier_t *identifier, int is_call,
-    const psx_identifier_binding_context_t *context,
-    psx_identifier_resolution_t *resolution) {
-  psx_identifier_resolution_request_t request =
-      identifier_resolution_request(identifier, is_call, context);
-  psx_resolve_identifier(&request, resolution);
 }
 
 static void resolve_identifier_expression(
@@ -323,46 +305,45 @@ static node_t *materialize_address_operand(
     const psx_identifier_binding_context_t *context) {
   if (is_predefined_function_name(context, identifier))
     return materialize_predefined_function_name(context, identifier);
-  psx_identifier_resolution_t resolution;
-  resolve_identifier(identifier, 0, context, &resolution);
+  psx_identifier_expression_resolution_t resolution;
+  resolve_identifier_expression(identifier, 0, context, &resolution);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(context->semantic_context);
-  if (resolution.kind == PSX_IDENTIFIER_LOCAL && resolution.local) {
-    lvar_t *var = resolution.local;
+  if (resolution.symbol.kind == PSX_IDENTIFIER_LOCAL &&
+      resolution.symbol.local) {
+    lvar_t *var = resolution.symbol.local;
     node_t *node = (node_t *)identifier;
-    if (is_static_local_array(var)) {
+    if (resolution.local_has_static_storage) {
       if (!bind_static_local_reference(
               binding_store(context),
               ps_ctx_arena(context->semantic_context), semantic_types,
-              node, var, ps_lvar_decl_qual_type(var)))
+              node, var, resolution.declaration_qual_type))
         return NULL;
-    } else if (ps_lvar_is_array(var)) {
+    } else {
       if (!psx_bind_local_reference_in(
               binding_store(context),
               ps_ctx_arena(context->semantic_context), node, var,
               var->offset, semantic_types,
-              ps_lvar_decl_qual_type(var)))
+              resolution.declaration_qual_type))
         return NULL;
-    } else {
-      return materialize_identifier(
-          identifier, 0, context, NULL);
     }
     record_lvar_usage(context, node, var);
     return node;
   }
-  if (resolution.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&
-      resolution.global && ps_gvar_is_array(resolution.global)) {
-    psx_qual_type_t declaration_qual_type =
-        ps_gvar_decl_qual_type(resolution.global);
+  if (resolution.symbol.kind == PSX_IDENTIFIER_GLOBAL_OBJECT &&
+      resolution.symbol.global) {
+    global_var_t *global = resolution.symbol.global;
     return psx_bind_global_reference_in(
                binding_store(context),
                ps_ctx_arena(context->semantic_context),
-               (node_t *)identifier, resolution.global,
-               resolution.global->name, resolution.global->name_len,
-               semantic_types, declaration_qual_type,
-               resolution.global->is_thread_local)
+               (node_t *)identifier, global,
+               global->name, global->name_len,
+               semantic_types, resolution.declaration_qual_type,
+               global->is_thread_local)
                ? (node_t *)identifier : NULL;
   }
+  if (resolution.symbol.kind == PSX_IDENTIFIER_FUNCTION)
+    return materialize_function(identifier, &resolution, context);
   return materialize_identifier(
       identifier, 0, context, NULL);
 }

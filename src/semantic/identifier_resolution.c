@@ -128,8 +128,6 @@ void psx_resolve_identifier_expression(
           ps_lvar_static_storage_global(resolution->symbol.local);
       resolution->local_has_static_storage =
           ps_lvar_is_static_local(resolution->symbol.local);
-      resolution->local_is_vla =
-          ps_lvar_is_vla(resolution->symbol.local);
       break;
     case PSX_IDENTIFIER_GLOBAL_OBJECT:
       resolution->declaration_qual_type =
@@ -160,16 +158,24 @@ void psx_resolve_identifier_expression(
   }
 
   psx_qual_type_t declared = resolution->declaration_qual_type;
-  const psx_type_t *declared_type = ps_ctx_type_by_id_in(
-      semantic_context, declared.type_id);
-  if (!declared_type) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t declared_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, declared.type_id, &declared_shape)) {
     resolution->declaration_qual_type = invalid_qual_type();
     return;
+  }
+  if (resolution->symbol.kind == PSX_IDENTIFIER_LOCAL) {
+    resolution->local_is_vla =
+        psx_semantic_type_table_contains_vla_array(
+            semantic_types, declared.type_id) ||
+        ps_lvar_vla_row_stride_frame_off(resolution->symbol.local) != 0;
   }
   resolution->local_is_vla_object =
       resolution->symbol.kind == PSX_IDENTIFIER_LOCAL &&
       resolution->local_is_vla &&
-      declared_type->kind == PSX_TYPE_ARRAY;
+      declared_shape.kind == PSX_TYPE_ARRAY;
   if (resolution->symbol.kind == PSX_IDENTIFIER_FUNCTION ||
       resolution->symbol.kind == PSX_IDENTIFIER_UNDECLARED_CALL) {
     resolution->expression_qual_type =
@@ -178,10 +184,9 @@ void psx_resolve_identifier_expression(
     resolution->decays_function_to_pointer = 1;
     return;
   }
-  if (declared_type->kind == PSX_TYPE_ARRAY) {
+  if (declared_shape.kind == PSX_TYPE_ARRAY) {
     psx_qual_type_t element = psx_semantic_type_table_base(
-        ps_ctx_semantic_type_table_in(semantic_context),
-        declared.type_id);
+        semantic_types, declared.type_id);
     resolution->expression_qual_type =
         ps_ctx_intern_pointer_to_qual_type_in(
             semantic_context, element);
