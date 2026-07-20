@@ -5031,6 +5031,30 @@ const parserTypeCompatibilitySource = await readFile(
   "src/semantic/parser_type_compatibility.c",
   "utf8",
 );
+const semanticParserTypeCompatibilityFiles = new Set([
+  "src/semantic/parser_type_compatibility.c",
+  "src/semantic/parser_type_compatibility.h",
+  "src/semantic/type_compatibility_view.c",
+  "src/semantic/type_compatibility_view.h",
+]);
+const semanticParserTypeBoundaryViolations = [];
+for (const path of allSourceFiles) {
+  if (!path.startsWith("src/semantic/") ||
+      semanticParserTypeCompatibilityFiles.has(path)) {
+    continue;
+  }
+  const source = await readFile(path, "utf8");
+  if (/\bpsx_type_t\b|parser\/type\.h|type_compatibility_view\.h/.test(
+        source,
+      )) {
+    semanticParserTypeBoundaryViolations.push(path);
+  }
+}
+if (semanticParserTypeBoundaryViolations.length > 0) {
+  throw new Error(
+    `semantic modules outside the explicit compatibility boundary must use canonical types: ${semanticParserTypeBoundaryViolations.join(", ")}`,
+  );
+}
 const nodeResolutionStateSource = await readFile(
   "src/semantic/resolution_state.h",
   "utf8",

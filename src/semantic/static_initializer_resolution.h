@@ -2,7 +2,6 @@
 #define SEMANTIC_STATIC_INITIALIZER_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/type.h"
 #include "../hir/hir.h"
 #include "type_identity.h"
 

@@ -1,7 +1,6 @@
 #ifndef SEMANTIC_TYPEDEF_DECLARATION_RESOLUTION_H
 #define SEMANTIC_TYPEDEF_DECLARATION_RESOLUTION_H
 
-#include "../parser/type.h"
 #include "declarator_application_types.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;

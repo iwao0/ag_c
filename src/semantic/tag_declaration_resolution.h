@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_TAG_DECLARATION_RESOLUTION_H
 #define SEMANTIC_TAG_DECLARATION_RESOLUTION_H
 
-#include "../parser/type.h"
+#include "../tokenizer/token.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
