@@ -2,7 +2,6 @@
 
 #include "scope_graph.h"
 
-#include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
@@ -91,17 +90,14 @@ void psx_resolve_global_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_GLOBAL_DECLARATION_INVALID;
-  if (!request || !request->semantic_context || !request->global_registry ||
-      !request->name || request->name_len <= 0 ||
+  if (!request || !request->semantic_context || !request->name ||
+      request->name_len <= 0 ||
       request->type.type_id == PSX_TYPE_ID_INVALID) {
     return;
   }
   psx_semantic_context_t *semantic_context = request->semantic_context;
-  psx_global_registry_t *global_registry = request->global_registry;
   psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(semantic_context);
-  if (!scope_graph ||
-      scope_graph != ps_global_registry_scope_graph(global_registry))
-    return;
+  if (!scope_graph) return;
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(semantic_context);

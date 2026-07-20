@@ -131,7 +131,6 @@ int psx_begin_global_declaration_pipeline(
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
-          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,
@@ -329,7 +328,6 @@ int psx_apply_function_declaration_pipeline(
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
-          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .function_qual_type = request->function_qual_type,

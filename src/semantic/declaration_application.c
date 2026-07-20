@@ -45,8 +45,8 @@ int psx_apply_parsed_enum_body_in_contexts(
             member->initializer, (token_t *)member->enumerator,
             &value))
       return i;
-    psx_apply_parsed_enum_constant_in_contexts(
-        semantic_context, global_registry, local_registry,
+    psx_apply_parsed_enum_constant_in(
+        semantic_context,
         member->enumerator->str, member->enumerator->len, value,
         (token_t *)member->enumerator);
     next_value = value + 1;
@@ -141,8 +141,8 @@ static void apply_decl_tag_action(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry) {
   if (!action || action->action == PSX_PARSED_TAG_NONE) return;
-  psx_apply_parsed_tag_declaration_in_contexts(
-      semantic_context, local_registry,
+  psx_apply_parsed_tag_declaration_in(
+      semantic_context,
       action->kind, action->name, action->name_len,
       action->action == PSX_PARSED_TAG_DEFINITION
           ? PSX_TAG_DECLARATION_FORWARD
@@ -164,8 +164,8 @@ static void apply_decl_tag_action(
         action->aggregate_body, action->kind,
         action->name, action->name_len, &size, &alignment);
   }
-  psx_apply_parsed_tag_declaration_in_contexts(
-      semantic_context, local_registry,
+  psx_apply_parsed_tag_declaration_in(
+      semantic_context,
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_DEFINITION, member_count,
       action->diagnostic_token);
@@ -545,8 +545,8 @@ void psx_apply_parsed_standalone_tag_in_contexts(
         action, semantic_context, global_registry, local_registry);
     return;
   }
-  psx_apply_parsed_tag_declaration_in_contexts(
-      semantic_context, local_registry,
+  psx_apply_parsed_tag_declaration_in(
+      semantic_context,
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_FORWARD, 0,
       action->diagnostic_token);

@@ -4,7 +4,6 @@
 #include "../parser/function_public.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef enum {
   PSX_FUNCTION_DECLARATION_OK = 0,
@@ -16,7 +15,6 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   psx_qual_type_t function_qual_type;

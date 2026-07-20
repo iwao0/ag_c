@@ -12,13 +12,11 @@
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 
-void psx_apply_parsed_typedef_declaration_in_contexts(
+void psx_apply_parsed_typedef_declaration_in(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
     char *name, int name_len, psx_qual_type_t decl_qual_type,
     token_t *diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry) return;
+  if (!semantic_context) return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   psx_typedef_declaration_resolution_t resolution;
@@ -56,12 +54,10 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
                name_len, name);
 }
 
-void psx_apply_parsed_enum_constant_in_contexts(
+void psx_apply_parsed_enum_constant_in(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
     char *name, int name_len, long long value, token_t *diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry) return;
+  if (!semantic_context) return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   psx_enum_constant_resolution_t resolution;
@@ -98,13 +94,12 @@ void psx_apply_parsed_enum_constant_in_contexts(
                name_len, name);
 }
 
-void psx_apply_parsed_tag_declaration_in_contexts(
+void psx_apply_parsed_tag_declaration_in(
     psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int name_len,
     psx_tag_declaration_mode_t mode, int member_count,
     token_t *diag_tok) {
-  if (!semantic_context || !local_registry) return;
+  if (!semantic_context) return;
   ag_diagnostic_context_t *diagnostics =
       ps_ctx_diagnostics(semantic_context);
   psx_tag_declaration_resolution_t resolution;

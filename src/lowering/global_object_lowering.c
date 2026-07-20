@@ -110,7 +110,6 @@ int lower_global_object_declaration(
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
-          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,

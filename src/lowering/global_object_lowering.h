@@ -7,6 +7,7 @@
 #include "../semantic/static_initializer_resolution.h"
 
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;

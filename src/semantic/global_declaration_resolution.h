@@ -4,7 +4,6 @@
 #include "../parser/symtab.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef enum {
   PSX_GLOBAL_DECLARATION_OK = 0,
@@ -18,7 +17,6 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   psx_qual_type_t type;

@@ -3153,6 +3153,10 @@ const functionDeclarationResolutionSource = await readFile(
   "src/semantic/function_declaration_resolution.c",
   "utf8",
 );
+const functionDeclarationResolutionHeader = await readFile(
+  "src/semantic/function_declaration_resolution.h",
+  "utf8",
+);
 if (!/case\s+PSX_DECL_FUNCTION:[^]*?resolution->function\s*=\s*declaration->payload/.test(
       identifierResolutionSource,
     ) ||
@@ -3420,7 +3424,7 @@ const contextFreeTagRegistryCall =
   /\bps_ctx_(?:has_tag_type|register_tag_type|get_tag_size|get_tag_align|ensure_tag_record_decl|get_tag_member_count|register_tag_members|find_tag_member_info)\s*\(/;
 if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     contextFreeTagRegistryCall.test(aggregateMemberResolutionSource) ||
-    !/psx_apply_parsed_tag_declaration_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_tag_declaration_in\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
@@ -3913,6 +3917,10 @@ const globalDeclarationResolutionSource = await readFile(
   "src/semantic/global_declaration_resolution.c",
   "utf8",
 );
+const globalDeclarationResolutionHeader = await readFile(
+  "src/semantic/global_declaration_resolution.h",
+  "utf8",
+);
 if (!/\bps_ctx_get_record_decl_in\s*\(/.test(
       globalDeclarationResolutionSource,
     ) ||
@@ -3926,11 +3934,34 @@ const declarationRegistrationSource = await readFile(
   "src/semantic/declaration_registration.c",
   "utf8",
 );
+const declarationRegistrationHeader = await readFile(
+  "src/semantic/declaration_registration.h",
+  "utf8",
+);
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       declarationRegistrationSource,
     )) {
   throw new Error(
-    "declaration registration must receive all required registries explicitly",
+    "declaration registration must not fall back to active contexts",
+  );
+}
+if (!/psx_apply_parsed_typedef_declaration_in\s*\(/.test(
+      declarationRegistrationSource,
+    ) ||
+    !/psx_apply_parsed_enum_constant_in\s*\(/.test(
+      declarationRegistrationSource,
+    ) ||
+    !/psx_apply_parsed_tag_declaration_in\s*\(/.test(
+      declarationRegistrationSource,
+    ) ||
+    /psx_apply_parsed_(?:typedef_declaration|enum_constant|tag_declaration)_in_contexts\s*\(/.test(
+      declarationRegistrationSource + declarationRegistrationHeader,
+    ) ||
+    /psx_apply_parsed_(?:typedef_declaration|enum_constant|tag_declaration)_in\s*\([^)]*psx_(?:global|local)_registry_t/.test(
+      declarationRegistrationSource + declarationRegistrationHeader,
+    )) {
+  throw new Error(
+    "semantic namespace registration adapters must use semantic context only",
   );
 }
 const ordinaryNamespaceResolutionSources = [
@@ -3947,8 +3978,8 @@ const strictResolverRequestSources = [
   [identifierResolutionSource, ["semantic_context"]],
   [enumConstantResolutionSource, ["semantic_context"]],
   [typedefDeclarationResolutionSource, ["semantic_context"]],
-  [functionDeclarationResolutionSource, ["semantic_context", "global_registry"]],
-  [globalDeclarationResolutionSource, ["semantic_context", "global_registry"]],
+  [functionDeclarationResolutionSource, ["semantic_context"]],
+  [globalDeclarationResolutionSource, ["semantic_context"]],
   [tagDeclarationResolutionSource, ["semantic_context"]],
   [declarationResolutionSource, ["semantic_context"]],
   [aggregateMemberResolutionSource, ["semantic_context"]],
@@ -3968,6 +3999,8 @@ const namespaceDeclarationRequestStructs = [
   [enumConstantResolutionHeader, "enum_constant"],
   [typedefDeclarationResolutionHeader, "typedef_declaration"],
   [tagDeclarationResolutionHeader, "tag_declaration"],
+  [functionDeclarationResolutionHeader, "function_declaration"],
+  [globalDeclarationResolutionHeader, "global_declaration"],
 ];
 for (const [header, name] of namespaceDeclarationRequestStructs) {
   const requestStruct = header.match(
@@ -4011,7 +4044,7 @@ if (contextFreeOrdinaryNamespaceCall.test(
     !/ps_ctx_enum_const_value_by_declaration_id_in\s*\(/.test(
       identifierResolutionSource,
     ) ||
-    !/psx_apply_parsed_typedef_declaration_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_typedef_declaration_in\s*\(/.test(
       frontendDeclarationSources,
     ) ||
     !/\.semantic_context\s*=\s*semantic_context/.test(
@@ -4040,6 +4073,9 @@ if (!/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
     ) ||
     /\bps_find_global_var_in\s*\(/.test(
       functionDeclarationResolutionSource,
+    ) ||
+    /\b(?:request->global_registry|ps_global_registry_scope_graph)\b/.test(
+      globalDeclarationResolutionSource + functionDeclarationResolutionSource,
     ) ||
     !/ps_register_global_var_in\s*\(/.test(
       globalObjectLoweringSource,
@@ -9104,10 +9140,6 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
   );
 }
 
-const globalDeclarationResolutionHeader = await readFile(
-  "src/semantic/global_declaration_resolution.h",
-  "utf8",
-);
 if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
       globalDeclarationResolutionHeader,
     ) ||
