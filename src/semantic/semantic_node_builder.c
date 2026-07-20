@@ -220,15 +220,17 @@ psx_semantic_node_t *psx_semantic_node_builder_vla_runtime(
           builder, &number_spec, plan->constant_qual_type,
           NULL, source_node_kind);
       if (!children[i]) return NULL;
-    } else if (!dimension->expression ||
-               !dimension->expression->root) {
-      psx_semantic_node_builder_fail(
-          builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
-          source_node_kind);
-      return NULL;
     } else {
-      children[i] =
-          (psx_semantic_node_t *)dimension->expression->root;
+      const psx_typed_hir_tree_t *expression =
+          ps_ctx_semantic_expression_in(
+              builder->semantic_context, dimension->expression_id);
+      if (!expression || !expression->root) {
+        psx_semantic_node_builder_fail(
+            builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+            source_node_kind);
+        return NULL;
+      }
+      children[i] = (psx_semantic_node_t *)expression->root;
     }
     edges[i] = PSX_HIR_EDGE_VLA_DIMENSION;
   }

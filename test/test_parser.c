@@ -13833,10 +13833,15 @@ static void test_target_type_layout_boundary() {
   psx_qual_type_t record_vla_qual_type =
       intern_test_qual_type(record_vla_type);
   ASSERT_TRUE(record_vla_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  const psx_typed_hir_tree_t *record_vla_dimension =
+      build_test_typed_number(3);
+  ASSERT_TRUE(record_vla_dimension != NULL);
   psx_vla_runtime_dimension_t record_vla_dimensions[1] = {{
-      .expression = build_test_typed_number(3),
+      .expression_id = ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), record_vla_dimension),
   }};
-  ASSERT_TRUE(record_vla_dimensions[0].expression != NULL);
+  ASSERT_TRUE(record_vla_dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   psx_vla_lowering_request_t record_vla_request = {
       .local_registry = test_local_registry(),
       .lowering_context = wasm_lowering,
@@ -13855,8 +13860,8 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(wasm_record_vla.init));
   ASSERT_TRUE(wasm_record_vla.runtime_plan != NULL);
   ASSERT_EQ(1, wasm_record_vla.runtime_plan->dimension_count);
-  ASSERT_EQ(record_vla_dimensions[0].expression,
-            wasm_record_vla.runtime_plan->dimensions[0].expression);
+  ASSERT_EQ(record_vla_dimensions[0].expression_id,
+            wasm_record_vla.runtime_plan->dimensions[0].expression_id);
   ASSERT_EQ(8, wasm_record_vla.runtime_plan->element_size);
 
   reset_test_locals();
@@ -13874,15 +13879,22 @@ static void test_target_type_layout_boundary() {
   psx_qual_type_t wasm_stride_storage_qual_type =
       intern_test_qual_type(wasm_stride_storage_type);
   ASSERT_TRUE(wasm_stride_storage_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  const psx_typed_hir_tree_t *wasm_parameter_expression =
+      build_test_typed_local(wasm_dimension);
+  ASSERT_TRUE(wasm_parameter_expression != NULL);
   psx_parameter_vla_dimension_t wasm_parameter_dimension = {
-      .expression = build_test_typed_local(wasm_dimension),
+      .expression_id = ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), wasm_parameter_expression),
   };
-  ASSERT_TRUE(wasm_parameter_dimension.expression != NULL);
+  ASSERT_TRUE(wasm_parameter_dimension.expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   psx_parameter_vla_lowering_result_t wasm_parameter_vla =
       lower_parameter_vla_declaration(
           &(psx_parameter_vla_lowering_request_t){
               .local_registry = test_local_registry(),
               .lowering_context = wasm_lowering,
+              .semantic_expressions = ps_ctx_semantic_expression_table_in(
+                  test_semantic_context()),
               .name = (char *)"target_values",
               .name_len = 13,
               .inner_dimensions = &wasm_parameter_dimension,
@@ -14033,8 +14045,11 @@ static void test_vla_lowering_request_boundary() {
   };
   request.name = (char *)"v";
   request.name_len = 1;
-  request_dimensions[0].expression = build_test_typed_number(3);
-  ASSERT_TRUE(request_dimensions[0].expression != NULL);
+  request_dimensions[0].expression_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), build_test_typed_number(3));
+  ASSERT_TRUE(request_dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   request.dimension_count = 1;
   request.type = vla_qual_type;
   request.requested_alignment = 16;
@@ -14044,8 +14059,8 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(result.init));
   ASSERT_TRUE(result.runtime_plan != NULL);
   ASSERT_EQ(1, result.runtime_plan->dimension_count);
-  ASSERT_EQ(request.dimensions[0].expression,
-            result.runtime_plan->dimensions[0].expression);
+  ASSERT_EQ(request.dimensions[0].expression_id,
+            result.runtime_plan->dimensions[0].expression_id);
   ASSERT_EQ(4, result.runtime_plan->element_size);
   ASSERT_TRUE(result.runtime_plan->performs_allocation);
   ASSERT_EQ(4, ps_lvar_array_scalar_element_size(result.var));
@@ -14056,8 +14071,11 @@ static void test_vla_lowering_request_boundary() {
   reset_test_locals();
   request.name = (char *)"vp";
   request.name_len = 2;
-  request_dimensions[0].expression = build_test_typed_number(3);
-  ASSERT_TRUE(request_dimensions[0].expression != NULL);
+  request_dimensions[0].expression_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), build_test_typed_number(3));
+  ASSERT_TRUE(request_dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   request.dimension_count = 1;
   psx_type_t *pointer_vla_type = ps_type_new_array(
       ps_type_new_pointer(ps_type_clone(integer)), 0, 0, 1);
@@ -14073,7 +14091,8 @@ static void test_vla_lowering_request_boundary() {
   request.name = (char *)"m";
   request.name_len = 1;
   request_dimensions[0] = (psx_vla_runtime_dimension_t){
-      .expression = build_test_typed_number(2),
+      .expression_id = ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), build_test_typed_number(2)),
   };
   request_dimensions[1] = (psx_vla_runtime_dimension_t){
       .constant_value = 3,
@@ -14083,7 +14102,8 @@ static void test_vla_lowering_request_boundary() {
       .constant_value = 4,
       .is_constant = 1,
   };
-  ASSERT_TRUE(request_dimensions[0].expression != NULL);
+  ASSERT_TRUE(request_dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   request.constant_qual_type = ps_ctx_intern_integer_qual_type_in(
       test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0);
   ASSERT_TRUE(request.constant_qual_type.type_id != PSX_TYPE_ID_INVALID);
@@ -14114,6 +14134,10 @@ static void test_vla_lowering_request_boundary() {
   const psx_typed_hir_tree_t *row_dimension =
       build_test_typed_number(5);
   ASSERT_TRUE(row_dimension != NULL);
+  psx_semantic_expr_id_t row_dimension_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), row_dimension);
+  ASSERT_TRUE(row_dimension_id != PSX_SEMANTIC_EXPR_ID_INVALID);
   psx_type_t *row_type = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
   psx_qual_type_t pointer_qual_type = intern_test_qual_type(pointer_type);
@@ -14124,7 +14148,7 @@ static void test_vla_lowering_request_boundary() {
           .lowering_context = test_lowering_context(),
           .name = (char *)"p",
           .name_len = 1,
-          .row_dimension = row_dimension,
+          .row_dimension_id = row_dimension_id,
           .type = pointer_qual_type,
           .requested_alignment = 32,
       });
@@ -14145,8 +14169,8 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(result.runtime_plan != NULL);
   ASSERT_TRUE(!result.runtime_plan->performs_allocation);
   ASSERT_EQ(1, result.runtime_plan->dimension_count);
-  ASSERT_EQ(row_dimension,
-            result.runtime_plan->dimensions[0].expression);
+  ASSERT_EQ(row_dimension_id,
+            result.runtime_plan->dimensions[0].expression_id);
   ASSERT_EQ(1, result.runtime_plan->stride_store_count);
   ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(result.var),
             result.runtime_plan->stride_store_offsets[0]);
@@ -14172,6 +14196,8 @@ static void test_vla_lowering_request_boundary() {
   psx_parameter_vla_lowering_request_t parameter_request = {
       .local_registry = test_local_registry(),
       .lowering_context = test_lowering_context(),
+      .semantic_expressions = ps_ctx_semantic_expression_table_in(
+          test_semantic_context()),
       .name = (char *)"tensor",
       .name_len = 6,
       .inner_dimensions = parameter_dimensions,
@@ -14179,14 +14205,18 @@ static void test_vla_lowering_request_boundary() {
       .type = parameter_qual_type,
       .stride_storage_type = stride_storage_qual_type,
   };
-  parameter_request.inner_dimensions[0].expression =
-      build_test_typed_local(n);
+  parameter_request.inner_dimensions[0].expression_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), build_test_typed_local(n));
   parameter_request.inner_dimensions[1].constant_value = 3;
   parameter_request.inner_dimensions[1].is_constant = 1;
-  parameter_request.inner_dimensions[2].expression =
-      build_test_typed_local(k);
-  ASSERT_TRUE(parameter_request.inner_dimensions[0].expression != NULL);
-  ASSERT_TRUE(parameter_request.inner_dimensions[2].expression != NULL);
+  parameter_request.inner_dimensions[2].expression_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), build_test_typed_local(k));
+  ASSERT_TRUE(parameter_request.inner_dimensions[0].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
+  ASSERT_TRUE(parameter_request.inner_dimensions[2].expression_id !=
+              PSX_SEMANTIC_EXPR_ID_INVALID);
   psx_parameter_vla_lowering_result_t parameter_result =
       lower_parameter_vla_declaration(&parameter_request);
   ASSERT_TRUE(parameter_result.var != NULL);
@@ -14347,16 +14377,15 @@ static void test_parameter_declaration_storage_plan_boundary() {
             test_semantic_type_sizeof_in(
                 test_semantic_context(), runtime_stride_slot));
 
-  const psx_typed_hir_tree_t *inner_dimension_expressions[1] = {
-      typed_dimension_expression};
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
           .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
+          .semantic_expressions = ps_ctx_semantic_expression_table_in(
+              test_semantic_context()),
           .name = (char *)"values",
           .name_len = 6,
           .resolution = &parameter_resolution,
-          .inner_dimension_expressions = inner_dimension_expressions,
       });
   ASSERT_TRUE(resolved_lowered != NULL);
   ASSERT_TRUE(resolved_lowered->is_param);

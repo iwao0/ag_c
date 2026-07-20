@@ -309,6 +309,12 @@ const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
              : NULL;
 }
 
+const psx_semantic_expression_table_t *
+ps_ctx_semantic_expression_table_in(
+    const psx_semantic_context_t *context) {
+  return context ? context->semantic_expressions : NULL;
+}
+
 psx_qual_type_t ps_ctx_intern_qual_type_in(
     psx_semantic_context_t *context, const psx_type_t *type) {
   if (!context) {

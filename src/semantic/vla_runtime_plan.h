@@ -1,10 +1,10 @@
 #ifndef SEMANTIC_VLA_RUNTIME_PLAN_H
 #define SEMANTIC_VLA_RUNTIME_PLAN_H
 
-#include "typed_hir_tree.h"
+#include "expression_identity.h"
 
 typedef struct {
-  const psx_typed_hir_tree_t *expression;
+  psx_semantic_expr_id_t expression_id;
   long long constant_value;
   unsigned char is_constant;
 } psx_vla_runtime_dimension_t;

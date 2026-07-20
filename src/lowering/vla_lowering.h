@@ -37,7 +37,7 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  const psx_typed_hir_tree_t *row_dimension;
+  psx_semantic_expr_id_t row_dimension_id;
   psx_qual_type_t type;
   int requested_alignment;
   token_t *diag_tok;
@@ -49,7 +49,7 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request);
 
 typedef struct {
-  const psx_typed_hir_tree_t *expression;
+  psx_semantic_expr_id_t expression_id;
   long long constant_value;
   int is_constant;
 } psx_parameter_vla_dimension_t;
@@ -57,6 +57,7 @@ typedef struct {
 typedef struct {
   psx_local_registry_t *local_registry;
   psx_lowering_context_t *lowering_context;
+  const psx_semantic_expression_table_t *semantic_expressions;
   char *name;
   int name_len;
   psx_parameter_vla_dimension_t *inner_dimensions;

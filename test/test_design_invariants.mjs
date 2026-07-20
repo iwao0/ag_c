@@ -8947,6 +8947,21 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     !/psx_qual_type_t\s+stride_storage_type\s*;/.test(
       vlaLoweringHeader,
     ) ||
+    !/psx_semantic_expr_id_t\s+row_dimension_id\s*;/.test(
+      vlaLoweringHeader,
+    ) ||
+    !/psx_semantic_expr_id_t\s+expression_id\s*;/.test(
+      vlaLoweringHeader,
+    ) ||
+    !/psx_semantic_expression_table_t\s*\*\s*semantic_expressions\s*;/.test(
+      `${vlaLoweringHeader}\n${parameterLoweringHeader}`,
+    ) ||
+    /psx_typed_hir_tree_t/.test(
+      `${vlaLoweringHeader}\n${parameterLoweringHeader}`,
+    ) ||
+    !/psx_semantic_expression_table_lookup\s*\([^]*?dimension->expression_id/.test(
+      vlaLoweringSource,
+    ) ||
     /\bpsx_type_t\b/.test(vlaLoweringHeader) ||
     /\bps_lowering_type_(?:id|alignment)\s*\(/.test(vlaLoweringSource) ||
     /ps_local_registry_create_(?:internal_)?storage_object_in\s*\(/.test(
@@ -8966,7 +8981,7 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
 }
 const vlaGeneratedSemanticNodeRe =
   /\bps_(?:node_new_binary_for_target_in|node_new_num_in|node_new_assign_in|node_new_lvar_typed_in)\s*\(/;
-if (!/typedef\s+struct\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\s*expression\s*;[^]*?long\s+long\s+constant_value\s*;[^]*?is_constant\s*;[^]*?\}\s*psx_vla_runtime_dimension_t\s*;/.test(
+if (!/typedef\s+struct\s*\{[^]*?psx_semantic_expr_id_t\s+expression_id\s*;[^]*?long\s+long\s+constant_value\s*;[^]*?is_constant\s*;[^]*?\}\s*psx_vla_runtime_dimension_t\s*;/.test(
       vlaRuntimePlanHeaderSource,
     ) ||
     !/typedef\s+struct\s+psx_vla_runtime_plan_t\s*\{[^]*?psx_vla_runtime_dimension_t\s*\*\s*dimensions\s*;[^]*?psx_qual_type_t\s+constant_qual_type\s*;[^]*?\bstride_store_offsets\s*;[^]*?\bstride_start_dimensions\s*;[^]*?\bperforms_allocation\s*;[^]*?\}\s*psx_vla_runtime_plan_t\s*;/.test(
@@ -8991,8 +9006,11 @@ if (!/typedef\s+struct\s*\{[^]*?const\s+psx_typed_hir_tree_t\s*\*\s*expression\s
     /build_node\s*\(\s*builder\s*,\s*plan->dimensions/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/dimension->is_constant[^]*?PSX_HIR_NUMBER[^]*?dimension->expression->root/.test(
+    !/dimension->is_constant[^]*?PSX_HIR_NUMBER[^]*?ps_ctx_semantic_expression_in\s*\([^]*?dimension->expression_id[^]*?expression->root/.test(
       semanticNodeBuilderSource,
+    ) ||
+    /psx_typed_hir_tree_t\s*\*\s*expression\s*;/.test(
+      vlaRuntimePlanHeaderSource,
     ) ||
     /plan->dimensions/.test(semanticPassSource) ||
     /plan->dimensions/.test(identifierBindingSource) ||

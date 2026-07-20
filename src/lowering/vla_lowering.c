@@ -12,6 +12,7 @@
 #include "../diag/diag.h"
 #include "../semantic/vla_runtime_plan.h"
 #include "../semantic/resolved_object_ref.h"
+#include "../semantic/typed_hir_tree.h"
 #include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>
@@ -99,7 +100,7 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
     if (dimension->is_constant) {
       if (dimension->constant_value <= 0) return result;
       has_constant_dimension = 1;
-    } else if (!dimension->expression) {
+    } else if (dimension->expression_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
       return result;
     }
   }
@@ -198,7 +199,8 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
   if (!request->local_registry ||
       request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->name || request->name_len <= 0 ||
-      element_size <= 0 || !request->row_dimension) {
+      element_size <= 0 ||
+      request->row_dimension_id == PSX_SEMANTIC_EXPR_ID_INVALID) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
         diag_message_for_in(
@@ -232,7 +234,7 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
       !plan->stride_start_dimensions)
     return result;
   plan->dimensions[0] = (psx_vla_runtime_dimension_t){
-      .expression = request->row_dimension,
+      .expression_id = request->row_dimension_id,
   };
   plan->stride_store_offsets[0] = row_stride_offset;
   plan->stride_start_dimensions[0] = 0;
@@ -350,11 +352,15 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
       constants[i] = dimension->is_constant
                          ? (int)dimension->constant_value : 0;
       if (dimension->is_constant) continue;
+      const psx_typed_hir_tree_t *expression =
+          psx_semantic_expression_table_lookup(
+              request->semantic_expressions, dimension->expression_id);
+      if (!expression) return result;
       int source_offset =
-          psx_typed_hir_tree_root_kind(dimension->expression) ==
+          psx_typed_hir_tree_root_kind(expression) ==
                   PSX_HIR_LOCAL
               ? psx_typed_hir_tree_root_storage_offset(
-                    dimension->expression)
+                    expression)
               : 0;
       lvar_t *source = psx_decl_find_lvar_by_offset_in(
           request->local_registry, source_offset);

@@ -66,6 +66,7 @@ lvar_t *lower_resolved_parameter_declaration(
   psx_parameter_vla_lowering_request_t vla = {
       .local_registry = request->local_registry,
       .lowering_context = request->lowering_context,
+      .semantic_expressions = request->semantic_expressions,
       .name = request->name,
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,
@@ -83,10 +84,8 @@ lvar_t *lower_resolved_parameter_declaration(
         sizeof(*vla.inner_dimensions));
   }
   for (int i = 0; i < resolution->inner_dimension_count; i++) {
-    vla.inner_dimensions[i].expression =
-        request->inner_dimension_expressions
-            ? request->inner_dimension_expressions[i]
-            : NULL;
+    vla.inner_dimensions[i].expression_id =
+        resolution->inner_dimensions[i].expression_id;
     vla.inner_dimensions[i].constant_value =
         resolution->inner_dimensions[i].constant_value;
     vla.inner_dimensions[i].is_constant =

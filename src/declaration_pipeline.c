@@ -476,18 +476,11 @@ static int append_definition_parameter(
     return 1;
   }
 
-  const psx_typed_hir_tree_t **inner_dimension_expressions = NULL;
-  if (resolution.inner_dimension_count > 0) {
-    inner_dimension_expressions = arena_alloc_in(
-        ps_ctx_arena(semantic_context),
-        (size_t)resolution.inner_dimension_count *
-        sizeof(*inner_dimension_expressions));
-  }
   for (int i = 0; i < resolution.inner_dimension_count; i++) {
-    inner_dimension_expressions[i] = ps_ctx_semantic_expression_in(
-        semantic_context, resolution.inner_dimensions[i].expression_id);
     if (!resolution.inner_dimensions[i].is_constant &&
-        !inner_dimension_expressions[i]) {
+        !ps_ctx_semantic_expression_in(
+            semantic_context,
+            resolution.inner_dimensions[i].expression_id)) {
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
           parameter->declarator.diagnostic_token, "param",
@@ -498,11 +491,11 @@ static int append_definition_parameter(
           &(psx_resolved_parameter_lowering_request_t){
               .local_registry = local_registry,
               .lowering_context = lowering_context,
+              .semantic_expressions =
+                  ps_ctx_semantic_expression_table_in(semantic_context),
               .name = name->str,
               .name_len = name->len,
               .resolution = &resolution,
-              .inner_dimension_expressions =
-                  inner_dimension_expressions,
               .diag_tok = parameter->declarator.diagnostic_token,
           });
   if (!lowered) {
@@ -1030,16 +1023,13 @@ static int begin_automatic_local_declaration_pipeline(
         const psx_local_vla_dimension_t *dimension =
             &resolution.dimensions[i];
         lowering.dimensions[i] = (psx_vla_runtime_dimension_t){
-            .expression = dimension->is_constant
-                              ? NULL
-                              : ps_ctx_semantic_expression_in(
-                                    request->semantic_context,
-                                    dimension->expression_id),
+            .expression_id = dimension->expression_id,
             .constant_value = dimension->constant_value,
             .is_constant = dimension->is_constant ? 1 : 0,
         };
         if (!dimension->is_constant &&
-            !lowering.dimensions[i].expression)
+            !ps_ctx_semantic_expression_in(
+                request->semantic_context, dimension->expression_id))
           return 0;
       }
       vla = materialize_compatibility_ast
@@ -1051,17 +1041,16 @@ static int begin_automatic_local_declaration_pipeline(
       break;
     }
     case PSX_LOCAL_STORAGE_POINTER_TO_VLA: {
-      const psx_typed_hir_tree_t *row_dimension =
-          ps_ctx_semantic_expression_in(
-          request->semantic_context,
-          resolution.pointer_row_dimension_id);
-      if (!row_dimension) return 0;
+      if (!ps_ctx_semantic_expression_in(
+              request->semantic_context,
+              resolution.pointer_row_dimension_id))
+        return 0;
       psx_pointer_vla_lowering_request_t lowering = {
               .local_registry = request->local_registry,
               .lowering_context = request->lowering_context,
               .name = request->name,
               .name_len = request->name_len,
-              .row_dimension = row_dimension,
+              .row_dimension_id = resolution.pointer_row_dimension_id,
               .type = declaration_identity,
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
