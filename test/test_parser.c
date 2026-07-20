@@ -8196,6 +8196,7 @@ static void test_identifier_resolution_boundary() {
   parsed_code = parse_program_input(
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
+      "int __identifier_array[3]; "
       "int __identifier_function(int value);");
   lvar_t *local = register_test_default_storage_fixture(
       (char *)"__identifier_local", 18);
@@ -8243,6 +8244,41 @@ static void test_identifier_resolution_boundary() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_type->kind);
   ASSERT_EQ(1, resolved_function_type->param_count);
   ASSERT_TRUE(!resolved_function_type->is_variadic_function);
+  psx_identifier_expression_resolution_t array_expression;
+  psx_resolve_identifier_expression(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = (char *)"__identifier_array",
+          .name_len = 18,
+      },
+      &array_expression);
+  ASSERT_EQ(PSX_IDENTIFIER_GLOBAL_OBJECT,
+            array_expression.symbol.kind);
+  ASSERT_TRUE(array_expression.decays_array_to_address);
+  ASSERT_TRUE(array_expression.declaration_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(array_expression.expression_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_type_shape_t array_declaration_shape = {0};
+  psx_type_shape_t array_expression_shape = {0};
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types, array_expression.declaration_qual_type.type_id,
+      &array_declaration_shape));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types, array_expression.expression_qual_type.type_id,
+      &array_expression_shape));
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_declaration_shape.kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, array_expression_shape.kind);
+  psx_qual_type_t array_element = psx_semantic_type_table_base(
+      semantic_types, array_expression.declaration_qual_type.type_id);
+  psx_qual_type_t pointer_pointee = psx_semantic_type_table_base(
+      semantic_types, array_expression.expression_qual_type.type_id);
+  ASSERT_EQ(array_element.type_id, pointer_pointee.type_id);
+  ASSERT_EQ(array_element.qualifiers, pointer_pointee.qualifiers);
   assert_identifier_resolution_kind(
       (char *)"__identifier_missing", 20, 0,
       PSX_IDENTIFIER_UNDEFINED);

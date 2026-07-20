@@ -5580,6 +5580,40 @@ if (!localReferenceBinder ||
     "local declaration references must preserve canonical QualType identity without rebuilding parser type views",
   );
 }
+const identifierArrayDecay = identifierBindingSource.match(
+  /static\s+node_t\s*\*wrap_array_decay\s*\([^]*?\n\}/,
+);
+const identifierMaterialization = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_identifier\s*\([^]*?\n\}/,
+);
+if (!identifierArrayDecay ||
+    !/psx_qual_type_t\s+expression_qual_type/.test(
+      identifierArrayDecay[0],
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      identifierArrayDecay[0],
+    ) ||
+    !/ps_node_bind_qual_type\s*\(/.test(identifierArrayDecay[0]) ||
+    /ps_type_decay_array_in\s*\(|ps_node_bind_type\s*\(/.test(
+      identifierArrayDecay[0],
+    ) ||
+    !identifierMaterialization ||
+    !/psx_identifier_expression_resolution_t\s+resolution/.test(
+      identifierMaterialization[0],
+    ) ||
+    !/resolve_identifier_expression\s*\(/.test(
+      identifierMaterialization[0],
+    ) ||
+    !/resolution(?:\.|->)expression_qual_type/.test(
+      identifierBindingSource,
+    ) ||
+    /ps_type_decay_array_in\s*\(|ps_[lg]var_get_decl_type\s*\(/.test(
+      identifierBindingSource,
+    )) {
+  throw new Error(
+    "identifier binding must consume resolver-owned declaration and expression QualTypes for array decay",
+  );
+}
 const resolvedObjectRefFactories = [
   "psx_node_new_lvar_in",
   "ps_node_new_lvar_typed_in",
