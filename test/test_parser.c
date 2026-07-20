@@ -13661,9 +13661,12 @@ static void test_target_type_layout_boundary() {
                                    ag_target_info_data_layout(&wasm)));
   ASSERT_TRUE(ag_data_layout_equal(ps_lowering_data_layout(host_lowering),
                                    ag_target_info_data_layout(&host)));
-  ASSERT_EQ(8, ps_lowering_type_size(wasm_lowering, record_type));
-  ASSERT_EQ(4, ps_lowering_type_alignment(wasm_lowering, record_type));
-  ASSERT_EQ(4, ps_lowering_type_deref_size(wasm_lowering, pointer_array));
+  ASSERT_EQ(8, ps_lowering_type_id_size(
+                   wasm_lowering, record_identity.type_id));
+  ASSERT_EQ(4, ps_lowering_type_id_alignment(
+                   wasm_lowering, record_identity.type_id));
+  ASSERT_EQ(4, ps_lowering_type_id_size(
+                   wasm_lowering, pointer_identity.type_id));
   psx_type_t *record_vla_type = ps_type_new_array(
       record_type, 0, 0, 1);
   psx_qual_type_t record_vla_qual_type =
@@ -13730,9 +13733,12 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_lvar_frame_storage_size(wasm_parameter_vla.var));
   ASSERT_EQ(4, ps_lvar_align_bytes(wasm_parameter_vla.var));
 
-  ASSERT_EQ(16, ps_lowering_type_size(host_lowering, record_type));
-  ASSERT_EQ(8, ps_lowering_type_alignment(host_lowering, record_type));
-  ASSERT_EQ(8, ps_lowering_type_deref_size(host_lowering, pointer_array));
+  ASSERT_EQ(16, ps_lowering_type_id_size(
+                    host_lowering, record_identity.type_id));
+  ASSERT_EQ(8, ps_lowering_type_id_alignment(
+                   host_lowering, record_identity.type_id));
+  ASSERT_EQ(8, ps_lowering_type_id_size(
+                   host_lowering, pointer_identity.type_id));
   reset_test_locals();
   local_storage_reset(host_lowering);
   record_vla_request.lowering_context = host_lowering;

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
 #include "../type_layout.h"
 
 psx_compound_literal_storage_duration_t
@@ -30,13 +29,18 @@ int psx_resolve_compound_literal_qual_type_plan_in(
   if (!semantic_context || !plan ||
       object_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  const psx_type_t *object_type = ps_ctx_type_by_id_in(
-      semantic_context, object_qual_type.type_id);
-  if (!object_type || object_type->kind == PSX_TYPE_VOID ||
-      object_type->kind == PSX_TYPE_FUNCTION ||
-      ps_type_is_incomplete_array(object_type) ||
-      ps_type_contains_vla_array(object_type) ||
-      ps_type_sizeof_id(ps_ctx_semantic_type_table_in(semantic_context),
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t object_type = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_type) ||
+      object_type.kind == PSX_TYPE_VOID ||
+      object_type.kind == PSX_TYPE_FUNCTION ||
+      (object_type.kind == PSX_TYPE_ARRAY && object_type.array_len <= 0 &&
+       !object_type.is_vla) ||
+      psx_semantic_type_table_contains_vla_array(
+          semantic_types, object_qual_type.type_id) ||
+      ps_type_sizeof_id(semantic_types,
                         ps_ctx_record_layout_table_in(semantic_context),
                         object_qual_type.type_id,
                         ps_ctx_data_layout(semantic_context)) <= 0)

@@ -69,18 +69,10 @@ const psx_record_decl_table_t *ps_lowering_record_decls(
     const psx_lowering_context_t *ctx);
 const psx_record_layout_table_t *ps_lowering_record_layouts(
     const psx_lowering_context_t *ctx);
-psx_type_id_t ps_lowering_type_id(
-    const psx_lowering_context_t *ctx, const psx_type_t *type);
 int ps_lowering_type_id_size(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id);
 int ps_lowering_type_id_alignment(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id);
-int ps_lowering_type_size(
-    const psx_lowering_context_t *ctx, const psx_type_t *type);
-int ps_lowering_type_deref_size(
-    const psx_lowering_context_t *ctx, const psx_type_t *type);
-int ps_lowering_type_alignment(
-    const psx_lowering_context_t *ctx, const psx_type_t *type);
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx);
 const ag_data_layout_t *

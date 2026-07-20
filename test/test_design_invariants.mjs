@@ -3060,6 +3060,12 @@ const staticAggregateFrontendBoundary =
 if (!/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
       staticAggregateFrontendBoundary,
     ) ||
+    !/psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts\s*\([^)]*\bpsx_qual_type_t\s+type\b/.test(
+      semanticPipelineSource,
+    ) ||
+    /\bps_lowering_type_id\s*\(/.test(
+      staticAggregateFrontendBoundary,
+    ) ||
     !/psx_build_static_aggregate_hir_initializer_plan\s*\(/.test(
       staticAggregateFrontendBoundary,
     ) ||
@@ -3070,6 +3076,12 @@ if (!/psx_resolve_initializer_hir_from_syntax_in_contexts\s*\(/.test(
       staticAggregateFrontendBoundary,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*typed_tree/.test(
+      staticInitializerMaterializationSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+type\b/.test(
+      staticInitializerMaterializationSource,
+    ) ||
+    /\bps_lowering_type_id\s*\(/.test(
       staticInitializerMaterializationSource,
     ) ||
     !/psx_typed_hir_tree_emit\s*\(/.test(
@@ -3638,13 +3650,19 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     "type query semantics must resolve canonical QualType plans without Syntax AST dependencies",
   );
 }
-if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/ast\.h|resolution_state/.test(
+if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|\bpsx_type_t\b|parser\/(?:ast|type)\.h|resolution_state/.test(
       `${compoundLiteralSemanticsHeader}\n${compoundLiteralSemanticsSource}`,
     ) ||
     !/psx_compound_literal_plan_t/.test(
       compoundLiteralSemanticsHeader,
     ) ||
     !/psx_resolve_compound_literal_qual_type_plan_in\s*\(/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      compoundLiteralSemanticsSource,
+    ) ||
+    !/psx_semantic_type_table_contains_vla_array\s*\(/.test(
       compoundLiteralSemanticsSource,
     ) ||
     !/PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC/.test(
@@ -7966,13 +7984,19 @@ const targetSensitiveLoweringSources = [
   declarationPipelineSource,
   hirIrBuilder,
 ].join("\n");
-if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
-    !/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
+if (!/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_id_alignment\s*\(/.test(loweringRuntimeHeader) ||
-    !/\bps_lowering_type_deref_size\s*\(/.test(loweringRuntimeHeader) ||
-    !/\bps_lowering_type_alignment\s*\(/.test(loweringRuntimeHeader) ||
+    /\bps_lowering_type_(?:id|size|deref_size|alignment)\s*\(/.test(
+      `${loweringRuntimeHeader}\n${loweringRuntimeSource}`,
+    ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
       loweringRuntimeSource,
+    ) ||
+    !/\bps_lowering_type_id_size\s*\(/.test(
+      declarationPipelineSource,
+    ) ||
+    /\bps_lowering_type_(?:id|size|deref_size|alignment)\s*\(/.test(
+      declarationPipelineSource,
     ) ||
     !/\bps_type_alignof_id\s*\(/.test(
       loweringRuntimeSource,

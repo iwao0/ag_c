@@ -116,15 +116,6 @@ static void diagnose_static_initializer(
   }
 }
 
-static const psx_type_t *static_initializer_type_view(
-    psx_semantic_context_t *semantic_context,
-    const psx_static_initializer_resolution_t *resolution) {
-  return semantic_context && resolution
-             ? ps_ctx_type_by_id_in(
-                   semantic_context, resolution->object_qual_type.type_id)
-             : NULL;
-}
-
 int psx_begin_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result) {
@@ -209,9 +200,6 @@ static int finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
-      const psx_type_t *initializer_type = static_initializer_type_view(
-          request->semantic_context, &initializer_resolution);
-      if (!initializer_type) return 0;
       psx_frontend_expression_hir_t expression_hir = {
           .root = PSX_HIR_NODE_ID_INVALID,
       };
@@ -232,7 +220,7 @@ static int finish_global_declaration_pipeline(
                                 request->local_registry,
                                 request->lowering_context,
                                 request->options,
-                                initializer_type,
+                                initializer_resolution.object_qual_type,
                                 initializer_resolution.initializer,
                                 request->initializer->value_tok,
                                 &aggregate_plan);
@@ -638,8 +626,14 @@ int psx_begin_static_local_declaration_pipeline(
   if (declaration_identity.type_id == PSX_TYPE_ID_INVALID) {
     return 0;
   }
-  if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
-  if (request->type->kind == PSX_TYPE_VOID) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(request->semantic_context);
+  psx_type_shape_t object_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, declaration_identity.type_id, &object_shape))
+    return 0;
+  if (object_shape.kind == PSX_TYPE_FUNCTION) return 0;
+  if (object_shape.kind == PSX_TYPE_VOID) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),
         request->diag_tok, "decl",
@@ -648,7 +642,8 @@ int psx_begin_static_local_declaration_pipeline(
             DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
         request->name_len, request->name);
   }
-  if (ps_type_contains_vla_array(request->type)) {
+  if (psx_semantic_type_table_contains_vla_array(
+          semantic_types, declaration_identity.type_id)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),
         request->diag_tok, "decl",
@@ -656,12 +651,18 @@ int psx_begin_static_local_declaration_pipeline(
         request->name_len, request->name);
   }
 
-  const psx_type_t *leaf = ps_type_array_leaf_type(request->type);
-  int object_size = ps_lowering_type_size(
-      request->lowering_context, request->type);
-  int leaf_size = ps_lowering_type_size(
-      request->lowering_context, leaf);
-  if (leaf && ps_type_is_tag_aggregate(leaf) && leaf_size <= 0) {
+  psx_qual_type_t leaf = psx_semantic_type_table_array_leaf(
+      semantic_types, declaration_identity.type_id);
+  psx_type_shape_t leaf_shape = {0};
+  if (leaf.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_describe(
+          semantic_types, leaf.type_id, &leaf_shape))
+    return 0;
+  int object_size = ps_lowering_type_id_size(
+      request->lowering_context, declaration_identity.type_id);
+  int leaf_size = ps_lowering_type_id_size(
+      request->lowering_context, leaf.type_id);
+  if (psx_type_kind_is_aggregate(leaf_shape.kind) && leaf_size <= 0) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),
         request->diag_tok, "decl", "%s",
@@ -669,7 +670,7 @@ int psx_begin_static_local_declaration_pipeline(
             ps_ctx_diagnostics(request->semantic_context),
             DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
   }
-  if (request->type->kind == PSX_TYPE_ARRAY) {
+  if (object_shape.kind == PSX_TYPE_ARRAY) {
     if (leaf_size <= 0 ||
         (object_size <= 0 && !request->initializer->has_initializer)) {
       ps_diag_ctx_in(
@@ -683,20 +684,21 @@ int psx_begin_static_local_declaration_pipeline(
     return 0;
   }
 
-  if (leaf && ps_type_is_tag_aggregate(leaf) && leaf->tag_name &&
-      leaf->tag_len >= 11 &&
-      memcmp(leaf->tag_name, "__anon_tag_", 11) == 0) {
+  if (psx_type_kind_is_aggregate(leaf_shape.kind) &&
+      leaf_shape.record_tag_name && leaf_shape.record_tag_length >= 11 &&
+      memcmp(leaf_shape.record_tag_name, "__anon_tag_", 11) == 0) {
     ps_ctx_promote_tag_to_file_scope_in(
         request->semantic_context,
-        ps_type_tag_token_kind(leaf), leaf->tag_name, leaf->tag_len);
+        leaf_shape.kind == PSX_TYPE_STRUCT ? TK_STRUCT : TK_UNION,
+        (char *)leaf_shape.record_tag_name, leaf_shape.record_tag_length);
   }
 
   psx_static_local_kind_t kind = PSX_STATIC_LOCAL_SCALAR;
-  if (request->type->kind == PSX_TYPE_ARRAY) {
-    kind = leaf && ps_type_is_tag_aggregate(leaf)
+  if (object_shape.kind == PSX_TYPE_ARRAY) {
+    kind = psx_type_kind_is_aggregate(leaf_shape.kind)
                ? PSX_STATIC_LOCAL_AGGREGATE_ARRAY
                : PSX_STATIC_LOCAL_CONSUMED_ARRAY;
-  } else if (ps_type_is_tag_aggregate(request->type)) {
+  } else if (psx_type_kind_is_aggregate(object_shape.kind)) {
     kind = PSX_STATIC_LOCAL_AGGREGATE;
   }
 
@@ -748,9 +750,6 @@ int psx_finish_static_local_declaration_pipeline(
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
   }
-  const psx_type_t *initializer_type = static_initializer_type_view(
-      request->semantic_context, &resolution);
-  if (!initializer_type) return 0;
   psx_frontend_expression_hir_t expression_hir = {
       .root = PSX_HIR_NODE_ID_INVALID,
   };
@@ -759,7 +758,7 @@ int psx_finish_static_local_declaration_pipeline(
     if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
             request->semantic_context, request->global_registry,
             request->local_registry, request->lowering_context,
-            request->options, initializer_type,
+            request->options, resolution.object_qual_type,
             resolution.initializer, request->initializer->value_tok,
             &aggregate_plan)) {
       return 0;
@@ -819,16 +818,12 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
       &resolution);
   if (resolution.status != PSX_STATIC_INITIALIZER_OK)
     return 0;
-  const psx_type_t *initializer_type = static_initializer_type_view(
-      request->semantic_context, &resolution);
-  if (!initializer_type) return 0;
-
   psx_hir_module_t *initializer_hir = NULL;
   psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
   if (resolution.is_aggregate_initializer) {
     if (!psx_materialize_static_aggregate_initializer_plan(
             initializer_typed_hir, request->global_registry,
-            request->lowering_context, initializer_type,
+            request->lowering_context, resolution.object_qual_type,
             request->initializer->value_tok, &aggregate_plan))
       return 0;
     resolution.aggregate_plan = &aggregate_plan;

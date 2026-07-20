@@ -46,12 +46,6 @@ const psx_record_layout_table_t *ps_lowering_record_layouts(
   return ctx ? ctx->record_layouts : NULL;
 }
 
-psx_type_id_t ps_lowering_type_id(
-    const psx_lowering_context_t *ctx, const psx_type_t *type) {
-  return psx_semantic_type_table_find(
-             ps_lowering_semantic_types(ctx), type).type_id;
-}
-
 int ps_lowering_type_id_size(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id) {
   return ps_type_sizeof_id(ps_lowering_semantic_types(ctx),
@@ -64,26 +58,6 @@ int ps_lowering_type_id_alignment(
   return ps_type_alignof_id(
       ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx), type_id,
       ag_target_info_data_layout(ps_lowering_target(ctx)));
-}
-
-int ps_lowering_type_size(
-    const psx_lowering_context_t *ctx, const psx_type_t *type) {
-  return ps_lowering_type_id_size(ctx, ps_lowering_type_id(ctx, type));
-}
-
-int ps_lowering_type_deref_size(
-    const psx_lowering_context_t *ctx, const psx_type_t *type) {
-  if (!type ||
-      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
-    return 0;
-  }
-  return ps_lowering_type_size(ctx, type->base);
-}
-
-int ps_lowering_type_alignment(
-    const psx_lowering_context_t *ctx, const psx_type_t *type) {
-  return ps_lowering_type_id_alignment(
-      ctx, ps_lowering_type_id(ctx, type));
 }
 
 const ag_target_info_t *ps_lowering_target(
