@@ -2,6 +2,7 @@
 #define SEMANTIC_AGGREGATE_MEMBER_RESOLUTION_H
 
 #include "declaration_resolution.h"
+#include "record_decl.h"
 #include "type_identity.h"
 #include "../parser/declarator_shape.h"
 

@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_RECORD_DECL_TABLE_H
 #define SEMANTIC_RECORD_DECL_TABLE_H
 
-#include "../parser/type.h"
+#include "record_decl.h"
 
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 

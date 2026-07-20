@@ -1,8 +1,8 @@
 #ifndef SEMANTIC_RECORD_LAYOUT_H
 #define SEMANTIC_RECORD_LAYOUT_H
 
-#include "../parser/type.h"
 #include "../target_info.h"
+#include "../type_system/type_ids.h"
 
 typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 

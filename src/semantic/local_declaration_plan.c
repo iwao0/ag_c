@@ -1,4 +1,6 @@
 #include "local_declaration_plan.h"
+
+#include "../parser/type.h"
 #include "../type_layout.h"
 
 int psx_plan_local_storage_for_type_id(

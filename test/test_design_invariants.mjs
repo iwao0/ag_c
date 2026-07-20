@@ -6658,6 +6658,14 @@ if (inPlaceLoweringOverwrites.length) {
 }
 
 const typeSource = await readFile("src/parser/type.h", "utf8");
+const recordDeclHeaderSource = await readFile(
+  "src/semantic/record_decl.h",
+  "utf8",
+);
+const recordDeclImplementationSource = await readFile(
+  "src/semantic/record_decl.c",
+  "utf8",
+);
 const typeBuilderSource = await readFile(
   "src/parser/type_builder.h",
   "utf8",
@@ -7026,10 +7034,10 @@ const refreshRecordDeclFunction = tagContextSource.match(
 const getTagMemberFunction = tagContextSource.match(
   /static\s+bool\s+get_tag_member_impl_in\s*\([^]*?\n\}/,
 );
-const recordDeclStruct = typeSource.match(
+const recordDeclStruct = recordDeclHeaderSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
-const recordMemberDeclStruct = typeSource.match(
+const recordMemberDeclStruct = recordDeclHeaderSource.match(
   /typedef struct psx_record_member_decl_t\s*\{([\s\S]*?)\}\s*psx_record_member_decl_t\s*;/,
 );
 const recordMemberLayoutStruct = recordLayoutHeaderSource.match(
@@ -7083,7 +7091,11 @@ if (!getTagMemberFunction ||
     "tag member queries must preserve declaration order and return declaration and layout separately",
   );
 }
-if (!recordMemberDeclStruct ||
+if (/typedef\s+struct\s+psx_record_(?:member_)?decl_t\s*\{/.test(typeSource) ||
+    /#include\s+"\.\.\/parser\//.test(
+      `${recordDeclHeaderSource}\n${recordDeclImplementationSource}`,
+    ) ||
+    !recordMemberDeclStruct ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
       recordMemberDeclStruct[1],
     ) ||
@@ -7106,7 +7118,7 @@ if (!recordMemberDeclStruct ||
       refreshRecordDeclFunction[0],
     )) {
   throw new Error(
-    "RecordDecl members must be physically independent from target placement",
+    "semantic RecordDecl must own member declarations independently from parser types and target placement",
   );
 }
 if (!tagMemberStruct ||
@@ -8282,9 +8294,12 @@ if (!recordMemberDeclStruct ||
     !/decl_qual_type/.test(recordMemberDeclStruct[1]) ||
     /\bpsx_type_t\b/.test(recordMemberDeclStruct[1]) ||
     !/psx_record_member_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      recordDeclImplementationSource,
+    ) ||
+    /\bpsx_record_member_decl_(?:type|is_tag_aggregate|is_unnamed_struct|is_unnamed_union|is_unnamed_aggregate)\s*\(/.test(
       parserTypeImplementationSource,
     ) ||
-    /return\s+member->decl_type\s*;/.test(parserTypeImplementationSource) ||
+    /return\s+member->decl_type\s*;/.test(recordDeclImplementationSource) ||
     !/ps_ctx_intern_qual_type_in\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/.test(
       parserSemanticContextImplementation,
     ) ||

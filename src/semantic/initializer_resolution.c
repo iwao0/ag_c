@@ -1,5 +1,7 @@
 #include "initializer_resolution.h"
 
+#include "../parser/type.h"
+
 #include "character_array_initializer.h"
 #include "constant_expression.h"
 #include "../diag/diag.h"

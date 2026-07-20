@@ -3,21 +3,13 @@
 #include "declarator_shape_builder.h"
 #include "arena.h"
 #include "type_owned_internal.h"
+#include "../semantic/record_decl.h"
 #include "../semantic/type_identity.h"
 #include "../target_info.h"
 #include "../type_layout.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-
-const psx_type_t *psx_record_member_decl_type(
-    const psx_record_member_decl_t *member) {
-  if (!member || !member->decl_type_table ||
-      member->decl_qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
-      member->decl_type_table, member->decl_qual_type);
-}
 
 int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b) {
@@ -1394,62 +1386,6 @@ int ps_type_pointer_depth(const psx_type_t *type) {
     type = type->base;
   }
   return depth;
-}
-
-int psx_record_member_decl_is_tag_aggregate(
-    const psx_record_member_decl_t *member) {
-  const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(
-                                     psx_record_member_decl_type(member))
-                               : NULL;
-  return ps_type_is_tag_aggregate(type);
-}
-
-int psx_record_member_decl_is_unnamed_struct(
-    const psx_record_member_decl_t *member) {
-  const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(
-                                     psx_record_member_decl_type(member))
-                               : NULL;
-  return member && member->len <= 0 && type &&
-         type->kind == PSX_TYPE_STRUCT;
-}
-
-int psx_record_member_decl_is_unnamed_union(
-    const psx_record_member_decl_t *member) {
-  const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(
-                                     psx_record_member_decl_type(member))
-                               : NULL;
-  return member && member->len <= 0 && type &&
-         type->kind == PSX_TYPE_UNION;
-}
-
-int psx_record_member_decl_is_unnamed_aggregate(
-    const psx_record_member_decl_t *member) {
-  return psx_record_member_decl_is_unnamed_struct(member) ||
-         psx_record_member_decl_is_unnamed_union(member);
-}
-
-tk_float_kind_t psx_record_member_decl_fp_kind(
-    const psx_record_member_decl_t *member) {
-  const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(
-                                     psx_record_member_decl_type(member))
-                               : NULL;
-  if (!type ||
-      (type->kind != PSX_TYPE_FLOAT && type->kind != PSX_TYPE_COMPLEX))
-    return TK_FLOAT_KIND_NONE;
-  return ps_type_floating_token_kind(type);
-}
-
-int psx_record_member_decl_is_bool(
-    const psx_record_member_decl_t *member) {
-  const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(
-                                     psx_record_member_decl_type(member))
-                               : NULL;
-  return type && type->kind == PSX_TYPE_BOOL;
 }
 
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,

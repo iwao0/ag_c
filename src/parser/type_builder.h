@@ -3,6 +3,7 @@
 
 #include "type.h"
 #include "declarator_shape.h"
+#include "../semantic/record_decl.h"
 
 typedef struct arena_context_t arena_context_t;
 

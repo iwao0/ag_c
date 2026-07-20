@@ -393,7 +393,11 @@ ps_gvar_init_member_value(const global_var_t *gv, int idx,
                            const psx_record_member_decl_t *member,
                            int member_size) {
   psx_gvar_init_slot_t slot = ps_gvar_init_slot_view(gv, idx);
-  tk_float_kind_t member_fp_kind = psx_record_member_decl_fp_kind(member);
+  const psx_type_t *member_type = ps_type_array_leaf_type(
+      psx_record_member_decl_type(member));
+  tk_float_kind_t member_fp_kind =
+      member_type ? ps_type_floating_token_kind(member_type)
+                  : TK_FLOAT_KIND_NONE;
   psx_gvar_init_member_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
       .symbol_ref = gvar_init_slot_symbol_ref(&slot),
@@ -402,7 +406,8 @@ ps_gvar_init_member_value(const global_var_t *gv, int idx,
       .fp_kind = TK_FLOAT_KIND_NONE,
       .size = member_size > 0 ? member_size : 0,
   };
-  if (psx_record_member_decl_is_bool(member)) value.value = value.value != 0;
+  if (member_type && member_type->kind == PSX_TYPE_BOOL)
+    value.value = value.value != 0;
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
     value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
     return value;

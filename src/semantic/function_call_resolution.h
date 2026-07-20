@@ -3,6 +3,7 @@
 
 #include "../parser/node_fwd.h"
 #include "../parser/type.h"
+#include "type_identity.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;

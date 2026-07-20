@@ -4,6 +4,7 @@
 #include "../parser/type.h"
 #include "../parser/vla_runtime.h"
 #include "declarator_application_types.h"
+#include "record_decl.h"
 #include "resolved_node_kind.h"
 
 struct global_var_t;

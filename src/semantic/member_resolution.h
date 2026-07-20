@@ -2,6 +2,7 @@
 #define SEMANTIC_MEMBER_RESOLUTION_H
 
 #include "../parser/semantic_ctx.h"
+#include "record_decl.h"
 
 typedef enum {
   PSX_MEMBER_ACCESS_OK = 0,

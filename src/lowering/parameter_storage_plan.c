@@ -1,4 +1,6 @@
 #include "parameter_storage_plan.h"
+
+#include "../parser/type.h"
 #include "abi_target_policy.h"
 #include "../target_info.h"
 #include "../type_layout.h"

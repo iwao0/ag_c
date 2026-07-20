@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "type.h"
+#include "../semantic/record_decl.h"
 #include "../semantic/record_layout.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
