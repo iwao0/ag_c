@@ -406,7 +406,7 @@ static int append_definition_parameter(
         parameter->specifier.diagnostic_token, "param",
         "canonical parameter base type resolution failed");
   }
-  psx_local_lookup_point_t parameter_lookup_point =
+  psx_scope_lookup_point_t parameter_lookup_point =
       ps_local_registry_capture_lookup_point_in(local_registry);
   psx_runtime_declarator_application_t applied;
   psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(

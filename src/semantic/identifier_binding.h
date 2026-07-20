@@ -14,7 +14,7 @@ node_t *psx_bind_identifier_tree_in_contexts(
 node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
-    psx_local_lookup_point_t lookup_point,
+    psx_scope_lookup_point_t lookup_point,
     node_t *node, const token_t *fallback_diag_tok);
 node_t *psx_bind_identifier_initializer_tree_in_contexts(
     psx_semantic_context_t *semantic_context,

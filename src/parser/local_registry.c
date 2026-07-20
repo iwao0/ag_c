@@ -255,15 +255,13 @@ unsigned ps_local_registry_next_scope_seq_in(
   return next == PSX_SCOPE_ID_INVALID || next == 0 ? 0 : next - 1;
 }
 
-psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
+psx_scope_lookup_point_t ps_local_registry_capture_lookup_point_in(
     const psx_local_registry_t *registry) {
-  if (!registry) return (psx_local_lookup_point_t){0};
-  psx_scope_lookup_point_t point =
-      psx_scope_graph_capture_lookup_point(registry->scope_graph);
-  return (psx_local_lookup_point_t){
-      .scope_seq = point.scope_id == PSX_SCOPE_ID_INVALID ? 0 : point.scope_id,
-      .declaration_seq = point.declaration_order,
-  };
+  return registry
+             ? psx_scope_graph_capture_lookup_point(registry->scope_graph)
+             : (psx_scope_lookup_point_t){
+                   .scope_id = PSX_SCOPE_ID_INVALID,
+               };
 }
 
 void psx_local_registry_add_in(

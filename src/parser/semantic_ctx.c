@@ -781,19 +781,16 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
-    psx_local_lookup_point_t point) {
+    psx_scope_lookup_point_t point) {
   if (!context || !local_registry || !name || len <= 0) return NULL;
   if (!context->scope_graph ||
       context->scope_graph !=
           ps_local_registry_scope_graph(local_registry))
     return NULL;
   psx_scope_lookup_point_t graph_point =
-      point.scope_seq == PSX_SCOPE_ID_INVALID
+      point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(context->scope_graph)
-          : (psx_scope_lookup_point_t){
-                .scope_id = point.scope_seq,
-                .declaration_order = point.declaration_seq,
-            };
+          : point;
   psx_decl_id_t declaration_id = psx_scope_graph_lookup(
       context->scope_graph, PSX_NAMESPACE_TAG, name, len,
       graph_point);
@@ -1432,7 +1429,7 @@ bool ps_ctx_enum_const_value_by_declaration_id_in(
 bool ps_ctx_find_enum_const_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     long long *out_value) {
   if (!context || !local_registry || !name || len <= 0) return false;
   psx_scope_graph_t *scope_graph = context->scope_graph;
@@ -1440,12 +1437,9 @@ bool ps_ctx_find_enum_const_at_in_contexts(
       scope_graph != ps_local_registry_scope_graph(local_registry))
     return false;
   psx_scope_lookup_point_t graph_point =
-      point.scope_seq == PSX_SCOPE_ID_INVALID
+      point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(scope_graph)
-          : (psx_scope_lookup_point_t){
-                .scope_id = point.scope_seq,
-                .declaration_order = point.declaration_seq,
-            };
+          : point;
   psx_decl_id_t id = psx_scope_graph_lookup(
       scope_graph, PSX_NAMESPACE_ORDINARY, name, len, graph_point);
   const psx_scope_declaration_t *declaration =
@@ -1644,7 +1638,7 @@ bool ps_ctx_find_typedef_decl_type_in(
 bool ps_ctx_find_typedef_decl_type_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     const psx_type_t **out_type) {
   psx_typedef_info_t info;
   if (!ps_ctx_find_typedef_name_at_in_contexts(
@@ -1657,7 +1651,7 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
 bool ps_ctx_find_typedef_name_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     psx_typedef_info_t *out) {
   if (!context || !local_registry || !name || len <= 0) return false;
   psx_scope_graph_t *scope_graph = context->scope_graph;
@@ -1665,12 +1659,9 @@ bool ps_ctx_find_typedef_name_at_in_contexts(
       scope_graph != ps_local_registry_scope_graph(local_registry))
     return false;
   psx_scope_lookup_point_t graph_point =
-      point.scope_seq == PSX_SCOPE_ID_INVALID
+      point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(scope_graph)
-          : (psx_scope_lookup_point_t){
-                .scope_id = point.scope_seq,
-                .declaration_order = point.declaration_seq,
-            };
+          : point;
   psx_decl_id_t id = psx_scope_graph_lookup(
       scope_graph, PSX_NAMESPACE_ORDINARY, name, len, graph_point);
   const psx_scope_declaration_t *declaration =

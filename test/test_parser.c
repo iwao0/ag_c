@@ -1157,15 +1157,11 @@ static global_var_t *find_test_global_var_in(
 
 static lvar_t *find_test_visible_local_var_in(
     const psx_local_registry_t *registry, char *name, int len,
-    psx_local_lookup_point_t point) {
+    psx_scope_lookup_point_t point) {
   psx_scope_graph_t *scope_graph =
       ps_local_registry_scope_graph(registry);
   psx_decl_id_t declaration_id = psx_scope_graph_lookup(
-      scope_graph, PSX_NAMESPACE_ORDINARY, name, len,
-      (psx_scope_lookup_point_t){
-          .scope_id = point.scope_seq,
-          .declaration_order = point.declaration_seq,
-      });
+      scope_graph, PSX_NAMESPACE_ORDINARY, name, len, point);
   const psx_scope_declaration_t *declaration =
       psx_scope_graph_declaration(scope_graph, declaration_id);
   return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT
@@ -7553,14 +7549,14 @@ static int parse_raw_function_item(
   ps_parser_name_environment_init(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()));
-  psx_local_lookup_point_t function_lookup_point =
+  psx_scope_lookup_point_t function_lookup_point =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ps_parser_name_environment_reset_at(
       &name_environment,
       ps_ctx_name_classifier(test_semantic_context()),
-      function_lookup_point.scope_seq,
+      function_lookup_point.scope_id,
       ps_local_registry_next_scope_seq_in(test_local_registry()),
-      function_lookup_point.declaration_seq);
+      function_lookup_point.declaration_order);
   local_declarations.name_classifier =
       ps_parser_name_environment_classifier(
           &name_environment);
@@ -8485,12 +8481,12 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_TRUE(outer != NULL);
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t before_inner =
+  psx_scope_lookup_point_t before_inner =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   lvar_t *inner = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(inner != NULL);
-  psx_local_lookup_point_t after_inner =
+  psx_scope_lookup_point_t after_inner =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, before_inner) == outer);
@@ -8498,7 +8494,7 @@ static void test_persistent_local_scope_lookup_boundary() {
                   (char *)"__scope_value", 13, after_inner) == inner);
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t nested =
+  psx_scope_lookup_point_t nested =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__scope_value", 13, nested) == inner);
@@ -8512,10 +8508,7 @@ static void test_persistent_local_scope_lookup_boundary() {
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_lookup_point = 1,
-          .lookup_point = {
-              .scope_id = before_inner.scope_seq,
-              .declaration_order = before_inner.declaration_seq,
-          },
+          .lookup_point = before_inner,
       },
       &delayed_resolution);
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
@@ -8526,17 +8519,14 @@ static void test_persistent_local_scope_lookup_boundary() {
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_lookup_point = 1,
-          .lookup_point = {
-              .scope_id = after_inner.scope_seq,
-              .declaration_order = after_inner.declaration_seq,
-          },
+          .lookup_point = after_inner,
       },
       &delayed_resolution);
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
   ASSERT_TRUE(delayed_resolution.local == inner);
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t sibling_before_decl =
+  psx_scope_lookup_point_t sibling_before_decl =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   lvar_t *sibling = register_test_storage_fixture(
       (char *)"__sibling_only", 14, 4, 4, 0);
@@ -8550,7 +8540,7 @@ static void test_persistent_local_scope_lookup_boundary() {
   ps_decl_leave_scope_in(test_local_registry());
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t other_sibling =
+  psx_scope_lookup_point_t other_sibling =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
@@ -8561,11 +8551,11 @@ static void test_persistent_local_scope_lookup_boundary() {
   ps_decl_leave_scope_in(test_local_registry());
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t before_enum =
+  psx_scope_lookup_point_t before_enum =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(test_semantic_define_enum_const(
       (char *)"__scoped_enum", 13, 29));
-  psx_local_lookup_point_t after_enum =
+  psx_scope_lookup_point_t after_enum =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ps_decl_leave_scope_in(test_local_registry());
   long long enum_value = 0;
@@ -8576,7 +8566,7 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_EQ(29, enum_value);
 
   ps_decl_enter_scope_in(test_local_registry());
-  psx_local_lookup_point_t enum_sibling =
+  psx_scope_lookup_point_t enum_sibling =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
@@ -29397,7 +29387,7 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       first.semantic_context, first.local_registry,
       TK_STRUCT, (char *)"FirstTag", 8, 0, 0));
-  psx_local_lookup_point_t first_namespace_point =
+  psx_scope_lookup_point_t first_namespace_point =
       ps_local_registry_capture_lookup_point_in(first.local_registry);
   const psx_type_t *isolated_typedef_type = NULL;
   long long isolated_enum_value = 0;
@@ -29470,8 +29460,8 @@ static void test_compilation_session_registry_isolation() {
   };
   psx_type_name_ref_t isolated_type_name = {
       .syntax = &isolated_type_name_syntax,
-      .scope_seq = first_namespace_point.scope_seq,
-      .declaration_seq = first_namespace_point.declaration_seq,
+      .scope_seq = first_namespace_point.scope_id,
+      .declaration_seq = first_namespace_point.declaration_order,
   };
   psx_type_name_resolution_state_t isolated_type_name_state = {0};
   const psx_type_t *isolated_resolved_type =
@@ -29538,8 +29528,8 @@ static void test_compilation_session_registry_isolation() {
       .base = {.kind = ND_IDENTIFIER},
       .name = (char *)"shared_global",
       .name_len = 13,
-      .scope_seq = first_namespace_point.scope_seq,
-      .declaration_seq = first_namespace_point.declaration_seq,
+      .scope_seq = first_namespace_point.scope_id,
+      .declaration_seq = first_namespace_point.declaration_order,
   };
   node_t *isolated_global_node = psx_bind_identifier_tree_in_contexts(
       first.semantic_context, first.local_registry,
@@ -29616,7 +29606,7 @@ static void test_compilation_session_registry_isolation() {
                   first.local_registry,
                   (char *)"explicit_first_local", 20) ==
               &explicit_first_local);
-  psx_local_lookup_point_t explicit_first_point =
+  psx_scope_lookup_point_t explicit_first_point =
       ps_local_registry_capture_lookup_point_in(first.local_registry);
   ASSERT_TRUE(find_test_visible_local_var_in(
                   first.local_registry,

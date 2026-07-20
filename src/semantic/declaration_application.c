@@ -444,9 +444,9 @@ static int resolve_parsed_alignas_expression(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_alignas_t *alignas) {
-  psx_local_lookup_point_t point = {
-      .scope_seq = alignas->scope_seq,
-      .declaration_seq = alignas->declaration_seq,
+  psx_scope_lookup_point_t point = {
+      .scope_id = alignas->scope_seq,
+      .declaration_order = alignas->declaration_seq,
   };
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_syntax_integer_constant_result_t constant_result;
@@ -706,7 +706,7 @@ static void apply_runtime_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index,
-    const psx_local_lookup_point_t *lookup_point) {
+    const psx_scope_lookup_point_t *lookup_point) {
   if (!semantic_context || !global_registry || !local_registry ||
       !declarator || !application) return;
   psx_runtime_array_bound_t *resolved_bounds = NULL;
@@ -775,7 +775,7 @@ void psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index,
-    psx_local_lookup_point_t lookup_point) {
+    psx_scope_lookup_point_t lookup_point) {
   apply_runtime_parsed_declarator(
       semantic_context, global_registry, local_registry,
       declarator, application, skipped_function_op_index,
@@ -815,7 +815,7 @@ void psx_apply_parsed_function_parameters_in_contexts(
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parameter->specifier.diagnostic_token, "param", "%s",
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
-    psx_local_lookup_point_t parameter_lookup_point =
+    psx_scope_lookup_point_t parameter_lookup_point =
         ps_local_registry_capture_lookup_point_in(local_registry);
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(

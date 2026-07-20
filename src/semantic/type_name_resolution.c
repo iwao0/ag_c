@@ -10,11 +10,11 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
 
-static psx_local_lookup_point_t type_name_lookup_point(
+static psx_scope_lookup_point_t type_name_lookup_point(
     const psx_type_name_ref_t *type_name) {
-  return (psx_local_lookup_point_t){
-      .scope_seq = type_name ? type_name->scope_seq : 0,
-      .declaration_seq = type_name ? type_name->declaration_seq : 0,
+  return (psx_scope_lookup_point_t){
+      .scope_id = type_name ? type_name->scope_seq : 0,
+      .declaration_order = type_name ? type_name->declaration_seq : 0,
   };
 }
 
@@ -102,12 +102,12 @@ static const psx_type_t *bind_base_type(
     const psx_runtime_declarator_application_t **runtime_application) {
   if (runtime_application) *runtime_application = NULL;
   const psx_parsed_type_name_t *syntax = type_name->syntax;
-  psx_local_lookup_point_t point = type_name_lookup_point(type_name);
+  psx_scope_lookup_point_t point = type_name_lookup_point(type_name);
   if (syntax->atomic_inner) {
     psx_type_name_ref_t inner = {
         .syntax = syntax->atomic_inner,
-        .scope_seq = point.scope_seq,
-        .declaration_seq = point.declaration_seq,
+        .scope_seq = point.scope_id,
+        .declaration_seq = point.declaration_order,
     };
     psx_type_name_resolution_state_t inner_state = {0};
     psx_type_t *type = ps_type_clone_in(

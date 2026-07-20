@@ -27,7 +27,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_local_registry_t *local_registry;
   const token_t *fallback_diag_tok;
-  psx_local_lookup_point_t lookup_point;
+  psx_scope_lookup_point_t lookup_point;
   int has_lookup_point_override;
   int usage_is_unevaluated;
   char *function_name;
@@ -188,11 +188,11 @@ static node_t *materialize_builtin_va_arg_area(
 static psx_identifier_resolution_request_t identifier_resolution_request(
     const node_identifier_t *identifier, int is_call,
     const psx_identifier_binding_context_t *context) {
-  psx_local_lookup_point_t point = context->has_lookup_point_override
+  psx_scope_lookup_point_t point = context->has_lookup_point_override
       ? context->lookup_point
-      : (psx_local_lookup_point_t){
-            .scope_seq = identifier->scope_seq,
-            .declaration_seq = identifier->declaration_seq,
+      : (psx_scope_lookup_point_t){
+            .scope_id = identifier->scope_seq,
+            .declaration_order = identifier->declaration_seq,
         };
   int has_lookup_point = context->has_lookup_point_override ||
                          identifier->base.tok ||
@@ -204,10 +204,7 @@ static psx_identifier_resolution_request_t identifier_resolution_request(
       .name_len = identifier->name_len,
       .is_call = is_call,
       .has_lookup_point = has_lookup_point,
-      .lookup_point = {
-          .scope_id = point.scope_seq,
-          .declaration_order = point.declaration_seq,
-      },
+      .lookup_point = point,
   };
 }
 
@@ -619,7 +616,7 @@ node_t *psx_bind_identifier_tree_in_contexts(
 node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
-    psx_local_lookup_point_t lookup_point,
+    psx_scope_lookup_point_t lookup_point,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!semantic_context || !local_registry) return node;
   psx_identifier_binding_context_t context = {

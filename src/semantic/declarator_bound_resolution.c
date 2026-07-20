@@ -10,7 +10,7 @@ int psx_resolve_declarator_bound_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const node_t *syntax_expression,
-    const psx_local_lookup_point_t *lookup_point,
+    const psx_scope_lookup_point_t *lookup_point,
     const token_t *fallback_diag_tok,
     psx_declarator_bound_resolution_t *resolution) {
   if (resolution) *resolution = (psx_declarator_bound_resolution_t){0};

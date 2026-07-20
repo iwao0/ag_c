@@ -240,6 +240,10 @@ const scopeGraphLocalRegistrySource = await readFile(
   "src/parser/local_registry.c",
   "utf8",
 );
+const scopeGraphLocalRegistryHeader = await readFile(
+  "src/parser/local_registry.h",
+  "utf8",
+);
 const scopeGraphGlobalRegistrySource = await readFile(
   "src/parser/global_registry.c",
   "utf8",
@@ -275,6 +279,12 @@ const tagScopeLookupBody =
   )?.[0] ?? "";
 if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
+    /\bpsx_local_lookup_point_t\b/.test(
+      scopeGraphLocalRegistryHeader + scopeGraphSemanticContextHeader,
+    ) ||
+    !/psx_scope_lookup_point_t\s+ps_local_registry_capture_lookup_point_in\s*\(/.test(
+      scopeGraphLocalRegistryHeader,
+    ) ||
     !/PSX_NAMESPACE_ORDINARY/.test(scopeGraphHeader) ||
     !/PSX_NAMESPACE_TAG/.test(scopeGraphHeader) ||
     !/PSX_NAMESPACE_LABEL/.test(scopeGraphHeader) ||

@@ -16,11 +16,6 @@ typedef struct {
   void *state;
 } psx_local_registry_checkpoint_t;
 
-typedef struct psx_local_lookup_point_t {
-  unsigned scope_seq;
-  unsigned declaration_seq;
-} psx_local_lookup_point_t;
-
 psx_local_registry_t *ps_local_registry_create(
     ag_diagnostic_context_t *diagnostic_context,
     const psx_semantic_type_table_t *semantic_types,
@@ -48,7 +43,7 @@ unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry);
 unsigned ps_local_registry_next_scope_seq_in(
     const psx_local_registry_t *registry);
-psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
+psx_scope_lookup_point_t ps_local_registry_capture_lookup_point_in(
     const psx_local_registry_t *registry);
 void ps_local_registry_reset_in(psx_local_registry_t *registry);
 void ps_local_registry_reset_translation_unit_in(

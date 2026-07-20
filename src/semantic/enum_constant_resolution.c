@@ -83,7 +83,7 @@ int psx_resolve_enum_initializer_syntax_in_contexts(
       !syntax_expression || !value)
     return 0;
   const psx_typed_hir_tree_t *typed_hir = NULL;
-  psx_local_lookup_point_t lookup_point =
+  psx_scope_lookup_point_t lookup_point =
       ps_local_registry_capture_lookup_point_in(local_registry);
   psx_syntax_integer_constant_result_t constant_result;
   psx_resolved_hir_build_failure_t failure;

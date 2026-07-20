@@ -159,13 +159,13 @@ int psx_frontend_stream_begin(
   };
   ps_parser_stream_begin_with_syntax(
       &stream->parser, tk_ctx, start, &stream->parser_syntax);
-  psx_local_lookup_point_t translation_unit_lookup_point =
+  psx_scope_lookup_point_t translation_unit_lookup_point =
       ps_local_registry_capture_lookup_point_in(local_registry);
   ps_parser_name_environment_reset_at(
       &stream->parser.name_environment, empty_classifier,
-      translation_unit_lookup_point.scope_seq,
+      translation_unit_lookup_point.scope_id,
       ps_local_registry_next_scope_seq_in(local_registry),
-      translation_unit_lookup_point.declaration_seq);
+      translation_unit_lookup_point.declaration_order);
   stream->parser.syntax.name_classifier =
       ps_parser_name_environment_classifier(
           &stream->parser.name_environment);
@@ -223,14 +223,14 @@ int psx_frontend_next_function_with_resolver(
           local_registry,
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0);
-      psx_local_lookup_point_t function_lookup_point =
+      psx_scope_lookup_point_t function_lookup_point =
           ps_local_registry_capture_lookup_point_in(local_registry);
       ps_parser_name_environment_reset_at(
           &stream->local_name_environment,
           stream->parser.syntax.name_classifier,
-          function_lookup_point.scope_seq,
+          function_lookup_point.scope_id,
           ps_local_registry_next_scope_seq_in(local_registry),
-          function_lookup_point.declaration_seq);
+          function_lookup_point.declaration_order);
       stream->local_declarations.name_classifier =
           ps_parser_name_environment_classifier(
               &stream->local_name_environment);

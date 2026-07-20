@@ -136,7 +136,7 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
-    psx_local_lookup_point_t point);
+    psx_scope_lookup_point_t point);
 int ps_ctx_register_tag_type_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
@@ -225,7 +225,7 @@ bool ps_ctx_find_enum_const_in(
 bool ps_ctx_find_enum_const_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     long long *out_value);
 bool ps_ctx_enum_const_value_by_declaration_id_in(
     psx_semantic_context_t *context, psx_decl_id_t declaration_id,
@@ -270,12 +270,12 @@ bool ps_ctx_find_typedef_decl_type_in(
 bool ps_ctx_find_typedef_decl_type_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     const psx_type_t **out_type);
 bool ps_ctx_find_typedef_name_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
-    char *name, int len, psx_local_lookup_point_t point,
+    char *name, int len, psx_scope_lookup_point_t point,
     psx_typedef_info_t *out);
 bool psx_ctx_find_typedef_layout_in(
     psx_semantic_context_t *context,

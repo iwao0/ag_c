@@ -193,7 +193,7 @@ typedef struct {
   const ag_compilation_options_t *options;
   psx_semantic_node_builder_t builder;
   psx_resolved_hir_build_failure_t *failure;
-  const psx_local_lookup_point_t *identifier_lookup_point;
+  const psx_scope_lookup_point_t *identifier_lookup_point;
   direct_identifier_binding_t *identifier_bindings;
   direct_cast_binding_t *cast_bindings;
   direct_call_binding_t *call_bindings;
@@ -780,11 +780,11 @@ static int resolve_direct_identifier_with_usage(
           .has_lookup_point = has_lookup_point,
           .lookup_point = {
               .scope_id = context->identifier_lookup_point
-                              ? context->identifier_lookup_point->scope_seq
+                              ? context->identifier_lookup_point->scope_id
                               : identifier->scope_seq,
               .declaration_order = context->identifier_lookup_point
                                        ? context->identifier_lookup_point
-                                             ->declaration_seq
+                                             ->declaration_order
                                        : identifier->declaration_seq,
           },
       },
@@ -5937,7 +5937,7 @@ resolve_syntax_expression_direct_to_typed_hir(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
-    const psx_local_lookup_point_t *lookup_point,
+    const psx_scope_lookup_point_t *lookup_point,
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_syntax_integer_constant_result_t *constant_result,
@@ -6100,7 +6100,7 @@ psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    const psx_local_lookup_point_t *lookup_point,
+    const psx_scope_lookup_point_t *lookup_point,
     const node_t *syntax_expression,
     const psx_typed_hir_tree_t **typed_hir,
     psx_syntax_integer_constant_result_t *constant_result,

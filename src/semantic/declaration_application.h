@@ -101,7 +101,7 @@ void psx_apply_runtime_parsed_declarator_at_lookup_point_in_contexts(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index,
-    psx_local_lookup_point_t lookup_point);
+    psx_scope_lookup_point_t lookup_point);
 int psx_apply_resolved_runtime_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
