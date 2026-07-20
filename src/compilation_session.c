@@ -49,12 +49,13 @@ ag_compilation_session_t *ag_compilation_session_create(
 int ag_compilation_session_init(
     ag_compilation_session_t *session, const ag_target_info_t *target) {
   if (!session) return 0;
+  ag_target_info_t resolved_target =
+      target ? *target : ag_target_info_host();
   memset(session, 0, sizeof(*session));
+  if (!ag_target_info_is_valid(&resolved_target)) return 0;
   ag_compilation_options_init_defaults(&session->options);
   tk_context_init(&session->tokenizer);
-  session->target = target ? *target : ag_target_info_host();
-  session->target.pointer_size =
-      ag_target_info_pointer_size(&session->target);
+  session->target = resolved_target;
   session->diagnostic_context = diag_context_create();
   diag_context_bind_tokenizer(
       session->diagnostic_context, &session->tokenizer);
@@ -164,8 +165,7 @@ int ag_compilation_session_is_complete(
          ps_lowering_record_decls(session->lowering_context) &&
          ps_lowering_record_layouts(session->lowering_context) &&
          session->codegen_emit_context &&
-         (session->target.pointer_size == 4 ||
-          session->target.pointer_size == 8);
+         ag_target_info_is_valid(&session->target);
 }
 
 int ag_compilation_session_dispose(ag_compilation_session_t *session) {

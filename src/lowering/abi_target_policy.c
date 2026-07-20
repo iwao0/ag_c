@@ -13,6 +13,8 @@ const ir_abi_target_policy_t *ir_abi_target_policy_for(
       return arm64_apple_abi_policy();
     case AG_TARGET_CALL_ABI_WASM32:
       return wasm32_abi_policy();
+    case AG_TARGET_CALL_ABI_INVALID:
+      return NULL;
   }
   return NULL;
 }

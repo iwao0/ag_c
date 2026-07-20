@@ -12783,6 +12783,23 @@ static void test_target_type_layout_boundary() {
   printf("test_target_type_layout_boundary...\n");
   ag_target_info_t host = ag_target_info_host();
   ag_target_info_t wasm = ag_target_info_wasm32();
+  ASSERT_TRUE(ag_target_info_is_valid(&host));
+  ASSERT_TRUE(ag_target_info_is_valid(&wasm));
+  ASSERT_TRUE(!ag_target_info_is_valid(NULL));
+  ASSERT_EQ(0, ag_target_info_pointer_size(NULL));
+  ASSERT_EQ(0, ag_target_info_pointer_alignment(NULL));
+  ASSERT_EQ(AG_TARGET_CALL_ABI_INVALID, ag_target_info_call_abi(NULL));
+  ASSERT_EQ(0, ag_target_info_scalar_size(NULL, AG_TARGET_SCALAR_INT));
+  ASSERT_EQ(0, ag_target_info_scalar_alignment(
+                   NULL, AG_TARGET_SCALAR_INT));
+  ASSERT_TRUE(!ag_target_info_equal(NULL, &host));
+  ag_target_info_t incomplete_target = host;
+  incomplete_target.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
+  ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
+  ag_compilation_session_t invalid_session;
+  ASSERT_TRUE(!ag_compilation_session_init(
+      &invalid_session, &incomplete_target));
+  ASSERT_TRUE(!ag_compilation_session_is_complete(&invalid_session));
   psx_type_t *semantic_plain_char = ps_type_new_integer_kind_in(
       test_arena_context(), PSX_INTEGER_KIND_CHAR, 0, 1);
   psx_type_t *semantic_signed_char = ps_type_new_integer_kind_in(

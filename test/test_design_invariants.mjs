@@ -1255,6 +1255,20 @@ const compilationSessionInternalHeader = await readFile(
   "src/compilation_session_internal.h",
   "utf8",
 );
+const targetInfoSource = await readFile("src/target_info.c", "utf8");
+const targetInfoHeader = await readFile("src/target_info.h", "utf8");
+if (!/ag_target_info_is_valid\s*\(/.test(targetInfoHeader) ||
+    !/ag_target_info_is_valid\s*\(&resolved_target\)/.test(
+      compilationSessionSource,
+    ) ||
+    (targetInfoSource.match(/\bstandard_target\b/g) ?? []).length !== 3 ||
+    /:\s*ag_target_info_pointer_size\s*\(target\)/.test(
+      targetInfoSource,
+    )) {
+  throw new Error(
+    "target layout queries must reject incomplete inputs instead of falling back to the host ABI",
+  );
+}
 const sessionContextAccessorNames = [
   "semantic_context",
   "global_registry",
