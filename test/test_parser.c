@@ -108,6 +108,7 @@
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/type_identity_pass.h"
 #include "../src/semantic/type_name_resolution.h"
+#include "../src/type_system/integer_conversion.h"
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/type_query_semantics.h"
 #include "../src/semantic/typed_hir_materialization.h"
@@ -3020,6 +3021,41 @@ static void assert_test_nested_integer_cast_hir(
   ASSERT_EQ(PSX_TYPE_INTEGER, inner_shape.kind);
   ASSERT_EQ(expected_inner_kind, inner_shape.integer_kind);
   ASSERT_EQ(expected_inner_unsigned, inner_shape.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
+static void assert_test_type_query_hir(
+    const char *input, psx_syntax_node_kind_t expected_syntax_kind,
+    long long expected_value) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(input, &syntax);
+  ASSERT_EQ(expected_syntax_kind, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(root));
+  ASSERT_EQ(expected_value, psx_hir_node_integer_value(root));
+  psx_type_shape_t shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, shape.integer_kind);
+  ASSERT_TRUE(shape.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
+static void assert_test_integer_expression_hir(
+    const char *input, psx_hir_node_kind_t expected_hir_kind,
+    psx_integer_kind_t expected_integer_kind, int expected_unsigned,
+    int expected_size) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(input, &syntax);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(expected_hir_kind, psx_hir_node_kind(root));
+  psx_type_shape_t shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+  ASSERT_EQ(expected_integer_kind, shape.integer_kind);
+  ASSERT_EQ(expected_unsigned, shape.is_unsigned);
+  ASSERT_EQ(expected_size,
+            test_type_size_id(psx_hir_node_qual_type(root).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 }
 
@@ -19040,70 +19076,39 @@ static void test_expr_generic() {
 static void test_expr_sizeof() {
   printf("test_expr_sizeof...\n");
 
-    node_t *n1 = parse_expr_input("sizeof(int)");
-  assert_typed_sizeof(n1, 4);
-
-    node_t *n0 = parse_expr_input("sizeof(void)");
-  assert_typed_sizeof(n0, 1);
-
-    node_t *n2 = parse_expr_input("sizeof(int*)");
-  assert_typed_sizeof(n2, 8);
-
-    node_t *n2q1 = parse_expr_input("sizeof(int * const)");
-  assert_typed_sizeof(n2q1, 8);
-
-    node_t *n2q2 = parse_expr_input("sizeof(int * volatile)");
-  assert_typed_sizeof(n2q2, 8);
-
-    node_t *n2q3 = parse_expr_input("sizeof(int * restrict)");
-  assert_typed_sizeof(n2q3, 8);
-
-    node_t *n2a = parse_expr_input("sizeof(int[10])");
-  assert_typed_sizeof(n2a, 40);
-
-    node_t *n2b = parse_expr_input("sizeof(int (*)[3])");
-  assert_typed_sizeof(n2b, 8);
-
-    node_t *n2c = parse_expr_input("sizeof((int[3]))");
-  assert_typed_sizeof(n2c, 12);
-
-    node_t *n3 = parse_expr_input("sizeof(int (*)(int))");
-  assert_typed_sizeof(n3, 8);
-
-    node_t *n4 = parse_expr_input("sizeof(_Complex double)");
-  assert_typed_sizeof(n4, 16);
-
-    node_t *n5 = parse_expr_input("sizeof(float _Imaginary)");
-  assert_typed_sizeof(n5, 8);
-
-    node_t *a1 = parse_expr_input("_Alignof(int)");
-  assert_typed_alignof(a1, 4);
-
-    node_t *a2 = parse_expr_input("_Alignof(int*)");
-  assert_typed_alignof(a2, 8);
-
-    node_t *a2q1 = parse_expr_input("_Alignof(int * const)");
-  assert_typed_alignof(a2q1, 8);
-
-    node_t *a2q2 = parse_expr_input("_Alignof(int * volatile)");
-  assert_typed_alignof(a2q2, 8);
-
-    node_t *a2q3 = parse_expr_input("_Alignof(int * restrict)");
-  assert_typed_alignof(a2q3, 8);
-
-    node_t *a2a = parse_expr_input("_Alignof(int[10])");
-  /* 配列のアラインメントは要素のアラインメント (= 4)。sizeof (40) ではない。 */
-  assert_typed_alignof(a2a, 4);
-
-    node_t *a2b = parse_expr_input("_Alignof(int (*)[3])");
-  assert_typed_alignof(a2b, 8);
-
-    node_t *a2c = parse_expr_input("_Alignof((int[3]))");
-  /* 配列のアラインメントは要素のアラインメント (= 4)、sizeof (12) ではない。 */
-  assert_typed_alignof(a2c, 4);
-
-  node_t *a3 = parse_expr_input("_Alignof(_Imaginary double)");
-  assert_typed_alignof(a3, 8);
+  const struct {
+    const char *input;
+    psx_syntax_node_kind_t syntax_kind;
+    long long value;
+  } type_queries[] = {
+      {"sizeof(int)", ND_SIZEOF_QUERY, 4},
+      {"sizeof(void)", ND_SIZEOF_QUERY, 1},
+      {"sizeof(int*)", ND_SIZEOF_QUERY, 8},
+      {"sizeof(int * const)", ND_SIZEOF_QUERY, 8},
+      {"sizeof(int * volatile)", ND_SIZEOF_QUERY, 8},
+      {"sizeof(int * restrict)", ND_SIZEOF_QUERY, 8},
+      {"sizeof(int[10])", ND_SIZEOF_QUERY, 40},
+      {"sizeof(int (*)[3])", ND_SIZEOF_QUERY, 8},
+      {"sizeof((int[3]))", ND_SIZEOF_QUERY, 12},
+      {"sizeof(int (*)(int))", ND_SIZEOF_QUERY, 8},
+      {"sizeof(_Complex double)", ND_SIZEOF_QUERY, 16},
+      {"sizeof(float _Imaginary)", ND_SIZEOF_QUERY, 8},
+      {"_Alignof(int)", ND_ALIGNOF_QUERY, 4},
+      {"_Alignof(int*)", ND_ALIGNOF_QUERY, 8},
+      {"_Alignof(int * const)", ND_ALIGNOF_QUERY, 8},
+      {"_Alignof(int * volatile)", ND_ALIGNOF_QUERY, 8},
+      {"_Alignof(int * restrict)", ND_ALIGNOF_QUERY, 8},
+      {"_Alignof(int[10])", ND_ALIGNOF_QUERY, 4},
+      {"_Alignof(int (*)[3])", ND_ALIGNOF_QUERY, 8},
+      {"_Alignof((int[3]))", ND_ALIGNOF_QUERY, 4},
+      {"_Alignof(_Imaginary double)", ND_ALIGNOF_QUERY, 8},
+  };
+  for (size_t i = 0;
+       i < sizeof(type_queries) / sizeof(type_queries[0]); i++) {
+    assert_test_type_query_hir(
+        type_queries[i].input, type_queries[i].syntax_kind,
+        type_queries[i].value);
+  }
 
   parsed_code = parse_program_input("int main() { int x; return sizeof(x); }");
   node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
@@ -19154,147 +19159,137 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   assert_typed_sizeof(ret->lhs, 24);
 
-    // Source cast stays intact; Typed HIR owns the value conversion.
-    node_t *c1 = parse_expr_input("(char)300");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c1));
-  ASSERT_TRUE(ps_node_is_source_cast(c1));
-  ASSERT_EQ(ND_NUM, c1->lhs->kind);
+  assert_test_integer_cast_hir(
+      "(char)300", PSX_INTEGER_KIND_CHAR, 0,
+      PSX_TYPE_QUALIFIER_NONE, 300);
 
-    node_t *c2 = parse_expr_input("(_Complex double)1");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c2));
-  ASSERT_TRUE(ps_node_is_source_cast(c2));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(c2));
-  ASSERT_EQ(ND_NUM, c2->lhs->kind);
-  const psx_type_t *c2_ty = ps_node_get_type(c2);
-  ASSERT_TRUE(c2_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, c2_ty->kind);
-  ASSERT_EQ(16, ps_type_sizeof(c2_ty));
-  ASSERT_EQ(16, ps_node_type_size(c2));
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_cast_input_hir("(_Complex double)1", &syntax);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  psx_type_shape_t shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, shape.floating_kind);
+  ASSERT_EQ(16,
+            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *c3 = parse_expr_input("(float _Imaginary)1");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c3));
-  ASSERT_TRUE(ps_node_is_source_cast(c3));
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(c3));
-  ASSERT_EQ(ND_NUM, c3->lhs->kind);
-  const psx_type_t *c3_ty = ps_node_get_type(c3);
-  ASSERT_TRUE(c3_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, c3_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(c3_ty));
-  ASSERT_EQ(8, ps_node_type_size(c3));
+  expression = resolve_test_cast_input_hir(
+      "(float _Imaginary)1", &syntax);
+  root = test_expression_hir_root(&expression);
+  shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, shape.floating_kind);
+  ASSERT_EQ(8,
+            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *c4 = parse_expr_input("(long double)1");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c4));
-  ASSERT_TRUE(ps_node_is_source_cast(c4));
-  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, ps_node_value_fp_kind(c4));
-  ASSERT_EQ(ND_NUM, c4->lhs->kind);
+  expression = resolve_test_cast_input_hir("(long double)1", &syntax);
+  root = test_expression_hir_root(&expression);
+  shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_FLOAT, shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE, shape.floating_kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *c5 = parse_expr_input("(_Atomic(int))1");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c5));
-  ASSERT_EQ(ND_NUM, c5->lhs->kind);
+  assert_test_integer_cast_hir(
+      "(_Atomic(int))1", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_ATOMIC, 1);
 
-    node_t *c6 = parse_expr_input("(_Atomic(int*))0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(c6));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(c6));
-  ASSERT_EQ(ND_NUM, c6->lhs->kind);
+  expression = resolve_test_cast_input_hir("(_Atomic(int*))0", &syntax);
+  root = test_expression_hir_root(&expression);
+  psx_qual_type_t type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_ATOMIC, type.qualifiers);
+  ASSERT_EQ(8, test_type_size_id(type.type_id));
+  psx_qual_type_t base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *ci = parse_expr_input("(int)a");
-  const psx_type_t *ci_ty = ps_node_get_type(ci);
-  ASSERT_TRUE(ci_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ci_ty->kind);
-  ASSERT_EQ(4, ps_type_sizeof(ci_ty));
-  ASSERT_TRUE(!ps_type_is_unsigned(ci_ty));
-  ASSERT_TRUE(!ps_node_integer_value_is_unsigned(ci));
+  const struct {
+    const char *input;
+    psx_integer_kind_t integer_kind;
+    int is_unsigned;
+    int size;
+  } integer_casts[] = {
+      {"(int)a", PSX_INTEGER_KIND_INT, 0, 4},
+      {"(unsigned short)a", PSX_INTEGER_KIND_SHORT, 1, 2},
+      {"(unsigned long)a", PSX_INTEGER_KIND_LONG, 1, 8},
+  };
+  for (size_t i = 0;
+       i < sizeof(integer_casts) / sizeof(integer_casts[0]); i++) {
+    expression = resolve_test_cast_input_hir(
+        integer_casts[i].input, &syntax);
+    root = test_expression_hir_root(&expression);
+    shape = test_hir_type_shape(root);
+    ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+    ASSERT_EQ(integer_casts[i].integer_kind, shape.integer_kind);
+    ASSERT_EQ(integer_casts[i].is_unsigned, shape.is_unsigned);
+    ASSERT_EQ(integer_casts[i].size,
+              test_type_size_id(psx_hir_node_qual_type(root).type_id));
+    psx_frontend_expression_hir_dispose(&expression);
+  }
 
-    node_t *cus = parse_expr_input("(unsigned short)a");
-  const psx_type_t *cus_ty = ps_node_get_type(cus);
-  ASSERT_TRUE(cus_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, cus_ty->kind);
-  ASSERT_EQ(2, ps_type_sizeof(cus_ty));
-  ASSERT_EQ(2, ps_node_type_size(cus));
-  ASSERT_TRUE(ps_type_is_unsigned(cus_ty));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(cus));
+  expression = resolve_test_cast_input_hir("(float)a", &syntax);
+  root = test_expression_hir_root(&expression);
+  shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_FLOAT, shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, shape.floating_kind);
+  ASSERT_EQ(4,
+            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *cul = parse_expr_input("(unsigned long)a");
-  const psx_type_t *cul_ty = ps_node_get_type(cul);
-  ASSERT_TRUE(cul_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, cul_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(cul_ty));
-  ASSERT_EQ(8, ps_node_type_size(cul));
-  ASSERT_TRUE(ps_type_is_unsigned(cul_ty));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(cul));
+  expression = resolve_test_cast_input_hir("(double*)a", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(8, test_type_size_id(type.type_id));
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_FLOAT, test_qual_type_shape(base).kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            test_qual_type_shape(base).floating_kind);
+  ASSERT_EQ(8, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *cf = parse_expr_input("(float)a");
-  const psx_type_t *cf_ty = ps_node_get_type(cf);
-  ASSERT_TRUE(cf_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, cf_ty->kind);
-  ASSERT_EQ(4, ps_type_sizeof(cf_ty));
+  assert_test_integer_expression_hir(
+      "(unsigned char)1 + (short)2", PSX_HIR_ADD,
+      PSX_INTEGER_KIND_INT, 0, 4);
+  assert_test_integer_expression_hir(
+      "(unsigned int)1 + (long)-1", PSX_HIR_ADD,
+      PSX_INTEGER_KIND_LONG, 0, 8);
+  assert_test_integer_expression_hir(
+      "(unsigned long)1 + (long)-1", PSX_HIR_ADD,
+      PSX_INTEGER_KIND_LONG, 1, 8);
+  assert_test_integer_expression_hir(
+      "((unsigned long long)9ULL) ^ ((unsigned short)3)",
+      PSX_HIR_BITXOR, PSX_INTEGER_KIND_LONG_LONG, 1, 8);
+  assert_test_integer_expression_hir(
+      "1 ? (unsigned int)1 : (long)-1", PSX_HIR_TERNARY,
+      PSX_INTEGER_KIND_LONG, 0, 8);
 
-    node_t *cp = parse_expr_input("(double*)a");
-  const psx_type_t *cp_ty = ps_node_get_type(cp);
-  ASSERT_TRUE(cp_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, cp_ty->kind);
-  ASSERT_EQ(8, ps_node_type_size(cp));
-  ASSERT_EQ(8, ps_type_deref_size(cp_ty));
-  ASSERT_EQ(8, ps_node_deref_size(cp));
-  ASSERT_EQ(1, canonical_node_pointer_qual_levels(cp));
-  ASSERT_EQ(8, canonical_node_base_deref_size(cp));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, canonical_node_pointee_fp_kind(cp));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(cp));
-
-    node_t *uac_promote = parse_expr_input("(unsigned char)1 + (short)2");
-  const psx_type_t *uac_promote_ty = ps_node_get_type(uac_promote);
-  ASSERT_TRUE(uac_promote_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, uac_promote_ty->kind);
-  ASSERT_EQ(4, ps_type_sizeof(uac_promote_ty));
-  ASSERT_TRUE(!ps_type_is_unsigned(uac_promote_ty));
-  ASSERT_EQ(4, ps_node_type_size(uac_promote));
-  ASSERT_TRUE(!ps_node_integer_value_is_unsigned(uac_promote));
-  ASSERT_TRUE(!ps_node_usual_arith_is_unsigned(uac_promote));
-
-    node_t *uac_signed_wider = parse_expr_input("(unsigned int)1 + (long)-1");
-  const psx_type_t *uac_signed_wider_ty = ps_node_get_type(uac_signed_wider);
-  ASSERT_TRUE(uac_signed_wider_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, uac_signed_wider_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(uac_signed_wider_ty));
-  ASSERT_TRUE(!ps_type_is_unsigned(uac_signed_wider_ty));
-  ASSERT_EQ(8, ps_node_type_size(uac_signed_wider));
-  ASSERT_TRUE(!ps_node_integer_value_is_unsigned(uac_signed_wider));
-  ASSERT_TRUE(!ps_node_usual_arith_is_unsigned(uac_signed_wider));
-
-    node_t *uac_unsigned_same_width = parse_expr_input("(unsigned long)1 + (long)-1");
-  const psx_type_t *uac_unsigned_same_width_ty =
-      ps_node_get_type(uac_unsigned_same_width);
-  ASSERT_TRUE(uac_unsigned_same_width_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, uac_unsigned_same_width_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(uac_unsigned_same_width_ty));
-  ASSERT_TRUE(ps_type_is_unsigned(uac_unsigned_same_width_ty));
-  ASSERT_EQ(8, ps_node_type_size(uac_unsigned_same_width));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(uac_unsigned_same_width));
-  ASSERT_TRUE(ps_node_usual_arith_is_unsigned(uac_unsigned_same_width));
-
-    node_t *uac_long_long = parse_expr_input("((unsigned long long)9ULL) ^ ((unsigned short)3)");
-  const psx_type_t *uac_long_long_ty = ps_node_get_type(uac_long_long);
-  ASSERT_TRUE(uac_long_long_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, uac_long_long_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(uac_long_long_ty));
-  ASSERT_TRUE(ps_type_is_unsigned(uac_long_long_ty));
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG, uac_long_long_ty->integer_kind);
-  ASSERT_EQ(8, ps_node_type_size(uac_long_long));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(uac_long_long));
-  ASSERT_TRUE(ps_node_usual_arith_is_unsigned(uac_long_long));
-
-    node_t *ternary_uac = parse_expr_input("1 ? (unsigned int)1 : (long)-1");
-  const psx_type_t *ternary_uac_ty = ps_node_get_type(ternary_uac);
-  ASSERT_TRUE(ternary_uac_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ternary_uac_ty->kind);
-  ASSERT_EQ(8, ps_type_sizeof(ternary_uac_ty));
-  ASSERT_TRUE(!ps_type_is_unsigned(ternary_uac_ty));
-  ASSERT_EQ(8, ps_node_type_size(ternary_uac));
-  ASSERT_TRUE(!ps_node_integer_value_is_unsigned(ternary_uac));
-  ASSERT_TRUE(!ps_node_usual_arith_is_unsigned(ternary_uac));
-
-    node_t *cmp_uac = parse_expr_input("(unsigned int)1 < (long)-1");
-  ASSERT_TRUE(!ps_node_usual_arith_is_unsigned(cmp_uac));
+  expression = resolve_test_expression_input_hir(
+      "(unsigned int)1 < (long)-1", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_LT, psx_hir_node_kind(root));
+  shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
+  ASSERT_TRUE(!shape.is_unsigned);
+  const psx_hir_node_t *left = test_hir_child(&expression, root, 0);
+  const psx_hir_node_t *right = test_hir_child(&expression, root, 1);
+  psx_type_shape_t left_shape = test_hir_type_shape(left);
+  psx_type_shape_t right_shape = test_hir_type_shape(right);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, left_shape.integer_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, right_shape.integer_kind);
+  ASSERT_TRUE(left_shape.is_unsigned);
+  ASSERT_TRUE(!right_shape.is_unsigned);
+  psx_integer_conversion_t comparison_type =
+      psx_usual_integer_conversion_for_data_layout(
+          psx_integer_conversion_from_shape(&left_shape),
+          psx_integer_conversion_from_shape(&right_shape),
+          ps_ctx_data_layout(test_semantic_context()));
+  ASSERT_EQ(4, comparison_type.rank);
+  ASSERT_TRUE(!comparison_type.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_inc_dec_typed_hir_boundary() {

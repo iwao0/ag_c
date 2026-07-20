@@ -2667,6 +2667,7 @@ for (const testName of [
   "test_expr_shift",
   "test_expr_ternary",
   "test_expr_unary_ops",
+  "test_expr_sizeof",
 ]) {
   const body = parserUnitTestSource.match(
     new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
@@ -2699,7 +2700,7 @@ const legacyAnalyzedExpressionParseSites = callBodies(
   parserUnitTestSource,
   "parse_expr_input",
 );
-if (legacyAnalyzedExpressionParseSites.length > 71) {
+if (legacyAnalyzedExpressionParseSites.length > 33) {
   throw new Error(
     "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
