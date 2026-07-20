@@ -7,7 +7,6 @@
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
-#include "../parser/type_builder.h"
 #include "resolution_state.h"
 #include "resolved_node_type.h"
 
@@ -28,11 +27,12 @@ static psx_floating_kind_t literal_floating_kind(
 
 static int finish_literal_resolution(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *type,
+    psx_qual_type_t qual_type,
     psx_literal_semantic_resolution_t *resolution) {
-  if (!semantic_context || !type || !resolution) return 0;
-  resolution->qual_type =
-      ps_ctx_intern_qual_type_in(semantic_context, type);
+  if (!semantic_context || !resolution ||
+      qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  resolution->qual_type = qual_type;
   return resolution->qual_type.type_id != PSX_TYPE_ID_INVALID &&
          ps_ctx_type_by_id_in(
              semantic_context, resolution->qual_type.type_id) != NULL;
@@ -45,14 +45,14 @@ int psx_resolve_number_literal_semantics_in_contexts(
     psx_literal_semantic_resolution_t *resolution) {
   if (resolution) *resolution = (psx_literal_semantic_resolution_t){0};
   if (!semantic_context || !literal || !resolution) return 0;
-  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   token_t *tok = literal->base.tok;
-  const psx_type_t *type = NULL;
+  psx_qual_type_t qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (tok && tok->kind == TK_NUM &&
       tk_as_num(tok)->num_kind == TK_NUM_KIND_FLOAT) {
     tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;
-    type = ps_type_new_floating_in(
-        arena_context, literal_floating_kind(fp_kind), 0);
+    qual_type = ps_ctx_intern_floating_qual_type_in(
+        semantic_context, literal_floating_kind(fp_kind), 0);
     if (global_registry) {
       float_lit_t *registered = calloc(1, sizeof(*registered));
       if (!registered) return 0;
@@ -77,11 +77,11 @@ int psx_resolve_number_literal_semantics_in_contexts(
         : int_size == TK_INT_SIZE_LONG
             ? PSX_INTEGER_KIND_LONG
             : PSX_INTEGER_KIND_INT;
-    type = ps_type_new_integer_kind_in(
-        arena_context, integer_kind, is_unsigned, 0);
+    qual_type = ps_ctx_intern_integer_qual_type_in(
+        semantic_context, integer_kind, is_unsigned, 0);
   }
   return finish_literal_resolution(
-      semantic_context, type, resolution);
+      semantic_context, qual_type, resolution);
 }
 
 int psx_resolve_string_literal_semantics_in_contexts(
@@ -110,7 +110,6 @@ int psx_resolve_string_literal_value_in_contexts(
     psx_literal_semantic_resolution_t *resolution) {
   if (resolution) *resolution = (psx_literal_semantic_resolution_t){0};
   if (!semantic_context || !literal || !resolution) return 0;
-  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   int element_width = literal->character_width
                           ? literal->character_width
                           : TK_CHAR_WIDTH_CHAR;
@@ -123,11 +122,11 @@ int psx_resolve_string_literal_value_in_contexts(
       : element_width == TK_CHAR_WIDTH_CHAR16
           ? PSX_INTEGER_KIND_SHORT
           : PSX_INTEGER_KIND_INT;
-  const psx_type_t *element_type = ps_type_new_integer_kind_in(
-      arena_context, element_kind, element_is_unsigned,
+  psx_qual_type_t element_type = ps_ctx_intern_integer_qual_type_in(
+      semantic_context, element_kind, element_is_unsigned,
       element_width == TK_CHAR_WIDTH_CHAR);
-  const psx_type_t *type = ps_type_new_pointer_in(
-      arena_context, element_type);
+  psx_qual_type_t type = ps_ctx_intern_pointer_to_qual_type_in(
+      semantic_context, element_type);
   if (global_registry) {
     string_lit_t *registered = calloc(1, sizeof(*registered));
     if (!registered) return 0;

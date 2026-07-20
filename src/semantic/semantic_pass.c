@@ -1225,13 +1225,15 @@ static void semantic_transform_node(
           traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_VARARG_CURSOR:
-      if (!ps_node_get_type(store, node))
-        semantic_bind_result_type(
-            traversal->semantic_context, node, ps_type_new_pointer_in(
-                      ps_ctx_arena(traversal->semantic_context),
-                      ps_type_new_in(
-                          ps_ctx_arena(traversal->semantic_context),
-                          PSX_TYPE_VOID)));
+      if (!ps_node_get_type(store, node)) {
+        psx_qual_type_t void_type =
+            ps_ctx_intern_void_qual_type_in(
+                traversal->semantic_context);
+        semantic_bind_qual_type_result(
+            traversal->semantic_context, node,
+            ps_ctx_intern_pointer_to_qual_type_in(
+                traversal->semantic_context, void_type));
+      }
       break;
     case ND_SUBSCRIPT:
       semantic_transform_node(node->lhs, traversal);

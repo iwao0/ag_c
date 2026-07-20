@@ -28411,6 +28411,10 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(const_int_array_identity.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(const_int_array_identity.type_id,
             repeated_const_int_array.type_id);
+  ASSERT_EQ(const_int_array_identity.type_id,
+            ps_ctx_intern_qual_type_in(
+                context,
+                ps_type_new_array(const_int, 4, 16, 0)).type_id);
   psx_qual_type_t const_int_array_element =
       psx_semantic_type_table_base(
           ps_ctx_semantic_type_table_in(context),
@@ -28607,6 +28611,8 @@ static void test_semantic_type_identity() {
   psx_qual_type_t addressed_const_int_identity =
       psx_resolve_address_result_qual_type_in(
           context, const_int_identity);
+  ASSERT_EQ(pointer_to_const_identity.type_id,
+            addressed_const_int_identity.type_id);
   psx_qual_type_t addressed_const_int_base =
       psx_semantic_type_table_base(
           ps_ctx_semantic_type_table_in(context),
@@ -28697,6 +28703,28 @@ static void test_semantic_type_identity() {
   psx_qual_type_t function_identity =
       ps_ctx_intern_qual_type_in(context, function_type);
   ASSERT_TRUE(function_identity.type_id != PSX_TYPE_ID_INVALID);
+  const psx_qual_type_t function_parameter_identities[2] = {
+      const_int_identity, host_pointer_identity};
+  ASSERT_EQ(function_identity.type_id,
+            ps_ctx_intern_function_qual_type_in(
+                context, plain_int_identity,
+                function_parameter_identities, 2, 1, 0).type_id);
+  psx_qual_type_t invalid_function_parameter = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_pointer_to_qual_type_in(
+                context, invalid_function_parameter).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_array_of_qual_type_in(
+                context, invalid_function_parameter, 1, 0).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_function_qual_type_in(
+                context, invalid_function_parameter,
+                NULL, 0, 1, 0).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_function_qual_type_in(
+                context, plain_int_identity,
+                &invalid_function_parameter, 1, 1, 0).type_id);
   ASSERT_EQ(plain_int_identity.type_id,
             psx_semantic_type_table_base(
                 ps_ctx_semantic_type_table_in(context),
@@ -28741,6 +28769,20 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_parameter(
                 ps_ctx_semantic_type_table_in(context),
                 function_identity.type_id, 2).type_id);
+
+  psx_qual_type_t implicit_function_identity =
+      ps_ctx_intern_implicit_function_qual_type_in(context);
+  psx_type_shape_t implicit_function_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      implicit_function_identity.type_id, &implicit_function_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, implicit_function_shape.kind);
+  ASSERT_EQ(0, implicit_function_shape.parameter_count);
+  ASSERT_TRUE(!implicit_function_shape.has_function_prototype);
+  ASSERT_EQ(plain_int_identity.type_id,
+            psx_semantic_type_table_base(
+                ps_ctx_semantic_type_table_in(context),
+                implicit_function_identity.type_id).type_id);
 
   psx_type_t *exact_int_void_function = ps_type_new_function(plain_int);
   ps_type_set_function_params(exact_int_void_function, NULL, 0, 0);

@@ -378,6 +378,19 @@ psx_qual_type_t ps_ctx_intern_array_of_qual_type_in(
                                  PSX_TYPE_QUALIFIER_NONE};
 }
 
+psx_qual_type_t ps_ctx_intern_function_qual_type_in(
+    psx_semantic_context_t *context, psx_qual_type_t result,
+    const psx_qual_type_t *parameters, int parameter_count,
+    int has_prototype, int is_variadic) {
+  return context
+             ? psx_semantic_type_table_intern_function(
+                   context->semantic_types, result,
+                   parameters, parameter_count,
+                   has_prototype, is_variadic)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
     psx_semantic_context_t *context) {
   if (!context) {
@@ -386,11 +399,8 @@ psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
   }
   psx_qual_type_t result = ps_ctx_intern_integer_qual_type_in(
       context, PSX_INTEGER_KIND_INT, 0, 0);
-  const psx_type_t *result_type = ps_ctx_type_by_id_in(
-      context, result.type_id);
-  return ps_ctx_intern_qual_type_in(
-      context,
-      ps_type_new_function_in(context->arena_context, result_type));
+  return ps_ctx_intern_function_qual_type_in(
+      context, result, NULL, 0, 0, 0);
 }
 
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(

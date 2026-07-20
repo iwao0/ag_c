@@ -2,7 +2,6 @@
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
 
@@ -103,16 +102,14 @@ int psx_resolve_parameter_declaration(
             ps_ctx_data_layout(request->type.semantic_context),
             AG_TARGET_SCALAR_LONG_LONG) != PSX_VLA_RUNTIME_SLOT_SIZE)
       return 0;
-    psx_type_t *slot = ps_type_new_integer_kind_in(
-        ps_ctx_arena(request->type.semantic_context),
+    psx_qual_type_t slot = ps_ctx_intern_integer_qual_type_in(
+        request->type.semantic_context,
         PSX_INTEGER_KIND_LONG_LONG, 1, 0);
-    psx_type_t *storage_type = request->inner_dimension_count == 1
+    psx_qual_type_t storage_identity = request->inner_dimension_count == 1
         ? slot
-        : ps_type_new_array_in(
-              ps_ctx_arena(request->type.semantic_context), slot,
+        : ps_ctx_intern_array_of_qual_type_in(
+              request->type.semantic_context, slot,
               request->inner_dimension_count, 0);
-    psx_qual_type_t storage_identity = ps_ctx_intern_qual_type_in(
-        request->type.semantic_context, storage_type);
     if (storage_identity.type_id == PSX_TYPE_ID_INVALID) return 0;
     resolution->runtime_stride_storage_type_id =
         storage_identity.type_id;

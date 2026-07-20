@@ -8639,6 +8639,12 @@ for (const [contextInterner, tableInterner] of [
    "psx_semantic_type_table_intern_floating"],
   ["ps_ctx_intern_void_qual_type_in",
    "psx_semantic_type_table_intern_void"],
+  ["ps_ctx_intern_pointer_to_qual_type_in",
+   "psx_semantic_type_table_intern_pointer_to"],
+  ["ps_ctx_intern_array_of_qual_type_in",
+   "psx_semantic_type_table_intern_array_of"],
+  ["ps_ctx_intern_function_qual_type_in",
+   "psx_semantic_type_table_intern_function"],
 ]) {
   const implementation = parserSemanticContextImplementation.match(
     new RegExp(
@@ -8657,25 +8663,63 @@ for (const [contextInterner, tableInterner] of [
         semanticTypeIdentitySource,
       )) {
     throw new Error(
-      `${contextInterner} must intern an immutable scalar TypeShape without constructing a parser type`,
+      `${contextInterner} must intern an immutable TypeShape without constructing a parser type`,
     );
   }
 }
-const directScalarShapeInterner = semanticTypeIdentitySource.match(
-  /static\s+psx_qual_type_t\s+semantic_type_table_intern_scalar_shape\s*\([^]*?\n\}/,
+const directShapeInterner = semanticTypeIdentitySource.match(
+  /static\s+psx_qual_type_t\s+semantic_type_table_intern_shape\s*\([^]*?\n\}/,
 );
-if (!directScalarShapeInterner ||
+if (!directShapeInterner ||
     !/table->entries\[id\]\.shape\s*=\s*\*shape\s*;/.test(
-      directScalarShapeInterner[0],
+      directShapeInterner[0],
     ) ||
     !/table->entries\[id\]\.base_type\s*=\s*base_type\s*;/.test(
-      directScalarShapeInterner[0],
+      directShapeInterner[0],
+    ) ||
+    !/table->entries\[id\]\.parameter_types\s*=\s*owned_parameters\s*;/.test(
+      directShapeInterner[0],
     ) ||
     /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_semantic_type_table_intern\s*\(/.test(
-      directScalarShapeInterner[0],
+      directShapeInterner[0],
     )) {
   throw new Error(
-    "semantic scalar TypeIds must be interned directly from TypeShape while parser types remain compatibility views",
+    "semantic TypeIds must be interned directly from TypeShape relations while parser types remain compatibility views",
+  );
+}
+for (const derivedInterner of [
+  "psx_semantic_type_table_intern_pointer_to",
+  "psx_semantic_type_table_intern_array_of",
+  "psx_semantic_type_table_intern_function",
+]) {
+  const implementation = semanticTypeIdentitySource.match(
+    new RegExp(
+      `psx_qual_type_t\\s+${derivedInterner}\\s*\\([^]*?\\n\\}`,
+    ),
+  );
+  if (!implementation ||
+      !/\bsemantic_type_table_intern_shape\s*\(/.test(
+        implementation[0],
+      ) ||
+      /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_semantic_type_table_lookup\s*\(/.test(
+        implementation[0],
+      )) {
+    throw new Error(
+      `${derivedInterner} must derive TypeId directly from recursive QualType relations`,
+    );
+  }
+}
+if (/parser\/type_builder\.h|\bps_type_new_[A-Za-z0-9_]*\s*\(/.test(
+      literalResolutionSource,
+    ) ||
+    /parser\/type_builder\.h|\bps_type_new_[A-Za-z0-9_]*\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/case\s+ND_VARARG_CURSOR:[^]*?ps_ctx_intern_void_qual_type_in\s*\([^]*?ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "semantic synthesized pointer and array types must use canonical TypeId constructors",
   );
 }
 const exactIntVoidTypePredicate = semanticTypeIdentitySource.match(
@@ -9125,7 +9169,10 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
     !/AG_TARGET_SCALAR_LONG_LONG[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/ps_type_new_integer_kind_in\s*\([^]*?PSX_INTEGER_KIND_LONG_LONG/.test(
+    !/ps_ctx_intern_integer_qual_type_in\s*\([^]*?PSX_INTEGER_KIND_LONG_LONG/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/ps_ctx_intern_array_of_qual_type_in\s*\(/.test(
       parameterDeclarationResolutionSource,
     ) ||
     /\b8\s*\*\s*(?:count|level|stride_count|subscript_depth)/.test(
@@ -9139,7 +9186,10 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
 if (!/static\s+int\s+semantic_bind_address_result_type\s*\([^]*?ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
       semanticPassSource,
     ) ||
-    !/psx_semantic_type_table_intern_pointer_to\s*\([^]*?base\.type_id\s*==\s*pointee\.type_id[^]*?base\.qualifiers\s*==\s*pointee\.qualifiers/.test(
+    !/semantic_type_relations_match\s*\([^]*?entry->base_type\.type_id\s*!=\s*base_type\.type_id[^]*?entry->base_type\.qualifiers\s*!=\s*base_type\.qualifiers/.test(
+      typeIdentityImplementationSource,
+    ) ||
+    !/psx_semantic_type_table_intern_pointer_to\s*\([^]*?semantic_type_table_intern_shape\s*\(/.test(
       typeIdentityImplementationSource,
     ) ||
     !/psx_semantic_type_table_callable_function\s*\(/.test(

@@ -71,6 +71,10 @@ psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
 psx_qual_type_t ps_ctx_intern_array_of_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t element,
     int array_len, int is_vla);
+psx_qual_type_t ps_ctx_intern_function_qual_type_in(
+    psx_semantic_context_t *context, psx_qual_type_t result,
+    const psx_qual_type_t *parameters, int parameter_count,
+    int has_prototype, int is_variadic);
 psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
     psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(
