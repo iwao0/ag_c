@@ -7362,6 +7362,7 @@ const localDeclarationResolutionTraversalSource = await readFile(
   "utf8",
 );
 for (const functionName of [
+  "psx_semantic_type_table_contains_vla_array",
   "psx_semantic_type_table_array_leaf",
   "psx_semantic_type_table_pointee_value",
 ]) {
@@ -7372,6 +7373,17 @@ for (const functionName of [
       "derived type traversal must be owned by the semantic TypeId graph",
     );
   }
+}
+const semanticTypeIdTraversalImplementation =
+  semanticTypeTraversalSource.slice(
+    semanticTypeTraversalSource.indexOf("static psx_qual_type_t related_type"),
+  );
+if (/\bpsx_semantic_type_table_lookup\s*\(/.test(
+      semanticTypeIdTraversalImplementation,
+    )) {
+  throw new Error(
+    "semantic TypeId graph traversal must inspect immutable TypeShape relations without materializing parser type views",
+  );
 }
 for (const source of [
   localDeclarationPlanSource,
@@ -7396,6 +7408,11 @@ for (const [name, header, source, functionName] of [
   );
   if (!signature.test(header) || !signature.test(source) ||
       !/\bps_type_sizeof_id\s*\(/.test(source) ||
+      !/\bpsx_semantic_type_table_describe\s*\(/.test(source) ||
+      /\bpsx_semantic_type_table_lookup\s*\(/.test(source) ||
+      /#include\s+"\.\.\/parser\/type\.h"/.test(source) ||
+      (name === "local" &&
+       !/\bpsx_semantic_type_table_contains_vla_array\s*\(/.test(source)) ||
       /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
       /\bag_target_info_t\b/.test(`${header}\n${source}`) ||

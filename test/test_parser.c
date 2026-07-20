@@ -27812,6 +27812,23 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(array_leaf_identity.type_id, pointee_value_identity.type_id);
   ASSERT_EQ(array_leaf_identity.qualifiers,
             pointee_value_identity.qualifiers);
+  ASSERT_TRUE(!psx_semantic_type_table_contains_vla_array(
+      ps_ctx_semantic_type_table_in(context),
+      nested_array_identity.type_id));
+  psx_type_t *vla_array = ps_type_new_array(plain_int, 0, 0, 1);
+  psx_type_t *vla_pointer = ps_type_new_pointer(vla_array);
+  psx_qual_type_t vla_array_identity =
+      ps_ctx_intern_qual_type_in(context, vla_array);
+  psx_qual_type_t vla_pointer_identity =
+      ps_ctx_intern_qual_type_in(context, vla_pointer);
+  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
+      ps_ctx_semantic_type_table_in(context),
+      vla_array_identity.type_id));
+  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
+      ps_ctx_semantic_type_table_in(context),
+      vla_pointer_identity.type_id));
+  ASSERT_TRUE(!psx_semantic_type_table_contains_vla_array(
+      ps_ctx_semantic_type_table_in(context), PSX_TYPE_ID_INVALID));
   psx_qual_type_t derived_array_pointer_identity =
       ps_ctx_intern_pointer_to_qual_type_in(context,
                                             nested_array_identity);

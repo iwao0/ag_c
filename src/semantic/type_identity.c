@@ -61,6 +61,13 @@ struct psx_semantic_type_table_t {
   psx_type_id_t next_id;
 };
 
+static int semantic_type_id_is_valid(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  return table && type_id != PSX_TYPE_ID_INVALID &&
+         type_id <= table->next_id && (size_t)type_id < table->capacity &&
+         table->entries[type_id].shape.kind != PSX_TYPE_INVALID;
+}
+
 psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
   psx_semantic_type_table_t *table = calloc(1, sizeof(*table));
   if (!table) return NULL;
@@ -442,9 +449,7 @@ const psx_type_t *psx_semantic_type_table_lookup(
 int psx_semantic_type_table_describe(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     psx_type_shape_t *out) {
-  if (!table || !out || type_id == PSX_TYPE_ID_INVALID ||
-      type_id > table->next_id || (size_t)type_id >= table->capacity ||
-      !table->entries[type_id].type) {
+  if (!out || !semantic_type_id_is_valid(table, type_id)) {
     return 0;
   }
   *out = table->entries[type_id].shape;
@@ -531,29 +536,40 @@ const psx_type_t *psx_semantic_type_table_lookup_qual_type(
 
 static psx_qual_type_t related_type(
     const psx_semantic_type_table_t *table, psx_qual_type_t relation) {
-  if (!table || relation.type_id == PSX_TYPE_ID_INVALID ||
-      !psx_semantic_type_table_lookup(table, relation.type_id))
+  if (!semantic_type_id_is_valid(table, relation.type_id))
     return invalid_qual_type();
   return relation;
 }
 
 psx_qual_type_t psx_semantic_type_table_base(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
-  if (!type) return invalid_qual_type();
+  if (!semantic_type_id_is_valid(table, type_id))
+    return invalid_qual_type();
   return related_type(table, table->entries[type_id].base_type);
+}
+
+int psx_semantic_type_table_contains_vla_array(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  for (psx_type_id_t current = type_id;
+       semantic_type_id_is_valid(table, current);) {
+    const psx_type_shape_t *shape = &table->entries[current].shape;
+    if (shape->kind == PSX_TYPE_ARRAY && shape->is_vla) return 1;
+    psx_qual_type_t base = psx_semantic_type_table_base(table, current);
+    if (base.type_id == PSX_TYPE_ID_INVALID) return 0;
+    current = base.type_id;
+  }
+  return 0;
 }
 
 static psx_qual_type_t semantic_type_table_array_leaf_from(
     const psx_semantic_type_table_t *table, psx_qual_type_t result) {
   result = related_type(table, result);
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      table, result.type_id);
-  while (type && type->kind == PSX_TYPE_ARRAY) {
+  while (semantic_type_id_is_valid(table, result.type_id) &&
+         table->entries[result.type_id].shape.kind == PSX_TYPE_ARRAY) {
     result = psx_semantic_type_table_base(table, result.type_id);
-    type = psx_semantic_type_table_lookup(table, result.type_id);
   }
-  return type ? result : invalid_qual_type();
+  return semantic_type_id_is_valid(table, result.type_id)
+             ? result : invalid_qual_type();
 }
 
 psx_qual_type_t psx_semantic_type_table_array_leaf(
@@ -564,9 +580,9 @@ psx_qual_type_t psx_semantic_type_table_array_leaf(
 
 psx_qual_type_t psx_semantic_type_table_pointee_value(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
-  if (!type || (type->kind != PSX_TYPE_POINTER &&
-                type->kind != PSX_TYPE_ARRAY)) {
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(table, type_id, &type) ||
+      (type.kind != PSX_TYPE_POINTER && type.kind != PSX_TYPE_ARRAY)) {
     return invalid_qual_type();
   }
   psx_qual_type_t base = psx_semantic_type_table_base(table, type_id);
@@ -575,25 +591,29 @@ psx_qual_type_t psx_semantic_type_table_pointee_value(
 
 psx_qual_type_t psx_semantic_type_table_callable_function(
     const psx_semantic_type_table_t *table, psx_qual_type_t type) {
-  const psx_type_t *current = psx_semantic_type_table_lookup(
-      table, type.type_id);
-  if (current && current->kind == PSX_TYPE_POINTER) {
+  psx_type_shape_t current = {0};
+  int has_current = psx_semantic_type_table_describe(
+      table, type.type_id, &current);
+  if (has_current && current.kind == PSX_TYPE_POINTER) {
     type = psx_semantic_type_table_base(table, type.type_id);
-    current = psx_semantic_type_table_lookup(table, type.type_id);
+    has_current = psx_semantic_type_table_describe(
+        table, type.type_id, &current);
   }
-  return current && current->kind == PSX_TYPE_FUNCTION
+  return has_current && current.kind == PSX_TYPE_FUNCTION
              ? type : invalid_qual_type();
 }
 
 psx_qual_type_t psx_semantic_type_table_aggregate_object(
     const psx_semantic_type_table_t *table, psx_qual_type_t type) {
   while (type.type_id != PSX_TYPE_ID_INVALID) {
-    const psx_type_t *current = psx_semantic_type_table_lookup(
-        table, type.type_id);
-    if (!current) return invalid_qual_type();
-    if (ps_type_is_tag_aggregate(current)) return type;
-    if (current->kind != PSX_TYPE_POINTER &&
-        current->kind != PSX_TYPE_ARRAY)
+    psx_type_shape_t current = {0};
+    if (!psx_semantic_type_table_describe(
+            table, type.type_id, &current))
+      return invalid_qual_type();
+    if (current.kind == PSX_TYPE_STRUCT || current.kind == PSX_TYPE_UNION)
+      return type;
+    if (current.kind != PSX_TYPE_POINTER &&
+        current.kind != PSX_TYPE_ARRAY)
       return invalid_qual_type();
     type = psx_semantic_type_table_base(table, type.type_id);
   }
@@ -603,8 +623,7 @@ psx_qual_type_t psx_semantic_type_table_aggregate_object(
 psx_qual_type_t psx_semantic_type_table_parameter(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     int parameter_index) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
-  if (!type || parameter_index < 0 ||
+  if (!semantic_type_id_is_valid(table, type_id) || parameter_index < 0 ||
       parameter_index >= table->entries[type_id].parameter_count ||
       !table->entries[type_id].parameter_types)
     return invalid_qual_type();
@@ -615,8 +634,10 @@ psx_qual_type_t psx_semantic_type_table_parameter(
 psx_qual_type_t psx_semantic_type_table_record_member(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     int member_index) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
-  if (!type || !ps_type_is_tag_aggregate(type) || member_index < 0 ||
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(table, type_id, &type) ||
+      (type.kind != PSX_TYPE_STRUCT && type.kind != PSX_TYPE_UNION) ||
+      member_index < 0 ||
       member_index >= table->entries[type_id].record_member_count)
     return invalid_qual_type();
   return related_type(
