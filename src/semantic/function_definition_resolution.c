@@ -38,23 +38,14 @@ static int resolve_function_definition_header(
   ps_local_registry_prepare_function_resolution_in(local_registry);
   local_storage_reset(lowering_context);
 
-  const psx_type_t *base_type =
-      psx_apply_parsed_decl_specifier_in_contexts(
+  psx_qual_type_t base_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
           semantic_context, global_registry, local_registry,
           &definition->return_specifier);
-  if (!base_type) {
-    ps_diag_ctx_in(
-        diagnostics, definition->diagnostic_token, "funcdef",
-        "canonical function return base type resolution failed");
-    return 0;
-  }
-  psx_qual_type_t base_qual_type =
-      ps_ctx_intern_declaration_qual_type_in(
-          semantic_context, base_type);
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         diagnostics, definition->diagnostic_token, "funcdef",
-        "canonical function return base type interning failed");
+        "canonical function return base type resolution failed");
     return 0;
   }
   psx_function_definition_pipeline_result_t applied;

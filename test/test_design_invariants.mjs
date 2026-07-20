@@ -3008,7 +3008,7 @@ if (!/psx_name_classifier_t\s+name_classifier\s*;/.test(
     !/ps_name_classifier_declare\s*\(\s*&context->name_classifier/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
-    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_decl_specifier_qual_type_in_contexts\s*\(/.test(
       toplevelDeclarationFrontendSource,
     ) ||
     !/psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
@@ -3060,7 +3060,7 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     !/psx_local_declaration_application_context_t/.test(
       localDeclarationTreeResolutionSource,
     ) ||
-    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_decl_specifier_qual_type_in_contexts\s*\(/.test(
       localDeclarationTreeResolutionSource,
     ) ||
     !/psx_apply_parsed_standalone_tag_in_contexts\s*\(/.test(
@@ -3393,7 +3393,7 @@ if (!declarationSpecifierValueResolutionStruct ||
     /\bpsx_type_t\b|\bbase_type\b/.test(
       declarationSpecifierValueResolutionStruct[1],
     ) ||
-    !/resolution->base_qual_type\s*=\s*[^;]*ps_ctx_intern_declaration_qual_type_in\s*\(/s.test(
+    !/resolution->base_qual_type\s*=\s*[^;]*psx_resolve_decl_specifier_qual_type_in_context\s*\(/s.test(
       declarationSpecifierResolutionSource,
     )) {
   throw new Error(
@@ -3514,7 +3514,7 @@ if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     !/psx_apply_parsed_tag_declaration_in\s*\(/.test(
       declarationApplicationSource,
     ) ||
-    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+    !/psx_apply_parsed_decl_specifier_qual_type_in_contexts\s*\(/.test(
       frontendDeclarationSources,
     ) ||
     !/psx_apply_parsed_standalone_tag_in_contexts\s*\(/.test(
@@ -9418,8 +9418,6 @@ if (!/\bpsx_qual_type_t\s+psx_apply_parsed_declarator_qual_type_in_contexts\s*\(
 }
 
 const readonlySemanticTypeResults = [
-  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax_in_context"],
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
@@ -9440,9 +9438,7 @@ const declarationResolutionHeader = await readFile(
   "utf8",
 );
 const declarationTypeBuilderUsers = new Set([
-  "src/semantic/declaration_type_builder.h",
   "src/semantic/declaration_resolution.c",
-  "src/semantic/declaration_application.c",
 ]);
 const declarationTypeBuilderViolations = [];
 for (const file of sourceFiles) {
@@ -9466,6 +9462,30 @@ if (/\bpsx_build_decl_type\b/.test(
     )) {
   throw new Error(
     "mutable declarator type construction must remain private to declaration resolution",
+  );
+}
+if (/\bpsx_build_decl_specifier_type_in_context\b/.test(
+      `${declarationResolutionHeader}\n${declarationResolutionSource}`,
+    ) ||
+    !/static\s+psx_type_t\s*\*build_decl_specifier_type_value\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/psx_qual_type_t\s+psx_resolve_decl_specifier_qual_type_in_context\s*\(/.test(
+      declarationResolutionHeader,
+    )) {
+  throw new Error(
+    "declaration specifier resolution must publish canonical QualType from a private mutable builder",
+  );
+}
+
+if (!/psx_qual_type_t\s+psx_apply_parsed_decl_specifier_qual_type_in_contexts\s*\(/.test(
+      declarationApplicationHeader,
+    ) ||
+    /\bpsx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+      `${declarationApplicationHeader}\n${declarationApplicationSource}`,
+    )) {
+  throw new Error(
+    "parsed declaration specifier application must publish canonical QualType without a compatibility type-view API",
   );
 }
 
@@ -11494,7 +11514,7 @@ if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
     /ps_prepare_constant_declarator_expressions_in_context\s*\(|ps_prepare_decl_specifier_alignments_in_context\s*\(/.test(
       declarationSpecifierResolutionSource,
     ) ||
-    /ps_prepare_constant_declarator_expressions_in_context\s*\(|ps_prepare_decl_specifier_alignments_in_context\s*\(|psx_apply_parsed_decl_specifier_in_contexts\s*\(|psx_apply_parsed_standalone_tag_in_contexts\s*\(|psx_apply_local_declaration_syntax_in_contexts\s*\(/.test(
+    /ps_prepare_constant_declarator_expressions_in_context\s*\(|ps_prepare_decl_specifier_alignments_in_context\s*\(|psx_apply_parsed_decl_specifier_qual_type_in_contexts\s*\(|psx_apply_parsed_standalone_tag_in_contexts\s*\(|psx_apply_local_declaration_syntax_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_semantic_node_builder_vla_runtime\s*\(/.test(

@@ -105,25 +105,16 @@ static void *begin_declaration(
         specifier);
     return application;
   }
-  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      application->semantic_context, application->global_registry,
-      application->local_registry,
-      specifier);
-  if (!base_type) {
+  application->base_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+          application->semantic_context, application->global_registry,
+          application->local_registry, specifier);
+  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         specifier->diagnostic_token, "local-declaration",
         "canonical local declaration type resolution failed");
     return application;
-  }
-  application->base_qual_type =
-      ps_ctx_intern_declaration_qual_type_in(
-          application->semantic_context, base_type);
-  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-    ps_diag_ctx_in(
-        application_diagnostics(application),
-        specifier->diagnostic_token, "local-declaration",
-        "canonical local declaration type interning failed");
   }
   application->requested_alignment =
       psx_resolve_parsed_decl_alignment_in_contexts(

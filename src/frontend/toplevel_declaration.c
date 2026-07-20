@@ -88,25 +88,17 @@ static int begin_declaration(
     return 1;
   }
 
-  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      application->semantic_context, application->global_registry,
-      application->local_registry,
-      &declaration->specifier);
-  if (!base_type) {
+  application->base_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+          application->semantic_context, application->global_registry,
+          application->local_registry,
+          &declaration->specifier);
+  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         application_diagnostics(application),
         declaration->diagnostic_token, "decl",
         "canonical top-level base type resolution failed");
     return 0;
-  }
-  application->base_qual_type =
-      ps_ctx_intern_declaration_qual_type_in(
-          application->semantic_context, base_type);
-  if (application->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-    ps_diag_ctx_in(
-        application_diagnostics(application),
-        declaration->diagnostic_token, "decl",
-        "canonical top-level base type interning failed");
   }
   return 1;
 }

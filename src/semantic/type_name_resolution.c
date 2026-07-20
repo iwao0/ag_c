@@ -164,11 +164,8 @@ static psx_qual_type_t bind_base_qual_type(
             specifier->tag_action.name_len, point),
         specifier);
   }
-  return ps_ctx_intern_declaration_qual_type_in(
-      semantic_context,
-      psx_apply_parsed_decl_specifier_in_contexts(
-          semantic_context, global_registry, local_registry,
-          specifier));
+  return psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+      semantic_context, global_registry, local_registry, specifier);
 }
 
 int psx_bind_type_name_ref_in_contexts(

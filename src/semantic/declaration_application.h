@@ -129,7 +129,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align);
-const psx_type_t *psx_apply_parsed_decl_specifier_in_contexts(
+psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,

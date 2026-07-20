@@ -3,7 +3,6 @@
 #include "aggregate_member_resolution.h"
 #include "declaration_application.h"
 #include "declaration_registration.h"
-#include "declaration_type_builder.h"
 #include "declarator_bound_resolution.h"
 #include "enum_constant_resolution.h"
 #include "../parser/aggregate_member_syntax.h"
@@ -112,7 +111,7 @@ static psx_decl_specifier_value_status_t resolve_tag_action_value(
     const psx_parsed_tag_action_t *action, int is_standalone_tag,
     int *member_count, int *size, int *alignment);
 
-static const psx_type_t *resolve_decl_specifier_type_value(
+static psx_qual_type_t resolve_decl_specifier_type_value(
     const decl_specifier_value_context_t *context,
     const psx_parsed_decl_specifier_t *specifier,
     psx_decl_specifier_value_status_t *status) {
@@ -122,10 +121,13 @@ static const psx_type_t *resolve_decl_specifier_type_value(
   *status = resolve_tag_action_value(
       context, &specifier->tag_action, 0,
       &ignored_member_count, &ignored_size, &ignored_alignment);
-  if (*status != PSX_DECL_SPECIFIER_VALUE_OK) return NULL;
-  const psx_type_t *type = psx_build_decl_specifier_type_in_context(
+  if (*status != PSX_DECL_SPECIFIER_VALUE_OK)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t type = psx_resolve_decl_specifier_qual_type_in_context(
       context->semantic_context, specifier);
-  if (!type) *status = PSX_DECL_SPECIFIER_VALUE_INVALID;
+  if (type.type_id == PSX_TYPE_ID_INVALID)
+    *status = PSX_DECL_SPECIFIER_VALUE_INVALID;
   return type;
 }
 
@@ -146,15 +148,11 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
     const psx_parsed_aggregate_member_declaration_t *declaration =
         &body->items[i].value.member_declaration;
     psx_decl_specifier_value_status_t base_status;
-    const psx_type_t *base_type = resolve_decl_specifier_type_value(
+    psx_qual_type_t base_qual_type = resolve_decl_specifier_type_value(
         context, &declaration->specifier, &base_status);
-    if (base_status != PSX_DECL_SPECIFIER_VALUE_OK || !base_type)
+    if (base_status != PSX_DECL_SPECIFIER_VALUE_OK ||
+        base_qual_type.type_id == PSX_TYPE_ID_INVALID)
       return base_status;
-    psx_qual_type_t base_qual_type =
-        ps_ctx_intern_declaration_qual_type_in(
-            context->semantic_context, base_type);
-    if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
-      return PSX_DECL_SPECIFIER_VALUE_INVALID;
     int requested_alignment = resolve_decl_alignment_value(
         context, &declaration->specifier);
     for (int j = 0; j < declaration->declarator_count; j++) {
@@ -314,15 +312,9 @@ void psx_resolve_decl_specifier_value_in_contexts(
       &resolution->tag_alignment);
   if (resolution->status != PSX_DECL_SPECIFIER_VALUE_OK) return;
   if (request->is_standalone_tag) return;
-  const psx_type_t *base_type = psx_build_decl_specifier_type_in_context(
-      request->semantic_context, request->syntax);
-  if (!base_type) {
-    resolution->status = PSX_DECL_SPECIFIER_VALUE_INVALID;
-    return;
-  }
   resolution->base_qual_type =
-      ps_ctx_intern_declaration_qual_type_in(
-          request->semantic_context, base_type);
+      psx_resolve_decl_specifier_qual_type_in_context(
+          request->semantic_context, request->syntax);
   if (resolution->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_DECL_SPECIFIER_VALUE_INVALID;
     return;

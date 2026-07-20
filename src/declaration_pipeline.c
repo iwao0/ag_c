@@ -395,14 +395,24 @@ static int append_definition_parameter(
     psx_lowering_context_t *lowering_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
     const psx_parsed_function_parameter_t *parameter) {
-  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, global_registry, local_registry,
-      &parameter->specifier);
-  if (!base_type) {
+  psx_qual_type_t base_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &parameter->specifier);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
         parameter->specifier.diagnostic_token, "param",
         "canonical parameter base type resolution failed");
+  }
+  psx_type_shape_t base_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          base_qual_type.type_id, &base_shape)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        parameter->specifier.diagnostic_token, "param",
+        "canonical parameter base type description failed");
   }
   psx_scope_lookup_point_t parameter_lookup_point =
       psx_scope_graph_capture_lookup_point(
@@ -417,7 +427,7 @@ static int append_definition_parameter(
       &applied.shape, PSX_DECL_OP_POINTER) > 0;
   int has_array = ps_declarator_shape_count_ops(
       &applied.shape, PSX_DECL_OP_ARRAY) > 0;
-  if (!name && base_type->kind == PSX_TYPE_VOID &&
+  if (!name && base_shape.kind == PSX_TYPE_VOID &&
       !has_pointer && !has_array && applied.shape.count == 0) {
     return -1;
   }
@@ -425,8 +435,7 @@ static int append_definition_parameter(
   psx_parameter_declaration_resolution_t resolution;
   if (!resolve_definition_parameter(
           semantic_context,
-          ps_ctx_intern_declaration_qual_type_in(
-              semantic_context, base_type),
+          base_qual_type,
           &applied, &resolution)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),

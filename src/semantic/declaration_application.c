@@ -1,6 +1,5 @@
 #include "declaration_application.h"
 #include "declaration_registration.h"
-#include "declaration_type_builder.h"
 
 #include "../parser/arena.h"
 #include "../parser/diag.h"
@@ -82,23 +81,14 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
 
     psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
-    const psx_type_t *member_base_type =
-        psx_apply_parsed_decl_specifier_in_contexts(
+    psx_qual_type_t member_base_qual_type =
+        psx_apply_parsed_decl_specifier_qual_type_in_contexts(
             semantic_context, global_registry, local_registry,
             &declaration->specifier);
-    if (!member_base_type) {
+    if (member_base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), declaration->specifier.diagnostic_token, "decl", "%s",
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context),
                        DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
-    }
-    psx_qual_type_t member_base_qual_type =
-        ps_ctx_intern_declaration_qual_type_in(
-            semantic_context, member_base_type);
-    if (member_base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      ps_diag_ctx_in(
-          ps_ctx_diagnostics(semantic_context),
-          declaration->specifier.diagnostic_token, "decl",
-          "canonical member base type interning failed");
     }
     int requested_alignment =
         psx_resolve_parsed_decl_alignment_in_contexts(
@@ -200,10 +190,8 @@ static psx_qual_type_t resolve_parsed_type_name_qual_type(
     apply_decl_tag_action(
         &type_name->specifier.tag_action, semantic_context,
         global_registry, local_registry);
-    const psx_type_t *base_type = psx_build_decl_specifier_type_in_context(
+    base_qual_type = psx_resolve_decl_specifier_qual_type_in_context(
         semantic_context, &type_name->specifier);
-    base_qual_type = ps_ctx_intern_declaration_qual_type_in(
-        semantic_context, base_type);
     if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
       return base_qual_type;
   }
@@ -391,13 +379,12 @@ int psx_apply_declaration_phase_in_contexts(
     phase->state = PSX_DECLARATION_PHASE_STANDALONE_TAG;
     return 1;
   }
-  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, global_registry, local_registry, &phase->syntax);
-  if (!base_type) return 0;
-  phase->type_table = ps_ctx_semantic_type_table_in(semantic_context);
-  phase->base_qual_type = ps_ctx_intern_declaration_qual_type_in(
-      semantic_context, base_type);
+  phase->base_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &phase->syntax);
   if (phase->base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  phase->type_table = ps_ctx_semantic_type_table_in(semantic_context);
   phase->state = PSX_DECLARATION_PHASE_RESOLVED_TYPE;
   return 1;
 }
@@ -424,17 +411,18 @@ const psx_type_t *psx_declaration_phase_base_type(
              : NULL;
 }
 
-const psx_type_t *psx_apply_parsed_decl_specifier_in_contexts(
+psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_decl_specifier_t *specifier) {
   if (!semantic_context || !global_registry || !local_registry || !specifier)
-    return NULL;
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
   apply_decl_tag_action(
       &specifier->tag_action, semantic_context,
       global_registry, local_registry);
-  return psx_build_decl_specifier_type_in_context(
+  return psx_resolve_decl_specifier_qual_type_in_context(
       semantic_context, specifier);
 }
 
@@ -818,13 +806,22 @@ void psx_apply_parsed_function_parameters_in_contexts(
   for (int i = 0; i < parameters->count; i++) {
     const psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
-    const psx_type_t *base =
-        psx_apply_parsed_decl_specifier_in_contexts(
+    psx_qual_type_t base_qual_type =
+        psx_apply_parsed_decl_specifier_qual_type_in_contexts(
             semantic_context, global_registry, local_registry,
             &parameter->specifier);
-    if (!base) {
+    if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), parameter->specifier.diagnostic_token, "param", "%s",
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context), DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
+    }
+    psx_type_shape_t base_shape = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(semantic_context),
+            base_qual_type.type_id, &base_shape)) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->specifier.diagnostic_token, "param",
+          "canonical parameter base type description failed");
     }
     psx_scope_lookup_point_t parameter_lookup_point =
         psx_scope_graph_capture_lookup_point(
@@ -834,9 +831,7 @@ void psx_apply_parsed_function_parameters_in_contexts(
         semantic_context, global_registry, local_registry,
         &parameter->declarator, &parameter_application, -1,
         parameter_lookup_point);
-    psx_qual_type_t base_qual_type =
-        ps_ctx_intern_declaration_qual_type_in(semantic_context, base);
-    if (parameters->count == 1 && base->kind == PSX_TYPE_VOID &&
+    if (parameters->count == 1 && base_shape.kind == PSX_TYPE_VOID &&
         parameter_application.shape.count == 0) {
       resolved_count = 0;
       break;

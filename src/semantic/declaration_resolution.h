@@ -25,7 +25,7 @@ typedef int (*psx_incomplete_array_constant_index_resolver_t)(
 
 psx_qual_type_t psx_resolve_decl_qual_type(
     const psx_decl_type_request_t *request);
-const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
+psx_qual_type_t psx_resolve_decl_specifier_qual_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier);
 int psx_resolve_incomplete_array_type(

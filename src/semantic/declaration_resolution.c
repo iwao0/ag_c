@@ -1,5 +1,4 @@
 #include "declaration_resolution.h"
-#include "declaration_type_builder.h"
 
 #include "constant_expression.h"
 
@@ -126,7 +125,7 @@ psx_qual_type_t psx_resolve_decl_qual_type(
       request->semantic_context, resolved);
 }
 
-psx_type_t *psx_build_decl_specifier_type_in_context(
+static psx_type_t *build_decl_specifier_type_value(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
@@ -170,11 +169,15 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
   return type;
 }
 
-const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
+psx_qual_type_t psx_resolve_decl_specifier_qual_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
-  return psx_build_decl_specifier_type_in_context(
-      semantic_context, specifier);
+  if (!semantic_context)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  return ps_ctx_intern_declaration_qual_type_in(
+      semantic_context,
+      build_decl_specifier_type_value(semantic_context, specifier));
 }
 
 static int object_scalar_slots_by_id(

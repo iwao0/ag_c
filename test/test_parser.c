@@ -2496,9 +2496,13 @@ static void init_test_local_declaration_callbacks(
 
 static const psx_type_t *resolve_test_decl_specifier_syntax(
     const psx_parsed_decl_specifier_t *specifier) {
-  return psx_resolve_decl_specifier_syntax_in_context(
-      ag_compilation_session_semantic_context(test_suite_session),
-      specifier);
+  psx_semantic_context_t *semantic_context =
+      ag_compilation_session_semantic_context(test_suite_session);
+  psx_qual_type_t resolved =
+      psx_resolve_decl_specifier_qual_type_in_context(
+          semantic_context, specifier);
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 static void resolve_test_generic_selection(
@@ -15404,11 +15408,10 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
-  const psx_type_t *unapplied_type =
-      resolve_test_decl_specifier_syntax(&phase.syntax);
-  ASSERT_TRUE(unapplied_type != NULL);
-  ASSERT_EQ(PSX_TYPE_STRUCT, unapplied_type->kind);
-  ASSERT_EQ(PSX_RECORD_ID_INVALID, ps_type_record_id(unapplied_type));
+  psx_qual_type_t unapplied_type =
+      psx_resolve_decl_specifier_qual_type_in_context(
+          test_semantic_context(), &phase.syntax);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID, unapplied_type.type_id);
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
@@ -29012,10 +29015,14 @@ static void test_semantic_context_isolation() {
           .name_len = 9,
       },
   };
-  const psx_type_t *direct_tag_type =
-      psx_apply_parsed_decl_specifier_in_contexts(
+  psx_qual_type_t direct_tag_qual_type =
+      psx_apply_parsed_decl_specifier_qual_type_in_contexts(
           second, second_globals,
           second_locals, &direct_tag_specifier);
+  const psx_type_t *direct_tag_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(second),
+          direct_tag_qual_type);
   ASSERT_TRUE(direct_tag_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
   ASSERT_EQ(0, ps_type_sizeof(direct_tag_type));
