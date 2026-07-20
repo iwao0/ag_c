@@ -9672,27 +9672,21 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(raw->rhs));
   psx_frontend_expression_hir_dispose(&compound_expression);
 
-  node_t **program = parse_program_input(
-      "int __typed_hir_compound_literal(void) { return (int){3}; }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
-  ASSERT_EQ(ND_COMPOUND_LITERAL, body->body[0]->lhs->kind);
-  int found_compound_sequence = 0;
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __typed_hir_compound_literal(void) { return (int){3}; }"));
+  int found_compound_sequence = 0;
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (!hir_node ||
-        psx_hir_node_kind(hir_node) != PSX_HIR_COMMA)
+        psx_hir_node_kind(hir_node) != PSX_HIR_STMT_EXPR)
       continue;
     for (size_t child = 0;
          child < psx_hir_node_child_count(hir_node); child++) {
-      if (psx_hir_node_child_edge_at(hir_node, child) !=
-          PSX_HIR_EDGE_RHS)
-        continue;
       const psx_hir_node_t *value = psx_hir_module_lookup(
           hir, psx_hir_node_child_at(hir_node, child));
       if (value && psx_hir_node_kind(value) == PSX_HIR_LOCAL) {
@@ -10048,17 +10042,14 @@ static void test_subscript_typed_hir_boundary() {
   ASSERT_TRUE(ps_node_get_type(reversed) == NULL);
   psx_frontend_expression_hir_dispose(&reversed_subscript);
 
-  node_t **program = parse_program_input(
-      "int __typed_hir_subscript(int *value) { return value[1]; }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
-  ASSERT_EQ(ND_SUBSCRIPT, body->body[0]->lhs->kind);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __typed_hir_subscript(int *value) { return value[1]; }"));
   int found_typed_hir_subscript = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (hir_node &&
@@ -10157,18 +10148,14 @@ static void test_unary_deref_typed_hir_boundary() {
   ASSERT_TRUE(ps_node_get_type(subscript_address) == NULL);
   psx_frontend_expression_hir_dispose(&subscript_address_hir);
 
-  node_t **program = parse_program_input(
-      "int __typed_hir_deref(int *value) { return *value; }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
-  ASSERT_EQ(ND_UNARY_DEREF, body->body[0]->lhs->kind);
-  ASSERT_TRUE(ps_node_get_type(body->body[0]->lhs) != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __typed_hir_deref(int *value) { return *value; }"));
   int found_typed_hir_deref = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (hir_node &&
@@ -10414,25 +10401,16 @@ static void test_generic_selection_typed_hir_boundary() {
   ASSERT_TRUE(ps_node_get_type(selection->associations[0].expression) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
 
-  node_t **program = parse_program_input(
-      "int __typed_hir_generic(int x) { "
-      "return _Generic(x, int: x + 1, default: x + 200); }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
-  ASSERT_EQ(ND_GENERIC_SELECTION, body->body[0]->lhs->kind);
-  node_generic_selection_t *work_selection =
-      (node_generic_selection_t *)body->body[0]->lhs;
-  ASSERT_EQ(0, psx_generic_selection_selected_index(work_selection));
-  ASSERT_TRUE(
-      psx_generic_selection_selected_expression(work_selection) != NULL);
-  ASSERT_TRUE(ps_node_get_type((node_t *)work_selection) != NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __typed_hir_generic(int x) { "
+      "return _Generic(x, int: x + 1, default: x + 200); }"));
   int found_selected_literal = 0;
   int found_unselected_literal = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (!hir_node || psx_hir_node_kind(hir_node) != PSX_HIR_NUMBER)
@@ -11322,18 +11300,15 @@ static void test_compound_assignment_typed_hir_boundary() {
   psx_frontend_expression_hir_dispose(
       &deref_assignment_expression);
 
-  node_t **program = parse_program_input(
-      "int __typed_hir_subscript_compound(int *values, int index) { "
-      "values[index] += 2; return values[index]; }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, body->body[0]->kind);
-  ASSERT_EQ(ND_SUBSCRIPT, body->body[0]->lhs->kind);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int __typed_hir_subscript_compound(int *values, int index) { "
+      "values[index] += 2; return values[index]; }"));
   int found_subscript_compound = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (hir_node &&
@@ -11346,18 +11321,15 @@ static void test_compound_assignment_typed_hir_boundary() {
   }
   ASSERT_TRUE(found_subscript_compound);
 
-  program = parse_program_input(
+  hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __TypedHirMemberCompound { int value; }; "
       "int __typed_hir_member_compound("
       "struct __TypedHirMemberCompound *object) { "
-      "object->value += 3; return object->value; }");
-  ASSERT_TRUE(program != NULL);
-  body = as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, body->body[0]->kind);
-  ASSERT_EQ(ND_MEMBER_ACCESS, body->body[0]->lhs->kind);
-  hir = ag_compilation_session_hir_module(test_suite_session);
+      "object->value += 3; return object->value; }"));
   int found_member_compound = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (!hir_node ||

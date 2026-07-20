@@ -2736,7 +2736,12 @@ for (const helperName of ["expect_parse_fail", "expect_parse_ok"]) {
 for (const testName of [
   "test_parser_name_environment_boundary",
   "test_direct_literal_typed_hir_resolution_boundary",
+  "test_expr_compound_literal_typed_hir_boundary",
+  "test_subscript_typed_hir_boundary",
+  "test_unary_deref_typed_hir_boundary",
   "test_unary_operator_typed_hir_boundary",
+  "test_generic_selection_typed_hir_boundary",
+  "test_compound_assignment_typed_hir_boundary",
   "test_toplevel_point_of_declaration_boundary",
   "test_parameter_declaration_storage_plan_boundary",
   "test_toplevel_declarator_phase_boundary",
@@ -2751,20 +2756,6 @@ for (const testName of [
       `${testName} must use production Typed HIR for program fixtures`,
     );
   }
-}
-const compoundLiteralProgramBody = parserUnitTestSource.match(
-  /static\s+void\s+test_expr_compound_literal_typed_hir_boundary\s*\(\s*\)\s*\{([^]*?)\n\}/,
-);
-if (!compoundLiteralProgramBody ||
-    !/resolve_program_input_hir\s*\([^]*?__typed_hir_promoted_union_compound/.test(
-      compoundLiteralProgramBody[1],
-    ) ||
-    /parse_program_input\s*\(\s*"struct __CompoundValue/.test(
-      compoundLiteralProgramBody[1],
-    )) {
-  throw new Error(
-    "promoted anonymous-union compound fixture must use production Typed HIR",
-  );
 }
 if (/\(void\)\s*parsed_code\s*;/.test(parserUnitTestSource)) {
   throw new Error(
