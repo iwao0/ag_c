@@ -9586,7 +9586,10 @@ if (!recordMemberDeclStruct ||
     /decl_type_table/.test(recordMemberDeclStruct[1]) ||
     !/decl_qual_type/.test(recordMemberDeclStruct[1]) ||
     /\bpsx_type_t\b/.test(recordMemberDeclStruct[1]) ||
-    !/psx_record_member_decl_type\s*\(\s*const\s+psx_semantic_type_table_t\s*\*\s*types\s*,[^]*?psx_type_compatibility_view_for\s*\(\s*types\s*,\s*member->decl_qual_type/s.test(
+    /\bpsx_record_member_decl_type\s*\(/.test(
+      `${recordDeclHeaderSource}\n${recordDeclImplementationSource}`,
+    ) ||
+    /type_compatibility_view\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       recordDeclImplementationSource,
     ) ||
     /member->decl_type_table/.test(recordDeclImplementationSource) ||
@@ -9594,14 +9597,14 @@ if (!recordMemberDeclStruct ||
       parserTypeImplementationSource,
     ) ||
     /return\s+member->decl_type\s*;/.test(recordDeclImplementationSource) ||
-    !/ps_ctx_intern_qual_type_in\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/.test(
+    !/psx_qual_type_t\s+identity\s*=\s*declaration->decl_qual_type\s*;[^]*?psx_semantic_type_table_qual_type_is_valid\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/s.test(
       parserSemanticContextImplementation,
     ) ||
     !/views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
       typeCompatibilityViewSource,
     )) {
   throw new Error(
-    "record members must store QualType only and materialize views through an explicit semantic type table",
+    "record members must store QualType only without publishing parser type views",
   );
 }
 if (!/\bpsx_record_member_decl_leaf_shape\s*\(/.test(

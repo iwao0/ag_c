@@ -5,7 +5,6 @@
 #include "../type_system/type_shape.h"
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
-typedef struct psx_type_t psx_type_t;
 
 typedef struct psx_record_member_decl_t {
   char *name;
@@ -25,9 +24,6 @@ typedef struct psx_record_decl_t {
   const psx_record_member_decl_t *members;
 } psx_record_decl_t;
 
-const psx_type_t *psx_record_member_decl_type(
-    const psx_semantic_type_table_t *types,
-    const psx_record_member_decl_t *member);
 int psx_record_member_decl_leaf_shape(
     const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member, psx_type_shape_t *shape);

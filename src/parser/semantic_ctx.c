@@ -581,15 +581,7 @@ static int initialize_tag_member_record(
     return 0;
   m->declaration.bit_width = declaration->bit_width;
   m->declaration.bit_is_signed = declaration->bit_is_signed;
-  const psx_type_t *desc_type = psx_record_member_decl_type(
-      context->semantic_types, declaration);
-  psx_type_t *resolved_type = ctx_type_clone_persistent_in(
-      context, desc_type);
-  if (!resolved_type) return 0;
-  ps_ctx_bind_record_ids_in(context, resolved_type);
-  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
-      context, resolved_type);
-  if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
+  psx_qual_type_t identity = declaration->decl_qual_type;
   if (!psx_semantic_type_table_qual_type_is_valid(
           context->semantic_types, identity))
     return 0;
@@ -1175,7 +1167,8 @@ static int register_tag_members_for_owner_in(
     const psx_record_member_decl_t *declaration = &declarations[i];
     const psx_record_member_layout_t *layout = &layouts[i];
     if (!declaration->name || declaration->len < 0 ||
-        !psx_record_member_decl_type(context->semantic_types, declaration) ||
+        !psx_semantic_type_table_qual_type_is_valid(
+            context->semantic_types, declaration->decl_qual_type) ||
         layout->offset < 0 ||
         layout->bit_offset < 0) {
       if (out_conflict_index) *out_conflict_index = i;

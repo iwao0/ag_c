@@ -161,6 +161,15 @@ typedef struct {
   const psx_type_t *decl_type;
 } tag_member_info_t;
 
+static const psx_type_t *test_record_member_decl_type(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_member_decl_t *member) {
+  return member
+             ? psx_type_compatibility_view_for(
+                   semantic_types, member->decl_qual_type)
+             : NULL;
+}
+
 static tag_member_info_t ps_tag_member_declaration_view(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_member_decl_t *member) {
@@ -170,7 +179,7 @@ static tag_member_info_t ps_tag_member_declaration_view(
                    .len = member->len,
                    .bit_width = member->bit_width,
                    .bit_is_signed = member->bit_is_signed,
-                   .decl_type = psx_record_member_decl_type(
+                   .decl_type = test_record_member_decl_type(
                        semantic_types, member),
                }
              : (tag_member_info_t){0};
@@ -937,7 +946,7 @@ static void set_test_record_member_fixture_type_in(
   ASSERT_TRUE(member != NULL);
   ASSERT_TRUE(type != NULL);
   member->decl_qual_type = ps_ctx_intern_qual_type_in(semantic_context, type);
-  ASSERT_TRUE(psx_record_member_decl_type(
+  ASSERT_TRUE(test_record_member_decl_type(
                   ps_ctx_semantic_type_table_in(semantic_context), member) !=
               NULL);
 }
@@ -8662,7 +8671,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_EQ(1, resolution.member_index);
   ASSERT_EQ(member_record->record_id, resolution.record_id);
-  ASSERT_EQ(4, ps_type_sizeof(psx_record_member_decl_type(
+  ASSERT_EQ(4, ps_type_sizeof(test_record_member_decl_type(
                    ps_ctx_semantic_type_table_in(test_semantic_context()),
                    &resolution.declaration)));
   ASSERT_TRUE(resolution.base_object_qual_type.type_id !=
@@ -15135,11 +15144,11 @@ static void test_record_decl_ownership_boundary() {
             first->members[0].decl_qual_type.qualifiers);
   ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(),
-                   psx_record_member_decl_type(
+                   test_record_member_decl_type(
                        ps_ctx_semantic_type_table_in(test_semantic_context()),
                        &first->members[0])));
   ASSERT_TRUE(ps_type_has_qualifier(
-      psx_record_member_decl_type(
+      test_record_member_decl_type(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           &first->members[0]),
       PSX_TYPE_QUALIFIER_CONST));
@@ -24451,7 +24460,7 @@ static void test_type_metadata_bridge() {
       test_record_decl_mut(ps_gvar_get_decl_type(&walk_gv));
   ASSERT_TRUE(walk_outer_record != NULL);
   psx_type_t *walk_inner_type = (psx_type_t *)
-      psx_record_member_decl_type(
+      test_record_member_decl_type(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           &walk_outer_record->members[0])->base;
   ASSERT_TRUE(walk_inner_type != NULL);
@@ -24550,7 +24559,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(walk_anon_outer_record != NULL);
   ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
   const psx_type_t *walk_anon_inner_type = ps_type_array_leaf_type(
-      psx_record_member_decl_type(
+      test_record_member_decl_type(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           &walk_anon_outer_record->members[0]));
   ASSERT_TRUE(walk_anon_inner_type != NULL);
@@ -29429,7 +29438,7 @@ static void test_semantic_context_isolation() {
       &detached_resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, detached_resolution.status);
   ASSERT_EQ(direct_record->record_id, detached_resolution.record_id);
-  ASSERT_EQ(4, ps_type_sizeof(psx_record_member_decl_type(
+  ASSERT_EQ(4, ps_type_sizeof(test_record_member_decl_type(
                    ps_ctx_semantic_type_table_in(second),
                    &detached_resolution.declaration)));
 

@@ -1,18 +1,7 @@
 #include "record_decl.h"
 
-#include "type_compatibility_view.h"
 #include "type_identity.h"
 #include <stddef.h>
-
-const psx_type_t *psx_record_member_decl_type(
-    const psx_semantic_type_table_t *types,
-    const psx_record_member_decl_t *member) {
-  if (!types || !member ||
-      member->decl_qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
-  return psx_type_compatibility_view_for(
-      types, member->decl_qual_type);
-}
 
 int psx_record_member_decl_leaf_shape(
     const psx_semantic_type_table_t *types,
