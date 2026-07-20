@@ -5985,7 +5985,19 @@ if (!initializerTargetType ||
     /\bpsx_initializer_leaf_cursor_after_target\s*\(/.test(
       initializerResolutionHeader,
     ) ||
-    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_array_flat_element_count\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /#include\s+"\.\.\/parser\/type\.h"/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /\bps_type_(?:is_tag_aggregate|record_id|array_flat_element_count|character_code_unit_width)\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
@@ -6709,6 +6721,19 @@ if (!/\bpsx_character_array_initializer_plan_t\b/.test(
     ) ||
     /(?:lowering_context|ps_node_new_)/.test(
       characterArrayInitializerSource,
+    ) ||
+    /\bpsx_type_t\b/.test(characterArrayInitializerHeader) ||
+    /\bpsx_semantic_type_table_lookup\s*\(|\bps_type_character_code_unit_width\s*\(/.test(
+      characterArrayInitializerSource,
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      characterArrayInitializerSource,
+    ) ||
+    !/psx_type_shape_character_code_unit_width\s*\(/.test(
+      characterArrayInitializerSource,
+    ) ||
+    !/psx_resolve_character_array_string_shape\s*\(\s*int\s+array_capacity\s*,\s*int\s+element_width/.test(
+      characterArrayInitializerHeader,
     ) ||
     !/tk_emit_string_code_units\s*\(/.test(
       characterArrayInitializerSource,

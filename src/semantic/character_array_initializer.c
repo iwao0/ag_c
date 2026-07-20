@@ -4,23 +4,18 @@
 #include <string.h>
 
 #include "../parser/arena.h"
-#include "../parser/type.h"
 #include "../tokenizer/literals.h"
 #include "type_identity.h"
 
 psx_character_array_initializer_status_t
 psx_resolve_character_array_string_shape(
-    const psx_type_t *array_type, const char *literal_contents,
-    int literal_length, int character_width,
+    int array_capacity, int element_width,
+    const char *literal_contents, int literal_length, int character_width,
     psx_character_array_string_shape_t *shape) {
   if (shape) *shape = (psx_character_array_string_shape_t){0};
-  if (!array_type || !literal_contents || literal_length < 0 ||
+  if (array_capacity < 0 || !literal_contents || literal_length < 0 ||
       !shape)
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
-  if (array_type->kind != PSX_TYPE_ARRAY || !array_type->base)
-    return PSX_CHARACTER_ARRAY_INITIALIZER_NOT_CHARACTER_ARRAY;
-  int element_width =
-      ps_type_character_code_unit_width(array_type->base);
   int literal_width = character_width > 0 ? character_width : 1;
   if (element_width <= 0)
     return PSX_CHARACTER_ARRAY_INITIALIZER_NOT_CHARACTER_ARRAY;
@@ -62,36 +57,43 @@ psx_plan_character_array_string_initializer(
   if (!arena_context || !semantic_types || !plan ||
       object_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
-  const psx_type_t *object_type = psx_semantic_type_table_lookup(
+  psx_type_shape_t object_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_shape) ||
+      object_shape.kind != PSX_TYPE_ARRAY)
+    return PSX_CHARACTER_ARRAY_INITIALIZER_NOT_CHARACTER_ARRAY;
+  psx_qual_type_t element_qual_type = psx_semantic_type_table_base(
       semantic_types, object_qual_type.type_id);
+  psx_type_shape_t element_shape = {0};
+  if (element_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      !psx_semantic_type_table_describe(
+          semantic_types, element_qual_type.type_id, &element_shape))
+    return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
   psx_character_array_string_shape_t shape;
   psx_character_array_initializer_status_t status =
       psx_resolve_character_array_string_shape(
-          object_type, literal_contents, literal_length,
+          object_shape.array_len,
+          psx_type_shape_character_code_unit_width(&element_shape),
+          literal_contents, literal_length,
           character_width, &shape);
   if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK) return status;
-  if (object_type->array_len <= 0)
+  if (object_shape.array_len <= 0)
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
-  if (shape.content_unit_count > object_type->array_len)
+  if (shape.content_unit_count > object_shape.array_len)
     return PSX_CHARACTER_ARRAY_INITIALIZER_TOO_LONG;
-  psx_qual_type_t element_qual_type =
-      psx_semantic_type_table_base(
-          semantic_types, object_qual_type.type_id);
-  if (element_qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
   uint32_t *units = arena_alloc_in(
       arena_context,
-      (size_t)object_type->array_len * sizeof(*units));
+      (size_t)object_shape.array_len * sizeof(*units));
   if (!units) return PSX_CHARACTER_ARRAY_INITIALIZER_OUT_OF_MEMORY;
   memset(units, 0,
-         (size_t)object_type->array_len * sizeof(*units));
+         (size_t)object_shape.array_len * sizeof(*units));
   character_array_unit_writer_t writer = {
       .units = units,
-      .capacity = object_type->array_len,
+      .capacity = object_shape.array_len,
   };
   int emitted = tk_emit_string_code_units(
       literal_contents, literal_length, shape.character_width,
-      object_type->array_len, write_character_array_unit, &writer);
+      object_shape.array_len, write_character_array_unit, &writer);
   if (emitted != shape.content_unit_count ||
       writer.count != shape.content_unit_count)
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;

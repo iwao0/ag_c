@@ -4237,7 +4237,9 @@ static const psx_type_t *resolve_direct_completed_array_type(
   if (string) {
     psx_character_array_string_shape_t shape;
     if (psx_resolve_character_array_string_shape(
-            type, string->literal_contents, string->literal_length,
+            type->array_len,
+            ps_type_character_code_unit_width(type->base),
+            string->literal_contents, string->literal_length,
             (int)string->char_width, &shape) !=
         PSX_CHARACTER_ARRAY_INITIALIZER_OK)
       return NULL;

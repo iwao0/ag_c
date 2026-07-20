@@ -7,7 +7,6 @@
 
 typedef struct arena_context_t arena_context_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
-typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_CHARACTER_ARRAY_INITIALIZER_OK = 0,
@@ -34,8 +33,8 @@ typedef struct {
 
 psx_character_array_initializer_status_t
 psx_resolve_character_array_string_shape(
-    const psx_type_t *array_type, const char *literal_contents,
-    int literal_length, int character_width,
+    int array_capacity, int element_width,
+    const char *literal_contents, int literal_length, int character_width,
     psx_character_array_string_shape_t *shape);
 
 psx_character_array_initializer_status_t

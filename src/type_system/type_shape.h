@@ -67,4 +67,17 @@ static inline int psx_type_kind_is_aggregate(psx_type_kind_t kind) {
   return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
 }
 
+static inline int psx_type_shape_character_code_unit_width(
+    const psx_type_shape_t *shape) {
+  if (!shape || shape->kind != PSX_TYPE_INTEGER ||
+      shape->integer_kind == PSX_INTEGER_KIND_ENUM)
+    return 0;
+  switch (shape->integer_kind) {
+    case PSX_INTEGER_KIND_CHAR: return 1;
+    case PSX_INTEGER_KIND_SHORT: return 2;
+    case PSX_INTEGER_KIND_INT: return 4;
+    default: return 0;
+  }
+}
+
 #endif

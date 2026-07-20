@@ -19323,6 +19323,11 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, ps_type_array_dimension(deep_array, 9));
   ASSERT_EQ(0, ps_type_array_dimension(deep_array, 10));
   ASSERT_EQ(1024, ps_type_array_flat_element_count(deep_array));
+  psx_type_id_t deep_array_type_id = intern_test_type_id(deep_array);
+  ASSERT_TRUE(deep_array_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(1024, psx_semantic_type_table_array_flat_element_count(
+                      ps_ctx_semantic_type_table_in(test_semantic_context()),
+                      deep_array_type_id));
   ASSERT_TRUE(ps_type_array_leaf_type(deep_array) == deep_array_leaf);
   ASSERT_EQ(4, ps_type_array_scalar_element_size(deep_array));
   ASSERT_EQ(512, ps_type_array_subscript_stride_elements(deep_array, 0));
@@ -19353,6 +19358,11 @@ static void test_type_metadata_bridge() {
       ps_type_new_array(callback_pointer, 3, 24, 0);
   ASSERT_EQ(1, ps_type_array_rank(callback_array));
   ASSERT_EQ(3, ps_type_array_flat_element_count(callback_array));
+  psx_type_id_t callback_array_type_id = intern_test_type_id(callback_array);
+  ASSERT_TRUE(callback_array_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(3, psx_semantic_type_table_array_flat_element_count(
+                   ps_ctx_semantic_type_table_in(test_semantic_context()),
+                   callback_array_type_id));
   ASSERT_TRUE(ps_type_array_leaf_type(callback_array) == callback_pointer);
   ASSERT_EQ(PSX_TYPE_POINTER,
             ps_type_array_leaf_type(callback_array)->kind);

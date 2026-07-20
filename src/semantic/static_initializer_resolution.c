@@ -42,11 +42,16 @@ void psx_resolve_static_initializer(
       semantic_context, type);
   if (object_qual_type.type_id == PSX_TYPE_ID_INVALID) return;
   resolution->object_qual_type = object_qual_type;
+  psx_type_shape_t object_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          object_qual_type.type_id, &object_shape))
+    return;
 
   if (resolution->kind == PSX_DECL_INIT_LIST) {
     if (resolution->initializer->kind != ND_INIT_LIST) return;
-    if (type->kind == PSX_TYPE_ARRAY ||
-        ps_type_is_tag_aggregate(type)) {
+    if (object_shape.kind == PSX_TYPE_ARRAY ||
+        psx_type_kind_is_aggregate(object_shape.kind)) {
       resolution->is_aggregate_initializer = 1;
       resolution->status = PSX_STATIC_INITIALIZER_OK;
       return;
