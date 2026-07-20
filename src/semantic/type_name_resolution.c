@@ -123,8 +123,8 @@ static const psx_type_t *bind_base_type(
   if (specifier->source == PSX_PARSED_DECL_TYPEDEF_NAME &&
       specifier->typedef_name) {
     psx_typedef_info_t info;
-    if (!ps_ctx_find_typedef_name_at_in_contexts(
-            semantic_context, local_registry,
+    if (!ps_ctx_find_typedef_name_at_in(
+            semantic_context,
             specifier->typedef_name->str,
             specifier->typedef_name->len, point, &info))
       return NULL;
@@ -138,8 +138,8 @@ static const psx_type_t *bind_base_type(
   }
   if (specifier->source == PSX_PARSED_DECL_TYPE_TAG &&
       specifier->tag_action.action == PSX_PARSED_TAG_REFERENCE) {
-    psx_type_t *bound = ps_ctx_clone_tag_type_at_in_contexts(
-        semantic_context, local_registry,
+    psx_type_t *bound = ps_ctx_clone_tag_type_at_in(
+        semantic_context,
         specifier->tag_action.kind,
         specifier->tag_action.name,
         specifier->tag_action.name_len, point);

@@ -8559,16 +8559,16 @@ static void test_persistent_local_scope_lookup_boundary() {
       ps_local_registry_capture_lookup_point_in(test_local_registry());
   ps_decl_leave_scope_in(test_local_registry());
   long long enum_value = 0;
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
       (char *)"__scoped_enum", 13, before_enum, &enum_value));
-  ASSERT_TRUE(ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
+  ASSERT_TRUE(ps_ctx_find_enum_const_at_in(test_semantic_context(),
       (char *)"__scoped_enum", 13, after_enum, &enum_value));
   ASSERT_EQ(29, enum_value);
 
   ps_decl_enter_scope_in(test_local_registry());
   psx_scope_lookup_point_t enum_sibling =
       ps_local_registry_capture_lookup_point_in(test_local_registry());
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
   ps_decl_leave_scope_in(test_local_registry());
 }
@@ -14133,8 +14133,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   char small_parameter_tag[] = "SmallParam";
   test_semantic_define_tag_type_with_layout(
       TK_STRUCT, small_parameter_tag, 10, 0, 12, 8);
-  psx_type_t *small_aggregate = ps_ctx_clone_tag_type_at_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  psx_type_t *small_aggregate = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(),
       TK_STRUCT, small_parameter_tag, 10,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(small_aggregate != NULL);
@@ -14147,8 +14147,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   char large_parameter_tag[] = "LargeParam";
   test_semantic_define_tag_type_with_layout(
       TK_STRUCT, large_parameter_tag, 10, 0, 24, 8);
-  psx_type_t *large_aggregate = ps_ctx_clone_tag_type_at_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  psx_type_t *large_aggregate = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(),
       TK_STRUCT, large_parameter_tag, 10,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(large_aggregate != NULL);
@@ -15672,8 +15672,8 @@ static void test_local_declaration_resolution_boundary() {
   char record_element_tag[] = "LocalRecordElement";
   test_semantic_define_tag_type_with_layout(
       TK_STRUCT, record_element_tag, 18, 0, 8, 4);
-  psx_type_t *record_element = ps_ctx_clone_tag_type_at_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  psx_type_t *record_element = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(),
       TK_STRUCT, record_element_tag, 18,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(record_element != NULL);
@@ -24125,8 +24125,8 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, &walk_outer_tail));
 
   global_var_t walk_gv = {0};
-  psx_type_t *walk_gv_type = ps_ctx_clone_tag_type_at_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  psx_type_t *walk_gv_type = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(),
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(walk_gv_type != NULL);
@@ -24185,8 +24185,8 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_array_tag, walk_array_len, &walk_array_b));
 
   global_var_t walk_array_gv = {0};
-  psx_type_t *walk_array_element = ps_ctx_clone_tag_type_at_in_contexts(
-      test_semantic_context(), test_local_registry(),
+  psx_type_t *walk_array_element = ps_ctx_clone_tag_type_at_in(
+      test_semantic_context(),
       TK_STRUCT, (char *)walk_array_tag, walk_array_len,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(walk_array_element != NULL);
@@ -29332,12 +29332,12 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(second_session_record != NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       second.semantic_context, second_session_record->record_id, 12, 4));
-  first_aggregate_type = ps_ctx_clone_tag_type_at_in_contexts(
-      first.semantic_context, first.local_registry,
+  first_aggregate_type = ps_ctx_clone_tag_type_at_in(
+      first.semantic_context,
       TK_STRUCT, session_aggregate_name, 16,
       ps_local_registry_capture_lookup_point_in(first.local_registry));
-  second_aggregate_type = ps_ctx_clone_tag_type_at_in_contexts(
-      second.semantic_context, second.local_registry,
+  second_aggregate_type = ps_ctx_clone_tag_type_at_in(
+      second.semantic_context,
       TK_STRUCT, session_aggregate_name, 16,
       ps_local_registry_capture_lookup_point_in(second.local_registry));
   ASSERT_TRUE(first_aggregate_type != NULL);
@@ -29391,18 +29391,18 @@ static void test_compilation_session_registry_isolation() {
       ps_local_registry_capture_lookup_point_in(first.local_registry);
   const psx_type_t *isolated_typedef_type = NULL;
   long long isolated_enum_value = 0;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_at_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_at_in(
+      first.semantic_context,
       (char *)"FirstType", 9, first_namespace_point,
       &isolated_typedef_type));
   ASSERT_TRUE(isolated_typedef_type != NULL);
-  ASSERT_TRUE(ps_ctx_find_enum_const_at_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_find_enum_const_at_in(
+      first.semantic_context,
       (char *)"FIRST_ENUM", 10, first_namespace_point,
       &isolated_enum_value));
   ASSERT_EQ(37, isolated_enum_value);
-  ASSERT_TRUE(ps_ctx_clone_tag_type_at_in_contexts(
-      first.semantic_context, first.local_registry,
+  ASSERT_TRUE(ps_ctx_clone_tag_type_at_in(
+      first.semantic_context,
       TK_STRUCT, (char *)"FirstTag", 8,
       first_namespace_point) != NULL);
   token_t *nested_context_tokens = tk_tokenize_ctx(

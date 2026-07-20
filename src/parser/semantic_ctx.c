@@ -777,15 +777,11 @@ bool ps_ctx_has_tag_type_in(
   return find_tag_type_in(context, kind, name, len) != NULL;
 }
 
-psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
+psx_type_t *ps_ctx_clone_tag_type_at_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int len,
     psx_scope_lookup_point_t point) {
-  if (!context || !local_registry || !name || len <= 0) return NULL;
-  if (!context->scope_graph ||
-      context->scope_graph !=
-          ps_local_registry_scope_graph(local_registry))
+  if (!context || !context->scope_graph || !name || len <= 0)
     return NULL;
   psx_scope_lookup_point_t graph_point =
       point.scope_id == PSX_SCOPE_ID_INVALID
@@ -1426,16 +1422,13 @@ bool ps_ctx_enum_const_value_by_declaration_id_in(
   return true;
 }
 
-bool ps_ctx_find_enum_const_at_in_contexts(
+bool ps_ctx_find_enum_const_at_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, psx_scope_lookup_point_t point,
     long long *out_value) {
-  if (!context || !local_registry || !name || len <= 0) return false;
+  if (!context || !name || len <= 0) return false;
   psx_scope_graph_t *scope_graph = context->scope_graph;
-  if (!scope_graph ||
-      scope_graph != ps_local_registry_scope_graph(local_registry))
-    return false;
+  if (!scope_graph) return false;
   psx_scope_lookup_point_t graph_point =
       point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(scope_graph)
@@ -1635,29 +1628,25 @@ bool ps_ctx_find_typedef_decl_type_in(
   return true;
 }
 
-bool ps_ctx_find_typedef_decl_type_at_in_contexts(
+bool ps_ctx_find_typedef_decl_type_at_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, psx_scope_lookup_point_t point,
     const psx_type_t **out_type) {
   psx_typedef_info_t info;
-  if (!ps_ctx_find_typedef_name_at_in_contexts(
-          context, local_registry, name, len, point, &info))
+  if (!ps_ctx_find_typedef_name_at_in(
+          context, name, len, point, &info))
     return false;
   if (out_type) *out_type = ps_ctx_typedef_decl_type(&info);
   return true;
 }
 
-bool ps_ctx_find_typedef_name_at_in_contexts(
+bool ps_ctx_find_typedef_name_at_in(
     psx_semantic_context_t *context,
-    psx_local_registry_t *local_registry,
     char *name, int len, psx_scope_lookup_point_t point,
     psx_typedef_info_t *out) {
-  if (!context || !local_registry || !name || len <= 0) return false;
+  if (!context || !name || len <= 0) return false;
   psx_scope_graph_t *scope_graph = context->scope_graph;
-  if (!scope_graph ||
-      scope_graph != ps_local_registry_scope_graph(local_registry))
-    return false;
+  if (!scope_graph) return false;
   psx_scope_lookup_point_t graph_point =
       point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(scope_graph)

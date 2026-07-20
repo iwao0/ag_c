@@ -345,7 +345,7 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/psx_scope_graph_declare\s*\([^]*?PSX_NAMESPACE_TAG[^]*?PSX_DECL_TAG/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in_contexts\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
+    !/ps_ctx_clone_tag_type_at_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
@@ -367,7 +367,7 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     /\bpsx_(?:global|local)_registry_t\b/.test(
       scopeGraphIdentifierResolutionHeader,
     ) ||
-    /\b(?:ps_decl_find_lvar_in|ps_local_registry_find_visible_in|ps_ctx_find_enum_const_in|ps_ctx_find_enum_const_at_in_contexts|ps_ctx_find_function_symbol_in|psx_resolve_global_object_symbol_in)\s*\(/.test(
+    /\b(?:ps_decl_find_lvar_in|ps_local_registry_find_visible_in|ps_ctx_find_enum_const_in|ps_ctx_find_enum_const_at_in(?:_contexts)?|ps_ctx_find_function_symbol_in|psx_resolve_global_object_symbol_in)\s*\(/.test(
       identifierResolverBody,
     )) {
   throw new Error(
@@ -1152,10 +1152,10 @@ if (contextFreeSemanticRegistryApis.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registry operations must require an explicit context");
 }
 const splitSemanticLocalContextApis =
-  /\bps_ctx_(?:clone_tag_type_at|register_tag_type|register_enum_const|find_enum_const_at|register_typedef_name|find_typedef_decl_type_at)_in\s*\(/;
+  /\bps_ctx_(?:register_tag_type|register_enum_const|register_typedef_name)_in\s*\(/;
 if (splitSemanticLocalContextApis.test(semanticContextOwnershipSource)) {
   throw new Error(
-    "semantic namespace operations must receive semantic and local contexts together",
+    "semantic namespace declarations must receive semantic and local contexts together",
   );
 }
 const compilationSessionHeader = await readFile(
@@ -2307,29 +2307,35 @@ if (/psx_decl_find_lvar_by_offset\s*\(/.test(nodeUtilsSourceForRegistry)) {
 if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in_contexts\s*\(/.test(
+    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_find_enum_const_at_in_contexts\s*\(/.test(
+    !/ps_ctx_find_enum_const_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
+    !/ps_ctx_find_typedef_decl_type_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/context->scope_graph\s*!=\s*ps_local_registry_scope_graph\s*\(/.test(
+    /ps_ctx_(?:clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource + semanticContextOwnershipHeader,
+    ) ||
+    /ps_ctx_(?:clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in\s*\([^)]*psx_local_registry_t/.test(
+      semanticContextOwnershipSource + semanticContextOwnershipHeader,
+    ) ||
+    !/scope_graph\s*!=\s*ps_local_registry_scope_graph\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/psx_scope_graph_lookup\s*\(/.test(
       semanticContextOwnershipSource,
     )) {
   throw new Error(
-    "semantic namespaces must receive local scope ownership explicitly",
+    "semantic namespace declarations must share scope ownership while lookups read the semantic context graph directly",
   );
 }
 const frontendTranslationUnitHeader = await readFile(
@@ -3838,10 +3844,10 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     !/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
-    !/ps_ctx_find_typedef_(?:decl_type|name)_at_in_contexts\s*\(/.test(
+    !/ps_ctx_find_typedef_(?:decl_type|name)_at_in\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in_contexts\s*\(/.test(
+    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
       typeNameResolutionSource,
     ) ||
     !/psx_resolve_bound_type_name_ref_in_contexts\s*\(/.test(
@@ -7151,7 +7157,7 @@ if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/runtime_application/.test(nodeResolutionStateSource) ||
-    !/ps_ctx_find_typedef_name_at_in_contexts\s*\(/.test(
+    !/ps_ctx_find_typedef_name_at_in\s*\(/.test(
       typeNameResolutionSource,
     )) {
   throw new Error(
