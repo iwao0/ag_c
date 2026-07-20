@@ -14,10 +14,10 @@ void psx_resolve_declarator_syntax_in_context(
     psx_local_registry_t *local_registry,
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width);
-void psx_set_resolved_function_parameter_types(
+void psx_set_resolved_function_parameter_qual_types(
     arena_context_t *arena_context,
     psx_declarator_op_t *function_op,
-    const psx_type_t *const *parameter_types,
+    const psx_qual_type_t *parameter_qual_types,
     int parameter_count, int is_variadic, int has_prototype);
 
 #endif

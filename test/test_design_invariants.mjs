@@ -7202,6 +7202,7 @@ const typeBuilderApiNames = [
   "ps_type_set_function_params_in",
   "ps_type_wrap_array_dims_in",
   "ps_type_apply_declarator_shape_in",
+  "ps_type_apply_resolved_declarator_shape_in",
   "ps_type_adjust_parameter_type_in",
   "ps_type_complete_array",
   "ps_type_set_decl_spec_qualifiers",
@@ -7309,9 +7310,14 @@ if (/\bpsx_declarator_(?:op_kind_t|op_t|shape_t)\b|\bPSX_DECL_OP_/.test(
   );
 }
 if (!/\bpsx_declarator_shape_t\b/.test(declaratorShapeSource) ||
+    !/type_system\/type_ids\.h/.test(declaratorShapeSource) ||
+    !/psx_qual_type_t\s*\*\s*function_param_qual_types\s*;/.test(
+      declaratorShapeSource,
+    ) ||
+    /\bpsx_type_t\b|function_param_types/.test(declaratorShapeSource) ||
     /#[ \t]*include[^\n]*type\.h/.test(declaratorShapeSource)) {
   throw new Error(
-    "declarator shape state must depend only on the canonical type forward declaration",
+    "declarator shape state must retain canonical parameter QualTypes without semantic type views",
   );
 }
 const declaratorShapeBuilderApiNames = [
@@ -7322,7 +7328,7 @@ const declaratorShapeBuilderApiNames = [
   "ps_declarator_shape_append_array_ex_in",
   "ps_declarator_shape_append_vla_array_in",
   "ps_declarator_shape_append_function_in",
-  "ps_declarator_op_set_function_params_in",
+  "ps_declarator_op_set_function_param_qual_types_in",
   "ps_declarator_shape_set_array_bound",
   "ps_declarator_op_set_variadic",
   "ps_declarator_shape_count_ops",
@@ -11163,13 +11169,16 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     !/psx_qual_type_t\s+function_qual_type\s*;/.test(
       functionDefinitionPipelineResultStruct[1],
     ) ||
-    /const\s+psx_type_t\s*\*\s*function_type\s*;/.test(
+    !/psx_qual_type_t\s*\*\s*parameter_qual_types\s*;/.test(
+      functionDefinitionPipelineResultStruct[1],
+    ) ||
+    /\bpsx_type_t\b/.test(
       functionDefinitionPipelineResultStruct[1],
     ) ||
     !/lvar_t\s*\*\*\s*parameters\s*;/.test(
       functionDefinitionResolutionHeader,
     ) ||
-    !/result->parameter_types\s*,\s*result->nargs/.test(
+    !/result->parameter_qual_types\s*,\s*result->nargs/.test(
       explicitArenaDeclarationPipelineSource,
     ) ||
     /parameter_types\s*\[[^\]]+\]\s*=\s*ps_node_get_type\s*\(/.test(

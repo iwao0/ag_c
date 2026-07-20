@@ -6,6 +6,8 @@
 #include "../semantic/record_decl.h"
 
 typedef struct arena_context_t arena_context_t;
+typedef const psx_type_t *(*psx_qual_type_view_resolver_t)(
+    void *context, psx_qual_type_t qual_type);
 
 /* Mutation is restricted to construction-owned types before publication. */
 psx_type_t *ps_type_new_in(
@@ -54,6 +56,12 @@ psx_type_t *ps_type_wrap_array_dims_in(
 psx_type_t *ps_type_apply_declarator_shape_in(
     arena_context_t *arena_context, psx_type_t *base,
     const psx_declarator_shape_t *shape);
+/* Canonical function parameters require an explicit semantic type view. */
+psx_type_t *ps_type_apply_resolved_declarator_shape_in(
+    arena_context_t *arena_context, psx_type_t *base,
+    const psx_declarator_shape_t *shape,
+    psx_qual_type_view_resolver_t resolve_qual_type,
+    void *resolver_context);
 psx_type_t *ps_type_adjust_parameter_type_in(
     arena_context_t *arena_context, psx_type_t *type);
 int ps_type_complete_array(psx_type_t *type, int array_len);

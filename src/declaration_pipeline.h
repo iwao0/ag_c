@@ -78,7 +78,7 @@ typedef struct {
 
 typedef struct {
   struct lvar_t **parameter_vars;
-  const psx_type_t **parameter_types;
+  psx_qual_type_t *parameter_qual_types;
   node_t **args;
   int nargs;
   int has_unnamed_parameter;

@@ -667,24 +667,28 @@ int ps_declarator_shape_append_function_in(
              arena_context, shape, PSX_DECL_OP_FUNCTION) != NULL;
 }
 
-int ps_declarator_op_set_function_params_in(
+int ps_declarator_op_set_function_param_qual_types_in(
     arena_context_t *arena_context, psx_declarator_op_t *op,
-    const psx_type_t *const *param_types,
+    const psx_qual_type_t *param_qual_types,
     int param_count, int is_variadic, int has_prototype) {
   if (!op || op->kind != PSX_DECL_OP_FUNCTION || param_count < 0)
     return 0;
-  op->function_param_types = NULL;
+  op->function_param_qual_types = NULL;
   op->function_param_count = param_count;
   op->function_is_variadic = is_variadic ? 1 : 0;
   op->function_has_prototype = has_prototype ? 1 : 0;
   op->has_canonical_function_params = 1;
   if (param_count == 0) return 1;
-  op->function_param_types =
+  op->function_param_qual_types =
       arena_alloc_in(
           arena_context,
-          (size_t)param_count * sizeof(*op->function_param_types));
+          (size_t)param_count * sizeof(*op->function_param_qual_types));
+  if (!op->function_param_qual_types) return 0;
   for (int i = 0; i < param_count; i++)
-    op->function_param_types[i] = param_types ? param_types[i] : NULL;
+    op->function_param_qual_types[i] = param_qual_types
+        ? param_qual_types[i]
+        : (psx_qual_type_t){
+              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   return 1;
 }
 
@@ -734,9 +738,9 @@ int ps_declarator_shape_append_shape_in(
           arena_context, shape);
       if (appended && op->has_canonical_function_params) {
         psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
-        appended = ps_declarator_op_set_function_params_in(
+        appended = ps_declarator_op_set_function_param_qual_types_in(
             arena_context, copy,
-            op->function_param_types, op->function_param_count,
+            op->function_param_qual_types, op->function_param_count,
             op->function_is_variadic,
             op->function_has_prototype);
       }
@@ -765,9 +769,11 @@ int ps_declarator_shape_count_ops(
   return count;
 }
 
-psx_type_t *ps_type_apply_declarator_shape_in(
+psx_type_t *ps_type_apply_resolved_declarator_shape_in(
     arena_context_t *arena_context, psx_type_t *base,
-    const psx_declarator_shape_t *shape) {
+    const psx_declarator_shape_t *shape,
+    psx_qual_type_view_resolver_t resolve_qual_type,
+    void *resolver_context) {
   if (!base || !shape) return base;
   psx_type_t *type = base;
   for (int i = shape->count - 1; i >= 0; i--) {
@@ -785,8 +791,25 @@ psx_type_t *ps_type_apply_declarator_shape_in(
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       type = ps_type_new_function_in(arena_context, type);
       if (op->has_canonical_function_params) {
+        const psx_type_t **param_types = NULL;
+        if (op->function_param_count > 0) {
+          if (!op->function_param_qual_types || !resolve_qual_type)
+            return NULL;
+          param_types = arena_alloc_in(
+              arena_context,
+              (size_t)op->function_param_count * sizeof(*param_types));
+          if (!param_types) return NULL;
+          for (int parameter_index = 0;
+               parameter_index < op->function_param_count;
+               parameter_index++) {
+            param_types[parameter_index] = resolve_qual_type(
+                resolver_context,
+                op->function_param_qual_types[parameter_index]);
+            if (!param_types[parameter_index]) return NULL;
+          }
+        }
         ps_type_set_function_params_in(
-            arena_context, type, op->function_param_types,
+            arena_context, type, param_types,
             op->function_param_count, op->function_is_variadic);
         type->has_function_prototype =
             op->function_has_prototype ? 1 : 0;
@@ -794,6 +817,13 @@ psx_type_t *ps_type_apply_declarator_shape_in(
     }
   }
   return type;
+}
+
+psx_type_t *ps_type_apply_declarator_shape_in(
+    arena_context_t *arena_context, psx_type_t *base,
+    const psx_declarator_shape_t *shape) {
+  return ps_type_apply_resolved_declarator_shape_in(
+      arena_context, base, shape, NULL, NULL);
 }
 
 psx_type_t *ps_type_adjust_parameter_type_in(

@@ -118,20 +118,21 @@ static int clone_declarator_shape(
   for (int i = 0; i < source->count; i++) {
     const psx_declarator_op_t *source_op = &source->ops[i];
     psx_declarator_op_t *op = &destination->ops[i];
-    if (!source_op->function_param_types ||
+    if (!source_op->function_param_qual_types ||
         source_op->function_param_count <= 0) {
-      op->function_param_types = NULL;
+      op->function_param_qual_types = NULL;
       continue;
     }
-    op->function_param_types = arena_alloc_in(
+    op->function_param_qual_types = arena_alloc_in(
         arena_context,
         (size_t)source_op->function_param_count *
-            sizeof(*op->function_param_types));
-    if (!op->function_param_types) return 0;
+            sizeof(*op->function_param_qual_types));
+    if (!op->function_param_qual_types) return 0;
     memcpy(
-        op->function_param_types, source_op->function_param_types,
+        op->function_param_qual_types,
+        source_op->function_param_qual_types,
         (size_t)source_op->function_param_count *
-            sizeof(*op->function_param_types));
+            sizeof(*op->function_param_qual_types));
   }
   return 1;
 }

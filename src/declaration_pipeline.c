@@ -446,16 +446,17 @@ static int append_definition_parameter(
     result->parameter_vars = pda_xreallocarray_in(
         ps_ctx_diagnostics(semantic_context), result->parameter_vars,
         (size_t)*capacity, sizeof(*result->parameter_vars));
-    result->parameter_types = pda_xreallocarray_in(
-        ps_ctx_diagnostics(semantic_context), result->parameter_types,
-        (size_t)*capacity, sizeof(*result->parameter_types));
+    result->parameter_qual_types = pda_xreallocarray_in(
+        ps_ctx_diagnostics(semantic_context), result->parameter_qual_types,
+        (size_t)*capacity, sizeof(*result->parameter_qual_types));
     result->args = pda_xreallocarray_in(
         ps_ctx_diagnostics(semantic_context), result->args,
         (size_t)*capacity, sizeof(node_t *));
   }
   if (!name) {
     result->parameter_vars[result->nargs] = NULL;
-    result->parameter_types[result->nargs] = resolved_parameter_type;
+    result->parameter_qual_types[result->nargs] =
+        resolution.declaration_qual_type;
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
             ps_lowering_resolution_store(lowering_context),
@@ -501,7 +502,8 @@ static int append_definition_parameter(
         name->len, name->str);
   }
   result->parameter_vars[result->nargs] = lowered;
-  result->parameter_types[result->nargs] = resolved_parameter_type;
+  result->parameter_qual_types[result->nargs] =
+      resolution.declaration_qual_type;
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
           ps_lowering_resolution_store(lowering_context),
@@ -552,10 +554,12 @@ int psx_begin_function_definition_pipeline(
   state->args_capacity = 16;
   result->parameter_vars = calloc(
       (size_t)state->args_capacity, sizeof(*result->parameter_vars));
-  result->parameter_types = calloc(
-      (size_t)state->args_capacity, sizeof(*result->parameter_types));
+  result->parameter_qual_types = calloc(
+      (size_t)state->args_capacity,
+      sizeof(*result->parameter_qual_types));
   result->args = calloc((size_t)state->args_capacity, sizeof(node_t *));
-  return result->parameter_vars && result->parameter_types && result->args;
+  return result->parameter_vars && result->parameter_qual_types &&
+         result->args;
 }
 
 int psx_apply_function_definition_parameter_pipeline(
@@ -575,7 +579,9 @@ int psx_apply_function_definition_parameter_pipeline(
     }
     state->result->nargs = 0;
     state->result->parameter_vars[0] = NULL;
-    state->result->parameter_types[0] = NULL;
+    state->result->parameter_qual_types[0] =
+        (psx_qual_type_t){
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     state->result->args[0] = NULL;
     return 1;
   }
@@ -589,9 +595,9 @@ int psx_finish_function_definition_pipeline(
   psx_function_definition_pipeline_result_t *result = state->result;
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
-  psx_set_resolved_function_parameter_types(
+  psx_set_resolved_function_parameter_qual_types(
       ps_ctx_arena(state->semantic_context), primary,
-      result->parameter_types, result->nargs,
+      result->parameter_qual_types, result->nargs,
       primary->function_is_variadic,
       state->parameter_count > 0 || primary->function_is_variadic);
 

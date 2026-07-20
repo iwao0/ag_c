@@ -70,14 +70,14 @@ void psx_resolve_declarator_syntax_in_context(
   }
 }
 
-void psx_set_resolved_function_parameter_types(
+void psx_set_resolved_function_parameter_qual_types(
     arena_context_t *arena_context,
     psx_declarator_op_t *function_op,
-    const psx_type_t *const *parameter_types,
+    const psx_qual_type_t *parameter_qual_types,
     int parameter_count, int is_variadic, int has_prototype) {
   if (!function_op || function_op->kind != PSX_DECL_OP_FUNCTION) return;
-  (void)ps_declarator_op_set_function_params_in(
+  (void)ps_declarator_op_set_function_param_qual_types_in(
       arena_context, function_op,
-      parameter_types, parameter_count, is_variadic,
+      parameter_qual_types, parameter_count, is_variadic,
       has_prototype);
 }

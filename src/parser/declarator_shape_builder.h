@@ -25,9 +25,9 @@ int ps_declarator_shape_append_vla_array_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape);
 int ps_declarator_shape_append_function_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape);
-int ps_declarator_op_set_function_params_in(
+int ps_declarator_op_set_function_param_qual_types_in(
     arena_context_t *arena_context, psx_declarator_op_t *op,
-    const psx_type_t *const *param_types,
+    const psx_qual_type_t *param_qual_types,
     int param_count, int is_variadic, int has_prototype);
 int ps_declarator_shape_set_array_bound(
     psx_declarator_shape_t *shape, int op_index,

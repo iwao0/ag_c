@@ -163,7 +163,7 @@ static int resolve_function_definition_header(
   else
     free(applied.args);
   free(applied.parameter_vars);
-  free(applied.parameter_types);
+  free(applied.parameter_qual_types);
   return 1;
 }
 

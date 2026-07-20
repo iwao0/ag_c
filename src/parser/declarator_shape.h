@@ -1,7 +1,7 @@
 #ifndef PARSER_DECLARATOR_SHAPE_H
 #define PARSER_DECLARATOR_SHAPE_H
 
-#include "type_fwd.h"
+#include "../type_system/type_ids.h"
 
 typedef enum {
   PSX_DECL_OP_POINTER = 0,
@@ -18,7 +18,7 @@ typedef struct {
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
   unsigned int function_has_prototype : 1;
-  const psx_type_t **function_param_types;
+  psx_qual_type_t *function_param_qual_types;
   int function_param_count;
   int function_is_variadic;
 } psx_declarator_op_t;

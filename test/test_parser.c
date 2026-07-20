@@ -508,7 +508,7 @@ static void test_set_invalid_vla_runtime_view(
 #define ps_type_wrap_array_dims(...) \
   ps_type_wrap_array_dims_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_apply_declarator_shape(...) \
-  ps_type_apply_declarator_shape_in(test_arena_context(), __VA_ARGS__)
+  test_apply_declarator_shape(__VA_ARGS__)
 #define ps_type_adjust_parameter_type(...) \
   ps_type_adjust_parameter_type_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_usual_arithmetic_result(...)                                   \
@@ -572,8 +572,8 @@ static int test_type_alignof_for_target(
       test_arena_context(), __VA_ARGS__)
 #define ps_declarator_shape_append_function(...) \
   ps_declarator_shape_append_function_in(test_arena_context(), __VA_ARGS__)
-#define ps_declarator_op_set_function_params(...) \
-  ps_declarator_op_set_function_params_in( \
+#define ps_declarator_op_set_function_param_qual_types(...) \
+  ps_declarator_op_set_function_param_qual_types_in( \
       test_arena_context(), __VA_ARGS__)
 #define ps_declarator_shape_copy(...) \
   ps_declarator_shape_copy_in(test_arena_context(), __VA_ARGS__)
@@ -804,6 +804,20 @@ static node_t *test_node_new_lvar_array_addr_for(lvar_t *var) {
 
 static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
+}
+
+static const psx_type_t *resolve_test_qual_type_view(
+    void *context, psx_qual_type_t qual_type) {
+  psx_semantic_context_t *semantic_context = context;
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(semantic_context), qual_type);
+}
+
+static psx_type_t *test_apply_declarator_shape(
+    psx_type_t *base, const psx_declarator_shape_t *shape) {
+  return ps_type_apply_resolved_declarator_shape_in(
+      test_arena_context(), base, shape,
+      resolve_test_qual_type_view, test_semantic_context());
 }
 
 static void bind_test_function_call_type(
@@ -14270,8 +14284,9 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &returned_funcptr_shape, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_function(
       &returned_funcptr_shape));
-  const psx_type_t *returned_callable_params[] = {integer};
-  psx_set_resolved_function_parameter_types(
+  const psx_qual_type_t returned_callable_params[] = {
+      intern_test_qual_type(integer)};
+  psx_set_resolved_function_parameter_qual_types(
       test_arena_context(),
       &returned_funcptr_shape.ops[returned_funcptr_shape.count - 1],
       returned_callable_params, 1, 0, 1);
@@ -21764,12 +21779,16 @@ static void test_type_metadata_bridge() {
       &array_of_funcptr_shape, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_function(
       &array_of_funcptr_shape));
-  const psx_type_t *declarator_func_params[] = {
-      ps_type_new_integer(TK_INT, 4, 0)};
-  psx_set_resolved_function_parameter_types(
+  const psx_qual_type_t declarator_func_params[] = {
+      intern_test_qual_type(ps_type_new_integer(TK_INT, 4, 0))};
+  psx_set_resolved_function_parameter_qual_types(
       test_arena_context(),
       &array_of_funcptr_shape.ops[array_of_funcptr_shape.count - 1],
       declarator_func_params, 1, 0, 1);
+  ASSERT_TRUE(ps_type_apply_declarator_shape_in(
+                  test_arena_context(),
+                  ps_type_new_integer(TK_INT, 4, 0),
+                  &array_of_funcptr_shape) == NULL);
   psx_type_t *array_of_funcptr_type = ps_type_apply_declarator_shape(
       ps_type_new_integer(TK_INT, 4, 0),
       &array_of_funcptr_shape);

@@ -84,6 +84,16 @@ static void apply_decl_specifier_type_properties(
     ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
 }
 
+static const psx_type_t *resolve_decl_qual_type_view(
+    void *context, psx_qual_type_t qual_type) {
+  psx_semantic_context_t *semantic_context = context;
+  return semantic_context
+             ? psx_semantic_type_table_lookup_qual_type(
+                   ps_ctx_semantic_type_table_in(semantic_context),
+                   qual_type)
+             : NULL;
+}
+
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
   if (!request || !request->semantic_context || !request->base_type)
     return NULL;
@@ -92,9 +102,10 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
       ps_ctx_arena(semantic_context), request->base_type);
   if (!type) return NULL;
   if (request->declarator_shape) {
-    type = ps_type_apply_declarator_shape_in(
+    type = ps_type_apply_resolved_declarator_shape_in(
         ps_ctx_arena(semantic_context), type,
-        request->declarator_shape);
+        request->declarator_shape,
+        resolve_decl_qual_type_view, semantic_context);
   }
   ps_ctx_bind_record_ids_in(semantic_context, type);
   return type;

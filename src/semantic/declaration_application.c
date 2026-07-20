@@ -713,9 +713,11 @@ void psx_apply_parsed_function_parameters_in_contexts(
     ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), diagnostic_token, "declarator-application",
                  "invalid function parameter syntax target");
   }
-  const psx_type_t **resolved_types = parameters->count > 0
-      ? calloc((size_t)parameters->count, sizeof(*resolved_types)) : NULL;
-  if (parameters->count > 0 && !resolved_types) {
+  psx_qual_type_t *resolved_qual_types = parameters->count > 0
+      ? calloc(
+            (size_t)parameters->count, sizeof(*resolved_qual_types))
+      : NULL;
+  if (parameters->count > 0 && !resolved_qual_types) {
     ps_diag_ctx_in(ps_ctx_diagnostics(semantic_context), diagnostic_token, "declarator-application",
                 "function parameter type allocation failed");
   }
@@ -752,15 +754,15 @@ void psx_apply_parsed_function_parameters_in_contexts(
     }
     psx_type_t *adjusted = ps_type_adjust_parameter_type_in(
         ps_ctx_arena(semantic_context), type);
-    if (adjusted && ps_ctx_intern_qual_type_in(
-                        semantic_context, adjusted).type_id ==
-                        PSX_TYPE_ID_INVALID) {
+    psx_qual_type_t adjusted_qual_type =
+        ps_ctx_intern_qual_type_in(semantic_context, adjusted);
+    if (adjusted_qual_type.type_id == PSX_TYPE_ID_INVALID) {
       ps_diag_ctx_in(
           ps_ctx_diagnostics(semantic_context),
           parameter->specifier.diagnostic_token, "param",
           "prototype parameter type interning failed");
     }
-    resolved_types[resolved_count] = adjusted;
+    resolved_qual_types[resolved_count] = adjusted_qual_type;
     resolved_count++;
     token_ident_t *name = parameter->declarator.identifier;
     if (name && !ps_local_registry_create_type_binding_in(
@@ -771,10 +773,10 @@ void psx_apply_parsed_function_parameters_in_contexts(
     }
   }
   ps_decl_leave_scope_in(local_registry);
-  psx_set_resolved_function_parameter_types(
+  psx_set_resolved_function_parameter_qual_types(
       ps_ctx_arena(semantic_context), function_op,
-      resolved_types, resolved_count,
+      resolved_qual_types, resolved_count,
       parameters->is_variadic,
       parameters->count > 0 || parameters->is_variadic);
-  free(resolved_types);
+  free(resolved_qual_types);
 }
