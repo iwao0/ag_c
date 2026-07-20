@@ -351,7 +351,8 @@ static void diagnose_declarator_too_complex(void *context, token_t *tok) {
 }
 
 static int append_declarator_pointer(
-    void *context, int is_const, int is_volatile, int nesting_depth) {
+    void *context, int is_const, int is_volatile, int is_restrict,
+    int nesting_depth) {
   (void)nesting_depth;
   declaration_declarator_parse_context_t *parse_context = context;
   psx_parsed_declarator_t *declarator =
@@ -360,7 +361,7 @@ static int append_declarator_pointer(
                            ps_parser_runtime_arena(
                                parse_context->runtime_context),
                            &declarator->declarator_shape,
-                           is_const, is_volatile);
+                           is_const, is_volatile, is_restrict);
 }
 
 static int consume_declarator_suffix(

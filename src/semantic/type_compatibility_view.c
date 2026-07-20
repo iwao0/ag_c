@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { PSX_QUALIFIER_VIEW_COUNT = 8 };
+enum { PSX_QUALIFIER_VIEW_COUNT = 16 };
 
 typedef struct {
   const psx_type_t *canonical_view;
@@ -247,7 +247,7 @@ static const psx_type_t *materialize_view(
     int preserve_relation_qualifiers) {
   const psx_type_qualifiers_t supported =
       PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
-      PSX_TYPE_QUALIFIER_ATOMIC;
+      PSX_TYPE_QUALIFIER_ATOMIC | PSX_TYPE_QUALIFIER_RESTRICT;
   psx_type_shape_t shape = {0};
   if (!cache || !types || type.type_id == PSX_TYPE_ID_INVALID ||
       (type.qualifiers & ~supported) != 0 ||

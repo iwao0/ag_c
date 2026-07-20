@@ -13,6 +13,7 @@ enum {
   PSX_TYPE_QUALIFIER_CONST = 1u << 0,
   PSX_TYPE_QUALIFIER_VOLATILE = 1u << 1,
   PSX_TYPE_QUALIFIER_ATOMIC = 1u << 2,
+  PSX_TYPE_QUALIFIER_RESTRICT = 1u << 3,
 };
 
 typedef struct {

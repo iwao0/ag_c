@@ -89,6 +89,8 @@ static void write_type(signature_writer_t *writer,
     write_literal(writer, "V");
   if (type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC)
     write_literal(writer, "A");
+  if (type.qualifiers & PSX_TYPE_QUALIFIER_RESTRICT)
+    write_literal(writer, "R");
 
   switch (shape.kind) {
     case PSX_TYPE_VOID:

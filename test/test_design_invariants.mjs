@@ -2697,7 +2697,7 @@ const legacyAnalyzedExpressionParseSites = callBodies(
   parserUnitTestSource,
   "parse_expr_input",
 );
-if (legacyAnalyzedExpressionParseSites.length > 94) {
+if (legacyAnalyzedExpressionParseSites.length > 91) {
   throw new Error(
     "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
@@ -8986,6 +8986,27 @@ if (!qualTypeStruct ||
     /->(?:size|align)\b/.test(semanticTypeIdentitySource)) {
   throw new Error(
     "QualType must pair an interned TypeId with qualifiers, independent of target layout",
+  );
+}
+if (!/PSX_TYPE_QUALIFIER_RESTRICT\s*=\s*1u\s*<<\s*3/.test(
+      typeIdsHeader,
+    ) ||
+    !/is_restrict_qualified\s*:\s*1/.test(declaratorShapeSource) ||
+    !/TK_RESTRICT[^]*?\.is_restrict\s*=\s*1/.test(
+      declaratorSyntaxSource,
+    ) ||
+    !/op->is_restrict_qualified[^]*?PSX_TYPE_QUALIFIER_RESTRICT/.test(
+      declarationResolutionSource,
+    ) ||
+    !/PSX_QUALIFIER_VIEW_COUNT\s*=\s*16/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/PSX_TYPE_QUALIFIER_RESTRICT/.test(semanticTypeIdentitySource) ||
+    !/type\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_RESTRICT[^]*?write_literal\(writer,\s*"R"\)/.test(
+      typeIdCanonicalSignatureSource,
+    )) {
+  throw new Error(
+    "restrict must survive declarator parsing as a canonical QualType qualifier",
   );
 }
 const semanticTypeEntry = semanticTypeIdentitySource.match(

@@ -15031,7 +15031,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_declarator_shape_t returned_funcptr_shape;
   ps_declarator_shape_init(&returned_funcptr_shape);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &returned_funcptr_shape, 0, 0));
+      &returned_funcptr_shape, 0, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_function(
       &returned_funcptr_shape));
   const psx_qual_type_t returned_callable_params[] = {
@@ -15041,7 +15041,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &returned_funcptr_shape.ops[returned_funcptr_shape.count - 1],
       returned_callable_params, 1, 0, 1);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &returned_funcptr_shape, 0, 0));
+      &returned_funcptr_shape, 0, 0, 0));
   ASSERT_EQ(2, ps_declarator_shape_count_ops(
                    &returned_funcptr_shape, PSX_DECL_OP_POINTER));
   ASSERT_EQ(1, ps_declarator_shape_count_ops(
@@ -16434,7 +16434,7 @@ static void test_local_declaration_resolution_boundary() {
   application = (psx_runtime_declarator_application_t){0};
   ps_declarator_shape_init(&application.shape);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &application.shape, 0, 0));
+      &application.shape, 0, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_vla_array(
       &application.shape));
   psx_runtime_array_bound_t pointer_vla_bounds[1] = {{0}};
@@ -16702,7 +16702,7 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_declarator_shape_t member_shape;
   ps_declarator_shape_init(&member_shape);
-  ps_declarator_shape_append_pointer(&member_shape, 0, 0);
+  ps_declarator_shape_append_pointer(&member_shape, 0, 0, 0);
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
   psx_qual_type_t member_qual_type = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
@@ -16736,7 +16736,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_init(&pointer_array_shape);
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 2, 0);
   ps_declarator_shape_append_pointer(
-      &pointer_array_shape, 0, 0);
+      &pointer_array_shape, 0, 0, 0);
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
   psx_qual_type_t pointer_array_member_qual_type =
       psx_resolve_decl_qual_type(
@@ -16816,7 +16816,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_t incomplete_pointer_shape;
   ps_declarator_shape_init(&incomplete_pointer_shape);
   ps_declarator_shape_append_pointer(
-      &incomplete_pointer_shape, 0, 0);
+      &incomplete_pointer_shape, 0, 0, 0);
   psx_qual_type_t incomplete_pointer_qual_type =
       psx_resolve_decl_qual_type(
           &(psx_decl_type_request_t){
@@ -16963,7 +16963,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_t unnamed_pointer_shape;
   ps_declarator_shape_init(&unnamed_pointer_shape);
   ps_declarator_shape_append_pointer(
-      &unnamed_pointer_shape, 0, 0);
+      &unnamed_pointer_shape, 0, 0, 0);
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
@@ -17257,7 +17257,7 @@ static void test_typedef_declaration_resolution_boundary() {
 
   psx_runtime_declarator_application_t pointer_application = {0};
   ASSERT_TRUE(ps_declarator_shape_append_pointer_in(
-      test_arena_context(), &pointer_application.shape, 0, 0));
+      test_arena_context(), &pointer_application.shape, 0, 0, 0));
   psx_runtime_declarator_application_t composed_application;
   ASSERT_TRUE(psx_compose_runtime_declarator_applications_in(
       test_arena_context(), &pointer_application,
@@ -18488,11 +18488,21 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_CAST, psx_resolution_node_kind(post_dup_const_cast));
   ASSERT_EQ(21, as_num(post_dup_const_cast->lhs)->val);
 
-    node_t *multi_ptr_qual_cast = parse_expr_input("(int const * volatile * restrict)0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(multi_ptr_qual_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(multi_ptr_qual_cast));
-  ASSERT_EQ(ND_NUM, multi_ptr_qual_cast->lhs->kind);
-  ASSERT_EQ(0, as_num(multi_ptr_qual_cast->lhs)->val);
+  expression = resolve_test_cast_input_hir(
+      "(int const * volatile * restrict)0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_RESTRICT, type.qualifiers);
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_VOLATILE, base.qualifiers);
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, base.qualifiers);
+  assert_canonical_qual_type_signature(
+      psx_hir_node_qual_type(root), "Rp<Vp<ki32>>");
+  psx_frontend_expression_hir_dispose(&expression);
 
     node_t *unsigned_int_const_cast = parse_expr_input("(unsigned int const)13");
   ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_int_const_cast));
@@ -18580,17 +18590,28 @@ static void test_expr_unary_ops() {
   ASSERT_TRUE(!ps_node_integer_value_is_unsigned(
       long_signed_short_cast->lhs));
 
-    node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(restrict_ptr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(restrict_ptr_cast));
-  ASSERT_EQ(ND_NUM, restrict_ptr_cast->lhs->kind);
-  ASSERT_EQ(0, as_num(restrict_ptr_cast->lhs)->val);
-
-    node_t *dup_restrict_ptr_cast = parse_expr_input("(restrict restrict int*)0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(dup_restrict_ptr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(dup_restrict_ptr_cast));
-  ASSERT_EQ(ND_NUM, dup_restrict_ptr_cast->lhs->kind);
-  ASSERT_EQ(0, as_num(dup_restrict_ptr_cast->lhs)->val);
+  const char *restrict_casts[] = {
+      "(int *restrict)0",
+      "(int *restrict restrict)0",
+  };
+  for (size_t i = 0;
+       i < sizeof(restrict_casts) / sizeof(restrict_casts[0]); i++) {
+    expression = resolve_test_cast_input_hir(
+        restrict_casts[i], &syntax);
+    root = test_expression_hir_root(&expression);
+    type = psx_hir_node_qual_type(root);
+    ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+    ASSERT_EQ(PSX_TYPE_QUALIFIER_RESTRICT, type.qualifiers);
+    assert_canonical_qual_type_signature(type, "Rp<i32>");
+    const psx_type_t *compatibility_view =
+        psx_type_compatibility_view_for(
+            ps_ctx_semantic_type_table_in(test_semantic_context()),
+            type);
+    ASSERT_TRUE(compatibility_view != NULL);
+    ASSERT_TRUE(ps_type_has_qualifier(
+        compatibility_view, PSX_TYPE_QUALIFIER_RESTRICT));
+    psx_frontend_expression_hir_dispose(&expression);
+  }
 
     node_t *atomic_cast = parse_expr_input("(_Atomic int)9");
   ASSERT_EQ(ND_CAST, psx_resolution_node_kind(atomic_cast));
@@ -22848,7 +22869,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_declarator_shape_append_array(
       &array_of_pointer_shape, 3));
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &array_of_pointer_shape, 0, 0));
+      &array_of_pointer_shape, 0, 0, 0));
   psx_type_t *array_of_pointer_type = ps_type_apply_declarator_shape(
       ps_type_new_integer(TK_INT, 4, 0), &array_of_pointer_shape);
   ASSERT_EQ(PSX_TYPE_ARRAY, array_of_pointer_type->kind);
@@ -22878,7 +22899,7 @@ static void test_type_metadata_bridge() {
   psx_declarator_shape_t pointer_to_array_shape;
   ps_declarator_shape_init(&pointer_to_array_shape);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &pointer_to_array_shape, 0, 0));
+      &pointer_to_array_shape, 0, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_array(
       &pointer_to_array_shape, 3));
   psx_type_t *pointer_to_array_type = ps_type_apply_declarator_shape(
@@ -22892,7 +22913,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_declarator_shape_append_array(
       &array_of_funcptr_shape, 2));
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &array_of_funcptr_shape, 0, 0));
+      &array_of_funcptr_shape, 0, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_function(
       &array_of_funcptr_shape));
   const psx_qual_type_t declarator_func_params[] = {
@@ -29201,7 +29222,7 @@ static void test_semantic_type_identity() {
                         PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_TRUE(!psx_semantic_type_table_qual_type_is_valid(
       semantic_types,
-      (psx_qual_type_t){plain_int_identity.type_id, 1u << 3}));
+      (psx_qual_type_t){plain_int_identity.type_id, 1u << 4}));
   ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
       semantic_types, plain_int_identity, const_int_identity));
   ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(

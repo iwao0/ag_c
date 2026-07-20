@@ -26,6 +26,7 @@ typedef struct {
 typedef struct {
   unsigned char is_const;
   unsigned char is_volatile;
+  unsigned char is_restrict;
 } declarator_pointer_qualifiers_t;
 
 static declarator_parse_result_t parse_declarator_recursive(
@@ -57,6 +58,8 @@ static declarator_parse_result_t parse_declarator_recursive(
         pointer_qualifiers[pointer_count].is_const = 1;
       if (current_token(syntax)->kind == TK_VOLATILE)
         pointer_qualifiers[pointer_count].is_volatile = 1;
+      if (current_token(syntax)->kind == TK_RESTRICT)
+        pointer_qualifiers[pointer_count].is_restrict = 1;
       tk_set_current_token_ctx(
           syntax->tokenizer_context, current_token(syntax)->next);
     }
@@ -97,7 +100,8 @@ static declarator_parse_result_t parse_declarator_recursive(
     if (syntax->append_pointer &&
         !syntax->append_pointer(
             syntax->context, pointer_qualifiers[i].is_const,
-            pointer_qualifiers[i].is_volatile, nesting_depth)) {
+            pointer_qualifiers[i].is_volatile,
+            pointer_qualifiers[i].is_restrict, nesting_depth)) {
       if (syntax->diagnose_too_complex)
         syntax->diagnose_too_complex(
             syntax->context, current_token(syntax));

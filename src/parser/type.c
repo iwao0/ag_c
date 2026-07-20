@@ -562,13 +562,15 @@ static psx_declarator_op_t *declarator_shape_append(
 int ps_declarator_shape_append_pointer_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int is_const_qualified,
-    int is_volatile_qualified) {
+    int is_volatile_qualified,
+    int is_restrict_qualified) {
   psx_declarator_op_t *op =
       declarator_shape_append(
           arena_context, shape, PSX_DECL_OP_POINTER);
   if (!op) return 0;
   op->is_const_qualified = is_const_qualified ? 1u : 0u;
   op->is_volatile_qualified = is_volatile_qualified ? 1u : 0u;
+  op->is_restrict_qualified = is_restrict_qualified ? 1u : 0u;
   return 1;
 }
 
@@ -664,7 +666,8 @@ int ps_declarator_shape_append_shape_in(
     if (op->kind == PSX_DECL_OP_POINTER) {
       appended = ps_declarator_shape_append_pointer_in(
           arena_context, shape,
-          op->is_const_qualified, op->is_volatile_qualified);
+          op->is_const_qualified, op->is_volatile_qualified,
+          op->is_restrict_qualified);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       if (op->is_vla_array)
         appended = ps_declarator_shape_append_vla_array_in(
@@ -724,6 +727,8 @@ psx_type_t *ps_type_apply_resolved_declarator_shape_in(
       if (op->is_const_qualified) qualifiers |= PSX_TYPE_QUALIFIER_CONST;
       if (op->is_volatile_qualified)
         qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+      if (op->is_restrict_qualified)
+        qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
       ps_type_add_qualifiers(type, qualifiers);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       type = ps_type_new_array_in(
@@ -782,7 +787,8 @@ psx_type_t *ps_type_adjust_parameter_type_in(
     ps_type_remove_qualifiers(
         adjusted, PSX_TYPE_QUALIFIER_CONST |
                       PSX_TYPE_QUALIFIER_VOLATILE |
-                      PSX_TYPE_QUALIFIER_ATOMIC);
+                      PSX_TYPE_QUALIFIER_ATOMIC |
+                      PSX_TYPE_QUALIFIER_RESTRICT);
   return adjusted;
 }
 
@@ -1155,6 +1161,8 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
     canonical_sig_lit(w, "V");
   if (ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_ATOMIC))
     canonical_sig_lit(w, "A");
+  if (ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_RESTRICT))
+    canonical_sig_lit(w, "R");
 
   switch (type->kind) {
     case PSX_TYPE_VOID:
@@ -1277,10 +1285,12 @@ int ps_type_generic_matches(const psx_type_t *control,
   psx_type_t unqualified_association = *association;
   ps_type_remove_qualifiers(
       &unqualified_control,
-      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
+          PSX_TYPE_QUALIFIER_RESTRICT);
   ps_type_remove_qualifiers(
       &unqualified_association,
-      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
+          PSX_TYPE_QUALIFIER_RESTRICT);
   control = &unqualified_control;
   association = &unqualified_association;
   const psx_type_t *control_function = ps_type_derived_function(control);
@@ -1385,7 +1395,8 @@ void ps_type_add_qualifiers(psx_type_t *type,
   if (!type) return;
   type->qualifiers |=
       qualifiers & (PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
-                    PSX_TYPE_QUALIFIER_ATOMIC);
+                    PSX_TYPE_QUALIFIER_ATOMIC |
+                    PSX_TYPE_QUALIFIER_RESTRICT);
 }
 
 void ps_type_remove_qualifiers(psx_type_t *type,
@@ -1394,7 +1405,8 @@ void ps_type_remove_qualifiers(psx_type_t *type,
   type->qualifiers &=
       ~(qualifiers & (PSX_TYPE_QUALIFIER_CONST |
                       PSX_TYPE_QUALIFIER_VOLATILE |
-                      PSX_TYPE_QUALIFIER_ATOMIC));
+                      PSX_TYPE_QUALIFIER_ATOMIC |
+                      PSX_TYPE_QUALIFIER_RESTRICT));
 }
 
 void ps_type_remove_all_qualifiers_recursive(psx_type_t *type) {

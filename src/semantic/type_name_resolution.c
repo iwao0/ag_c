@@ -17,7 +17,7 @@ static int type_name_qual_type_is_valid(
     psx_qual_type_t type) {
   const psx_type_qualifiers_t supported =
       PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
-      PSX_TYPE_QUALIFIER_ATOMIC;
+      PSX_TYPE_QUALIFIER_ATOMIC | PSX_TYPE_QUALIFIER_RESTRICT;
   psx_type_shape_t shape = {0};
   return (type.qualifiers & ~supported) == 0 &&
          psx_semantic_type_table_describe(
