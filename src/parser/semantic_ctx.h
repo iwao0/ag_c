@@ -136,6 +136,10 @@ psx_type_t *ps_ctx_clone_tag_type_at_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     psx_scope_lookup_point_t point);
+psx_qual_type_t ps_ctx_tag_qual_type_at_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len,
+    psx_scope_lookup_point_t point);
 int ps_ctx_register_tag_type_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,

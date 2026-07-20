@@ -3879,7 +3879,7 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     !/ps_ctx_find_typedef_(?:decl_type|name)_at_in\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
+    !/ps_ctx_tag_qual_type_at_in\s*\(/.test(
       typeNameResolutionSource,
     ) ||
     !/psx_resolve_bound_type_name_ref_in_contexts\s*\(/.test(
@@ -5650,6 +5650,15 @@ if (!typeNameRef ||
       typeNameResolutionHeader,
     ) ||
     !/psx_type_name_bound_base_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\([^]*?base_qual_type/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/static\s+psx_qual_type_t\s+bind_base_qual_type\s*\(/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/ps_ctx_tag_qual_type_at_in\s*\(/.test(
+      typeNameResolutionSource,
+    ) ||
+    /ps_type_(?:clone_in|add_qualifiers|set_decl_spec_qualifiers)\s*\(/.test(
       typeNameResolutionSource,
     ) ||
     /\b(?:bound_base_type|resolved_type_table|resolved_qual_type|bound_runtime_application)\b/.test(

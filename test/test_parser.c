@@ -15462,6 +15462,90 @@ static void test_type_name_phase_boundary() {
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             type->base->param_types[0]->floating_kind);
   psx_dispose_type_name_syntax(&syntax);
+
+  tokens = tk_tokenize((char *)"const int,");
+  tk_set_current_token(tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  reference = (psx_type_name_ref_t){.syntax = &syntax};
+  state = (psx_type_name_resolution_state_t){0};
+  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(), &reference, &state));
+  psx_qual_type_t qualified_base =
+      psx_type_name_bound_base_qual_type(&state);
+  ASSERT_TRUE((qualified_base.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            psx_semantic_type_table_lookup(
+                ps_ctx_semantic_type_table_in(test_semantic_context()),
+                qualified_base.type_id)->kind);
+  psx_dispose_type_name_syntax(&syntax);
+
+  tokens = tk_tokenize((char *)"_Atomic(int),");
+  tk_set_current_token(tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  reference = (psx_type_name_ref_t){.syntax = &syntax};
+  state = (psx_type_name_resolution_state_t){0};
+  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(), &reference, &state));
+  qualified_base = psx_type_name_bound_base_qual_type(&state);
+  ASSERT_TRUE((qualified_base.qualifiers &
+               PSX_TYPE_QUALIFIER_ATOMIC) != 0);
+  psx_dispose_type_name_syntax(&syntax);
+
+  char tag_name[] = "__TypeNameTag";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, tag_name, 13, 0, 4, 4);
+  tokens = tk_tokenize((char *)"const struct __TypeNameTag,");
+  tk_set_current_token(tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  psx_scope_lookup_point_t point = test_scope_lookup_point();
+  reference = (psx_type_name_ref_t){
+      .syntax = &syntax,
+      .scope_seq = point.scope_id,
+      .declaration_seq = point.declaration_order,
+  };
+  state = (psx_type_name_resolution_state_t){0};
+  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(), &reference, &state));
+  qualified_base = psx_type_name_bound_base_qual_type(&state);
+  ASSERT_TRUE((qualified_base.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            psx_semantic_type_table_lookup(
+                ps_ctx_semantic_type_table_in(test_semantic_context()),
+                qualified_base.type_id)->kind);
+  psx_dispose_type_name_syntax(&syntax);
+
+  const psx_typedef_info_t alias = {
+      .decl_type_table =
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+      .decl_qual_type = ps_ctx_intern_integer_qual_type_in(
+          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0),
+  };
+  char alias_name[] = "__TypeNameAlias";
+  ASSERT_TRUE(ps_ctx_register_typedef_name_in(
+      test_semantic_context(), alias_name, 15, &alias, NULL, NULL));
+  tokens = tk_tokenize((char *)"volatile __TypeNameAlias,");
+  tk_set_current_token(tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  point = test_scope_lookup_point();
+  reference = (psx_type_name_ref_t){
+      .syntax = &syntax,
+      .scope_seq = point.scope_id,
+      .declaration_seq = point.declaration_order,
+  };
+  state = (psx_type_name_resolution_state_t){0};
+  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+      test_semantic_context(), test_global_registry(),
+      test_local_registry(), &reference, &state));
+  qualified_base = psx_type_name_bound_base_qual_type(&state);
+  ASSERT_EQ(alias.decl_qual_type.type_id, qualified_base.type_id);
+  ASSERT_TRUE((qualified_base.qualifiers &
+               PSX_TYPE_QUALIFIER_VOLATILE) != 0);
+  psx_dispose_type_name_syntax(&syntax);
 }
 
 static void test_toplevel_declarator_phase_boundary() {
