@@ -2417,10 +2417,18 @@ static node_t *lower_test_semantic_tree(node_t *expression) {
 }
 
 static node_t *resolve_and_lower_test_initializer(node_t *initializer) {
-  initializer = psx_bind_identifier_initializer_tree_in_contexts(
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      initializer, initializer ? initializer->tok : NULL);
+  char *function_name = NULL;
+  int function_name_len = 0;
+  ps_decl_get_current_funcname_in(
+      test_local_registry(), &function_name, &function_name_len);
+  initializer = psx_bind_identifier_initializer_tree_in(
+      &(psx_identifier_binding_request_t){
+          .semantic_context = test_semantic_context(),
+          .function_name = function_name,
+          .function_name_len = function_name_len,
+          .fallback_diag_tok = initializer ? initializer->tok : NULL,
+      },
+      initializer);
   if (!initializer) return NULL;
   psx_semantic_resolve_initializer_tree_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
@@ -2438,8 +2446,18 @@ static node_t *resolve_and_lower_test_initializer(node_t *initializer) {
 
 static node_t *bind_test_identifier_tree(
     node_t *node, const token_t *fallback_diag_tok) {
-  return psx_bind_identifier_tree_in_session(
-      test_suite_session, node, fallback_diag_tok);
+  char *function_name = NULL;
+  int function_name_len = 0;
+  ps_decl_get_current_funcname_in(
+      test_local_registry(), &function_name, &function_name_len);
+  return psx_bind_identifier_tree_in(
+      &(psx_identifier_binding_request_t){
+          .semantic_context = test_semantic_context(),
+          .function_name = function_name,
+          .function_name_len = function_name_len,
+          .fallback_diag_tok = fallback_diag_tok,
+      },
+      node);
 }
 
 static void apply_test_toplevel_declaration(
@@ -29520,9 +29538,11 @@ static void test_compilation_session_registry_isolation() {
       .scope_seq = first_namespace_point.scope_id,
       .declaration_seq = first_namespace_point.declaration_order,
   };
-  node_t *isolated_global_node = psx_bind_identifier_tree_in_contexts(
-      first.semantic_context, first.local_registry,
-      (node_t *)&isolated_global_identifier, NULL);
+  node_t *isolated_global_node = psx_bind_identifier_tree_in(
+      &(psx_identifier_binding_request_t){
+          .semantic_context = first.semantic_context,
+      },
+      (node_t *)&isolated_global_identifier);
   ASSERT_TRUE(isolated_global_node != NULL);
   ASSERT_EQ(ND_IDENTIFIER, isolated_global_node->kind);
   ASSERT_EQ(ND_GVAR,

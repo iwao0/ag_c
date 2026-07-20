@@ -55,7 +55,6 @@ int psx_finish_resolved_global_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   psx_qual_type_t function_qual_type;

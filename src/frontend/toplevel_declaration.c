@@ -37,7 +37,6 @@ static ag_diagnostic_context_t *application_diagnostics(
 
 static void apply_function_prototype(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
     token_ident_t *name, psx_qual_type_t function_qual_type) {
   psx_type_shape_t function_shape = {0};
   if (!name ||
@@ -49,7 +48,6 @@ static void apply_function_prototype(
   if (!psx_apply_function_declaration_pipeline(
       &(psx_function_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
-              .global_registry = global_registry,
               .name = name->str,
               .name_len = name->len,
               .function_qual_type = function_qual_type,
@@ -163,8 +161,8 @@ static void begin_declarator(
           name->len, name->str);
     }
     apply_function_prototype(
-        application->semantic_context, application->global_registry,
-        name, application->current_qual_type);
+        application->semantic_context, name,
+        application->current_qual_type);
     application->current_kind = PSX_TOPLEVEL_APPLY_FUNCTION;
     return;
   }

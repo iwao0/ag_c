@@ -321,8 +321,8 @@ static void diagnose_function_declaration(
 
 int psx_apply_function_declaration_pipeline(
     const psx_function_declaration_pipeline_request_t *request) {
-  if (!request || !request->semantic_context || !request->global_registry ||
-      !request->name || request->name_len <= 0 ||
+  if (!request || !request->semantic_context || !request->name ||
+      request->name_len <= 0 ||
       request->function_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   psx_function_declaration_resolution_t resolution;
   psx_resolve_function_declaration(
@@ -1187,7 +1187,6 @@ int psx_apply_block_extern_declaration_pipeline(
     if (!psx_apply_function_declaration_pipeline(
             &(psx_function_declaration_pipeline_request_t){
                 .semantic_context = request->semantic_context,
-                .global_registry = request->global_registry,
                 .name = request->name,
                 .name_len = request->name_len,
                 .function_qual_type = request->type,

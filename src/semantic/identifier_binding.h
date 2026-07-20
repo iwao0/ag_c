@@ -2,29 +2,24 @@
 #define SEMANTIC_IDENTIFIER_BINDING_H
 
 #include "../parser/ast.h"
-#include "../parser/local_registry.h"
-#include "../compilation_session.h"
+#include "scope_graph.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
-node_t *psx_bind_identifier_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    psx_scope_lookup_point_t lookup_point,
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_initializer_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    node_t *syntax, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_tree_in_session(
-    ag_compilation_session_t *session,
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_initializer_tree_in_session(
-    ag_compilation_session_t *session,
-    node_t *syntax, const token_t *fallback_diag_tok);
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  char *function_name;
+  int function_name_len;
+  const token_t *fallback_diag_tok;
+  psx_scope_lookup_point_t lookup_point;
+  unsigned char has_lookup_point;
+} psx_identifier_binding_request_t;
+
+node_t *psx_bind_identifier_tree_in(
+    const psx_identifier_binding_request_t *request,
+    node_t *node);
+node_t *psx_bind_identifier_initializer_tree_in(
+    const psx_identifier_binding_request_t *request,
+    node_t *syntax);
 
 #endif

@@ -80,13 +80,21 @@ static int prepare_bound_tree(
           semantic_context, global_registry, local_registry,
           lowering_context, options, root))
     return 0;
+  char *function_name = NULL;
+  int function_name_len = 0;
+  ps_decl_get_current_funcname_in(
+      local_registry, &function_name, &function_name_len);
+  const psx_identifier_binding_request_t binding_request = {
+      .semantic_context = semantic_context,
+      .function_name = function_name,
+      .function_name_len = function_name_len,
+      .fallback_diag_tok = fallback_diag_tok,
+  };
   *root = is_initializer
-              ? psx_bind_identifier_initializer_tree_in_contexts(
-                    semantic_context, local_registry,
-                    *root, fallback_diag_tok)
-              : psx_bind_identifier_tree_in_contexts(
-                    semantic_context, local_registry,
-                    *root, fallback_diag_tok);
+              ? psx_bind_identifier_initializer_tree_in(
+                    &binding_request, *root)
+              : psx_bind_identifier_tree_in(
+                    &binding_request, *root);
   return *root &&
          advance_with_compatibility_root(
              work_tree, PSX_RESOLUTION_WORK_CLONED,

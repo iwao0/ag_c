@@ -2589,11 +2589,19 @@ const identifierBindingBoundary =
 if (/\bpsx_bind_identifier_(?:tree|initializer_tree)\s*\(/.test(
       identifierBindingBoundary,
     ) ||
-    /\bpsx_global_registry_t\b|\bglobal_registry\b/.test(
+    /\bpsx_(?:global|local)_registry_t\b|\b(?:global|local)_registry\b/.test(
       identifierBindingBoundary,
+    ) ||
+    !/psx_identifier_binding_request_t/.test(identifierBindingHeader) ||
+    !/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
+      identifierBindingHeader,
+    ) ||
+    !/char\s*\*function_name\s*;/.test(identifierBindingHeader) ||
+    !/psx_scope_lookup_point_t\s+lookup_point\s*;/.test(
+      identifierBindingHeader,
     )) {
   throw new Error(
-    "identifier binding must receive CompilationSession or canonical semantic/local contexts without a global symbol registry",
+    "identifier binding must receive an explicit semantic binding request without storage registries",
   );
 }
 const lvarUsageAnalysisSource = await readFile(
@@ -2734,12 +2742,9 @@ if (ambiguousFrontendContextApis.test(
 }
 if (/psx_semantic_resolve_(?:initializer_)?tree_in_context\s*\(/.test(
       semanticPassSource,
-    ) ||
-    /psx_bind_identifier_(?:initializer_)?tree_in\s*\(/.test(
-      identifierBindingSource,
     )) {
   throw new Error(
-    "semantic traversal APIs must receive one complete registry set",
+    "legacy semantic tree traversal must receive one complete registry set",
   );
 }
 if (!/ag_compilation_session_t\s*\*session\s*;/.test(
@@ -2780,11 +2785,11 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
     !/psx_frontend_resolve_parsed_function_to_hir_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
+    !/psx_bind_identifier_tree_in\s*\(/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
-    !/\.local_registry\s*=\s*local_registry/.test(
-      identifierBindingSource,
+    !/\.function_name\s*=\s*function_name/.test(
+      legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_analyze_function_lvar_usage_in\s*\(/.test(
       legacySyntaxDiagnosticsSource,
@@ -2824,13 +2829,10 @@ if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_se
       semanticPipelineSource,
     ) ||
     !/ag_compilation_session_is_complete\s*\(session\)/.test(
-      identifierBindingSource,
-    ) ||
-    !/ag_compilation_session_is_complete\s*\(session\)/.test(
       translationUnitDataLoweringSource,
     ) ||
     /!session\s*\|\|\s*!session->/.test(
-      `${semanticPipelineSource}\n${identifierBindingSource}`,
+      semanticPipelineSource,
     )) {
   throw new Error(
     "explicit frontend and lowering APIs must use CompilationSession completeness as their validity source",
@@ -6357,6 +6359,20 @@ const declarationPipelineHeader = await readFile(
   "src/declaration_pipeline.h",
   "utf8",
 );
+const functionDeclarationPipelineRequest = declarationPipelineHeader.match(
+  /typedef\s+struct\s*\{([^{}]*)\}\s*psx_function_declaration_pipeline_request_t\s*;/,
+);
+const functionDeclarationPipeline = declarationPipelineSource.match(
+  /int\s+psx_apply_function_declaration_pipeline\s*\([^]*?\n\}/,
+);
+if (!functionDeclarationPipelineRequest ||
+    !functionDeclarationPipeline ||
+    /\bglobal_registry\b/.test(functionDeclarationPipelineRequest[1]) ||
+    /request->global_registry\b/.test(functionDeclarationPipeline[0])) {
+  throw new Error(
+    "function declaration pipeline must resolve names from semantic context only",
+  );
+}
 const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",

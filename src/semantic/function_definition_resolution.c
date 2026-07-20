@@ -113,7 +113,6 @@ static int resolve_function_definition_header(
   if (!name || !psx_apply_function_declaration_pipeline(
           &(psx_function_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
-              .global_registry = global_registry,
               .name = name ? name->str : NULL,
               .name_len = name ? name->len : 0,
               .function_qual_type = applied.function_qual_type,

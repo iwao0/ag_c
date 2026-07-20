@@ -13,7 +13,6 @@
 #include "resolved_object_ref.h"
 #include "../parser/arena.h"
 #include "../parser/declaration_syntax.h"
-#include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/lvar_internal.h"
 #include "../parser/node_utils.h"
@@ -25,7 +24,6 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_local_registry_t *local_registry;
   const token_t *fallback_diag_tok;
   psx_scope_lookup_point_t lookup_point;
   int has_lookup_point_override;
@@ -591,75 +589,33 @@ static node_t *bind_node(
   }
 }
 
-static void set_binding_function_name(
-    psx_identifier_binding_context_t *context) {
-  if (!context || !context->local_registry) return;
-  ps_decl_get_current_funcname_in(
-      context->local_registry, &context->function_name,
-      &context->function_name_len);
+static psx_identifier_binding_context_t binding_context_from_request(
+    const psx_identifier_binding_request_t *request) {
+  if (!request) return (psx_identifier_binding_context_t){0};
+  return (psx_identifier_binding_context_t){
+      .semantic_context = request->semantic_context,
+      .fallback_diag_tok = request->fallback_diag_tok,
+      .lookup_point = request->lookup_point,
+      .has_lookup_point_override = request->has_lookup_point,
+      .function_name = request->function_name,
+      .function_name_len = request->function_name_len,
+  };
 }
 
-node_t *psx_bind_identifier_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !local_registry) return node;
-  psx_identifier_binding_context_t context = {
-      .semantic_context = semantic_context,
-      .local_registry = local_registry,
-      .fallback_diag_tok = fallback_diag_tok,
-  };
-  set_binding_function_name(&context);
+node_t *psx_bind_identifier_tree_in(
+    const psx_identifier_binding_request_t *request,
+    node_t *node) {
+  if (!request || !request->semantic_context) return node;
+  psx_identifier_binding_context_t context =
+      binding_context_from_request(request);
   return bind_node(node, &context);
 }
 
-node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    psx_scope_lookup_point_t lookup_point,
-    node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !local_registry) return node;
-  psx_identifier_binding_context_t context = {
-      .semantic_context = semantic_context,
-      .local_registry = local_registry,
-      .fallback_diag_tok = fallback_diag_tok,
-      .lookup_point = lookup_point,
-      .has_lookup_point_override = 1,
-  };
-  set_binding_function_name(&context);
-  return bind_node(node, &context);
-}
-
-node_t *psx_bind_identifier_tree_in_session(
-    ag_compilation_session_t *session,
-    node_t *node, const token_t *fallback_diag_tok) {
-  if (!ag_compilation_session_is_complete(session)) return node;
-  return psx_bind_identifier_tree_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_local_registry(session),
-      node, fallback_diag_tok);
-}
-
-node_t *psx_bind_identifier_initializer_tree_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_local_registry_t *local_registry,
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !local_registry) return syntax;
-  psx_identifier_binding_context_t context = {
-      .semantic_context = semantic_context,
-      .local_registry = local_registry,
-      .fallback_diag_tok = fallback_diag_tok,
-  };
-  set_binding_function_name(&context);
+node_t *psx_bind_identifier_initializer_tree_in(
+    const psx_identifier_binding_request_t *request,
+    node_t *syntax) {
+  if (!request || !request->semantic_context) return syntax;
+  psx_identifier_binding_context_t context =
+      binding_context_from_request(request);
   return bind_initializer(syntax, &context);
-}
-
-node_t *psx_bind_identifier_initializer_tree_in_session(
-    ag_compilation_session_t *session,
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!ag_compilation_session_is_complete(session)) return syntax;
-  return psx_bind_identifier_initializer_tree_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_local_registry(session),
-      syntax, fallback_diag_tok);
 }
