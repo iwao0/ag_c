@@ -76,13 +76,8 @@ static int materialize_interned_type(node_t *node, void *user) {
   if (!ps_node_get_type(pass->resolution_store, node)) return 1;
   psx_qual_type_t qual_type =
       ps_node_qual_type(pass->resolution_store, node);
-  const psx_type_t *canonical =
-      psx_semantic_type_table_lookup_qual_type(
-          ps_ctx_semantic_type_table_in(pass->semantic_context),
-          qual_type);
-  if (canonical) {
-    ps_node_bind_qual_type(
-        pass->resolution_store, node, canonical, qual_type);
+  if (ps_node_bind_qual_type(
+          pass->resolution_store, node, qual_type)) {
     return 1;
   }
   pass->failed_node = node;

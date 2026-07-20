@@ -324,9 +324,9 @@ static void test_set_invalid_vla_runtime_view(
   ps_node_qual_type(test_resolution_store(), (node))
 #define ps_node_bind_type(node, type) \
   ps_node_bind_type(test_resolution_store(), (node), (type))
-#define ps_node_bind_qual_type(node, type, qual_type) \
+#define ps_node_bind_qual_type(node, qual_type) \
   ps_node_bind_qual_type(                                \
-      test_resolution_store(), (node), (type), (qual_type))
+      test_resolution_store(), (node), (qual_type))
 #define ps_node_prepare_resolution_state_in(arena, node) \
   ps_node_prepare_resolution_state_in(                     \
       test_resolution_store(), (arena), (node))
@@ -414,7 +414,6 @@ static void test_set_invalid_vla_runtime_view(
     arena, var, initializer, kind, tok)                               \
   psx_bind_local_initializer_target_in(                               \
       test_resolution_store(), (arena),                               \
-      ps_ctx_semantic_type_table_in(test_semantic_context()),         \
       (var), (initializer),                                           \
       (kind), (tok))
 #define psx_semantic_tree_has_canonical_expression_types(root, failure) \
@@ -497,7 +496,6 @@ static void test_set_invalid_vla_runtime_view(
 #define psx_node_new_function_reference_in(arena, name, len, type) \
   psx_node_new_function_reference_in(                              \
       test_resolution_store(), (arena), (name), (len),             \
-      ps_ctx_semantic_type_table_in(test_semantic_context()),      \
       intern_test_qual_type(type))
 #define psx_eval_const_int(node, ok) \
   psx_eval_const_int(test_resolution_store(), (node), (ok))
@@ -641,24 +639,19 @@ static int test_type_alignof_for_target(
 #define ps_node_new_param_placeholder(type) \
   ps_node_new_param_placeholder_in(            \
       test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), \
       intern_test_qual_type(type))
 #define psx_node_new_lvar_for(...) \
   psx_node_new_lvar_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define psx_node_new_lvar_object_ref_for(...) \
   psx_node_new_lvar_object_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_lvar_expr_ref_for(...) \
   ps_node_new_lvar_expr_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define psx_node_new_lvar_identifier_ref_for(...) \
   psx_node_new_lvar_identifier_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 static psx_semantic_context_t *test_semantic_context(void);
 static psx_qual_type_t test_array_decay_qual_type(
     psx_qual_type_t declaration_qual_type) {
@@ -683,13 +676,10 @@ static psx_qual_type_t test_array_address_qual_type(
 }
 
 static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
   psx_qual_type_t decay_type = test_array_decay_qual_type(
       ps_lvar_decl_qual_type(var));
   return psx_node_new_vla_decay_ref_for_in(
-      test_resolution_store(), test_arena_context(), semantic_types,
-      var, decay_type);
+      test_resolution_store(), test_arena_context(), var, decay_type);
 }
 
 static node_t *test_node_new_gvar_array_addr_for(global_var_t *global) {
@@ -723,8 +713,7 @@ static node_t *test_node_new_lvar_array_addr_for(lvar_t *var) {
   test_node_new_vla_decay_ref_for(__VA_ARGS__)
 #define ps_node_new_param_lvar_for(...) \
   ps_node_new_param_lvar_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_array_elem_lvar_for(...) \
   test_node_new_array_elem_lvar_for(__VA_ARGS__)
 #define ps_node_new_fp_to_int_cast(...) \
@@ -782,16 +771,13 @@ static node_t *test_node_new_lvar_array_addr_for(lvar_t *var) {
       (info)->bit_width, (info)->bit_offset)
 #define ps_node_new_gvar_for(...) \
   ps_node_new_gvar_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define psx_node_new_gvar_array_base_for(...) \
   psx_node_new_gvar_array_base_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define psx_node_new_static_local_gvar_for(...) \
   psx_node_new_static_local_gvar_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_vla_runtime(...) \
   ps_node_new_vla_runtime_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_assign(...) \
@@ -1209,9 +1195,8 @@ static node_t *test_node_new_lvar_type_at_for_in(
     arena_context_t *arena_context, lvar_t *owner, int offset,
     const psx_type_t *type) {
   return ps_node_new_lvar_qual_type_at_for_in(
-      test_resolution_store(), arena_context,
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      owner, offset, intern_test_qual_type(type));
+      test_resolution_store(), arena_context, owner, offset,
+      intern_test_qual_type(type));
 }
 
 static psx_qual_type_t intern_test_declaration_qual_type(
@@ -5369,7 +5354,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   psx_qual_type_t int_qual_type =
       intern_test_qual_type(int_type);
   ASSERT_TRUE(int_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  ps_node_bind_qual_type(typed_root, int_type, int_qual_type);
+  ps_node_bind_qual_type(typed_root, int_qual_type);
   ASSERT_TRUE(psx_resolution_work_tree_advance(
       typed_work_tree, PSX_RESOLUTION_WORK_CLONED,
       PSX_RESOLUTION_WORK_BOUND));
@@ -5436,10 +5421,10 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_TRUE(initializer_root->entries[0].value !=
               syntax_entry.value);
   ps_node_bind_qual_type(
-      initializer_root->entries[0].value, int_type, int_qual_type);
+      initializer_root->entries[0].value, int_qual_type);
   ps_node_bind_qual_type(
       initializer_root->entries[0].designators[0].index_expr,
-      int_type, int_qual_type);
+      int_qual_type);
   ASSERT_TRUE(psx_resolution_work_tree_advance(
       initializer_work_tree, PSX_RESOLUTION_WORK_CLONED,
       PSX_RESOLUTION_WORK_BOUND));
@@ -27931,8 +27916,6 @@ static void test_semantic_canonical_type_invariant() {
           duplicated_return_type.signature_qual_type.type_id);
   ps_node_bind_qual_type(
       (node_t *)&duplicated_return_type,
-      psx_semantic_type_table_lookup_qual_type(
-          duplicated_types, duplicated_return_qual_type),
       duplicated_return_qual_type);
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&duplicated_return_type, &failure));

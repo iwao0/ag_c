@@ -5565,6 +5565,12 @@ if (!/case\s+ND_CASE:[^]*?psx_eval_const_int\s*\([^]*?psx_case_label_bind_value\
     "case label expressions must remain Syntax while resolved values live in semantic state and Typed HIR",
   );
 }
+const canonicalQualTypeBinder = resolvedNodeTypeSource.match(
+  /int\s+ps_node_bind_qual_type\s*\([^]*?\n\}/,
+);
+const canonicalQualTypeBinderDeclaration = resolvedNodeTypeHeader.match(
+  /int\s+ps_node_bind_qual_type\s*\(([^;]*)\);/,
+);
 if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
       nodeResolutionStateSource,
     ) ||
@@ -5579,11 +5585,25 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
       resolutionStoreSource,
     ) ||
     !/ps_node_bind_type\s*\([^]*?psx_resolution_store_intern_type\s*\(/.test(
-      nodeUtilsSourceForRegistry,
+      resolvedNodeTypeSource,
     ) ||
     !/psx_semantic_type_table_lookup_qual_type\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
-    )) {
+    ) ||
+    !canonicalQualTypeBinder ||
+    !canonicalQualTypeBinderDeclaration ||
+    !/psx_qual_type_t\s+qual_type/.test(
+      canonicalQualTypeBinderDeclaration[1],
+    ) ||
+    /const\s+psx_type_t\s*\*|canonical_type\s*,/.test(
+      canonicalQualTypeBinderDeclaration[1],
+    ) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      canonicalQualTypeBinder[0],
+    ) ||
+    !/PSX_NODE_TYPE_CANONICAL/.test(canonicalQualTypeBinder[0]) ||
+    /ps_node_bind_type\s*\(/.test(canonicalQualTypeBinder[0])
+    ) {
   throw new Error(
     "node resolution state must canonicalize every bound type immediately",
   );
@@ -5784,8 +5804,11 @@ if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     !/\bint\s+ps_node_prepare_resolution_state_in\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
-    /^(?:const\s+psx_type_t\s*\*|psx_qual_type_t|int)\s+(?:ps_node_get_type|ps_node_qual_type|ps_node_prepare_resolution_state_in|ps_node_copy_resolution_state_in)\s*\(/m.test(
+    /^(?:const\s+psx_type_t\s*\*|psx_qual_type_t|void|int)\s+(?:ps_node_get_type|ps_node_qual_type|ps_node_bind_type|ps_node_bind_qual_type|ps_node_clear_type|ps_node_prepare_resolution_state_in|ps_node_copy_resolution_state_in)\s*\(/m.test(
       nodeUtilsSource,
+    ) ||
+    /\bps_node_set_qual_type_identity\s*\(/.test(
+      `${resolvedNodeTypeHeader}\n${resolvedNodeTypeSource}\n${nodeUtilsSource}`,
     )) {
   throw new Error(
     "resolved node type state and its core API must be owned by the semantic layer",
@@ -5931,7 +5954,7 @@ if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
     !/psx_semantic_type_table_fundamental_integer\s*\(/.test(
       storageSlotConstructor[0],
     ) ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+    /psx_semantic_type_table_t|semantic_types/.test(
       canonicalTypeSlotConstructor[0],
     ) ||
     !/psx_qual_type_t\s+qual_type/.test(canonicalTypeSlotConstructor[0]) ||
@@ -5996,13 +6019,8 @@ const vlaDecayConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*psx_node_new_vla_decay_ref_for_in\s*\([^]*?\n\}/,
 );
 if (!localReferenceBinder ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
-      localReferenceBinder[0],
-    ) ||
+    /psx_semantic_type_table_t|semantic_types/.test(localReferenceBinder[0]) ||
     !/psx_qual_type_t\s+qual_type/.test(localReferenceBinder[0]) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
-      localReferenceBinder[0],
-    ) ||
     !/ps_node_bind_qual_type\s*\(/.test(localReferenceBinder[0]) ||
     !/ps_node_bind_qual_type\s*\([^;]+;[^]*bind_local_reference_vla_runtime\s*\(/s.test(
       localReferenceBinder[0],
@@ -6017,13 +6035,13 @@ if (!localReferenceBinder ||
     /ps_type_decay_array_in\s*\(|ps_node_bind_type\s*\(/.test(
       vlaDecayConstructor[0],
     ) ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+    /psx_semantic_type_table_t|semantic_types/.test(
       localInitializerBindingSource,
     ) ||
-    !/psx_node_new_lvar_object_ref_for_in\s*\([^;]*semantic_types/s.test(
+    !/psx_node_new_lvar_object_ref_for_in\s*\(/.test(
       localInitializerBindingSource,
     ) ||
-    !/ps_node_new_lvar_expr_ref_for_in\s*\([^;]*semantic_types/s.test(
+    !/ps_node_new_lvar_expr_ref_for_in\s*\(/.test(
       localInitializerBindingSource,
     )) {
   throw new Error(
@@ -6040,9 +6058,7 @@ if (!identifierArrayDecay ||
     !/psx_qual_type_t\s+expression_qual_type/.test(
       identifierArrayDecay[0],
     ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
-      identifierArrayDecay[0],
-    ) ||
+    /psx_semantic_type_table_t|semantic_types/.test(identifierArrayDecay[0]) ||
     !/ps_node_bind_qual_type\s*\(/.test(identifierArrayDecay[0]) ||
     /ps_type_decay_array_in\s*\(|ps_node_bind_type\s*\(/.test(
       identifierArrayDecay[0],
@@ -6117,13 +6133,8 @@ const arrayAddressBinder = resolvedObjectRefSource.match(
   /static\s+int\s+bind_array_address_qual_type\s*\([^]*?\n\}/,
 );
 if (!globalReferenceBinder ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
-      globalReferenceBinder[0],
-    ) ||
+    /psx_semantic_type_table_t|semantic_types/.test(globalReferenceBinder[0]) ||
     !/psx_qual_type_t\s+qual_type/.test(globalReferenceBinder[0]) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
-      globalReferenceBinder[0],
-    ) ||
     /const\s+psx_type_t\s*\*\s*type\s*,/.test(
       globalReferenceBinder[0],
     ) ||
@@ -6162,11 +6173,8 @@ const identifierVarargMaterializer = identifierBindingSource.match(
 );
 for (const binder of [functionReferenceBinder, varargReferenceBinder]) {
   if (!binder ||
-      !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
-        binder[0],
-      ) ||
+      /psx_semantic_type_table_t|semantic_types/.test(binder[0]) ||
       !/psx_qual_type_t\s+expression_qual_type/.test(binder[0]) ||
-      !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(binder[0]) ||
       !/ps_node_bind_qual_type\s*\(/.test(binder[0]) ||
       /ps_node_bind_type\s*\(/.test(binder[0])) {
     throw new Error(
@@ -7613,12 +7621,10 @@ const typeBuilderUsers = new Set([
   "src/semantic/parameter_declaration_resolution.c",
   "src/semantic/declaration_application.c",
   "src/semantic/type_name_resolution.c",
-  "src/semantic/semantic_pass.c",
   "src/semantic/literal_resolution.c",
   "src/semantic/generic_selection_resolution.c",
   "src/semantic/static_initializer_resolution.c",
   "src/semantic/type_query_resolution.c",
-  "src/semantic/identifier_binding.c",
   "src/semantic/function_call_resolution.c",
   "src/semantic/expression_operand_resolution.c",
   "src/semantic/type_identity.c",

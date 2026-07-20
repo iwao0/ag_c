@@ -180,12 +180,7 @@ static node_t *lower_tree(
       if (result_qual_type.type_id != PSX_TYPE_ID_INVALID &&
           (result_qual_type.type_id != current_qual_type.type_id ||
            result_qual_type.qualifiers != current_qual_type.qualifiers)) {
-        const psx_type_t *canonical_result =
-            ps_ctx_type_by_id_in(
-                context->semantic_context, result_qual_type.type_id);
-        if (canonical_result)
-          ps_node_bind_qual_type(
-              store, node, canonical_result, result_qual_type);
+        ps_node_bind_qual_type(store, node, result_qual_type);
       }
       return node;
     }

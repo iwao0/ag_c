@@ -8,22 +8,20 @@
 
 void ps_node_bind_symbol_decl_type_if_missing(
     psx_resolution_store_t *store, node_t *node) {
-  if (!node || ps_node_get_type(store, node)) return;
+  if (!node ||
+      ps_node_qual_type(store, node).type_id != PSX_TYPE_ID_INVALID)
+    return;
   switch (psx_resolved_object_ref_kind(store, node)) {
     case PSX_RESOLVED_OBJECT_REF_LOCAL: {
       lvar_t *var = psx_resolved_object_ref_local(store, node);
-      const psx_type_t *type = ps_lvar_get_decl_type(var);
-      if (type)
-        ps_node_bind_qual_type(
-            store, node, type, ps_lvar_decl_qual_type(var));
+      ps_node_bind_qual_type(
+          store, node, ps_lvar_decl_qual_type(var));
       return;
     }
     case PSX_RESOLVED_OBJECT_REF_GLOBAL: {
       global_var_t *var = psx_resolved_object_ref_global(store, node);
-      const psx_type_t *type = ps_gvar_get_decl_type(var);
-      if (type)
-        ps_node_bind_qual_type(
-            store, node, type, ps_gvar_decl_qual_type(var));
+      ps_node_bind_qual_type(
+          store, node, ps_gvar_decl_qual_type(var));
       return;
     }
     case PSX_RESOLVED_OBJECT_REF_NONE:

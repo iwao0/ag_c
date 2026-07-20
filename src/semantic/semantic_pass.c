@@ -9,7 +9,6 @@
 #include "../parser/node_vla_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 #include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "assignment_validation.h"
@@ -49,39 +48,14 @@ static ag_diagnostic_context_t *semantic_diagnostics(
 static void semantic_transform_node(
     node_t *node, const psx_semantic_traversal_t *traversal);
 
-static void semantic_bind_result_type(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, const psx_type_t *type) {
-  ps_node_bind_type(
-      ps_ctx_resolution_store(semantic_context), node, type);
-}
-
 static int semantic_bind_qual_type_result(
     psx_semantic_context_t *semantic_context,
     node_t *node, psx_qual_type_t qual_type) {
   if (!semantic_context || !node ||
       qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, qual_type.type_id);
-  if (!canonical) return 0;
-  ps_node_bind_qual_type(
-      ps_ctx_resolution_store(semantic_context),
-      node, canonical, qual_type);
-  return 1;
-}
-
-static void semantic_bind_canonical_result_type(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, const psx_type_t *type) {
-  psx_qual_type_t qual_type =
-      ps_ctx_intern_qual_type_in(semantic_context, type);
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, qual_type.type_id);
-  if (canonical)
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context),
-        node, canonical, qual_type);
+  return ps_node_bind_qual_type(
+      ps_ctx_resolution_store(semantic_context), node, qual_type);
 }
 
 static psx_qual_type_t semantic_node_qual_type_value(
@@ -92,12 +66,7 @@ static psx_qual_type_t semantic_node_qual_type_value(
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  psx_qual_type_t type = ps_node_qual_type(store, node);
-  return type.type_id != PSX_TYPE_ID_INVALID
-             ? type
-             : ps_ctx_intern_qual_type_in(
-                   semantic_context,
-                   ps_node_get_type(store, node));
+  return ps_node_qual_type(store, node);
 }
 
 static const char *semantic_control_statement_name(int node_kind) {
@@ -153,19 +122,15 @@ static void semantic_resolve_number_literal(
     psx_global_registry_t *global_registry,
     node_num_t *literal) {
   if (!semantic_context || !literal ||
-      ps_node_get_type(
+      ps_node_qual_type(
           ps_ctx_resolution_store(semantic_context),
-          (node_t *)literal)) return;
+          (node_t *)literal).type_id != PSX_TYPE_ID_INVALID) return;
   psx_literal_semantic_resolution_t resolution;
   if (!psx_resolve_number_literal_semantics_in_contexts(
           semantic_context, global_registry, literal, &resolution))
     return;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, resolution.qual_type.type_id);
-  if (canonical)
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context),
-        (node_t *)literal, canonical, resolution.qual_type);
+  semantic_bind_qual_type_result(
+      semantic_context, (node_t *)literal, resolution.qual_type);
 }
 
 static void semantic_resolve_string_literal(
@@ -173,9 +138,9 @@ static void semantic_resolve_string_literal(
     psx_global_registry_t *global_registry,
     node_string_t *literal) {
   if (!semantic_context || !literal ||
-      ps_node_get_type(
+      ps_node_qual_type(
           ps_ctx_resolution_store(semantic_context),
-          (node_t *)literal)) return;
+          (node_t *)literal).type_id != PSX_TYPE_ID_INVALID) return;
   psx_literal_semantic_resolution_t resolution;
   if (!psx_resolve_string_literal_semantics_in_contexts(
           semantic_context, global_registry, literal, &resolution))
@@ -184,23 +149,21 @@ static void semantic_resolve_string_literal(
     psx_string_literal_bind_label(
         ps_ctx_resolution_store(semantic_context),
         literal, resolution.string_label);
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, resolution.qual_type.type_id);
-  if (canonical)
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context),
-        (node_t *)literal, canonical, resolution.qual_type);
+  semantic_bind_qual_type_result(
+      semantic_context, (node_t *)literal, resolution.qual_type);
 }
 
 static void semantic_bind_size_query_result_type(
     psx_semantic_context_t *semantic_context, node_t *query) {
   if (!semantic_context || !query ||
-      ps_node_get_type(ps_ctx_resolution_store(semantic_context), query))
+      ps_node_qual_type(
+          ps_ctx_resolution_store(semantic_context), query).type_id !=
+          PSX_TYPE_ID_INVALID)
     return;
-  semantic_bind_canonical_result_type(
+  semantic_bind_qual_type_result(
       semantic_context, query,
-      ps_type_new_integer_kind_in(
-          ps_ctx_arena(semantic_context),
+      psx_semantic_type_table_fundamental_integer(
+          ps_ctx_semantic_type_table_in(semantic_context),
           PSX_INTEGER_KIND_LONG, 1, 0));
 }
 
@@ -212,18 +175,12 @@ static int semantic_bind_address_result_type(
       ps_ctx_semantic_type_table_in(semantic_context);
   psx_qual_type_t operand_type = ps_node_qual_type(
       ps_ctx_resolution_store(semantic_context), operand);
-  if (operand_type.type_id == PSX_TYPE_ID_INVALID) {
-    operand_type = ps_ctx_intern_qual_type_in(
-        semantic_context,
-        ps_node_get_type(
-            ps_ctx_resolution_store(semantic_context), operand));
-  }
-  const psx_type_t *operand_canonical = psx_semantic_type_table_lookup(
-      types, operand_type.type_id);
-  if (!operand_canonical) return 0;
-
+  psx_type_shape_t operand_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, operand_type.type_id, &operand_shape))
+    return 0;
   psx_qual_type_t pointee_type = operand_type;
-  if (operand_canonical->kind == PSX_TYPE_ARRAY) {
+  if (operand_shape.kind == PSX_TYPE_ARRAY) {
     pointee_type = psx_semantic_type_table_base(
         types, operand_type.type_id);
   }
@@ -279,11 +236,8 @@ static void semantic_resolve_explicit_address(
     return;
   }
   if (resolution.status != PSX_ADDRESS_OPERAND_OK) return;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, resolution.result_qual_type.type_id);
-  if (canonical)
-    ps_node_bind_qual_type(
-        store, node, canonical, resolution.result_qual_type);
+  semantic_bind_qual_type_result(
+      semantic_context, node, resolution.result_qual_type);
 }
 
 static void semantic_transform_initializer_syntax(
@@ -328,9 +282,10 @@ static void semantic_transform_return(
       ps_ctx_semantic_type_table_in(semantic_context);
   psx_qual_type_t return_qual_type =
       ps_function_definition_return_qual_type(types, current_func);
-  const psx_type_t *return_type =
-      psx_semantic_type_table_lookup_qual_type(types, return_qual_type);
-  int returns_void = return_type && return_type->kind == PSX_TYPE_VOID;
+  psx_type_shape_t return_shape = {0};
+  int returns_void = psx_semantic_type_table_describe(
+                         types, return_qual_type.type_id, &return_shape) &&
+                     return_shape.kind == PSX_TYPE_VOID;
 
   if (!node->lhs) {
     if (!returns_void) {
@@ -455,8 +410,9 @@ static void semantic_resolve_arithmetic_unary(
             semantic_node_qual_type_value(
                 semantic_context, node->lhs)));
   }
-  if (ps_node_get_type(
-          ps_ctx_resolution_store(semantic_context), node)) return;
+  if (ps_node_qual_type(
+          ps_ctx_resolution_store(semantic_context), node).type_id !=
+      PSX_TYPE_ID_INVALID) return;
   ps_diag_ctx_in(diagnostics, node->tok ? node->tok : (token_t *)fallback_diag_tok,
               "unary", "%s のオペランドは算術型でなければなりません",
               operator_name);
@@ -472,8 +428,9 @@ static void semantic_resolve_logical_not(
           semantic_context,
           semantic_node_qual_type_value(
               semantic_context, node->lhs)));
-  if (ps_node_get_type(
-          ps_ctx_resolution_store(semantic_context), node))
+  if (ps_node_qual_type(
+          ps_ctx_resolution_store(semantic_context), node).type_id !=
+      PSX_TYPE_ID_INVALID)
     return;
   ps_diag_ctx_in(
       semantic_diagnostics(semantic_context),
@@ -491,8 +448,9 @@ static void semantic_resolve_bitwise_not(
           semantic_context,
           semantic_node_qual_type_value(
               semantic_context, node->lhs)));
-  if (ps_node_get_type(
-          ps_ctx_resolution_store(semantic_context), node))
+  if (ps_node_qual_type(
+          ps_ctx_resolution_store(semantic_context), node).type_id !=
+      PSX_TYPE_ID_INVALID)
     return;
   ps_diag_ctx_in(
       semantic_diagnostics(semantic_context),
@@ -576,12 +534,8 @@ static void semantic_resolve_conditional(
   }
   if (resolution.status != PSX_CONDITIONAL_TYPES_OK)
     return;
-  const psx_type_t *canonical = ps_ctx_type_by_id_in(
-      semantic_context, resolution.result_qual_type.type_id);
-  if (canonical)
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context), node,
-        canonical, resolution.result_qual_type);
+  semantic_bind_qual_type_result(
+      semantic_context, node, resolution.result_qual_type);
 }
 
 static void semantic_resolve_member_access(
@@ -633,30 +587,17 @@ static void semantic_resolve_member_access(
       .is_resolved = 1,
   };
 
-  const psx_type_t *access_type =
-      psx_semantic_type_table_lookup_qual_type(
-          ps_ctx_semantic_type_table_in(semantic_context),
-          resolution.member_qual_type);
-  if (access_type)
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context),
-        (node_t *)access, access_type,
-        resolution.member_qual_type);
-  const psx_type_t *base_type = ps_node_get_type(
-      ps_ctx_resolution_store(semantic_context), access->base.lhs);
+  semantic_bind_qual_type_result(
+      semantic_context, (node_t *)access,
+      resolution.member_qual_type);
+  psx_qual_type_t base_type = semantic_node_qual_type_value(
+      semantic_context, access->base.lhs);
   if (access->from_pointer) {
-    state->base_address_qual_type =
-        ps_node_qual_type(
-            ps_ctx_resolution_store(semantic_context), access->base.lhs);
-    if (state->base_address_qual_type.type_id == PSX_TYPE_ID_INVALID) {
-      state->base_address_qual_type = ps_ctx_intern_qual_type_in(
-          semantic_context, base_type);
-    }
+    state->base_address_qual_type = base_type;
   } else {
-    const psx_type_t *address_type = ps_type_address_result_in(
-        ps_ctx_arena(semantic_context), base_type);
-    state->base_address_qual_type = ps_ctx_intern_qual_type_in(
-        semantic_context, address_type);
+    state->base_address_qual_type =
+        psx_resolve_address_result_qual_type_in(
+            semantic_context, base_type);
   }
   ps_node_set_bitfield_info(
       ps_ctx_resolution_store(semantic_context),
@@ -715,14 +656,22 @@ static node_t *semantic_normalize_call_deref_chain(
 
   semantic_transform_node(
       bottom, traversal);
-  const psx_type_t *type = ps_node_get_type(
-      ps_ctx_resolution_store(traversal->semantic_context), bottom);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(traversal->semantic_context);
+  psx_qual_type_t type = semantic_node_qual_type_value(
+      traversal->semantic_context, bottom);
+  psx_type_shape_t shape = {0};
   int pointer_depth = 0;
-  while (type && type->kind == PSX_TYPE_POINTER) {
+  while (psx_semantic_type_table_describe(
+             types, type.type_id, &shape) &&
+         shape.kind == PSX_TYPE_POINTER) {
     pointer_depth++;
-    type = type->base;
+    type = psx_semantic_type_table_base(types, type.type_id);
   }
-  if (!type || type->kind != PSX_TYPE_FUNCTION) return callee;
+  if (!psx_semantic_type_table_describe(
+          types, type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_FUNCTION)
+    return callee;
 
   int real_derefs = pointer_depth > 0 ? pointer_depth - 1 : 0;
   if (real_derefs > deref_count) real_derefs = deref_count;
@@ -761,19 +710,16 @@ static void semantic_resolve_function_call(
         &call_types);
     if (call_types.function_qual_type.type_id !=
         PSX_TYPE_ID_INVALID) {
-      const psx_type_t *canonical_function =
-          psx_semantic_type_table_lookup(
-              types, call_types.function_qual_type.type_id);
-      const psx_type_t *canonical_return =
-          psx_semantic_type_table_lookup(
-              types, call_types.return_qual_type.type_id);
-      if (canonical_function)
+      psx_type_shape_t function_shape = {0};
+      if (psx_semantic_type_table_describe(
+              types, call_types.function_qual_type.type_id,
+              &function_shape) &&
+          function_shape.kind == PSX_TYPE_FUNCTION)
         psx_function_call_bind_qual_type(
             store, call, call_types.function_qual_type);
-      if (canonical_return)
-        ps_node_bind_qual_type(
-            store, (node_t *)call, canonical_return,
-            call_types.return_qual_type);
+      semantic_bind_qual_type_result(
+          semantic_context, (node_t *)call,
+          call_types.return_qual_type);
     }
     if (call_types.status == PSX_CALL_TYPES_OK)
       return;
@@ -791,10 +737,10 @@ static void semantic_resolve_function_call(
     }
   }
   if (is_implicit_declaration) {
-    semantic_bind_result_type(
+    semantic_bind_qual_type_result(
         semantic_context, (node_t *)call,
-        ps_type_new_integer_kind_in(
-            ps_ctx_arena(semantic_context),
+        psx_semantic_type_table_fundamental_integer(
+            ps_ctx_semantic_type_table_in(semantic_context),
             PSX_INTEGER_KIND_INT, 0, 0));
     return;
   }
@@ -803,17 +749,6 @@ static void semantic_resolve_function_call(
       call->base.tok ? call->base.tok : (token_t *)fallback_diag_tok,
       "%s", diag_message_for_in(
                 diagnostics, DIAG_ERR_PARSER_CALL_NOT_CALLABLE));
-}
-
-static const psx_type_t *semantic_resolve_type_name_ref(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const psx_type_name_ref_t *type_name,
-    psx_type_name_resolution_state_t *state) {
-  return psx_resolve_bound_type_name_ref_in_contexts(
-      semantic_context, global_registry, local_registry,
-      type_name, state);
 }
 
 static void semantic_resolve_source_cast(
@@ -835,12 +770,8 @@ static void semantic_resolve_source_cast(
               ps_ctx_resolution_store(semantic_context), &cast->base),
           &target_type))
     return;
-  const psx_type_t *canonical =
-      ps_ctx_type_by_id_in(semantic_context, target_type.type_id);
-  if (canonical) {
-    ps_node_bind_qual_type(
-        ps_ctx_resolution_store(semantic_context),
-        (node_t *)cast, canonical, target_type);
+  if (semantic_bind_qual_type_result(
+          semantic_context, (node_t *)cast, target_type)) {
     psx_resolution_node_set_kind(
         ps_ctx_resolution_store(semantic_context),
         (node_t *)cast, ND_CAST);
@@ -861,17 +792,14 @@ static void semantic_resolve_compound_literal(
   psx_type_name_resolution_state_t *type_name_state =
       psx_node_type_name_state_mut(
           ps_ctx_resolution_store(semantic_context), &compound->base);
-  const psx_type_t *object_type =
-      psx_type_name_resolved_type(type_name_state);
-  if (!object_type) {
-    object_type = semantic_resolve_type_name_ref(
-        semantic_context, global_registry, local_registry,
-        &compound->type_name, type_name_state);
-  }
-  const psx_type_t *result = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), object_type);
   psx_qual_type_t result_qual_type =
-      ps_ctx_intern_qual_type_in(semantic_context, result);
+      psx_type_name_resolved_qual_type(type_name_state);
+  if (result_qual_type.type_id == PSX_TYPE_ID_INVALID &&
+      !psx_resolve_bound_type_name_qual_type_in_contexts(
+          semantic_context, global_registry, local_registry,
+          &compound->type_name, type_name_state,
+          &result_qual_type))
+    return;
   semantic_bind_qual_type_result(
       semantic_context, (node_t *)compound, result_qual_type);
 }
@@ -1156,10 +1084,10 @@ static void semantic_transform_node(
       } else {
         semantic_transform_node(node->rhs, traversal);
       }
-      semantic_bind_result_type(
-          traversal->semantic_context, node, ps_type_clone_in(
-                    ps_ctx_arena(traversal->semantic_context),
-                    ps_node_get_type(store, node->lhs)));
+      semantic_bind_qual_type_result(
+          traversal->semantic_context, node,
+          semantic_node_qual_type_value(
+              traversal->semantic_context, node->lhs));
       psx_validate_assignment_in_context(
           traversal->semantic_context, node, diagnostics,
           fallback_diag_tok);
@@ -1225,7 +1153,8 @@ static void semantic_transform_node(
           traversal->semantic_context, node, fallback_diag_tok);
       break;
     case ND_VARARG_CURSOR:
-      if (!ps_node_get_type(store, node)) {
+      if (ps_node_qual_type(store, node).type_id ==
+          PSX_TYPE_ID_INVALID) {
         psx_qual_type_t void_type =
             ps_ctx_intern_void_qual_type_in(
                 traversal->semantic_context);
@@ -1336,7 +1265,8 @@ static void semantic_transform_node(
       semantic_transform_node(node->lhs, traversal);
       if (!semantic_bind_address_result_type(
               traversal->semantic_context, node, node->lhs) &&
-          !ps_node_get_type(store, node)) {
+          ps_node_qual_type(store, node).type_id ==
+              PSX_TYPE_ID_INVALID) {
         semantic_bind_qual_type_result(
             traversal->semantic_context, node,
             psx_resolve_address_result_qual_type_in(
@@ -1374,7 +1304,8 @@ static void semantic_transform_node(
     case ND_LOGOR:
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
-      if (!ps_node_get_type(store, node)) {
+      if (ps_node_qual_type(store, node).type_id ==
+          PSX_TYPE_ID_INVALID) {
         psx_type_binary_op_t operator;
         if (ps_node_binary_type_op(node->kind, &operator)) {
           semantic_bind_qual_type_result(
@@ -1432,8 +1363,10 @@ static void semantic_transform_node(
           fallback_diag_tok);
       if (node->kind == ND_ASSIGN ||
           node->kind == ND_COMPOUND_ASSIGN)
-        ps_node_bind_type(
-            store, node, ps_node_get_type(store, node->lhs));
+        ps_node_bind_qual_type(
+            store, node,
+            semantic_node_qual_type_value(
+                traversal->semantic_context, node->lhs));
       break;
   }
 }

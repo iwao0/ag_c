@@ -198,8 +198,7 @@ static node_t *new_array_elem_assign(
       context->semantic_types, ps_lvar_decl_type_id(var));
   int element_size = type_size_id(context, element.type_id);
   node_t *target = ps_node_new_lvar_qual_type_at_for_in(
-      context->resolution_store, context->arena_context,
-      context->semantic_types, var,
+      context->resolution_store, context->arena_context, var,
       ps_lvar_offset(var) + idx * (element_size > 0 ? element_size : 0),
       element);
   return ps_node_new_assign_in(
@@ -345,12 +344,10 @@ static node_t *lower_array_expr_initializer(
         context->semantic_types, ps_lvar_decl_type_id(var));
     for (int i = 0; i < array_len; i++) {
       node_t *dst = ps_node_new_lvar_qual_type_at_for_in(
-          context->resolution_store, context->arena_context,
-          context->semantic_types, var,
+          context->resolution_store, context->arena_context, var,
           ps_lvar_offset(var) + i * elem_size, element);
       node_t *src = ps_node_new_lvar_qual_type_at_for_in(
-          context->resolution_store, context->arena_context,
-          context->semantic_types, source,
+          context->resolution_store, context->arena_context, source,
           source_offset + i * elem_size, element);
       chain = append_init(
           context, chain,
@@ -497,7 +494,7 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
   if (ctx->index >= ctx->capacity) return;
   node_t *target = ps_node_new_lvar_qual_type_at_for_in(
       ctx->lowering->resolution_store,
-      ctx->lowering->arena_context, ctx->lowering->semantic_types, ctx->var,
+      ctx->lowering->arena_context, ctx->var,
       ps_lvar_offset(ctx->var) + ctx->relative_offset +
           ctx->index * ctx->element_size,
       ctx->element_qual_type);
@@ -800,8 +797,8 @@ static node_t *lower_typed_initializer_value(
                              context, var, relative_offset, member_ref)
                        : ps_node_new_lvar_qual_type_at_for_in(
                              context->resolution_store,
-                             context->arena_context, context->semantic_types,
-                             var, ps_lvar_offset(var) + relative_offset,
+                             context->arena_context, var,
+                             ps_lvar_offset(var) + relative_offset,
                              unqualified_type(type_id));
   return append_init(
       context, chain,
@@ -873,8 +870,7 @@ static node_t *append_typed_object_zero_fill(
                                &leaf->member_ref)
                          : ps_node_new_lvar_qual_type_at_for_in(
                                context->resolution_store,
-                               context->arena_context,
-                               context->semantic_types, var,
+                               context->arena_context, var,
                                ps_lvar_offset(var) + leaf->relative_offset,
                                leaf->qual_type);
     chain = append_init(
@@ -1160,8 +1156,8 @@ static node_t *try_lower_typed_array_copy(
     int leaf_source_offset =
         source_offset + (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_qual_type_at_for_in(
-        context->resolution_store, context->arena_context,
-        context->semantic_types, source, leaf_source_offset,
+        context->resolution_store, context->arena_context, source,
+        leaf_source_offset,
         leaf->qual_type);
     node_t *dst = leaf->member_ref.declaration
                       ? new_initializer_member_lvar_ref(
@@ -1169,8 +1165,7 @@ static node_t *try_lower_typed_array_copy(
                             &leaf->member_ref)
                       : ps_node_new_lvar_qual_type_at_for_in(
                             context->resolution_store,
-                            context->arena_context, context->semantic_types,
-                            var,
+                            context->arena_context, var,
                             ps_lvar_offset(var) + leaf->relative_offset,
                             leaf->qual_type);
     chain = append_init(
@@ -1200,8 +1195,7 @@ static node_t *lower_flat_typed_array_initializer_list(
   }
   for (int i = 0; i < list->entry_count; i++) {
     node_t *target = ps_node_new_lvar_qual_type_at_for_in(
-        context->resolution_store, context->arena_context,
-        context->semantic_types, var,
+        context->resolution_store, context->arena_context, var,
         ps_lvar_offset(var) + relative_offset + i * leaf_size, leaf);
     chain = append_init(
         context, chain,

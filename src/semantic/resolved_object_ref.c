@@ -48,15 +48,16 @@ static void bind_local_reference_vla_runtime(
 int psx_bind_local_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node, lvar_t *var,
-    int storage_offset, const psx_semantic_type_table_t *semantic_types,
-    psx_qual_type_t qual_type) {
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      semantic_types, qual_type);
-  if (!type ||
-      !bind_local_reference_payload_in(
-          store, arena_context, node, var, storage_offset))
+    int storage_offset, psx_qual_type_t qual_type) {
+  if (!node ||
+      !ps_node_prepare_resolution_state_in(store, arena_context, node))
     return 0;
-  ps_node_bind_qual_type(store, node, type, qual_type);
+  if (!ps_node_bind_qual_type(store, node, qual_type)) return 0;
+  if (!bind_local_reference_payload_in(
+          store, arena_context, node, var, storage_offset)) {
+    ps_node_clear_type(store, node);
+    return 0;
+  }
   bind_local_reference_vla_runtime(store, node, var);
   return 1;
 }
@@ -65,15 +66,11 @@ int psx_bind_global_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
     global_var_t *global, char *name, int name_len,
-    const psx_semantic_type_table_t *semantic_types,
-    psx_qual_type_t qual_type,
-    int is_thread_local) {
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      semantic_types, qual_type);
-  if (!node || !type ||
+    psx_qual_type_t qual_type, int is_thread_local) {
+  if (!node ||
       !ps_node_prepare_resolution_state_in(store, arena_context, node))
     return 0;
-  ps_node_bind_qual_type(store, node, type, qual_type);
+  if (!ps_node_bind_qual_type(store, node, qual_type)) return 0;
   psx_resolved_reference_state_t *reference = reference_state(store, node);
   if (!reference) return 0;
   *reference = (psx_resolved_reference_state_t){
@@ -90,17 +87,12 @@ int psx_bind_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
     char *name, int name_len,
-    const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t expression_qual_type) {
   if (!node ||
       !ps_node_prepare_resolution_state_in(store, arena_context, node))
     return 0;
-  const psx_type_t *expression_type =
-      psx_semantic_type_table_lookup_qual_type(
-          semantic_types, expression_qual_type);
-  if (!expression_type) return 0;
-  ps_node_bind_qual_type(
-      store, node, expression_type, expression_qual_type);
+  if (!ps_node_bind_qual_type(store, node, expression_qual_type))
+    return 0;
   psx_resolved_reference_state_t *reference = reference_state(store, node);
   if (!reference) return 0;
   *reference = (psx_resolved_reference_state_t){
@@ -114,16 +106,12 @@ int psx_bind_function_reference_in(
 int psx_bind_va_arg_area_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
-    const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t expression_qual_type) {
-  const psx_type_t *expression_type =
-      psx_semantic_type_table_lookup_qual_type(
-          semantic_types, expression_qual_type);
-  if (!node || !expression_type ||
+  if (!node ||
       !ps_node_prepare_resolution_state_in(store, arena_context, node))
     return 0;
-  ps_node_bind_qual_type(
-      store, node, expression_type, expression_qual_type);
+  if (!ps_node_bind_qual_type(store, node, expression_qual_type))
+    return 0;
   psx_resolved_reference_state_t *reference = reference_state(store, node);
   if (!reference) return 0;
   *reference = (psx_resolved_reference_state_t){
@@ -149,7 +137,6 @@ psx_resolution_node_kind_t psx_resolved_object_ref_node_kind(
 static node_t *new_lvar_qual_type_node(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
     int offset, lvar_t *var, psx_qual_type_t qual_type) {
   node_t *node = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*node));
@@ -157,19 +144,17 @@ static node_t *new_lvar_qual_type_node(
       !psx_resolution_node_set_kind(store, node, ND_LVAR))
     return NULL;
   return psx_bind_local_reference_in(
-             store, arena_context, node, var, offset,
-             semantic_types, qual_type)
+             store, arena_context, node, var, offset, qual_type)
              ? node : NULL;
 }
 
 static node_t *new_decl_lvar_symbol_node(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
     lvar_t *var, int offset) {
-  if (!semantic_types || !var) return NULL;
+  if (!var) return NULL;
   return new_lvar_qual_type_node(
-      store, arena_context, semantic_types, offset, var,
+      store, arena_context, offset, var,
       ps_lvar_decl_qual_type(var));
 }
 
@@ -190,16 +175,15 @@ node_t *ps_node_new_lvar_storage_slot_for_in(
       integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
       0, 0);
   return new_lvar_qual_type_node(
-      store, arena_context, semantic_types, offset, owner, type);
+      store, arena_context, offset, owner, type);
 }
 
 node_t *ps_node_new_lvar_qual_type_at_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
     lvar_t *owner, int offset, psx_qual_type_t qual_type) {
   return new_lvar_qual_type_node(
-      store, arena_context, semantic_types, offset, owner, qual_type);
+      store, arena_context, offset, owner, qual_type);
 }
 
 node_t *ps_node_new_lvar_fp_slot_for_in(
@@ -228,89 +212,76 @@ node_t *ps_node_new_lvar_fp_slot_for_in(
         semantic_types, integer_kind_for_storage_size(type_size), 0, 0);
   }
   return new_lvar_qual_type_node(
-      store, arena_context, semantic_types, offset, owner, type);
+      store, arena_context, offset, owner, type);
 }
 
 node_t *ps_node_new_param_placeholder_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t qual_type) {
   return new_lvar_qual_type_node(
-      store, arena_context, semantic_types, 0, NULL, qual_type);
+      store, arena_context, 0, NULL, qual_type);
 }
 
 node_t *psx_node_new_lvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
+    arena_context_t *arena_context, lvar_t *var) {
   return new_decl_lvar_symbol_node(
-      store, arena_context, semantic_types, var, var ? var->offset : 0);
+      store, arena_context, var, var ? var->offset : 0);
 }
 
 node_t *psx_node_new_lvar_object_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
-  return psx_node_new_lvar_for_in(
-      store, arena_context, semantic_types, var);
+    arena_context_t *arena_context, lvar_t *var) {
+  return psx_node_new_lvar_for_in(store, arena_context, var);
 }
 
 node_t *ps_node_new_lvar_expr_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
+    arena_context_t *arena_context, lvar_t *var) {
   return new_decl_lvar_symbol_node(
-      store, arena_context, semantic_types, var, var ? var->offset : 0);
+      store, arena_context, var, var ? var->offset : 0);
 }
 
 node_t *ps_node_new_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
-    global_var_t *global);
+    arena_context_t *arena_context, global_var_t *global);
 node_t *psx_node_new_static_local_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
+    arena_context_t *arena_context, lvar_t *var);
 
 node_t *psx_node_new_lvar_identifier_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
+    arena_context_t *arena_context, lvar_t *var) {
   if (var && var->is_static_local && var->static_global_name)
     return psx_node_new_static_local_gvar_for_in(
-        store, arena_context, semantic_types, var);
-  return psx_node_new_lvar_for_in(
-      store, arena_context, semantic_types, var);
+        store, arena_context, var);
+  return psx_node_new_lvar_for_in(store, arena_context, var);
 }
 
 node_t *psx_node_new_vla_decay_ref_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var,
+    arena_context_t *arena_context, lvar_t *var,
     psx_qual_type_t decay_qual_type) {
-  if (!semantic_types || !var ||
-      decay_qual_type.type_id == PSX_TYPE_ID_INVALID)
+  if (!var || decay_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return psx_node_new_lvar_identifier_ref_for_in(
-        store, arena_context, semantic_types, var);
+        store, arena_context, var);
   node_t *node = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*node));
   if (!node ||
       !psx_resolution_node_set_kind(store, node, ND_LVAR) ||
       !psx_bind_local_reference_in(
           store, arena_context, node, var, var->offset,
-          semantic_types, decay_qual_type))
+          decay_qual_type))
     return NULL;
   return node;
 }
 
 node_t *ps_node_new_param_lvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
+    arena_context_t *arena_context, lvar_t *var) {
   return new_decl_lvar_symbol_node(
-      store, arena_context, semantic_types, var, var ? var->offset : 0);
+      store, arena_context, var, var ? var->offset : 0);
 }
 
 static node_t *new_address_node(
@@ -330,16 +301,13 @@ static int bind_array_address_qual_type(
     const psx_semantic_type_table_t *semantic_types,
     node_t *address, psx_qual_type_t expression_qual_type) {
   psx_type_shape_t shape = {0};
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      semantic_types, expression_qual_type);
-  if (!address || !type ||
+  if (!address ||
       !psx_semantic_type_table_describe(
           semantic_types, expression_qual_type.type_id, &shape) ||
       (shape.kind != PSX_TYPE_POINTER && shape.kind != PSX_TYPE_ARRAY))
     return 0;
-  ps_node_bind_qual_type(
-      store, address, type, expression_qual_type);
-  return 1;
+  return ps_node_bind_qual_type(
+      store, address, expression_qual_type);
 }
 
 node_t *ps_node_new_gvar_array_addr_for_in(
@@ -350,7 +318,7 @@ node_t *ps_node_new_gvar_array_addr_for_in(
   node_t *address = new_address_node(
       store, arena_context,
       psx_node_new_gvar_array_base_for_in(
-          store, arena_context, semantic_types, global));
+          store, arena_context, global));
   return bind_array_address_qual_type(
              store, semantic_types, address, expression_qual_type)
              ? address : NULL;
@@ -364,7 +332,7 @@ node_t *psx_node_new_static_local_array_addr_for_in(
   node_t *address = new_address_node(
       store, arena_context,
       psx_node_new_static_local_gvar_for_in(
-          store, arena_context, semantic_types, var));
+          store, arena_context, var));
   return bind_array_address_qual_type(
              store, semantic_types, address, expression_qual_type)
              ? address : NULL;
@@ -378,7 +346,7 @@ node_t *ps_node_new_lvar_array_addr_for_in(
   node_t *address = new_address_node(
       store, arena_context,
       psx_node_new_lvar_for_in(
-          store, arena_context, semantic_types, var));
+          store, arena_context, var));
   return bind_array_address_qual_type(
              store, semantic_types, address, expression_qual_type)
              ? address : NULL;
@@ -406,7 +374,7 @@ node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
         (PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
   }
   node_t *node = new_lvar_qual_type_node(
-      store, arena_context, semantic_types,
+      store, arena_context,
       (owner ? owner->offset : 0) + member_offset,
       owner, member_qual_type);
   if (!node) return NULL;
@@ -427,32 +395,26 @@ static node_t *new_global_symbol_node(
 
 node_t *ps_node_new_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
-    global_var_t *global) {
+    arena_context_t *arena_context, global_var_t *global) {
   node_t *node = new_global_symbol_node(store, arena_context);
   if (!node) return NULL;
   if (!global) return node;
   return psx_bind_global_reference_in(
              store, arena_context, node, global,
-             global->name, global->name_len, semantic_types,
+             global->name, global->name_len,
              ps_gvar_decl_qual_type(global), global->is_thread_local)
              ? node : NULL;
 }
 
 node_t *psx_node_new_gvar_array_base_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
-    global_var_t *global) {
-  return ps_node_new_gvar_for_in(
-      store, arena_context, semantic_types, global);
+    arena_context_t *arena_context, global_var_t *global) {
+  return ps_node_new_gvar_for_in(store, arena_context, global);
 }
 
 node_t *psx_node_new_static_local_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var) {
+    arena_context_t *arena_context, lvar_t *var) {
   node_t *node = new_global_symbol_node(store, arena_context);
   if (!node) return NULL;
   if (!var) return node;
@@ -462,15 +424,14 @@ node_t *psx_node_new_static_local_gvar_for_in(
   return psx_bind_global_reference_in(
              store, arena_context, node, var->static_global,
              var->static_global_name, var->static_global_name_len,
-             semantic_types, declaration_qual_type,
-             var->static_global && var->static_global->is_thread_local)
+             declaration_qual_type, var->static_global &&
+                 var->static_global->is_thread_local)
              ? node : NULL;
 }
 
 node_t *psx_node_new_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, char *name, int name_len,
-    const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t expression_qual_type) {
   node_t *reference = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*reference));
@@ -479,13 +440,12 @@ node_t *psx_node_new_function_reference_in(
     return NULL;
   return psx_bind_function_reference_in(
              store, arena_context, reference, name, name_len,
-             semantic_types, expression_qual_type)
+             expression_qual_type)
              ? reference : NULL;
 }
 
 node_t *psx_node_new_va_arg_area_reference_in(
     psx_resolution_store_t *store, arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t expression_qual_type) {
   node_t *node = psx_resolution_node_alloc_in(
       store, arena_context, sizeof(*node));
@@ -493,8 +453,7 @@ node_t *psx_node_new_va_arg_area_reference_in(
       !psx_resolution_node_set_kind(store, node, ND_VARARG_CURSOR))
     return NULL;
   return psx_bind_va_arg_area_reference_in(
-             store, arena_context, node, semantic_types,
-             expression_qual_type)
+             store, arena_context, node, expression_qual_type)
              ? node : NULL;
 }
 

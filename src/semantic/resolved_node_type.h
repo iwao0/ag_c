@@ -32,9 +32,8 @@ void *psx_resolution_node_alloc_in(
 void ps_node_bind_type(
     psx_resolution_store_t *store, node_t *node,
     const psx_type_t *type);
-void ps_node_bind_qual_type(
+int ps_node_bind_qual_type(
     psx_resolution_store_t *store, node_t *node,
-    const psx_type_t *canonical_type,
     psx_qual_type_t qual_type);
 int ps_node_prepare_resolution_state_in(
     psx_resolution_store_t *store, arena_context_t *arena_context,
@@ -48,9 +47,6 @@ int ps_node_copy_resolution_state_in(
 void ps_node_clear_type(psx_resolution_store_t *store, node_t *node);
 void ps_node_clear_expr_type_state(
     psx_resolution_store_t *store, node_t *node);
-void ps_node_set_qual_type_identity(
-    psx_resolution_store_t *store, node_t *node,
-    psx_qual_type_t qual_type);
 void ps_node_set_bitfield_info(
     psx_resolution_store_t *store, node_t *node,
     int bit_width, int bit_offset, int bit_is_signed);

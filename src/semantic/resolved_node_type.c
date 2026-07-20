@@ -4,6 +4,9 @@
 
 #include "../parser/arena.h"
 #include "../parser/ast.h"
+#include "../parser/node_vla_public.h"
+#include "../parser/type.h"
+#include "resolved_node_kind.h"
 #include "resolution_state.h"
 #include "resolution_store.h"
 #include "type_identity.h"
@@ -195,6 +198,103 @@ psx_qual_type_t ps_node_qual_type(
              ? state->type_binding.canonical_type
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                                  PSX_TYPE_QUALIFIER_NONE};
+}
+
+static int bound_type_accepts_vla_runtime_view(
+    const psx_resolution_store_t *store, const node_t *node) {
+  const psx_type_t *type = ps_node_get_type(store, node);
+  return type && ps_type_is_well_formed(type) &&
+         ps_type_contains_vla_array(type);
+}
+
+static node_t *bound_type_vla_runtime_source(
+    const psx_resolution_store_t *store, node_t *node) {
+  if (!node) return NULL;
+  if (psx_resolution_node_kind(store, node) == ND_ADDR)
+    return node->lhs;
+  switch (psx_resolution_node_kind(store, node)) {
+    case ND_ADD:
+      if (node->lhs &&
+          ps_node_vla_row_stride_frame_off(store, node->lhs) != 0)
+        return node->lhs;
+      return node->rhs;
+    case ND_SUB:
+    case ND_ASSIGN:
+    case ND_COMPOUND_ASSIGN:
+    case ND_CAST:
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return node->lhs;
+    case ND_COMMA:
+    case ND_STMT_EXPR:
+    case ND_TERNARY:
+      return node->rhs;
+    default:
+      return NULL;
+  }
+}
+
+static void refresh_bound_type_vla_runtime(
+    psx_resolution_store_t *store, node_t *node) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(store, node);
+  if (!state) return;
+  if (!bound_type_accepts_vla_runtime_view(store, node)) {
+    state->expr.vla_runtime = (psx_vla_runtime_view_t){0};
+    return;
+  }
+  node_t *source = bound_type_vla_runtime_source(store, node);
+  if (source) {
+    ps_node_set_vla_runtime_view(
+        store, node,
+        ps_node_vla_row_stride_frame_off(store, source),
+        ps_node_vla_strides_remaining(store, source));
+  } else if (psx_resolution_node_kind(store, node) == ND_DEREF &&
+             node->lhs) {
+    int frame_off = ps_node_vla_row_stride_frame_off(store, node->lhs);
+    int remaining = ps_node_vla_strides_remaining(store, node->lhs);
+    ps_node_set_vla_runtime_view(
+        store, node, frame_off != 0 && remaining > 0 ? frame_off + 8 : 0,
+        remaining > 0 ? remaining - 1 : 0);
+  }
+}
+
+int ps_node_bind_qual_type(
+    psx_resolution_store_t *store, node_t *node,
+    psx_qual_type_t qual_type) {
+  if (!node || qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(store, node);
+  const psx_type_t *resolved = psx_semantic_type_table_lookup_qual_type(
+      psx_resolution_store_semantic_types(store), qual_type);
+  if (!state || !resolved) return 0;
+  state->type_binding = (psx_node_type_binding_t){
+      .kind = PSX_NODE_TYPE_CANONICAL,
+      .canonical_type = qual_type,
+  };
+  refresh_bound_type_vla_runtime(store, node);
+  return 1;
+}
+
+void ps_node_bind_type(
+    psx_resolution_store_t *store, node_t *node,
+    const psx_type_t *type) {
+  psx_qual_type_t qual_type = psx_resolution_store_intern_type(store, type);
+  if (!ps_node_bind_qual_type(store, node, qual_type)) {
+    psx_node_resolution_state_t *state =
+        ps_node_resolution_state(store, node);
+    if (state) state->type_binding = (psx_node_type_binding_t){0};
+  }
+}
+
+void ps_node_clear_type(psx_resolution_store_t *store, node_t *node) {
+  psx_node_resolution_state_t *state =
+      ps_node_resolution_state(store, node);
+  if (!state) return;
+  state->type_binding = (psx_node_type_binding_t){0};
+  state->expr.vla_runtime = (psx_vla_runtime_view_t){0};
 }
 
 int ps_node_prepare_resolution_state_in(

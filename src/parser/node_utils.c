@@ -2284,36 +2284,6 @@ static int node_type_accepts_vla_runtime_view(
          ps_type_contains_vla_array(type);
 }
 
-static node_t *bound_node_vla_runtime_source(
-    const psx_resolution_store_t *store, node_t *node) {
-  if (!node) return NULL;
-  if (psx_resolution_node_kind(store, node) == ND_ADDR)
-    return node->lhs;
-  switch (psx_resolution_node_kind(store, node)) {
-    case ND_ADD:
-      if (node->lhs &&
-          ps_node_vla_row_stride_frame_off(store, node->lhs) != 0)
-        return node->lhs;
-      return node->rhs;
-    case ND_SUB:
-    case ND_ASSIGN:
-    case ND_COMPOUND_ASSIGN:
-    case ND_CAST:
-    case ND_PRE_INC:
-    case ND_PRE_DEC:
-    case ND_POST_INC:
-    case ND_POST_DEC:
-      return node->lhs;
-    case ND_COMMA:
-    case ND_STMT_EXPR:
-      return node->rhs;
-    case ND_TERNARY:
-      return node->rhs;
-    default:
-      return NULL;
-  }
-}
-
 void ps_node_set_vla_runtime_view(
     psx_resolution_store_t *store, node_t *node,
     int row_stride_frame_off, int strides_remaining) {
@@ -2331,87 +2301,11 @@ void ps_node_set_vla_runtime_view(
       strides_remaining > 0 ? strides_remaining : 0;
 }
 
-void ps_node_bind_type(
-    psx_resolution_store_t *store, node_t *node,
-    const psx_type_t *type) {
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(store, node);
-  if (!state) return;
-  psx_qual_type_t qual_type =
-      psx_resolution_store_intern_type(store, type);
-  state->type_binding = qual_type.type_id != PSX_TYPE_ID_INVALID
-      ? (psx_node_type_binding_t){
-            .kind = PSX_NODE_TYPE_CANONICAL,
-            .canonical_type = qual_type,
-        }
-      : (psx_node_type_binding_t){0};
-  if (!node_type_accepts_vla_runtime_view(store, node)) {
-    state->expr.vla_runtime =
-        (psx_vla_runtime_view_t){0};
-    return;
-  }
-  node_t *source = bound_node_vla_runtime_source(store, node);
-  if (source) {
-    int frame_off = ps_node_vla_row_stride_frame_off(store, source);
-    int remaining = ps_node_vla_strides_remaining(store, source);
-    ps_node_set_vla_runtime_view(store, node, frame_off, remaining);
-  } else if (psx_resolution_node_kind(store, node) == ND_DEREF && node->lhs) {
-    int frame_off = ps_node_vla_row_stride_frame_off(store, node->lhs);
-    int remaining = ps_node_vla_strides_remaining(store, node->lhs);
-    ps_node_set_vla_runtime_view(
-        store, node, frame_off != 0 && remaining > 0 ? frame_off + 8 : 0,
-        remaining > 0 ? remaining - 1 : 0);
-  }
-}
-
-void ps_node_bind_qual_type(
-    psx_resolution_store_t *store, node_t *node,
-    const psx_type_t *canonical_type,
-    psx_qual_type_t qual_type) {
-  if (!node || !canonical_type) return;
-  ps_node_bind_type(store, node, canonical_type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return;
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(store, node);
-  const psx_type_t *resolved = psx_semantic_type_table_lookup_qual_type(
-      psx_resolution_store_semantic_types(store), qual_type);
-  if (state && resolved) {
-    state->type_binding = (psx_node_type_binding_t){
-        .kind = PSX_NODE_TYPE_CANONICAL,
-        .canonical_type = qual_type,
-    };
-  }
-}
-
-void ps_node_clear_type(psx_resolution_store_t *store, node_t *node) {
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(store, node);
-  if (!state) return;
-  state->type_binding = (psx_node_type_binding_t){0};
-  state->expr.vla_runtime =
-      (psx_vla_runtime_view_t){0};
-}
-
 void ps_node_clear_expr_type_state(
     psx_resolution_store_t *store, node_t *node) {
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
   if (state) state->expr = (psx_expr_type_state_t){0};
-}
-
-void ps_node_set_qual_type_identity(
-    psx_resolution_store_t *store, node_t *node,
-    psx_qual_type_t qual_type) {
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(store, node);
-  const psx_type_t *resolved = psx_semantic_type_table_lookup_qual_type(
-      psx_resolution_store_semantic_types(store), qual_type);
-  if (state && resolved) {
-    state->type_binding = (psx_node_type_binding_t){
-        .kind = PSX_NODE_TYPE_CANONICAL,
-        .canonical_type = qual_type,
-    };
-  }
 }
 
 void ps_node_set_bitfield_info(
