@@ -417,8 +417,7 @@ static void bind_direct_call(
       psx_semantic_type_table_lookup_qual_type(
           semantic_types, function_qual_type);
   psx_function_call_bind_qual_type(
-      binding_store(context), call, semantic_types,
-      function_qual_type);
+      binding_store(context), call, function_qual_type);
   if (!callee_type || callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(context->semantic_context),

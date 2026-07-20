@@ -5340,6 +5340,9 @@ const functionDefinitionStruct = resolvedFunctionHeader.match(
 const functionCallStruct = astSource.match(
   /struct node_function_call_t\s*\{([^{}]*)\};/,
 );
+const functionCallResolutionStateStruct = nodeResolutionStateSource.match(
+  /typedef struct\s*\{([^{}]*)\}\s*psx_function_call_resolution_state_t\s*;/,
+);
 if (/\bnode_func_t\b/.test(astSource) ||
     /\bnode_function_definition_t\b/.test(astSource) ||
     /\bND_FUNCDEF\b/.test(syntaxNodeKindHeader) ||
@@ -5367,11 +5370,9 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bpsx_function_call_resolution_state_t\s+function_call\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*callee_type_table\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    /\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
-      nodeResolutionStateSource,
+    !functionCallResolutionStateStruct ||
+    /\bpsx_type_t\b|\bpsx_semantic_type_table_t\b/.test(
+      functionCallResolutionStateStruct[1],
     ) ||
     !/\bpsx_qual_type_t\s+callee_qual_type\s*;/.test(
       nodeResolutionStateSource,
@@ -5387,6 +5388,15 @@ if (/\bnode_func_t\b/.test(astSource) ||
     ) ||
     !/\bpsx_function_call_qual_type\s*\(/.test(
       functionCallResolutionHeader,
+    ) ||
+    /\bpsx_function_call_type\s*\(/.test(
+      functionCallResolutionHeader + functionCallResolutionSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+psx_resolve_function_reference_qual_type\s*\(/.test(
+      functionCallResolutionHeader,
+    ) ||
+    !/ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      functionCallResolutionSource,
     ) ||
     /\bpsx_function_call_bind_type\s*\(/.test(
       functionCallResolutionHeader,
@@ -9033,7 +9043,6 @@ const readonlySemanticTypeResults = [
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
-  ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
   ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
 for (const [file, functionName] of readonlySemanticTypeResults) {

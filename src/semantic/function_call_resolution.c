@@ -4,7 +4,6 @@
 #include "resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 
 #include <string.h>
 
@@ -81,26 +80,12 @@ int psx_function_call_direct_name_length(
   return state ? state->direct_name_len : 0;
 }
 
-const psx_type_t *psx_function_call_type(
-    const psx_resolution_store_t *store,
-    const node_function_call_t *call) {
-  const psx_function_call_resolution_state_t *state =
-      call_state_const(store, call);
-  return state && state->callee_type_table
-             ? psx_semantic_type_table_lookup_qual_type(
-                   state->callee_type_table,
-                   state->callee_qual_type)
-             : NULL;
-}
-
 void psx_function_call_bind_qual_type(
     psx_resolution_store_t *store,
     node_function_call_t *call,
-    const psx_semantic_type_table_t *callee_type_table,
     psx_qual_type_t callee_qual_type) {
   psx_function_call_resolution_state_t *state = call_state(store, call);
   if (!state) return;
-  state->callee_type_table = callee_type_table;
   state->callee_qual_type = callee_qual_type;
 }
 
@@ -130,12 +115,18 @@ int psx_function_call_is_implicit_declaration(
   return state && state->is_implicit_declaration;
 }
 
-const psx_type_t *psx_resolve_function_reference_type(
+psx_qual_type_t psx_resolve_function_reference_qual_type(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *function_type) {
-  if (!function_type || function_type->kind != PSX_TYPE_FUNCTION)
-    return NULL;
-  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
-  return ps_type_new_pointer_in(
-      arena_context, ps_type_clone_in(arena_context, function_type));
+    psx_qual_type_t function_qual_type) {
+  psx_type_shape_t shape = {0};
+  if (!semantic_context ||
+      !psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          function_qual_type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_FUNCTION) {
+    return (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  }
+  return ps_ctx_intern_pointer_to_qual_type_in(
+      semantic_context, function_qual_type);
 }

@@ -2,7 +2,6 @@
 #define SEMANTIC_FUNCTION_CALL_RESOLUTION_H
 
 #include "../parser/node_fwd.h"
-#include "../parser/type.h"
 #include "type_identity.h"
 
 typedef struct arena_context_t arena_context_t;
@@ -31,13 +30,9 @@ char *psx_function_call_direct_name(
 int psx_function_call_direct_name_length(
     const psx_resolution_store_t *store,
     const node_function_call_t *call);
-const psx_type_t *psx_function_call_type(
-    const psx_resolution_store_t *store,
-    const node_function_call_t *call);
 void psx_function_call_bind_qual_type(
     psx_resolution_store_t *store,
     node_function_call_t *call,
-    const psx_semantic_type_table_t *callee_type_table,
     psx_qual_type_t callee_qual_type);
 psx_qual_type_t psx_function_call_qual_type(
     const psx_resolution_store_t *store,
@@ -49,8 +44,8 @@ int psx_function_call_is_implicit_declaration(
     const psx_resolution_store_t *store,
     const node_function_call_t *call);
 
-const psx_type_t *psx_resolve_function_reference_type(
+psx_qual_type_t psx_resolve_function_reference_qual_type(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *function_type);
+    psx_qual_type_t function_qual_type);
 
 #endif

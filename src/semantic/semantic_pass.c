@@ -671,22 +671,32 @@ static void semantic_resolve_function_reference(
   if (!reference) return;
   ag_diagnostic_context_t *diagnostics =
       semantic_diagnostics(semantic_context);
-  const psx_type_t *source_type = ps_node_get_type(
-      ps_ctx_resolution_store(semantic_context), reference);
-  const psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
-      ? psx_resolve_function_reference_type(
-            semantic_context, source_type)
-      : NULL;
-  if (!type && ps_type_callable_function(source_type))
-    type = ps_type_clone_in(
-        ps_ctx_arena(semantic_context), source_type);
-  if (!type) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t source_type = semantic_node_qual_type_value(
+      semantic_context, reference);
+  psx_type_shape_t source_shape = {0};
+  psx_qual_type_t type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (psx_semantic_type_table_describe(
+          types, source_type.type_id, &source_shape)) {
+    if (source_shape.kind == PSX_TYPE_FUNCTION) {
+      type = psx_resolve_function_reference_qual_type(
+          semantic_context, source_type);
+    } else if (psx_semantic_type_table_callable_function(
+                   types, source_type).type_id !=
+               PSX_TYPE_ID_INVALID) {
+      type = source_type;
+    }
+  }
+  if (type.type_id == PSX_TYPE_ID_INVALID) {
     ps_diag_ctx_in(diagnostics, reference->tok
                     ? reference->tok
                     : (token_t *)fallback_diag_tok,
                 "funcref", "canonical function type is not bound");
   }
-  semantic_bind_result_type(semantic_context, reference, type);
+  semantic_bind_qual_type_result(
+      semantic_context, reference, type);
 }
 
 static node_t *semantic_normalize_call_deref_chain(
@@ -731,22 +741,19 @@ static void semantic_resolve_function_call(
       semantic_diagnostics(semantic_context);
   psx_resolution_store_t *store =
       ps_ctx_resolution_store(semantic_context);
-  const psx_type_t *bound_call_type =
-      psx_function_call_type(store, call);
+  psx_qual_type_t bound_call_type =
+      psx_function_call_qual_type(store, call);
   int is_implicit_declaration =
       psx_function_call_is_implicit_declaration(store, call);
   if (!is_implicit_declaration) {
     const psx_semantic_type_table_t *types =
         ps_ctx_semantic_type_table_in(semantic_context);
     psx_qual_type_t callee_type = call->callee
-        ? ps_node_qual_type(store, call->callee)
-        : (psx_qual_type_t){
-              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+        ? semantic_node_qual_type_value(
+              semantic_context, call->callee)
+        : bound_call_type;
     if (callee_type.type_id == PSX_TYPE_ID_INVALID) {
-      callee_type = ps_ctx_intern_qual_type_in(
-          semantic_context,
-          call->callee ? ps_node_get_type(store, call->callee)
-                       : bound_call_type);
+      callee_type = bound_call_type;
     }
     psx_call_types_resolution_t call_types;
     psx_resolve_call_qual_types_in(
@@ -762,8 +769,7 @@ static void semantic_resolve_function_call(
               types, call_types.return_qual_type.type_id);
       if (canonical_function)
         psx_function_call_bind_qual_type(
-            store, call, types,
-            call_types.function_qual_type);
+            store, call, call_types.function_qual_type);
       if (canonical_return)
         ps_node_bind_qual_type(
             store, (node_t *)call, canonical_return,

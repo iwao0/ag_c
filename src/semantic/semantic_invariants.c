@@ -178,47 +178,45 @@ static int validate_node(const node_t *node, void *user) {
   if (node->kind == ND_FUNCALL) {
     const node_function_call_t *call =
         (const node_function_call_t *)node;
-    const psx_type_t *callee_type =
-        call->callee ? ps_node_get_type(store, call->callee) : NULL;
-    if (call->callee &&
-        !ps_type_callable_function(callee_type)) {
-      return fail(
-          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
-    }
-    const psx_type_t *resolved_callee_type =
-        psx_function_call_type(store, call);
-    if (resolved_callee_type) {
-      if (resolved_callee_type->kind != PSX_TYPE_FUNCTION ||
-          !ps_type_is_well_formed(resolved_callee_type)) {
+    psx_qual_type_t actual =
+        psx_function_call_qual_type(store, call);
+    if (actual.type_id != PSX_TYPE_ID_INVALID) {
+      if (!semantic_context) {
+        return fail(
+            failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+            node);
+      }
+      const psx_semantic_type_table_t *types =
+          ps_ctx_semantic_type_table_in(semantic_context);
+      psx_type_shape_t function_shape = {0};
+      if (!psx_semantic_type_table_describe(
+              types, actual.type_id, &function_shape) ||
+          function_shape.kind != PSX_TYPE_FUNCTION) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
-      if (semantic_context) {
-        psx_qual_type_t actual =
-            psx_function_call_qual_type(store, call);
-        if (actual.type_id == PSX_TYPE_ID_INVALID) {
-          return fail(
-              failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
-              node);
-        }
-        const psx_semantic_type_table_t *types =
-            ps_ctx_semantic_type_table_in(semantic_context);
-        if (resolved_callee_type !=
-            psx_semantic_type_table_lookup_qual_type(types, actual)) {
-          return fail(
-              failure, PSX_SEMANTIC_INVARIANT_NONCANONICAL_TYPE_OBJECT,
-              node);
-        }
-        psx_qual_type_t expected_result =
-            psx_semantic_type_table_base(types, actual.type_id);
-        psx_qual_type_t actual_result = ps_node_qual_type(store, node);
-        if (expected_result.type_id == PSX_TYPE_ID_INVALID ||
-            expected_result.type_id != actual_result.type_id ||
-            expected_result.qualifiers != actual_result.qualifiers) {
+      if (call->callee) {
+        psx_qual_type_t callee_expression =
+            ps_node_qual_type(store, call->callee);
+        psx_qual_type_t expected_function =
+            psx_semantic_type_table_callable_function(
+                types, callee_expression);
+        if (expected_function.type_id != actual.type_id ||
+            expected_function.qualifiers != actual.qualifiers) {
           return fail(
               failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
               node);
         }
+      }
+      psx_qual_type_t expected_result =
+          psx_semantic_type_table_base(types, actual.type_id);
+      psx_qual_type_t actual_result = ps_node_qual_type(store, node);
+      if (expected_result.type_id == PSX_TYPE_ID_INVALID ||
+          expected_result.type_id != actual_result.type_id ||
+          expected_result.qualifiers != actual_result.qualifiers) {
+        return fail(
+            failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
+            node);
       }
     } else if (!psx_function_call_is_implicit_declaration(store, call) ||
                !is_implicit_function_result_type(node_type)) {
