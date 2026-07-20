@@ -95,8 +95,8 @@ int ag_compilation_session_init(
       session->arena_context, &session->tokenizer,
       session->diagnostic_context);
   session->lowering_context = ps_lowering_context_create(
-      session->arena_context, session->diagnostic_context);
-  ps_lowering_context_bind_target(session->lowering_context, &session->target);
+      session->arena_context, session->diagnostic_context,
+      &session->target);
   ps_lowering_context_bind_resolution_store(
       session->lowering_context, session->resolution_store);
   ps_lowering_context_bind_semantic_types(

@@ -2366,18 +2366,26 @@ static node_t *parse_test_initializer_for_var(lvar_t *var) {
 /* Test-only storage fixtures may start with a simple scalar/array type and
  * replace it with the exact type under test. Production registration accepts
  * only an explicit canonical type. */
-static lvar_t *register_test_typed_storage_fixture(
+static lvar_t *register_test_typed_storage_fixture_in(
+    psx_lowering_context_t *lowering_context,
     char *name, int len, int size, int align, const psx_type_t *type) {
   psx_qual_type_t qual_type = intern_test_qual_type(type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
   int offset = local_storage_allocate(
-      test_lowering_context(), size, align);
+      lowering_context, size, align);
   return ps_local_registry_create_storage_object_in(
       ag_compilation_session_local_registry(test_suite_session),
       name, len, offset, size, align, type, NULL);
 }
 
-static lvar_t *register_test_storage_fixture(
+static lvar_t *register_test_typed_storage_fixture(
+    char *name, int len, int size, int align, const psx_type_t *type) {
+  return register_test_typed_storage_fixture_in(
+      test_lowering_context(), name, len, size, align, type);
+}
+
+static lvar_t *register_test_storage_fixture_in(
+    psx_lowering_context_t *lowering_context,
     char *name, int len, int size, int elem_size, int is_array) {
   int scalar_size = elem_size > 0 ? elem_size : size;
   if (scalar_size <= 0) scalar_size = 1;
@@ -2389,8 +2397,14 @@ static lvar_t *register_test_storage_fixture(
                         : 0;
     type = ps_type_new_array(type, array_len, size, 0);
   }
-  return register_test_typed_storage_fixture(
-      name, len, size, 0, type);
+  return register_test_typed_storage_fixture_in(
+      lowering_context, name, len, size, 0, type);
+}
+
+static lvar_t *register_test_storage_fixture(
+    char *name, int len, int size, int elem_size, int is_array) {
+  return register_test_storage_fixture_in(
+      test_lowering_context(), name, len, size, elem_size, is_array);
 }
 
 static lvar_t *register_test_default_storage_fixture(char *name, int len) {
@@ -13240,14 +13254,35 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(8, wasm_record_parameter.storage_size);
   ASSERT_EQ(4, wasm_record_parameter.alignment);
 
-  psx_lowering_context_t *lowering = test_lowering_context();
-  const psx_record_layout_table_t *session_record_layouts =
-      ps_lowering_record_layouts(lowering);
-  ps_lowering_context_bind_record_layouts(lowering, record_layouts);
-  ps_lowering_context_bind_target(lowering, &wasm);
-  ASSERT_EQ(8, ps_lowering_type_size(lowering, record_type));
-  ASSERT_EQ(4, ps_lowering_type_alignment(lowering, record_type));
-  ASSERT_EQ(4, ps_lowering_type_deref_size(lowering, pointer_array));
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(test_suite_session);
+  ASSERT_TRUE(ps_lowering_context_create(
+      test_arena_context(), diagnostics, NULL) == NULL);
+  ASSERT_TRUE(ps_lowering_context_create(
+      test_arena_context(), diagnostics, &incomplete_target) == NULL);
+  psx_lowering_context_t *wasm_lowering = ps_lowering_context_create(
+      test_arena_context(), diagnostics, &wasm);
+  psx_lowering_context_t *host_lowering = ps_lowering_context_create(
+      test_arena_context(), diagnostics, &host);
+  ASSERT_TRUE(wasm_lowering != NULL);
+  ASSERT_TRUE(host_lowering != NULL);
+  ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(wasm_lowering), &wasm));
+  ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(host_lowering), &host));
+  ps_lowering_context_bind_resolution_store(
+      wasm_lowering, test_resolution_store());
+  ps_lowering_context_bind_semantic_types(wasm_lowering, types);
+  ps_lowering_context_bind_record_decls(
+      wasm_lowering, ps_ctx_record_decl_table_in(test_semantic_context()));
+  ps_lowering_context_bind_record_layouts(wasm_lowering, record_layouts);
+  ps_lowering_context_bind_resolution_store(
+      host_lowering, test_resolution_store());
+  ps_lowering_context_bind_semantic_types(host_lowering, types);
+  ps_lowering_context_bind_record_decls(
+      host_lowering, ps_ctx_record_decl_table_in(test_semantic_context()));
+  ps_lowering_context_bind_record_layouts(host_lowering, record_layouts);
+  ASSERT_EQ(8, ps_lowering_type_size(wasm_lowering, record_type));
+  ASSERT_EQ(4, ps_lowering_type_alignment(wasm_lowering, record_type));
+  ASSERT_EQ(4, ps_lowering_type_deref_size(wasm_lowering, pointer_array));
   psx_type_t *record_vla_type = ps_type_new_array(
       record_type, 0, 0, 1);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
@@ -13259,7 +13294,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(record_vla_dimensions[0].expression != NULL);
   psx_vla_lowering_request_t record_vla_request = {
       .local_registry = test_local_registry(),
-      .lowering_context = lowering,
+      .lowering_context = wasm_lowering,
       .name = (char *)"target_vla",
       .name_len = 10,
       .dimensions = record_vla_dimensions,
@@ -13268,6 +13303,7 @@ static void test_target_type_layout_boundary() {
       .requested_alignment = 8,
   };
   reset_test_locals();
+  local_storage_reset(wasm_lowering);
   psx_vla_lowering_result_t wasm_record_vla = lower_vla_declaration(
       &record_vla_request);
   ASSERT_TRUE(wasm_record_vla.var != NULL);
@@ -13279,8 +13315,9 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(8, wasm_record_vla.runtime_plan->element_size);
 
   reset_test_locals();
-  lvar_t *wasm_dimension = register_test_storage_fixture(
-      (char *)"target_n", 8, 4, 4, 0);
+  local_storage_reset(wasm_lowering);
+  lvar_t *wasm_dimension = register_test_storage_fixture_in(
+      wasm_lowering, (char *)"target_n", 8, 4, 4, 0);
   wasm_dimension->is_param = 1;
   psx_type_t *wasm_vla_parameter_type = ps_type_new_pointer(
       ps_type_new_array(integer, 0, 0, 1));
@@ -13298,7 +13335,7 @@ static void test_target_type_layout_boundary() {
       lower_parameter_vla_declaration(
           &(psx_parameter_vla_lowering_request_t){
               .local_registry = test_local_registry(),
-              .lowering_context = lowering,
+              .lowering_context = wasm_lowering,
               .name = (char *)"target_values",
               .name_len = 13,
               .inner_dimensions = &wasm_parameter_dimension,
@@ -13310,19 +13347,20 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_lvar_frame_storage_size(wasm_parameter_vla.var));
   ASSERT_EQ(4, ps_lvar_align_bytes(wasm_parameter_vla.var));
 
-  ps_lowering_context_bind_target(lowering, &host);
-  ASSERT_EQ(16, ps_lowering_type_size(lowering, record_type));
-  ASSERT_EQ(8, ps_lowering_type_alignment(lowering, record_type));
-  ASSERT_EQ(8, ps_lowering_type_deref_size(lowering, pointer_array));
+  ASSERT_EQ(16, ps_lowering_type_size(host_lowering, record_type));
+  ASSERT_EQ(8, ps_lowering_type_alignment(host_lowering, record_type));
+  ASSERT_EQ(8, ps_lowering_type_deref_size(host_lowering, pointer_array));
   reset_test_locals();
+  local_storage_reset(host_lowering);
+  record_vla_request.lowering_context = host_lowering;
   psx_vla_lowering_result_t host_record_vla = lower_vla_declaration(
       &record_vla_request);
   ASSERT_TRUE(host_record_vla.var != NULL);
   ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(host_record_vla.init));
   ASSERT_TRUE(host_record_vla.runtime_plan != NULL);
   ASSERT_EQ(16, host_record_vla.runtime_plan->element_size);
-  ps_lowering_context_bind_record_layouts(
-      lowering, session_record_layouts);
+  ps_lowering_context_destroy(host_lowering);
+  ps_lowering_context_destroy(wasm_lowering);
   psx_record_layout_table_destroy(record_layouts);
 }
 
@@ -28394,12 +28432,11 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE((psx_resolution_node_set_kind)(
       second_store, &parsed_function.base, ND_FUNCDEF));
   psx_lowering_context_t *second_lowering_context =
-      ps_lowering_context_create(arena_context, diagnostics);
+      ps_lowering_context_create(
+          arena_context, diagnostics, ps_ctx_target_info(second));
   ASSERT_TRUE(second_lowering_context != NULL);
   ps_lowering_context_bind_resolution_store(
       second_lowering_context, second_store);
-  ps_lowering_context_bind_target(
-      second_lowering_context, ps_ctx_target_info(second));
   ps_lowering_context_bind_semantic_types(
       second_lowering_context, ps_ctx_semantic_type_table_in(second));
   ps_lowering_context_bind_record_decls(

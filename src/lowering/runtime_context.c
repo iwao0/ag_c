@@ -7,13 +7,16 @@
 
 psx_lowering_context_t *ps_lowering_context_create(
     arena_context_t *arena_context,
-    ag_diagnostic_context_t *diagnostic_context) {
-  if (!arena_context || !diagnostic_context) return NULL;
+    ag_diagnostic_context_t *diagnostic_context,
+    const ag_target_info_t *target) {
+  if (!arena_context || !diagnostic_context ||
+      !ag_target_info_is_valid(target))
+    return NULL;
   psx_lowering_context_t *ctx = calloc(1, sizeof(*ctx));
   if (ctx) {
     ctx->arena_context = arena_context;
     ctx->diagnostic_context = diagnostic_context;
-    ctx->target = ag_target_info_host();
+    ctx->target = *target;
   }
   return ctx;
 }
@@ -21,13 +24,6 @@ psx_lowering_context_t *ps_lowering_context_create(
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx) {
   if (!ctx) return;
   free(ctx);
-}
-
-void ps_lowering_context_bind_target(
-    psx_lowering_context_t *ctx, const ag_target_info_t *target) {
-  if (!ctx) return;
-  ctx->target = target ? *target : ag_target_info_host();
-  ctx->target.pointer_size = ag_target_info_pointer_size(&ctx->target);
 }
 
 void ps_lowering_context_bind_semantic_types(

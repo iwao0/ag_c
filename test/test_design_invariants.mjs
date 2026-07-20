@@ -1795,9 +1795,17 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
     ) ||
     !/ps_lowering_diagnostics\s*\(/.test(loweringRuntimeHeader) ||
-    !/ps_lowering_context_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*\)/.test(
+    !/ps_lowering_context_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*&session->target\s*\)/s.test(
       compilationSessionSource,
     ) ||
+    !/psx_lowering_context_t\s*\*ps_lowering_context_create\s*\([^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(
+      loweringRuntimeSource,
+    ) ||
+    !/ag_target_info_is_valid\s*\(target\)/.test(loweringRuntimeSource) ||
+    /ps_lowering_context_bind_target\s*\(/.test(
+      loweringRuntimeHeader + loweringRuntimeSource,
+    ) ||
+    /ag_target_info_host\s*\(/.test(loweringRuntimeSource) ||
     /default_lowering_context|active_lowering_context/.test(
       loweringRuntimeSource,
     ) ||
