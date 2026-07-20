@@ -4,7 +4,6 @@
 #include "../parser/ast.h"
 #include "../parser/declarator_shape.h"
 #include "../parser/declaration_syntax.h"
-#include "../parser/type.h"
 #include "declarator_application_types.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;

@@ -3,34 +3,32 @@
 #include "constant_expression.h"
 
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 #include "../type_layout.h"
 
 #include <limits.h>
 
-static psx_type_t *resolve_tag_base_type(
+static psx_qual_type_t invalid_qual_type(void) {
+  return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                           PSX_TYPE_QUALIFIER_NONE};
+}
+
+static psx_qual_type_t resolve_tag_base_qual_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, char *name, int name_len) {
   int scope_depth = ps_ctx_get_tag_scope_depth_in(
       semantic_context, kind, name, name_len);
   if (kind == TK_ENUM) {
-    return ps_type_new_enum_in(
-        ps_ctx_arena(semantic_context), name, name_len,
+    return ps_ctx_intern_enum_qual_type_in(
+        semantic_context, name, name_len,
         scope_depth >= 0 ? scope_depth + 1 : 0);
   }
-  if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
+  if (!ps_ctx_is_tag_aggregate_kind(kind)) return invalid_qual_type();
   psx_record_id_t record_id = ps_ctx_resolve_tag_record_id_in(
       semantic_context, kind, name, name_len);
-  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-      semantic_context, record_id);
-  return record
-             ? ps_type_new_record_in(ps_ctx_arena(semantic_context), record)
-             : ps_type_new_tag_in(
-                   ps_ctx_arena(semantic_context), kind, name, name_len,
-                   scope_depth >= 0 ? scope_depth + 1 : 0);
+  return ps_ctx_intern_record_qual_type_in(semantic_context, record_id);
 }
 
-static psx_type_t *resolve_builtin_base_type(
+static psx_qual_type_t resolve_builtin_base_qual_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, const psx_type_spec_result_t *specifier) {
   psx_floating_kind_t floating_kind = PSX_FLOATING_KIND_NONE;
@@ -41,19 +39,17 @@ static psx_type_t *resolve_builtin_base_type(
   else if (kind == TK_DOUBLE)
     floating_kind = PSX_FLOATING_KIND_DOUBLE;
   if (specifier->is_complex)
-    return ps_type_new_floating_in(
-        ps_ctx_arena(semantic_context),
+    return ps_ctx_intern_floating_qual_type_in(
+        semantic_context,
         floating_kind == PSX_FLOATING_KIND_NONE
             ? PSX_FLOATING_KIND_DOUBLE
             : floating_kind,
         1);
   if (floating_kind != PSX_FLOATING_KIND_NONE)
-    return ps_type_new_floating_in(
-        ps_ctx_arena(semantic_context), floating_kind, 0);
-  if (kind == TK_VOID) {
-    return ps_type_new_in(
-        ps_ctx_arena(semantic_context), PSX_TYPE_VOID);
-  }
+    return ps_ctx_intern_floating_qual_type_in(
+        semantic_context, floating_kind, 0);
+  if (kind == TK_VOID)
+    return ps_ctx_intern_void_qual_type_in(semantic_context);
   psx_integer_kind_t integer_kind = PSX_INTEGER_KIND_INT;
   if (specifier->is_long_long)
     integer_kind = PSX_INTEGER_KIND_LONG_LONG;
@@ -65,119 +61,147 @@ static psx_type_t *resolve_builtin_base_type(
     integer_kind = PSX_INTEGER_KIND_SHORT;
   else if (kind == TK_LONG)
     integer_kind = PSX_INTEGER_KIND_LONG;
-  return ps_type_new_integer_kind_in(
-      ps_ctx_arena(semantic_context), integer_kind,
+  return ps_ctx_intern_integer_qual_type_in(
+      semantic_context, integer_kind,
       specifier->is_unsigned, specifier->is_plain_char);
 }
 
-static void apply_decl_specifier_type_properties(
-    psx_type_t *type, const psx_type_spec_result_t *specifier) {
-  if (!type || !specifier) return;
-  ps_type_set_decl_spec_qualifiers(
-      type,
-      ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST) ||
-          specifier->is_const_qualified,
-      ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE) ||
-          specifier->is_volatile_qualified);
+static psx_qual_type_t apply_decl_specifier_cv_qualifiers(
+    psx_semantic_context_t *semantic_context, psx_qual_type_t type,
+    psx_type_qualifiers_t qualifiers) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(types, type.type_id, &shape))
+    return invalid_qual_type();
+  if (shape.kind == PSX_TYPE_FUNCTION) return type;
+  if (shape.kind != PSX_TYPE_ARRAY) {
+    type.qualifiers |= qualifiers;
+    return type;
+  }
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      types, type.type_id);
+  element = apply_decl_specifier_cv_qualifiers(
+      semantic_context, element, qualifiers);
+  if (element.type_id == PSX_TYPE_ID_INVALID) return element;
+  psx_qual_type_t qualified_array = ps_ctx_intern_array_of_qual_type_in(
+      semantic_context, element, shape.array_len, shape.is_vla);
+  qualified_array.qualifiers = type.qualifiers;
+  return qualified_array;
+}
+
+static psx_qual_type_t apply_decl_specifier_qualifiers(
+    psx_semantic_context_t *semantic_context, psx_qual_type_t type,
+    const psx_type_spec_result_t *specifier) {
+  if (type.type_id == PSX_TYPE_ID_INVALID || !specifier) return type;
+  psx_type_qualifiers_t cv_qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  if (specifier->is_const_qualified)
+    cv_qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+  if (specifier->is_volatile_qualified)
+    cv_qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+  type = apply_decl_specifier_cv_qualifiers(
+      semantic_context, type, cv_qualifiers);
   if (specifier->is_atomic)
-    ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
+    type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  return type;
 }
 
-static const psx_type_t *resolve_decl_qual_type_view(
-    void *context, psx_qual_type_t qual_type) {
-  psx_semantic_context_t *semantic_context = context;
-  return semantic_context
-             ? psx_semantic_type_table_lookup_qual_type(
-                   ps_ctx_semantic_type_table_in(semantic_context),
-                   qual_type)
-             : NULL;
-}
-
-static psx_type_t *build_decl_type_value(
+static psx_qual_type_t apply_declarator_shape(
     const psx_decl_type_request_t *request) {
   if (!request || !request->semantic_context ||
       request->base_qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
+    return invalid_qual_type();
   psx_semantic_context_t *semantic_context = request->semantic_context;
-  const psx_type_t *base_type = resolve_decl_qual_type_view(
-      semantic_context, request->base_qual_type);
-  if (!base_type) return NULL;
-  psx_type_t *type = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), base_type);
-  if (!type) return NULL;
-  if (request->declarator_shape) {
-    type = ps_type_apply_resolved_declarator_shape_in(
-        ps_ctx_arena(semantic_context), type,
-        request->declarator_shape,
-        resolve_decl_qual_type_view, semantic_context);
+  psx_qual_type_t type = request->base_qual_type;
+  const psx_declarator_shape_t *shape = request->declarator_shape;
+  if (!shape) return type;
+  for (int i = shape->count - 1; i >= 0; i--) {
+    const psx_declarator_op_t *op = &shape->ops[i];
+    switch (op->kind) {
+      case PSX_DECL_OP_POINTER:
+        type = ps_ctx_intern_pointer_to_qual_type_in(
+            semantic_context, type);
+        if (op->is_const_qualified)
+          type.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+        if (op->is_volatile_qualified)
+          type.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+        break;
+      case PSX_DECL_OP_ARRAY:
+        type = ps_ctx_intern_array_of_qual_type_in(
+            semantic_context, type, op->array_len, op->is_vla_array);
+        break;
+      case PSX_DECL_OP_FUNCTION:
+        type = ps_ctx_intern_function_qual_type_in(
+            semantic_context, type,
+            op->has_canonical_function_params
+                ? op->function_param_qual_types : NULL,
+            op->has_canonical_function_params
+                ? op->function_param_count : 0,
+            op->has_canonical_function_params
+                ? op->function_has_prototype : 0,
+            op->has_canonical_function_params
+                ? op->function_is_variadic : 0);
+        break;
+      default:
+        return invalid_qual_type();
+    }
+    if (type.type_id == PSX_TYPE_ID_INVALID) return type;
   }
-  ps_ctx_bind_record_ids_in(semantic_context, type);
   return type;
 }
 
 psx_qual_type_t psx_resolve_decl_qual_type(
     const psx_decl_type_request_t *request) {
-  if (!request || !request->semantic_context)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  psx_type_t *resolved = build_decl_type_value(request);
-  return ps_ctx_intern_declaration_qual_type_in(
-      request->semantic_context, resolved);
+  return apply_declarator_shape(request);
 }
 
-static psx_type_t *build_decl_specifier_type_value(
+static psx_qual_type_t resolve_decl_specifier_qual_type(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
-  if (!specifier) return NULL;
+  if (!semantic_context || !specifier) return invalid_qual_type();
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
-  psx_type_t *type = NULL;
+  psx_qual_type_t type = invalid_qual_type();
   switch (specifier->source) {
     case PSX_PARSED_DECL_TYPE_BUILTIN:
-      type = resolve_builtin_base_type(
+      type = resolve_builtin_base_qual_type(
           semantic_context, syntax->kind, syntax);
       break;
     case PSX_PARSED_DECL_TYPE_TAG:
-      type = resolve_tag_base_type(
+      type = resolve_tag_base_qual_type(
           semantic_context,
           specifier->tag_action.kind,
           specifier->tag_action.name,
           specifier->tag_action.name_len);
       break;
     case PSX_PARSED_DECL_TYPEDEF_NAME: {
-      const psx_type_t *typedef_type = NULL;
+      psx_typedef_info_t typedef_info;
       if (!specifier->typedef_name ||
-          !ps_ctx_find_typedef_decl_type_in(
+          !ps_ctx_find_typedef_name_in(
               semantic_context,
               specifier->typedef_name->str,
               specifier->typedef_name->len,
-              &typedef_type))
-        return NULL;
-      type = ps_type_clone_in(
-          ps_ctx_arena(semantic_context), typedef_type);
+              &typedef_info))
+        return invalid_qual_type();
+      type = ps_ctx_typedef_decl_qual_type(&typedef_info);
       break;
     }
     case PSX_PARSED_DECL_TYPE_IMPLICIT_INT:
-      type = resolve_builtin_base_type(
+      type = resolve_builtin_base_qual_type(
           semantic_context, TK_INT, syntax);
       break;
     default:
-      return NULL;
+      return invalid_qual_type();
   }
-  apply_decl_specifier_type_properties(type, syntax);
-  ps_ctx_bind_record_ids_in(semantic_context, type);
-  return type;
+  return apply_decl_specifier_qualifiers(
+      semantic_context, type, syntax);
 }
 
 psx_qual_type_t psx_resolve_decl_specifier_qual_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
-  if (!semantic_context)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  return ps_ctx_intern_declaration_qual_type_in(
-      semantic_context,
-      build_decl_specifier_type_value(semantic_context, specifier));
+  return resolve_decl_specifier_qual_type(
+      semantic_context, specifier);
 }
 
 static int object_scalar_slots_by_id(
@@ -187,20 +211,21 @@ static int object_scalar_slots_by_id(
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(semantic_context);
   const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      semantic_types, type_id);
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_ARRAY) {
-    if (type->array_len <= 0) return 0;
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, type_id, &shape))
+    return 0;
+  if (shape.kind == PSX_TYPE_ARRAY) {
+    if (shape.array_len <= 0) return 0;
     psx_type_id_t base_type_id =
         psx_semantic_type_table_base(semantic_types, type_id).type_id;
     int child = object_scalar_slots_by_id(
         semantic_context, base_type_id);
-    if (child <= 0 || child > INT_MAX / type->array_len) return 0;
-    return child * type->array_len;
+    if (child <= 0 || child > INT_MAX / shape.array_len) return 0;
+    return child * shape.array_len;
   }
-  if (!ps_type_is_tag_aggregate(type)) return 1;
-  psx_record_id_t record_id = ps_type_record_id(type);
+  if (!psx_type_kind_is_aggregate(shape.kind)) return 1;
+  psx_record_id_t record_id = shape.record_id;
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
   const psx_record_layout_t *layout =
@@ -208,7 +233,7 @@ static int object_scalar_slots_by_id(
   if (!record || !layout || record->member_count <= 0 ||
       layout->member_count < record->member_count)
     return 0;
-  if (type->kind == PSX_TYPE_UNION) {
+  if (shape.kind == PSX_TYPE_UNION) {
     int max_slots = 0;
     int max_bytes = -1;
     for (int i = 0; i < record->member_count; i++) {
@@ -297,16 +322,22 @@ int psx_resolve_completed_incomplete_array_qual_type_in(
 static long long initializer_string_count(
     const psx_semantic_type_table_t *semantic_types,
     psx_qual_type_t array_type, const node_t *initializer) {
-  const psx_type_t *array_view =
-      psx_semantic_type_table_lookup_qual_type(
-          semantic_types, array_type);
-  if (!array_view || !array_view->base || !initializer ||
-      initializer->kind != ND_STRING)
+  psx_type_shape_t array_shape = {0};
+  if (!initializer || initializer->kind != ND_STRING ||
+      !psx_semantic_type_table_describe(
+          semantic_types, array_type.type_id, &array_shape) ||
+      array_shape.kind != PSX_TYPE_ARRAY)
+    return 0;
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      semantic_types, array_type.type_id);
+  psx_type_shape_t element_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, element.type_id, &element_shape))
     return 0;
   const node_string_t *string = (const node_string_t *)initializer;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
-  if (ps_type_character_code_unit_width(array_view->base) != width)
+  if (psx_type_shape_character_code_unit_width(&element_shape) != width)
     return 0;
   return (long long)string->byte_len + 1;
 }

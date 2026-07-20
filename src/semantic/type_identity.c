@@ -18,8 +18,6 @@ typedef struct {
   psx_qual_type_t base_type;
   psx_qual_type_t *parameter_types;
   int parameter_count;
-  psx_qual_type_t *record_member_types;
-  int record_member_count;
   psx_type_t *qualified_views[PSX_QUALIFIER_VIEW_COUNT];
   unsigned char qualified_view_materializing[PSX_QUALIFIER_VIEW_COUNT];
   unsigned char relations_populating;
@@ -277,7 +275,17 @@ static psx_type_t *semantic_type_compatibility_view(
       .param_count = parameter_count,
       .has_function_prototype = shape->has_function_prototype,
       .is_variadic_function = shape->is_variadic_function,
+      .record_id = shape->record_id,
   };
+  if (shape->kind == PSX_TYPE_STRUCT || shape->kind == PSX_TYPE_UNION) {
+    type->tag_name = (char *)shape->record_tag_name;
+    type->tag_len = shape->record_tag_length;
+  } else if (shape->kind == PSX_TYPE_INTEGER &&
+             shape->integer_kind == PSX_INTEGER_KIND_ENUM) {
+    type->tag_name = (char *)shape->enum_tag_name;
+    type->tag_len = shape->enum_tag_length;
+    type->tag_scope_depth_p1 = shape->enum_tag_scope_depth_p1;
+  }
   if (base_type.type_id != PSX_TYPE_ID_INVALID) {
     type->base = psx_semantic_type_table_lookup(
         table, base_type.type_id);
@@ -296,6 +304,33 @@ static psx_type_t *semantic_type_compatibility_view(
     type->param_types = parameters;
   }
   return type;
+}
+
+static int semantic_type_shape_own_name(
+    psx_semantic_type_table_t *table, const char *source, int length,
+    const char **owned) {
+  if (!table || !owned || length < 0 || (length > 0 && !source)) return 0;
+  *owned = NULL;
+  if (length == 0) return 1;
+  char *copy = arena_alloc_in(
+      table->arena_context, (size_t)length + 1);
+  if (!copy) return 0;
+  memcpy(copy, source, (size_t)length);
+  copy[length] = '\0';
+  *owned = copy;
+  return 1;
+}
+
+static int semantic_type_shape_own_names(
+    psx_semantic_type_table_t *table, psx_type_shape_t *shape) {
+  if (!table || !shape) return 0;
+  if (!semantic_type_shape_own_name(
+          table, shape->record_tag_name, shape->record_tag_length,
+          &shape->record_tag_name))
+    return 0;
+  return semantic_type_shape_own_name(
+      table, shape->enum_tag_name, shape->enum_tag_length,
+      &shape->enum_tag_name);
 }
 
 static psx_qual_type_t semantic_type_table_intern_shape(
@@ -328,9 +363,12 @@ static psx_qual_type_t semantic_type_table_intern_shape(
   if (table->next_id == UINT_MAX) return invalid_qual_type();
   psx_type_id_t id = table->next_id + 1;
   if (!reserve_type_id(table, id)) return invalid_qual_type();
+  psx_type_shape_t owned_shape = *shape;
+  if (!semantic_type_shape_own_names(table, &owned_shape))
+    return invalid_qual_type();
   psx_type_t *compatibility_type =
       semantic_type_compatibility_view(
-          table, shape, base_type, parameter_types, parameter_count);
+          table, &owned_shape, base_type, parameter_types, parameter_count);
   if (!compatibility_type) return invalid_qual_type();
   psx_qual_type_t *owned_parameters = NULL;
   if (parameter_count > 0) {
@@ -341,7 +379,7 @@ static psx_qual_type_t semantic_type_table_intern_shape(
     memcpy(owned_parameters, parameter_types,
            (size_t)parameter_count * sizeof(*owned_parameters));
   }
-  table->entries[id].shape = *shape;
+  table->entries[id].shape = owned_shape;
   table->entries[id].type = compatibility_type;
   table->entries[id].base_type = base_type;
   table->entries[id].parameter_types = owned_parameters;
@@ -395,6 +433,42 @@ psx_qual_type_t psx_semantic_type_table_intern_floating(
 psx_qual_type_t psx_semantic_type_table_intern_void(
     psx_semantic_type_table_t *table) {
   const psx_type_shape_t shape = {.kind = PSX_TYPE_VOID};
+  return semantic_type_table_intern_shape(
+      table, &shape, invalid_qual_type(), NULL, 0);
+}
+
+psx_qual_type_t psx_semantic_type_table_intern_enum(
+    psx_semantic_type_table_t *table,
+    const char *tag_name, int tag_length, int tag_scope_depth_p1) {
+  if (tag_length < 0 || (tag_length > 0 && !tag_name) ||
+      tag_scope_depth_p1 < 0)
+    return invalid_qual_type();
+  const psx_type_shape_t shape = {
+      .kind = PSX_TYPE_INTEGER,
+      .integer_kind = PSX_INTEGER_KIND_ENUM,
+      .enum_tag_name = tag_name,
+      .enum_tag_length = tag_length,
+      .enum_tag_scope_depth_p1 = tag_scope_depth_p1,
+  };
+  return semantic_type_table_intern_shape(
+      table, &shape, invalid_qual_type(), NULL, 0);
+}
+
+psx_qual_type_t psx_semantic_type_table_intern_record(
+    psx_semantic_type_table_t *table, psx_record_id_t record_id) {
+  const psx_record_decl_t *record = table
+      ? psx_record_decl_table_lookup(table->record_decls, record_id)
+      : NULL;
+  if (!record ||
+      (record->record_kind != PSX_TYPE_STRUCT &&
+       record->record_kind != PSX_TYPE_UNION))
+    return invalid_qual_type();
+  const psx_type_shape_t shape = {
+      .kind = record->record_kind,
+      .record_id = record->record_id,
+      .record_tag_name = record->tag_name,
+      .record_tag_length = record->tag_len,
+  };
   return semantic_type_table_intern_shape(
       table, &shape, invalid_qual_type(), NULL, 0);
 }
@@ -485,26 +559,6 @@ static int populate_type_relations_body(
     if (parameter.type_id == PSX_TYPE_ID_INVALID) return 0;
     table->entries[id].parameter_types[i] = parameter;
   }
-  const psx_record_decl_t *record = psx_record_decl_table_lookup(
-      table->record_decls, ps_type_record_id(type));
-  if (record &&
-      record->member_count > table->entries[id].record_member_count) {
-    psx_qual_type_t *record_member_types = arena_alloc_in(
-        table->arena_context,
-        (size_t)record->member_count * sizeof(*record_member_types));
-    if (!record_member_types) return 0;
-    table->entries[id].record_member_types = record_member_types;
-    table->entries[id].record_member_count = record->member_count;
-  }
-  for (int i = 0; record && i < record->member_count; i++) {
-    const psx_type_t *member_type =
-        psx_record_member_decl_type(table, &record->members[i]);
-    if (!member_type) continue;
-    psx_qual_type_t member = psx_semantic_type_table_intern(
-        table, member_type);
-    if (member.type_id == PSX_TYPE_ID_INVALID) return 0;
-    table->entries[id].record_member_types[i] = member;
-  }
   return 1;
 }
 
@@ -581,7 +635,18 @@ psx_qual_type_t psx_semantic_type_table_intern(
   if (!canonical) return result;
   ps_type_normalize_scalar_identity(canonical);
   ps_type_remove_all_qualifiers_recursive(canonical);
-  table->entries[id].shape = semantic_type_shape(canonical);
+  psx_type_shape_t owned_shape = semantic_type_shape(canonical);
+  if (!semantic_type_shape_own_names(table, &owned_shape)) return result;
+  if (canonical->kind == PSX_TYPE_STRUCT ||
+      canonical->kind == PSX_TYPE_UNION) {
+    canonical->tag_name = (char *)owned_shape.record_tag_name;
+    canonical->tag_len = owned_shape.record_tag_length;
+  } else if (canonical->kind == PSX_TYPE_INTEGER &&
+             canonical->integer_kind == PSX_INTEGER_KIND_ENUM) {
+    canonical->tag_name = (char *)owned_shape.enum_tag_name;
+    canonical->tag_len = owned_shape.enum_tag_length;
+  }
+  table->entries[id].shape = owned_shape;
   table->entries[id].type = canonical;
   table->next_id = id;
   result.type_id = id;
@@ -865,10 +930,12 @@ psx_qual_type_t psx_semantic_type_table_record_member(
     int member_index) {
   psx_type_shape_t type = {0};
   if (!psx_semantic_type_table_describe(table, type_id, &type) ||
-      (type.kind != PSX_TYPE_STRUCT && type.kind != PSX_TYPE_UNION) ||
-      member_index < 0 ||
-      member_index >= table->entries[type_id].record_member_count)
+      (type.kind != PSX_TYPE_STRUCT && type.kind != PSX_TYPE_UNION))
     return invalid_qual_type();
-  return related_type(
-      table, table->entries[type_id].record_member_types[member_index]);
+  const psx_record_decl_t *record = psx_record_decl_table_lookup(
+      table->record_decls, type.record_id);
+  if (!record || !record->members || member_index < 0 ||
+      member_index >= record->member_count)
+    return invalid_qual_type();
+  return related_type(table, record->members[member_index].decl_qual_type);
 }

@@ -28501,8 +28501,12 @@ static void test_semantic_type_identity() {
       ps_ctx_intern_qual_type_in(context, equivalent_enum);
   psx_qual_type_t shadowed_enum_identity =
       ps_ctx_intern_qual_type_in(context, shadowed_enum);
+  psx_qual_type_t direct_enum_identity =
+      ps_ctx_intern_enum_qual_type_in(
+          context, "SemanticMode", 12, 2);
   ASSERT_EQ(first_enum_identity.type_id,
             equivalent_enum_identity.type_id);
+  ASSERT_EQ(first_enum_identity.type_id, direct_enum_identity.type_id);
   ASSERT_TRUE(first_enum_identity.type_id !=
               shadowed_enum_identity.type_id);
   psx_type_shape_t enum_shape = {0};
@@ -28514,6 +28518,49 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(2, enum_shape.enum_tag_scope_depth_p1);
   ASSERT_TRUE(strncmp("SemanticMode", enum_shape.enum_tag_name,
                       (size_t)enum_shape.enum_tag_length) == 0);
+
+  char owned_enum_name[] = "OwnedSemanticMode";
+  psx_qual_type_t owned_enum_identity =
+      ps_ctx_intern_enum_qual_type_in(
+          context, owned_enum_name, 17, 4);
+  ASSERT_TRUE(owned_enum_identity.type_id != PSX_TYPE_ID_INVALID);
+  owned_enum_name[0] = 'X';
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      owned_enum_identity.type_id, &enum_shape));
+  ASSERT_EQ(17, enum_shape.enum_tag_length);
+  ASSERT_TRUE(strncmp("OwnedSemanticMode", enum_shape.enum_tag_name,
+                      (size_t)enum_shape.enum_tag_length) == 0);
+
+  char direct_record_name[] = "DirectSemanticRecord";
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      context, TK_STRUCT, direct_record_name, 20, 0, 0));
+  const psx_record_decl_t *direct_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          context, TK_STRUCT, direct_record_name, 20);
+  ASSERT_TRUE(direct_record != NULL);
+  psx_qual_type_t direct_record_identity =
+      ps_ctx_intern_record_qual_type_in(
+          context, direct_record->record_id);
+  psx_qual_type_t parser_record_identity =
+      ps_ctx_intern_qual_type_in(
+          context, ps_type_new_record_in(
+                       test_arena_context(), direct_record));
+  ASSERT_TRUE(direct_record_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(direct_record_identity.type_id,
+            parser_record_identity.type_id);
+  psx_type_shape_t record_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      direct_record_identity.type_id, &record_shape));
+  ASSERT_EQ(PSX_TYPE_STRUCT, record_shape.kind);
+  ASSERT_EQ(direct_record->record_id, record_shape.record_id);
+  ASSERT_EQ(20, record_shape.record_tag_length);
+  ASSERT_TRUE(strncmp("DirectSemanticRecord", record_shape.record_tag_name,
+                      (size_t)record_shape.record_tag_length) == 0);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_record_qual_type_in(
+                context, PSX_RECORD_ID_INVALID).type_id);
 
   psx_type_t *mutable_element = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *mutable_array = ps_type_new_array(

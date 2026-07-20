@@ -27,6 +27,11 @@ psx_qual_type_t psx_semantic_type_table_intern_floating(
     psx_floating_kind_t floating_kind, int is_complex);
 psx_qual_type_t psx_semantic_type_table_intern_void(
     psx_semantic_type_table_t *table);
+psx_qual_type_t psx_semantic_type_table_intern_enum(
+    psx_semantic_type_table_t *table,
+    const char *tag_name, int tag_length, int tag_scope_depth_p1);
+psx_qual_type_t psx_semantic_type_table_intern_record(
+    psx_semantic_type_table_t *table, psx_record_id_t record_id);
 psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
     psx_semantic_type_table_t *table, psx_qual_type_t pointee);
 psx_qual_type_t psx_semantic_type_table_intern_array_of(

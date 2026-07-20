@@ -3892,7 +3892,7 @@ const declarationResolutionSource = await readFile(
   "src/semantic/declaration_resolution.c",
   "utf8",
 );
-if (!/\bps_type_character_code_unit_width\s*\(/.test(
+if (/\bpsx_type_t\b|\bps_type_(?:new|clone|apply|add|set|is_tag|record_id|character_code_unit_width)\b|type_builder\.h/.test(
       declarationResolutionSource,
     ) ||
     /\bps_type_sizeof\s*\(/.test(declarationResolutionSource) ||
@@ -3901,7 +3901,13 @@ if (!/\bps_type_character_code_unit_width\s*\(/.test(
     !/\bps_ctx_resolve_tag_record_id_in\s*\(/.test(
       declarationResolutionSource,
     ) ||
-    !/\bps_type_new_record_in\s*\(/.test(
+    !/\bps_ctx_intern_record_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/\bps_ctx_intern_enum_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/\bpsx_type_shape_character_code_unit_width\s*\(/.test(
       declarationResolutionSource,
     ) ||
     /\btype->(?:record_id|is_plain_char|floating_kind)\s*=/.test(
@@ -7578,7 +7584,6 @@ const typeBuilderUsers = new Set([
   "src/parser/global_registry.c",
   "src/parser/node_utils.c",
   "src/declaration_pipeline.c",
-  "src/semantic/declaration_resolution.c",
   "src/semantic/parameter_declaration_resolution.c",
   "src/semantic/resolved_object_ref.c",
   "src/semantic/declaration_application.c",
@@ -8588,7 +8593,7 @@ if (!qualTypeStruct ||
 if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id\s*;[^]*?populate_type_relations\s*\(\s*table\s*,\s*id\s*,\s*type\s*\)/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/populate_type_relations_body\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
+    !/psx_semantic_type_table_record_member\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->members\[member_index\]\.decl_qual_type/.test(
       semanticTypeIdentitySource,
     ) ||
     !/psx_semantic_type_table_intern\s*\([^]*?ps_type_clone_in\s*\(\s*table->arena_context\s*,\s*type\s*\)/.test(
@@ -8639,6 +8644,10 @@ for (const [contextInterner, tableInterner] of [
    "psx_semantic_type_table_intern_floating"],
   ["ps_ctx_intern_void_qual_type_in",
    "psx_semantic_type_table_intern_void"],
+  ["ps_ctx_intern_enum_qual_type_in",
+   "psx_semantic_type_table_intern_enum"],
+  ["ps_ctx_intern_record_qual_type_in",
+   "psx_semantic_type_table_intern_record"],
   ["ps_ctx_intern_pointer_to_qual_type_in",
    "psx_semantic_type_table_intern_pointer_to"],
   ["ps_ctx_intern_array_of_qual_type_in",
@@ -8671,7 +8680,7 @@ const directShapeInterner = semanticTypeIdentitySource.match(
   /static\s+psx_qual_type_t\s+semantic_type_table_intern_shape\s*\([^]*?\n\}/,
 );
 if (!directShapeInterner ||
-    !/table->entries\[id\]\.shape\s*=\s*\*shape\s*;/.test(
+    !/table->entries\[id\]\.shape\s*=\s*owned_shape\s*;/.test(
       directShapeInterner[0],
     ) ||
     !/table->entries\[id\]\.base_type\s*=\s*base_type\s*;/.test(
@@ -8781,7 +8790,10 @@ if (!/\bpsx_qual_type_t\s+base_type\s*;/.test(
     !/\bpsx_qual_type_t\s*\*\s*parameter_types\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/\bpsx_qual_type_t\s*\*\s*record_member_types\s*;/.test(
+    /\bpsx_qual_type_t\s*\*\s*record_member_types\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_record_member\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->members\[member_index\]\.decl_qual_type/.test(
       semanticTypeIdentitySource,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
@@ -8794,7 +8806,7 @@ if (!/\bpsx_qual_type_t\s+base_type\s*;/.test(
       semanticTypeIdentityHeader,
     )) {
   throw new Error(
-    "interned TypeIds must retain recursive base, parameter, and record member QualType relationships",
+    "TypeIds must retain recursive base and parameter relations while RecordDecl remains the sole member QualType owner",
   );
 }
 
@@ -9569,9 +9581,7 @@ const declarationResolutionHeader = await readFile(
   "src/semantic/declaration_resolution.h",
   "utf8",
 );
-const declarationTypeBuilderUsers = new Set([
-  "src/semantic/declaration_resolution.c",
-]);
+const declarationTypeBuilderUsers = new Set();
 const declarationTypeBuilderViolations = [];
 for (const file of sourceFiles) {
   const source = await readFile(file, "utf8");
@@ -9586,27 +9596,36 @@ if (declarationTypeBuilderViolations.length) {
       declarationTypeBuilderViolations.sort().join("\n"),
   );
 }
-if (/\bpsx_build_decl_type\b/.test(
+if (/\bpsx_build_decl_type\b|\bbuild_decl_type_value\b|\bps_type_apply_resolved_declarator_shape_in\b/.test(
       `${declarationResolutionHeader}\n${declarationResolutionSource}`,
     ) ||
-    !/static\s+psx_type_t\s*\*build_decl_type_value\s*\(/.test(
+    !/static\s+psx_qual_type_t\s+apply_declarator_shape\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/ps_ctx_intern_array_of_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    !/ps_ctx_intern_function_qual_type_in\s*\(/.test(
       declarationResolutionSource,
     )) {
   throw new Error(
-    "mutable declarator type construction must remain private to declaration resolution",
+    "declarator type resolution must build recursive canonical QualType relations directly",
   );
 }
-if (/\bpsx_build_decl_specifier_type_in_context\b/.test(
+if (/\bpsx_build_decl_specifier_type_in_context\b|\bbuild_decl_specifier_type_value\b/.test(
       `${declarationResolutionHeader}\n${declarationResolutionSource}`,
     ) ||
-    !/static\s+psx_type_t\s*\*build_decl_specifier_type_value\s*\(/.test(
+    !/static\s+psx_qual_type_t\s+resolve_decl_specifier_qual_type\s*\(/.test(
       declarationResolutionSource,
     ) ||
     !/psx_qual_type_t\s+psx_resolve_decl_specifier_qual_type_in_context\s*\(/.test(
       declarationResolutionHeader,
     )) {
   throw new Error(
-    "declaration specifier resolution must publish canonical QualType from a private mutable builder",
+    "declaration specifier resolution must produce canonical QualType without mutable type builders",
   );
 }
 
@@ -9672,8 +9691,11 @@ if (!/psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\(/.test(
       declarationResolutionHeader,
     ) ||
     !declarationQualTypeCore ||
-    !/ps_ctx_intern_declaration_qual_type_in\s*\(/.test(
+    !/return\s+apply_declarator_shape\s*\(\s*request\s*\)\s*;/.test(
       declarationQualTypeCore[0],
+    ) ||
+    /ps_ctx_intern_declaration_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
     ) ||
     /\bpsx_resolve_decl_type\s*\(/.test(
       `${declarationResolutionHeader}\n${declarationResolutionSource}`,

@@ -66,6 +66,11 @@ psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
     psx_floating_kind_t floating_kind, int is_complex);
 psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     psx_semantic_context_t *context);
+psx_qual_type_t ps_ctx_intern_enum_qual_type_in(
+    psx_semantic_context_t *context,
+    const char *tag_name, int tag_length, int tag_scope_depth_p1);
+psx_qual_type_t ps_ctx_intern_record_qual_type_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee);
 psx_qual_type_t ps_ctx_intern_array_of_qual_type_in(

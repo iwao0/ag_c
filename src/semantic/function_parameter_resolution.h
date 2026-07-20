@@ -7,6 +7,7 @@
 
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct arena_context_t arena_context_t;
 
 void psx_resolve_declarator_syntax_in_context(
     psx_semantic_context_t *semantic_context,

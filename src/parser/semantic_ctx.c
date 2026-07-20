@@ -358,6 +358,26 @@ psx_qual_type_t ps_ctx_intern_void_qual_type_in(
       context->semantic_types);
 }
 
+psx_qual_type_t ps_ctx_intern_enum_qual_type_in(
+    psx_semantic_context_t *context,
+    const char *tag_name, int tag_length, int tag_scope_depth_p1) {
+  return context
+             ? psx_semantic_type_table_intern_enum(
+                   context->semantic_types, tag_name, tag_length,
+                   tag_scope_depth_p1)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_qual_type_t ps_ctx_intern_record_qual_type_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id) {
+  return context
+             ? psx_semantic_type_table_intern_record(
+                   context->semantic_types, record_id)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
     psx_semantic_context_t *context, psx_qual_type_t pointee) {
   return context

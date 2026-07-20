@@ -10,6 +10,8 @@
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct arena_context_t arena_context_t;
+typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_DECLARATION_PHASE_EMPTY = 0,
