@@ -602,7 +602,7 @@ static const wasm_e2e_case_t cases[] = {
     {"string", "empty", "test/fixtures/string/empty.c"},
     {"string", "charlit", "test/fixtures/string/charlit.c"},
     {"string", "newline", "test/fixtures/string/newline.c"},
-    {"string", "nul", "test/fixtures/string/nul.c"},
+    {"string", "nul", "test/fixtures/string/nul_char.c"},
     {"string", "index", "test/fixtures/string/index.c"},
     {"string", "deref", "test/fixtures/string/deref.c"},
     {"string", "buf_idx", "test/fixtures/string/buf_idx.c"},

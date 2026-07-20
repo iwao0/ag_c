@@ -659,7 +659,7 @@ static const test_case_t test_cases[] = {
     {"string", "empty", CASE_ASSERT_FILE, "test/fixtures/string/empty.c", 0, 0},
     {"string", "charlit", CASE_ASSERT_FILE, "test/fixtures/string/charlit.c", 0, 0},
     {"string", "newline", CASE_ASSERT_FILE, "test/fixtures/string/newline.c", 0, 0},
-    {"string", "nul", CASE_ASSERT_FILE, "test/fixtures/string/nul.c", 0, 0},
+    {"string", "nul", CASE_ASSERT_FILE, "test/fixtures/string/nul_char.c", 0, 0},
     {"string", "buf_idx", CASE_ASSERT_FILE, "test/fixtures/string/buf_idx.c", 0, 0},
     {"string", "buf_sum", CASE_ASSERT_FILE, "test/fixtures/string/buf_sum.c", 0, 0},
     {"string", "char_var", CASE_ASSERT_FILE, "test/fixtures/string/char_var.c", 0, 0},
