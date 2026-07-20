@@ -207,6 +207,40 @@ static arena_context_t *test_arena_context(void) {
   return ag_compilation_session_arena_context(test_suite_session);
 }
 
+typedef struct {
+  psx_semantic_context_t *context;
+  psx_resolution_store_t *resolution_store;
+  psx_scope_graph_t *scope_graph;
+} test_semantic_context_fixture_t;
+
+static int test_semantic_context_fixture_init(
+    test_semantic_context_fixture_t *fixture,
+    const ag_target_info_t *target) {
+  if (!fixture) return 0;
+  memset(fixture, 0, sizeof(*fixture));
+  fixture->resolution_store = psx_resolution_store_create();
+  fixture->scope_graph = psx_scope_graph_create();
+  fixture->context = ps_ctx_create(
+      test_arena_context(), test_diagnostics(),
+      fixture->resolution_store, fixture->scope_graph, target);
+  if (fixture->context) return 1;
+  psx_scope_graph_destroy(fixture->scope_graph);
+  psx_resolution_store_destroy(fixture->resolution_store);
+  memset(fixture, 0, sizeof(*fixture));
+  return 0;
+}
+
+static void test_semantic_context_fixture_dispose(
+    test_semantic_context_fixture_t *fixture) {
+  if (!fixture) return;
+  ps_ctx_destroy(fixture->context);
+  ASSERT_TRUE(psx_resolution_store_semantic_types(
+                  fixture->resolution_store) == NULL);
+  psx_scope_graph_destroy(fixture->scope_graph);
+  psx_resolution_store_destroy(fixture->resolution_store);
+  memset(fixture, 0, sizeof(*fixture));
+}
+
 static psx_resolution_store_t *test_resolution_store(void) {
   return test_suite_session ? test_suite_session->resolution_store : NULL;
 }
@@ -12814,9 +12848,24 @@ static void test_target_type_layout_boundary() {
   ag_target_info_t incomplete_target = host;
   incomplete_target.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
   ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
-  ASSERT_TRUE(ps_ctx_create(test_arena_context(), NULL) == NULL);
   ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), &incomplete_target) == NULL);
+      test_arena_context(), test_diagnostics(), test_resolution_store(),
+      test_suite_session->scope_graph, NULL) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      test_arena_context(), test_diagnostics(), test_resolution_store(),
+      test_suite_session->scope_graph, &incomplete_target) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      NULL, test_diagnostics(), test_resolution_store(),
+      test_suite_session->scope_graph, &host) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      test_arena_context(), NULL, test_resolution_store(),
+      test_suite_session->scope_graph, &host) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      test_arena_context(), test_diagnostics(), NULL,
+      test_suite_session->scope_graph, &host) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      test_arena_context(), test_diagnostics(), test_resolution_store(),
+      NULL, &host) == NULL);
   ag_compilation_session_t invalid_session;
   ASSERT_TRUE(ag_compilation_session_create(NULL) == NULL);
   ASSERT_TRUE(!ag_compilation_session_init(&invalid_session, NULL));
@@ -13038,9 +13087,11 @@ static void test_target_type_layout_boundary() {
   while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
     pointer_type_end = pointer_type_end->next;
   ASSERT_TRUE(pointer_type_end != NULL);
-  psx_semantic_context_t *wasm_semantic_context = ps_ctx_create(
-      test_arena_context(), &wasm);
-  ASSERT_TRUE(wasm_semantic_context != NULL);
+  test_semantic_context_fixture_t wasm_semantic_fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(
+      &wasm_semantic_fixture, &wasm));
+  psx_semantic_context_t *wasm_semantic_context =
+      wasm_semantic_fixture.context;
   ASSERT_TRUE(ag_target_info_equal(
       ps_ctx_target_info(wasm_semantic_context), &wasm));
   psx_name_classifier_t wasm_name_classifier =
@@ -13085,9 +13136,11 @@ static void test_target_type_layout_boundary() {
   split_layout_target.pointer_alignment = 8;
   split_layout_target.scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){12, 4};
-  psx_semantic_context_t *split_semantic_context = ps_ctx_create(
-      test_arena_context(), &split_layout_target);
-  ASSERT_TRUE(split_semantic_context != NULL);
+  test_semantic_context_fixture_t split_semantic_fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(
+      &split_semantic_fixture, &split_layout_target));
+  psx_semantic_context_t *split_semantic_context =
+      split_semantic_fixture.context;
   ASSERT_TRUE(ag_target_info_equal(
       ps_ctx_target_info(split_semantic_context), &split_layout_target));
   psx_name_classifier_t split_name_classifier =
@@ -13129,8 +13182,8 @@ static void test_target_type_layout_boundary() {
                    split_semantic_context, &split_name_classifier,
                    alignof_long_tokens,
                    alignof_long_end));
-  ps_ctx_destroy(split_semantic_context);
-  ps_ctx_destroy(wasm_semantic_context);
+  test_semantic_context_fixture_dispose(&split_semantic_fixture);
+  test_semantic_context_fixture_dispose(&wasm_semantic_fixture);
   psx_record_decl_t *record = arena_alloc_in(
       test_arena_context(), sizeof(*record));
   memset(record, 0, sizeof(*record));
@@ -27405,10 +27458,10 @@ static void test_resolution_store_isolation_and_lifetime() {
 
 static void test_semantic_type_identity() {
   printf("test_semantic_type_identity...\n");
-  psx_semantic_context_t *context = ps_ctx_create(
-      test_arena_context(),
-      ag_compilation_session_target(test_suite_session));
-  ASSERT_TRUE(context != NULL);
+  test_semantic_context_fixture_t fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(
+      &fixture, ag_compilation_session_target(test_suite_session)));
+  psx_semantic_context_t *context = fixture.context;
   if (!context) return;
 
   psx_type_t *plain_int = ps_type_new_integer(TK_INT, 4, 0);
@@ -27835,6 +27888,7 @@ static void test_semantic_type_identity() {
 
   psx_type_id_t retained_id = pointer_to_const_identity.type_id;
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
+  psx_scope_graph_reset(ps_ctx_scope_graph(context));
   ps_ctx_reset_translation_unit_scope_in(context);
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) == NULL);
   psx_resolution_store_t *context_store =
@@ -27940,7 +27994,7 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_parameter(
                 ps_ctx_semantic_type_table_in(context),
                 callee_identity.type_id, 0).qualifiers);
-  ps_ctx_destroy(context);
+  test_semantic_context_fixture_dispose(&fixture);
 }
 
 static void test_semantic_context_isolation() {
@@ -27949,19 +28003,19 @@ static void test_semantic_context_isolation() {
       ag_compilation_session_arena_context(test_suite_session);
   const ag_target_info_t *target =
       ag_compilation_session_target(test_suite_session);
-  psx_semantic_context_t *first = ps_ctx_create(arena_context, target);
-  psx_semantic_context_t *second = ps_ctx_create(arena_context, target);
-  ASSERT_TRUE(first != NULL);
-  ASSERT_TRUE(second != NULL);
+  test_semantic_context_fixture_t first_fixture;
+  test_semantic_context_fixture_t second_fixture;
+  ASSERT_TRUE(test_semantic_context_fixture_init(&first_fixture, target));
+  ASSERT_TRUE(test_semantic_context_fixture_init(&second_fixture, target));
+  psx_semantic_context_t *first = first_fixture.context;
+  psx_semantic_context_t *second = second_fixture.context;
   if (!first || !second) {
-    ps_ctx_destroy(first);
-    ps_ctx_destroy(second);
+    test_semantic_context_fixture_dispose(&first_fixture);
+    test_semantic_context_fixture_dispose(&second_fixture);
     return;
   }
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(test_suite_session);
-  ps_ctx_bind_diagnostic_context(first, diagnostics);
-  ps_ctx_bind_diagnostic_context(second, diagnostics);
   psx_resolution_store_t *first_store =
       ps_ctx_resolution_store(first);
   psx_resolution_store_t *second_store =
@@ -27999,8 +28053,8 @@ static void test_semantic_context_isolation() {
     ps_global_registry_destroy(second_globals);
     ps_local_registry_destroy(first_locals);
     ps_local_registry_destroy(second_locals);
-    ps_ctx_destroy(first);
-    ps_ctx_destroy(second);
+    test_semantic_context_fixture_dispose(&first_fixture);
+    test_semantic_context_fixture_dispose(&second_fixture);
     return;
   }
   char enum_name[] = "ContextValue";
@@ -28391,6 +28445,7 @@ static void test_semantic_context_isolation() {
   ps_ctx_record_unsupported_gnu_extension_in(
       second, NULL, "context-isolation");
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
+  psx_scope_graph_reset(ps_ctx_scope_graph(second));
   ps_ctx_reset_translation_unit_scope_in(second);
   ASSERT_TRUE(ps_ctx_arena(second) == arena_context);
   ASSERT_TRUE(ps_ctx_diagnostics(second) == diagnostics);
@@ -28490,8 +28545,8 @@ static void test_semantic_context_isolation() {
   ps_global_registry_destroy(second_globals);
   ps_local_registry_destroy(first_locals);
   ps_local_registry_destroy(second_locals);
-  ps_ctx_destroy(first);
-  ps_ctx_destroy(second);
+  test_semantic_context_fixture_dispose(&first_fixture);
+  test_semantic_context_fixture_dispose(&second_fixture);
 }
 
 static void test_compilation_session_registry_isolation() {

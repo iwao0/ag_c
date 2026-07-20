@@ -294,11 +294,13 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     /ps_(?:global|local)_registry_bind_scope_graph\s*\(/.test(
       scopeGraphRegistrySources + compilationSession,
     ) ||
-    !/ps_ctx_bind_scope_graph\s*\(/.test(compilationSession) ||
-    !/context->scope_graph\s*=\s*psx_scope_graph_create\s*\(/.test(
+    !/context->scope_graph\s*=\s*scope_graph\s*;/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/context->owns_scope_graph\s*=\s*context->scope_graph\s*\?\s*1\s*:\s*0/.test(
+    /ps_ctx_bind_scope_graph\s*\(/.test(
+      scopeGraphSemanticContextSource + compilationSession,
+    ) ||
+    /psx_scope_graph_create\s*\(|owns_scope_graph/.test(
       scopeGraphSemanticContextSource,
     ) ||
     /scope_graph\s*=\s*NULL/.test(scopeGraphSemanticContextSource) ||
@@ -1091,7 +1093,7 @@ const semanticContextOwnershipHeader = await readFile(
   "utf8",
 );
 if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
-    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\([^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(semanticContextOwnershipSource) ||
+    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\([^)]*arena_context_t\s*\*arena_context[^)]*ag_diagnostic_context_t\s*\*diagnostic_context[^)]*psx_resolution_store_t\s*\*resolution_store[^)]*psx_scope_graph_t\s*\*scope_graph[^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(semanticContextOwnershipSource) ||
     !/ag_target_info_is_valid\s*\(target\)/.test(
       semanticContextOwnershipSource,
     ) ||
@@ -1104,8 +1106,23 @@ if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource)
     /context->target\s*=\s*\*target\s*;/.test(
       semanticContextOwnershipSource,
     ) ||
-    /ps_ctx_bind_target_info\s*\(/.test(
+    !/context->diagnostic_context\s*=\s*diagnostic_context\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/context->resolution_store\s*=\s*resolution_store\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/context->scope_graph\s*=\s*scope_graph\s*;/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    /ps_ctx_bind_(?:diagnostic_context|resolution_store|scope_graph|target_info)\s*\(/.test(
       semanticContextOwnershipSource + semanticContextOwnershipHeader,
+    ) ||
+    /psx_(?:resolution_store|scope_graph)_create\s*\(|owns_(?:resolution_store|scope_graph)/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_destroy\s*\([^]*?psx_resolution_store_semantic_types\s*\([^]*?psx_resolution_store_bind_semantic_types\s*\([^]*?NULL/.test(
+      semanticContextOwnershipSource,
     ) ||
     /ag_target_info_host\s*\(/.test(semanticContextOwnershipSource) ||
     !/void\s+ps_ctx_destroy\s*\(/.test(semanticContextOwnershipSource) ||
@@ -1140,7 +1157,7 @@ const compilationSessionSource = await readFile(
   "src/compilation_session.c",
   "utf8",
 );
-if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*&session->target\s*\)/s.test(
+if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*session->resolution_store\s*,\s*session->scope_graph\s*,\s*&session->target\s*\)/s.test(
       compilationSessionSource,
     )) {
   throw new Error(
@@ -4560,7 +4577,7 @@ if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
     !/psx_resolution_store_t\s*\*resolution_store\s*;/.test(
       compilationSessionInternalHeader,
     ) ||
-    !/ps_ctx_bind_resolution_store\s*\(\s*session->semantic_context\s*,\s*session->resolution_store\s*\)/.test(
+    !/ps_ctx_create\s*\([^]*?session->resolution_store\s*,\s*session->scope_graph\s*,\s*&session->target/.test(
       compilationSessionSource,
     ) ||
     !/psx_resolution_store_semantic_types\s*\(\s*session->resolution_store\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
