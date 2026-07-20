@@ -71,7 +71,7 @@ static ir_val_t pointer_stride_value(
       context->options->semantic_types,
       psx_hir_node_qual_type(pointer).type_id);
   int stride_bytes =
-      ps_type_sizeof_id(context->options->semantic_types,
+      psx_type_layout_sizeof(context->options->semantic_types,
                         context->options->record_layouts, element_type.type_id,
                         ag_target_info_data_layout(context->options->target));
   if (stride_bytes <= 0) return hir_ir_unsupported_expr(context);
@@ -1236,7 +1236,7 @@ static ir_val_t build_inc_dec(
       psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
           context->options->semantic_types,
           psx_hir_node_qual_type(target).type_id);
-      step = ps_type_sizeof_id(
+      step = psx_type_layout_sizeof(
           context->options->semantic_types, context->options->record_layouts,
           pointee.type_id,
           ag_target_info_data_layout(context->options->target));
@@ -1368,7 +1368,7 @@ static ir_val_t build_compound_assignment(
       psx_qual_type_t pointee = psx_semantic_type_table_base(
           context->options->semantic_types,
           psx_hir_node_qual_type(target).type_id);
-      int stride_bytes = ps_type_sizeof_id(
+      int stride_bytes = psx_type_layout_sizeof(
           context->options->semantic_types, context->options->record_layouts,
           pointee.type_id,
           ag_target_info_data_layout(context->options->target));

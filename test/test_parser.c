@@ -1406,7 +1406,7 @@ static psx_record_decl_t *test_record_decl_mut(const psx_type_t *type) {
 }
 
 static int test_type_size_id(psx_type_id_t type_id) {
-  return ps_type_sizeof_id(
+  return psx_type_layout_sizeof(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_layout_table_in(test_semantic_context()), type_id,
       ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
@@ -1417,7 +1417,7 @@ static int test_semantic_type_sizeof_in(
     const psx_type_t *type) {
   psx_qual_type_t qual_type = ps_ctx_intern_qual_type_in(
       semantic_context, type);
-  return ps_type_sizeof_id(
+  return psx_type_layout_sizeof(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
       ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
@@ -1428,7 +1428,7 @@ static int test_semantic_type_alignof_in(
     const psx_type_t *type) {
   psx_qual_type_t qual_type = ps_ctx_intern_qual_type_in(
       semantic_context, type);
-  return ps_type_alignof_id(
+  return psx_type_layout_alignof(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
       ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
@@ -8098,7 +8098,7 @@ static int test_type_layout_of(
   }
   psx_qual_type_t identity = psx_semantic_type_table_intern(types, type);
   int resolved = identity.type_id != PSX_TYPE_ID_INVALID &&
-                 ps_type_layout_of_id(types, record_layouts, identity.type_id,
+                 psx_type_layout_of(types, record_layouts, identity.type_id,
                                       ag_target_info_data_layout(target), out);
   psx_record_layout_table_destroy(record_layouts);
   psx_semantic_type_table_destroy(types);
@@ -13229,7 +13229,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(ps_lvar_decl_type_id(lowered) != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(stored_type == ps_ctx_type_by_id_in(
       test_semantic_context(), ps_lvar_decl_type_id(lowered)));
-  ASSERT_EQ(24, ps_type_sizeof_id(
+  ASSERT_EQ(24, psx_type_layout_sizeof(
                     ps_ctx_semantic_type_table_in(test_semantic_context()),
                     ps_ctx_record_layout_table_in(test_semantic_context()),
                     ps_lvar_decl_type_id(lowered),
@@ -13735,19 +13735,19 @@ static void test_target_type_layout_boundary() {
   const psx_type_t *canonical_pointer_array =
       psx_type_compatibility_canonical_view_for(types, pointer_array_identity.type_id);
   ASSERT_TRUE(canonical_pointer_array != NULL);
-  ASSERT_EQ(8, ps_type_sizeof_id(types, layouts, pointer_identity.type_id,
+  ASSERT_EQ(8, psx_type_layout_sizeof(types, layouts, pointer_identity.type_id,
                                  ag_target_info_data_layout(&host)));
-  ASSERT_EQ(4, ps_type_sizeof_id(types, layouts, pointer_identity.type_id,
+  ASSERT_EQ(4, psx_type_layout_sizeof(types, layouts, pointer_identity.type_id,
                                  ag_target_info_data_layout(&wasm)));
-  ASSERT_EQ(8, ps_type_alignof_id(types, layouts, pointer_identity.type_id,
+  ASSERT_EQ(8, psx_type_layout_alignof(types, layouts, pointer_identity.type_id,
                                   ag_target_info_data_layout(&host)));
-  ASSERT_EQ(4, ps_type_alignof_id(types, layouts, pointer_identity.type_id,
+  ASSERT_EQ(4, psx_type_layout_alignof(types, layouts, pointer_identity.type_id,
                                   ag_target_info_data_layout(&wasm)));
   ASSERT_EQ(24,
-            ps_type_sizeof_id(types, layouts, pointer_array_identity.type_id,
+            psx_type_layout_sizeof(types, layouts, pointer_array_identity.type_id,
                               ag_target_info_data_layout(&host)));
   ASSERT_EQ(12,
-            ps_type_sizeof_id(types, layouts, pointer_array_identity.type_id,
+            psx_type_layout_sizeof(types, layouts, pointer_array_identity.type_id,
                               ag_target_info_data_layout(&wasm)));
   psx_semantic_context_t *host_semantic_context = test_semantic_context();
   psx_name_classifier_t host_name_classifier =
@@ -13882,18 +13882,18 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(psx_record_layout_table_define(record_layouts, record->record_id,
                                              ag_target_info_data_layout(&wasm),
                                              8, 4, wasm_members, 2));
-  ASSERT_EQ(0, ps_type_sizeof_id(types, layouts, record_identity.type_id,
+  ASSERT_EQ(0, psx_type_layout_sizeof(types, layouts, record_identity.type_id,
                                  ag_target_info_data_layout(&host)));
   ASSERT_EQ(16,
-            ps_type_sizeof_id(types, record_layouts, record_identity.type_id,
+            psx_type_layout_sizeof(types, record_layouts, record_identity.type_id,
                               ag_target_info_data_layout(&host)));
-  ASSERT_EQ(16, ps_type_sizeof_id(
+  ASSERT_EQ(16, psx_type_layout_sizeof(
                     types, record_layouts, record_identity.type_id,
                     ag_target_info_data_layout(&alternate_host_abi)));
   ASSERT_EQ(8,
-            ps_type_alignof_id(types, record_layouts, record_identity.type_id,
+            psx_type_layout_alignof(types, record_layouts, record_identity.type_id,
                                ag_target_info_data_layout(&host)));
-  ASSERT_EQ(8, ps_type_sizeof_id(types, record_layouts, record_identity.type_id,
+  ASSERT_EQ(8, psx_type_layout_sizeof(types, record_layouts, record_identity.type_id,
                                  ag_target_info_data_layout(&wasm)));
   ir_abi_type_context_t host_abi = {
       .semantic_types = types,
@@ -13933,7 +13933,7 @@ static void test_target_type_layout_boundary() {
   ir_abi_module_free(wasm_lowered);
   ir_module_free(abi_probe_module);
   ASSERT_EQ(4,
-            ps_type_alignof_id(types, record_layouts, record_identity.type_id,
+            psx_type_layout_alignof(types, record_layouts, record_identity.type_id,
                                ag_target_info_data_layout(&wasm)));
   const psx_record_layout_t *host_record_layout =
       psx_record_layout_table_lookup(record_layouts, record->record_id,
@@ -16190,7 +16190,7 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
   ASSERT_EQ(0, boundary.offset);
   ASSERT_TRUE(boundary.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(1, ps_type_sizeof_id(
+  ASSERT_EQ(1, psx_type_layout_sizeof(
                    ps_ctx_semantic_type_table_in(test_semantic_context()),
                    ps_ctx_record_layout_table_in(test_semantic_context()),
                    boundary.type_id,

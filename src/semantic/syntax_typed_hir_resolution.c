@@ -975,7 +975,7 @@ static int resolve_direct_sizeof_type_name(
           semantic_types, factor_base_qual_type.type_id,
           &factor_base_shape))
     return 0;
-  long long factor = ps_type_sizeof_id(
+  long long factor = psx_type_layout_sizeof(
       semantic_types,
       ps_ctx_record_layout_table_in(context->semantic_context),
       factor_base_qual_type.type_id,

@@ -200,7 +200,7 @@ static int flat_initializer_child_span(
     int child_leaf_count = flat_initializer_leaf_count(
         context, child_type_id);
     int child_size =
-        ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+        psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
                           child_type_id, context->data_layout);
     if (child_leaf_count <= 0 || child_size < 0) return 0;
     *child = (psx_initializer_object_span_t){
@@ -230,7 +230,7 @@ static int flat_initializer_child_span(
       context->record_layouts, parent_shape.record_id,
       context->data_layout, child_index);
   int member_size =
-      ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+      psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
                         member_type_id, context->data_layout);
   int member_leaf_count = flat_initializer_leaf_count(
       context, member_type_id);
@@ -841,7 +841,7 @@ initializer_type_size(const psx_semantic_type_table_t *semantic_types,
                       const psx_record_layout_table_t *record_layouts,
                       psx_type_id_t type_id,
                       const ag_data_layout_t *data_layout) {
-  return ps_type_sizeof_id(semantic_types, record_layouts, type_id,
+  return psx_type_layout_sizeof(semantic_types, record_layouts, type_id,
                            data_layout);
 }
 

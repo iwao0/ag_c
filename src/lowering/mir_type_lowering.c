@@ -26,7 +26,7 @@ ir_mir_type_info_t ir_mir_classify_type_id(
       .type = IR_TY_VOID,
       .type_class = IR_MIR_TYPE_UNKNOWN,
       .source_size =
-          ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+          psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
                             type_id, context->data_layout),
       .is_unsigned = type.is_unsigned,
   };

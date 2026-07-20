@@ -48,9 +48,9 @@ void psx_resolve_aggregate_cast_qual_types(
   if (options->enable_size_compatible_nonscalar_cast &&
       psx_type_kind_is_aggregate(operand_type.kind) && data_layout &&
       record_layouts) {
-    int target_size = ps_type_sizeof_id(types, record_layouts,
+    int target_size = psx_type_layout_sizeof(types, record_layouts,
                                         target_qual_type.type_id, data_layout);
-    int operand_size = ps_type_sizeof_id(
+    int operand_size = psx_type_layout_sizeof(
         types, record_layouts, operand_qual_type.type_id, data_layout);
     if (target_size > 0 && target_size == operand_size &&
         operand_type.kind == target_type.kind) {

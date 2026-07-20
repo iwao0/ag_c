@@ -969,7 +969,7 @@ if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
     !/ps_gvar_init_member_value\s*\([^;]*type_size_id\s*\(/s.test(
       translationUnitDataLoweringSourceForMemberLayout,
     ) ||
-    !/int\s+value_size\s*=\s*ps_type_sizeof_id\s*\(/.test(
+    !/int\s+value_size\s*=\s*psx_type_layout_sizeof\s*\(/.test(
       irSymbolLoweringSourceForMemberLayout,
     ) ||
     !/ps_gvar_init_member_value\s*\(\s*ctx->semantic_types\s*,\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
@@ -2545,7 +2545,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
     !/\bpsx_usual_integer_conversion_for_data_layout\s*\(/.test(
       typedHirDiagnosticsSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       typedHirDiagnosticsSource,
     ) ||
     !/unsigned\s+char\s+is_source_assignment\s*;/.test(
@@ -3314,10 +3314,10 @@ if (!aggregateMemberResolutionType ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_alignof_id\s*\(/.test(
+    !/\bpsx_type_layout_alignof\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/\bps_ctx_record_layout_table_in\s*\(/.test(
@@ -3847,10 +3847,10 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bps_type_alignof_id\s*\(/.test(
+    !/\bpsx_type_layout_alignof\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
     !/psx_type_query_plan_kind_t/.test(typeQuerySemanticsHeader) ||
@@ -4646,7 +4646,7 @@ if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test
       irSymbolLoweringSource,
     ) ||
     /\bps_type_sizeof\s*\(/.test(abiLoweringSource) ||
-    !/\bps_type_sizeof_id\s*\(/.test(abiLoweringSource)) {
+    !/\bpsx_type_layout_sizeof\s*\(/.test(abiLoweringSource)) {
   throw new Error(
     "generic IR must retain resolved function TypeId while ABI lowering owns target classification",
   );
@@ -6497,7 +6497,7 @@ if (!initializerTargetType ||
     /\bps_type_(?:is_tag_aggregate|record_id|array_flat_element_count|character_code_unit_width)\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     /\bag_target_info_t\b/.test(
@@ -6511,7 +6511,7 @@ if (!initializerTargetType ||
         `\\b${name}\\s*\\([^]*?const\\s+ag_data_layout_t\\s*\\*data_layout`,
       ).test(initializerResolutionHeader),
     ) ||
-    /\bps_type_sizeof_id_for_target\s*\(/.test(
+    /\bpsx_type_layout_sizeof_for_target\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
@@ -7250,7 +7250,7 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     /#include\s+"\.\.\/parser\/type\.h"/.test(
       aggregateCastResolutionSource,
     ) ||
-    !/ps_type_sizeof_id\s*\(/.test(
+    !/psx_type_layout_sizeof\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
     /\bag_target_info_t\b/.test(
@@ -7477,7 +7477,7 @@ if (!directSizeofTypeName ||
     /\bpsx_type_t\b|->(?:kind|base)\b/.test(
       directTypeBeforeApplication[0],
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       directSizeofTypeName[0],
     ) ||
     /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
@@ -8232,9 +8232,11 @@ const mirTypeLoweringSource = await readFile(
   "utf8",
 );
 const typeIdLayoutFunction = typeLayoutSource.match(
-  /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
+  /int\s+psx_type_layout_of\s*\([^]*?\n\}/,
 );
-if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
+if (!/\bpsx_type_layout_of\s*\(/.test(typeLayoutSource) ||
+    !/\bpsx_type_layout_sizeof\s*\(/.test(typeLayoutHeader) ||
+    !/\bpsx_type_layout_alignof\s*\(/.test(typeLayoutHeader) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(typeLayoutSource) ||
     /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(typeLayoutSource) ||
     /parser\/type\.h/.test(typeLayoutSource) ||
@@ -8275,9 +8277,10 @@ if (!/\bpsx_record_layout_table_lookup\s*\(/.test(typeLayoutSource) ||
 }
 for (const path of allSourceFiles) {
   const source = await readFile(path, "utf8");
-  if (/\bps_type_(?:layout_of_id_with_records|(?:size|align)of_id_with_records|(?:size|align)of_id_for_target)\s*\(/.test(source)) {
+  if (/\bps_type_(?:layout_of_id|sizeof_id|alignof_id)\s*\(/.test(source) ||
+      /\bps_type_(?:layout_of_id_with_records|(?:size|align)of_id_with_records|(?:size|align)of_id_for_target)\s*\(/.test(source)) {
     throw new Error(
-      `${path} must use the single record-aware TypeId layout API`,
+      `${path} must use the canonical psx_type_layout API`,
     );
   }
 }
@@ -8400,7 +8403,7 @@ for (const [name, header, source, functionName] of [
     `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*const\\s+psx_record_layout_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
   );
   if (!signature.test(header) || !signature.test(source) ||
-      !/\bps_type_sizeof_id\s*\(/.test(source) ||
+      !/\bpsx_type_layout_sizeof\s*\(/.test(source) ||
       !/\bpsx_semantic_type_table_describe\s*\(/.test(source) ||
       /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(source) ||
       /#include\s+"\.\.\/parser\/type\.h"/.test(source) ||
@@ -8427,12 +8430,12 @@ for (const [name, header, source, functionName] of [
 }
 
 for (const [name, source, requiredLayoutCall] of [
-  ["pointer arithmetic", hirIrBuilder, /\bps_type_sizeof_id\s*\(/],
-  ["subscript", hirIrBuilder, /\bps_type_sizeof_id\s*\(/],
-  ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id\s*\(/],
-  ["VLA", vlaLoweringSource, /\bps_type_sizeof_id\s*\(/],
-  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bps_type_sizeof_id\s*\(/],
-  ["translation unit data", translationUnitDataLoweringSource, /\bps_type_sizeof_id\s*\(/],
+  ["pointer arithmetic", hirIrBuilder, /\bpsx_type_layout_sizeof\s*\(/],
+  ["subscript", hirIrBuilder, /\bpsx_type_layout_sizeof\s*\(/],
+  ["initializer", explicitDiagnosticInitializerLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
+  ["VLA", vlaLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
+  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bpsx_type_layout_sizeof\s*\(/],
+  ["translation unit data", translationUnitDataLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
 ]) {
   if (!requiredLayoutCall.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
@@ -8451,7 +8454,7 @@ if (!automaticLocalPipeline ||
     /\bps_ctx_intern_qual_type_in\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
-    !/\bpsx_resolve_decl_qual_type\s*\([^]*?\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_resolve_decl_qual_type\s*\([^]*?\bpsx_type_layout_sizeof\s*\(/.test(
       parameterDeclarationResolutionSource,
     ) ||
     /\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
@@ -8511,7 +8514,7 @@ if (!/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
     /\bps_lowering_type_(?:id|size|deref_size|alignment)\s*\(/.test(
       `${loweringRuntimeHeader}\n${loweringRuntimeSource}`,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       loweringRuntimeSource,
     ) ||
     !/\bps_lowering_type_id_size\s*\(/.test(
@@ -8520,10 +8523,10 @@ if (!/\bps_lowering_type_id_size\s*\(/.test(loweringRuntimeHeader) ||
     /\bps_lowering_type_(?:id|size|deref_size|alignment)\s*\(/.test(
       declarationPipelineSource,
     ) ||
-    !/\bps_type_alignof_id\s*\(/.test(
+    !/\bpsx_type_layout_alignof\s*\(/.test(
       loweringRuntimeSource,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(hirIrBuilder) ||
+    !/\bpsx_type_layout_sizeof\s*\(/.test(hirIrBuilder) ||
     /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",
@@ -8576,7 +8579,7 @@ if (!/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?\bscalar\s*\[\s*AG_TARGET_SCA
     /\bag_target_info_(?:pointer|scalar)_(?:size|alignment)\s*\(/.test(
       typeLayoutSource,
     ) ||
-    !/ps_type_layout_of_id\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
+    !/psx_type_layout_of\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
       typeLayoutHeader,
     ) ||
     !/psx_record_layout_table_(?:define|lookup)\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
@@ -9142,10 +9145,10 @@ if (!/\bconst\s+ag_data_layout_t\s*\*\s*ps_ctx_data_layout\s*\(/.test(
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       `${semanticContextSource}\n${parserSemanticContextImplementation}`,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
-    !/\bps_type_alignof_id\s*\(/.test(
+    !/\bpsx_type_layout_alignof\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
     /\bps_ctx_refresh_type_completeness_in\s*\(/.test(
@@ -9540,7 +9543,7 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
     /\bag_target_info_data_layout\s*\(/.test(
@@ -10257,7 +10260,7 @@ if (!aggregateWalkerLayoutSection ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_type_layout_sizeof\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bgvar_get_record_member_layout\s*\(/.test(
@@ -10314,7 +10317,7 @@ if (!aggregateWalkerLayoutSection ||
     /\bps_gvar_storage_size\s*\(|\bsymbol_alignment\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    !/\bps_type_(?:size|align)of_id\s*\(/.test(
+    !/\bpsx_type_layout_(?:size|align)of\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
@@ -10773,10 +10776,10 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
     /ps_type_(?:sizeof|alignof)_id\s*\(/.test(
       resolvedTreeMaterialization,
     ) ||
-    !/ps_type_sizeof_id\s*\(/.test(
+    !/psx_type_layout_sizeof\s*\(/.test(
       hirSymbolResolutionSource,
     ) ||
-    !/ps_type_alignof_id\s*\(/.test(
+    !/psx_type_layout_alignof\s*\(/.test(
       hirSymbolResolutionSource,
     )) {
   throw new Error(
@@ -11403,7 +11406,7 @@ if (!/MAP\s*\(\s*ND_SUBSCRIPT\s*,\s*PSX_HIR_SUBSCRIPT\s*\)/.test(
 if (!/try_build_pointer_arithmetic\s*\(/.test(hirIrBuilder) ||
     !/pointer_stride_value\s*\(/.test(hirIrBuilder) ||
     !/psx_hir_node_vla_stride_frame_offset\s*\(/.test(hirIrBuilder) ||
-    !/ps_type_sizeof_id\s*\(/.test(hirIrBuilder) ||
+    !/psx_type_layout_sizeof\s*\(/.test(hirIrBuilder) ||
     /\blower_additive_expression\s*\(/.test(
       semanticLoweringPassSource,
     ) ||

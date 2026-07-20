@@ -242,7 +242,7 @@ static int object_scalar_slots_by_id(
               semantic_types, type_id, i).type_id;
       int slots = object_scalar_slots_by_id(
           semantic_context, member_type_id);
-      int bytes = ps_type_sizeof_id(semantic_types, record_layouts,
+      int bytes = psx_type_layout_sizeof(semantic_types, record_layouts,
                                     member_type_id, data_layout);
       if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
         max_bytes = bytes;
@@ -267,7 +267,7 @@ static int object_scalar_slots_by_id(
     if (member_slots <= 0 || slots > INT_MAX - member_slots) return 0;
     slots += member_slots;
     if (member->len <= 0) {
-      int size = ps_type_sizeof_id(semantic_types, record_layouts,
+      int size = psx_type_layout_sizeof(semantic_types, record_layouts,
                                    member_type_id, data_layout);
       int end = member_layout->offset + size;
       if (size > 0 && end > covered_end) covered_end = end;

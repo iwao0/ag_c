@@ -71,7 +71,7 @@ int psx_resolve_parameter_declaration(
         request->type.semantic_context, identity);
   }
   if (identity.type_id == PSX_TYPE_ID_INVALID ||
-      ps_type_sizeof_id(
+      psx_type_layout_sizeof(
           types,
           ps_ctx_record_layout_table_in(request->type.semantic_context),
           identity.type_id,

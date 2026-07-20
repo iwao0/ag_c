@@ -36,7 +36,7 @@ static void lower_aggregate_scalar(
     psx_type_id_t value_type_id, int slot, long long offset) {
   ir_symbol_func_ref_lowering_t *ctx = user;
   int value_size =
-      ps_type_sizeof_id(ctx->semantic_types, ctx->record_layouts, value_type_id,
+      psx_type_layout_sizeof(ctx->semantic_types, ctx->record_layouts, value_type_id,
                         ag_target_info_data_layout(ctx->target));
   psx_gvar_init_value_t value =
       ps_gvar_init_member_value(
@@ -89,16 +89,16 @@ ir_symbol_t *lower_ir_global_symbol(
   psx_type_shape_t type = {0};
   if (!psx_semantic_type_table_describe(semantic_types, type_id, &type))
     return NULL;
-  int storage_size = ps_type_sizeof_id(semantic_types, record_layouts, type_id,
+  int storage_size = psx_type_layout_sizeof(semantic_types, record_layouts, type_id,
                                        ag_target_info_data_layout(target));
   if (storage_size <= 0 && ps_gvar_is_extern_decl(global)) {
     psx_type_id_t base_type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
     storage_size =
-        ps_type_sizeof_id(semantic_types, record_layouts, base_type_id,
+        psx_type_layout_sizeof(semantic_types, record_layouts, base_type_id,
                           ag_target_info_data_layout(target));
   }
-  int alignment = ps_type_alignof_id(semantic_types, record_layouts, type_id,
+  int alignment = psx_type_layout_alignof(semantic_types, record_layouts, type_id,
                                      ag_target_info_data_layout(target));
   if (storage_size <= 0 || alignment <= 0) return NULL;
 

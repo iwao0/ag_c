@@ -32,7 +32,7 @@ static int type_size_id(
     const initializer_lowering_context_t *context,
     psx_type_id_t type_id) {
   if (!context) return 0;
-  return ps_type_sizeof_id(context->semantic_types, context->record_layouts,
+  return psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
                            type_id, context->data_layout);
 }
 

@@ -25,7 +25,7 @@ int psx_plan_parameter_storage_for_type_id(
     return 1;
   }
 
-  int size = ps_type_sizeof_id(
+  int size = psx_type_layout_sizeof(
       types, record_layouts, type_id, data_layout);
   if (size <= 0) return 0;
   if (type.kind == PSX_TYPE_STRUCT || type.kind == PSX_TYPE_UNION) {
@@ -38,7 +38,7 @@ int psx_plan_parameter_storage_for_type_id(
     } else {
       plan->kind = PSX_PARAMETER_STORAGE_AGGREGATE_VALUE;
       plan->storage_size = size;
-      plan->alignment = ps_type_alignof_id(types, record_layouts, type_id,
+      plan->alignment = psx_type_layout_alignof(types, record_layouts, type_id,
                                            data_layout);
     }
     return 1;
@@ -46,7 +46,7 @@ int psx_plan_parameter_storage_for_type_id(
   if (type.kind == PSX_TYPE_COMPLEX) {
     plan->kind = PSX_PARAMETER_STORAGE_COMPLEX;
     plan->storage_size = size;
-    plan->alignment = ps_type_alignof_id(types, record_layouts, type_id,
+    plan->alignment = psx_type_layout_alignof(types, record_layouts, type_id,
                                          data_layout);
     return 1;
   }

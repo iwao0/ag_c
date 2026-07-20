@@ -64,7 +64,7 @@ void psx_resolve_local_declaration(
       psx_semantic_type_table_pointee_value(
           request->semantic_types, request->type_id);
   int element_size =
-      ps_type_sizeof_id(request->semantic_types, request->record_layouts,
+      psx_type_layout_sizeof(request->semantic_types, request->record_layouts,
                         element_identity.type_id, request->data_layout);
 
   if (type.kind == PSX_TYPE_ARRAY && leading_array_has_vla) {
@@ -114,7 +114,7 @@ void psx_resolve_local_declaration(
     }
   }
 
-  if (ps_type_sizeof_id(request->semantic_types, request->record_layouts,
+  if (psx_type_layout_sizeof(request->semantic_types, request->record_layouts,
                         request->type_id, request->data_layout) <= 0) {
     resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
     return;

@@ -19,7 +19,7 @@
 static int type_size(
     const psx_lowering_context_t *lowering_context,
     psx_type_id_t type_id) {
-  return ps_type_sizeof_id(
+  return psx_type_layout_sizeof(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context),
       type_id,
@@ -29,7 +29,7 @@ static int type_size(
 static int type_alignment(
     const psx_lowering_context_t *lowering_context,
     psx_type_id_t type_id) {
-  return ps_type_alignof_id(
+  return psx_type_layout_alignof(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context), type_id,
       ag_target_info_data_layout(ps_lowering_target(lowering_context)));

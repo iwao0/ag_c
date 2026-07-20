@@ -434,7 +434,7 @@ static int resolve_parsed_alignas_type_name(
         "alignas", "alignment type name could not be resolved");
     return 1;
   }
-  int alignment = ps_type_alignof_id(
+  int alignment = psx_type_layout_alignof(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
       ps_ctx_data_layout(semantic_context));

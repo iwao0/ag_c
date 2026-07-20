@@ -40,7 +40,7 @@ int psx_resolve_compound_literal_qual_type_plan_in(
        !object_type.is_vla) ||
       psx_semantic_type_table_contains_vla_array(
           semantic_types, object_qual_type.type_id) ||
-      ps_type_sizeof_id(semantic_types,
+      psx_type_layout_sizeof(semantic_types,
                         ps_ctx_record_layout_table_in(semantic_context),
                         object_qual_type.type_id,
                         ps_ctx_data_layout(semantic_context)) <= 0)

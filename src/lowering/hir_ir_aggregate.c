@@ -45,7 +45,7 @@ ir_val_t hir_ir_build_object_copy(
   int has_target_semantic_type = target && hir_ir_node_type_shape(
       context, target, &target_semantic_type);
   int copy_size =
-      target ? ps_type_sizeof_id(
+      target ? psx_type_layout_sizeof(
                    context->options->semantic_types,
                    context->options->record_layouts,
                    psx_hir_node_qual_type(target).type_id,

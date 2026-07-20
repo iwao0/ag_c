@@ -12,11 +12,11 @@ int psx_plan_local_storage_for_type_id(
       psx_semantic_type_table_contains_vla_array(types, type_id))
     return 0;
   int storage_size =
-      ps_type_sizeof_id(types, record_layouts, type_id, data_layout);
+      psx_type_layout_sizeof(types, record_layouts, type_id, data_layout);
   if (storage_size <= 0) return 0;
 
   int alignment =
-      ps_type_alignof_id(types, record_layouts, type_id, data_layout);
+      psx_type_layout_alignof(types, record_layouts, type_id, data_layout);
   if (alignment <= 0) return 0;
   out->storage_size = storage_size;
   out->alignment = alignment;

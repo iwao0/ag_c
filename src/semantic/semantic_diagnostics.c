@@ -55,7 +55,7 @@ static psx_resolution_node_kind_t resolved_node_kind(
 static int semantic_type_size(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return ps_type_sizeof_id(ps_ctx_semantic_type_table_in(semantic_context),
+  return psx_type_layout_sizeof(ps_ctx_semantic_type_table_in(semantic_context),
                            ps_ctx_record_layout_table_in(semantic_context),
                            qual_type.type_id,
                            ps_ctx_data_layout(semantic_context));

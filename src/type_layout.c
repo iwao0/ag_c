@@ -142,11 +142,11 @@ static int layout_of_id_recursive(
   return complete_array_layout(&type, &element, out);
 }
 
-int ps_type_layout_of_id(const psx_semantic_type_table_t *types,
-                         const psx_record_layout_table_t *record_layouts,
-                         psx_type_id_t type_id,
-                         const ag_data_layout_t *data_layout,
-                         psx_type_layout_t *out) {
+int psx_type_layout_of(const psx_semantic_type_table_t *types,
+                       const psx_record_layout_table_t *record_layouts,
+                       psx_type_id_t type_id,
+                       const ag_data_layout_t *data_layout,
+                       psx_type_layout_t *out) {
   if (!types || !record_layouts || !ag_data_layout_is_valid(data_layout) ||
       !out)
     return 0;
@@ -154,25 +154,25 @@ int ps_type_layout_of_id(const psx_semantic_type_table_t *types,
                                 out);
 }
 
-int ps_type_sizeof_id(const psx_semantic_type_table_t *types,
-                      const psx_record_layout_table_t *record_layouts,
-                      psx_type_id_t type_id,
-                      const ag_data_layout_t *data_layout) {
+int psx_type_layout_sizeof(const psx_semantic_type_table_t *types,
+                           const psx_record_layout_table_t *record_layouts,
+                           psx_type_id_t type_id,
+                           const ag_data_layout_t *data_layout) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(types, record_layouts, type_id, data_layout,
-                              &layout) &&
+  return psx_type_layout_of(types, record_layouts, type_id, data_layout,
+                            &layout) &&
                  layout.is_complete
              ? layout.size
              : 0;
 }
 
-int ps_type_alignof_id(const psx_semantic_type_table_t *types,
-                       const psx_record_layout_table_t *record_layouts,
-                       psx_type_id_t type_id,
-                       const ag_data_layout_t *data_layout) {
+int psx_type_layout_alignof(const psx_semantic_type_table_t *types,
+                            const psx_record_layout_table_t *record_layouts,
+                            psx_type_id_t type_id,
+                            const ag_data_layout_t *data_layout) {
   psx_type_layout_t layout = {0};
-  return ps_type_layout_of_id(types, record_layouts, type_id, data_layout,
-                              &layout)
+  return psx_type_layout_of(types, record_layouts, type_id, data_layout,
+                            &layout)
              ? layout.alignment
              : 0;
 }
