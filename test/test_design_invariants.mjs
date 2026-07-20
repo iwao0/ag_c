@@ -1079,8 +1079,19 @@ const semanticContextOwnershipSource = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
+const semanticContextOwnershipHeader = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
 if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
-    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\(/.test(semanticContextOwnershipSource) ||
+    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\([^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(semanticContextOwnershipSource) ||
+    !/ag_target_info_is_valid\s*\(target\)/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    /ps_ctx_bind_target_info\s*\(/.test(
+      semanticContextOwnershipSource + semanticContextOwnershipHeader,
+    ) ||
+    /ag_target_info_host\s*\(/.test(semanticContextOwnershipSource) ||
     !/void\s+ps_ctx_destroy\s*\(/.test(semanticContextOwnershipSource) ||
     /default_semantic_context|active_semantic_context/.test(
       semanticContextOwnershipSource,
@@ -1113,6 +1124,13 @@ const compilationSessionSource = await readFile(
   "src/compilation_session.c",
   "utf8",
 );
+if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*&session->target\s*\)/s.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "CompilationSession must construct semantic state with its immutable target",
+  );
+}
 const compilerMainSource = await readFile("src/main.c", "utf8");
 const codegenEmitSource = await readFile("src/codegen_emit.c", "utf8");
 const codegenEmitHeader = await readFile("src/codegen_emit.h", "utf8");

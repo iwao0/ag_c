@@ -64,7 +64,8 @@ int ag_compilation_session_init(
   session->arena_context = arena_context_create();
   session->resolution_store = psx_resolution_store_create();
   session->scope_graph = psx_scope_graph_create();
-  session->semantic_context = ps_ctx_create(session->arena_context);
+  session->semantic_context = ps_ctx_create(
+      session->arena_context, &session->target);
   ps_ctx_bind_resolution_store(
       session->semantic_context, session->resolution_store);
   session->hir_module = psx_hir_module_create();
@@ -84,7 +85,6 @@ int ag_compilation_session_init(
   ps_ctx_bind_scope_graph(session->semantic_context, session->scope_graph);
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
-  ps_ctx_bind_target_info(session->semantic_context, &session->target);
   session->preprocessor_context = pp_context_create(
       session->diagnostic_context);
   session->token_allocator_context = tk_allocator_context_create(

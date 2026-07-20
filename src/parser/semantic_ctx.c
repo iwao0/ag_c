@@ -401,8 +401,9 @@ const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
   return context ? context->record_layouts : NULL;
 }
 
-psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
-  if (!arena_context) return NULL;
+psx_semantic_context_t *ps_ctx_create(
+    arena_context_t *arena_context, const ag_target_info_t *target) {
+  if (!arena_context || !ag_target_info_is_valid(target)) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
   if (context) {
     context->semantic_expressions =
@@ -433,7 +434,7 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
     psx_resolution_store_bind_semantic_types(
         context->resolution_store, context->semantic_types);
     context->arena_context = arena_context;
-    context->target = ag_target_info_host();
+    context->target = *target;
   }
   return context;
 }
@@ -499,14 +500,6 @@ psx_scope_graph_t *ps_ctx_scope_graph(
 ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context) {
   return context ? context->diagnostic_context : NULL;
-}
-
-void ps_ctx_bind_target_info(
-    psx_semantic_context_t *context, const ag_target_info_t *target) {
-  if (!context) return;
-  context->target = target ? *target : ag_target_info_host();
-  context->target.pointer_size =
-      ag_target_info_pointer_size(&context->target);
 }
 
 const ag_target_info_t *ps_ctx_target_info(

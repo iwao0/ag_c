@@ -23,7 +23,8 @@ typedef struct node_t node_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
 
-psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context);
+psx_semantic_context_t *ps_ctx_create(
+    arena_context_t *arena_context, const ag_target_info_t *target);
 void ps_ctx_destroy(psx_semantic_context_t *context);
 arena_context_t *ps_ctx_arena(
     const psx_semantic_context_t *context);
@@ -41,8 +42,6 @@ psx_scope_graph_t *ps_ctx_scope_graph(
     const psx_semantic_context_t *context);
 ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context);
-void ps_ctx_bind_target_info(
-    psx_semantic_context_t *context, const ag_target_info_t *target);
 const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context);
 psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(

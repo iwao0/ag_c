@@ -12796,6 +12796,9 @@ static void test_target_type_layout_boundary() {
   ag_target_info_t incomplete_target = host;
   incomplete_target.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
   ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
+  ASSERT_TRUE(ps_ctx_create(test_arena_context(), NULL) == NULL);
+  ASSERT_TRUE(ps_ctx_create(
+      test_arena_context(), &incomplete_target) == NULL);
   ag_compilation_session_t invalid_session;
   ASSERT_TRUE(!ag_compilation_session_init(
       &invalid_session, &incomplete_target));
@@ -13006,52 +13009,72 @@ static void test_target_type_layout_boundary() {
                     types, layouts, pointer_array_identity.type_id, &host));
   ASSERT_EQ(12, ps_type_sizeof_id(
                     types, layouts, pointer_array_identity.type_id, &wasm));
-  psx_semantic_context_t *semantic_context = test_semantic_context();
-  psx_name_classifier_t name_classifier =
-      ps_ctx_name_classifier(semantic_context);
+  psx_semantic_context_t *host_semantic_context = test_semantic_context();
+  psx_name_classifier_t host_name_classifier =
+      ps_ctx_name_classifier(host_semantic_context);
   token_t *pointer_type_tokens = tk_tokenize((char *)"int *)");
   token_t *pointer_type_end = pointer_type_tokens;
   while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
     pointer_type_end = pointer_type_end->next;
   ASSERT_TRUE(pointer_type_end != NULL);
-  ps_ctx_bind_target_info(semantic_context, &wasm);
+  psx_semantic_context_t *wasm_semantic_context = ps_ctx_create(
+      test_arena_context(), &wasm);
+  ASSERT_TRUE(wasm_semantic_context != NULL);
+  ASSERT_TRUE(ag_target_info_equal(
+      ps_ctx_target_info(wasm_semantic_context), &wasm));
+  psx_name_classifier_t wasm_name_classifier =
+      ps_ctx_name_classifier(wasm_semantic_context);
+  psx_qual_type_t wasm_pointer_array_identity =
+      ps_ctx_intern_qual_type_in(wasm_semantic_context, pointer_array);
+  ASSERT_TRUE(wasm_pointer_array_identity.type_id != PSX_TYPE_ID_INVALID);
   psx_type_query_plan_t pointer_array_query_plan = {0};
   ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
-      semantic_context, pointer_array_identity, 0, 0,
+      wasm_semantic_context, wasm_pointer_array_identity, 0, 0,
       &pointer_array_query_plan));
   ASSERT_EQ(12, pointer_array_query_plan.constant_factor);
   ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
-      semantic_context, pointer_array_identity,
+      wasm_semantic_context, wasm_pointer_array_identity,
       &pointer_array_query_plan));
   ASSERT_EQ(4, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(12, test_semantic_type_sizeof_in(semantic_context, pointer_array));
-  ASSERT_EQ(4, test_semantic_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(12, test_semantic_type_sizeof_in(
+                    wasm_semantic_context, pointer_array));
+  ASSERT_EQ(4, test_semantic_type_alignof_in(
+                   wasm_semantic_context, pointer_array));
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, &name_classifier, pointer_type_tokens,
+                   wasm_semantic_context, &wasm_name_classifier,
+                   pointer_type_tokens,
                    pointer_type_end));
-  ps_ctx_bind_target_info(semantic_context, &host);
   ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
-      semantic_context, pointer_array_identity, 0, 0,
+      host_semantic_context, pointer_array_identity, 0, 0,
       &pointer_array_query_plan));
   ASSERT_EQ(24, pointer_array_query_plan.constant_factor);
   ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
-      semantic_context, pointer_array_identity,
+      host_semantic_context, pointer_array_identity,
       &pointer_array_query_plan));
   ASSERT_EQ(8, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(24, test_semantic_type_sizeof_in(semantic_context, pointer_array));
-  ASSERT_EQ(8, test_semantic_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(24, test_semantic_type_sizeof_in(
+                    host_semantic_context, pointer_array));
+  ASSERT_EQ(8, test_semantic_type_alignof_in(
+                   host_semantic_context, pointer_array));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, &name_classifier, pointer_type_tokens,
+                   host_semantic_context, &host_name_classifier,
+                   pointer_type_tokens,
                    pointer_type_end));
   ag_target_info_t split_layout_target = wasm;
   split_layout_target.pointer_alignment = 8;
   split_layout_target.scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){12, 4};
-  ps_ctx_bind_target_info(semantic_context, &split_layout_target);
+  psx_semantic_context_t *split_semantic_context = ps_ctx_create(
+      test_arena_context(), &split_layout_target);
+  ASSERT_TRUE(split_semantic_context != NULL);
+  ASSERT_TRUE(ag_target_info_equal(
+      ps_ctx_target_info(split_semantic_context), &split_layout_target));
+  psx_name_classifier_t split_name_classifier =
+      ps_ctx_name_classifier(split_semantic_context);
   int token_size = 0;
   int token_alignment = 0;
   ASSERT_TRUE(psx_ctx_get_type_token_layout_in(
-      semantic_context, TK_LONG, &token_size, &token_alignment));
+      split_semantic_context, TK_LONG, &token_size, &token_alignment));
   ASSERT_EQ(12, token_size);
   ASSERT_EQ(4, token_alignment);
   token_t *long_alignas_tokens = tk_tokenize((char *)"long)");
@@ -13060,10 +13083,12 @@ static void test_target_type_layout_boundary() {
     long_alignas_end = long_alignas_end->next;
   ASSERT_TRUE(long_alignas_end != NULL);
   ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, &name_classifier, long_alignas_tokens,
+                   split_semantic_context, &split_name_classifier,
+                   long_alignas_tokens,
                    long_alignas_end));
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   semantic_context, &name_classifier, pointer_type_tokens,
+                   split_semantic_context, &split_name_classifier,
+                   pointer_type_tokens,
                    pointer_type_end));
   token_t *sizeof_long_tokens = tk_tokenize((char *)"sizeof(long)");
   token_t *sizeof_long_end = sizeof_long_tokens;
@@ -13071,7 +13096,8 @@ static void test_target_type_layout_boundary() {
     sizeof_long_end = sizeof_long_end->next;
   ASSERT_TRUE(sizeof_long_end != NULL);
   ASSERT_EQ(12, psx_eval_parsed_enum_const_expr_in_context(
-                    semantic_context, &name_classifier, sizeof_long_tokens,
+                    split_semantic_context, &split_name_classifier,
+                    sizeof_long_tokens,
                     sizeof_long_end));
   token_t *alignof_long_tokens = tk_tokenize((char *)"_Alignof(long)");
   token_t *alignof_long_end = alignof_long_tokens;
@@ -13079,9 +13105,11 @@ static void test_target_type_layout_boundary() {
     alignof_long_end = alignof_long_end->next;
   ASSERT_TRUE(alignof_long_end != NULL);
   ASSERT_EQ(4, psx_eval_parsed_enum_const_expr_in_context(
-                   semantic_context, &name_classifier, alignof_long_tokens,
+                   split_semantic_context, &split_name_classifier,
+                   alignof_long_tokens,
                    alignof_long_end));
-  ps_ctx_bind_target_info(semantic_context, &host);
+  ps_ctx_destroy(split_semantic_context);
+  ps_ctx_destroy(wasm_semantic_context);
   psx_record_decl_t *record = arena_alloc_in(
       test_arena_context(), sizeof(*record));
   memset(record, 0, sizeof(*record));
@@ -27332,7 +27360,9 @@ static void test_resolution_store_isolation_and_lifetime() {
 
 static void test_semantic_type_identity() {
   printf("test_semantic_type_identity...\n");
-  psx_semantic_context_t *context = ps_ctx_create(test_arena_context());
+  psx_semantic_context_t *context = ps_ctx_create(
+      test_arena_context(),
+      ag_compilation_session_target(test_suite_session));
   ASSERT_TRUE(context != NULL);
   if (!context) return;
 
@@ -27872,8 +27902,10 @@ static void test_semantic_context_isolation() {
   printf("test_semantic_context_isolation...\n");
   arena_context_t *arena_context =
       ag_compilation_session_arena_context(test_suite_session);
-  psx_semantic_context_t *first = ps_ctx_create(arena_context);
-  psx_semantic_context_t *second = ps_ctx_create(arena_context);
+  const ag_target_info_t *target =
+      ag_compilation_session_target(test_suite_session);
+  psx_semantic_context_t *first = ps_ctx_create(arena_context, target);
+  psx_semantic_context_t *second = ps_ctx_create(arena_context, target);
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(second != NULL);
   if (!first || !second) {
