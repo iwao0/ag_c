@@ -12103,6 +12103,17 @@ if (!/int\s+psx_finish_static_local_declaration_typed_hir_pipeline\s*\(/.test(
     "direct static local scalar initializers must lower from Typed HIR without invoking the compatibility declaration pipeline",
   );
 }
+if (/\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /type_compatibility_view\.h/.test(syntaxTypedHirResolutionSource) ||
+    !/resolve_direct_completed_array_qual_type\s*\([^]*?psx_type_shape_character_code_unit_width\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "direct Typed HIR resolution must classify canonical types through TypeShape without compatibility views",
+  );
+}
 const functionDefinitionResolutionHeader = await readFile(
   "src/semantic/function_definition_resolution.h",
   "utf8",

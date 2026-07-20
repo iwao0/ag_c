@@ -22,7 +22,6 @@
 #include "../type_layout.h"
 #include "assignment_resolution.h"
 #include "call_resolution.h"
-#include "type_compatibility_view.h"
 #include "character_array_initializer.h"
 #include "compound_literal_semantics.h"
 #include "declaration_application.h"
@@ -4252,23 +4251,31 @@ static psx_qual_type_t resolve_direct_completed_array_qual_type(
     const psx_parsed_initializer_t *initializer) {
   psx_qual_type_t invalid = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  const psx_type_t *type_view = context
-      ? psx_type_compatibility_view_for(
-            ps_ctx_semantic_type_table_in(context->semantic_context),
-            type)
+  const psx_semantic_type_table_t *semantic_types = context
+      ? ps_ctx_semantic_type_table_in(context->semantic_context)
       : NULL;
-  if (!context || !type_view ||
-      !ps_type_is_incomplete_array(type_view) ||
+  psx_type_shape_t array_shape = {0};
+  if (!context ||
+      !psx_semantic_type_table_describe(
+          semantic_types, type.type_id, &array_shape) ||
+      array_shape.kind != PSX_TYPE_ARRAY || array_shape.array_len > 0 ||
+      array_shape.is_vla ||
       !initializer || !initializer->has_initializer ||
       !initializer->value)
     return invalid;
   const node_string_t *string =
       direct_character_array_string_initializer(initializer);
   if (string) {
+    psx_qual_type_t element = psx_semantic_type_table_base(
+        semantic_types, type.type_id);
+    psx_type_shape_t element_shape = {0};
+    if (!psx_semantic_type_table_describe(
+            semantic_types, element.type_id, &element_shape))
+      return invalid;
     psx_character_array_string_shape_t shape;
     if (psx_resolve_character_array_string_shape(
-            type_view->array_len,
-            ps_type_character_code_unit_width(type_view->base),
+            array_shape.array_len,
+            psx_type_shape_character_code_unit_width(&element_shape),
             string->literal_contents, string->literal_length,
             (int)string->char_width, &shape) !=
         PSX_CHARACTER_ARRAY_INITIALIZER_OK)
@@ -4353,23 +4360,27 @@ static int resolve_direct_compound_literal(
           context->local_registry, &compound->type_name,
           &object_qual_type))
     return 0;
-  const psx_type_t *object_type = ps_ctx_type_by_id_in(
-      context->semantic_context, object_qual_type.type_id);
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
+  psx_type_shape_t object_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_shape))
+    return 0;
   psx_parsed_initializer_t initializer = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,
       .value = compound->base.rhs,
       .value_tok = compound->base.tok,
   };
-  if (object_type && ps_type_is_incomplete_array(object_type)) {
+  if (object_shape.kind == PSX_TYPE_ARRAY &&
+      object_shape.array_len <= 0 && !object_shape.is_vla) {
     object_qual_type = resolve_direct_completed_array_qual_type(
         context, object_qual_type, &initializer);
-    object_type = psx_type_compatibility_view_for(
-        ps_ctx_semantic_type_table_in(context->semantic_context),
-        object_qual_type);
+    if (!psx_semantic_type_table_describe(
+            semantic_types, object_qual_type.type_id, &object_shape))
+      return 0;
   }
-  if (!object_type ||
-      object_qual_type.type_id == PSX_TYPE_ID_INVALID)
+  if (object_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
 
   direct_compound_literal_binding_t *binding = arena_alloc_in(
@@ -4391,7 +4402,7 @@ static int resolve_direct_compound_literal(
     return 0;
   const node_string_t *string_initializer =
       direct_character_array_string_initializer(&initializer);
-  if (object_type->kind == PSX_TYPE_ARRAY && string_initializer) {
+  if (object_shape.kind == PSX_TYPE_ARRAY && string_initializer) {
     psx_character_array_initializer_status_t status =
         psx_plan_character_array_string_initializer(
             ps_ctx_arena(context->semantic_context),
@@ -4442,7 +4453,7 @@ static int resolve_direct_compound_literal(
       psx_parsed_initializer_t storage_initializer = initializer;
       const node_init_list_t *list =
           (const node_init_list_t *)compound->base.rhs;
-      if (ps_type_is_scalar(object_type)) {
+      if (psx_type_kind_is_scalar(object_shape.kind)) {
         if (!list || list->entry_count != 1 ||
             list->entries[0].designator_count != 0 ||
             !list->entries[0].value ||
@@ -4635,13 +4646,14 @@ static int preflight_direct_local_declaration(
     psx_qual_type_t decl_qual_type =
         psx_apply_runtime_declarator_qual_type_in_context(
             context->semantic_context, base_qual_type, &application);
-    const psx_type_t *type =
-        psx_type_compatibility_view_for(
-            ps_ctx_semantic_type_table_in(context->semantic_context),
-            decl_qual_type);
-    if (type && (declaration->is_extern ||
-                 type->kind == PSX_TYPE_FUNCTION)) {
-      if (type->kind == PSX_TYPE_FUNCTION) {
+    const psx_semantic_type_table_t *semantic_types =
+        ps_ctx_semantic_type_table_in(context->semantic_context);
+    psx_type_shape_t type_shape = {0};
+    int has_type = psx_semantic_type_table_describe(
+        semantic_types, decl_qual_type.type_id, &type_shape);
+    if (has_type && (declaration->is_extern ||
+                     type_shape.kind == PSX_TYPE_FUNCTION)) {
+      if (type_shape.kind == PSX_TYPE_FUNCTION) {
         direct_function_declaration_checkpoint_t *checkpoint =
             arena_alloc_in(
                 ps_ctx_arena(context->semantic_context),
@@ -4684,7 +4696,7 @@ static int preflight_direct_local_declaration(
       };
       continue;
     }
-    if (type && declaration->is_static) {
+    if (has_type && declaration->is_static) {
       psx_static_local_declaration_pipeline_request_t static_request = {
           .semantic_context = context->semantic_context,
           .global_registry = context->global_registry,
@@ -4744,23 +4756,26 @@ static int preflight_direct_local_declaration(
       };
       continue;
     }
-    if (type && ps_type_is_incomplete_array(type)) {
+    if (has_type && type_shape.kind == PSX_TYPE_ARRAY &&
+        type_shape.array_len <= 0 && !type_shape.is_vla) {
       decl_qual_type = resolve_direct_completed_array_qual_type(
           context, decl_qual_type, initializer);
-      type = psx_type_compatibility_view_for(
-          ps_ctx_semantic_type_table_in(context->semantic_context),
-          decl_qual_type);
+      has_type = psx_semantic_type_table_describe(
+          semantic_types, decl_qual_type.type_id, &type_shape);
     }
     int is_complete_fixed_array =
-        type && type->kind == PSX_TYPE_ARRAY &&
-        !ps_type_is_incomplete_array(type) &&
-        !ps_type_contains_vla_array(type);
+        has_type && type_shape.kind == PSX_TYPE_ARRAY &&
+        type_shape.array_len > 0 &&
+        !psx_semantic_type_table_contains_vla_array(
+            semantic_types, decl_qual_type.type_id);
     int is_complete_aggregate =
-        type && ps_type_is_tag_aggregate(type);
-    int has_vla_type = type && ps_type_contains_vla_array(type);
+        has_type && psx_type_kind_is_aggregate(type_shape.kind);
+    int has_vla_type = has_type &&
+        psx_semantic_type_table_contains_vla_array(
+            semantic_types, decl_qual_type.type_id);
     int is_vla_object =
-        has_vla_type && type->kind == PSX_TYPE_ARRAY;
-    if (!type || (!ps_type_is_scalar(type) &&
+        has_vla_type && type_shape.kind == PSX_TYPE_ARRAY;
+    if (!has_type || (!psx_type_kind_is_scalar(type_shape.kind) &&
                   !is_complete_fixed_array &&
                   !is_complete_aggregate && !has_vla_type))
       return 0;
@@ -4795,7 +4810,7 @@ static int preflight_direct_local_declaration(
     int is_object_copy_initializer = 0;
     const node_string_t *string_initializer =
         direct_character_array_string_initializer(initializer);
-    if (type->kind == PSX_TYPE_ARRAY && string_initializer) {
+    if (type_shape.kind == PSX_TYPE_ARRAY && string_initializer) {
       psx_character_array_initializer_status_t status =
           psx_plan_character_array_string_initializer(
               ps_ctx_arena(context->semantic_context),
@@ -4823,7 +4838,7 @@ static int preflight_direct_local_declaration(
         initializer->kind == PSX_DECL_INIT_EXPR) {
       psx_qual_type_t value_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-      if (type->kind == PSX_TYPE_ARRAY) {
+      if (type_shape.kind == PSX_TYPE_ARRAY) {
         if (!initializer->value ||
             !resolve_direct_initializer_value_type(
                 context, initializer->value, &value_type) ||
