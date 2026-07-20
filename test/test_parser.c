@@ -4027,6 +4027,8 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   psx_static_local_declaration_result_t direct_static = {0};
   psx_type_t *direct_static_type =
       ps_type_new_integer(TK_INT, 4, 0);
+  psx_qual_type_t direct_static_identity =
+      intern_test_qual_type(direct_static_type);
   ASSERT_TRUE(lower_static_local_declaration_storage(
       &(psx_static_local_declaration_request_t){
           .global_registry = test_global_registry(),
@@ -4037,7 +4039,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
           .function_name_len = 6,
           .name = (char *)"DirectStatic",
           .name_len = 12,
-          .type = direct_static_type,
+          .type = direct_static_identity,
       },
       &direct_static));
   ASSERT_TRUE(direct_static.global != NULL);
@@ -12894,13 +12896,14 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(!plan_test_local_storage(vla, &plan));
 
   reset_test_locals();
+  psx_qual_type_t matrix_identity = intern_test_qual_type(matrix);
   lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"matrix",
           .name_len = 6,
-          .type = matrix,
+          .type = matrix_identity,
           .requested_alignment = 32,
       });
   ASSERT_TRUE(lowered != NULL);
@@ -12936,20 +12939,21 @@ static void test_local_declaration_storage_plan_boundary() {
           .lowering_context = test_lowering_context(),
           .name = (char *)"deferred",
           .name_len = 8,
-          .type = deferred_type,
+          .type = (psx_qual_type_t){
+              incomplete_type_id, PSX_TYPE_QUALIFIER_NONE},
       });
   ASSERT_TRUE(declared != NULL);
   ASSERT_EQ(incomplete_type_id, ps_lvar_decl_type_id(declared));
   ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(declared,
             ps_decl_find_lvar_in(test_local_registry(), (char *)"deferred", 8));
-  ASSERT_TRUE(!ps_local_registry_complete_array_type(
+  ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
       test_local_registry(), declared,
-      ps_type_new_integer(TK_INT, 4, 0)));
-  ASSERT_TRUE(!ps_local_registry_complete_array_type(
+      intern_test_qual_type(ps_type_new_integer(TK_INT, 4, 0))));
+  ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
       test_local_registry(), declared,
-      ps_type_new_array(
-          ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0)));
+      intern_test_qual_type(ps_type_new_array(
+          ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0))));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
       test_semantic_context(), deferred_type,
       &(psx_incomplete_array_resolution_t){
@@ -12965,15 +12969,17 @@ static void test_local_declaration_storage_plan_boundary() {
           .lowering_context = test_lowering_context(),
           .name = (char *)"deferred",
           .name_len = 8,
-          .type = deferred_type,
+          .type = (psx_qual_type_t){
+              complete_type_id, PSX_TYPE_QUALIFIER_NONE},
       }));
   ASSERT_EQ(12, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(3, ps_lvar_get_decl_type(declared)->array_len);
   ASSERT_EQ(complete_type_id, ps_lvar_decl_type_id(declared));
   ASSERT_TRUE(ps_lvar_get_decl_type(declared) == ps_ctx_type_by_id_in(
       test_semantic_context(), complete_type_id));
-  ASSERT_TRUE(!ps_local_registry_complete_array_type(
-      test_local_registry(), declared, deferred_type));
+  ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
+      test_local_registry(), declared,
+      (psx_qual_type_t){complete_type_id, PSX_TYPE_QUALIFIER_NONE}));
 
   reset_test_locals();
   psx_type_t *qualified_local_type =
@@ -12989,7 +12995,7 @@ static void test_local_declaration_storage_plan_boundary() {
           .lowering_context = test_lowering_context(),
           .name = (char *)"qualified_local",
           .name_len = 15,
-          .type = qualified_local_type,
+          .type = qualified_local_identity,
       });
   ASSERT_TRUE(qualified_local != NULL);
   ASSERT_EQ(qualified_local_identity.type_id,
@@ -14491,7 +14497,6 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = incomplete,
           .is_extern_decl = 1,
           .resolution = &first_resolution,
       },
@@ -14523,7 +14528,6 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = complete,
           .resolution = &merged_resolution,
       },
       &merged));
@@ -14552,7 +14556,6 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = complete,
           .resolution = &repeated_resolution,
       },
       &repeated));
@@ -17051,6 +17054,8 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK,
             static_initializer_resolution.status);
   psx_static_local_declaration_result_t static_result = {0};
+  psx_qual_type_t static_incomplete_identity =
+      intern_test_qual_type(static_incomplete);
   ASSERT_TRUE(lower_static_local_declaration(
       &(psx_static_local_declaration_request_t){
           .global_registry = test_global_registry(),
@@ -17061,7 +17066,7 @@ static void test_static_data_initializer_boundary() {
           .function_name_len = 8,
           .name = (char *)"values",
           .name_len = 6,
-          .type = static_incomplete,
+          .type = static_incomplete_identity,
           .initializer_resolution = &static_initializer_resolution,
       },
       &static_result));
@@ -29442,13 +29447,15 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       second.semantic_context, TK_STRUCT, (char *)"FirstTag", 8));
   ps_decl_leave_scope_in(first.local_registry);
+  psx_qual_type_t first_local_type = ps_ctx_intern_qual_type_in(
+      first.semantic_context, ps_type_new_integer(TK_INT, 4, 0));
   lvar_t *lowered_into_first = lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = first.local_registry,
           .lowering_context = first.lowering_context,
           .name = (char *)"lowered_into_first",
           .name_len = 18,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type = first_local_type,
       });
   ASSERT_TRUE(lowered_into_first != NULL);
   ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,

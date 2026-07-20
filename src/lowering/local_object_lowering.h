@@ -11,7 +11,7 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int requested_alignment;
   token_t *diag_tok;
 } psx_local_object_request_t;

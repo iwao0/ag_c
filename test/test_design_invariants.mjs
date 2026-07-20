@@ -2641,6 +2641,10 @@ const localObjectLoweringSource = await readFile(
   "src/lowering/local_object_lowering.c",
   "utf8",
 );
+const localObjectLoweringHeader = await readFile(
+  "src/lowering/local_object_lowering.h",
+  "utf8",
+);
 const parameterLoweringSource = await readFile(
   "src/lowering/parameter_lowering.c",
   "utf8",
@@ -2663,6 +2667,14 @@ const frameLayoutSource = await readFile(
 );
 const staticLocalLoweringSource = await readFile(
   "src/lowering/static_local_lowering.c",
+  "utf8",
+);
+const staticLocalLoweringHeader = await readFile(
+  "src/lowering/static_local_lowering.h",
+  "utf8",
+);
+const globalObjectLoweringHeader = await readFile(
+  "src/lowering/global_object_lowering.h",
   "utf8",
 );
 const localDeclarationPipelineSource = await readFile(
@@ -2947,7 +2959,7 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     ) ||
     /\bps_register_global_var\s*\(/.test(staticLocalLoweringSource) ||
     /\bps_decl_find_lvar\s*\(/.test(vlaLoweringSource) ||
-    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
       localObjectLoweringSource,
     ) ||
     !/ps_local_registry_create_storage_object_in\s*\(/.test(
@@ -2956,12 +2968,64 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     !/ps_local_registry_create_storage_object_in\s*\(/.test(
       vlaLoweringSource,
     ) ||
-    !/ps_local_registry_create_static_alias_in\s*\(/.test(
+    !/ps_local_registry_create_static_alias_qual_type_in\s*\(/.test(
       staticLocalLoweringSource,
     ) ||
     !/ps_register_global_var_in\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
     "local declaration syntax must receive only runtime, NameClassifier, and syntax services while semantic application and lowering use frontend-owned registries",
+  );
+}
+const resolvedGlobalObjectRequest = globalObjectLoweringHeader.match(
+  /typedef\s+struct\s*\{([^{}]*)\}\s*psx_resolved_global_object_request_t\s*;/,
+);
+if (/\bpsx_type_t\b/.test(localObjectLoweringHeader) ||
+    /\bpsx_type_t\b/.test(staticLocalLoweringHeader) ||
+    /\bps_lowering_type_id\s*\(|\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+      `${localObjectLoweringSource}\n${staticLocalLoweringSource}`,
+    ) ||
+    /\bps_local_registry_(?:create_storage_object_in|create_internal_storage_object_in|create_static_alias_in|complete_array_type)\s*\(/.test(
+      `${localObjectLoweringSource}\n${staticLocalLoweringSource}`,
+    ) ||
+    !/\bps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
+      localObjectLoweringSource,
+    ) ||
+    !/\bps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
+      localObjectLoweringSource,
+    ) ||
+    !/\bps_local_registry_create_static_alias_qual_type_in\s*\(/.test(
+      staticLocalLoweringSource,
+    ) ||
+    !/\bps_local_registry_complete_array_qual_type\s*\(/.test(
+      `${localObjectLoweringSource}\n${staticLocalLoweringSource}`,
+    ) ||
+    !resolvedGlobalObjectRequest ||
+    /\bpsx_type_t\b/.test(resolvedGlobalObjectRequest[1]) ||
+    !/\bpsx_global_declaration_resolution_t\s*\*\s*resolution\b/.test(
+      resolvedGlobalObjectRequest[1],
+    )) {
+  throw new Error(
+    "resolved object storage lowering must consume canonical QualType identities without compatibility type views",
+  );
+}
+const canonicalLocalArrayCompletion = localRegistrySource.match(
+  /int\s+ps_local_registry_complete_array_qual_type\s*\([^]*?\n\}/,
+);
+if (!/\bps_local_registry_create_storage_object_qual_type_in\s*\(/.test(
+      localRegistryHeader,
+    ) ||
+    !/\bps_local_registry_create_static_alias_qual_type_in\s*\(/.test(
+      localRegistryHeader,
+    ) ||
+    !canonicalLocalArrayCompletion ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      canonicalLocalArrayCompletion[0],
+    ) ||
+    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+      canonicalLocalArrayCompletion[0],
+    )) {
+  throw new Error(
+    "local registry canonical storage APIs must validate TypeShape without restoring compatibility type views",
   );
 }
 if (!/psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts\s*\([\s\S]*?request->local_registry/.test(
@@ -8718,7 +8782,8 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     /\bglobal->decl_type\s*=/.test(globalRegistrySource) ||
     /\bcanonical_type\b/.test(globalRegistrySource) ||
     /\bglobal->decl_type\b/.test(staticLocalLoweringSource) ||
-    !/\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource)) {
+    /\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource) ||
+    !/\bps_gvar_decl_qual_type\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
     "production symbol type views must materialize from declaration QualType identity",
   );
@@ -8823,10 +8888,7 @@ const readonlyTypeFields = [
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
-  ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_definition_pipeline_result_t", "function_type"],
-  ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
-  ["src/lowering/static_local_lowering.h", "psx_static_local_declaration_request_t", "type"],
 ];
 const readonlyTypeSources = new Map();
 for (const [file, typeName, fieldName] of readonlyTypeFields) {
@@ -8836,13 +8898,39 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
     readonlyTypeSources.set(file, source);
   }
   const body = source.match(
-    new RegExp(`typedef struct\\s*\\{([\\s\\S]*?)\\}\\s*${typeName}\\s*;`),
+    new RegExp(
+      `typedef struct\\s*\\{((?:(?!typedef struct)[\\s\\S])*?)\\}\\s*${typeName}\\s*;`,
+    ),
   );
   const field = new RegExp(
     `\\bconst\\s+psx_type_t\\s*\\*\\s*${fieldName}\\s*;`,
   );
   if (!body || !field.test(body[1])) {
     throw new Error(`${typeName}.${fieldName} must be a const type view`);
+  }
+}
+const canonicalLoweringTypeFields = [
+  ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
+  ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
+  ["src/lowering/static_local_lowering.h", "psx_static_local_object_request_t", "type"],
+  ["src/lowering/static_local_lowering.h", "psx_static_local_declaration_request_t", "type"],
+];
+for (const [file, typeName, fieldName] of canonicalLoweringTypeFields) {
+  let source = readonlyTypeSources.get(file);
+  if (!source) {
+    source = await readFile(file, "utf8");
+    readonlyTypeSources.set(file, source);
+  }
+  const body = source.match(
+    new RegExp(
+      `typedef struct\\s*\\{((?:(?!typedef struct)[\\s\\S])*?)\\}\\s*${typeName}\\s*;`,
+    ),
+  );
+  const field = new RegExp(
+    `\\bpsx_qual_type_t\\s+${fieldName}\\s*;`,
+  );
+  if (!body || !field.test(body[1]) || /\bpsx_type_t\b/.test(body[1])) {
+    throw new Error(`${typeName}.${fieldName} must be a canonical QualType`);
   }
 }
 
@@ -10482,7 +10570,7 @@ if (!/direct_compound_literal_binding_t/.test(
     !/lower_complete_internal_local_object\s*\(/.test(
       localObjectLoweringSource,
     ) ||
-    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
       localObjectLoweringSource,
     ) ||
     !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(

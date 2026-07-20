@@ -3945,11 +3945,12 @@ static int capture_direct_vla_typedef_bounds(
         !preflight_direct_expression(
             context, value_syntax, &value_qual_type))
       return 0;
-    const psx_type_t *value_type = ps_ctx_type_by_id_in(
-        context->semantic_context, value_qual_type.type_id);
-    if (!value_type ||
-        (value_type->kind != PSX_TYPE_BOOL &&
-         value_type->kind != PSX_TYPE_INTEGER))
+    psx_type_shape_t value_type = {0};
+    if (!psx_semantic_type_table_describe(
+            ps_ctx_semantic_type_table_in(context->semantic_context),
+            value_qual_type.type_id, &value_type) ||
+        (value_type.kind != PSX_TYPE_BOOL &&
+         value_type.kind != PSX_TYPE_INTEGER))
       return 0;
     int name_len = 0;
     char *name = new_direct_vla_typedef_bound_name(
@@ -3961,7 +3962,7 @@ static int capture_direct_vla_typedef_bounds(
                   .lowering_context = context->lowering_context,
                   .name = name,
                   .name_len = name_len,
-                  .type = value_type,
+                  .type = value_qual_type,
               })
         : NULL;
     psx_qual_type_t stored_qual_type = storage
@@ -4180,19 +4181,17 @@ static int preflight_direct_flat_initializer(
     return 0;
   }
   for (int i = 0; i < plan->evaluation_group_count; i++) {
-    const psx_type_t *value_type = ps_ctx_type_by_id_in(
-        context->semantic_context, temporary_types[i].type_id);
     int name_len = 0;
     char *name = new_direct_initializer_value_name(
         context, &name_len);
-    lvar_t *temporary = value_type && name
+    lvar_t *temporary = name
         ? lower_complete_internal_local_object(
               &(psx_local_object_request_t){
                   .local_registry = context->local_registry,
                   .lowering_context = context->lowering_context,
                   .name = name,
                   .name_len = name_len,
-                  .type = value_type,
+                  .type = temporary_types[i],
               })
         : NULL;
     if (!temporary) return 0;
@@ -4391,7 +4390,7 @@ static int resolve_direct_compound_literal(
                     .lowering_context = context->lowering_context,
                     .name = name,
                     .name_len = name_len,
-                    .type = object_type,
+                    .type = object_qual_type,
                 })
           : NULL;
       if (!binding->local_object) return 0;

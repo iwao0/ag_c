@@ -162,7 +162,6 @@ int psx_begin_global_declaration_pipeline(
               .global_registry = request->global_registry,
               .name = request->name,
               .name_len = request->name_len,
-              .type = request->type,
               .is_extern_decl = request->is_extern_decl,
               .is_static = request->is_static,
               .is_compiler_generated = request->is_compiler_generated,
@@ -634,9 +633,9 @@ int psx_begin_static_local_declaration_pipeline(
       !request->lowering_context || !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
-  if (ps_ctx_intern_qual_type_in(
-          request->semantic_context, request->type).type_id ==
-      PSX_TYPE_ID_INVALID) {
+  psx_qual_type_t declaration_identity = ps_ctx_intern_qual_type_in(
+      request->semantic_context, request->type);
+  if (declaration_identity.type_id == PSX_TYPE_ID_INVALID) {
     return 0;
   }
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
@@ -712,7 +711,7 @@ int psx_begin_static_local_declaration_pipeline(
               .function_name_len = request->function_name_len,
               .name = request->name,
               .name_len = request->name_len,
-              .type = request->type,
+              .type = declaration_identity,
           },
           &storage)) {
     return 0;
@@ -789,8 +788,9 @@ int psx_finish_static_local_declaration_pipeline(
     return 0;
   }
   if (result->type_completed &&
-      !ps_local_registry_complete_array_type(
-          request->local_registry, result->alias, initializer_type))
+      !ps_local_registry_complete_array_qual_type(
+          request->local_registry, result->alias,
+          resolution.object_qual_type))
     return 0;
   result->initialized = 1;
   return 1;
@@ -852,8 +852,9 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
   psx_hir_module_destroy(initializer_hir);
   if (!lowered) return 0;
   if (result->type_completed &&
-      !ps_local_registry_complete_array_type(
-          request->local_registry, result->alias, initializer_type))
+      !ps_local_registry_complete_array_qual_type(
+          request->local_registry, result->alias,
+          resolution.object_qual_type))
     return 0;
   result->initialized = 1;
   return 1;
@@ -963,7 +964,7 @@ static int begin_automatic_local_declaration_pipeline(
                   .lowering_context = request->lowering_context,
                   .name = request->name,
                   .name_len = request->name_len,
-                  .type = request->type,
+                  .type = declaration_identity,
                   .requested_alignment = request->requested_alignment,
                   .diag_tok = request->diag_tok,
               });
@@ -976,7 +977,7 @@ static int begin_automatic_local_declaration_pipeline(
                   .lowering_context = request->lowering_context,
                   .name = request->name,
                   .name_len = request->name_len,
-                  .type = request->type,
+                  .type = declaration_identity,
                   .requested_alignment = request->requested_alignment,
                   .diag_tok = request->diag_tok,
               });
@@ -1090,9 +1091,9 @@ int psx_finish_automatic_local_declaration_pipeline(
               ps_lowering_diagnostics(request->lowering_context),
               DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
-    if (ps_ctx_intern_qual_type_in(
-            request->semantic_context, completed_type).type_id ==
-        PSX_TYPE_ID_INVALID) {
+    psx_qual_type_t completed_identity = ps_ctx_intern_qual_type_in(
+        request->semantic_context, completed_type);
+    if (completed_identity.type_id == PSX_TYPE_ID_INVALID) {
       return 0;
     }
     if (!complete_declared_local_object(
@@ -1102,7 +1103,7 @@ int psx_finish_automatic_local_declaration_pipeline(
                 .lowering_context = request->lowering_context,
                 .name = request->name,
                 .name_len = request->name_len,
-                .type = completed_type,
+                .type = completed_identity,
                 .requested_alignment = request->requested_alignment,
                 .diag_tok = request->diag_tok,
             })) {
@@ -1191,7 +1192,8 @@ int psx_apply_block_extern_declaration_pipeline(
 lvar_t *psx_apply_temporary_local_declaration_pipeline(
     const psx_temporary_local_declaration_pipeline_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || !request->local_registry ||
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
+      !request->local_registry ||
       !request->lowering_context) {
     return NULL;
   }

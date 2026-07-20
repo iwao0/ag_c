@@ -305,6 +305,21 @@ lvar_t *ps_local_registry_create_storage_object_in(
       registry, decl_type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
+  return ps_local_registry_create_storage_object_qual_type_in(
+      registry, name, name_len, offset, storage_size, alignment,
+      qual_type, diagnostic_token);
+}
+
+lvar_t *ps_local_registry_create_storage_object_qual_type_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, psx_qual_type_t decl_qual_type,
+    token_t *diagnostic_token) {
+  psx_type_shape_t shape = {0};
+  if (!registry || !name || name_len <= 0 ||
+      !psx_semantic_type_table_describe(
+          registry->semantic_types, decl_qual_type.type_id, &shape))
+    return NULL;
   if (has_local_object_in_current_scope(registry, name, name_len)) {
     ps_diag_duplicate_with_name_in(
         registry->diagnostic_context, diagnostic_token,
@@ -319,7 +334,7 @@ lvar_t *ps_local_registry_create_storage_object_in(
   var->size = storage_size;
   var->align_bytes = alignment;
   var->decl_type_table = registry->semantic_types;
-  var->decl_qual_type = qual_type;
+  var->decl_qual_type = decl_qual_type;
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -394,12 +409,28 @@ lvar_t *ps_local_registry_create_static_alias_in(
     global_var_t *global,
     char *name, int name_len, char *global_name, int global_name_len,
     const psx_type_t *type) {
-  if (!registry || !name || name_len <= 0 ||
+  if (!registry || !global || !name || name_len <= 0 ||
       !global_name || global_name_len <= 0 ||
       !type)
     return NULL;
   psx_qual_type_t qual_type = resolve_local_decl_type(registry, type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+  return ps_local_registry_create_static_alias_qual_type_in(
+      registry, global, name, name_len, global_name, global_name_len,
+      qual_type);
+}
+
+lvar_t *ps_local_registry_create_static_alias_qual_type_in(
+    psx_local_registry_t *registry,
+    global_var_t *global,
+    char *name, int name_len, char *global_name, int global_name_len,
+    psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  if (!registry || !name || name_len <= 0 ||
+      !global_name || global_name_len <= 0 ||
+      !psx_semantic_type_table_describe(
+          registry->semantic_types, type.type_id, &shape))
     return NULL;
   lvar_t *var = calloc(1, sizeof(*var));
   if (!var) return NULL;
@@ -410,7 +441,7 @@ lvar_t *ps_local_registry_create_static_alias_in(
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
   var->decl_type_table = registry->semantic_types;
-  var->decl_qual_type = qual_type;
+  var->decl_qual_type = type;
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -438,27 +469,39 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
 int ps_local_registry_complete_array_type(
     psx_local_registry_t *registry, lvar_t *var,
     const psx_type_t *complete_type) {
-  const psx_type_t *current = ps_lvar_get_decl_type(var);
-  if (!ps_type_is_incomplete_array(current) || !complete_type ||
-      complete_type->kind != PSX_TYPE_ARRAY ||
-      complete_type->array_len <= 0 || complete_type->is_vla ||
-      !current->base || !complete_type->base) {
-    return 0;
-  }
   psx_qual_type_t qual_type = resolve_local_decl_type(
       registry, complete_type);
   if (qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
+  return ps_local_registry_complete_array_qual_type(
+      registry, var, qual_type);
+}
+
+int ps_local_registry_complete_array_qual_type(
+    psx_local_registry_t *registry, lvar_t *var,
+    psx_qual_type_t complete_type) {
+  psx_type_shape_t current = {0};
+  psx_type_shape_t replacement = {0};
+  if (!registry || !var ||
+      !psx_semantic_type_table_describe(
+          registry->semantic_types, var->decl_qual_type.type_id, &current) ||
+      current.kind != PSX_TYPE_ARRAY || current.array_len > 0 ||
+      current.is_vla ||
+      !psx_semantic_type_table_describe(
+          registry->semantic_types, complete_type.type_id, &replacement) ||
+      replacement.kind != PSX_TYPE_ARRAY || replacement.array_len <= 0 ||
+      replacement.is_vla)
+    return 0;
   psx_qual_type_t current_base = psx_semantic_type_table_base(
       registry->semantic_types, var->decl_qual_type.type_id);
   psx_qual_type_t replacement_base = psx_semantic_type_table_base(
-      registry->semantic_types, qual_type.type_id);
+      registry->semantic_types, complete_type.type_id);
   if (current_base.type_id == PSX_TYPE_ID_INVALID ||
       current_base.type_id != replacement_base.type_id ||
       current_base.qualifiers != replacement_base.qualifiers)
     return 0;
   var->decl_type_table = registry->semantic_types;
-  var->decl_qual_type = qual_type;
+  var->decl_qual_type = complete_type;
   return 1;
 }
 

@@ -12,7 +12,7 @@ int lower_resolved_global_object_declaration(
     const psx_resolved_global_object_request_t *request,
     psx_global_object_result_t *result) {
   if (!request || !result || !request->global_registry || !request->name ||
-      request->name_len <= 0 || !request->type || !request->resolution ||
+      request->name_len <= 0 || !request->resolution ||
       request->resolution->status != PSX_GLOBAL_DECLARATION_OK) return 0;
   memset(result, 0, sizeof(*result));
   psx_global_registry_t *global_registry = request->global_registry;
@@ -126,7 +126,6 @@ int lower_global_object_declaration(
           .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
-          .type = request->type,
           .is_extern_decl = request->is_extern_decl,
           .is_static = request->is_static,
           .is_compiler_generated = 0,

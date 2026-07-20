@@ -19,11 +19,11 @@ void psx_static_local_lowering_reset_in(
 
 int psx_static_local_prepare_global(
     psx_global_registry_t *global_registry, global_var_t *global,
-    const psx_type_t *type) {
-  if (!global || !type) return 0;
+    psx_qual_type_t type) {
+  if (!global || type.type_id == PSX_TYPE_ID_INVALID) return 0;
   global->is_static = 1;
-  if (ps_gvar_get_decl_type(global)) return 1;
-  return ps_global_registry_bind_decl_type(
+  if (ps_gvar_decl_type_id(global) != PSX_TYPE_ID_INVALID) return 1;
+  return ps_global_registry_bind_decl_qual_type(
       global_registry, global, type);
 }
 
@@ -66,7 +66,8 @@ static char *mangle_static_local_name(
 lvar_t *lower_static_local_object(
     const psx_static_local_object_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->global || !request->type || !request->global_registry ||
+      !request->global || request->type.type_id == PSX_TYPE_ID_INVALID ||
+      !request->global_registry ||
       !request->local_registry || !request->lowering_context)
     return NULL;
   int mangled_len = 0;
@@ -87,7 +88,7 @@ lvar_t *lower_static_local_object(
   global->is_compiler_generated = 1;
   ps_register_global_var_in(request->global_registry, global);
 
-  lvar_t *alias = ps_local_registry_create_static_alias_in(
+  lvar_t *alias = ps_local_registry_create_static_alias_qual_type_in(
       request->local_registry,
       global,
       request->name, request->name_len, mangled, mangled_len,
@@ -101,7 +102,8 @@ int lower_static_local_declaration_storage(
     psx_static_local_declaration_result_t *result) {
   if (result) *result = (psx_static_local_declaration_result_t){0};
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || !request->global_registry ||
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
+      !request->global_registry ||
       !request->local_registry || !request->lowering_context)
     return 0;
 
@@ -124,7 +126,7 @@ int lower_static_local_declaration_storage(
           .name = request->name,
           .name_len = request->name_len,
           .global = global,
-          .type = ps_gvar_get_decl_type(global),
+          .type = ps_gvar_decl_qual_type(global),
       });
   if (!alias) return 0;
   if (result) {
@@ -167,11 +169,9 @@ int lower_static_local_declaration(
     return 0;
   }
   if (lowered.type_completed &&
-      !ps_local_registry_complete_array_type(
+      !ps_local_registry_complete_array_qual_type(
           request->local_registry, lowered.alias,
-          psx_semantic_type_table_lookup_qual_type(
-              ps_lowering_semantic_types(request->lowering_context),
-              request->initializer_resolution->object_qual_type))) {
+          request->initializer_resolution->object_qual_type)) {
     return 0;
   }
   if (result) *result = lowered;

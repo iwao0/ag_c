@@ -78,6 +78,11 @@ lvar_t *ps_local_registry_create_storage_object_in(
     char *name, int name_len, int offset, int storage_size,
     int alignment, const psx_type_t *decl_type,
     token_t *diagnostic_token);
+lvar_t *ps_local_registry_create_storage_object_qual_type_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, psx_qual_type_t decl_qual_type,
+    token_t *diagnostic_token);
 lvar_t *ps_local_registry_create_internal_storage_object_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
@@ -95,6 +100,11 @@ lvar_t *ps_local_registry_create_static_alias_in(
     global_var_t *global,
     char *name, int name_len, char *global_name, int global_name_len,
     const psx_type_t *type);
+lvar_t *ps_local_registry_create_static_alias_qual_type_in(
+    psx_local_registry_t *registry,
+    global_var_t *global,
+    char *name, int name_len, char *global_name, int global_name_len,
+    psx_qual_type_t type);
 void ps_local_registry_update_storage_object_in(
     psx_local_registry_t *registry,
     lvar_t *var, int offset, int storage_size, int alignment);
@@ -103,6 +113,9 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
 int ps_local_registry_complete_array_type(
     psx_local_registry_t *registry, lvar_t *var,
     const psx_type_t *complete_type);
+int ps_local_registry_complete_array_qual_type(
+    psx_local_registry_t *registry, lvar_t *var,
+    psx_qual_type_t complete_type);
 void ps_local_registry_set_vla_descriptor(
     lvar_t *var, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset,

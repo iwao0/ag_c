@@ -197,7 +197,7 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int requested_alignment;
 } psx_temporary_local_declaration_pipeline_request_t;
 
