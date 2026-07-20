@@ -3,7 +3,6 @@
 #include "declaration_resolution.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 
 #include <string.h>
 

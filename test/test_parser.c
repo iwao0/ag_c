@@ -220,6 +220,9 @@ static const psx_type_t *ps_tag_member_decl_tag_type(
 static node_t **parsed_code;
 static node_t **parse_program_input(const char *input);
 static ag_compilation_session_t *test_suite_session;
+static node_t *test_node_new_lvar_type_at_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int offset,
+    const psx_type_t *type);
 
 static ag_diagnostic_context_t *test_diagnostics(void) {
   return ag_compilation_session_diagnostic_context(test_suite_session);
@@ -405,8 +408,8 @@ static void test_set_invalid_vla_runtime_view(
 #define ps_node_conversion_value_is_unsigned(node) \
   ps_node_conversion_value_is_unsigned(test_resolution_store(), (node))
 #define ps_node_new_lvar_type_at_for_in(arena, owner, offset, type) \
-  ps_node_new_lvar_type_at_for_in(                                   \
-      test_resolution_store(), (arena), (owner), (offset), (type))
+  test_node_new_lvar_type_at_for_in(                                \
+      (arena), (owner), (offset), (type))
 #define psx_bind_local_initializer_target_in(                         \
     arena, var, initializer, kind, tok)                               \
   psx_bind_local_initializer_target_in(                               \
@@ -629,27 +632,17 @@ static int test_type_alignof_for_target(
 #define ps_node_new_num(...) \
   ps_node_new_num_in(                                      \
       test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_lvar(...) \
-  psx_node_new_lvar_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define ps_node_new_lvar_typed(...) \
-  ps_node_new_lvar_typed_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_lvar_typed_at_for(...) \
   test_node_new_lvar_typed_at_for(__VA_ARGS__)
-#define ps_node_new_lvar_type_at_for(...) \
-  ps_node_new_lvar_type_at_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_lvar_scalar_slot_at(...) \
-  psx_node_new_lvar_scalar_slot_at_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_lvar_fp_slot_at(...) \
-  psx_node_new_lvar_fp_slot_at_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_lvar_fp_slot_for(...) \
   ps_node_new_lvar_fp_slot_for_in( \
       test_resolution_store(), test_arena_context(), \
       ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
-#define ps_node_new_param_placeholder(...) \
+#define ps_node_new_param_placeholder(type) \
   ps_node_new_param_placeholder_in(            \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define ps_node_new_unsigned_lvar_typed(...) \
-  ps_node_new_unsigned_lvar_typed_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), \
+      intern_test_qual_type(type))
 #define psx_node_new_lvar_for(...) \
   psx_node_new_lvar_for_in( \
       test_resolution_store(), test_arena_context(), \
@@ -1210,6 +1203,15 @@ static psx_lowering_context_t *test_lowering_context(void) {
 
 static psx_qual_type_t intern_test_qual_type(const psx_type_t *type) {
   return ps_ctx_intern_qual_type_in(test_semantic_context(), type);
+}
+
+static node_t *test_node_new_lvar_type_at_for_in(
+    arena_context_t *arena_context, lvar_t *owner, int offset,
+    const psx_type_t *type) {
+  return ps_node_new_lvar_qual_type_at_for_in(
+      test_resolution_store(), arena_context,
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      owner, offset, intern_test_qual_type(type));
 }
 
 static psx_qual_type_t intern_test_declaration_qual_type(
@@ -23311,7 +23313,9 @@ static void test_type_metadata_bridge() {
       &cast_needs_i64));
   ASSERT_EQ(1, cast_widen_zext);
 
-  node_t *typed_internal_slot = ps_node_new_lvar_typed(1234, 8);
+  node_t *typed_internal_slot = ps_node_new_lvar_type_at_for_in(
+      test_arena_context(), NULL, 1234,
+      ps_type_new_integer(TK_LONG, 8, 0));
   ASSERT_TRUE(ps_node_get_type(typed_internal_slot) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(typed_internal_slot)->kind);
   ASSERT_EQ(8, ps_type_sizeof(ps_node_get_type(typed_internal_slot)));

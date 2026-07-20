@@ -10,7 +10,6 @@
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type_builder.h"
 #include "../type_layout.h"
 #include "aggregate_member_resolution.h"
 #include "declaration_resolution.h"

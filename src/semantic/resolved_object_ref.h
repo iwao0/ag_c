@@ -3,15 +3,14 @@
 
 #include "../parser/core.h"
 #include "../parser/syntax_node_kind.h"
-#include "../parser/type.h"
 #include "../type_system/type_ids.h"
+#include "../type_system/type_shape.h"
 #include "resolved_node_kind.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct global_var_t global_var_t;
 typedef struct lvar_t lvar_t;
 typedef struct node_t node_t;
-typedef struct psx_type_t psx_type_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 typedef struct psx_resolution_store_t psx_resolution_store_t;
 typedef enum {
@@ -48,33 +47,16 @@ int psx_bind_va_arg_area_reference_in(
 psx_resolution_node_kind_t psx_resolved_object_ref_node_kind(
     const psx_resolution_store_t *store, const node_t *node);
 
-node_t *psx_node_new_lvar_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, int offset);
-node_t *ps_node_new_lvar_typed_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, int offset, int type_size);
 node_t *ps_node_new_lvar_storage_slot_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    int type_size);
-node_t *ps_node_new_lvar_type_at_for_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    const psx_type_t *type);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *owner, int offset, int type_size);
 node_t *ps_node_new_lvar_qual_type_at_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
     const psx_semantic_type_table_t *semantic_types,
     lvar_t *owner, int offset, psx_qual_type_t qual_type);
-node_t *psx_node_new_lvar_scalar_slot_at_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind, int is_bool);
-node_t *psx_node_new_lvar_fp_slot_at_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, int offset, int type_size,
-    psx_floating_kind_t floating_kind);
 node_t *ps_node_new_lvar_fp_slot_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
@@ -82,10 +64,9 @@ node_t *ps_node_new_lvar_fp_slot_for_in(
     lvar_t *owner, int offset, int type_size);
 node_t *ps_node_new_param_placeholder_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, const psx_type_t *type);
-node_t *ps_node_new_unsigned_lvar_typed_in(
-    psx_resolution_store_t *store,
-    arena_context_t *arena_context, int offset, int type_size);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t qual_type);
 node_t *psx_node_new_lvar_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,

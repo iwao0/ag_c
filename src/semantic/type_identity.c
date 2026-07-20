@@ -59,6 +59,8 @@ struct psx_semantic_type_table_t {
   psx_type_id_t next_id;
 };
 
+static int seed_fundamental_types(psx_semantic_type_table_t *table);
+
 static int semantic_type_id_is_valid(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
   return table && type_id != PSX_TYPE_ID_INVALID &&
@@ -72,6 +74,10 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
   table->arena_context = arena_context_create();
   if (!table->arena_context) {
     free(table);
+    return NULL;
+  }
+  if (!seed_fundamental_types(table)) {
+    psx_semantic_type_table_destroy(table);
     return NULL;
   }
   return table;
@@ -91,6 +97,7 @@ void psx_semantic_type_table_reset(psx_semantic_type_table_t *table) {
   table->entries = NULL;
   table->capacity = 0;
   table->next_id = PSX_TYPE_ID_INVALID;
+  (void)seed_fundamental_types(table);
 }
 
 void psx_semantic_type_table_bind_record_decls(
@@ -428,6 +435,82 @@ psx_qual_type_t psx_semantic_type_table_intern_floating(
   };
   return semantic_type_table_intern_shape(
       table, &shape, base_type, NULL, 0);
+}
+
+psx_qual_type_t psx_semantic_type_table_fundamental_integer(
+    const psx_semantic_type_table_t *table,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char) {
+  if (integer_kind <= PSX_INTEGER_KIND_NONE ||
+      integer_kind >= PSX_INTEGER_KIND_ENUM)
+    return invalid_qual_type();
+  const psx_type_shape_t shape = {
+      .kind = integer_kind == PSX_INTEGER_KIND_BOOL
+                  ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER,
+      .integer_kind = integer_kind,
+      .is_unsigned = is_unsigned ? 1 : 0,
+      .is_plain_char = integer_kind == PSX_INTEGER_KIND_CHAR &&
+                               is_plain_char
+                           ? 1 : 0,
+  };
+  return (psx_qual_type_t){
+      semantic_type_shape_id(
+          table, &shape, invalid_qual_type(), NULL, 0),
+      PSX_TYPE_QUALIFIER_NONE,
+  };
+}
+
+psx_qual_type_t psx_semantic_type_table_fundamental_floating(
+    const psx_semantic_type_table_t *table,
+    psx_floating_kind_t floating_kind, int is_complex) {
+  if (floating_kind <= PSX_FLOATING_KIND_NONE ||
+      floating_kind > PSX_FLOATING_KIND_LONG_DOUBLE)
+    return invalid_qual_type();
+  psx_qual_type_t base_type = is_complex
+      ? psx_semantic_type_table_fundamental_floating(
+            table, floating_kind, 0)
+      : invalid_qual_type();
+  if (is_complex && base_type.type_id == PSX_TYPE_ID_INVALID)
+    return invalid_qual_type();
+  const psx_type_shape_t shape = {
+      .kind = is_complex ? PSX_TYPE_COMPLEX : PSX_TYPE_FLOAT,
+      .floating_kind = floating_kind,
+  };
+  return (psx_qual_type_t){
+      semantic_type_shape_id(table, &shape, base_type, NULL, 0),
+      PSX_TYPE_QUALIFIER_NONE,
+  };
+}
+
+static int seed_fundamental_types(psx_semantic_type_table_t *table) {
+  if (!table) return 0;
+  if (psx_semantic_type_table_intern_void(table).type_id ==
+      PSX_TYPE_ID_INVALID)
+    return 0;
+  for (psx_integer_kind_t kind = PSX_INTEGER_KIND_BOOL;
+       kind < PSX_INTEGER_KIND_ENUM; kind++) {
+    int last_unsigned = kind == PSX_INTEGER_KIND_BOOL ? 0 : 1;
+    for (int is_unsigned = 0; is_unsigned <= last_unsigned;
+         is_unsigned++) {
+      if (psx_semantic_type_table_intern_integer(
+              table, kind, is_unsigned, 0).type_id ==
+          PSX_TYPE_ID_INVALID)
+        return 0;
+    }
+  }
+  if (psx_semantic_type_table_intern_integer(
+          table, PSX_INTEGER_KIND_CHAR, 0, 1).type_id ==
+      PSX_TYPE_ID_INVALID)
+    return 0;
+  for (psx_floating_kind_t kind = PSX_FLOATING_KIND_FLOAT;
+       kind <= PSX_FLOATING_KIND_LONG_DOUBLE; kind++) {
+    if (psx_semantic_type_table_intern_floating(
+            table, kind, 0).type_id == PSX_TYPE_ID_INVALID ||
+        psx_semantic_type_table_intern_floating(
+            table, kind, 1).type_id == PSX_TYPE_ID_INVALID)
+      return 0;
+  }
+  return 1;
 }
 
 psx_qual_type_t psx_semantic_type_table_intern_void(

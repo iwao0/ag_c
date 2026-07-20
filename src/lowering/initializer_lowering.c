@@ -633,7 +633,7 @@ static node_t *append_object_zero_fill(
     while (offset + width <= size) {
       node_t *slot = ps_node_new_lvar_storage_slot_for_in(
           context->resolution_store,
-          context->arena_context, var,
+          context->arena_context, context->semantic_types, var,
           ps_lvar_offset(var) + offset, width);
       chain = append_init(
           context, chain,

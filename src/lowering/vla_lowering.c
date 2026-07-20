@@ -8,7 +8,6 @@
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
-#include "../parser/type_builder.h"
 #include "../diag/diag.h"
 #include "../semantic/vla_runtime_plan.h"
 #include "../semantic/resolved_object_ref.h"

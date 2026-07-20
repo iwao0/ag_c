@@ -17,7 +17,6 @@
 #include "parser/dynarray.h"
 #include "parser/node_utils.h"
 #include "parser/semantic_ctx.h"
-#include "parser/type_builder.h"
 #include "lowering/parameter_lowering.h"
 #include "lowering/runtime_context.h"
 #include "semantic/function_declaration_resolution.h"
@@ -442,14 +441,6 @@ static int append_definition_parameter(
         parameter->declarator.diagnostic_token, "param",
         "canonical parameter declaration resolution failed");
   }
-  const psx_type_t *resolved_parameter_type = ps_ctx_type_by_id_in(
-      semantic_context, resolution.declaration_qual_type.type_id);
-  if (!resolved_parameter_type) {
-    ps_diag_ctx_in(
-        ps_ctx_diagnostics(semantic_context),
-        parameter->declarator.diagnostic_token, "param",
-        "canonical parameter TypeId lookup failed");
-  }
   if (result->nargs + 1 >= *capacity) {
     *capacity = pda_next_cap_in(
         ps_ctx_diagnostics(semantic_context),
@@ -471,7 +462,9 @@ static int append_definition_parameter(
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
             ps_lowering_resolution_store(lowering_context),
-            ps_lowering_arena(lowering_context), resolved_parameter_type);
+            ps_lowering_arena(lowering_context),
+            ps_ctx_semantic_type_table_in(semantic_context),
+            resolution.declaration_qual_type);
     result->args[result->nargs] = NULL;
     return 1;
   }

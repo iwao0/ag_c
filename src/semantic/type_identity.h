@@ -25,6 +25,13 @@ psx_qual_type_t psx_semantic_type_table_intern_integer(
 psx_qual_type_t psx_semantic_type_table_intern_floating(
     psx_semantic_type_table_t *table,
     psx_floating_kind_t floating_kind, int is_complex);
+psx_qual_type_t psx_semantic_type_table_fundamental_integer(
+    const psx_semantic_type_table_t *table,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char);
+psx_qual_type_t psx_semantic_type_table_fundamental_floating(
+    const psx_semantic_type_table_t *table,
+    psx_floating_kind_t floating_kind, int is_complex);
 psx_qual_type_t psx_semantic_type_table_intern_void(
     psx_semantic_type_table_t *table);
 psx_qual_type_t psx_semantic_type_table_intern_enum(

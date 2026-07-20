@@ -5920,8 +5920,15 @@ const canonicalTypeSlotConstructor = resolvedObjectRefSource.match(
 const floatingSlotConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*ps_node_new_lvar_fp_slot_for_in\s*\([^]*?\n\}/,
 );
+const canonicalLocalReferenceConstructor = resolvedObjectRefSource.match(
+  /static\s+node_t\s*\*new_lvar_qual_type_node\s*\([^]*?\n\}/,
+);
 if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
+    !canonicalLocalReferenceConstructor ||
     /\bps_(?:lvar|type)_[A-Za-z0-9_]*(?:size|sizeof)\s*\(/.test(
+      storageSlotConstructor[0],
+    ) ||
+    !/psx_semantic_type_table_fundamental_integer\s*\(/.test(
       storageSlotConstructor[0],
     ) ||
     !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
@@ -5929,10 +5936,19 @@ if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
     ) ||
     !/psx_qual_type_t\s+qual_type/.test(canonicalTypeSlotConstructor[0]) ||
     !/psx_bind_local_reference_in\s*\([^;]*\bqual_type\s*\)/s.test(
+      canonicalLocalReferenceConstructor[0],
+    ) ||
+    !/new_lvar_qual_type_node\s*\(/.test(
       canonicalTypeSlotConstructor[0],
     ) ||
     /psx_semantic_type_table_lookup\s*\(|ps_lvar_get_decl_type\s*\(/.test(
       canonicalTypeSlotConstructor[0],
+    ) ||
+    /\bps_type_(?:new|clone|add_qualifiers)\s*\(|type_builder\.h/.test(
+      resolvedObjectRefSource,
+    ) ||
+    /\bpsx_type_t\b/.test(
+      `${storageSlotConstructor[0]}\n${canonicalTypeSlotConstructor[0]}\n${floatingSlotConstructor?.[0] ?? ""}`,
     ) ||
     !/ps_node_new_lvar_qual_type_at_for_in\s*\(/.test(
       initializerLoweringSourceForLocalLayout,
@@ -6184,15 +6200,9 @@ if (!functionReferenceFactory || !varargReferenceFactory ||
   );
 }
 const resolvedObjectRefFactories = [
-  "psx_node_new_lvar_in",
-  "ps_node_new_lvar_typed_in",
   "ps_node_new_lvar_storage_slot_for_in",
-  "ps_node_new_lvar_type_at_for_in",
-  "psx_node_new_lvar_scalar_slot_at_in",
-  "psx_node_new_lvar_fp_slot_at_in",
   "ps_node_new_lvar_fp_slot_for_in",
   "ps_node_new_param_placeholder_in",
-  "ps_node_new_unsigned_lvar_typed_in",
   "psx_node_new_lvar_for_in",
   "psx_node_new_lvar_object_ref_for_in",
   "ps_node_new_lvar_expr_ref_for_in",
@@ -6210,6 +6220,22 @@ const resolvedObjectRefFactories = [
   "psx_node_new_va_arg_area_reference_in",
   "ps_node_lvar_symbol",
 ];
+for (const removedFactory of [
+  "psx_node_new_lvar_in",
+  "ps_node_new_lvar_typed_in",
+  "ps_node_new_lvar_type_at_for_in",
+  "psx_node_new_lvar_scalar_slot_at_in",
+  "psx_node_new_lvar_fp_slot_at_in",
+  "ps_node_new_unsigned_lvar_typed_in",
+]) {
+  if (new RegExp(`\\b${removedFactory}\\s*\\(`).test(
+        `${resolvedObjectRefSource}\n${resolvedObjectRefHeader}`,
+      )) {
+    throw new Error(
+      `raw parser-type object reference factory ${removedFactory} must not return`,
+    );
+  }
+}
 for (const factory of resolvedObjectRefFactories) {
   const declaration = new RegExp(`\\b${factory}\\s*\\(`);
   const definition = new RegExp(
@@ -7585,7 +7611,6 @@ const typeBuilderUsers = new Set([
   "src/parser/node_utils.c",
   "src/declaration_pipeline.c",
   "src/semantic/parameter_declaration_resolution.c",
-  "src/semantic/resolved_object_ref.c",
   "src/semantic/declaration_application.c",
   "src/semantic/type_name_resolution.c",
   "src/semantic/semantic_pass.c",
