@@ -19,7 +19,6 @@
 #include "parameter_declaration_resolution.h"
 #include "prototype_parameter.h"
 #include "syntax_typed_hir_resolution.h"
-#include "type_compatibility_view.h"
 #include "type_name_resolution.h"
 #include "typed_hir_materialization.h"
 #include "../diag/diag.h"
@@ -169,18 +168,19 @@ static void apply_decl_tag_action(
   }
 }
 
-static psx_qual_type_t resolve_parsed_type_name_qual_type(
+psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name) {
-  if (!type_name)
+  if (!semantic_context || !global_registry || !local_registry ||
+      !type_name)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   psx_qual_type_t base_qual_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (type_name->atomic_inner) {
-    base_qual_type = resolve_parsed_type_name_qual_type(
+    base_qual_type = psx_apply_parsed_type_name_qual_type_in_contexts(
         semantic_context, global_registry, local_registry,
         type_name->atomic_inner);
     if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
@@ -209,36 +209,6 @@ static psx_qual_type_t resolve_parsed_type_name_qual_type(
       });
 }
 
-const psx_type_t *psx_apply_parsed_type_name_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const psx_parsed_type_name_t *type_name) {
-  if (!semantic_context || !global_registry || !local_registry) return NULL;
-  psx_qual_type_t resolved = resolve_parsed_type_name_qual_type(
-      semantic_context, global_registry, local_registry, type_name);
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(semantic_context), resolved);
-}
-
-const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const psx_type_t *base_type,
-    const psx_parsed_declarator_t *declarator) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !base_type || !declarator) return NULL;
-  psx_qual_type_t resolved =
-      psx_apply_parsed_declarator_qual_type_in_contexts(
-          semantic_context, global_registry, local_registry,
-          ps_ctx_intern_declaration_qual_type_in(
-              semantic_context, base_type),
-          declarator);
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(semantic_context), resolved);
-}
-
 psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -261,21 +231,6 @@ psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
           .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
-}
-
-const psx_type_t *psx_apply_runtime_declarator_type_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *base_type,
-    const psx_runtime_declarator_application_t *application) {
-  if (!base_type || !application) return NULL;
-  psx_qual_type_t resolved =
-      psx_apply_runtime_declarator_qual_type_in_context(
-          semantic_context,
-          ps_ctx_intern_declaration_qual_type_in(
-              semantic_context, base_type),
-          application);
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 psx_qual_type_t psx_apply_runtime_declarator_qual_type_in_context(
@@ -384,7 +339,6 @@ int psx_apply_declaration_phase_in_contexts(
           semantic_context, global_registry, local_registry,
           &phase->syntax);
   if (phase->base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
-  phase->type_table = ps_ctx_semantic_type_table_in(semantic_context);
   phase->state = PSX_DECLARATION_PHASE_RESOLVED_TYPE;
   return 1;
 }
@@ -401,14 +355,6 @@ psx_qual_type_t psx_declaration_phase_base_qual_type(
              ? phase->base_qual_type
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                                  PSX_TYPE_QUALIFIER_NONE};
-}
-
-const psx_type_t *psx_declaration_phase_base_type(
-    const psx_declaration_phase_t *phase) {
-  return phase && phase->state == PSX_DECLARATION_PHASE_RESOLVED_TYPE
-             ? psx_type_compatibility_view_for(
-                   phase->type_table, phase->base_qual_type)
-             : NULL;
 }
 
 psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts(

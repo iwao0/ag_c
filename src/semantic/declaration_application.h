@@ -11,7 +11,6 @@
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct arena_context_t arena_context_t;
-typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_DECLARATION_PHASE_EMPTY = 0,
@@ -22,7 +21,6 @@ typedef enum {
 
 typedef struct {
   psx_parsed_decl_specifier_t syntax;
-  const psx_semantic_type_table_t *type_table;
   psx_qual_type_t base_qual_type;
   int requested_alignment;
   psx_declaration_phase_state_t state;
@@ -39,30 +37,18 @@ int psx_apply_declaration_phase_in_contexts(
 void psx_dispose_declaration_phase(psx_declaration_phase_t *phase);
 psx_qual_type_t psx_declaration_phase_base_qual_type(
     const psx_declaration_phase_t *phase);
-const psx_type_t *psx_declaration_phase_base_type(
-    const psx_declaration_phase_t *phase);
 
-const psx_type_t *psx_apply_parsed_type_name_in_contexts(
+psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name);
-const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const psx_type_t *base_type,
-    const psx_parsed_declarator_t *declarator);
 psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_qual_type_t base_qual_type,
     const psx_parsed_declarator_t *declarator);
-const psx_type_t *psx_apply_runtime_declarator_type_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *base_type,
-    const psx_runtime_declarator_application_t *application);
 psx_qual_type_t psx_apply_runtime_declarator_qual_type_in_context(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t base_qual_type,

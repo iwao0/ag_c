@@ -491,7 +491,7 @@ static void test_set_invalid_vla_runtime_view(
 #define psx_sizeof_query_evaluates_vla_operand(query) \
   psx_sizeof_query_evaluates_vla_operand(test_resolution_store(), (query))
 #define psx_node_resolved_type_name(node) \
-  psx_node_resolved_type_name(test_resolution_store(), (node))
+  test_node_resolved_type_name((node))
 #define psx_generic_selection_selected_index(selection) \
   psx_generic_selection_selected_index(                   \
       test_resolution_store(), (selection))
@@ -852,6 +852,69 @@ static const psx_type_t *resolve_test_qual_type_view(
   psx_semantic_context_t *semantic_context = context;
   return psx_type_compatibility_view_for(
       ps_ctx_semantic_type_table_in(semantic_context), qual_type);
+}
+
+static const psx_type_t *test_type_name_resolved_type(
+    const psx_type_name_resolution_state_t *state) {
+  return state && state->kind == PSX_TYPE_NAME_RESOLVED
+             ? psx_type_compatibility_view_for(
+                   state->value.resolved.type_table,
+                   psx_type_name_resolved_qual_type(state))
+             : NULL;
+}
+
+static const psx_type_t *test_type_name_bound_base_type(
+    const psx_type_name_resolution_state_t *state) {
+  return state && state->kind == PSX_TYPE_NAME_BOUND
+             ? psx_type_compatibility_view_for(
+                   state->value.bound.type_table,
+                   psx_type_name_bound_base_qual_type(state))
+             : NULL;
+}
+
+static const psx_type_t *test_node_resolved_type_name(node_t *node) {
+  return test_type_name_resolved_type(
+      psx_node_type_name_state(test_resolution_store(), node));
+}
+
+static const psx_type_t *test_resolve_bound_type_name_ref_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const psx_type_name_ref_t *type_name,
+    psx_type_name_resolution_state_t *state) {
+  psx_qual_type_t resolved = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  return psx_resolve_bound_type_name_qual_type_in_contexts(
+             semantic_context, global_registry, local_registry,
+             type_name, state, &resolved)
+             ? psx_type_compatibility_view_for(
+                   ps_ctx_semantic_type_table_in(semantic_context),
+                   resolved)
+             : NULL;
+}
+
+static const psx_type_t *test_declaration_phase_base_type(
+    const psx_declaration_phase_t *phase) {
+  return phase && phase->state == PSX_DECLARATION_PHASE_RESOLVED_TYPE
+             ? psx_type_compatibility_view_for(
+                   ps_ctx_semantic_type_table_in(test_semantic_context()),
+                   psx_declaration_phase_base_qual_type(phase))
+             : NULL;
+}
+
+static const psx_type_t *test_apply_runtime_declarator_type_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *base_type,
+    const psx_runtime_declarator_application_t *application) {
+  psx_qual_type_t resolved =
+      psx_apply_runtime_declarator_qual_type_in_context(
+          semantic_context,
+          ps_ctx_intern_declaration_qual_type_in(
+              semantic_context, base_type),
+          application);
+  return psx_type_compatibility_view_for(
+      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 static psx_type_t *test_apply_declarator_shape(
@@ -2608,10 +2671,16 @@ static int apply_test_parsed_aggregate_body_layout(
 
 static const psx_type_t *apply_test_parsed_type_name(
     const psx_parsed_type_name_t *type_name) {
-  return psx_apply_parsed_type_name_in_contexts(
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session), type_name);
+  psx_semantic_context_t *semantic_context =
+      ag_compilation_session_semantic_context(test_suite_session);
+  psx_qual_type_t resolved =
+      psx_apply_parsed_type_name_qual_type_in_contexts(
+          semantic_context,
+          ag_compilation_session_global_registry(test_suite_session),
+          ag_compilation_session_local_registry(test_suite_session),
+          type_name);
+  return psx_type_compatibility_view_for(
+      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 static void apply_test_runtime_parsed_declarator(
@@ -10136,14 +10205,14 @@ static void test_sizeof_semantic_lowering_boundary() {
       direct_qual_type.type_id, &direct_shape));
   ASSERT_EQ(PSX_TYPE_ARRAY, direct_shape.kind);
   ASSERT_EQ(3, direct_shape.array_len);
-  ASSERT_TRUE(psx_type_name_bound_base_type(direct_type_state) == NULL);
+  ASSERT_TRUE(test_type_name_bound_base_type(direct_type_state) == NULL);
   resolve_test_sizeof_query(direct_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
   ASSERT_EQ(12, psx_sizeof_query_resolved_size(direct_type_query));
   direct_type_state = psx_node_type_name_state(
       test_resolution_store(), &direct_type_query->base);
   ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, direct_type_state->kind);
-  ASSERT_TRUE(psx_type_name_bound_base_type(direct_type_state) == NULL);
+  ASSERT_TRUE(test_type_name_bound_base_type(direct_type_state) == NULL);
 
   node_sizeof_query_t *negative_type_query =
       (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
@@ -15603,7 +15672,7 @@ static void test_declaration_phase_boundary() {
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(PSX_PARSED_DECL_TYPE_NONE, syntax.source);
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
-  ASSERT_TRUE(psx_declaration_phase_base_type(&phase) == NULL);
+  ASSERT_TRUE(test_declaration_phase_base_type(&phase) == NULL);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_declaration_phase_base_qual_type(&phase).type_id);
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
@@ -15619,7 +15688,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(PSX_DECLARATION_PHASE_RESOLVED_TYPE, phase.state);
   const psx_type_t *phase_base_type =
-      psx_declaration_phase_base_type(&phase);
+      test_declaration_phase_base_type(&phase);
   ASSERT_TRUE(phase_base_type != NULL);
   ASSERT_TRUE(psx_declaration_phase_base_qual_type(&phase).type_id !=
               PSX_TYPE_ID_INVALID);
@@ -15639,7 +15708,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(16, phase.requested_alignment);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            psx_declaration_phase_base_type(&phase)->kind);
+            test_declaration_phase_base_type(&phase)->kind);
   psx_dispose_declaration_phase(&phase);
 
   tokens = tk_tokenize((char *)"_Alignas(int *) char");
@@ -15656,7 +15725,7 @@ static void test_declaration_phase_boundary() {
                 ps_ctx_target_info(test_semantic_context())),
             phase.requested_alignment);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            psx_declaration_phase_base_type(&phase)->kind);
+            test_declaration_phase_base_type(&phase)->kind);
   psx_dispose_declaration_phase(&phase);
 }
 
@@ -15679,21 +15748,21 @@ static void test_type_name_phase_boundary() {
       test_semantic_context(), test_global_registry(),
       test_local_registry(), &reference, &state));
   ASSERT_EQ(PSX_TYPE_NAME_BOUND, state.kind);
-  ASSERT_TRUE(psx_type_name_bound_base_type(&state) != NULL);
+  ASSERT_TRUE(test_type_name_bound_base_type(&state) != NULL);
   ASSERT_TRUE(psx_type_name_bound_base_qual_type(&state).type_id !=
               PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(psx_type_name_resolved_type(&state) == NULL);
+  ASSERT_TRUE(test_type_name_resolved_type(&state) == NULL);
   const psx_type_t *resolved =
-      psx_resolve_bound_type_name_ref_in_contexts(
+      test_resolve_bound_type_name_ref_in_contexts(
           test_semantic_context(), test_global_registry(),
           test_local_registry(), &reference, &state);
   ASSERT_TRUE(resolved != NULL);
   ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, state.kind);
-  ASSERT_TRUE(psx_type_name_bound_base_type(&state) == NULL);
+  ASSERT_TRUE(test_type_name_bound_base_type(&state) == NULL);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_type_name_bound_base_qual_type(&state).type_id);
   ASSERT_TRUE(psx_type_name_bound_runtime_application(&state) == NULL);
-  ASSERT_TRUE(psx_type_name_resolved_type(&state) == resolved);
+  ASSERT_TRUE(test_type_name_resolved_type(&state) == resolved);
   ASSERT_TRUE(psx_type_name_resolved_qual_type(&state).type_id !=
               PSX_TYPE_ID_INVALID);
 
@@ -16789,7 +16858,7 @@ static void test_typedef_declaration_resolution_boundary() {
   vla_application.array_bounds = &vla_bound;
   vla_application.array_bound_count = 1;
   const psx_type_t *vla_type =
-      psx_apply_runtime_declarator_type_in_context(
+      test_apply_runtime_declarator_type_in_context(
           test_semantic_context(), integer, &vla_application);
   ASSERT_TRUE(vla_type != NULL);
   ASSERT_TRUE(ps_type_contains_vla_array(vla_type));
@@ -30033,7 +30102,7 @@ static void test_compilation_session_registry_isolation() {
   };
   psx_type_name_resolution_state_t isolated_type_name_state = {0};
   const psx_type_t *isolated_resolved_type =
-      psx_resolve_bound_type_name_ref_in_contexts(
+      test_resolve_bound_type_name_ref_in_contexts(
           first.semantic_context, first.global_registry,
           first.local_registry,
           &isolated_type_name, &isolated_type_name_state);

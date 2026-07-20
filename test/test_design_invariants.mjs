@@ -5760,7 +5760,13 @@ if (!typeNameRef ||
     !/\bpsx_type_name_bound_base_qual_type\s*\(/.test(
       typeNameResolutionHeader,
     ) ||
-    !/psx_type_name_bound_base_type\s*\([^]*?psx_type_compatibility_view_for\s*\([^]*?base_qual_type/.test(
+    !/\bpsx_type_name_resolved_qual_type\s*\(/.test(
+      typeNameResolutionHeader,
+    ) ||
+    /\bpsx_type_name_(?:bound_base|resolved)_type\s*\(|\bpsx_resolve_bound_type_name_ref_in_contexts\s*\(|\bpsx_type_name_bind_resolved_type_in\s*\(/.test(
+      `${typeNameResolutionHeader}\n${typeNameResolutionSource}`,
+    ) ||
+    /type_compatibility_view\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       typeNameResolutionSource,
     ) ||
     !/static\s+psx_qual_type_t\s+bind_base_qual_type\s*\(/.test(
@@ -9771,27 +9777,35 @@ const declarationApplicationHeader = await readFile(
   "src/semantic/declaration_application.h",
   "utf8",
 );
-if (!/\bpsx_qual_type_t\s+psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
+const declarationPhaseStruct = declarationApplicationHeader.match(
+  /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_declaration_phase_t\s*;/,
+);
+if (!/\bpsx_qual_type_t\s+psx_apply_parsed_type_name_qual_type_in_contexts\s*\(/.test(
+      declarationApplicationHeader,
+    ) ||
+    !/\bpsx_qual_type_t\s+psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
       declarationApplicationHeader,
     ) ||
     !/\bpsx_qual_type_t\s+psx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
       declarationApplicationHeader,
     ) ||
-    !/psx_apply_parsed_declarator_type_in_contexts\s*\([^]*?psx_apply_parsed_declarator_qual_type_in_contexts\s*\(/.test(
-      declarationApplicationSource,
+    !declarationPhaseStruct ||
+    !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(
+      declarationPhaseStruct[1],
     ) ||
-    !/psx_apply_runtime_declarator_type_in_context\s*\([^]*?psx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+    /\btype_table\b|\bpsx_type_t\b/.test(declarationPhaseStruct[1]) ||
+    /\bpsx_(?:declaration_phase_base_type|apply_parsed_type_name_in_contexts|apply_parsed_declarator_type_in_contexts|apply_runtime_declarator_type_in_context)\s*\(/.test(
+      `${declarationApplicationHeader}\n${declarationApplicationSource}`,
+    ) ||
+    /type_compatibility_view\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       declarationApplicationSource,
     )) {
   throw new Error(
-    "declarator application must use canonical QualType cores with explicit compatibility view adapters",
+    "type-name and declarator application must expose only canonical QualType results",
   );
 }
 
 const readonlySemanticTypeResults = [
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
-  ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
   ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
 for (const [file, functionName] of readonlySemanticTypeResults) {
@@ -11006,9 +11020,6 @@ const typeNameQualTypeValueAdapter = typeNameResolutionSource.match(
 const boundTypeNameQualTypeCore = typeNameResolutionSource.match(
   /int\s+psx_resolve_bound_type_name_qual_type_in_contexts\s*\([^]*?\n\}/,
 );
-const boundTypeNameRefAdapter = typeNameResolutionSource.match(
-  /const psx_type_t\s*\*psx_resolve_bound_type_name_ref_in_contexts\s*\([^]*?\n\}/,
-);
 const compatibilityGenericSelectionResolver =
   genericSelectionResolutionSource.match(
     /void\s+psx_resolve_generic_selection_in_contexts\s*\([^]*?\n\}/,
@@ -11042,12 +11053,8 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
     /psx_resolve_bound_type_name_ref_in_contexts\s*\(|psx_build_decl_type\s*\(|ps_type_clone_in\s*\(/.test(
       boundTypeNameQualTypeCore[0],
     ) ||
-    !boundTypeNameRefAdapter ||
-    !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
-      boundTypeNameRefAdapter[0],
-    ) ||
-    !/psx_type_compatibility_view_for\s*\(/.test(
-      boundTypeNameRefAdapter[0],
+    /\bpsx_resolve_bound_type_name_ref_in_contexts\s*\(|\bpsx_type_name_(?:bound_base|resolved)_type\s*\(|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+      `${typeNameResolutionHeader}\n${typeNameResolutionSource}`,
     ) ||
     !compatibilityGenericSelectionResolver ||
     !/psx_resolve_bound_type_name_qual_type_in_contexts\s*\(/.test(
@@ -11076,7 +11083,7 @@ if (!/\bpsx_resolve_type_name_qual_type_in_contexts\s*\(/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "type names and generic selection must resolve through a canonical QualType core while compatibility type views remain outward-only adapters",
+    "type names and generic selection must resolve exclusively through canonical QualType identities",
   );
 }
 

@@ -1,7 +1,6 @@
 #include "type_name_resolution.h"
 
 #include "declaration_application.h"
-#include "type_compatibility_view.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/semantic_ctx.h"
 
@@ -25,31 +24,12 @@ static int type_name_qual_type_is_valid(
              semantic_types, type.type_id, &shape);
 }
 
-const psx_type_t *psx_type_name_resolved_type(
-    const psx_type_name_resolution_state_t *state) {
-  return state && state->kind == PSX_TYPE_NAME_RESOLVED &&
-                 state->value.resolved.type_table
-             ? psx_type_compatibility_view_for(
-                   state->value.resolved.type_table,
-                   state->value.resolved.qual_type)
-             : NULL;
-}
-
 psx_qual_type_t psx_type_name_resolved_qual_type(
     const psx_type_name_resolution_state_t *state) {
   return state && state->kind == PSX_TYPE_NAME_RESOLVED
              ? state->value.resolved.qual_type
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                                  PSX_TYPE_QUALIFIER_NONE};
-}
-
-const psx_type_t *psx_type_name_bound_base_type(
-    const psx_type_name_resolution_state_t *state) {
-  return state && state->kind == PSX_TYPE_NAME_BOUND
-             ? psx_type_compatibility_view_for(
-                   state->value.bound.type_table,
-                   state->value.bound.base_qual_type)
-             : NULL;
 }
 
 psx_qual_type_t psx_type_name_bound_base_qual_type(
@@ -65,16 +45,6 @@ psx_type_name_bound_runtime_application(
     const psx_type_name_resolution_state_t *state) {
   return state && state->kind == PSX_TYPE_NAME_BOUND
              ? state->value.bound.runtime_application : NULL;
-}
-
-int psx_type_name_bind_resolved_type_in(
-    psx_semantic_context_t *semantic_context,
-    psx_type_name_resolution_state_t *state,
-    const psx_type_t *resolved_type) {
-  if (!semantic_context || !state || !resolved_type) return 0;
-  return psx_type_name_bind_resolved_qual_type_in(
-      semantic_context, state,
-      ps_ctx_intern_qual_type_in(semantic_context, resolved_type));
 }
 
 int psx_type_name_bind_resolved_qual_type_in(
@@ -201,25 +171,6 @@ int psx_bind_type_name_ref_in_contexts(
       },
   };
   return 1;
-}
-
-const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const psx_type_name_ref_t *type_name,
-    psx_type_name_resolution_state_t *state) {
-  if (!semantic_context || !global_registry || !local_registry ||
-      !type_name || !state)
-    return NULL;
-  psx_qual_type_t resolved = {
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  if (!psx_resolve_bound_type_name_qual_type_in_contexts(
-          semantic_context, global_registry, local_registry,
-          type_name, state, &resolved))
-    return NULL;
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 int psx_resolve_type_name_qual_type_in_contexts(

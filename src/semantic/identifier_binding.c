@@ -539,8 +539,10 @@ static node_t *bind_node(
               binding_store(context), query) != 0 ||
           psx_sizeof_query_runtime_plan(binding_store(context), query) ||
           (query->is_type_name &&
-           psx_node_resolved_type_name(
-               binding_store(context), &query->base)))
+           psx_type_name_resolved_qual_type(
+               psx_node_type_name_state(
+                   binding_store(context), &query->base)).type_id !=
+               PSX_TYPE_ID_INVALID))
         return node;
       bind_type_name(&query->type_name, context);
       psx_identifier_binding_context_t unevaluated = *context;

@@ -4,6 +4,7 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
+#include "../semantic/generic_selection_resolution.h"
 #include "../semantic/type_name_resolution.h"
 #include "../semantic/type_compatibility_view.h"
 #include "lvar_internal.h"
@@ -2007,7 +2008,7 @@ int ps_node_generic_selection_index(
     return -1;
   }
   int count = selection->association_count;
-  const psx_type_t **types =
+  psx_qual_type_t *types =
       calloc((size_t)count, sizeof(*types));
   unsigned char *defaults = calloc((size_t)count, sizeof(*defaults));
   if (!types || !defaults) {
@@ -2022,16 +2023,20 @@ int ps_node_generic_selection_index(
   for (int i = 0; i < count; i++) {
     types[i] = resolution && resolution->association_type_names &&
                        i < resolution->association_type_name_count
-                   ? psx_type_name_resolved_type(
+                   ? psx_type_name_resolved_qual_type(
                          &resolution->association_type_names[i])
-                   : NULL;
+                   : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                       PSX_TYPE_QUALIFIER_NONE};
     defaults[i] = selection->associations[i].is_default;
   }
-  int selected = ps_type_generic_select_index(
-      ps_node_get_type(store, selection->control), types, defaults, count);
+  psx_generic_selection_resolution_t selection_result;
+  psx_resolve_generic_selection_qual_types_in(
+      ps_node_qual_type(store, selection->control),
+      types, defaults, count, &selection_result);
   free(types);
   free(defaults);
-  return selected;
+  return selection_result.status == PSX_GENERIC_SELECTION_RESOLUTION_OK
+             ? selection_result.selected_index : -1;
 }
 
 static node_t *generic_selection_semantic_expression(
