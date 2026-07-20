@@ -38,11 +38,13 @@ int psx_bind_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
     char *name, int name_len,
-    const psx_semantic_type_table_t *types,
-    psx_qual_type_t function_qual_type);
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t expression_qual_type);
 int psx_bind_va_arg_area_reference_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, node_t *node);
+    arena_context_t *arena_context, node_t *node,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t expression_qual_type);
 psx_resolution_node_kind_t psx_resolved_object_ref_node_kind(
     const psx_resolution_store_t *store, const node_t *node);
 
@@ -143,9 +145,12 @@ node_t *psx_node_new_static_local_gvar_for_in(
 node_t *psx_node_new_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, char *name, int name_len,
-    const psx_type_t *function_type);
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t expression_qual_type);
 node_t *psx_node_new_va_arg_area_reference_in(
-    psx_resolution_store_t *store, arena_context_t *arena_context);
+    psx_resolution_store_t *store, arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t expression_qual_type);
 lvar_t *ps_node_lvar_symbol(
     const psx_resolution_store_t *store, node_t *node);
 psx_resolved_object_ref_kind_t psx_resolved_object_ref_kind(

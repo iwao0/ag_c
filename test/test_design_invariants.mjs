@@ -5646,6 +5646,63 @@ if (!globalReferenceBinder ||
     "global references and declaration-backed array addresses must bind canonical QualType identity",
   );
 }
+const functionReferenceBinder = resolvedObjectRefSource.match(
+  /int\s+psx_bind_function_reference_in\s*\([^]*?\n\}/,
+);
+const varargReferenceBinder = resolvedObjectRefSource.match(
+  /int\s+psx_bind_va_arg_area_reference_in\s*\([^]*?\n\}/,
+);
+const functionReferenceFactory = resolvedObjectRefSource.match(
+  /node_t\s*\*psx_node_new_function_reference_in\s*\([^]*?\n\}/,
+);
+const varargReferenceFactory = resolvedObjectRefSource.match(
+  /node_t\s*\*psx_node_new_va_arg_area_reference_in\s*\([^]*?\n\}/,
+);
+const identifierFunctionMaterializer = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_function\s*\([^]*?\n\}/,
+);
+const identifierVarargMaterializer = identifierBindingSource.match(
+  /static\s+node_t\s*\*materialize_builtin_va_arg_area\s*\([^]*?\n\}/,
+);
+for (const binder of [functionReferenceBinder, varargReferenceBinder]) {
+  if (!binder ||
+      !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+        binder[0],
+      ) ||
+      !/psx_qual_type_t\s+expression_qual_type/.test(binder[0]) ||
+      !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(binder[0]) ||
+      !/ps_node_bind_qual_type\s*\(/.test(binder[0]) ||
+      /ps_node_bind_type\s*\(/.test(binder[0])) {
+    throw new Error(
+      "function and vararg references must bind resolver-owned expression QualType identity",
+    );
+  }
+}
+if (!functionReferenceFactory || !varargReferenceFactory ||
+    !/psx_bind_function_reference_in\s*\(/.test(
+      functionReferenceFactory[0],
+    ) ||
+    !/psx_bind_va_arg_area_reference_in\s*\(/.test(
+      varargReferenceFactory[0],
+    ) ||
+    /const\s+psx_type_t\s*\*|ps_type_clone_in\s*\(|ps_node_bind_type\s*\(/.test(
+      `${functionReferenceFactory[0]}\n${varargReferenceFactory[0]}`,
+    ) ||
+    !identifierFunctionMaterializer ||
+    !identifierVarargMaterializer ||
+    !/resolution->expression_qual_type/.test(
+      identifierFunctionMaterializer[0],
+    ) ||
+    !/resolution->expression_qual_type/.test(
+      identifierVarargMaterializer[0],
+    ) ||
+    /ps_function_symbol_qual_type\s*\(/.test(
+      identifierFunctionMaterializer[0],
+    )) {
+  throw new Error(
+    "identifier reference materialization must not reconstruct function or vararg types",
+  );
+}
 const resolvedObjectRefFactories = [
   "psx_node_new_lvar_in",
   "ps_node_new_lvar_typed_in",

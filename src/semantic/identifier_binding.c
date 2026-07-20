@@ -169,10 +169,8 @@ static node_t *materialize_global(
 
 static node_t *materialize_function(
     node_identifier_t *identifier,
-    const psx_identifier_resolution_t *resolution,
+    const psx_identifier_expression_resolution_t *resolution,
     const psx_identifier_binding_context_t *context) {
-  psx_qual_type_t function_qual_type =
-      ps_function_symbol_qual_type(resolution->function);
   return psx_bind_function_reference_in(
              binding_store(context),
              ps_ctx_arena(context->semantic_context),
@@ -180,17 +178,21 @@ static node_t *materialize_function(
              identifier->name_len,
              ps_ctx_semantic_type_table_in(
                  context->semantic_context),
-             function_qual_type)
+             resolution->expression_qual_type)
              ? (node_t *)identifier : NULL;
 }
 
 static node_t *materialize_builtin_va_arg_area(
     node_identifier_t *identifier,
+    const psx_identifier_expression_resolution_t *resolution,
     const psx_identifier_binding_context_t *context) {
   return psx_bind_va_arg_area_reference_in(
              binding_store(context),
              ps_ctx_arena(context->semantic_context),
-             (node_t *)identifier)
+             (node_t *)identifier,
+             ps_ctx_semantic_type_table_in(
+                 context->semantic_context),
+             resolution->expression_qual_type)
              ? (node_t *)identifier : NULL;
 }
 
@@ -298,10 +300,10 @@ static node_t *materialize_identifier(
           ps_ctx_semantic_type_table_in(context->semantic_context),
           identifier, &resolution);
     case PSX_IDENTIFIER_FUNCTION:
-      return materialize_function(
-          identifier, &resolution.symbol, context);
+      return materialize_function(identifier, &resolution, context);
     case PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA:
-      return materialize_builtin_va_arg_area(identifier, context);
+      return materialize_builtin_va_arg_area(
+          identifier, &resolution, context);
     case PSX_IDENTIFIER_UNDECLARED_CALL:
       return NULL;
     case PSX_IDENTIFIER_UNDEFINED:
@@ -361,8 +363,6 @@ static node_t *materialize_address_operand(
                resolution.global->is_thread_local)
                ? (node_t *)identifier : NULL;
   }
-  if (resolution.kind == PSX_IDENTIFIER_FUNCTION)
-    return materialize_function(identifier, &resolution, context);
   return materialize_identifier(
       identifier, 0, context, NULL);
 }

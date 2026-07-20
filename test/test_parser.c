@@ -476,7 +476,9 @@ static void test_set_invalid_vla_runtime_view(
   psx_resolution_node_alloc_in(test_resolution_store(), (arena), (size))
 #define psx_node_new_function_reference_in(arena, name, len, type) \
   psx_node_new_function_reference_in(                              \
-      test_resolution_store(), (arena), (name), (len), (type))
+      test_resolution_store(), (arena), (name), (len),             \
+      ps_ctx_semantic_type_table_in(test_semantic_context()),      \
+      intern_test_qual_type(type))
 #define psx_eval_const_int(node, ok) \
   psx_eval_const_int(test_resolution_store(), (node), (ok))
 #define ps_type_new(...) \
@@ -8295,6 +8297,35 @@ static void test_identifier_resolution_boundary() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_type->kind);
   ASSERT_EQ(1, resolved_function_type->param_count);
   ASSERT_TRUE(!resolved_function_type->is_variadic_function);
+  psx_identifier_expression_resolution_t function_expression;
+  psx_resolve_identifier_expression(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .local_registry = test_local_registry(),
+          .name = (char *)"__identifier_function",
+          .name_len = 21,
+      },
+      &function_expression);
+  ASSERT_EQ(PSX_IDENTIFIER_FUNCTION,
+            function_expression.symbol.kind);
+  ASSERT_TRUE(function_expression.decays_function_to_pointer);
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_type_shape_t function_declaration_shape = {0};
+  psx_type_shape_t function_expression_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types, function_expression.declaration_qual_type.type_id,
+      &function_declaration_shape));
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      semantic_types, function_expression.expression_qual_type.type_id,
+      &function_expression_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_declaration_shape.kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, function_expression_shape.kind);
+  ASSERT_EQ(function_expression.declaration_qual_type.type_id,
+            psx_semantic_type_table_base(
+                semantic_types,
+                function_expression.expression_qual_type.type_id).type_id);
   psx_identifier_expression_resolution_t array_expression;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
@@ -8314,8 +8345,6 @@ static void test_identifier_resolution_boundary() {
               PSX_TYPE_ID_INVALID);
   psx_type_shape_t array_declaration_shape = {0};
   psx_type_shape_t array_expression_shape = {0};
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
   ASSERT_TRUE(psx_semantic_type_table_describe(
       semantic_types, array_expression.declaration_qual_type.type_id,
       &array_declaration_shape));
@@ -27363,6 +27392,16 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(va_arg_area)->kind);
   ASSERT_TRUE(ps_node_get_type(va_arg_area)->base != NULL);
   ASSERT_EQ(PSX_TYPE_VOID, ps_node_get_type(va_arg_area)->base->kind);
+  ASSERT_TRUE(ps_node_qual_type(va_arg_area).type_id !=
+              PSX_TYPE_ID_INVALID);
+  psx_qual_type_t va_arg_pointee = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_node_qual_type(va_arg_area).type_id);
+  psx_type_shape_t va_arg_pointee_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      va_arg_pointee.type_id, &va_arg_pointee_shape));
+  ASSERT_EQ(PSX_TYPE_VOID, va_arg_pointee_shape.kind);
   ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
       va_arg_area, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
