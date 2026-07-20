@@ -1,41 +1,23 @@
 #include "identifier_resolution.h"
 
 #include "../parser/decl.h"
-#include "../parser/global_registry.h"
 #include "../parser/gvar_public.h"
 #include "../parser/lvar_public.h"
 #include "../parser/semantic_ctx.h"
 
 #include <string.h>
 
-static psx_scope_graph_t *shared_identifier_scope_graph(
-    const psx_identifier_resolution_request_t *request) {
-  if (!request) return NULL;
-  psx_scope_graph_t *graph = ps_ctx_scope_graph(
-      request->semantic_context);
-  return graph &&
-                 graph == ps_local_registry_scope_graph(
-                              request->local_registry) &&
-                 graph == ps_global_registry_scope_graph(
-                              request->global_registry)
-             ? graph
-             : NULL;
-}
-
 static void resolve_identifier_from_scope_graph(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution) {
-  psx_scope_graph_t *graph = shared_identifier_scope_graph(request);
+  psx_scope_graph_t *graph = ps_ctx_scope_graph(
+      request->semantic_context);
   if (!graph) return;
   int has_valid_lookup_point =
-      request->has_local_lookup_point &&
-      request->local_lookup_point.scope_seq != PSX_SCOPE_ID_INVALID;
+      request->has_lookup_point &&
+      request->lookup_point.scope_id != PSX_SCOPE_ID_INVALID;
   psx_scope_lookup_point_t point = has_valid_lookup_point
-      ? (psx_scope_lookup_point_t){
-            .scope_id = request->local_lookup_point.scope_seq,
-            .declaration_order =
-                request->local_lookup_point.declaration_seq,
-        }
+      ? request->lookup_point
       : psx_scope_graph_capture_lookup_point(graph);
   psx_decl_id_t id = psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_ORDINARY,
@@ -82,11 +64,11 @@ void psx_resolve_identifier(
     psx_identifier_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
-  if (!request || !request->semantic_context || !request->global_registry ||
-      !request->local_registry || !request->name || request->name_len <= 0) {
+  if (!request || !request->semantic_context || !request->name ||
+      request->name_len <= 0) {
     return;
   }
-  if (!shared_identifier_scope_graph(request)) return;
+  if (!ps_ctx_scope_graph(request->semantic_context)) return;
   if (!request->is_call && request->name_len == 13 &&
       memcmp(request->name, "__va_arg_area", 13) == 0) {
     resolution->kind = PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA;

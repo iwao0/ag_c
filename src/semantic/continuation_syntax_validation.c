@@ -12,8 +12,6 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
   const ag_continuation_options_t *continuation;
   const token_t *invalid_token;
 } continuation_condition_validation_t;
@@ -43,15 +41,13 @@ static void validate_call(
     psx_resolve_identifier_expression(
         &(psx_identifier_resolution_request_t){
             .semantic_context = validation->semantic_context,
-            .global_registry = validation->global_registry,
-            .local_registry = validation->local_registry,
             .name = identifier->name,
             .name_len = identifier->name_len,
             .is_call = 1,
-            .has_local_lookup_point = 1,
-            .local_lookup_point = {
-                .scope_seq = identifier->scope_seq,
-                .declaration_seq = identifier->declaration_seq,
+            .has_lookup_point = 1,
+            .lookup_point = {
+                .scope_id = identifier->scope_seq,
+                .declaration_order = identifier->declaration_seq,
             },
         },
         &resolution);
@@ -97,8 +93,6 @@ static void validate_node(
 
 int psx_validate_continuation_condition_types_in_contexts(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
     const ag_continuation_options_t *continuation,
     const psx_parsed_function_definition_t *function) {
   if (!continuation || !function || function->is_static ||
@@ -110,8 +104,6 @@ int psx_validate_continuation_condition_types_in_contexts(
     return 1;
   continuation_condition_validation_t validation = {
       .semantic_context = semantic_context,
-      .global_registry = global_registry,
-      .local_registry = local_registry,
       .continuation = continuation,
   };
   validate_node(&validation, function->body);

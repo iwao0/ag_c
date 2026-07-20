@@ -18,8 +18,6 @@ int psx_frontend_resolve_parsed_function_to_hir_in_session(
     return 0;
   if (!psx_validate_continuation_condition_types_in_contexts(
           ag_compilation_session_semantic_context(session),
-          ag_compilation_session_global_registry(session),
-          ag_compilation_session_local_registry(session),
           ag_compilation_session_continuation(session),
           syntax_function))
     return 0;

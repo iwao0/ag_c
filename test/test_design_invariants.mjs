@@ -256,6 +256,10 @@ const scopeGraphIdentifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",
   "utf8",
 );
+const scopeGraphIdentifierResolutionHeader = await readFile(
+  "src/semantic/identifier_resolution.h",
+  "utf8",
+);
 const scopeGraphRegistrySources = [
   scopeGraphLocalRegistrySource,
   scopeGraphGlobalRegistrySource,
@@ -346,12 +350,12 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/find_tag_member_impl_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_MEMBER/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/shared_identifier_scope_graph\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
+    !/ps_ctx_scope_graph\s*\(\s*request->semantic_context\s*\)[^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
       scopeGraphIdentifierResolutionSource,
     ) ||
     !identifierResolverBody ||
-    !/if\s*\(!shared_identifier_scope_graph\s*\(request\)\)\s*return\s*;/.test(
-      identifierResolverBody,
+    /\bpsx_(?:global|local)_registry_t\b/.test(
+      scopeGraphIdentifierResolutionHeader,
     ) ||
     /\b(?:ps_decl_find_lvar_in|ps_local_registry_find_visible_in|ps_ctx_find_enum_const_in|ps_ctx_find_enum_const_at_in_contexts|ps_ctx_find_function_symbol_in|psx_resolve_global_object_symbol_in)\s*\(/.test(
       identifierResolverBody,
@@ -2565,11 +2569,16 @@ const identifierBindingHeader = await readFile(
   "src/semantic/identifier_binding.h",
   "utf8",
 );
+const identifierBindingBoundary =
+  `${identifierBindingHeader}\n${identifierBindingSource}`;
 if (/\bpsx_bind_identifier_(?:tree|initializer_tree)\s*\(/.test(
-      `${identifierBindingHeader}\n${identifierBindingSource}`,
+      identifierBindingBoundary,
+    ) ||
+    /\bpsx_global_registry_t\b|\bglobal_registry\b/.test(
+      identifierBindingBoundary,
     )) {
   throw new Error(
-    "identifier binding must receive CompilationSession or explicit registries",
+    "identifier binding must receive CompilationSession or canonical semantic/local contexts without a global symbol registry",
   );
 }
 const lvarUsageAnalysisSource = await readFile(
@@ -3912,7 +3921,7 @@ const ordinaryDeclarationConflictSources = [
   typedefDeclarationResolutionSource,
 ];
 const strictResolverRequestSources = [
-  [identifierResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
+  [identifierResolutionSource, ["semantic_context"]],
   [enumConstantResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
   [typedefDeclarationResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
   [functionDeclarationResolutionSource, ["semantic_context", "global_registry"]],

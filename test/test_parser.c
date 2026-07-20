@@ -2423,7 +2423,6 @@ static node_t *lower_test_semantic_tree(node_t *expression) {
 static node_t *resolve_and_lower_test_initializer(node_t *initializer) {
   initializer = psx_bind_identifier_initializer_tree_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       initializer, initializer ? initializer->tok : NULL);
   if (!initializer) return NULL;
@@ -8308,8 +8307,6 @@ static void assert_identifier_resolution_kind(
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = name,
           .name_len = name_len,
           .is_call = is_call,
@@ -8358,8 +8355,6 @@ static void test_identifier_resolution_boundary() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__identifier_function",
           .name_len = 21,
           .is_call = 1,
@@ -8383,8 +8378,6 @@ static void test_identifier_resolution_boundary() {
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__identifier_function",
           .name_len = 21,
       },
@@ -8412,8 +8405,6 @@ static void test_identifier_resolution_boundary() {
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__identifier_array",
           .name_len = 18,
       },
@@ -8445,8 +8436,6 @@ static void test_identifier_resolution_boundary() {
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__identifier_local_array",
           .name_len = 24,
       },
@@ -8520,12 +8509,13 @@ static void test_persistent_local_scope_lookup_boundary() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__scope_value",
           .name_len = 13,
-          .has_local_lookup_point = 1,
-          .local_lookup_point = before_inner,
+          .has_lookup_point = 1,
+          .lookup_point = {
+              .scope_id = before_inner.scope_seq,
+              .declaration_order = before_inner.declaration_seq,
+          },
       },
       &delayed_resolution);
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
@@ -8533,12 +8523,13 @@ static void test_persistent_local_scope_lookup_boundary() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
           .name = (char *)"__scope_value",
           .name_len = 13,
-          .has_local_lookup_point = 1,
-          .local_lookup_point = after_inner,
+          .has_lookup_point = 1,
+          .lookup_point = {
+              .scope_id = after_inner.scope_seq,
+              .declaration_order = after_inner.declaration_seq,
+          },
       },
       &delayed_resolution);
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
@@ -28737,8 +28728,6 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
-          .global_registry = second_globals,
-          .local_registry = second_locals,
           .name = function_name,
           .name_len = 15,
           .is_call = 1,
@@ -28771,8 +28760,6 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
-          .global_registry = second_globals,
-          .local_registry = second_locals,
           .name = direct_enum_name,
           .name_len = 10,
       },
@@ -29500,8 +29487,6 @@ static void test_compilation_session_registry_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = first.semantic_context,
-          .global_registry = first.global_registry,
-          .local_registry = first.local_registry,
           .name = (char *)"shared_global",
           .name_len = 13,
       },
@@ -29509,19 +29494,18 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_EQ(PSX_IDENTIFIER_GLOBAL_OBJECT,
             isolated_global_resolution.kind);
   ASSERT_TRUE(isolated_global_resolution.global == &first_global);
-  psx_identifier_resolution_t mismatched_graph_resolution;
+  psx_identifier_resolution_t isolated_second_graph_resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = first.semantic_context,
-          .global_registry = second.global_registry,
-          .local_registry = first.local_registry,
+          .semantic_context = second.semantic_context,
           .name = (char *)"shared_global",
           .name_len = 13,
       },
-      &mismatched_graph_resolution);
-  ASSERT_EQ(PSX_IDENTIFIER_UNDEFINED,
-            mismatched_graph_resolution.kind);
-  ASSERT_TRUE(mismatched_graph_resolution.global == NULL);
+      &isolated_second_graph_resolution);
+  ASSERT_EQ(PSX_IDENTIFIER_GLOBAL_OBJECT,
+            isolated_second_graph_resolution.kind);
+  ASSERT_TRUE(isolated_second_graph_resolution.global == &second_global);
+  ASSERT_TRUE(isolated_second_graph_resolution.global != &first_global);
   psx_global_declaration_resolution_t mismatched_global_declaration;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -29558,8 +29542,8 @@ static void test_compilation_session_registry_isolation() {
       .declaration_seq = first_namespace_point.declaration_seq,
   };
   node_t *isolated_global_node = psx_bind_identifier_tree_in_contexts(
-      first.semantic_context, first.global_registry,
-      first.local_registry, (node_t *)&isolated_global_identifier, NULL);
+      first.semantic_context, first.local_registry,
+      (node_t *)&isolated_global_identifier, NULL);
   ASSERT_TRUE(isolated_global_node != NULL);
   ASSERT_EQ(ND_IDENTIFIER, isolated_global_node->kind);
   ASSERT_EQ(ND_GVAR,

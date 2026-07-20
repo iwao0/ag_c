@@ -82,10 +82,10 @@ static int prepare_bound_tree(
     return 0;
   *root = is_initializer
               ? psx_bind_identifier_initializer_tree_in_contexts(
-                    semantic_context, global_registry, local_registry,
+                    semantic_context, local_registry,
                     *root, fallback_diag_tok)
               : psx_bind_identifier_tree_in_contexts(
-                    semantic_context, global_registry, local_registry,
+                    semantic_context, local_registry,
                     *root, fallback_diag_tok);
   return *root &&
          advance_with_compatibility_root(

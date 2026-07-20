@@ -15,7 +15,6 @@
 #include "../parser/declaration_syntax.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
-#include "../parser/global_registry.h"
 #include "../parser/lvar_internal.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
@@ -26,7 +25,6 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const token_t *fallback_diag_tok;
   psx_local_lookup_point_t lookup_point;
@@ -202,13 +200,14 @@ static psx_identifier_resolution_request_t identifier_resolution_request(
                          identifier->declaration_seq != 0;
   return (psx_identifier_resolution_request_t){
       .semantic_context = context->semantic_context,
-      .global_registry = context->global_registry,
-      .local_registry = context->local_registry,
       .name = identifier->name,
       .name_len = identifier->name_len,
       .is_call = is_call,
-      .has_local_lookup_point = has_lookup_point,
-      .local_lookup_point = point,
+      .has_lookup_point = has_lookup_point,
+      .lookup_point = {
+          .scope_id = point.scope_seq,
+          .declaration_order = point.declaration_seq,
+      },
   };
 }
 
@@ -605,13 +604,11 @@ static void set_binding_function_name(
 
 node_t *psx_bind_identifier_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry) return node;
+  if (!semantic_context || !local_registry) return node;
   psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
-      .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
@@ -621,14 +618,12 @@ node_t *psx_bind_identifier_tree_in_contexts(
 
 node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_local_lookup_point_t lookup_point,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry) return node;
+  if (!semantic_context || !local_registry) return node;
   psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
-      .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
       .lookup_point = lookup_point,
@@ -644,20 +639,17 @@ node_t *psx_bind_identifier_tree_in_session(
   if (!ag_compilation_session_is_complete(session)) return node;
   return psx_bind_identifier_tree_in_contexts(
       ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
       node, fallback_diag_tok);
 }
 
 node_t *psx_bind_identifier_initializer_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!semantic_context || !global_registry || !local_registry) return syntax;
+  if (!semantic_context || !local_registry) return syntax;
   psx_identifier_binding_context_t context = {
       .semantic_context = semantic_context,
-      .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
@@ -671,7 +663,6 @@ node_t *psx_bind_identifier_initializer_tree_in_session(
   if (!ag_compilation_session_is_complete(session)) return syntax;
   return psx_bind_identifier_initializer_tree_in_contexts(
       ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
       syntax, fallback_diag_tok);
 }

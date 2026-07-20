@@ -2,12 +2,12 @@
 #define SEMANTIC_IDENTIFIER_RESOLUTION_H
 
 #include "../parser/function_public.h"
-#include "../parser/local_registry.h"
 #include "../parser/symtab.h"
+#include "scope_graph.h"
 #include "type_identity.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct lvar_t lvar_t;
 
 typedef enum {
   PSX_IDENTIFIER_UNDEFINED = 0,
@@ -21,13 +21,11 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   int is_call;
-  int has_local_lookup_point;
-  psx_local_lookup_point_t local_lookup_point;
+  int has_lookup_point;
+  psx_scope_lookup_point_t lookup_point;
 } psx_identifier_resolution_request_t;
 
 typedef struct {

@@ -774,20 +774,18 @@ static int resolve_direct_identifier_with_usage(
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
           .semantic_context = context->semantic_context,
-          .global_registry = context->global_registry,
-          .local_registry = context->local_registry,
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
-          .has_local_lookup_point = has_lookup_point,
-          .local_lookup_point = {
-              .scope_seq = context->identifier_lookup_point
-                               ? context->identifier_lookup_point->scope_seq
-                               : identifier->scope_seq,
-              .declaration_seq = context->identifier_lookup_point
-                                     ? context->identifier_lookup_point
-                                           ->declaration_seq
-                                     : identifier->declaration_seq,
+          .has_lookup_point = has_lookup_point,
+          .lookup_point = {
+              .scope_id = context->identifier_lookup_point
+                              ? context->identifier_lookup_point->scope_seq
+                              : identifier->scope_seq,
+              .declaration_order = context->identifier_lookup_point
+                                       ? context->identifier_lookup_point
+                                             ->declaration_seq
+                                       : identifier->declaration_seq,
           },
       },
       &resolved);
