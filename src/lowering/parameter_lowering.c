@@ -1,12 +1,24 @@
 #include "parameter_lowering.h"
 
-#include "local_storage.h"
-#include "runtime_context.h"
-#include "vla_lowering.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
 #include "../semantic/type_identity.h"
+#include "abi_target_policy.h"
+#include "local_storage.h"
+#include "runtime_context.h"
+#include "vla_lowering.h"
+
+static int plan_parameter_storage(psx_lowering_context_t *lowering_context,
+                                  psx_type_id_t type_id,
+                                  psx_parameter_storage_plan_t *storage) {
+  const ag_target_info_t *target = ps_lowering_target(lowering_context);
+  return psx_plan_parameter_storage_for_type_id(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context), type_id,
+      ps_lowering_data_layout(lowering_context),
+      ir_abi_target_policy_for(target), storage);
+}
 
 static lvar_t *lower_parameter_with_plan(
     psx_local_registry_t *local_registry,
@@ -36,12 +48,11 @@ lvar_t *lower_parameter_declaration(
       !request->type || !request->local_registry ||
       !request->lowering_context) return NULL;
   psx_parameter_storage_plan_t storage;
-  if (!psx_plan_parameter_storage_for_type_id(
-          ps_lowering_semantic_types(request->lowering_context),
-          ps_lowering_record_layouts(request->lowering_context),
+  if (!plan_parameter_storage(
+          request->lowering_context,
           ps_lowering_type_id(request->lowering_context, request->type),
-          ps_lowering_target(request->lowering_context),
-          &storage)) return NULL;
+          &storage))
+    return NULL;
   return lower_parameter_with_plan(
       request->local_registry, request->lowering_context,
       request->name, request->name_len, request->type, &storage,
@@ -62,10 +73,14 @@ lvar_t *lower_resolved_parameter_declaration(
       resolution->declaration_qual_type);
   if (!type) return NULL;
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_NORMAL) {
+    psx_parameter_storage_plan_t storage;
+    if (!plan_parameter_storage(request->lowering_context,
+                                resolution->declaration_qual_type.type_id,
+                                &storage))
+      return NULL;
     return lower_parameter_with_plan(
-        request->local_registry, request->lowering_context,
-        request->name, request->name_len, type,
-        &resolution->storage, request->diag_tok);
+        request->local_registry, request->lowering_context, request->name,
+        request->name_len, type, &storage, request->diag_tok);
   }
 
   psx_parameter_vla_lowering_request_t vla = {

@@ -16,6 +16,8 @@ size_t ir_abi_policy_complex_result_piece_count(
 int ir_abi_policy_direct_aggregate_type(
     const ir_abi_target_policy_t *policy, int source_size,
     ir_type_t *out_type);
+int ir_abi_policy_parameter_aggregate_is_indirect(
+    const ir_abi_target_policy_t *policy, int source_size);
 size_t ir_abi_policy_variadic_aggregate_piece_count(
     const ir_abi_target_policy_t *policy, int source_size);
 int ir_abi_policy_variadic_aggregate_piece(

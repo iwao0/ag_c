@@ -2,9 +2,9 @@
 #define LOWERING_PARAMETER_LOWERING_H
 
 #include "../parser/lvar_public.h"
-#include "../semantic/parameter_declaration_plan.h"
 #include "../semantic/parameter_declaration_resolution.h"
 #include "../semantic/typed_hir_tree.h"
+#include "parameter_storage_plan.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;

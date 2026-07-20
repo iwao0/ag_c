@@ -2,7 +2,6 @@
 #define SEMANTIC_PARAMETER_DECLARATION_RESOLUTION_H
 
 #include "declaration_resolution.h"
-#include "parameter_declaration_plan.h"
 
 typedef struct {
   psx_semantic_expr_id_t expression_id;
@@ -23,7 +22,6 @@ typedef struct {
 
 typedef struct {
   psx_qual_type_t declaration_qual_type;
-  psx_parameter_storage_plan_t storage;
   psx_parameter_lowering_kind_t lowering_kind;
   psx_type_id_t runtime_stride_storage_type_id;
   psx_parameter_dimension_t *inner_dimensions;

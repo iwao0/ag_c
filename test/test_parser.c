@@ -1,46 +1,7 @@
-#include "../src/parser/parser.h"
-#include "../src/parser/parser_legacy.h"
-#include "../src/compilation_session_internal.h"
-#include "../src/type_layout.h"
-#include "../src/type_signature.h"
-#include "../src/source_manager.h"
 #include "../src/codegen_emit.h"
+#include "../src/compilation_session_internal.h"
 #include "../src/declaration_pipeline.h"
-#include "../src/parser/arena.h"
-#include "../src/parser/alignas_value.h"
-#include "../src/parser/decl.h"
-#include "../src/parser/declaration_binding_events.h"
-#include "../src/parser/declarator_shape_builder.h"
-#include "../src/parser/lvar_internal.h"
-#include "../src/parser/expr.h"
-#include "../src/parser/function_parameter_syntax.h"
-#include "../src/parser/function_public.h"
-#include "../src/parser/gvar_public.h"
-#include "../src/parser/global_registry.h"
-#include "../src/parser/literal_public.h"
-#include "../src/parser/lvar_public.h"
-#include "../src/parser/local_registry.h"
-#include "../src/parser/name_environment.h"
-#include "../src/semantic/resolved_node_type.h"
-#include "../src/semantic/scope_graph.h"
-#include "../src/semantic/resolved_object_ref.h"
-#include "../src/semantic/resolved_lvalue.h"
-#include "../src/semantic/resolved_node.h"
-#include "../src/semantic/resolved_node_kind.h"
-#include "../src/semantic/resolution_state.h"
-#include "../src/semantic/resolution_store.h"
-#include "../src/parser/node_utils.h"
-#include "../src/parser/node_vla_public.h"
-#include "../src/parser/tag_public.h"
-#include "../src/parser/semantic_ctx.h"
-#include "../src/parser/runtime_context.h"
-#include "../src/parser/stmt.h"
-#include "../src/parser/stmt_legacy.h"
-#include "../src/parser/symtab.h"
-#include "../src/parser/type_builder.h"
-#include "../src/parser/aggregate_member_syntax.h"
-#include "../src/semantic/declaration_application.h"
-#include "../src/semantic/declaration_registration.h"
+#include "../src/diag/diag.h"
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/local_declaration_legacy.h"
 #include "../src/frontend/semantic_pipeline.h"
@@ -48,81 +9,121 @@
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
 #include "../src/hir/hir.h"
+#include "../src/lowering/abi_lowering.h"
+#include "../src/lowering/abi_target_policy.h"
+#include "../src/lowering/global_object_lowering.h"
+#include "../src/lowering/hir_ir_builder.h"
+#include "../src/lowering/local_object_lowering.h"
+#include "../src/lowering/local_storage.h"
+#include "../src/lowering/mir_type_lowering.h"
+#include "../src/lowering/parameter_lowering.h"
+#include "../src/lowering/parameter_storage_plan.h"
+#include "../src/lowering/runtime_context.h"
+#include "../src/lowering/runtime_initializer_plan.h"
+#include "../src/lowering/semantic_lowering_pass.h"
+#include "../src/lowering/static_data_initializer.h"
+#include "../src/lowering/static_local_lowering.h"
+#include "../src/lowering/translation_unit_data_lowering.h"
+#include "../src/lowering/vla_lowering.h"
+#include "../src/parser/aggregate_member_syntax.h"
+#include "../src/parser/alignas_value.h"
+#include "../src/parser/arena.h"
+#include "../src/parser/decl.h"
+#include "../src/parser/declaration_binding_events.h"
+#include "../src/parser/declarator_shape_builder.h"
+#include "../src/parser/expr.h"
+#include "../src/parser/function_parameter_syntax.h"
+#include "../src/parser/function_public.h"
+#include "../src/parser/global_registry.h"
+#include "../src/parser/gvar_public.h"
+#include "../src/parser/literal_public.h"
+#include "../src/parser/local_registry.h"
+#include "../src/parser/lvar_internal.h"
+#include "../src/parser/lvar_public.h"
+#include "../src/parser/name_environment.h"
+#include "../src/parser/node_utils.h"
+#include "../src/parser/node_vla_public.h"
+#include "../src/parser/parser.h"
+#include "../src/parser/parser_legacy.h"
+#include "../src/parser/runtime_context.h"
+#include "../src/parser/semantic_ctx.h"
+#include "../src/parser/stmt.h"
+#include "../src/parser/stmt_legacy.h"
+#include "../src/parser/symtab.h"
+#include "../src/parser/tag_public.h"
+#include "../src/parser/type_builder.h"
+#include "../src/pragma_pack.h"
 #include "../src/preprocess/preprocess.h"
-#include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/alignof_query_resolution.h"
-#include "../src/semantic/case_label_resolution.h"
 #include "../src/semantic/call_resolution.h"
+#include "../src/semantic/case_label_resolution.h"
 #include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/compound_literal_semantics.h"
 #include "../src/semantic/constant_expression.h"
 #include "../src/semantic/control_flow_validation.h"
+#include "../src/semantic/declaration_application.h"
+#include "../src/semantic/declaration_registration.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
+#include "../src/semantic/expression_operand_resolution.h"
+#include "../src/semantic/function_call_resolution.h"
 #include "../src/semantic/function_declaration_resolution.h"
 #include "../src/semantic/function_definition_resolution.h"
 #include "../src/semantic/function_parameter_resolution.h"
-#include "../src/semantic/initializer_resolution.h"
-#include "../src/semantic/identifier_resolution.h"
-#include "../src/semantic/literal_resolution.h"
-#include "../src/semantic/member_access_resolution.h"
-#include "../src/semantic/expression_operand_resolution.h"
-#include "../src/semantic/function_call_resolution.h"
 #include "../src/semantic/generic_selection_resolution.h"
+#include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/identifier_binding.h"
+#include "../src/semantic/identifier_resolution.h"
+#include "../src/semantic/initializer_resolution.h"
+#include "../src/semantic/literal_resolution.h"
+#include "../src/semantic/local_declaration_plan.h"
+#include "../src/semantic/local_declaration_resolution.h"
+#include "../src/semantic/local_declaration_tree_resolution.h"
+#include "../src/semantic/local_initializer_binding.h"
+#include "../src/semantic/member_access_resolution.h"
+#include "../src/semantic/parameter_declaration_resolution.h"
+#include "../src/semantic/resolution_state.h"
+#include "../src/semantic/resolution_store.h"
+#include "../src/semantic/resolution_work_tree_internal.h"
+#include "../src/semantic/resolved_lvalue.h"
+#include "../src/semantic/resolved_node.h"
+#include "../src/semantic/resolved_node_kind.h"
+#include "../src/semantic/resolved_node_type.h"
+#include "../src/semantic/resolved_object_ref.h"
+#include "../src/semantic/scope_graph.h"
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/semantic_tree_resolution.h"
 #include "../src/semantic/semantic_tree_resolution_test_support.h"
-#include "../src/semantic/syntax_typed_hir_resolution.h"
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
-#include "../src/semantic/type_query_resolution.h"
-#include "../src/semantic/type_query_semantics.h"
-#include "../src/semantic/type_identity_pass.h"
-#include "../src/semantic/vla_runtime_plan.h"
-#include "../src/semantic/type_name_resolution.h"
-#include "../src/semantic/local_declaration_plan.h"
-#include "../src/semantic/local_declaration_resolution.h"
-#include "../src/semantic/local_declaration_tree_resolution.h"
-#include "../src/semantic/local_initializer_binding.h"
-#include "../src/semantic/global_declaration_resolution.h"
-#include "../src/semantic/parameter_declaration_plan.h"
-#include "../src/semantic/parameter_declaration_resolution.h"
-#include "../src/semantic/resolution_work_tree_internal.h"
-#include "../src/semantic/typed_hir_materialization.h"
-#include "../src/semantic/typed_hir_tree_internal.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
+#include "../src/semantic/syntax_typed_hir_resolution.h"
 #include "../src/semantic/tag_declaration_resolution.h"
+#include "../src/semantic/type_identity_pass.h"
+#include "../src/semantic/type_name_resolution.h"
+#include "../src/semantic/type_query_resolution.h"
+#include "../src/semantic/type_query_semantics.h"
+#include "../src/semantic/typed_hir_materialization.h"
+#include "../src/semantic/typed_hir_tree_internal.h"
 #include "../src/semantic/typedef_declaration_resolution.h"
-#include "../src/lowering/global_object_lowering.h"
-#include "../src/lowering/abi_lowering.h"
-#include "../src/lowering/hir_ir_builder.h"
-#include "../src/lowering/mir_type_lowering.h"
-#include "../src/lowering/runtime_context.h"
-#include "../src/lowering/runtime_initializer_plan.h"
-#include "../src/lowering/semantic_lowering_pass.h"
-#include "../src/lowering/local_storage.h"
-#include "../src/lowering/local_object_lowering.h"
-#include "../src/lowering/parameter_lowering.h"
-#include "../src/lowering/vla_lowering.h"
-#include "../src/lowering/static_data_initializer.h"
-#include "../src/lowering/static_local_lowering.h"
-#include "../src/lowering/translation_unit_data_lowering.h"
-#include "../src/pragma_pack.h"
+#include "../src/semantic/vla_runtime_plan.h"
+#include "../src/source_manager.h"
+#include "../src/tokenizer/allocator.h"
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/tokenizer_test.h"
-#include "../src/tokenizer/allocator.h"
+#include "../src/type_layout.h"
+#include "../src/type_signature.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <string.h>
 
 #include "test_common.h"
 #include "support/parser_compatibility_test_hook.h"
@@ -1393,7 +1394,8 @@ static int plan_test_parameter_storage(
   return psx_plan_parameter_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_layout_table_in(test_semantic_context()),
-      intern_test_type_id(type), &target, plan);
+      intern_test_type_id(type), ag_target_info_data_layout(&target),
+      ir_abi_target_policy_for(&target), plan);
 }
 
 static int test_tag_flat_slot_count(
@@ -12841,6 +12843,21 @@ static void test_target_type_layout_boundary() {
   ag_target_info_t wasm = ag_target_info_wasm32();
   ASSERT_TRUE(ag_target_info_is_valid(&host));
   ASSERT_TRUE(ag_target_info_is_valid(&wasm));
+  const ir_abi_target_policy_t *host_abi_policy =
+      ir_abi_target_policy_for(&host);
+  const ir_abi_target_policy_t *wasm_abi_policy =
+      ir_abi_target_policy_for(&wasm);
+  ASSERT_TRUE(host_abi_policy != NULL);
+  ASSERT_TRUE(wasm_abi_policy != NULL);
+  ASSERT_TRUE(
+      !ir_abi_policy_parameter_aggregate_is_indirect(host_abi_policy, 16));
+  ASSERT_TRUE(
+      ir_abi_policy_parameter_aggregate_is_indirect(host_abi_policy, 17));
+  ASSERT_TRUE(
+      !ir_abi_policy_parameter_aggregate_is_indirect(wasm_abi_policy, 16));
+  ASSERT_TRUE(
+      ir_abi_policy_parameter_aggregate_is_indirect(wasm_abi_policy, 17));
+  ASSERT_TRUE(!ir_abi_policy_parameter_aggregate_is_indirect(NULL, 17));
   ASSERT_TRUE(!ag_target_info_is_valid(NULL));
   ASSERT_EQ(0, ag_target_info_pointer_size(NULL));
   ASSERT_EQ(0, ag_target_info_pointer_alignment(NULL));
@@ -13325,7 +13342,9 @@ static void test_target_type_layout_boundary() {
 
   psx_parameter_storage_plan_t parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, pointer_identity.type_id, &wasm, &parameter));
+      types, record_layouts, pointer_identity.type_id,
+      ag_target_info_data_layout(&wasm), ir_abi_target_policy_for(&wasm),
+      &parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
@@ -13355,7 +13374,8 @@ static void test_target_type_layout_boundary() {
 
   psx_parameter_storage_plan_t host_record_parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, record_identity.type_id, &host,
+      types, record_layouts, record_identity.type_id,
+      ag_target_info_data_layout(&host), ir_abi_target_policy_for(&host),
       &host_record_parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
             host_record_parameter.kind);
@@ -13364,7 +13384,8 @@ static void test_target_type_layout_boundary() {
 
   psx_parameter_storage_plan_t wasm_record_parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, record_identity.type_id, &wasm,
+      types, record_layouts, record_identity.type_id,
+      ag_target_info_data_layout(&wasm), ir_abi_target_policy_for(&wasm),
       &wasm_record_parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
             wasm_record_parameter.kind);
@@ -13894,8 +13915,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &parameter_request, &parameter_resolution));
   ASSERT_EQ(PSX_PARAMETER_LOWER_VLA,
             parameter_resolution.lowering_kind);
-  ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER,
-            parameter_resolution.storage.kind);
   const psx_type_t *resolved_parameter_type = ps_ctx_type_by_id_in(
       test_semantic_context(),
       parameter_resolution.declaration_qual_type.type_id);

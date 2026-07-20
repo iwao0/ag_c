@@ -1,10 +1,11 @@
 #include "parameter_declaration_resolution.h"
-#include "declaration_type_builder.h"
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
 #include "../parser/vla_runtime.h"
+#include "../type_layout.h"
+#include "declaration_type_builder.h"
 
 #include <string.h>
 
@@ -43,12 +44,11 @@ int psx_resolve_parameter_declaration(
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       request->type.semantic_context, type);
   if (!type || identity.type_id == PSX_TYPE_ID_INVALID ||
-      !psx_plan_parameter_storage_for_type_id(
+      ps_type_sizeof_id(
           ps_ctx_semantic_type_table_in(request->type.semantic_context),
           ps_ctx_record_layout_table_in(request->type.semantic_context),
           identity.type_id,
-          ps_ctx_target_info(request->type.semantic_context),
-          &resolution->storage)) {
+          ps_ctx_data_layout(request->type.semantic_context)) <= 0) {
     return 0;
   }
   resolution->declaration_qual_type = identity;

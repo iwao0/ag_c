@@ -4317,6 +4317,12 @@ if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_
     !/size_t\s+complex_result_piece_count\s*;/.test(
       abiTargetPolicyInternalHeader,
     ) ||
+    !/int\s+parameter_aggregate_direct_size_limit\s*;/.test(
+      abiTargetPolicyInternalHeader,
+    ) ||
+    !/\bir_abi_policy_parameter_aggregate_is_indirect\s*\(/.test(
+      abiTargetPolicySource,
+    ) ||
     !/\bir_abi_policy_direct_aggregate_type\s*\(/.test(
       abiLoweringSource,
     ) ||
@@ -4333,6 +4339,12 @@ if (/(?:unsigned\s+char|int)\s+(?:result_is_indirect|result_complex_half|result_
       arm64AppleAbiPolicySource,
     ) ||
     !/\.complex_result_piece_count\s*=\s*1/.test(
+      wasm32AbiPolicySource,
+    ) ||
+    !/\.parameter_aggregate_direct_size_limit\s*=\s*16/.test(
+      arm64AppleAbiPolicySource,
+    ) ||
+    !/\.parameter_aggregate_direct_size_limit\s*=\s*16/.test(
       wasm32AbiPolicySource,
     ) ||
     !/\.variadic_aggregate_piece_size\s*=\s*8/.test(
@@ -5776,11 +5788,11 @@ const localDeclarationPlanSource = await readFile(
   "utf8",
 );
 const parameterDeclarationPlanHeader = await readFile(
-  "src/semantic/parameter_declaration_plan.h",
+  "src/lowering/parameter_storage_plan.h",
   "utf8",
 );
 const parameterDeclarationPlanSource = await readFile(
-  "src/semantic/parameter_declaration_plan.c",
+  "src/lowering/parameter_storage_plan.c",
   "utf8",
 );
 const controlFlowValidationSource = await readFile(
@@ -7357,15 +7369,20 @@ for (const [name, header, source, functionName] of [
       !/\bps_type_sizeof_id\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
-      (name === "local" &&
-       (/\bag_target_info_t\b/.test(`${header}\n${source}`) ||
-        !/const\s+ag_data_layout_t\s*\*data_layout/.test(header))) ||
+      /\bag_target_info_t\b/.test(`${header}\n${source}`) ||
+      !/const\s+ag_data_layout_t\s*\*data_layout/.test(header) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
+      (name === "parameter" &&
+       (!/const\s+ir_abi_target_policy_t\s*\*abi_policy/.test(header) ||
+        !/ir_abi_policy_parameter_aggregate_is_indirect\s*\(/.test(
+          source,
+        ) ||
+        /\bsize\s*>\s*16\b/.test(source))) ||
       /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
         header,
       )) {
     throw new Error(
-      `${name} storage planning must accept TypeId and explicit record layouts`,
+      `${name} storage planning must separate TypeId layout from target ABI policy`,
     );
   }
 }
@@ -7392,11 +7409,17 @@ if (!automaticLocalPipeline ||
     !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_resolve_local_declaration\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
-    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
+    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bps_type_sizeof_id\s*\(/.test(
       parameterDeclarationResolutionSource,
+    ) ||
+    /\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_plan_parameter_storage_for_type_id\s*\([^]*?\bir_abi_target_policy_for\s*\(/.test(
+      parameterLoweringSource,
     )) {
   throw new Error(
-    "local and parameter declaration types must be interned before layout-dependent planning and lowering",
+    "parameter ABI storage planning must occur in lowering after semantic TypeId resolution",
   );
 }
 if (/\bpsx_decl_parse_initializer_for_var_in_contexts\s*\(/.test(
@@ -7923,6 +7946,9 @@ if (!runtimeArrayBoundStruct ||
     ) ||
     !parameterDeclarationResolutionStruct ||
     !/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
+      parameterDeclarationResolutionStruct[1],
+    ) ||
+    /\bpsx_parameter_storage_plan_t\b/.test(
       parameterDeclarationResolutionStruct[1],
     ) ||
     /\bpsx_type_t\b/.test(parameterDeclarationResolutionStruct[1]) ||

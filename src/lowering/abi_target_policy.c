@@ -40,6 +40,12 @@ int ir_abi_policy_direct_aggregate_type(
   }
 }
 
+int ir_abi_policy_parameter_aggregate_is_indirect(
+    const ir_abi_target_policy_t *policy, int source_size) {
+  return policy && source_size > 0 &&
+         source_size > policy->parameter_aggregate_direct_size_limit;
+}
+
 size_t ir_abi_policy_variadic_aggregate_piece_count(
     const ir_abi_target_policy_t *policy, int source_size) {
   if (!policy || source_size <= 0 ||
