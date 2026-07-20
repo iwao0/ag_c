@@ -881,7 +881,7 @@ if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
     !/int\s+value_size\s*=\s*ps_type_sizeof_id\s*\(/.test(
       irSymbolLoweringSourceForMemberLayout,
     ) ||
-    !/ps_gvar_init_member_value\s*\(\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
+    !/ps_gvar_init_member_value\s*\(\s*ctx->semantic_types\s*,\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
       irSymbolLoweringSourceForMemberLayout,
     ) ||
     /\btag_member_info_t\b/.test(gvarPublicHeaderSource) ||
@@ -6952,14 +6952,14 @@ if (allSourceFiles.includes("src/parser/tag_member_public.h") ||
 if (/\btag_member_info_t\b|#include\s+"tag_member_public\.h"/.test(
       tagPublicSource,
     ) ||
-    !/\bps_record_member_decl_is_tag_aggregate\s*\([^;]*const\s+psx_record_member_decl_t\s*\*/s.test(
+    /\bps_record_member_decl_is_(?:tag|struct|union|unnamed)_aggregate\s*\(/.test(
       tagPublicSource,
     ) ||
     !/\bps_record_member_decl_flat_slots_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*/s.test(
       tagPublicSource,
     )) {
   throw new Error(
-    "public tag APIs must expose semantic member declarations without compatibility member views",
+    "public tag APIs must expose semantic member declarations without compatibility views or semantic type predicates",
   );
 }
 if (/#include\s+"tag_member_public\.h"/.test(
@@ -7096,7 +7096,7 @@ if (/typedef\s+struct\s+psx_record_(?:member_)?decl_t\s*\{/.test(typeSource) ||
       `${recordDeclHeaderSource}\n${recordDeclImplementationSource}`,
     ) ||
     !recordMemberDeclStruct ||
-    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
+    /\bdecl_type_table\b/.test(
       recordMemberDeclStruct[1],
     ) ||
     !/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(
@@ -8307,13 +8307,14 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
   );
 }
 if (!recordMemberDeclStruct ||
-    !/decl_type_table/.test(recordMemberDeclStruct[1]) ||
+    /decl_type_table/.test(recordMemberDeclStruct[1]) ||
     !/decl_qual_type/.test(recordMemberDeclStruct[1]) ||
     /\bpsx_type_t\b/.test(recordMemberDeclStruct[1]) ||
-    !/psx_record_member_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+    !/psx_record_member_decl_type\s*\(\s*const\s+psx_semantic_type_table_t\s*\*\s*types\s*,[^]*?psx_semantic_type_table_lookup_qual_type\s*\(\s*types\s*,\s*member->decl_qual_type/s.test(
       recordDeclImplementationSource,
     ) ||
-    /\bpsx_record_member_decl_(?:type|is_tag_aggregate|is_unnamed_struct|is_unnamed_union|is_unnamed_aggregate)\s*\(/.test(
+    /member->decl_type_table/.test(recordDeclImplementationSource) ||
+    /\bpsx_record_member_decl_(?:type|is_tag_aggregate|is_struct_aggregate|is_union_aggregate|is_unnamed_struct|is_unnamed_union|is_unnamed_aggregate)\s*\(/.test(
       parserTypeImplementationSource,
     ) ||
     /return\s+member->decl_type\s*;/.test(recordDeclImplementationSource) ||
@@ -8324,7 +8325,7 @@ if (!recordMemberDeclStruct ||
       semanticTypeIdentitySource,
     )) {
   throw new Error(
-    "record member type views must be materialized exclusively from QualType",
+    "record members must store QualType only and materialize views through an explicit semantic type table",
   );
 }
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||

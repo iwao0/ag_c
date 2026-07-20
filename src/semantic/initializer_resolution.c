@@ -303,7 +303,9 @@ static int flat_initializer_designated_member_span(
      aggregate. Following that path is what selects the active union member. */
   for (int i = 0; i < record->member_count; i++) {
     const psx_record_member_decl_t *member = &record->members[i];
-    if (!psx_record_member_decl_is_unnamed_aggregate(member)) continue;
+    if (!psx_record_member_decl_is_unnamed_aggregate(
+            context->semantic_types, member))
+      continue;
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
         context->semantic_types, aggregate->type_id, i).type_id;
     if (!flat_initializer_record_has_named_member(
@@ -951,7 +953,9 @@ int psx_resolve_initializer_member_target_with_records(
 
   for (int i = 0; i < record->member_count; i++) {
     const psx_record_member_decl_t *member = &record->members[i];
-    if (!psx_record_member_decl_is_unnamed_aggregate(member)) continue;
+    if (!psx_record_member_decl_is_unnamed_aggregate(
+            semantic_types, member))
+      continue;
     psx_qual_type_t nested_type = psx_semantic_type_table_record_member(
         semantic_types, target_inout->type_id, i);
     const psx_type_t *nested = psx_semantic_type_table_lookup(
@@ -1111,11 +1115,14 @@ static int canonical_member_flat_slot_count(
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, const psx_record_member_decl_t *member,
     psx_type_id_t member_type_id) {
-  if (!member || psx_record_member_decl_is_unnamed_struct(member)) return 0;
+  if (!member ||
+      psx_record_member_decl_is_unnamed_struct(semantic_types, member))
+    return 0;
   int per = 1;
-  const psx_type_t *member_type = psx_record_member_decl_type(member);
+  const psx_type_t *member_type = psx_record_member_decl_type(
+      semantic_types, member);
   psx_type_id_t aggregate_type_id =
-      psx_record_member_decl_is_tag_aggregate(member)
+      psx_record_member_decl_is_tag_aggregate(semantic_types, member)
                                         ? psx_semantic_type_table_array_leaf(
                                               semantic_types,
                                               member_type_id).type_id
@@ -1169,7 +1176,8 @@ static int canonical_definition_flat_slot_count(
       }
       continue;
     }
-    if (psx_record_member_decl_is_unnamed_struct(member)) continue;
+    if (psx_record_member_decl_is_unnamed_struct(semantic_types, member))
+      continue;
     int member_offset = initializer_member_offset(
         record_layouts, aggregate_type, data_layout, i);
     if (covered_union_size > 0 &&
@@ -1178,7 +1186,7 @@ static int canonical_definition_flat_slot_count(
       continue;
     }
     slots += member_slots;
-    if (psx_record_member_decl_is_unnamed_union(member)) {
+    if (psx_record_member_decl_is_unnamed_union(semantic_types, member)) {
       covered_union_offset = member_offset;
       covered_union_size = initializer_type_size(semantic_types, record_layouts,
                                                  member_type_id, data_layout);
@@ -1273,7 +1281,8 @@ static int collect_initializer_scalar_leaves(
           initializer_member_offset(record_layouts, type, data_layout, i);
       if (type->kind == PSX_TYPE_STRUCT && member_offset < covered_end)
         continue;
-      const psx_type_t *member_type = psx_record_member_decl_type(member);
+      const psx_type_t *member_type = psx_record_member_decl_type(
+          semantic_types, member);
       psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
           semantic_types, type_id, i).type_id;
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||

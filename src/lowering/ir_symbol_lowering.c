@@ -40,7 +40,7 @@ static void lower_aggregate_scalar(
                         ag_target_info_data_layout(ctx->target));
   psx_gvar_init_value_t value =
       ps_gvar_init_member_value(
-          ctx->global, slot, member, value_size);
+          ctx->semantic_types, ctx->global, slot, member, value_size);
   lower_func_ref(ctx, (int)offset, value, value_type_id);
 }
 

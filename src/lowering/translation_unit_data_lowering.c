@@ -234,7 +234,7 @@ static void lower_aggregate_scalar(
   global_data_lowering_t *ctx = user;
   psx_gvar_init_member_value_t value =
       ps_gvar_init_member_value(
-          ctx->global, slot, member,
+          ctx->lowering->semantic_types, ctx->global, slot, member,
           type_size_id(ctx->lowering, value_type_id));
   if (offset < 0 || offset > INT32_MAX ||
       !lower_init_value(ctx, (int)offset, value, value_type_id))

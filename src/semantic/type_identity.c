@@ -315,7 +315,7 @@ static int populate_type_relations_body(
   }
   for (int i = 0; record && i < record->member_count; i++) {
     const psx_type_t *member_type =
-        psx_record_member_decl_type(&record->members[i]);
+        psx_record_member_decl_type(table, &record->members[i]);
     if (!member_type) continue;
     psx_qual_type_t member = psx_semantic_type_table_intern(
         table, member_type);

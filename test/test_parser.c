@@ -154,12 +154,11 @@ typedef struct {
   int bit_width;
   int bit_offset;
   int bit_is_signed;
-  const psx_semantic_type_table_t *decl_type_table;
-  psx_qual_type_t decl_qual_type;
   const psx_type_t *decl_type;
 } tag_member_info_t;
 
 static tag_member_info_t ps_tag_member_declaration_view(
+    const psx_semantic_type_table_t *semantic_types,
     const psx_record_member_decl_t *member) {
   return member
              ? (tag_member_info_t){
@@ -167,9 +166,8 @@ static tag_member_info_t ps_tag_member_declaration_view(
                    .len = member->len,
                    .bit_width = member->bit_width,
                    .bit_is_signed = member->bit_is_signed,
-                   .decl_type_table = member->decl_type_table,
-                   .decl_qual_type = member->decl_qual_type,
-                   .decl_type = psx_record_member_decl_type(member),
+                   .decl_type = psx_record_member_decl_type(
+                       semantic_types, member),
                }
              : (tag_member_info_t){0};
 }
@@ -750,11 +748,13 @@ static psx_local_registry_t *test_local_registry(void) {
 }
 
 static int test_materialize_tag_member_info(
+    psx_semantic_context_t *semantic_context,
     const psx_record_member_decl_t *declaration,
     const psx_record_member_layout_t *layout,
     tag_member_info_t *out) {
   if (!declaration || !layout || !out) return 0;
-  *out = ps_tag_member_declaration_view(declaration);
+  *out = ps_tag_member_declaration_view(
+      ps_ctx_semantic_type_table_in(semantic_context), declaration);
   out->offset = layout->offset;
   out->bit_offset = layout->bit_offset;
   return 1;
@@ -769,7 +769,8 @@ static bool ps_ctx_get_tag_member_info_in(
   return ps_ctx_get_tag_member_in(
              semantic_context, kind, name, len, index,
              &declaration, &layout) &&
-         test_materialize_tag_member_info(&declaration, &layout, out);
+         test_materialize_tag_member_info(
+             semantic_context, &declaration, &layout, out);
 }
 
 static bool ps_ctx_find_tag_member_info_in(
@@ -781,7 +782,8 @@ static bool ps_ctx_find_tag_member_info_in(
   return ps_ctx_find_tag_member_in(
              semantic_context, kind, name, len,
              member_name, member_len, &declaration, &layout) &&
-         test_materialize_tag_member_info(&declaration, &layout, out);
+         test_materialize_tag_member_info(
+             semantic_context, &declaration, &layout, out);
 }
 
 static bool ps_ctx_find_tag_member_info_at_scope_in(
@@ -793,7 +795,8 @@ static bool ps_ctx_find_tag_member_info_at_scope_in(
   return ps_ctx_find_tag_member_at_scope_in(
              semantic_context, kind, name, len, scope_depth,
              member_name, member_len, &declaration, &layout) &&
-         test_materialize_tag_member_info(&declaration, &layout, out);
+         test_materialize_tag_member_info(
+             semantic_context, &declaration, &layout, out);
 }
 
 static bool test_semantic_has_tag_type(
@@ -835,9 +838,10 @@ static void set_test_record_member_fixture_type_in(
   ASSERT_TRUE(semantic_context != NULL);
   ASSERT_TRUE(member != NULL);
   ASSERT_TRUE(type != NULL);
-  member->decl_type_table = ps_ctx_semantic_type_table_in(semantic_context);
   member->decl_qual_type = ps_ctx_intern_qual_type_in(semantic_context, type);
-  ASSERT_TRUE(psx_record_member_decl_type(member) != NULL);
+  ASSERT_TRUE(psx_record_member_decl_type(
+                  ps_ctx_semantic_type_table_in(semantic_context), member) !=
+              NULL);
 }
 
 static void set_test_record_member_fixture_type(
@@ -861,13 +865,6 @@ static void set_test_record_member_fixture_from_tag_member_in(
     psx_record_member_decl_t *member, const tag_member_info_t *source) {
   ASSERT_TRUE(member != NULL);
   ASSERT_TRUE(source != NULL);
-  if (source->decl_type_table &&
-      source->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    member->decl_type_table = source->decl_type_table;
-    member->decl_qual_type = source->decl_qual_type;
-    ASSERT_TRUE(psx_record_member_decl_type(member) != NULL);
-    return;
-  }
   set_test_record_member_fixture_type_in(
       semantic_context, member, ps_tag_member_decl_type(source));
 }
@@ -1451,7 +1448,8 @@ static void test_materialize_tag_member(
     const psx_record_member_layout_t *layout,
     tag_member_info_t *out) {
   if (!out) return;
-  *out = ps_tag_member_declaration_view(declaration);
+  *out = ps_tag_member_declaration_view(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), declaration);
   if (layout) {
     out->offset = layout->offset;
     out->bit_offset = layout->bit_offset;
@@ -1462,42 +1460,48 @@ static int ps_tag_member_is_tag_aggregate(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_tag_aggregate(&declaration);
+  return psx_record_member_decl_is_tag_aggregate(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int ps_tag_member_is_struct_aggregate(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_struct_aggregate(&declaration);
+  return psx_record_member_decl_is_struct_aggregate(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int ps_tag_member_is_union_aggregate(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_union_aggregate(&declaration);
+  return psx_record_member_decl_is_union_aggregate(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int ps_tag_member_is_unnamed_struct(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_unnamed_struct(&declaration);
+  return psx_record_member_decl_is_unnamed_struct(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int ps_tag_member_is_unnamed_union(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_unnamed_union(&declaration);
+  return psx_record_member_decl_is_unnamed_union(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int ps_tag_member_is_unnamed_aggregate(
     const tag_member_info_t *member) {
   psx_record_member_decl_t declaration =
       test_record_member_declaration(member);
-  return ps_record_member_decl_is_unnamed_aggregate(&declaration);
+  return psx_record_member_decl_is_unnamed_aggregate(
+      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
 }
 
 static int test_tag_member_flat_slots(const tag_member_info_t *member) {
@@ -8379,8 +8383,9 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_EQ(1, resolution.member_index);
   ASSERT_EQ(member_record->record_id, resolution.record_id);
-  ASSERT_EQ(4, ps_type_sizeof(
-                   psx_record_member_decl_type(&resolution.declaration)));
+  ASSERT_EQ(4, ps_type_sizeof(psx_record_member_decl_type(
+                   ps_ctx_semantic_type_table_in(test_semantic_context()),
+                   &resolution.declaration)));
   ASSERT_TRUE(resolution.base_object_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
@@ -8522,7 +8527,8 @@ static void aggregate_walk_trace_scalar(
   int idx = trace->scalar_count++;
   psx_gvar_init_member_value_t value =
       ps_gvar_init_member_value(
-          trace->gv, slot, member, test_type_size_id(value_type_id));
+          ps_ctx_semantic_type_table_in(test_semantic_context()), trace->gv,
+          slot, member, test_type_size_id(value_type_id));
   trace->scalar_offsets[idx] = offset;
   trace->scalar_values[idx] = value.value;
   trace->scalar_sizes[idx] = value.size;
@@ -14666,17 +14672,19 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(first->is_complete);
   ASSERT_TRUE(first->members != NULL);
   ASSERT_EQ(5, first->members[0].len);
-  ASSERT_TRUE(first->members[0].decl_type_table ==
-              ps_ctx_semantic_type_table_in(test_semantic_context()));
   ASSERT_TRUE(first->members[0].decl_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             first->members[0].decl_qual_type.qualifiers);
   ASSERT_EQ(4, test_semantic_type_sizeof_in(
                    test_semantic_context(),
-                   psx_record_member_decl_type(&first->members[0])));
+                   psx_record_member_decl_type(
+                       ps_ctx_semantic_type_table_in(test_semantic_context()),
+                       &first->members[0])));
   ASSERT_TRUE(ps_type_has_qualifier(
-      psx_record_member_decl_type(&first->members[0]),
+      psx_record_member_decl_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          &first->members[0]),
       PSX_TYPE_QUALIFIER_CONST));
   const psx_record_member_decl_t *first_members = first->members;
 
@@ -22946,8 +22954,9 @@ static void test_type_metadata_bridge() {
       &tmp_member_value_double,
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_gvar_init_member_value_t tmp_member_value =
-      ps_gvar_init_member_value(&tmp_member_value_gv, 0,
-                                 &tmp_member_value_double, 8);
+      ps_gvar_init_member_value(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          &tmp_member_value_gv, 0, &tmp_member_value_double, 8);
   ASSERT_EQ(PSX_GVAR_INIT_VALUE_FLOAT, tmp_member_value.kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_member_value.fp_kind);
   ASSERT_EQ(8, tmp_member_value.size);
@@ -22959,6 +22968,7 @@ static void test_type_metadata_bridge() {
   set_test_record_member_fixture_type(
       &tmp_member_value_bool, ps_type_new_integer(TK_BOOL, 1, 1));
   tmp_member_value = ps_gvar_init_member_value(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
       &tmp_member_bool_gv, 0, &tmp_member_value_bool, 1);
   ASSERT_EQ(PSX_GVAR_INIT_VALUE_INTEGER, tmp_member_value.kind);
   ASSERT_EQ(1, tmp_member_value.value);
@@ -23733,7 +23743,9 @@ static void test_type_metadata_bridge() {
       test_record_decl_mut(ps_gvar_get_decl_type(&walk_gv));
   ASSERT_TRUE(walk_outer_record != NULL);
   psx_type_t *walk_inner_type = (psx_type_t *)
-      psx_record_member_decl_type(&walk_outer_record->members[0])->base;
+      psx_record_member_decl_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          &walk_outer_record->members[0])->base;
   ASSERT_TRUE(walk_inner_type != NULL);
   psx_record_decl_t *walk_inner_record =
       test_record_decl_mut(walk_inner_type);
@@ -23830,7 +23842,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(walk_anon_outer_record != NULL);
   ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
   const psx_type_t *walk_anon_inner_type = ps_type_array_leaf_type(
-      psx_record_member_decl_type(&walk_anon_outer_record->members[0]));
+      psx_record_member_decl_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          &walk_anon_outer_record->members[0]));
   ASSERT_TRUE(walk_anon_inner_type != NULL);
   psx_record_decl_t *walk_anon_inner_record =
       test_record_decl_mut(walk_anon_inner_type);
@@ -28451,9 +28465,9 @@ static void test_semantic_context_isolation() {
       &detached_resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, detached_resolution.status);
   ASSERT_EQ(direct_record->record_id, detached_resolution.record_id);
-  ASSERT_EQ(4, ps_type_sizeof(
-                   psx_record_member_decl_type(
-                       &detached_resolution.declaration)));
+  ASSERT_EQ(4, ps_type_sizeof(psx_record_member_decl_type(
+                   ps_ctx_semantic_type_table_in(second),
+                   &detached_resolution.declaration)));
 
   node_member_access_t detached_access = {
       .base = {

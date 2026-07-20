@@ -8,18 +8,6 @@
 struct global_var_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
-int ps_record_member_decl_is_tag_aggregate(
-    const psx_record_member_decl_t *declaration);
-int ps_record_member_decl_is_struct_aggregate(
-    const psx_record_member_decl_t *declaration);
-int ps_record_member_decl_is_union_aggregate(
-    const psx_record_member_decl_t *declaration);
-int ps_record_member_decl_is_unnamed_struct(
-    const psx_record_member_decl_t *declaration);
-int ps_record_member_decl_is_unnamed_union(
-    const psx_record_member_decl_t *declaration);
-int ps_record_member_decl_is_unnamed_aggregate(
-    const psx_record_member_decl_t *declaration);
 int ps_tag_find_unnamed_union_covering_offset_in(
     psx_semantic_context_t *semantic_context,
     token_kind_t tag_kind, char *tag_name, int tag_len,

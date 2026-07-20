@@ -12,7 +12,6 @@ typedef struct psx_record_member_decl_t {
   int len;
   int bit_width;
   int bit_is_signed;
-  const psx_semantic_type_table_t *decl_type_table;
   psx_qual_type_t decl_qual_type;
 } psx_record_member_decl_t;
 
@@ -27,14 +26,25 @@ typedef struct psx_record_decl_t {
 } psx_record_decl_t;
 
 const psx_type_t *psx_record_member_decl_type(
+    const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
 int psx_record_member_decl_is_tag_aggregate(
+    const psx_semantic_type_table_t *types,
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_struct_aggregate(
+    const psx_semantic_type_table_t *types,
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_union_aggregate(
+    const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
 int psx_record_member_decl_is_unnamed_struct(
+    const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
 int psx_record_member_decl_is_unnamed_union(
+    const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
 int psx_record_member_decl_is_unnamed_aggregate(
+    const psx_semantic_type_table_t *types,
     const psx_record_member_decl_t *member);
 
 #endif

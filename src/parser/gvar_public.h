@@ -154,7 +154,8 @@ int ps_gvar_walk_init_slot_values(const global_var_t *gv,
                                    psx_gvar_init_slot_value_fn callback,
                                    void *user);
 psx_gvar_init_member_value_t
-ps_gvar_init_member_value(const global_var_t *gv, int idx,
+ps_gvar_init_member_value(const psx_semantic_type_table_t *semantic_types,
+                           const global_var_t *gv, int idx,
                            const psx_record_member_decl_t *member,
                            int member_size);
 psx_gvar_init_scalar_value_t

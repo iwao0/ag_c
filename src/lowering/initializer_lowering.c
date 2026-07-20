@@ -120,7 +120,8 @@ static node_t *new_initializer_member_lvar_ref(
   return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
       context->resolution_store, context->arena_context,
       owner, relative_offset,
-      psx_record_member_decl_type(member_ref->declaration),
+      psx_record_member_decl_type(
+          context->semantic_types, member_ref->declaration),
       member_ref->declaration->bit_is_signed,
       member_ref->declaration->bit_width,
       member_ref->layout.bit_offset);
@@ -172,13 +173,15 @@ static int initializer_supports_recursive_aggregate(
   for (int i = 0; i < record->member_count; i++) {
     const psx_record_member_decl_t *member = &record->members[i];
     if (member->len <= 0) {
-      const psx_type_t *member_type = psx_record_member_decl_type(member);
+      const psx_type_t *member_type = psx_record_member_decl_type(
+          context->semantic_types, member);
       if (!member_type || !ps_type_is_tag_aggregate(member_type) ||
           !initializer_supports_recursive_aggregate(context, member_type))
         return 0;
       continue;
     }
-    const psx_type_t *member_type = psx_record_member_decl_type(member);
+    const psx_type_t *member_type = psx_record_member_decl_type(
+        context->semantic_types, member);
     const psx_type_t *leaf = ps_type_array_leaf_type(member_type);
     if (leaf && ps_type_is_tag_aggregate(leaf) &&
         !initializer_supports_recursive_aggregate(context, member_type))
@@ -963,7 +966,8 @@ static int immediate_subobject_at_leaf_cursor(
     const psx_record_decl_t *record = record_decl(context, type);
     for (int i = 0; record && i < record->member_count; i++) {
       const psx_record_member_decl_t *member = &record->members[i];
-      const psx_type_t *member_type = psx_record_member_decl_type(member);
+      const psx_type_t *member_type = psx_record_member_decl_type(
+          context->semantic_types, member);
       int member_offset = relative_offset +
                           record_member_offset(context, type, i);
       if (member_offset != leaf_offset || !member_type) continue;
@@ -1279,7 +1283,8 @@ static node_t *lower_typed_aggregate_initializer_list(
       }
     }
     const psx_record_member_decl_t *first = &record->members[0];
-    const psx_type_t *first_type = psx_record_member_decl_type(first);
+    const psx_type_t *first_type = psx_record_member_decl_type(
+        context->semantic_types, first);
     if (!has_designator && first_type &&
         first_type->kind == PSX_TYPE_ARRAY) {
       if (!context->options->enable_union_array_member_nonbrace_init) {
@@ -1352,7 +1357,8 @@ static node_t *lower_typed_aggregate_initializer_list(
                            : DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const psx_record_member_decl_t *member = &record->members[member_index];
-    const psx_type_t *target_type = psx_record_member_decl_type(member);
+    const psx_type_t *target_type = psx_record_member_decl_type(
+        context->semantic_types, member);
     psx_type_id_t target_type_id = psx_semantic_type_table_record_member(
         context->semantic_types, type_id, member_index).type_id;
     int target_offset = relative_offset +
