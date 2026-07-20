@@ -7952,7 +7952,10 @@ const automaticLocalPipeline = declarationPipelineSource.match(
   /static\s+int\s+begin_automatic_local_declaration_pipeline\s*\([^]*?\n\}/,
 );
 if (!automaticLocalPipeline ||
-    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_resolve_local_declaration\s*\(/.test(
+    !/\bpsx_qual_type_t\s+declaration_identity\s*=\s*request->type\s*;/.test(
+      automaticLocalPipeline[0],
+    ) ||
+    /\bps_ctx_intern_qual_type_in\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
     !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bps_type_sizeof_id\s*\(/.test(
@@ -8732,7 +8735,10 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
-    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    ) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
     !/\bps_type_sizeof_id\s*\(/.test(
@@ -8961,8 +8967,6 @@ if (!staticInitializerRequest ||
 
 const readonlyTypeFields = [
   ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_type"],
-  ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
-  ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_definition_pipeline_result_t", "function_type"],
 ];
@@ -8989,6 +8993,8 @@ const canonicalLoweringTypeFields = [
   ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
   ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
+  ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
+  ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/lowering/global_object_lowering.h", "psx_global_object_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],

@@ -4649,7 +4649,8 @@ static int preflight_direct_local_declaration(
           .function_name_len = context->function_name_len,
           .name = name->str,
           .name_len = name->len,
-          .type = type,
+          .type = ps_ctx_intern_qual_type_in(
+              context->semantic_context, type),
           .initializer = initializer,
           .diag_tok = (token_t *)name,
       };
@@ -4722,7 +4723,8 @@ static int preflight_direct_local_declaration(
         .lowering_context = context->lowering_context,
         .name = name->str,
         .name_len = name->len,
-        .type = type,
+        .type = ps_ctx_intern_qual_type_in(
+            context->semantic_context, type),
         .application = &effective_application,
         .requested_alignment =
             specifier_resolution.requested_alignment,

@@ -13039,7 +13039,7 @@ static void test_local_declaration_storage_plan_boundary() {
           .lowering_context = test_lowering_context(),
           .name = (char *)"pipeline_deferred",
           .name_len = 17,
-          .type = pipeline_input,
+          .type = intern_test_qual_type(pipeline_input),
           .application = &pipeline_application,
           .initializer = &pipeline_initializer,
       },

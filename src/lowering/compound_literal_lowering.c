@@ -125,8 +125,6 @@ static int plan_local_compound_literal(
     psx_compound_literal_storage_plan_t *plan) {
   psx_qual_type_t object_qual_type = ps_node_qual_type(
       ps_lowering_resolution_store(lowering_context), &compound->base);
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      ps_lowering_semantic_types(lowering_context), object_qual_type);
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,
@@ -147,7 +145,7 @@ static int plan_local_compound_literal(
               .lowering_context = lowering_context,
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
-              .type = type,
+              .type = object_qual_type,
               .application = &application,
               .initializer = &parsed,
               .diag_tok = diag_tok,

@@ -118,7 +118,7 @@ typedef struct {
   int function_name_len;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_static_local_declaration_pipeline_request_t;
@@ -150,7 +150,7 @@ typedef struct {
   psx_lowering_context_t *lowering_context;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   const psx_runtime_declarator_application_t *application;
   int requested_alignment;
   const psx_parsed_initializer_t *initializer;

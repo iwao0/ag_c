@@ -45,6 +45,7 @@ typedef struct {
 
   psx_local_apply_kind_t current_kind;
   const psx_type_t *current_type;
+  psx_qual_type_t current_qual_type;
   psx_runtime_declarator_application_t current_application;
   psx_parsed_initializer_t current_initializer;
   psx_static_local_declaration_pipeline_request_t static_request;
@@ -147,6 +148,15 @@ static void begin_declarator(
         "canonical declarator type resolution failed for '%.*s'",
         name->len, name->str);
   }
+  application->current_qual_type = ps_ctx_intern_qual_type_in(
+      application->semantic_context, application->current_type);
+  if (application->current_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    ps_diag_ctx_in(
+        application_diagnostics(application), (token_t *)name,
+        "local-declaration",
+        "canonical declarator type identity failed for '%.*s'",
+        name->len, name->str);
+  }
 
   if (application->is_typedef) {
     if (initializer->has_initializer) {
@@ -206,7 +216,7 @@ static void begin_declarator(
             .function_name_len = function_name_len,
             .name = name->str,
             .name_len = name->len,
-            .type = application->current_type,
+            .type = application->current_qual_type,
             .initializer = &application->current_initializer,
             .diag_tok = (token_t *)name,
         };
@@ -229,7 +239,7 @@ static void begin_declarator(
           .lowering_context = application->lowering_context,
           .name = name->str,
           .name_len = name->len,
-          .type = application->current_type,
+          .type = application->current_qual_type,
           .application = &application->current_application,
           .requested_alignment = application->requested_alignment,
           .initializer = &application->current_initializer,
