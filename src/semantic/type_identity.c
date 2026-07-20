@@ -516,6 +516,15 @@ int psx_semantic_type_table_describe(
   return 1;
 }
 
+int psx_semantic_type_table_qual_type_is_valid(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  const psx_type_qualifiers_t supported =
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
+      PSX_TYPE_QUALIFIER_ATOMIC;
+  return (type.qualifiers & ~supported) == 0 &&
+         semantic_type_id_is_valid(table, type.type_id);
+}
+
 static psx_qual_type_t related_type(
     const psx_semantic_type_table_t *table, psx_qual_type_t relation) {
   if (!semantic_type_id_is_valid(table, relation.type_id))

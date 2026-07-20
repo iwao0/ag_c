@@ -8,7 +8,7 @@
 #include "../type_layout.h"
 #include "resolved_node_kind.h"
 #include "resolved_object_ref.h"
-#include "type_compatibility_view.h"
+#include "type_identity.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,6 +32,21 @@ static tk_float_kind_t node_fp_kind(
     const psx_resolution_store_t *store, node_t *node) {
   return node ? type_fp_kind(ps_node_get_type(store, node))
               : TK_FLOAT_KIND_NONE;
+}
+
+static tk_float_kind_t semantic_fp_kind(
+    const psx_semantic_type_table_t *types, psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(types, type.type_id, &shape) ||
+      (shape.kind != PSX_TYPE_FLOAT && shape.kind != PSX_TYPE_COMPLEX))
+    return TK_FLOAT_KIND_NONE;
+  switch (shape.floating_kind) {
+    case PSX_FLOATING_KIND_FLOAT: return TK_FLOAT_KIND_FLOAT;
+    case PSX_FLOATING_KIND_LONG_DOUBLE: return TK_FLOAT_KIND_LONG_DOUBLE;
+    case PSX_FLOATING_KIND_DOUBLE: return TK_FLOAT_KIND_DOUBLE;
+    case PSX_FLOATING_KIND_NONE: return TK_FLOAT_KIND_DOUBLE;
+    default: return TK_FLOAT_KIND_NONE;
+  }
 }
 
 static psx_resolution_node_kind_t resolved_node_kind(
@@ -157,11 +172,13 @@ static void warn_return(
       ps_ctx_semantic_type_table_in(semantic_context);
   psx_qual_type_t return_qual_type =
       ps_function_definition_return_qual_type(types, current_func);
-  const psx_type_t *ret_type =
-      psx_type_compatibility_view_for(types, return_qual_type);
-  tk_float_kind_t ret_fp = type_fp_kind(ret_type);
-  int ret_pointer = ps_type_is_pointer(ret_type);
-  int ret_void = ret_type && ret_type->kind == PSX_TYPE_VOID;
+  psx_type_shape_t return_shape = {0};
+  int has_return_shape = psx_semantic_type_table_describe(
+      types, return_qual_type.type_id, &return_shape);
+  tk_float_kind_t ret_fp = semantic_fp_kind(types, return_qual_type);
+  int ret_pointer = has_return_shape &&
+                    return_shape.kind == PSX_TYPE_POINTER;
+  int ret_void = has_return_shape && return_shape.kind == PSX_TYPE_VOID;
   const token_t *tok = node->tok ? node->tok : fallback;
   if (node_fp_kind(store, node->lhs) != TK_FLOAT_KIND_NONE &&
       ret_fp == TK_FLOAT_KIND_NONE && !ret_pointer && !ret_void) {

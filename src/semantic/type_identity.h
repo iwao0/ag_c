@@ -46,6 +46,8 @@ psx_qual_type_t psx_semantic_type_table_intern_function(
 int psx_semantic_type_table_describe(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     psx_type_shape_t *out);
+int psx_semantic_type_table_qual_type_is_valid(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type);
 psx_qual_type_t psx_semantic_type_table_base(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 int psx_semantic_type_table_contains_vla_array(

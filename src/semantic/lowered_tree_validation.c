@@ -9,7 +9,7 @@
 #include "resolved_node_kind.h"
 #include "resolved_node_type.h"
 #include "tree_walk.h"
-#include "type_compatibility_view.h"
+#include "type_identity.h"
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -45,10 +45,10 @@ static void validate_lowered_return(
   psx_qual_type_t return_type =
       ps_function_definition_return_qual_type(
           types, validation->current_function);
-  const psx_type_t *canonical_return_type =
-      psx_type_compatibility_view_for(types, return_type);
-  if (!canonical_return_type ||
-      canonical_return_type->kind == PSX_TYPE_VOID)
+  psx_type_shape_t return_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, return_type.type_id, &return_shape) ||
+      return_shape.kind == PSX_TYPE_VOID)
     return;
 
   const psx_resolution_store_t *store =

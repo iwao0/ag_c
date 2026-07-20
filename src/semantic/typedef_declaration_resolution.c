@@ -1,7 +1,7 @@
 #include "typedef_declaration_resolution.h"
 
 #include "scope_graph.h"
-#include "type_compatibility_view.h"
+#include "type_identity.h"
 
 #include "../parser/semantic_ctx.h"
 
@@ -47,7 +47,7 @@ void psx_resolve_typedef_declaration(
     }
   }
 
-  if (!psx_type_compatibility_view_for(
+  if (!psx_semantic_type_table_qual_type_is_valid(
           ps_ctx_semantic_type_table_in(semantic_context),
           request->decl_qual_type)) {
     resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;

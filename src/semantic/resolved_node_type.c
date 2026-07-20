@@ -268,9 +268,10 @@ int ps_node_bind_qual_type(
   if (!node || qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   psx_node_resolution_state_t *state =
       ps_node_resolution_state(store, node);
-  const psx_type_t *resolved = psx_type_compatibility_view_for(
-      psx_resolution_store_semantic_types(store), qual_type);
-  if (!state || !resolved) return 0;
+  if (!state || !psx_semantic_type_table_qual_type_is_valid(
+                    psx_resolution_store_semantic_types(store),
+                    qual_type))
+    return 0;
   state->type_binding = (psx_node_type_binding_t){
       .kind = PSX_NODE_TYPE_CANONICAL,
       .canonical_type = qual_type,

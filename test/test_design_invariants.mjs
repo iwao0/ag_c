@@ -5587,7 +5587,7 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
     !/ps_node_bind_type\s*\([^]*?psx_resolution_store_intern_type\s*\(/.test(
       resolvedNodeTypeSource,
     ) ||
-    !/psx_type_compatibility_view_for\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
+    !/psx_semantic_type_table_qual_type_is_valid\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
     ) ||
     !canonicalQualTypeBinder ||
@@ -5598,7 +5598,7 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
     /const\s+psx_type_t\s*\*|canonical_type\s*,/.test(
       canonicalQualTypeBinderDeclaration[1],
     ) ||
-    !/psx_type_compatibility_view_for\s*\(/.test(
+    !/psx_semantic_type_table_qual_type_is_valid\s*\(/.test(
       canonicalQualTypeBinder[0],
     ) ||
     !/PSX_NODE_TYPE_CANONICAL/.test(canonicalQualTypeBinder[0]) ||
@@ -6689,7 +6689,13 @@ if (/\bpsx_type_t\b|\bps_type_[A-Za-z0-9_]*\s*\(|parser\/type(?:_builder)?\.h/.t
     ) ||
     /\bps_type_sizeof\s*\(/.test(expressionOperandResolutionSource) ||
     /\bps_type_sizeof\s*\(/.test(semanticDiagnosticsSource) ||
-    /\bps_type_sizeof\s*\(/.test(semanticPassSource)) {
+    /\bps_type_sizeof\s*\(/.test(semanticPassSource) ||
+    /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+      semanticDiagnosticsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      semanticDiagnosticsSource,
+    )) {
   throw new Error(
     "semantic rank and category checks must use TypeShape while target-sensitive conversions receive explicit DataLayout",
   );
@@ -8719,6 +8725,12 @@ if (!semanticTypeEntry ||
     !/\bpsx_semantic_type_table_intern_array_of\s*\(/.test(
       semanticTypeIdentityHeader,
     ) ||
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/psx_semantic_type_table_qual_type_is_valid\s*\([^]*?type\.qualifiers\s*&\s*~supported[^]*?semantic_type_id_is_valid\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
     !/typedef\s+struct\s*\{[^]*?\}\s*psx_type_shape_t\s*;/.test(
       semanticTypeShapeHeader,
     ) ||
@@ -9472,7 +9484,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     !/\bstatic\s+psx_qual_type_t\s+resolve_local_decl_type\s*\(/.test(
       localRegistrySource,
     ) ||
-    !/\bpsx_type_compatibility_view_for\s*\(/.test(
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
       localRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
@@ -9553,7 +9565,7 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bstatic\s+psx_qual_type_t\s+resolve_global_decl_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bpsx_type_compatibility_view_for\s*\(/.test(
+    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
       globalRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
@@ -10701,6 +10713,12 @@ if (
   sharedReturnTypeRuleUses !== 2 ||
   /\bpsx_resolve_return_qual_types_in\s*\(/.test(
     semanticPassSource,
+  ) ||
+  /\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
+    loweredTreeValidationSource,
+  ) ||
+  !/\bpsx_semantic_type_table_describe\s*\(/.test(
+    loweredTreeValidationSource,
   ) ||
   !/PSX_RETURN_TYPES_INCOMPATIBLE/.test(
     syntaxTypedHirResolutionSource,
@@ -12092,7 +12110,7 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
       typedefDeclarationResolutionSource,
     ) ||
     /request->type\b/.test(typedefDeclarationResolutionSource) ||
-    !/psx_type_compatibility_view_for\s*\([^]*?request->decl_qual_type/.test(
+    !/psx_semantic_type_table_qual_type_is_valid\s*\([^]*?request->decl_qual_type/.test(
       typedefDeclarationResolutionSource,
     ) ||
     !/psx_prepare_function_definition_resolution_in_contexts\s*\([^]*?resolve_function_definition_header\s*\(/.test(

@@ -590,7 +590,7 @@ static int initialize_tag_member_record(
   psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
       context, resolved_type);
   if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
-  if (!psx_type_compatibility_view_for(
+  if (!psx_semantic_type_table_qual_type_is_valid(
           context->semantic_types, identity))
     return 0;
   m->declaration.type_table = context->semantic_types;
@@ -1580,7 +1580,7 @@ static psx_qual_type_t resolve_typedef_decl_qual_type(
   if (!context || !info ||
       info->decl_type_table != context->semantic_types ||
       identity.type_id == PSX_TYPE_ID_INVALID ||
-      !psx_type_compatibility_view_for(
+      !psx_semantic_type_table_qual_type_is_valid(
           context->semantic_types, identity))
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
