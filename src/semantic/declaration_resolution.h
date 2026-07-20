@@ -28,24 +28,19 @@ psx_qual_type_t psx_resolve_decl_qual_type(
 psx_qual_type_t psx_resolve_decl_specifier_qual_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier);
-int psx_resolve_incomplete_array_type(
-    psx_semantic_context_t *semantic_context, psx_type_t *type,
-    const psx_incomplete_array_resolution_t *request);
-const psx_type_t *psx_resolve_completed_incomplete_array_type(
+int psx_resolve_completed_incomplete_array_qual_type_in(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *incomplete_type,
-    const psx_incomplete_array_resolution_t *request);
-int psx_resolve_incomplete_array_initializer_shape(
-    const psx_type_t *incomplete_type,
+    psx_qual_type_t incomplete_type,
+    const psx_incomplete_array_resolution_t *request,
+    psx_qual_type_t *completed_type);
+int psx_resolve_incomplete_array_initializer_shape_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
     psx_decl_init_kind_t initializer_kind,
     const node_t *initializer,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
     void *resolve_index_context,
     psx_incomplete_array_resolution_t *resolution);
-int psx_resolve_incomplete_array_initializer(
-    psx_semantic_context_t *semantic_context, psx_type_t *type,
-    psx_decl_init_kind_t initializer_kind,
-    node_t *initializer);
 int psx_resolve_incomplete_array_initializer_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t incomplete_type,

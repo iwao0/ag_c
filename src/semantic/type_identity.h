@@ -20,6 +20,9 @@ psx_qual_type_t psx_semantic_type_table_find(
     const psx_semantic_type_table_t *table, const psx_type_t *type);
 psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
     psx_semantic_type_table_t *table, psx_qual_type_t pointee);
+psx_qual_type_t psx_semantic_type_table_intern_array_of(
+    psx_semantic_type_table_t *table, psx_qual_type_t element,
+    int array_len, int is_vla);
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 int psx_semantic_type_table_describe(

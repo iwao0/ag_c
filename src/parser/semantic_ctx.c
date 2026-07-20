@@ -352,6 +352,17 @@ psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
                                  PSX_TYPE_QUALIFIER_NONE};
 }
 
+psx_qual_type_t ps_ctx_intern_array_of_qual_type_in(
+    psx_semantic_context_t *context, psx_qual_type_t element,
+    int array_len, int is_vla) {
+  return context
+             ? psx_semantic_type_table_intern_array_of(
+                   context->semantic_types, element,
+                   array_len, is_vla)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
     psx_semantic_context_t *context) {
   if (!context) {

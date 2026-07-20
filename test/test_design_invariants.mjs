@@ -8601,6 +8601,9 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       semanticTypeIdentityHeader,
     ) ||
+    !/\bpsx_semantic_type_table_intern_array_of\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
     !/typedef\s+struct\s*\{[^]*?\}\s*psx_type_shape_t\s*;/.test(
       semanticTypeShapeHeader,
     ) ||
@@ -9475,6 +9478,20 @@ if (/\bpsx_build_decl_specifier_type_in_context\b/.test(
     )) {
   throw new Error(
     "declaration specifier resolution must publish canonical QualType from a private mutable builder",
+  );
+}
+
+if (!/psx_resolve_completed_incomplete_array_qual_type_in\s*\(/.test(
+      declarationResolutionHeader,
+    ) ||
+    !/ps_ctx_intern_array_of_qual_type_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    /psx_resolve_incomplete_array_type\s*\(|psx_resolve_completed_incomplete_array_type\s*\(|psx_resolve_incomplete_array_initializer\s*\(/.test(
+      `${declarationResolutionHeader}\n${declarationResolutionSource}`,
+    )) {
+  throw new Error(
+    "incomplete array completion must create a canonical QualType without mutable compatibility APIs",
   );
 }
 
@@ -11465,10 +11482,10 @@ if (!/psx_resolve_syntax_function_direct_to_typed_hir_in_contexts\s*\(/.test(
     !/psx_resolve_flat_local_initializer_plan\s*\(/.test(
       initializerResolutionSource,
     ) ||
-    !/psx_resolve_incomplete_array_initializer_shape\s*\(/.test(
+    !/psx_resolve_incomplete_array_initializer_shape_in\s*\(/.test(
       declarationResolutionSource,
     ) ||
-    !/resolve_direct_completed_array_type\s*\(/.test(
+    !/resolve_direct_completed_array_qual_type\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/psx_resolve_flat_local_initializer_plan\s*\(/.test(

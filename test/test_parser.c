@@ -12989,34 +12989,58 @@ static void test_local_declaration_storage_plan_boundary() {
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
   ASSERT_TRUE(!plan_test_local_storage(incomplete, &plan));
-  ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      test_semantic_context(), incomplete,
+  psx_qual_type_t completed_incomplete = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
+      test_semantic_context(), intern_test_qual_type(incomplete),
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
-      }));
-  ASSERT_EQ(5, incomplete->array_len);
-  ASSERT_EQ(20, ps_type_sizeof(incomplete));
-  ASSERT_TRUE(plan_test_local_storage(incomplete, &plan));
+      },
+      &completed_incomplete));
+  const psx_type_t *completed_incomplete_view =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          completed_incomplete);
+  ASSERT_TRUE(completed_incomplete_view != NULL);
+  ASSERT_EQ(5, completed_incomplete_view->array_len);
+  ASSERT_EQ(20, ps_type_sizeof(completed_incomplete_view));
+  ASSERT_TRUE(plan_test_local_storage(completed_incomplete_view, &plan));
 
   psx_type_t *partial_flat_matrix = ps_type_new_array(row, 0, 0, 0);
-  ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      test_semantic_context(), partial_flat_matrix,
+  psx_qual_type_t completed_partial_flat_matrix = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
+      test_semantic_context(), intern_test_qual_type(partial_flat_matrix),
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
           .entries_initialize_outer_elements = 0,
-      }));
-  ASSERT_EQ(2, partial_flat_matrix->array_len);
-  ASSERT_EQ(24, ps_type_sizeof(partial_flat_matrix));
+      },
+      &completed_partial_flat_matrix));
+  const psx_type_t *completed_partial_flat_matrix_view =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          completed_partial_flat_matrix);
+  ASSERT_TRUE(completed_partial_flat_matrix_view != NULL);
+  ASSERT_EQ(2, completed_partial_flat_matrix_view->array_len);
+  ASSERT_EQ(24, ps_type_sizeof(completed_partial_flat_matrix_view));
 
   psx_type_t *nested_matrix = ps_type_new_array(row, 0, 0, 0);
-  ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      test_semantic_context(), nested_matrix,
+  psx_qual_type_t completed_nested_matrix = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
+      test_semantic_context(), intern_test_qual_type(nested_matrix),
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 2,
           .entries_initialize_outer_elements = 1,
-      }));
-  ASSERT_EQ(2, nested_matrix->array_len);
-  ASSERT_EQ(24, ps_type_sizeof(nested_matrix));
+      },
+      &completed_nested_matrix));
+  const psx_type_t *completed_nested_matrix_view =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          completed_nested_matrix);
+  ASSERT_TRUE(completed_nested_matrix_view != NULL);
+  ASSERT_EQ(2, completed_nested_matrix_view->array_len);
+  ASSERT_EQ(24, ps_type_sizeof(completed_nested_matrix_view));
   psx_type_t *vla = ps_type_new_array(integer, 0, 0, 1);
   ASSERT_TRUE(!plan_test_local_storage(vla, &plan));
 
@@ -13086,12 +13110,17 @@ static void test_local_declaration_storage_plan_boundary() {
       test_local_registry(), declared,
       intern_test_qual_type(ps_type_new_array(
           ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0))));
-  ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      test_semantic_context(), deferred_type,
+  psx_qual_type_t complete_deferred_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
+      test_semantic_context(),
+      (psx_qual_type_t){
+          incomplete_type_id, PSX_TYPE_QUALIFIER_NONE},
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 3,
-      }));
-  psx_type_id_t complete_type_id = intern_test_type_id(deferred_type);
+      },
+      &complete_deferred_type));
+  psx_type_id_t complete_type_id = complete_deferred_type.type_id;
   ASSERT_TRUE(complete_type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(complete_type_id != incomplete_type_id);
   ASSERT_TRUE(complete_declared_local_object(
@@ -28233,14 +28262,24 @@ static void test_semantic_type_identity() {
   utf16_string.byte_len = 2;
   psx_type_t *utf16_array = ps_type_new_array(
       stale_wide_short, 0, 0, 0);
-  ASSERT_TRUE(psx_resolve_incomplete_array_initializer(
-      test_semantic_context(), utf16_array, PSX_DECL_INIT_EXPR,
-      (node_t *)&utf16_string));
-  ASSERT_EQ(3, utf16_array->array_len);
+  psx_qual_type_t completed_utf16_array = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(psx_resolve_incomplete_array_initializer_qual_type_in(
+      context, ps_ctx_intern_qual_type_in(context, utf16_array),
+      PSX_DECL_INIT_EXPR, (node_t *)&utf16_string,
+      &completed_utf16_array));
+  psx_type_shape_t completed_utf16_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      completed_utf16_array.type_id, &completed_utf16_shape));
+  ASSERT_EQ(3, completed_utf16_shape.array_len);
   psx_type_t *boolean_array = ps_type_new_array(boolean, 0, 0, 0);
-  ASSERT_TRUE(!psx_resolve_incomplete_array_initializer(
-      test_semantic_context(), boolean_array, PSX_DECL_INIT_EXPR,
-      (node_t *)&utf16_string));
+  psx_qual_type_t completed_boolean_array = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  ASSERT_TRUE(!psx_resolve_incomplete_array_initializer_qual_type_in(
+      context, ps_ctx_intern_qual_type_in(context, boolean_array),
+      PSX_DECL_INIT_EXPR, (node_t *)&utf16_string,
+      &completed_boolean_array));
   ASSERT_EQ(0, boolean_array->array_len);
   psx_type_t *const_int = ps_type_clone(plain_int);
   ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);
@@ -28252,6 +28291,23 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(plain_int_identity.type_id, const_int_identity.type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, plain_int_identity.qualifiers);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, const_int_identity.qualifiers);
+  psx_qual_type_t const_int_array_identity =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int_identity, 4, 0);
+  psx_qual_type_t repeated_const_int_array =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int_identity, 4, 0);
+  ASSERT_TRUE(const_int_array_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(const_int_array_identity.type_id,
+            repeated_const_int_array.type_id);
+  psx_qual_type_t const_int_array_element =
+      psx_semantic_type_table_base(
+          ps_ctx_semantic_type_table_in(context),
+          const_int_array_identity.type_id);
+  ASSERT_EQ(const_int_identity.type_id,
+            const_int_array_element.type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            const_int_array_element.qualifiers);
   const psx_type_t *interned_int =
       ps_ctx_type_by_id_in(context, plain_int_identity.type_id);
   ASSERT_TRUE(interned_int != NULL);

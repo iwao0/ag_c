@@ -437,6 +437,39 @@ psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
   return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
 }
 
+psx_qual_type_t psx_semantic_type_table_intern_array_of(
+    psx_semantic_type_table_t *table, psx_qual_type_t element,
+    int array_len, int is_vla) {
+  const psx_type_t *element_type = psx_semantic_type_table_lookup(
+      table, element.type_id);
+  if (!table || !element_type || array_len < 0)
+    return invalid_qual_type();
+  for (psx_type_id_t id = 1; id <= table->next_id; id++) {
+    if ((size_t)id >= table->capacity ||
+        !table->entries[id].type ||
+        table->entries[id].shape.kind != PSX_TYPE_ARRAY ||
+        table->entries[id].shape.array_len != array_len ||
+        table->entries[id].shape.is_vla != (is_vla ? 1 : 0))
+      continue;
+    psx_qual_type_t base = table->entries[id].base_type;
+    if (base.type_id == element.type_id &&
+        base.qualifiers == element.qualifiers)
+      return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
+  }
+  if (table->next_id == UINT_MAX) return invalid_qual_type();
+  psx_type_id_t id = table->next_id + 1;
+  if (!reserve_type_id(table, id)) return invalid_qual_type();
+  psx_type_t *array = ps_type_new_array_in(
+      table->arena_context, element_type, array_len, is_vla);
+  if (!array) return invalid_qual_type();
+  table->entries[id].type = array;
+  table->entries[id].shape = semantic_type_shape(array);
+  table->entries[id].base_type = element;
+  table->entries[id].canonical_relations_materialized = 1;
+  table->next_id = id;
+  return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
+}
+
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
   if (!table || type_id == PSX_TYPE_ID_INVALID ||

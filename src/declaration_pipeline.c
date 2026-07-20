@@ -1107,18 +1107,13 @@ int psx_finish_automatic_local_declaration_pipeline(
     return 0;
   if (declaration_shape.kind == PSX_TYPE_ARRAY &&
       declaration_shape.array_len <= 0 && !declaration_shape.is_vla) {
-    const psx_type_t *type_view =
-        psx_semantic_type_table_lookup_qual_type(
-            semantic_types, request->type);
-    if (!type_view) return 0;
-    psx_type_t *completed_type = ps_type_clone_in(
-        ps_lowering_arena(request->lowering_context), type_view);
-    if (!completed_type) return 0;
+    psx_qual_type_t completed_identity = {
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     if (!request->initializer->has_initializer ||
-        !psx_resolve_incomplete_array_initializer(
-            request->semantic_context, completed_type,
+        !psx_resolve_incomplete_array_initializer_qual_type_in(
+            request->semantic_context, request->type,
             request->initializer->kind,
-            request->initializer->value)) {
+            request->initializer->value, &completed_identity)) {
       ps_diag_ctx_in(
           ps_lowering_diagnostics(request->lowering_context),
           request->initializer->value_tok, "decl", "%s",
@@ -1126,8 +1121,6 @@ int psx_finish_automatic_local_declaration_pipeline(
               ps_lowering_diagnostics(request->lowering_context),
               DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
-    psx_qual_type_t completed_identity = ps_ctx_intern_qual_type_in(
-        request->semantic_context, completed_type);
     if (completed_identity.type_id == PSX_TYPE_ID_INVALID) {
       return 0;
     }

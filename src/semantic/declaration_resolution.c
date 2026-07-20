@@ -251,60 +251,62 @@ static int object_scalar_slots_by_id(
   return slots;
 }
 
-static int object_scalar_slots(
-    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
-  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
-      semantic_context, type).type_id;
-  return object_scalar_slots_by_id(semantic_context, type_id);
-}
-
-int psx_resolve_incomplete_array_type(
-    psx_semantic_context_t *semantic_context, psx_type_t *type,
-    const psx_incomplete_array_resolution_t *request) {
-  if (!semantic_context || !type || !request ||
-      type->kind != PSX_TYPE_ARRAY || type->is_vla ||
-      type->array_len > 0 || request->initializer_count <= 0) return 0;
+int psx_resolve_completed_incomplete_array_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
+    const psx_incomplete_array_resolution_t *request,
+    psx_qual_type_t *completed_type) {
+  if (completed_type)
+    *completed_type = (psx_qual_type_t){
+        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || !request || !completed_type ||
+      incomplete_type.type_id == PSX_TYPE_ID_INVALID ||
+      request->initializer_count <= 0)
+    return 0;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          semantic_types, incomplete_type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_ARRAY || shape.is_vla ||
+      shape.array_len > 0)
+    return 0;
+  psx_qual_type_t element = psx_semantic_type_table_base(
+      semantic_types, incomplete_type.type_id);
+  if (element.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   long long outer_count = request->initializer_count;
-  if (!request->entries_initialize_outer_elements && type->base &&
-      (type->base->kind == PSX_TYPE_ARRAY ||
-       ps_type_is_tag_aggregate(type->base))) {
-    int slots = object_scalar_slots(semantic_context, type->base);
+  psx_type_shape_t element_shape = {0};
+  if (!request->entries_initialize_outer_elements &&
+      psx_semantic_type_table_describe(
+          semantic_types, element.type_id, &element_shape) &&
+      (element_shape.kind == PSX_TYPE_ARRAY ||
+       psx_type_kind_is_aggregate(element_shape.kind))) {
+    int slots = object_scalar_slots_by_id(
+        semantic_context, element.type_id);
     if (slots <= 0) return 0;
     outer_count = (outer_count + slots - 1) / slots;
   }
   if (outer_count <= 0 || outer_count > INT_MAX) return 0;
-  return ps_type_complete_array(type, (int)outer_count);
-}
-
-const psx_type_t *psx_resolve_completed_incomplete_array_type(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *incomplete_type,
-    const psx_incomplete_array_resolution_t *request) {
-  if (!semantic_context || !incomplete_type || !request) return NULL;
-  psx_type_t *completed = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), incomplete_type);
-  if (!completed ||
-      !psx_resolve_incomplete_array_type(
-          semantic_context, completed, request))
-    return NULL;
-  psx_qual_type_t completed_qual_type = ps_ctx_intern_qual_type_in(
-      semantic_context, completed);
-  if (completed_qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
-  return psx_semantic_type_table_lookup_qual_type(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      completed_qual_type);
+  *completed_type = ps_ctx_intern_array_of_qual_type_in(
+      semantic_context, element, (int)outer_count, 0);
+  completed_type->qualifiers = incomplete_type.qualifiers;
+  return completed_type->type_id != PSX_TYPE_ID_INVALID;
 }
 
 static long long initializer_string_count(
-    const psx_type_t *array_type, const node_t *initializer) {
-  if (!array_type || !array_type->base || !initializer ||
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t array_type, const node_t *initializer) {
+  const psx_type_t *array_view =
+      psx_semantic_type_table_lookup_qual_type(
+          semantic_types, array_type);
+  if (!array_view || !array_view->base || !initializer ||
       initializer->kind != ND_STRING)
     return 0;
   const node_string_t *string = (const node_string_t *)initializer;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
-  if (ps_type_character_code_unit_width(array_type->base) != width)
+  if (ps_type_character_code_unit_width(array_view->base) != width)
     return 0;
   return (long long)string->byte_len + 1;
 }
@@ -366,8 +368,9 @@ static long long initializer_list_count(
   return max_index + 1;
 }
 
-int psx_resolve_incomplete_array_initializer_shape(
-    const psx_type_t *incomplete_type,
+int psx_resolve_incomplete_array_initializer_shape_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t incomplete_type,
     psx_decl_init_kind_t initializer_kind,
     const node_t *initializer,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
@@ -375,16 +378,21 @@ int psx_resolve_incomplete_array_initializer_shape(
     psx_incomplete_array_resolution_t *resolution) {
   if (resolution)
     *resolution = (psx_incomplete_array_resolution_t){0};
-  if (!incomplete_type || !resolution ||
-      incomplete_type->kind != PSX_TYPE_ARRAY ||
-      incomplete_type->array_len > 0 || incomplete_type->is_vla ||
-      !initializer)
+  const psx_semantic_type_table_t *semantic_types = semantic_context
+      ? ps_ctx_semantic_type_table_in(semantic_context) : NULL;
+  psx_type_shape_t shape = {0};
+  if (!semantic_types || !resolution || !initializer ||
+      !psx_semantic_type_table_describe(
+          semantic_types, incomplete_type.type_id, &shape) ||
+      shape.kind != PSX_TYPE_ARRAY || shape.array_len > 0 ||
+      shape.is_vla)
     return 0;
 
   long long count = 0;
   int entries_initialize_outer_elements = 0;
   if (initializer_kind == PSX_DECL_INIT_EXPR) {
-    count = initializer_string_count(incomplete_type, initializer);
+    count = initializer_string_count(
+        semantic_types, incomplete_type, initializer);
   } else if (initializer_kind == PSX_DECL_INIT_LIST &&
              initializer->kind == ND_INIT_LIST) {
     const node_init_list_t *list =
@@ -394,7 +402,8 @@ int psx_resolve_incomplete_array_initializer_shape(
         &entries_initialize_outer_elements);
     if (count < 0) {
       count = initializer_string_count(
-          incomplete_type, list->entries[0].value);
+          semantic_types, incomplete_type,
+          list->entries[0].value);
       if (count <= 0) count = list->entry_count;
     }
   }
@@ -405,24 +414,6 @@ int psx_resolve_incomplete_array_initializer_shape(
           entries_initialize_outer_elements,
   };
   return 1;
-}
-
-int psx_resolve_incomplete_array_initializer(
-    psx_semantic_context_t *semantic_context, psx_type_t *type,
-    psx_decl_init_kind_t initializer_kind,
-    node_t *initializer) {
-  if (!semantic_context || !type || type->kind != PSX_TYPE_ARRAY ||
-      type->array_len > 0 ||
-      type->is_vla || !initializer)
-    return 0;
-
-  psx_incomplete_array_resolution_t resolution;
-  return psx_resolve_incomplete_array_initializer_shape(
-             type, initializer_kind, initializer,
-             legacy_incomplete_array_constant_index, semantic_context,
-             &resolution) &&
-         psx_resolve_incomplete_array_type(
-             semantic_context, type, &resolution);
 }
 
 int psx_resolve_incomplete_array_initializer_qual_type_in(
@@ -437,21 +428,14 @@ int psx_resolve_incomplete_array_initializer_qual_type_in(
   if (!semantic_context || !completed_type ||
       incomplete_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
-  const psx_type_t *incomplete_view =
-      psx_semantic_type_table_lookup_qual_type(
-          ps_ctx_semantic_type_table_in(semantic_context),
-          incomplete_type);
   psx_incomplete_array_resolution_t resolution;
-  if (!psx_resolve_incomplete_array_initializer_shape(
-          incomplete_view, initializer_kind, initializer,
+  if (!psx_resolve_incomplete_array_initializer_shape_in(
+          semantic_context, incomplete_type,
+          initializer_kind, initializer,
           legacy_incomplete_array_constant_index, semantic_context,
           &resolution))
     return 0;
-  const psx_type_t *completed_view =
-      psx_resolve_completed_incomplete_array_type(
-          semantic_context, incomplete_view, &resolution);
-  if (!completed_view) return 0;
-  *completed_type = ps_ctx_find_interned_qual_type_in(
-      semantic_context, completed_view);
-  return completed_type->type_id != PSX_TYPE_ID_INVALID;
+  return psx_resolve_completed_incomplete_array_qual_type_in(
+      semantic_context, incomplete_type, &resolution,
+      completed_type);
 }

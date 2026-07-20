@@ -4245,39 +4245,53 @@ static const node_string_t *direct_character_array_string_initializer(
   return NULL;
 }
 
-static const psx_type_t *resolve_direct_completed_array_type(
+static psx_qual_type_t resolve_direct_completed_array_qual_type(
     direct_resolution_context_t *context,
-    const psx_type_t *type,
+    psx_qual_type_t type,
     const psx_parsed_initializer_t *initializer) {
-  if (!context || !type || !ps_type_is_incomplete_array(type) ||
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  const psx_type_t *type_view = context
+      ? psx_semantic_type_table_lookup_qual_type(
+            ps_ctx_semantic_type_table_in(context->semantic_context),
+            type)
+      : NULL;
+  if (!context || !type_view ||
+      !ps_type_is_incomplete_array(type_view) ||
       !initializer || !initializer->has_initializer ||
       !initializer->value)
-    return NULL;
+    return invalid;
   const node_string_t *string =
       direct_character_array_string_initializer(initializer);
   if (string) {
     psx_character_array_string_shape_t shape;
     if (psx_resolve_character_array_string_shape(
-            type->array_len,
-            ps_type_character_code_unit_width(type->base),
+            type_view->array_len,
+            ps_type_character_code_unit_width(type_view->base),
             string->literal_contents, string->literal_length,
             (int)string->char_width, &shape) !=
         PSX_CHARACTER_ARRAY_INITIALIZER_OK)
-      return NULL;
-    return psx_resolve_completed_incomplete_array_type(
+      return invalid;
+    psx_qual_type_t completed = invalid;
+    return psx_resolve_completed_incomplete_array_qual_type_in(
         context->semantic_context, type,
         &(psx_incomplete_array_resolution_t){
             .initializer_count = shape.inferred_capacity,
             .entries_initialize_outer_elements = 1,
-        });
+        },
+        &completed)
+               ? completed : invalid;
   }
   psx_incomplete_array_resolution_t resolution;
-  if (!psx_resolve_incomplete_array_initializer_shape(
-          type, initializer->kind, initializer->value,
+  if (!psx_resolve_incomplete_array_initializer_shape_in(
+          context->semantic_context, type,
+          initializer->kind, initializer->value,
           resolve_direct_initializer_index, context, &resolution))
-    return NULL;
-  return psx_resolve_completed_incomplete_array_type(
-      context->semantic_context, type, &resolution);
+    return invalid;
+  psx_qual_type_t completed = invalid;
+  return psx_resolve_completed_incomplete_array_qual_type_in(
+      context->semantic_context, type, &resolution, &completed)
+             ? completed : invalid;
 }
 
 static direct_compound_literal_binding_t *
@@ -4347,10 +4361,11 @@ static int resolve_direct_compound_literal(
       .value_tok = compound->base.tok,
   };
   if (object_type && ps_type_is_incomplete_array(object_type)) {
-    object_type = resolve_direct_completed_array_type(
-        context, object_type, &initializer);
-    object_qual_type = ps_ctx_intern_qual_type_in(
-        context->semantic_context, object_type);
+    object_qual_type = resolve_direct_completed_array_qual_type(
+        context, object_qual_type, &initializer);
+    object_type = psx_semantic_type_table_lookup_qual_type(
+        ps_ctx_semantic_type_table_in(context->semantic_context),
+        object_qual_type);
   }
   if (!object_type ||
       object_qual_type.type_id == PSX_TYPE_ID_INVALID)
@@ -4729,10 +4744,11 @@ static int preflight_direct_local_declaration(
       continue;
     }
     if (type && ps_type_is_incomplete_array(type)) {
-      type = resolve_direct_completed_array_type(
-          context, type, initializer);
-      decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
-          context->semantic_context, type);
+      decl_qual_type = resolve_direct_completed_array_qual_type(
+          context, decl_qual_type, initializer);
+      type = psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(context->semantic_context),
+          decl_qual_type);
     }
     int is_complete_fixed_array =
         type && type->kind == PSX_TYPE_ARRAY &&

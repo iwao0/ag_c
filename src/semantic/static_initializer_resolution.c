@@ -35,23 +35,13 @@ void psx_resolve_static_initializer(
 
   if (object_shape.kind == PSX_TYPE_ARRAY && object_shape.array_len <= 0 &&
       !object_shape.is_vla) {
-    const psx_type_t *type_view =
-        psx_semantic_type_table_lookup_qual_type(
-            semantic_types, request->type);
-    if (!type_view) return;
-    psx_type_t *type = ps_type_clone_in(
-        ps_ctx_arena(semantic_context), type_view);
-    if (!type) return;
-    if (!psx_resolve_incomplete_array_initializer(
-            semantic_context, type, resolution->kind,
-            resolution->initializer)) {
+    if (!psx_resolve_incomplete_array_initializer_qual_type_in(
+            semantic_context, request->type, resolution->kind,
+            resolution->initializer, &object_qual_type)) {
       resolution->status = PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED;
       return;
     }
     resolution->type_completed = 1;
-    object_qual_type = ps_ctx_intern_qual_type_in(
-        semantic_context, type);
-    if (object_qual_type.type_id == PSX_TYPE_ID_INVALID) return;
     if (!psx_semantic_type_table_describe(
             semantic_types, object_qual_type.type_id, &object_shape))
       return;
