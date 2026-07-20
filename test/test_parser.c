@@ -10687,14 +10687,9 @@ static void test_sizeof_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  node_t **sizeof_program = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned long __typed_hir_sizeof(void) { "
-      "return sizeof(int[3]); }");
-  ASSERT_TRUE(sizeof_program != NULL);
-  node_block_t *sizeof_body =
-      as_block(as_function_definition(sizeof_program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, sizeof_body->body[0]->kind);
-  assert_typed_sizeof(sizeof_body->body[0]->lhs, 12);
+      "return sizeof(int[3]); }"));
   int found_size_literal = 0;
   for (size_t i = hir_checkpoint + 1;
        i <= psx_hir_module_node_count(hir); i++) {
@@ -10710,46 +10705,45 @@ static void test_sizeof_typed_hir_boundary() {
   ASSERT_TRUE(found_size_literal);
 
   hir_checkpoint = psx_hir_module_node_count(hir);
-  node_t **vla_program = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned long __typed_hir_sizeof_vla(int n, int i) { "
-      "int a[n][n]; return sizeof(a[i]); }");
-  ASSERT_TRUE(vla_program != NULL);
-  node_block_t *vla_body =
-      as_block(as_function_definition(vla_program[0])->base.rhs);
-  node_t *vla_return = NULL;
-  for (int i = 0; vla_body->body[i]; i++) {
-    if (vla_body->body[i]->kind == ND_RETURN) {
-      vla_return = vla_body->body[i];
-      break;
-    }
-  }
-  ASSERT_TRUE(vla_return != NULL);
-  node_t *vla_query_node =
-      find_binary_tree_node_kind(vla_return->lhs, ND_SIZEOF_QUERY);
-  ASSERT_TRUE(vla_query_node != NULL);
-  node_sizeof_query_t *vla_query =
-      (node_sizeof_query_t *)vla_query_node;
-  int runtime_size_slot =
-      psx_sizeof_query_runtime_size_slot(vla_query);
-  ASSERT_TRUE(runtime_size_slot != 0);
-  ASSERT_TRUE(psx_sizeof_query_evaluates_vla_operand(vla_query));
-  int found_runtime_slot = 0;
-  int found_index_prefix = 0;
+      "int a[n][n]; return sizeof(a[i]); }"));
+  int found_vla_size_query = 0;
   for (size_t i = hir_checkpoint + 1;
        i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
-    if (!hir_node) continue;
-    if (psx_hir_node_kind(hir_node) == PSX_HIR_LOCAL &&
-        psx_hir_node_storage_offset(hir_node) ==
-            runtime_size_slot) {
-      found_runtime_slot = 1;
-    }
-    if (psx_hir_node_kind(hir_node) == PSX_HIR_COMMA)
-      found_index_prefix = 1;
+    if (!hir_node || psx_hir_node_kind(hir_node) != PSX_HIR_COMMA ||
+        psx_hir_node_child_count(hir_node) != 2)
+      continue;
+    const psx_hir_node_t *prefix = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(hir_node, 0));
+    const psx_hir_node_t *runtime_size = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(hir_node, 1));
+    if (!prefix || !runtime_size ||
+        psx_hir_node_kind(prefix) != PSX_HIR_LOCAL ||
+        psx_hir_node_kind(runtime_size) != PSX_HIR_LOCAL ||
+        psx_hir_node_object_size(runtime_size) !=
+            PSX_VLA_RUNTIME_SLOT_SIZE)
+      continue;
+    ASSERT_EQ(PSX_HIR_EDGE_LHS,
+              psx_hir_node_child_edge_at(hir_node, 0));
+    ASSERT_EQ(PSX_HIR_EDGE_RHS,
+              psx_hir_node_child_edge_at(hir_node, 1));
+    ASSERT_EQ(4, psx_hir_node_object_size(prefix));
+    ASSERT_EQ(PSX_VLA_RUNTIME_SLOT_SIZE,
+              psx_hir_node_object_align(runtime_size));
+    ASSERT_TRUE(psx_hir_node_storage_offset(runtime_size) != 0);
+    ASSERT_TRUE(psx_hir_node_storage_offset(prefix) !=
+                psx_hir_node_storage_offset(runtime_size));
+    psx_type_shape_t vla_size_shape = test_hir_type_shape(hir_node);
+    ASSERT_EQ(PSX_TYPE_INTEGER, vla_size_shape.kind);
+    ASSERT_EQ(PSX_INTEGER_KIND_LONG, vla_size_shape.integer_kind);
+    ASSERT_TRUE(vla_size_shape.is_unsigned);
+    found_vla_size_query = 1;
+    break;
   }
-  ASSERT_TRUE(found_runtime_slot);
-  ASSERT_TRUE(found_index_prefix);
+  ASSERT_TRUE(found_vla_size_query);
 
   node_t *raw_align =
       parse_expr_input_with_existing_locals("_Alignof(int[3])");
@@ -10788,16 +10782,13 @@ static void test_sizeof_typed_hir_boundary() {
   ASSERT_TRUE(ps_node_get_type(syntax_align) == NULL);
   psx_frontend_expression_hir_dispose(&typed_align);
 
-  node_t **program = parse_program_input(
+  hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
       "unsigned long __typed_hir_alignof(void) { "
-      "return _Alignof(void *); }");
-  ASSERT_TRUE(program != NULL);
-  node_block_t *body =
-      as_block(as_function_definition(program[0])->base.rhs);
-  ASSERT_EQ(ND_RETURN, body->body[0]->kind);
-  assert_typed_alignof(body->body[0]->lhs, 8);
+      "return _Alignof(void *); }"));
   int found_alignment_literal = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *hir_node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     if (hir_node &&

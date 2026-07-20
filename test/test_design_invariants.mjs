@@ -2733,6 +2733,24 @@ for (const helperName of ["expect_parse_fail", "expect_parse_ok"]) {
     );
   }
 }
+const typedHirBoundaryTests = [
+  ...parserUnitTestSource.matchAll(
+    /^static\s+void\s+(test_[A-Za-z0-9_]*typed_hir[A-Za-z0-9_]*)\s*\(/gm,
+  ),
+].map((match) => match[1]);
+if (typedHirBoundaryTests.length === 0) {
+  throw new Error("Typed HIR boundary tests must remain discoverable");
+}
+for (const testName of typedHirBoundaryTests) {
+  const body = parserUnitTestSource.match(
+    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+  );
+  if (!body || /\bparse_program_input\s*\(/.test(body[1])) {
+    throw new Error(
+      `${testName} must not recover Typed HIR assertions from a compatibility program AST`,
+    );
+  }
+}
 for (const testName of [
   "test_parser_name_environment_boundary",
   "test_direct_literal_typed_hir_resolution_boundary",
@@ -2746,6 +2764,7 @@ for (const testName of [
   "test_parameter_declaration_storage_plan_boundary",
   "test_toplevel_declarator_phase_boundary",
   "test_member_access_typed_hir_boundary",
+  "test_sizeof_typed_hir_boundary",
   "test_parse_evil_edge_cases",
 ]) {
   const body = parserUnitTestSource.match(
