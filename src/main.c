@@ -413,9 +413,9 @@ static int agc_wasm_compile_to_memory(
   tk_set_filename_ctx(tk_ctx, source_name);
 
   pp_stream_t *pps = NULL;
-  token_t *tok = pp_stream_open_for_target(
+  token_t *tok = pp_stream_open_in(
       ag_compilation_session_preprocessor_context(session),
-      &pps, tk_ctx, ag_compilation_session_target(session), source);
+      &pps, source);
 
   if (object_mode) {
     wasm32_backend_obj_set_output_file(backend, NULL);
@@ -761,9 +761,9 @@ int main(int argc, char **argv) {
    * line_delta / file_override)、#include (Stage 5: 被 include を遅延字句フレームとして push)
    * をすべて扱える。 */
   pp_stream_t *pps = NULL;
-  token_t *tok = pp_stream_open_for_target(
+  token_t *tok = pp_stream_open_in(
       ag_compilation_session_preprocessor_context(session),
-      &pps, tk_ctx, ag_compilation_session_target(session), source);
+      &pps, source);
 
 #ifdef AGC_TARGET_WASM32
   FILE *wasm_obj_out = NULL;

@@ -29151,6 +29151,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               &wasm_backend);
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
+  ASSERT_TRUE(pp_context_create(
+      host.diagnostic_context, &wasm.tokenizer, &host.target) == NULL);
+  ASSERT_TRUE(pp_context_create(
+      host.diagnostic_context, &host.tokenizer, NULL) == NULL);
   tokenizer_context_t invalid_tokenizer;
   ASSERT_TRUE(!tk_context_init(
       &invalid_tokenizer, NULL, host.token_allocator_context,
@@ -29217,6 +29221,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.diagnostic_context);
   ASSERT_TRUE(pp_context_diagnostics(host.preprocessor_context) ==
               host.diagnostic_context);
+  ASSERT_TRUE(pp_context_tokenizer(host.preprocessor_context) ==
+              &host.tokenizer);
+  ASSERT_TRUE(pp_context_target(host.preprocessor_context) ==
+              &host.target);
   ASSERT_TRUE(ps_lowering_diagnostics(host.lowering_context) ==
               host.diagnostic_context);
   ASSERT_TRUE(cg_context_diagnostics(host.codegen_emit_context) ==
@@ -29266,6 +29274,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               wasm.diagnostic_context);
   ASSERT_TRUE(pp_context_diagnostics(wasm.preprocessor_context) ==
               wasm.diagnostic_context);
+  ASSERT_TRUE(pp_context_tokenizer(wasm.preprocessor_context) ==
+              &wasm.tokenizer);
+  ASSERT_TRUE(pp_context_target(wasm.preprocessor_context) ==
+              &wasm.target);
   ASSERT_TRUE(ps_lowering_diagnostics(wasm.lowering_context) ==
               wasm.diagnostic_context);
   ASSERT_TRUE(cg_context_diagnostics(wasm.codegen_emit_context) ==

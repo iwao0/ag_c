@@ -62,8 +62,8 @@ struct ag_preprocessor_context_t {
 #define pp_time_buf (context->time_buf)
 #define pragma_once_list (context->pragma_once_list)
 #define cond_incl (context->cond_incl)
-#define g_preprocess_tk_ctx (context->tokenizer)
-#define g_preprocess_target (context->target)
+#define preprocess_tokenizer (context->tokenizer)
+#define preprocess_target (context->target)
 
 static tk_allocator_context_t *pp_token_allocator(
     const ag_preprocessor_context_t *context) {
@@ -159,6 +159,8 @@ static char *normalize_include_path_or_die(
 static char *dirname_dup_or_null(
     ag_preprocessor_context_t *context, const char *path);
 static char *my_strndup(const char *s, size_t n);
+static token_t *preprocess_tokens(
+    ag_preprocessor_context_t *context, token_t *tok);
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
 static _Noreturn void pp_error(
     ag_preprocessor_context_t *context,
@@ -1408,8 +1410,7 @@ static token_t *pp_expand_arg(
   }
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_for_target_ctx(
-      context, g_preprocess_tk_ctx, g_preprocess_target, list);
+  token_t *expanded = preprocess_tokens(context, list);
   include_depth = saved_depth;
   return expanded;
 }
@@ -1483,8 +1484,7 @@ static bool evaluate_constexpr(
        pp_token_allocator(context), 1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
 
-   token_t *expanded = preprocess_for_target_ctx(
-       context, g_preprocess_tk_ctx, g_preprocess_target, head2.next);
+   token_t *expanded = preprocess_tokens(context, head2.next);
 
    if (expanded->kind == TK_EOF) return false;
    if_expr_eval_steps = 0;
@@ -1594,20 +1594,20 @@ static token_t *paste_tokens(
       memcpy(buf, s_l, (size_t)len_l);
       memcpy(buf + len_l, s_r, (size_t)len_r);
       
-      const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-      const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
-      token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
+      const char *saved_input = tk_get_user_input_ctx(preprocess_tokenizer);
+      const char *saved_filename = tk_get_filename_ctx(preprocess_tokenizer);
+      token_t *saved_token = tk_get_current_token_ctx(preprocess_tokenizer);
 
-      tk_set_filename_ctx(g_preprocess_tk_ctx, "<paste>");
-      token_t *merged = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
+      tk_set_filename_ctx(preprocess_tokenizer, "<paste>");
+      token_t *merged = tk_tokenize_ctx(preprocess_tokenizer, buf);
       // Token-pasting must produce exactly one preprocessing token.
       if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
         pp_error(context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
       }
 
-      tk_set_filename_ctx(g_preprocess_tk_ctx, saved_filename);
-      tk_set_user_input_ctx(g_preprocess_tk_ctx, saved_input);
-      tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
+      tk_set_filename_ctx(preprocess_tokenizer, saved_filename);
+      tk_set_user_input_ctx(preprocess_tokenizer, saved_input);
+      tk_set_current_token_ctx(preprocess_tokenizer, saved_token);
 
       merged->next = rhs->next;
       copy_source_location(merged, cur);
@@ -1949,8 +1949,7 @@ static token_t *pp_expand_directive_line(
   cur->next->kind = TK_EOF;
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_for_target_ctx(
-      context, g_preprocess_tk_ctx, g_preprocess_target, head.next);
+  token_t *expanded = preprocess_tokens(context, head.next);
   include_depth = saved_depth;
   return expanded;
 }
@@ -1996,7 +1995,7 @@ static token_t *handle_line(
       t->line_no = (int)((long long)t->line_no + offset);
       if (new_file) {
         t->file_name_id = tk_filename_intern_ctx(
-            g_preprocess_tk_ctx, new_file);
+            preprocess_tokenizer, new_file);
       }
     }
   }
@@ -2284,19 +2283,13 @@ static token_t *pp_expand_funclike(
   return body_copy;
 }
 
-// プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
-token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
-                                   tokenizer_context_t *tk_ctx,
-                                   const ag_target_info_t *target,
-                                   token_t *tok) {
-  if (!context || !tk_ctx || !target || !tok) return NULL;
-  tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
-  const ag_target_info_t *prev_target = g_preprocess_target;
-  g_preprocess_tk_ctx = tk_ctx;
-  g_preprocess_target = target;
+static token_t *preprocess_tokens(
+    ag_preprocessor_context_t *context, token_t *tok) {
+  if (!context || !preprocess_tokenizer || !preprocess_target || !tok)
+    return NULL;
   if (include_depth == 0) {
     macro_expand_steps = 0;
-    pp_init_predefined_macros(context, target);
+    pp_init_predefined_macros(context, preprocess_target);
   }
 
   token_t head;
@@ -2308,7 +2301,7 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
     if (tok->at_bol && tok->kind == TK_HASH) {
       tok = tok->next; // '#' をスキップ
 
-      /* #include はストリーム経路 (pps_handle_include) で処理する。batch preprocess_ctx は
+      /* #include はストリーム経路 (pps_handle_include) で処理する。batch preprocess_tokens は
        * マクロ引数展開・#if 式評価のサブ展開でのみ使われ、それらのトークン列に #include 指令は
        * 現れないため、ここで #include を扱う必要はない。 */
       if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(context, tok, false); continue; }
@@ -2346,7 +2339,7 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
       if (!strcmp(name, "__FILE__")) {
         free(name);
         const char *fn = tk_filename_lookup_ctx(
-            g_preprocess_tk_ctx, tok->file_name_id);
+            preprocess_tokenizer, tok->file_name_id);
         const char *fname = fn ? fn : "";
         token_t *ft = make_string_token(context, fname, tok);
         cur->next = ft;
@@ -2409,8 +2402,6 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
   }
 
   cur->next = tok; // TK_EOF を繋ぐ
-  g_preprocess_tk_ctx = prev_tk_ctx;
-  g_preprocess_target = prev_target;
   return head.next;
 }
 
@@ -2444,8 +2435,6 @@ struct pp_include_frame {
 
 struct pp_stream {
   ag_preprocessor_context_t *context;
-  tokenizer_context_t *tk_ctx;
-  ag_target_info_t target;
   tk_token_stream_t *lex;
   token_t *out_head;   // 解放されていない先頭 (デバッグ用)
   token_t *out_tail;   // 末尾 (ここに append)
@@ -2462,7 +2451,8 @@ struct pp_stream {
    * offset を加算 / file_name_id を上書き」する。ストリームでは後続を一括変更できないので、
    * 遅延デルタとして保持し、lex 由来 (物理) トークンを pull した時点で 1 回だけ適用する。
    * file_override は #line にファイル指定がある度に更新され、以降 sticky (指定無し #line は
-   * 既存のファイル名を保つ = バッチと同じ)。id 0 も有効なので別フラグで有無を持つ。 */
+   * 既存のファイル名を保つ = バッチと同じ)。id 0 は unknown/empty を表す場合があるため、
+   * 別フラグで override の有無を持つ。 */
   int line_delta;          // 物理 line_no に加算するデルタ (既定 0)
   int file_override_set;   // file_override が有効か
   uint16_t file_override;  // 有効時、lex 由来トークンの file_name_id をこれで上書き
@@ -2481,26 +2471,26 @@ typedef struct {
 
 static pps_cursor_hook_binding_t pps_suspend_cursor_hook(pp_stream_t *s) {
   pps_cursor_hook_binding_t saved = {
-      .callback = tk_get_cursor_hook_ctx(s->tk_ctx),
-      .user_data = tk_get_cursor_hook_user_data_ctx(s->tk_ctx),
+      .callback = tk_get_cursor_hook_ctx(s->context->tokenizer),
+      .user_data = tk_get_cursor_hook_user_data_ctx(s->context->tokenizer),
   };
-  tk_set_cursor_hook_ctx(s->tk_ctx, NULL, NULL);
+  tk_set_cursor_hook_ctx(s->context->tokenizer, NULL, NULL);
   return saved;
 }
 
 static void pps_restore_cursor_hook(
     pp_stream_t *s, pps_cursor_hook_binding_t binding) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, binding.callback, binding.user_data);
+  tk_set_cursor_hook_ctx(s->context->tokenizer, binding.callback, binding.user_data);
 }
 
 static void pps_install_tokenizer_hooks(pp_stream_t *s) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, pps_on_advance, s);
-  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, pps_ensure_lookahead, s);
+  tk_set_cursor_hook_ctx(s->context->tokenizer, pps_on_advance, s);
+  tk_set_ensure_lookahead_hook_ctx(s->context->tokenizer, pps_ensure_lookahead, s);
 }
 
 static void pps_clear_tokenizer_hooks(pp_stream_t *s) {
-  tk_set_cursor_hook_ctx(s->tk_ctx, NULL, NULL);
-  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, NULL, NULL);
+  tk_set_cursor_hook_ctx(s->context->tokenizer, NULL, NULL);
+  tk_set_ensure_lookahead_hook_ctx(s->context->tokenizer, NULL, NULL);
 }
 
 static void pps_activate(pp_stream_t *s) {
@@ -2555,8 +2545,8 @@ static void pps_pop_frame(pp_stream_t *s) {
   pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
   tk_stream_delete(s->lex);          // EOF に達した被 include の lexer
   pps_restore_cursor_hook(s, saved_hook);
-  tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
-  tk_set_user_input_ctx(g_preprocess_tk_ctx, f->saved_input);
+  tk_set_filename_ctx(preprocess_tokenizer, f->saved_filename);
+  tk_set_user_input_ctx(preprocess_tokenizer, f->saved_input);
   s->pb_head           = f->saved_pb_head;  // 親の pushback 列 (被 include 後に続く)
   pps_update_stream_pin(s);
   s->line_delta        = f->saved_line_delta;
@@ -2611,7 +2601,7 @@ static int pp_body_is_single_call_replacement(token_t *body) {
 }
 
 /* `MACRO(args)(more)` 形: 置換列末尾の `)` の直後の `(more)` だけを繋ぎ、
- * その閉じ `)` までを preprocess_for_target_ctx で縮約してから pushback する。 */
+ * その閉じ `)` までを preprocess_tokens で縮約してから pushback する。 */
 static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
   ag_preprocessor_context_t *context = s->context;
   if (!body) return NULL;
@@ -2646,8 +2636,7 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
 
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_for_target_ctx(
-      context, g_preprocess_tk_ctx, g_preprocess_target, copy);
+  token_t *expanded = preprocess_tokens(context, copy);
   include_depth = saved_depth;
   if (expanded) {
     token_t *prev = NULL;
@@ -2700,14 +2689,14 @@ static token_t *pps_materialize_line(pp_stream_t *s, token_t *first) {
    * 先頭でトークナイズ不能文字 (` @ $) だと、スキップ開始前にここで tokenize されて E2028 に
    * なる。先読み区間はトークナイズ不能文字を許容 (TK_UNKNOWN 化) し、偽分岐なら後段の skip が
    * 捨て、active なら pps_step が出力時に E2028 を出す。 */
-  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, true);
+  tk_set_tolerate_untokenizable_ctx(s->context->tokenizer, true);
   for (;;) {
     token_t *nx = pps_pull_raw(s);
     if (!nx) break;                    // 入力末尾
     if (nx->kind == TK_EOF || nx->at_bol) { pps_pushback_one(s, nx); break; }
     cur->next = nx; cur = nx;
   }
-  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, false);
+  tk_set_tolerate_untokenizable_ctx(s->context->tokenizer, false);
   cur->next = pps_make_eof(s->context, first);
   return first;
 }
@@ -2772,9 +2761,9 @@ static void pps_skip_cond_incl_impl(pp_stream_t *s) {
  * 中身は単一文字 pp-token に分解されるだけでよい)。読み飛ばしは生トークンを pull して捨てる
  * ので、ここで tk_set_tolerate_untokenizable を立てておけば偽分岐内の非C 文字でエラーにならない。 */
 static void pps_skip_cond_incl(pp_stream_t *s) {
-  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, true);
+  tk_set_tolerate_untokenizable_ctx(s->context->tokenizer, true);
   pps_skip_cond_incl_impl(s);
-  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, false);
+  tk_set_tolerate_untokenizable_ctx(s->context->tokenizer, false);
 }
 
 /* ストリーミング版の条件指令ハンドラ。式評価/スタック操作はバッチの補助関数を再利用し、
@@ -2838,7 +2827,7 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
     long long raw = (long long)nx->line_no - s->line_delta;  // 旧デルタを除いた素値
     s->line_delta = (int)(new_line - raw);
     if (new_file) {
-      s->file_override = tk_filename_intern_ctx(s->tk_ctx, new_file);
+      s->file_override = tk_filename_intern_ctx(s->context->tokenizer, new_file);
       s->file_override_set = 1;
     }
     /* 覗いたトークンは pushback 側に戻る = 以後デルタ非適用なので、新デルタ/上書きを今ここで
@@ -2858,7 +2847,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;  // skip "include"
   char *filename = consume_include_filename(context, &tok);
-  const char *current_file = tk_get_filename_ctx(g_preprocess_tk_ctx);
+  const char *current_file = tk_get_filename_ctx(preprocess_tokenizer);
   char *loaded_path = NULL;
   char *buf = NULL;
   if (g_virtual_headers_enabled) {
@@ -2896,8 +2885,8 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   f->buf                     = buf;
   f->buf_owned               = g_virtual_headers_enabled ? 0 : 1;
   f->path_owned              = loaded_path;
-  f->saved_input             = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-  f->saved_filename          = tk_get_filename_ctx(g_preprocess_tk_ctx);
+  f->saved_input             = tk_get_user_input_ctx(preprocess_tokenizer);
+  f->saved_filename          = tk_get_filename_ctx(preprocess_tokenizer);
   f->saved_line_delta        = s->line_delta;
   f->saved_file_override_set = s->file_override_set;
   f->saved_file_override     = s->file_override;
@@ -2908,7 +2897,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
 
   /* ctx はframe所有のpathを借用する。tokenのfilename tableは文字列をコピーするので、
    * frame pop後も発行済みfile_name_idは有効なまま。 */
-  tk_set_filename_ctx(g_preprocess_tk_ctx, loaded_path);
+  tk_set_filename_ctx(preprocess_tokenizer, loaded_path);
   s->line_delta        = 0;
   s->file_override_set = 0;
   s->file_override     = 0;
@@ -2922,10 +2911,10 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   /* 被 include の遅延字句を開く。begin_tokenize_session が current_token=NULL にし、
    * tokenize_prepare_input が user_input を被 include バッファに上書きする。current_token は
    * パーサのカーソルなので保存・復元する (バッチ include_and_splice 同様)。 */
-  token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
-  s->lex    = tk_stream_new(g_preprocess_tk_ctx, buf);
+  token_t *saved_token = tk_get_current_token_ctx(preprocess_tokenizer);
+  s->lex    = tk_stream_new(preprocess_tokenizer, buf);
   s->frames = f;
-  tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
+  tk_set_current_token_ctx(preprocess_tokenizer, saved_token);
   free(filename);
 }
 
@@ -2992,7 +2981,7 @@ static int pps_step(pp_stream_t *s) {
     }
     if (id->len == 8 && memcmp(id->str, "__FILE__", 8) == 0) {
       const char *fn = tk_filename_lookup_ctx(
-          s->tk_ctx, tok->file_name_id);
+          s->context->tokenizer, tok->file_name_id);
       pps_append(s, make_string_token(context, fn ? fn : "", tok));
       return 1;
     }
@@ -3002,7 +2991,7 @@ static int pps_step(pp_stream_t *s) {
       count_macro_expansion_or_die(s->context);  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
       /* マクロ展開は batch と同じ pp_expand_objlike / pp_expand_funclike を使い、結果を
        * pushback して rescan する (= batch の splice + continue 相当)。展開中は paste_tokens
-       * (tk_tokenize_ctx) / pp_expand_arg (preprocess_for_target_ctx) がネスト session でカーソルフックを
+       * (tk_tokenize_ctx) / pp_expand_arg (preprocess_tokens) がネスト session でカーソルフックを
        * 発火させるので一時的に外す。 */
       if (m->is_funclike) {
         token_t *nx = pps_pull_raw(s);   // 2-token 先読み: 呼び出しの '(' か
@@ -3015,7 +3004,7 @@ static int pps_step(pp_stream_t *s) {
               context, m, tok, args, name);
           free(args);
           if (body) {
-            /* The suffix rescan calls preprocess_for_target_ctx() on a synthetic token list.
+            /* The suffix rescan calls preprocess_tokens() on a synthetic token list.
              * Keep the outer streaming cursor hook disabled so that nested cursor
              * movement cannot refill the outer stream before the expansion result
              * is pushed back. */
@@ -3109,25 +3098,22 @@ static void pps_ensure_lookahead(void *user_data) {
 
 /* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
  * 先頭トークン (パーサのカーソル開始位置) を返す。 */
-token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
-                                   pp_stream_t **out_s,
-                                   tokenizer_context_t *tk_ctx,
-                                   const ag_target_info_t *target,
-                                   const char *src) {
-  if (!context || !out_s || !tk_ctx || !target || !src) return NULL;
+token_t *pp_stream_open_in(ag_preprocessor_context_t *context,
+                        pp_stream_t **out_s,
+                        const char *src) {
+  if (!out_s) return NULL;
+  *out_s = NULL;
+  if (!context || context->active_stream || !preprocess_tokenizer ||
+      !ag_target_info_is_valid(preprocess_target) || !src)
+    return NULL;
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
   if (!s) return NULL;
   s->context = context;
-  s->tk_ctx = tk_ctx;
-  s->target = *target;
-  g_preprocess_tk_ctx = s->tk_ctx;
-  g_preprocess_target = &s->target;
   /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に
    * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
   reset_macros(context);
   reset_retired_include_sources(context);
   tk_allocator_reset_translation_unit_in(pp_token_allocator(context));
-  tk_filename_reset_translation_unit_ctx(s->tk_ctx);
   reset_pragma_once_list(context);
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
@@ -3140,10 +3126,10 @@ token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
   include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
   tk_allocator_set_recyclable_in(pp_token_allocator(context), 0);
-  pp_init_predefined_macros(context, target);
+  pp_init_predefined_macros(context, preprocess_target);
   /* 以後の生成は recyclable アリーナ。 */
   tk_allocator_set_recyclable_in(pp_token_allocator(context), 1);
-  s->lex = tk_stream_new(s->tk_ctx, src);
+  s->lex = tk_stream_new(s->context->tokenizer, src);
   s->cursor = NULL;
   /* 先頭を 1 つ生成し、そこから lookahead 分を満たす。 */
   while (!s->out_head && !s->eof_done) pps_step(s);
@@ -3174,17 +3160,22 @@ void pp_stream_close(pp_stream_t *s) {
     free(f);
   }
   tk_stream_delete(s->lex);
-  if (g_preprocess_tk_ctx == s->tk_ctx) g_preprocess_tk_ctx = NULL;
-  if (g_preprocess_target == &s->target) g_preprocess_target = NULL;
   free(s);
 }
 
 ag_preprocessor_context_t *pp_context_create(
-    ag_diagnostic_context_t *diagnostic_context) {
-  if (!diagnostic_context) return NULL;
+    ag_diagnostic_context_t *diagnostic_context,
+    tokenizer_context_t *tokenizer_context,
+    const ag_target_info_t *target) {
+  if (!diagnostic_context || !tokenizer_context ||
+      tk_context_diagnostics(tokenizer_context) != diagnostic_context ||
+      !ag_target_info_is_valid(target))
+    return NULL;
   ag_preprocessor_context_t *context = calloc(1, sizeof(*context));
   if (!context) return NULL;
   context->diagnostic_context = diagnostic_context;
+  context->tokenizer = tokenizer_context;
+  context->target = target;
   context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
   context->if_expr_eval = true;
   return context;
@@ -3193,6 +3184,16 @@ ag_preprocessor_context_t *pp_context_create(
 ag_diagnostic_context_t *pp_context_diagnostics(
     const ag_preprocessor_context_t *context) {
   return context ? context->diagnostic_context : NULL;
+}
+
+tokenizer_context_t *pp_context_tokenizer(
+    const ag_preprocessor_context_t *context) {
+  return context ? context->tokenizer : NULL;
+}
+
+const ag_target_info_t *pp_context_target(
+    const ag_preprocessor_context_t *context) {
+  return context ? context->target : NULL;
 }
 
 void pp_context_destroy(ag_preprocessor_context_t *context) {

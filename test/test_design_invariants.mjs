@@ -1423,7 +1423,8 @@ if (sessionContextAccessorNames.some((name) =>
     !/ag_compilation_session_tokenizer\s*\(/.test(compilerMainSource) ||
     /tk_get_default_context\s*\(/.test(compilerMainSource) ||
     /ag_target_set_pointer_size\s*\(/.test(compilerMainSource) ||
-    !/pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
+    !/pp_stream_open_in\s*\(/.test(compilerMainSource) ||
+    /pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
     /diag_context_publish\s*\(/.test(compilerMainSource) ||
     /static\s+ag_compilation_session_t\s*\*wasm_adapter_session\s*;/.test(
       compilerMainSource,
@@ -1781,6 +1782,36 @@ const tokenizerProductionContextSources = [
   tokenizerAllocatorSource,
   tokenizerAllocatorHeader,
 ].join("\n");
+if (!/pp_context_create\s*\(\s*ag_diagnostic_context_t\s*\*diagnostic_context\s*,\s*tokenizer_context_t\s*\*tokenizer_context\s*,\s*const\s+ag_target_info_t\s*\*target\s*\)/s.test(
+      preprocessHeader + preprocessSource,
+    ) ||
+    !/context->tokenizer\s*=\s*tokenizer_context\s*;/.test(
+      preprocessSource,
+    ) ||
+    !/context->target\s*=\s*target\s*;/.test(preprocessSource) ||
+    /(?:preprocess_tokenizer|preprocess_target)\s*=/.test(
+      preprocessSource,
+    ) ||
+    /struct\s+pp_stream\s*\{[^}]*\b(?:tk_ctx|ag_target_info_t\s+target)\b/s.test(
+      preprocessSource,
+    ) ||
+    !/static\s+token_t\s*\*preprocess_tokens\s*\(\s*ag_preprocessor_context_t\s*\*context\s*,\s*token_t\s*\*tok\s*\)/s.test(
+      preprocessSource,
+    ) ||
+    /preprocess_tokens\s*\(/.test(preprocessHeader) ||
+    /tk_filename_reset_translation_unit_ctx\s*\(/.test(preprocessSource) ||
+    !/pp_stream_open_in\s*\(\s*ag_preprocessor_context_t\s*\*context\s*,\s*pp_stream_t\s*\*\*out_s\s*,\s*const\s+char\s*\*src\s*\)/s.test(
+      preprocessHeader + preprocessSource,
+    ) ||
+    !/context->active_stream/.test(
+      preprocessSource.match(
+        /token_t\s*\*pp_stream_open_in\s*\([^]*?\n\}/,
+      )?.[0] ?? "",
+    )) {
+  throw new Error(
+    "preprocessor tokenizer and target dependencies must be immutable context state",
+  );
+}
 if (/owns_(?:allocator|diagnostic)_context/.test(tokenizerHeader) ||
     /tk_context_(?:bind_diagnostic_context|set_allocator)\s*\(/.test(
       tokenizerHeader + tokenizerConfigRuntimeSource,
@@ -2027,11 +2058,13 @@ if (!/tk_cursor_hook_t\s+cursor_hook\s*;/.test(
     /static\s+void\s*\(\*tk_cursor_hook\)/.test(tokenizerSource) ||
     /static\s+void\s*\(\*g_ensure_lookahead_hook\)/.test(tokenizerSource) ||
     /static\s+bool\s+g_tolerate_untokenizable/.test(tokenizerSource) ||
-    !/tk_set_cursor_hook_ctx\s*\(s->tk_ctx/.test(preprocessSource) ||
-    !/tk_set_ensure_lookahead_hook_ctx\s*\(s->tk_ctx/.test(
+    !/tk_set_cursor_hook_ctx\s*\(s->context->tokenizer/.test(
       preprocessSource,
     ) ||
-    !/tk_set_tolerate_untokenizable_ctx\s*\(s->tk_ctx/.test(
+    !/tk_set_ensure_lookahead_hook_ctx\s*\(s->context->tokenizer/.test(
+      preprocessSource,
+    ) ||
+    !/tk_set_tolerate_untokenizable_ctx\s*\(s->context->tokenizer/.test(
       preprocessSource,
     )) {
   throw new Error(
@@ -2042,10 +2075,10 @@ if (/default_preprocessor_context|active_preprocessor_context/.test(
       preprocessSource,
     ) ||
     /pp_context_(?:active|activate)\s*\(/.test(preprocessSource) ||
-    !/pp_stream_open_for_target\s*\(ag_preprocessor_context_t\s*\*context/.test(
+    !/pp_stream_open_in\s*\(ag_preprocessor_context_t\s*\*context/.test(
       preprocessSource,
     ) ||
-    !/preprocess_for_target_ctx\s*\(ag_preprocessor_context_t\s*\*context/.test(
+    !/preprocess_tokens\s*\(\s*ag_preprocessor_context_t\s*\*context/.test(
       preprocessSource,
     ) ||
     /tk_ctx\s*\?\s*tk_ctx\s*:\s*tk_get_default_context\s*\(/.test(
@@ -2066,7 +2099,7 @@ if (!/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
     !/pp_context_create\s*\(\s*ag_diagnostic_context_t\s*\*diagnostic_context/.test(
       preprocessSource,
     ) ||
-    !/pp_context_create\s*\(\s*session->diagnostic_context\s*\)/.test(
+    !/pp_context_create\s*\(\s*session->diagnostic_context\s*,\s*&session->tokenizer\s*,\s*&session->target\s*\)/s.test(
       compilationSessionSource,
     ) ||
     contextFreePreprocessorDiagnosticApi.test(preprocessSource)) {
@@ -2199,6 +2232,12 @@ if (!/ps_local_registry_diagnostics\s*\(/.test(
     !/diag_context_source_manager\s*\(\s*session->diagnostic_context\s*\)\s*==\s*session->source_manager/.test(
       compilationSessionSource,
     ) ||
+    !/pp_context_tokenizer\s*\(\s*session->preprocessor_context\s*\)\s*==\s*&session->tokenizer/.test(
+      compilationSessionSource,
+    ) ||
+    !/pp_context_target\s*\(\s*session->preprocessor_context\s*\)\s*==\s*&session->target/.test(
+      compilationSessionSource,
+    ) ||
     !/ps_ctx_arena\s*\(\s*session->semantic_context\s*\)\s*==\s*session->arena_context/.test(
       compilationSessionSource,
     ) ||
@@ -2271,6 +2310,13 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
+if (!/ag_source_manager_reset_translation_unit\s*\(\s*ag_compilation_session_source_manager\s*\(session\)\s*\)/.test(
+      frontendTranslationUnitSource,
+    )) {
+  throw new Error(
+    "CompilationSession translation-unit reset must reset SourceManager state",
+  );
+}
 const frontendTranslationUnitResolverHeader = await readFile(
   "src/frontend/translation_unit_resolver.h",
   "utf8",

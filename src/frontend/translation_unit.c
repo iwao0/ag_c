@@ -19,6 +19,7 @@
 #include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/statement_syntax_adapter.h"
+#include "../source_manager.h"
 #include <string.h>
 
 static int frontend_session_is_complete(
@@ -134,6 +135,8 @@ static void reset_translation_unit_state(
 int psx_frontend_reset_translation_unit_state_in_session(
     ag_compilation_session_t *session) {
   if (!frontend_session_is_complete(session)) return 0;
+  ag_source_manager_reset_translation_unit(
+      ag_compilation_session_source_manager(session));
   psx_hir_module_reset(
       ag_compilation_session_hir_module(session));
   reset_translation_unit_state(

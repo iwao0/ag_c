@@ -84,7 +84,8 @@ int ag_compilation_session_init(
       ps_ctx_semantic_type_table_in(session->semantic_context),
       session->scope_graph);
   session->preprocessor_context = pp_context_create(
-      session->diagnostic_context);
+      session->diagnostic_context, &session->tokenizer,
+      &session->target);
   session->parser_runtime_context = ps_parser_runtime_context_create(
       session->arena_context, &session->tokenizer,
       session->diagnostic_context);
@@ -177,6 +178,10 @@ int ag_compilation_session_is_complete(
              session->diagnostic_context &&
          pp_context_diagnostics(session->preprocessor_context) ==
              session->diagnostic_context &&
+         pp_context_tokenizer(session->preprocessor_context) ==
+             &session->tokenizer &&
+         pp_context_target(session->preprocessor_context) ==
+             &session->target &&
          session->parser_runtime_context &&
          ps_parser_runtime_arena(session->parser_runtime_context) ==
              session->arena_context &&
