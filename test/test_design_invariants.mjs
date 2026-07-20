@@ -3912,6 +3912,10 @@ const wasmMachineFunctionPlanSource = await readFile(
   "src/arch/wasm32/wasm32_machine_function.c",
   "utf8",
 );
+const wasmMachineModulePlanSource = await readFile(
+  "src/arch/wasm32/wasm32_machine_module.c",
+  "utf8",
+);
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
     !/\blower_ir_global_symbol\s*\(/.test(irSymbolLoweringSource) ||
@@ -3984,8 +3988,11 @@ if (/\bx8\b|\bret_type\b/.test(irHeaderSource) ||
     !/\bir_abi_reference_signature\s*\(/.test(
       wasmMachineFunctionPlanSource,
     ) ||
-    !/\bir_abi_data_relocation_signature\s*\(/.test(wasmIrSource) ||
-    !/\bir_abi_data_relocation_signature\s*\(/.test(wasmObjSource)) {
+    !/\bir_abi_data_relocation_signature\s*\(/.test(
+      wasmMachineModulePlanSource,
+    ) ||
+    /\bir_abi_data_relocation_signature\s*\(/.test(wasmIrSource) ||
+    /\bir_abi_data_relocation_signature\s*\(/.test(wasmObjSource)) {
   throw new Error(
     "aggregate result and function-reference ABI must be represented by target-neutral MIR plus sidecars",
   );
@@ -10849,8 +10856,11 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
       wasmMachineAbiSource,
     ) ||
     !/wasm32_machine_call_signature\s*\(/.test(wasmMachineAbiSource) ||
-    !/wasm32_machine_signature_from_abi\s*\(/.test(wasmWatWriterSource) ||
-    !/wasm32_machine_signature_from_abi\s*\(/.test(wasmObjectWriterSource) ||
+    !/wasm32_machine_signature_from_abi\s*\(/.test(
+      wasmMachineModuleSource,
+    ) ||
+    /wasm32_machine_signature_from_abi\s*\(/.test(wasmWatWriterSource) ||
+    /wasm32_machine_signature_from_abi\s*\(/.test(wasmObjectWriterSource) ||
     !/wasm32_machine_call_signature\s*\(/.test(
       wasmMachineFunctionSource,
     ) ||
@@ -10984,6 +10994,38 @@ if (!/char\s+\*name\s*;/.test(wasmMachineFunctionHeader) ||
     )) {
   throw new Error(
     "Wasm serializers must use Machine function identity, linkage, and continuation metadata",
+  );
+}
+
+if (!/wasm32_machine_data_object_t\s*\*data_objects\s*;/.test(
+      wasmMachineModuleHeader,
+    ) ||
+    !/wasm32_machine_module_build_data\s*\(/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/copy_data_object\s*\(/.test(wasmMachineModuleSource) ||
+    !/ir_abi_data_relocation_signature\s*\(/.test(
+      wasmMachineModuleSource,
+    ) ||
+    !/wasm32_emit_machine_data_segments_in\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_obj_emit_machine_data_segments_in\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /\bir_data_(?:module|object|reloc)_t\b/.test(wasmWatWriterSource) ||
+    /\bir_data_(?:module|object|reloc)_t\b/.test(wasmObjectWriterSource) ||
+    /\bir_abi_data_module_t\b|ir_abi_data_relocation_signature\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /\bir_abi_data_module_t\b|ir_abi_data_relocation_signature\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/wasm32_machine_module_build_data\s*\(/.test(
+      wasmBackendContextSource,
+    )) {
+  throw new Error(
+    "Wasm serializers must consume owned Machine data objects and relocations",
   );
 }
 

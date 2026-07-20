@@ -1,4 +1,5 @@
 #include "wasm32_machine_module.h"
+#include "../../lowering/abi_lowering.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -57,15 +58,157 @@ static int copy_symbol(
   return 1;
 }
 
+static void dispose_data_object(
+    wasm32_machine_data_object_t *object) {
+  if (!object) return;
+  free(object->name);
+  free(object->bytes);
+  for (int i = 0; i < object->relocation_count; i++) {
+    free(object->relocations[i].target);
+    wasm32_machine_signature_dispose(
+        &object->relocations[i].function_signature);
+  }
+  free(object->relocations);
+  memset(object, 0, sizeof(*object));
+}
+
+static void clear_data_objects(wasm32_machine_module_t *module) {
+  if (!module) return;
+  for (size_t i = 0; i < module->data_object_count; i++)
+    dispose_data_object(&module->data_objects[i]);
+  free(module->data_objects);
+  module->data_objects = NULL;
+  module->data_object_count = 0;
+}
+
+static wasm32_machine_data_object_kind_t machine_data_kind(
+    ir_data_object_kind_t kind) {
+  switch (kind) {
+    case IR_DATA_OBJECT: return WASM32_MACHINE_DATA_OBJECT;
+    case IR_DATA_STRING: return WASM32_MACHINE_DATA_STRING;
+    case IR_DATA_FLOAT: return WASM32_MACHINE_DATA_FLOAT;
+  }
+  return WASM32_MACHINE_DATA_FLOAT;
+}
+
+static int copy_data_object(
+    wasm32_machine_data_object_t *destination,
+    const ir_data_object_t *source,
+    const ir_abi_data_module_t *data_abi) {
+  memset(destination, 0, sizeof(*destination));
+  destination->name_len = source->name_len;
+  destination->byte_size = source->byte_size;
+  destination->alignment = source->alignment;
+  destination->element_size = source->element_size;
+  destination->kind = machine_data_kind(source->kind);
+  destination->is_extern = source->is_extern;
+  destination->is_static = source->is_static;
+  destination->is_thread_local = source->is_thread_local;
+  destination->is_read_only = source->is_read_only;
+  destination->has_explicit_initializer =
+      source->has_explicit_initializer;
+  if (!copy_name(
+          &destination->name, source->name, source->name_len))
+    return 0;
+  if (source->bytes && source->byte_size > 0) {
+    destination->bytes = malloc((size_t)source->byte_size);
+    if (!destination->bytes) return 0;
+    memcpy(
+        destination->bytes, source->bytes,
+        (size_t)source->byte_size);
+  }
+  for (const ir_data_reloc_t *relocation = source->relocs; relocation;
+       relocation = relocation->next)
+    destination->relocation_count++;
+  if (destination->relocation_count > 0) {
+    destination->relocations = calloc(
+        (size_t)destination->relocation_count,
+        sizeof(*destination->relocations));
+    if (!destination->relocations) return 0;
+  }
+  int index = 0;
+  for (const ir_data_reloc_t *relocation = source->relocs; relocation;
+       relocation = relocation->next, index++) {
+    wasm32_machine_data_reloc_t *machine =
+        &destination->relocations[index];
+    machine->target_len = relocation->target_len;
+    machine->offset = relocation->offset;
+    machine->width = relocation->width;
+    machine->addend = relocation->addend;
+    machine->kind = relocation->kind == IR_DATA_RELOC_FUNCTION
+                        ? WASM32_MACHINE_DATA_RELOC_FUNCTION
+                        : WASM32_MACHINE_DATA_RELOC_DATA;
+    if (!copy_name(
+            &machine->target,
+            relocation->target, relocation->target_len))
+      return 0;
+    if (machine->kind == WASM32_MACHINE_DATA_RELOC_FUNCTION) {
+      const ir_abi_signature_t *abi =
+          ir_abi_data_relocation_signature(data_abi, relocation);
+      if (!wasm32_machine_signature_from_abi(
+              abi, 1, &machine->function_signature))
+        return 0;
+      machine->has_function_signature = 1;
+    }
+  }
+  return 1;
+}
+
 void wasm32_machine_module_dispose(wasm32_machine_module_t *module) {
   if (!module) return;
   for (size_t i = 0; i < module->function_count; i++)
     wasm32_machine_function_dispose(&module->functions[i]);
   for (size_t i = 0; i < module->symbol_count; i++)
     dispose_symbol(&module->symbols[i]);
+  clear_data_objects(module);
   free(module->functions);
   free(module->symbols);
   memset(module, 0, sizeof(*module));
+}
+
+int wasm32_machine_module_build_data(
+    wasm32_machine_module_t *module,
+    const ir_data_module_t *source,
+    const ir_abi_data_module_t *data_abi) {
+  if (!module) return 0;
+  clear_data_objects(module);
+  if (!source) return 1;
+  for (const ir_data_object_t *object = source->objects; object;
+       object = object->next)
+    module->data_object_count++;
+  if (module->data_object_count > 0) {
+    module->data_objects = calloc(
+        module->data_object_count, sizeof(*module->data_objects));
+    if (!module->data_objects) goto fail;
+  }
+  size_t index = 0;
+  for (const ir_data_object_t *object = source->objects; object;
+       object = object->next, index++) {
+    if (!copy_data_object(
+            &module->data_objects[index], object, data_abi))
+      goto fail;
+  }
+  for (size_t object_index = 0;
+       object_index < module->data_object_count; object_index++) {
+    wasm32_machine_data_object_t *object =
+        &module->data_objects[object_index];
+    for (int relocation_index = 0;
+         relocation_index < object->relocation_count;
+         relocation_index++) {
+      wasm32_machine_data_reloc_t *relocation =
+          &object->relocations[relocation_index];
+      if (relocation->kind != WASM32_MACHINE_DATA_RELOC_DATA)
+        continue;
+      relocation->resolved_target = wasm32_machine_module_data_object(
+          module, relocation->target, relocation->target_len);
+      if (!relocation->resolved_target) goto fail;
+    }
+  }
+  return 1;
+
+fail:
+  clear_data_objects(module);
+  return 0;
 }
 
 int wasm32_machine_module_build(
@@ -149,6 +292,20 @@ wasm32_machine_symbol_find_func_ref(
   for (int i = 0; i < symbol->func_ref_count; i++) {
     if (symbol->func_refs[i].offset == offset)
       return &symbol->func_refs[i];
+  }
+  return NULL;
+}
+
+const wasm32_machine_data_object_t *wasm32_machine_module_data_object(
+    const wasm32_machine_module_t *module,
+    const char *name, int name_len) {
+  if (!module || !name || name_len <= 0) return NULL;
+  for (size_t i = 0; i < module->data_object_count; i++) {
+    const wasm32_machine_data_object_t *object =
+        &module->data_objects[i];
+    if (object->name_len == name_len &&
+        memcmp(object->name, name, (size_t)name_len) == 0)
+      return object;
   }
   return NULL;
 }

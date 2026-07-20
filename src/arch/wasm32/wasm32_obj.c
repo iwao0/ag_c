@@ -3,7 +3,6 @@
 #include "wasm32_machine_function.h"
 #include "wasm32_machine_ir.h"
 #include "../../diag/diag.h"
-#include "../../lowering/abi_lowering.h"
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -141,7 +140,6 @@ struct wasm32_obj_context_t {
   ir_type_t *emit_local_types;
   unsigned char *emit_local_unsigned;
   int emit_local_count;
-  const ir_abi_data_module_t *data_abi;
   wasm32_machine_primitive_plan_t primitives;
 };
 
@@ -205,7 +203,6 @@ void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx) {
 #define g_emit_local_unsigned \
   (context->emit_local_unsigned)
 #define g_emit_local_count (context->emit_local_count)
-#define g_obj_data_abi (context->data_abi)
 #define g_obj_machine_primitives \
   (context->primitives)
 
@@ -1010,16 +1007,6 @@ static void emit_selected_memarg(
     wb_t *b, const wasm32_machine_memory_t *selected) {
   wb_uleb(b, selected->alignment_log2);
   wb_uleb(b, 0);
-}
-
-static obj_sig_t func_sig_from_reference_abi(
-    wasm32_obj_context_t *context,
-    const ir_abi_signature_t *abi) {
-  obj_sig_t sig;
-  if (!wasm32_machine_signature_from_abi(abi, 1, &sig))
-    obj_unsupported_msg(
-        context, "missing function-reference ABI in Wasm object mode");
-  return sig;
 }
 
 static obj_sig_t func_sig_from_machine_callable(
@@ -2606,7 +2593,8 @@ void wasm32_obj_gen_machine_module_in(
 }
 
 static void emit_obj_string_literal(
-    wasm32_obj_context_t *context, const ir_data_object_t *object) {
+    wasm32_obj_context_t *context,
+    const wasm32_machine_data_object_t *object) {
   obj_data_t *d = intern_data(
       context,
       object->name, object->name_len,
@@ -2619,9 +2607,9 @@ static void emit_obj_string_literal(
 
 static obj_data_t *intern_lowered_data_object(
     wasm32_obj_context_t *context,
-    const ir_data_object_t *object) {
-  if (!object || object->kind == IR_DATA_FLOAT) return NULL;
-  int is_string = object->kind == IR_DATA_STRING;
+    const wasm32_machine_data_object_t *object) {
+  if (!object || object->kind == WASM32_MACHINE_DATA_FLOAT) return NULL;
+  int is_string = object->kind == WASM32_MACHINE_DATA_STRING;
   return intern_data(
       context,
       object->name, object->name_len,
@@ -2632,22 +2620,23 @@ static obj_data_t *intern_lowered_data_object(
 
 static void emit_obj_data_reloc(
     wasm32_obj_context_t *context,
-    const ir_data_module_t *module, obj_data_t *data,
-    const ir_data_reloc_t *reloc) {
+    obj_data_t *data,
+    const wasm32_machine_data_reloc_t *reloc) {
   if (reloc->offset < 0 || reloc->width <= 0 ||
       (size_t)reloc->offset + (size_t)reloc->width > data->bytes.len)
     obj_unsupported_msg(
         context, "lowered data relocation range in Wasm object mode");
-  if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
+  if (reloc->kind == WASM32_MACHINE_DATA_RELOC_FUNCTION) {
     if (reloc->addend != 0)
       obj_unsupported_msg(
           context, "function address addend in Wasm object mode");
-    const ir_abi_signature_t *abi =
-        ir_abi_data_relocation_signature(g_obj_data_abi, reloc);
+    if (!reloc->has_function_signature)
+      obj_unsupported_msg(
+          context, "missing function relocation Machine signature");
     ensure_func_sig_for_address(
         context,
         reloc->target, reloc->target_len,
-        func_sig_from_reference_abi(context, abi));
+        copy_signature(context, &reloc->function_signature));
     obj_func_t *target = find_func(
         context, reloc->target, reloc->target_len);
     if (!target)
@@ -2658,9 +2647,8 @@ static void emit_obj_data_reloc(
                    (int)(target - g_obj.funcs), 0, 0);
     return;
   }
-  const ir_data_object_t *target_object = ir_data_module_find_object(
-      module, reloc->target, reloc->target_len);
-  obj_data_t *target = intern_lowered_data_object(context, target_object);
+  obj_data_t *target = intern_lowered_data_object(
+      context, reloc->resolved_target);
   if (!target)
     obj_unsupported_msg(context, "missing data relocation target");
   data_add_reloc(
@@ -2670,7 +2658,7 @@ static void emit_obj_data_reloc(
 
 static void emit_obj_global(
     wasm32_obj_context_t *context,
-    const ir_data_module_t *module, const ir_data_object_t *object) {
+    const wasm32_machine_data_object_t *object) {
   obj_data_t *data = intern_lowered_data_object(context, object);
   if (!data || object->is_extern) return;
   data_note_alloc_size(data, (size_t)object->byte_size);
@@ -2680,34 +2668,37 @@ static void emit_obj_global(
       obj_unsupported_msg(
           context, "missing lowered global bytes in Wasm object mode");
     wb_bytes(&data->bytes, object->bytes, (size_t)object->byte_size);
-    for (const ir_data_reloc_t *reloc = object->relocs; reloc;
-         reloc = reloc->next)
-      emit_obj_data_reloc(context, module, data, reloc);
+    for (int index = 0; index < object->relocation_count; index++)
+      emit_obj_data_reloc(
+          context, data, &object->relocations[index]);
   }
   data->is_emitted = 1;
 }
 
-void wasm32_obj_emit_data_segments_in(
+void wasm32_obj_emit_machine_data_segments_in(
     wasm32_obj_context_t *ctx,
-    const ir_data_module_t *data_module,
-    const ir_abi_data_module_t *data_abi) {
+    const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_obj_context_t *context = ctx;
-  g_obj_data_abi = data_abi;
+  if (!machine_module)
+    obj_unsupported_msg(context, "missing Wasm machine data module");
   int object_count = 0;
-  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
-       object; object = object->next)
-    if (object->kind != IR_DATA_FLOAT) object_count++;
+  for (size_t index = 0; index < machine_module->data_object_count; index++)
+    if (machine_module->data_objects[index].kind !=
+        WASM32_MACHINE_DATA_FLOAT)
+      object_count++;
   reserve_data_capacity(context, g_obj.data_count + object_count + 8);
-  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
-       object; object = object->next)
-    intern_lowered_data_object(context, object);
-  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
-       object; object = object->next) {
-    if (object->kind == IR_DATA_STRING)
+  for (size_t index = 0; index < machine_module->data_object_count; index++)
+    intern_lowered_data_object(
+        context, &machine_module->data_objects[index]);
+  for (size_t index = 0; index < machine_module->data_object_count;
+       index++) {
+    const wasm32_machine_data_object_t *object =
+        &machine_module->data_objects[index];
+    if (object->kind == WASM32_MACHINE_DATA_STRING)
       emit_obj_string_literal(context, object);
-    else if (object->kind == IR_DATA_OBJECT)
-      emit_obj_global(context, data_module, object);
+    else if (object->kind == WASM32_MACHINE_DATA_OBJECT)
+      emit_obj_global(context, object);
   }
 }
 

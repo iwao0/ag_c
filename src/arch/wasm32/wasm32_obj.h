@@ -3,8 +3,6 @@
 
 #include "wasm32_machine_module.h"
 
-typedef struct ir_abi_data_module_t ir_abi_data_module_t;
-#include "../../ir/ir_data.h"
 #include <stdio.h>
 
 typedef struct wasm32_obj_context_t wasm32_obj_context_t;
@@ -26,10 +24,9 @@ void wasm32_obj_begin_in(wasm32_obj_context_t *ctx);
 void wasm32_obj_gen_machine_module_in(
     wasm32_obj_context_t *ctx,
     const wasm32_machine_module_t *machine_module);
-void wasm32_obj_emit_data_segments_in(
+void wasm32_obj_emit_machine_data_segments_in(
     wasm32_obj_context_t *ctx,
-    const ir_data_module_t *data_module,
-    const ir_abi_data_module_t *data_abi);
+    const wasm32_machine_module_t *machine_module);
 void wasm32_obj_end_in(wasm32_obj_context_t *ctx);
 
 #endif /* AG_WASM32_OBJ_H */

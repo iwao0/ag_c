@@ -15,6 +15,8 @@ static const ir_abi_argument_t *fixture_call_arguments;
 static size_t fixture_call_argument_count;
 static const ir_inst_t *fixture_reference;
 static const ir_abi_signature_t *fixture_reference_abi;
+static const ir_data_reloc_t *fixture_data_relocation;
+static const ir_abi_signature_t *fixture_data_relocation_abi;
 
 const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function) {
@@ -44,6 +46,14 @@ const ir_abi_signature_t *ir_abi_reference_signature(
     const ir_abi_module_t *module, const ir_inst_t *reference) {
   (void)module;
   return reference == fixture_reference ? fixture_reference_abi : NULL;
+}
+
+const ir_abi_signature_t *ir_abi_data_relocation_signature(
+    const ir_abi_data_module_t *module,
+    const ir_data_reloc_t *relocation) {
+  (void)module;
+  return relocation == fixture_data_relocation
+             ? fixture_data_relocation_abi : NULL;
 }
 
 typedef struct {
@@ -903,6 +913,58 @@ int main(void) {
     fprintf(stderr, "FAIL: machine module plan build\n");
     return 1;
   }
+  unsigned char target_bytes[] = {1, 2, 3, 4};
+  unsigned char holder_bytes[8] = {0};
+  ir_data_reloc_t function_data_relocation = {
+      .target = "planned_function",
+      .target_len = 16,
+      .offset = 4,
+      .width = 4,
+      .kind = IR_DATA_RELOC_FUNCTION,
+  };
+  ir_data_reloc_t object_data_relocation = {
+      .next = &function_data_relocation,
+      .target = "target_data",
+      .target_len = 11,
+      .offset = 0,
+      .width = 4,
+      .addend = 2,
+      .kind = IR_DATA_RELOC_DATA,
+  };
+  ir_data_object_t holder_object = {
+      .name = "data_holder",
+      .name_len = 11,
+      .bytes = holder_bytes,
+      .byte_size = 8,
+      .alignment = 4,
+      .kind = IR_DATA_OBJECT,
+      .has_explicit_initializer = 1,
+      .relocs = &object_data_relocation,
+      .relocs_tail = &function_data_relocation,
+  };
+  ir_data_object_t target_object = {
+      .next = &holder_object,
+      .name = "target_data",
+      .name_len = 11,
+      .bytes = target_bytes,
+      .byte_size = 4,
+      .alignment = 4,
+      .kind = IR_DATA_OBJECT,
+      .has_explicit_initializer = 1,
+  };
+  ir_data_module_t source_data_module = {
+      .objects = &target_object,
+      .objects_tail = &holder_object,
+  };
+  fixture_data_relocation = &function_data_relocation;
+  fixture_data_relocation_abi = &reference_abi;
+  if (!wasm32_machine_module_build_data(
+          &machine_module, &source_data_module, NULL)) {
+    fprintf(stderr, "FAIL: machine data module plan build\n");
+    return 1;
+  }
+  const unsigned char *source_target_bytes = target_bytes;
+  const unsigned char *source_holder_bytes = holder_bytes;
   memset(&source_module, 0, sizeof(source_module));
   memset(&source_symbol, 0, sizeof(source_symbol));
   memset(&source_func_ref, 0, sizeof(source_func_ref));
@@ -910,6 +972,13 @@ int main(void) {
   function.name = NULL;
   function.c_signature = NULL;
   function_instructions[14].sym = NULL;
+  memset(&source_data_module, 0, sizeof(source_data_module));
+  memset(&target_object, 0, sizeof(target_object));
+  memset(&holder_object, 0, sizeof(holder_object));
+  memset(&object_data_relocation, 0, sizeof(object_data_relocation));
+  memset(&function_data_relocation, 0, sizeof(function_data_relocation));
+  memset(target_bytes, 0, sizeof(target_bytes));
+  memset(holder_bytes, 0, sizeof(holder_bytes));
   const wasm32_machine_symbol_t *machine_symbol =
       wasm32_machine_module_symbol(
           &machine_module, "global_slot", 11);
@@ -917,8 +986,15 @@ int main(void) {
       wasm32_machine_symbol_find_func_ref(machine_symbol, 8);
   const wasm32_machine_function_t *module_function =
       wasm32_machine_module_function(&machine_module, 0);
+  const wasm32_machine_data_object_t *machine_target =
+      wasm32_machine_module_data_object(
+          &machine_module, "target_data", 11);
+  const wasm32_machine_data_object_t *machine_holder =
+      wasm32_machine_module_data_object(
+          &machine_module, "data_holder", 11);
   if (machine_module.function_count != 1 ||
       machine_module.symbol_count != 1 ||
+      machine_module.data_object_count != 2 ||
       !machine_symbol || machine_symbol->name == source_symbol_name ||
       strcmp(machine_symbol->name, "global_slot") != 0 ||
       machine_symbol->byte_size != 16 || machine_symbol->alignment != 8 ||
@@ -929,14 +1005,31 @@ int main(void) {
       module_function->instructions[14].sym == source_instruction_name ||
       strcmp(module_function->instructions[14].sym, "global_slot") != 0 ||
       module_function->instructions[14].resolved_symbol != machine_symbol ||
+      !machine_target || machine_target->bytes == source_target_bytes ||
+      machine_target->bytes[0] != 1 || machine_target->bytes[3] != 4 ||
+      !machine_holder || machine_holder->bytes == source_holder_bytes ||
+      machine_holder->relocation_count != 2 ||
+      machine_holder->relocations[0].kind !=
+          WASM32_MACHINE_DATA_RELOC_DATA ||
+      machine_holder->relocations[0].resolved_target != machine_target ||
+      machine_holder->relocations[0].addend != 2 ||
+      machine_holder->relocations[1].kind !=
+          WASM32_MACHINE_DATA_RELOC_FUNCTION ||
+      !machine_holder->relocations[1].has_function_signature ||
+      machine_holder->relocations[1].function_signature.nparams != 1 ||
+      machine_holder->relocations[1].function_signature.params[0] !=
+          IR_TY_I64 ||
+      machine_holder->relocations[1].function_signature.result != IR_TY_I32 ||
       wasm32_machine_module_function(&machine_module, 1) != NULL) {
     fprintf(stderr, "FAIL: machine module plan invariants\n");
     return 1;
   }
   wasm32_machine_module_dispose(&machine_module);
   if (machine_module.functions || machine_module.symbols ||
+      machine_module.data_objects ||
       machine_module.function_count != 0 ||
-      machine_module.symbol_count != 0) {
+      machine_module.symbol_count != 0 ||
+      machine_module.data_object_count != 0) {
     fprintf(stderr, "FAIL: machine module plan disposal\n");
     return 1;
   }

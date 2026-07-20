@@ -5,7 +5,6 @@
 #include "wasm32_wat_runtime.h"
 #include "../../codegen_emit.h"
 #include "../../diag/diag.h"
-#include "../../lowering/abi_lowering.h"
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -80,10 +79,8 @@ typedef struct {
 struct wasm32_ir_context_t {
   ag_codegen_emit_context_t *emit_context;
   wasm_data_ctx_t data;
-  const ir_data_module_t *data_module;
   wasm_func_table_ctx_t func_table;
   wasm_function_symbol_ctx_t function_symbols;
-  const ir_abi_data_module_t *data_abi;
   wasm32_machine_primitive_plan_t primitives;
 };
 
@@ -113,10 +110,8 @@ void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
 }
 
 #define g_data (context->data)
-#define g_data_module (context->data_module)
 #define g_func_table (context->func_table)
 #define g_function_symbols (context->function_symbols)
-#define g_data_abi (context->data_abi)
 #define g_machine_primitives (context->primitives)
 
 ag_codegen_emit_context_t *wasm32_ir_emit_context(
@@ -331,17 +326,6 @@ wasm_data_symbol_t *intern_data_symbol(
   return s;
 }
 
-static int data_addr_for_string_label(
-    wasm32_ir_context_t *context, const char *sym) {
-  if (!sym) return -1;
-  int sym_len = (int)strlen(sym);
-  ir_data_object_t *object =
-      ir_data_module_find_object(g_data_module, sym, sym_len);
-  if (!object || object->kind != IR_DATA_STRING) return -1;
-  return intern_data_symbol(context, sym, sym_len, object->byte_size,
-                            object->alignment)->addr;
-}
-
 static int data_addr_for_ir_string(
     wasm32_ir_context_t *context,
     const char *sym, int sym_len, int size) {
@@ -350,7 +334,8 @@ static int data_addr_for_ir_string(
 }
 
 static int data_addr_for_data_object(
-    wasm32_ir_context_t *context, const ir_data_object_t *object) {
+    wasm32_ir_context_t *context,
+    const wasm32_machine_data_object_t *object) {
   if (!object) return -1;
   return intern_data_symbol(context, object->name, object->name_len,
                             object->byte_size, object->alignment)->addr;
@@ -1845,8 +1830,9 @@ static void emit_wat_escaped_byte(
 }
 
 static void emit_string_literal_data(
-    wasm32_ir_context_t *context, const ir_data_object_t *object) {
-  int addr = data_addr_for_string_label(context, object->name);
+    wasm32_ir_context_t *context,
+    const wasm32_machine_data_object_t *object) {
+  int addr = data_addr_for_data_object(context, object);
   if (addr < 0)
     wasm_unsupported_msg(
         context, "string literal label in Wasm backend");
@@ -1867,33 +1853,31 @@ void emit_i32_data_bytes(
 }
 
 static long long data_relocation_value(
-    wasm32_ir_context_t *context, const ir_data_reloc_t *reloc) {
+    wasm32_ir_context_t *context,
+    const wasm32_machine_data_reloc_t *reloc) {
   if (!reloc) return 0;
-  if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
-    const ir_abi_signature_t *abi =
-        ir_abi_data_relocation_signature(g_data_abi, reloc);
-    wasm32_machine_signature_t signature;
-    if (!wasm32_machine_signature_from_abi(abi, 1, &signature))
+  if (reloc->kind == WASM32_MACHINE_DATA_RELOC_FUNCTION) {
+    if (!reloc->has_function_signature)
       wasm_unsupported_msg(
           context,
           "function data relocation without ABI lowering result");
     record_function_signature(
-        context, reloc->target, reloc->target_len, &signature);
-    wasm32_machine_signature_dispose(&signature);
+        context, reloc->target, reloc->target_len,
+        &reloc->function_signature);
     int index = function_table_index_or_unsupported(
         context, reloc->target, reloc->target_len);
     return (long long)index + reloc->addend;
   }
-  ir_data_object_t *target = ir_data_module_find_object(
-      g_data_module, reloc->target, reloc->target_len);
-  int addr = data_addr_for_data_object(context, target);
+  int addr = data_addr_for_data_object(
+      context, reloc->resolved_target);
   if (addr < 0)
     wasm_unsupported_msg(context, "missing data relocation target");
   return (long long)addr + reloc->addend;
 }
 
 static void emit_global_data_object(
-    wasm32_ir_context_t *context, const ir_data_object_t *object) {
+    wasm32_ir_context_t *context,
+    const wasm32_machine_data_object_t *object) {
   if (!object || object->is_extern) return;
   if (!object->has_explicit_initializer && object->byte_size != 1 &&
       object->byte_size != 2 && object->byte_size != 4 &&
@@ -1904,8 +1888,11 @@ static void emit_global_data_object(
     wasm_unsupported_msg(
         context, "missing lowered global data in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  const ir_data_reloc_t *reloc = object->relocs;
+  int relocation_index = 0;
   for (int offset = 0; offset < object->byte_size; ) {
+    const wasm32_machine_data_reloc_t *reloc =
+        relocation_index < object->relocation_count
+            ? &object->relocations[relocation_index] : NULL;
     if (reloc && reloc->offset == offset) {
       if (reloc->width <= 0 || offset > object->byte_size - reloc->width)
         wasm_unsupported_msg(context, "global data relocation range");
@@ -1914,7 +1901,7 @@ static void emit_global_data_object(
         emit_wat_escaped_byte(
             context, (unsigned char)(value >> (8 * i)));
       offset += reloc->width;
-      reloc = reloc->next;
+      relocation_index++;
     } else {
       if (reloc && reloc->offset < offset)
         wasm_unsupported_msg(
@@ -1924,25 +1911,26 @@ static void emit_global_data_object(
       offset++;
     }
   }
-  if (reloc)
+  if (relocation_index < object->relocation_count)
     wasm_unsupported_msg(
         context, "global data relocation outside object");
   wasm_cg_emitf("\")\n");
 }
 
-void wasm32_emit_data_segments_in(
+void wasm32_emit_machine_data_segments_in(
     wasm32_ir_context_t *ctx,
-    const ir_data_module_t *data_module,
-    const ir_abi_data_module_t *data_abi) {
+    const wasm32_machine_module_t *machine_module) {
   if (!ctx) abort();
   wasm32_ir_context_t *context = ctx;
-  g_data_module = data_module;
-  g_data_abi = data_abi;
-  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
-       object; object = object->next) {
-    if (object->kind == IR_DATA_STRING)
+  if (!machine_module)
+    wasm_unsupported_msg(context, "missing Wasm machine data module");
+  for (size_t index = 0; index < machine_module->data_object_count;
+       index++) {
+    const wasm32_machine_data_object_t *object =
+        &machine_module->data_objects[index];
+    if (object->kind == WASM32_MACHINE_DATA_STRING)
       emit_string_literal_data(context, object);
-    else if (object->kind == IR_DATA_OBJECT)
+    else if (object->kind == WASM32_MACHINE_DATA_OBJECT)
       emit_global_data_object(context, object);
   }
 }

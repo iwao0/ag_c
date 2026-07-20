@@ -48,6 +48,7 @@ void wasm32_backend_context_destroy(void *context) {
 }
 
 void wasm32_backend_wat_begin(wasm32_backend_context_t *ctx) {
+  wasm32_machine_module_dispose(&ctx->machine_module);
   wasm32_module_begin_in(ctx->ir);
 }
 
@@ -57,18 +58,23 @@ void wasm32_backend_wat_gen_ir_module(
   const wasm32_machine_module_t *machine_module =
       build_machine_module(ctx, module, abi);
   wasm32_gen_machine_module_in(ctx->ir, machine_module);
-  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_wat_emit_data_segments(
     wasm32_backend_context_t *ctx,
     const ir_data_module_t *data_module,
     const ir_abi_data_module_t *data_abi) {
-  wasm32_emit_data_segments_in(ctx->ir, data_module, data_abi);
+  const wasm32_machine_module_t *machine_module =
+      wasm32_machine_module_build_data(
+          &ctx->machine_module, data_module, data_abi)
+          ? &ctx->machine_module : NULL;
+  wasm32_emit_machine_data_segments_in(ctx->ir, machine_module);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_wat_end(wasm32_backend_context_t *ctx) {
   wasm32_module_end_in(ctx->ir);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_obj_set_output_file(
@@ -97,6 +103,7 @@ unsigned char *wasm32_backend_obj_take_output(
 }
 
 void wasm32_backend_obj_begin(wasm32_backend_context_t *ctx) {
+  wasm32_machine_module_dispose(&ctx->machine_module);
   wasm32_obj_begin_in(ctx->obj);
 }
 
@@ -106,16 +113,21 @@ void wasm32_backend_obj_gen_ir_module(
   const wasm32_machine_module_t *machine_module =
       build_machine_module(ctx, module, abi);
   wasm32_obj_gen_machine_module_in(ctx->obj, machine_module);
-  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_obj_emit_data_segments(
     wasm32_backend_context_t *ctx,
     const ir_data_module_t *data_module,
     const ir_abi_data_module_t *data_abi) {
-  wasm32_obj_emit_data_segments_in(ctx->obj, data_module, data_abi);
+  const wasm32_machine_module_t *machine_module =
+      wasm32_machine_module_build_data(
+          &ctx->machine_module, data_module, data_abi)
+          ? &ctx->machine_module : NULL;
+  wasm32_obj_emit_machine_data_segments_in(ctx->obj, machine_module);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
 
 void wasm32_backend_obj_end(wasm32_backend_context_t *ctx) {
   wasm32_obj_end_in(ctx->obj);
+  wasm32_machine_module_dispose(&ctx->machine_module);
 }
