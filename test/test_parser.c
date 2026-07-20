@@ -119,9 +119,11 @@
 #include "../src/type_signature.h"
 #include <assert.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -30000,6 +30002,61 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(1, wasm_backend.destroy_count);
 }
 
+static void test_compilation_session_owns_preprocessor_roots() {
+  printf("test_compilation_session_owns_preprocessor_roots...\n");
+  char original_cwd[PATH_MAX];
+  char first_root[] = "/tmp/ag_c_pp_root_first_XXXXXX";
+  char second_root[] = "/tmp/ag_c_pp_root_second_XXXXXX";
+  char first_include[PATH_MAX];
+  char second_include[PATH_MAX];
+  char first_resolved[PATH_MAX];
+  char second_resolved[PATH_MAX];
+  char first_include_resolved[PATH_MAX];
+  char second_include_resolved[PATH_MAX];
+  ASSERT_TRUE(getcwd(original_cwd, sizeof(original_cwd)) != NULL);
+  ASSERT_TRUE(mkdtemp(first_root) != NULL);
+  ASSERT_TRUE(mkdtemp(second_root) != NULL);
+  snprintf(first_include, sizeof(first_include), "%s/include", first_root);
+  snprintf(second_include, sizeof(second_include), "%s/include", second_root);
+  ASSERT_TRUE(mkdir(first_include, 0700) == 0);
+  ASSERT_TRUE(mkdir(second_include, 0700) == 0);
+  ASSERT_TRUE(realpath(first_root, first_resolved) != NULL);
+  ASSERT_TRUE(realpath(second_root, second_resolved) != NULL);
+  ASSERT_TRUE(realpath(first_include, first_include_resolved) != NULL);
+  ASSERT_TRUE(realpath(second_include, second_include_resolved) != NULL);
+
+  ag_target_info_t target = ag_target_info_host();
+  ag_compilation_session_t first = {0};
+  ag_compilation_session_t second = {0};
+  ASSERT_TRUE(chdir(first_root) == 0);
+  ASSERT_TRUE(ag_compilation_session_init(&first, &target));
+  ASSERT_TRUE(chdir(second_root) == 0);
+  ASSERT_TRUE(ag_compilation_session_init(&second, &target));
+  ASSERT_TRUE(strcmp(first_resolved,
+                     pp_context_project_root(first.preprocessor_context)) ==
+              0);
+  ASSERT_TRUE(strcmp(second_resolved,
+                     pp_context_project_root(second.preprocessor_context)) ==
+              0);
+  ASSERT_TRUE(strcmp(first_include_resolved,
+                     pp_context_include_root(first.preprocessor_context)) ==
+              0);
+  ASSERT_TRUE(strcmp(second_include_resolved,
+                     pp_context_include_root(second.preprocessor_context)) ==
+              0);
+  ASSERT_TRUE(strcmp(pp_context_project_root(first.preprocessor_context),
+                     pp_context_project_root(second.preprocessor_context)) !=
+              0);
+
+  ASSERT_TRUE(chdir(original_cwd) == 0);
+  ASSERT_TRUE(ag_compilation_session_dispose(&first));
+  ASSERT_TRUE(ag_compilation_session_dispose(&second));
+  ASSERT_TRUE(rmdir(first_include) == 0);
+  ASSERT_TRUE(rmdir(second_include) == 0);
+  ASSERT_TRUE(rmdir(first_root) == 0);
+  ASSERT_TRUE(rmdir(second_root) == 0);
+}
+
 static void test_scope_graph_namespace_and_transaction_boundary(void) {
   printf("test_scope_graph_namespace_and_transaction_boundary...\n");
   psx_scope_graph_t *graph = psx_scope_graph_create();
@@ -30228,6 +30285,7 @@ int main() {
   test_diagnostic_catalog_localization();
 #endif
   test_compilation_session_owns_target_and_tokenizer();
+  test_compilation_session_owns_preprocessor_roots();
   test_compilation_session_registry_isolation();
   test_syntax_literal_type_boundary();
   test_direct_literal_typed_hir_resolution_boundary();

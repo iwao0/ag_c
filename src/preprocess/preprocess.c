@@ -44,6 +44,10 @@ struct ag_preprocessor_context_t {
   tokenizer_context_t *tokenizer;
   const ag_target_info_t *target;
   pp_stream_t *active_stream;
+  char project_root[PATH_MAX];
+  char include_root[PATH_MAX];
+  bool have_project_root;
+  bool have_include_root;
 };
 
 #define macros (context->macros)
@@ -499,21 +503,13 @@ static bool path_is_within(const char *path, const char *base) {
   return strncmp(path, base, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
-static bool include_path_is_allowed(const char *resolved) {
-  static bool roots_initialized = false;
-  static char project_root[PATH_MAX];
-  static char include_root[PATH_MAX];
-  static bool have_project_root = false;
-  static bool have_include_root = false;
-
-  if (!roots_initialized) {
-    roots_initialized = true;
-    have_project_root = realpath(".", project_root) != NULL;
-    have_include_root = realpath("include", include_root) != NULL;
-  }
-
-  return (have_project_root && path_is_within(resolved, project_root)) ||
-         (have_include_root && path_is_within(resolved, include_root));
+static bool include_path_is_allowed(
+    const ag_preprocessor_context_t *context, const char *resolved) {
+  if (!context || !resolved) return false;
+  return (context->have_project_root &&
+          path_is_within(resolved, context->project_root)) ||
+         (context->have_include_root &&
+          path_is_within(resolved, context->include_root));
 }
 
 static void validate_include_realpath_or_die(
@@ -521,7 +517,7 @@ static void validate_include_realpath_or_die(
     const char *candidate, const char *display_path) {
   char resolved[PATH_MAX];
   if (!realpath(candidate, resolved)) return;
-  if (!include_path_is_allowed(resolved)) {
+  if (!include_path_is_allowed(context, resolved)) {
     pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
 }
@@ -579,7 +575,7 @@ static char *read_include_file_secure(
     }
     have_opened_path = true;
   }
-  if (have_opened_path && !include_path_is_allowed(opened_path)) {
+  if (have_opened_path && !include_path_is_allowed(context, opened_path)) {
     fclose(fp);
     pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
@@ -3177,6 +3173,10 @@ ag_preprocessor_context_t *pp_context_create(
   context->diagnostic_context = diagnostic_context;
   context->tokenizer = tokenizer_context;
   context->target = target;
+  context->have_project_root =
+      realpath(".", context->project_root) != NULL;
+  context->have_include_root =
+      realpath("include", context->include_root) != NULL;
   context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
   context->if_expr_eval = true;
   return context;
@@ -3195,6 +3195,20 @@ tokenizer_context_t *pp_context_tokenizer(
 const ag_target_info_t *pp_context_target(
     const ag_preprocessor_context_t *context) {
   return context ? context->target : NULL;
+}
+
+const char *pp_context_project_root(
+    const ag_preprocessor_context_t *context) {
+  return context && context->have_project_root
+             ? context->project_root
+             : NULL;
+}
+
+const char *pp_context_include_root(
+    const ag_preprocessor_context_t *context) {
+  return context && context->have_include_root
+             ? context->include_root
+             : NULL;
 }
 
 void pp_context_destroy(ag_preprocessor_context_t *context) {

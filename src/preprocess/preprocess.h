@@ -18,6 +18,10 @@ tokenizer_context_t *pp_context_tokenizer(
     const ag_preprocessor_context_t *context);
 const ag_target_info_t *pp_context_target(
     const ag_preprocessor_context_t *context);
+const char *pp_context_project_root(
+    const ag_preprocessor_context_t *context);
+const char *pp_context_include_root(
+    const ag_preprocessor_context_t *context);
 
 /* 遅延プリプロセス生成器。状態は呼び出し元の Preprocessor context に保持する。
  * pp_stream_open_in は predefined マクロを永続側に作り、recyclable 生成器を開き、

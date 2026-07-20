@@ -1236,6 +1236,22 @@ const tokenizerFilenameSource = await readFile(
 );
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
 const preprocessHeader = await readFile("src/preprocess/preprocess.h", "utf8");
+if (!/struct\s+ag_preprocessor_context_t\s*\{[^]*?char\s+project_root\s*\[\s*PATH_MAX\s*\]\s*;[^]*?char\s+include_root\s*\[\s*PATH_MAX\s*\]\s*;/.test(
+      preprocessSource,
+    ) ||
+    !/include_path_is_allowed\s*\(\s*const\s+ag_preprocessor_context_t\s*\*\s*context\s*,/.test(
+      preprocessSource,
+    ) ||
+    !/include_path_is_allowed\s*\(\s*context\s*,\s*resolved\s*\)/.test(
+      preprocessSource,
+    ) ||
+    /\broots_initialized\b/.test(preprocessSource) ||
+    !/\bpp_context_project_root\s*\(/.test(preprocessHeader) ||
+    !/\bpp_context_include_root\s*\(/.test(preprocessHeader)) {
+  throw new Error(
+    "preprocessor include roots must be immutable per-context session state",
+  );
+}
 const parserRuntimeSource = await readFile(
   "src/parser/runtime_context.c",
   "utf8",
@@ -4441,6 +4457,9 @@ const legacyTypeMutationRe =
 const legacyTypeMutations = [];
 const legacyFunctionNodeReferences = [];
 const legacyRecursiveTypeMetadata = [];
+const mutableProcessState = [];
+const mutableStaticDataRe =
+  /^\s*static\s+(?!const\b|inline\b)(?:[A-Za-z_][A-Za-z0-9_]*\s+)*(?:\*+\s*)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\[[^\n;]*\]\s*)?(?:=|;)/gm;
 for (const file of sourceFiles) {
   const source = await readFile(file, "utf8");
   for (const match of source.matchAll(legacyTypeMutationRe)) {
@@ -4454,6 +4473,16 @@ for (const file of sourceFiles) {
       )) {
     legacyRecursiveTypeMetadata.push(file);
   }
+  if (file.endsWith(".c") && mutableStaticDataRe.test(source)) {
+    mutableProcessState.push(file);
+  }
+  mutableStaticDataRe.lastIndex = 0;
+}
+if (mutableProcessState.length) {
+  throw new Error(
+    "production mutable static state must be owned by CompilationSession contexts:\n" +
+      mutableProcessState.sort().join("\n"),
+  );
 }
 if (legacyTypeMutations.length) {
   throw new Error(
