@@ -2745,6 +2745,7 @@ for (const testName of [
   "test_toplevel_point_of_declaration_boundary",
   "test_parameter_declaration_storage_plan_boundary",
   "test_toplevel_declarator_phase_boundary",
+  "test_member_access_typed_hir_boundary",
   "test_parse_evil_edge_cases",
 ]) {
   const body = parserUnitTestSource.match(

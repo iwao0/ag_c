@@ -2829,16 +2829,31 @@ static node_t *parse_test_initializer_for_var(lvar_t *var) {
 /* Test-only storage fixtures may start with a simple scalar/array type and
  * replace it with the exact type under test. Production registration accepts
  * only an explicit canonical type. */
+static lvar_t *register_test_qual_type_storage_fixture_in(
+    psx_lowering_context_t *lowering_context,
+    char *name, int len, int size, int align,
+    psx_qual_type_t qual_type) {
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
+  int offset = local_storage_allocate(
+      lowering_context, size, align);
+  return ps_local_registry_create_storage_object_qual_type_in(
+      ag_compilation_session_local_registry(test_suite_session),
+      name, len, offset, size, align, qual_type, NULL);
+}
+
+static lvar_t *register_test_qual_type_storage_fixture(
+    char *name, int len, int size, int align,
+    psx_qual_type_t qual_type) {
+  return register_test_qual_type_storage_fixture_in(
+      test_lowering_context(), name, len, size, align, qual_type);
+}
+
 static lvar_t *register_test_typed_storage_fixture_in(
     psx_lowering_context_t *lowering_context,
     char *name, int len, int size, int align, const psx_type_t *type) {
   psx_qual_type_t qual_type = intern_test_qual_type(type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
-  int offset = local_storage_allocate(
-      lowering_context, size, align);
-  return ps_local_registry_create_storage_object_in(
-      ag_compilation_session_local_registry(test_suite_session),
-      name, len, offset, size, align, type, NULL);
+  return register_test_qual_type_storage_fixture_in(
+      lowering_context, name, len, size, align, qual_type);
 }
 
 static lvar_t *register_test_typed_storage_fixture(
@@ -8898,115 +8913,121 @@ static void test_persistent_local_scope_lookup_boundary() {
 static void test_member_access_typed_hir_boundary() {
   printf("test_member_access_typed_hir_boundary...\n");
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(
-      "struct __MemberBoundary { char prefix; int value; }; "
-      "int __member_boundary_function(void) { "
-      "struct __MemberBoundary object; int *pointer; "
-      "const struct __MemberBoundary const_object; "
-      "const struct __MemberBoundary *const_pointer; return 0; }");
-  lvar_t *object = find_func_lvar(as_function_definition(parsed_code[0]), "object");
-  lvar_t *pointer = find_func_lvar(as_function_definition(parsed_code[0]), "pointer");
-  lvar_t *const_object = find_func_lvar(
-      as_function_definition(parsed_code[0]), "const_object");
-  lvar_t *const_pointer = find_func_lvar(
-      as_function_definition(parsed_code[0]), "const_pointer");
-  ASSERT_TRUE(object != NULL);
-  ASSERT_TRUE(pointer != NULL);
-  ASSERT_TRUE(const_object != NULL);
-  ASSERT_TRUE(const_pointer != NULL);
-  node_t *base = psx_node_new_lvar_identifier_ref_for(object);
-  psx_record_decl_t *member_record = test_record_decl_mut(
-      ps_type_find_aggregate_object_type(ps_node_get_type(base)));
+  psx_semantic_context_t *semantic_context = test_semantic_context();
+  const char member_tag_name[] = "__MemberBoundary";
+  const int member_tag_len = (int)sizeof(member_tag_name) - 1;
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, (char *)member_tag_name, member_tag_len,
+      0, 0, 0, 0));
+
+  psx_qual_type_t character_qual_type =
+      ps_ctx_intern_integer_qual_type_in(
+          semantic_context, PSX_INTEGER_KIND_CHAR, 0, 1);
+  psx_qual_type_t integer_qual_type =
+      ps_ctx_intern_integer_qual_type_in(
+          semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+  ASSERT_TRUE(character_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(integer_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  const psx_record_member_decl_t member_declarations[2] = {
+      {
+          .name = (char *)"prefix",
+          .len = 6,
+          .decl_qual_type = character_qual_type,
+      },
+      {
+          .name = (char *)"value",
+          .len = 5,
+          .decl_qual_type = integer_qual_type,
+      },
+  };
+  const psx_record_member_layout_t member_layouts[2] = {
+      {.offset = 0},
+      {.offset = 4},
+  };
+  int conflict_index = -1;
+  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+      semantic_context, TK_STRUCT, (char *)member_tag_name,
+      member_tag_len, member_declarations, member_layouts, 2,
+      &conflict_index));
+  ASSERT_EQ(-1, conflict_index);
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, (char *)member_tag_name, member_tag_len,
+      1, 2, 8, 4));
+
+  const psx_record_decl_t *member_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          semantic_context, TK_STRUCT, (char *)member_tag_name,
+          member_tag_len);
   ASSERT_TRUE(member_record != NULL);
   ASSERT_EQ(2, member_record->member_count);
-  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
-      test_semantic_context(), member_record->record_id, 8, 4));
   const psx_record_layout_t *member_layout = psx_record_layout_table_lookup(
-      ps_ctx_record_layout_table_in(test_semantic_context()),
-      member_record->record_id,
-      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_record_layout_table_in(semantic_context),
+      member_record->record_id, ps_ctx_data_layout(semantic_context));
   ASSERT_TRUE(member_layout != NULL);
   ASSERT_EQ(4, psx_record_layout_member(member_layout, 1)->offset);
+
+  psx_qual_type_t object_qual_type =
+      ps_ctx_intern_record_qual_type_in(
+          semantic_context, member_record->record_id);
+  ASSERT_TRUE(object_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_member_access_resolution_t resolution;
-  psx_resolve_member_access(
-      &(psx_member_access_resolution_request_t){
-          .semantic_context = test_semantic_context(),
-          .base = base,
-          .member_name = (char *)"value",
-          .member_name_len = 5,
-      },
+  psx_resolve_member_access_qual_type_in(
+      semantic_context, object_qual_type, "value", 5, 0,
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_EQ(1, resolution.member_index);
   ASSERT_EQ(member_record->record_id, resolution.record_id);
-  ASSERT_EQ(4, ps_type_sizeof(test_record_member_decl_type(
-                   ps_ctx_semantic_type_table_in(test_semantic_context()),
-                   &resolution.declaration)));
+  psx_type_shape_t member_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      resolution.member_qual_type.type_id, &member_shape));
+  ASSERT_EQ(PSX_TYPE_INTEGER, member_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, member_shape.integer_kind);
   ASSERT_TRUE(resolution.base_object_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             resolution.base_object_qual_type.qualifiers);
   psx_type_shape_t base_object_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(semantic_context),
       resolution.base_object_qual_type.type_id, &base_object_shape));
   ASSERT_EQ(PSX_TYPE_STRUCT, base_object_shape.kind);
   ASSERT_EQ(resolution.record_id, base_object_shape.record_id);
 
-  node_t *const_object_base =
-      psx_node_new_lvar_identifier_ref_for(const_object);
-  psx_resolve_member_access(
-      &(psx_member_access_resolution_request_t){
-          .semantic_context = test_semantic_context(),
-          .base = const_object_base,
-          .member_name = (char *)"value",
-          .member_name_len = 5,
-      },
+  psx_qual_type_t const_object_qual_type = object_qual_type;
+  const_object_qual_type.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+  psx_resolve_member_access_qual_type_in(
+      semantic_context, const_object_qual_type, "value", 5, 0,
+      &resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
+  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+  ASSERT_TRUE((resolution.member_qual_type.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+
+  psx_qual_type_t const_pointer_qual_type =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, const_object_qual_type);
+  psx_resolve_member_access_qual_type_in(
+      semantic_context, const_pointer_qual_type, "value", 5, 1,
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
 
-  node_t *const_pointer_base =
-      psx_node_new_lvar_identifier_ref_for(const_pointer);
-  psx_resolve_member_access(
-      &(psx_member_access_resolution_request_t){
-          .semantic_context = test_semantic_context(),
-          .base = const_pointer_base,
-          .member_name = (char *)"value",
-          .member_name_len = 5,
-          .from_pointer = 1,
-      },
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
-  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
-               PSX_TYPE_QUALIFIER_CONST) != 0);
-
-  psx_resolve_member_access(
-      &(psx_member_access_resolution_request_t){
-          .semantic_context = test_semantic_context(),
-          .base = base,
-          .member_name = (char *)"value",
-          .member_name_len = 5,
-          .from_pointer = 1,
-      },
+  psx_resolve_member_access_qual_type_in(
+      semantic_context, object_qual_type, "value", 5, 1,
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_INVALID_BASE, resolution.status);
-  psx_resolve_member_access(
-      &(psx_member_access_resolution_request_t){
-          .semantic_context = test_semantic_context(),
-          .base = base,
-          .member_name = (char *)"missing",
-          .member_name_len = 7,
-      },
+  psx_resolve_member_access_qual_type_in(
+      semantic_context, object_qual_type, "missing", 7, 0,
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, resolution.status);
 
-  psx_type_t *object_type = ps_type_clone(test_lvar_decl_type(object));
   reset_test_locals();
-  lvar_t *raw_object = register_test_storage_fixture(
-      (char *)"object", 6, 8, 4, 0);
-  set_test_storage_fixture_type(raw_object, object_type);
+  lvar_t *raw_object = register_test_qual_type_storage_fixture(
+      (char *)"object", 6, 8, 4, object_qual_type);
+  ASSERT_TRUE(raw_object != NULL);
   node_t *raw_access = parse_expr_input_with_existing_locals(
       "object.value");
   ASSERT_EQ(ND_MEMBER_ACCESS, raw_access->kind);
@@ -9042,27 +9063,53 @@ static void test_member_access_typed_hir_boundary() {
   psx_frontend_expression_hir_dispose(&access_expression);
 
   psx_qual_type_t pointer_qual_type =
-      intern_test_qual_type(test_lvar_decl_type(pointer));
-  psx_qual_type_t integer_qual_type = intern_test_qual_type(
-      ps_type_new_integer(TK_INT, 4, 0));
+      ps_ctx_intern_pointer_to_qual_type_in(
+          semantic_context, integer_qual_type);
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,
             psx_resolve_deref_operand_qual_type_in(
-                test_semantic_context(), pointer_qual_type));
+                semantic_context, pointer_qual_type));
   ASSERT_EQ(PSX_DEREF_OPERAND_NOT_POINTER,
             psx_resolve_deref_operand_qual_type_in(
-                test_semantic_context(), integer_qual_type));
+                semantic_context, integer_qual_type));
   psx_subscript_qual_types_resolution_t subscript;
   psx_resolve_subscript_qual_types_in(
-      test_semantic_context(), integer_qual_type,
+      semantic_context, integer_qual_type,
       pointer_qual_type, &subscript);
   ASSERT_EQ(PSX_SUBSCRIPT_OPERANDS_OK, subscript.status);
   ASSERT_TRUE(subscript.swapped);
   ASSERT_EQ(pointer_qual_type.type_id,
             subscript.base_qual_type.type_id);
   psx_resolve_subscript_qual_types_in(
-      test_semantic_context(), integer_qual_type,
+      semantic_context, integer_qual_type,
       integer_qual_type, &subscript);
   ASSERT_EQ(PSX_SUBSCRIPT_OPERANDS_INVALID, subscript.status);
+
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  ASSERT_TRUE(resolve_program_input_hir(
+      "struct __MemberProgram { char prefix; int value; }; "
+      "int __typed_hir_member_access(struct __MemberProgram *pointer) { "
+      "struct __MemberProgram object; object.value = 1; "
+      "return pointer->value + object.value; }"));
+  int direct_member_count = 0;
+  int pointer_member_count = 0;
+  for (size_t i = hir_checkpoint + 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *hir_node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!hir_node ||
+        psx_hir_node_kind(hir_node) != PSX_HIR_MEMBER_ACCESS)
+      continue;
+    ASSERT_EQ(4, psx_hir_node_member_offset(hir_node));
+    ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(hir_node).kind);
+    if (psx_hir_node_member_from_pointer(hir_node))
+      pointer_member_count++;
+    else
+      direct_member_count++;
+  }
+  ASSERT_TRUE(direct_member_count >= 2);
+  ASSERT_TRUE(pointer_member_count >= 1);
 }
 
 typedef struct {
