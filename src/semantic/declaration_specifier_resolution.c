@@ -315,9 +315,16 @@ void psx_resolve_decl_specifier_value_in_contexts(
       &resolution->tag_alignment);
   if (resolution->status != PSX_DECL_SPECIFIER_VALUE_OK) return;
   if (request->is_standalone_tag) return;
-  resolution->base_type = psx_build_decl_specifier_type_in_context(
+  const psx_type_t *base_type = psx_build_decl_specifier_type_in_context(
       request->semantic_context, request->syntax);
-  if (!resolution->base_type) {
+  if (!base_type) {
+    resolution->status = PSX_DECL_SPECIFIER_VALUE_INVALID;
+    return;
+  }
+  resolution->base_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          request->semantic_context, base_type);
+  if (resolution->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_DECL_SPECIFIER_VALUE_INVALID;
     return;
   }

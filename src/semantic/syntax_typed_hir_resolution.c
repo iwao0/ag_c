@@ -4491,8 +4491,10 @@ static int preflight_direct_local_declaration(
     context->local_declarations = binding;
     return 1;
   }
-  const psx_type_t *base_type = specifier_resolution.base_type;
-  if (!base_type || declaration->declarator_count <= 0)
+  psx_qual_type_t base_qual_type =
+      specifier_resolution.base_qual_type;
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      declaration->declarator_count <= 0)
     return 0;
   direct_local_declarator_binding_t *declarators = arena_alloc_in(
       ps_ctx_arena(context->semantic_context),
@@ -4533,13 +4535,10 @@ static int preflight_direct_local_declaration(
               specifier_resolution.typedef_runtime_application,
               &effective_application))
         return 0;
-      const psx_type_t *type =
-          psx_apply_runtime_declarator_type_in_context(
-              context->semantic_context, base_type, &application);
-      if (!type) return 0;
       psx_qual_type_t decl_qual_type =
-          ps_ctx_intern_declaration_qual_type_in(
-              context->semantic_context, type);
+          psx_apply_runtime_declarator_qual_type_in_context(
+              context->semantic_context, base_qual_type,
+              &application);
       if (decl_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
       psx_typedef_declaration_resolution_t resolution;
       psx_resolve_typedef_declaration(
@@ -4551,8 +4550,12 @@ static int preflight_direct_local_declaration(
               .name_len = name->len,
               .decl_qual_type = decl_qual_type,
               .runtime_application =
-                  ps_type_contains_vla_array(type)
-                      ? &effective_application : NULL,
+                  psx_semantic_type_table_contains_vla_array(
+                      ps_ctx_semantic_type_table_in(
+                          context->semantic_context),
+                      decl_qual_type.type_id)
+                      ? &effective_application
+                      : NULL,
           },
           &resolution);
       if (resolution.status != PSX_TYPEDEF_DECLARATION_OK) return 0;
@@ -4594,9 +4597,13 @@ static int preflight_direct_local_declaration(
             specifier_resolution.typedef_runtime_application,
             &effective_application))
       return 0;
+    psx_qual_type_t decl_qual_type =
+        psx_apply_runtime_declarator_qual_type_in_context(
+            context->semantic_context, base_qual_type, &application);
     const psx_type_t *type =
-        psx_apply_runtime_declarator_type_in_context(
-            context->semantic_context, base_type, &application);
+        psx_semantic_type_table_lookup_qual_type(
+            ps_ctx_semantic_type_table_in(context->semantic_context),
+            decl_qual_type);
     if (type && (declaration->is_extern ||
                  type->kind == PSX_TYPE_FUNCTION)) {
       if (type->kind == PSX_TYPE_FUNCTION) {
@@ -4630,15 +4637,13 @@ static int preflight_direct_local_declaration(
                   .options = context->options,
                   .name = name->str,
                   .name_len = name->len,
-                  .type = ps_ctx_intern_qual_type_in(
-                      context->semantic_context, type),
+                  .type = decl_qual_type,
                   .has_initializer = initializer->has_initializer,
                   .diag_tok = (token_t *)name,
               }))
         return 0;
       declarators[i] = (direct_local_declarator_binding_t){
-          .declaration_qual_type = ps_ctx_intern_qual_type_in(
-              context->semantic_context, type),
+          .declaration_qual_type = decl_qual_type,
           .initializer = initializer,
           .is_semantic_only = 1,
       };
@@ -4655,8 +4660,7 @@ static int preflight_direct_local_declaration(
           .function_name_len = context->function_name_len,
           .name = name->str,
           .name_len = name->len,
-          .type = ps_ctx_intern_qual_type_in(
-              context->semantic_context, type),
+          .type = decl_qual_type,
           .initializer = initializer,
           .diag_tok = (token_t *)name,
       };
@@ -4705,9 +4709,12 @@ static int preflight_direct_local_declaration(
       };
       continue;
     }
-    if (type && ps_type_is_incomplete_array(type))
+    if (type && ps_type_is_incomplete_array(type)) {
       type = resolve_direct_completed_array_type(
           context, type, initializer);
+      decl_qual_type = ps_ctx_intern_declaration_qual_type_in(
+          context->semantic_context, type);
+    }
     int is_complete_fixed_array =
         type && type->kind == PSX_TYPE_ARRAY &&
         !ps_type_is_incomplete_array(type) &&
@@ -4729,8 +4736,7 @@ static int preflight_direct_local_declaration(
         .lowering_context = context->lowering_context,
         .name = name->str,
         .name_len = name->len,
-        .type = ps_ctx_intern_qual_type_in(
-            context->semantic_context, type),
+        .type = decl_qual_type,
         .application = &effective_application,
         .requested_alignment =
             specifier_resolution.requested_alignment,

@@ -7,7 +7,6 @@
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_DECL_SPECIFIER_VALUE_OK = 0,
@@ -25,7 +24,7 @@ typedef struct {
 
 typedef struct {
   psx_decl_specifier_value_status_t status;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   const psx_runtime_declarator_application_t *typedef_runtime_application;
   int tag_member_count;
   int tag_size;

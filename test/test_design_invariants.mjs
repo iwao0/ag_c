@@ -3264,6 +3264,65 @@ const declarationSpecifierResolutionSource = await readFile(
   "src/semantic/declaration_specifier_resolution.c",
   "utf8",
 );
+const declarationSpecifierResolutionHeader = await readFile(
+  "src/semantic/declaration_specifier_resolution.h",
+  "utf8",
+);
+const declarationSpecifierValueResolutionStruct =
+  declarationSpecifierResolutionHeader.match(
+    /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_decl_specifier_value_resolution_t\s*;/,
+  );
+if (!declarationSpecifierValueResolutionStruct ||
+    !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(
+      declarationSpecifierValueResolutionStruct[1],
+    ) ||
+    /\bpsx_type_t\b|\bbase_type\b/.test(
+      declarationSpecifierValueResolutionStruct[1],
+    ) ||
+    !/resolution->base_qual_type\s*=\s*[^;]*ps_ctx_intern_declaration_qual_type_in\s*\(/s.test(
+      declarationSpecifierResolutionSource,
+    )) {
+  throw new Error(
+    "declaration specifier resolution must publish canonical QualType instead of owning a compatibility type view",
+  );
+}
+const declarationSpecifierDirectHirSource = await readFile(
+  "src/semantic/syntax_typed_hir_resolution.c",
+  "utf8",
+);
+const directLocalDeclarationStart =
+  declarationSpecifierDirectHirSource.indexOf(
+    "static int preflight_direct_local_declaration(",
+  );
+const directLocalDeclarationEnd = declarationSpecifierDirectHirSource.indexOf(
+  "static int preflight_direct_statement(",
+  directLocalDeclarationStart,
+);
+const directLocalDeclaration =
+  directLocalDeclarationStart >= 0 && directLocalDeclarationEnd > 0
+    ? declarationSpecifierDirectHirSource.slice(
+        directLocalDeclarationStart,
+        directLocalDeclarationEnd,
+      )
+    : "";
+if (!directLocalDeclaration ||
+    /specifier_resolution\.base_type\b/.test(directLocalDeclaration) ||
+    /\bconst\s+psx_type_t\s*\*\s*base_type\b/.test(
+      directLocalDeclaration,
+    ) ||
+    /\bpsx_apply_runtime_declarator_type_in_context\s*\(/.test(
+      directLocalDeclaration,
+    ) ||
+    !/specifier_resolution\.base_qual_type\b/.test(
+      directLocalDeclaration,
+    ) ||
+    !/\bpsx_apply_runtime_declarator_qual_type_in_context\s*\(/.test(
+      directLocalDeclaration,
+    )) {
+  throw new Error(
+    "direct local declarations must apply declarators to canonical QualType identities",
+  );
+}
 if (!/PSX_PARSED_TAG_DEFINITION[^]*?PSX_TAG_DECLARATION_FORWARD/.test(
       declarationApplicationSource,
     ) ||
@@ -7043,7 +7102,7 @@ if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
     !/bound->expression_id\s*=\s*reference_id/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/\.runtime_application\s*=\s*[^,]*ps_type_contains_vla_array/.test(
+    !/\.runtime_application\s*=\s*[^]*?psx_semantic_type_table_contains_vla_array\s*\([^]*?decl_qual_type\.type_id[^]*?\?\s*&effective_application/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     /if\s*\(\s*!type\s*\|\|\s*ps_type_contains_vla_array\(type\)\s*\)\s*return\s+0/.test(
