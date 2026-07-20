@@ -1778,7 +1778,7 @@ static int preflight_direct_expression_impl(
           ps_ctx_record_decl_table_in(context->semantic_context),
           ps_ctx_record_layout_table_in(context->semantic_context),
           context->lowering_context
-              ? ps_lowering_target(context->lowering_context)
+              ? ps_lowering_data_layout(context->lowering_context)
               : NULL,
           target_type, operand_type, context->options,
           &binding->type_resolution);

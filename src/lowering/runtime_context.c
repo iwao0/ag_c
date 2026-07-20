@@ -91,6 +91,11 @@ const ag_target_info_t *ps_lowering_target(
   return ctx ? ctx->target : NULL;
 }
 
+const ag_data_layout_t *
+ps_lowering_data_layout(const psx_lowering_context_t *ctx) {
+  return ag_target_info_data_layout(ps_lowering_target(ctx));
+}
+
 arena_context_t *ps_lowering_arena(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->arena_context : NULL;

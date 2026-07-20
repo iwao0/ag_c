@@ -12,10 +12,8 @@ void psx_resolve_aggregate_cast_qual_types(
     const psx_semantic_type_table_t *types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target,
-    psx_qual_type_t target_qual_type,
-    psx_qual_type_t operand_qual_type,
-    const ag_compilation_options_t *options,
+    const ag_data_layout_t *data_layout, psx_qual_type_t target_qual_type,
+    psx_qual_type_t operand_qual_type, const ag_compilation_options_t *options,
     psx_aggregate_cast_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
@@ -45,14 +43,11 @@ void psx_resolve_aggregate_cast_qual_types(
   }
 
   if (options->enable_size_compatible_nonscalar_cast &&
-      ps_type_is_tag_aggregate(operand_type) && target &&
-      record_layouts) {
-    int target_size =
-        ps_type_sizeof_id(types, record_layouts, target_qual_type.type_id,
-                          ag_target_info_data_layout(target));
-    int operand_size =
-        ps_type_sizeof_id(types, record_layouts, operand_qual_type.type_id,
-                          ag_target_info_data_layout(target));
+      ps_type_is_tag_aggregate(operand_type) && data_layout && record_layouts) {
+    int target_size = ps_type_sizeof_id(types, record_layouts,
+                                        target_qual_type.type_id, data_layout);
+    int operand_size = ps_type_sizeof_id(
+        types, record_layouts, operand_qual_type.type_id, data_layout);
     if (target_size > 0 && target_size == operand_size &&
         (int)ps_type_tag_token_kind(operand_type) ==
             resolution->target_tag_kind) {

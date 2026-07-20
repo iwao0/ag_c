@@ -12,9 +12,7 @@ typedef struct {
 
 int psx_plan_local_storage_for_type_id(
     const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t type_id,
-    const ag_target_info_t *target,
-    psx_local_storage_plan_t *out);
+    const psx_record_layout_table_t *record_layouts, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout, psx_local_storage_plan_t *out);
 
 #endif

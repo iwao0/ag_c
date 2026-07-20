@@ -37,10 +37,8 @@ void psx_resolve_aggregate_cast_qual_types(
     const psx_semantic_type_table_t *types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target,
-    psx_qual_type_t target_qual_type,
-    psx_qual_type_t operand_qual_type,
-    const ag_compilation_options_t *options,
+    const ag_data_layout_t *data_layout, psx_qual_type_t target_qual_type,
+    psx_qual_type_t operand_qual_type, const ag_compilation_options_t *options,
     psx_aggregate_cast_resolution_t *resolution);
 
 #endif

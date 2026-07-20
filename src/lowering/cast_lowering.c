@@ -174,7 +174,7 @@ int psx_validate_source_cast_qual_types(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_decls(lowering_context),
       ps_lowering_record_layouts(lowering_context),
-      ps_lowering_target(lowering_context), target_qual_type,
+      ps_lowering_data_layout(lowering_context), target_qual_type,
       operand_qual_type, options, resolution);
   if (resolution->status == PSX_SOURCE_CAST_TYPES_OK) return 1;
   diagnose_source_cast_resolution(

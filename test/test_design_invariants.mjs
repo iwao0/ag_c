@@ -6321,6 +6321,12 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     ) ||
     !/ps_type_sizeof_id\s*\(/.test(
       aggregateCastResolutionSource,
+    ) ||
+    /\bag_target_info_t\b/.test(
+      `${aggregateCastResolutionHeader}\n${aggregateCastResolutionSource}`,
+    ) ||
+    !/const\s+ag_data_layout_t\s*\*data_layout/.test(
+      aggregateCastResolutionHeader,
     )) {
   throw new Error(
     "aggregate cast semantics must resolve independently from Syntax AST, HIR, and temporary storage planning",
@@ -6349,6 +6355,12 @@ if (!/\bpsx_source_cast_types_resolution_t\b/.test(
     ) ||
     !/psx_resolve_aggregate_cast_qual_types\s*\(/.test(
       sourceCastTypeResolutionSource,
+    ) ||
+    /\bag_target_info_t\b/.test(
+      `${sourceCastTypeResolutionHeader}\n${sourceCastTypeResolutionSource}`,
+    ) ||
+    !/const\s+ag_data_layout_t\s*\*data_layout/.test(
+      sourceCastTypeResolutionHeader,
     )) {
   throw new Error(
     "all source-cast constraints must resolve from canonical QualTypes before HIR emission or storage planning",
@@ -7310,6 +7322,9 @@ for (const [name, header, source, functionName] of [
       !/\bps_type_sizeof_id\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
+      (name === "local" &&
+       (/\bag_target_info_t\b/.test(`${header}\n${source}`) ||
+        !/const\s+ag_data_layout_t\s*\*data_layout/.test(header))) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
       /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
         header,

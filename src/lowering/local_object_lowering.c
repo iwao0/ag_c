@@ -16,8 +16,8 @@ lvar_t *lower_complete_local_object(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
-          ps_lowering_target(request->lowering_context),
-          &plan)) return NULL;
+          ps_lowering_data_layout(request->lowering_context), &plan))
+    return NULL;
   int alignment = plan.alignment;
   if (request->requested_alignment > 0)
     alignment = request->requested_alignment;
@@ -42,7 +42,7 @@ lvar_t *lower_complete_internal_local_object(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
-          ps_lowering_target(request->lowering_context), &plan))
+          ps_lowering_data_layout(request->lowering_context), &plan))
     return NULL;
   int alignment = request->requested_alignment > 0
                       ? request->requested_alignment
@@ -78,8 +78,8 @@ int complete_declared_local_object(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
-          ps_lowering_target(request->lowering_context),
-          &plan)) return 0;
+          ps_lowering_data_layout(request->lowering_context), &plan))
+    return 0;
   int alignment = request->requested_alignment > 0
                       ? request->requested_alignment : plan.alignment;
   int offset = local_storage_allocate(

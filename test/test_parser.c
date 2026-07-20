@@ -1384,7 +1384,7 @@ static int plan_test_local_storage(
   return psx_plan_local_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_layout_table_in(test_semantic_context()),
-      intern_test_type_id(type), &target, plan);
+      intern_test_type_id(type), ag_target_info_data_layout(&target), plan);
 }
 
 static int plan_test_parameter_storage(
@@ -13304,7 +13304,8 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, psx_record_layout_member(wasm_record_layout, 1)->offset);
   psx_local_storage_plan_t local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, pointer_array_identity.type_id, &wasm, &local));
+      types, record_layouts, pointer_array_identity.type_id,
+      ag_target_info_data_layout(&wasm), &local));
   ASSERT_EQ(12, local.storage_size);
   ASSERT_EQ(4, local.alignment);
 
@@ -13317,15 +13318,24 @@ static void test_target_type_layout_boundary() {
 
   psx_local_storage_plan_t host_record_local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, record_identity.type_id, &host,
-      &host_record_local));
+      types, record_layouts, record_identity.type_id,
+      ag_target_info_data_layout(&host), &host_record_local));
   ASSERT_EQ(16, host_record_local.storage_size);
   ASSERT_EQ(8, host_record_local.alignment);
 
+  psx_local_storage_plan_t alternate_host_record_local = {0};
+  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
+      types, record_layouts, record_identity.type_id,
+      ag_target_info_data_layout(&alternate_host_abi),
+      &alternate_host_record_local));
+  ASSERT_EQ(host_record_local.storage_size,
+            alternate_host_record_local.storage_size);
+  ASSERT_EQ(host_record_local.alignment, alternate_host_record_local.alignment);
+
   psx_local_storage_plan_t wasm_record_local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, record_identity.type_id, &wasm,
-      &wasm_record_local));
+      types, record_layouts, record_identity.type_id,
+      ag_target_info_data_layout(&wasm), &wasm_record_local));
   ASSERT_EQ(8, wasm_record_local.storage_size);
   ASSERT_EQ(4, wasm_record_local.alignment);
 
@@ -13380,6 +13390,10 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(host_lowering != NULL);
   ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(wasm_lowering), &wasm));
   ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(host_lowering), &host));
+  ASSERT_TRUE(ag_data_layout_equal(ps_lowering_data_layout(wasm_lowering),
+                                   ag_target_info_data_layout(&wasm)));
+  ASSERT_TRUE(ag_data_layout_equal(ps_lowering_data_layout(host_lowering),
+                                   ag_target_info_data_layout(&host)));
   ASSERT_EQ(8, ps_lowering_type_size(wasm_lowering, record_type));
   ASSERT_EQ(4, ps_lowering_type_alignment(wasm_lowering, record_type));
   ASSERT_EQ(4, ps_lowering_type_deref_size(wasm_lowering, pointer_array));

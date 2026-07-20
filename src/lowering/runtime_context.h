@@ -83,6 +83,8 @@ int ps_lowering_type_alignment(
     const psx_lowering_context_t *ctx, const psx_type_t *type);
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx);
+const ag_data_layout_t *
+ps_lowering_data_layout(const psx_lowering_context_t *ctx);
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx);
 void psx_lowering_context_checkpoint(
     const psx_lowering_context_t *ctx,
