@@ -83,20 +83,20 @@ int ag_compilation_session_init(
   session->parser_runtime_context = ps_parser_runtime_context_create(
       session->arena_context, &session->tokenizer,
       session->diagnostic_context);
+  const psx_lowering_context_dependencies_t lowering_dependencies = {
+      .arena_context = session->arena_context,
+      .diagnostic_context = session->diagnostic_context,
+      .resolution_store = session->resolution_store,
+      .target = &session->target,
+      .semantic_types =
+          ps_ctx_semantic_type_table_in(session->semantic_context),
+      .record_decls =
+          ps_ctx_record_decl_table_in(session->semantic_context),
+      .record_layouts =
+          ps_ctx_record_layout_table_in(session->semantic_context),
+  };
   session->lowering_context = ps_lowering_context_create(
-      session->arena_context, session->diagnostic_context,
-      &session->target);
-  ps_lowering_context_bind_resolution_store(
-      session->lowering_context, session->resolution_store);
-  ps_lowering_context_bind_semantic_types(
-      session->lowering_context,
-      ps_ctx_semantic_type_table_in(session->semantic_context));
-  ps_lowering_context_bind_record_decls(
-      session->lowering_context,
-      ps_ctx_record_decl_table_in(session->semantic_context));
-  ps_lowering_context_bind_record_layouts(
-      session->lowering_context,
-      ps_ctx_record_layout_table_in(session->semantic_context));
+      &lowering_dependencies);
   session->codegen_emit_context = cg_context_create(
       session->diagnostic_context);
   if (!session->scope_graph || !session->semantic_context ||
@@ -180,9 +180,12 @@ int ag_compilation_session_is_complete(
          ps_lowering_target(session->lowering_context) ==
              &session->target &&
          session->hir_module &&
-         ps_lowering_semantic_types(session->lowering_context) &&
-         ps_lowering_record_decls(session->lowering_context) &&
-         ps_lowering_record_layouts(session->lowering_context) &&
+         ps_lowering_semantic_types(session->lowering_context) ==
+             ps_ctx_semantic_type_table_in(session->semantic_context) &&
+         ps_lowering_record_decls(session->lowering_context) ==
+             ps_ctx_record_decl_table_in(session->semantic_context) &&
+         ps_lowering_record_layouts(session->lowering_context) ==
+             ps_ctx_record_layout_table_in(session->semantic_context) &&
          session->codegen_emit_context &&
          cg_context_diagnostics(session->codegen_emit_context) ==
              session->diagnostic_context &&

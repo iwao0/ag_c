@@ -32,6 +32,16 @@ typedef struct psx_lowering_context_t {
 } psx_lowering_context_t;
 
 typedef struct {
+  arena_context_t *arena_context;
+  ag_diagnostic_context_t *diagnostic_context;
+  psx_resolution_store_t *resolution_store;
+  const ag_target_info_t *target;
+  const psx_semantic_type_table_t *semantic_types;
+  const psx_record_decl_table_t *record_decls;
+  const psx_record_layout_table_t *record_layouts;
+} psx_lowering_context_dependencies_t;
+
+typedef struct {
   frame_layout_t local_frame_layout;
   int static_local_sequences[PSX_STATIC_LOCAL_KIND_COUNT];
   int file_scope_compound_sequence;
@@ -43,33 +53,20 @@ typedef struct {
   int vla_typedef_bound_sequence;
 } psx_lowering_context_checkpoint_t;
 
-/* target must outlive the lowering context. */
+/* All dependencies must outlive the lowering context. */
 psx_lowering_context_t *ps_lowering_context_create(
-    arena_context_t *arena_context,
-    ag_diagnostic_context_t *diagnostic_context,
-    const ag_target_info_t *target);
+    const psx_lowering_context_dependencies_t *dependencies);
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx);
 arena_context_t *ps_lowering_arena(
     const psx_lowering_context_t *ctx);
 ag_diagnostic_context_t *ps_lowering_diagnostics(
     const psx_lowering_context_t *ctx);
-void ps_lowering_context_bind_resolution_store(
-    psx_lowering_context_t *ctx, psx_resolution_store_t *store);
 psx_resolution_store_t *ps_lowering_resolution_store(
     const psx_lowering_context_t *ctx);
-void ps_lowering_context_bind_semantic_types(
-    psx_lowering_context_t *ctx,
-    const psx_semantic_type_table_t *semantic_types);
 const psx_semantic_type_table_t *ps_lowering_semantic_types(
     const psx_lowering_context_t *ctx);
-void ps_lowering_context_bind_record_decls(
-    psx_lowering_context_t *ctx,
-    const psx_record_decl_table_t *record_decls);
 const psx_record_decl_table_t *ps_lowering_record_decls(
     const psx_lowering_context_t *ctx);
-void ps_lowering_context_bind_record_layouts(
-    psx_lowering_context_t *ctx,
-    const psx_record_layout_table_t *record_layouts);
 const psx_record_layout_table_t *ps_lowering_record_layouts(
     const psx_lowering_context_t *ctx);
 psx_type_id_t ps_lowering_type_id(

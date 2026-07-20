@@ -13316,30 +13316,37 @@ static void test_target_type_layout_boundary() {
 
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(test_suite_session);
-  ASSERT_TRUE(ps_lowering_context_create(
-      test_arena_context(), diagnostics, NULL) == NULL);
-  ASSERT_TRUE(ps_lowering_context_create(
-      test_arena_context(), diagnostics, &incomplete_target) == NULL);
-  psx_lowering_context_t *wasm_lowering = ps_lowering_context_create(
-      test_arena_context(), diagnostics, &wasm);
-  psx_lowering_context_t *host_lowering = ps_lowering_context_create(
-      test_arena_context(), diagnostics, &host);
+  const psx_lowering_context_dependencies_t wasm_dependencies = {
+      .arena_context = test_arena_context(),
+      .diagnostic_context = diagnostics,
+      .resolution_store = test_resolution_store(),
+      .target = &wasm,
+      .semantic_types = types,
+      .record_decls =
+          ps_ctx_record_decl_table_in(test_semantic_context()),
+      .record_layouts = record_layouts,
+  };
+  psx_lowering_context_dependencies_t invalid_dependencies =
+      wasm_dependencies;
+  invalid_dependencies.target = NULL;
+  ASSERT_TRUE(ps_lowering_context_create(NULL) == NULL);
+  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
+  invalid_dependencies.target = &incomplete_target;
+  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
+  invalid_dependencies = wasm_dependencies;
+  invalid_dependencies.semantic_types = NULL;
+  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
+  psx_lowering_context_dependencies_t host_dependencies =
+      wasm_dependencies;
+  host_dependencies.target = &host;
+  psx_lowering_context_t *wasm_lowering =
+      ps_lowering_context_create(&wasm_dependencies);
+  psx_lowering_context_t *host_lowering =
+      ps_lowering_context_create(&host_dependencies);
   ASSERT_TRUE(wasm_lowering != NULL);
   ASSERT_TRUE(host_lowering != NULL);
   ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(wasm_lowering), &wasm));
   ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(host_lowering), &host));
-  ps_lowering_context_bind_resolution_store(
-      wasm_lowering, test_resolution_store());
-  ps_lowering_context_bind_semantic_types(wasm_lowering, types);
-  ps_lowering_context_bind_record_decls(
-      wasm_lowering, ps_ctx_record_decl_table_in(test_semantic_context()));
-  ps_lowering_context_bind_record_layouts(wasm_lowering, record_layouts);
-  ps_lowering_context_bind_resolution_store(
-      host_lowering, test_resolution_store());
-  ps_lowering_context_bind_semantic_types(host_lowering, types);
-  ps_lowering_context_bind_record_decls(
-      host_lowering, ps_ctx_record_decl_table_in(test_semantic_context()));
-  ps_lowering_context_bind_record_layouts(host_lowering, record_layouts);
   ASSERT_EQ(8, ps_lowering_type_size(wasm_lowering, record_type));
   ASSERT_EQ(4, ps_lowering_type_alignment(wasm_lowering, record_type));
   ASSERT_EQ(4, ps_lowering_type_deref_size(wasm_lowering, pointer_array));
@@ -28491,18 +28498,18 @@ static void test_semantic_context_isolation() {
       sizeof(parsed_function)));
   ASSERT_TRUE((psx_resolution_node_set_kind)(
       second_store, &parsed_function.base, ND_FUNCDEF));
+  const psx_lowering_context_dependencies_t second_lowering_dependencies = {
+      .arena_context = arena_context,
+      .diagnostic_context = diagnostics,
+      .resolution_store = second_store,
+      .target = ps_ctx_target_info(second),
+      .semantic_types = ps_ctx_semantic_type_table_in(second),
+      .record_decls = ps_ctx_record_decl_table_in(second),
+      .record_layouts = ps_ctx_record_layout_table_in(second),
+  };
   psx_lowering_context_t *second_lowering_context =
-      ps_lowering_context_create(
-          arena_context, diagnostics, ps_ctx_target_info(second));
+      ps_lowering_context_create(&second_lowering_dependencies);
   ASSERT_TRUE(second_lowering_context != NULL);
-  ps_lowering_context_bind_resolution_store(
-      second_lowering_context, second_store);
-  ps_lowering_context_bind_semantic_types(
-      second_lowering_context, ps_ctx_semantic_type_table_in(second));
-  ps_lowering_context_bind_record_decls(
-      second_lowering_context, ps_ctx_record_decl_table_in(second));
-  ps_lowering_context_bind_record_layouts(
-      second_lowering_context, ps_ctx_record_layout_table_in(second));
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_legacy_local_declaration_adapter_t
       local_declaration_adapter;
@@ -29267,6 +29274,18 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.resolution_store);
   ASSERT_TRUE(ps_lowering_resolution_store(wasm.lowering_context) ==
               wasm.resolution_store);
+  ASSERT_TRUE(ps_lowering_semantic_types(host.lowering_context) ==
+              ps_ctx_semantic_type_table_in(host.semantic_context));
+  ASSERT_TRUE(ps_lowering_semantic_types(wasm.lowering_context) ==
+              ps_ctx_semantic_type_table_in(wasm.semantic_context));
+  ASSERT_TRUE(ps_lowering_record_decls(host.lowering_context) ==
+              ps_ctx_record_decl_table_in(host.semantic_context));
+  ASSERT_TRUE(ps_lowering_record_decls(wasm.lowering_context) ==
+              ps_ctx_record_decl_table_in(wasm.semantic_context));
+  ASSERT_TRUE(ps_lowering_record_layouts(host.lowering_context) ==
+              ps_ctx_record_layout_table_in(host.semantic_context));
+  ASSERT_TRUE(ps_lowering_record_layouts(wasm.lowering_context) ==
+              ps_ctx_record_layout_table_in(wasm.semantic_context));
   ASSERT_EQ(8, ag_target_info_pointer_size(
                    ag_compilation_session_target(&host)));
   ASSERT_EQ(4, ag_target_info_pointer_size(

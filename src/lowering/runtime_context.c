@@ -6,17 +6,22 @@
 #include <string.h>
 
 psx_lowering_context_t *ps_lowering_context_create(
-    arena_context_t *arena_context,
-    ag_diagnostic_context_t *diagnostic_context,
-    const ag_target_info_t *target) {
-  if (!arena_context || !diagnostic_context ||
-      !ag_target_info_is_valid(target))
+    const psx_lowering_context_dependencies_t *dependencies) {
+  if (!dependencies || !dependencies->arena_context ||
+      !dependencies->diagnostic_context ||
+      !dependencies->resolution_store || !dependencies->semantic_types ||
+      !dependencies->record_decls || !dependencies->record_layouts ||
+      !ag_target_info_is_valid(dependencies->target))
     return NULL;
   psx_lowering_context_t *ctx = calloc(1, sizeof(*ctx));
   if (ctx) {
-    ctx->arena_context = arena_context;
-    ctx->diagnostic_context = diagnostic_context;
-    ctx->target = target;
+    ctx->arena_context = dependencies->arena_context;
+    ctx->diagnostic_context = dependencies->diagnostic_context;
+    ctx->resolution_store = dependencies->resolution_store;
+    ctx->target = dependencies->target;
+    ctx->semantic_types = dependencies->semantic_types;
+    ctx->record_decls = dependencies->record_decls;
+    ctx->record_layouts = dependencies->record_layouts;
   }
   return ctx;
 }
@@ -26,32 +31,14 @@ void ps_lowering_context_destroy(psx_lowering_context_t *ctx) {
   free(ctx);
 }
 
-void ps_lowering_context_bind_semantic_types(
-    psx_lowering_context_t *ctx,
-    const psx_semantic_type_table_t *semantic_types) {
-  if (ctx) ctx->semantic_types = semantic_types;
-}
-
 const psx_semantic_type_table_t *ps_lowering_semantic_types(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->semantic_types : NULL;
 }
 
-void ps_lowering_context_bind_record_decls(
-    psx_lowering_context_t *ctx,
-    const psx_record_decl_table_t *record_decls) {
-  if (ctx) ctx->record_decls = record_decls;
-}
-
 const psx_record_decl_table_t *ps_lowering_record_decls(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->record_decls : NULL;
-}
-
-void ps_lowering_context_bind_record_layouts(
-    psx_lowering_context_t *ctx,
-    const psx_record_layout_table_t *record_layouts) {
-  if (ctx) ctx->record_layouts = record_layouts;
 }
 
 const psx_record_layout_table_t *ps_lowering_record_layouts(
@@ -112,11 +99,6 @@ arena_context_t *ps_lowering_arena(
 ag_diagnostic_context_t *ps_lowering_diagnostics(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->diagnostic_context : NULL;
-}
-
-void ps_lowering_context_bind_resolution_store(
-    psx_lowering_context_t *ctx, psx_resolution_store_t *store) {
-  if (ctx) ctx->resolution_store = store;
 }
 
 psx_resolution_store_t *ps_lowering_resolution_store(

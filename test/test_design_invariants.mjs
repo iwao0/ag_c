@@ -1834,20 +1834,44 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
     ) ||
     !/ps_lowering_diagnostics\s*\(/.test(loweringRuntimeHeader) ||
-    !/ps_lowering_context_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*&session->target\s*\)/s.test(
+    !/typedef\s+struct\s*\{[^]*?arena_context_t\s*\*arena_context\s*;[^]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[^]*?psx_resolution_store_t\s*\*resolution_store\s*;[^]*?const\s+ag_target_info_t\s*\*target\s*;[^]*?const\s+psx_semantic_type_table_t\s*\*semantic_types\s*;[^]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[^]*?const\s+psx_record_layout_table_t\s*\*record_layouts\s*;[^]*?\}\s*psx_lowering_context_dependencies_t\s*;/.test(
+      loweringRuntimeHeader,
+    ) ||
+    !/ps_lowering_context_create\s*\(\s*&lowering_dependencies\s*\)/.test(
       compilationSessionSource,
     ) ||
-    !/psx_lowering_context_t\s*\*ps_lowering_context_create\s*\([^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(
+    !/psx_lowering_context_t\s*\*ps_lowering_context_create\s*\(\s*const\s+psx_lowering_context_dependencies_t\s*\*dependencies\s*\)/s.test(
       loweringRuntimeSource,
     ) ||
-    !/ag_target_info_is_valid\s*\(target\)/.test(loweringRuntimeSource) ||
+    !/ag_target_info_is_valid\s*\(dependencies->target\)/.test(loweringRuntimeSource) ||
     !/const\s+ag_target_info_t\s*\*target\s*;/.test(
       loweringRuntimeHeader,
     ) ||
-    !/ctx->target\s*=\s*target\s*;/.test(loweringRuntimeSource) ||
-    /ctx->target\s*=\s*\*target\s*;/.test(loweringRuntimeSource) ||
-    /ps_lowering_context_bind_target\s*\(/.test(
+    !/ctx->target\s*=\s*dependencies->target\s*;/.test(loweringRuntimeSource) ||
+    /ctx->target\s*=\s*\*dependencies->target\s*;/.test(loweringRuntimeSource) ||
+    /ps_lowering_context_bind_(?:target|resolution_store|semantic_types|record_decls|record_layouts)\s*\(/.test(
       loweringRuntimeHeader + loweringRuntimeSource,
+    ) ||
+    !/ctx->resolution_store\s*=\s*dependencies->resolution_store\s*;/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/ctx->semantic_types\s*=\s*dependencies->semantic_types\s*;/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/ctx->record_decls\s*=\s*dependencies->record_decls\s*;/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/ctx->record_layouts\s*=\s*dependencies->record_layouts\s*;/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/ps_lowering_semantic_types\s*\(\s*session->lowering_context\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_lowering_record_decls\s*\(\s*session->lowering_context\s*\)\s*==\s*ps_ctx_record_decl_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    !/ps_lowering_record_layouts\s*\(\s*session->lowering_context\s*\)\s*==\s*ps_ctx_record_layout_table_in\s*\(\s*session->semantic_context\s*\)/.test(
+      compilationSessionSource,
     ) ||
     /ag_target_info_host\s*\(/.test(loweringRuntimeSource) ||
     /default_lowering_context|active_lowering_context/.test(
@@ -8225,11 +8249,8 @@ if (!/\bpsx_record_decl_table_define\s*\(/.test(recordDeclTableHeader) ||
     !/records\s*\[\s*record->record_id\s*\]\s*=\s*record/.test(
       recordDeclTableSource,
     ) ||
-    !/\bps_lowering_context_bind_record_decls\s*\(/.test(
-      loweringRuntimeSource,
-    ) ||
     !/\bps_lowering_record_decls\s*\(/.test(loweringRuntimeSource) ||
-    !/\bps_lowering_context_bind_record_decls\s*\(/.test(
+    !/\.record_decls\s*=\s*ps_ctx_record_decl_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
     )) {
   throw new Error(
