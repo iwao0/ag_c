@@ -16525,9 +16525,11 @@ static void test_enum_constant_resolution_boundary() {
 static void test_initializer_resolution_boundary() {
   printf("test_initializer_resolution_boundary...\n");
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *const_integer = ps_type_new_integer(TK_INT, 4, 0);
+  ps_type_add_qualifiers(const_integer, PSX_TYPE_QUALIFIER_CONST);
   psx_type_t *array = ps_type_new_array(integer, 2, 8, 0);
   psx_record_member_decl_t members[2] = {
-      test_record_member_fixture((char *)"x", 1, integer),
+      test_record_member_fixture((char *)"x", 1, const_integer),
       test_record_member_fixture((char *)"a", 1, array),
   };
   psx_record_decl_t definition = {
@@ -16563,13 +16565,18 @@ static void test_initializer_resolution_boundary() {
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_decl_table_in(test_semantic_context()), record_layouts,
       ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
-      aggregate_type_id, 0, &leaves));
+      (psx_qual_type_t){aggregate_type_id, PSX_TYPE_QUALIFIER_NONE}, 0,
+      &leaves));
   ASSERT_EQ(3, leaves.count);
   ASSERT_EQ(0, leaves.items[0].relative_offset);
   ASSERT_EQ(4, leaves.items[1].relative_offset);
   ASSERT_EQ(8, leaves.items[2].relative_offset);
-  ASSERT_EQ(integer_type_id, leaves.items[2].type_id);
-  ASSERT_TRUE(leaves.items[2].type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(integer_type_id, leaves.items[2].qual_type.type_id);
+  ASSERT_TRUE(leaves.items[2].qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE((leaves.items[0].qual_type.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            leaves.items[1].qual_type.qualifiers);
 
   node_num_t index = {0};
   index.base.kind = ND_NUM;
@@ -16597,13 +16604,26 @@ static void test_initializer_resolution_boundary() {
   ASSERT_EQ(8, target.relative_offset);
   ASSERT_EQ(1, target.first_member_index);
   ASSERT_EQ(1, target.first_array_index);
-  ASSERT_EQ(leaves.items[2].type_id, target.type_id);
+  ASSERT_EQ(leaves.items[2].qual_type.type_id, target.type_id);
   ASSERT_EQ(3, psx_initializer_leaf_cursor_after_target_with_records(
                    ps_ctx_semantic_type_table_in(test_semantic_context()),
                    record_layouts,
                    ag_target_info_data_layout(
                        ps_ctx_target_info(test_semantic_context())),
                    &leaves, &target));
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_decl_table_in(test_semantic_context()), record_layouts,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
+      (psx_qual_type_t){aggregate_type_id, PSX_TYPE_QUALIFIER_CONST}, 0,
+      &leaves));
+  ASSERT_EQ(3, leaves.count);
+  for (int i = 0; i < leaves.count; i++) {
+    ASSERT_TRUE((leaves.items[i].qual_type.qualifiers &
+                 PSX_TYPE_QUALIFIER_CONST) != 0);
+  }
   psx_initializer_scalar_leaf_list_dispose(&leaves);
 
   psx_type_t *recursive = ps_type_new_tag(
@@ -16638,12 +16658,13 @@ static void test_initializer_resolution_boundary() {
       ps_ctx_semantic_type_table_in(test_semantic_context()),
       ps_ctx_record_decl_table_in(test_semantic_context()), record_layouts,
       ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())),
-      recursive_type_id, 0, &leaves));
+      (psx_qual_type_t){recursive_type_id, PSX_TYPE_QUALIFIER_NONE}, 0,
+      &leaves));
   ASSERT_EQ(2, leaves.count);
   psx_type_shape_t recursive_pointer_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
-      leaves.items[0].type_id, &recursive_pointer_shape));
+      leaves.items[0].qual_type.type_id, &recursive_pointer_shape));
   ASSERT_EQ(PSX_TYPE_POINTER, recursive_pointer_shape.kind);
   ASSERT_EQ(8, leaves.items[1].relative_offset);
   psx_initializer_scalar_leaf_list_dispose(&leaves);

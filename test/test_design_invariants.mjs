@@ -5498,21 +5498,37 @@ for (const removedApi of [
 const storageSlotConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*ps_node_new_lvar_storage_slot_for_in\s*\([^]*?\n\}/,
 );
+const canonicalTypeSlotConstructor = resolvedObjectRefSource.match(
+  /node_t\s*\*ps_node_new_lvar_qual_type_at_for_in\s*\([^]*?\n\}/,
+);
 const floatingSlotConstructor = resolvedObjectRefSource.match(
   /node_t\s*\*ps_node_new_lvar_fp_slot_for_in\s*\([^]*?\n\}/,
 );
-if (!storageSlotConstructor ||
+if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
     /\bps_(?:lvar|type)_[A-Za-z0-9_]*(?:size|sizeof)\s*\(/.test(
       storageSlotConstructor[0],
     ) ||
-    !/ps_node_new_lvar_type_at_for_in\s*\([^;]*\belement\s*\)/s.test(
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      canonicalTypeSlotConstructor[0],
+    ) ||
+    !/psx_qual_type_t\s+qual_type/.test(canonicalTypeSlotConstructor[0]) ||
+    !/psx_bind_local_reference_in\s*\([^;]*\bqual_type\s*\)/s.test(
+      canonicalTypeSlotConstructor[0],
+    ) ||
+    /psx_semantic_type_table_lookup\s*\(|ps_lvar_get_decl_type\s*\(/.test(
+      canonicalTypeSlotConstructor[0],
+    ) ||
+    !/ps_node_new_lvar_qual_type_at_for_in\s*\(/.test(
+      initializerLoweringSourceForLocalLayout,
+    ) ||
+    /ps_node_new_lvar_type_at_for_in\s*\(/.test(
       initializerLoweringSourceForLocalLayout,
     ) ||
     !/ps_node_new_lvar_storage_slot_for_in\s*\(/.test(
       initializerLoweringSourceForLocalLayout,
     )) {
   throw new Error(
-    "local initializer lowering must pass semantic element types directly and label byte-wise zero fill as storage slots",
+    "local initializer lowering must bind canonical QualType slots and label byte-wise zero fill as storage slots",
   );
 }
 if (!floatingSlotConstructor ||
@@ -5948,10 +5964,10 @@ const initializerResolutionHeader = await readFile(
   "utf8",
 );
 const initializerTargetType = initializerResolutionHeader.match(
-  /typedef struct\s*\{([\s\S]*?)\}\s*psx_initializer_target_t\s*;/,
+  /typedef struct\s*\{([^}]*)\}\s*psx_initializer_target_t\s*;/,
 );
 const initializerLeafType = initializerResolutionHeader.match(
-  /typedef struct\s*\{([\s\S]*?)\}\s*psx_initializer_scalar_leaf_t\s*;/,
+  /typedef struct\s*\{([^}]*)\}\s*psx_initializer_scalar_leaf_t\s*;/,
 );
 const initializerLayoutApis = [
   "psx_resolve_flat_local_initializer_plan",
@@ -5965,7 +5981,8 @@ if (!initializerTargetType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerTargetType[1]) ||
     /\bpsx_type_t\b/.test(initializerTargetType[1]) ||
     !initializerLeafType ||
-    !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerLeafType[1]) ||
+    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(initializerLeafType[1]) ||
+    /\bpsx_type_id_t\s+type_id\s*;/.test(initializerLeafType[1]) ||
     /\bpsx_type_t\b/.test(initializerLeafType[1]) ||
     !/\bpsx_type_id_t\s+string_array_type_id\s*;/.test(
       initializerLeafType[1],
@@ -5973,7 +5990,7 @@ if (!initializerTargetType ||
     !/\bpsx_resolve_initializer_designator_path_with_records\s*\([\s\S]*?\bpsx_type_id_t\s+root_type_id\b/.test(
       initializerResolutionHeader,
     ) ||
-    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bpsx_type_id_t\s+type_id\b/.test(
+    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bpsx_qual_type_t\s+qual_type\b/.test(
       initializerResolutionHeader,
     ) ||
     /\bpsx_resolve_initializer_designator_path\s*\(/.test(
@@ -8943,14 +8960,14 @@ for (const functionName of [
 if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*;[^]*?\btype_size_id\s*\(\s*lowering\s*,\s*type_id\s*\)/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*ctx->global\s*\)\s*;/.test(
+    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bps_gvar_decl_qual_type\s*\(\s*ctx->global\s*\)\s*,\s*0\s*,/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bps_gvar_decl_type_id\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
+    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bps_gvar_decl_qual_type\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
       staticDataInitializerSource,
     )) {
   throw new Error(
-    "global data and static initializer root layout must consume the symbol declaration TypeId",
+    "global data and static initializer root layout must consume the symbol declaration QualType",
   );
 }
 if (/\bstorage_alignment\s*\(/.test(translationUnitDataLoweringSource) ||
@@ -9051,7 +9068,24 @@ const typedInitializerSection = initializerLoweringSource.match(
 );
 if (!typedInitializerSection ||
     /\btype_id\s*\(\s*context\s*,/.test(typedInitializerSection[0]) ||
+    /\bconst\s+psx_type_t\s*\*|\bpsx_type_t\s*\*/.test(
+      initializerLoweringSource,
+    ) ||
+    /\bpsx_semantic_type_table_lookup\s*\(|\bpsx_record_member_decl_type\s*\(|\bps_lvar_get_decl_type\s*\(|\bps_node_get_type\s*\(|\bps_type_(?:array_leaf_type|array_flat_element_count|is_tag_aggregate|record_id|tag_identity_matches)\s*\(/.test(
+      initializerLoweringSource,
+    ) ||
     !/\bps_lvar_decl_type_id\s*\(/.test(initializerLoweringSource) ||
+    !/\bps_lvar_decl_qual_type\s*\(/.test(initializerLoweringSource) ||
+    !/\bps_node_qual_type\s*\(/.test(initializerLoweringSource) ||
+    !/\bps_node_new_lvar_qual_type_at_for_in\s*\(/.test(
+      initializerLoweringSource,
+    ) ||
+    !/ps_node_new_lvar_qual_type_at_for_in\s*\([^;]*\bleaf->qual_type\s*\)/s.test(
+      initializerLoweringSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      initializerLoweringSource,
+    ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       typedInitializerSection[0],
     ) ||
@@ -9059,7 +9093,7 @@ if (!typedInitializerSection ||
       typedInitializerSection[0],
     )) {
   throw new Error(
-    "typed local initializer lowering must traverse declaration, base, and member TypeIds without type pointer reverse lookup",
+    "local initializer lowering must traverse canonical QualType, TypeShape, RecordId, and target layout without compatibility type reverse lookup",
   );
 }
 

@@ -237,6 +237,21 @@ node_t *ps_node_new_lvar_type_at_for_in(
       store, arena_context, offset, owner, type);
 }
 
+node_t *ps_node_new_lvar_qual_type_at_for_in(
+    psx_resolution_store_t *store,
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *owner, int offset, psx_qual_type_t qual_type) {
+  node_t *node = psx_resolution_node_alloc_in(
+      store, arena_context, sizeof(*node));
+  if (!node || !psx_resolution_node_set_kind(store, node, ND_LVAR) ||
+      !psx_bind_local_reference_in(
+          store, arena_context, node, owner, offset, semantic_types,
+          qual_type))
+    return NULL;
+  return node;
+}
+
 node_t *psx_node_new_lvar_scalar_slot_at_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, int offset, int type_size,

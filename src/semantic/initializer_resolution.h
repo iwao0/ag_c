@@ -61,7 +61,7 @@ typedef struct {
 } psx_initializer_target_t;
 
 typedef struct {
-  psx_type_id_t type_id;
+  psx_qual_type_t qual_type;
   int relative_offset;
   psx_initializer_member_ref_t member_ref;
   psx_type_id_t string_array_type_id;
@@ -103,7 +103,7 @@ int psx_collect_initializer_scalar_leaves_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_data_layout_t *data_layout, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout, psx_qual_type_t qual_type,
     int relative_offset, psx_initializer_scalar_leaf_list_t *list);
 int psx_initializer_flat_slot_count_with_records(
     const psx_semantic_type_table_t *semantic_types,

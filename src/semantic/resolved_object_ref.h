@@ -62,6 +62,11 @@ node_t *ps_node_new_lvar_type_at_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, lvar_t *owner, int offset,
     const psx_type_t *type);
+node_t *ps_node_new_lvar_qual_type_at_for_in(
+    psx_resolution_store_t *store,
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *owner, int offset, psx_qual_type_t qual_type);
 node_t *psx_node_new_lvar_scalar_slot_at_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, int offset, int type_size,

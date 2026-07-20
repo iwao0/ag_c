@@ -216,11 +216,11 @@ static int lower_init_slot(void *user, int index,
           : NULL;
   int offset = leaf ? leaf->relative_offset : index * layout->elem_size;
   if (leaf) {
-    int size = type_size_id(ctx->lowering, leaf->type_id);
+    int size = type_size_id(ctx->lowering, leaf->qual_type.type_id);
     if (size > 0) value.size = size;
   }
   if (!lower_init_value(ctx, offset, value,
-                        leaf ? leaf->type_id
+                        leaf ? leaf->qual_type.type_id
                              : ps_gvar_decl_type_id(ctx->global))) {
     ctx->lowering->failed = 1;
     return 0;
@@ -295,11 +295,10 @@ static int lower_global_slots(
   (void)init_class;
   global_data_lowering_t *ctx = user;
   psx_initializer_scalar_leaf_list_t leaves = {0};
-  psx_type_id_t type_id = ps_gvar_decl_type_id(ctx->global);
   if (!psx_collect_initializer_scalar_leaves_with_records(
           ctx->lowering->semantic_types, ctx->lowering->record_decls,
-          ctx->lowering->record_layouts, ctx->lowering->data_layout, type_id, 0,
-          &leaves)) {
+          ctx->lowering->record_layouts, ctx->lowering->data_layout,
+          ps_gvar_decl_qual_type(ctx->global), 0, &leaves)) {
     return 0;
   }
   ctx->leaves = &leaves;

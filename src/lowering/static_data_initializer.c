@@ -479,7 +479,7 @@ static psx_initializer_target_t positional_target(
   if (!context_type || !leaves || cursor < 0 || cursor >= leaves->count)
     return target;
   const psx_initializer_scalar_leaf_t *leaf = &leaves->items[cursor];
-  target.type_id = leaf->type_id;
+  target.type_id = leaf->qual_type.type_id;
   target.relative_offset = leaf->relative_offset;
   target.member_ref = leaf->member_ref;
   const psx_record_decl_t *record = record_decl(
@@ -763,7 +763,7 @@ int lower_static_object_initializer(
           ps_lowering_record_decls(lowering_context),
           ps_lowering_record_layouts(lowering_context),
           ps_lowering_data_layout(lowering_context),
-          ps_gvar_decl_type_id(global), 0, &lowering.leaves) ||
+          ps_gvar_decl_qual_type(global), 0, &lowering.leaves) ||
       lowering.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&lowering.leaves);
     return 0;
