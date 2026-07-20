@@ -17528,11 +17528,41 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(12, ps_type_sizeof(resolved_inferred_type));
   ASSERT_EQ(0, ps_gvar_decl_sizeof(&inferred_global, 0));
 
+  psx_initializer_entry_t scalar_entry = {
+      .value = (node_t *)&one,
+  };
+  node_init_list_t scalar_list = {
+      .base = {.kind = ND_INIT_LIST},
+      .entries = &scalar_entry,
+      .entry_count = 1,
+  };
+  psx_static_initializer_resolution_t scalar_list_resolution;
+  psx_resolve_static_initializer(
+      &(psx_static_initializer_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .type = intern_test_qual_type(integer),
+          .kind = PSX_DECL_INIT_LIST,
+          .initializer = (node_t *)&scalar_list,
+      },
+      &scalar_list_resolution);
+  ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, scalar_list_resolution.status);
+  ASSERT_EQ(0, scalar_list_resolution.is_aggregate_initializer);
+  ASSERT_EQ(1, scalar_list_resolution.scalar_list_value_selected);
+
+  psx_static_aggregate_initializer_plan_t inferred_plan = {0};
+  ASSERT_TRUE(psx_build_static_aggregate_initializer_plan(
+      test_global_registry(), test_lowering_context(),
+      inferred_resolution.object_qual_type, &inferred_list, NULL,
+      &inferred_plan));
+  const psx_static_initializer_lowering_input_t inferred_initializer = {
+      .resolution = &inferred_resolution,
+      .aggregate_plan = &inferred_plan,
+      .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+  };
   psx_static_declaration_initializer_result_t inferred_result = {0};
   ASSERT_TRUE(lower_resolved_static_initializer(
       test_global_registry(), test_lowering_context(), &inferred_global,
-      &inferred_resolution, NULL,
-      &inferred_result));
+      &inferred_initializer, &inferred_result));
   ASSERT_EQ(1, inferred_result.type_completed);
   ASSERT_EQ(1, inferred_result.initialized);
   ASSERT_EQ(12, ps_gvar_decl_sizeof(&inferred_global, 0));
@@ -17577,9 +17607,19 @@ static void test_static_data_initializer_boundary() {
       },
       &pointer_resolution);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, pointer_resolution.status);
+  psx_static_aggregate_initializer_plan_t pointer_plan = {0};
+  ASSERT_TRUE(psx_build_static_aggregate_initializer_plan(
+      test_global_registry(), test_lowering_context(),
+      pointer_resolution.object_qual_type, &pointer_list, NULL,
+      &pointer_plan));
+  const psx_static_initializer_lowering_input_t pointer_initializer = {
+      .resolution = &pointer_resolution,
+      .aggregate_plan = &pointer_plan,
+      .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+  };
   ASSERT_TRUE(lower_resolved_static_initializer(
       test_global_registry(), test_lowering_context(), &pointer_array_global,
-      &pointer_resolution, NULL, NULL));
+      &pointer_initializer, NULL));
   ASSERT_EQ(0, pointer_array_type->array_len);
   const psx_type_t *resolved_pointer_array_type = ps_ctx_type_by_id_in(
       test_semantic_context(), pointer_resolution.object_qual_type.type_id);
@@ -17609,6 +17649,16 @@ static void test_static_data_initializer_boundary() {
       &static_initializer_resolution);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK,
             static_initializer_resolution.status);
+  psx_static_aggregate_initializer_plan_t static_initializer_plan = {0};
+  ASSERT_TRUE(psx_build_static_aggregate_initializer_plan(
+      test_global_registry(), test_lowering_context(),
+      static_initializer_resolution.object_qual_type, &inferred_list, NULL,
+      &static_initializer_plan));
+  const psx_static_initializer_lowering_input_t static_initializer = {
+      .resolution = &static_initializer_resolution,
+      .aggregate_plan = &static_initializer_plan,
+      .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+  };
   psx_static_local_declaration_result_t static_result = {0};
   psx_qual_type_t static_incomplete_identity =
       intern_test_qual_type(static_incomplete);
@@ -17623,7 +17673,7 @@ static void test_static_data_initializer_boundary() {
           .name = (char *)"values",
           .name_len = 6,
           .type = static_incomplete_identity,
-          .initializer_resolution = &static_initializer_resolution,
+          .initializer = &static_initializer,
       },
       &static_result));
   ASSERT_TRUE(static_result.global != NULL);

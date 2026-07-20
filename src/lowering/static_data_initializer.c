@@ -865,101 +865,17 @@ int psx_apply_static_aggregate_initializer_plan(
   return 1;
 }
 
-static int lower_static_string_expression(
-    psx_lowering_context_t *lowering_context,
-    global_var_t *global, psx_type_id_t type_id, node_string_t *string) {
-  psx_type_shape_t type = {0};
-  if (!global || !string ||
-      !lowering_type_shape(lowering_context, type_id, &type))
-    return 0;
-  if (type.kind == PSX_TYPE_POINTER) {
-    global->init_symbol = psx_string_literal_label(
-        resolution_store(lowering_context), string);
-    global->init_symbol_len = -1;
-    return 1;
-  }
-  if (type.kind != PSX_TYPE_ARRAY) return 0;
-
-  psx_qual_type_t element = psx_semantic_type_table_array_leaf(
-      ps_lowering_semantic_types(lowering_context), type_id);
-  int element_size = lowering_type_size_id(
-      lowering_context, element.type_id);
-  int char_width = (int)string->char_width;
-  if (char_width <= 0) char_width = 1;
-  if (element_size != char_width) return 0;
-
-  int total = string->byte_len + 1;
-  ps_gvar_init_slots_alloc(global, total, 0);
-  if (string->literal_contents) {
-    ps_gvar_init_slots_write_string_units(
-        global, 0, string->literal_contents, string->literal_length,
-        element_size, string->byte_len);
-  }
-  ps_gvar_init_slot_write(global, string->byte_len, 0, 0.0, NULL, 0);
-  global->init_count = total;
-  return 1;
-}
-
-static int lower_static_scalar_expression(
-    psx_lowering_context_t *lowering_context,
-    global_var_t *global, psx_type_id_t type_id, node_t *initializer) {
-  psx_type_shape_t type = {0};
-  if (!global || !initializer ||
-      !lowering_type_shape(lowering_context, type_id, &type))
-    return 0;
-  if (initializer->kind == ND_STRING)
-    return lower_static_string_expression(
-        lowering_context, global, type_id, (node_string_t *)initializer);
-
-  int integer_ok = 1;
-  long long integer = eval_static_const_int(
-      lowering_context, initializer, &integer_ok);
-  if (type.kind == PSX_TYPE_FLOAT || type.kind == PSX_TYPE_COMPLEX) {
-    int floating_ok = 1;
-    double floating = psx_eval_const_fp(
-        resolution_store(lowering_context), initializer, &floating_ok);
-    if (floating_ok) {
-      global->fval = floating;
-      return 1;
-    }
-  }
-  if (integer_ok) {
-    global->init_val = type.kind == PSX_TYPE_BOOL ? integer != 0 : integer;
-    return 1;
-  }
-
-  char *symbol = NULL;
-  int symbol_len = 0;
-  long long offset = 0;
-  if (resolve_static_address_constant(
-          lowering_context, initializer,
-          &symbol, &symbol_len, &offset)) {
-    global->init_symbol = symbol;
-    global->init_symbol_len = symbol_len;
-    global->init_symbol_offset = offset;
-    return 1;
-  }
-  if (psx_resolved_object_ref_node_kind(
-          resolution_store(lowering_context), initializer) == ND_FUNCREF) {
-    global->init_symbol = psx_resolved_object_ref_name(
-        resolution_store(lowering_context), initializer,
-        &global->init_symbol_len);
-    return global->init_symbol != NULL;
-  }
-  return 0;
-}
-
 int lower_resolved_static_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
-    const psx_static_initializer_resolution_t *resolution,
-    token_t *tok,
+    const psx_static_initializer_lowering_input_t *initializer,
     psx_static_declaration_initializer_result_t *result) {
   if (result) *result = (psx_static_declaration_initializer_result_t){0};
+  const psx_static_initializer_resolution_t *resolution =
+      initializer ? initializer->resolution : NULL;
   if (!global_registry || !lowering_context || !global || !resolution ||
       resolution->status != PSX_STATIC_INITIALIZER_OK ||
-      resolution->object_qual_type.type_id == PSX_TYPE_ID_INVALID ||
-      !resolution->initializer)
+      resolution->object_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   if (!psx_global_registry_note_global_mutation(
           global_registry, global))
@@ -973,13 +889,9 @@ int lower_resolved_static_initializer(
   }
 
   if (resolution->is_aggregate_initializer) {
-    if (resolution->aggregate_plan) {
-      if (!psx_apply_static_aggregate_initializer_plan(
-              global, resolution->aggregate_plan))
-        return 0;
-    } else if (!lower_static_object_initializer(
-                   lowering_context, global,
-                   (node_init_list_t *)resolution->initializer, tok)) {
+    if (!initializer->aggregate_plan ||
+        !psx_apply_static_aggregate_initializer_plan(
+            global, initializer->aggregate_plan)) {
       return 0;
     }
     global->has_init = 1;
@@ -987,16 +899,13 @@ int lower_resolved_static_initializer(
     return 1;
   }
 
-  if (resolution->initializer_hir) {
-    if (!psx_lower_static_scalar_hir_initializer(
-            global_registry, lowering_context, global,
-            ps_gvar_decl_type_id(global),
-            resolution->initializer_hir,
-            resolution->initializer_hir_root))
-      return 0;
-  } else if (!lower_static_scalar_expression(
-                 lowering_context, global, ps_gvar_decl_type_id(global),
-                 resolution->initializer)) {
+  if (!initializer->initializer_hir ||
+      initializer->initializer_hir_root == PSX_HIR_NODE_ID_INVALID ||
+      !psx_lower_static_scalar_hir_initializer(
+          global_registry, lowering_context, global,
+          ps_gvar_decl_type_id(global),
+          initializer->initializer_hir,
+          initializer->initializer_hir_root)) {
     return 0;
   }
   global->has_init = 1;

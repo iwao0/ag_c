@@ -139,15 +139,14 @@ int lower_static_local_declaration_storage(
 int lower_static_local_declaration_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
-    const psx_static_initializer_resolution_t *resolution,
-    token_t *diag_tok, int *type_completed) {
+    const psx_static_initializer_lowering_input_t *initializer,
+    int *type_completed) {
   if (type_completed) *type_completed = 0;
-  if (!global || !resolution) return 0;
+  if (!global || !initializer) return 0;
   psx_static_declaration_initializer_result_t initializer_result = {0};
   if (!lower_resolved_static_initializer(
           global_registry, lowering_context, global,
-          resolution, diag_tok,
-          &initializer_result)) {
+          initializer, &initializer_result)) {
     return 0;
   }
   if (type_completed)
@@ -160,18 +159,17 @@ int lower_static_local_declaration(
     psx_static_local_declaration_result_t *result) {
   psx_static_local_declaration_result_t lowered = {0};
   if (!lower_static_local_declaration_storage(request, &lowered)) return 0;
-  if (request->initializer_resolution &&
+  if (request->initializer &&
       !lower_static_local_declaration_initializer(
           request->global_registry, request->lowering_context,
           lowered.global,
-          request->initializer_resolution,
-          request->diag_tok, &lowered.type_completed)) {
+          request->initializer, &lowered.type_completed)) {
     return 0;
   }
   if (lowered.type_completed &&
       !ps_local_registry_complete_array_qual_type(
           request->local_registry, lowered.alias,
-          request->initializer_resolution->object_qual_type)) {
+          request->initializer->resolution->object_qual_type)) {
     return 0;
   }
   if (result) *result = lowered;

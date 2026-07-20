@@ -3954,6 +3954,10 @@ const staticInitializerResolutionSource = await readFile(
   "src/semantic/static_initializer_resolution.c",
   "utf8",
 );
+const staticInitializerResolutionHeader = await readFile(
+  "src/semantic/static_initializer_resolution.h",
+  "utf8",
+);
 const frontendSemanticPipelineSource = await readFile(
   "src/frontend/semantic_pipeline.c",
   "utf8",
@@ -10152,6 +10156,50 @@ const staticDataInitializerSource = await readFile(
   "src/lowering/static_data_initializer.c",
   "utf8",
 );
+const staticInitializerResolutionResult =
+  staticInitializerResolutionHeader.match(
+    /typedef\s+struct\s*\{((?:(?!typedef\s+struct)[\s\S])*?)\}\s*psx_static_initializer_resolution_t\s*;/,
+  );
+const staticInitializerLoweringInput = staticDataInitializerHeader.match(
+  /typedef\s+struct\s+psx_static_initializer_lowering_input_t\s*\{([^]*?)\}\s*psx_static_initializer_lowering_input_t\s*;/,
+);
+const resolvedStaticInitializerLowering = staticDataInitializerSource.match(
+  /int\s+lower_resolved_static_initializer\s*\([^]*?\n\}/,
+);
+if (!staticInitializerResolutionResult ||
+    /\bnode_t\b|\bpsx_hir_|aggregate_plan|\binitializer\s*;/.test(
+      staticInitializerResolutionResult[1],
+    ) ||
+    !/\bpsx_qual_type_t\s+object_qual_type\s*;/.test(
+      staticInitializerResolutionResult[1],
+    ) ||
+    !/\bint\s+scalar_list_value_selected\s*;/.test(
+      staticInitializerResolutionResult[1],
+    ) ||
+    !staticInitializerLoweringInput ||
+    !/const\s+psx_static_initializer_resolution_t\s*\*resolution\s*;/.test(
+      staticInitializerLoweringInput[1],
+    ) ||
+    !/const\s+psx_static_aggregate_initializer_plan_t\s*\*aggregate_plan\s*;/.test(
+      staticInitializerLoweringInput[1],
+    ) ||
+    !/const\s+psx_hir_module_t\s*\*initializer_hir\s*;/.test(
+      staticInitializerLoweringInput[1],
+    ) ||
+    !resolvedStaticInitializerLowering ||
+    /\bnode_t\b|\bND_[A-Z0-9_]+\b|lower_static_object_initializer\s*\(|lower_static_scalar_expression\s*\(/.test(
+      resolvedStaticInitializerLowering[0],
+    ) ||
+    !/initializer->aggregate_plan/.test(
+      resolvedStaticInitializerLowering[0],
+    ) ||
+    !/initializer->initializer_hir/.test(
+      resolvedStaticInitializerLowering[0],
+    )) {
+  throw new Error(
+    "static initializer semantics must return AST-free classification while lowering consumes only aggregate plans or HIR",
+  );
+}
 const initializerLoweringSource = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",

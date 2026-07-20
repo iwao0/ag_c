@@ -4,7 +4,7 @@
 #include "../parser/ast.h"
 #include "../parser/symtab.h"
 #include "../semantic/global_declaration_resolution.h"
-#include "../semantic/static_initializer_resolution.h"
+#include "static_data_initializer.h"
 
 typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -46,7 +46,6 @@ int lower_resolved_global_object_declaration(
 int lower_resolved_global_declaration_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
-    const psx_static_initializer_resolution_t *resolution,
-    token_t *diag_tok);
+    const psx_static_initializer_lowering_input_t *initializer);
 
 #endif

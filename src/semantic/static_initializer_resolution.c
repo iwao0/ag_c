@@ -20,8 +20,8 @@ void psx_resolve_static_initializer(
     return;
   }
 
-  resolution->kind = request->kind;
-  resolution->initializer = request->initializer;
+  psx_decl_init_kind_t kind = request->kind;
+  node_t *initializer = request->initializer;
   psx_semantic_context_t *semantic_context = request->semantic_context;
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
@@ -35,8 +35,8 @@ void psx_resolve_static_initializer(
   if (object_shape.kind == PSX_TYPE_ARRAY && object_shape.array_len <= 0 &&
       !object_shape.is_vla) {
     if (!psx_resolve_incomplete_array_initializer_qual_type_in(
-            semantic_context, request->type, resolution->kind,
-            resolution->initializer, &object_qual_type)) {
+            semantic_context, request->type, kind,
+            initializer, &object_qual_type)) {
       resolution->status = PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED;
       return;
     }
@@ -48,8 +48,8 @@ void psx_resolve_static_initializer(
 
   resolution->object_qual_type = object_qual_type;
 
-  if (resolution->kind == PSX_DECL_INIT_LIST) {
-    if (resolution->initializer->kind != ND_INIT_LIST) return;
+  if (kind == PSX_DECL_INIT_LIST) {
+    if (initializer->kind != ND_INIT_LIST) return;
     if (object_shape.kind == PSX_TYPE_ARRAY ||
         psx_type_kind_is_aggregate(object_shape.kind)) {
       resolution->is_aggregate_initializer = 1;
@@ -57,16 +57,15 @@ void psx_resolve_static_initializer(
       return;
     }
 
-    node_init_list_t *list = (node_init_list_t *)resolution->initializer;
-    if (list->entry_count != 1 ||
+    node_init_list_t *list = (node_init_list_t *)initializer;
+    if (list->entry_count != 1 || !list->entries ||
         list->entries[0].designator_count > 0 ||
         !list->entries[0].value ||
         list->entries[0].value->kind == ND_INIT_LIST) {
       resolution->status = PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST;
       return;
     }
-    resolution->initializer = list->entries[0].value;
-    resolution->kind = PSX_DECL_INIT_EXPR;
+    resolution->scalar_list_value_selected = 1;
   }
 
   resolution->status = PSX_STATIC_INITIALIZER_OK;

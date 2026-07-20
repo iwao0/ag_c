@@ -136,9 +136,8 @@ int lower_global_object_declaration(
 int lower_resolved_global_declaration_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
-    const psx_static_initializer_resolution_t *resolution,
-    token_t *diag_tok) {
+    const psx_static_initializer_lowering_input_t *initializer) {
   return lower_resolved_static_initializer(
       global_registry, lowering_context, global,
-      resolution, diag_tok, NULL);
+      initializer, NULL);
 }

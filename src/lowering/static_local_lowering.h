@@ -2,7 +2,7 @@
 #define LOWERING_STATIC_LOCAL_LOWERING_H
 
 #include "../parser/decl.h"
-#include "../semantic/static_initializer_resolution.h"
+#include "static_data_initializer.h"
 
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -40,8 +40,7 @@ typedef struct {
   char *name;
   int name_len;
   psx_qual_type_t type;
-  const psx_static_initializer_resolution_t *initializer_resolution;
-  token_t *diag_tok;
+  const psx_static_initializer_lowering_input_t *initializer;
 } psx_static_local_declaration_request_t;
 
 typedef struct {
@@ -66,7 +65,7 @@ int lower_static_local_declaration_storage(
 int lower_static_local_declaration_initializer(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
-    const psx_static_initializer_resolution_t *resolution,
-    token_t *diag_tok, int *type_completed);
+    const psx_static_initializer_lowering_input_t *initializer,
+    int *type_completed);
 
 #endif

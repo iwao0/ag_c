@@ -163,6 +163,20 @@ int psx_begin_global_declaration_pipeline(
   return 1;
 }
 
+static node_t *selected_static_initializer_syntax(
+    const psx_parsed_initializer_t *initializer,
+    const psx_static_initializer_resolution_t *resolution) {
+  if (!initializer || !initializer->value || !resolution)
+    return NULL;
+  if (!resolution->scalar_list_value_selected)
+    return initializer->value;
+  if (initializer->value->kind != ND_INIT_LIST)
+    return NULL;
+  node_init_list_t *list = (node_init_list_t *)initializer->value;
+  return list->entry_count == 1 && list->entries
+             ? list->entries[0].value : NULL;
+}
+
 static int finish_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result,
@@ -193,18 +207,24 @@ static int finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
+      node_t *initializer = selected_static_initializer_syntax(
+          request->initializer, &initializer_resolution);
+      if (!initializer) return 0;
       psx_frontend_expression_hir_t expression_hir = {
           .root = PSX_HIR_NODE_ID_INVALID,
       };
       psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
+      psx_static_initializer_lowering_input_t lowering_input = {
+          .resolution = &initializer_resolution,
+          .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+      };
       if (initializer_resolution.is_aggregate_initializer) {
         int planned = initializer_is_resolved
                           ? psx_build_static_aggregate_initializer_plan(
                                 request->global_registry,
                                 request->lowering_context,
                                 initializer_resolution.object_qual_type,
-                                (node_init_list_t *)
-                                    initializer_resolution.initializer,
+                                (node_init_list_t *)initializer,
                                 request->initializer->value_tok,
                                 &aggregate_plan)
                           : psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
@@ -214,36 +234,33 @@ static int finish_global_declaration_pipeline(
                                 request->lowering_context,
                                 request->options,
                                 initializer_resolution.object_qual_type,
-                                initializer_resolution.initializer,
+                                initializer,
                                 request->initializer->value_tok,
                                 &aggregate_plan);
         if (!planned) {
           return 0;
         }
-        initializer_resolution.aggregate_plan = &aggregate_plan;
-      } else if (!initializer_is_resolved) {
+        lowering_input.aggregate_plan = &aggregate_plan;
+      } else {
         if (!psx_frontend_resolve_expression_to_hir_in_contexts(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
                 request->lowering_context,
                 request->options,
-                initializer_resolution.initializer,
-                initializer_resolution.initializer->tok
-                    ? initializer_resolution.initializer->tok
+                initializer,
+                initializer->tok
+                    ? initializer->tok
                     : request->initializer->value_tok,
                 &expression_hir)) {
           return 0;
         }
-        initializer_resolution.initializer_hir =
-            expression_hir.module;
-        initializer_resolution.initializer_hir_root =
-            expression_hir.root;
+        lowering_input.initializer_hir = expression_hir.module;
+        lowering_input.initializer_hir_root = expression_hir.root;
       }
       int lowered = lower_resolved_global_declaration_initializer(
           request->global_registry, request->lowering_context, global,
-          &initializer_resolution,
-          request->initializer->value_tok);
+          &lowering_input);
       psx_frontend_expression_hir_dispose(&expression_hir);
       if (!lowered) {
         ps_diag_ctx_in(
@@ -766,38 +783,44 @@ int psx_finish_static_local_declaration_pipeline(
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
   }
+  node_t *initializer = selected_static_initializer_syntax(
+      request->initializer, &resolution);
+  if (!initializer) return 0;
   psx_frontend_expression_hir_t expression_hir = {
       .root = PSX_HIR_NODE_ID_INVALID,
   };
   psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
+  psx_static_initializer_lowering_input_t lowering_input = {
+      .resolution = &resolution,
+      .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+  };
   if (resolution.is_aggregate_initializer) {
     if (!psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
             request->semantic_context, request->global_registry,
             request->local_registry, request->lowering_context,
             request->options, resolution.object_qual_type,
-            resolution.initializer, request->initializer->value_tok,
+            initializer, request->initializer->value_tok,
             &aggregate_plan)) {
       return 0;
     }
-    resolution.aggregate_plan = &aggregate_plan;
+    lowering_input.aggregate_plan = &aggregate_plan;
   } else {
     if (!psx_frontend_resolve_expression_to_hir_in_contexts(
             request->semantic_context, request->global_registry,
             request->local_registry, request->lowering_context,
-            request->options, resolution.initializer,
-            resolution.initializer->tok
-                ? resolution.initializer->tok
+            request->options, initializer,
+            initializer->tok
+                ? initializer->tok
                 : request->initializer->value_tok,
             &expression_hir)) {
       return 0;
     }
-    resolution.initializer_hir = expression_hir.module;
-    resolution.initializer_hir_root = expression_hir.root;
+    lowering_input.initializer_hir = expression_hir.module;
+    lowering_input.initializer_hir_root = expression_hir.root;
   }
   int lowered = lower_static_local_declaration_initializer(
       request->global_registry, request->lowering_context,
-      result->global, &resolution, request->initializer->value_tok,
-      &result->type_completed);
+      result->global, &lowering_input, &result->type_completed);
   psx_frontend_expression_hir_dispose(&expression_hir);
   if (!lowered) {
     return 0;
@@ -836,13 +859,17 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
     return 0;
   psx_hir_module_t *initializer_hir = NULL;
   psx_static_aggregate_initializer_plan_t aggregate_plan = {0};
+  psx_static_initializer_lowering_input_t lowering_input = {
+      .resolution = &resolution,
+      .initializer_hir_root = PSX_HIR_NODE_ID_INVALID,
+  };
   if (resolution.is_aggregate_initializer) {
     if (!psx_materialize_static_aggregate_initializer_plan(
             initializer_typed_hir, request->global_registry,
             request->lowering_context, resolution.object_qual_type,
             request->initializer->value_tok, &aggregate_plan))
       return 0;
-    resolution.aggregate_plan = &aggregate_plan;
+    lowering_input.aggregate_plan = &aggregate_plan;
   } else {
     initializer_hir = psx_hir_module_create();
     if (!initializer_hir) return 0;
@@ -853,13 +880,12 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
       psx_hir_module_destroy(initializer_hir);
       return 0;
     }
-    resolution.initializer_hir = initializer_hir;
-    resolution.initializer_hir_root = initializer_root;
+    lowering_input.initializer_hir = initializer_hir;
+    lowering_input.initializer_hir_root = initializer_root;
   }
   int lowered = lower_static_local_declaration_initializer(
       request->global_registry, request->lowering_context,
-      result->global, &resolution, request->initializer->value_tok,
-      &result->type_completed);
+      result->global, &lowering_input, &result->type_completed);
   psx_hir_module_destroy(initializer_hir);
   if (!lowered) return 0;
   if (result->type_completed &&
