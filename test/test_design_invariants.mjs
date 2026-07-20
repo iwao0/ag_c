@@ -7061,7 +7061,15 @@ if (/\blower_aggregate_address_expression\s*\(/.test(
     "aggregate address representation must be lowered while materializing Typed HIR, without rewriting the semantic node tree",
   );
 }
-if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
+const compoundLiteralStoragePlan = compoundLiteralLoweringHeader.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_compound_literal_storage_plan_t\s*;/,
+);
+if (!compoundLiteralStoragePlan ||
+    !/\bpsx_qual_type_t\s+object_qual_type\s*;/.test(
+      compoundLiteralStoragePlan[1],
+    ) ||
+    /\bpsx_type_t\b/.test(compoundLiteralStoragePlan[1]) ||
+    !/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       compoundLiteralLoweringHeader,
     ) ||
     !/\bpsx_apply_resolved_global_declaration_pipeline\s*\(/.test(
@@ -7074,6 +7082,24 @@ if (!/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       declarationPipelineSource,
     ) ||
     /\blower_compound_literal_expression_in_contexts\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/plan->object_qual_type\s*=\s*ps_gvar_decl_qual_type\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    !/plan->object_qual_type\s*=\s*ps_lvar_decl_qual_type\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    /plan(?:->|\.)object_type\b/.test(
+      `${compoundLiteralLoweringSource}\n${semanticLoweringPassSource}`,
+    ) ||
+    /\bps_ctx_intern_qual_type_in\s*\(/.test(
+      compoundLiteralLoweringSource,
+    ) ||
+    /plan\.object_qual_type[^]*?ps_ctx_intern_qual_type_in\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    !/qual_types_equal\s*\([^]*?object_qual_type[^]*?ps_node_qual_type/.test(
       compoundLiteralLoweringSource,
     ) ||
     !/\bmaterialize_compound_literal\s*\(/.test(

@@ -8,8 +8,6 @@
 #include "../parser/decl.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
-#include "../semantic/type_name_resolution.h"
 #include "../semantic/compound_literal_semantics.h"
 
 #include <stdio.h>
@@ -30,6 +28,11 @@ static char *new_compound_object_name(
   return name;
 }
 
+static int qual_types_equal(psx_qual_type_t left, psx_qual_type_t right) {
+  return left.type_id == right.type_id &&
+         left.qualifiers == right.qualifiers;
+}
+
 static int plan_file_scope_compound_literal(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -39,28 +42,36 @@ static int plan_file_scope_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
-  const psx_type_t *type =
-      psx_node_resolved_type_name(
-          ps_lowering_resolution_store(lowering_context),
-          &compound->base);
+  psx_resolution_store_t *store =
+      ps_lowering_resolution_store(lowering_context);
+  psx_qual_type_t object_qual_type =
+      ps_node_qual_type(store, &compound->base);
+  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
+      ps_lowering_semantic_types(lowering_context), object_qual_type);
+  psx_type_shape_t object_shape = {0};
+  int has_object_shape = psx_semantic_type_table_describe(
+      ps_lowering_semantic_types(lowering_context),
+      object_qual_type.type_id, &object_shape);
   node_t *initializer = compound->base.rhs;
-  int is_array = type && type->kind == PSX_TYPE_ARRAY;
+  int is_array = has_object_shape && object_shape.kind == PSX_TYPE_ARRAY;
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
                                ? (node_init_list_t *)initializer
                                : NULL;
-  if (!is_array &&
+  if (has_object_shape &&
+      object_qual_type.type_id != PSX_TYPE_ID_INVALID && !is_array &&
       !psx_compound_literal_requires_addressable_storage(
           ps_lowering_resolution_store(lowering_context),
           &compound->base) &&
-      !ps_type_is_tag_aggregate(type) && list &&
+      !psx_type_kind_is_aggregate(object_shape.kind) && list &&
       list->entry_count == 1 &&
       list->entries[0].designator_count == 0 &&
       list->entries[0].value &&
-      list->entries[0].value->kind == ND_NUM) {
+      list->entries[0].value->kind == ND_NUM &&
+      qual_types_equal(
+          object_qual_type,
+          ps_node_qual_type(store, list->entries[0].value))) {
     plan->direct_initializer_index = 0;
-    plan->object_type = ps_node_get_type(
-        ps_lowering_resolution_store(lowering_context),
-        list->entries[0].value);
+    plan->object_qual_type = object_qual_type;
     plan->kind = PSX_COMPOUND_LITERAL_DIRECT_INITIALIZER;
     return 1;
   }
@@ -102,9 +113,9 @@ static int plan_file_scope_compound_literal(
   }
   if (!object.global) return 0;
   plan->global_object = object.global;
-  plan->object_type = ps_gvar_get_decl_type(object.global);
+  plan->object_qual_type = ps_gvar_decl_qual_type(object.global);
   plan->kind = PSX_COMPOUND_LITERAL_GLOBAL_OBJECT;
-  return plan->object_type != NULL;
+  return plan->object_qual_type.type_id != PSX_TYPE_ID_INVALID;
 }
 
 static int plan_local_compound_literal(
@@ -114,10 +125,10 @@ static int plan_local_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok,
     psx_compound_literal_storage_plan_t *plan) {
-  const psx_type_t *type =
-      psx_node_resolved_type_name(
-          ps_lowering_resolution_store(lowering_context),
-          &compound->base);
+  psx_qual_type_t object_qual_type = ps_node_qual_type(
+      ps_lowering_resolution_store(lowering_context), &compound->base);
+  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
+      ps_lowering_semantic_types(lowering_context), object_qual_type);
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,
@@ -152,9 +163,9 @@ static int plan_local_compound_literal(
   if (!object.var) return 0;
   plan->local_object = object.var;
   plan->initialization_tree = object.initialization;
-  plan->object_type = ps_lvar_get_decl_type(object.var);
+  plan->object_qual_type = ps_lvar_decl_qual_type(object.var);
   plan->kind = PSX_COMPOUND_LITERAL_LOCAL_OBJECT;
-  return plan->object_type != NULL;
+  return plan->object_qual_type.type_id != PSX_TYPE_ID_INVALID;
 }
 
 int psx_plan_compound_literal_storage_in_contexts(

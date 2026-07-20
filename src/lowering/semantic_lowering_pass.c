@@ -175,19 +175,17 @@ static node_t *lower_tree(
       resolution->direct_initializer_index =
           plan.direct_initializer_index;
       resolution->kind = plan.kind;
-      const psx_type_t *result_type = plan.object_type;
-      if (result_type) {
-        psx_qual_type_t result_qual_type =
-            ps_ctx_intern_qual_type_in(
-                context->semantic_context, result_type);
+      psx_qual_type_t result_qual_type = plan.object_qual_type;
+      psx_qual_type_t current_qual_type = ps_node_qual_type(store, node);
+      if (result_qual_type.type_id != PSX_TYPE_ID_INVALID &&
+          (result_qual_type.type_id != current_qual_type.type_id ||
+           result_qual_type.qualifiers != current_qual_type.qualifiers)) {
         const psx_type_t *canonical_result =
             ps_ctx_type_by_id_in(
-                context->semantic_context,
-                result_qual_type.type_id);
-        if (canonical_result) {
+                context->semantic_context, result_qual_type.type_id);
+        if (canonical_result)
           ps_node_bind_qual_type(
               store, node, canonical_result, result_qual_type);
-        }
       }
       return node;
     }

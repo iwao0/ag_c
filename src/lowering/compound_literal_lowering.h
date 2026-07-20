@@ -15,7 +15,7 @@ typedef struct {
   struct global_var_t *global_object;
   node_t *initialization_tree;
   int direct_initializer_index;
-  const psx_type_t *object_type;
+  psx_qual_type_t object_qual_type;
   psx_compound_literal_resolution_kind_t kind;
 } psx_compound_literal_storage_plan_t;
 
