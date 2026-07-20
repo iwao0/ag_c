@@ -288,7 +288,8 @@ void psx_resolve_aggregate_member_declaration(
   if (!layout || !request || !request->semantic_context ||
       layout->record_id == PSX_RECORD_ID_INVALID ||
       !is_aggregate_kind(layout->record_kind) ||
-      !request->base_type || !request->declarator_shape ||
+      request->base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      !request->declarator_shape ||
       request->member_name_len < 0 || request->pack_alignment < 0 ||
       request->requested_alignment < 0) {
     return;
@@ -300,7 +301,7 @@ void psx_resolve_aggregate_member_declaration(
   psx_type_t *type = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = request->base_type,
+          .base_qual_type = request->base_qual_type,
           .declarator_shape = request->declarator_shape,
       });
   if (!type) return;

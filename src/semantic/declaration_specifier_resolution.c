@@ -150,6 +150,11 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
         context, &declaration->specifier, &base_status);
     if (base_status != PSX_DECL_SPECIFIER_VALUE_OK || !base_type)
       return base_status;
+    psx_qual_type_t base_qual_type =
+        ps_ctx_intern_declaration_qual_type_in(
+            context->semantic_context, base_type);
+    if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
+      return PSX_DECL_SPECIFIER_VALUE_INVALID;
     int requested_alignment = resolve_decl_alignment_value(
         context, &declaration->specifier);
     for (int j = 0; j < declaration->declarator_count; j++) {
@@ -192,7 +197,7 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
           &layout,
           &(psx_aggregate_member_declaration_request_t){
               .semantic_context = context->semantic_context,
-              .base_type = base_type,
+              .base_qual_type = base_qual_type,
               .declarator_shape = &application.shape,
               .member_name = name ? name->str : NULL,
               .member_name_len = name ? name->len : 0,

@@ -48,6 +48,15 @@ static int resolve_function_definition_header(
         "canonical function return base type resolution failed");
     return 0;
   }
+  psx_qual_type_t base_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          semantic_context, base_type);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    ps_diag_ctx_in(
+        diagnostics, definition->diagnostic_token, "funcdef",
+        "canonical function return base type interning failed");
+    return 0;
+  }
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
@@ -56,7 +65,7 @@ static int resolve_function_definition_header(
               .global_registry = global_registry,
               .local_registry = local_registry,
               .lowering_context = lowering_context,
-              .base_type = base_type,
+              .base_qual_type = base_qual_type,
               .declarator = &definition->declarator,
           },
           &applied, &pipeline)) {

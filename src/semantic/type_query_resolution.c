@@ -96,9 +96,9 @@ static void resolve_sizeof_type_name(
     return;
   }
 
-  const psx_type_t *base_type =
-      psx_type_name_bound_base_type(bound_state);
-  if (!base_type) {
+  psx_qual_type_t base_qual_type =
+      psx_type_name_bound_base_qual_type(bound_state);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -147,7 +147,7 @@ static void resolve_sizeof_type_name(
   psx_type_t *resolved_type = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = base_qual_type,
           .declarator_shape = shape,
       });
   ps_ctx_bind_record_ids_in(
@@ -158,8 +158,14 @@ static void resolve_sizeof_type_name(
     return;
   }
 
-  psx_qual_type_t base_qual_type = ps_ctx_intern_qual_type_in(
-      semantic_context, base_type);
+  const psx_type_t *base_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          base_qual_type);
+  if (!base_type) {
+    resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
+    return;
+  }
   int base_size = query_type_size(semantic_context, base_qual_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);

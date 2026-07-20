@@ -3217,6 +3217,10 @@ if (!aggregateMemberResolutionType ||
     ) ||
     /\btoken_kind_t\s+kind\s*;/.test(aggregateLayoutStateType[1]) ||
     !aggregateMemberRequestType ||
+    !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(
+      aggregateMemberRequestType[1],
+    ) ||
+    /\bpsx_type_t\b/.test(aggregateMemberRequestType[1]) ||
     /\btarget_tag_(?:kind|name|name_len)\b/.test(
       aggregateMemberRequestType[1],
     ) ||
@@ -5450,7 +5454,10 @@ if (!typeNameRef ||
     !/\bpsx_type_name_resolution_kind_t\s+kind\s*;/.test(
       nodeResolutionStateSource,
     ) ||
-    !/\bconst\s+psx_type_t\s*\*\s*base_type\s*;/.test(
+    /\bconst\s+psx_type_t\s*\*\s*base_type\s*;/.test(
+      nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+base_qual_type\s*;/.test(
       nodeResolutionStateSource,
     ) ||
     !/\bconst\s+psx_runtime_declarator_application_t\s*\*\s*runtime_application\s*;/.test(
@@ -5461,6 +5468,12 @@ if (!typeNameRef ||
     ) ||
     !/\bpsx_qual_type_t\s+qual_type\s*;/.test(
       nodeResolutionStateSource,
+    ) ||
+    !/\bpsx_type_name_bound_base_qual_type\s*\(/.test(
+      typeNameResolutionHeader,
+    ) ||
+    !/psx_type_name_bound_base_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\([^]*?base_qual_type/.test(
+      typeNameResolutionSource,
     ) ||
     /\b(?:bound_base_type|resolved_type_table|resolved_qual_type|bound_runtime_application)\b/.test(
       nodeResolutionStateSource,
@@ -9008,12 +9021,16 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
   }
 }
 const canonicalLoweringTypeFields = [
+  ["src/semantic/declaration_resolution.h", "psx_decl_type_request_t", "base_qual_type"],
+  ["src/semantic/aggregate_member_resolution.h", "psx_aggregate_member_declaration_request_t", "base_qual_type"],
   ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
   ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_request_t", "type"],
   ["src/semantic/function_declaration_resolution.h", "psx_function_declaration_resolution_request_t", "function_qual_type"],
   ["src/semantic/typedef_declaration_resolution.h", "psx_typedef_declaration_resolution_request_t", "decl_qual_type"],
   ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_declaration_pipeline_request_t", "function_qual_type"],
+  ["src/declaration_pipeline.h", "psx_function_definition_pipeline_request_t", "base_qual_type"],
+  ["src/declaration_pipeline.h", "psx_function_definition_pipeline_state_t", "base_qual_type"],
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],

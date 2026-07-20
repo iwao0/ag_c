@@ -30,7 +30,7 @@ typedef struct {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   const psx_declarator_shape_t *declarator_shape;
   char *member_name;
   int member_name_len;

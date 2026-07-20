@@ -352,13 +352,13 @@ static const psx_runtime_array_bound_t *parameter_bound_for_op(
 
 static int resolve_definition_parameter(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *base_type,
+    psx_qual_type_t base_qual_type,
     const psx_runtime_declarator_application_t *application,
     psx_parameter_declaration_resolution_t *resolution) {
   psx_parameter_declaration_resolution_request_t semantic_request = {
       .type = {
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = base_qual_type,
           .declarator_shape = &application->shape,
       },
   };
@@ -425,7 +425,10 @@ static int append_definition_parameter(
 
   psx_parameter_declaration_resolution_t resolution;
   if (!resolve_definition_parameter(
-          semantic_context, base_type, &applied, &resolution)) {
+          semantic_context,
+          ps_ctx_intern_declaration_qual_type_in(
+              semantic_context, base_type),
+          &applied, &resolution)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
         parameter->declarator.diagnostic_token, "param",
@@ -519,7 +522,9 @@ int psx_begin_function_definition_pipeline(
     psx_function_definition_pipeline_state_t *state) {
   if (result) *result = (psx_function_definition_pipeline_result_t){0};
   if (state) *state = (psx_function_definition_pipeline_state_t){0};
-  if (!request || !result || !request->base_type || !request->declarator ||
+  if (!request || !result ||
+      request->base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      !request->declarator ||
       !request->semantic_context || !request->global_registry ||
       !request->local_registry || !request->lowering_context ||
       !request->declarator->identifier ||
@@ -545,7 +550,7 @@ int psx_begin_function_definition_pipeline(
   state->global_registry = request->global_registry;
   state->local_registry = request->local_registry;
   state->lowering_context = request->lowering_context;
-  state->base_type = request->base_type;
+  state->base_qual_type = request->base_qual_type;
   state->result = result;
   state->primary_function_op_index =
       primary_suffix->declarator_op_index;
@@ -591,7 +596,9 @@ int psx_apply_function_definition_parameter_pipeline(
 
 int psx_finish_function_definition_pipeline(
     psx_function_definition_pipeline_state_t *state) {
-  if (!state || !state->result || !state->base_type) return 0;
+  if (!state || !state->result ||
+      state->base_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return 0;
   psx_function_definition_pipeline_result_t *result = state->result;
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
@@ -604,7 +611,7 @@ int psx_finish_function_definition_pipeline(
   const psx_type_t *function_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = state->semantic_context,
-          .base_type = state->base_type,
+          .base_qual_type = state->base_qual_type,
           .declarator_shape = &state->application.shape,
       });
   result->function_qual_type = ps_ctx_intern_qual_type_in(

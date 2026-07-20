@@ -72,7 +72,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_lowering_context_t *lowering_context;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   const psx_parsed_declarator_t *declarator;
 } psx_function_definition_pipeline_request_t;
 
@@ -90,7 +90,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_lowering_context_t *lowering_context;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   psx_runtime_declarator_application_t application;
   psx_function_definition_pipeline_result_t *result;
   int primary_function_op_index;

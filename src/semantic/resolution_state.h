@@ -141,7 +141,8 @@ typedef struct psx_type_name_resolution_state_t {
   psx_type_name_resolution_kind_t kind;
   union {
     struct {
-      const psx_type_t *base_type;
+      const psx_semantic_type_table_t *type_table;
+      psx_qual_type_t base_qual_type;
       const psx_runtime_declarator_application_t *runtime_application;
     } bound;
     struct {

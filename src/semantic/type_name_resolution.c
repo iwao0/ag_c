@@ -39,7 +39,18 @@ psx_qual_type_t psx_type_name_resolved_qual_type(
 const psx_type_t *psx_type_name_bound_base_type(
     const psx_type_name_resolution_state_t *state) {
   return state && state->kind == PSX_TYPE_NAME_BOUND
-             ? state->value.bound.base_type : NULL;
+             ? psx_semantic_type_table_lookup_qual_type(
+                   state->value.bound.type_table,
+                   state->value.bound.base_qual_type)
+             : NULL;
+}
+
+psx_qual_type_t psx_type_name_bound_base_qual_type(
+    const psx_type_name_resolution_state_t *state) {
+  return state && state->kind == PSX_TYPE_NAME_BOUND
+             ? state->value.bound.base_qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 const psx_runtime_declarator_application_t *
@@ -154,10 +165,16 @@ int psx_bind_type_name_ref_in_contexts(
       semantic_context, global_registry, local_registry, type_name,
       &runtime_application);
   if (!base_type) return 0;
+  psx_qual_type_t base_qual_type =
+      ps_ctx_intern_declaration_qual_type_in(
+          semantic_context, base_type);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   *state = (psx_type_name_resolution_state_t){
       .kind = PSX_TYPE_NAME_BOUND,
       .value.bound = {
-          .base_type = base_type,
+          .type_table = ps_ctx_semantic_type_table_in(
+              semantic_context),
+          .base_qual_type = base_qual_type,
           .runtime_application = runtime_application,
       },
   };
@@ -178,9 +195,9 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
   if (!psx_bind_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
           type_name, state)) return NULL;
-  const psx_type_t *base_type =
-      psx_type_name_bound_base_type(state);
-  if (!base_type) return NULL;
+  psx_qual_type_t base_qual_type =
+      psx_type_name_bound_base_qual_type(state);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) return NULL;
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
   psx_apply_parsed_declarator_in_contexts(
@@ -189,7 +206,7 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
   psx_type_t *resolved = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
   ps_ctx_bind_record_ids_in(semantic_context, resolved);

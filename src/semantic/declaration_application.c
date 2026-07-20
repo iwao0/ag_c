@@ -89,6 +89,15 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
                    diag_message_for_in(ps_ctx_diagnostics(semantic_context),
                        DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
+    psx_qual_type_t member_base_qual_type =
+        ps_ctx_intern_declaration_qual_type_in(
+            semantic_context, member_base_type);
+    if (member_base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          declaration->specifier.diagnostic_token, "decl",
+          "canonical member base type interning failed");
+    }
     int requested_alignment =
         psx_resolve_parsed_decl_alignment_in_contexts(
             semantic_context, global_registry, local_registry,
@@ -104,7 +113,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
           &layout,
           &(psx_aggregate_member_declaration_request_t){
               .semantic_context = semantic_context,
-              .base_type = member_base_type,
+              .base_qual_type = member_base_qual_type,
               .declarator_shape = &resolved_shape,
               .member_name = head->identifier
                                  ? head->identifier->str
@@ -198,7 +207,8 @@ static psx_type_t *build_parsed_type_name(
   return psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              semantic_context, base_type),
           .declarator_shape = &shape,
       });
 }
@@ -229,7 +239,8 @@ const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              semantic_context, base_type),
           .declarator_shape = &shape,
       });
 }
@@ -242,7 +253,8 @@ const psx_type_t *psx_apply_runtime_declarator_type_in_context(
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_type = base_type,
+          .base_qual_type = ps_ctx_intern_declaration_qual_type_in(
+              semantic_context, base_type),
           .declarator_shape = &application->shape,
       });
 }
@@ -744,7 +756,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
     psx_type_t *type = psx_build_decl_type(
         &(psx_decl_type_request_t){
             .semantic_context = semantic_context,
-            .base_type = base,
+            .base_qual_type = ps_ctx_intern_declaration_qual_type_in(
+                semantic_context, base),
             .declarator_shape = &parameter_application.shape,
         });
     if (parameters->count == 1 && type && type->kind == PSX_TYPE_VOID &&

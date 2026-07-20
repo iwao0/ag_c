@@ -11,7 +11,7 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  const psx_type_t *base_type;
+  psx_qual_type_t base_qual_type;
   const psx_declarator_shape_t *declarator_shape;
 } psx_decl_type_request_t;
 

@@ -95,11 +95,15 @@ static const psx_type_t *resolve_decl_qual_type_view(
 }
 
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
-  if (!request || !request->semantic_context || !request->base_type)
+  if (!request || !request->semantic_context ||
+      request->base_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
   psx_semantic_context_t *semantic_context = request->semantic_context;
+  const psx_type_t *base_type = resolve_decl_qual_type_view(
+      semantic_context, request->base_qual_type);
+  if (!base_type) return NULL;
   psx_type_t *type = ps_type_clone_in(
-      ps_ctx_arena(semantic_context), request->base_type);
+      ps_ctx_arena(semantic_context), base_type);
   if (!type) return NULL;
   if (request->declarator_shape) {
     type = ps_type_apply_resolved_declarator_shape_in(

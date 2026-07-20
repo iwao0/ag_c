@@ -1156,6 +1156,12 @@ static psx_qual_type_t intern_test_qual_type(const psx_type_t *type) {
   return ps_ctx_intern_qual_type_in(test_semantic_context(), type);
 }
 
+static psx_qual_type_t intern_test_declaration_qual_type(
+    const psx_type_t *type) {
+  return ps_ctx_intern_declaration_qual_type_in(
+      test_semantic_context(), type);
+}
+
 static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
   return intern_test_qual_type(type).type_id;
 }
@@ -14178,7 +14184,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_INT, 4, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_INT, 4, 0)),
           .declarator_shape = &vla_parameter_shape,
       },
       .inner_dimensions = parameter_dimensions,
@@ -15387,6 +15393,8 @@ static void test_type_name_phase_boundary() {
       test_local_registry(), &reference, &state));
   ASSERT_EQ(PSX_TYPE_NAME_BOUND, state.kind);
   ASSERT_TRUE(psx_type_name_bound_base_type(&state) != NULL);
+  ASSERT_TRUE(psx_type_name_bound_base_qual_type(&state).type_id !=
+              PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(psx_type_name_resolved_type(&state) == NULL);
   const psx_type_t *resolved =
       psx_resolve_bound_type_name_ref_in_contexts(
@@ -15395,6 +15403,8 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE(resolved != NULL);
   ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, state.kind);
   ASSERT_TRUE(psx_type_name_bound_base_type(&state) == NULL);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_type_name_bound_base_qual_type(&state).type_id);
   ASSERT_TRUE(psx_type_name_bound_runtime_application(&state) == NULL);
   ASSERT_TRUE(psx_type_name_resolved_type(&state) == resolved);
   ASSERT_TRUE(psx_type_name_resolved_qual_type(&state).type_id !=
@@ -15687,7 +15697,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_CHAR, 1, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_CHAR, 1, 0)),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"c",
           .member_name_len = 1,
@@ -15708,7 +15718,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = bitfield_integer,
+          .base_qual_type = intern_test_declaration_qual_type(bitfield_integer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"a",
           .member_name_len = 1,
@@ -15724,7 +15734,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = bitfield_integer,
+          .base_qual_type = intern_test_declaration_qual_type(bitfield_integer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"b",
           .member_name_len = 1,
@@ -15739,7 +15749,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = bitfield_integer,
+          .base_qual_type = intern_test_declaration_qual_type(bitfield_integer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"overflow",
           .member_name_len = 8,
@@ -15754,7 +15764,8 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_pointer(bitfield_integer),
+          .base_qual_type = intern_test_declaration_qual_type(
+              ps_type_new_pointer(bitfield_integer)),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"pointer",
           .member_name_len = 7,
@@ -15784,7 +15795,7 @@ static void test_aggregate_member_resolution_boundary() {
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = canonical_enum,
+          .base_qual_type = intern_test_declaration_qual_type(canonical_enum),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"e",
           .member_name_len = 1,
@@ -15798,7 +15809,7 @@ static void test_aggregate_member_resolution_boundary() {
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_BOOL, 1, 1),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_BOOL, 1, 1)),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"b",
           .member_name_len = 1,
@@ -15814,7 +15825,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = packed_member,
+          .base_qual_type = intern_test_declaration_qual_type(packed_member),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"tail",
           .member_name_len = 4,
@@ -15832,7 +15843,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = bitfield_integer,
+          .base_qual_type = intern_test_declaration_qual_type(bitfield_integer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"i",
           .member_name_len = 1,
@@ -15844,7 +15855,7 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_LONG, 8, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_LONG, 8, 0)),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"l",
           .member_name_len = 1,
@@ -15862,7 +15873,7 @@ static void test_aggregate_member_resolution_boundary() {
   const psx_type_t *member_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_INT, 4, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_INT, 4, 0)),
           .declarator_shape = &member_shape,
       });
   ASSERT_TRUE(member_type != NULL);
@@ -15892,7 +15903,7 @@ static void test_aggregate_member_resolution_boundary() {
   const psx_type_t *pointer_array_member = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_INT, 4, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_INT, 4, 0)),
           .declarator_shape = &pointer_array_shape,
       });
   ASSERT_TRUE(pointer_array_member != NULL);
@@ -15953,7 +15964,7 @@ static void test_aggregate_member_resolution_boundary() {
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = incomplete_base,
+          .base_qual_type = intern_test_declaration_qual_type(incomplete_base),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"incomplete",
           .member_name_len = 10,
@@ -15967,14 +15978,14 @@ static void test_aggregate_member_resolution_boundary() {
   const psx_type_t *incomplete_pointer = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = incomplete_base,
+          .base_qual_type = intern_test_declaration_qual_type(incomplete_base),
           .declarator_shape = &incomplete_pointer_shape,
       });
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = incomplete_pointer,
+          .base_qual_type = intern_test_declaration_qual_type(incomplete_pointer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"pointer",
           .member_name_len = 7,
@@ -15988,7 +15999,7 @@ static void test_aggregate_member_resolution_boundary() {
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = function_member,
+          .base_qual_type = intern_test_declaration_qual_type(function_member),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"function",
           .member_name_len = 8,
@@ -16015,7 +16026,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = integer,
+          .base_qual_type = intern_test_declaration_qual_type(integer),
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"a",
           .member_name_len = 1,
@@ -16062,7 +16073,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = integer,
+          .base_qual_type = intern_test_declaration_qual_type(integer),
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"b",
           .member_name_len = 1,
@@ -16081,7 +16092,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = integer,
+          .base_qual_type = intern_test_declaration_qual_type(integer),
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"a",
           .member_name_len = 1,
@@ -16095,7 +16106,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = integer,
+          .base_qual_type = intern_test_declaration_qual_type(integer),
           .declarator_shape = &transaction_shape,
       },
       &transaction);
@@ -16109,7 +16120,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = aligned_member,
+          .base_qual_type = intern_test_declaration_qual_type(aligned_member),
           .declarator_shape = &unnamed_pointer_shape,
       },
       &transaction);
@@ -16124,7 +16135,7 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = aligned_member,
+          .base_qual_type = intern_test_declaration_qual_type(aligned_member),
           .declarator_shape = &unnamed_array_shape,
       },
       &transaction);
@@ -16218,7 +16229,7 @@ static void test_aggregate_member_resolution_boundary() {
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = ps_type_new_integer(TK_LONG, 8, 0),
+          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_LONG, 8, 0)),
           .declarator_shape = &promoted_shape,
           .member_name = (char *)"prefix",
           .member_name_len = 6,
@@ -16229,7 +16240,7 @@ static void test_aggregate_member_resolution_boundary() {
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = promoted_source_type,
+          .base_qual_type = intern_test_declaration_qual_type(promoted_source_type),
           .declarator_shape = &promoted_shape,
       },
       &transaction);
@@ -16303,7 +16314,7 @@ static void test_aggregate_member_resolution_boundary() {
       &anonymous_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .base_type = batch_source_type,
+          .base_qual_type = intern_test_declaration_qual_type(batch_source_type),
           .declarator_shape = &anonymous_shape,
       },
       &transaction);
