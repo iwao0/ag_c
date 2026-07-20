@@ -192,14 +192,12 @@ typedef struct {
   int block_count;
   wasm32_machine_alloca_t *allocas;
   int alloca_count;
-  int frame_size;
+  wasm32_machine_stack_plan_t stack;
   int name_len;
   int c_signature_len;
   int continuation_condition_block_id;
   int is_static;
   unsigned char has_control_flow;
-  unsigned char has_vla_alloc;
-  unsigned char has_variadic_varargs;
   unsigned char has_atomic_cas32;
   unsigned char has_atomic_cas64;
   unsigned char is_continuation_entry;

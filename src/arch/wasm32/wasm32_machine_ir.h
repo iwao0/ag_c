@@ -151,6 +151,16 @@ typedef struct {
 } wasm32_machine_alignment_t;
 
 typedef struct {
+  int fixed_frame_size;
+  unsigned char has_dynamic_allocation;
+  unsigned char has_variadic_call_area;
+  unsigned char has_persistent_frame;
+  unsigned char saves_stack_pointer;
+  unsigned char restores_stack_pointer;
+  unsigned char uses_stack_pointer;
+} wasm32_machine_stack_plan_t;
+
+typedef struct {
   wasm32_machine_copy_chunk_t *chunks;
   int chunk_count;
 } wasm32_machine_copy_plan_t;
@@ -197,6 +207,10 @@ void wasm32_machine_copy_plan_dispose(
 int wasm32_machine_alignment_plan_build(
     int requested_alignment, int default_alignment,
     wasm32_machine_alignment_t *plan);
+int wasm32_machine_stack_plan_build(
+    int fixed_frame_size, int has_dynamic_allocation,
+    int has_variadic_call_area, int has_persistent_frame,
+    wasm32_machine_stack_plan_t *plan);
 int wasm32_machine_primitive_plan_build(
     wasm32_machine_primitive_plan_t *plan);
 const wasm32_machine_conversion_t *wasm32_machine_planned_conversion(

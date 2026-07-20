@@ -213,6 +213,29 @@ int main(void) {
     return 1;
   }
 
+  wasm32_machine_stack_plan_t stack_plan;
+  if (!wasm32_machine_stack_plan_build(
+          0, 1, 0, 0, &stack_plan) ||
+      stack_plan.fixed_frame_size != 0 ||
+      !stack_plan.has_dynamic_allocation ||
+      stack_plan.has_variadic_call_area ||
+      stack_plan.has_persistent_frame ||
+      !stack_plan.saves_stack_pointer ||
+      !stack_plan.restores_stack_pointer ||
+      !stack_plan.uses_stack_pointer ||
+      !wasm32_machine_stack_plan_build(
+          32, 1, 1, 1, &stack_plan) ||
+      stack_plan.fixed_frame_size != 32 ||
+      !stack_plan.has_persistent_frame ||
+      stack_plan.saves_stack_pointer ||
+      stack_plan.restores_stack_pointer ||
+      !stack_plan.uses_stack_pointer ||
+      wasm32_machine_stack_plan_build(
+          -1, 0, 0, 0, &stack_plan)) {
+    fprintf(stderr, "FAIL: machine stack plan\n");
+    return 1;
+  }
+
   wasm32_machine_copy_plan_t copy_plan;
   if (!wasm32_machine_copy_plan_build(15, &copy_plan) ||
       copy_plan.chunk_count != 4 ||
@@ -756,7 +779,7 @@ int main(void) {
       !machine_function.is_static ||
       !machine_function.is_continuation_entry ||
       !machine_function.continuation_has_suspend ||
-      machine_function.frame_size != 32 ||
+      machine_function.stack.fixed_frame_size != 32 ||
       machine_function.alloca_count != 2 ||
       machine_function.instruction_count != 16 ||
       machine_function.block_count != 1 ||
@@ -785,7 +808,12 @@ int main(void) {
           &machine_function, function_instructions[3].dst) != IR_TY_I64 ||
       !wasm32_machine_function_vreg_is_unsigned(
           &machine_function, function_instructions[4].dst) ||
-      !machine_function.has_vla_alloc ||
+      !machine_function.stack.has_dynamic_allocation ||
+      !machine_function.stack.has_variadic_call_area ||
+      !machine_function.stack.has_persistent_frame ||
+      machine_function.stack.saves_stack_pointer ||
+      machine_function.stack.restores_stack_pointer ||
+      !machine_function.stack.uses_stack_pointer ||
       !machine_function.has_control_flow ||
       machine_function.has_atomic_cas32 ||
       !machine_function.has_atomic_cas64 ||

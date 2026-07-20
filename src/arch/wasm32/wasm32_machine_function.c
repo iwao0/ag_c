@@ -137,7 +137,7 @@ static int collect_allocas(
     }
   }
   function->alloca_count = count;
-  function->frame_size = align_to(frame_size, 16);
+  function->stack.fixed_frame_size = align_to(frame_size, 16);
   return 1;
 }
 
@@ -677,7 +677,8 @@ static void collect_function_flags(
   if (instruction->op == IR_LABEL || instruction->op == IR_BR ||
       instruction->op == IR_BR_COND)
     function->has_control_flow = 1;
-  if (instruction->op == IR_VLA_ALLOC) function->has_vla_alloc = 1;
+  if (instruction->op == IR_VLA_ALLOC)
+    function->stack.has_dynamic_allocation = 1;
   if (instruction->op == IR_ATOMIC &&
       instruction->atomic_kind == IR_ATOMIC_CAS) {
     if (instruction->atomic_width == 8)
@@ -689,7 +690,7 @@ static void collect_function_flags(
   if (selected->call.is_variadic &&
       selected->call.argument_count >
           selected->call.fixed_argument_count)
-    function->has_variadic_varargs = 1;
+    function->stack.has_variadic_call_area = 1;
 }
 
 static void infer_alloca_value_types(
@@ -995,6 +996,20 @@ int wasm32_machine_function_build(
       collect_instruction_values(function, instruction, selected);
       collect_function_flags(function, instruction, selected);
     }
+  }
+  int fixed_frame_size = function->stack.fixed_frame_size;
+  int has_dynamic_allocation =
+      function->stack.has_dynamic_allocation;
+  int has_variadic_call_area =
+      function->stack.has_variadic_call_area;
+  if (!wasm32_machine_stack_plan_build(
+          fixed_frame_size, has_dynamic_allocation,
+          has_variadic_call_area,
+          function->is_continuation_entry &&
+              function->continuation_has_suspend,
+          &function->stack)) {
+    wasm32_machine_function_dispose(function);
+    return 0;
   }
   infer_alloca_value_types(function, source);
   if (!propagate_forced_i32(function, source)) {

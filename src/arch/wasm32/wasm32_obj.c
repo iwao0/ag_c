@@ -1287,14 +1287,13 @@ static void gen_func_body(
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
   int nlocals = machine_function.vreg_count;
-  int frame_size = machine_function.frame_size;
-  int has_variadic_varargs = machine_function.has_variadic_varargs;
+  int frame_size = machine_function.stack.fixed_frame_size;
+  int has_variadic_varargs =
+      machine_function.stack.has_variadic_call_area;
   int has_persistent_continuation_frame =
-      machine_function.is_continuation_entry &&
-      machine_function.continuation_has_suspend;
-  int has_stack_restore = !has_persistent_continuation_frame &&
-      (frame_size > 0 || machine_function.has_vla_alloc ||
-       has_variadic_varargs);
+      machine_function.stack.has_persistent_frame;
+  int has_stack_restore =
+      machine_function.stack.restores_stack_pointer;
   int has_control_flow = machine_function.has_control_flow;
   int has_atomic_cas32 = machine_function.has_atomic_cas32;
   int has_atomic_cas64 = machine_function.has_atomic_cas64;
@@ -1319,7 +1318,7 @@ static void gen_func_body(
   int atomic_exp64_local = atomic_tmp64_local + 1;
   if (has_atomic_cas64) extra_count += 2;
   obj_global_t *stack_pointer =
-      (has_stack_restore || has_variadic_varargs)
+      machine_function.stack.uses_stack_pointer
           ? intern_stack_pointer_global(context)
           : NULL;
   int continuation_frame_data = -1;

@@ -462,6 +462,28 @@ int wasm32_machine_alignment_plan_build(
   return 1;
 }
 
+int wasm32_machine_stack_plan_build(
+    int fixed_frame_size, int has_dynamic_allocation,
+    int has_variadic_call_area, int has_persistent_frame,
+    wasm32_machine_stack_plan_t *plan) {
+  if (plan) memset(plan, 0, sizeof(*plan));
+  if (!plan || fixed_frame_size < 0) return 0;
+  plan->fixed_frame_size = fixed_frame_size;
+  plan->has_dynamic_allocation = has_dynamic_allocation ? 1 : 0;
+  plan->has_variadic_call_area = has_variadic_call_area ? 1 : 0;
+  plan->has_persistent_frame = has_persistent_frame ? 1 : 0;
+  int transient_stack = fixed_frame_size > 0 ||
+                        plan->has_dynamic_allocation ||
+                        plan->has_variadic_call_area;
+  plan->saves_stack_pointer =
+      transient_stack && !plan->has_persistent_frame ? 1 : 0;
+  plan->restores_stack_pointer = plan->saves_stack_pointer;
+  plan->uses_stack_pointer =
+      plan->saves_stack_pointer || plan->has_dynamic_allocation ||
+      plan->has_variadic_call_area;
+  return 1;
+}
+
 int wasm32_machine_primitive_plan_build(
     wasm32_machine_primitive_plan_t *plan) {
   if (!plan) return 0;

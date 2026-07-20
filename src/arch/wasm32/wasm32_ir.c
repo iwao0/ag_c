@@ -1588,12 +1588,12 @@ static void emit_inst(
           ir_val_t result = planned->control.value;
           if (ctx->machine.signature.has_hidden_result) {
             emit_indirect_ret_copy(ctx, i, result, indent);
-            if (ctx->machine.frame_size > 0)
+            if (ctx->machine.stack.restores_stack_pointer)
               wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
             wasm_emitf(indent, "return\n");
             return;
           }
-          if (ctx->machine.frame_size > 0)
+          if (ctx->machine.stack.restores_stack_pointer)
             wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
           if (ctx->machine.signature.has_direct_aggregate_result) {
             const char *load = memory_wat_or_unsupported(
@@ -1664,10 +1664,11 @@ static void emit_func(
   wasm_emitf(4, "(local $atomic_tmp_i64 i64)\n");
   wasm_emitf(4, "(local $atomic_exp_i64 i64)\n");
   if (ctx.machine.has_control_flow) wasm_emitf(4, "(local $pc i32)\n");
-  if (ctx.machine.frame_size > 0) {
+  if (ctx.machine.stack.saves_stack_pointer)
     wasm_emitf(4, "(local.set $old_sp (global.get $__stack_pointer))\n");
+  if (ctx.machine.stack.fixed_frame_size > 0) {
     wasm_emitf(4, "(local.set $fp (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
-               ctx.machine.frame_size);
+               ctx.machine.stack.fixed_frame_size);
     wasm_emitf(4, "(global.set $__stack_pointer (local.get $fp))\n");
   }
   if (ctx.machine.has_control_flow) {

@@ -13409,6 +13409,32 @@ if (!/wasm32_machine_alignment_plan_build\s*\(/.test(
   );
 }
 
+if (!/wasm32_machine_stack_plan_build\s*\(/.test(
+      wasmMachineIrSource,
+    ) ||
+    !/wasm32_machine_stack_plan_t\s+stack\s*;/.test(
+      wasmMachineFunctionHeader,
+    ) ||
+    !/wasm32_machine_stack_plan_build\s*\([^]*?&function->stack/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/stack\.saves_stack_pointer/.test(wasmWatWriterSource) ||
+    !/stack\.restores_stack_pointer/.test(wasmWatWriterSource) ||
+    !/stack\.fixed_frame_size/.test(wasmWatWriterSource) ||
+    !/stack\.restores_stack_pointer/.test(wasmObjectWriterSource) ||
+    !/stack\.uses_stack_pointer/.test(wasmObjectWriterSource) ||
+    /machine_function\.(?:frame_size|has_vla_alloc|has_variadic_varargs)/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /ctx\.machine\.frame_size/.test(wasmWatWriterSource) ||
+    /int\s+frame_size\s*;|has_vla_alloc|has_variadic_varargs/.test(
+      wasmMachineFunctionHeader,
+    )) {
+  throw new Error(
+    "Wasm serializers must consume one Machine function stack plan",
+  );
+}
+
 for (const [name, source] of [
   ["Wasm text", wasmWatWriterSource],
   ["Wasm object", wasmObjectWriterSource],
