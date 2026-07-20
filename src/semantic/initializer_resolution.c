@@ -28,6 +28,7 @@ typedef struct {
   void *resolve_index_context;
   psx_initializer_scalar_leaf_list_t *leaves;
   psx_local_initializer_plan_t *plan;
+  psx_local_initializer_status_t failure_status;
 } psx_flat_initializer_context_t;
 
 static const psx_record_member_layout_t *initializer_member_layout(
@@ -580,10 +581,18 @@ static int flat_initializer_apply_list(
     return 0;
   psx_initializer_object_span_t positional_object = *object;
   int positional_union_active = 0;
+  int union_has_designated_initializer = 0;
   int cursor = object->leaf_begin;
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
     if (!entry->value) return 0;
+    if (object_shape.kind == PSX_TYPE_UNION &&
+        union_has_designated_initializer &&
+        entry->designator_count == 0) {
+      context->failure_status =
+          PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
+      return 0;
+    }
     unsigned char range_overrides[8] = {0};
     long long range_begins[8] = {0};
     long long range_ends[8] = {0};
@@ -595,6 +604,8 @@ static int flat_initializer_apply_list(
       return 0;
     psx_initializer_object_span_t target;
     if (entry->designator_count > 0) {
+      if (object_shape.kind == PSX_TYPE_UNION)
+        union_has_designated_initializer = 1;
       if (range_count > 0) {
         if (!flat_initializer_apply_designated_ranges(
                 context, object, entry, range_overrides,
@@ -828,9 +839,13 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
   };
   if (!flat_initializer_apply_list(
           &context, &root, initializer, 0)) {
+    psx_local_initializer_status_t failure_status =
+        context.failure_status;
     *plan = (psx_local_initializer_plan_t){0};
     psx_initializer_scalar_leaf_list_dispose(&leaves);
-    return PSX_LOCAL_INITIALIZER_NOT_SUPPORTED;
+    return failure_status != PSX_LOCAL_INITIALIZER_OK
+               ? failure_status
+               : PSX_LOCAL_INITIALIZER_NOT_SUPPORTED;
   }
   psx_initializer_scalar_leaf_list_dispose(&leaves);
   return PSX_LOCAL_INITIALIZER_OK;

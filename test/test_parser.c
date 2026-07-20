@@ -9110,8 +9110,8 @@ static void expect_parse_fail(const char *input) {
     freopen("/dev/null", "w", stderr);
     diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    int resolved = resolve_test_program_hir_from(head);
+    _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -9129,8 +9129,8 @@ static void expect_parse_ok(const char *input) {
     freopen("/dev/null", "w", stderr);
     diag_reset_records_in(test_diagnostics());
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    int resolved = resolve_test_program_hir_from(head);
+    _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);

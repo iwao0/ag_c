@@ -4102,6 +4102,51 @@ static char *new_direct_initializer_value_name(
   return name;
 }
 
+static int direct_initializer_list_has_no_nested_values(
+    const node_init_list_t *list) {
+  if (!list) return 0;
+  for (int i = 0; i < list->entry_count; i++) {
+    if (!list->entries[i].value ||
+        list->entries[i].value->kind == ND_INIT_LIST)
+      return 0;
+  }
+  return 1;
+}
+
+static int direct_union_array_initializer_extension_is_disabled(
+    const direct_resolution_context_t *context,
+    psx_qual_type_t object_qual_type,
+    const node_init_list_t *list) {
+  if (!context || !context->options ||
+      context->options->enable_union_array_member_nonbrace_init ||
+      !direct_initializer_list_has_no_nested_values(list))
+    return 0;
+  for (int i = 0; i < list->entry_count; i++) {
+    if (list->entries[i].designator_count > 0 ||
+        list->entries[i].has_member || list->entries[i].has_index)
+      return 0;
+  }
+  psx_type_shape_t object_shape = {0};
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
+  const psx_record_decl_t *record =
+      psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_shape) &&
+      object_shape.kind == PSX_TYPE_UNION
+          ? psx_record_decl_table_lookup(
+                ps_ctx_record_decl_table_in(context->semantic_context),
+                object_shape.record_id)
+          : NULL;
+  if (!record || record->member_count <= 0) return 0;
+  psx_qual_type_t first_member =
+      psx_semantic_type_table_record_member(
+          semantic_types, object_qual_type.type_id, 0);
+  psx_type_shape_t first_shape = {0};
+  return psx_semantic_type_table_describe(
+             semantic_types, first_member.type_id, &first_shape) &&
+         first_shape.kind == PSX_TYPE_ARRAY;
+}
+
 static int preflight_direct_flat_initializer(
     direct_resolution_context_t *context,
     psx_qual_type_t object_qual_type,
@@ -4114,6 +4159,12 @@ static int preflight_direct_flat_initializer(
   psx_local_initializer_plan_t *plan = &binding->plan;
   const node_init_list_t *list =
       (const node_init_list_t *)initializer->value;
+  if (direct_union_array_initializer_extension_is_disabled(
+          context, object_qual_type, list))
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_UNION_ARRAY_MEMBER_NONBRACE_DISABLED,
+        initializer->value);
   psx_local_initializer_status_t status =
       psx_resolve_flat_local_initializer_plan(
           ps_ctx_arena(context->semantic_context),
@@ -4130,6 +4181,11 @@ static int preflight_direct_flat_initializer(
         initializer->value);
     return 0;
   }
+  if (status == PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
+        initializer->value);
   if (status != PSX_LOCAL_INITIALIZER_OK) return 0;
 
   psx_qual_type_t *evaluation_types = NULL;

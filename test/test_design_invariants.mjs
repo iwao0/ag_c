@@ -2720,6 +2720,19 @@ for (const testName of directProgramHirTests) {
     );
   }
 }
+for (const helperName of ["expect_parse_fail", "expect_parse_ok"]) {
+  const body = parserUnitTestSource.match(
+    new RegExp(`static\\s+void\\s+${helperName}\\s*\\([^)]*\\)\\s*\\{([^]*?)\\n\\}`),
+  );
+  if (!body ||
+      !/\bresolve_test_program_hir_from\s*\(/.test(body[1]) ||
+      !/!resolved\s*\|\|\s*diag_has_error_records_in/.test(body[1]) ||
+      /\bparse_test_program_from\s*\(/.test(body[1])) {
+    throw new Error(
+      `${helperName} must validate program acceptance through the production Typed HIR frontend`,
+    );
+  }
+}
 if (/\(void\)\s*parsed_code\s*;/.test(parserUnitTestSource)) {
   throw new Error(
     "parser tests that discard compatibility ASTs must use the production Typed HIR frontend",
