@@ -22,6 +22,7 @@
 #include "../src/lowering/runtime_initializer_plan.h"
 #include "../src/lowering/semantic_lowering_pass.h"
 #include "../src/lowering/static_data_initializer.h"
+#include "../src/lowering/static_data_initializer_compat.h"
 #include "../src/lowering/static_local_lowering.h"
 #include "../src/lowering/translation_unit_data_lowering.h"
 #include "../src/lowering/vla_lowering.h"

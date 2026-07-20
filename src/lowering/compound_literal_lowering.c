@@ -86,7 +86,7 @@ static int plan_file_scope_compound_literal(
                           ? compound->base.tok
                           : (token_t *)fallback_diag_tok;
   if (!storage_name ||
-      !psx_apply_resolved_global_declaration_pipeline(
+      !psx_apply_global_declaration_pipeline(
           &(psx_global_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
               .global_registry = global_registry,

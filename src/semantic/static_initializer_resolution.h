@@ -2,17 +2,9 @@
 #define SEMANTIC_STATIC_INITIALIZER_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "type_identity.h"
+#include "static_initializer_classification.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
-
-typedef enum {
-  PSX_STATIC_INITIALIZER_OK = 0,
-  PSX_STATIC_INITIALIZER_INVALID,
-  PSX_STATIC_INITIALIZER_DUPLICATE_DEFINITION,
-  PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED,
-  PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST,
-} psx_static_initializer_status_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -22,14 +14,6 @@ typedef struct {
   token_t *diag_tok;
   int already_initialized;
 } psx_static_initializer_resolution_request_t;
-
-typedef struct {
-  psx_static_initializer_status_t status;
-  psx_qual_type_t object_qual_type;
-  int is_aggregate_initializer;
-  int type_completed;
-  int scalar_list_value_selected;
-} psx_static_initializer_resolution_t;
 
 void psx_resolve_static_initializer(
     const psx_static_initializer_resolution_request_t *request,

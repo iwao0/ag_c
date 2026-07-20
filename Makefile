@@ -25,13 +25,16 @@ LOWERING_SRCS=$(wildcard src/lowering/*.c)
 TYPE_SYSTEM_SRCS=$(wildcard src/type_system/*.c)
 TEST_ONLY_SRCS=src/semantic/legacy_syntax_diagnostics.c src/semantic/resolution_work_tree.c src/semantic/typed_hir_tree_materialization.c
 TEST_ONLY_SRCS+=src/semantic/identifier_binding.c src/semantic/local_declaration_tree_resolution.c src/semantic/semantic_pass.c
-TEST_ONLY_SRCS+=src/lowering/semantic_lowering_pass.c src/semantic/lowered_tree_validation.c
+TEST_ONLY_SRCS+=src/lowering/semantic_lowering_pass.c src/lowering/initializer_lowering.c src/lowering/compound_literal_lowering.c
+TEST_ONLY_SRCS+=src/semantic/lowered_tree_validation.c
 TEST_ONLY_SRCS+=src/semantic/control_flow_validation.c src/semantic/semantic_diagnostics.c src/semantic/semantic_invariants.c
 TEST_ONLY_SRCS+=src/semantic/type_identity_pass.c src/semantic/tree_walk.c src/semantic/lvar_usage_analysis.c
 SRCS=$(filter-out $(TEST_ONLY_SRCS),$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/hir/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(TYPE_SYSTEM_SRCS) $(LOWERING_SRCS) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 TEST_ONLY_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(TEST_ONLY_SRCS))
+STATIC_DATA_INITIALIZER_COMPAT_OBJ=$(OBJROOT)/test/static_data_initializer_compat.o
 DEPS=$(OBJS:.o=.d)
+DEPS+=$(STATIC_DATA_INITIALIZER_COMPAT_OBJ:.o=.d)
 TARGET=build/ag_c
 WASM_TARGET=build/ag_c_wasm
 WASM_LINKER=build/ag_wasm_link
@@ -110,6 +113,10 @@ $(OBJROOT)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
+$(STATIC_DATA_INITIALIZER_COMPAT_OBJ): src/lowering/static_data_initializer.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -DAGC_STATIC_INITIALIZER_COMPAT -DAGC_STATIC_INITIALIZER_COMPAT_ONLY -c -o $@ $<
+
 $(WASM_MAIN_OBJ): src/main.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -DAGC_TARGET_WASM32 -c -o $@ $<
@@ -118,7 +125,7 @@ $(TEST_TOKENIZER): test/test_tokenizer.c test/support/tokenizer_test_hook.c $(TO
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c test/support/parser_compatibility_test_hook.c test/support/tokenizer_test_hook.c $(TEST_ONLY_SRCS) $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
+$(TEST_PARSER): test/test_parser.c test/support/parser_compatibility_test_hook.c test/support/tokenizer_test_hook.c $(TEST_ONLY_SRCS) $(STATIC_DATA_INITIALIZER_COMPAT_OBJ) $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

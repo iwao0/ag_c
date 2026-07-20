@@ -2,10 +2,13 @@
 #include "static_hir_initializer.h"
 #include "runtime_context.h"
 
+#include "../parser/global_registry.h"
+
+#ifdef AGC_STATIC_INITIALIZER_COMPAT
+#include "static_data_initializer_compat.h"
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/decl.h"
-#include "../parser/global_registry.h"
 #include "../semantic/resolution_state.h"
 #include "../parser/node_utils.h"
 #include "../semantic/compound_literal_resolution.h"
@@ -847,7 +850,9 @@ int psx_build_static_aggregate_initializer_plan(
   };
   return plan->value_count > 0;
 }
+#endif
 
+#ifndef AGC_STATIC_INITIALIZER_COMPAT_ONLY
 int psx_apply_static_aggregate_initializer_plan(
     global_var_t *global,
     const psx_static_aggregate_initializer_plan_t *plan) {
@@ -912,3 +917,4 @@ int lower_resolved_static_initializer(
   if (result) result->initialized = 1;
   return 1;
 }
+#endif

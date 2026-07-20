@@ -3958,6 +3958,10 @@ const staticInitializerResolutionHeader = await readFile(
   "src/semantic/static_initializer_resolution.h",
   "utf8",
 );
+const staticInitializerClassificationHeader = await readFile(
+  "src/semantic/static_initializer_classification.h",
+  "utf8",
+);
 const frontendSemanticPipelineSource = await readFile(
   "src/frontend/semantic_pipeline.c",
   "utf8",
@@ -7635,14 +7639,17 @@ if (!compoundLiteralStoragePlan ||
     !/\bint\s+psx_plan_compound_literal_storage_in_contexts\s*\(/.test(
       compoundLiteralLoweringHeader,
     ) ||
-    !/\bpsx_apply_resolved_global_declaration_pipeline\s*\(/.test(
+    !/\bpsx_apply_global_declaration_pipeline\s*\(/.test(
       compoundLiteralLoweringSource,
     ) ||
-    /\bpsx_apply_global_declaration_pipeline\s*\(/.test(
+    /\bpsx_apply_resolved_global_declaration_pipeline\s*\(/.test(
       compoundLiteralLoweringSource,
     ) ||
-    !/initializer_is_resolved\s*\?\s*psx_build_static_aggregate_initializer_plan\s*\(/.test(
+    /initializer_is_resolved|psx_build_static_aggregate_initializer_plan\s*\(/.test(
       declarationPipelineSource,
+    ) ||
+    /psx_(?:apply|finish)_resolved_global_declaration_pipeline\s*\(/.test(
+      declarationPipelineHeader,
     ) ||
     /\blower_compound_literal_expression_in_contexts\s*\(/.test(
       compoundLiteralLoweringSource,
@@ -9880,7 +9887,7 @@ const staticInitializerSource = await readFile(
 const staticInitializerRequest = staticInitializerSource.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_static_initializer_resolution_request_t\s*;/,
 );
-const staticInitializerResolution = staticInitializerSource.match(
+const staticInitializerResolution = staticInitializerClassificationHeader.match(
   /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_static_initializer_resolution_t\s*;/,
 );
 if (!staticInitializerRequest ||
@@ -10157,7 +10164,7 @@ const staticDataInitializerSource = await readFile(
   "utf8",
 );
 const staticInitializerResolutionResult =
-  staticInitializerResolutionHeader.match(
+  staticInitializerClassificationHeader.match(
     /typedef\s+struct\s*\{((?:(?!typedef\s+struct)[\s\S])*?)\}\s*psx_static_initializer_resolution_t\s*;/,
   );
 const staticInitializerLoweringInput = staticDataInitializerHeader.match(
@@ -10167,6 +10174,15 @@ const resolvedStaticInitializerLowering = staticDataInitializerSource.match(
   /int\s+lower_resolved_static_initializer\s*\([^]*?\n\}/,
 );
 if (!staticInitializerResolutionResult ||
+    /parser\/ast\.h|\bnode_t\b|\btoken_t\b/.test(
+      staticInitializerClassificationHeader,
+    ) ||
+    !/#include\s+"static_initializer_classification\.h"/.test(
+      staticInitializerResolutionHeader,
+    ) ||
+    /parser\/ast\.h|static_initializer_resolution\.h|\bnode_t\b|\bnode_init_list_t\b|\btoken_t\b/.test(
+      staticDataInitializerHeader,
+    ) ||
     /\bnode_t\b|\bpsx_hir_|aggregate_plan|\binitializer\s*;/.test(
       staticInitializerResolutionResult[1],
     ) ||
@@ -10198,6 +10214,22 @@ if (!staticInitializerResolutionResult ||
     )) {
   throw new Error(
     "static initializer semantics must return AST-free classification while lowering consumes only aggregate plans or HIR",
+  );
+}
+if (!/#ifdef\s+AGC_STATIC_INITIALIZER_COMPAT[^]*?psx_build_static_aggregate_initializer_plan\s*\([^]*?#endif[^]*?#ifndef\s+AGC_STATIC_INITIALIZER_COMPAT_ONLY[^]*?lower_resolved_static_initializer\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/^STATIC_DATA_INITIALIZER_COMPAT_OBJ=\$\(OBJROOT\)\/test\/static_data_initializer_compat\.o$/m.test(
+      makefileSource,
+    ) ||
+    !/\$\(STATIC_DATA_INITIALIZER_COMPAT_OBJ\):\s+src\/lowering\/static_data_initializer\.c[^]*?-DAGC_STATIC_INITIALIZER_COMPAT\s+-DAGC_STATIC_INITIALIZER_COMPAT_ONLY/.test(
+      makefileSource,
+    ) ||
+    !/\$\(TEST_PARSER\):[^\n]*\$\(STATIC_DATA_INITIALIZER_COMPAT_OBJ\)/.test(
+      makefileSource,
+    )) {
+  throw new Error(
+    "legacy AST static initializer helpers must compile only into the parser compatibility test object",
   );
 }
 const initializerLoweringSource = await readFile(
@@ -10301,11 +10333,14 @@ if (/\bpsx_type_t\b/.test(staticDataInitializerSource) ||
     "static initializer lowering must use declaration QualType, TypeShape, RecordId, and DataLayout without compatibility type views",
   );
 }
-if (!/\bpsx_qual_type_t\s+object_type\b/.test(
-      staticDataInitializerHeader,
+if (!/\bpsx_qual_type_t\s+object_qual_type\b/.test(
+      staticInitializerClassificationHeader,
     ) ||
-    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
-      staticDataInitializerSource,
+    !/psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts\s*\([^)]*\bpsx_qual_type_t\s+type\b/.test(
+      semanticPipelineSource,
+    ) ||
+    /psx_build_static_aggregate_initializer_plan\s*\(/.test(
+      declarationPipelineSource,
     )) {
   throw new Error(
     "static aggregate initializer plans must preserve canonical QualType identity",
@@ -12534,6 +12569,8 @@ const mutableCompatibilityTestOnlySources = [
   "src/semantic/local_declaration_tree_resolution.c",
   "src/semantic/semantic_pass.c",
   "src/lowering/semantic_lowering_pass.c",
+  "src/lowering/initializer_lowering.c",
+  "src/lowering/compound_literal_lowering.c",
   "src/semantic/lowered_tree_validation.c",
   "src/semantic/control_flow_validation.c",
   "src/semantic/semantic_diagnostics.c",
