@@ -2982,6 +2982,47 @@ static psx_frontend_expression_hir_t resolve_test_cast_input_hir(
   return expression;
 }
 
+static void assert_test_integer_cast_hir(
+    const char *input, psx_integer_kind_t expected_kind,
+    int expected_unsigned, psx_type_qualifiers_t expected_qualifiers,
+    long long expected_operand) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_cast_input_hir(input, &syntax);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  psx_type_shape_t shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+  ASSERT_EQ(expected_kind, shape.integer_kind);
+  ASSERT_EQ(expected_unsigned, shape.is_unsigned);
+  ASSERT_EQ(expected_qualifiers,
+            psx_hir_node_qual_type(root).qualifiers);
+  const psx_hir_node_t *operand = test_hir_child(&expression, root, 0);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(operand));
+  ASSERT_EQ(expected_operand, psx_hir_node_integer_value(operand));
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
+static void assert_test_nested_integer_cast_hir(
+    const char *input, psx_integer_kind_t expected_outer_kind,
+    int expected_outer_unsigned, psx_integer_kind_t expected_inner_kind,
+    int expected_inner_unsigned) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_cast_input_hir(input, &syntax);
+  const psx_hir_node_t *outer = test_expression_hir_root(&expression);
+  const psx_hir_node_t *inner = test_hir_child(&expression, outer, 0);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner));
+  psx_type_shape_t outer_shape = test_hir_type_shape(outer);
+  psx_type_shape_t inner_shape = test_hir_type_shape(inner);
+  ASSERT_EQ(PSX_TYPE_INTEGER, outer_shape.kind);
+  ASSERT_EQ(expected_outer_kind, outer_shape.integer_kind);
+  ASSERT_EQ(expected_outer_unsigned, outer_shape.is_unsigned);
+  ASSERT_EQ(PSX_TYPE_INTEGER, inner_shape.kind);
+  ASSERT_EQ(expected_inner_kind, inner_shape.integer_kind);
+  ASSERT_EQ(expected_inner_unsigned, inner_shape.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
 static node_t *parse_expr_input_with_existing_names(const char *input) {
   set_test_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
@@ -18472,21 +18513,18 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(PSX_TYPE_BOOL, test_hir_type_shape(root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *const_cast = parse_expr_input("(const int)7");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(const_cast));
-  ASSERT_EQ(7, as_num(const_cast->lhs)->val);
-
-    node_t *volatile_cast = parse_expr_input("(volatile int)8");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(volatile_cast));
-  ASSERT_EQ(8, as_num(volatile_cast->lhs)->val);
-
-    node_t *post_const_cast = parse_expr_input("(int const)12");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(post_const_cast));
-  ASSERT_EQ(12, as_num(post_const_cast->lhs)->val);
-
-    node_t *post_dup_const_cast = parse_expr_input("(int const const)21");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(post_dup_const_cast));
-  ASSERT_EQ(21, as_num(post_dup_const_cast->lhs)->val);
+  assert_test_integer_cast_hir(
+      "(const int)7", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_CONST, 7);
+  assert_test_integer_cast_hir(
+      "(volatile int)8", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_VOLATILE, 8);
+  assert_test_integer_cast_hir(
+      "(int const)12", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_CONST, 12);
+  assert_test_integer_cast_hir(
+      "(int const const)21", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_CONST, 21);
 
   expression = resolve_test_cast_input_hir(
       "(int const * volatile * restrict)0", &syntax);
@@ -18504,72 +18542,63 @@ static void test_expr_unary_ops() {
       psx_hir_node_qual_type(root), "Rp<Vp<ki32>>");
   psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *unsigned_int_const_cast = parse_expr_input("(unsigned int const)13");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_int_const_cast));
-  ASSERT_EQ(13, as_num(unsigned_int_const_cast->lhs)->val);
+  assert_test_integer_cast_hir(
+      "(unsigned int const)13", PSX_INTEGER_KIND_INT, 1,
+      PSX_TYPE_QUALIFIER_CONST, 13);
 
-    node_t *funcptr_const_cast = parse_expr_input("(int (*const)(int))0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(funcptr_const_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(funcptr_const_cast));
-  ASSERT_EQ(ND_NUM, funcptr_const_cast->lhs->kind);
-  ASSERT_EQ(0, as_num(funcptr_const_cast->lhs)->val);
+  expression = resolve_test_cast_input_hir(
+      "(int (*const)(int))0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, type.qualifiers);
+  base = test_qual_type_base(type);
+  psx_type_shape_t function_shape = test_qual_type_shape(base);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(1, function_shape.parameter_count);
+  ASSERT_TRUE(function_shape.has_function_prototype);
+  psx_qual_type_t function_result = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_qual_type_shape(function_result).kind);
+  const psx_hir_node_t *funcptr_operand =
+      test_hir_child(&expression, root, 0);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(funcptr_operand));
+  ASSERT_EQ(0, psx_hir_node_integer_value(funcptr_operand));
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *long_long_cast = parse_expr_input("(long long)14");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_long_cast));
-  ASSERT_EQ(14, as_num(long_long_cast->lhs)->val);
+  assert_test_integer_cast_hir(
+      "(long long)14", PSX_INTEGER_KIND_LONG_LONG, 0,
+      PSX_TYPE_QUALIFIER_NONE, 14);
+  assert_test_integer_cast_hir(
+      "(unsigned long)15", PSX_INTEGER_KIND_LONG, 1,
+      PSX_TYPE_QUALIFIER_NONE, 15);
 
-    node_t *unsigned_long_cast = parse_expr_input("(unsigned long)15");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_long_cast));
-  ASSERT_EQ(15, as_num(unsigned_long_cast->lhs)->val);
+  assert_test_nested_integer_cast_hir(
+      "(long)(unsigned int)a", PSX_INTEGER_KIND_LONG, 0,
+      PSX_INTEGER_KIND_INT, 1);
+  assert_test_nested_integer_cast_hir(
+      "(long)(int)a", PSX_INTEGER_KIND_LONG, 0,
+      PSX_INTEGER_KIND_INT, 0);
 
-  node_t *long_unsigned_int_cast = parse_expr_input("(long)(unsigned int)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_int_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_int_cast->lhs));
-  ASSERT_TRUE(ps_type_is_unsigned(
-      ps_node_get_type(long_unsigned_int_cast->lhs)));
+  assert_test_integer_cast_hir(
+      "(unsigned short int)16", PSX_INTEGER_KIND_SHORT, 1,
+      PSX_TYPE_QUALIFIER_NONE, 16);
+  assert_test_integer_cast_hir(
+      "(signed char)17", PSX_INTEGER_KIND_CHAR, 0,
+      PSX_TYPE_QUALIFIER_NONE, 17);
+  assert_test_integer_cast_hir(
+      "(unsigned char)18", PSX_INTEGER_KIND_CHAR, 1,
+      PSX_TYPE_QUALIFIER_NONE, 18);
 
-  node_t *long_signed_int_cast = parse_expr_input("(long)(int)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_int_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_int_cast->lhs));
-  ASSERT_TRUE(!ps_type_is_unsigned(
-      ps_node_get_type(long_signed_int_cast->lhs)));
-
-    // 定数の short/char キャストは目的幅へ切り詰めて ND_NUM へ定数畳み込みする
-    // (16/17/18 は範囲内なので値は不変)。
-    node_t *unsigned_short_int_cast = parse_expr_input("(unsigned short int)16");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_short_int_cast));
-  ASSERT_EQ(16, as_num(unsigned_short_int_cast->lhs)->val);
-
-    node_t *signed_char_cast = parse_expr_input("(signed char)17");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(signed_char_cast));
-  ASSERT_EQ(17, as_num(signed_char_cast->lhs)->val);
-
-    node_t *unsigned_char_cast = parse_expr_input("(unsigned char)18");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_char_cast));
-  ASSERT_EQ(18, as_num(unsigned_char_cast->lhs)->val);
-
-  node_t *long_unsigned_char_cast = parse_expr_input("(long)(unsigned char)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_char_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_char_cast->lhs));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(
-      long_unsigned_char_cast->lhs));
-
-  node_t *long_unsigned_short_cast = parse_expr_input("(long)(unsigned short)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_short_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_unsigned_short_cast->lhs));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(
-      long_unsigned_short_cast->lhs));
-
-  node_t *unsigned_signed_short_cast =
-      parse_expr_input("(unsigned)(short)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_signed_short_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(unsigned_signed_short_cast->lhs));
-  ASSERT_TRUE(!ps_type_is_unsigned(
-      ps_node_get_type(unsigned_signed_short_cast->lhs)));
-  ASSERT_TRUE(ps_type_is_unsigned(
-      ps_node_get_type(unsigned_signed_short_cast)));
-  ASSERT_TRUE(ps_node_usual_arith_is_unsigned(
-      unsigned_signed_short_cast));
+  assert_test_nested_integer_cast_hir(
+      "(long)(unsigned char)a", PSX_INTEGER_KIND_LONG, 0,
+      PSX_INTEGER_KIND_CHAR, 1);
+  assert_test_nested_integer_cast_hir(
+      "(long)(unsigned short)a", PSX_INTEGER_KIND_LONG, 0,
+      PSX_INTEGER_KIND_SHORT, 1);
+  assert_test_nested_integer_cast_hir(
+      "(unsigned)(short)a", PSX_INTEGER_KIND_INT, 1,
+      PSX_INTEGER_KIND_SHORT, 0);
 
   parsed_code = parse_program_input(
       "int cast_unsigned_short_compare(short s) { return (unsigned)s > 5; }");
@@ -18584,11 +18613,9 @@ static void test_expr_unary_ops() {
   ASSERT_TRUE(ps_node_usual_arith_is_unsigned(
       unsigned_short_return->lhs));
 
-  node_t *long_signed_short_cast = parse_expr_input("(long)(short)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_short_cast));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_signed_short_cast->lhs));
-  ASSERT_TRUE(!ps_node_integer_value_is_unsigned(
-      long_signed_short_cast->lhs));
+  assert_test_nested_integer_cast_hir(
+      "(long)(short)a", PSX_INTEGER_KIND_LONG, 0,
+      PSX_INTEGER_KIND_SHORT, 0);
 
   const char *restrict_casts[] = {
       "(int *restrict)0",
@@ -18613,17 +18640,15 @@ static void test_expr_unary_ops() {
     psx_frontend_expression_hir_dispose(&expression);
   }
 
-    node_t *atomic_cast = parse_expr_input("(_Atomic int)9");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(atomic_cast));
-  ASSERT_EQ(9, as_num(atomic_cast->lhs)->val);
-
-    node_t *atomic_const_cast = parse_expr_input("(_Atomic const int)10");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(atomic_const_cast));
-  ASSERT_EQ(10, as_num(atomic_const_cast->lhs)->val);
-
-    node_t *nested_atomic_cast = parse_expr_input("(_Atomic(_Atomic(int)))11");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(nested_atomic_cast));
-  ASSERT_EQ(11, as_num(nested_atomic_cast->lhs)->val);
+  assert_test_integer_cast_hir(
+      "(_Atomic int)9", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_ATOMIC, 9);
+  assert_test_integer_cast_hir(
+      "(_Atomic const int)10", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_ATOMIC | PSX_TYPE_QUALIFIER_CONST, 10);
+  assert_test_integer_cast_hir(
+      "(_Atomic(_Atomic(int)))11", PSX_INTEGER_KIND_INT, 0,
+      PSX_TYPE_QUALIFIER_ATOMIC, 11);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);

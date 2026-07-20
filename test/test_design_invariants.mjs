@@ -2666,11 +2666,13 @@ for (const testName of [
   "test_expr_bitwise",
   "test_expr_shift",
   "test_expr_ternary",
+  "test_expr_unary_ops",
 ]) {
   const body = parserUnitTestSource.match(
     new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
   );
   if (!body || /\banalyze_test_expression\s*\(/.test(body[1]) ||
+      /\bparse_expr_input\s*\(/.test(body[1]) ||
       (testName !== "test_syntax_literal_type_boundary" &&
        !/\bresolve_test_expression(?:_input)?_hir\s*\(/.test(body[1]))) {
     throw new Error(
@@ -2697,7 +2699,7 @@ const legacyAnalyzedExpressionParseSites = callBodies(
   parserUnitTestSource,
   "parse_expr_input",
 );
-if (legacyAnalyzedExpressionParseSites.length > 91) {
+if (legacyAnalyzedExpressionParseSites.length > 71) {
   throw new Error(
     "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
