@@ -8,7 +8,6 @@
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_node_type.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +26,12 @@ static char *new_aggregate_temp_name(
   return name;
 }
 
+static token_kind_t aggregate_token_kind(psx_type_kind_t type_kind) {
+  return type_kind == PSX_TYPE_STRUCT ? TK_STRUCT
+       : type_kind == PSX_TYPE_UNION ? TK_UNION
+                                     : TK_EOF;
+}
+
 int psx_plan_aggregate_source_cast_resolution(
     psx_lowering_context_t *lowering_context,
     psx_local_registry_t *local_registry,
@@ -43,35 +48,34 @@ int psx_plan_aggregate_source_cast_resolution(
       resolution->member_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
 
-  const psx_type_t *target_type = psx_semantic_type_table_lookup(
-      ps_lowering_semantic_types(lowering_context),
-      resolution->target_qual_type.type_id);
-  if (!ps_type_is_tag_aggregate(target_type)) return 0;
+  if (!psx_type_kind_is_aggregate(resolution->target_type_kind) ||
+      resolution->target_record_id == PSX_RECORD_ID_INVALID)
+    return 0;
   const psx_record_layout_t *record_layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(lowering_context),
-      ps_type_record_id(target_type),
+      resolution->target_record_id,
       ag_target_info_data_layout(ps_lowering_target(lowering_context)));
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(
           record_layout, resolution->member_index);
   if (!member_layout) return 0;
 
-  int target_size = ps_lowering_type_size(
-      lowering_context, target_type);
-  int object_size = target_size > 0 ? target_size : 8;
-  int object_align = ps_lowering_type_alignment(
-      lowering_context, target_type);
-  if (object_align <= 0) object_align = object_size;
+  int object_size = ps_lowering_type_id_size(
+      lowering_context, resolution->target_qual_type.type_id);
+  int object_align = ps_lowering_type_id_alignment(
+      lowering_context, resolution->target_qual_type.type_id);
+  if (object_size <= 0 || object_align <= 0) return 0;
   char *temporary_name =
       new_aggregate_temp_name(lowering_context);
   int offset = local_storage_allocate(
       lowering_context, object_size, object_align);
   lvar_t *temporary =
       temporary_name
-          ? ps_local_registry_create_internal_storage_object_in(
+          ? ps_local_registry_create_internal_storage_object_qual_type_in(
                 local_registry, temporary_name,
                 (int)strlen(temporary_name), offset,
-                object_size, object_align, target_type)
+                object_size, object_align,
+                resolution->target_qual_type)
           : NULL;
   if (!temporary) return 0;
 
@@ -85,7 +89,7 @@ int psx_plan_aggregate_source_cast_resolution(
                           ? member_layout->bit_offset : 0);
   const psx_record_decl_t *record = psx_record_decl_table_lookup(
       ps_lowering_record_decls(lowering_context),
-      ps_type_record_id(target_type));
+      resolution->target_record_id);
   if (record && resolution->member_index < record->member_count) {
     const psx_record_member_decl_t *member =
         &record->members[resolution->member_index];
@@ -103,7 +107,7 @@ static void diagnose_source_cast_resolution(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(lowering_context);
   token_kind_t tag_kind =
-      (token_kind_t)resolution->target_tag_kind;
+      aggregate_token_kind(resolution->target_type_kind);
   switch (resolution->status) {
     case PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR:
       ps_diag_ctx_in(

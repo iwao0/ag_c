@@ -10478,6 +10478,14 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   const psx_type_t *type = ps_lvar_get_decl_type(temp);
   ASSERT_TRUE(type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, type->kind);
+  psx_qual_type_t temporary_qual_type = ps_lvar_decl_qual_type(temp);
+  psx_type_shape_t temporary_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      temporary_qual_type.type_id, &temporary_shape));
+  ASSERT_EQ(PSX_TYPE_STRUCT, temporary_shape.kind);
+  ASSERT_TRUE(temporary_shape.record_id != PSX_RECORD_ID_INVALID);
+  ASSERT_EQ(ps_type_record_id(type), temporary_shape.record_id);
   const psx_record_decl_t *record = test_record_decl(type);
   ASSERT_TRUE(record != NULL);
   ASSERT_EQ(2, record->member_count);

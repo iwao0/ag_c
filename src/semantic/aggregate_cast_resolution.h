@@ -4,6 +4,7 @@
 #include "../compilation_options.h"
 #include "../target_info.h"
 #include "../type_system/type_ids.h"
+#include "../type_system/type_shape.h"
 
 typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 typedef struct psx_record_layout_table_t psx_record_layout_table_t;
@@ -29,8 +30,9 @@ typedef struct {
   psx_aggregate_cast_mode_t mode;
   psx_qual_type_t target_qual_type;
   psx_qual_type_t member_qual_type;
+  psx_record_id_t target_record_id;
   int member_index;
-  int target_tag_kind;
+  psx_type_kind_t target_type_kind;
 } psx_aggregate_cast_resolution_t;
 
 void psx_resolve_aggregate_cast_qual_types(

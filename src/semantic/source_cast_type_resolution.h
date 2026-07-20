@@ -20,7 +20,7 @@ typedef struct {
   psx_qual_type_t target_qual_type;
   psx_qual_type_t operand_qual_type;
   int target_is_aggregate;
-  int target_tag_kind;
+  psx_type_kind_t target_type_kind;
   psx_aggregate_cast_resolution_t aggregate;
 } psx_source_cast_types_resolution_t;
 

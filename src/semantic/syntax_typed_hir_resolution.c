@@ -379,7 +379,7 @@ static int note_direct_source_cast_rejection(
       return 0;
   }
   return note_direct_integer_rejection(
-      context, rejection, syntax, resolution->target_tag_kind);
+      context, rejection, syntax, resolution->target_type_kind);
 }
 
 static int resolve_direct_function_call(

@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "../parser/type.h"
 #include "../type_layout.h"
 #include "record_decl_table.h"
 #include "record_layout.h"
@@ -27,61 +26,64 @@ void psx_resolve_aggregate_cast_qual_types(
       operand_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return;
 
-  const psx_type_t *target_type = psx_semantic_type_table_lookup(
-      types, target_qual_type.type_id);
-  const psx_type_t *operand_type = psx_semantic_type_table_lookup(
-      types, operand_qual_type.type_id);
-  if (!ps_type_is_tag_aggregate(target_type) || !operand_type)
+  psx_type_shape_t target_type = {0};
+  psx_type_shape_t operand_type = {0};
+  if (!psx_semantic_type_table_describe(
+          types, target_qual_type.type_id, &target_type) ||
+      !psx_semantic_type_table_describe(
+          types, operand_qual_type.type_id, &operand_type) ||
+      !psx_type_kind_is_aggregate(target_type.kind))
     return;
-  resolution->target_tag_kind = ps_type_tag_token_kind(target_type);
+  resolution->target_type_kind = target_type.kind;
+  resolution->target_record_id = target_type.record_id;
 
-  if (ps_type_is_tag_aggregate(operand_type) &&
-      ps_type_tag_identity_matches(operand_type, target_type)) {
+  if (psx_type_kind_is_aggregate(operand_type.kind) &&
+      operand_type.kind == target_type.kind &&
+      operand_type.record_id == target_type.record_id) {
     resolution->status = PSX_AGGREGATE_CAST_STATUS_OK;
     resolution->mode = PSX_AGGREGATE_CAST_COPY_VALUE;
     return;
   }
 
   if (options->enable_size_compatible_nonscalar_cast &&
-      ps_type_is_tag_aggregate(operand_type) && data_layout && record_layouts) {
+      psx_type_kind_is_aggregate(operand_type.kind) && data_layout &&
+      record_layouts) {
     int target_size = ps_type_sizeof_id(types, record_layouts,
                                         target_qual_type.type_id, data_layout);
     int operand_size = ps_type_sizeof_id(
         types, record_layouts, operand_qual_type.type_id, data_layout);
     if (target_size > 0 && target_size == operand_size &&
-        (int)ps_type_tag_token_kind(operand_type) ==
-            resolution->target_tag_kind) {
+        operand_type.kind == target_type.kind) {
       resolution->status = PSX_AGGREGATE_CAST_STATUS_OK;
       resolution->mode = PSX_AGGREGATE_CAST_COPY_VALUE;
       return;
     }
   }
 
-  if (ps_type_is_tag_aggregate(operand_type)) {
+  if (psx_type_kind_is_aggregate(operand_type.kind)) {
     resolution->status = PSX_AGGREGATE_CAST_STATUS_TYPE_MISMATCH;
     return;
   }
-  if (resolution->target_tag_kind == TK_STRUCT &&
+  if (target_type.kind == PSX_TYPE_STRUCT &&
       !options->enable_struct_scalar_pointer_cast) {
     resolution->status =
         PSX_AGGREGATE_CAST_STATUS_STRUCT_EXTENSION_DISABLED;
     return;
   }
-  if (resolution->target_tag_kind == TK_UNION &&
+  if (target_type.kind == PSX_TYPE_UNION &&
       !options->enable_union_scalar_pointer_cast) {
     resolution->status =
         PSX_AGGREGATE_CAST_STATUS_UNION_EXTENSION_DISABLED;
     return;
   }
-  if (resolution->target_tag_kind != TK_STRUCT &&
-      resolution->target_tag_kind != TK_UNION) {
+  if (!psx_type_kind_is_aggregate(target_type.kind)) {
     resolution->status =
         PSX_AGGREGATE_CAST_STATUS_UNSUPPORTED_TARGET;
     return;
   }
 
   const psx_record_decl_t *record = psx_record_decl_table_lookup(
-      record_decls, ps_type_record_id(target_type));
+      record_decls, target_type.record_id);
   if (!record) {
     resolution->status = PSX_AGGREGATE_CAST_STATUS_MEMBER_NOT_FOUND;
     return;

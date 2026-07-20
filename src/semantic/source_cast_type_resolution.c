@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "../parser/type.h"
 #include "type_identity.h"
 
 static psx_source_cast_types_status_t aggregate_cast_status(
@@ -42,21 +41,23 @@ void psx_resolve_source_cast_qual_types(
       operand_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return;
 
-  const psx_type_t *target_type = psx_semantic_type_table_lookup(
-      types, target_qual_type.type_id);
-  const psx_type_t *operand_type = psx_semantic_type_table_lookup(
-      types, operand_qual_type.type_id);
-  if (!target_type || !operand_type) return;
+  psx_type_shape_t target_type = {0};
+  psx_type_shape_t operand_type = {0};
+  if (!psx_semantic_type_table_describe(
+          types, target_qual_type.type_id, &target_type) ||
+      !psx_semantic_type_table_describe(
+          types, operand_qual_type.type_id, &operand_type))
+    return;
 
-  if (target_type->kind == PSX_TYPE_VOID) {
+  if (target_type.kind == PSX_TYPE_VOID) {
     resolution->status = PSX_SOURCE_CAST_TYPES_OK;
     return;
   }
-  if (ps_type_is_tag_aggregate(target_type)) {
+  if (psx_type_kind_is_aggregate(target_type.kind)) {
     resolution->target_is_aggregate = 1;
-    resolution->target_tag_kind = ps_type_tag_token_kind(target_type);
-    if (!ps_type_is_tag_aggregate(operand_type) &&
-        !ps_type_is_scalar(operand_type)) {
+    resolution->target_type_kind = target_type.kind;
+    if (!psx_type_kind_is_aggregate(operand_type.kind) &&
+        !psx_type_kind_is_scalar(operand_type.kind)) {
       resolution->status = PSX_SOURCE_CAST_OPERAND_NOT_SCALAR;
       return;
     }
@@ -67,12 +68,12 @@ void psx_resolve_source_cast_qual_types(
         resolution->aggregate.status);
     return;
   }
-  if (!ps_type_is_scalar(target_type)) {
+  if (!psx_type_kind_is_scalar(target_type.kind)) {
     resolution->status =
         PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR;
     return;
   }
-  if (!ps_type_is_scalar(operand_type)) {
+  if (!psx_type_kind_is_scalar(operand_type.kind)) {
     resolution->status = PSX_SOURCE_CAST_OPERAND_NOT_SCALAR;
     return;
   }

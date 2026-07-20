@@ -57,4 +57,14 @@ typedef struct {
   unsigned char is_variadic_function;
 } psx_type_shape_t;
 
+static inline int psx_type_kind_is_scalar(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_BOOL || kind == PSX_TYPE_INTEGER ||
+         kind == PSX_TYPE_FLOAT || kind == PSX_TYPE_COMPLEX ||
+         kind == PSX_TYPE_POINTER;
+}
+
+static inline int psx_type_kind_is_aggregate(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
+}
+
 #endif

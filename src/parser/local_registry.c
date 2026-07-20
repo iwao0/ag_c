@@ -332,7 +332,17 @@ lvar_t *ps_local_registry_create_internal_storage_object_in(
   if (!registry || !decl_type) return NULL;
   psx_qual_type_t qual_type = resolve_local_decl_type(
       registry, decl_type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
+  return ps_local_registry_create_internal_storage_object_qual_type_in(
+      registry, name, name_len, offset, storage_size, alignment, qual_type);
+}
+
+lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, psx_qual_type_t decl_qual_type) {
+  psx_type_shape_t shape = {0};
+  if (!registry || !psx_semantic_type_table_describe(
+          registry->semantic_types, decl_qual_type.type_id, &shape))
     return NULL;
   lvar_t *var = calloc(1, sizeof(*var));
   if (!var) return NULL;
@@ -342,7 +352,7 @@ lvar_t *ps_local_registry_create_internal_storage_object_in(
   var->size = storage_size;
   var->align_bytes = alignment;
   var->decl_type_table = registry->semantic_types;
-  var->decl_qual_type = qual_type;
+  var->decl_qual_type = decl_qual_type;
   var->next_all = registry->all_locals;
   registry->all_locals = var;
   unsigned bucket = offset_hash(offset);

@@ -5049,7 +5049,7 @@ const parameterBindingSeedIndex = frontendTranslationUnitSource.indexOf(
   "psx_record_function_definition_declarator_binding_events(",
 );
 const internalStorageRegistration = localRegistrySource.match(
-  /lvar_t\s*\*ps_local_registry_create_internal_storage_object_in\s*\([^]*?\n\}/,
+  /lvar_t\s*\*ps_local_registry_create_internal_storage_object_qual_type_in\s*\([^]*?\n\}/,
 )?.[0] ?? "";
 const declaratorExpressionSyntaxSource = await readFile(
   "src/parser/declaration_syntax.c",
@@ -6622,6 +6622,22 @@ if (!/\bpsx_aggregate_cast_resolution_t\b/.test(
     !/psx_record_decl_table_lookup\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
+    !/psx_type_kind_t\s+target_type_kind\s*;/.test(
+      aggregateCastResolutionHeader,
+    ) ||
+    !/psx_record_id_t\s+target_record_id\s*;/.test(
+      aggregateCastResolutionHeader,
+    ) ||
+    /target_tag_kind/.test(aggregateCastResolutionHeader) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      aggregateCastResolutionSource,
+    ) ||
+    /psx_semantic_type_table_lookup\s*\(|ps_type_(?:is_tag_aggregate|tag_identity_matches|tag_token_kind|record_id)\s*\(/.test(
+      aggregateCastResolutionSource,
+    ) ||
+    /#include\s+"\.\.\/parser\/type\.h"/.test(
+      aggregateCastResolutionSource,
+    ) ||
     !/ps_type_sizeof_id\s*\(/.test(
       aggregateCastResolutionSource,
     ) ||
@@ -6647,7 +6663,20 @@ if (!/\bpsx_source_cast_types_resolution_t\b/.test(
     /(?:lowering_context|ps_node_new_)/.test(
       sourceCastTypeResolutionSource,
     ) ||
-    !/target_type->kind\s*==\s*PSX_TYPE_VOID/.test(
+    !/target_type\.kind\s*==\s*PSX_TYPE_VOID/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    !/psx_type_kind_t\s+target_type_kind\s*;/.test(
+      sourceCastTypeResolutionHeader,
+    ) ||
+    /target_tag_kind/.test(sourceCastTypeResolutionHeader) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    /psx_semantic_type_table_lookup\s*\(|ps_type_(?:is_tag_aggregate|tag_token_kind|is_scalar)\s*\(/.test(
+      sourceCastTypeResolutionSource,
+    ) ||
+    /#include\s+"\.\.\/parser\/type\.h"/.test(
       sourceCastTypeResolutionSource,
     ) ||
     !/PSX_SOURCE_CAST_TARGET_NOT_VOID_OR_SCALAR/.test(
@@ -6724,6 +6753,19 @@ if (!/\bint\s+psx_plan_aggregate_source_cast\s*\(/.test(
     ) ||
     !/psx_plan_validated_aggregate_source_cast\s*\(/.test(
       semanticLoweringPassSource,
+    ) ||
+    /psx_semantic_type_table_lookup\s*\(|ps_lowering_type_(?:size|alignment)\s*\(/.test(
+      castLoweringSource,
+    ) ||
+    !/ps_lowering_type_id_size\s*\(/.test(castLoweringSource) ||
+    !/ps_lowering_type_id_alignment\s*\(/.test(castLoweringSource) ||
+    !/resolution->target_record_id/.test(castLoweringSource) ||
+    !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
+      castLoweringSource,
+    ) ||
+    /#include\s+"\.\.\/parser\/type\.h"/.test(castLoweringSource) ||
+    !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
+      localRegistrySource,
     ) ||
     !/context->unevaluated_depth\s*==\s*0[\s\S]*?psx_plan_aggregate_source_cast_resolution\s*\(/.test(
       syntaxTypedHirResolutionSource,
@@ -10318,7 +10360,7 @@ if (!/direct_compound_literal_binding_t/.test(
     !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
       localObjectLoweringSource,
     ) ||
-    !/ps_local_registry_create_internal_storage_object_in\s*\(/.test(
+    !/ps_local_registry_create_internal_storage_object_qual_type_in\s*\(/.test(
       castLoweringSource,
     )) {
   throw new Error(

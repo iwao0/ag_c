@@ -3,6 +3,7 @@
 #include "../parser/diag.h"
 #include "../parser/function_definition_syntax.h"
 #include "../parser/semantic_ctx.h"
+#include "../type_system/type_shape.h"
 #include "syntax_typed_hir_resolution.h"
 #include "typed_hir_diagnostics.h"
 #include "typed_hir_materialization.h"
@@ -23,6 +24,12 @@ static const char *direct_control_statement_name(int node_kind) {
     case ND_FOR: return "for";
     default: return NULL;
   }
+}
+
+static token_kind_t aggregate_token_kind(psx_type_kind_t type_kind) {
+  return type_kind == PSX_TYPE_STRUCT ? TK_STRUCT
+       : type_kind == PSX_TYPE_UNION ? TK_UNION
+                                     : TK_EOF;
 }
 
 static int diagnose_direct_syntax_rejection(
@@ -365,7 +372,8 @@ static int diagnose_direct_syntax_rejection(
               diagnostics,
               DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
           ps_ctx_tag_kind_spelling(
-              (token_kind_t)failure->source_integer_value));
+              aggregate_token_kind(
+                  (psx_type_kind_t)failure->source_integer_value)));
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED:
       ps_diag_ctx_in(
@@ -388,7 +396,8 @@ static int diagnose_direct_syntax_rejection(
               diagnostics,
               DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
           ps_ctx_tag_kind_spelling(
-              (token_kind_t)failure->source_integer_value));
+              aggregate_token_kind(
+                  (psx_type_kind_t)failure->source_integer_value)));
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_MEMBER_NOT_FOUND:
       ps_diag_ctx_in(
