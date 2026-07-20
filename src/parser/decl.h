@@ -41,8 +41,6 @@ void psx_decl_attach_lvar_current_region_in(
 void ps_decl_record_lvar_usage_in_region_in(
     psx_local_registry_t *registry, lvar_t *var,
     psx_lvar_usage_kind_t kind, psx_lvar_usage_region_t *region);
-void ps_decl_reset_translation_unit_state_in(
-    psx_local_registry_t *registry);
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
 void ps_decl_set_current_funcname_in(
     psx_local_registry_t *registry, char *name, int len);

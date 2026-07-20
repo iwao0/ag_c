@@ -55,7 +55,7 @@ static void run_case(
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
   psx_frontend_stream_t stream = {0};
   size_t funcs = 0;
-  if (!psx_frontend_reset_translation_unit_state_in_session(session) ||
+  if (!ag_compilation_session_reset_translation_unit(session) ||
       !psx_frontend_stream_begin(
           &stream, session, NULL,
           tk_get_current_token_ctx(tokenizer))) {

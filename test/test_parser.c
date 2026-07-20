@@ -1721,7 +1721,7 @@ static void set_test_current_funcname(char *name, int len) {
 }
 
 static void reset_test_translation_unit_state(void) {
-  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(
+  ASSERT_TRUE(ag_compilation_session_reset_translation_unit(
       test_suite_session));
 }
 
@@ -29727,8 +29727,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       8, test_target_pointer_size(ps_lowering_target(host.lowering_context)));
   ASSERT_EQ(
       4, test_target_pointer_size(ps_lowering_target(wasm.lowering_context)));
-  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&host));
-  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&wasm));
+  ASSERT_TRUE(ag_compilation_session_reset_translation_unit(&host));
+  ASSERT_TRUE(ag_compilation_session_reset_translation_unit(&wasm));
   ASSERT_TRUE(ps_ctx_resolution_store(host.semantic_context) ==
               host.resolution_store);
   ASSERT_TRUE(ps_ctx_resolution_store(wasm.semantic_context) ==

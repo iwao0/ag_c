@@ -386,8 +386,7 @@ static int agc_wasm_compile_to_memory(
   wasm32_backend_context_t *backend =
       ag_compilation_session_backend_context(session);
 
-  if (!psx_frontend_reset_translation_unit_state_in_session(
-          session)) {
+  if (!ag_compilation_session_reset_translation_unit(session)) {
     return -4;
   }
 
@@ -743,8 +742,7 @@ int main(int argc, char **argv) {
   wasm32_backend_context_t *backend =
       ag_compilation_session_backend_context(session);
 #endif
-  if (!psx_frontend_reset_translation_unit_state_in_session(
-          session)) {
+  if (!ag_compilation_session_reset_translation_unit(session)) {
     ag_compilation_session_destroy(session);
     free(source);
     return 1;

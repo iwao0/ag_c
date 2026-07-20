@@ -37,11 +37,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void psx_declaration_pipeline_reset_translation_unit_state_in(
-    psx_lowering_context_t *ctx) {
-  ps_lowering_context_reset_translation_unit(ctx);
-}
-
 static void diagnose_global_declaration(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_status_t status) {

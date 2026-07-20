@@ -211,6 +211,22 @@ int ag_compilation_session_is_complete(
          ag_target_info_is_valid(&session->target);
 }
 
+int ag_compilation_session_reset_translation_unit(
+    ag_compilation_session_t *session) {
+  if (!ag_compilation_session_is_complete(session)) return 0;
+  ag_source_manager_reset_translation_unit(session->source_manager);
+  psx_hir_module_reset(session->hir_module);
+  psx_scope_graph_reset(session->scope_graph);
+  ps_global_registry_reset_translation_unit_in(session->global_registry);
+  ps_local_registry_reset_translation_unit_in(session->local_registry);
+  ps_ctx_reset_translation_unit_scope_in(session->semantic_context);
+  ps_parser_runtime_context_reset_translation_unit(
+      session->parser_runtime_context);
+  ps_lowering_context_reset_translation_unit(session->lowering_context);
+  arena_free_all_in(session->arena_context);
+  return 1;
+}
+
 int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (!session) return 0;
   psx_hir_module_destroy(session->hir_module);

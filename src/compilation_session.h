@@ -29,6 +29,8 @@ ag_compilation_session_t *ag_compilation_session_create(
     const ag_target_info_t *target);
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session);
+int ag_compilation_session_reset_translation_unit(
+    ag_compilation_session_t *session);
 int ag_compilation_session_destroy(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);

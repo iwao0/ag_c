@@ -204,7 +204,4 @@ typedef struct {
 struct lvar_t *psx_apply_temporary_local_declaration_pipeline(
     const psx_temporary_local_declaration_pipeline_request_t *request);
 
-void psx_declaration_pipeline_reset_translation_unit_state_in(
-    psx_lowering_context_t *ctx);
-
 #endif

@@ -256,10 +256,6 @@ const scopeGraphIdentifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",
   "utf8",
 );
-const scopeGraphTranslationUnitSource = await readFile(
-  "src/frontend/translation_unit.c",
-  "utf8",
-);
 const scopeGraphRegistrySources = [
   scopeGraphLocalRegistrySource,
   scopeGraphGlobalRegistrySource,
@@ -305,8 +301,8 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     ) ||
     /scope_graph\s*=\s*NULL/.test(scopeGraphSemanticContextSource) ||
     /psx_scope_graph_reset\s*\(/.test(scopeGraphGlobalRegistrySource) ||
-    !/reset_translation_unit_state\s*\([^]*?psx_scope_graph_reset\s*\(ps_ctx_scope_graph\s*\(semantic_context\)\)/.test(
-      scopeGraphTranslationUnitSource,
+    !/ag_compilation_session_reset_translation_unit\s*\([^]*?psx_scope_graph_reset\s*\(session->scope_graph\)/.test(
+      compilationSession,
     ) ||
     !/ag_compilation_session_is_complete\s*\([^]*?ps_ctx_scope_graph\s*\([^]*?==\s*session->scope_graph[^]*?ps_global_registry_scope_graph\s*\([^]*?==\s*session->scope_graph[^]*?ps_local_registry_scope_graph\s*\([^]*?==\s*session->scope_graph/.test(
       compilationSession,
@@ -1417,7 +1413,7 @@ if (sessionContextAccessorNames.some((name) =>
     ) ||
     /wasm32_(?:ir|obj|backend)_context/.test(compilationSessionSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilationSessionSource) ||
-    !/psx_frontend_reset_translation_unit_state_in_session\s*\(/.test(
+    !/ag_compilation_session_reset_translation_unit\s*\(/.test(
       compilerMainSource,
     ) ||
     !/ag_compilation_session_create\s*\(/.test(compilerMainSource) ||
@@ -1982,8 +1978,8 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
         source,
       )
     ) ||
-    !/psx_declaration_pipeline_reset_translation_unit_state_in\s*\(\s*lowering_context\s*\)/.test(
-      await readFile("src/frontend/translation_unit.c", "utf8"),
+    !/ps_lowering_context_reset_translation_unit\s*\(\s*session->lowering_context\s*\)/.test(
+      compilationSessionSource,
     ) ||
     !/\.lowering_context\s*=\s*lowering_context/.test(
       await readFile("src/lowering/semantic_lowering_pass.c", "utf8"),
@@ -2013,8 +2009,8 @@ if (!/struct\s+psx_parser_runtime_context_t\s*\{/.test(
     /static\s+(?:char\s*\*|int\s+)current_funcname/.test(
       parserDeclSource,
     ) ||
-    !/ps_parser_runtime_context_reset_translation_unit\s*\(runtime_context\)/.test(
-      await readFile("src/frontend/translation_unit.c", "utf8"),
+    !/ps_parser_runtime_context_reset_translation_unit\s*\(\s*session->parser_runtime_context\s*\)/.test(
+      compilationSessionSource,
     )) {
   throw new Error(
     "parser translation-unit state must be owned by parser runtime context",
@@ -2315,11 +2311,17 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
-if (!/ag_source_manager_reset_translation_unit\s*\(\s*ag_compilation_session_source_manager\s*\(session\)\s*\)/.test(
+if (!/ag_source_manager_reset_translation_unit\s*\(\s*session->source_manager\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    !/arena_free_all_in\s*\(\s*session->arena_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
+    /\b(?:ag_source_manager_reset_translation_unit|psx_scope_graph_reset|ps_global_registry_reset_translation_unit_in|ps_local_registry_reset_translation_unit_in|ps_ctx_reset_translation_unit_scope_in|ps_parser_runtime_context_reset_translation_unit|ps_lowering_context_reset_translation_unit)\s*\(/.test(
       frontendTranslationUnitSource,
     )) {
   throw new Error(
-    "CompilationSession translation-unit reset must reset SourceManager state",
+    "CompilationSession must exclusively coordinate translation-unit state reset",
   );
 }
 const frontendTranslationUnitResolverHeader = await readFile(
@@ -3991,7 +3993,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
       toplevelDeclarationSyntaxSource,
     ) ||
     !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
-    !/psx_frontend_reset_translation_unit_state_in_session\s*\(/.test(
+    !/ag_compilation_session_reset_translation_unit\s*\(/.test(
       compilerMainSource,
     ) ||
     !/ps_ctx_emit_deferred_parser_diagnostics_in\s*\(/.test(

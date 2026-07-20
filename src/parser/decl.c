@@ -157,10 +157,3 @@ int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
     return 0;
   return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
-
-void ps_decl_reset_translation_unit_state_in(
-    psx_local_registry_t *registry) {
-  if (!registry) return;
-  ps_local_registry_reset_translation_unit_in(registry);
-  ps_decl_set_current_funcname_in(registry, NULL, 0);
-}

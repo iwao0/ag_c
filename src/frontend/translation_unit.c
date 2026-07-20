@@ -19,7 +19,6 @@
 #include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/statement_syntax_adapter.h"
-#include "../source_manager.h"
 #include <string.h>
 
 static int frontend_session_is_complete(
@@ -113,40 +112,6 @@ static int finish_toplevel_declaration_syntax(
   };
   return psx_finish_toplevel_declaration_syntax_with_context(
       declaration, &syntax);
-}
-
-static void reset_translation_unit_state(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    psx_lowering_context_t *lowering_context,
-    arena_context_t *arena_context) {
-  psx_scope_graph_reset(ps_ctx_scope_graph(semantic_context));
-  ps_global_registry_reset_translation_unit_in(global_registry);
-  ps_decl_reset_translation_unit_state_in(local_registry);
-  ps_ctx_reset_translation_unit_scope_in(semantic_context);
-  ps_parser_runtime_context_reset_translation_unit(runtime_context);
-  psx_declaration_pipeline_reset_translation_unit_state_in(
-      lowering_context);
-  arena_free_all_in(arena_context);
-}
-
-int psx_frontend_reset_translation_unit_state_in_session(
-    ag_compilation_session_t *session) {
-  if (!frontend_session_is_complete(session)) return 0;
-  ag_source_manager_reset_translation_unit(
-      ag_compilation_session_source_manager(session));
-  psx_hir_module_reset(
-      ag_compilation_session_hir_module(session));
-  reset_translation_unit_state(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
-      ag_compilation_session_parser_runtime_context(session),
-      ag_compilation_session_lowering_context(session),
-      ag_compilation_session_arena_context(session));
-  return 1;
 }
 
 int psx_frontend_stream_begin(
