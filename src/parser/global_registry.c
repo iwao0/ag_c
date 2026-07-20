@@ -4,6 +4,7 @@
 #include "type.h"
 #include "type_builder.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../semantic/scope_graph.h"
 #include <stdlib.h>
 #include <string.h>

@@ -2,7 +2,7 @@
 
 #include "../parser/arena.h"
 #include "../parser/type.h"
-#include "type_identity.h"
+#include "type_identity_internal.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -68,6 +68,152 @@ static int reserve_type_id(
   cache->entries = entries;
   cache->capacity = capacity;
   return 1;
+}
+
+static psx_qual_type_t invalid_qual_type(void) {
+  return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                           PSX_TYPE_QUALIFIER_NONE};
+}
+
+static psx_type_shape_t parser_type_shape(const psx_type_t *type) {
+  psx_type_shape_t shape = {0};
+  if (!type) return shape;
+  shape.kind = type->kind;
+  shape.array_len = type->array_len;
+  shape.integer_kind = type->integer_kind;
+  if (shape.kind == PSX_TYPE_INTEGER &&
+      shape.integer_kind == PSX_INTEGER_KIND_NONE)
+    shape.integer_kind = PSX_INTEGER_KIND_INT;
+  shape.floating_kind = type->floating_kind;
+  shape.record_id = ps_type_record_id(type);
+  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
+    shape.record_tag_name = type->tag_name;
+    shape.record_tag_length = type->tag_len;
+  } else if (type->kind == PSX_TYPE_INTEGER &&
+             type->integer_kind == PSX_INTEGER_KIND_ENUM) {
+    shape.enum_tag_name = type->tag_name;
+    shape.enum_tag_length = type->tag_len;
+    shape.enum_tag_scope_depth_p1 = type->tag_scope_depth_p1;
+  }
+  shape.parameter_count = type->param_count;
+  shape.is_unsigned = type->is_unsigned;
+  shape.is_plain_char = type->is_plain_char;
+  shape.is_vla = type->is_vla;
+  shape.has_function_prototype = type->has_function_prototype;
+  shape.is_variadic_function = type->is_variadic_function;
+  return shape;
+}
+
+static int parser_type_has_resolved_record_identity(
+    const psx_type_t *type) {
+  if (!type) return 1;
+  if (ps_type_is_tag_aggregate(type) &&
+      ps_type_record_id(type) == PSX_RECORD_ID_INVALID)
+    return 0;
+  if (!parser_type_has_resolved_record_identity(type->base)) return 0;
+  for (int i = 0; i < type->param_count; i++) {
+    if (!parser_type_has_resolved_record_identity(type->param_types[i]))
+      return 0;
+  }
+  return 1;
+}
+
+static int parser_type_can_import(const psx_type_t *type) {
+  return type && type->kind != PSX_TYPE_INVALID &&
+         ps_type_is_well_formed(type) &&
+         parser_type_has_resolved_record_identity(type);
+}
+
+psx_qual_type_t psx_semantic_type_table_find(
+    const psx_semantic_type_table_t *table, const psx_type_t *type) {
+  if (!table || !parser_type_can_import(type))
+    return invalid_qual_type();
+  psx_qual_type_t compatibility_identity =
+      psx_type_compatibility_view_identity(
+          psx_semantic_type_table_compatibility_cache_const(table), type);
+  if (compatibility_identity.type_id != PSX_TYPE_ID_INVALID)
+    return compatibility_identity;
+
+  psx_qual_type_t base_type = invalid_qual_type();
+  if (type->base) {
+    base_type = psx_semantic_type_table_find(table, type->base);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  }
+  psx_qual_type_t *parameter_types = NULL;
+  if (type->param_count > 0) {
+    parameter_types = malloc(
+        (size_t)type->param_count * sizeof(*parameter_types));
+    if (!parameter_types) return invalid_qual_type();
+    for (int i = 0; i < type->param_count; i++) {
+      parameter_types[i] = psx_semantic_type_table_find(
+          table, type->param_types[i]);
+      if (parameter_types[i].type_id == PSX_TYPE_ID_INVALID) {
+        free(parameter_types);
+        return invalid_qual_type();
+      }
+    }
+  }
+  psx_type_shape_t shape = parser_type_shape(type);
+  psx_qual_type_t result = psx_semantic_type_table_find_shape(
+      table, &shape, base_type, parameter_types, type->param_count);
+  free(parameter_types);
+  if (result.type_id != PSX_TYPE_ID_INVALID)
+    result.qualifiers = ps_type_qualifiers(type);
+  return result;
+}
+
+psx_qual_type_t psx_semantic_type_table_intern(
+    psx_semantic_type_table_t *table, const psx_type_t *type) {
+  if (!table || !parser_type_can_import(type))
+    return invalid_qual_type();
+  psx_type_compatibility_cache_t *cache =
+      psx_semantic_type_table_compatibility_cache(table);
+  psx_qual_type_t result = psx_type_compatibility_view_identity(
+      cache, type);
+  if (result.type_id != PSX_TYPE_ID_INVALID) {
+    return psx_type_compatibility_cache_remember_import(
+               cache, result, type)
+               ? result
+               : invalid_qual_type();
+  }
+
+  psx_qual_type_t base_type = invalid_qual_type();
+  if (type->base) {
+    base_type = psx_semantic_type_table_intern(table, type->base);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  } else if (type->kind == PSX_TYPE_COMPLEX) {
+    base_type = psx_semantic_type_table_fundamental_floating(
+        table, type->floating_kind, 0);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  }
+  psx_qual_type_t *parameter_types = NULL;
+  if (type->param_count > 0) {
+    parameter_types = malloc(
+        (size_t)type->param_count * sizeof(*parameter_types));
+    if (!parameter_types) return invalid_qual_type();
+    for (int i = 0; i < type->param_count; i++) {
+      parameter_types[i] = psx_semantic_type_table_intern(
+          table, type->param_types[i]);
+      if (parameter_types[i].type_id == PSX_TYPE_ID_INVALID) {
+        free(parameter_types);
+        return invalid_qual_type();
+      }
+    }
+  }
+  psx_type_shape_t shape = parser_type_shape(type);
+  result = psx_semantic_type_table_intern_shape(
+      table, &shape, base_type, parameter_types, type->param_count);
+  free(parameter_types);
+  if (result.type_id != PSX_TYPE_ID_INVALID) {
+    result.qualifiers = ps_type_qualifiers(type);
+    if (!psx_type_compatibility_cache_remember_import(
+            cache, result, type))
+      return invalid_qual_type();
+  }
+  return result;
 }
 
 int psx_type_compatibility_cache_remember_import(

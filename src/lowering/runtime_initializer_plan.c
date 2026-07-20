@@ -6,6 +6,7 @@
 #include "../parser/node_utils.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
+#include "../semantic/type_compatibility_view.h"
 
 static int count_items(const node_t *node) {
   if (!node) return 0;

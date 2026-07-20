@@ -8594,6 +8594,14 @@ const typeCompatibilityViewSource = await readFile(
   "src/semantic/type_compatibility_view.c",
   "utf8",
 );
+const typeCompatibilityViewHeader = await readFile(
+  "src/semantic/type_compatibility_view.h",
+  "utf8",
+);
+const semanticTypeIdentityInternalHeader = await readFile(
+  "src/semantic/type_identity_internal.h",
+  "utf8",
+);
 const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
@@ -8613,8 +8621,17 @@ if (!qualTypeStruct ||
     ) ||
     /parser\/type\.h/.test(semanticTypeIdentityHeader) ||
     /#include\s+"\.\.\/semantic\/type_identity\.h"/.test(astSource) ||
-    !/relation\.qualifiers\s*==\s*ps_type_qualifiers\s*\(\s*candidate\s*\)/.test(
+    /parser\/type\.h|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
       semanticTypeIdentitySource,
+    ) ||
+    /\bpsx_semantic_type_table_(?:intern|find)\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_intern\s*\(/.test(
+      typeCompatibilityViewHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_find\s*\(/.test(
+      typeCompatibilityViewHeader,
     ) ||
     /#include\s+"\.\.\/(?:target_info|type_layout)\.h"/.test(
       semanticTypeIdentitySource,
@@ -8658,8 +8675,17 @@ if (!semanticTypeEntry ||
     !/\bconst\s+psx_type_t\s*\*\s*psx_semantic_type_table_lookup\s*\(\s*const\s+psx_semantic_type_table_t\s*\*table\s*,\s*psx_type_id_t\s+type_id\s*\)\s*;/.test(
       semanticTypeIdentityHeader,
     ) ||
-    !/\bsemantic_type_entry_matches\s*\(/.test(
+    !/\bpsx_semantic_type_table_find_shape\s*\(/.test(
       semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_semantic_type_table_intern_shape\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_semantic_type_table_find_shape\s*\(/.test(
+      semanticTypeIdentityInternalHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_intern_shape\s*\(/.test(
+      semanticTypeIdentityInternalHeader,
     ) ||
     /\bps_type_clone_for_identity_in\s*\(/.test(
       `${semanticTypeIdentitySource}\n${canonicalTypeSource}`,
@@ -8713,6 +8739,18 @@ if (!/const\s+psx_type_t\s*\*canonical_view\s*;/.test(
     ) ||
     !/psx_type_compatibility_cache_remember_import\s*\(/.test(
       typeCompatibilityViewSource,
+    ) ||
+    !/#include\s+"\.\.\/parser\/type\.h"/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/static\s+psx_type_shape_t\s+parser_type_shape\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_find\s*\([^]*?psx_semantic_type_table_find_shape\s*\(/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_intern\s*\([^]*?psx_semantic_type_table_intern_shape\s*\(/.test(
+      typeCompatibilityViewSource,
     )) {
   throw new Error(
     "mutable parser type views must be isolated in the compatibility adapter",
@@ -8758,7 +8796,7 @@ for (const [contextInterner, tableInterner] of [
   }
 }
 const directShapeInterner = semanticTypeIdentitySource.match(
-  /static\s+psx_qual_type_t\s+semantic_type_table_intern_shape\s*\([^]*?\n\}/,
+  /psx_qual_type_t\s+psx_semantic_type_table_intern_shape\s*\([^]*?\n\}/,
 );
 if (!directShapeInterner ||
     !/table->entries\[id\]\.shape\s*=\s*owned_shape\s*;/.test(
@@ -8788,7 +8826,7 @@ for (const derivedInterner of [
     ),
   );
   if (!implementation ||
-      !/\bsemantic_type_table_intern_shape\s*\(/.test(
+      !/\bpsx_semantic_type_table_intern_shape\s*\(/.test(
         implementation[0],
       ) ||
       /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_semantic_type_table_lookup\s*\(/.test(
@@ -8841,25 +8879,24 @@ if (!exactIntVoidTypePredicate ||
     "continuation function type validation must consume canonical TypeId shape in every phase",
   );
 }
-const resolvedRecordIdentityGuard = semanticTypeIdentitySource.match(
-  /static\s+int\s+semantic_type_has_resolved_record_identity\s*\([^]*?\n\}/,
-);
-const semanticTypeNodeMatcher = semanticTypeIdentitySource.match(
-  /static\s+int\s+semantic_type_node_matches\s*\([^]*?\n\}/,
+const resolvedRecordIdentityGuard = typeCompatibilityViewSource.match(
+  /static\s+int\s+parser_type_has_resolved_record_identity\s*\([^]*?\n\}/,
 );
 if (!resolvedRecordIdentityGuard ||
     !/\bps_type_record_id\s*\([^)]*\)\s*==\s*PSX_RECORD_ID_INVALID/.test(
       resolvedRecordIdentityGuard[0],
     ) ||
-    !semanticTypeNodeMatcher ||
     !/canonical->record_id\s*!=\s*PSX_RECORD_ID_INVALID/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/psx_semantic_type_table_find\s*\([^]*?semantic_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
-      semanticTypeIdentitySource,
+    !/parser_type_can_import\s*\([^]*?parser_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
+      typeCompatibilityViewSource,
     ) ||
-    !/psx_semantic_type_table_intern\s*\([^]*?semantic_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
-      semanticTypeIdentitySource,
+    !/psx_semantic_type_table_find\s*\([^]*?parser_type_can_import\s*\(\s*type\s*\)/.test(
+      typeCompatibilityViewSource,
+    ) ||
+    !/psx_semantic_type_table_intern\s*\([^]*?parser_type_can_import\s*\(\s*type\s*\)/.test(
+      typeCompatibilityViewSource,
     )) {
   throw new Error(
     "aggregate TypeId identity must require a resolved RecordId throughout the recursive type",

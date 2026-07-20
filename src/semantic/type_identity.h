@@ -14,10 +14,6 @@ void psx_semantic_type_table_reset(psx_semantic_type_table_t *table);
 void psx_semantic_type_table_bind_record_decls(
     psx_semantic_type_table_t *table,
     const psx_record_decl_table_t *record_decls);
-psx_qual_type_t psx_semantic_type_table_intern(
-    psx_semantic_type_table_t *table, const psx_type_t *type);
-psx_qual_type_t psx_semantic_type_table_find(
-    const psx_semantic_type_table_t *table, const psx_type_t *type);
 psx_qual_type_t psx_semantic_type_table_intern_integer(
     psx_semantic_type_table_t *table,
     psx_integer_kind_t integer_kind, int is_unsigned,

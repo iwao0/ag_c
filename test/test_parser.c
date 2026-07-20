@@ -25,6 +25,7 @@
 #include "../src/lowering/static_local_lowering.h"
 #include "../src/lowering/translation_unit_data_lowering.h"
 #include "../src/lowering/vla_lowering.h"
+#include "../src/semantic/type_compatibility_view.h"
 #include "../src/parser/aggregate_member_syntax.h"
 #include "../src/parser/alignas_value.h"
 #include "../src/parser/arena.h"

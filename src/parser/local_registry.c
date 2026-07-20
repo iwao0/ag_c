@@ -9,6 +9,7 @@
 #include "type_builder.h"
 #include "../semantic/scope_graph.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/type_compatibility_view.h"
 #include <stdlib.h>
 #include <string.h>
 

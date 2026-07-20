@@ -7,6 +7,7 @@
 #include "../parser/ast.h"
 #include "resolution_state.h"
 #include "type_identity.h"
+#include "type_compatibility_view.h"
 
 enum { PSX_RESOLUTION_STORE_BUCKET_COUNT = 4096 };
 

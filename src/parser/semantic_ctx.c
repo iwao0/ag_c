@@ -6,6 +6,7 @@
 #include "type_builder.h"
 #include "../diag/diag.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/type_compatibility_view.h"
 #include "../semantic/record_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"

@@ -8,6 +8,12 @@ typedef struct psx_type_compatibility_cache_t
     psx_type_compatibility_cache_t;
 typedef struct psx_type_t psx_type_t;
 
+/* Legacy parser-type adapter. Semantic code constructs and compares TypeShape
+ * relations directly; only compatibility callers should use these imports. */
+psx_qual_type_t psx_semantic_type_table_intern(
+    psx_semantic_type_table_t *table, const psx_type_t *type);
+psx_qual_type_t psx_semantic_type_table_find(
+    const psx_semantic_type_table_t *table, const psx_type_t *type);
 psx_type_compatibility_cache_t *psx_type_compatibility_cache_create(void);
 void psx_type_compatibility_cache_destroy(
     psx_type_compatibility_cache_t *cache);
