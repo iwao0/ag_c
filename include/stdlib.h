@@ -66,7 +66,7 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
 
 /* Environment */
 char *getenv(char *name);
-int system(char *command);
+int system(const char *command);
 char *realpath(const char *path, char *resolved_path);
 
 #endif
