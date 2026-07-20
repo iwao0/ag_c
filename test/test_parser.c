@@ -84,6 +84,7 @@
 #include "../src/semantic/local_initializer_binding.h"
 #include "../src/semantic/member_access_resolution.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
+#include "../src/semantic/parser_type_compatibility.h"
 #include "../src/semantic/prototype_parameter.h"
 #include "../src/semantic/resolution_state.h"
 #include "../src/semantic/resolution_store.h"

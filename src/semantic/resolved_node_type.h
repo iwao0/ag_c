@@ -6,20 +6,14 @@
 #include "../type_system/type_shape.h"
 #include "resolution_state_access.h"
 
-typedef struct psx_type_t psx_type_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 typedef struct lvar_t lvar_t;
 
-const psx_type_t *ps_node_get_type(
-    const psx_resolution_store_t *store, const node_t *node);
 psx_qual_type_t ps_node_qual_type(
     const psx_resolution_store_t *store, const node_t *node);
 int ps_node_type_shape(
     const psx_resolution_store_t *store, const node_t *node,
     psx_type_shape_t *shape);
-void ps_node_bind_type(
-    psx_resolution_store_t *store, node_t *node,
-    const psx_type_t *type);
 int ps_node_bind_qual_type(
     psx_resolution_store_t *store, node_t *node,
     psx_qual_type_t qual_type);

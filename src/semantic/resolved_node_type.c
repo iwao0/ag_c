@@ -5,11 +5,9 @@
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "../parser/node_vla_public.h"
-#include "../parser/type.h"
 #include "resolved_node_kind.h"
 #include "resolution_state.h"
 #include "resolution_store.h"
-#include "type_compatibility_view.h"
 #include "type_identity.h"
 
 void *psx_resolution_node_alloc_in(
@@ -180,17 +178,6 @@ size_t psx_resolution_node_storage_size(
   return psx_resolution_store_node_size(store, node);
 }
 
-const psx_type_t *ps_node_get_type(
-    const psx_resolution_store_t *store, const node_t *node) {
-  const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(store, node);
-  if (!state || state->type_binding.kind != PSX_NODE_TYPE_CANONICAL)
-    return NULL;
-  return psx_type_compatibility_view_for(
-      psx_resolution_store_semantic_types(store),
-      state->type_binding.canonical_type);
-}
-
 psx_qual_type_t ps_node_qual_type(
     const psx_resolution_store_t *store, const node_t *node) {
   const psx_node_resolution_state_t *state =
@@ -290,17 +277,6 @@ int ps_node_bind_qual_type(
   };
   refresh_bound_type_vla_runtime(store, node);
   return 1;
-}
-
-void ps_node_bind_type(
-    psx_resolution_store_t *store, node_t *node,
-    const psx_type_t *type) {
-  psx_qual_type_t qual_type = psx_resolution_store_intern_type(store, type);
-  if (!ps_node_bind_qual_type(store, node, qual_type)) {
-    psx_node_resolution_state_t *state =
-        ps_node_resolution_state(store, node);
-    if (state) state->type_binding = (psx_node_type_binding_t){0};
-  }
 }
 
 void ps_node_clear_type(psx_resolution_store_t *store, node_t *node) {

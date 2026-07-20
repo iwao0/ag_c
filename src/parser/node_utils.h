@@ -6,6 +6,7 @@
 #include "ast.h"
 #include "init_slot.h"
 #include "gvar_public.h"
+#include "../semantic/parser_type_compatibility.h"
 #include "../semantic/resolved_node_type.h"
 #include "../semantic/resolved_node_kind.h"
 #include "node_vla_public.h"

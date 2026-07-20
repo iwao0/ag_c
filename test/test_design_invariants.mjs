@@ -5006,6 +5006,18 @@ const resolutionStoreSource = await readFile(
   "src/semantic/resolution_store.c",
   "utf8",
 );
+const resolutionStoreHeader = await readFile(
+  "src/semantic/resolution_store.h",
+  "utf8",
+);
+const parserTypeCompatibilityHeader = await readFile(
+  "src/semantic/parser_type_compatibility.h",
+  "utf8",
+);
+const parserTypeCompatibilitySource = await readFile(
+  "src/semantic/parser_type_compatibility.c",
+  "utf8",
+);
 const nodeResolutionStateSource = await readFile(
   "src/semantic/resolution_state.h",
   "utf8",
@@ -5623,11 +5635,16 @@ if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
       nodeResolutionStateSource,
     ) ||
     !/psx_resolution_store_intern_type\s*\([^]*?psx_semantic_type_table_intern\s*\(/.test(
-      resolutionStoreSource,
+      parserTypeCompatibilitySource,
     ) ||
     !/ps_node_bind_type\s*\([^]*?psx_resolution_store_intern_type\s*\(/.test(
-      resolvedNodeTypeSource,
+      parserTypeCompatibilitySource,
     ) ||
+    /\bpsx_type_t\b|parser\/type\.h|type_compatibility_view\.h/.test(
+      `${resolvedNodeTypeHeader}\n${resolvedNodeTypeSource}\n${resolutionStoreHeader}\n${resolutionStoreSource}`,
+    ) ||
+    !/\bpsx_type_t\b/.test(parserTypeCompatibilityHeader) ||
+    !/type_compatibility_view\.h/.test(parserTypeCompatibilitySource) ||
     !/psx_semantic_type_table_qual_type_is_valid\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
       resolvedNodeTypeSource,
     ) ||
@@ -5846,7 +5863,7 @@ const nodeUtilsHeaderSource = await readFile(
 if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     allSourceFiles.includes("src/parser/node_resolution_state.h") ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_node_get_type\s*\(/.test(
-      resolvedNodeTypeSource,
+      parserTypeCompatibilitySource,
     ) ||
     !/\bint\s+ps_node_type_shape\s*\(/.test(
       resolvedNodeTypeHeader,
@@ -5864,7 +5881,7 @@ if (allSourceFiles.includes("src/parser/node_type_public.h") ||
       `${resolvedNodeTypeHeader}\n${resolvedNodeTypeSource}\n${nodeUtilsSource}`,
     )) {
   throw new Error(
-    "resolved node type state and its core API must be owned by the semantic layer",
+    "resolved node type state must be canonical while parser type views remain in the explicit compatibility module",
   );
 }
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(

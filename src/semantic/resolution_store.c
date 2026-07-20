@@ -6,8 +6,6 @@
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "resolution_state.h"
-#include "type_identity.h"
-#include "type_compatibility_view.h"
 
 enum { PSX_RESOLUTION_STORE_BUCKET_COUNT = 4096 };
 
@@ -69,15 +67,6 @@ void psx_resolution_store_bind_semantic_types(
 const psx_semantic_type_table_t *psx_resolution_store_semantic_types(
     const psx_resolution_store_t *store) {
   return store ? store->semantic_types : NULL;
-}
-
-psx_qual_type_t psx_resolution_store_intern_type(
-    psx_resolution_store_t *store, const psx_type_t *type) {
-  return store && store->semantic_types && type
-             ? psx_semantic_type_table_intern(
-                   store->semantic_types, type)
-             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
 }
 
 void psx_resolution_store_destroy(psx_resolution_store_t *store) {
