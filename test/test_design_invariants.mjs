@@ -13734,23 +13734,35 @@ const wasmWatCallSerializer = wasmWatWriterSource.match(
   /static\s+void\s+emit_call\s*\([^]*?\)\s*\{([^]*?)\n\}/,
 );
 if (!wasmWatCallSerializer ||
-    !/int\s+wasm32_wat_runtime_plan_call\s*\(/.test(
+    !/int\s+wasm32_wat_runtime_module_plan_build\s*\(/.test(
       wasmWatRuntimeSource,
     ) ||
-    !/wasm32_wat_runtime_call_plan_dispose\s*\(/.test(
+    !/wasm32_wat_runtime_module_plan_call\s*\(/.test(
       wasmWatRuntimeSource,
     ) ||
-    !/wasm32_wat_runtime_plan_call\s*\(/.test(
+    !/wasm32_wat_runtime_module_plan_dispose\s*\(/.test(
+      wasmWatRuntimeSource,
+    ) ||
+    !/wasm32_wat_runtime_module_plan_build\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_wat_runtime_module_plan_dispose\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/wasm32_wat_runtime_module_plan_call\s*\(/.test(
       wasmWatCallSerializer[1],
     ) ||
-    !/wasm32_wat_runtime_call_plan_dispose\s*\(/.test(
+    /wasm32_wat_runtime_(?:plan_call|call_plan_dispose)\s*\(/.test(
+      wasmWatCallSerializer[1],
+    ) ||
+    /\b(?:calloc|malloc|realloc|free)\s*\(/.test(
       wasmWatCallSerializer[1],
     ) ||
     /"(?:printf|fprintf|snprintf|swprintf|sscanf|swscanf|scalbln|scalblnf|scalblnl)"/.test(
       wasmWatCallSerializer[1],
     )) {
   throw new Error(
-    "Wasm WAT writer must serialize runtime bridge call plans without selecting symbol-specific argument ABI",
+    "Wasm WAT writer must consume prebuilt runtime bridge call plans without planning or allocation",
   );
 }
 

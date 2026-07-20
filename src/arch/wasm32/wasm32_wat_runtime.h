@@ -41,12 +41,32 @@ typedef struct {
   int argument_count;
 } wasm32_wat_runtime_call_plan_t;
 
+typedef struct {
+  const wasm32_machine_inst_t *instruction;
+  wasm32_wat_runtime_call_plan_t call;
+} wasm32_wat_runtime_call_plan_entry_t;
+
+typedef struct {
+  wasm32_wat_runtime_call_plan_entry_t *entries;
+  size_t entry_count;
+} wasm32_wat_runtime_module_plan_t;
+
 int wasm32_wat_runtime_plan_call(
     const char *name, int name_len, int is_undefined,
     const wasm32_machine_call_t *call,
     wasm32_wat_runtime_call_plan_t *plan);
 void wasm32_wat_runtime_call_plan_dispose(
     wasm32_wat_runtime_call_plan_t *plan);
+int wasm32_wat_runtime_module_plan_build(
+    const wasm32_machine_function_t *functions,
+    size_t function_count,
+    wasm32_wat_runtime_module_plan_t *plan);
+const wasm32_wat_runtime_call_plan_t *
+wasm32_wat_runtime_module_plan_call(
+    const wasm32_wat_runtime_module_plan_t *plan,
+    const wasm32_machine_inst_t *instruction);
+void wasm32_wat_runtime_module_plan_dispose(
+    wasm32_wat_runtime_module_plan_t *plan);
 
 ag_codegen_emit_context_t *wasm32_ir_emit_context(
     wasm32_ir_context_t *context);

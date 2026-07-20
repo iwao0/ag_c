@@ -82,6 +82,7 @@ struct wasm32_ir_context_t {
   wasm_func_table_ctx_t func_table;
   wasm_function_symbol_ctx_t function_symbols;
   const wasm32_machine_primitive_plan_t *primitives;
+  wasm32_wat_runtime_module_plan_t runtime_calls;
 };
 
 wasm32_ir_context_t *wasm32_ir_context_create(
@@ -97,6 +98,7 @@ wasm32_ir_context_t *wasm32_ir_context_create(
 
 void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
   if (!ctx) return;
+  wasm32_wat_runtime_module_plan_dispose(&ctx->runtime_calls);
   for (int i = 0; i < ctx->data.symbol_count; i++)
     free(ctx->data.symbols[i].name);
   for (int i = 0; i < ctx->func_table.ref_count; i++)
@@ -1276,23 +1278,21 @@ static void emit_call(
   } else {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
   }
-  wasm32_wat_runtime_call_plan_t runtime_plan;
-  if (!wasm32_wat_runtime_plan_call(
-          i->sym, i->sym_len,
-          !has_defined_function(context, i->sym, i->sym_len),
-          call, &runtime_plan))
+  const wasm32_wat_runtime_call_plan_t *runtime_plan =
+      wasm32_wat_runtime_module_plan_call(
+          &context->runtime_calls, i);
+  if (!runtime_plan)
     wasm_unsupported_msg(
-        context, "failed to plan Wasm runtime call arguments");
-  for (int index = 0; index < runtime_plan.argument_count; index++) {
+        context, "missing preplanned Wasm runtime call arguments");
+  for (int index = 0; index < runtime_plan->argument_count; index++) {
     const wasm32_wat_runtime_argument_t *argument =
-        &runtime_plan.arguments[index];
+        &runtime_plan->arguments[index];
     if (argument->kind == WASM32_WAT_RUNTIME_ARGUMENT_ZERO_I64) {
       wasm_cg_emitf(" (i64.const 0)");
       continue;
     }
     if (argument->source_index < 0 ||
         argument->source_index >= argument_count) {
-      wasm32_wat_runtime_call_plan_dispose(&runtime_plan);
       wasm_unsupported_msg(
           context, "invalid Wasm runtime call argument plan");
     }
@@ -1301,7 +1301,6 @@ static void emit_call(
         ctx, &arguments[argument->source_index],
         argument->value_type);
   }
-  wasm32_wat_runtime_call_plan_dispose(&runtime_plan);
   wasm_cg_emitf(")");
   if ((!returns_hidden &&
        !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) ||
@@ -1772,10 +1771,20 @@ void wasm32_gen_machine_module_in(
       wasm_unsupported_msg(context, "incomplete Wasm machine module");
     register_function_definition(context, machine);
   }
+  wasm32_wat_runtime_module_plan_dispose(
+      &context->runtime_calls);
+  if (!wasm32_wat_runtime_module_plan_build(
+          machine_module->functions,
+          machine_module->function_count,
+          &context->runtime_calls))
+    wasm_unsupported_msg(
+        context, "failed to preplan Wasm runtime calls");
   for (size_t index = 0; index < machine_module->function_count; index++)
     emit_func(
         context,
         wasm32_machine_module_function(machine_module, index));
+  wasm32_wat_runtime_module_plan_dispose(
+      &context->runtime_calls);
   g_machine_primitives = NULL;
 }
 

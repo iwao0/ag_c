@@ -183,6 +183,99 @@ fail:
   return 0;
 }
 
+static int runtime_module_has_function(
+    const wasm32_machine_function_t *functions,
+    size_t function_count, const char *name, int name_len) {
+  if (!functions || !name || name_len <= 0) return 0;
+  for (size_t index = 0; index < function_count; index++) {
+    const wasm32_machine_function_t *function = &functions[index];
+    if (function->name && function->name_len == name_len &&
+        memcmp(function->name, name, (size_t)name_len) == 0)
+      return 1;
+  }
+  return 0;
+}
+
+void wasm32_wat_runtime_module_plan_dispose(
+    wasm32_wat_runtime_module_plan_t *plan) {
+  if (!plan) return;
+  for (size_t index = 0; index < plan->entry_count; index++)
+    wasm32_wat_runtime_call_plan_dispose(
+        &plan->entries[index].call);
+  free(plan->entries);
+  *plan = (wasm32_wat_runtime_module_plan_t){0};
+}
+
+int wasm32_wat_runtime_module_plan_build(
+    const wasm32_machine_function_t *functions,
+    size_t function_count,
+    wasm32_wat_runtime_module_plan_t *plan) {
+  if (plan) *plan = (wasm32_wat_runtime_module_plan_t){0};
+  if (!plan || (function_count > 0 && !functions)) return 0;
+  for (size_t function_index = 0;
+       function_index < function_count; function_index++) {
+    const wasm32_machine_function_t *function =
+        &functions[function_index];
+    for (int instruction_index = 0;
+         instruction_index < function->instruction_count;
+         instruction_index++) {
+      const wasm32_machine_inst_t *instruction =
+          &function->instructions[instruction_index];
+      if (instruction->kind == WASM32_MACHINE_INST_CALL &&
+          instruction->callee.id == IR_VAL_NONE)
+        plan->entry_count++;
+    }
+  }
+  if (plan->entry_count > 0) {
+    plan->entries = calloc(
+        plan->entry_count, sizeof(*plan->entries));
+    if (!plan->entries) goto fail;
+  }
+  size_t output = 0;
+  for (size_t function_index = 0;
+       function_index < function_count; function_index++) {
+    const wasm32_machine_function_t *function =
+        &functions[function_index];
+    for (int instruction_index = 0;
+         instruction_index < function->instruction_count;
+         instruction_index++) {
+      const wasm32_machine_inst_t *instruction =
+          &function->instructions[instruction_index];
+      if (instruction->kind != WASM32_MACHINE_INST_CALL ||
+          instruction->callee.id != IR_VAL_NONE)
+        continue;
+      wasm32_wat_runtime_call_plan_entry_t *entry =
+          &plan->entries[output++];
+      entry->instruction = instruction;
+      int is_undefined = !runtime_module_has_function(
+          functions, function_count,
+          instruction->sym, instruction->sym_len);
+      if (!wasm32_wat_runtime_plan_call(
+              instruction->sym, instruction->sym_len,
+              is_undefined, &instruction->call, &entry->call))
+        goto fail;
+    }
+  }
+  if (output != plan->entry_count) goto fail;
+  return 1;
+
+fail:
+  wasm32_wat_runtime_module_plan_dispose(plan);
+  return 0;
+}
+
+const wasm32_wat_runtime_call_plan_t *
+wasm32_wat_runtime_module_plan_call(
+    const wasm32_wat_runtime_module_plan_t *plan,
+    const wasm32_machine_inst_t *instruction) {
+  if (!plan || !instruction) return NULL;
+  for (size_t index = 0; index < plan->entry_count; index++) {
+    if (plan->entries[index].instruction == instruction)
+      return &plan->entries[index].call;
+  }
+  return NULL;
+}
+
 static void emit_minimal_static_data_if_needed(
     wasm32_ir_context_t *context) {
   if (has_undefined_function("setlocale", 9) || has_undefined_function("localeconv", 10)) {
