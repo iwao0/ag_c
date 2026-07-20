@@ -162,8 +162,9 @@ static int semantic_integer_rank(const psx_type_shape_t *shape) {
   }
 }
 
-static int semantic_type_node_matches(
-    const psx_type_shape_t *canonical, const psx_type_t *candidate) {
+static int semantic_type_shapes_match(
+    const psx_type_shape_t *canonical,
+    const psx_type_shape_t *candidate) {
   if (!canonical || !candidate || canonical->kind != candidate->kind)
     return 0;
   switch (canonical->kind) {
@@ -174,22 +175,22 @@ static int semantic_type_node_matches(
           candidate->integer_kind == PSX_INTEGER_KIND_ENUM) {
         if (canonical->integer_kind != PSX_INTEGER_KIND_ENUM ||
             candidate->integer_kind != PSX_INTEGER_KIND_ENUM ||
-            canonical->enum_tag_length != candidate->tag_len)
+            canonical->enum_tag_length != candidate->enum_tag_length)
           return 0;
         if (canonical->enum_tag_length > 0 &&
-            (!canonical->enum_tag_name || !candidate->tag_name ||
-             strncmp(canonical->enum_tag_name, candidate->tag_name,
+            (!canonical->enum_tag_name || !candidate->enum_tag_name ||
+             strncmp(canonical->enum_tag_name, candidate->enum_tag_name,
                      (size_t)canonical->enum_tag_length) != 0))
           return 0;
         return canonical->enum_tag_scope_depth_p1 == 0 ||
-               candidate->tag_scope_depth_p1 == 0 ||
+               candidate->enum_tag_scope_depth_p1 == 0 ||
                canonical->enum_tag_scope_depth_p1 ==
-                   candidate->tag_scope_depth_p1;
+                   candidate->enum_tag_scope_depth_p1;
       }
       return canonical->is_unsigned == candidate->is_unsigned &&
              canonical->is_plain_char == candidate->is_plain_char &&
              semantic_integer_rank(canonical) ==
-                 ps_type_integer_rank(candidate);
+                 semantic_integer_rank(candidate);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       return canonical->floating_kind == candidate->floating_kind;
@@ -201,9 +202,9 @@ static int semantic_type_node_matches(
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
       return canonical->record_id != PSX_RECORD_ID_INVALID &&
-             canonical->record_id == ps_type_record_id(candidate);
+             canonical->record_id == candidate->record_id;
     case PSX_TYPE_FUNCTION:
-      return canonical->parameter_count == candidate->param_count &&
+      return canonical->parameter_count == candidate->parameter_count &&
              canonical->has_function_prototype ==
                  candidate->has_function_prototype &&
              canonical->is_variadic_function ==
@@ -214,6 +215,120 @@ static int semantic_type_node_matches(
     default:
       return 0;
   }
+}
+
+static int semantic_type_node_matches(
+    const psx_type_shape_t *canonical, const psx_type_t *candidate) {
+  if (!candidate) return 0;
+  psx_type_shape_t candidate_shape = semantic_type_shape(candidate);
+  return semantic_type_shapes_match(canonical, &candidate_shape);
+}
+
+static psx_type_id_t semantic_scalar_type_id(
+    const psx_semantic_type_table_t *table,
+    const psx_type_shape_t *shape, psx_qual_type_t base_type) {
+  if (!table || !shape) return PSX_TYPE_ID_INVALID;
+  for (psx_type_id_t id = 1; id <= table->next_id; id++) {
+    if (!semantic_type_id_is_valid(table, id)) continue;
+    const psx_semantic_type_entry_t *entry = &table->entries[id];
+    if (entry->parameter_count == 0 &&
+        semantic_type_shapes_match(&entry->shape, shape) &&
+        entry->base_type.type_id == base_type.type_id &&
+        entry->base_type.qualifiers == base_type.qualifiers)
+      return id;
+  }
+  return PSX_TYPE_ID_INVALID;
+}
+
+static psx_type_t *semantic_scalar_compatibility_type(
+    psx_semantic_type_table_t *table,
+    const psx_type_shape_t *shape, psx_qual_type_t base_type) {
+  if (!table || !shape) return NULL;
+  psx_type_t *type = arena_alloc_in(
+      table->arena_context, sizeof(*type));
+  if (!type) return NULL;
+  memset(type, 0, sizeof(*type));
+  type->kind = shape->kind;
+  type->integer_kind = shape->integer_kind;
+  type->floating_kind = shape->floating_kind;
+  type->is_unsigned = shape->is_unsigned;
+  type->is_plain_char = shape->is_plain_char;
+  if (base_type.type_id != PSX_TYPE_ID_INVALID) {
+    type->base = psx_semantic_type_table_lookup(
+        table, base_type.type_id);
+    if (!type->base) return NULL;
+  }
+  return type;
+}
+
+static psx_qual_type_t semantic_type_table_intern_scalar_shape(
+    psx_semantic_type_table_t *table,
+    const psx_type_shape_t *shape, psx_qual_type_t base_type) {
+  if (!table || !shape) return invalid_qual_type();
+  psx_type_id_t existing = semantic_scalar_type_id(
+      table, shape, base_type);
+  if (existing != PSX_TYPE_ID_INVALID)
+    return (psx_qual_type_t){existing, PSX_TYPE_QUALIFIER_NONE};
+  if (table->next_id == UINT_MAX) return invalid_qual_type();
+  psx_type_id_t id = table->next_id + 1;
+  if (!reserve_type_id(table, id)) return invalid_qual_type();
+  psx_type_t *compatibility_type =
+      semantic_scalar_compatibility_type(table, shape, base_type);
+  if (!compatibility_type) return invalid_qual_type();
+  table->entries[id].shape = *shape;
+  table->entries[id].type = compatibility_type;
+  table->entries[id].base_type = base_type;
+  table->entries[id].canonical_relations_materialized = 1;
+  table->next_id = id;
+  return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_qual_type_t psx_semantic_type_table_intern_integer(
+    psx_semantic_type_table_t *table,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char) {
+  if (integer_kind <= PSX_INTEGER_KIND_NONE ||
+      integer_kind >= PSX_INTEGER_KIND_ENUM)
+    return invalid_qual_type();
+  psx_type_shape_t shape = {
+      .kind = integer_kind == PSX_INTEGER_KIND_BOOL
+                  ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER,
+      .integer_kind = integer_kind,
+      .is_unsigned = is_unsigned ? 1 : 0,
+      .is_plain_char = integer_kind == PSX_INTEGER_KIND_CHAR &&
+                               is_plain_char
+                           ? 1 : 0,
+  };
+  return semantic_type_table_intern_scalar_shape(
+      table, &shape, invalid_qual_type());
+}
+
+psx_qual_type_t psx_semantic_type_table_intern_floating(
+    psx_semantic_type_table_t *table,
+    psx_floating_kind_t floating_kind, int is_complex) {
+  if (floating_kind <= PSX_FLOATING_KIND_NONE ||
+      floating_kind > PSX_FLOATING_KIND_LONG_DOUBLE)
+    return invalid_qual_type();
+  psx_qual_type_t base_type = invalid_qual_type();
+  if (is_complex) {
+    base_type = psx_semantic_type_table_intern_floating(
+        table, floating_kind, 0);
+    if (base_type.type_id == PSX_TYPE_ID_INVALID)
+      return invalid_qual_type();
+  }
+  psx_type_shape_t shape = {
+      .kind = is_complex ? PSX_TYPE_COMPLEX : PSX_TYPE_FLOAT,
+      .floating_kind = floating_kind,
+  };
+  return semantic_type_table_intern_scalar_shape(
+      table, &shape, base_type);
+}
+
+psx_qual_type_t psx_semantic_type_table_intern_void(
+    psx_semantic_type_table_t *table) {
+  const psx_type_shape_t shape = {.kind = PSX_TYPE_VOID};
+  return semantic_type_table_intern_scalar_shape(
+      table, &shape, invalid_qual_type());
 }
 
 static int semantic_type_entry_matches(

@@ -332,10 +332,9 @@ psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   }
-  const psx_type_t *type = ps_type_new_integer_kind_in(
-      context->arena_context, integer_kind, is_unsigned,
+  return psx_semantic_type_table_intern_integer(
+      context->semantic_types, integer_kind, is_unsigned,
       is_plain_char);
-  return ps_ctx_intern_qual_type_in(context, type);
 }
 
 psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
@@ -345,10 +344,8 @@ psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   }
-  return ps_ctx_intern_qual_type_in(
-      context,
-      ps_type_new_floating_in(
-          context->arena_context, floating_kind, is_complex));
+  return psx_semantic_type_table_intern_floating(
+      context->semantic_types, floating_kind, is_complex);
 }
 
 psx_qual_type_t ps_ctx_intern_void_qual_type_in(
@@ -357,9 +354,8 @@ psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   }
-  return ps_ctx_intern_qual_type_in(
-      context,
-      ps_type_new_in(context->arena_context, PSX_TYPE_VOID));
+  return psx_semantic_type_table_intern_void(
+      context->semantic_types);
 }
 
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(

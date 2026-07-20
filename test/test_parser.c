@@ -28436,6 +28436,54 @@ static void test_semantic_type_identity() {
       plain_int_identity.type_id, &plain_int_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, plain_int_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, plain_int_shape.integer_kind);
+  ASSERT_EQ(plain_int_identity.type_id,
+            ps_ctx_intern_integer_qual_type_in(
+                context, PSX_INTEGER_KIND_INT, 0, 0).type_id);
+  ASSERT_EQ(ps_ctx_intern_qual_type_in(context, boolean).type_id,
+            ps_ctx_intern_integer_qual_type_in(
+                context, PSX_INTEGER_KIND_BOOL, 0, 0).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_integer_qual_type_in(
+                context, PSX_INTEGER_KIND_ENUM, 0, 0).type_id);
+
+  psx_qual_type_t direct_float =
+      ps_ctx_intern_floating_qual_type_in(
+          context, PSX_FLOATING_KIND_FLOAT, 0);
+  psx_qual_type_t parser_float = ps_ctx_intern_qual_type_in(
+      context, ps_type_new_floating_in(
+                   test_arena_context(), PSX_FLOATING_KIND_FLOAT, 0));
+  ASSERT_TRUE(direct_float.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(direct_float.type_id, parser_float.type_id);
+  psx_qual_type_t direct_float_complex =
+      ps_ctx_intern_floating_qual_type_in(
+          context, PSX_FLOATING_KIND_FLOAT, 1);
+  ASSERT_TRUE(direct_float_complex.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(direct_float.type_id,
+            psx_semantic_type_table_base(
+                ps_ctx_semantic_type_table_in(context),
+                direct_float_complex.type_id).type_id);
+  psx_type_shape_t direct_float_complex_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(context),
+      direct_float_complex.type_id, &direct_float_complex_shape));
+  ASSERT_EQ(PSX_TYPE_COMPLEX, direct_float_complex_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
+            direct_float_complex_shape.floating_kind);
+  const psx_type_t *direct_float_complex_view =
+      ps_ctx_type_by_id_in(context, direct_float_complex.type_id);
+  ASSERT_TRUE(direct_float_complex_view != NULL);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, direct_float_complex_view->kind);
+  ASSERT_TRUE(direct_float_complex_view->base ==
+              ps_ctx_type_by_id_in(context, direct_float.type_id));
+
+  psx_qual_type_t direct_void =
+      ps_ctx_intern_void_qual_type_in(context);
+  psx_qual_type_t parser_void = ps_ctx_intern_qual_type_in(
+      context, ps_type_new_in(test_arena_context(), PSX_TYPE_VOID));
+  ASSERT_TRUE(direct_void.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(direct_void.type_id, parser_void.type_id);
+  ASSERT_EQ(PSX_TYPE_VOID,
+            ps_ctx_type_by_id_in(context, direct_void.type_id)->kind);
 
   psx_type_t *first_enum = ps_type_new_enum_in(
       test_arena_context(), (char *)"SemanticMode", 12, 2);

@@ -18,6 +18,15 @@ psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type);
 psx_qual_type_t psx_semantic_type_table_find(
     const psx_semantic_type_table_t *table, const psx_type_t *type);
+psx_qual_type_t psx_semantic_type_table_intern_integer(
+    psx_semantic_type_table_t *table,
+    psx_integer_kind_t integer_kind, int is_unsigned,
+    int is_plain_char);
+psx_qual_type_t psx_semantic_type_table_intern_floating(
+    psx_semantic_type_table_t *table,
+    psx_floating_kind_t floating_kind, int is_complex);
+psx_qual_type_t psx_semantic_type_table_intern_void(
+    psx_semantic_type_table_t *table);
 psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
     psx_semantic_type_table_t *table, psx_qual_type_t pointee);
 psx_qual_type_t psx_semantic_type_table_intern_array_of(

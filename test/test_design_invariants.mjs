@@ -8632,6 +8632,52 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
   );
 }
+for (const [contextInterner, tableInterner] of [
+  ["ps_ctx_intern_integer_qual_type_in",
+   "psx_semantic_type_table_intern_integer"],
+  ["ps_ctx_intern_floating_qual_type_in",
+   "psx_semantic_type_table_intern_floating"],
+  ["ps_ctx_intern_void_qual_type_in",
+   "psx_semantic_type_table_intern_void"],
+]) {
+  const implementation = parserSemanticContextImplementation.match(
+    new RegExp(
+      `psx_qual_type_t\\s+${contextInterner}\\s*\\([^]*?\\n\\}`,
+    ),
+  );
+  if (!implementation ||
+      !new RegExp(`\\b${tableInterner}\\s*\\(`).test(implementation[0]) ||
+      /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bps_ctx_intern_qual_type_in\s*\(/.test(
+        implementation[0],
+      ) ||
+      !new RegExp(`\\b${tableInterner}\\s*\\(`).test(
+        semanticTypeIdentityHeader,
+      ) ||
+      !new RegExp(`\\b${tableInterner}\\s*\\(`).test(
+        semanticTypeIdentitySource,
+      )) {
+    throw new Error(
+      `${contextInterner} must intern an immutable scalar TypeShape without constructing a parser type`,
+    );
+  }
+}
+const directScalarShapeInterner = semanticTypeIdentitySource.match(
+  /static\s+psx_qual_type_t\s+semantic_type_table_intern_scalar_shape\s*\([^]*?\n\}/,
+);
+if (!directScalarShapeInterner ||
+    !/table->entries\[id\]\.shape\s*=\s*\*shape\s*;/.test(
+      directScalarShapeInterner[0],
+    ) ||
+    !/table->entries\[id\]\.base_type\s*=\s*base_type\s*;/.test(
+      directScalarShapeInterner[0],
+    ) ||
+    /\bps_type_new_[A-Za-z0-9_]*\s*\(|\bpsx_semantic_type_table_intern\s*\(/.test(
+      directScalarShapeInterner[0],
+    )) {
+  throw new Error(
+    "semantic scalar TypeIds must be interned directly from TypeShape while parser types remain compatibility views",
+  );
+}
 const exactIntVoidTypePredicate = semanticTypeIdentitySource.match(
   /int\s+psx_semantic_type_is_exact_int_void_function\s*\([^]*?\n\}/,
 );
