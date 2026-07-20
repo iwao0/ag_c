@@ -179,26 +179,33 @@ static void apply_decl_tag_action(
   }
 }
 
-static psx_type_t *build_parsed_type_name(
+static psx_qual_type_t resolve_parsed_type_name_qual_type(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name) {
-  if (!type_name) return NULL;
-  psx_type_t *base_type = NULL;
+  if (!type_name)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t base_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (type_name->atomic_inner) {
-    base_type = build_parsed_type_name(
+    base_qual_type = resolve_parsed_type_name_qual_type(
         semantic_context, global_registry, local_registry,
         type_name->atomic_inner);
-    if (!base_type) return NULL;
-    ps_type_add_qualifiers(base_type, PSX_TYPE_QUALIFIER_ATOMIC);
+    if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
+      return base_qual_type;
+    base_qual_type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
   } else {
     apply_decl_tag_action(
         &type_name->specifier.tag_action, semantic_context,
         global_registry, local_registry);
-    base_type = psx_build_decl_specifier_type_in_context(
+    const psx_type_t *base_type = psx_build_decl_specifier_type_in_context(
         semantic_context, &type_name->specifier);
-    if (!base_type) return NULL;
+    base_qual_type = ps_ctx_intern_declaration_qual_type_in(
+        semantic_context, base_type);
+    if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
+      return base_qual_type;
   }
 
   psx_declarator_shape_t shape;
@@ -206,11 +213,10 @@ static psx_type_t *build_parsed_type_name(
   psx_apply_parsed_declarator_in_contexts(
       semantic_context, global_registry, local_registry,
       &type_name->declarator, &shape, NULL);
-  return psx_build_decl_type(
+  return psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
-          .base_qual_type = ps_ctx_intern_declaration_qual_type_in(
-              semantic_context, base_type),
+          .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
 }
@@ -221,8 +227,10 @@ const psx_type_t *psx_apply_parsed_type_name_in_contexts(
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name) {
   if (!semantic_context || !global_registry || !local_registry) return NULL;
-  return build_parsed_type_name(
+  psx_qual_type_t resolved = resolve_parsed_type_name_qual_type(
       semantic_context, global_registry, local_registry, type_name);
+  return psx_semantic_type_table_lookup_qual_type(
+      ps_ctx_semantic_type_table_in(semantic_context), resolved);
 }
 
 const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
@@ -259,17 +267,12 @@ psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
   psx_apply_parsed_declarator_in_contexts(
       semantic_context, global_registry, local_registry,
       declarator, &shape, NULL);
-  const psx_type_t *resolved = psx_resolve_decl_type(
+  return psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
           .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
-  if (!resolved) {
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  }
-  return ps_ctx_intern_qual_type_in(semantic_context, resolved);
 }
 
 const psx_type_t *psx_apply_runtime_declarator_type_in_context(
@@ -296,17 +299,12 @@ psx_qual_type_t psx_apply_runtime_declarator_qual_type_in_context(
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
   }
-  const psx_type_t *resolved = psx_resolve_decl_type(
+  return psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
           .base_qual_type = base_qual_type,
           .declarator_shape = &application->shape,
       });
-  if (!resolved) {
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  }
-  return ps_ctx_intern_qual_type_in(semantic_context, resolved);
 }
 
 int psx_compose_runtime_declarator_applications_in(

@@ -5,7 +5,6 @@
 #include "../parser/type_builder.h"
 #include "../parser/vla_runtime.h"
 #include "../type_layout.h"
-#include "declaration_type_builder.h"
 
 #include <string.h>
 
@@ -29,6 +28,22 @@ static int request_shape_has(
              request->type.declarator_shape, kind) > 0;
 }
 
+static int derived_leaf_is_aggregate(
+    const psx_semantic_type_table_t *types,
+    psx_type_id_t type_id) {
+  psx_type_shape_t shape = {0};
+  while (psx_semantic_type_table_describe(types, type_id, &shape) &&
+         (shape.kind == PSX_TYPE_POINTER ||
+          shape.kind == PSX_TYPE_ARRAY)) {
+    psx_qual_type_t base =
+        psx_semantic_type_table_base(types, type_id);
+    if (base.type_id == PSX_TYPE_ID_INVALID) return 0;
+    type_id = base.type_id;
+  }
+  return shape.kind == PSX_TYPE_STRUCT ||
+         shape.kind == PSX_TYPE_UNION;
+}
+
 int psx_resolve_parameter_declaration(
     const psx_parameter_declaration_resolution_request_t *request,
     psx_parameter_declaration_resolution_t *resolution) {
@@ -37,10 +52,8 @@ int psx_resolve_parameter_declaration(
     return 0;
   }
   memset(resolution, 0, sizeof(*resolution));
-  psx_type_t *type = psx_build_decl_type(&request->type);
-  if (!type) return 0;
-  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
-      request->type.semantic_context, type);
+  psx_qual_type_t identity =
+      psx_resolve_decl_qual_type(&request->type);
   psx_type_shape_t shape = {0};
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(request->type.semantic_context);
@@ -73,8 +86,8 @@ int psx_resolve_parameter_declaration(
   resolution->function_qual_type.qualifiers =
       PSX_TYPE_QUALIFIER_NONE;
 
-  const psx_type_t *leaf = ps_type_derived_leaf_type(type);
-  int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);
+  int leaf_is_aggregate = derived_leaf_is_aggregate(
+      types, identity.type_id);
   int has_pointer = request_shape_has(request, PSX_DECL_OP_POINTER);
   int has_array = request_shape_has(request, PSX_DECL_OP_ARRAY);
   int has_function = request_shape_has(request, PSX_DECL_OP_FUNCTION);

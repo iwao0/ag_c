@@ -23,8 +23,6 @@ typedef struct {
 typedef int (*psx_incomplete_array_constant_index_resolver_t)(
     void *context, const node_t *expression, long long *value);
 
-const psx_type_t *psx_resolve_decl_type(
-    const psx_decl_type_request_t *request);
 psx_qual_type_t psx_resolve_decl_qual_type(
     const psx_decl_type_request_t *request);
 const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(

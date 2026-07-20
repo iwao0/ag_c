@@ -16058,12 +16058,16 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_init(&member_shape);
   ps_declarator_shape_append_pointer(&member_shape, 0, 0);
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
-  const psx_type_t *member_type = psx_resolve_decl_type(
+  psx_qual_type_t member_qual_type = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = test_semantic_context(),
           .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_INT, 4, 0)),
           .declarator_shape = &member_shape,
       });
+  const psx_type_t *member_type =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          member_qual_type);
   ASSERT_TRUE(member_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, member_type->kind);
   ASSERT_TRUE(member_type->base != NULL);
@@ -16088,12 +16092,18 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_pointer(
       &pointer_array_shape, 0, 0);
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
-  const psx_type_t *pointer_array_member = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .semantic_context = test_semantic_context(),
-          .base_qual_type = intern_test_declaration_qual_type(ps_type_new_integer(TK_INT, 4, 0)),
-          .declarator_shape = &pointer_array_shape,
-      });
+  psx_qual_type_t pointer_array_member_qual_type =
+      psx_resolve_decl_qual_type(
+          &(psx_decl_type_request_t){
+              .semantic_context = test_semantic_context(),
+              .base_qual_type = intern_test_declaration_qual_type(
+                  ps_type_new_integer(TK_INT, 4, 0)),
+              .declarator_shape = &pointer_array_shape,
+          });
+  const psx_type_t *pointer_array_member =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          pointer_array_member_qual_type);
   ASSERT_TRUE(pointer_array_member != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, pointer_array_member->kind);
   ASSERT_EQ(2, pointer_array_member->array_len);
@@ -16161,12 +16171,18 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_init(&incomplete_pointer_shape);
   ps_declarator_shape_append_pointer(
       &incomplete_pointer_shape, 0, 0);
-  const psx_type_t *incomplete_pointer = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .semantic_context = test_semantic_context(),
-          .base_qual_type = intern_test_declaration_qual_type(incomplete_base),
-          .declarator_shape = &incomplete_pointer_shape,
-      });
+  psx_qual_type_t incomplete_pointer_qual_type =
+      psx_resolve_decl_qual_type(
+          &(psx_decl_type_request_t){
+              .semantic_context = test_semantic_context(),
+              .base_qual_type = intern_test_declaration_qual_type(
+                  incomplete_base),
+              .declarator_shape = &incomplete_pointer_shape,
+          });
+  const psx_type_t *incomplete_pointer =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          incomplete_pointer_qual_type);
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){

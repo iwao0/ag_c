@@ -94,7 +94,8 @@ static const psx_type_t *resolve_decl_qual_type_view(
              : NULL;
 }
 
-psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
+static psx_type_t *build_decl_type_value(
+    const psx_decl_type_request_t *request) {
   if (!request || !request->semantic_context ||
       request->base_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
@@ -115,23 +116,12 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
   return type;
 }
 
-const psx_type_t *psx_resolve_decl_type(
-    const psx_decl_type_request_t *request) {
-  psx_qual_type_t resolved = psx_resolve_decl_qual_type(request);
-  return request && request->semantic_context
-             ? psx_semantic_type_table_lookup_qual_type(
-                   ps_ctx_semantic_type_table_in(
-                       request->semantic_context),
-                   resolved)
-             : NULL;
-}
-
 psx_qual_type_t psx_resolve_decl_qual_type(
     const psx_decl_type_request_t *request) {
   if (!request || !request->semantic_context)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
-  psx_type_t *resolved = psx_build_decl_type(request);
+  psx_type_t *resolved = build_decl_type_value(request);
   return ps_ctx_intern_declaration_qual_type_in(
       request->semantic_context, resolved);
 }

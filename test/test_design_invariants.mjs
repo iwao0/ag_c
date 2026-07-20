@@ -3293,7 +3293,10 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionType[1],
     ) ||
     /\bpsx_type_t\b/.test(aggregateMemberResolutionType[1]) ||
-    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+    !/\bpsx_resolve_decl_qual_type\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    /\bpsx_type_t\b|\bpsx_build_decl_type\s*\(|\bpsx_resolve_decl_type\s*\(|\bps_ctx_intern_qual_type_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
@@ -8287,7 +8290,7 @@ if (!automaticLocalPipeline ||
     /\bps_ctx_intern_qual_type_in\s*\(/.test(
       automaticLocalPipeline[0],
     ) ||
-    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bps_type_sizeof_id\s*\(/.test(
+    !/\bpsx_resolve_decl_qual_type\s*\([^]*?\bps_type_sizeof_id\s*\(/.test(
       parameterDeclarationResolutionSource,
     ) ||
     /\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
@@ -9415,7 +9418,6 @@ if (!/\bpsx_qual_type_t\s+psx_apply_parsed_declarator_qual_type_in_contexts\s*\(
 }
 
 const readonlySemanticTypeResults = [
-  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_type"],
   ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax_in_context"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier_in_contexts"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
@@ -9433,13 +9435,14 @@ for (const [file, functionName] of readonlySemanticTypeResults) {
   }
 }
 
+const declarationResolutionHeader = await readFile(
+  "src/semantic/declaration_resolution.h",
+  "utf8",
+);
 const declarationTypeBuilderUsers = new Set([
   "src/semantic/declaration_type_builder.h",
   "src/semantic/declaration_resolution.c",
   "src/semantic/declaration_application.c",
-  "src/semantic/type_name_resolution.c",
-  "src/semantic/aggregate_member_resolution.c",
-  "src/semantic/parameter_declaration_resolution.c",
 ]);
 const declarationTypeBuilderViolations = [];
 for (const file of sourceFiles) {
@@ -9455,16 +9458,49 @@ if (declarationTypeBuilderViolations.length) {
       declarationTypeBuilderViolations.sort().join("\n"),
   );
 }
+if (/\bpsx_build_decl_type\b/.test(
+      `${declarationResolutionHeader}\n${declarationResolutionSource}`,
+    ) ||
+    !/static\s+psx_type_t\s*\*build_decl_type_value\s*\(/.test(
+      declarationResolutionSource,
+    )) {
+  throw new Error(
+    "mutable declarator type construction must remain private to declaration resolution",
+  );
+}
 
-const declarationResolutionHeader = await readFile(
-  "src/semantic/declaration_resolution.h",
-  "utf8",
-);
+const canonicalDeclarationTypeConsumers = [
+  ["aggregate member resolution", aggregateMemberResolutionSource],
+  ["parameter declaration resolution", parameterDeclarationResolutionSource],
+  ["declaration application", declarationApplicationSource],
+  ["function definition pipeline", declarationPipelineSource],
+];
+for (const [name, source] of canonicalDeclarationTypeConsumers) {
+  if (!/\bpsx_resolve_decl_qual_type\s*\(/.test(source) ||
+      /\bpsx_build_decl_type\s*\(|\bpsx_resolve_decl_type\s*\(/.test(
+        source,
+      )) {
+    throw new Error(
+      `${name} must consume declaration types through canonical QualType`,
+    );
+  }
+}
+if (/\bps_type_derived_leaf_type\s*\(|\bps_type_is_tag_aggregate\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "parameter declaration adjustment must traverse canonical TypeId relations",
+  );
+}
+
 const declarationQualTypeCore = declarationResolutionSource.match(
   /psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\([^]*?\n\}/,
-);
-const declarationTypeViewAdapter = declarationResolutionSource.match(
-  /const psx_type_t\s*\*psx_resolve_decl_type\s*\([^]*?\n\}/,
 );
 if (!/psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\(/.test(
       declarationResolutionHeader,
@@ -9473,15 +9509,11 @@ if (!/psx_qual_type_t\s+psx_resolve_decl_qual_type\s*\(/.test(
     !/ps_ctx_intern_declaration_qual_type_in\s*\(/.test(
       declarationQualTypeCore[0],
     ) ||
-    !declarationTypeViewAdapter ||
-    !/psx_resolve_decl_qual_type\s*\(/.test(
-      declarationTypeViewAdapter[0],
-    ) ||
-    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
-      declarationTypeViewAdapter[0],
+    /\bpsx_resolve_decl_type\s*\(/.test(
+      `${declarationResolutionHeader}\n${declarationResolutionSource}`,
     )) {
   throw new Error(
-    "declaration type resolution must publish canonical QualType before projecting compatibility views",
+    "declaration type resolution must publish canonical QualType without a compatibility type-view API",
   );
 }
 

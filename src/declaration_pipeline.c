@@ -620,14 +620,12 @@ int psx_finish_function_definition_pipeline(
       primary->function_is_variadic,
       state->parameter_count > 0 || primary->function_is_variadic);
 
-  const psx_type_t *function_type = psx_resolve_decl_type(
+  result->function_qual_type = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = state->semantic_context,
           .base_qual_type = state->base_qual_type,
           .declarator_shape = &state->application.shape,
       });
-  result->function_qual_type = ps_ctx_intern_qual_type_in(
-      state->semantic_context, function_type);
   psx_type_shape_t function_shape = {0};
   return result->function_qual_type.type_id != PSX_TYPE_ID_INVALID &&
          psx_semantic_type_table_describe(

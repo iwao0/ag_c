@@ -1,5 +1,4 @@
 #include "aggregate_member_resolution.h"
-#include "declaration_type_builder.h"
 
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
@@ -222,16 +221,22 @@ int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state) {
 
 static int collect_promoted_aggregate_members(
     psx_semantic_context_t *semantic_context,
-    const psx_type_t *source_type, int base_offset,
+    psx_qual_type_t source_type, int base_offset,
     psx_record_member_decl_t **out_declarations,
     psx_record_member_layout_t **out_layouts,
     int *out_member_count) {
   *out_declarations = NULL;
   *out_layouts = NULL;
   *out_member_count = 0;
-  if (!ps_type_is_tag_aggregate(source_type) || base_offset < 0)
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_type_shape_t source_shape = {0};
+  if (base_offset < 0 ||
+      !psx_semantic_type_table_describe(
+          semantic_types, source_type.type_id, &source_shape) ||
+      !is_aggregate_kind(source_shape.kind))
     return 0;
-  psx_record_id_t record_id = ps_type_record_id(source_type);
+  psx_record_id_t record_id = source_shape.record_id;
   if (record_id == PSX_RECORD_ID_INVALID) return 0;
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
@@ -298,22 +303,24 @@ void psx_resolve_aggregate_member_declaration(
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
-  psx_type_t *type = psx_build_decl_type(
+  psx_qual_type_t identity = psx_resolve_decl_qual_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
           .base_qual_type = request->base_qual_type,
           .declarator_shape = request->declarator_shape,
       });
-  if (!type) return;
+  if (identity.type_id == PSX_TYPE_ID_INVALID) return;
+  psx_type_shape_t type_shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          identity.type_id, &type_shape))
+    return;
   int is_anonymous_aggregate =
-      !has_name && ps_type_is_tag_aggregate(type);
+      !has_name && is_aggregate_kind(type_shape.kind);
   if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;
   }
-  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
-      semantic_context, type);
-  if (identity.type_id == PSX_TYPE_ID_INVALID) return;
   resolution->type_id = identity.type_id;
 
   if (request->has_bitfield) {
@@ -373,7 +380,7 @@ void psx_resolve_aggregate_member_declaration(
   int promoted_count = 0;
   if (is_anonymous_aggregate) {
     if (!collect_promoted_aggregate_members(
-            semantic_context, type, resolution->offset,
+            semantic_context, identity, resolution->offset,
             &promoted_declarations, &promoted_layouts,
             &promoted_count))
       return;
