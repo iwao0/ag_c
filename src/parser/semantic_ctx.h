@@ -115,9 +115,6 @@ const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
     psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_track_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
-const psx_function_symbol_t *ps_ctx_register_function_type_in(
-    psx_semantic_context_t *context, char *name, int len,
-    const psx_type_t *function_type);
 const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_qual_type_t function_type);
@@ -131,14 +128,7 @@ void psx_ctx_define_function_name_in(
     psx_semantic_context_t *context, char *name, int len);
 int ps_ctx_is_function_defined_in(
     psx_semantic_context_t *context, char *name, int len);
-const psx_type_t *psx_ctx_get_function_ret_type_in(
-    psx_semantic_context_t *context, char *name, int len);
 psx_qual_type_t psx_ctx_get_function_return_qual_type_in(
-    psx_semantic_context_t *context, char *name, int len);
-int psx_ctx_track_function_type_in(
-    psx_semantic_context_t *context, char *name, int len,
-    const psx_type_t *function_type);
-const psx_type_t *ps_ctx_get_function_type_in(
     psx_semantic_context_t *context, char *name, int len);
 psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len);

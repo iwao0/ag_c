@@ -12198,6 +12198,13 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
     /f->function_type\b|checkpoint->function_type\b/.test(
       semanticContextOwnershipSource,
     ) ||
+    /\b(?:ps_ctx_register_function_type_in|psx_ctx_track_function_type_in|ps_ctx_get_function_type_in|psx_ctx_get_function_ret_type_in)\s*\(/.test(
+      `${functionPublicHeaderSource}\n${semanticContextHeaderSource}\n${semanticContextOwnershipSource}`,
+    ) ||
+    /#include\s+"(?:core|type)\.h"/.test(functionPublicHeaderSource) ||
+    !/ps_ctx_format_function_signature_in\s*\([^]*?psx_format_canonical_type_signature\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
     !/ps_function_symbol_qual_type\s*\(/.test(
       identifierResolutionSource,
     ) ||

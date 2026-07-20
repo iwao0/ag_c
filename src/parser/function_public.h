@@ -1,8 +1,7 @@
 #ifndef PARSER_FUNCTION_PUBLIC_H
 #define PARSER_FUNCTION_PUBLIC_H
 
-#include "core.h"
-#include "type.h"
+#include "../type_system/type_ids.h"
 #include <stddef.h>
 
 typedef struct psx_function_symbol_t psx_function_symbol_t;
@@ -17,9 +16,6 @@ psx_qual_type_t ps_function_symbol_qual_type(
 psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len);
 psx_qual_type_t psx_ctx_get_function_return_qual_type_in(
-    psx_semantic_context_t *context, char *name, int len);
-/* Compatibility view materialized from the symbol's canonical QualType. */
-const psx_type_t *ps_ctx_get_function_type_in(
     psx_semantic_context_t *context, char *name, int len);
 /* Returns the canonical C signature length, or -1 when the function is unknown.
  * A zero-sized output queries the required length; for example void(void) is v(). */

@@ -11,6 +11,7 @@
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
 #include "../type_layout.h"
+#include "../type_signature.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -1826,27 +1827,6 @@ int ps_ctx_is_function_defined_in(
   return f && f->is_defined;
 }
 
-const psx_type_t *psx_ctx_get_function_ret_type_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  psx_qual_type_t return_type =
-      psx_ctx_get_function_return_qual_type_in(context, name, len);
-  return psx_type_compatibility_view_for(
-      context ? context->semantic_types : NULL, return_type);
-}
-
-const psx_function_symbol_t *ps_ctx_register_function_type_in(
-    psx_semantic_context_t *context, char *name, int len,
-    const psx_type_t *function_type) {
-  if (!context || !name || len <= 0 || !function_type ||
-      function_type->kind != PSX_TYPE_FUNCTION) {
-    return NULL;
-  }
-  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
-      context, function_type);
-  return ps_ctx_register_function_qual_type_in(
-      context, name, len, identity);
-}
-
 const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_qual_type_t function_type) {
@@ -1876,20 +1856,6 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
   return f;
 }
 
-int psx_ctx_track_function_type_in(
-    psx_semantic_context_t *context, char *name, int len,
-    const psx_type_t *function_type) {
-  return ps_ctx_register_function_type_in(
-             context, name, len, function_type) != NULL;
-}
-
-const psx_type_t *ps_ctx_get_function_type_in(
-    psx_semantic_context_t *context, char *name, int len) {
-  return psx_type_compatibility_view_for(
-      context ? context->semantic_types : NULL,
-      ps_ctx_get_function_qual_type_in(context, name, len));
-}
-
 psx_qual_type_t ps_ctx_get_function_qual_type_in(
     psx_semantic_context_t *context, char *name, int len) {
   return ps_function_symbol_qual_type(
@@ -1907,10 +1873,11 @@ psx_qual_type_t psx_ctx_get_function_return_qual_type_in(
 int ps_ctx_format_function_signature_in(
     psx_semantic_context_t *context, char *name, int len,
     char *out, size_t out_size) {
-  const psx_type_t *type = ps_ctx_get_function_type_in(context, name, len);
-  if (!type) return -1;
-  return ps_type_format_canonical_signature_for_data_layout(
-      type, ps_ctx_data_layout(context), out, out_size);
+  if (!context) return -1;
+  return psx_format_canonical_type_signature(
+      context->semantic_types,
+      ps_ctx_get_function_qual_type_in(context, name, len),
+      ps_ctx_data_layout(context), out, out_size);
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {
