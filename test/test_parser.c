@@ -2535,6 +2535,16 @@ static psx_type_shape_t test_hir_type_shape(
   return shape;
 }
 
+static psx_type_shape_t test_hir_attached_type_shape(
+    const psx_hir_node_t *node) {
+  psx_type_shape_t shape = {0};
+  ASSERT_TRUE(node != NULL);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      psx_hir_node_attached_qual_type(node).type_id, &shape));
+  return shape;
+}
+
 static const psx_typed_hir_tree_t *build_test_typed_leaf(
     psx_hir_node_kind_t kind, psx_qual_type_t qual_type,
     int storage_offset, long long integer_value) {
@@ -10030,8 +10040,8 @@ static void test_unary_operator_typed_hir_boundary() {
   ASSERT_TRUE(found_complex_negate);
 }
 
-static void test_generic_selection_semantic_lowering_boundary() {
-  printf("test_generic_selection_semantic_lowering_boundary...\n");
+static void test_generic_selection_typed_hir_boundary() {
+  printf("test_generic_selection_typed_hir_boundary...\n");
   node_t control = {
       .kind = ND_NUM,
   };
@@ -10149,24 +10159,23 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_records_lvar_usage(selected_usage));
   ASSERT_TRUE(!ps_node_lvar_usage_is_unevaluated(selected_usage));
 
-  node_t *typed = analyze_test_expression(raw, NULL);
-  ASSERT_TRUE(typed != raw);
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_hir(raw);
+  const psx_hir_node_t *selected =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(selected));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(selected).kind);
+  ASSERT_EQ(2, psx_hir_node_child_count(selected));
+  const psx_hir_node_t *selected_rhs = psx_hir_module_lookup(
+      expression.module, psx_hir_node_child_at(selected, 1));
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(selected_rhs));
+  ASSERT_EQ(1, psx_hir_node_integer_value(selected_rhs));
   ASSERT_TRUE(
       psx_generic_selection_type_name_state(selection, 0) == NULL);
   ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
   ASSERT_TRUE(ps_node_get_type((node_t *)selection) == NULL);
   ASSERT_TRUE(ps_node_get_type(selection->associations[0].expression) == NULL);
-  ASSERT_EQ(ND_GENERIC_SELECTION, typed->kind);
-  node_generic_selection_t *typed_selection =
-      (node_generic_selection_t *)typed;
-  ASSERT_EQ(0, psx_generic_selection_selected_index(typed_selection));
-  ASSERT_TRUE(ps_node_get_type(typed) != NULL);
-  node_t *selected_expression =
-      psx_generic_selection_selected_expression(typed_selection);
-  ASSERT_TRUE(selected_expression != NULL);
-  ASSERT_EQ(ND_ADD, selected_expression->kind);
-  ASSERT_TRUE(ps_node_get_type(selected_expression) != NULL);
-  ASSERT_EQ(1, as_num(selected_expression->rhs)->val);
+  psx_frontend_expression_hir_dispose(&expression);
 
   node_t **program = parse_program_input(
       "int __typed_hir_generic(int x) { "
@@ -10493,8 +10502,8 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_TRUE(found_alignment_literal);
 }
 
-static void test_expression_type_materialization_boundary() {
-  printf("test_expression_type_materialization_boundary...\n");
+static void test_expression_typed_hir_type_boundary() {
+  printf("test_expression_typed_hir_type_boundary...\n");
   reset_test_locals();
   node_t *ternary =
       parse_expr_input_with_existing_locals("(1, 2) ? 3 : 4");
@@ -10505,25 +10514,24 @@ static void test_expression_type_materialization_boundary() {
   ASSERT_TRUE(ps_node_get_type(ternary) == NULL);
   ASSERT_TRUE(ps_node_get_type(ternary->lhs) == NULL);
 
-  node_t *syntax_ternary = ternary;
-  ternary = analyze_test_expression(ternary, NULL);
-  ASSERT_TRUE(ternary != syntax_ternary);
-  ASSERT_TRUE(ps_node_get_type(syntax_ternary) == NULL);
-  ASSERT_TRUE(ps_node_get_type(syntax_ternary->lhs) == NULL);
-  ASSERT_TRUE(ps_node_get_type(ternary) != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(ternary)->kind);
-  ASSERT_TRUE(ps_node_get_type(ternary->lhs) != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(ternary->lhs)->kind);
-  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
-                  test_semantic_context(), ps_node_get_type(ternary)).type_id !=
-              PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
-                  test_semantic_context(), ps_node_get_type(ternary->lhs)).type_id !=
-              PSX_TYPE_ID_INVALID);
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_hir(ternary);
+  const psx_hir_node_t *typed_ternary =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(typed_ternary));
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_hir_type_shape(typed_ternary).kind);
+  const psx_hir_node_t *typed_comma = psx_hir_module_lookup(
+      expression.module, psx_hir_node_child_at(typed_ternary, 0));
+  ASSERT_EQ(PSX_HIR_COMMA, psx_hir_node_kind(typed_comma));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(typed_comma).kind);
+  ASSERT_TRUE(ps_node_get_type(ternary) == NULL);
+  ASSERT_TRUE(ps_node_get_type(ternary->lhs) == NULL);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_function_call_type_binding_boundary() {
-  printf("test_function_call_type_binding_boundary...\n");
+static void test_function_call_typed_hir_boundary() {
+  printf("test_function_call_typed_hir_boundary...\n");
   static char function_name[] = "__call_type_boundary";
   int function_name_len = (int)sizeof(function_name) - 1;
   psx_type_t *parameter = ps_type_new_integer(TK_INT, 4, 0);
@@ -10627,28 +10635,49 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(direct_call->callee != NULL);
   ASSERT_EQ(ND_IDENTIFIER, direct_call->callee->kind);
   ASSERT_TRUE(ps_node_get_type(direct) == NULL);
-  direct = analyze_test_expression(direct, NULL);
-  direct_call = (node_function_call_t *)direct;
-  const psx_type_t *direct_callee_type =
-      test_function_call_type(direct_call);
-  ASSERT_TRUE(direct_callee_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, direct_callee_type->kind);
-  ASSERT_TRUE(ps_node_get_type(direct) != NULL);
-  ASSERT_TRUE(ps_node_get_type(direct) == direct_callee_type->base);
-  ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(direct)->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ps_node_get_type(direct)->floating_kind);
+  psx_frontend_expression_hir_t direct_expression =
+      resolve_test_expression_hir(direct);
+  const psx_hir_node_t *direct_hir =
+      test_expression_hir_root(&direct_expression);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(direct_hir));
+  psx_type_shape_t direct_result = test_hir_type_shape(direct_hir);
+  ASSERT_EQ(PSX_TYPE_FLOAT, direct_result.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            direct_result.floating_kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION,
+            test_hir_attached_type_shape(direct_hir).kind);
+  ASSERT_EQ(1, psx_hir_node_child_count(direct_hir));
+  ASSERT_EQ(PSX_HIR_EDGE_ARGUMENT,
+            psx_hir_node_child_edge_at(direct_hir, 0));
+  ASSERT_TRUE(!psx_hir_node_is_implicit_call(direct_hir));
+  ASSERT_TRUE(test_function_call_type(direct_call) == NULL);
+  ASSERT_TRUE(ps_node_get_type(direct) == NULL);
+  psx_frontend_expression_hir_dispose(&direct_expression);
 
   node_t *reference = parse_expr_input_with_existing_locals(
       "__call_type_boundary");
   ASSERT_EQ(ND_IDENTIFIER, reference->kind);
   ASSERT_TRUE(ps_node_get_type(reference) == NULL);
-  reference = analyze_test_expression(reference, NULL);
+  psx_frontend_expression_hir_t reference_expression =
+      resolve_test_expression_hir(reference);
+  const psx_hir_node_t *reference_hir =
+      test_expression_hir_root(&reference_expression);
+  ASSERT_EQ(PSX_HIR_FUNCTION_REF,
+            psx_hir_node_kind(reference_hir));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_hir_type_shape(reference_hir).kind);
+  psx_qual_type_t referenced_function = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      psx_hir_node_qual_type(reference_hir).type_id);
+  psx_type_shape_t referenced_function_shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      referenced_function.type_id, &referenced_function_shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, referenced_function_shape.kind);
   ASSERT_EQ(ND_IDENTIFIER, reference->kind);
-  ASSERT_EQ(ND_FUNCREF,
-            psx_resolved_object_ref_node_kind(reference));
-  ASSERT_TRUE(ps_node_get_type(reference) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(reference)->kind);
-  ASSERT_TRUE(ps_type_derived_function(ps_node_get_type(reference)) != NULL);
+  ASSERT_TRUE(!ps_node_has_resolution_state(reference));
+  ASSERT_TRUE(ps_node_get_type(reference) == NULL);
+  psx_frontend_expression_hir_dispose(&reference_expression);
 
   reset_test_locals();
   lvar_t *fp = register_test_storage_fixture(
@@ -10661,16 +10690,27 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(indirect_call->callee != NULL);
   ASSERT_TRUE(test_function_call_type(indirect_call) == NULL);
   ASSERT_TRUE(ps_node_get_type(indirect) == NULL);
-  indirect = analyze_test_expression(indirect, NULL);
-  indirect_call = (node_function_call_t *)indirect;
-  const psx_type_t *indirect_callee_type =
-      test_function_call_type(indirect_call);
-  ASSERT_TRUE(indirect_callee_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_callee_type->kind);
-  ASSERT_TRUE(ps_node_get_type(indirect) != NULL);
-  ASSERT_TRUE(ps_node_get_type(indirect) == indirect_callee_type->base);
-  ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(indirect)->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ps_node_get_type(indirect)->floating_kind);
+  psx_frontend_expression_hir_t indirect_expression =
+      resolve_test_expression_hir(indirect);
+  const psx_hir_node_t *indirect_hir =
+      test_expression_hir_root(&indirect_expression);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(indirect_hir));
+  psx_type_shape_t indirect_result = test_hir_type_shape(indirect_hir);
+  ASSERT_EQ(PSX_TYPE_FLOAT, indirect_result.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            indirect_result.floating_kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION,
+            test_hir_attached_type_shape(indirect_hir).kind);
+  ASSERT_EQ(2, psx_hir_node_child_count(indirect_hir));
+  ASSERT_EQ(PSX_HIR_EDGE_CALLEE,
+            psx_hir_node_child_edge_at(indirect_hir, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                indirect_expression.module,
+                psx_hir_node_child_at(indirect_hir, 0))));
+  ASSERT_TRUE(test_function_call_type(indirect_call) == NULL);
+  ASSERT_TRUE(ps_node_get_type(indirect) == NULL);
+  psx_frontend_expression_hir_dispose(&indirect_expression);
 
   reset_test_locals();
   node_t *implicit = parse_expr_input_with_existing_locals(
@@ -10679,14 +10719,21 @@ static void test_function_call_type_binding_boundary() {
   node_function_call_t *implicit_call = (node_function_call_t *)implicit;
   ASSERT_TRUE(test_function_call_type(implicit_call) == NULL);
   ASSERT_TRUE(ps_node_get_type(implicit) == NULL);
-  implicit = analyze_test_expression(implicit, NULL);
-  implicit_call = (node_function_call_t *)implicit;
-  ASSERT_TRUE(psx_function_call_is_implicit_declaration(implicit_call));
+  psx_frontend_expression_hir_t implicit_expression =
+      resolve_test_expression_hir(implicit);
+  const psx_hir_node_t *implicit_hir =
+      test_expression_hir_root(&implicit_expression);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(implicit_hir));
+  ASSERT_TRUE(psx_hir_node_is_implicit_call(implicit_hir));
+  psx_type_shape_t implicit_result = test_hir_type_shape(implicit_hir);
+  ASSERT_EQ(PSX_TYPE_INTEGER, implicit_result.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, implicit_result.integer_kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION,
+            test_hir_attached_type_shape(implicit_hir).kind);
+  ASSERT_TRUE(!psx_function_call_is_implicit_declaration(implicit_call));
   ASSERT_TRUE(test_function_call_type(implicit_call) == NULL);
-  ASSERT_TRUE(ps_node_get_type(implicit) != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(implicit)->kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT, ps_node_get_type(implicit)->integer_kind);
-  ASSERT_EQ(4, ps_type_sizeof(ps_node_get_type(implicit)));
+  ASSERT_TRUE(ps_node_get_type(implicit) == NULL);
+  psx_frontend_expression_hir_dispose(&implicit_expression);
 }
 
 static void test_function_prototype_type_identity_boundary() {
@@ -10741,8 +10788,8 @@ static void test_function_prototype_type_identity_boundary() {
   ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
 }
 
-static void test_cast_semantic_lowering_boundary() {
-  printf("test_cast_semantic_lowering_boundary...\n");
+static void test_cast_typed_hir_boundary() {
+  printf("test_cast_typed_hir_boundary...\n");
   reset_test_locals();
   preregister_test_locals();
   node_t *node =
@@ -10758,28 +10805,29 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(inner->type_name.syntax != NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(&inner->base));
 
-  node_t *syntax = node;
-  node = analyze_test_expression(syntax, NULL);
-  ASSERT_TRUE(node != syntax);
-  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(node));
-  ASSERT_TRUE(ps_node_is_source_cast(node));
-  node_source_cast_t *typed_outer = (node_source_cast_t *)node;
-  ASSERT_TRUE(
-      psx_node_resolved_type_name(&typed_outer->base) != NULL);
-  ASSERT_EQ(
-      PSX_SOURCE_CAST_DIRECT_HIR,
-      psx_source_cast_resolution_kind(typed_outer));
-
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(node->lhs));
-  ASSERT_TRUE(ps_node_is_source_cast(node->lhs));
-  node_source_cast_t *typed_inner =
-      (node_source_cast_t *)node->lhs;
-  ASSERT_EQ(
-      PSX_SOURCE_CAST_DIRECT_HIR,
-      psx_source_cast_resolution_kind(typed_inner));
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_hir(node);
+  const psx_hir_node_t *typed_outer =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(typed_outer));
+  psx_type_shape_t outer_shape = test_hir_type_shape(typed_outer);
+  ASSERT_EQ(PSX_TYPE_INTEGER, outer_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, outer_shape.integer_kind);
+  ASSERT_EQ(1, psx_hir_node_child_count(typed_outer));
+  const psx_hir_node_t *typed_inner = psx_hir_module_lookup(
+      expression.module, psx_hir_node_child_at(typed_outer, 0));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(typed_inner));
+  psx_type_shape_t inner_shape = test_hir_type_shape(typed_inner);
+  ASSERT_EQ(PSX_TYPE_INTEGER, inner_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, inner_shape.integer_kind);
+  ASSERT_TRUE(inner_shape.is_unsigned);
+  ASSERT_EQ(ND_SOURCE_CAST, node->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, node->lhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(node));
+  ASSERT_TRUE(!ps_node_has_resolution_state(node->lhs));
+  ASSERT_TRUE(ps_node_get_type(node) == NULL);
+  ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_aggregate_cast_semantic_lowering_boundary() {
@@ -10929,8 +10977,8 @@ static void test_implicit_conversion_hir_boundary() {
             psx_resolved_object_ref_node_kind(call->arguments[0]));
 }
 
-static void test_compound_assignment_semantic_lowering_boundary() {
-  printf("test_compound_assignment_semantic_lowering_boundary...\n");
+static void test_compound_assignment_typed_hir_boundary() {
+  printf("test_compound_assignment_typed_hir_boundary...\n");
   reset_test_locals();
   lvar_t *value = register_test_storage_fixture((char *)"a", 1, 4, 4, 0);
   set_test_storage_fixture_type(
@@ -10940,12 +10988,30 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_EQ(TK_PLUSEQ, node->source_op);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
-  node_t *assignment_syntax = node;
-  node = analyze_test_expression(node, NULL);
-  ASSERT_TRUE(node != assignment_syntax);
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, assignment_syntax->kind);
+  psx_frontend_expression_hir_t assignment_expression =
+      resolve_test_expression_hir(node);
+  const psx_hir_node_t *assignment_hir =
+      test_expression_hir_root(&assignment_expression);
+  ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
+            psx_hir_node_kind(assignment_hir));
+  ASSERT_EQ(PSX_HIR_COMPOUND_ADD,
+            psx_hir_node_compound_operator(assignment_hir));
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_hir_type_shape(assignment_hir).kind);
+  ASSERT_EQ(2, psx_hir_node_child_count(assignment_hir));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                assignment_expression.module,
+                psx_hir_node_child_at(assignment_hir, 0))));
+  ASSERT_EQ(PSX_HIR_NUMBER,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                assignment_expression.module,
+                psx_hir_node_child_at(assignment_hir, 1))));
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(node));
+  ASSERT_TRUE(ps_node_get_type(node) == NULL);
+  psx_frontend_expression_hir_dispose(&assignment_expression);
 
   reset_test_locals();
   lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
@@ -10954,9 +11020,24 @@ static void test_compound_assignment_semantic_lowering_boundary() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node = parse_expr_input_with_existing_locals("*p += 2");
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
-  node = analyze_test_expression(node, NULL);
+  psx_frontend_expression_hir_t deref_assignment_expression =
+      resolve_test_expression_hir(node);
+  const psx_hir_node_t *deref_assignment_hir =
+      test_expression_hir_root(&deref_assignment_expression);
+  ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
+            psx_hir_node_kind(deref_assignment_hir));
+  ASSERT_EQ(PSX_HIR_COMPOUND_ADD,
+            psx_hir_node_compound_operator(deref_assignment_hir));
+  ASSERT_EQ(PSX_HIR_DEREF,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                deref_assignment_expression.module,
+                psx_hir_node_child_at(deref_assignment_hir, 0))));
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_UNARY_DEREF, node->lhs->kind);
+  ASSERT_TRUE(!ps_node_has_resolution_state(node));
+  ASSERT_TRUE(ps_node_get_type(node) == NULL);
+  psx_frontend_expression_hir_dispose(
+      &deref_assignment_expression);
 
   node_t **program = parse_program_input(
       "int __typed_hir_subscript_compound(int *values, int index) { "
@@ -31267,15 +31348,15 @@ int main() {
   test_subscript_typed_hir_boundary();
   test_unary_deref_typed_hir_boundary();
   test_unary_operator_typed_hir_boundary();
-  test_generic_selection_semantic_lowering_boundary();
+  test_generic_selection_typed_hir_boundary();
   test_sizeof_semantic_lowering_boundary();
-  test_expression_type_materialization_boundary();
-  test_function_call_type_binding_boundary();
+  test_expression_typed_hir_type_boundary();
+  test_function_call_typed_hir_boundary();
   test_function_prototype_type_identity_boundary();
-  test_cast_semantic_lowering_boundary();
+  test_cast_typed_hir_boundary();
   test_aggregate_cast_semantic_lowering_boundary();
   test_implicit_conversion_hir_boundary();
-  test_compound_assignment_semantic_lowering_boundary();
+  test_compound_assignment_typed_hir_boundary();
   test_translation_unit_frontend_boundary();
   test_function_definition_header_resolution_boundary();
   test_global_registry_checkpoint_boundary();
