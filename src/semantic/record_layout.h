@@ -13,7 +13,7 @@ typedef struct {
 
 typedef struct {
   psx_record_id_t record_id;
-  ag_target_info_t target;
+  ag_data_layout_t data_layout;
   int size;
   int alignment;
   int member_count;

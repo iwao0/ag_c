@@ -15,11 +15,6 @@ struct psx_record_layout_table_t {
   size_t capacity;
 };
 
-static int target_matches(
-    const ag_target_info_t *lhs, const ag_target_info_t *rhs) {
-  return lhs && rhs && ag_target_info_equal(lhs, rhs);
-}
-
 psx_record_layout_table_t *psx_record_layout_table_create(void) {
   return calloc(1, sizeof(psx_record_layout_table_t));
 }
@@ -41,11 +36,13 @@ void psx_record_layout_table_destroy(psx_record_layout_table_t *table) {
 static psx_record_layout_entry_t *find_entry(
     psx_record_layout_table_t *table, psx_record_id_t record_id,
     const ag_target_info_t *target) {
-  if (!table || record_id == PSX_RECORD_ID_INVALID || !target) return NULL;
+  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+  if (!table || record_id == PSX_RECORD_ID_INVALID || !data_layout)
+    return NULL;
   for (size_t i = 0; i < table->count; i++) {
     psx_record_layout_entry_t *entry = &table->entries[i];
     if (entry->layout.record_id == record_id &&
-        target_matches(&entry->layout.target, target))
+        ag_data_layout_equal(&entry->layout.data_layout, data_layout))
       return entry;
   }
   return NULL;
@@ -54,11 +51,13 @@ static psx_record_layout_entry_t *find_entry(
 static const psx_record_layout_entry_t *find_entry_const(
     const psx_record_layout_table_t *table, psx_record_id_t record_id,
     const ag_target_info_t *target) {
-  if (!table || record_id == PSX_RECORD_ID_INVALID || !target) return NULL;
+  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+  if (!table || record_id == PSX_RECORD_ID_INVALID || !data_layout)
+    return NULL;
   for (size_t i = 0; i < table->count; i++) {
     const psx_record_layout_entry_t *entry = &table->entries[i];
     if (entry->layout.record_id == record_id &&
-        target_matches(&entry->layout.target, target))
+        ag_data_layout_equal(&entry->layout.data_layout, data_layout))
       return entry;
   }
   return NULL;
@@ -86,7 +85,9 @@ int psx_record_layout_table_define(
     psx_record_layout_table_t *table, psx_record_id_t record_id,
     const ag_target_info_t *target, int size, int alignment,
     const psx_record_member_layout_t *members, int member_count) {
-  if (!table || record_id == PSX_RECORD_ID_INVALID || !target || size < 0 ||
+  const ag_data_layout_t *data_layout = ag_target_info_data_layout(target);
+  if (!table || record_id == PSX_RECORD_ID_INVALID ||
+      !ag_data_layout_is_valid(data_layout) || size < 0 ||
       alignment <= 0 || member_count < 0 ||
       (member_count > 0 && !members))
     return 0;
@@ -108,7 +109,7 @@ int psx_record_layout_table_define(
   entry->owned_members = member_copy;
   entry->layout = (psx_record_layout_t){
       .record_id = record_id,
-      .target = *target,
+      .data_layout = *data_layout,
       .size = size,
       .alignment = alignment,
       .member_count = member_count,

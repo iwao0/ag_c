@@ -56,7 +56,7 @@ typedef struct tag_member_layout_draft_t tag_member_layout_draft_t;
 struct tag_member_layout_draft_t {
   tag_member_layout_draft_t *next;
   const tag_member_t *member;
-  ag_target_info_t target;
+  ag_data_layout_t data_layout;
   psx_record_member_layout_t placement;
 };
 
@@ -504,7 +504,9 @@ static const psx_record_member_layout_t *find_tag_member_layout_draft(
            context->aggregate_member_layout_drafts;
        draft; draft = draft->next) {
     if (draft->member == member &&
-        ag_target_info_equal(&draft->target, context->target))
+        ag_data_layout_equal(
+            &draft->data_layout,
+            ag_target_info_data_layout(context->target)))
       return &draft->placement;
   }
   return NULL;
@@ -537,7 +539,7 @@ static int initialize_tag_member_record(
       context, 1, sizeof(*draft));
   if (!draft) return 0;
   draft->member = m;
-  draft->target = *context->target;
+  draft->data_layout = *ag_target_info_data_layout(context->target);
   draft->placement = *layout;
   draft->next = context->aggregate_member_layout_drafts;
   context->aggregate_member_layout_drafts = draft;

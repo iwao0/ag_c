@@ -1313,6 +1313,11 @@ const compilationSessionInternalHeader = await readFile(
 const targetInfoSource = await readFile("src/target_info.c", "utf8");
 const targetInfoHeader = await readFile("src/target_info.h", "utf8");
 if (!/ag_target_info_is_valid\s*\(/.test(targetInfoHeader) ||
+    !/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?pointer_size[^]*?pointer_alignment[^]*?scalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\][^]*?\}\s*ag_data_layout_t\s*;/.test(
+      targetInfoHeader,
+    ) ||
+    !/ag_data_layout_t\s+data_layout\s*;/.test(targetInfoHeader) ||
+    !/ag_target_info_data_layout\s*\(/.test(targetInfoHeader) ||
     !/ag_target_info_is_valid\s*\(target\)/.test(
       compilationSessionSource,
     ) ||
@@ -7061,7 +7066,7 @@ if (!tagMemberStruct ||
     !/\bconst\s+tag_member_t\s*\*\s*member\s*;/.test(
       tagMemberLayoutDraftStruct[1],
     ) ||
-    !/\bag_target_info_t\s+target\s*;/.test(
+    !/\bag_data_layout_t\s+data_layout\s*;/.test(
       tagMemberLayoutDraftStruct[1],
     ) ||
     !/\bpsx_record_member_layout_t\s+placement\s*;/.test(
@@ -7416,12 +7421,15 @@ const typeIdentityImplementationSource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
 );
-if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) ||
+if (!/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\][^]*?\}\s*ag_data_layout_t\s*;/.test(targetInfoHeaderSource) ||
+    !/\bag_data_layout_t\s+data_layout\s*;/.test(targetInfoHeaderSource) ||
     !/\bpointer_alignment\s*;/.test(targetInfoHeaderSource) ||
+    !/\bag_data_layout_equal\s*\(/.test(targetInfoHeaderSource) ||
+    !/\bag_target_info_data_layout\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_scalar_alignment\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_equal\s*\(/.test(targetInfoHeaderSource) ||
-    !/target\s*&&\s*target->pointer_size\s*>\s*0/.test(
+    !/layout\s*&&\s*layout->pointer_size\s*>\s*0/.test(
       targetInfoImplementationSource,
     ) ||
     /target->pointer_size\s*==\s*4\s*\?\s*4\s*:\s*8/.test(
@@ -7433,7 +7441,9 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
     /\bdefault_target\b/.test(targetInfoImplementationSource) ||
     !/\blayout_scalar\s*\(/.test(await readFile("src/type_layout.c", "utf8")) ||
     !/\bAG_TARGET_SCALAR_FLOAT_COMPLEX\b/.test(targetInfoImplementationSource) ||
-    !/\bag_target_info_equal\s*\(/.test(recordLayoutImplementationSource) ||
+    !/\bag_data_layout_equal\s*\(/.test(recordLayoutImplementationSource) ||
+    /\bag_target_info_t\s+target\s*;/.test(recordLayoutHeaderSource) ||
+    !/\bag_data_layout_t\s+data_layout\s*;/.test(recordLayoutHeaderSource) ||
     /\bps_type_clear_(?:cached_layout|record_layout_cache)\s*\(/.test(
       typeSource +
         typeIdentityImplementationSource +

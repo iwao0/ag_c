@@ -12850,8 +12850,24 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(0, ag_target_info_scalar_alignment(
                    NULL, AG_TARGET_SCALAR_INT));
   ASSERT_TRUE(!ag_target_info_equal(NULL, &host));
+  ASSERT_TRUE(ag_data_layout_is_valid(
+      ag_target_info_data_layout(&host)));
+  ASSERT_TRUE(ag_data_layout_equal(
+      ag_target_info_data_layout(&host),
+      ag_target_info_data_layout(&host)));
+  ag_target_info_t alternate_host_abi = host;
+  alternate_host_abi.call_abi = AG_TARGET_CALL_ABI_WASM32;
+  ASSERT_TRUE(ag_target_info_is_valid(&alternate_host_abi));
+  ASSERT_TRUE(!ag_target_info_equal(&host, &alternate_host_abi));
+  ASSERT_TRUE(ag_data_layout_equal(
+      ag_target_info_data_layout(&host),
+      ag_target_info_data_layout(&alternate_host_abi)));
+  ag_target_info_t invalid_abi_target = host;
+  invalid_abi_target.call_abi = AG_TARGET_CALL_ABI_INVALID;
+  ASSERT_TRUE(!ag_target_info_is_valid(&invalid_abi_target));
+  ASSERT_TRUE(ag_target_info_data_layout(&invalid_abi_target) != NULL);
   ag_target_info_t incomplete_target = host;
-  incomplete_target.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
+  incomplete_target.data_layout.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
   ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
   ASSERT_TRUE(ps_ctx_create(
       test_arena_context(), test_diagnostics(), test_resolution_store(),
@@ -12940,8 +12956,8 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
   ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
   ag_target_info_t wide_pointer_target = host;
-  wide_pointer_target.pointer_size = 16;
-  wide_pointer_target.pointer_alignment = 16;
+  wide_pointer_target.data_layout.pointer_size = 16;
+  wide_pointer_target.data_layout.pointer_alignment = 16;
   ASSERT_EQ(16, ag_target_info_pointer_size(&wide_pointer_target));
   ASSERT_EQ(16, ps_type_sizeof_for_target(
                     pointer, &wide_pointer_target));
@@ -12953,7 +12969,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_type_sizeof_for_target(stale_integer, &host));
   ASSERT_TRUE(ps_type_shape_matches(integer, stale_integer));
   ag_target_info_t narrow_int_target = host;
-  narrow_int_target.scalar[AG_TARGET_SCALAR_INT] =
+  narrow_int_target.data_layout.scalar[AG_TARGET_SCALAR_INT] =
       (ag_target_scalar_layout_t){2, 2};
   ASSERT_TRUE(ag_target_info_equal(&host, &host));
   ASSERT_TRUE(!ag_target_info_equal(&host, &wasm));
@@ -12972,7 +12988,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(8, ps_type_sizeof_for_target(float_complex, &host));
   ASSERT_EQ(8, ps_type_alignof_for_target(float_complex, &host));
   ag_target_info_t packed_complex_target = host;
-  packed_complex_target.scalar[AG_TARGET_SCALAR_FLOAT_COMPLEX] =
+  packed_complex_target.data_layout.scalar[AG_TARGET_SCALAR_FLOAT_COMPLEX] =
       (ag_target_scalar_layout_t){8, 2};
   ASSERT_TRUE(!ag_target_info_equal(&host, &packed_complex_target));
   ASSERT_EQ(8, ps_type_sizeof_for_target(
@@ -12994,7 +13010,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
 
   ag_target_info_t equal_width_integer_target = host;
-  equal_width_integer_target.scalar[AG_TARGET_SCALAR_LONG] =
+  equal_width_integer_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){4, 4};
   const psx_type_t *equal_width_conversion =
       ps_type_usual_arithmetic_result_for_target_in(
@@ -13007,7 +13023,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(ps_type_is_unsigned(equal_width_conversion));
 
   ag_target_info_t wide_short_target = host;
-  wide_short_target.scalar[AG_TARGET_SCALAR_SHORT] =
+  wide_short_target.data_layout.scalar[AG_TARGET_SCALAR_SHORT] =
       (ag_target_scalar_layout_t){4, 4};
   psx_type_t *stale_unsigned_short =
       ps_type_new_integer(TK_SHORT, 1, 1);
@@ -13138,8 +13154,8 @@ static void test_target_type_layout_boundary() {
                    pointer_type_tokens,
                    pointer_type_end));
   ag_target_info_t split_layout_target = wasm;
-  split_layout_target.pointer_alignment = 8;
-  split_layout_target.scalar[AG_TARGET_SCALAR_LONG] =
+  split_layout_target.data_layout.pointer_alignment = 8;
+  split_layout_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){12, 4};
   test_semantic_context_fixture_t split_semantic_fixture;
   ASSERT_TRUE(test_semantic_context_fixture_init(
@@ -13267,10 +13283,14 @@ static void test_target_type_layout_boundary() {
   const psx_record_layout_t *host_record_layout =
       psx_record_layout_table_lookup(
           record_layouts, record->record_id, &host);
+  const psx_record_layout_t *alternate_abi_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record->record_id, &alternate_host_abi);
   const psx_record_layout_t *wasm_record_layout =
       psx_record_layout_table_lookup(
           record_layouts, record->record_id, &wasm);
   ASSERT_TRUE(host_record_layout != NULL);
+  ASSERT_TRUE(alternate_abi_record_layout == host_record_layout);
   ASSERT_TRUE(wasm_record_layout != NULL);
   ASSERT_EQ(8, psx_record_layout_member(host_record_layout, 1)->offset);
   ASSERT_EQ(4, psx_record_layout_member(wasm_record_layout, 1)->offset);
@@ -29117,8 +29137,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_target_info_t host_target = ag_target_info_host();
   ag_target_info_t wasm_target = ag_target_info_wasm32();
   ag_target_info_t wide_pointer_target = host_target;
-  wide_pointer_target.pointer_size = 16;
-  wide_pointer_target.pointer_alignment = 16;
+  wide_pointer_target.data_layout.pointer_size = 16;
+  wide_pointer_target.data_layout.pointer_alignment = 16;
   ag_compilation_session_t host;
   ag_compilation_session_t wasm;
   ag_compilation_session_t wide_pointer;
@@ -29415,8 +29435,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   tokenizer_context_t *previous_tokenizer = tk_context_active();
   ag_compilation_session_t *previous_session = test_suite_session;
-  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
-  ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->data_layout.pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(&host)->data_layout.pointer_size);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   gen_set_output_callback_in(
       ag_compilation_session_codegen_emit_context(&host),
@@ -29455,7 +29475,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   tk_set_tolerate_untokenizable_ctx(&host.tokenizer, true);
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
-  ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
+  ASSERT_EQ(4, ag_compilation_session_target(&wasm)->data_layout.pointer_size);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&wasm), "wasm");
@@ -29485,12 +29505,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_init(
       &inherited_context, ag_compilation_session_target(&wasm)));
   ASSERT_EQ(4, ag_compilation_session_target(&inherited_context)
-                   ->pointer_size);
+                   ->data_layout.pointer_size);
   ASSERT_TRUE(ag_compilation_session_dispose(&inherited_context));
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(&host));
   ASSERT_EQ(0, arena_current_reserved_bytes_in(host.arena_context));
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
-  ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(&host)->data_layout.pointer_size);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&host), "-host-b");
@@ -29526,7 +29546,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
 
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
-  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->data_layout.pointer_size);
   ASSERT_TRUE(ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_dispose(&wasm));
   ASSERT_EQ(1, host_backend.destroy_count);
