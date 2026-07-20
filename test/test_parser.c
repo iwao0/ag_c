@@ -1970,6 +1970,16 @@ static node_t **parse_test_program_from(token_t *start) {
   return program;
 }
 
+static int resolve_test_program_hir_from(token_t *start) {
+  psx_frontend_stream_t stream = {0};
+  if (!psx_frontend_stream_begin(
+          &stream, test_suite_session, NULL, start))
+    return 0;
+  psx_frontend_function_t function;
+  while (psx_frontend_next_function(&stream, &function)) {}
+  return psx_frontend_stream_end(&stream);
+}
+
 static node_t *parse_test_expression_from(token_t *start) {
   return ps_expr_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
@@ -5551,6 +5561,10 @@ static node_t **parse_program_input(const char *input) {
   return program;
 }
 
+static int resolve_program_input_hir(const char *input) {
+  return resolve_test_program_hir_from(tk_tokenize((char *)input));
+}
+
 static void test_typed_hir_ownership_and_type_boundary() {
   printf("test_typed_hir_ownership_and_type_boundary...\n");
   reset_test_translation_unit_state();
@@ -5755,9 +5769,9 @@ static void test_typed_hir_ownership_and_type_boundary() {
             psx_hir_node_qual_type(initializer_hir_value).type_id);
   psx_hir_module_destroy(isolated_hir);
 
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int main(void) { return 1+2; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(hir != NULL);
@@ -5805,7 +5819,6 @@ static void test_typed_hir_ownership_and_type_boundary() {
   }
   ASSERT_TRUE(found_two);
 
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
   root = psx_hir_module_lookup(hir, root_id);
@@ -5874,15 +5887,14 @@ static int max_ir_alloca_size(const ir_func_t *function) {
 static void test_typed_hir_local_lowering_without_ast() {
   printf("test_typed_hir_local_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int main(void) { int x = 3; int before = ++x; --x; "
       "x = x + 4; return before + x; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -5919,16 +5931,15 @@ static void test_typed_hir_local_lowering_without_ast() {
 static void test_typed_hir_overaligned_local_without_ast() {
   printf("test_typed_hir_overaligned_local_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int aligned_local(void) { "
       "_Alignas(64) int value = 7; "
       "return value + ((unsigned long)&value % 64); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -5969,14 +5980,13 @@ static void test_typed_hir_overaligned_local_without_ast() {
 static void test_typed_hir_parameter_lowering_without_ast() {
   printf("test_typed_hir_parameter_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int add(int left, short right) { return left + right; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6014,17 +6024,16 @@ static void test_typed_hir_parameter_lowering_without_ast() {
 static void test_typed_hir_pointer_lowering_without_ast() {
   printf("test_typed_hir_pointer_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int *touch(int *p) { int x = *p; int *q = &x; "
       "int *before = ++q; --q; *before = x + 1; "
       "long address = (long)q; q = (int *)address; "
       "*p = *q; return p; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6060,15 +6069,14 @@ static void test_typed_hir_pointer_lowering_without_ast() {
 static void test_typed_hir_post_inc_lowering_without_ast() {
   printf("test_typed_hir_post_inc_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int assign_once(int *dst, int *index) { "
       "dst[(*index)++] = 7; return *index; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6101,10 +6109,10 @@ static void test_typed_hir_post_inc_lowering_without_ast() {
 static void test_typed_hir_vla_parameter_metadata_without_ast() {
   printf("test_typed_hir_vla_parameter_metadata_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int rstride(int n, int a[n][n]) { "
       "return a[1][0] + a[2][1]; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -6126,7 +6134,6 @@ static void test_typed_hir_vla_parameter_metadata_without_ast() {
   ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_parameter));
   ASSERT_EQ(8, psx_hir_node_vla_stride_slot_size(vla_parameter));
   ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_parameter));
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
   ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_parameter));
@@ -6157,12 +6164,12 @@ static void test_typed_hir_vla_parameter_metadata_without_ast() {
 static void test_typed_hir_vla_allocation_without_ast() {
   printf("test_typed_hir_vla_allocation_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int first(int outer, int middle, int inner) { "
       "int values[outer][middle][inner]; "
       "values[0][0][0] = 42; "
       "return values[0][0][0]; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -6190,7 +6197,6 @@ static void test_typed_hir_vla_allocation_without_ast() {
                    vla_runtime, 0));
   ASSERT_EQ(2, psx_hir_node_vla_runtime_store_dimension(
                    vla_runtime, 1));
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6222,21 +6228,20 @@ static void test_typed_hir_vla_allocation_without_ast() {
 static void test_typed_hir_direct_call_lowering_without_ast() {
   printf("test_typed_hir_direct_call_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int add(int left, int right) { return left + right; } "
       "int sink(int tag, ...) { return tag; } "
       "int twice(int value) { "
       "return add(value, value) + sink(1, (char)value); } "
       "int recur(int value) { "
       "return value ? recur(value - 1) : 0; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(4, psx_hir_module_root_count(hir));
   psx_hir_node_id_t variadic_root_id = psx_hir_module_root_at(hir, 1);
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 2);
   psx_hir_node_id_t recursive_root_id = psx_hir_module_root_at(hir, 3);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6351,17 +6356,16 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
 static void test_typed_hir_variadic_aggregate_call_without_ast() {
   printf("test_typed_hir_variadic_aggregate_call_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Payload { char bytes[9]; }; "
       "int sink(int marker, ...); "
       "int invoke_sink(void) { "
       "struct Payload payload; return sink(1, payload); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6425,7 +6429,7 @@ static void test_typed_hir_variadic_aggregate_call_without_ast() {
 static void test_typed_hir_atomic_lowering_without_ast() {
   printf("test_typed_hir_atomic_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "long __ag_atomic_load(void *obj); "
       "long __ag_atomic_store(void *obj, long value); "
       "long __ag_atomic_fetch_add(void *obj, long value); "
@@ -6441,12 +6445,11 @@ static void test_typed_hir_atomic_lowering_without_ast() {
       "result = result + __ag_atomic_cas(&wide, &expected, 9); "
       "__ag_atomic_fence(); "
       "return result; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6508,16 +6511,15 @@ static void test_typed_hir_atomic_lowering_without_ast() {
 static void test_typed_hir_va_arg_area_lowering_without_ast() {
   printf("test_typed_hir_va_arg_area_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int has_args(int count, ...) { "
       "void *area = __va_arg_area; "
       "return count && area != (void *)0; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6547,7 +6549,7 @@ static void test_typed_hir_va_arg_area_lowering_without_ast() {
 static void test_typed_hir_register_aggregate_lowering_without_ast() {
   printf("test_typed_hir_register_aggregate_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Pair { int left; int right; }; "
       "struct Pair make_pair(int left, int right) { "
       "struct Pair pair; pair.left = left; pair.right = right; "
@@ -6555,7 +6557,7 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
       "int read_left(void) { return make_pair(3, 4).left; } "
       "int read_initialized(void) { "
       "struct Pair pair = make_pair(5, 6); return pair.right; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(3, psx_hir_module_root_count(hir));
@@ -6563,7 +6565,6 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
   psx_hir_node_id_t read_root_id = psx_hir_module_root_at(hir, 1);
   psx_hir_node_id_t initialized_root_id =
       psx_hir_module_root_at(hir, 2);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6625,7 +6626,7 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
 static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   printf("test_typed_hir_aggregate_parameter_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Pair { int left; int right; }; "
       "struct Triple { int first; int second; int third; }; "
       "int sum_pair(struct Pair value) { "
@@ -6636,14 +6637,13 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
       "struct Pair pair = {1, 2}; "
       "struct Triple triple = {3, 4, 5}; "
       "return sum_pair(pair) + sum_triple(triple); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(3, psx_hir_module_root_count(hir));
   psx_hir_node_id_t pair_root = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t triple_root = psx_hir_module_root_at(hir, 1);
   psx_hir_node_id_t caller_root = psx_hir_module_root_at(hir, 2);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6692,7 +6692,7 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
 static void test_typed_hir_indirect_aggregate_return_without_ast() {
   printf("test_typed_hir_indirect_aggregate_return_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Triple { int first; int second; int third; }; "
       "struct Triple make_triple(int value) { "
       "struct Triple result = {value, value + 1, value + 2}; "
@@ -6700,13 +6700,12 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
       "int read_third(void) { "
       "struct Triple result = make_triple(40); "
       "return result.third; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   psx_hir_node_id_t make_root = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t read_root = psx_hir_module_root_at(hir, 1);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6762,7 +6761,7 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
 static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
   printf("test_typed_hir_odd_sized_aggregate_abi_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct P3 { char x; char y; char z; }; "
       "struct P3 combine(struct P3 left, struct P3 right) { "
       "struct P3 result = { "
@@ -6772,7 +6771,7 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
       "struct P3 result = combine("
       "(struct P3){1, 2, 3}, (struct P3){4, 5, 6}); "
       "return result.x + result.y + result.z; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
@@ -6782,7 +6781,6 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
       psx_hir_module_root_at(hir, 1);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6826,7 +6824,7 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
 static void test_typed_hir_aggregate_ternary_without_ast() {
   printf("test_typed_hir_aggregate_ternary_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Triple { int first; int second; int third; }; "
       "struct Triple make_triple(int base) { "
       "struct Triple result = {base, base + 1, base + 2}; "
@@ -6837,7 +6835,7 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
       "int read_choice(int choose_call) { "
       "struct Triple selected = choose_triple(choose_call); "
       "return selected.first + selected.second + selected.third; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(3, psx_hir_module_root_count(hir));
@@ -6845,7 +6843,6 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
       psx_hir_module_root_at(hir, 1);
   psx_hir_node_id_t caller_root =
       psx_hir_module_root_at(hir, 2);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6884,12 +6881,12 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
 static void test_typed_hir_aggregate_member_storage_without_ast() {
   printf("test_typed_hir_aggregate_member_storage_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct S { int x; int y; int z; }; "
       "int main(void) { "
       "struct S value = {1, 2, 3}; struct S *pointer = &value; "
       "return value.x + pointer->y * 10 + pointer->z * 100; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -6922,7 +6919,6 @@ static void test_typed_hir_aggregate_member_storage_without_ast() {
   ASSERT_TRUE(saw_member_offset_0);
   ASSERT_TRUE(saw_member_offset_4);
   ASSERT_TRUE(saw_member_offset_8);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -6953,17 +6949,16 @@ static void test_typed_hir_aggregate_member_storage_without_ast() {
 static void test_typed_hir_floating_lowering_without_ast() {
   printf("test_typed_hir_floating_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int convert(double input, int increment) { "
       "double value = input + (double)increment + 1.5; "
       "if (value) return (int)-value; "
       "return 0; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7033,17 +7028,16 @@ static void test_typed_hir_floating_lowering_without_ast() {
 static void test_typed_hir_float_inc_dec_without_ast() {
   printf("test_typed_hir_float_inc_dec_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int update(void) { "
       "float first = 1.5f; double second = 4.0; "
       "first++; --second; "
       "return (int)(first + second); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7074,7 +7068,7 @@ static void test_typed_hir_float_inc_dec_without_ast() {
 static void test_typed_hir_structural_sequence_types_without_ast() {
   printf("test_typed_hir_structural_sequence_types_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct N { int v; struct N *next; }; "
       "struct Holder { struct N *items[3]; }; "
       "int read_members(void) { "
@@ -7085,34 +7079,40 @@ static void test_typed_hir_structural_sequence_types_without_ast() {
       "holder.items[1] = &second; "
       "holder.items[2] = &third; "
       "return holder.items[0]->next->v + holder.items[2]->v; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  int comma_count = 0;
+  int assignment_count = 0;
   for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *node = psx_hir_module_lookup(
         hir, (psx_hir_node_id_t)i);
-    if (!node || psx_hir_node_kind(node) != PSX_HIR_COMMA) continue;
+    if (!node || psx_hir_node_kind(node) != PSX_HIR_ASSIGN) continue;
+    const psx_hir_node_t *lhs = NULL;
     const psx_hir_node_t *rhs = NULL;
     for (size_t child_index = 0;
          child_index < psx_hir_node_child_count(node); child_index++) {
-      if (psx_hir_node_child_edge_at(node, child_index) !=
-          PSX_HIR_EDGE_RHS)
-        continue;
-      rhs = psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(node, child_index));
-      break;
+      psx_hir_edge_kind_t edge =
+          psx_hir_node_child_edge_at(node, child_index);
+      if (edge == PSX_HIR_EDGE_LHS)
+        lhs = psx_hir_module_lookup(
+            hir, psx_hir_node_child_at(node, child_index));
+      if (edge == PSX_HIR_EDGE_RHS)
+        rhs = psx_hir_module_lookup(
+            hir, psx_hir_node_child_at(node, child_index));
     }
+    ASSERT_TRUE(lhs != NULL);
     ASSERT_TRUE(rhs != NULL);
-    ASSERT_EQ(
-        psx_hir_node_qual_type(rhs).type_id,
-        psx_hir_node_qual_type(node).type_id);
-    comma_count++;
+    ASSERT_EQ(PSX_HIR_ROLE_EXPRESSION, psx_hir_node_role(lhs));
+    ASSERT_EQ(PSX_HIR_ROLE_EXPRESSION, psx_hir_node_role(rhs));
+    ASSERT_EQ(psx_hir_node_qual_type(lhs).type_id,
+              psx_hir_node_qual_type(node).type_id);
+    ASSERT_TRUE(
+        psx_hir_node_qual_type(rhs).type_id != PSX_TYPE_ID_INVALID);
+    assignment_count++;
   }
-  ASSERT_TRUE(comma_count >= 3);
-  free(program);
+  ASSERT_TRUE(assignment_count >= 6);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7141,7 +7141,7 @@ static void test_typed_hir_structural_sequence_types_without_ast() {
 static void test_typed_hir_complex_copy_comparison_without_ast() {
   printf("test_typed_hir_complex_copy_comparison_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "double _Complex identity(double _Complex value) { return value; } "
       "int compare(void) { "
       "_Complex double first = 3.0; "
@@ -7149,13 +7149,12 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
       "_Complex double sum = copy + 1.0; "
       "_Complex double expected = 4.0; "
       "return sum == expected; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   psx_hir_node_id_t identity_root_id = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 1);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7242,19 +7241,18 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
 static void test_typed_hir_complex_width_conversion_without_ast() {
   printf("test_typed_hir_complex_width_conversion_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int convert_complex(void) { "
       "double _Complex wide = {3.0, 4.0}; "
       "float _Complex narrow = wide; "
       "double _Complex restored = narrow; "
       "narrow = restored; "
       "return ((float *)&narrow)[1] > 3.9f; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7283,15 +7281,14 @@ static void test_typed_hir_complex_width_conversion_without_ast() {
 static void test_typed_hir_indirect_call_lowering_without_ast() {
   printf("test_typed_hir_indirect_call_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int apply(int (*callback)(int), int value) { "
       "return callback(value); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7340,16 +7337,15 @@ static void test_typed_hir_indirect_call_lowering_without_ast() {
 static void test_typed_hir_unprototyped_indirect_call_without_ast() {
   printf("test_typed_hir_unprototyped_indirect_call_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "typedef int (*callback_t)(); "
       "int apply_unprototyped(callback_t callback) { "
       "return callback(7); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7394,19 +7390,18 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast() {
 static void test_typed_hir_void_function_lowering_without_ast() {
   printf("test_typed_hir_void_function_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "void assign(int *pointer, int value) { *pointer = value; return; } "
       "void clear(int *pointer) { *pointer = 0; } "
       "int run(void) { int value = 1; assign(&value, 7); "
       "clear(&value); return value; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(3, psx_hir_module_root_count(hir));
   psx_hir_node_id_t assign_root = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t clear_root = psx_hir_module_root_at(hir, 1);
   psx_hir_node_id_t run_root = psx_hir_module_root_at(hir, 2);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7465,16 +7460,15 @@ static void test_typed_hir_void_function_lowering_without_ast() {
 static void test_typed_hir_symbol_reference_lowering_without_ast() {
   printf("test_typed_hir_symbol_reference_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int consume(const char *text, int (*callback)(int)); "
       "int increment(int value) { return value + 1; } "
       "int run(void) { return consume(\"x\", increment); }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 1);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7540,18 +7534,17 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
 static void test_typed_hir_global_symbol_lowering_without_ast() {
   printf("test_typed_hir_global_symbol_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "extern int external_value; static int internal_value; "
       "_Thread_local int tls_value; "
       "int use_globals(int value) { internal_value = value; "
       "tls_value = internal_value; return external_value + tls_value; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   ASSERT_EQ(3, psx_hir_module_symbol_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7623,12 +7616,12 @@ static void test_typed_hir_global_symbol_lowering_without_ast() {
 static void test_typed_hir_bitfield_lowering_without_ast() {
   printf("test_typed_hir_bitfield_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "struct Bits { unsigned int a:3; int b:5; }; "
       "struct Bits bits = {3, -2}; "
       "int set_bits(int value) { bits.a = value; "
       "return bits.a * 10 + bits.b; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -7656,7 +7649,6 @@ static void test_typed_hir_bitfield_lowering_without_ast() {
   }
   ASSERT_TRUE(bitfield_count >= 3);
   ASSERT_TRUE(signed_count >= 1);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
   ASSERT_TRUE(psx_hir_node_bitfield_info(
@@ -7692,19 +7684,18 @@ static void test_typed_hir_bitfield_lowering_without_ast() {
 static void test_typed_hir_conditional_expr_lowering_without_ast() {
   printf("test_typed_hir_conditional_expr_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "void fail(void); "
       "int select(int *pointer, int condition) { "
       "int a = condition && ((*pointer = *pointer + 1) != 0); "
       "int b = condition || ((*pointer = *pointer + 2) != 0); "
       "condition ? (void)0 : fail(); "
       "return condition ? a : b; }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -7739,7 +7730,7 @@ static void test_typed_hir_conditional_expr_lowering_without_ast() {
 static void test_typed_hir_control_flow_lowering_without_ast() {
   printf("test_typed_hir_control_flow_lowering_without_ast...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  int program_resolved = resolve_program_input_hir(
       "int sum(int n) { int r = 0; int branch; "
       "if (n > 10) branch = 1; else branch = 2; r = r + branch; "
       "goto start; r = 99; start: "
@@ -7751,13 +7742,12 @@ static void test_typed_hir_control_flow_lowering_without_ast() {
       "case 1: r = r + 1; break; default: r = 99; } return r; } "
       "int terminal_switch(int n) { switch (n) { "
       "case 1: return 10; case 2: return 20; default: return 99; } }");
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
   psx_hir_node_id_t terminal_root_id = psx_hir_module_root_at(hir, 1);
-  free(program);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 

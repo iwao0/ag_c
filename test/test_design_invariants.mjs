@@ -2688,6 +2688,38 @@ if (/\b(?:analyze_test_expression|parse_expr_input)\s*\(/.test(
     "parser tests must resolve standalone expressions as immutable Syntax plus Typed HIR",
   );
 }
+const directProgramHirHelper = parserUnitTestSource.match(
+  /static\s+int\s+resolve_test_program_hir_from\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
+const directProgramHirTests = [
+  "test_typed_hir_ownership_and_type_boundary",
+  ...[
+    ...parserUnitTestSource.matchAll(
+      /static\s+void\s+(test_typed_hir_[A-Za-z0-9_]+_without_ast)\s*\(/g,
+    ),
+  ].map((match) => match[1]),
+];
+if (!directProgramHirHelper ||
+    !/\bpsx_frontend_next_function\s*\(/.test(directProgramHirHelper[1]) ||
+    /compatibility|psx_test_frontend_next_function/.test(
+      directProgramHirHelper[1],
+    ) ||
+    directProgramHirTests.length !== 31) {
+  throw new Error(
+    "Typed HIR program tests must enter through the production frontend",
+  );
+}
+for (const testName of directProgramHirTests) {
+  const body = parserUnitTestSource.match(
+    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+  );
+  if (!body || !/\bresolve_program_input_hir\s*\(/.test(body[1]) ||
+      /\bparse_program_input\s*\(/.test(body[1])) {
+    throw new Error(
+      `${testName} must resolve programs directly to Typed HIR`,
+    );
+  }
+}
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
     !/psx_frontend_resolve_parsed_function_to_hir_in_session/.test(
       semanticPipelineHeader,
