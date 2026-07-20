@@ -2681,28 +2681,11 @@ for (const testName of [
     );
   }
 }
-const compatibilityAnalyzerCalls = callBodies(
-  parserUnitTestSource,
-  "analyze_test_expression",
-);
-if (compatibilityAnalyzerCalls.length !== 2 ||
-    !/static\s+node_t\s*\*analyze_test_expression\s*\(/.test(
-      parserUnitTestSource,
-    ) ||
-    !/static\s+node_t\s*\*parse_expr_input\s*\([^]*?analyze_test_expression\s*\(\s*expr\s*,\s*head\s*\)/.test(
+if (/\b(?:analyze_test_expression|parse_expr_input)\s*\(/.test(
       parserUnitTestSource,
     )) {
   throw new Error(
-    "the mutable compatibility analyzer must remain centralized in the explicit legacy parse helper",
-  );
-}
-const legacyAnalyzedExpressionParseSites = callBodies(
-  parserUnitTestSource,
-  "parse_expr_input",
-);
-if (legacyAnalyzedExpressionParseSites.length > 33) {
-  throw new Error(
-    "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
+    "parser tests must resolve standalone expressions as immutable Syntax plus Typed HIR",
   );
 }
 if (/node_t\s*\*psx_frontend_/.test(semanticPipelineHeader) ||
@@ -7143,10 +7126,10 @@ const availableTypeInterningCheckCount = [
     /\bpsx_require_available_semantic_tree_types_interned\s*\(/g,
   ),
 ].length;
-if (completeSemanticBoundaryCheckCount !== 2 ||
-    initializerSemanticBoundaryCheckCount !== 1 ||
-    internedSemanticBoundaryCheckCount !== 2 ||
-    internedInitializerBoundaryCheckCount !== 1 ||
+if (completeSemanticBoundaryCheckCount !== 1 ||
+    initializerSemanticBoundaryCheckCount !== 0 ||
+    internedSemanticBoundaryCheckCount !== 1 ||
+    internedInitializerBoundaryCheckCount !== 0 ||
     availableTypeInterningCheckCount !== 1) {
   throw new Error(
     "every semantic pipeline entry must pre-intern available types and require interned and canonical expression contracts",
@@ -7156,32 +7139,15 @@ const typedResolutionBoundary =
   legacySyntaxDiagnosticsSource.match(
     /static\s+int\s+resolve_typed_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
-const expressionFinalizationBoundary =
-  legacySyntaxDiagnosticsSource.match(
-    /static\s+int\s+finalize_expression_compatibility_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
-  )?.[1] ?? "";
 const functionSemanticPipelineBody =
   legacySyntaxDiagnosticsSource.match(
     /static\s+int\s+resolve_function_compatibility_tree_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
-  )?.[1] ?? "";
-const expressionSemanticPipelineBody =
-  legacySyntaxDiagnosticsSource.match(
-    /static\s+int\s+resolve_nonfunction_compatibility_tree\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
   )?.[1] ?? "";
 if (!/psx_require_available_semantic_tree_types_interned\s*\(/.test(
       typedResolutionBoundary,
     ) ||
     !/psx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?psx_require_semantic_tree_has_canonical_expression_types\s*\(/.test(
-      expressionFinalizationBoundary,
-    ) ||
-    !/psx_require_semantic_initializer_has_interned_expression_types\s*\([\s\S]*?psx_require_semantic_initializer_has_canonical_expression_types\s*\(/.test(
-      expressionFinalizationBoundary,
-    ) ||
-    !/psx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?psx_require_semantic_tree_has_canonical_expression_types\s*\(/.test(
       functionSemanticPipelineBody,
-    ) ||
-    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_compatibility_tree\s*\(/.test(
-      expressionSemanticPipelineBody,
     )) {
   throw new Error(
     "semantic tree resolution must intern available types before lowering and enforce final expression contracts",
@@ -7190,9 +7156,6 @@ if (!/psx_require_available_semantic_tree_types_interned\s*\(/.test(
 if (/\bpsx_lower_implicit_conversions\s*\(/.test(
       functionSemanticPipelineBody,
     ) ||
-    /\bpsx_lower_implicit_conversions\s*\(/.test(
-      expressionSemanticPipelineBody,
-    ) ||
     !/\bhir_ir_coerce_direct_value_to_qual_type\s*\(/.test(
       hirIrBuilder,
     ) ||
@@ -7200,7 +7163,7 @@ if (/\bpsx_lower_implicit_conversions\s*\(/.test(
       hirIrBuilder,
     )) {
   throw new Error(
-    "function and expression semantic trees must preserve operands while HIR-to-IR owns implicit conversion and Bool normalization",
+    "function semantic trees must preserve operands while HIR-to-IR owns implicit conversion and Bool normalization",
   );
 }
 if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
@@ -12758,8 +12721,8 @@ if (!parsedFunctionResolutionBoundary ||
     !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\(/.test(
       semanticTreeResolutionTestSupportHeader,
     ) ||
-    !/psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\(/.test(
-      semanticTreeResolutionTestSupportHeader,
+    /psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\(/.test(
+      `${semanticTreeResolutionTestSupportHeader}\n${legacySyntaxDiagnosticsSource}`,
     ) ||
     /semantic_tree_resolution_internal\.h/.test(
       `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}\n${parserCompatibilityTestHook}`,
@@ -12802,14 +12765,11 @@ if (!parsedFunctionResolutionBoundary ||
     !/psx_semantic_context_t/.test(
       typedHirMaterializationDeclaration,
     ) ||
-    semanticMaterializationCalls.length !== 3 ||
+    semanticMaterializationCalls.length !== 2 ||
     /if\s*\(\s*is_initializer\s*\)\s*return\s+1/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
     !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
-      legacySyntaxDiagnosticsSource,
-    ) ||
-    !/psx_resolve_expression_compatibility_work_tree_for_test_in_contexts\s*\([^]*?materialize_resolved_tree\s*\(/.test(
       legacySyntaxDiagnosticsSource,
     ) ||
     !/const\s+psx_typed_hir_tree_t\s*\*psx_resolution_work_tree_typed_hir\s*\(/.test(
@@ -12935,11 +12895,8 @@ if (resolveTreeCalls.length !== 1 ||
     !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?psx_validate_lowered_tree_in_context\s*\(/.test(
       functionSemanticPipelineBody,
     ) ||
-    !/resolve_typed_tree\s*\([\s\S]*?lower_tree\s*\([\s\S]*?finalize_expression_compatibility_tree\s*\(/.test(
-      expressionSemanticPipelineBody,
-    ) ||
     /\bpsx_semantic_resolve_(?:tree|initializer_tree)_in_contexts\s*\(/.test(
-      `${functionSemanticPipelineBody}\n${expressionSemanticPipelineBody}`,
+      functionSemanticPipelineBody,
     ) ||
     !/psx_walk_semantic_tree\s*\(\s*ps_ctx_resolution_store\s*\(\s*semantic_context\s*\)\s*,\s*root\s*,\s*validate_lowered_node/.test(
       loweredTreeValidationSource,

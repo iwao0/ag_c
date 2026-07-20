@@ -1677,17 +1677,6 @@ static int test_node_compound_literal_array_size(node_t *node) {
              : 0;
 }
 
-static lvar_t *test_compound_literal_local_object(node_t *node) {
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(node);
-  if (!node || node->kind != ND_COMPOUND_LITERAL || !state)
-    return NULL;
-  psx_compound_literal_resolution_t *resolution =
-      &state->compound_literal;
-  return resolution->kind == PSX_COMPOUND_LITERAL_LOCAL_OBJECT
-             ? resolution->local_object : NULL;
-}
-
 static int plan_test_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *plan) {
   ag_target_info_t target = ag_target_info_host();
@@ -2489,21 +2478,6 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
   return declarator;
 }
 
-static node_t *analyze_test_expression(
-    node_t *expression, const token_t *fallback_diag_tok) {
-  psx_resolution_work_tree_t *work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          test_arena_context(), expression);
-  if (!work_tree ||
-      !psx_resolve_expression_compatibility_work_tree_for_test_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
-          ag_compilation_session_options_view(test_suite_session),
-          work_tree, fallback_diag_tok))
-    return NULL;
-  return psx_resolution_work_tree_compatibility_root_mut(work_tree);
-}
-
 static psx_frontend_expression_hir_t resolve_test_expression_hir(
     const node_t *syntax) {
   psx_frontend_expression_hir_t result = {
@@ -2910,9 +2884,8 @@ static void count_float_literal(float_lit_t *lit, void *user) {
   (*(int *)user)++;
 }
 
-/* parse_expr_input は単体式パースのため、main 関数の宣言ブロックを通らない。
- * ag_c は未宣言識別子をエラー扱いするので、テストで多用する短い名前を
- * あらかじめローカル変数として登録しておく。 */
+/* Standalone expression tests model a function body without parsing its
+ * declaration block, so predeclare the short fixture names they use. */
 static void preregister_test_locals(void) {
   static char names[] = "abcdefghijklmnopqrstuvwxyz";
   for (int i = 0; i < 26; i++) {
@@ -2926,24 +2899,6 @@ static void assert_semantic_tree_invariants(node_t *root) {
   fprintf(stderr, "semantic invariant failed: status=%d kind=%d\n",
           failure.status, failure.node ? failure.node->kind : -1);
   exit(1);
-}
-
-static node_t *test_effective_semantic_expression(node_t *node) {
-  return node;
-}
-
-static node_t *parse_expr_input(const char *input) {
-  reset_test_locals();
-  preregister_test_locals();
-  /* 単体式パースは関数本体内のコードを模す (ローカルを登録するのと同様)。
-   * 複合リテラル `(int){3}` をローカル実体化経路 (ND_COMMA) で扱わせるため、
-   * 現在関数名を非 NULL にしておく (本物のパースでは関数定義時に設定される)。 */
-  set_test_current_funcname((char *)"__test__", 8);
-  token_t *head = tk_tokenize((char *)input);
-  node_t *expr = parse_test_expression_from(head);
-  node_t *analyzed = analyze_test_expression(expr, head);
-  assert_semantic_tree_invariants(analyzed);
-  return test_effective_semantic_expression(analyzed);
 }
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
@@ -3056,6 +3011,40 @@ static void assert_test_integer_expression_hir(
   ASSERT_EQ(expected_unsigned, shape.is_unsigned);
   ASSERT_EQ(expected_size,
             test_type_size_id(psx_hir_node_qual_type(root).type_id));
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
+static void assert_test_generic_number_hir(
+    const char *input, long long expected_value) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(input, &syntax);
+  ASSERT_EQ(ND_GENERIC_SELECTION, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(root));
+  ASSERT_EQ(expected_value, psx_hir_node_integer_value(root));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
+}
+
+static void assert_test_compound_assignment_hir(
+    const char *input, token_kind_t expected_syntax_operator,
+    psx_hir_compound_operator_t expected_hir_operator) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(input, &syntax);
+  ASSERT_EQ(ND_COMPOUND_ASSIGN, syntax->kind);
+  ASSERT_EQ(expected_syntax_operator, syntax->source_op);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN, psx_hir_node_kind(root));
+  ASSERT_EQ(expected_hir_operator,
+            psx_hir_node_compound_operator(root));
+  ASSERT_EQ(2, psx_hir_node_child_count(root));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  const psx_hir_node_t *rhs = test_hir_child(&expression, root, 1);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(rhs));
+  ASSERT_EQ(3, psx_hir_node_integer_value(rhs));
   psx_frontend_expression_hir_dispose(&expression);
 }
 
@@ -8211,7 +8200,6 @@ static node_function_call_t *as_function_call(node_t *n) {
 }
 static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
-static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
 static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 
 static int test_type_sizeof(const psx_type_t *type) {
@@ -18788,11 +18776,22 @@ static void test_expr_generic() {
   assert_canonical_type_signature(generic_id_pointer, "p<i32(i32)>");
   assert_canonical_type_signature(unary_type, "p<i32(i32)>");
   ASSERT_TRUE(ps_type_generic_matches(generic_id_pointer, unary_type));
-  node_t *generic_id_ref = parse_expr_input("generic_id");
-  const psx_type_t *generic_id_ref_type = ps_node_get_type(generic_id_ref);
-  ASSERT_TRUE(generic_id_ref_type != NULL);
-  assert_canonical_type_signature(generic_id_ref_type, "p<i32(i32)>");
-  ASSERT_TRUE(ps_type_generic_matches(generic_id_ref_type, unary_type));
+  node_t *generic_id_syntax = NULL;
+  psx_frontend_expression_hir_t generic_id_expression =
+      resolve_test_expression_input_hir(
+          "generic_id", &generic_id_syntax);
+  const psx_hir_node_t *generic_id_ref =
+      test_expression_hir_root(&generic_id_expression);
+  ASSERT_EQ(ND_IDENTIFIER, generic_id_syntax->kind);
+  ASSERT_EQ(PSX_HIR_FUNCTION_REF, psx_hir_node_kind(generic_id_ref));
+  psx_qual_type_t generic_id_ref_type =
+      psx_hir_node_qual_type(generic_id_ref);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(generic_id_ref_type).kind);
+  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      generic_id_ref_type, ps_ctx_typedef_decl_qual_type(&unary_info)));
+  psx_frontend_expression_hir_dispose(&generic_id_expression);
   parsed_code = parse_program_input(
       "typedef int (*unary_fn)(int); int id(int x){return x;} "
       "int main(){return _Generic(id, unary_fn:9, int:4, default:5);}");
@@ -18801,15 +18800,12 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, typedef_funcref_return->kind);
   assert_selected_generic_number(typedef_funcref_return->lhs, 9);
 
-    node_t *g1 = parse_expr_input("_Generic(1, int: 11, default: 22)");
-  assert_selected_generic_number(g1, 11);
-
-    node_t *g2 = parse_expr_input("_Generic(1.0, float: 11, double: 33, default: 22)");
-  assert_selected_generic_number(g2, 33);
-
-  node_t *generic_atomic_scalar =
-      parse_expr_input("_Generic(1, _Atomic(int): 41, default: 42)");
-  assert_selected_generic_number(generic_atomic_scalar, 41);
+  assert_test_generic_number_hir(
+      "_Generic(1, int: 11, default: 22)", 11);
+  assert_test_generic_number_hir(
+      "_Generic(1.0, float: 11, double: 33, default: 22)", 33);
+  assert_test_generic_number_hir(
+      "_Generic(1, _Atomic(int): 41, default: 42)", 41);
   expect_parse_ok(
       "int main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
   expect_parse_ok(
@@ -19340,78 +19336,62 @@ static void test_expr_inc_dec_typed_hir_boundary() {
 
 static void test_expr_assign() {
   printf("test_expr_assign...\n");
-    node_t *node = parse_expr_input("a = 3");
-
-  ASSERT_EQ(ND_ASSIGN, node->kind);
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(node->lhs));
-  ASSERT_TRUE(psx_resolved_object_ref_storage_offset(
-                  as_lvar(node->lhs)) >= 0);
-  ASSERT_EQ(ND_NUM, node->rhs->kind);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("a = 3", &syntax);
+  ASSERT_EQ(ND_ASSIGN, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_ASSIGN, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  const psx_hir_node_t *rhs = test_hir_child(&expression, root, 1);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(rhs));
+  ASSERT_EQ(3, psx_hir_node_integer_value(rhs));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_compound_assign() {
   printf("test_expr_compound_assign...\n");
-
-    node_t *add = parse_expr_input("a += 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, add->kind);
-  ASSERT_EQ(ND_NUM, add->rhs->kind);
-  ASSERT_EQ(TK_PLUSEQ, add->source_op);
-
-    node_t *sub = parse_expr_input("a -= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, sub->kind);
-  ASSERT_EQ(ND_NUM, sub->rhs->kind);
-  ASSERT_EQ(TK_MINUSEQ, sub->source_op);
-
-    node_t *mul = parse_expr_input("a *= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, mul->kind);
-  ASSERT_EQ(ND_NUM, mul->rhs->kind);
-  ASSERT_EQ(TK_MULEQ, mul->source_op);
-
-    node_t *div = parse_expr_input("a /= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, div->kind);
-  ASSERT_EQ(ND_NUM, div->rhs->kind);
-  ASSERT_EQ(TK_DIVEQ, div->source_op);
-
-    node_t *mod = parse_expr_input("a %= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, mod->kind);
-  ASSERT_EQ(ND_NUM, mod->rhs->kind);
-  ASSERT_EQ(TK_MODEQ, mod->source_op);
-
-    node_t *shl = parse_expr_input("a <<= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, shl->kind);
-  ASSERT_EQ(ND_NUM, shl->rhs->kind);
-  ASSERT_EQ(TK_SHLEQ, shl->source_op);
-
-    node_t *shr = parse_expr_input("a >>= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, shr->kind);
-  ASSERT_EQ(ND_NUM, shr->rhs->kind);
-  ASSERT_EQ(TK_SHREQ, shr->source_op);
-
-    node_t *band = parse_expr_input("a &= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, band->kind);
-  ASSERT_EQ(ND_NUM, band->rhs->kind);
-  ASSERT_EQ(TK_ANDEQ, band->source_op);
-
-    node_t *bxor = parse_expr_input("a ^= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, bxor->kind);
-  ASSERT_EQ(ND_NUM, bxor->rhs->kind);
-  ASSERT_EQ(TK_XOREQ, bxor->source_op);
-
-    node_t *bor = parse_expr_input("a |= 3");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, bor->kind);
-  ASSERT_EQ(ND_NUM, bor->rhs->kind);
-  ASSERT_EQ(TK_OREQ, bor->source_op);
+  const struct {
+    const char *input;
+    token_kind_t syntax_operator;
+    psx_hir_compound_operator_t hir_operator;
+  } cases[] = {
+      {"a += 3", TK_PLUSEQ, PSX_HIR_COMPOUND_ADD},
+      {"a -= 3", TK_MINUSEQ, PSX_HIR_COMPOUND_SUB},
+      {"a *= 3", TK_MULEQ, PSX_HIR_COMPOUND_MUL},
+      {"a /= 3", TK_DIVEQ, PSX_HIR_COMPOUND_DIV},
+      {"a %= 3", TK_MODEQ, PSX_HIR_COMPOUND_MOD},
+      {"a <<= 3", TK_SHLEQ, PSX_HIR_COMPOUND_SHL},
+      {"a >>= 3", TK_SHREQ, PSX_HIR_COMPOUND_SHR},
+      {"a &= 3", TK_ANDEQ, PSX_HIR_COMPOUND_BITAND},
+      {"a ^= 3", TK_XOREQ, PSX_HIR_COMPOUND_BITXOR},
+      {"a |= 3", TK_OREQ, PSX_HIR_COMPOUND_BITOR},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    assert_test_compound_assignment_hir(
+        cases[i].input, cases[i].syntax_operator,
+        cases[i].hir_operator);
+  }
 }
 
 static void test_expr_comma() {
   printf("test_expr_comma...\n");
-
-    node_t *node = parse_expr_input("a=1, b=2, a+b");
-  ASSERT_EQ(ND_COMMA, node->kind);
-  ASSERT_EQ(ND_COMMA, node->lhs->kind);
-  ASSERT_EQ(ND_ADD, node->rhs->kind);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(
+          "a=1, b=2, a+b", &syntax);
+  ASSERT_EQ(ND_COMMA, syntax->kind);
+  ASSERT_EQ(ND_COMMA, syntax->lhs->kind);
+  ASSERT_EQ(ND_ADD, syntax->rhs->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_COMMA, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_COMMA,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(PSX_HIR_ADD,
+            psx_hir_node_kind(test_hir_child(&expression, root, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_program_funcdef() {
@@ -19437,19 +19417,32 @@ static void test_program_funcdef() {
 
 static void test_funcall() {
   printf("test_funcall...\n");
-    node_t *node = parse_expr_input("add(1, 2)");
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("add(1, 2)", &syntax);
+  ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(root));
+  ASSERT_EQ(2, psx_hir_node_child_count(root));
+  ASSERT_EQ(1, psx_hir_node_integer_value(
+                   test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(2, psx_hir_node_integer_value(
+                   test_hir_child(&expression, root, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  ASSERT_EQ(ND_FUNCALL, node->kind);
-  ASSERT_EQ(2, as_function_call(node)->argument_count);
-  ASSERT_EQ(1, as_num(as_function_call(node)->arguments[0])->val);
-  ASSERT_EQ(2, as_num(as_function_call(node)->arguments[1])->val);
-
-  node= parse_expr_input("foo((1,2), 3)");
-  ASSERT_EQ(ND_FUNCALL, node->kind);
-  ASSERT_EQ(2, as_function_call(node)->argument_count);
-  ASSERT_EQ(ND_COMMA, as_function_call(node)->arguments[0]->kind);
-  ASSERT_EQ(ND_NUM, as_function_call(node)->arguments[1]->kind);
-  ASSERT_EQ(3, as_num(as_function_call(node)->arguments[1])->val);
+  expression = resolve_test_expression_input_hir(
+      "foo((1,2), 3)", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_FUNCALL, syntax->kind);
+  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(root));
+  ASSERT_EQ(2, psx_hir_node_child_count(root));
+  ASSERT_EQ(PSX_HIR_COMMA,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  const psx_hir_node_t *second_argument =
+      test_hir_child(&expression, root, 1);
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(second_argument));
+  ASSERT_EQ(3, psx_hir_node_integer_value(second_argument));
+  psx_frontend_expression_hir_dispose(&expression);
 
   parsed_code = parse_program_input(
       "int main() { int (*fp)(int); fp(1); }");
@@ -19989,34 +19982,45 @@ static void test_expr_member_access() {
 
 static void test_expr_string() {
   printf("test_expr_string...\n");
-    node_t *node = parse_expr_input("\"hello\"");
-
-  ASSERT_EQ(ND_STRING, node->kind);
-  ASSERT_TRUE(psx_string_literal_label(as_string(node)) != NULL);
-  ASSERT_TRUE(ps_node_get_type(node) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(node)->kind);
-  ASSERT_TRUE(ps_node_get_type(node)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(node)->base->kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_CHAR, ps_node_get_type(node)->base->integer_kind);
-  node_string_t *string = as_string(node);
-  ASSERT_EQ(5, string->literal_length);
-  ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
-  string_lit_t *lit = ps_find_string_lit_by_label_in(
-      ag_compilation_session_global_registry(test_suite_session),
-      psx_string_literal_label(string));
-  ASSERT_TRUE(lit != NULL);
-  ASSERT_EQ(5, lit->len);
-  ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("\"hello\"", &syntax);
+  ASSERT_EQ(ND_STRING, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(root));
+  psx_qual_type_t type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_qual_type_shape(test_qual_type_base(type)).kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
+            test_qual_type_shape(test_qual_type_base(type)).integer_kind);
+  size_t literal_length = 0;
+  const char *literal =
+      psx_hir_node_literal_contents(root, &literal_length);
+  ASSERT_EQ(5, literal_length);
+  ASSERT_TRUE(literal != NULL);
+  ASSERT_TRUE(strncmp(literal, "hello", 5) == 0);
+  size_t label_length = 0;
+  ASSERT_TRUE(psx_hir_node_name(root, &label_length) != NULL);
+  ASSERT_TRUE(label_length > 0);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_concat_string() {
   printf("test_expr_concat_string...\n");
-    node_t *node = parse_expr_input("\"he\" \"llo\"");
-
-  ASSERT_EQ(ND_STRING, node->kind);
-  node_string_t *string = as_string(node);
-  ASSERT_EQ(5, string->literal_length);
-  ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("\"he\" \"llo\"", &syntax);
+  ASSERT_EQ(ND_STRING, syntax->kind);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(root));
+  size_t literal_length = 0;
+  const char *literal =
+      psx_hir_node_literal_contents(root, &literal_length);
+  ASSERT_EQ(5, literal_length);
+  ASSERT_TRUE(literal != NULL);
+  ASSERT_TRUE(strncmp(literal, "hello", 5) == 0);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_type_decl() {
@@ -21445,14 +21449,23 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, grid_rows_type->kind);
   ASSERT_TRUE(grid_rows_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, grid_rows_type->base->kind);
-  node_t *grid_rowptr_elem = parse_expr_input("(*__tm_grid_ptrs)[0]");
-  const psx_type_t *grid_rowptr_elem_type =
-      ps_node_get_type(grid_rowptr_elem);
-  ASSERT_TRUE(grid_rowptr_elem_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, grid_rowptr_elem_type->kind);
-  ASSERT_TRUE(grid_rowptr_elem_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, grid_rowptr_elem_type->base->kind);
-  ASSERT_EQ(12, ps_node_deref_size(grid_rowptr_elem));
+  node_t *grid_rowptr_syntax = NULL;
+  psx_frontend_expression_hir_t grid_rowptr_expression =
+      resolve_test_expression_input_hir(
+          "(*__tm_grid_ptrs)[0]", &grid_rowptr_syntax);
+  ASSERT_EQ(ND_SUBSCRIPT, grid_rowptr_syntax->kind);
+  const psx_hir_node_t *grid_rowptr_elem =
+      test_expression_hir_root(&grid_rowptr_expression);
+  ASSERT_EQ(PSX_HIR_SUBSCRIPT, psx_hir_node_kind(grid_rowptr_elem));
+  psx_qual_type_t grid_rowptr_type =
+      psx_hir_node_qual_type(grid_rowptr_elem);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(grid_rowptr_type).kind);
+  psx_qual_type_t grid_row_type =
+      test_qual_type_base(grid_rowptr_type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(grid_row_type).kind);
+  ASSERT_EQ(12, test_type_size_id(grid_row_type.type_id));
+  psx_frontend_expression_hir_dispose(&grid_rowptr_expression);
 
   parsed_code = parse_program_input(
       "int __tm_param_nested_rows(int (*(*rows)[2])[3]) { "
@@ -24172,8 +24185,7 @@ static void test_type_metadata_bridge() {
   body = as_block(fn->base.rhs);
   node_t *fp_to_unsigned_ret = body->body[0];
   ASSERT_EQ(ND_RETURN, fp_to_unsigned_ret->kind);
-  node_t *fp_to_unsigned_result =
-      test_effective_semantic_expression(fp_to_unsigned_ret->lhs);
+  node_t *fp_to_unsigned_result = fp_to_unsigned_ret->lhs;
   ASSERT_TRUE(ps_node_is_unsigned_type(fp_to_unsigned_result));
   ASSERT_EQ(ND_CAST, psx_resolution_node_kind(fp_to_unsigned_result));
   ASSERT_TRUE(ps_node_is_source_cast(fp_to_unsigned_result));
@@ -25636,43 +25648,43 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER,
             block_declared_function->param_types[0]->kind);
 
-  node_t *compound_lit_expr = parse_expr_input("(int[3]){1,2,3}");
-  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_lit_expr->kind);
-  lvar_t *compound_lit_local =
-      test_compound_literal_local_object(compound_lit_expr);
-  ASSERT_TRUE(compound_lit_local != NULL);
-  ASSERT_TRUE(test_lvar_decl_type(compound_lit_local) != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY,
-            test_lvar_decl_type(compound_lit_local)->kind);
-  ASSERT_EQ(12, ps_type_sizeof(
-                    test_lvar_decl_type(compound_lit_local)));
-  node_t *compound_lit_stale_addr =
-      ps_node_new_lvar_array_addr_for(compound_lit_local);
-  ASSERT_TRUE(ps_node_get_type(compound_lit_stale_addr) != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE,
-            canonical_node_pointee_fp_kind(compound_lit_stale_addr));
-  ASSERT_TRUE(!canonical_node_pointee_is_bool(compound_lit_stale_addr));
-  ASSERT_TRUE(!canonical_node_pointee_is_unsigned(compound_lit_stale_addr));
-
-  node_t *compound_unsigned_expr = parse_expr_input("(unsigned char[2]){1,2}");
-  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_unsigned_expr->kind);
-  lvar_t *compound_unsigned_local =
-      test_compound_literal_local_object(compound_unsigned_expr);
-  ASSERT_TRUE(compound_unsigned_local != NULL);
-  ASSERT_TRUE(test_lvar_decl_type(compound_unsigned_local) != NULL);
-  node_t *compound_unsigned_addr =
-      ps_node_new_lvar_array_addr_for(compound_unsigned_local);
-  ASSERT_TRUE(canonical_node_pointee_is_unsigned(compound_unsigned_addr));
-
-  node_t *compound_bool_expr = parse_expr_input("(_Bool[2]){0,1}");
-  ASSERT_EQ(ND_COMPOUND_LITERAL, compound_bool_expr->kind);
-  lvar_t *compound_bool_local =
-      test_compound_literal_local_object(compound_bool_expr);
-  ASSERT_TRUE(compound_bool_local != NULL);
-  ASSERT_TRUE(test_lvar_decl_type(compound_bool_local) != NULL);
-  node_t *compound_bool_addr =
-      ps_node_new_lvar_array_addr_for(compound_bool_local);
-  ASSERT_TRUE(canonical_node_pointee_is_bool(compound_bool_addr));
+  const struct {
+    const char *input;
+    int array_length;
+    psx_type_kind_t element_kind;
+    psx_integer_kind_t integer_kind;
+    int is_unsigned;
+  } compound_arrays[] = {
+      {"(int[3]){1,2,3}", 3, PSX_TYPE_INTEGER,
+       PSX_INTEGER_KIND_INT, 0},
+      {"(unsigned char[2]){1,2}", 2, PSX_TYPE_INTEGER,
+       PSX_INTEGER_KIND_CHAR, 1},
+      {"(_Bool[2]){0,1}", 2, PSX_TYPE_BOOL,
+       PSX_INTEGER_KIND_BOOL, 0},
+  };
+  for (size_t i = 0;
+       i < sizeof(compound_arrays) / sizeof(compound_arrays[0]); i++) {
+    node_t *compound_syntax = NULL;
+    psx_frontend_expression_hir_t compound_expression =
+        resolve_test_expression_input_hir(
+            compound_arrays[i].input, &compound_syntax);
+    ASSERT_EQ(ND_COMPOUND_LITERAL, compound_syntax->kind);
+    const psx_hir_node_t *compound_object =
+        test_hir_array_decay_source(&compound_expression);
+    psx_type_shape_t array_shape =
+        test_hir_type_shape(compound_object);
+    ASSERT_EQ(compound_arrays[i].array_length, array_shape.array_len);
+    psx_qual_type_t element_type = test_qual_type_base(
+        psx_hir_node_qual_type(compound_object));
+    psx_type_shape_t element_shape =
+        test_qual_type_shape(element_type);
+    ASSERT_EQ(compound_arrays[i].element_kind, element_shape.kind);
+    ASSERT_EQ(compound_arrays[i].integer_kind,
+              element_shape.integer_kind);
+    ASSERT_EQ(compound_arrays[i].is_unsigned,
+              element_shape.is_unsigned);
+    psx_frontend_expression_hir_dispose(&compound_expression);
+  }
 
   reset_test_translation_unit_state();
   parsed_code = parse_program_input("int *__tm_compound_lit_global = (int[]){1,2,3}; int main(void) { return 0; }");
@@ -28254,67 +28266,106 @@ static void test_parse_evil_edge_cases() {
   printf("test_parse_evil_edge_cases...\n");
 
   // ネストした三項演算子: a?b?c:d:e は a?(b?c:d):e
-    node_t *tn = parse_expr_input("1 ? 2 ? 3 : 4 : 5");
-  ASSERT_EQ(ND_TERNARY, tn->kind);
-  ASSERT_EQ(1, as_num(tn->lhs)->val);         // 条件: 1
-  ASSERT_EQ(ND_TERNARY, tn->rhs->kind);       // then: 2?3:4
-  ASSERT_EQ(2, as_num(tn->rhs->lhs)->val);    // 内側条件: 2
-  ASSERT_EQ(3, as_num(tn->rhs->rhs)->val);    // 内側then: 3
-  ASSERT_EQ(4, as_num(as_ctrl(tn->rhs)->els)->val); // 内側else: 4
-  ASSERT_EQ(5, as_num(as_ctrl(tn)->els)->val);      // 外側else: 5
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(
+          "1 ? 2 ? 3 : 4 : 5", &syntax);
+  const psx_hir_node_t *root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_TERNARY, syntax->kind);
+  ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(root));
+  const psx_hir_node_t *inner = test_hir_child(&expression, root, 1);
+  ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(inner));
+  ASSERT_EQ(2, psx_hir_node_integer_value(
+                   test_hir_child(&expression, inner, 0)));
+  ASSERT_EQ(3, psx_hir_node_integer_value(
+                   test_hir_child(&expression, inner, 1)));
+  ASSERT_EQ(4, psx_hir_node_integer_value(
+                   test_hir_child(&expression, inner, 2)));
+  ASSERT_EQ(5, psx_hir_node_integer_value(
+                   test_hir_child(&expression, root, 2)));
+  psx_frontend_expression_hir_dispose(&expression);
 
   // 複雑な優先順位: 1+2*3==7&&1||0 → (((1+(2*3))==7)&&1)||0
-    node_t *cp = parse_expr_input("1+2*3==7&&1||0");
-  ASSERT_EQ(ND_LOGOR, cp->kind);
-  ASSERT_EQ(0, as_num(cp->rhs)->val);         // ||0
-  ASSERT_EQ(ND_LOGAND, cp->lhs->kind);
-  ASSERT_EQ(1, as_num(cp->lhs->rhs)->val);    // &&1
-  ASSERT_EQ(ND_EQ, cp->lhs->lhs->kind);       // ==
-  ASSERT_EQ(7, as_num(cp->lhs->lhs->rhs)->val); // ==7
-  ASSERT_EQ(ND_ADD, cp->lhs->lhs->lhs->kind); // 1+...
-  ASSERT_EQ(ND_MUL, cp->lhs->lhs->lhs->rhs->kind); // 2*3
+  expression = resolve_test_expression_input_hir(
+      "1+2*3==7&&1||0", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_LOGOR, psx_hir_node_kind(root));
+  const psx_hir_node_t *logical_and =
+      test_hir_child(&expression, root, 0);
+  const psx_hir_node_t *equality =
+      test_hir_child(&expression, logical_and, 0);
+  const psx_hir_node_t *addition =
+      test_hir_child(&expression, equality, 0);
+  ASSERT_EQ(PSX_HIR_LOGAND, psx_hir_node_kind(logical_and));
+  ASSERT_EQ(PSX_HIR_EQ, psx_hir_node_kind(equality));
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(addition));
+  ASSERT_EQ(PSX_HIR_MUL,
+            psx_hir_node_kind(test_hir_child(
+                &expression, addition, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 
   // ビット演算と論理演算の優先順位: 1&2|3^4
   // → (1&2) | (3^4) → ND_BITOR( ND_BITAND(1,2), ND_BITXOR(3,4) )
-    node_t *bw = parse_expr_input("1&2|3^4");
-  ASSERT_EQ(ND_BITOR, bw->kind);
-  ASSERT_EQ(ND_BITAND, bw->lhs->kind);
-  ASSERT_EQ(1, as_num(bw->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(bw->lhs->rhs)->val);
-  ASSERT_EQ(ND_BITXOR, bw->rhs->kind);
-  ASSERT_EQ(3, as_num(bw->rhs->lhs)->val);
-  ASSERT_EQ(4, as_num(bw->rhs->rhs)->val);
+  expression = resolve_test_expression_input_hir("1&2|3^4", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_BITOR, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_BITAND,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(PSX_HIR_BITXOR,
+            psx_hir_node_kind(test_hir_child(&expression, root, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 
   // x+++y の式解析: (x++) + y
   parsed_code = parse_program_input("int main() { int x=1; int y=2; return x+++y; }");
   // パースが成功すればOK
 
   // キャストと単項マイナスのネスト: (int)-(char)5
-    node_t *cn = parse_expr_input("(int)-(char)5");
-  // (int)(0-(char)5) → ND_CAST(ND_SUB(0, ND_CAST(5)))のような構造
-  // パースが壊れずに完了することを確認
-  ASSERT_TRUE(cn != NULL);
+  expression = resolve_test_cast_input_hir("(int)-(char)5", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
+  const psx_hir_node_t *negation = test_hir_child(&expression, root, 0);
+  ASSERT_EQ(PSX_HIR_NEGATE, psx_hir_node_kind(negation));
+  ASSERT_EQ(PSX_HIR_CAST,
+            psx_hir_node_kind(test_hir_child(
+                &expression, negation, 0)));
+  psx_frontend_expression_hir_dispose(&expression);
 
   // シフトと比較の優先順位: 1<<2<8 → (1<<2)<8
-    node_t *sh = parse_expr_input("1<<2<8");
-  ASSERT_EQ(ND_LT, sh->kind);
-  ASSERT_EQ(TK_LT, sh->source_op);
-  ASSERT_EQ(ND_SHL, sh->lhs->kind);
-  ASSERT_EQ(1, as_num(sh->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(sh->lhs->rhs)->val);
-  ASSERT_EQ(8, as_num(sh->rhs)->val);
+  expression = resolve_test_expression_input_hir("1<<2<8", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_LT, syntax->kind);
+  ASSERT_EQ(TK_LT, syntax->source_op);
+  ASSERT_EQ(PSX_HIR_LT, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_SHL,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(8, psx_hir_node_integer_value(
+                   test_hir_child(&expression, root, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 
   // 比較演算子とオペランド順を Syntax AST にそのまま保持する。
-  node_t *gt = parse_expr_input("1>2");
-  ASSERT_EQ(ND_GT, gt->kind);
-  ASSERT_EQ(TK_GT, gt->source_op);
-  ASSERT_EQ(1, as_num(gt->lhs)->val);
-  ASSERT_EQ(2, as_num(gt->rhs)->val);
-  node_t *ge = parse_expr_input("1>=2");
-  ASSERT_EQ(ND_GE, ge->kind);
-  ASSERT_EQ(TK_GE, ge->source_op);
-  ASSERT_EQ(1, as_num(ge->lhs)->val);
-  ASSERT_EQ(2, as_num(ge->rhs)->val);
+  const struct {
+    const char *input;
+    psx_syntax_node_kind_t syntax_kind;
+    token_kind_t source_operator;
+    psx_hir_node_kind_t hir_kind;
+  } comparisons[] = {
+      {"1>2", ND_GT, TK_GT, PSX_HIR_GT},
+      {"1>=2", ND_GE, TK_GE, PSX_HIR_GE},
+  };
+  for (size_t i = 0;
+       i < sizeof(comparisons) / sizeof(comparisons[0]); i++) {
+    expression = resolve_test_expression_input_hir(
+        comparisons[i].input, &syntax);
+    root = test_expression_hir_root(&expression);
+    ASSERT_EQ(comparisons[i].syntax_kind, syntax->kind);
+    ASSERT_EQ(comparisons[i].source_operator, syntax->source_op);
+    ASSERT_EQ(comparisons[i].hir_kind, psx_hir_node_kind(root));
+    ASSERT_EQ(1, psx_hir_node_integer_value(
+                     test_hir_child(&expression, root, 0)));
+    ASSERT_EQ(2, psx_hir_node_integer_value(
+                     test_hir_child(&expression, root, 1)));
+    psx_frontend_expression_hir_dispose(&expression);
+  }
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
   parsed_code = parse_program_input("int main() { int a; int b; a=1,b=2; }");
@@ -28719,27 +28770,19 @@ static void test_semantic_canonical_type_invariant() {
   }
 
   psx_semantic_invariant_failure_t failure;
-  node_t *va_arg_area = parse_expr_input("__va_arg_area");
-  ASSERT_EQ(ND_IDENTIFIER, va_arg_area->kind);
-  ASSERT_EQ(ND_VARARG_CURSOR,
-            psx_resolved_object_ref_node_kind(va_arg_area));
-  ASSERT_TRUE(ps_node_get_type(va_arg_area) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(va_arg_area)->kind);
-  ASSERT_TRUE(ps_node_get_type(va_arg_area)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_VOID, ps_node_get_type(va_arg_area)->base->kind);
-  ASSERT_TRUE(ps_node_qual_type(va_arg_area).type_id !=
-              PSX_TYPE_ID_INVALID);
-  psx_qual_type_t va_arg_pointee = psx_semantic_type_table_base(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_node_qual_type(va_arg_area).type_id);
-  psx_type_shape_t va_arg_pointee_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      va_arg_pointee.type_id, &va_arg_pointee_shape));
-  ASSERT_EQ(PSX_TYPE_VOID, va_arg_pointee_shape.kind);
-  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
-      va_arg_area, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
+  node_t *va_arg_syntax = NULL;
+  psx_frontend_expression_hir_t va_arg_expression =
+      resolve_test_expression_input_hir(
+          "__va_arg_area", &va_arg_syntax);
+  ASSERT_EQ(ND_IDENTIFIER, va_arg_syntax->kind);
+  const psx_hir_node_t *va_arg_area =
+      test_expression_hir_root(&va_arg_expression);
+  ASSERT_EQ(PSX_HIR_VARARG_CURSOR, psx_hir_node_kind(va_arg_area));
+  psx_qual_type_t va_arg_type = psx_hir_node_qual_type(va_arg_area);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(va_arg_type).kind);
+  ASSERT_EQ(PSX_TYPE_VOID,
+            test_qual_type_shape(test_qual_type_base(va_arg_type)).kind);
+  psx_frontend_expression_hir_dispose(&va_arg_expression);
 
   node_function_definition_t duplicated_return_type = {0};
   test_set_resolved_node_kind(

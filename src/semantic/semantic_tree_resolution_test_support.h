@@ -30,13 +30,4 @@ int psx_resolve_parsed_function_compatibility_for_test_in_contexts(
     const token_t *fallback_diag_tok,
     psx_function_compatibility_test_result_t *result);
 
-int psx_resolve_expression_compatibility_work_tree_for_test_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_lowering_context_t *lowering_context,
-    const ag_compilation_options_t *options,
-    psx_resolution_work_tree_t *work_tree,
-    const token_t *fallback_diag_tok);
-
 #endif
