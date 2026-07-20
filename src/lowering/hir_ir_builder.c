@@ -535,26 +535,6 @@ static int hir_name_matches(
          memcmp(name, expected, name_length) == 0;
 }
 
-static int exact_int_void_function(
-    const psx_semantic_type_table_t *types, psx_qual_type_t qual_type) {
-  psx_qual_type_t function_type =
-      psx_semantic_type_table_callable_function(types, qual_type);
-  psx_qual_type_t result_qual_type = psx_semantic_type_table_base(
-      types, function_type.type_id);
-  psx_type_shape_t function = {0};
-  psx_type_shape_t result = {0};
-  return psx_semantic_type_table_describe(
-             types, function_type.type_id, &function) &&
-         psx_semantic_type_table_describe(
-             types, result_qual_type.type_id, &result) &&
-         function.kind == PSX_TYPE_FUNCTION &&
-         function.parameter_count == 0 &&
-         !function.is_variadic_function &&
-         result.kind == PSX_TYPE_INTEGER &&
-         result.integer_kind == PSX_INTEGER_KIND_INT &&
-         !result.is_unsigned;
-}
-
 typedef struct {
   const hir_ir_context_t *context;
   const ag_continuation_options_t *options;
@@ -593,7 +573,7 @@ static void scan_continuation_node(
     if (hir_name_matches(
             name, name_length, scan->options->frame_condition)) {
       scan->condition_call_count++;
-      if (!exact_int_void_function(
+      if (!psx_semantic_type_is_exact_int_void_function(
               scan->context->options->semantic_types,
               psx_hir_node_attached_qual_type(node))) {
         scan->invalid_node = node;
@@ -652,7 +632,7 @@ static int prepare_continuation_entry(
   if (!hir_name_matches(name, name_length, options->entry) ||
       psx_hir_node_is_static_function(root))
     return 1;
-  if (!exact_int_void_function(
+  if (!psx_semantic_type_is_exact_int_void_function(
           context->options->semantic_types,
           psx_hir_node_attached_qual_type(root)))
     return emit_continuation_error(

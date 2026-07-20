@@ -28196,6 +28196,33 @@ static void test_semantic_type_identity() {
                 ps_ctx_semantic_type_table_in(context),
                 function_identity.type_id, 2).type_id);
 
+  psx_type_t *exact_int_void_function = ps_type_new_function(plain_int);
+  ps_type_set_function_params(exact_int_void_function, NULL, 0, 0);
+  psx_qual_type_t exact_int_void_identity =
+      ps_ctx_intern_qual_type_in(context, exact_int_void_function);
+  psx_qual_type_t exact_int_void_pointer_identity =
+      ps_ctx_intern_qual_type_in(
+          context, ps_type_new_pointer(exact_int_void_function));
+  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
+      ps_ctx_semantic_type_table_in(context), exact_int_void_identity));
+  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
+      ps_ctx_semantic_type_table_in(context),
+      exact_int_void_pointer_identity));
+  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
+      ps_ctx_semantic_type_table_in(context), function_identity));
+
+  psx_type_t *unsigned_int_void_function =
+      ps_type_new_function(stale_wide_unsigned_int);
+  ps_type_set_function_params(unsigned_int_void_function, NULL, 0, 0);
+  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
+      ps_ctx_semantic_type_table_in(context),
+      ps_ctx_intern_qual_type_in(context, unsigned_int_void_function)));
+  psx_type_t *variadic_int_function = ps_type_new_function(plain_int);
+  ps_type_set_function_params(variadic_int_function, NULL, 0, 1);
+  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
+      ps_ctx_semantic_type_table_in(context),
+      ps_ctx_intern_qual_type_in(context, variadic_int_function)));
+
   char record_name[] = "IdentityRecord";
   psx_type_t *first_record = ps_type_new_tag(
       TK_STRUCT, record_name, 14, 1, 8);

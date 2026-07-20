@@ -8,7 +8,6 @@
 #include "../parser/ast.h"
 #include "../parser/function_definition_syntax.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/type.h"
 #include "identifier_resolution.h"
 
 typedef struct {
@@ -24,25 +23,6 @@ static int name_matches(
   return name && expected && name_length >= 0 &&
          (size_t)name_length == strlen(expected) &&
          memcmp(name, expected, (size_t)name_length) == 0;
-}
-
-static int exact_int_void_function(
-    const psx_semantic_type_table_t *types,
-    psx_qual_type_t qual_type) {
-  psx_qual_type_t function_type =
-      psx_semantic_type_table_callable_function(types, qual_type);
-  const psx_type_t *function = psx_semantic_type_table_lookup(
-      types, function_type.type_id);
-  psx_qual_type_t result_qual_type = psx_semantic_type_table_base(
-      types, function_type.type_id);
-  const psx_type_t *result = psx_semantic_type_table_lookup(
-      types, result_qual_type.type_id);
-  return function && function->kind == PSX_TYPE_FUNCTION &&
-         function->param_count == 0 &&
-         !function->is_variadic_function && result &&
-         result->kind == PSX_TYPE_INTEGER &&
-         result->integer_kind == PSX_INTEGER_KIND_INT &&
-         !result->is_unsigned;
 }
 
 static void validate_node(
@@ -77,7 +57,7 @@ static void validate_call(
         &resolution);
     if (resolution.expression_qual_type.type_id !=
             PSX_TYPE_ID_INVALID &&
-        !exact_int_void_function(
+        !psx_semantic_type_is_exact_int_void_function(
             ps_ctx_semantic_type_table_in(
                 validation->semantic_context),
             resolution.expression_qual_type)) {

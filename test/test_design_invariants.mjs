@@ -7974,6 +7974,10 @@ const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
 );
+const continuationSyntaxValidationSource = await readFile(
+  "src/semantic/continuation_syntax_validation.c",
+  "utf8",
+);
 const qualTypeStruct = typeIdsHeader.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_qual_type_t\s*;/,
 );
@@ -8038,6 +8042,35 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     )) {
   throw new Error(
     "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
+  );
+}
+const exactIntVoidTypePredicate = semanticTypeIdentitySource.match(
+  /int\s+psx_semantic_type_is_exact_int_void_function\s*\([^]*?\n\}/,
+);
+if (!exactIntVoidTypePredicate ||
+    !/psx_semantic_type_table_callable_function\s*\(/.test(
+      exactIntVoidTypePredicate[0],
+    ) ||
+    !/psx_semantic_type_table_describe\s*\(/.test(
+      exactIntVoidTypePredicate[0],
+    ) ||
+    /psx_semantic_type_table_lookup\s*\(/.test(
+      exactIntVoidTypePredicate[0],
+    ) ||
+    /static\s+int\s+exact_int_void_function\s*\(/.test(
+      continuationSyntaxValidationSource + hirIrBuilder,
+    ) ||
+    !/psx_semantic_type_is_exact_int_void_function\s*\(/.test(
+      continuationSyntaxValidationSource,
+    ) ||
+    !/psx_semantic_type_is_exact_int_void_function\s*\(/.test(
+      hirIrBuilder,
+    ) ||
+    /#include\s+"\.\.\/parser\/type\.h"/.test(
+      continuationSyntaxValidationSource,
+    )) {
+  throw new Error(
+    "continuation function type validation must consume canonical TypeId shape in every phase",
   );
 }
 const resolvedRecordIdentityGuard = semanticTypeIdentitySource.match(

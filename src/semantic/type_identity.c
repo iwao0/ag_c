@@ -603,6 +603,25 @@ psx_qual_type_t psx_semantic_type_table_callable_function(
              ? type : invalid_qual_type();
 }
 
+int psx_semantic_type_is_exact_int_void_function(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  psx_qual_type_t function_type =
+      psx_semantic_type_table_callable_function(table, type);
+  psx_qual_type_t result_type = psx_semantic_type_table_base(
+      table, function_type.type_id);
+  psx_type_shape_t function = {0};
+  psx_type_shape_t result = {0};
+  return psx_semantic_type_table_describe(
+             table, function_type.type_id, &function) &&
+         psx_semantic_type_table_describe(
+             table, result_type.type_id, &result) &&
+         function.parameter_count == 0 &&
+         !function.is_variadic_function &&
+         result.kind == PSX_TYPE_INTEGER &&
+         result.integer_kind == PSX_INTEGER_KIND_INT &&
+         !result.is_unsigned;
+}
+
 psx_qual_type_t psx_semantic_type_table_aggregate_object(
     const psx_semantic_type_table_t *table, psx_qual_type_t type) {
   while (type.type_id != PSX_TYPE_ID_INVALID) {

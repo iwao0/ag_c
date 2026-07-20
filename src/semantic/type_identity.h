@@ -40,6 +40,8 @@ psx_qual_type_t psx_semantic_type_table_pointee_value(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 psx_qual_type_t psx_semantic_type_table_callable_function(
     const psx_semantic_type_table_t *table, psx_qual_type_t type);
+int psx_semantic_type_is_exact_int_void_function(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type);
 psx_qual_type_t psx_semantic_type_table_aggregate_object(
     const psx_semantic_type_table_t *table, psx_qual_type_t type);
 psx_qual_type_t psx_semantic_type_table_parameter(
