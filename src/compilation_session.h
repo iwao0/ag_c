@@ -22,6 +22,8 @@ typedef struct ir_allocation_stats_t ir_allocation_stats_t;
 typedef struct ag_compilation_session_t ag_compilation_session_t;
 typedef void (*ag_session_backend_destroy_fn)(void *context);
 
+/* A complete target is required. Session creation never selects a host
+ * default. */
 ag_compilation_session_t *ag_compilation_session_create(
     const ag_target_info_t *target);
 int ag_compilation_session_is_complete(

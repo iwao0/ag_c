@@ -49,13 +49,11 @@ ag_compilation_session_t *ag_compilation_session_create(
 int ag_compilation_session_init(
     ag_compilation_session_t *session, const ag_target_info_t *target) {
   if (!session) return 0;
-  ag_target_info_t resolved_target =
-      target ? *target : ag_target_info_host();
   memset(session, 0, sizeof(*session));
-  if (!ag_target_info_is_valid(&resolved_target)) return 0;
+  if (!ag_target_info_is_valid(target)) return 0;
   ag_compilation_options_init_defaults(&session->options);
   tk_context_init(&session->tokenizer);
-  session->target = resolved_target;
+  session->target = *target;
   session->diagnostic_context = diag_context_create();
   diag_context_bind_tokenizer(
       session->diagnostic_context, &session->tokenizer);

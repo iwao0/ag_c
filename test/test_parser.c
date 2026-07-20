@@ -12415,7 +12415,10 @@ static void test_frontend_stream_lifecycle_boundary() {
   ps_parser_stream_end(&parser_stream);
 
   ag_compilation_session_t session_context;
-  ASSERT_TRUE(ag_compilation_session_init(&session_context, NULL));
+  const ag_target_info_t *session_target =
+      ag_compilation_session_target(test_suite_session);
+  ASSERT_TRUE(ag_compilation_session_init(
+      &session_context, session_target));
   ag_compilation_session_t *outer_session = test_suite_session;
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
@@ -12460,7 +12463,8 @@ static void test_frontend_stream_lifecycle_boundary() {
                   outer_session->semantic_context,
                   (char *)"__stream_previous", 17) != NULL);
   ag_compilation_session_t nested_context;
-  ASSERT_TRUE(ag_compilation_session_init(&nested_context, NULL));
+  ASSERT_TRUE(ag_compilation_session_init(
+      &nested_context, session_target));
   psx_frontend_stream_t nested_stream = {0};
   ASSERT_TRUE(psx_frontend_stream_begin(
       &nested_stream, &nested_context, NULL,
@@ -12814,6 +12818,9 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(ps_ctx_create(
       test_arena_context(), &incomplete_target) == NULL);
   ag_compilation_session_t invalid_session;
+  ASSERT_TRUE(ag_compilation_session_create(NULL) == NULL);
+  ASSERT_TRUE(!ag_compilation_session_init(&invalid_session, NULL));
+  ASSERT_TRUE(!ag_compilation_session_is_complete(&invalid_session));
   ASSERT_TRUE(!ag_compilation_session_init(
       &invalid_session, &incomplete_target));
   ASSERT_TRUE(!ag_compilation_session_is_complete(&invalid_session));
@@ -28493,8 +28500,10 @@ static void test_compilation_session_registry_isolation() {
   printf("test_compilation_session_registry_isolation...\n");
   ag_compilation_session_t first;
   ag_compilation_session_t second;
-  ASSERT_TRUE(ag_compilation_session_init(&first, NULL));
-  ASSERT_TRUE(ag_compilation_session_init(&second, NULL));
+  const ag_target_info_t *target =
+      ag_compilation_session_target(test_suite_session);
+  ASSERT_TRUE(ag_compilation_session_init(&first, target));
+  ASSERT_TRUE(ag_compilation_session_init(&second, target));
   ASSERT_TRUE(ag_compilation_session_is_complete(&first));
   ASSERT_TRUE(ag_compilation_session_is_complete(&second));
   ps_global_registry_bind_scope_graph(

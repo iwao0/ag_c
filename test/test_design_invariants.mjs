@@ -1276,9 +1276,13 @@ const compilationSessionInternalHeader = await readFile(
 const targetInfoSource = await readFile("src/target_info.c", "utf8");
 const targetInfoHeader = await readFile("src/target_info.h", "utf8");
 if (!/ag_target_info_is_valid\s*\(/.test(targetInfoHeader) ||
-    !/ag_target_info_is_valid\s*\(&resolved_target\)/.test(
+    !/ag_target_info_is_valid\s*\(target\)/.test(
       compilationSessionSource,
     ) ||
+    /target\s*\?\s*\*target\s*:\s*ag_target_info_host\s*\(\)/.test(
+      compilationSessionSource,
+    ) ||
+    /\bag_target_info_host\s*\(\)/.test(compilationSessionSource) ||
     (targetInfoSource.match(/\bstandard_target\b/g) ?? []).length !== 3 ||
     /:\s*ag_target_info_pointer_size\s*\(target\)/.test(
       targetInfoSource,
