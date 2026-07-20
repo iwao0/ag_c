@@ -7577,20 +7577,23 @@ if (!dataLayoutIntegerConversionSection ||
     "semantic arithmetic conversion must use scalar rank and explicit DataLayout instead of TargetInfo or cached type layout",
   );
 }
-const targetCanonicalSignatureSection = canonicalTypeSource.match(
-  /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature_for_target\s*\([^]*?\n\}/,
+const dataLayoutCanonicalSignatureSection = canonicalTypeSource.match(
+  /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature_for_data_layout\s*\([^]*?\n\}/,
 );
 const typeIdCanonicalSignatureSource = await readFile(
   "src/type_signature.c",
   "utf8",
 );
-if (!targetCanonicalSignatureSection ||
-    /\bps_type_sizeof\s*\(/.test(targetCanonicalSignatureSection[0]) ||
-    !/\bconst\s+ag_target_info_t\s*\*target\b/.test(
-      targetCanonicalSignatureSection[0],
+if (!dataLayoutCanonicalSignatureSection ||
+    /\bps_type_sizeof\s*\(/.test(dataLayoutCanonicalSignatureSection[0]) ||
+    !/\bconst\s+ag_data_layout_t\s*\*data_layout\b/.test(
+      dataLayoutCanonicalSignatureSection[0],
     ) ||
-    !/\bag_target_info_scalar_size\s*\(/.test(
-      targetCanonicalSignatureSection[0],
+    !/\bag_data_layout_scalar_size\s*\(/.test(
+      dataLayoutCanonicalSignatureSection[0],
+    ) ||
+    /\bag_target_info_t\b|\bag_target_info_(?:scalar_size|data_layout)\s*\(/.test(
+      dataLayoutCanonicalSignatureSection[0],
     ) ||
     /parser\/type\.h|\bpsx_semantic_type_table_lookup\s*\(/.test(
       typeIdCanonicalSignatureSource,
@@ -7598,14 +7601,20 @@ if (!targetCanonicalSignatureSection ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
       typeIdCanonicalSignatureSource,
     ) ||
-    !/\bag_target_info_scalar_size\s*\(/.test(
+    !/\bag_data_layout_scalar_size\s*\(/.test(
       typeIdCanonicalSignatureSource,
     ) ||
-    !/\bpsx_format_canonical_type_signature\s*\([^]*?options->target/.test(
+    /\bag_target_info_t\b|\bag_target_info_scalar_size\s*\(/.test(
+      typeIdCanonicalSignatureSource,
+    ) ||
+    !/\bpsx_format_canonical_type_signature\s*\([^]*?ag_target_info_data_layout\s*\(\s*options->target\s*\)/.test(
       hirIrBuilder,
+    ) ||
+    /\bps_type_format_canonical_signature_for_target\s*\(/.test(
+      `${canonicalTypeSource}\n${typeSource}`,
     )) {
   throw new Error(
-    "canonical C signatures must derive ABI widths from explicit TargetSpec",
+    "canonical C signatures must derive widths from explicit DataLayout without depending on TargetInfo",
   );
 }
 const scalarIdentityNormalizer = canonicalTypeSource.match(

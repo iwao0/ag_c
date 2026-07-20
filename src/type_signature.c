@@ -92,10 +92,10 @@ static ag_target_scalar_kind_t floating_target_kind(
                     : AG_TARGET_SCALAR_DOUBLE;
 }
 
-static void write_type(
-    signature_writer_t *writer, const psx_semantic_type_table_t *types,
-    psx_qual_type_t type, const signature_path_t *path,
-    const ag_target_info_t *target) {
+static void write_type(signature_writer_t *writer,
+                       const psx_semantic_type_table_t *types,
+                       psx_qual_type_t type, const signature_path_t *path,
+                       const ag_data_layout_t *data_layout) {
   psx_type_shape_t shape = {0};
   if (type.type_id == PSX_TYPE_ID_INVALID ||
       path_contains(path, type.type_id) ||
@@ -121,8 +121,10 @@ static void write_type(
     case PSX_TYPE_INTEGER: {
       int rank = integer_rank(&shape);
       if (rank <= 0) rank = 3;
-      unsigned int bits = (unsigned int)(ag_target_info_scalar_size(
-          target, integer_target_kind(rank)) * 8);
+      unsigned int bits =
+          (unsigned int)(ag_data_layout_scalar_size(data_layout,
+                                                    integer_target_kind(rank)) *
+                         8);
       if (shape.integer_kind == PSX_INTEGER_KIND_ENUM) {
         write_literal(writer, "e{");
         write_unsigned(writer, (unsigned int)(
@@ -150,10 +152,13 @@ static void write_type(
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       write_literal(writer, shape.kind == PSX_TYPE_FLOAT ? "f" : "x");
-      write_unsigned(writer, (unsigned int)(ag_target_info_scalar_size(
-          target, floating_target_kind(
-                      shape.floating_kind,
-                      shape.kind == PSX_TYPE_COMPLEX)) * 8));
+      write_unsigned(
+          writer,
+          (unsigned int)(ag_data_layout_scalar_size(
+                             data_layout, floating_target_kind(
+                                              shape.floating_kind,
+                                              shape.kind == PSX_TYPE_COMPLEX)) *
+                         8));
       return;
     case PSX_TYPE_POINTER:
     case PSX_TYPE_ARRAY: {
@@ -167,7 +172,7 @@ static void write_type(
             shape.array_len > 0 ? shape.array_len : 0));
         write_literal(writer, "<");
       }
-      write_type(writer, types, base, &current, target);
+      write_type(writer, types, base, &current, data_layout);
       write_literal(writer, ">");
       return;
     }
@@ -176,13 +181,15 @@ static void write_type(
         writer->failed = 1;
         return;
       }
-      write_type(writer, types, psx_semantic_type_table_base(
-          types, type.type_id), &current, target);
+      write_type(writer, types,
+                 psx_semantic_type_table_base(types, type.type_id), &current,
+                 data_layout);
       write_literal(writer, "(");
       for (int i = 0; i < shape.parameter_count; i++) {
         if (i > 0) write_literal(writer, ",");
-        write_type(writer, types, psx_semantic_type_table_parameter(
-            types, type.type_id, i), &current, target);
+        write_type(writer, types,
+                   psx_semantic_type_table_parameter(types, type.type_id, i),
+                   &current, data_layout);
       }
       if (shape.is_variadic_function) {
         if (shape.parameter_count > 0) write_literal(writer, ",");
@@ -208,12 +215,15 @@ static void write_type(
   }
 }
 
-int psx_format_canonical_type_signature(
-    const psx_semantic_type_table_t *types, psx_qual_type_t type,
-    const ag_target_info_t *target, char *out, size_t out_size) {
+int psx_format_canonical_type_signature(const psx_semantic_type_table_t *types,
+                                        psx_qual_type_t type,
+                                        const ag_data_layout_t *data_layout,
+                                        char *out, size_t out_size) {
   signature_writer_t writer = {out, out_size, 0, 0};
-  if (!types || !target) writer.failed = 1;
-  if (!writer.failed) write_type(&writer, types, type, NULL, target);
+  if (!types || !ag_data_layout_is_valid(data_layout))
+    writer.failed = 1;
+  if (!writer.failed)
+    write_type(&writer, types, type, NULL, data_layout);
   if (out && out_size > 0) {
     size_t terminator = writer.length < out_size
                             ? writer.length : out_size - 1;

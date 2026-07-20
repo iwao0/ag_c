@@ -1171,7 +1171,7 @@ static void canonical_sig_uint(canonical_sig_writer_t *w, unsigned int value) {
 static void canonical_sig_type(canonical_sig_writer_t *w,
                                const psx_type_t *type,
                                const canonical_sig_path_t *path,
-                               const ag_target_info_t *target) {
+                               const ag_data_layout_t *data_layout) {
   if (!type || canonical_sig_path_contains(path, type)) {
     w->failed = 1;
     return;
@@ -1198,9 +1198,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       int rank = ps_type_integer_rank(type);
       if (rank <= 0) rank = 3;
       unsigned int bits =
-          (unsigned int)(integer_rank_size(rank,
-                                           ag_target_info_data_layout(target)) *
-                         8);
+          (unsigned int)(integer_rank_size(rank, data_layout) * 8);
       if (type->integer_kind == PSX_INTEGER_KIND_ENUM) {
         canonical_sig_lit(w, "e{");
         canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));
@@ -1226,31 +1224,29 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
     case PSX_TYPE_FLOAT:
       canonical_sig_lit(w, "f");
       canonical_sig_uint(
-          w, (unsigned int)(ag_target_info_scalar_size(
-                                 target, floating_target_kind(
-                                             type->floating_kind,
-                                             0)) *
-                             8));
+          w, (unsigned int)(ag_data_layout_scalar_size(
+                                data_layout,
+                                floating_target_kind(type->floating_kind, 0)) *
+                            8));
       return;
     case PSX_TYPE_COMPLEX:
       canonical_sig_lit(w, "x");
       canonical_sig_uint(
-          w, (unsigned int)(ag_target_info_scalar_size(
-                                 target, floating_target_kind(
-                                             type->floating_kind,
-                                             1)) *
-                             8));
+          w, (unsigned int)(ag_data_layout_scalar_size(
+                                data_layout,
+                                floating_target_kind(type->floating_kind, 1)) *
+                            8));
       return;
     case PSX_TYPE_POINTER:
       canonical_sig_lit(w, "p<");
-      canonical_sig_type(w, type->base, &current_path, target);
+      canonical_sig_type(w, type->base, &current_path, data_layout);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_ARRAY:
       canonical_sig_lit(w, "a");
       canonical_sig_uint(w, (unsigned int)(type->array_len > 0 ? type->array_len : 0));
       canonical_sig_lit(w, "<");
-      canonical_sig_type(w, type->base, &current_path, target);
+      canonical_sig_type(w, type->base, &current_path, data_layout);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_FUNCTION:
@@ -1259,11 +1255,11 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
         w->failed = 1;
         return;
       }
-      canonical_sig_type(w, type->base, &current_path, target);
+      canonical_sig_type(w, type->base, &current_path, data_layout);
       canonical_sig_lit(w, "(");
       for (int i = 0; i < type->param_count; i++) {
         if (i > 0) canonical_sig_lit(w, ",");
-        canonical_sig_type(w, type->param_types[i], &current_path, target);
+        canonical_sig_type(w, type->param_types[i], &current_path, data_layout);
       }
       if (type->is_variadic_function) {
         if (type->param_count > 0) canonical_sig_lit(w, ",");
@@ -1286,11 +1282,14 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
   }
 }
 
-int ps_type_format_canonical_signature_for_target(
-    const psx_type_t *type, const ag_target_info_t *target,
-    char *out, size_t out_size) {
+int ps_type_format_canonical_signature_for_data_layout(
+    const psx_type_t *type, const ag_data_layout_t *data_layout, char *out,
+    size_t out_size) {
   canonical_sig_writer_t writer = {out, out_size, 0, 0};
-  canonical_sig_type(&writer, type, NULL, target);
+  if (!ag_data_layout_is_valid(data_layout))
+    writer.failed = 1;
+  if (!writer.failed)
+    canonical_sig_type(&writer, type, NULL, data_layout);
   if (out && out_size > 0) {
     size_t terminator = writer.len < out_size ? writer.len : out_size - 1;
     out[terminator] = '\0';

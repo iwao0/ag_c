@@ -7781,8 +7781,8 @@ static int test_type_alignof_for_target(
 
 static int test_type_format_canonical_signature(
     const psx_type_t *type, char *out, size_t out_size) {
-  return ps_type_format_canonical_signature_for_target(
-      type, ps_ctx_target_info(test_semantic_context()), out, out_size);
+  return ps_type_format_canonical_signature_for_data_layout(
+      type, ps_ctx_data_layout(test_semantic_context()), out, out_size);
 }
 
 static int test_type_deref_size(const psx_type_t *type) {
@@ -12997,14 +12997,24 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(2, ps_type_sizeof_for_target(integer, &narrow_int_target));
   ASSERT_EQ(2, ps_type_alignof_for_target(integer, &narrow_int_target));
   char target_signature[16];
-  ASSERT_EQ(3, ps_type_format_canonical_signature_for_target(
-                   stale_integer, &host,
+  ASSERT_EQ(3, ps_type_format_canonical_signature_for_data_layout(
+                   stale_integer, ag_target_info_data_layout(&host),
                    target_signature, sizeof(target_signature)));
   ASSERT_TRUE(strcmp("i32", target_signature) == 0);
-  ASSERT_EQ(3, ps_type_format_canonical_signature_for_target(
-                   stale_integer, &narrow_int_target,
-                   target_signature, sizeof(target_signature)));
+  char alternate_abi_signature[16];
+  ASSERT_EQ(3,
+            ps_type_format_canonical_signature_for_data_layout(
+                stale_integer, ag_target_info_data_layout(&alternate_host_abi),
+                alternate_abi_signature, sizeof(alternate_abi_signature)));
+  ASSERT_TRUE(strcmp(target_signature, alternate_abi_signature) == 0);
+  ASSERT_EQ(3,
+            ps_type_format_canonical_signature_for_data_layout(
+                stale_integer, ag_target_info_data_layout(&narrow_int_target),
+                target_signature, sizeof(target_signature)));
   ASSERT_TRUE(strcmp("i16", target_signature) == 0);
+  ASSERT_EQ(
+      -1, ps_type_format_canonical_signature_for_data_layout(
+              stale_integer, NULL, target_signature, sizeof(target_signature)));
   ASSERT_EQ(8, ps_type_sizeof_for_target(float_complex, &host));
   ASSERT_EQ(8, ps_type_alignof_for_target(float_complex, &host));
   ag_target_info_t packed_complex_target = host;
@@ -13069,14 +13079,18 @@ static void test_target_type_layout_boundary() {
   char legacy_pointer_array_signature[64] = {0};
   char type_id_pointer_array_signature[64] = {0};
   int legacy_pointer_array_signature_length =
-      ps_type_format_canonical_signature_for_target(
-          pointer_array, &host, legacy_pointer_array_signature,
+      ps_type_format_canonical_signature_for_data_layout(
+          pointer_array, ag_target_info_data_layout(&host),
+          legacy_pointer_array_signature,
           sizeof(legacy_pointer_array_signature));
   ASSERT_EQ(legacy_pointer_array_signature_length,
             psx_format_canonical_type_signature(
-                types, pointer_array_identity, &host,
+                types, pointer_array_identity,
+                ag_target_info_data_layout(&host),
                 type_id_pointer_array_signature,
                 sizeof(type_id_pointer_array_signature)));
+  ASSERT_EQ(-1, psx_format_canonical_type_signature(
+                    types, pointer_array_identity, NULL, NULL, 0));
   ASSERT_TRUE(strcmp(legacy_pointer_array_signature,
                      type_id_pointer_array_signature) == 0);
   psx_qual_type_t signed_long_identity =

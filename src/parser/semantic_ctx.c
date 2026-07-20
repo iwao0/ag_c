@@ -1888,8 +1888,8 @@ int ps_ctx_format_function_signature_in(
     char *out, size_t out_size) {
   const psx_type_t *type = ps_ctx_get_function_type_in(context, name, len);
   if (!type) return -1;
-  return ps_type_format_canonical_signature_for_target(
-      type, ps_ctx_target_info(context), out, out_size);
+  return ps_type_format_canonical_signature_for_data_layout(
+      type, ps_ctx_data_layout(context), out, out_size);
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

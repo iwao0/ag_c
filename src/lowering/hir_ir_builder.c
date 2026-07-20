@@ -843,11 +843,13 @@ ir_module_t *ir_build_function_module_from_hir(
     return NULL;
   }
   context.function->is_static = psx_hir_node_is_static_function(root);
-  int signature_length = context.continuation ? 0 :
-      psx_format_canonical_type_signature(
-          options->semantic_types,
-          (psx_qual_type_t){signature_id, PSX_TYPE_QUALIFIER_NONE},
-          options->target, NULL, 0);
+  int signature_length =
+      context.continuation
+          ? 0
+          : psx_format_canonical_type_signature(
+                options->semantic_types,
+                (psx_qual_type_t){signature_id, PSX_TYPE_QUALIFIER_NONE},
+                ag_target_info_data_layout(options->target), NULL, 0);
   if (signature_length < 0) {
     ir_module_free(context.module);
     if (status) *status = IR_HIR_BUILD_INVALID;
@@ -859,7 +861,7 @@ ir_module_t *ir_build_function_module_from_hir(
         psx_format_canonical_type_signature(
             options->semantic_types,
             (psx_qual_type_t){signature_id, PSX_TYPE_QUALIFIER_NONE},
-            options->target,
+            ag_target_info_data_layout(options->target),
             context.function->c_signature,
             (size_t)signature_length + 1) != signature_length) {
       ir_module_free(context.module);

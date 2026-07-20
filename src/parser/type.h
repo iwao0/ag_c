@@ -8,7 +8,6 @@
 #include "type_fwd.h"
 #include <stddef.h>
 
-typedef struct ag_target_info_t ag_target_info_t;
 typedef struct ag_data_layout_t ag_data_layout_t;
 
 typedef struct arena_context_t arena_context_t;
@@ -123,9 +122,9 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
  * layout. Recursive child qualifiers remain part of the containing type. */
 int ps_type_unqualified_semantic_matches(
     const psx_type_t *a, const psx_type_t *b);
-int ps_type_format_canonical_signature_for_target(
-    const psx_type_t *type, const ag_target_info_t *target,
-    char *out, size_t out_size);
+int ps_type_format_canonical_signature_for_data_layout(
+    const psx_type_t *type, const ag_data_layout_t *data_layout, char *out,
+    size_t out_size);
 int ps_type_generic_matches(const psx_type_t *control,
                             const psx_type_t *association);
 const psx_type_t *ps_type_generic_control_in(
