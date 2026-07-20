@@ -269,14 +269,14 @@ int ps_global_registry_complete_array_type(
 int ps_global_registry_complete_array_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t complete_type) {
-  const psx_type_t *current = global && registry
-      ? psx_semantic_type_table_lookup(
-            registry->semantic_types, global->decl_qual_type.type_id)
-      : NULL;
-  const psx_type_t *replacement = registry
-      ? psx_semantic_type_table_lookup(
-            registry->semantic_types, complete_type.type_id)
-      : NULL;
+  psx_type_shape_t current = {0};
+  psx_type_shape_t replacement = {0};
+  int has_current = global && registry &&
+      psx_semantic_type_table_describe(
+          registry->semantic_types, global->decl_qual_type.type_id, &current);
+  int has_replacement = registry &&
+      psx_semantic_type_table_describe(
+          registry->semantic_types, complete_type.type_id, &replacement);
   psx_qual_type_t current_base = global && registry
       ? psx_semantic_type_table_base(
             registry->semantic_types, global->decl_qual_type.type_id)
@@ -285,9 +285,10 @@ int ps_global_registry_complete_array_qual_type(
       ? psx_semantic_type_table_base(
             registry->semantic_types, complete_type.type_id)
       : (psx_qual_type_t){0};
-  if (!ps_type_is_incomplete_array(current) || !replacement ||
-      replacement->kind != PSX_TYPE_ARRAY ||
-      replacement->array_len <= 0 || replacement->is_vla ||
+  if (!has_current || current.kind != PSX_TYPE_ARRAY ||
+      current.array_len > 0 || current.is_vla || !has_replacement ||
+      replacement.kind != PSX_TYPE_ARRAY ||
+      replacement.array_len <= 0 || replacement.is_vla ||
       current_base.type_id == PSX_TYPE_ID_INVALID ||
       current_base.type_id != replacement_base.type_id ||
       current_base.qualifiers != replacement_base.qualifiers)

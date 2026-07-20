@@ -23,16 +23,16 @@ int lower_resolved_static_initializer(
 
 int lower_static_object_initializer(
     psx_lowering_context_t *lowering_context,
-    global_var_t *global, const psx_type_t *type,
-    node_init_list_t *initializer, token_t *fallback_tok);
+    global_var_t *global, node_init_list_t *initializer,
+    token_t *fallback_tok);
 int lower_static_scalar_array_initializer(
     psx_lowering_context_t *lowering_context,
-    global_var_t *global, const psx_type_t *type,
-    node_init_list_t *initializer, token_t *fallback_tok);
+    global_var_t *global, node_init_list_t *initializer,
+    token_t *fallback_tok);
 int psx_build_static_aggregate_initializer_plan(
     psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context,
-    const psx_type_t *type, node_init_list_t *initializer,
+    psx_qual_type_t object_type, node_init_list_t *initializer,
     token_t *fallback_tok,
     psx_static_aggregate_initializer_plan_t *plan);
 

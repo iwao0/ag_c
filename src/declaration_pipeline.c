@@ -222,7 +222,7 @@ static int finish_global_declaration_pipeline(
                           ? psx_build_static_aggregate_initializer_plan(
                                 request->global_registry,
                                 request->lowering_context,
-                                initializer_type,
+                                initializer_resolution.object_qual_type,
                                 (node_init_list_t *)
                                     initializer_resolution.initializer,
                                 request->initializer->value_tok,

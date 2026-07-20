@@ -16864,7 +16864,7 @@ static void test_static_data_initializer_boundary() {
             ps_type_qualifiers(ps_gvar_get_decl_type(&qualified_global)));
 
   ASSERT_TRUE(lower_static_scalar_array_initializer(
-      test_lowering_context(), &global, array, &list, NULL));
+      test_lowering_context(), &global, &list, NULL));
   ASSERT_EQ(3, global.init_count);
   ASSERT_EQ(1, ps_gvar_init_slot_view(&global, 0).value);
   ASSERT_EQ(0, ps_gvar_init_slot_view(&global, 1).value);
@@ -16928,7 +16928,7 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(union_type_id, ps_gvar_decl_type_id(&union_global));
   ASSERT_TRUE(lower_static_object_initializer(
       test_lowering_context(), &union_global,
-      union_type, &union_list, NULL));
+      &union_list, NULL));
   ASSERT_EQ(2, union_global.init_count);
   ASSERT_EQ(0, ps_gvar_init_slot_view(&union_global, 0).value);
   ASSERT_EQ(7, ps_gvar_init_slot_view(&union_global, 1).value);

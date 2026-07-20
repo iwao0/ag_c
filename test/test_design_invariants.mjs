@@ -8975,16 +8975,53 @@ if (!/\bpsx_record_decl_table_define\s*\(/.test(recordDeclTableHeader) ||
     "RecordDeclTable must be an explicit semantic-to-lowering phase input",
   );
 }
-for (const functionName of [
-  "lower_static_object_initializer",
-  "lower_static_scalar_array_initializer",
-]) {
-  const signature = new RegExp(
-    `\\b${functionName}\\s*\\([\\s\\S]*?\\bconst\\s+psx_type_t\\s*\\*\\s*type\\b[\\s\\S]*?\\)\\s*;`,
+if (/\bpsx_type_t\b/.test(staticDataInitializerSource) ||
+    /\bpsx_type_t\b/.test(staticDataInitializerHeader) ||
+    /\bps_lowering_type_id\s*\(/.test(staticDataInitializerSource) ||
+    /\bpsx_semantic_type_table_lookup(?:_qual_type)?\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    /\bps_node_get_type\s*\(/.test(staticDataInitializerSource) ||
+    /\bpsx_record_member_decl_type\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/\bps_gvar_decl_qual_type\s*\(/.test(staticDataInitializerSource) ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      staticDataInitializerSource,
+    )) {
+  throw new Error(
+    "static initializer lowering must use declaration QualType, TypeShape, RecordId, and DataLayout without compatibility type views",
   );
-  if (!signature.test(staticDataInitializerHeader)) {
-    throw new Error(`${functionName} must consume a const type view`);
-  }
+}
+if (!/\bpsx_qual_type_t\s+object_type\b/.test(
+      staticDataInitializerHeader,
+    ) ||
+    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
+      staticDataInitializerSource,
+    )) {
+  throw new Error(
+    "static aggregate initializer plans must preserve canonical QualType identity",
+  );
+}
+const canonicalArrayCompletion = globalRegistrySource.match(
+  /int\s+ps_global_registry_complete_array_qual_type\s*\([^]*?\n\}/,
+);
+if (!canonicalArrayCompletion ||
+    !/\bpsx_semantic_type_table_describe\s*\(/.test(
+      canonicalArrayCompletion[0],
+    ) ||
+    /\bpsx_semantic_type_table_lookup\s*\(/.test(
+      canonicalArrayCompletion[0],
+    )) {
+  throw new Error(
+    "canonical global array completion must validate TypeShape without restoring compatibility type views",
+  );
 }
 if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*;[^]*?\btype_size_id\s*\(\s*lowering\s*,\s*type_id\s*\)/.test(
       translationUnitDataLoweringSource,
@@ -8992,7 +9029,7 @@ if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*
     !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bps_gvar_decl_qual_type\s*\(\s*ctx->global\s*\)\s*,\s*0\s*,/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bps_gvar_decl_qual_type\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
+    !/\bpsx_qual_type_t\s+object_type\s*=\s*ps_gvar_decl_qual_type\s*\(\s*global\s*\)\s*;[^]*?\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bobject_type\s*,\s*0\s*,/.test(
       staticDataInitializerSource,
     )) {
   throw new Error(
