@@ -2548,6 +2548,24 @@ static psx_type_shape_t test_hir_type_shape(
   return shape;
 }
 
+static psx_type_shape_t test_qual_type_shape(psx_qual_type_t type) {
+  psx_type_shape_t shape = {0};
+  ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      type.type_id, &shape));
+  return shape;
+}
+
+static psx_qual_type_t test_qual_type_base(psx_qual_type_t type) {
+  ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
+  psx_qual_type_t base = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      type.type_id);
+  ASSERT_TRUE(base.type_id != PSX_TYPE_ID_INVALID);
+  return base;
+}
+
 static const psx_hir_node_t *test_hir_array_decay_source(
     const psx_frontend_expression_hir_t *expression) {
   const psx_hir_node_t *address =
@@ -2943,6 +2961,21 @@ static psx_frontend_expression_hir_t resolve_test_expression_input_hir(
   ASSERT_TRUE(ps_node_get_type(syntax) == NULL);
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(syntax);
+  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
+  ASSERT_TRUE(ps_node_get_type(syntax) == NULL);
+  if (out_syntax) *out_syntax = syntax;
+  return expression;
+}
+
+static psx_frontend_expression_hir_t resolve_test_cast_input_hir(
+    const char *input, node_t **out_syntax) {
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(input, &syntax);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
+  ASSERT_TRUE(syntax->lhs != NULL);
+  ASSERT_EQ(PSX_HIR_CAST,
+            psx_hir_node_kind(test_expression_hir_root(&expression)));
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
   ASSERT_TRUE(ps_node_get_type(syntax) == NULL);
   if (out_syntax) *out_syntax = syntax;
@@ -18275,141 +18308,169 @@ static void test_expr_ternary() {
 static void test_expr_unary_ops() {
   printf("test_expr_unary_ops...\n");
 
-  node_t *pos = parse_expr_input("+42");
-  ASSERT_EQ(ND_UNARY_PLUS, pos->kind);
-  ASSERT_EQ(ND_NUM, pos->lhs->kind);
-  ASSERT_EQ(42, as_num(pos->lhs)->val);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            ps_node_get_type(pos)->integer_kind);
+  const struct {
+    const char *input;
+    psx_resolution_node_kind_t syntax_kind;
+    psx_hir_node_kind_t hir_kind;
+    long long operand;
+  } unary_cases[] = {
+      {"+42", ND_UNARY_PLUS, PSX_HIR_UNARY_PLUS, 42},
+      {"-42", ND_UNARY_NEGATE, PSX_HIR_NEGATE, 42},
+      {"!0", ND_LOGICAL_NOT, PSX_HIR_LOGICAL_NOT, 0},
+      {"~5", ND_BITWISE_NOT, PSX_HIR_BITWISE_NOT, 5},
+  };
+  for (size_t i = 0; i < sizeof(unary_cases) / sizeof(unary_cases[0]); i++) {
+    node_t *syntax = NULL;
+    psx_frontend_expression_hir_t expression =
+        resolve_test_expression_input_hir(
+            unary_cases[i].input, &syntax);
+    const psx_hir_node_t *root =
+        test_expression_hir_root(&expression);
+    ASSERT_EQ(unary_cases[i].syntax_kind, syntax->kind);
+    ASSERT_EQ(ND_NUM, syntax->lhs->kind);
+    ASSERT_EQ(unary_cases[i].operand, as_num(syntax->lhs)->val);
+    ASSERT_EQ(unary_cases[i].hir_kind, psx_hir_node_kind(root));
+    psx_type_shape_t shape = test_hir_type_shape(root);
+    ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+    ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
+    psx_frontend_expression_hir_dispose(&expression);
+  }
 
-  node_t *neg = parse_expr_input("-42");
-  ASSERT_EQ(ND_UNARY_NEGATE, neg->kind);
-  ASSERT_EQ(ND_NUM, neg->lhs->kind);
-  ASSERT_EQ(42, as_num(neg->lhs)->val);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(neg)->kind);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_cast_input_hir("(void)1", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_NUM, syntax->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs)->val);
+  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *not0 = parse_expr_input("!0");
-  ASSERT_EQ(ND_LOGICAL_NOT, not0->kind);
-  ASSERT_EQ(ND_NUM, not0->lhs->kind);
-  ASSERT_EQ(0, as_num(not0->lhs)->val);
-  ASSERT_TRUE(not0->rhs == NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(not0)->kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            ps_node_get_type(not0)->integer_kind);
+  expression = resolve_test_cast_input_hir(
+      "(int *)0x1000", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_NUM, syntax->lhs->kind);
+  ASSERT_EQ(0x1000, as_num(syntax->lhs)->val);
+  psx_qual_type_t type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(8, test_type_size_id(type.type_id));
+  psx_qual_type_t base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *bitnot = parse_expr_input("~5");
-  ASSERT_EQ(ND_BITWISE_NOT, bitnot->kind);
-  ASSERT_EQ(ND_NUM, bitnot->lhs->kind);
-  ASSERT_EQ(5, as_num(bitnot->lhs)->val);
-  ASSERT_TRUE(bitnot->rhs == NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            ps_node_get_type(bitnot)->integer_kind);
+  expression = resolve_test_cast_input_hir(
+      "(double (*)[2])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(8, test_type_size_id(type.type_id));
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(2, test_qual_type_shape(base).array_len);
+  ASSERT_EQ(16, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            test_qual_type_shape(base).floating_kind);
+  ASSERT_EQ(8, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *voidcast = parse_expr_input("(void)1");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(voidcast));
-  ASSERT_TRUE(ps_node_get_type(voidcast)->kind == PSX_TYPE_VOID);
-  ASSERT_EQ(ND_NUM, voidcast->lhs->kind);
-  ASSERT_EQ(1, as_num(voidcast->lhs)->val);
+  expression = resolve_test_cast_input_hir("(int **)0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(8, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(4, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *ptr_const_cast = parse_expr_input("(int *)0x1000");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptr_const_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ptr_const_cast));
-  ASSERT_EQ(ND_NUM, ptr_const_cast->lhs->kind);
-  ASSERT_EQ(0x1000, as_num(ptr_const_cast->lhs)->val);
+  expression = resolve_test_cast_input_hir(
+      "(long (*)[2])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(16, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            test_qual_type_shape(base).integer_kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *ptrarr_cast = parse_expr_input("(double (*)[2])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptrarr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ptrarr_cast));
-  ASSERT_EQ(8, ps_node_type_size(ptrarr_cast));
-  ASSERT_EQ(16, ps_node_deref_size(ptrarr_cast));
-  ASSERT_EQ(8, canonical_node_base_deref_size(ptrarr_cast));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, canonical_node_pointee_fp_kind(ptrarr_cast));
-  ASSERT_TRUE(ps_node_get_type(ptrarr_cast) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(ptrarr_cast)->kind);
-  ASSERT_TRUE(ps_node_get_type(ptrarr_cast)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptrarr_cast)->base->kind);
+  expression = resolve_test_cast_input_hir(
+      "(long * (*)[2])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(16, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            test_qual_type_shape(base).integer_kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *ptrptr_cast = parse_expr_input("(int **)0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptrptr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ptrptr_cast));
-  ASSERT_EQ(8, ps_node_deref_size(ptrptr_cast));
-  ASSERT_TRUE(ps_node_get_type(ptrptr_cast) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(ptrptr_cast)->kind);
-  ASSERT_EQ(2, canonical_node_pointer_qual_levels(ptrptr_cast));
-  ASSERT_TRUE(ps_node_get_type(ptrptr_cast)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(ptrptr_cast)->base->kind);
-  ASSERT_EQ(4, ps_type_deref_size(ps_node_get_type(ptrptr_cast)->base));
-  ASSERT_TRUE(ps_node_get_type(ptrptr_cast)->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(ptrptr_cast)->base->base->kind);
+  expression = resolve_test_cast_input_hir(
+      "(int * (*)[2][3])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  type = psx_hir_node_qual_type(root);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(8, test_type_size_id(type.type_id));
+  base = test_qual_type_base(type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(2, test_qual_type_shape(base).array_len);
+  ASSERT_EQ(48, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(3, test_qual_type_shape(base).array_len);
+  ASSERT_EQ(24, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(8, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(4, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *long_ptrarr_cast = parse_expr_input("(long (*)[2])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_ptrarr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(long_ptrarr_cast));
-  ASSERT_EQ(16, ps_node_deref_size(long_ptrarr_cast));
-  ASSERT_TRUE(ps_node_get_type(long_ptrarr_cast) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(long_ptrarr_cast)->kind);
-  ASSERT_TRUE(ps_node_get_type(long_ptrarr_cast)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(long_ptrarr_cast)->base->kind);
-  ASSERT_TRUE(ps_node_get_type(long_ptrarr_cast)->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(long_ptrarr_cast)->base->base->kind);
+  expression = resolve_test_cast_input_hir(
+      "(unsigned char (*)[3])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  base = test_qual_type_base(psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(3, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
+            test_qual_type_shape(base).integer_kind);
+  ASSERT_TRUE(test_qual_type_shape(base).is_unsigned);
+  ASSERT_EQ(1, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *long_ptr_elem_cast = parse_expr_input("(long * (*)[2])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(long_ptr_elem_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(long_ptr_elem_cast));
-  ASSERT_EQ(16, ps_node_deref_size(long_ptr_elem_cast));
-  ASSERT_TRUE(ps_node_get_type(long_ptr_elem_cast) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(long_ptr_elem_cast)->kind);
-  ASSERT_TRUE(ps_node_get_type(long_ptr_elem_cast)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(long_ptr_elem_cast)->base->kind);
-  ASSERT_TRUE(ps_node_get_type(long_ptr_elem_cast)->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(long_ptr_elem_cast)->base->base->kind);
+  expression = resolve_test_cast_input_hir(
+      "(_Bool (*)[2])0", &syntax);
+  root = test_expression_hir_root(&expression);
+  base = test_qual_type_base(psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
+  ASSERT_EQ(2, test_type_size_id(base.type_id));
+  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(base).kind);
+  ASSERT_EQ(1, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *ptr_elem_2d_cast = parse_expr_input("(int * (*)[2][3])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ptr_elem_2d_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ptr_elem_2d_cast));
-  ASSERT_EQ(8, ps_node_type_size(ptr_elem_2d_cast));
-  ASSERT_EQ(48, ps_node_deref_size(ptr_elem_2d_cast));
-  ASSERT_EQ(4, canonical_node_base_deref_size(ptr_elem_2d_cast));
-  ASSERT_TRUE(ps_node_get_type(ptr_elem_2d_cast) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(ptr_elem_2d_cast)->kind);
-  ASSERT_TRUE(ps_node_get_type(ptr_elem_2d_cast)->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptr_elem_2d_cast)->base->kind);
-  ASSERT_TRUE(ps_node_get_type(ptr_elem_2d_cast)->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(ptr_elem_2d_cast)->base->base->kind);
-  ASSERT_TRUE(ps_node_get_type(ptr_elem_2d_cast)->base->base->base != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_node_get_type(ptr_elem_2d_cast)->base->base->base->kind);
-  int ptr_elem_2d_inner =
-      canonical_node_array_subscript_stride_bytes(ptr_elem_2d_cast, 0);
-  int ptr_elem_2d_next =
-      canonical_node_array_subscript_stride_bytes(ptr_elem_2d_cast, 1);
-  ASSERT_EQ(24, ptr_elem_2d_inner);
-  ASSERT_EQ(8, ptr_elem_2d_next);
+  expression = resolve_test_cast_input_hir("(_Bool *)0", &syntax);
+  root = test_expression_hir_root(&expression);
+  base = test_qual_type_base(psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(base).kind);
+  ASSERT_EQ(1, test_type_size_id(base.type_id));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  node_t *uchar_ptrarr_cast = parse_expr_input("(unsigned char (*)[3])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(uchar_ptrarr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(uchar_ptrarr_cast));
-  ASSERT_EQ(3, ps_node_deref_size(uchar_ptrarr_cast));
-  ASSERT_EQ(1, canonical_node_base_deref_size(uchar_ptrarr_cast));
-  ASSERT_TRUE(canonical_node_pointee_is_unsigned(uchar_ptrarr_cast));
-
-  node_t *bool_ptrarr_cast = parse_expr_input("(_Bool (*)[2])0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(bool_ptrarr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(bool_ptrarr_cast));
-  ASSERT_EQ(2, ps_node_deref_size(bool_ptrarr_cast));
-  ASSERT_EQ(1, canonical_node_base_deref_size(bool_ptrarr_cast));
-  ASSERT_TRUE(canonical_node_pointee_is_bool(bool_ptrarr_cast));
-
-  node_t *bool_ptr_cast = parse_expr_input("(_Bool *)0");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(bool_ptr_cast));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(bool_ptr_cast));
-  ASSERT_TRUE(canonical_node_pointee_is_bool(bool_ptr_cast));
-  ASSERT_EQ(1, ps_node_deref_size(bool_ptr_cast));
-
-  node_t *boolcast = parse_expr_input("(_Bool)3");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(boolcast));
-  ASSERT_TRUE(ps_node_is_source_cast(boolcast));
-  ASSERT_EQ(ND_NUM, boolcast->lhs->kind);
+  expression = resolve_test_cast_input_hir("(_Bool)3", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_NUM, syntax->lhs->kind);
+  ASSERT_EQ(3, as_num(syntax->lhs)->val);
+  ASSERT_EQ(PSX_TYPE_BOOL, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 
     node_t *const_cast = parse_expr_input("(const int)7");
   ASSERT_EQ(ND_CAST, psx_resolution_node_kind(const_cast));

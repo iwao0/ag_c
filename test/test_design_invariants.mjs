@@ -2697,7 +2697,7 @@ const legacyAnalyzedExpressionParseSites = callBodies(
   parserUnitTestSource,
   "parse_expr_input",
 );
-if (legacyAnalyzedExpressionParseSites.length > 109) {
+if (legacyAnalyzedExpressionParseSites.length > 94) {
   throw new Error(
     "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
