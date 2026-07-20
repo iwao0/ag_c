@@ -2403,7 +2403,7 @@ if (!/ps_ctx_register_tag_type_in\s*\(/.test(
     !/ps_ctx_register_typedef_name_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_find_typedef_decl_type_at_in\s*\(/.test(
+    !/ps_ctx_find_typedef_name_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     /ps_ctx_(?:clone_tag_type_at|find_enum_const_at|find_typedef_(?:decl_type|name)_at)_in_contexts\s*\(/.test(
@@ -12220,11 +12220,11 @@ if (!/psx_function_definition_header_resolution_t\s*;/.test(
       typedefInfoStruct[1],
     ) ||
     /\bpsx_type_t\b/.test(typedefInfoStruct[1]) ||
-    !/ps_ctx_typedef_decl_type\s*\([^]*?psx_type_compatibility_view_for\s*\(/.test(
-      semanticContextHeaderSource,
+    /\bps_ctx_typedef_decl_type\s*\(|\bps_ctx_find_typedef_decl_type(?:_at)?_in\s*\(/.test(
+      `${semanticContextHeaderSource}\n${semanticContextOwnershipSource}`,
     ) ||
     /\bt->decl_type\b/.test(semanticContextOwnershipSource) ||
-    !/typedef_record_decl_type\s*\([^]*?psx_type_compatibility_view_for\s*\(/.test(
+    /\btypedef_record_decl_type\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/resolve_typedef_decl_qual_type\s*\([^]*?info->decl_type_table\s*!=\s*context->semantic_types/.test(

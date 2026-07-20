@@ -136,13 +136,6 @@ static psx_qual_type_t typedef_record_decl_qual_type(
                                PSX_TYPE_QUALIFIER_NONE};
 }
 
-static const psx_type_t *typedef_record_decl_type(
-    const psx_semantic_context_t *context, const typedef_name_t *t) {
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(context),
-      typedef_record_decl_qual_type(t));
-}
-
 static const psx_runtime_declarator_application_t *
 typedef_record_runtime_application(const typedef_name_t *t) {
   return t ? t->runtime_application : NULL;
@@ -1670,27 +1663,6 @@ bool ps_ctx_find_typedef_name_in(
     out->runtime_application =
         typedef_record_runtime_application(t);
   }
-  return true;
-}
-
-bool ps_ctx_find_typedef_decl_type_in(
-    psx_semantic_context_t *context,
-    char *name, int len, const psx_type_t **out_type) {
-  typedef_name_t *t = find_typedef_in(context, name, len);
-  if (!t) return false;
-  if (out_type) *out_type = typedef_record_decl_type(context, t);
-  return true;
-}
-
-bool ps_ctx_find_typedef_decl_type_at_in(
-    psx_semantic_context_t *context,
-    char *name, int len, psx_scope_lookup_point_t point,
-    const psx_type_t **out_type) {
-  psx_typedef_info_t info;
-  if (!ps_ctx_find_typedef_name_at_in(
-          context, name, len, point, &info))
-    return false;
-  if (out_type) *out_type = ps_ctx_typedef_decl_type(&info);
   return true;
 }
 

@@ -10,7 +10,6 @@
 #include "../semantic/declarator_application_types.h"
 #include "../semantic/record_decl_table.h"
 #include "../semantic/record_layout.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../semantic/type_identity.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
@@ -263,14 +262,6 @@ static inline psx_qual_type_t ps_ctx_typedef_decl_qual_type(
                                   PSX_TYPE_QUALIFIER_NONE};
 }
 
-static inline const psx_type_t *ps_ctx_typedef_decl_type(
-    const psx_typedef_info_t *info) {
-  return info
-             ? psx_type_compatibility_view_for(
-                   info->decl_type_table, info->decl_qual_type)
-             : NULL;
-}
-
 /* typedef 名を登録する。decl_type_table + decl_qual_type が正本。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = 型欠落または型衝突。 */
 int ps_ctx_register_typedef_name_in(
@@ -282,13 +273,6 @@ int ps_ctx_register_typedef_name_in(
 bool ps_ctx_find_typedef_name_in(
     psx_semantic_context_t *context,
     char *name, int len, psx_typedef_info_t *out);
-bool ps_ctx_find_typedef_decl_type_in(
-    psx_semantic_context_t *context,
-    char *name, int len, const psx_type_t **out_type);
-bool ps_ctx_find_typedef_decl_type_at_in(
-    psx_semantic_context_t *context,
-    char *name, int len, psx_scope_lookup_point_t point,
-    const psx_type_t **out_type);
 bool ps_ctx_find_typedef_name_at_in(
     psx_semantic_context_t *context,
     char *name, int len, psx_scope_lookup_point_t point,

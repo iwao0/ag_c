@@ -170,6 +170,37 @@ static const psx_type_t *test_record_member_decl_type(
              : NULL;
 }
 
+static const psx_type_t *test_typedef_decl_type(
+    const psx_typedef_info_t *info) {
+  return info
+             ? psx_type_compatibility_view_for(
+                   info->decl_type_table, info->decl_qual_type)
+             : NULL;
+}
+
+static bool test_find_typedef_decl_type_in(
+    psx_semantic_context_t *semantic_context,
+    char *name, int len, const psx_type_t **out_type) {
+  psx_typedef_info_t info;
+  if (!ps_ctx_find_typedef_name_in(
+          semantic_context, name, len, &info))
+    return false;
+  if (out_type) *out_type = test_typedef_decl_type(&info);
+  return true;
+}
+
+static bool test_find_typedef_decl_type_at_in(
+    psx_semantic_context_t *semantic_context,
+    char *name, int len, psx_scope_lookup_point_t point,
+    const psx_type_t **out_type) {
+  psx_typedef_info_t info;
+  if (!ps_ctx_find_typedef_name_at_in(
+          semantic_context, name, len, point, &info))
+    return false;
+  if (out_type) *out_type = test_typedef_decl_type(&info);
+  return true;
+}
+
 static tag_member_info_t ps_tag_member_declaration_view(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_member_decl_t *member) {
@@ -1226,7 +1257,7 @@ static void set_test_typedef_fixture_type(
   info->decl_type_table = ps_ctx_semantic_type_table_in(
       test_semantic_context());
   info->decl_qual_type = intern_test_qual_type(type);
-  ASSERT_TRUE(ps_ctx_typedef_decl_type(info) != NULL);
+  ASSERT_TRUE(test_typedef_decl_type(info) != NULL);
 }
 
 static void set_test_global_fixture_type_in(
@@ -15427,7 +15458,7 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"PhaseEnumZero", 13, &enum_value));
   const psx_type_t *deferred_alias_type = NULL;
-  ASSERT_TRUE(!ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
+  ASSERT_TRUE(!test_find_typedef_decl_type_in(test_semantic_context(),
       (char *)"DeferredAlias", 13, &deferred_alias_type));
 
   psx_typedef_info_t deferred_alias = {0};
@@ -16701,7 +16732,7 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(0, resolution.scope_depth);
   const psx_type_t *canonical_typedef_type = NULL;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
+  ASSERT_TRUE(test_find_typedef_decl_type_in(test_semantic_context(),
       request.name, request.name_len, &canonical_typedef_type));
   ASSERT_TRUE(canonical_typedef_type != NULL);
 
@@ -16711,7 +16742,7 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.redeclared);
   const psx_type_t *redeclared_typedef_type = NULL;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
+  ASSERT_TRUE(test_find_typedef_decl_type_in(test_semantic_context(),
       request.name, request.name_len, &redeclared_typedef_type));
   ASSERT_TRUE(redeclared_typedef_type == canonical_typedef_type);
 
@@ -17971,7 +18002,7 @@ static void test_expr_generic() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, generic_id_type->kind);
   psx_type_t *generic_id_pointer =
       ps_type_new_pointer(ps_type_clone(generic_id_type));
-  const psx_type_t *unary_type = ps_ctx_typedef_decl_type(&unary_info);
+  const psx_type_t *unary_type = test_typedef_decl_type(&unary_info);
   ASSERT_TRUE(unary_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, unary_type->kind);
   ASSERT_TRUE(ps_type_derived_function(unary_type) != NULL);
@@ -21511,9 +21542,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMDPtrArray", 11,
                                         &tm_decl_ptr_array));
   const psx_type_t *tm_array_ptr_type =
-      ps_ctx_typedef_decl_type(&tm_decl_array_ptr);
+      test_typedef_decl_type(&tm_decl_array_ptr);
   const psx_type_t *tm_ptr_array_type =
-      ps_ctx_typedef_decl_type(&tm_decl_ptr_array);
+      test_typedef_decl_type(&tm_decl_ptr_array);
   ASSERT_TRUE(tm_array_ptr_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_array_ptr_type->kind);
   ASSERT_EQ(3, tm_array_ptr_type->array_len);
@@ -25184,19 +25215,19 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), (char *)typedef_sync_name,
                                         (int)sizeof(typedef_sync_name) - 1,
                                         &typedef_sync_out));
-  ASSERT_TRUE(ps_ctx_typedef_decl_type(&typedef_sync_out) != NULL);
+  ASSERT_TRUE(test_typedef_decl_type(&typedef_sync_out) != NULL);
   psx_qual_type_t typedef_sync_qual_type =
       ps_ctx_typedef_decl_qual_type(&typedef_sync_out);
   ASSERT_TRUE(typedef_sync_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(
-      ps_ctx_typedef_decl_type(&typedef_sync_out) ==
+      test_typedef_decl_type(&typedef_sync_out) ==
       psx_type_compatibility_view_for(
           ps_ctx_semantic_type_table_in(test_semantic_context()),
           typedef_sync_qual_type));
   ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_typedef_decl_type(&typedef_sync_out)->kind);
+            test_typedef_decl_type(&typedef_sync_out)->kind);
   ASSERT_EQ(1, ps_type_pointer_depth(
-                   ps_ctx_typedef_decl_type(&typedef_sync_out)));
+                   test_typedef_decl_type(&typedef_sync_out)));
 
   const char typedef_identity_name[] = "__tm_typedef_identity";
   const psx_typedef_info_t typedef_identity = {
@@ -25906,11 +25937,11 @@ static void test_type_metadata_bridge() {
   psx_typedef_info_t tm_func_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMFunc", 6, &tm_func_info));
   ASSERT_TRUE(ps_type_derived_function(
-      ps_ctx_typedef_decl_type(&tm_func_info)) != NULL);
+      test_typedef_decl_type(&tm_func_info)) != NULL);
   psx_typedef_info_t tm_funcs_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMFuncs", 7, &tm_funcs_info));
   ASSERT_TRUE(ps_type_derived_function(
-      ps_ctx_typedef_decl_type(&tm_funcs_info)) != NULL);
+      test_typedef_decl_type(&tm_funcs_info)) != NULL);
   fn = as_function_definition(parsed_code[1]);
   lvar_t *tm_ops = find_func_lvar(fn, "ops");
   lvar_t *tm_pa = find_func_lvar(fn, "pa");
@@ -26622,17 +26653,17 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   psx_typedef_info_t td_dp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_DP", 8, &td_dp));
-  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_dp) != NULL && ps_ctx_typedef_decl_type(&td_dp)->base != NULL);
+  ASSERT_TRUE(test_typedef_decl_type(&td_dp) != NULL && test_typedef_decl_type(&td_dp)->base != NULL);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            ps_ctx_typedef_decl_type(&td_dp)->base->floating_kind);
-  assert_canonical_type_signature(ps_ctx_typedef_decl_type(&td_dp), "p<f64>");
+            test_typedef_decl_type(&td_dp)->base->floating_kind);
+  assert_canonical_type_signature(test_typedef_decl_type(&td_dp), "p<f64>");
   psx_typedef_info_t td_fp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_FP", 8, &td_fp));
-  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_fp) != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ps_ctx_typedef_decl_type(&td_fp)->kind);
-  assert_canonical_type_signature(ps_ctx_typedef_decl_type(&td_fp), "p<f64()>");
-  const psx_type_t *td_fp_decl_type = ps_ctx_typedef_decl_type(&td_fp);
-  ASSERT_TRUE(ps_ctx_typedef_decl_type(&td_fp) == td_fp_decl_type);
+  ASSERT_TRUE(test_typedef_decl_type(&td_fp) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_typedef_decl_type(&td_fp)->kind);
+  assert_canonical_type_signature(test_typedef_decl_type(&td_fp), "p<f64()>");
+  const psx_type_t *td_fp_decl_type = test_typedef_decl_type(&td_fp);
+  ASSERT_TRUE(test_typedef_decl_type(&td_fp) == td_fp_decl_type);
   fn = as_function_definition(parsed_code[1]);
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
@@ -26659,18 +26690,18 @@ static void test_type_metadata_bridge() {
   psx_typedef_info_t tm817_get_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET", 9, &tm817_get_td));
   assert_canonical_type_signature(
-      ps_ctx_typedef_decl_type(&tm817_get_td), "p<p<i32>()>");
-  ASSERT_EQ(1, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_get_td)));
+      test_typedef_decl_type(&tm817_get_td), "p<p<i32>()>");
+  ASSERT_EQ(1, ps_type_pointer_depth(test_typedef_decl_type(&tm817_get_td)));
   psx_typedef_info_t tm817_get2_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET2", 10, &tm817_get2_td));
   assert_canonical_type_signature(
-      ps_ctx_typedef_decl_type(&tm817_get2_td), "p<p<i32>()>");
-  ASSERT_EQ(1, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_get2_td)));
+      test_typedef_decl_type(&tm817_get2_td), "p<p<i32>()>");
+  ASSERT_EQ(1, ps_type_pointer_depth(test_typedef_decl_type(&tm817_get2_td)));
   psx_typedef_info_t tm817_pp_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_PP", 8, &tm817_pp_td));
   assert_canonical_type_signature(
-      ps_ctx_typedef_decl_type(&tm817_pp_td), "p<p<i32(i32)>>");
-  ASSERT_EQ(2, ps_type_pointer_depth(ps_ctx_typedef_decl_type(&tm817_pp_td)));
+      test_typedef_decl_type(&tm817_pp_td), "p<p<i32(i32)>>");
+  ASSERT_EQ(2, ps_type_pointer_depth(test_typedef_decl_type(&tm817_pp_td)));
   fn = as_function_definition(parsed_code[2]);
   lvar_t *tm817_get_lvar = find_func_lvar(fn, "get");
   ASSERT_TRUE(tm817_get_lvar != NULL);
@@ -29291,7 +29322,7 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(
       second, direct_typedef_name, 13, &direct_typedef_info));
   ASSERT_EQ(8, ps_type_sizeof(
-                   ps_ctx_typedef_decl_type(&direct_typedef_info)));
+                   test_typedef_decl_type(&direct_typedef_info)));
   psx_global_declaration_resolution_t direct_global_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -29895,7 +29926,7 @@ static void test_compilation_session_registry_isolation() {
           ps_ctx_scope_graph(first.semantic_context));
   const psx_type_t *isolated_typedef_type = NULL;
   long long isolated_enum_value = 0;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_at_in(
+  ASSERT_TRUE(test_find_typedef_decl_type_at_in(
       first.semantic_context,
       (char *)"FirstType", 9, first_namespace_point,
       &isolated_typedef_type));
