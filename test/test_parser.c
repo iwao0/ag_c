@@ -648,16 +648,64 @@ static int test_type_alignof_for_target(
       test_resolution_store(), test_arena_context(), \
       ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
 static psx_semantic_context_t *test_semantic_context(void);
-static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
+static psx_qual_type_t test_array_decay_qual_type(
+    psx_qual_type_t declaration_qual_type) {
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
   psx_qual_type_t element_type = psx_semantic_type_table_base(
-      semantic_types, ps_lvar_decl_type_id(var));
-  psx_qual_type_t decay_type = ps_ctx_intern_pointer_to_qual_type_in(
+      semantic_types, declaration_qual_type.type_id);
+  return ps_ctx_intern_pointer_to_qual_type_in(
       test_semantic_context(), element_type);
+}
+
+static psx_qual_type_t test_array_address_qual_type(
+    psx_qual_type_t declaration_qual_type) {
+  psx_type_shape_t shape = {0};
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  return psx_semantic_type_table_describe(
+             semantic_types, declaration_qual_type.type_id, &shape) &&
+         shape.kind == PSX_TYPE_ARRAY
+             ? test_array_decay_qual_type(declaration_qual_type)
+             : declaration_qual_type;
+}
+
+static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_qual_type_t decay_type = test_array_decay_qual_type(
+      ps_lvar_decl_qual_type(var));
   return psx_node_new_vla_decay_ref_for_in(
       test_resolution_store(), test_arena_context(), semantic_types,
       var, decay_type);
+}
+
+static node_t *test_node_new_gvar_array_addr_for(global_var_t *global) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  return ps_node_new_gvar_array_addr_for_in(
+      test_resolution_store(), test_arena_context(), semantic_types,
+      global, test_array_address_qual_type(
+                  ps_gvar_decl_qual_type(global)));
+}
+
+static node_t *test_node_new_static_local_array_addr_for(lvar_t *var) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_qual_type_t declaration_qual_type = var->static_global
+      ? ps_gvar_decl_qual_type(var->static_global)
+      : ps_lvar_decl_qual_type(var);
+  return psx_node_new_static_local_array_addr_for_in(
+      test_resolution_store(), test_arena_context(), semantic_types,
+      var, test_array_address_qual_type(declaration_qual_type));
+}
+
+static node_t *test_node_new_lvar_array_addr_for(lvar_t *var) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  return ps_node_new_lvar_array_addr_for_in(
+      test_resolution_store(), test_arena_context(), semantic_types,
+      var, test_array_address_qual_type(ps_lvar_decl_qual_type(var)));
 }
 #define psx_node_new_vla_decay_ref_for(...) \
   test_node_new_vla_decay_ref_for(__VA_ARGS__)
@@ -686,14 +734,11 @@ static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
 #define psx_node_new_source_cast(...) \
   psx_node_new_source_cast_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_gvar_array_addr_for(...) \
-  ps_node_new_gvar_array_addr_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  test_node_new_gvar_array_addr_for(__VA_ARGS__)
 #define psx_node_new_static_local_array_addr_for(...) \
-  psx_node_new_static_local_array_addr_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  test_node_new_static_local_array_addr_for(__VA_ARGS__)
 #define ps_node_new_lvar_array_addr_for(...) \
-  ps_node_new_lvar_array_addr_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
+  test_node_new_lvar_array_addr_for(__VA_ARGS__)
 #define ps_node_new_addr_value_for(...) \
   ps_node_new_addr_value_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_explicit_addr_value_for(...) \
@@ -724,11 +769,17 @@ static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
           ps_tag_member_decl_type(info)), (info)->bit_is_signed, \
       (info)->bit_width, (info)->bit_offset)
 #define ps_node_new_gvar_for(...) \
-  ps_node_new_gvar_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  ps_node_new_gvar_for_in( \
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
 #define psx_node_new_gvar_array_base_for(...) \
-  psx_node_new_gvar_array_base_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  psx_node_new_gvar_array_base_for_in( \
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
 #define psx_node_new_static_local_gvar_for(...) \
-  psx_node_new_static_local_gvar_for_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
+  psx_node_new_static_local_gvar_for_in( \
+      test_resolution_store(), test_arena_context(), \
+      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
 #define ps_node_new_vla_runtime(...) \
   ps_node_new_vla_runtime_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define ps_node_new_assign(...) \
@@ -19575,6 +19626,8 @@ static void test_type_metadata_bridge() {
       ps_node_new_lvar_array_addr_for(&tmp_lvar_canonical_pointer_view);
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_ptr_decl_type_addr) ==
               tmp_lvar_ptr_decl_type);
+  ASSERT_EQ(ps_lvar_decl_type_id(&tmp_lvar_canonical_pointer_view),
+            ps_node_qual_type(tmp_lvar_ptr_decl_type_addr).type_id);
   ASSERT_TRUE(ps_node_value_is_pointer_like(tmp_lvar_ptr_decl_type_addr));
   ASSERT_EQ(4, ps_node_deref_size(tmp_lvar_ptr_decl_type_addr));
   ASSERT_EQ(0, canonical_node_ptr_array_pointee_bytes(
@@ -19590,6 +19643,13 @@ static void test_type_metadata_bridge() {
   node_t *decayed_array_addr =
       ps_node_new_lvar_array_addr_for(&explicit_array_addr_var);
   ASSERT_EQ(PSX_TYPE_POINTER, ps_node_get_type(decayed_array_addr)->kind);
+  psx_qual_type_t expected_array_addr_type =
+      test_array_address_qual_type(
+          ps_lvar_decl_qual_type(&explicit_array_addr_var));
+  ASSERT_EQ(expected_array_addr_type.type_id,
+            ps_node_qual_type(decayed_array_addr).type_id);
+  ASSERT_EQ(expected_array_addr_type.qualifiers,
+            ps_node_qual_type(decayed_array_addr).qualifiers);
   ASSERT_EQ(PSX_TYPE_INTEGER,
             ps_node_get_type(decayed_array_addr)->base->kind);
   node_t *explicit_array_addr =
@@ -19842,6 +19902,10 @@ static void test_type_metadata_bridge() {
   node_t *sig_nested_gvar_node = ps_node_new_gvar_for(sig_nested_gvar);
   assert_canonical_type_signature(
       ps_node_get_type(sig_nested_gvar_node), "p<p<i32(f64)>()>");
+  ASSERT_EQ(ps_gvar_decl_qual_type(sig_nested_gvar).type_id,
+            ps_node_qual_type(sig_nested_gvar_node).type_id);
+  ASSERT_EQ(ps_gvar_decl_qual_type(sig_nested_gvar).qualifiers,
+            ps_node_qual_type(sig_nested_gvar_node).qualifiers);
 
   parsed_code = parse_program_input(
       "int **__tm_gpp; int *__tm_gptrs[2]; "
@@ -23980,6 +24044,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sd->static_global == sd_gv);
   ASSERT_TRUE(psx_resolved_object_ref_global(sd_node) == sd_gv);
   ASSERT_TRUE(ps_node_get_type(sd_node) == ps_gvar_get_decl_type(sd_gv));
+  ASSERT_EQ(ps_gvar_decl_qual_type(sd_gv).type_id,
+            ps_node_qual_type(sd_node).type_id);
+  ASSERT_EQ(ps_gvar_decl_qual_type(sd_gv).qualifiers,
+            ps_node_qual_type(sd_node).qualifiers);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             ps_node_get_type(sd_node)->floating_kind);
 
@@ -24031,6 +24099,12 @@ static void test_type_metadata_bridge() {
   const psx_type_t *sa_addr_type = ps_node_get_type(sa_addr);
   ASSERT_TRUE(sa_addr_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, sa_addr_type->kind);
+  psx_qual_type_t expected_sa_addr_type =
+      test_array_address_qual_type(ps_gvar_decl_qual_type(sa_gv));
+  ASSERT_EQ(expected_sa_addr_type.type_id,
+            ps_node_qual_type(sa_addr).type_id);
+  ASSERT_EQ(expected_sa_addr_type.qualifiers,
+            ps_node_qual_type(sa_addr).qualifiers);
   ASSERT_TRUE(sa_addr_type->base == ps_gvar_get_decl_type(sa_gv)->base);
 
   parsed_code = parse_program_input(

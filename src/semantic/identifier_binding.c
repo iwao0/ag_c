@@ -91,13 +91,11 @@ static int bind_static_local_reference(
     const psx_semantic_type_table_t *semantic_types,
     node_t *node, lvar_t *var, psx_qual_type_t declaration_qual_type) {
   global_var_t *global = var ? var->static_global : NULL;
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      semantic_types, declaration_qual_type);
   return psx_bind_global_reference_in(
       store, arena_context, node, global,
       var ? var->static_global_name : NULL,
       var ? var->static_global_name_len : 0,
-      type, declaration_qual_type,
+      semantic_types, declaration_qual_type,
       global && global->is_thread_local);
 }
 
@@ -154,15 +152,12 @@ static node_t *materialize_global(
     node_identifier_t *identifier,
     const psx_identifier_expression_resolution_t *resolution) {
   global_var_t *global = resolution ? resolution->symbol.global : NULL;
-  const psx_type_t *declaration_type =
-      psx_semantic_type_table_lookup_qual_type(
-          semantic_types, resolution->declaration_qual_type);
   node_t *node = (node_t *)identifier;
   if (!psx_bind_global_reference_in(
           store, arena_context, node, global,
           global ? global->name : identifier->name,
           global ? global->name_len : identifier->name_len,
-          declaration_type, resolution->declaration_qual_type,
+          semantic_types, resolution->declaration_qual_type,
           global && global->is_thread_local))
     return NULL;
   return global && ps_gvar_is_array(global)
@@ -362,9 +357,7 @@ static node_t *materialize_address_operand(
                ps_ctx_arena(context->semantic_context),
                (node_t *)identifier, resolution.global,
                resolution.global->name, resolution.global->name_len,
-               psx_semantic_type_table_lookup_qual_type(
-                   semantic_types, declaration_qual_type),
-               declaration_qual_type,
+               semantic_types, declaration_qual_type,
                resolution.global->is_thread_local)
                ? (node_t *)identifier : NULL;
   }

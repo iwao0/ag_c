@@ -31,7 +31,8 @@ int psx_bind_global_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, node_t *node,
     global_var_t *global, char *name, int name_len,
-    const psx_type_t *type, psx_qual_type_t qual_type,
+    const psx_semantic_type_table_t *semantic_types,
+    psx_qual_type_t qual_type,
     int is_thread_local);
 int psx_bind_function_reference_in(
     psx_resolution_store_t *store,
@@ -106,14 +107,19 @@ node_t *ps_node_new_param_lvar_for_in(
 
 node_t *ps_node_new_gvar_array_addr_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, global_var_t *global);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    global_var_t *global, psx_qual_type_t expression_qual_type);
 node_t *psx_node_new_static_local_array_addr_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    lvar_t *var, psx_qual_type_t expression_qual_type);
 node_t *ps_node_new_lvar_array_addr_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
-    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var,
+    psx_qual_type_t expression_qual_type);
 node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context,
@@ -122,13 +128,18 @@ node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     int bit_is_signed, int bit_width, int bit_offset);
 node_t *ps_node_new_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, global_var_t *global);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    global_var_t *global);
 node_t *psx_node_new_gvar_array_base_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, global_var_t *global);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types,
+    global_var_t *global);
 node_t *psx_node_new_static_local_gvar_for_in(
     psx_resolution_store_t *store,
-    arena_context_t *arena_context, lvar_t *var);
+    arena_context_t *arena_context,
+    const psx_semantic_type_table_t *semantic_types, lvar_t *var);
 node_t *psx_node_new_function_reference_in(
     psx_resolution_store_t *store,
     arena_context_t *arena_context, char *name, int name_len,

@@ -5614,6 +5614,38 @@ if (!identifierArrayDecay ||
     "identifier binding must consume resolver-owned declaration and expression QualTypes for array decay",
   );
 }
+const globalReferenceBinder = resolvedObjectRefSource.match(
+  /int\s+psx_bind_global_reference_in\s*\([^]*?\n\}/,
+);
+const arrayAddressBinder = resolvedObjectRefSource.match(
+  /static\s+int\s+bind_array_address_qual_type\s*\([^]*?\n\}/,
+);
+if (!globalReferenceBinder ||
+    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
+      globalReferenceBinder[0],
+    ) ||
+    !/psx_qual_type_t\s+qual_type/.test(globalReferenceBinder[0]) ||
+    !/psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      globalReferenceBinder[0],
+    ) ||
+    /const\s+psx_type_t\s*\*\s*type\s*,/.test(
+      globalReferenceBinder[0],
+    ) ||
+    !arrayAddressBinder ||
+    !/psx_qual_type_t\s+expression_qual_type/.test(
+      arrayAddressBinder[0],
+    ) ||
+    !/ps_node_bind_qual_type\s*\(/.test(arrayAddressBinder[0]) ||
+    /ps_node_bind_type\s*\(|ps_type_decay_array_in\s*\(/.test(
+      arrayAddressBinder[0],
+    ) ||
+    /ps_[lg]var_get_decl_type\s*\(|ps_type_decay_array_in\s*\(/.test(
+      resolvedObjectRefSource,
+    )) {
+  throw new Error(
+    "global references and declaration-backed array addresses must bind canonical QualType identity",
+  );
+}
 const resolvedObjectRefFactories = [
   "psx_node_new_lvar_in",
   "ps_node_new_lvar_typed_in",
