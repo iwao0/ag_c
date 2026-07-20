@@ -46,8 +46,6 @@ static int plan_file_scope_compound_literal(
       ps_lowering_resolution_store(lowering_context);
   psx_qual_type_t object_qual_type =
       ps_node_qual_type(store, &compound->base);
-  const psx_type_t *type = psx_semantic_type_table_lookup_qual_type(
-      ps_lowering_semantic_types(lowering_context), object_qual_type);
   psx_type_shape_t object_shape = {0};
   int has_object_shape = psx_semantic_type_table_describe(
       ps_lowering_semantic_types(lowering_context),
@@ -97,7 +95,7 @@ static int plan_file_scope_compound_literal(
               .options = options,
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
-              .type = type,
+              .type = object_qual_type,
               .is_static = 1,
               .is_compiler_generated = 1,
               .initializer = &parsed,

@@ -13,7 +13,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int is_extern_decl;
   int is_static;
   token_t *diag_tok;

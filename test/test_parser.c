@@ -14463,7 +14463,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_stale_complete_record",
           .name_len = 32,
-          .type = stale_complete_view,
+          .type = intern_test_qual_type(stale_complete_view),
       },
       &record_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT,
@@ -14490,7 +14490,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_stale_incomplete_record",
           .name_len = 34,
-          .type = stale_incomplete_view,
+          .type = intern_test_qual_type(stale_incomplete_view),
       },
       &record_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, record_resolution.status);
@@ -14504,7 +14504,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = incomplete,
+          .type = intern_test_qual_type(incomplete),
           .is_extern_decl = 1,
       },
       &first_resolution);
@@ -14534,7 +14534,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = complete,
+          .type = intern_test_qual_type(complete),
       },
       &merged_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, merged_resolution.status);
@@ -14564,7 +14564,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = complete,
+          .type = intern_test_qual_type(complete),
       },
       &repeated_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, repeated_resolution.status);
@@ -14587,7 +14587,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
-          .type = incomplete,
+          .type = intern_test_qual_type(incomplete),
       },
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT,
@@ -14598,7 +14598,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
-          .type = incomplete,
+          .type = intern_test_qual_type(incomplete),
           .has_initializer = 1,
       },
       &rejected_resolution);
@@ -14611,7 +14611,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
-          .type = pointer,
+          .type = intern_test_qual_type(pointer),
       },
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPE_CONFLICT,
@@ -14623,7 +14623,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_static",
           .name_len = 17,
-          .type = pointer,
+          .type = intern_test_qual_type(pointer),
           .is_static = 1,
       },
       &internal));
@@ -14650,7 +14650,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = boundary_function_name,
           .name_len = (int)sizeof(boundary_function_name) - 1,
-          .type = integer,
+          .type = intern_test_qual_type(integer),
       },
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT,
@@ -14675,7 +14675,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = boundary_typedef_name,
           .name_len = (int)sizeof(boundary_typedef_name) - 1,
-          .type = integer,
+          .type = intern_test_qual_type(integer),
       },
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT,
@@ -14700,7 +14700,7 @@ static void test_global_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = boundary_enum_name,
           .name_len = (int)sizeof(boundary_enum_name) - 1,
-          .type = integer,
+          .type = intern_test_qual_type(integer),
       },
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT,
@@ -14726,7 +14726,8 @@ static void test_declaration_pipeline_order_boundary() {
       .options = test_compilation_options(),
       .name = name,
       .name_len = name_len,
-      .type = ps_type_new_integer(TK_INT, 4, 0),
+      .type = intern_test_qual_type(
+          ps_type_new_integer(TK_INT, 4, 0)),
       .initializer = &initializer,
       .diag_tok = tokens,
   };
@@ -16413,7 +16414,7 @@ static void test_typedef_declaration_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__TypeObject",
           .name_len = 12,
-          .type = integer,
+          .type = intern_test_qual_type(integer),
       },
       &object));
   request.name = (char *)"__TypeObject";
@@ -16493,7 +16494,7 @@ static void test_enum_constant_resolution_boundary() {
           .global_registry = test_global_registry(),
           .name = (char *)"__EnumObject",
           .name_len = 12,
-          .type = integer,
+          .type = intern_test_qual_type(integer),
       },
       &object));
   request.name = (char *)"__EnumObject";
@@ -16975,7 +16976,7 @@ static void test_static_data_initializer_boundary() {
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .type = inferred_type,
+          .type = ps_gvar_decl_qual_type(&inferred_global),
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,
       },
@@ -17034,7 +17035,7 @@ static void test_static_data_initializer_boundary() {
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .type = pointer_array_type,
+          .type = ps_gvar_decl_qual_type(&pointer_array_global),
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&pointer_list,
       },
@@ -17065,7 +17066,7 @@ static void test_static_data_initializer_boundary() {
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = test_semantic_context(),
-          .type = static_incomplete,
+          .type = intern_test_qual_type(static_incomplete),
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,
       },
@@ -28688,7 +28689,8 @@ static void test_semantic_context_isolation() {
           .global_registry = first_globals,
           .name = direct_typedef_name,
           .name_len = 13,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type = ps_ctx_intern_qual_type_in(
+              first, ps_type_new_integer(TK_INT, 4, 0)),
           .is_extern_decl = 1,
       },
       &direct_global_resolution);
@@ -28700,7 +28702,8 @@ static void test_semantic_context_isolation() {
           .global_registry = second_globals,
           .name = direct_typedef_name,
           .name_len = 13,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type = ps_ctx_intern_qual_type_in(
+              second, ps_type_new_integer(TK_INT, 4, 0)),
           .is_extern_decl = 1,
       },
       &direct_global_resolution);
@@ -28857,7 +28860,7 @@ static void test_semantic_context_isolation() {
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = first,
-          .type = detached_tag_type,
+          .type = (psx_qual_type_t){PSX_TYPE_ID_INVALID, 0},
           .kind = PSX_DECL_INIT_EXPR,
           .initializer = first_zero,
       },
@@ -28868,7 +28871,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = second,
-          .type = detached_tag_type,
+          .type = ps_ctx_intern_qual_type_in(
+              second, direct_tag_type),
           .kind = PSX_DECL_INIT_EXPR,
           .initializer = second_zero,
       },
@@ -29392,7 +29396,9 @@ static void test_compilation_session_registry_isolation() {
           .global_registry = second.global_registry,
           .name = (char *)"mismatched_global",
           .name_len = 17,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type = ps_ctx_intern_qual_type_in(
+              first.semantic_context,
+              ps_type_new_integer(TK_INT, 4, 0)),
           .is_extern_decl = 1,
       },
       &mismatched_global_declaration);
@@ -29449,7 +29455,9 @@ static void test_compilation_session_registry_isolation() {
           .options = ag_compilation_session_options_view(&first),
           .name = (char *)"pipeline_first",
           .name_len = 14,
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type = ps_ctx_intern_qual_type_in(
+              first.semantic_context,
+              ps_type_new_integer(TK_INT, 4, 0)),
           .initializer = &isolated_global_initializer,
       },
       &isolated_global_result));

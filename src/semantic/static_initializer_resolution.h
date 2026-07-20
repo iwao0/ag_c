@@ -20,7 +20,7 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   psx_decl_init_kind_t kind;
   node_t *initializer;
   token_t *diag_tok;

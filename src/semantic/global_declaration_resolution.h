@@ -21,7 +21,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int is_extern_decl;
   int has_initializer;
 } psx_global_declaration_resolution_request_t;

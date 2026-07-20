@@ -123,14 +123,9 @@ int psx_begin_global_declaration_pipeline(
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
       !request->lowering_context || !request->options ||
-      !request->name || request->name_len <= 0 || !request->type ||
+      !request->name || request->name_len <= 0 ||
+      request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->initializer) return 0;
-
-  if (ps_ctx_intern_qual_type_in(
-          request->semantic_context, request->type).type_id ==
-      PSX_TYPE_ID_INVALID) {
-    return 0;
-  }
 
   psx_global_declaration_resolution_t resolution;
   psx_resolve_global_declaration(
@@ -737,7 +732,7 @@ int psx_finish_static_local_declaration_pipeline(
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = request->semantic_context,
-          .type = request->type,
+          .type = ps_lvar_decl_qual_type(result->alias),
           .kind = request->initializer->kind,
           .initializer = request->initializer->value,
           .diag_tok = request->initializer->value_tok,
@@ -810,7 +805,7 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = request->semantic_context,
-          .type = request->type,
+          .type = ps_lvar_decl_qual_type(result->alias),
           .kind = request->initializer->kind,
           .initializer = request->initializer->value,
           .diag_tok = request->initializer->value_tok,
@@ -1164,6 +1159,9 @@ int psx_apply_block_extern_declaration_pipeline(
 
   psx_parsed_initializer_t initializer = {0};
   psx_global_declaration_pipeline_result_t global;
+  psx_qual_type_t object_type = ps_ctx_intern_qual_type_in(
+      request->semantic_context, request->type);
+  if (object_type.type_id == PSX_TYPE_ID_INVALID) return 0;
   if (!psx_apply_global_declaration_pipeline(
           &(psx_global_declaration_pipeline_request_t){
               .semantic_context = request->semantic_context,
@@ -1173,7 +1171,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .options = request->options,
               .name = request->name,
               .name_len = request->name_len,
-              .type = request->type,
+              .type = object_type,
               .is_extern_decl = 1,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,

@@ -3765,7 +3765,7 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     !/psx_bind_type_name_ref_in_contexts\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/ps_ctx_bind_record_ids_in\s*\(/.test(
+    !/psx_semantic_type_table_describe\s*\(/.test(
       staticInitializerResolutionSource,
     )) {
   throw new Error(
@@ -8920,14 +8920,18 @@ const globalDeclarationResolutionHeader = await readFile(
 if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
       globalDeclarationResolutionHeader,
     ) ||
-    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+    !/\bpsx_qual_type_t\s+type\s*;/.test(
+      globalDeclarationResolutionHeader,
+    ) ||
+    /\bpsx_type_t\b/.test(globalDeclarationResolutionSource) ||
+    /\bps_ctx_intern_qual_type_in\s*\(/.test(
       globalDeclarationResolutionSource,
     ) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       await readFile("src/lowering/global_object_lowering.c", "utf8"),
     )) {
   throw new Error(
-    "global declaration resolution must pass an interned QualType identity to lowering",
+    "global declaration resolution must consume and preserve canonical QualType identity",
   );
 }
 
@@ -8942,7 +8946,7 @@ const staticInitializerResolution = staticInitializerSource.match(
   /typedef struct\s*\{((?:(?!typedef struct)[\s\S])*?)\}\s*psx_static_initializer_resolution_t\s*;/,
 );
 if (!staticInitializerRequest ||
-    !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+    !/\bpsx_qual_type_t\s+type\s*;/.test(
       staticInitializerRequest[1],
     ) ||
     !staticInitializerResolution ||
@@ -8951,13 +8955,12 @@ if (!staticInitializerRequest ||
     ) ||
     /\bpsx_type_t\b/.test(staticInitializerResolution[1])) {
   throw new Error(
-    "static initializer resolution must consume a read-only construction type and return only canonical QualType identity",
+    "static initializer resolution must consume and return canonical QualType identity",
   );
 }
 
 const readonlyTypeFields = [
   ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_type"],
-  ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
@@ -8983,6 +8986,10 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
   }
 }
 const canonicalLoweringTypeFields = [
+  ["src/semantic/global_declaration_resolution.h", "psx_global_declaration_resolution_request_t", "type"],
+  ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_request_t", "type"],
+  ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
+  ["src/lowering/global_object_lowering.h", "psx_global_object_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
   ["src/lowering/static_local_lowering.h", "psx_static_local_object_request_t", "type"],

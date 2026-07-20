@@ -4427,7 +4427,7 @@ static int resolve_direct_compound_literal(
                   .options = context->options,
                   .name = name,
                   .name_len = name_len,
-                  .type = object_type,
+                  .type = object_qual_type,
                   .is_static = 1,
                   .is_compiler_generated = 1,
                   .initializer = &storage_initializer,
@@ -4436,9 +4436,8 @@ static int resolve_direct_compound_literal(
               &object) || !object.global || !object.initialized)
         return 0;
       binding->global_object = object.global;
-      psx_qual_type_t stored_type = ps_ctx_intern_qual_type_in(
-          context->semantic_context,
-          ps_gvar_get_decl_type(binding->global_object));
+      psx_qual_type_t stored_type =
+          ps_gvar_decl_qual_type(binding->global_object);
       if (stored_type.type_id != binding->plan.object_qual_type.type_id)
         return 0;
     }

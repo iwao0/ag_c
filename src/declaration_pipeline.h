@@ -22,7 +22,7 @@ typedef struct {
   const ag_compilation_options_t *options;
   char *name;
   int name_len;
-  const psx_type_t *type;
+  psx_qual_type_t type;
   int is_extern_decl;
   int is_static;
   int is_thread_local;

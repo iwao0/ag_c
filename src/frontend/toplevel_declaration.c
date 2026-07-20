@@ -156,7 +156,9 @@ static void begin_declarator(
           .options = application->options,
           .name = name->str,
           .name_len = name->len,
-          .type = application->current_type,
+          .type = ps_ctx_intern_qual_type_in(
+              application->semantic_context,
+              application->current_type),
           .is_extern_decl = declaration->is_extern,
           .is_static = declaration->is_static,
           .is_thread_local = declaration->is_thread_local,
