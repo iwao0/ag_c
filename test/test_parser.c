@@ -2525,6 +2525,19 @@ static const psx_hir_node_t *test_expression_hir_root(
              : NULL;
 }
 
+static const psx_hir_node_t *test_hir_child(
+    const psx_frontend_expression_hir_t *expression,
+    const psx_hir_node_t *parent, size_t index) {
+  ASSERT_TRUE(expression != NULL);
+  ASSERT_TRUE(expression->module != NULL);
+  ASSERT_TRUE(parent != NULL);
+  ASSERT_TRUE(index < psx_hir_node_child_count(parent));
+  const psx_hir_node_t *child = psx_hir_module_lookup(
+      expression->module, psx_hir_node_child_at(parent, index));
+  ASSERT_TRUE(child != NULL);
+  return child;
+}
+
 static psx_type_shape_t test_hir_type_shape(
     const psx_hir_node_t *node) {
   psx_type_shape_t shape = {0};
@@ -9681,13 +9694,22 @@ static void test_expr_compound_literal_array_subscript() {
 
 static void test_expr_add_sub() {
   printf("test_expr_add_sub...\n");
-    node_t *node = parse_expr_input("1 + 2 - 3"); // (1+2)-3
-
-  ASSERT_EQ(ND_SUB, node->kind);
-  ASSERT_EQ(ND_ADD, node->lhs->kind);
-  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 + 2 - 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  const psx_hir_node_t *addition =
+      test_hir_child(&expression, root, 0);
+  ASSERT_EQ(ND_SUB, syntax->kind);
+  ASSERT_EQ(ND_ADD, syntax->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_SUB, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(addition));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_additive_typed_hir_boundary() {
@@ -17993,153 +18015,261 @@ static void test_static_data_initializer_boundary() {
 
 static void test_expr_mul_div() {
   printf("test_expr_mul_div...\n");
-    node_t *node = parse_expr_input("1 * 2 / 3"); // (1*2)/3
-
-  ASSERT_EQ(ND_DIV, node->kind);
-  ASSERT_EQ(ND_MUL, node->lhs->kind);
-  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 * 2 / 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_DIV, syntax->kind);
+  ASSERT_EQ(ND_MUL, syntax->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_DIV, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_MUL,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_mod() {
   printf("test_expr_mod...\n");
-    node_t *node = parse_expr_input("10 % 3");
-
-  ASSERT_EQ(ND_MOD, node->kind);
-  ASSERT_EQ(10, as_num(node->lhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("10 % 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_MOD, syntax->kind);
+  ASSERT_EQ(10, as_num(syntax->lhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_MOD, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_precedence() {
   printf("test_expr_precedence...\n");
-    node_t *node = parse_expr_input("1 + 2 * 3"); // 1+(2*3)
-
-  ASSERT_EQ(ND_ADD, node->kind);
-  ASSERT_EQ(1, as_num(node->lhs)->val);
-  ASSERT_EQ(ND_MUL, node->rhs->kind);
-  ASSERT_EQ(2, as_num(node->rhs->lhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 + 2 * 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_ADD, syntax->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs)->val);
+  ASSERT_EQ(ND_MUL, syntax->rhs->kind);
+  ASSERT_EQ(2, as_num(syntax->rhs->lhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs->rhs)->val);
+  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_MUL,
+            psx_hir_node_kind(test_hir_child(&expression, root, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_parentheses() {
   printf("test_expr_parentheses...\n");
-    node_t *node = parse_expr_input("(1 + 2) * 3"); // (1+2)*3
-
-  ASSERT_EQ(ND_MUL, node->kind);
-  ASSERT_EQ(ND_ADD, node->lhs->kind);
-  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("(1 + 2) * 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_MUL, syntax->kind);
+  ASSERT_EQ(ND_ADD, syntax->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_MUL, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_ADD,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_eq_neq() {
   printf("test_expr_eq_neq...\n");
-    node_t *node = parse_expr_input("1 == 2 != 3"); // (1==2)!=3
-
-  ASSERT_EQ(ND_NE, node->kind);
-  ASSERT_EQ(ND_EQ, node->lhs->kind);
-  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 == 2 != 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_NE, syntax->kind);
+  ASSERT_EQ(ND_EQ, syntax->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_NE, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_EQ,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            test_hir_type_shape(root).integer_kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_relational() {
   printf("test_expr_relational...\n");
-    node_t *node = parse_expr_input("1 < 2 <= 3 > 4 >= 5");
-
-  ASSERT_EQ(ND_GE, node->kind);
-  ASSERT_EQ(5, as_num(node->rhs)->val);
-  ASSERT_EQ(ND_GT, node->lhs->kind);
-  ASSERT_EQ(4, as_num(node->lhs->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(
+          "1 < 2 <= 3 > 4 >= 5", &syntax);
+  const psx_hir_node_t *ge =
+      test_expression_hir_root(&expression);
+  const psx_hir_node_t *gt = test_hir_child(&expression, ge, 0);
+  const psx_hir_node_t *le = test_hir_child(&expression, gt, 0);
+  const psx_hir_node_t *lt = test_hir_child(&expression, le, 0);
+  ASSERT_EQ(ND_GE, syntax->kind);
+  ASSERT_EQ(5, as_num(syntax->rhs)->val);
+  ASSERT_EQ(ND_GT, syntax->lhs->kind);
+  ASSERT_EQ(4, as_num(syntax->lhs->rhs)->val);
   // <=
-  ASSERT_EQ(ND_LE, node->lhs->lhs->kind);
-  ASSERT_EQ(3, as_num(node->lhs->lhs->rhs)->val);
+  ASSERT_EQ(ND_LE, syntax->lhs->lhs->kind);
+  ASSERT_EQ(3, as_num(syntax->lhs->lhs->rhs)->val);
   // <
-  ASSERT_EQ(ND_LT, node->lhs->lhs->lhs->kind);
-  ASSERT_EQ(1, as_num(node->lhs->lhs->lhs->lhs)->val);
-  ASSERT_EQ(2, as_num(node->lhs->lhs->lhs->rhs)->val);
+  ASSERT_EQ(ND_LT, syntax->lhs->lhs->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs->lhs->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->lhs->lhs->lhs->rhs)->val);
+  ASSERT_EQ(PSX_HIR_GE, psx_hir_node_kind(ge));
+  ASSERT_EQ(PSX_HIR_GT, psx_hir_node_kind(gt));
+  ASSERT_EQ(PSX_HIR_LE, psx_hir_node_kind(le));
+  ASSERT_EQ(PSX_HIR_LT, psx_hir_node_kind(lt));
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_logical_and_or() {
   printf("test_expr_logical_and_or...\n");
-
-    node_t *node = parse_expr_input("1 && 0 || 3");
-  ASSERT_EQ(ND_LOGOR, node->kind);
-  ASSERT_EQ(ND_LOGAND, node->lhs->kind);
-  ASSERT_EQ(3, as_num(node->rhs)->val);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 && 0 || 3", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_LOGOR, syntax->kind);
+  ASSERT_EQ(ND_LOGAND, syntax->lhs->kind);
+  ASSERT_EQ(3, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_LOGOR, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_LOGAND,
+            psx_hir_node_kind(test_hir_child(&expression, root, 0)));
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            test_hir_type_shape(root).integer_kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_bitwise() {
   printf("test_expr_bitwise...\n");
-    node_t *node = parse_expr_input("1 | 2 ^ 3 & 4");
-
-  ASSERT_EQ(ND_BITOR, node->kind);
-  ASSERT_EQ(1, as_num(node->lhs)->val);
-  ASSERT_EQ(ND_BITXOR, node->rhs->kind);
-  ASSERT_EQ(2, as_num(node->rhs->lhs)->val);
-  ASSERT_EQ(ND_BITAND, node->rhs->rhs->kind);
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 | 2 ^ 3 & 4", &syntax);
+  const psx_hir_node_t *bit_or =
+      test_expression_hir_root(&expression);
+  const psx_hir_node_t *bit_xor =
+      test_hir_child(&expression, bit_or, 1);
+  ASSERT_EQ(ND_BITOR, syntax->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs)->val);
+  ASSERT_EQ(ND_BITXOR, syntax->rhs->kind);
+  ASSERT_EQ(2, as_num(syntax->rhs->lhs)->val);
+  ASSERT_EQ(ND_BITAND, syntax->rhs->rhs->kind);
+  ASSERT_EQ(PSX_HIR_BITOR, psx_hir_node_kind(bit_or));
+  ASSERT_EQ(PSX_HIR_BITXOR, psx_hir_node_kind(bit_xor));
+  ASSERT_EQ(
+      PSX_HIR_BITAND,
+      psx_hir_node_kind(test_hir_child(&expression, bit_xor, 1)));
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_shift() {
   printf("test_expr_shift...\n");
-    node_t *node = parse_expr_input("1 + 2 << 3 >> 1");
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir("1 + 2 << 3 >> 1", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  const psx_hir_node_t *left_shift =
+      test_hir_child(&expression, root, 0);
+  ASSERT_EQ(ND_SHR, syntax->kind);
+  ASSERT_EQ(ND_SHL, syntax->lhs->kind);
+  ASSERT_EQ(ND_ADD, syntax->lhs->lhs->kind);
+  ASSERT_EQ(1, as_num(syntax->rhs)->val);
+  ASSERT_EQ(PSX_HIR_SHR, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_SHL, psx_hir_node_kind(left_shift));
+  ASSERT_EQ(
+      PSX_HIR_ADD,
+      psx_hir_node_kind(test_hir_child(&expression, left_shift, 0)));
+  psx_frontend_expression_hir_dispose(&expression);
 
-  ASSERT_EQ(ND_SHR, node->kind);
-  ASSERT_EQ(ND_SHL, node->lhs->kind);
-  ASSERT_EQ(ND_ADD, node->lhs->lhs->kind);
-  ASSERT_EQ(1, as_num(node->rhs)->val);
+  expression = resolve_test_expression_input_hir(
+      "(unsigned char)a >> 1", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_SHR, syntax->kind);
+  ASSERT_EQ(PSX_HIR_SHR, psx_hir_node_kind(root));
+  psx_type_shape_t shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
+  ASSERT_TRUE(!shape.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *promoted_signed_shift = parse_expr_input("(unsigned char)a >> 1");
-  ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
-  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_data_layout(
-      ps_node_get_type(promoted_signed_shift->lhs),
-      ps_ctx_data_layout(test_semantic_context())));
-  ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(promoted_signed_shift));
+  expression = resolve_test_expression_input_hir(
+      "(unsigned int)a >> 1", &syntax);
+  root = test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_SHR, syntax->kind);
+  ASSERT_EQ(PSX_HIR_SHR, psx_hir_node_kind(root));
+  shape = test_hir_type_shape(root);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
+  ASSERT_TRUE(shape.is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
-  ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
-      ps_node_get_type(promoted_unsigned_shift->lhs),
-      ps_ctx_data_layout(test_semantic_context())));
-  ASSERT_TRUE(ps_node_shift_operation_is_unsigned(promoted_unsigned_shift));
+  expression = resolve_test_expression_input_hir(
+      "(int)(unsigned long)a", &syntax);
+  root = test_expression_hir_root(&expression);
+  const psx_hir_node_t *inner_cast =
+      test_hir_child(&expression, root, 0);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
+  ASSERT_TRUE(!test_hir_type_shape(root).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(inner_cast).is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_shift));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_shift));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_shift->lhs));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_shift->lhs));
-  ASSERT_TRUE(ps_type_is_unsigned(
-      ps_node_get_type(forced_signed_shift->lhs)));
-  ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(forced_signed_shift));
+  expression = resolve_test_expression_input_hir(
+      "(signed)(unsigned long)a", &syntax);
+  root = test_expression_hir_root(&expression);
+  inner_cast = test_hir_child(&expression, root, 0);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
+  ASSERT_TRUE(!test_hir_type_shape(root).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(inner_cast).is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 
-    node_t *forced_signed_keyword_shift = parse_expr_input("(signed)(unsigned long)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_keyword_shift));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_keyword_shift));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_signed_keyword_shift->lhs));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_signed_keyword_shift->lhs));
-  ASSERT_TRUE(ps_type_is_unsigned(
-      ps_node_get_type(forced_signed_keyword_shift->lhs)));
-  ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(forced_signed_keyword_shift));
-
-    node_t *forced_unsigned_shift = parse_expr_input("(unsigned)(long)a");
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_unsigned_shift));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_unsigned_shift));
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(forced_unsigned_shift->lhs));
-  ASSERT_TRUE(ps_node_is_source_cast(forced_unsigned_shift->lhs));
-  ASSERT_TRUE(!ps_type_is_unsigned(
-      ps_node_get_type(forced_unsigned_shift->lhs)));
-  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(forced_unsigned_shift));
+  expression = resolve_test_expression_input_hir(
+      "(unsigned)(long)a", &syntax);
+  root = test_expression_hir_root(&expression);
+  inner_cast = test_hir_child(&expression, root, 0);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
+  ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
+  ASSERT_TRUE(test_hir_type_shape(root).is_unsigned);
+  ASSERT_TRUE(!test_hir_type_shape(inner_cast).is_unsigned);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_ternary() {
   printf("test_expr_ternary...\n");
-    node_t *node = parse_expr_input("1 ? 2 : 3 ? 4 : 5");
-
-  ASSERT_EQ(ND_TERNARY, node->kind);
-  ASSERT_EQ(1, as_num(node->lhs)->val);
-  ASSERT_EQ(2, as_num(node->rhs)->val);
-  ASSERT_EQ(ND_TERNARY, as_ctrl(node)->els->kind); // 右結合
+  node_t *syntax = NULL;
+  psx_frontend_expression_hir_t expression =
+      resolve_test_expression_input_hir(
+          "1 ? 2 : 3 ? 4 : 5", &syntax);
+  const psx_hir_node_t *root =
+      test_expression_hir_root(&expression);
+  ASSERT_EQ(ND_TERNARY, syntax->kind);
+  ASSERT_EQ(1, as_num(syntax->lhs)->val);
+  ASSERT_EQ(2, as_num(syntax->rhs)->val);
+  ASSERT_EQ(ND_TERNARY, as_ctrl(syntax)->els->kind); // 右結合
+  ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(root));
+  ASSERT_EQ(3, psx_hir_node_child_count(root));
+  ASSERT_EQ(
+      PSX_HIR_TERNARY,
+      psx_hir_node_kind(test_hir_child(&expression, root, 2)));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void test_expr_unary_ops() {

@@ -2655,6 +2655,17 @@ for (const testName of [
   "test_expr_number",
   "test_expr_float",
   "test_expr_long_double_suffix_metadata",
+  "test_expr_add_sub",
+  "test_expr_mul_div",
+  "test_expr_mod",
+  "test_expr_precedence",
+  "test_expr_parentheses",
+  "test_expr_eq_neq",
+  "test_expr_relational",
+  "test_expr_logical_and_or",
+  "test_expr_bitwise",
+  "test_expr_shift",
+  "test_expr_ternary",
 ]) {
   const body = parserUnitTestSource.match(
     new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
@@ -2686,7 +2697,7 @@ const legacyAnalyzedExpressionParseSites = callBodies(
   parserUnitTestSource,
   "parse_expr_input",
 );
-if (legacyAnalyzedExpressionParseSites.length > 125) {
+if (legacyAnalyzedExpressionParseSites.length > 109) {
   throw new Error(
     "parser tests must not add uses of the mutable analyzed-expression compatibility helper",
   );
