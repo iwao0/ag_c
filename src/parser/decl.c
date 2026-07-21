@@ -9,7 +9,6 @@
 #include "node_utils.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
-#include "../semantic/resolved_object_ref.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>

@@ -73,6 +73,44 @@ function callBodies(source, functionName) {
 }
 
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const removedMutableAstCompatibilityFiles = [
+  "src/parser/node_vla_public.h",
+  "src/semantic/resolution_state.h",
+  "src/semantic/resolution_state_access.h",
+  "src/semantic/resolution_store.c",
+  "src/semantic/resolution_store.h",
+  "src/semantic/resolved_node.c",
+  "src/semantic/resolved_node.h",
+  "src/semantic/resolved_node_kind.c",
+  "src/semantic/resolved_node_kind.h",
+  "src/semantic/resolved_node_type.c",
+  "src/semantic/resolved_node_type.h",
+  "src/semantic/resolved_object_ref.c",
+  "src/semantic/resolved_object_ref.h",
+  "src/semantic/type_compatibility_cache.c",
+  "src/semantic/type_compatibility_cache_internal.h",
+  "src/semantic/type_compatibility_cache_storage_internal.h",
+];
+const remainingMutableAstCompatibilityFiles =
+  removedMutableAstCompatibilityFiles.filter(
+    (path) => allSourceFiles.includes(path),
+  );
+if (remainingMutableAstCompatibilityFiles.length) {
+  throw new Error(
+    "mutable Syntax AST compatibility files must not return:\n" +
+      remainingMutableAstCompatibilityFiles.join("\n"),
+  );
+}
+const mutableAstCompatibilityCorpus = `${(
+  await Promise.all(allSourceFiles.map((path) => readFile(path, "utf8")))
+).join("\n")}\n${await readFile("test/test_parser.c", "utf8")}\n${await readFile("Makefile", "utf8")}`;
+if (/\bpsx_(?:resolution_store_t|node_resolution_state_t|resolved_node_kind_t|resolved_object_ref_kind_t)\b|\bpsx_resolution_node[A-Za-z0-9_]*\b|\bps_node_resolution_state(?:_const)?\b|\bps_(?:ctx|lowering)_resolution_store\b/.test(
+      mutableAstCompatibilityCorpus,
+    )) {
+  throw new Error(
+    "mutable Syntax AST resolution stores, sidecars, and test-only compatibility APIs must not return",
+  );
+}
 const astHeader = await readFile("src/parser/ast.h", "utf8");
 const hirHeader = await readFile("src/hir/hir.h", "utf8");
 const hirImplementation = await readFile("src/hir/hir.c", "utf8");
@@ -104,26 +142,6 @@ const semanticNodeBuilderSource = await readFile(
   "src/semantic/semantic_node_builder.c",
   "utf8",
 );
-const resolvedObjectRefHeader = await readFile(
-  "src/semantic/resolved_object_ref.h",
-  "utf8",
-);
-const resolvedObjectRefSource = await readFile(
-  "src/semantic/resolved_object_ref.c",
-  "utf8",
-);
-const earlyNodeResolutionState = await readFile(
-  "src/semantic/resolution_state.h",
-  "utf8",
-);
-const resolvedNodeTypeHeader = await readFile(
-  "src/semantic/resolved_node_type.h",
-  "utf8",
-);
-const resolutionStateAccessHeader = await readFile(
-  "src/semantic/resolution_state_access.h",
-  "utf8",
-);
 const earlyAstSource = await readFile("src/parser/ast.h", "utf8");
 const earlyNodeUtilsSource = await readFile(
   "src/parser/node_utils.c",
@@ -132,15 +150,9 @@ const earlyNodeUtilsSource = await readFile(
 if (/\b(?:usage_region|usage_lvar|records_lvar_usage|widen_zext_i64|is_decl_initializer|is_implicit_int_return)\b/.test(
       astHeader,
     ) ||
-    /psx_lvar_usage_resolution_state_t\s+lvar_usage\s*;/.test(
-      earlyNodeResolutionState,
-    ) ||
-    /psx_node_semantic_flags_t\s+flags\s*;/.test(
-      earlyNodeResolutionState,
-    ) ||
     /\b(?:bound_base_type|resolved_type)\s*;/.test(astHeader) ||
-    /\bpsx_type_name_resolution_state_t\b|\btype_name\s*;/.test(
-      earlyNodeResolutionState,
+    /\bpsx_type_name_resolution_state_t\b/.test(
+      mutableAstCompatibilityCorpus,
     )) {
   throw new Error(
     "type-name syntax must remain typeless and immutable while Typed HIR owns semantic types",
@@ -1129,7 +1141,7 @@ const semanticContextOwnershipHeader = await readFile(
   "utf8",
 );
 if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
-    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\([^)]*arena_context_t\s*\*arena_context[^)]*ag_diagnostic_context_t\s*\*diagnostic_context[^)]*psx_resolution_store_t\s*\*resolution_store[^)]*psx_scope_graph_t\s*\*scope_graph[^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(semanticContextOwnershipSource) ||
+    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\([^)]*arena_context_t\s*\*arena_context[^)]*ag_diagnostic_context_t\s*\*diagnostic_context[^)]*psx_scope_graph_t\s*\*scope_graph[^)]*const\s+ag_target_info_t\s*\*target\s*\)/s.test(semanticContextOwnershipSource) ||
     !/ag_target_info_is_valid\s*\(target\)/.test(
       semanticContextOwnershipSource,
     ) ||
@@ -1145,19 +1157,13 @@ if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource)
     !/context->diagnostic_context\s*=\s*diagnostic_context\s*;/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/context->resolution_store\s*=\s*resolution_store\s*;/.test(
-      semanticContextOwnershipSource,
-    ) ||
     !/context->scope_graph\s*=\s*scope_graph\s*;/.test(
       semanticContextOwnershipSource,
     ) ||
     /ps_ctx_bind_(?:diagnostic_context|resolution_store|scope_graph|target_info)\s*\(/.test(
       semanticContextOwnershipSource + semanticContextOwnershipHeader,
     ) ||
-    /psx_(?:resolution_store|scope_graph)_create\s*\(|owns_(?:resolution_store|scope_graph)/.test(
-      semanticContextOwnershipSource,
-    ) ||
-    !/ps_ctx_destroy\s*\([^]*?psx_resolution_store_semantic_types\s*\([^]*?psx_resolution_store_bind_semantic_types\s*\([^]*?NULL/.test(
+    /psx_scope_graph_create\s*\(|owns_scope_graph/.test(
       semanticContextOwnershipSource,
     ) ||
     /ag_target_info_host\s*\(/.test(semanticContextOwnershipSource) ||
@@ -1199,7 +1205,7 @@ const sourceManagerHeader = await readFile("src/source_manager.h", "utf8");
 const sourceManagerSource = await readFile("src/source_manager.c", "utf8");
 const diagnosticContextHeader = await readFile("src/diag/diag.h", "utf8");
 const diagnosticContextSource = await readFile("src/diag/diag.c", "utf8");
-if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*session->resolution_store\s*,\s*session->scope_graph\s*,\s*&session->target\s*\)/s.test(
+if (!/ps_ctx_create\s*\(\s*session->arena_context\s*,\s*session->diagnostic_context\s*,\s*session->scope_graph\s*,\s*&session->target\s*\)/s.test(
       compilationSessionSource,
     )) {
   throw new Error(
@@ -1974,7 +1980,7 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
       loweringRuntimeHeader,
     ) ||
     !/ps_lowering_diagnostics\s*\(/.test(loweringRuntimeHeader) ||
-    !/typedef\s+struct\s*\{[^]*?arena_context_t\s*\*arena_context\s*;[^]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[^]*?psx_resolution_store_t\s*\*resolution_store\s*;[^]*?const\s+ag_target_info_t\s*\*target\s*;[^]*?const\s+psx_semantic_type_table_t\s*\*semantic_types\s*;[^]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[^]*?const\s+psx_record_layout_table_t\s*\*record_layouts\s*;[^]*?\}\s*psx_lowering_context_dependencies_t\s*;/.test(
+    !/typedef\s+struct\s*\{[^]*?arena_context_t\s*\*arena_context\s*;[^]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[^]*?const\s+ag_target_info_t\s*\*target\s*;[^]*?const\s+psx_semantic_type_table_t\s*\*semantic_types\s*;[^]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[^]*?const\s+psx_record_layout_table_t\s*\*record_layouts\s*;[^]*?\}\s*psx_lowering_context_dependencies_t\s*;/.test(
       loweringRuntimeHeader,
     ) ||
     !/ps_lowering_context_create\s*\(\s*&lowering_dependencies\s*\)/.test(
@@ -1989,11 +1995,8 @@ if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
     ) ||
     !/ctx->target\s*=\s*dependencies->target\s*;/.test(loweringRuntimeSource) ||
     /ctx->target\s*=\s*\*dependencies->target\s*;/.test(loweringRuntimeSource) ||
-    /ps_lowering_context_bind_(?:target|resolution_store|semantic_types|record_decls|record_layouts)\s*\(/.test(
+    /ps_lowering_context_bind_(?:target|semantic_types|record_decls|record_layouts)\s*\(/.test(
       loweringRuntimeHeader + loweringRuntimeSource,
-    ) ||
-    !/ctx->resolution_store\s*=\s*dependencies->resolution_store\s*;/.test(
-      loweringRuntimeSource,
     ) ||
     !/ctx->semantic_types\s*=\s*dependencies->semantic_types\s*;/.test(
       loweringRuntimeSource,
@@ -2486,11 +2489,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|parser\/ast\.h/.test(
     "Typed HIR warnings must consume semantic provenance without depending on Syntax AST kinds",
   );
 }
-if (/\bis_source_assignment\b/.test(earlyAstSource) ||
-    /unsigned\s+char\s+is_source_assignment\s*;/.test(
-      earlyNodeResolutionState,
-    ) ||
-    /\bps_node_is_source_assignment\s*\(/.test(resolvedNodeTypeHeader)) {
+if (/\bis_source_assignment\b/.test(earlyAstSource)) {
   throw new Error(
     "Source assignment provenance must live only in Typed HIR, not Syntax sidecars",
   );
@@ -3513,10 +3512,6 @@ const memberAccessAstHeader = await readFile(
   "src/parser/ast.h",
   "utf8",
 );
-const memberAccessStateHeader = await readFile(
-  "src/semantic/resolution_state.h",
-  "utf8",
-);
 const memberNodeUtilsSource = await readFile(
   "src/parser/node_utils.c",
   "utf8",
@@ -3637,42 +3632,6 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
     )) {
   throw new Error(
     "member access owner qualifiers must be resolved through TypeId QualType relations",
-  );
-}
-const semanticQualifierDiagnosticSection = memberNodeUtilsSource.match(
-  /static\s+psx_qual_type_t\s+node_semantic_qual_type\s*\([^]*?void\s+ps_node_expect_lvalue_at_in\s*\(/,
-);
-const pointeeQualTypeRelation = memberTypeIdentitySource.match(
-  /psx_qual_type_t\s+psx_semantic_type_table_pointee_value\s*\([^]*?\n\}/,
-);
-if (!semanticQualifierDiagnosticSection ||
-    !/\bps_node_qual_type\s*\(/.test(
-      semanticQualifierDiagnosticSection[0],
-    ) ||
-    /\bps_ctx_intern_qual_type_in\s*\(|\bps_node_get_type\s*\(/.test(
-      semanticQualifierDiagnosticSection[0],
-    ) ||
-    !/\bpsx_semantic_type_table_pointee_value\s*\(/.test(
-      semanticQualifierDiagnosticSection[0],
-    ) ||
-    !pointeeQualTypeRelation ||
-    !/semantic_type_table_array_leaf_from\s*\(\s*table\s*,\s*base\s*\)/.test(
-      pointeeQualTypeRelation[0],
-    ) ||
-    /psx_semantic_type_table_array_leaf\s*\(\s*table\s*,\s*base\.type_id\s*\)/.test(
-      pointeeQualTypeRelation[0],
-    ) ||
-    /\bnode_(?:self|pointee)_is_(?:const|volatile)_qualified\s*\(/.test(
-      semanticQualifierDiagnosticSection[0],
-    ) ||
-    !/ps_node_reject_const_assign_at_in\s*\([^;]*psx_semantic_context_t\s*\*/s.test(
-      memberNodeUtilsHeader,
-    ) ||
-    !/ps_node_reject_const_qual_discard_at_in\s*\([^;]*psx_semantic_context_t\s*\*/s.test(
-      memberNodeUtilsHeader,
-    )) {
-  throw new Error(
-    "semantic qualifier diagnostics must read self and pointee qualifiers through QualType relations",
   );
 }
 const typeNameResolutionSource = await readFile(
@@ -4382,10 +4341,6 @@ if (wasmObjFunctionCodegenViolations.length ||
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
 const irDataHeaderSource = await readFile("src/ir/ir_data.h", "utf8");
-const resolvedGlobalAstSource = await readFile(
-  "src/semantic/resolved_node.h",
-  "utf8",
-);
 const integerConstantEvaluationSource = await readFile(
   "src/semantic/integer_constant_evaluation.c",
   "utf8",
@@ -4438,13 +4393,9 @@ if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     "IR lowering must materialize global layout and string size before backend codegen",
   );
 }
-if (/\bnode_gvar_t\b/.test(resolvedGlobalAstSource) ||
-    /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
-    !/psx_resolved_object_ref_global\s*\(/.test(
-      resolvedObjectRefSource,
-    )) {
+if (/\bps_find_global_var\s*\(/.test(irSymbolLoweringSource)) {
   throw new Error(
-    "resolved global references must retain symbol identity in resolution state without active-registry lookup or specialized node payloads",
+    "Typed HIR global references must retain symbol identity without active-registry lookup",
   );
 }
 if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test(
@@ -4701,18 +4652,6 @@ const syntaxNodeKindHeader = await readFile(
   "src/parser/syntax_node_kind.h",
   "utf8",
 );
-const resolvedNodeKindHeader = await readFile(
-  "src/semantic/resolved_node_kind.h",
-  "utf8",
-);
-const resolvedNodeKindImplementation = await readFile(
-  "src/semantic/resolved_node_kind.c",
-  "utf8",
-);
-const resolvedNodeHeader = await readFile(
-  "src/semantic/resolved_node.h",
-  "utf8",
-);
 const functionCallResolutionHeader = await readFile(
   "src/semantic/function_call_resolution.h",
   "utf8",
@@ -4804,22 +4743,6 @@ const hirLocalResolutionSource = await readFile(
   "src/semantic/hir_local_resolution.c",
   "utf8",
 );
-const nodeTypePublicSource = await readFile(
-  "src/semantic/resolved_node_type.h",
-  "utf8",
-);
-const resolvedNodeTypeSource = await readFile(
-  "src/semantic/resolved_node_type.c",
-  "utf8",
-);
-const resolutionStoreSource = await readFile(
-  "src/semantic/resolution_store.c",
-  "utf8",
-);
-const resolutionStoreHeader = await readFile(
-  "src/semantic/resolution_store.h",
-  "utf8",
-);
 const semanticParserTypeBoundaryViolations = [];
 for (const path of allSourceFiles) {
   if (!path.startsWith("src/semantic/")) continue;
@@ -4835,10 +4758,6 @@ if (semanticParserTypeBoundaryViolations.length > 0) {
     `semantic modules outside the explicit compatibility boundary must use canonical types: ${semanticParserTypeBoundaryViolations.join(", ")}`,
   );
 }
-const nodeResolutionStateSource = await readFile(
-  "src/semantic/resolution_state.h",
-  "utf8",
-);
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
     !/\bpsx_syntax_node_kind_t\s+kind\s*;/.test(nodeStruct[1]) ||
@@ -4863,11 +4782,6 @@ if (!nodeStruct ||
 if (/\bis_source_cast\b/.test(astSource) ||
     !/\bND_SOURCE_CAST\b/.test(syntaxNodeKindHeader) ||
     /\bND_CAST\b/.test(syntaxNodeKindHeader) ||
-    !/\bND_CAST\b/.test(resolvedNodeKindHeader) ||
-    /unsigned\s+char\s+is_source_cast\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    /\bps_node_is_source_cast\s*\(/.test(nodeTypePublicSource) ||
     !/cast->base\.kind\s*=\s*ND_SOURCE_CAST/.test(
       earlyNodeUtilsSource,
     ) ||
@@ -4897,22 +4811,7 @@ if (/\b(?:unevaluated_operand_depth|in_unevaluated_operand)\b/.test(
     "unevaluated local-usage state must be derived by semantic binding and stored outside Syntax AST",
   );
 }
-if (!/\bpsx_resolved_node_kind_t\s+node_kind\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    !/\bpsx_resolution_node_kind\s*\(/.test(
-      resolvedNodeKindHeader,
-    ) ||
-    !/\bpsx_resolution_node_set_kind\s*\(/.test(
-      resolvedNodeKindHeader,
-    ) ||
-    !/state->node_kind\s*=\s*kind/.test(
-      resolvedNodeKindImplementation,
-    ) ||
-    !/node->kind\s*=\s*PSX_SYNTAX_NODE_INVALID/.test(
-      resolvedNodeKindImplementation,
-    ) ||
-    /psx_resolution_node_set_kind\s*\(/.test(
+if (/psx_resolution_node_set_kind\s*\(/.test(
       frontendFunctionDefinitionSource,
     ) ||
     /node->base\.kind\s*=\s*ND_FUNCDEF/.test(
@@ -4935,39 +4834,9 @@ if (directResolvedKindFieldFiles.length) {
       directResolvedKindFieldFiles.join("\n"),
   );
 }
-if (!/\bpsx_resolution_node_alloc_in\s*\(/.test(
-      resolvedNodeTypeSource,
-    ) ||
-    !/buckets\s*\[PSX_RESOLUTION_STORE_BUCKET_COUNT\]/.test(
-      resolutionStoreSource,
-    ) ||
-    !/arena_register_cleanup_in\s*\([^]*?remove_resolution_binding/.test(
-      resolutionStoreSource,
-    ) ||
-    !/psx_resolution_store_t\s*\*resolution_store\s*;/.test(
-      compilationSessionInternalHeader,
-    ) ||
-    !/ps_ctx_create\s*\([^]*?session->resolution_store\s*,\s*session->scope_graph\s*,\s*&session->target/.test(
-      compilationSessionSource,
-    ) ||
-    !/psx_resolution_store_semantic_types\s*\(\s*session->resolution_store\s*\)\s*==\s*ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
-      compilationSessionSource,
-    ) ||
-    /PSX_RESOLUTION_NODE_PREFIX_MAGIC|is_resolution_work_node|has_external_resolution_state/.test(
-      resolvedNodeTypeSource,
-    ) ||
-    !/\bps_node_resolution_state_const\s*\(/.test(
-      resolvedNodeTypeSource,
-    )) {
-  throw new Error(
-    "semantic node metadata must be owned by semantic sidecars and accessed through semantic APIs",
-  );
-}
 const semanticMetadataAccessSource = (
   await Promise.all(
-    allSourceFiles
-      .filter((path) => path !== "src/semantic/resolution_state.h")
-      .map((path) => readFile(path, "utf8")),
+    allSourceFiles.map((path) => readFile(path, "utf8")),
   )
 ).join("\n");
 if (/\b(?:\.|->)resolution_state\b/.test(
@@ -4977,11 +4846,9 @@ if (/\b(?:\.|->)resolution_state\b/.test(
     "semantic resolution state must not be stored or accessed through Syntax AST fields",
   );
 }
-if (/\bnode_(?:lvar|funcref|gvar|vla_alloc)_t\b/.test(astSource) ||
-    /\bnode_(?:lvar|funcref|gvar)_t\b/.test(resolvedNodeHeader) ||
-    !/\}\s*node_vla_alloc_t\s*;/.test(resolvedNodeHeader)) {
+if (/\bnode_(?:lvar|funcref|gvar|vla_alloc)_t\b/.test(astSource)) {
   throw new Error(
-    "resolved references must use resolution state without specialized payload structs, and VLA work nodes must live outside Syntax AST",
+    "resolved references and VLA work nodes must not use specialized Syntax AST payload structs",
   );
 }
 const resolvedOnlyNodeKinds = [
@@ -5012,9 +4879,6 @@ const parserSyntaxSources = (
 if (!/typedef\s+enum\s*\{[^]*?\}\s*psx_syntax_node_kind_t\s*;/.test(
       syntaxNodeKindHeader,
     ) ||
-    !/typedef\s+enum\s*\{[^]*?\}\s*psx_resolved_node_kind_t\s*;/.test(
-      resolvedNodeKindHeader,
-    ) ||
     resolvedOnlyNodeKindPattern.test(syntaxNodeKindHeader) ||
     /resolved_node_kind\.h/.test(astSource) ||
     /typedef\s+enum\s*\{[^]*?\}\s*node_kind_t\s*;/.test(astSource) ||
@@ -5024,7 +4888,7 @@ if (!/typedef\s+enum\s*\{[^]*?\}\s*psx_syntax_node_kind_t\s*;/.test(
     /#include\s+"node_utils\.h"/.test(parserStatementSource) ||
     !/#include\s+"syntax_node\.h"/.test(parserStatementSource)) {
   throw new Error(
-    "Syntax AST and resolver-created working node kinds must remain separate, and syntax parsing must depend only on syntax node construction",
+    "semantic working node kinds must not return, and syntax parsing must depend only on syntax node construction",
   );
 }
 if (/__va_arg_area/.test(parserExpressionSource) ||
@@ -5039,12 +4903,9 @@ if (/__va_arg_area/.test(parserExpressionSource) ||
     ) ||
     !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA[^]*?\.kind\s*=\s*PSX_HIR_VARARG_CURSOR/.test(
       syntaxTypedHirResolutionSource,
-    ) ||
-    !/case\s+PSX_RESOLVED_OBJECT_REF_VARARG_CURSOR\s*:\s*return\s+ND_VARARG_CURSOR/.test(
-      resolvedObjectRefSource,
     )) {
   throw new Error(
-    "__va_arg_area must remain identifier syntax, be classified by semantic identifier resolution, and use a sidecar only in the compatibility binder",
+    "__va_arg_area must remain identifier syntax and resolve directly into a Typed HIR vararg cursor",
   );
 }
 if (!/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_FUNCTION[^]*?spec\.kind\s*=\s*PSX_HIR_FUNCTION_REF/.test(
@@ -5330,64 +5191,6 @@ if (!/case\s+ND_CASE\s*:\s*\{[^]*?direct_integer_constant\s*\([^]*?bind_direct_c
     "case label expressions must remain Syntax while resolved values live in semantic state and Typed HIR",
   );
 }
-if (!/\bps_node_resolution_state\s*\(/.test(
-      resolutionStateAccessHeader,
-    ) ||
-    !/\bpsx_resolution_node_alloc_in\s*\(/.test(
-      resolutionStateAccessHeader,
-    ) ||
-    !/#include\s+"resolution_state_access\.h"/.test(
-      resolvedNodeTypeHeader,
-    ) ||
-    /\bps_node_resolution_state\s*\(/.test(resolvedNodeTypeHeader) ||
-    /#include\s+"resolution_state_access\.h"/.test(
-      literalResolutionSource,
-    ) ||
-    /resolved_node_type\.h/.test(literalResolutionSource)) {
-  throw new Error(
-    "resolution state access must be independent from parser type compatibility views",
-  );
-}
-const canonicalQualTypeBinder = resolvedNodeTypeSource.match(
-  /int\s+ps_node_bind_qual_type\s*\([^]*?\n\}/,
-);
-const canonicalQualTypeBinderDeclaration = resolvedNodeTypeHeader.match(
-  /int\s+ps_node_bind_qual_type\s*\(([^;]*)\);/,
-);
-if (!/\bpsx_node_type_binding_t\s+type_binding\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    !/\bPSX_NODE_TYPE_CANONICAL\b/.test(nodeResolutionStateSource) ||
-    !/\bpsx_qual_type_t\s+canonical_type\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    /\bPSX_NODE_TYPE_PENDING\b|\bpending_type\b|\bconst\s+psx_type_t\s*\*/.test(
-      nodeResolutionStateSource,
-    ) ||
-    /\bpsx_type_t\b|parser\/type\.h|type_compatibility_view\.h/.test(
-      `${resolvedNodeTypeHeader}\n${resolvedNodeTypeSource}\n${resolutionStoreHeader}\n${resolutionStoreSource}`,
-    ) ||
-    !/psx_semantic_type_table_qual_type_is_valid\s*\(\s*psx_resolution_store_semantic_types\s*\(\s*store\s*\)/.test(
-      resolvedNodeTypeSource,
-    ) ||
-    !canonicalQualTypeBinder ||
-    !canonicalQualTypeBinderDeclaration ||
-    !/psx_qual_type_t\s+qual_type/.test(
-      canonicalQualTypeBinderDeclaration[1],
-    ) ||
-    /const\s+psx_type_t\s*\*|canonical_type\s*,/.test(
-      canonicalQualTypeBinderDeclaration[1],
-    ) ||
-    !/psx_semantic_type_table_qual_type_is_valid\s*\(/.test(
-      canonicalQualTypeBinder[0],
-    ) ||
-    !/PSX_NODE_TYPE_CANONICAL/.test(canonicalQualTypeBinder[0]) ||
-    /ps_node_bind_type\s*\(/.test(canonicalQualTypeBinder[0])
-    ) {
-  throw new Error(
-    "node resolution state must canonicalize every bound type immediately",
-  );
-}
 const numberNodeStruct = astSource.match(
   /struct node_num_t\s*\{([\s\S]*?)\n\};/,
 );
@@ -5415,12 +5218,6 @@ if (/\bnode_func_t\b/.test(astSource) ||
       functionCallStruct[1],
     ) ||
     /\bis_implicit_func_decl\b/.test(astSource) ||
-    /\bpsx_function_call_resolution_state_t\b|\bfunction_call\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
-    /\bps_function_call_callee_qual_type\s*\(/.test(
-      nodeTypePublicSource,
-    ) ||
     /\bpsx_function_call_(?:prepare_resolution_in|bind_direct_name|direct_name|direct_name_length|bind_qual_type|qual_type|set_implicit_declaration|is_implicit_declaration)\s*\(/.test(
       functionCallResolutionHeader + functionCallResolutionSource,
     ) ||
@@ -5470,9 +5267,6 @@ if (!typeNameRef ||
     /\bconst\s+psx_type_t\s*\*\s*resolved_type\s*;/.test(
       typeNameRef[1],
     ) ||
-    /\bpsx_type_name_resolution_state_t\b|\bPSX_TYPE_NAME_(?:UNBOUND|BOUND|RESOLVED)\b/.test(
-      nodeResolutionStateSource,
-    ) ||
     !/\bpsx_type_name_base_resolution_t\b/.test(
       typeNameResolutionHeader,
     ) ||
@@ -5500,9 +5294,6 @@ if (!typeNameRef ||
     /ps_type_(?:clone_in|add_qualifiers|set_decl_spec_qualifiers)\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    /\b(?:bound_base_type|resolved_type_table|resolved_qual_type|bound_runtime_application)\b/.test(
-      nodeResolutionStateSource,
-    ) ||
     !compoundLiteralNode ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       compoundLiteralNode[1],
@@ -5522,7 +5313,7 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(alignofQueryNode[1]) ||
     /\bresolved_alignment\b/.test(alignofQueryNode[1])) {
   throw new Error(
-    "type-name expressions must keep semantic types only in resolution state",
+    "type-name expressions must resolve directly into canonical semantic types without Syntax state",
   );
 }
 
@@ -5533,23 +5324,11 @@ const nodeUtilsHeaderSource = await readFile(
 );
 if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     allSourceFiles.includes("src/parser/node_resolution_state.h") ||
-    !/\bint\s+ps_node_type_shape\s*\(/.test(
-      resolvedNodeTypeHeader,
-    ) ||
-    !/\bint\s+ps_node_type_shape\s*\([^]*?ps_node_qual_type\s*\([^]*?psx_semantic_type_table_describe\s*\(/.test(
-      resolvedNodeTypeSource,
-    ) ||
-    !/\bint\s+ps_node_prepare_resolution_state_in\s*\(/.test(
-      resolvedNodeTypeSource,
-    ) ||
     /^(?:const\s+psx_type_t\s*\*|psx_qual_type_t|void|int)\s+(?:ps_node_get_type|ps_node_qual_type|ps_node_bind_type|ps_node_bind_qual_type|ps_node_clear_type|ps_node_prepare_resolution_state_in|ps_node_copy_resolution_state_in)\s*\(/m.test(
       nodeUtilsSource,
-    ) ||
-    /\bps_node_set_qual_type_identity\s*\(/.test(
-      `${resolvedNodeTypeHeader}\n${resolvedNodeTypeSource}\n${nodeUtilsSource}`,
     )) {
   throw new Error(
-    "resolved node type state must be canonical",
+    "resolved node type compatibility APIs must be absent",
   );
 }
 if (/\bpsx_type_t\b|parser_type_compatibility\.h|\bps_node_(?:get_type|bind_type)\s*\(/.test(
@@ -5673,99 +5452,6 @@ for (const removedApi of [
     );
   }
 }
-const storageSlotConstructor = resolvedObjectRefSource.match(
-  /node_t\s*\*ps_node_new_lvar_storage_slot_for_in\s*\([^]*?\n\}/,
-);
-const canonicalTypeSlotConstructor = resolvedObjectRefSource.match(
-  /node_t\s*\*ps_node_new_lvar_qual_type_at_for_in\s*\([^]*?\n\}/,
-);
-const floatingSlotConstructor = resolvedObjectRefSource.match(
-  /node_t\s*\*ps_node_new_lvar_fp_slot_for_in\s*\([^]*?\n\}/,
-);
-const canonicalLocalReferenceConstructor = resolvedObjectRefSource.match(
-  /static\s+node_t\s*\*new_lvar_qual_type_node\s*\([^]*?\n\}/,
-);
-if (!storageSlotConstructor || !canonicalTypeSlotConstructor ||
-    !canonicalLocalReferenceConstructor ||
-    /\bps_(?:lvar|type)_[A-Za-z0-9_]*(?:size|sizeof)\s*\(/.test(
-      storageSlotConstructor[0],
-    ) ||
-    !/psx_semantic_type_table_fundamental_integer\s*\(/.test(
-      storageSlotConstructor[0],
-    ) ||
-    /psx_semantic_type_table_t|semantic_types/.test(
-      canonicalTypeSlotConstructor[0],
-    ) ||
-    !/psx_qual_type_t\s+qual_type/.test(canonicalTypeSlotConstructor[0]) ||
-    !/psx_bind_local_reference_in\s*\([^;]*\bqual_type\s*\)/s.test(
-      canonicalLocalReferenceConstructor[0],
-    ) ||
-    !/new_lvar_qual_type_node\s*\(/.test(
-      canonicalTypeSlotConstructor[0],
-    ) ||
-    /psx_type_compatibility_canonical_view_for\s*\(|ps_lvar_get_decl_type\s*\(/.test(
-      canonicalTypeSlotConstructor[0],
-    ) ||
-    /\bps_type_(?:new|clone|add_qualifiers)\s*\(|type_builder\.h/.test(
-      resolvedObjectRefSource,
-    ) ||
-    /\bpsx_type_t\b/.test(
-      `${storageSlotConstructor[0]}\n${canonicalTypeSlotConstructor[0]}\n${floatingSlotConstructor?.[0] ?? ""}`,
-    )) {
-  throw new Error(
-    "local initializer lowering must bind canonical QualType slots and label byte-wise zero fill as storage slots",
-  );
-}
-if (!floatingSlotConstructor ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
-      floatingSlotConstructor[0],
-    ) ||
-    !/ps_lvar_decl_type_id\s*\(\s*owner\s*\)/.test(
-      floatingSlotConstructor[0],
-    ) ||
-    !/psx_semantic_type_table_array_leaf\s*\(/.test(
-      floatingSlotConstructor[0],
-    ) ||
-    !/psx_semantic_type_table_describe\s*\(/.test(
-      floatingSlotConstructor[0],
-    ) ||
-    /ps_lvar_get_decl_type\s*\(|ps_type_array_leaf_type\s*\(/.test(
-      floatingSlotConstructor[0],
-    )) {
-  throw new Error(
-    "complex initializer slots must derive floating kind from the local declaration TypeId graph",
-  );
-}
-const localReferenceBinder = resolvedObjectRefSource.match(
-  /int\s+psx_bind_local_reference_in\s*\([^]*?\n\}/,
-);
-const declarationLocalConstructor = resolvedObjectRefSource.match(
-  /static\s+node_t\s*\*new_decl_lvar_symbol_node\s*\([^]*?\n\}/,
-);
-const vlaDecayConstructor = resolvedObjectRefSource.match(
-  /node_t\s*\*psx_node_new_vla_decay_ref_for_in\s*\([^]*?\n\}/,
-);
-if (!localReferenceBinder ||
-    /psx_semantic_type_table_t|semantic_types/.test(localReferenceBinder[0]) ||
-    !/psx_qual_type_t\s+qual_type/.test(localReferenceBinder[0]) ||
-    !/ps_node_bind_qual_type\s*\(/.test(localReferenceBinder[0]) ||
-    !/ps_node_bind_qual_type\s*\([^;]+;[^]*bind_local_reference_vla_runtime\s*\(/s.test(
-      localReferenceBinder[0],
-    ) ||
-    /ps_lvar_get_decl_type\s*\(/.test(localReferenceBinder[0]) ||
-    !declarationLocalConstructor ||
-    !/ps_lvar_decl_qual_type\s*\(/.test(declarationLocalConstructor[0]) ||
-    /ps_lvar_get_decl_type\s*\(/.test(declarationLocalConstructor[0]) ||
-    !vlaDecayConstructor ||
-    !/psx_qual_type_t\s+decay_qual_type/.test(vlaDecayConstructor[0]) ||
-    !/psx_bind_local_reference_in\s*\(/.test(vlaDecayConstructor[0]) ||
-    /ps_type_decay_array_in\s*\(|ps_node_bind_type\s*\(/.test(
-      vlaDecayConstructor[0],
-    )) {
-  throw new Error(
-    "local declaration references must preserve canonical QualType identity without rebuilding parser type views",
-  );
-}
 if (!/static\s+psx_semantic_node_t\s*\*build_direct_identifier\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
@@ -5806,183 +5492,6 @@ if (!identifierExpressionResolver ||
     )) {
   throw new Error(
     "direct identifier resolution must consume resolver classification instead of re-reading parser symbol types",
-  );
-}
-const globalReferenceBinder = resolvedObjectRefSource.match(
-  /int\s+psx_bind_global_reference_in\s*\([^]*?\n\}/,
-);
-const arrayAddressBinder = resolvedObjectRefSource.match(
-  /static\s+int\s+bind_array_address_qual_type\s*\([^]*?\n\}/,
-);
-if (!globalReferenceBinder ||
-    /psx_semantic_type_table_t|semantic_types/.test(globalReferenceBinder[0]) ||
-    !/psx_qual_type_t\s+qual_type/.test(globalReferenceBinder[0]) ||
-    /const\s+psx_type_t\s*\*\s*type\s*,/.test(
-      globalReferenceBinder[0],
-    ) ||
-    !arrayAddressBinder ||
-    !/psx_qual_type_t\s+expression_qual_type/.test(
-      arrayAddressBinder[0],
-    ) ||
-    !/ps_node_bind_qual_type\s*\(/.test(arrayAddressBinder[0]) ||
-    /ps_node_bind_type\s*\(|ps_type_decay_array_in\s*\(/.test(
-      arrayAddressBinder[0],
-    ) ||
-    /ps_[lg]var_get_decl_type\s*\(|ps_type_decay_array_in\s*\(/.test(
-      resolvedObjectRefSource,
-    )) {
-  throw new Error(
-    "global references and declaration-backed array addresses must bind canonical QualType identity",
-  );
-}
-const functionReferenceBinder = resolvedObjectRefSource.match(
-  /int\s+psx_bind_function_reference_in\s*\([^]*?\n\}/,
-);
-const varargReferenceBinder = resolvedObjectRefSource.match(
-  /int\s+psx_bind_va_arg_area_reference_in\s*\([^]*?\n\}/,
-);
-const functionReferenceFactory = resolvedObjectRefSource.match(
-  /node_t\s*\*psx_node_new_function_reference_in\s*\([^]*?\n\}/,
-);
-const varargReferenceFactory = resolvedObjectRefSource.match(
-  /node_t\s*\*psx_node_new_va_arg_area_reference_in\s*\([^]*?\n\}/,
-);
-for (const binder of [functionReferenceBinder, varargReferenceBinder]) {
-  if (!binder ||
-      /psx_semantic_type_table_t|semantic_types/.test(binder[0]) ||
-      !/psx_qual_type_t\s+expression_qual_type/.test(binder[0]) ||
-      !/ps_node_bind_qual_type\s*\(/.test(binder[0]) ||
-      /ps_node_bind_type\s*\(/.test(binder[0])) {
-    throw new Error(
-      "function and vararg references must bind resolver-owned expression QualType identity",
-    );
-  }
-}
-if (!functionReferenceFactory || !varargReferenceFactory ||
-    !/psx_bind_function_reference_in\s*\(/.test(
-      functionReferenceFactory[0],
-    ) ||
-    !/psx_bind_va_arg_area_reference_in\s*\(/.test(
-      varargReferenceFactory[0],
-    ) ||
-    /const\s+psx_type_t\s*\*|ps_type_clone_in\s*\(|ps_node_bind_type\s*\(/.test(
-      `${functionReferenceFactory[0]}\n${varargReferenceFactory[0]}`,
-    ) ||
-    !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_FUNCTION[^]*?PSX_HIR_FUNCTION_REF/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/resolution\.symbol\.kind\s*==\s*PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA[^]*?PSX_HIR_VARARG_CURSOR/.test(
-      syntaxTypedHirResolutionSource,
-    )) {
-  throw new Error(
-    "identifier reference materialization must not reconstruct function or vararg types",
-  );
-}
-const resolvedObjectRefFactories = [
-  "ps_node_new_lvar_storage_slot_for_in",
-  "ps_node_new_lvar_fp_slot_for_in",
-  "ps_node_new_param_placeholder_in",
-  "psx_node_new_lvar_for_in",
-  "psx_node_new_lvar_object_ref_for_in",
-  "ps_node_new_lvar_expr_ref_for_in",
-  "psx_node_new_lvar_identifier_ref_for_in",
-  "psx_node_new_vla_decay_ref_for_in",
-  "ps_node_new_param_lvar_for_in",
-  "ps_node_new_gvar_array_addr_for_in",
-  "psx_node_new_static_local_array_addr_for_in",
-  "ps_node_new_lvar_array_addr_for_in",
-  "ps_node_new_tag_member_lvar_ref_with_layout_for_in",
-  "ps_node_new_gvar_for_in",
-  "psx_node_new_gvar_array_base_for_in",
-  "psx_node_new_static_local_gvar_for_in",
-  "psx_node_new_function_reference_in",
-  "psx_node_new_va_arg_area_reference_in",
-  "ps_node_lvar_symbol",
-];
-for (const removedFactory of [
-  "psx_node_new_lvar_in",
-  "ps_node_new_lvar_typed_in",
-  "ps_node_new_lvar_type_at_for_in",
-  "psx_node_new_lvar_scalar_slot_at_in",
-  "psx_node_new_lvar_fp_slot_at_in",
-  "ps_node_new_unsigned_lvar_typed_in",
-]) {
-  if (new RegExp(`\\b${removedFactory}\\s*\\(`).test(
-        `${resolvedObjectRefSource}\n${resolvedObjectRefHeader}`,
-      )) {
-    throw new Error(
-      `raw parser-type object reference factory ${removedFactory} must not return`,
-    );
-  }
-}
-for (const factory of resolvedObjectRefFactories) {
-  const declaration = new RegExp(`\\b${factory}\\s*\\(`);
-  const definition = new RegExp(
-    `\\b(?:node_t|lvar_t)\\s*\\*\\s*${factory}\\s*\\(`,
-  );
-  if (definition.test(nodeUtilsSource) ||
-      declaration.test(nodeUtilsHeaderSource) ||
-      !definition.test(resolvedObjectRefSource) ||
-      !declaration.test(resolvedObjectRefHeader)) {
-    throw new Error(
-      `resolved object reference factory ${factory} must be owned by the semantic layer`,
-    );
-  }
-}
-const tagMemberLvarFactory = resolvedObjectRefSource.match(
-  /node_t\s*\*ps_node_new_tag_member_lvar_ref_with_layout_for_in\s*\([^]*?\n\}/,
-);
-if (!tagMemberLvarFactory ||
-    !/const\s+psx_semantic_type_table_t\s*\*\s*semantic_types/.test(
-      tagMemberLvarFactory[0],
-    ) ||
-    !/psx_qual_type_t\s+member_qual_type/.test(tagMemberLvarFactory[0]) ||
-    !/ps_lvar_decl_qual_type\s*\(\s*owner\s*\)/.test(
-      tagMemberLvarFactory[0],
-    ) ||
-    !/psx_semantic_type_table_array_leaf\s*\(/.test(
-      tagMemberLvarFactory[0],
-    ) ||
-    /ps_type_has_qualifier\s*\(/.test(tagMemberLvarFactory[0])) {
-  throw new Error(
-    "member lvalue construction must consume QualType identity and resolve owner qualifiers through the semantic type graph",
-  );
-}
-if (/(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR)/.test(nodeUtilsSource) ||
-    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_LVAR\s*\)/.test(
-      resolvedObjectRefSource,
-    ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_GVAR\s*\)/.test(
-      resolvedObjectRefSource,
-    ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*store,\s*reference,\s*ND_FUNCREF\s*\)/.test(
-      resolvedObjectRefSource,
-    ) ||
-    !/psx_resolution_node_set_kind\s*\(\s*store,\s*node,\s*ND_VARARG_CURSOR\s*\)/.test(
-      resolvedObjectRefSource,
-    ) ||
-    /(?:base\.)?kind\s*=\s*ND_(?:LVAR|GVAR|FUNCREF|VARARG_CURSOR)/.test(
-      resolvedObjectRefSource,
-    )) {
-  throw new Error(
-    "resolved object and function references must be constructed only by the semantic factory",
-  );
-}
-const resolvedReferencePayloadPattern =
-  /\bnode_(?:lvar|gvar|funcref)_t\b/;
-if (resolvedReferencePayloadPattern.test(resolvedObjectRefSource) ||
-    /resolved_node\.h/.test(nodeUtilsHeaderSource) ||
-    !/typedef\s+struct\s*\{[^]*?psx_resolved_reference_kind_t\s+kind\s*;[^]*?\}\s*psx_resolved_reference_state_t\s*;/.test(
-      earlyNodeResolutionState,
-    ) ||
-    !/psx_resolved_object_ref_storage_offset\s*\(/.test(
-      resolvedObjectRefSource,
-    ) ||
-    !/psx_resolved_object_ref_name\s*\(/.test(
-      resolvedObjectRefSource,
-    )) {
-  throw new Error(
-    "resolved reference payload must be owned by resolution state and consumed through semantic accessors",
   );
 }
 const classifiedInitializerVisitor = nodeUtilsSource.match(
@@ -6423,9 +5932,6 @@ if (!/\bhir_ir_coerce_direct_value_to_qual_type\s*\(/.test(
   );
 }
 if (/\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
-      nodeTypePublicSource,
-    ) ||
-    /\bps_function_definition_(?:return_type|signature_qual_type)\s*\(/.test(
       nodeUtilsSource,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\([^]*?header\.signature_qual_type\.type_id/.test(
@@ -6780,7 +6286,6 @@ if (!/capture_direct_vla_typedef_bounds\s*\(/.test(
     !/ps_ctx_semantic_expression_in\s*\([^]*?runtime_factor_ids\[i\]/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    /runtime_application/.test(nodeResolutionStateSource) ||
     !/ps_ctx_find_typedef_name_at_in\s*\(/.test(
       typeNameResolutionSource,
     )) {
@@ -7748,18 +7253,6 @@ const semanticTypeIdentityInternalHeader = await readFile(
   "src/semantic/type_identity_internal.h",
   "utf8",
 );
-const typeCompatibilityCacheInternalHeader = await readFile(
-  "src/semantic/type_compatibility_cache_internal.h",
-  "utf8",
-);
-const typeCompatibilityCacheStorageInternalHeader = await readFile(
-  "src/semantic/type_compatibility_cache_storage_internal.h",
-  "utf8",
-);
-const typeCompatibilityCacheSource = await readFile(
-  "src/semantic/type_compatibility_cache.c",
-  "utf8",
-);
 const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
@@ -7788,12 +7281,6 @@ if (!qualTypeStruct ||
     /\bpsx_semantic_type_table_(?:intern|find)\s*\(/.test(
       semanticTypeIdentityHeader,
     ) ||
-    !/\bpsx_type_compatibility_cache_create\s*\(/.test(
-      typeCompatibilityCacheInternalHeader,
-    ) ||
-    !/#include\s+"type_compatibility_cache_internal\.h"/.test(
-      semanticTypeIdentityInternalHeader,
-    ) ||
     /#include\s+"\.\.\/(?:target_info|type_layout)\.h"/.test(
       semanticTypeIdentitySource,
     ) ||
@@ -7811,9 +7298,6 @@ if (!/PSX_TYPE_QUALIFIER_RESTRICT\s*=\s*1u\s*<<\s*3/.test(
     ) ||
     !/op->is_restrict_qualified[^]*?PSX_TYPE_QUALIFIER_RESTRICT/.test(
       declarationResolutionSource,
-    ) ||
-    !/PSX_QUALIFIER_VIEW_COUNT\s*=\s*16/.test(
-      typeCompatibilityCacheStorageInternalHeader,
     ) ||
     !/PSX_TYPE_QUALIFIER_RESTRICT/.test(semanticTypeIdentitySource) ||
     !/type\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_RESTRICT[^]*?write_literal\(writer,\s*"R"\)/.test(
@@ -7896,28 +7380,6 @@ if (!semanticTypeEntry ||
     )) {
   throw new Error(
     "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
-  );
-}
-if (!/const\s+void\s*\*canonical_view\s*;/.test(
-      typeCompatibilityCacheStorageInternalHeader,
-    ) ||
-    !/const\s+void\s*\*views\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
-      typeCompatibilityCacheStorageInternalHeader,
-    ) ||
-    !/arena_context_t\s*\*arena_context\s*;/.test(
-      typeCompatibilityCacheStorageInternalHeader,
-    ) ||
-    /\bpsx_type_t\b|parser\/type\.h/.test(
-      `${typeCompatibilityCacheStorageInternalHeader}\n${typeCompatibilityCacheSource}`,
-    ) ||
-    !/\bpsx_type_compatibility_cache_create\s*\(/.test(
-      typeCompatibilityCacheSource,
-    ) ||
-    !/\bpsx_type_compatibility_cache_reserve_type_id\s*\(/.test(
-      typeCompatibilityCacheSource,
-    )) {
-  throw new Error(
-    "semantic type compatibility cache must remain opaque and parser-type free",
   );
 }
 for (const [contextInterner, tableInterner] of [
@@ -8645,9 +8107,6 @@ if (!recordMemberDeclStruct ||
     /return\s+member->decl_type\s*;/.test(recordDeclImplementationSource) ||
     !/psx_qual_type_t\s+identity\s*=\s*declaration->decl_qual_type\s*;[^]*?psx_semantic_type_table_qual_type_is_valid\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/s.test(
       parserSemanticContextImplementation,
-    ) ||
-    !/views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
-      typeCompatibilityCacheStorageInternalHeader,
     )) {
   throw new Error(
     "record members must store QualType only without publishing parser type views",
@@ -9479,9 +8938,6 @@ if (!parsedNumberLiteral ||
     /\bfval_id\b/.test(numberNodeStruct?.[1] ?? "") ||
     !stringNodeStruct ||
     /\bstring_label\b/.test(stringNodeStruct[1]) ||
-    /\bpsx_literal_resolution_state_t\b|\bliteral\s*;/.test(
-      nodeResolutionStateSource,
-    ) ||
     /\bpsx_string_literal_(?:bind_label|label)\s*\(/.test(
       literalResolutionHeader + literalResolutionSource,
     ) ||
@@ -9883,7 +9339,6 @@ if (
   !addressOperandQualTypeRule ||
   !/\bND_ADDRESS_OF\b/.test(syntaxNodeKindHeader) ||
   /\bND_ADDR\b/.test(syntaxNodeKindHeader) ||
-  !/\bND_ADDR\b/.test(resolvedNodeKindHeader) ||
   /\bis_explicit_addr_expr\b/.test(astSource) ||
   /\bbuild_unary_addr_node\b/.test(parserExpressionSource) ||
   !/PSX_HIR_ADDRESS/.test(syntaxTypedHirResolutionSource) ||
@@ -9897,8 +9352,6 @@ if (
   !/PSX_ADDRESS_OPERAND_IS_BITFIELD/.test(
     syntaxTypedHirResolutionSource,
   ) ||
-  !/int\s+ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
-  !/if\s*\(\s*!ps_node_is_lvalue_in\s*\(/.test(nodeUtilsSource) ||
   !/static\s+const\s+node_t\s*\*direct_selected_expression\s*\(/.test(
     syntaxTypedHirResolutionSource,
   ) ||
@@ -10349,7 +9802,6 @@ if (!/syntax->kind\s*==\s*ND_UNARY_NEGATE[^]*?PSX_HIR_NEGATE/.test(
     !/psx_hir_node_kind\s*\(\s*node\s*\)\s*==\s*PSX_HIR_NEGATE[^]*?build_scalar_negate\s*\(/.test(
       hirIrBuilder,
     ) ||
-    /\bND_FNEG\b/.test(resolvedNodeKindHeader) ||
     allSourceFiles.some(
       (path) =>
         /src\/lowering\/unary_operator_lowering\.[ch]$/.test(path),
@@ -10438,9 +9890,6 @@ if (!genericQualTypeResolution ||
     ) ||
     /\bpsx_(?:generic_selection_resolution_state_t|resolution_store_t)\b|\bps_node_resolution_state/.test(
       genericSelectionResolutionSource,
-    ) ||
-    /\bpsx_generic_selection_resolution_state_t\b|\bgeneric_selection\s*;/.test(
-      nodeResolutionStateSource,
     ) ||
     !/psx_resolve_generic_selection_qual_types_in\s*\(/.test(
       syntaxTypedHirResolutionSource,

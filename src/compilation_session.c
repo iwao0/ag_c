@@ -1,6 +1,4 @@
 #include "compilation_session_internal.h"
-#include "semantic/resolution_store.h"
-
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
 #include "parser/semantic_ctx.h"
@@ -69,12 +67,10 @@ int ag_compilation_session_init(
     return 0;
   }
   session->arena_context = arena_context_create();
-  session->resolution_store = psx_resolution_store_create();
   session->scope_graph = psx_scope_graph_create();
   session->semantic_context = ps_ctx_create(
       session->arena_context, session->diagnostic_context,
-      session->resolution_store, session->scope_graph,
-      &session->target);
+      session->scope_graph, &session->target);
   session->hir_module = psx_hir_module_create();
   session->global_registry = ps_global_registry_create(
       ps_ctx_semantic_type_table_in(session->semantic_context),
@@ -92,7 +88,6 @@ int ag_compilation_session_init(
   const psx_lowering_context_dependencies_t lowering_dependencies = {
       .arena_context = session->arena_context,
       .diagnostic_context = session->diagnostic_context,
-      .resolution_store = session->resolution_store,
       .target = &session->target,
       .semantic_types =
           ps_ctx_semantic_type_table_in(session->semantic_context),
@@ -108,8 +103,7 @@ int ag_compilation_session_init(
   if (!session->scope_graph || !session->semantic_context ||
       !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
-      !session->arena_context || !session->resolution_store ||
-      !session->diagnostic_context ||
+      !session->arena_context || !session->diagnostic_context ||
       !session->token_allocator_context || !session->parser_runtime_context ||
       !session->lowering_context || !session->hir_module ||
       !session->codegen_emit_context) {
@@ -123,7 +117,6 @@ int ag_compilation_session_init(
     ps_lowering_context_destroy(session->lowering_context);
     cg_context_destroy(session->codegen_emit_context);
     arena_context_destroy(session->arena_context);
-    psx_resolution_store_destroy(session->resolution_store);
     tk_context_dispose(&session->tokenizer);
     tk_allocator_context_destroy(session->token_allocator_context);
     diag_context_destroy(session->diagnostic_context);
@@ -154,12 +147,6 @@ int ag_compilation_session_is_complete(
          ps_local_registry_semantic_types(session->local_registry) ==
              ps_ctx_semantic_type_table_in(session->semantic_context) &&
          session->arena_context &&
-         session->resolution_store &&
-         ps_ctx_resolution_store(session->semantic_context) ==
-             session->resolution_store &&
-         psx_resolution_store_semantic_types(
-             session->resolution_store) ==
-             ps_ctx_semantic_type_table_in(session->semantic_context) &&
          session->source_manager && session->diagnostic_context &&
          session->token_allocator_context &&
          diag_context_source_manager(session->diagnostic_context) ==
@@ -194,8 +181,6 @@ int ag_compilation_session_is_complete(
              session->arena_context &&
          ps_lowering_diagnostics(session->lowering_context) ==
              session->diagnostic_context &&
-         ps_lowering_resolution_store(session->lowering_context) ==
-             session->resolution_store &&
          ps_lowering_target(session->lowering_context) ==
              &session->target &&
          session->hir_module &&
@@ -244,7 +229,6 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   arena_context_destroy(session->arena_context);
-  psx_resolution_store_destroy(session->resolution_store);
   diag_context_destroy(session->diagnostic_context);
   ag_source_manager_destroy(session->source_manager);
   memset(session, 0, sizeof(*session));

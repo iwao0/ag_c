@@ -39,7 +39,6 @@
 #include "../src/parser/lvar_public.h"
 #include "../src/parser/name_environment.h"
 #include "../src/parser/node_utils.h"
-#include "../src/parser/node_vla_public.h"
 #include "../src/parser/parser.h"
 #include "../src/parser/runtime_context.h"
 #include "../src/parser/semantic_ctx.h"
@@ -71,12 +70,6 @@
 #include "../src/semantic/local_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/prototype_parameter.h"
-#include "../src/semantic/resolution_state.h"
-#include "../src/semantic/resolution_store.h"
-#include "../src/semantic/resolved_node.h"
-#include "../src/semantic/resolved_node_kind.h"
-#include "../src/semantic/resolved_node_type.h"
-#include "../src/semantic/resolved_object_ref.h"
 #include "../src/semantic/scope_graph.h"
 #include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_tree_resolution.h"
@@ -178,7 +171,6 @@ static tokenizer_context_t *test_tokenizer(void) {
 
 typedef struct {
   psx_semantic_context_t *context;
-  psx_resolution_store_t *resolution_store;
   psx_scope_graph_t *scope_graph;
 } test_semantic_context_fixture_t;
 
@@ -187,14 +179,12 @@ static int test_semantic_context_fixture_init(
     const ag_target_info_t *target) {
   if (!fixture) return 0;
   memset(fixture, 0, sizeof(*fixture));
-  fixture->resolution_store = psx_resolution_store_create();
   fixture->scope_graph = psx_scope_graph_create();
   fixture->context = ps_ctx_create(
       test_arena_context(), test_diagnostics(),
-      fixture->resolution_store, fixture->scope_graph, target);
+      fixture->scope_graph, target);
   if (fixture->context) return 1;
   psx_scope_graph_destroy(fixture->scope_graph);
-  psx_resolution_store_destroy(fixture->resolution_store);
   memset(fixture, 0, sizeof(*fixture));
   return 0;
 }
@@ -203,116 +193,9 @@ static void test_semantic_context_fixture_dispose(
     test_semantic_context_fixture_t *fixture) {
   if (!fixture) return;
   ps_ctx_destroy(fixture->context);
-  ASSERT_TRUE(psx_resolution_store_semantic_types(
-                  fixture->resolution_store) == NULL);
   psx_scope_graph_destroy(fixture->scope_graph);
-  psx_resolution_store_destroy(fixture->resolution_store);
   memset(fixture, 0, sizeof(*fixture));
 }
-
-static psx_resolution_store_t *test_resolution_store(void) {
-  return test_suite_session ? test_suite_session->resolution_store : NULL;
-}
-
-#define test_set_resolved_node_kind(node, kind) \
-  test_set_resolved_node_kind_sized(              \
-      (node), sizeof(*(node)), (kind))
-
-
-/* Test fixtures use the suite session explicitly without repeating it at
- * every constructor call. Production code is forbidden from these aliases. */
-static const node_t *test_node_with_qual_type(const node_t *node) {
-  return node && ps_node_qual_type(
-                     test_resolution_store(), node).type_id !=
-                     PSX_TYPE_ID_INVALID
-             ? node
-             : NULL;
-}
-#define ps_node_qual_type(node) \
-  ps_node_qual_type(test_resolution_store(), (node))
-#define ps_node_bind_qual_type(node, qual_type) \
-  ps_node_bind_qual_type(                                \
-      test_resolution_store(), (node), (qual_type))
-#define ps_node_prepare_resolution_state_in(arena, node) \
-  ps_node_prepare_resolution_state_in(                     \
-      test_resolution_store(), (arena), (node))
-#define ps_node_resolution_state(node) \
-  ps_node_resolution_state(test_resolution_store(), (node))
-#define ps_node_resolution_state_const(node) \
-  ps_node_resolution_state_const(test_resolution_store(), (node))
-#define ps_node_has_resolution_state(node) \
-  ps_node_has_resolution_state(test_resolution_store(), (node))
-#define ps_node_value_fp_kind(node) \
-  ps_node_value_fp_kind(test_resolution_store(), (node))
-#define ps_node_is_long_long_type(node) \
-  ps_node_is_long_long_type(test_resolution_store(), (node))
-#define ps_node_shift_operation_is_unsigned(node) \
-  ps_node_shift_operation_is_unsigned(test_resolution_store(), (node))
-#define ps_node_integer_value_is_unsigned(node) \
-  ps_node_integer_value_is_unsigned(test_resolution_store(), (node))
-#define ps_node_vla_row_stride_frame_off(node) \
-  ps_node_vla_row_stride_frame_off(test_resolution_store(), (node))
-#define ps_node_bitfield_info(node, width, offset, is_signed) \
-  ps_node_bitfield_info(                                      \
-      test_resolution_store(), (node), (width), (offset), (is_signed))
-#define ps_node_lvar_symbol(node) \
-  ps_node_lvar_symbol(test_resolution_store(), (node))
-#define ps_node_value_is_complex(node) \
-  ps_node_value_is_complex(test_resolution_store(), (node))
-#define ps_node_value_is_void(node) \
-  ps_node_value_is_void(test_resolution_store(), (node))
-#define ps_node_clear_type(node) \
-  ps_node_clear_type(test_resolution_store(), (node))
-#define ps_node_bitfield_width(node) \
-  ps_node_bitfield_width(test_resolution_store(), (node))
-#define ps_node_set_bitfield_info(node, width, offset, is_signed) \
-  ps_node_set_bitfield_info(                                      \
-      test_resolution_store(), (node), (width), (offset), (is_signed))
-#define ps_node_vla_alloc_descriptor_info(node, descriptor, row) \
-  ps_node_vla_alloc_descriptor_info(                              \
-      test_resolution_store(), (node), (descriptor), (row))
-#define ps_node_is_plain_char_type(node) \
-  ps_node_is_plain_char_type(test_resolution_store(), (node))
-#define ps_node_is_long_double_type(node) \
-  ps_node_is_long_double_type(test_resolution_store(), (node))
-#define ps_node_subscript_deref_uses_base_address(node) \
-  ps_node_subscript_deref_uses_base_address(test_resolution_store(), (node))
-#define ps_node_scalar_ptr_member_lvalue(node) \
-  ps_node_scalar_ptr_member_lvalue(test_resolution_store(), (node))
-#define ps_node_deref_decays_to_address(node) \
-  ps_node_deref_decays_to_address(test_resolution_store(), (node))
-#define ps_node_vla_strides_remaining(node) \
-  ps_node_vla_strides_remaining(test_resolution_store(), (node))
-#define ps_node_set_vla_runtime_view(node, offset, remaining) \
-  ps_node_set_vla_runtime_view(                               \
-      test_resolution_store(), (node), (offset), (remaining))
-#define ps_node_set_subscript_uses_base_address(node, enabled) \
-  ps_node_set_subscript_uses_base_address(                     \
-      test_resolution_store(), (node), (enabled))
-#define ps_node_is_unsigned_type(node) \
-  ps_node_is_unsigned_type(test_resolution_store(), (node))
-#define ps_node_value_is_pointer_like(node) \
-  ps_node_value_is_pointer_like(test_resolution_store(), (node))
-#define ps_node_conversion_value_is_unsigned(node) \
-  ps_node_conversion_value_is_unsigned(test_resolution_store(), (node))
-#define psx_resolution_node_kind(node) \
-  psx_resolution_node_kind(test_resolution_store(), (node))
-#define psx_resolved_object_ref_node_kind(node) \
-  psx_resolved_object_ref_node_kind(test_resolution_store(), (node))
-#define psx_resolved_object_ref_kind(node) \
-  psx_resolved_object_ref_kind(test_resolution_store(), (node))
-#define psx_resolved_object_ref_storage_offset(node) \
-  psx_resolved_object_ref_storage_offset(test_resolution_store(), (node))
-#define psx_resolved_object_ref_global(node) \
-  psx_resolved_object_ref_global(test_resolution_store(), (node))
-#define psx_node_resolved_type_name(node) \
-  test_node_resolved_type_name((node))
-#define psx_require_semantic_tree_has_canonical_expression_types( \
-    diagnostics, root, tok)                                       \
-  psx_require_semantic_tree_has_canonical_expression_types(       \
-      test_semantic_context(), (diagnostics), (root), (tok))
-#define psx_resolution_node_alloc_in(arena, size) \
-  psx_resolution_node_alloc_in(test_resolution_store(), (arena), (size))
 #define ps_declarator_shape_append_pointer(...) \
   ps_declarator_shape_append_pointer_in(test_arena_context(), __VA_ARGS__)
 #define ps_declarator_shape_append_array(...) \
@@ -352,59 +235,14 @@ static const node_t *test_node_with_qual_type(const node_t *node) {
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_compound_literal_array_size(...) \
   test_node_compound_literal_array_size(__VA_ARGS__)
-#define ps_node_new_lvar_typed_at_for(...) \
-  test_node_new_lvar_typed_at_for(__VA_ARGS__)
-#define ps_node_new_lvar_fp_slot_for(...) \
-  ps_node_new_lvar_fp_slot_for_in( \
-      test_resolution_store(), test_arena_context(), \
-      ps_ctx_semantic_type_table_in(test_semantic_context()), __VA_ARGS__)
-#define psx_node_new_lvar_for(...) \
-  psx_node_new_lvar_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_lvar_object_ref_for(...) \
-  psx_node_new_lvar_object_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define ps_node_new_lvar_expr_ref_for(...) \
-  ps_node_new_lvar_expr_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_lvar_identifier_ref_for(...) \
-  psx_node_new_lvar_identifier_ref_for_in(            \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
 static psx_semantic_context_t *test_semantic_context(void);
 
-
-
-
-#define psx_node_new_vla_decay_ref_for(...) \
-  test_node_new_vla_decay_ref_for(__VA_ARGS__)
-#define ps_node_new_param_lvar_for(...) \
-  ps_node_new_param_lvar_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define ps_node_new_array_elem_lvar_for(...) \
-  test_node_new_array_elem_lvar_for(__VA_ARGS__)
 #define psx_node_new_source_cast(...) \
   psx_node_new_source_cast_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_new_gvar_array_addr_for(...) \
-  test_node_new_gvar_array_addr_for(__VA_ARGS__)
-#define psx_node_new_static_local_array_addr_for(...) \
-  test_node_new_static_local_array_addr_for(__VA_ARGS__)
-#define ps_node_new_lvar_array_addr_for(...) \
-  test_node_new_lvar_array_addr_for(__VA_ARGS__)
 #define psx_node_new_unary_deref_syntax_for(...) \
   psx_node_new_unary_deref_syntax_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_subscript_syntax_for(...) \
   psx_node_new_subscript_syntax_for_in(test_arena_context(), __VA_ARGS__)
-#define ps_node_new_gvar_for(...) \
-  ps_node_new_gvar_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_gvar_array_base_for(...) \
-  psx_node_new_gvar_array_base_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define psx_node_new_static_local_gvar_for(...) \
-  psx_node_new_static_local_gvar_for_in( \
-      test_resolution_store(), test_arena_context(), __VA_ARGS__)
-#define ps_node_new_vla_runtime(...) \
-  ps_node_new_vla_runtime_in(test_resolution_store(), test_arena_context(), __VA_ARGS__)
 #define psx_node_new_raw_assign(...) \
   psx_node_new_raw_assign_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_raw_decl_initializer(...) \
@@ -1135,7 +973,6 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_SIZEOF_QUERY, standalone_sizeof->kind);
   ASSERT_TRUE(
       ((node_sizeof_query_t *)standalone_sizeof)->is_type_name);
-  ASSERT_TRUE(!ps_node_has_resolution_state(standalone_sizeof));
   ASSERT_TRUE(classifier_context.call_count > 0);
 
   tk_tokenize_ctx(test_tokenizer(), (char *)"__va_arg_area");
@@ -1144,7 +981,6 @@ static void test_parser_name_classifier_boundary() {
       &classifier, NULL);
   ASSERT_TRUE(va_arg_area_syntax != NULL);
   ASSERT_EQ(ND_IDENTIFIER, va_arg_area_syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(va_arg_area_syntax));
   ASSERT_EQ(13, ((node_identifier_t *)va_arg_area_syntax)->name_len);
 
   tk_tokenize_ctx(test_tokenizer(), (char *)"&value");
@@ -1153,10 +989,8 @@ static void test_parser_name_classifier_boundary() {
       &classifier, NULL);
   ASSERT_TRUE(address_syntax != NULL);
   ASSERT_EQ(ND_ADDRESS_OF, address_syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax));
   ASSERT_TRUE(address_syntax->lhs != NULL);
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax->lhs));
 
   tk_tokenize_ctx(test_tokenizer(), (char *)"{ if (0) ; }");
   test_statement_syntax_services_t statement_services = {
@@ -1177,19 +1011,15 @@ static void test_parser_name_classifier_boundary() {
       psx_stmt_stmt_syntax(&statement_syntax);
   ASSERT_TRUE(standalone_statement != NULL);
   ASSERT_EQ(ND_BLOCK, standalone_statement->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(standalone_statement));
   node_block_t *standalone_block =
       (node_block_t *)standalone_statement;
   ASSERT_TRUE(standalone_block->body != NULL);
   ASSERT_TRUE(standalone_block->body[0] != NULL);
   ASSERT_EQ(ND_IF, standalone_block->body[0]->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(standalone_block->body[0]));
   ASSERT_TRUE(standalone_block->body[0]->lhs != NULL);
   ASSERT_EQ(ND_NUM, standalone_block->body[0]->lhs->kind);
   ASSERT_TRUE(standalone_block->body[0]->rhs != NULL);
   ASSERT_EQ(ND_NULL_STMT, standalone_block->body[0]->rhs->kind);
-  ASSERT_TRUE(
-      !ps_node_has_resolution_state(standalone_block->body[0]->lhs));
   ASSERT_EQ(0, statement_services.block_scope_depth);
   ASSERT_EQ(1, statement_services.block_enter_count);
   ASSERT_EQ(1, statement_services.block_leave_count);
@@ -1447,12 +1277,8 @@ static psx_frontend_expression_hir_t resolve_test_expression_input_hir(
   preregister_test_locals();
   node_t *syntax = parse_expr_input_with_existing_locals(input);
   ASSERT_TRUE(syntax != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
   if (out_syntax) *out_syntax = syntax;
   return expression;
 }
@@ -1466,8 +1292,6 @@ static psx_frontend_expression_hir_t resolve_test_cast_input_hir(
   ASSERT_TRUE(syntax->lhs != NULL);
   ASSERT_EQ(PSX_HIR_CAST,
             psx_hir_node_kind(test_expression_hir_root(&expression)));
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
   if (out_syntax) *out_syntax = syntax;
   return expression;
 }
@@ -1591,22 +1415,16 @@ static void test_syntax_literal_type_boundary() {
   node_t *integer =
       parse_expr_input_with_existing_locals("0UL");
   ASSERT_EQ(ND_NUM, integer->kind);
-  ASSERT_TRUE(test_node_with_qual_type(integer) == NULL);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID, ps_node_qual_type(integer).type_id);
   ASSERT_TRUE(integer->tok != NULL);
   ASSERT_EQ(TK_NUM, integer->tok->kind);
 
   node_t *floating =
       parse_expr_input_with_existing_locals("1.0f");
   ASSERT_EQ(ND_NUM, floating->kind);
-  ASSERT_TRUE(test_node_with_qual_type(floating) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(floating));
 
   node_t *string =
       parse_expr_input_with_existing_locals("\"syntax\"");
   ASSERT_EQ(ND_STRING, string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(string));
 
   node_t *function_name =
       parse_expr_input_with_existing_locals("__func__");
@@ -1616,8 +1434,6 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(8, function_name_identifier->name_len);
   ASSERT_TRUE(memcmp(
       function_name_identifier->name, "__func__", 8) == 0);
-  ASSERT_TRUE(test_node_with_qual_type(function_name) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(function_name));
 
   node_t *unary_plus =
       parse_expr_input_with_existing_locals("+(unsigned char)1");
@@ -1626,8 +1442,6 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_TRUE(unary_plus->rhs == NULL);
   ASSERT_TRUE(unary_plus->tok != NULL);
   ASSERT_EQ(TK_PLUS, unary_plus->tok->kind);
-  ASSERT_TRUE(test_node_with_qual_type(unary_plus) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(unary_plus));
 
   node_t *logical_not =
       parse_expr_input_with_existing_locals("!0");
@@ -1636,9 +1450,6 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_TRUE(logical_not->rhs == NULL);
   ASSERT_TRUE(logical_not->tok != NULL);
   ASSERT_EQ(TK_BANG, logical_not->tok->kind);
-  ASSERT_TRUE(test_node_with_qual_type(logical_not) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(logical_not->lhs) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(logical_not));
 
   node_t *bitwise_not =
       parse_expr_input_with_existing_locals("~1");
@@ -1647,8 +1458,6 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_TRUE(bitwise_not->rhs == NULL);
   ASSERT_TRUE(bitwise_not->tok != NULL);
   ASSERT_EQ(TK_TILDE, bitwise_not->tok->kind);
-  ASSERT_TRUE(test_node_with_qual_type(bitwise_not) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(bitwise_not));
 }
 
 static void test_direct_literal_typed_hir_resolution_boundary() {
@@ -1803,7 +1612,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
       "default: break; } goto done; done: return 3; }");
   ASSERT_TRUE(syntax != NULL);
   ASSERT_EQ(ND_BLOCK, syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
   node_block_t *syntax_block = (node_block_t *)syntax;
   ASSERT_EQ(ND_IF, syntax_block->body[0]->kind);
   ASSERT_EQ(ND_FOR, syntax_block->body[1]->kind);
@@ -1829,10 +1637,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), syntax, &typed_statement, &failure));
   ASSERT_TRUE(typed_statement != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_block->body[0]));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_block->body[0]->lhs));
   ASSERT_EQ(PSX_DECL_ID_INVALID,
             psx_scope_graph_lookup_in_scope(
                 scope_graph, psx_scope_graph_current_scope(scope_graph),
@@ -1959,7 +1763,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), duplicate_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_case));
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
             failure.rejection);
   ASSERT_EQ(ND_CASE, failure.source_node_kind);
@@ -1973,7 +1776,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), duplicate_default, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_default));
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             failure.rejection);
   ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
@@ -2003,7 +1805,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
           test_semantic_context(), test_global_registry(),
           test_local_registry(), undefined_goto, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(undefined_goto));
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
             failure.rejection);
   ASSERT_EQ(7, failure.source_name_length);
@@ -2078,8 +1879,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   const psx_hir_node_t *empty_body_hir = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(empty_if_hir, 1));
   ASSERT_EQ(PSX_HIR_NOP, psx_hir_node_kind(empty_body_hir));
-  ASSERT_TRUE(!ps_node_has_resolution_state(empty_if_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(empty_if_syntax->rhs));
 
   psx_hir_module_destroy(hir);
   reset_test_translation_unit_state();
@@ -4158,8 +3957,6 @@ static int parse_raw_function_item(
         &primary_suffix->parameters->items[i].declarator;
     for (int b = 0; b < parameter->array_bound_count; b++) {
       ASSERT_TRUE(parameter->array_bounds[b].expression.node != NULL);
-      ASSERT_TRUE(!ps_node_has_resolution_state(
-          parameter->array_bounds[b].expression.node));
     }
   }
   psx_record_function_definition_declarator_binding_events(
@@ -4180,17 +3977,6 @@ static int parse_raw_function_item(
   ps_decl_set_current_funcname_in(
       test_local_registry(), NULL, 0);
   ps_parser_name_environment_dispose(&name_environment);
-  if (parsed) {
-    for (int i = 0;
-         primary_suffix->parameters &&
-         i < primary_suffix->parameters->count; i++) {
-      const psx_parsed_declarator_t *parameter =
-          &primary_suffix->parameters->items[i].declarator;
-      for (int b = 0; b < parameter->array_bound_count; b++)
-        ASSERT_TRUE(!ps_node_has_resolution_state(
-            parameter->array_bounds[b].expression.node));
-    }
-  }
   return parsed;
 }
 
@@ -4246,7 +4032,6 @@ static void assert_direct_function_resolution(const char *source) {
           &item.value.function_header, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
   ASSERT_TRUE(item.value.function_header.body == syntax_body);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_body));
 
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
@@ -4354,8 +4139,6 @@ static void test_predefined_function_name_typed_hir_boundary() {
   ASSERT_TRUE(typed_hir != NULL);
   ASSERT_EQ(ND_IDENTIFIER, subscript_name->kind);
   ASSERT_EQ(ND_IDENTIFIER, sizeof_name->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(subscript_name));
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_name));
 
   psx_hir_module_t *hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);
@@ -4407,7 +4190,6 @@ static void test_builtin_expect_typed_hir_boundary() {
   ASSERT_TRUE(memcmp(callee->name, "__builtin_expect", 16) == 0);
   ASSERT_EQ(ND_ADD, call->arguments[0]->kind);
   ASSERT_EQ(ND_NUM, call->arguments[1]->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
 
   node_t *value_syntax = call->arguments[0];
   node_t *expectation_syntax = call->arguments[1];
@@ -4423,9 +4205,6 @@ static void test_builtin_expect_typed_hir_boundary() {
   ASSERT_TRUE(call->arguments[1] == expectation_syntax);
   ASSERT_EQ(ND_ADD, call->arguments[0]->kind);
   ASSERT_EQ(ND_NUM, call->arguments[1]->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(value_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(expectation_syntax));
   psx_frontend_expression_hir_dispose(&expression);
 
   psx_resolved_hir_build_failure_t failure = {0};
@@ -5086,8 +4865,6 @@ static void test_member_access_typed_hir_boundary() {
   ASSERT_TRUE(!member_syntax->from_pointer);
   ASSERT_EQ(5, member_syntax->member_name_len);
   ASSERT_TRUE(strncmp(member_syntax->member_name, "value", 5) == 0);
-  ASSERT_TRUE(!ps_node_has_resolution_state(&member_syntax->base));
-  ASSERT_TRUE(test_node_with_qual_type(raw_access) == NULL);
   node_t *raw_base = member_syntax->base.lhs;
   psx_frontend_expression_hir_t access_expression =
       resolve_test_expression_hir(raw_access);
@@ -5107,9 +4884,6 @@ static void test_member_access_typed_hir_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(access_hir).kind);
   ASSERT_EQ(ND_MEMBER_ACCESS, raw_access->kind);
   ASSERT_TRUE(member_syntax->base.lhs == raw_base);
-  ASSERT_TRUE(!ps_node_has_resolution_state(&member_syntax->base));
-  ASSERT_TRUE(test_node_with_qual_type(member_syntax->base.lhs) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(raw_access) == NULL);
   psx_frontend_expression_hir_dispose(&access_expression);
 
   psx_qual_type_t pointer_qual_type =
@@ -5627,7 +5401,6 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   node_t *raw = parse_expr_input_with_existing_locals("(int){3}");
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
-  ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
   ASSERT_TRUE(compound->type_name.syntax != NULL);
   ASSERT_EQ(PSX_SCOPE_ID_INVALID, compound->type_name.scope_seq);
   ASSERT_EQ(
@@ -5635,8 +5408,6 @@ static void test_expr_compound_literal_typed_hir_boundary() {
       psx_compound_literal_storage_duration_in_scope_graph(
           ps_ctx_scope_graph(test_semantic_context()),
           compound->type_name.scope_seq, 1));
-  ASSERT_TRUE(!ps_node_has_resolution_state(&compound->base));
-  ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   psx_parsed_type_name_t *type_name_syntax = compound->type_name.syntax;
   node_t *initializer_syntax = raw->rhs;
@@ -5658,14 +5429,10 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(initializer_hir));
   ASSERT_TRUE(psx_hir_node_child_count(initializer_hir) > 0);
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value_hir));
-  ASSERT_TRUE(!ps_node_has_resolution_state(&compound->base));
-  ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   ASSERT_TRUE(compound->type_name.syntax == type_name_syntax);
   ASSERT_TRUE(raw->rhs == initializer_syntax);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(raw));
-  ASSERT_TRUE(!ps_node_has_resolution_state(raw->rhs));
   psx_frontend_expression_hir_dispose(&compound_expression);
 
   psx_hir_module_t *hir =
@@ -6125,13 +5892,10 @@ static void test_generic_selection_typed_hir_boundary() {
   node_generic_selection_t *selection =
       (node_generic_selection_t *)raw;
   ASSERT_EQ(2, selection->association_count);
-  ASSERT_TRUE(!ps_node_has_resolution_state(&selection->base));
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
   ASSERT_EQ(ND_ADD, selection->associations[0].expression->kind);
   ASSERT_TRUE(selection->associations[1].is_default);
-  ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
 
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(raw);
@@ -6144,8 +5908,6 @@ static void test_generic_selection_typed_hir_boundary() {
       expression.module, psx_hir_node_child_at(selected, 1));
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(selected_rhs));
   ASSERT_EQ(1, psx_hir_node_integer_value(selected_rhs));
-  ASSERT_TRUE(test_node_with_qual_type((node_t *)selection) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(selection->associations[0].expression) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
 
   psx_hir_module_t *hir =
@@ -6324,10 +6086,6 @@ static void test_expression_typed_hir_type_boundary() {
       parse_expr_input_with_existing_locals("(1, 2) ? 3 : 4");
   ASSERT_EQ(ND_TERNARY, ternary->kind);
   ASSERT_EQ(ND_COMMA, ternary->lhs->kind);
-  ASSERT_TRUE(test_node_with_qual_type(ternary) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(ternary->lhs) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(ternary) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(ternary->lhs) == NULL);
 
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(ternary);
@@ -6340,8 +6098,6 @@ static void test_expression_typed_hir_type_boundary() {
       expression.module, psx_hir_node_child_at(typed_ternary, 0));
   ASSERT_EQ(PSX_HIR_COMMA, psx_hir_node_kind(typed_comma));
   ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(typed_comma).kind);
-  ASSERT_TRUE(test_node_with_qual_type(ternary) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(ternary->lhs) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
@@ -6549,13 +6305,9 @@ static void test_cast_typed_hir_boundary() {
   ASSERT_EQ(ND_SOURCE_CAST, node->kind);
   node_source_cast_t *outer = (node_source_cast_t *)node;
   ASSERT_TRUE(outer->type_name.syntax != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(&outer->base));
-  ASSERT_TRUE(test_node_with_qual_type(node) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(node) == NULL);
   ASSERT_EQ(ND_SOURCE_CAST, node->lhs->kind);
   node_source_cast_t *inner = (node_source_cast_t *)node->lhs;
   ASSERT_TRUE(inner->type_name.syntax != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(&inner->base));
 
   psx_frontend_expression_hir_t expression =
       resolve_test_expression_hir(node);
@@ -6575,10 +6327,6 @@ static void test_cast_typed_hir_boundary() {
   ASSERT_TRUE(inner_shape.is_unsigned);
   ASSERT_EQ(ND_SOURCE_CAST, node->kind);
   ASSERT_EQ(ND_SOURCE_CAST, node->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(node));
-  ASSERT_TRUE(!ps_node_has_resolution_state(node->lhs));
-  ASSERT_TRUE(test_node_with_qual_type(node) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(node->lhs) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
@@ -6722,8 +6470,6 @@ static void test_compound_assignment_typed_hir_boundary() {
                 psx_hir_node_child_at(assignment_hir, 1))));
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(node));
-  ASSERT_TRUE(test_node_with_qual_type(node) == NULL);
   psx_frontend_expression_hir_dispose(&assignment_expression);
 
   reset_test_locals();
@@ -6750,8 +6496,6 @@ static void test_compound_assignment_typed_hir_boundary() {
                 psx_hir_node_child_at(deref_assignment_hir, 0))));
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(ND_UNARY_DEREF, node->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(node));
-  ASSERT_TRUE(test_node_with_qual_type(node) == NULL);
   psx_frontend_expression_hir_dispose(
       &deref_assignment_expression);
 
@@ -6841,7 +6585,6 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
   node_t *raw_compound_assignment = parsed_body->body[1];
   ASSERT_EQ(ND_NUM, raw_compound_assignment->rhs->kind);
-  ASSERT_TRUE(test_node_with_qual_type(raw_compound_assignment->rhs) == NULL);
   node_t *raw_literal = raw_compound_assignment->rhs;
   psx_hir_node_id_t hir_root = PSX_HIR_NODE_ID_INVALID;
   ASSERT_TRUE(psx_frontend_resolve_parsed_function_to_hir_in_session(
@@ -6859,7 +6602,6 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
   ASSERT_TRUE(parsed_body->body[1] == raw_compound_assignment);
   ASSERT_TRUE(raw_compound_assignment->rhs == raw_literal);
-  ASSERT_TRUE(test_node_with_qual_type(raw_literal) == NULL);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *hir_function =
@@ -6903,8 +6645,6 @@ static void test_function_definition_header_resolution_boundary() {
   node_t *syntax_return_value = syntax_body->body[0]->lhs;
   ASSERT_TRUE(syntax_return_value != NULL);
   ASSERT_EQ(ND_IDENTIFIER, syntax_return_value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_return_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_return_value));
 
   psx_function_definition_header_resolution_t resolution;
   ASSERT_TRUE(psx_resolve_function_definition_header_in_contexts(
@@ -6963,8 +6703,6 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_TRUE(!resolution.is_variadic);
 
   ASSERT_EQ(ND_IDENTIFIER, syntax_return_value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_return_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_return_value));
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
   reset_test_translation_unit_state();
@@ -7157,11 +6895,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_designator_index =
       syntax_array_initializer->entries[0]
           .designators[0].index_expr;
-  ASSERT_TRUE(test_node_with_qual_type(syntax_array_bound) == NULL);
   ASSERT_TRUE(syntax_designator_index != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_designator_index) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_array_initializer->entries[0].value) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[2]->kind);
   node_local_declaration_t *inferred_declaration =
       (node_local_declaration_t *)nested_block->body[2];
@@ -7197,12 +6931,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
             syntax_matrix_second_row->entries[0].designator_count);
   const node_t *syntax_matrix_designator_index =
       syntax_matrix_second_row->entries[0].designators[0].index_expr;
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_outer_bound) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_inner_bound) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_matrix_second_row->entries[0].value) == NULL);
   ASSERT_TRUE(syntax_matrix_designator_index != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_designator_index) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[4]->kind);
   node_local_declaration_t *sparse_declaration =
       (node_local_declaration_t *)nested_block->body[4];
@@ -7216,7 +6945,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_sparse_nested_index =
       syntax_sparse_initializer->entries[0].designators[1].index_expr;
   ASSERT_TRUE(syntax_sparse_nested_index != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_sparse_nested_index) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[5]->kind);
   node_local_declaration_t *pair_declaration =
       (node_local_declaration_t *)nested_block->body[5];
@@ -7238,8 +6966,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(syntax_cells_member->array_bounds[0].expression.node != NULL);
   ASSERT_TRUE(syntax_flags_member->has_bitfield);
   ASSERT_TRUE(syntax_flags_member->bit_width_expression.node != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_pair_initializer->entries[1].value) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[6]->kind);
   node_local_declaration_t *standalone_tag_declaration =
       (node_local_declaration_t *)nested_block->body[6];
@@ -7251,7 +6977,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       mode_declaration->declaration->initializers[0].value;
   ASSERT_TRUE(syntax_mode_initializer != NULL);
   ASSERT_EQ(ND_IDENTIFIER, syntax_mode_initializer->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_mode_initializer) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[9]->kind);
   node_local_declaration_t *aligned_declaration =
       (node_local_declaration_t *)nested_block->body[9];
@@ -7262,7 +6987,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_EQ(PSX_PARSED_ALIGNAS_EXPRESSION, syntax_alignas->kind);
   ASSERT_TRUE(syntax_alignas->expression != NULL);
   ASSERT_EQ(ND_NUM, syntax_alignas->expression->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_alignas->expression) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[10]->kind);
   node_local_declaration_t *typedef_declaration =
       (node_local_declaration_t *)nested_block->body[10];
@@ -7278,7 +7002,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_typed_initializer =
       typed_declaration->declaration->initializers[0].value;
   ASSERT_TRUE(syntax_typed_initializer != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_typed_initializer) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[13]->kind);
   node_local_declaration_t *vla_declaration =
       (node_local_declaration_t *)nested_block->body[13];
@@ -7287,7 +7010,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
           .array_bounds[0].expression.node;
   ASSERT_TRUE(syntax_vla_bound != NULL);
   ASSERT_EQ(ND_IDENTIFIER, syntax_vla_bound->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_vla_bound) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[17]->kind);
   node_local_declaration_t *static_array_declaration =
       (node_local_declaration_t *)nested_block->body[17];
@@ -7300,9 +7022,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_static_array_initializer->entries[0]
           .designators[0].index_expr;
   ASSERT_TRUE(syntax_static_array_index != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_static_array_index) == NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_static_array_initializer->entries[0].value) == NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[18]->kind);
   node_local_declaration_t *aggregate_cast_declaration =
       (node_local_declaration_t *)nested_block->body[18];
@@ -7313,8 +7032,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_aggregate_cast = syntax_aggregate_cast_member->lhs;
   ASSERT_TRUE(syntax_aggregate_cast != NULL);
   ASSERT_EQ(ND_SOURCE_CAST, syntax_aggregate_cast->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_aggregate_cast) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_aggregate_cast));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[20]->kind);
   node_local_declaration_t *compound_scalar_declaration =
       (node_local_declaration_t *)nested_block->body[20];
@@ -7325,8 +7042,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(
       ((const node_compound_literal_t *)syntax_compound_scalar)
           ->type_name.scope_seq != PSX_SCOPE_ID_TRANSLATION_UNIT);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_scalar) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_scalar));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[21]->kind);
   node_local_declaration_t *compound_address_declaration =
       (node_local_declaration_t *)nested_block->body[21];
@@ -7342,11 +7057,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_compound_address_expr->lhs;
   ASSERT_TRUE(syntax_compound_address != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_address->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_address_expr) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_compound_address_expr));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_address) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_address));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[22]->kind);
   node_local_declaration_t *compound_array_declaration =
       (node_local_declaration_t *)nested_block->body[22];
@@ -7357,8 +7067,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_compound_array = syntax_compound_subscript->lhs;
   ASSERT_TRUE(syntax_compound_array != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_array->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_array) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_array));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[23]->kind);
   node_local_declaration_t *compound_record_declaration =
       (node_local_declaration_t *)nested_block->body[23];
@@ -7369,8 +7077,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_compound_record = syntax_compound_member->lhs;
   ASSERT_TRUE(syntax_compound_record != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_record->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_record) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_record));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[24]->kind);
   node_local_declaration_t *direct_expression_declaration =
       (node_local_declaration_t *)nested_block->body[24];
@@ -7379,9 +7085,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
           ->initializers[0].value;
   ASSERT_TRUE(syntax_direct_expression != NULL);
   ASSERT_EQ(ND_ADD, syntax_direct_expression->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_direct_expression) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_direct_expression));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[25]->kind);
   node_local_declaration_t *union_declaration =
       (node_local_declaration_t *)nested_block->body[25];
@@ -7395,8 +7098,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_t *syntax_union_value =
       syntax_union_initializer->entries[0].value;
   ASSERT_TRUE(syntax_union_value != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_union_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_union_value));
   ASSERT_EQ(ND_FOR, nested_block->body[28]->kind);
   const node_ctrl_t *syntax_declaration_for =
       (const node_ctrl_t *)nested_block->body[28];
@@ -7406,12 +7107,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   const node_local_declaration_t *syntax_for_declaration =
       (const node_local_declaration_t *)syntax_declaration_for->init;
   ASSERT_EQ(2, syntax_for_declaration->declaration->declarator_count);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_for_declaration->declaration->initializers[0].value) ==
-              NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_for_declaration->declaration->initializers[1].value) ==
-              NULL);
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[29]->kind);
   const node_local_declaration_t *syntax_post_for_declaration =
       (const node_local_declaration_t *)nested_block->body[29];
@@ -7438,7 +7133,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_scalar_braced_inner->entries[0].value;
   ASSERT_TRUE(syntax_scalar_braced_value != NULL);
   ASSERT_EQ(ND_NUM, syntax_scalar_braced_value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_scalar_braced_value) == NULL);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, nested_block->body[31]->kind);
   const node_t *syntax_aggregate_sizeof =
       nested_block->body[31]->rhs;
@@ -7448,10 +7142,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       ((const node_sizeof_query_t *)syntax_aggregate_sizeof)->operand;
   ASSERT_TRUE(syntax_unevaluated_aggregate_cast != NULL);
   ASSERT_EQ(ND_SOURCE_CAST, syntax_unevaluated_aggregate_cast->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_unevaluated_aggregate_cast) ==
-              NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_unevaluated_aggregate_cast));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[35]->kind);
   const node_local_declaration_t *syntax_text_declaration =
       (const node_local_declaration_t *)nested_block->body[35];
@@ -7465,8 +7155,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_text_declaration->declaration->initializers[0].value;
   ASSERT_TRUE(syntax_text_string != NULL);
   ASSERT_EQ(ND_STRING, syntax_text_string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_text_string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_text_string));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[36]->kind);
   const node_local_declaration_t *syntax_wide_declaration =
       (const node_local_declaration_t *)nested_block->body[36];
@@ -7480,8 +7168,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_wide_initializer->entries[0].value;
   ASSERT_TRUE(syntax_wide_string != NULL);
   ASSERT_EQ(ND_STRING, syntax_wide_string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_wide_string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_wide_string));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[38]->kind);
   const node_local_declaration_t *syntax_compound_string_declaration =
       (const node_local_declaration_t *)nested_block->body[38];
@@ -7502,9 +7188,6 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_compound_string_initializer->entries[0].value;
   ASSERT_TRUE(syntax_compound_string_value != NULL);
   ASSERT_EQ(ND_STRING, syntax_compound_string_value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_string_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_compound_string_value));
   ASSERT_EQ(ND_LOCAL_DECLARATION, nested_block->body[41]->kind);
   const node_local_declaration_t *syntax_vla_typedef =
       (const node_local_declaration_t *)nested_block->body[41];
@@ -7513,12 +7196,8 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       syntax_vla_typedef->declaration->declarators[0]
           .array_bounds[0].expression.node;
   ASSERT_TRUE(syntax_vla_typedef_bound != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_vla_typedef_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_vla_typedef_bound));
   node_t *syntax_condition = syntax_body->body[3]->lhs;
   ASSERT_EQ(ND_IDENTIFIER, syntax_condition->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_condition) == NULL);
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -7533,114 +7212,21 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_EQ(PSX_HIR_FUNCTION,
             psx_typed_hir_tree_root_kind(typed_hir));
   ASSERT_EQ(ND_IDENTIFIER, syntax_condition->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_condition) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_condition));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_array_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_array_bound));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_designator_index) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_designator_index));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_array_initializer->entries[0].value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_array_initializer->entries[0].value));
   ASSERT_TRUE(syntax_inferred_shape->ops[0].is_incomplete_array);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_outer_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_matrix_outer_bound));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_inner_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_matrix_inner_bound));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_matrix_second_row->entries[0].value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_matrix_second_row->entries[0].value));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_matrix_designator_index) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_matrix_designator_index));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_sparse_nested_index) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_sparse_nested_index));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_pair_initializer->entries[1].value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_pair_initializer->entries[1].value));
   ASSERT_TRUE(syntax_cells_member->array_bounds[0].expression.node != NULL);
   ASSERT_TRUE(syntax_flags_member->bit_width_expression.node != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_mode_initializer) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_mode_initializer));
   ASSERT_TRUE(syntax_alignas->expression != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_alignas->expression) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_alignas->expression));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_typed_initializer) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_typed_initializer));
   ASSERT_EQ(ND_IDENTIFIER, syntax_vla_bound->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_vla_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_vla_bound));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_static_array_index) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_static_array_index));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_static_array_initializer->entries[0].value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_static_array_initializer->entries[0].value));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_aggregate_cast) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_aggregate_cast));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_scalar) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_scalar));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_address_expr) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_compound_address_expr));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_address) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_address));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_array) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_array));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_record) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_compound_record));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_direct_expression) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_direct_expression));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_direct_expression->lhs) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_direct_expression->lhs));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_union_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_union_value));
   ASSERT_EQ(ND_LOCAL_DECLARATION,
             syntax_declaration_for->init->kind);
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_for_declaration->declaration->initializers[0].value) ==
-              NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_for_declaration->declaration->initializers[0].value));
-  ASSERT_TRUE(test_node_with_qual_type(
-      syntax_for_declaration->declaration->initializers[1].value) ==
-              NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_for_declaration->declaration->initializers[1].value));
   ASSERT_EQ(ND_INIT_LIST,
             syntax_scalar_braced_initializer->value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_scalar_braced_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_scalar_braced_value));
   ASSERT_EQ(ND_SOURCE_CAST, syntax_unevaluated_aggregate_cast->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_unevaluated_aggregate_cast) ==
-              NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_unevaluated_aggregate_cast));
   ASSERT_TRUE(syntax_text_shape->ops[0].is_incomplete_array);
   ASSERT_EQ(ND_STRING, syntax_text_string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_text_string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_text_string));
   ASSERT_EQ(ND_STRING, syntax_wide_string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_wide_string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_wide_string));
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_string->kind);
   ASSERT_EQ(ND_STRING, syntax_compound_string_value->kind);
-  ASSERT_TRUE(test_node_with_qual_type(syntax_compound_string_value) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_compound_string_value));
-  ASSERT_TRUE(test_node_with_qual_type(syntax_vla_typedef_bound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      syntax_vla_typedef_bound));
   global_var_t *direct_external = find_test_global_var_in(
       test_global_registry(), (char *)"__direct_external_value",
       (int)strlen("__direct_external_value"));
@@ -8233,8 +7819,6 @@ static void test_direct_string_pointer_initializer_boundary() {
       declaration->declaration->initializers[0].value;
   ASSERT_TRUE(string != NULL);
   ASSERT_EQ(ND_STRING, string->kind);
-  ASSERT_TRUE(test_node_with_qual_type(string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(string));
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -8248,8 +7832,6 @@ static void test_direct_string_pointer_initializer_boundary() {
   ASSERT_TRUE(typed_hir != NULL);
   ASSERT_EQ(PSX_HIR_FUNCTION,
             psx_typed_hir_tree_root_kind(typed_hir));
-  ASSERT_TRUE(test_node_with_qual_type(string) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(string));
 
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
@@ -8283,7 +7865,6 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_expression != NULL);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expression));
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -8303,7 +7884,6 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_case->base.lhs == syntax_expression);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expression));
 
   int found_resolved_case = 0;
   for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
@@ -8368,7 +7948,6 @@ static void test_block_static_assert_syntax_hir_boundary() {
       (node_static_assert_t *)syntax_body->body[0];
   node_t *syntax_condition = syntax_assertion->condition;
   ASSERT_TRUE(syntax_condition != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_condition));
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
@@ -8387,7 +7966,6 @@ static void test_block_static_assert_syntax_hir_boundary() {
   ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
   ASSERT_EQ(ND_STATIC_ASSERT, syntax_body->body[0]->kind);
   ASSERT_TRUE(syntax_assertion->condition == syntax_condition);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax_condition));
 
   int found_nop = 0;
   for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
@@ -8572,10 +8150,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)scalar_compound)
                 ->type_name.scope_seq);
-  ASSERT_TRUE(test_node_with_qual_type(scalar_address) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_address));
-  ASSERT_TRUE(test_node_with_qual_type(scalar_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_compound));
   ASSERT_TRUE(find_test_global_var("__phase_scalar", 14) == NULL);
   ASSERT_TRUE(find_test_global_var("__compound_lit_0", 16) == NULL);
 
@@ -8594,10 +8168,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(memcmp(
       scalar_pointer->init_symbol, "__compound_lit_0", 16) == 0);
   ASSERT_EQ(0, scalar_pointer->init_symbol_offset);
-  ASSERT_TRUE(test_node_with_qual_type(scalar_address) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_address));
-  ASSERT_TRUE(test_node_with_qual_type(scalar_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(scalar_compound));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -8618,8 +8188,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)array_compound)
                 ->type_name.scope_seq);
-  ASSERT_TRUE(test_node_with_qual_type(array_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(array_compound));
   apply_test_toplevel_declaration(&item.value.declaration);
   global_var_t *array_pointer =
       find_test_global_var("__phase_array", 13);
@@ -8637,8 +8205,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(memcmp(
       array_pointer->init_symbol, "__compound_lit_1", 16) == 0);
   ASSERT_EQ(4, array_pointer->init_symbol_offset);
-  ASSERT_TRUE(test_node_with_qual_type(array_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(array_compound));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -8659,8 +8225,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)member_compound)
                 ->type_name.scope_seq);
-  ASSERT_TRUE(test_node_with_qual_type(member_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_compound));
   apply_test_toplevel_declaration(&item.value.declaration);
   global_var_t *member_pointer =
       find_test_global_var("__phase_member", 14);
@@ -8678,8 +8242,6 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(memcmp(
       member_pointer->init_symbol, "__compound_lit_2", 16) == 0);
   ASSERT_EQ(4, member_pointer->init_symbol_offset);
-  ASSERT_TRUE(test_node_with_qual_type(member_compound) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_compound));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -9609,7 +9171,6 @@ static void test_target_type_layout_boundary() {
   const psx_lowering_context_dependencies_t dependencies = {
       .arena_context = test_arena_context(),
       .diagnostic_context = test_diagnostics(),
-      .resolution_store = test_resolution_store(),
       .target = &wasm,
       .semantic_types = types,
       .record_decls =
@@ -10728,9 +10289,6 @@ static void test_aggregate_body_phase_boundary() {
                   .bit_width_expression.node != NULL);
   ASSERT_TRUE(body.items[7].value.member_declaration.specifier
                   .alignas_specifiers[0].expression != NULL);
-  ASSERT_TRUE(test_node_with_qual_type(
-                  body.items[7].value.member_declaration.specifier
-                      .alignas_specifiers[0].expression) == NULL);
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"a", 1, &member));
@@ -12337,7 +11895,7 @@ static void test_expr_unary_ops() {
 
   const struct {
     const char *input;
-    psx_resolution_node_kind_t syntax_kind;
+    psx_syntax_node_kind_t syntax_kind;
     psx_hir_node_kind_t hir_kind;
     long long operand;
   } unary_cases[] = {
@@ -12718,7 +12276,6 @@ static void test_expr_generic() {
   node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
       "(int (*)(ExprCanonicalParam, int *, ...))0");
   ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
-  ASSERT_TRUE(test_node_with_qual_type(canonical_expr_funcptr) == NULL);
   node_t *canonical_expr_operand = canonical_expr_funcptr->lhs;
   psx_frontend_expression_hir_t canonical_funcptr_expression =
       resolve_test_expression_hir(canonical_expr_funcptr);
@@ -12760,9 +12317,6 @@ static void test_expr_generic() {
   ASSERT_EQ(PSX_TYPE_POINTER, second_parameter_shape.kind);
   ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
   ASSERT_TRUE(canonical_expr_funcptr->lhs == canonical_expr_operand);
-  ASSERT_TRUE(!ps_node_has_resolution_state(canonical_expr_funcptr));
-  ASSERT_TRUE(!ps_node_has_resolution_state(canonical_expr_operand));
-  ASSERT_TRUE(test_node_with_qual_type(canonical_expr_funcptr) == NULL);
   psx_frontend_expression_hir_dispose(
       &canonical_funcptr_expression);
 
@@ -13244,7 +12798,6 @@ static void test_expr_inc_dec_typed_hir_boundary() {
     ASSERT_EQ(cases[i].syntax_kind, syntax->kind);
     ASSERT_EQ(ND_IDENTIFIER, syntax->lhs->kind);
     ASSERT_TRUE(syntax->tok != NULL);
-    ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
     node_t *operand_syntax = syntax->lhs;
     psx_frontend_expression_hir_t expression =
         resolve_test_expression_hir(syntax);
@@ -13258,10 +12811,6 @@ static void test_expr_inc_dec_typed_hir_boundary() {
                   expression.module,
                   psx_hir_node_child_at(root, 0))));
     ASSERT_TRUE(syntax->lhs == operand_syntax);
-    ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-    ASSERT_TRUE(!ps_node_has_resolution_state(operand_syntax));
-    ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
-    ASSERT_TRUE(test_node_with_qual_type(operand_syntax) == NULL);
     psx_frontend_expression_hir_dispose(&expression);
   }
 }
@@ -13698,9 +13247,6 @@ static void test_expr_deref_address_typed_hir_boundary() {
                 address_expression.module,
                 psx_hir_node_child_at(address_hir, 0))));
   ASSERT_TRUE(address_syntax->lhs == address_operand_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_operand_syntax));
-  ASSERT_TRUE(test_node_with_qual_type(address_syntax) == NULL);
   psx_frontend_expression_hir_dispose(&address_expression);
 
   reset_test_locals();
@@ -13728,9 +13274,6 @@ static void test_expr_deref_address_typed_hir_boundary() {
                 psx_hir_node_child_at(deref_hir, 0))));
   ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
   ASSERT_TRUE(deref->lhs == deref_operand_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(deref));
-  ASSERT_TRUE(!ps_node_has_resolution_state(deref_operand_syntax));
-  ASSERT_TRUE(test_node_with_qual_type(deref) == NULL);
   psx_frontend_expression_hir_dispose(&deref_expression);
 }
 
@@ -14236,10 +13779,6 @@ static void test_bool_assignment_typed_hir_boundary() {
   ASSERT_EQ(3, psx_hir_node_integer_value(rhs_hir));
   ASSERT_TRUE(syntax->lhs == lhs_syntax);
   ASSERT_TRUE(syntax->rhs == rhs_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(lhs_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(rhs_syntax));
-  ASSERT_TRUE(test_node_with_qual_type(syntax) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
@@ -15801,76 +15340,8 @@ static void test_arena_checkpoint_rollback() {
   int *reused = arena_alloc_in(arena_context, sizeof(*reused));
   ASSERT_TRUE(reused == discarded);
   ASSERT_EQ(41, *retained);
-  arena_checkpoint_t resolution_checkpoint =
-      arena_checkpoint_in(arena_context);
-  node_t *resolution_node = psx_resolution_node_alloc_in(
-      arena_context, sizeof(*resolution_node));
-  ASSERT_TRUE(resolution_node != NULL);
-  ASSERT_TRUE(ps_node_has_resolution_state(resolution_node));
-  arena_rollback_in(arena_context, resolution_checkpoint);
-  node_t *plain_replacement = arena_alloc_in(
-      arena_context, sizeof(*plain_replacement));
-  ASSERT_TRUE(plain_replacement == resolution_node);
-  ASSERT_TRUE(!ps_node_has_resolution_state(plain_replacement));
-  arena_checkpoint_t external_checkpoint =
-      arena_checkpoint_in(arena_context);
-  node_t *external_node = arena_alloc_in(
-      arena_context, sizeof(*external_node));
-  ASSERT_TRUE(ps_node_prepare_resolution_state_in(
-      arena_context, external_node));
-  ASSERT_TRUE(ps_node_has_resolution_state(external_node));
-  arena_rollback_in(arena_context, external_checkpoint);
-  node_t *external_replacement = arena_alloc_in(
-      arena_context, sizeof(*external_replacement));
-  ASSERT_TRUE(external_replacement == external_node);
-  ASSERT_TRUE(!ps_node_has_resolution_state(external_replacement));
   arena_free_all_in(arena_context);
   ASSERT_EQ(1, retained_cleanup_count);
-}
-
-static void test_resolution_store_isolation_and_lifetime() {
-  printf("test_resolution_store_isolation_and_lifetime...\n");
-  arena_context_t *first_arena = arena_context_create();
-  arena_context_t *second_arena = arena_context_create();
-  psx_resolution_store_t *first_store =
-      psx_resolution_store_create();
-  psx_resolution_store_t *second_store =
-      psx_resolution_store_create();
-  ASSERT_TRUE(first_arena != NULL);
-  ASSERT_TRUE(second_arena != NULL);
-  ASSERT_TRUE(first_store != NULL);
-  ASSERT_TRUE(second_store != NULL);
-
-  node_t shared_node = {0};
-  ASSERT_TRUE(psx_resolution_store_prepare_in(
-      first_store, first_arena, &shared_node, sizeof(shared_node)));
-  ASSERT_TRUE(psx_resolution_store_prepare_in(
-      second_store, second_arena, &shared_node, sizeof(shared_node)));
-  psx_node_resolution_state_t *first_state =
-      psx_resolution_store_lookup(first_store, &shared_node);
-  psx_node_resolution_state_t *second_state =
-      psx_resolution_store_lookup(second_store, &shared_node);
-  ASSERT_TRUE(first_state != NULL);
-  ASSERT_TRUE(second_state != NULL);
-  ASSERT_TRUE(first_state != second_state);
-  first_state->reference.storage_offset = 1;
-  ASSERT_EQ(0, second_state->reference.storage_offset);
-
-  arena_checkpoint_t checkpoint = arena_checkpoint_in(first_arena);
-  node_t rollback_node = {0};
-  ASSERT_TRUE(psx_resolution_store_prepare_in(
-      first_store, first_arena, &rollback_node,
-      sizeof(rollback_node)));
-  ASSERT_TRUE(psx_resolution_store_lookup(
-      first_store, &rollback_node) != NULL);
-  arena_rollback_in(first_arena, checkpoint);
-  ASSERT_TRUE(psx_resolution_store_lookup(
-      first_store, &rollback_node) == NULL);
-
-  arena_context_destroy(first_arena);
-  psx_resolution_store_destroy(first_store);
-  psx_resolution_store_destroy(second_store);
-  arena_context_destroy(second_arena);
 }
 
 static void test_semantic_type_identity() {
@@ -16107,8 +15578,6 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(second != NULL);
   ASSERT_TRUE(first != second);
-  ASSERT_TRUE(ps_ctx_resolution_store(first) !=
-              ps_ctx_resolution_store(second));
   ASSERT_TRUE(ps_ctx_semantic_type_table_in(first) !=
               ps_ctx_semantic_type_table_in(second));
   ASSERT_TRUE(ps_ctx_scope_graph(first) !=
@@ -16617,13 +16086,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, ir_allocation_stats_block_peak(
                    ag_compilation_session_ir_allocation_stats_view(
                        &wasm)));
-  ASSERT_TRUE(host.resolution_store != NULL);
-  ASSERT_TRUE(wasm.resolution_store != NULL);
-  ASSERT_TRUE(host.resolution_store != wasm.resolution_store);
-  ASSERT_TRUE(ps_ctx_resolution_store(host.semantic_context) ==
-              host.resolution_store);
-  ASSERT_TRUE(ps_ctx_resolution_store(wasm.semantic_context) ==
-              wasm.resolution_store);
   ASSERT_TRUE(ag_compilation_session_semantic_context(&host) ==
               host.semantic_context);
   ASSERT_TRUE(ag_compilation_session_global_registry(&host) ==
@@ -16726,14 +16188,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               ps_parser_runtime_tokenizer(wasm.parser_runtime_context));
   ASSERT_TRUE(ps_lowering_arena(wasm.lowering_context) ==
               wasm.arena_context);
-  ASSERT_TRUE(ps_ctx_resolution_store(host.semantic_context) ==
-              host.resolution_store);
-  ASSERT_TRUE(ps_ctx_resolution_store(wasm.semantic_context) ==
-              wasm.resolution_store);
-  ASSERT_TRUE(ps_lowering_resolution_store(host.lowering_context) ==
-              host.resolution_store);
-  ASSERT_TRUE(ps_lowering_resolution_store(wasm.lowering_context) ==
-              wasm.resolution_store);
   ASSERT_TRUE(ps_lowering_semantic_types(host.lowering_context) ==
               ps_ctx_semantic_type_table_in(host.semantic_context));
   ASSERT_TRUE(ps_lowering_semantic_types(wasm.lowering_context) ==
@@ -16758,14 +16212,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       4, test_target_pointer_size(ps_lowering_target(wasm.lowering_context)));
   ASSERT_TRUE(ag_compilation_session_reset_translation_unit(&host));
   ASSERT_TRUE(ag_compilation_session_reset_translation_unit(&wasm));
-  ASSERT_TRUE(ps_ctx_resolution_store(host.semantic_context) ==
-              host.resolution_store);
-  ASSERT_TRUE(ps_ctx_resolution_store(wasm.semantic_context) ==
-              wasm.resolution_store);
-  ASSERT_TRUE(ps_lowering_resolution_store(host.lowering_context) ==
-              host.resolution_store);
-  ASSERT_TRUE(ps_lowering_resolution_store(wasm.lowering_context) ==
-              wasm.resolution_store);
   ASSERT_EQ(
       8, test_target_pointer_size(ps_ctx_target_info(host.semantic_context)));
   ASSERT_EQ(
@@ -17239,7 +16685,6 @@ int main() {
 
   test_scope_graph_namespace_and_transaction_boundary();
   test_arena_checkpoint_rollback();
-  test_resolution_store_isolation_and_lifetime();
   test_parser_name_environment_boundary();
   test_parser_name_classifier_boundary();
   test_typed_hir_ownership_and_type_boundary();

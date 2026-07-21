@@ -9,7 +9,7 @@ psx_lowering_context_t *ps_lowering_context_create(
     const psx_lowering_context_dependencies_t *dependencies) {
   if (!dependencies || !dependencies->arena_context ||
       !dependencies->diagnostic_context ||
-      !dependencies->resolution_store || !dependencies->semantic_types ||
+      !dependencies->semantic_types ||
       !dependencies->record_decls || !dependencies->record_layouts ||
       !ag_target_info_is_valid(dependencies->target))
     return NULL;
@@ -17,7 +17,6 @@ psx_lowering_context_t *ps_lowering_context_create(
   if (ctx) {
     ctx->arena_context = dependencies->arena_context;
     ctx->diagnostic_context = dependencies->diagnostic_context;
-    ctx->resolution_store = dependencies->resolution_store;
     ctx->target = dependencies->target;
     ctx->semantic_types = dependencies->semantic_types;
     ctx->record_decls = dependencies->record_decls;
@@ -78,11 +77,6 @@ arena_context_t *ps_lowering_arena(
 ag_diagnostic_context_t *ps_lowering_diagnostics(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->diagnostic_context : NULL;
-}
-
-psx_resolution_store_t *ps_lowering_resolution_store(
-    const psx_lowering_context_t *ctx) {
-  return ctx ? ctx->resolution_store : NULL;
 }
 
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx) {

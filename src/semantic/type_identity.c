@@ -18,7 +18,6 @@ typedef struct {
 
 struct psx_semantic_type_table_t {
   arena_context_t *arena_context;
-  psx_type_compatibility_cache_t *compatibility_views;
   const psx_record_decl_table_t *record_decls;
   psx_semantic_type_entry_t *entries;
   size_t capacity;
@@ -42,12 +41,6 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
     free(table);
     return NULL;
   }
-  table->compatibility_views = psx_type_compatibility_cache_create();
-  if (!table->compatibility_views) {
-    arena_context_destroy(table->arena_context);
-    free(table);
-    return NULL;
-  }
   if (!seed_fundamental_types(table)) {
     psx_semantic_type_table_destroy(table);
     return NULL;
@@ -57,7 +50,6 @@ psx_semantic_type_table_t *psx_semantic_type_table_create(void) {
 
 void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table) {
   if (!table) return;
-  psx_type_compatibility_cache_destroy(table->compatibility_views);
   arena_context_destroy(table->arena_context);
   free(table->entries);
   free(table);
@@ -65,7 +57,6 @@ void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table) {
 
 void psx_semantic_type_table_reset(psx_semantic_type_table_t *table) {
   if (!table) return;
-  psx_type_compatibility_cache_reset(table->compatibility_views);
   arena_free_all_in(table->arena_context);
   free(table->entries);
   table->entries = NULL;
@@ -78,12 +69,6 @@ void psx_semantic_type_table_bind_record_decls(
     psx_semantic_type_table_t *table,
     const psx_record_decl_table_t *record_decls) {
   if (table) table->record_decls = record_decls;
-}
-
-psx_type_compatibility_cache_t *
-psx_semantic_type_table_compatibility_cache(
-    const psx_semantic_type_table_t *table) {
-  return table ? table->compatibility_views : NULL;
 }
 
 static int reserve_type_id(

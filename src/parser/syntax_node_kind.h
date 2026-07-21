@@ -5,7 +5,7 @@
  * Parser-created Syntax AST node kinds.
  *
  * These describe source syntax only. Resolver-created storage references,
- * conversions, and other semantic nodes live in semantic/resolved_node_kind.h.
+ * conversions and other semantic operations live only in Typed HIR.
  */
 typedef enum {
   PSX_SYNTAX_NODE_INVALID = -1,

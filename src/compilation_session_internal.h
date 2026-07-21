@@ -3,7 +3,6 @@
 
 #include "compilation_session.h"
 #include "ir/ir_allocation_stats.h"
-#include "semantic/resolution_store.h"
 #include "tokenizer/tokenizer.h"
 
 int ag_compilation_session_init(
@@ -12,7 +11,6 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session);
 
 struct ag_compilation_session_t {
   psx_semantic_context_t *semantic_context;
-  psx_resolution_store_t *resolution_store;
   psx_scope_graph_t *scope_graph;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;

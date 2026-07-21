@@ -27,5 +27,15 @@ node_t *psx_node_new_static_assert_syntax_in(
 node_t *psx_node_new_compound_literal_in(
     arena_context_t *arena_context,
     psx_type_name_ref_t type_name, node_t *initializer, token_t *token);
+node_t *psx_node_new_raw_decl_initializer_in(
+    arena_context_t *arena_context, node_t *target, node_t *value,
+    psx_decl_init_kind_t init_kind, token_t *token);
+node_t *psx_node_new_raw_decl_initializer_list_in(
+    arena_context_t *arena_context,
+    node_t *target, psx_decl_init_kind_t init_kind,
+    psx_initializer_entry_t *entries, int entry_count, token_t *token);
+node_t *psx_node_new_initializer_list_in(
+    arena_context_t *arena_context,
+    psx_initializer_entry_t *entries, int entry_count, token_t *token);
 
 #endif

@@ -20,7 +20,6 @@
 #include "lowering/parameter_lowering.h"
 #include "lowering/runtime_context.h"
 #include "semantic/function_declaration_resolution.h"
-#include "semantic/resolved_object_ref.h"
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
