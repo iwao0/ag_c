@@ -1,6 +1,7 @@
 #include "hir_control_flow_diagnostics.h"
 
 #include "../diag/diag.h"
+#include "../parser/decl.h"
 
 static int is_switch_label(const psx_hir_node_t *node) {
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
@@ -31,14 +32,38 @@ static int statement_tail_terminates(
   }
 }
 
+static int resumes_reachable(const psx_hir_node_t *node) {
+  if (!node) return 0;
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  return kind == PSX_HIR_CASE || kind == PSX_HIR_DEFAULT ||
+         kind == PSX_HIR_LABEL;
+}
+
+static void suppress_unreachable_local_warnings(
+    const psx_hir_module_t *module, const psx_hir_node_t *node,
+    psx_local_registry_t *local_registry) {
+  if (!module || !node || !local_registry) return;
+  if (psx_hir_node_kind(node) == PSX_HIR_LOCAL)
+    ps_decl_suppress_lvar_warnings_by_offset_in(
+        local_registry, psx_hir_node_storage_offset(node));
+  for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
+    suppress_unreachable_local_warnings(
+        module,
+        psx_hir_module_lookup(module, psx_hir_node_child_at(node, i)),
+        local_registry);
+  }
+}
+
 static void emit_node_warnings(
     const psx_hir_module_t *module, const psx_hir_node_t *node,
     ag_diagnostic_context_t *diagnostics,
+    psx_local_registry_t *local_registry,
     const token_t *fallback_diag_tok) {
   if (!module || !node) return;
   if (psx_hir_node_kind(node) == PSX_HIR_BLOCK) {
     int seen_case = 0;
     int previous_terminates = 0;
+    int in_unreachable_run = 0;
     for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
       const psx_hir_node_t *statement = psx_hir_module_lookup(
           module, psx_hir_node_child_at(node, i));
@@ -51,6 +76,20 @@ static void emit_node_warnings(
                 diagnostics,
                 DIAG_WARN_PARSER_SWITCH_FALLTHROUGH));
       }
+      int resumes = resumes_reachable(statement);
+      if (resumes) in_unreachable_run = 0;
+      if (previous_terminates && !resumes &&
+          !in_unreachable_run) {
+        diag_warn_tokf_in(
+            diagnostics, DIAG_WARN_PARSER_UNREACHABLE_CODE,
+            fallback_diag_tok, "%s",
+            diag_warn_message_for_in(
+                diagnostics, DIAG_WARN_PARSER_UNREACHABLE_CODE));
+        in_unreachable_run = 1;
+      }
+      if (in_unreachable_run)
+        suppress_unreachable_local_warnings(
+            module, statement, local_registry);
       previous_terminates =
           statement_tail_terminates(module, statement);
       if (is_switch_label(statement)) seen_case = 1;
@@ -60,15 +99,16 @@ static void emit_node_warnings(
     emit_node_warnings(
         module,
         psx_hir_module_lookup(module, psx_hir_node_child_at(node, i)),
-        diagnostics, fallback_diag_tok);
+        diagnostics, local_registry, fallback_diag_tok);
   }
 }
 
 void psx_emit_hir_control_flow_warnings(
     const psx_hir_module_t *module, psx_hir_node_id_t root,
     ag_diagnostic_context_t *diagnostics,
+    psx_local_registry_t *local_registry,
     const token_t *fallback_diag_tok) {
   emit_node_warnings(
       module, psx_hir_module_lookup(module, root), diagnostics,
-      fallback_diag_tok);
+      local_registry, fallback_diag_tok);
 }

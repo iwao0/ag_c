@@ -592,11 +592,19 @@ static int flat_initializer_apply_list(
     const psx_initializer_entry_t *entry = &list->entries[i];
     if (!entry->value) return 0;
     if (object_shape.kind == PSX_TYPE_UNION &&
-        (union_has_designated_initializer || positional_union_active) &&
         entry->designator_count == 0) {
-      context->failure_status =
-          PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
-      return 0;
+      psx_type_shape_t positional_shape = {0};
+      int positional_array_active = positional_union_active &&
+          psx_semantic_type_table_describe(
+              context->semantic_types, positional_object.type_id,
+              &positional_shape) &&
+          positional_shape.kind == PSX_TYPE_ARRAY;
+      if (union_has_designated_initializer ||
+          (positional_union_active && !positional_array_active)) {
+        context->failure_status =
+            PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;
+        return 0;
+      }
     }
     unsigned char range_overrides[8] = {0};
     long long range_begins[8] = {0};

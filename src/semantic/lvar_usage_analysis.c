@@ -314,7 +314,7 @@ static void record_preinitialized_locals(
   }
 }
 
-static void emit_usage_warnings(
+void psx_emit_recorded_lvar_usage_warnings_in(
     ag_diagnostic_context_t *diagnostics,
     lvar_t *storage_objects,
     const token_t *fallback) {
@@ -341,16 +341,24 @@ static void emit_usage_warnings(
   }
 }
 
+void psx_prepare_recorded_lvar_usage_in(
+    psx_local_registry_t *local_registry,
+    lvar_t *storage_objects) {
+  if (!local_registry) return;
+  record_preinitialized_locals(local_registry, storage_objects);
+  ps_decl_replay_lvar_usage_events_in(
+      local_registry, storage_objects);
+}
+
 void psx_analyze_recorded_lvar_usage_in(
     ag_diagnostic_context_t *diagnostics,
     psx_local_registry_t *local_registry,
     lvar_t *storage_objects,
     const token_t *fallback_diag_tok) {
   if (!local_registry) return;
-  record_preinitialized_locals(local_registry, storage_objects);
-  ps_decl_replay_lvar_usage_events_in(
+  psx_prepare_recorded_lvar_usage_in(
       local_registry, storage_objects);
-  emit_usage_warnings(
+  psx_emit_recorded_lvar_usage_warnings_in(
       diagnostics, storage_objects, fallback_diag_tok);
 }
 

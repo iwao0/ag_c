@@ -41,6 +41,8 @@ void ps_decl_record_lvar_usage_in_region_in(
     psx_local_registry_t *registry, lvar_t *var,
     psx_lvar_usage_kind_t kind, psx_lvar_usage_region_t *region);
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
+void ps_decl_suppress_lvar_warnings_by_offset_in(
+    psx_local_registry_t *registry, int offset);
 void ps_decl_set_current_funcname_in(
     psx_local_registry_t *registry, char *name, int len);
 void ps_decl_get_current_funcname_in(

@@ -290,15 +290,6 @@ int psx_frontend_next_function_with_resolver(
             ag_compilation_session_arena_context(session), arena_mark);
         return 0;
       }
-      psx_emit_hir_control_flow_warnings(
-          ag_compilation_session_hir_module(session), result->hir_root,
-          ag_compilation_session_diagnostic_context(session),
-          (token_t *)function_name);
-      psx_analyze_recorded_lvar_usage_in(
-          ag_compilation_session_diagnostic_context(session),
-          local_registry,
-          ps_decl_get_storage_objects_in(local_registry),
-          (token_t *)function_name);
       ps_dispose_function_definition_syntax(
           &item.value.function_header);
       ps_local_registry_enter_translation_unit_in(local_registry);
@@ -314,8 +305,23 @@ static int resolve_function_to_hir(
     const token_t *fallback_diag_tok,
     psx_hir_node_id_t *hir_root) {
   (void)context;
-  return psx_frontend_resolve_parsed_function_to_hir_in_session(
-      session, syntax_function, fallback_diag_tok, hir_root);
+  if (!psx_frontend_resolve_parsed_function_to_hir_in_session(
+          session, syntax_function, fallback_diag_tok, hir_root))
+    return 0;
+  psx_local_registry_t *local_registry =
+      ag_compilation_session_local_registry(session);
+  lvar_t *storage_objects =
+      ps_decl_get_storage_objects_in(local_registry);
+  psx_prepare_recorded_lvar_usage_in(
+      local_registry, storage_objects);
+  psx_emit_hir_control_flow_warnings(
+      ag_compilation_session_hir_module(session), *hir_root,
+      ag_compilation_session_diagnostic_context(session),
+      local_registry, fallback_diag_tok);
+  psx_emit_recorded_lvar_usage_warnings_in(
+      ag_compilation_session_diagnostic_context(session),
+      storage_objects, fallback_diag_tok);
+  return 1;
 }
 
 int psx_frontend_next_function(

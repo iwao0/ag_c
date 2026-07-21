@@ -24,5 +24,12 @@ void psx_analyze_recorded_lvar_usage_in(
     psx_local_registry_t *local_registry,
     lvar_t *storage_objects,
     const token_t *fallback_diag_tok);
+void psx_prepare_recorded_lvar_usage_in(
+    psx_local_registry_t *local_registry,
+    lvar_t *storage_objects);
+void psx_emit_recorded_lvar_usage_warnings_in(
+    ag_diagnostic_context_t *diagnostics,
+    lvar_t *storage_objects,
+    const token_t *fallback_diag_tok);
 
 #endif

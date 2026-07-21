@@ -593,6 +593,12 @@ void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
   if (region) region->suppress_warnings = 1;
 }
 
+void ps_decl_suppress_lvar_warnings_by_offset_in(
+    psx_local_registry_t *registry, int offset) {
+  lvar_t *var = psx_decl_find_lvar_by_offset_in(registry, offset);
+  if (var) var->suppress_unreachable_warnings = 1;
+}
+
 void psx_decl_attach_lvar_current_region_in(
     const psx_local_registry_t *registry, lvar_t *var) {
   if (registry && var) var->decl_region = registry->current_usage_region;

@@ -8723,12 +8723,11 @@ static void assert_identifier_resolution_kind(
 static void test_identifier_resolution_boundary() {
   printf("test_identifier_resolution_boundary...\n");
   reset_test_translation_unit_state();
-  node_t **parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
       "int __identifier_array[3]; "
-      "int __identifier_function(int value);");
-  ASSERT_TRUE(parsed_code != NULL);
+      "int __identifier_function(int value);"));
   lvar_t *local = register_test_default_storage_fixture(
       (char *)"__identifier_local", 18);
   ASSERT_TRUE(local != NULL);
@@ -8771,15 +8770,14 @@ static void test_identifier_resolution_boundary() {
   ASSERT_TRUE(function_call.function ==
               ps_ctx_find_function_symbol_in(test_semantic_context(),
                   (char *)"__identifier_function", 21));
-  const psx_type_t *resolved_function_type =
-      test_function_symbol_type(function_call.function);
-  ASSERT_TRUE(resolved_function_type != NULL);
-  ASSERT_TRUE(resolved_function_type ==
-              test_function_type_in(test_semantic_context(),
-                  (char *)"__identifier_function", 21));
-  ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_type->kind);
-  ASSERT_EQ(1, resolved_function_type->param_count);
-  ASSERT_TRUE(!resolved_function_type->is_variadic_function);
+  psx_qual_type_t resolved_function_type =
+      ps_function_symbol_qual_type(function_call.function);
+  ASSERT_TRUE(resolved_function_type.type_id != PSX_TYPE_ID_INVALID);
+  psx_type_shape_t resolved_function_shape =
+      test_qual_type_shape(resolved_function_type);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_shape.kind);
+  ASSERT_EQ(1, resolved_function_shape.parameter_count);
+  ASSERT_TRUE(!resolved_function_shape.is_variadic_function);
   psx_identifier_expression_resolution_t function_expression;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
@@ -11119,36 +11117,35 @@ static void test_function_call_typed_hir_boundary() {
 }
 
 static void test_function_prototype_type_identity_boundary() {
-  node_t **parsed_code = NULL;
   printf("test_function_prototype_type_identity_boundary...\n");
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "int __unprototyped(); int __void_prototype(void); "
       "int __prototype_use(void) { "
-      "return __unprototyped(1) + __void_prototype(); }");
-  ASSERT_TRUE(parsed_code != NULL);
+      "return __unprototyped(1) + __void_prototype(); }"));
 
   static char unprototyped_name[] = "__unprototyped";
   static char void_prototype_name[] = "__void_prototype";
-  const psx_type_t *unprototyped = test_function_type_in(
-      test_semantic_context(), unprototyped_name,
-      (int)sizeof(unprototyped_name) - 1);
-  const psx_type_t *void_prototype = test_function_type_in(
-      test_semantic_context(), void_prototype_name,
-      (int)sizeof(void_prototype_name) - 1);
-  ASSERT_TRUE(unprototyped != NULL);
-  ASSERT_TRUE(void_prototype != NULL);
-  ASSERT_TRUE(!unprototyped->has_function_prototype);
-  ASSERT_TRUE(void_prototype->has_function_prototype);
-  ASSERT_EQ(0, unprototyped->param_count);
-  ASSERT_EQ(0, void_prototype->param_count);
-
-  psx_qual_type_t unprototyped_type = ps_ctx_intern_qual_type_in(
-      test_semantic_context(), unprototyped);
-  psx_qual_type_t void_prototype_type = ps_ctx_intern_qual_type_in(
-      test_semantic_context(), void_prototype);
+  psx_qual_type_t unprototyped_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(), unprototyped_name,
+          (int)sizeof(unprototyped_name) - 1);
+  psx_qual_type_t void_prototype_type =
+      ps_ctx_get_function_qual_type_in(
+          test_semantic_context(), void_prototype_name,
+          (int)sizeof(void_prototype_name) - 1);
   ASSERT_TRUE(unprototyped_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(void_prototype_type.type_id != PSX_TYPE_ID_INVALID);
+  psx_type_shape_t unprototyped_shape =
+      test_qual_type_shape(unprototyped_type);
+  psx_type_shape_t void_prototype_shape =
+      test_qual_type_shape(void_prototype_type);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, unprototyped_shape.kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, void_prototype_shape.kind);
+  ASSERT_TRUE(!unprototyped_shape.has_function_prototype);
+  ASSERT_TRUE(void_prototype_shape.has_function_prototype);
+  ASSERT_EQ(0, unprototyped_shape.parameter_count);
+  ASSERT_EQ(0, void_prototype_shape.parameter_count);
   ASSERT_TRUE(unprototyped_type.type_id != void_prototype_type.type_id);
 
   char signature[16];
@@ -11546,16 +11543,6 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_TRUE(found_typed_compound_assignment);
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
-
-  reset_test_translation_unit_state();
-  node_t **analyzed =
-      parse_test_program_from(tk_tokenize_ctx(test_tokenizer(), (char *)source));
-  ASSERT_TRUE(analyzed != NULL);
-  ASSERT_TRUE(analyzed[0] != NULL);
-  node_block_t *analyzed_body = as_block(as_function_definition(analyzed[0])->base.rhs);
-  ASSERT_EQ(ND_COMPOUND_ASSIGN, analyzed_body->body[1]->kind);
-  ASSERT_EQ(TK_PLUSEQ, analyzed_body->body[1]->source_op);
-  ASSERT_EQ(ND_NUM, analyzed_body->body[1]->rhs->kind);
 }
 
 static void test_function_definition_header_resolution_boundary() {
@@ -13435,9 +13422,9 @@ static void test_toplevel_single_parse_classification_boundary() {
 static void test_frontend_stream_lifecycle_boundary() {
   printf("test_frontend_stream_lifecycle_boundary...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_test_program_from(tk_tokenize_ctx(test_tokenizer(),
-      (char *)"int __stream_previous(void) { return 0; }"));
-  ASSERT_TRUE(program != NULL);
+  ASSERT_TRUE(resolve_test_program_hir_from(
+      tk_tokenize_ctx(test_tokenizer(),
+          (char *)"int __stream_previous(void) { return 0; }")));
   ASSERT_TRUE(test_function_type_in(test_semantic_context(),
                   (char *)"__stream_previous", 17) != NULL);
 
@@ -19564,58 +19551,108 @@ static void test_funcall() {
 // --- ここから追加テスト ---
 
 static void test_funcdef_with_params() {
-  node_t **parsed_code = NULL;
   printf("test_funcdef_with_params...\n");
-  parsed_code = parse_program_input("int add(int a, int b) { return a+b; }");
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int add(int a, int b) { return a+b; }"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(function));
+  psx_type_shape_t function_shape = test_qual_type_shape(
+      psx_hir_node_attached_qual_type(function));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(2, function_shape.parameter_count);
+  ASSERT_EQ(3, psx_hir_node_child_count(function));
+  for (size_t i = 0; i < 2; i++) {
+    ASSERT_EQ(PSX_HIR_EDGE_PARAMETER,
+              psx_hir_node_child_edge_at(function, i));
+    ASSERT_EQ(PSX_HIR_LOCAL,
+              psx_hir_node_kind(psx_hir_module_lookup(
+                  hir, psx_hir_node_child_at(function, i))));
+  }
 
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
-                         as_function_definition(parsed_code[0])->parameters[0]));
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
-                         as_function_definition(parsed_code[0])->parameters[1]));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int apply(int (*fp)(int), int x) { return x; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  function_shape = test_qual_type_shape(
+      psx_hir_node_attached_qual_type(function));
+  ASSERT_EQ(2, function_shape.parameter_count);
+  psx_qual_type_t first_parameter = psx_semantic_type_table_parameter(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      psx_hir_node_attached_qual_type(function).type_id, 0);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(first_parameter).kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION,
+            test_qual_type_shape(test_qual_type_base(first_parameter)).kind);
 
-  parsed_code = parse_program_input("int apply(int (*fp)(int), int x) { return x; }");
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int sum(int a[], int n) { return n; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  function_shape = test_qual_type_shape(
+      psx_hir_node_attached_qual_type(function));
+  ASSERT_EQ(2, function_shape.parameter_count);
+  first_parameter = psx_semantic_type_table_parameter(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      psx_hir_node_attached_qual_type(function).type_id, 0);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(first_parameter).kind);
 
-  parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
-
-  parsed_code = parse_program_input(
-      "int sum_variadic(int first, ...) { return first; }");
-  node_function_definition_t *variadic = as_function_definition(parsed_code[0]);
-  const psx_type_t *variadic_signature =
-      test_function_definition_signature_type(variadic);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(&variadic->base));
-  ASSERT_TRUE(variadic_signature != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic_signature->kind);
-  ASSERT_TRUE(variadic_signature->is_variadic_function);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int sum_variadic(int first, ...) { return first; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  function_shape = test_qual_type_shape(
+      psx_hir_node_attached_qual_type(function));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(1, function_shape.parameter_count);
+  ASSERT_TRUE(function_shape.is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
-  parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int proto(int); int main() { return 0; }"));
+  psx_qual_type_t prototype = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"proto", 5);
+  ASSERT_TRUE(prototype.type_id != PSX_TYPE_ID_INVALID);
+  function_shape = test_qual_type_shape(prototype);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(1, function_shape.parameter_count);
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  ASSERT_EQ(1, psx_hir_node_child_count(function));
 
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef void VoidAlias; int no_args(VoidAlias); "
-      "int main(void) { return 0; }");
-  const psx_type_t *no_args_type =
-      test_function_type_in(test_semantic_context(), (char *)"no_args", 7);
-  ASSERT_TRUE(no_args_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, no_args_type->kind);
-  ASSERT_EQ(0, no_args_type->param_count);
+      "int main(void) { return 0; }"));
+  prototype = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"no_args", 7);
+  function_shape = test_qual_type_shape(prototype);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(0, function_shape.parameter_count);
 
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef int (*F0)(); typedef int (*F1)(F0); "
       "int nested(int (int()), F0); "
-      "int nested(F1 fp, F0 arg) { return fp(arg); }");
-  const psx_type_t *nested_type =
-      test_function_type_in(test_semantic_context(), (char *)"nested", 6);
-  ASSERT_TRUE(nested_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, nested_type->kind);
-  ASSERT_EQ(2, nested_type->param_count);
+      "int nested(F1 fp, F0 arg) { return fp(arg); }"));
+  prototype = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"nested", 6);
+  function_shape = test_qual_type_shape(prototype);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(2, function_shape.parameter_count);
 
   expect_parse_fail_with_message(
       "typedef union __attribute__((packed)) AttrUnion { int value; } "
@@ -19623,122 +19660,169 @@ static void test_funcdef_with_params() {
       "E3096");
 }
 
+static const psx_hir_node_t *find_test_hir_node_kind(
+    const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
+    size_t occurrence);
+
 static void test_stmt_return() {
-  node_t **parsed_code = NULL;
   printf("test_stmt_return...\n");
-  parsed_code = parse_program_input("int main() { return 42; }");
-  node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir("int main() { return 42; }"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *ret =
+      find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  ASSERT_TRUE(ret != NULL);
+  ASSERT_EQ(1, psx_hir_node_child_count(ret));
+  const psx_hir_node_t *value = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(value));
+  ASSERT_EQ(42, psx_hir_node_integer_value(value));
 
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(42, as_num(ret->lhs)->val);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir("void noop() { return; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  ASSERT_TRUE(ret != NULL);
+  ASSERT_EQ(0, psx_hir_node_child_count(ret));
 
-  parsed_code = parse_program_input("void noop() { return; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_TRUE(ret->lhs == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "_Bool flag(void) { return 200; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(value));
+  ASSERT_EQ(200, psx_hir_node_integer_value(value));
 
-  parsed_code = parse_program_input("_Bool flag(void) { return 200; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(200, as_num(ret->lhs)->val);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "char narrow(int x) { return x; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(value).kind);
 
-  parsed_code = parse_program_input("char narrow(int x) { return x; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(ret->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int cast_unsigned_local(void) { unsigned u; return (int)u; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *cast =
+      find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
+  ASSERT_TRUE(cast != NULL);
+  psx_type_shape_t cast_shape = test_hir_type_shape(cast);
+  ASSERT_EQ(PSX_TYPE_INTEGER, cast_shape.kind);
+  ASSERT_TRUE(!cast_shape.is_unsigned);
+  const psx_hir_node_t *cast_operand = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(cast, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
+  ASSERT_TRUE(test_hir_type_shape(cast_operand).is_unsigned);
 
-  parsed_code = parse_program_input("int cast_unsigned_local(void) { unsigned u; return (int)u; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
-  ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(ret->lhs));
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(ret->lhs->lhs));
-  ASSERT_TRUE(ps_node_integer_value_is_unsigned(ret->lhs->lhs));
+  const struct {
+    const char *source;
+    int expected_size;
+    psx_integer_kind_t expected_integer_kind;
+  } pointer_cast_cases[] = {
+      {"int cast_pointer_int(int *p) { return (int)p; }",
+       4, PSX_INTEGER_KIND_INT},
+      {"long cast_pointer_long(int *p) { return (long)p; }",
+       8, PSX_INTEGER_KIND_LONG},
+  };
+  for (size_t i = 0;
+       i < sizeof(pointer_cast_cases) / sizeof(pointer_cast_cases[0]);
+       i++) {
+    reset_test_translation_unit_state();
+    ASSERT_TRUE(resolve_program_input_hir(pointer_cast_cases[i].source));
+    hir = ag_compilation_session_hir_module(test_suite_session);
+    cast = find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
+    ASSERT_TRUE(cast != NULL);
+    cast_shape = test_hir_type_shape(cast);
+    ASSERT_EQ(PSX_TYPE_INTEGER, cast_shape.kind);
+    ASSERT_EQ(pointer_cast_cases[i].expected_integer_kind,
+              cast_shape.integer_kind);
+    ASSERT_EQ(pointer_cast_cases[i].expected_size,
+              test_type_size_id(psx_hir_node_qual_type(cast).type_id));
+    cast_operand = psx_hir_module_lookup(
+        hir, psx_hir_node_child_at(cast, 0));
+    ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
+    ASSERT_EQ(PSX_TYPE_POINTER,
+              test_hir_type_shape(cast_operand).kind);
+  }
 
-  parsed_code = parse_program_input("int cast_pointer_int(int *p) { return (int)p; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
-  ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
-  ASSERT_EQ(4, ps_node_type_size(ret->lhs));
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(ret->lhs->lhs));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int deref_intptr_cast(long addr) { return *(int *)addr; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *deref =
+      find_test_hir_node_kind(hir, PSX_HIR_DEREF, 0);
+  ASSERT_TRUE(deref != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(deref).kind);
+  cast = psx_hir_module_lookup(hir, psx_hir_node_child_at(deref, 0));
+  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(cast));
+  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(cast).kind);
+  ASSERT_EQ(4, test_type_size_id(
+      test_qual_type_base(psx_hir_node_qual_type(cast)).type_id));
+  cast_operand = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(cast, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(cast_operand).kind);
 
-  parsed_code = parse_program_input("long cast_pointer_long(int *p) { return (long)p; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs));
-  ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
-  ASSERT_EQ(8, ps_node_type_size(ret->lhs));
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(ret->lhs->lhs));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "double void_cast_keeps_operand_fp(double d) { "
+      "(void)d; return d; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  cast = find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
+  ASSERT_TRUE(cast != NULL);
+  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(cast).kind);
+  cast_operand = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(cast, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
+  ASSERT_EQ(PSX_TYPE_FLOAT, test_hir_type_shape(cast_operand).kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            test_hir_type_shape(cast_operand).floating_kind);
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            test_hir_type_shape(value).floating_kind);
 
-  parsed_code = parse_program_input("int deref_intptr_cast(long addr) { return *(int *)addr; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_UNARY_DEREF, ret->lhs->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(ret->lhs->lhs));
-  ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
-  ASSERT_EQ(4, ps_node_deref_size(ret->lhs->lhs));
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(ret->lhs->lhs->lhs));
-  ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs->lhs->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "unsigned char unarrow(int x) { return x; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
 
-  parsed_code = parse_program_input("double void_cast_keeps_operand_fp(double d) { (void)d; return d; }");
-  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(body->body[0]));
-  ASSERT_TRUE(ps_node_get_type(body->body[0])->kind == PSX_TYPE_VOID);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(body->body[0]));
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
-                         body->body[0]->lhs));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_value_fp_kind(body->body[0]->lhs));
-  ret = body->body[1];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(ret->lhs));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(ret->lhs));
-
-  parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
-  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(ret->lhs));
-
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct __ret_meta_s { int a; int b; } __ret_meta_struct(void) { "
-      "struct __ret_meta_s r; return r; }");
-  node_function_definition_t *ret_meta_fn = as_function_definition(parsed_code[0]);
-  ret = as_block(ret_meta_fn->base.rhs)->body[1];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  const psx_type_t *ret_meta_type =
-      test_function_definition_return_type(ret_meta_fn);
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
-  ASSERT_TRUE(ret_meta_type != NULL);
-  ASSERT_EQ(PSX_TYPE_STRUCT, ret_meta_type->kind);
-  ASSERT_EQ(0, ps_type_sizeof(ret_meta_type));
-  ASSERT_EQ(8, test_semantic_type_sizeof_in(
-                   test_semantic_context(), ret_meta_type));
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
-  ASSERT_TRUE(ret_meta_type ==
-              test_function_definition_return_type(ret_meta_fn));
+      "struct __ret_meta_s r; return r; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  psx_qual_type_t return_type = test_qual_type_base(
+      psx_hir_node_attached_qual_type(function));
+  ASSERT_EQ(PSX_TYPE_STRUCT, test_qual_type_shape(return_type).kind);
+  ASSERT_EQ(8, test_type_size_id(return_type.type_id));
+  ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
+  value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
+  ASSERT_EQ(return_type.type_id,
+            psx_hir_node_qual_type(value).type_id);
 
-  parsed_code =
-      parse_program_input("_Complex double __ret_meta_complex(void) { return 1; }");
-  ret_meta_fn = as_function_definition(parsed_code[0]);
-  ret = as_block(ret_meta_fn->base.rhs)->body[0];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ret_meta_type = test_function_definition_return_type(ret_meta_fn);
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
-  ASSERT_TRUE(ret_meta_type != NULL);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ret_meta_type->floating_kind);
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) == NULL);
-  ASSERT_TRUE(ret_meta_type ==
-              test_function_definition_return_type(ret_meta_fn));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "_Complex double __ret_meta_complex(void) { return 1; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  return_type = test_qual_type_base(
+      psx_hir_node_attached_qual_type(function));
+  psx_type_shape_t return_shape = test_qual_type_shape(return_type);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, return_shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, return_shape.floating_kind);
 }
 
 static void test_expr_deref_address_typed_hir_boundary() {
@@ -19797,147 +19881,182 @@ static void test_expr_deref_address_typed_hir_boundary() {
   psx_frontend_expression_hir_dispose(&deref_expression);
 }
 
+static const psx_hir_node_t *find_test_hir_node_kind(
+    const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
+    size_t occurrence) {
+  if (!hir) return NULL;
+  size_t found = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (!node || psx_hir_node_kind(node) != kind) continue;
+    if (found++ == occurrence) return node;
+  }
+  return NULL;
+}
+
 static void test_expr_member_access() {
-  node_t **parsed_code = NULL;
   printf("test_expr_member_access...\n");
-  parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
-  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  node_t *assign = body->body[2];
-  ASSERT_EQ(ND_ASSIGN, assign->kind);
-  ASSERT_EQ(ND_MEMBER_ACCESS, assign->lhs->kind);
-  ASSERT_EQ(4, ps_node_type_size(assign->lhs));
-  ASSERT_EQ(ND_LVAR,
-            psx_resolved_object_ref_node_kind(assign->lhs->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main() { struct S { int a; int b; }; struct S s; "
+      "s.b = 3; return s.b; }"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *assignment =
+      find_test_hir_node_kind(hir, PSX_HIR_ASSIGN, 0);
+  ASSERT_TRUE(assignment != NULL);
+  const psx_hir_node_t *assigned_member = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(assignment, 0));
+  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
+            psx_hir_node_kind(assigned_member));
+  ASSERT_EQ(4, psx_hir_node_member_offset(assigned_member));
+  ASSERT_EQ(4, test_type_size_id(
+      psx_hir_node_qual_type(assigned_member).type_id));
+  ASSERT_EQ(PSX_HIR_LOCAL,
+            psx_hir_node_kind(psx_hir_module_lookup(
+                hir, psx_hir_node_child_at(assigned_member, 0))));
+  ASSERT_TRUE(find_test_hir_node_kind(
+      hir, PSX_HIR_RETURN, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 1) != NULL);
 
-  node_t *ret = body->body[3];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->kind);
-
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "int f(void) { static struct { int n; int m; } s = {3, 4}; "
-      "s.n += 1; return s.n + s.m; }");
-  node_function_definition_t *fn = as_function_definition(parsed_code[0]);
-  lvar_t *anonymous_static = find_func_lvar(fn, "s");
-  ASSERT_TRUE(anonymous_static != NULL);
-  ASSERT_TRUE(test_lvar_decl_type(anonymous_static) != NULL);
-  const psx_record_decl_t *anonymous_record = ps_ctx_get_record_decl_in(
-      test_semantic_context(),
-      ps_type_record_id(test_lvar_decl_type(anonymous_static)));
+      "s.n += 1; return s.n + s.m; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *anonymous_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(anonymous_member != NULL);
+  const psx_hir_node_t *anonymous_base = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(anonymous_member, 0));
+  psx_type_shape_t anonymous_shape = test_qual_type_shape(
+      psx_hir_node_qual_type(anonymous_base));
+  ASSERT_EQ(PSX_TYPE_STRUCT, anonymous_shape.kind);
+  const psx_record_decl_t *anonymous_record =
+      ps_ctx_get_record_decl_in(
+          test_semantic_context(), anonymous_shape.record_id);
   ASSERT_TRUE(anonymous_record != NULL);
   ASSERT_TRUE(anonymous_record->member_count == 2);
   ASSERT_TRUE(anonymous_record->members[0].name != NULL);
   ASSERT_TRUE(anonymous_record->members[0].len == 1);
   ASSERT_TRUE(memcmp(anonymous_record->members[0].name, "n", 1) == 0);
 
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "typedef unsigned char u8; "
-      "int main() { struct S { u8 a; }; struct S s; return s.a; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ret = NULL;
-  for (int i = 0; body->body[i]; i++) {
-    if (body->body[i]->kind == ND_RETURN) {
-      ret = body->body[i];
-      break;
+      "int main() { struct S { u8 a; }; struct S s; return s.a; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *unsigned_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(unsigned_member != NULL);
+  psx_type_shape_t unsigned_member_shape =
+      test_hir_type_shape(unsigned_member);
+  ASSERT_EQ(PSX_TYPE_INTEGER, unsigned_member_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
+            unsigned_member_shape.integer_kind);
+  ASSERT_TRUE(unsigned_member_shape.is_unsigned);
+
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "typedef unsigned char u8; "
+      "int main() { struct S { u8 a; }; struct S s; "
+      "return (int)s.a; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  unsigned_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(unsigned_member != NULL);
+  ASSERT_TRUE(test_hir_type_shape(unsigned_member).is_unsigned);
+  ASSERT_TRUE(find_test_hir_node_kind(hir, PSX_HIR_CAST, 0) != NULL);
+
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "typedef unsigned char u8; "
+      "int main() { struct S { u8 a; }; struct S s; "
+      "return (signed)s.a; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  unsigned_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(unsigned_member != NULL);
+  ASSERT_TRUE(test_hir_type_shape(unsigned_member).is_unsigned);
+
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main() { struct S { int a; int b; }; struct S s; "
+      "struct S *p; p=&s; p->b=5; return p->b; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  int pointer_member_count = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    if (node && psx_hir_node_kind(node) == PSX_HIR_MEMBER_ACCESS &&
+        psx_hir_node_member_from_pointer(node)) {
+      ASSERT_EQ(4, psx_hir_node_member_offset(node));
+      pointer_member_count++;
     }
   }
-  ASSERT_TRUE(ret != NULL);
-  ASSERT_EQ(ND_MEMBER_ACCESS, ret->lhs->kind);
-  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(ret->lhs));
+  ASSERT_EQ(2, pointer_member_count);
 
-  parsed_code = parse_program_input(
-      "typedef unsigned char u8; "
-      "int main() { struct S { u8 a; }; struct S s; return (int)s.a; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ret = NULL;
-  for (int i = 0; body->body[i]; i++) {
-    if (body->body[i]->kind == ND_RETURN) {
-      ret = body->body[i];
-      break;
-    }
-  }
-  ASSERT_TRUE(ret != NULL);
-  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
-      psx_resolution_node_kind(ret->lhs) == ND_CAST
-          ? ret->lhs->lhs : ret->lhs));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main() { struct S { int a[2]; }; "
+      "struct S s={{1,2}}; return s.a[0]; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *array_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(array_member != NULL);
+  psx_type_shape_t array_member_shape =
+      test_hir_type_shape(array_member);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_member_shape.kind);
+  ASSERT_EQ(2, array_member_shape.array_len);
+  ASSERT_TRUE(find_test_hir_node_kind(
+      hir, PSX_HIR_SUBSCRIPT, 0) != NULL);
 
-  parsed_code = parse_program_input(
-      "typedef unsigned char u8; "
-      "int main() { struct S { u8 a; }; struct S s; return (signed)s.a; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ret = NULL;
-  for (int i = 0; body->body[i]; i++) {
-    if (body->body[i]->kind == ND_RETURN) {
-      ret = body->body[i];
-      break;
-    }
-  }
-  ASSERT_TRUE(ret != NULL);
-  ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
-      psx_resolution_node_kind(ret->lhs) == ND_CAST
-          ? ret->lhs->lhs : ret->lhs));
-
-  parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  assign = body->body[4];
-  ASSERT_EQ(ND_ASSIGN, assign->kind);
-  ASSERT_EQ(ND_MEMBER_ACCESS, assign->lhs->kind);
-  ASSERT_EQ(4, ps_node_type_size(assign->lhs));
-
-  parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_NUM, body->body[0]->kind);
-  ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
-  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
-
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "int first(char *p) { return p[0]; } "
       "int main() { struct C { char x[1]; }; "
-      "struct C c = {\"Z\"}; return first(c.x); }");
-  body = as_block(as_function_definition(parsed_code[1])->base.rhs);
-  ret = body->body[2];
-  ASSERT_EQ(ND_RETURN, ret->kind);
-  node_t *call = ret->lhs;
-  ASSERT_EQ(ND_FUNCALL, call->kind);
-  ASSERT_EQ(1, as_function_call(call)->argument_count);
-  node_t *array_member = as_function_call(call)->arguments[0];
-  ASSERT_EQ(ND_MEMBER_ACCESS, array_member->kind);
-  ASSERT_EQ(1, ps_node_type_size(array_member));
+      "struct C c = {\"Z\"}; return first(c.x); }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_TRUE(find_test_hir_node_kind(hir, PSX_HIR_CALL, 0) != NULL);
+  array_member = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(array_member != NULL);
+  array_member_shape = test_hir_type_shape(array_member);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_member_shape.kind);
+  ASSERT_EQ(1, array_member_shape.array_len);
+  ASSERT_EQ(1, test_type_size_id(
+      psx_hir_node_qual_type(array_member).type_id));
 
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "int main(void) { struct B { signed int x:3; }; "
-      "struct B b; return b.x; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ret = NULL;
-  for (int i = 0; body->body[i]; i++) {
-    if (body->body[i]->kind == ND_RETURN) ret = body->body[i];
-  }
-  ASSERT_TRUE(ret != NULL);
-  node_t *bitfield = ret->lhs;
+      "struct B b; return b.x; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *bitfield = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(bitfield != NULL);
   int bit_width = 0;
   int bit_offset = 0;
   int bit_is_signed = 0;
-  ASSERT_TRUE(ps_node_bitfield_info(bitfield, &bit_width, &bit_offset,
-                                     &bit_is_signed));
-  ASSERT_EQ(3, bit_width);
-  ASSERT_TRUE(ps_node_bitfield_info(bitfield, &bit_width, &bit_offset,
-                                     &bit_is_signed));
+  ASSERT_TRUE(psx_hir_node_bitfield_info(
+      bitfield, &bit_width, &bit_offset, &bit_is_signed));
   ASSERT_EQ(3, bit_width);
   ASSERT_EQ(1, bit_is_signed);
 
-  parsed_code = parse_program_input(
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
       "enum CanonicalBitfieldEnum { CanonicalBitfieldValue }; "
       "typedef enum CanonicalBitfieldEnum CanonicalBitfieldEnumType; "
       "int main(void) { struct B { CanonicalBitfieldEnumType x:3; }; "
-      "struct B b; return b.x; }");
-  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ret = NULL;
-  for (int i = 0; body->body[i]; i++) {
-    if (body->body[i]->kind == ND_RETURN) ret = body->body[i];
-  }
-  ASSERT_TRUE(ret != NULL);
-  bitfield = ret->lhs;
-  ASSERT_TRUE(ps_node_bitfield_info(bitfield, &bit_width, &bit_offset,
-                                     &bit_is_signed));
+      "struct B b; return b.x; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  bitfield = find_test_hir_node_kind(
+      hir, PSX_HIR_MEMBER_ACCESS, 0);
+  ASSERT_TRUE(bitfield != NULL);
+  ASSERT_TRUE(psx_hir_node_bitfield_info(
+      bitfield, &bit_width, &bit_offset, &bit_is_signed));
   ASSERT_EQ(3, bit_width);
   ASSERT_EQ(0, bit_is_signed);
 }
@@ -27723,40 +27842,38 @@ static void test_type_metadata_bridge() {
 }
 
 static void test_translation_unit_reset_static_local_state() {
-  node_t **parsed_code = NULL;
   printf("test_translation_unit_reset_static_local_state...\n");
 
   const char *input = "int f(void) { static int x=1; return x; }";
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(input);
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  ASSERT_TRUE(resolve_program_input_hir(input));
+  ASSERT_EQ(1, psx_hir_module_root_count(
+                   ag_compilation_session_hir_module(
+                       test_suite_session)));
   ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
 
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(input);
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  ASSERT_TRUE(resolve_program_input_hir(input));
+  ASSERT_EQ(1, psx_hir_module_root_count(
+                   ag_compilation_session_hir_module(
+                       test_suite_session)));
   ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
   reset_test_translation_unit_state();
 }
 
 static void test_translation_unit_reset_anonymous_tag_state() {
-  node_t **parsed_code = NULL;
   printf("test_translation_unit_reset_anonymous_tag_state...\n");
 
   const char *input = "struct { int x; } g; int main(void) { return 0; }";
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(input);
-  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_TRUE(resolve_program_input_hir(input));
   ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
   ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
 
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(input);
-  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_TRUE(resolve_program_input_hir(input));
   ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
   ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
   reset_test_translation_unit_state();
@@ -27788,126 +27905,164 @@ static void test_translation_unit_reset_pragma_pack_state() {
   ASSERT_EQ(0, pragma_pack_current_alignment_in(runtime_context));
 }
 
+static const psx_hir_node_t *assert_test_hir_function_root(
+    const psx_hir_module_t *hir, size_t index,
+    const char *expected_name) {
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_TRUE(index < psx_hir_module_root_count(hir));
+  const psx_hir_node_t *function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, index));
+  ASSERT_TRUE(function != NULL);
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(function));
+  size_t name_length = 0;
+  const char *name = psx_hir_node_name(function, &name_length);
+  ASSERT_TRUE(name != NULL);
+  ASSERT_EQ(strlen(expected_name), name_length);
+  ASSERT_TRUE(strncmp(name, expected_name, name_length) == 0);
+  return function;
+}
+
 static void test_multiple_funcdefs() {
-  node_t **parsed_code = NULL;
   printf("test_multiple_funcdefs...\n");
-  parsed_code = parse_program_input(
-      "int foo(void) { 1; } int bar(void) { 2; }");
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int foo(void) { 1; } int bar(void) { 2; }"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  assert_test_hir_function_root(hir, 0, "foo");
+  assert_test_hir_function_root(hir, 1, "bar");
 
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "foo", 3) == 0);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int add(int a, int b); "
+      "int add(int a, int b) { return a+b; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  assert_test_hir_function_root(hir, 0, "add");
 
-  ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "bar", 3) == 0);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int log(const char *fmt, ...); int main() { return 0; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  assert_test_hir_function_root(hir, 0, "main");
 
-  ASSERT_TRUE(parsed_code[2] == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int **sig_proto_pp(void); int main(void) { return 0; }"));
+  psx_qual_type_t signature = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"sig_proto_pp", 12);
+  psx_qual_type_t derived = test_qual_type_base(signature);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
+  derived = test_qual_type_base(derived);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_qual_type_shape(test_qual_type_base(derived)).kind);
 
-  parsed_code = parse_program_input("int add(int a, int b); int add(int a, int b) { return a+b; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int **sig_def_pp(void) { return 0; }"));
+  signature = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"sig_def_pp", 10);
+  derived = test_qual_type_base(signature);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
+  derived = test_qual_type_base(derived);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
 
-  parsed_code = parse_program_input("int log(const char *fmt, ...); int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
-
-  parsed_code = parse_program_input("int **sig_proto_pp(void); int main(void) { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(2, ps_type_pointer_depth(
-                   test_function_return_type_in(test_semantic_context(), "sig_proto_pp", 12)));
-
-  parsed_code = parse_program_input("int **sig_def_pp(void) { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(2, ps_type_pointer_depth(
-                   test_function_return_type_in(test_semantic_context(), "sig_def_pp", 10)));
-
-  parsed_code = parse_program_input(
-      "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  const psx_type_t *deep_return =
-      test_function_return_type_in(test_semantic_context(), "sig_deep", 8);
-  const psx_type_t *deep_int_function =
-      ps_type_derived_function(deep_return);
-  ASSERT_TRUE(deep_int_function != NULL);
-  ASSERT_EQ(1, deep_int_function->param_count);
-  ASSERT_EQ(PSX_TYPE_INTEGER, deep_int_function->param_types[0]->kind);
-  const psx_type_t *deep_double_function =
-      ps_type_derived_function(deep_int_function->base);
-  ASSERT_TRUE(deep_double_function != NULL);
-  ASSERT_EQ(1, deep_double_function->param_count);
-  ASSERT_EQ(PSX_TYPE_FLOAT, deep_double_function->param_types[0]->kind);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }"));
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  signature = ps_ctx_get_function_qual_type_in(
+      test_semantic_context(), (char *)"sig_deep", 8);
+  psx_qual_type_t int_function_pointer =
+      psx_semantic_type_table_base(types, signature.type_id);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(int_function_pointer).kind);
+  psx_qual_type_t int_function =
+      test_qual_type_base(int_function_pointer);
+  psx_type_shape_t function_shape = test_qual_type_shape(int_function);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(1, function_shape.parameter_count);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            test_qual_type_shape(psx_semantic_type_table_parameter(
+                types, int_function.type_id, 0)).kind);
+  psx_qual_type_t double_function_pointer =
+      test_qual_type_base(int_function);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(double_function_pointer).kind);
+  psx_qual_type_t double_function =
+      test_qual_type_base(double_function_pointer);
+  function_shape = test_qual_type_shape(double_function);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
+  ASSERT_EQ(1, function_shape.parameter_count);
+  psx_type_shape_t double_parameter = test_qual_type_shape(
+      psx_semantic_type_table_parameter(
+          types, double_function.type_id, 0));
+  ASSERT_EQ(PSX_TYPE_FLOAT, double_parameter.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            deep_double_function->param_types[0]->floating_kind);
-  ASSERT_EQ(PSX_TYPE_POINTER, deep_double_function->base->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, deep_double_function->base->base->kind);
-  ASSERT_EQ(3, deep_double_function->base->base->array_len);
+            double_parameter.floating_kind);
+  psx_qual_type_t array_pointer = test_qual_type_base(double_function);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(array_pointer).kind);
+  psx_qual_type_t array = test_qual_type_base(array_pointer);
+  psx_type_shape_t array_shape = test_qual_type_shape(array);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_shape.kind);
+  ASSERT_EQ(3, array_shape.array_len);
 
-  parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "variadic", 8) == 0);
-  ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
-  ASSERT_TRUE(parsed_code[2] == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int variadic(...){ return 0; } "
+      "int main() { return variadic(); }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *variadic =
+      assert_test_hir_function_root(hir, 0, "variadic");
+  ASSERT_TRUE(test_qual_type_shape(
+      psx_hir_node_attached_qual_type(variadic)).is_variadic_function);
+  assert_test_hir_function_root(hir, 1, "main");
 
-  parsed_code = parse_program_input("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "f", 1) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int f(int a[static 3], int b[restrict static 2]) { return 7; }"));
+  hir = ag_compilation_session_hir_module(test_suite_session);
+  const psx_hir_node_t *array_function =
+      assert_test_hir_function_root(hir, 0, "f");
+  function_shape = test_qual_type_shape(
+      psx_hir_node_attached_qual_type(array_function));
+  ASSERT_EQ(2, function_shape.parameter_count);
 
-  parsed_code = parse_program_input("struct S { int x; }; int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
-
-  parsed_code = parse_program_input("struct S { int x; } *gp; int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
-
-  parsed_code = parse_program_input("int g=1; int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
-
-  parsed_code = parse_program_input("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
-  ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[2] == NULL);
-
-  parsed_code = parse_program_input("_Noreturn void die() { return; } int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "die", 3) == 0);
-  ASSERT_TRUE(parsed_code[1] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[1]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[2] == NULL);
-
-  parsed_code = parse_program_input("_Static_assert(1, \"ok\"); int main() { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
-  ASSERT_TRUE(parsed_code[1] == NULL);
-
-  parsed_code = parse_program_input(
-      "struct SA { _Static_assert(sizeof(int)==4, \"ok\"); int x; }; "
-      "int main(void) { return 0; }");
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
+  const struct {
+    const char *source;
+    const char *first_function;
+    const char *second_function;
+  } root_cases[] = {
+      {"struct S { int x; }; int main() { return 0; }", "main", NULL},
+      {"struct S { int x; } *gp; int main() { return 0; }", "main", NULL},
+      {"int g=1; int main() { return 0; }", "main", NULL},
+      {"extern int g; inline int add(int a, int b) { return a+b; } "
+       "int main() { return add(3,4); }", "add", "main"},
+      {"_Noreturn void die() { return; } int main() { return 0; }",
+       "die", "main"},
+      {"_Static_assert(1, \"ok\"); int main() { return 0; }",
+       "main", NULL},
+      {"struct SA { _Static_assert(sizeof(int)==4, \"ok\"); int x; }; "
+       "int main(void) { return 0; }", "main", NULL},
+  };
+  for (size_t i = 0;
+       i < sizeof(root_cases) / sizeof(root_cases[0]); i++) {
+    reset_test_translation_unit_state();
+    ASSERT_TRUE(resolve_program_input_hir(root_cases[i].source));
+    hir = ag_compilation_session_hir_module(test_suite_session);
+    size_t expected_roots = root_cases[i].second_function ? 2 : 1;
+    ASSERT_EQ(expected_roots, psx_hir_module_root_count(hir));
+    assert_test_hir_function_root(
+        hir, 0, root_cases[i].first_function);
+    if (root_cases[i].second_function)
+      assert_test_hir_function_root(
+          hir, 1, root_cases[i].second_function);
+  }
 }
 
 static void test_parse_invalid() {
