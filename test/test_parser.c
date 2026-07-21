@@ -18,7 +18,6 @@
 #include "../src/lowering/parameter_lowering.h"
 #include "../src/lowering/parameter_storage_plan.h"
 #include "../src/lowering/runtime_context.h"
-#include "../src/lowering/runtime_initializer_plan.h"
 #include "../src/lowering/static_data_initializer.h"
 #include "../src/lowering/static_local_lowering.h"
 #include "../src/lowering/translation_unit_data_lowering.h"
@@ -51,12 +50,8 @@
 #include "../src/pragma_pack.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/semantic/aggregate_member_resolution.h"
-#include "../src/semantic/alignof_query_resolution.h"
 #include "../src/semantic/call_resolution.h"
-#include "../src/semantic/case_label_resolution.h"
-#include "../src/semantic/compound_literal_resolution.h"
 #include "../src/semantic/compound_literal_semantics.h"
-#include "../src/semantic/constant_expression.h"
 #include "../src/semantic/declaration_application.h"
 #include "../src/semantic/declaration_registration.h"
 #include "../src/semantic/declaration_resolution.h"
@@ -68,18 +63,16 @@
 #include "../src/semantic/function_parameter_resolution.h"
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/global_declaration_resolution.h"
+#include "../src/semantic/hir_member_resolution.h"
 #include "../src/semantic/identifier_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
 #include "../src/semantic/literal_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
-#include "../src/semantic/local_initializer_binding.h"
-#include "../src/semantic/member_access_resolution.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
 #include "../src/semantic/prototype_parameter.h"
 #include "../src/semantic/resolution_state.h"
 #include "../src/semantic/resolution_store.h"
-#include "../src/semantic/resolved_lvalue.h"
 #include "../src/semantic/resolved_node.h"
 #include "../src/semantic/resolved_node_kind.h"
 #include "../src/semantic/resolved_node_type.h"
@@ -87,15 +80,12 @@
 #include "../src/semantic/scope_graph.h"
 #include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_tree_resolution.h"
-#include "../src/semantic/sizeof_query_resolution.h"
-#include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/static_initializer_resolution.h"
 #include "../src/semantic/syntax_typed_hir_resolution.h"
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/type_name_resolution.h"
 #include "../src/type_system/integer_conversion.h"
-#include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/type_query_semantics.h"
 #include "../src/semantic/typed_hir_materialization.h"
 #include "../src/semantic/typed_hir_tree_internal.h"
@@ -224,24 +214,6 @@ static psx_resolution_store_t *test_resolution_store(void) {
   return test_suite_session ? test_suite_session->resolution_store : NULL;
 }
 
-static void test_bind_node_qual_type_sized(
-    void *storage, size_t storage_size, psx_qual_type_t type) {
-  node_t *node = storage;
-  ASSERT_TRUE(ps_node_prepare_resolution_state_for_size_in(
-      test_resolution_store(), test_arena_context(), node, storage_size));
-  if (type.type_id == PSX_TYPE_ID_INVALID) {
-    ps_node_clear_type(test_resolution_store(), node);
-  } else {
-    ASSERT_TRUE(ps_node_bind_qual_type(
-        test_resolution_store(), node, type));
-  }
-}
-
-#define test_bind_node_qual_type(node, type) \
-  test_bind_node_qual_type_sized((node), sizeof(*(node)), (type))
-
-
-
 #define test_set_resolved_node_kind(node, kind) \
   test_set_resolved_node_kind_sized(              \
       (node), sizeof(*(node)), (kind))
@@ -270,21 +242,8 @@ static const node_t *test_node_with_qual_type(const node_t *node) {
   ps_node_resolution_state_const(test_resolution_store(), (node))
 #define ps_node_has_resolution_state(node) \
   ps_node_has_resolution_state(test_resolution_store(), (node))
-#define ps_node_lvar_usage_region(node) \
-  ps_node_lvar_usage_region(test_resolution_store(), (node))
 #define ps_node_value_fp_kind(node) \
   ps_node_value_fp_kind(test_resolution_store(), (node))
-#define ps_node_records_lvar_usage(node) \
-  ps_node_records_lvar_usage(test_resolution_store(), (node))
-#define ps_node_lvar_usage_is_unevaluated(node) \
-  ps_node_lvar_usage_is_unevaluated(              \
-      test_resolution_store(), (node))
-#define ps_node_is_decl_initializer(node) \
-  ps_node_is_decl_initializer(test_resolution_store(), (node))
-#define ps_node_is_source_assignment(node) \
-  ps_node_is_source_assignment(test_resolution_store(), (node))
-#define ps_node_is_source_cast(node) \
-  ps_node_is_source_cast(test_resolution_store(), (node))
 #define ps_node_is_long_long_type(node) \
   ps_node_is_long_long_type(test_resolution_store(), (node))
 #define ps_node_shift_operation_is_unsigned(node) \
@@ -332,20 +291,10 @@ static const node_t *test_node_with_qual_type(const node_t *node) {
       test_resolution_store(), (node), (enabled))
 #define ps_node_is_unsigned_type(node) \
   ps_node_is_unsigned_type(test_resolution_store(), (node))
-#define ps_node_widen_zext_i64(node) \
-  ps_node_widen_zext_i64(test_resolution_store(), (node))
 #define ps_node_value_is_pointer_like(node) \
   ps_node_value_is_pointer_like(test_resolution_store(), (node))
 #define ps_node_conversion_value_is_unsigned(node) \
   ps_node_conversion_value_is_unsigned(test_resolution_store(), (node))
-#define psx_bind_local_initializer_target_in(                         \
-    arena, var, initializer, kind, tok)                               \
-  psx_bind_local_initializer_target_in(                               \
-      test_resolution_store(), (arena),                               \
-      (var), (initializer),                                           \
-      (kind), (tok))
-#define psx_string_literal_label(literal) \
-  psx_string_literal_label(test_resolution_store(), (literal))
 #define psx_resolution_node_kind(node) \
   psx_resolution_node_kind(test_resolution_store(), (node))
 #define psx_resolved_object_ref_node_kind(node) \
@@ -356,66 +305,14 @@ static const node_t *test_node_with_qual_type(const node_t *node) {
   psx_resolved_object_ref_storage_offset(test_resolution_store(), (node))
 #define psx_resolved_object_ref_global(node) \
   psx_resolved_object_ref_global(test_resolution_store(), (node))
-#define psx_member_access_state(access) \
-  psx_member_access_state(test_resolution_store(), (access))
-#define psx_generic_selection_type_name_state(selection, index) \
-  psx_generic_selection_type_name_state(                         \
-      test_resolution_store(), (selection), (index))
-#define psx_generic_selection_selected_expression(selection) \
-  psx_generic_selection_selected_expression(                  \
-      test_resolution_store(), (selection))
-#define psx_alignof_query_resolved_alignment(query) \
-  psx_alignof_query_resolved_alignment(test_resolution_store(), (query))
-#define psx_sizeof_query_resolved_size(query) \
-  psx_sizeof_query_resolved_size(test_resolution_store(), (query))
-#define psx_sizeof_query_runtime_plan_const(query) \
-  psx_sizeof_query_runtime_plan_const(test_resolution_store(), (query))
-#define psx_sizeof_query_runtime_size_slot(query) \
-  psx_sizeof_query_runtime_size_slot(test_resolution_store(), (query))
-#define psx_sizeof_query_evaluates_vla_operand(query) \
-  psx_sizeof_query_evaluates_vla_operand(test_resolution_store(), (query))
 #define psx_node_resolved_type_name(node) \
   test_node_resolved_type_name((node))
-#define psx_generic_selection_selected_index(selection) \
-  psx_generic_selection_selected_index(                   \
-      test_resolution_store(), (selection))
-#define psx_compound_literal_direct_initializer(compound) \
-  psx_compound_literal_direct_initializer(                 \
-      test_resolution_store(), (compound))
 #define psx_require_semantic_tree_has_canonical_expression_types( \
     diagnostics, root, tok)                                       \
   psx_require_semantic_tree_has_canonical_expression_types(       \
       test_semantic_context(), (diagnostics), (root), (tok))
-#define psx_function_call_qual_type(call) \
-  psx_function_call_qual_type(test_resolution_store(), (call))
-#define psx_function_call_set_implicit_declaration(call, enabled) \
-  psx_function_call_set_implicit_declaration(                    \
-      test_resolution_store(), (call), (enabled))
-#define psx_function_call_direct_name(call) \
-  psx_function_call_direct_name(test_resolution_store(), (call))
-#define psx_function_call_direct_name_length(call) \
-  psx_function_call_direct_name_length(test_resolution_store(), (call))
-#define psx_function_call_is_implicit_declaration(call) \
-  psx_function_call_is_implicit_declaration(             \
-      test_resolution_store(), (call))
-#define psx_source_cast_resolution_kind(cast) \
-  psx_source_cast_resolution_kind(test_resolution_store(), (cast))
-#define psx_source_cast_aggregate_temporary(cast) \
-  psx_source_cast_aggregate_temporary(test_resolution_store(), (cast))
-#define psx_case_label_is_resolved(case_node) \
-  psx_case_label_is_resolved(test_resolution_store(), (case_node))
-#define psx_case_label_value(case_node) \
-  psx_case_label_value(test_resolution_store(), (case_node))
-#define psx_string_literal_bind_label(literal, label) \
-  psx_string_literal_bind_label(                       \
-      test_resolution_store(), (literal), (label))
-#define psx_resolve_initializer_designator_path_with_records(...) \
-  psx_resolve_initializer_designator_path_with_records(          \
-      test_resolution_store(), __VA_ARGS__)
 #define psx_resolution_node_alloc_in(arena, size) \
   psx_resolution_node_alloc_in(test_resolution_store(), (arena), (size))
-#define psx_eval_const_int(node, ok) \
-  psx_eval_const_int(test_resolution_store(), (node), (ok))
 #define ps_declarator_shape_append_pointer(...) \
   ps_declarator_shape_append_pointer_in(test_arena_context(), __VA_ARGS__)
 #define ps_declarator_shape_append_array(...) \
@@ -1293,8 +1190,6 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_NULL_STMT, standalone_block->body[0]->rhs->kind);
   ASSERT_TRUE(
       !ps_node_has_resolution_state(standalone_block->body[0]->lhs));
-  ASSERT_TRUE(
-      ps_node_lvar_usage_region(standalone_block->body[0]) == NULL);
   ASSERT_EQ(0, statement_services.block_scope_depth);
   ASSERT_EQ(1, statement_services.block_enter_count);
   ASSERT_EQ(1, statement_services.block_leave_count);
@@ -1416,16 +1311,6 @@ static void apply_test_toplevel_declaration(
       test_lowering_context(),
       ag_compilation_session_options_view(test_suite_session),
       declaration);
-}
-
-static void resolve_test_generic_selection(
-    node_generic_selection_t *selection,
-    psx_generic_selection_resolution_t *resolution) {
-  psx_resolve_generic_selection_in_contexts(
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      selection, resolution);
 }
 
 static int apply_test_declaration_phase(
@@ -1721,8 +1606,6 @@ static void test_syntax_literal_type_boundary() {
       parse_expr_input_with_existing_locals("\"syntax\"");
   ASSERT_EQ(ND_STRING, string->kind);
   ASSERT_TRUE(test_node_with_qual_type(string) == NULL);
-  ASSERT_TRUE(
-      psx_string_literal_label((node_string_t *)string) == NULL);
   ASSERT_TRUE(!ps_node_has_resolution_state(string));
 
   node_t *function_name =
@@ -5137,59 +5020,59 @@ static void test_member_access_typed_hir_boundary() {
       ps_ctx_intern_record_qual_type_in(
           semantic_context, member_record->record_id);
   ASSERT_TRUE(object_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  psx_member_access_resolution_t resolution;
-  psx_resolve_member_access_qual_type_in(
+  psx_hir_member_resolution_t resolution;
+  ASSERT_TRUE(psx_resolve_member_hir_node_spec_in(
       semantic_context, object_qual_type, "value", 5, 0,
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
-  ASSERT_EQ(1, resolution.member_index);
-  ASSERT_EQ(member_record->record_id, resolution.record_id);
+      &resolution));
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.member.status);
+  ASSERT_EQ(1, resolution.member.member_index);
+  ASSERT_EQ(member_record->record_id, resolution.member.record_id);
   psx_type_shape_t member_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       ps_ctx_semantic_type_table_in(semantic_context),
-      resolution.member_qual_type.type_id, &member_shape));
+      resolution.member.member_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, member_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, member_shape.integer_kind);
-  ASSERT_TRUE(resolution.base_object_qual_type.type_id !=
+  ASSERT_TRUE(resolution.member.base_object_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            resolution.base_object_qual_type.qualifiers);
+            resolution.member.base_object_qual_type.qualifiers);
   psx_type_shape_t base_object_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       ps_ctx_semantic_type_table_in(semantic_context),
-      resolution.base_object_qual_type.type_id, &base_object_shape));
+      resolution.member.base_object_qual_type.type_id, &base_object_shape));
   ASSERT_EQ(PSX_TYPE_STRUCT, base_object_shape.kind);
-  ASSERT_EQ(resolution.record_id, base_object_shape.record_id);
+  ASSERT_EQ(resolution.member.record_id, base_object_shape.record_id);
 
   psx_qual_type_t const_object_qual_type = object_qual_type;
   const_object_qual_type.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
-  psx_resolve_member_access_qual_type_in(
+  ASSERT_TRUE(psx_resolve_member_hir_node_spec_in(
       semantic_context, const_object_qual_type, "value", 5, 0,
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
-  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
+      &resolution));
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.member.status);
+  ASSERT_TRUE((resolution.member.base_object_qual_type.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
-  ASSERT_TRUE((resolution.member_qual_type.qualifiers &
+  ASSERT_TRUE((resolution.member.member_qual_type.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
 
   psx_qual_type_t const_pointer_qual_type =
       ps_ctx_intern_pointer_to_qual_type_in(
           semantic_context, const_object_qual_type);
-  psx_resolve_member_access_qual_type_in(
+  ASSERT_TRUE(psx_resolve_member_hir_node_spec_in(
       semantic_context, const_pointer_qual_type, "value", 5, 1,
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
-  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
+      &resolution));
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.member.status);
+  ASSERT_TRUE((resolution.member.base_object_qual_type.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
 
-  psx_resolve_member_access_qual_type_in(
+  ASSERT_TRUE(!psx_resolve_member_hir_node_spec_in(
       semantic_context, object_qual_type, "value", 5, 1,
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_INVALID_BASE, resolution.status);
-  psx_resolve_member_access_qual_type_in(
+      &resolution));
+  ASSERT_EQ(PSX_MEMBER_ACCESS_INVALID_BASE, resolution.member.status);
+  ASSERT_TRUE(!psx_resolve_member_hir_node_spec_in(
       semantic_context, object_qual_type, "missing", 7, 0,
-      &resolution);
-  ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, resolution.status);
+      &resolution));
+  ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, resolution.member.status);
 
   reset_test_locals();
   lvar_t *raw_object = register_test_qual_type_storage_fixture(
@@ -6177,94 +6060,54 @@ static void test_unary_operator_typed_hir_boundary() {
 
 static void test_generic_selection_typed_hir_boundary() {
   printf("test_generic_selection_typed_hir_boundary...\n");
-  node_t control = {
-      .kind = ND_NUM,
+  psx_qual_type_t integer_type =
+      ps_ctx_intern_integer_qual_type_in(
+          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0);
+  psx_qual_type_t floating_type =
+      ps_ctx_intern_floating_qual_type_in(
+          test_semantic_context(), PSX_FLOATING_KIND_DOUBLE, 0);
+  psx_qual_type_t association_types[2] = {
+      integer_type,
+      {PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
-  node_t integer_result = {
-      .kind = ND_NUM,
-  };
-  node_t float_result = {
-      .kind = ND_NUM,
-  };
-  test_bind_node_qual_type(
-      &control, ps_ctx_intern_integer_qual_type_in(
-                    test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
-  test_bind_node_qual_type(
-      &integer_result, ps_ctx_intern_integer_qual_type_in(
-                             test_semantic_context(),
-                             PSX_INTEGER_KIND_INT, 0, 0));
-  test_bind_node_qual_type(
-      &float_result, ps_ctx_intern_floating_qual_type_in(
-                           test_semantic_context(),
-                           PSX_FLOATING_KIND_DOUBLE, 0));
-  psx_parsed_type_name_t direct_integer_type = {
-      .specifier = {
-          .source = PSX_PARSED_DECL_TYPE_BUILTIN,
-          .type_spec = {.kind = TK_INT},
-      },
-  };
-  ps_declarator_shape_init(
-      &direct_integer_type.declarator.declarator_shape);
-  psx_generic_association_t associations[2] = {
-      {
-          .type_name = {
-              .syntax = &direct_integer_type,
-          },
-          .expression = &integer_result,
-      },
-      {
-          .expression = &float_result,
-          .is_default = 1,
-      },
-  };
-  node_generic_selection_t direct_selection = {
-      .base = {.kind = ND_GENERIC_SELECTION},
-      .control = &control,
-      .associations = associations,
-      .association_count = 2,
-  };
+  unsigned char is_default[2] = {0, 1};
   psx_generic_selection_resolution_t resolution;
-  resolve_test_generic_selection(&direct_selection, &resolution);
+  psx_resolve_generic_selection_qual_types_in(
+      integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_OK, resolution.status);
   ASSERT_EQ(0, resolution.selected_index);
   psx_type_shape_t selected_shape = {0};
-  ASSERT_TRUE(ps_node_type_shape(
-      test_resolution_store(),
-      direct_selection.associations[resolution.selected_index]
-          .expression,
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      association_types[resolution.selected_index].type_id,
       &selected_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, selected_shape.kind);
 
-  associations[0].is_default = 1;
-  resolve_test_generic_selection(&direct_selection, &resolution);
+  is_default[0] = 1;
+  psx_resolve_generic_selection_qual_types_in(
+      integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT,
             resolution.status);
   ASSERT_EQ(1, resolution.conflict_index);
 
-  associations[0].is_default = 0;
-  associations[1].is_default = 0;
-  associations[1].type_name.syntax = &direct_integer_type;
-  resolve_test_generic_selection(&direct_selection, &resolution);
+  is_default[0] = 0;
+  is_default[1] = 0;
+  association_types[1] = integer_type;
+  psx_resolve_generic_selection_qual_types_in(
+      integer_type, association_types, is_default, 2, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE,
             resolution.status);
   ASSERT_EQ(1, resolution.conflict_index);
 
-  direct_selection.association_count = 1;
-  test_bind_node_qual_type(
-      &control, ps_ctx_intern_floating_qual_type_in(
-                    test_semantic_context(), PSX_FLOATING_KIND_DOUBLE, 0));
-  resolve_test_generic_selection(&direct_selection, &resolution);
+  psx_resolve_generic_selection_qual_types_in(
+      floating_type, association_types, is_default, 1, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH,
             resolution.status);
 
-  test_bind_node_qual_type(
-      &control, ps_ctx_intern_integer_qual_type_in(
-                    test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
-  test_bind_node_qual_type(
-      &integer_result,
-      ((psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                         PSX_TYPE_QUALIFIER_NONE}));
-  resolve_test_generic_selection(&direct_selection, &resolution);
+  association_types[0] = (psx_qual_type_t){
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_resolve_generic_selection_qual_types_in(
+      integer_type, association_types, is_default, 1, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED,
             resolution.status);
   ASSERT_EQ(0, resolution.conflict_index);
@@ -6283,15 +6126,8 @@ static void test_generic_selection_typed_hir_boundary() {
       (node_generic_selection_t *)raw;
   ASSERT_EQ(2, selection->association_count);
   ASSERT_TRUE(!ps_node_has_resolution_state(&selection->base));
-  ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
-  ASSERT_TRUE(
-      psx_generic_selection_selected_expression(selection) == NULL);
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
-  ASSERT_TRUE(!ps_node_records_lvar_usage(selection->control));
-  ASSERT_TRUE(!ps_node_lvar_usage_is_unevaluated(selection->control));
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
-  ASSERT_TRUE(
-      psx_generic_selection_type_name_state(selection, 0) == NULL);
   ASSERT_EQ(ND_ADD, selection->associations[0].expression->kind);
   ASSERT_TRUE(selection->associations[1].is_default);
   ASSERT_TRUE(test_node_with_qual_type(raw) == NULL);
@@ -6308,9 +6144,6 @@ static void test_generic_selection_typed_hir_boundary() {
       expression.module, psx_hir_node_child_at(selected, 1));
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(selected_rhs));
   ASSERT_EQ(1, psx_hir_node_integer_value(selected_rhs));
-  ASSERT_TRUE(
-      psx_generic_selection_type_name_state(selection, 0) == NULL);
-  ASSERT_EQ(-1, psx_generic_selection_selected_index(selection));
   ASSERT_TRUE(test_node_with_qual_type((node_t *)selection) == NULL);
   ASSERT_TRUE(test_node_with_qual_type(selection->associations[0].expression) == NULL);
   psx_frontend_expression_hir_dispose(&expression);
@@ -8450,7 +8283,6 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_expression != NULL);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_TRUE(!psx_case_label_is_resolved(syntax_case));
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expression));
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
@@ -8471,7 +8303,6 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_TRUE(syntax_case->base.lhs == syntax_expression);
   ASSERT_EQ(ND_MUL, syntax_expression->kind);
   ASSERT_EQ(ND_IDENTIFIER, syntax_expression->lhs->kind);
-  ASSERT_TRUE(!psx_case_label_is_resolved(syntax_case));
   ASSERT_TRUE(!ps_node_has_resolution_state(syntax_expression));
 
   int found_resolved_case = 0;
@@ -11087,51 +10918,19 @@ static void test_type_name_phase_boundary() {
   ASSERT_TRUE(syntax.atomic_inner == NULL);
 
   psx_type_name_ref_t reference = {.syntax = &syntax};
-  psx_type_name_resolution_state_t state = {0};
-  ASSERT_EQ(PSX_TYPE_NAME_UNBOUND, state.kind);
-  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+  psx_type_name_base_resolution_t base_resolution = {0};
+  ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state));
-  ASSERT_EQ(PSX_TYPE_NAME_BOUND, state.kind);
-  ASSERT_TRUE(psx_type_name_bound_base_qual_type(&state).type_id !=
+      test_local_registry(), &reference, &base_resolution));
+  ASSERT_TRUE(base_resolution.base_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_type_name_resolved_qual_type(&state).type_id);
   psx_qual_type_t resolved = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  ASSERT_TRUE(psx_resolve_bound_type_name_qual_type_in_contexts(
+  ASSERT_TRUE(psx_resolve_type_name_qual_type_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state, &resolved));
+      test_local_registry(), &reference, &resolved));
   ASSERT_TRUE(resolved.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(PSX_TYPE_NAME_RESOLVED, state.kind);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_type_name_bound_base_qual_type(&state).type_id);
-  ASSERT_TRUE(psx_type_name_bound_runtime_application(&state) == NULL);
-  psx_qual_type_t state_resolved =
-      psx_type_name_resolved_qual_type(&state);
-  ASSERT_EQ(resolved.type_id, state_resolved.type_id);
-  ASSERT_EQ(resolved.qualifiers, state_resolved.qualifiers);
-
-  ag_target_info_t isolated_target = ag_target_info_host();
-  ag_compilation_session_t *isolated_session =
-      ag_compilation_session_create(&isolated_target);
-  ASSERT_TRUE(isolated_session != NULL);
-  ASSERT_TRUE(ag_compilation_session_is_complete(isolated_session));
-  psx_type_name_resolution_state_t foreign_state = state;
-  ASSERT_TRUE(!psx_bind_type_name_ref_in_contexts(
-      ag_compilation_session_semantic_context(isolated_session),
-      ag_compilation_session_global_registry(isolated_session),
-      ag_compilation_session_local_registry(isolated_session),
-      &reference, &foreign_state));
-  psx_qual_type_t foreign_qual_type = {
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  ASSERT_TRUE(!psx_resolve_bound_type_name_qual_type_in_contexts(
-      ag_compilation_session_semantic_context(isolated_session),
-      ag_compilation_session_global_registry(isolated_session),
-      ag_compilation_session_local_registry(isolated_session),
-      &reference, &foreign_state, &foreign_qual_type));
-  ASSERT_EQ(PSX_TYPE_ID_INVALID, foreign_qual_type.type_id);
-  ASSERT_TRUE(ag_compilation_session_destroy(isolated_session));
+  ASSERT_TRUE(base_resolution.runtime_application == NULL);
 
   psx_qual_type_t type =
       psx_apply_parsed_type_name_qual_type_in_contexts(
@@ -11162,12 +10961,12 @@ static void test_type_name_phase_boundary() {
   tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
-  state = (psx_type_name_resolution_state_t){0};
-  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+  base_resolution = (psx_type_name_base_resolution_t){0};
+  ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state));
+      test_local_registry(), &reference, &base_resolution));
   psx_qual_type_t qualified_base =
-      psx_type_name_bound_base_qual_type(&state);
+      base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -11179,11 +10978,11 @@ static void test_type_name_phase_boundary() {
   tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
-  state = (psx_type_name_resolution_state_t){0};
-  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+  base_resolution = (psx_type_name_base_resolution_t){0};
+  ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state));
-  qualified_base = psx_type_name_bound_base_qual_type(&state);
+      test_local_registry(), &reference, &base_resolution));
+  qualified_base = base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
   psx_dispose_type_name_syntax(&syntax);
@@ -11200,11 +10999,11 @@ static void test_type_name_phase_boundary() {
       .scope_seq = point.scope_id,
       .declaration_seq = point.declaration_order,
   };
-  state = (psx_type_name_resolution_state_t){0};
-  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+  base_resolution = (psx_type_name_base_resolution_t){0};
+  ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state));
-  qualified_base = psx_type_name_bound_base_qual_type(&state);
+      test_local_registry(), &reference, &base_resolution));
+  qualified_base = base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -11230,11 +11029,11 @@ static void test_type_name_phase_boundary() {
       .scope_seq = point.scope_id,
       .declaration_seq = point.declaration_order,
   };
-  state = (psx_type_name_resolution_state_t){0};
-  ASSERT_TRUE(psx_bind_type_name_ref_in_contexts(
+  base_resolution = (psx_type_name_base_resolution_t){0};
+  ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
       test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &state));
-  qualified_base = psx_type_name_bound_base_qual_type(&state);
+      test_local_registry(), &reference, &base_resolution));
+  qualified_base = base_resolution.base_qual_type;
   ASSERT_EQ(alias.decl_qual_type.type_id, qualified_base.type_id);
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_VOLATILE) != 0);
@@ -16054,8 +15853,8 @@ static void test_resolution_store_isolation_and_lifetime() {
   ASSERT_TRUE(first_state != NULL);
   ASSERT_TRUE(second_state != NULL);
   ASSERT_TRUE(first_state != second_state);
-  first_state->flags.is_decl_initializer = 1;
-  ASSERT_TRUE(!second_state->flags.is_decl_initializer);
+  first_state->reference.storage_offset = 1;
+  ASSERT_EQ(0, second_state->reference.storage_offset);
 
   arena_checkpoint_t checkpoint = arena_checkpoint_in(first_arena);
   node_t rollback_node = {0};

@@ -1,7 +1,5 @@
 #include "declaration_resolution.h"
 
-#include "constant_expression.h"
-
 #include "../parser/semantic_ctx.h"
 #include "../type_layout.h"
 
@@ -344,18 +342,6 @@ static long long initializer_string_count(
   return (long long)string->byte_len + 1;
 }
 
-static int legacy_incomplete_array_constant_index(
-    void *context, const node_t *expression, long long *value) {
-  psx_semantic_context_t *semantic_context = context;
-  int ok = 1;
-  long long resolved = psx_eval_const_int(
-      ps_ctx_resolution_store(semantic_context),
-      (node_t *)expression, &ok);
-  if (!ok) return 0;
-  if (value) *value = resolved;
-  return 1;
-}
-
 static long long initializer_list_count(
     const node_init_list_t *list,
     psx_incomplete_array_constant_index_resolver_t resolve_index,
@@ -447,28 +433,4 @@ int psx_resolve_incomplete_array_initializer_shape_in(
           entries_initialize_outer_elements,
   };
   return 1;
-}
-
-int psx_resolve_incomplete_array_initializer_qual_type_in(
-    psx_semantic_context_t *semantic_context,
-    psx_qual_type_t incomplete_type,
-    psx_decl_init_kind_t initializer_kind,
-    node_t *initializer,
-    psx_qual_type_t *completed_type) {
-  if (completed_type)
-    *completed_type = (psx_qual_type_t){
-        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  if (!semantic_context || !completed_type ||
-      incomplete_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
-  psx_incomplete_array_resolution_t resolution;
-  if (!psx_resolve_incomplete_array_initializer_shape_in(
-          semantic_context, incomplete_type,
-          initializer_kind, initializer,
-          legacy_incomplete_array_constant_index, semantic_context,
-          &resolution))
-    return 0;
-  return psx_resolve_completed_incomplete_array_qual_type_in(
-      semantic_context, incomplete_type, &resolution,
-      completed_type);
 }

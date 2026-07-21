@@ -17,9 +17,6 @@ struct lvar_t;
 struct global_var_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-int ps_node_generic_selection_index(
-    const psx_resolution_store_t *store,
-    node_generic_selection_t *selection);
 int ps_node_is_long_long_type(
     const psx_resolution_store_t *store, node_t *node);
 int ps_node_is_plain_char_type(

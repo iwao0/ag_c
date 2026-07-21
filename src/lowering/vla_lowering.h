@@ -23,12 +23,9 @@ typedef struct {
 
 typedef struct {
   lvar_t *var;
-  node_t *init;
   struct psx_vla_runtime_plan_t *runtime_plan;
 } psx_vla_lowering_result_t;
 
-psx_vla_lowering_result_t lower_vla_declaration(
-    const psx_vla_lowering_request_t *request);
 psx_vla_lowering_result_t lower_vla_declaration_plan(
     const psx_vla_lowering_request_t *request);
 
@@ -43,8 +40,6 @@ typedef struct {
   token_t *diag_tok;
 } psx_pointer_vla_lowering_request_t;
 
-psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
-    const psx_pointer_vla_lowering_request_t *request);
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request);
 

@@ -72,7 +72,6 @@ typedef struct {
 typedef struct {
   struct lvar_t **parameter_vars;
   psx_qual_type_t *parameter_qual_types;
-  node_t **args;
   int nargs;
   int has_unnamed_parameter;
   psx_qual_type_t function_qual_type;
@@ -152,20 +151,10 @@ typedef struct {
 
 typedef struct {
   struct lvar_t *var;
-  node_t *initialization;
   psx_vla_runtime_plan_t *vla_runtime_plan;
 } psx_automatic_local_declaration_pipeline_result_t;
 
-int psx_apply_automatic_local_declaration_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result);
-int psx_begin_automatic_local_declaration_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result);
 int psx_begin_automatic_local_declaration_hir_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result);
-int psx_finish_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_automatic_local_declaration_pipeline_result_t *result);
 

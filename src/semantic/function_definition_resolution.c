@@ -1,7 +1,6 @@
 #include "function_definition_resolution.h"
 
 #include "declaration_application.h"
-#include "resolved_node_kind.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"
@@ -11,7 +10,6 @@
 #include "../parser/function_definition_syntax.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_utils.h"
 #include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
 
@@ -24,11 +22,9 @@ static int resolve_function_definition_header(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const psx_parsed_function_definition_t *definition,
-    psx_function_definition_header_resolution_t *resolution,
-    node_t ***compatibility_parameters) {
+    psx_function_definition_header_resolution_t *resolution) {
   if (resolution)
     *resolution = (psx_function_definition_header_resolution_t){0};
-  if (compatibility_parameters) *compatibility_parameters = NULL;
   if (!definition || !semantic_context ||
       !global_registry || !local_registry || !lowering_context ||
       !resolution)
@@ -157,10 +153,6 @@ static int resolve_function_definition_header(
 
   if (resolution->is_variadic)
     local_storage_reserve_prefix(lowering_context, 64);
-  if (compatibility_parameters)
-    *compatibility_parameters = applied.args;
-  else
-    free(applied.args);
   free(applied.parameter_vars);
   free(applied.parameter_qual_types);
   return 1;
@@ -175,48 +167,5 @@ int psx_resolve_function_definition_header_in_contexts(
     psx_function_definition_header_resolution_t *resolution) {
   return resolve_function_definition_header(
       semantic_context, global_registry, local_registry,
-      lowering_context, definition, resolution, NULL);
-}
-
-node_function_definition_t *
-psx_prepare_function_definition_resolution_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context,
-    psx_lowering_context_t *lowering_context,
-    const psx_parsed_function_definition_t *definition) {
-  if (!definition || !definition->body || !runtime_context)
-    return NULL;
-  psx_function_definition_header_resolution_t resolution;
-  node_t **compatibility_parameters = NULL;
-  if (!resolve_function_definition_header(
-          semantic_context, global_registry, local_registry,
-          lowering_context, definition, &resolution,
-          &compatibility_parameters))
-    return NULL;
-  node_function_definition_t *node =
-      psx_resolution_node_alloc_in(
-          ps_ctx_resolution_store(semantic_context),
-          ps_parser_runtime_arena(runtime_context),
-          sizeof(node_function_definition_t));
-  if (!node ||
-      !psx_resolution_node_set_kind(
-          ps_ctx_resolution_store(semantic_context),
-          &node->base, ND_FUNCDEF))
-    return NULL;
-  node->base.tok =
-      (token_t *)definition->declarator.identifier;
-  ps_node_set_implicit_int_return(
-      ps_ctx_resolution_store(semantic_context),
-      &node->base, resolution.has_implicit_int_return);
-  node->base.rhs = definition->body;
-  node->name = resolution.name;
-  node->name_len = resolution.name_len;
-  node->is_static = resolution.is_static;
-  node->parameters = compatibility_parameters;
-  node->parameter_count = resolution.parameter_count;
-  node->signature_qual_type = resolution.signature_qual_type;
-  node->lvars = resolution.locals;
-  return node;
+      lowering_context, definition, resolution);
 }

@@ -5,8 +5,6 @@
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
-#include "../semantic/resolved_node_kind.h"
-#include "../semantic/resolved_node_type.h"
 #include "../parser/semantic_ctx.h"
 
 #include <stdio.h>
@@ -227,26 +225,4 @@ int psx_plan_aggregate_source_cast_qual_types(
     return 0;
   return psx_plan_validated_aggregate_source_cast(
       lowering_context, local_registry, &resolution, diag_tok, plan);
-}
-
-int psx_plan_aggregate_source_cast(
-    psx_lowering_context_t *lowering_context,
-    psx_local_registry_t *local_registry,
-    node_source_cast_t *cast, token_t *fallback_diag_tok,
-    const ag_compilation_options_t *options,
-    psx_aggregate_source_cast_plan_t *plan) {
-  node_t *node = cast ? &cast->base : NULL;
-  psx_resolution_store_t *store =
-      ps_lowering_resolution_store(lowering_context);
-  if (!node || psx_resolution_node_kind(store, node) != ND_CAST ||
-      !ps_node_is_source_cast(store, node) ||
-      !node->lhs)
-    return 0;
-  return psx_plan_aggregate_source_cast_qual_types(
-      lowering_context, local_registry,
-      ps_node_qual_type(
-          store, node),
-      ps_node_qual_type(
-          store, node->lhs),
-      node->tok ? node->tok : fallback_diag_tok, options, plan);
 }

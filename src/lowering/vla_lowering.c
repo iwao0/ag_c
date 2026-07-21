@@ -6,10 +6,8 @@
 #include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_utils.h"
 #include "../diag/diag.h"
 #include "../semantic/vla_runtime_plan.h"
-#include "../semantic/resolved_object_ref.h"
 #include "../semantic/typed_hir_tree.h"
 #include "../type_layout.h"
 #include <stdlib.h>
@@ -171,19 +169,6 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
   return result;
 }
 
-psx_vla_lowering_result_t lower_vla_declaration(
-    const psx_vla_lowering_request_t *request) {
-  psx_vla_lowering_result_t result =
-      lower_vla_declaration_plan(request);
-  if (result.runtime_plan && request && request->lowering_context) {
-    result.init = ps_node_new_vla_runtime_in(
-        ps_lowering_resolution_store(request->lowering_context),
-        ps_lowering_arena(request->lowering_context),
-        result.runtime_plan);
-  }
-  return result;
-}
-
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
     const psx_pointer_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
@@ -241,19 +226,6 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
   plan->row_stride_frame_offset = row_stride_offset;
   plan->element_size = element_size;
   result.runtime_plan = plan;
-  return result;
-}
-
-psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
-    const psx_pointer_vla_lowering_request_t *request) {
-  psx_vla_lowering_result_t result =
-      lower_pointer_to_vla_declaration_plan(request);
-  if (result.runtime_plan && request && request->lowering_context) {
-    result.init = ps_node_new_vla_runtime_in(
-        ps_lowering_resolution_store(request->lowering_context),
-        ps_lowering_arena(request->lowering_context),
-        result.runtime_plan);
-  }
   return result;
 }
 

@@ -25,7 +25,6 @@
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
 #include "semantic/local_declaration_resolution.h"
-#include "semantic/local_initializer_binding.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/static_initializer_materialization.h"
 #include "semantic/typed_hir_materialization.h"
@@ -191,6 +190,8 @@ static int finish_global_declaration_pipeline(
       psx_resolve_static_initializer(
           &(psx_static_initializer_resolution_request_t){
               .semantic_context = request->semantic_context,
+              .global_registry = request->global_registry,
+              .local_registry = request->local_registry,
               .type = request->type,
               .kind = request->initializer->kind,
               .initializer = request->initializer->value,
@@ -444,20 +445,12 @@ static int append_definition_parameter(
     result->parameter_qual_types = pda_xreallocarray_in(
         ps_ctx_diagnostics(semantic_context), result->parameter_qual_types,
         (size_t)*capacity, sizeof(*result->parameter_qual_types));
-    result->args = pda_xreallocarray_in(
-        ps_ctx_diagnostics(semantic_context), result->args,
-        (size_t)*capacity, sizeof(node_t *));
   }
   if (!name) {
     result->parameter_vars[result->nargs] = NULL;
     result->parameter_qual_types[result->nargs] =
         resolution.declaration_qual_type;
-    result->args[result->nargs++] =
-        ps_node_new_param_placeholder_in(
-            ps_lowering_resolution_store(lowering_context),
-            ps_lowering_arena(lowering_context),
-            resolution.declaration_qual_type);
-    result->args[result->nargs] = NULL;
+    result->nargs++;
     return 1;
   }
 
@@ -493,11 +486,7 @@ static int append_definition_parameter(
   result->parameter_vars[result->nargs] = lowered;
   result->parameter_qual_types[result->nargs] =
       resolution.declaration_qual_type;
-  result->args[result->nargs++] =
-      ps_node_new_param_lvar_for_in(
-          ps_lowering_resolution_store(lowering_context),
-          ps_lowering_arena(lowering_context), lowered);
-  result->args[result->nargs] = NULL;
+  result->nargs++;
   return 0;
 }
 
@@ -547,9 +536,7 @@ int psx_begin_function_definition_pipeline(
   result->parameter_qual_types = calloc(
       (size_t)state->args_capacity,
       sizeof(*result->parameter_qual_types));
-  result->args = calloc((size_t)state->args_capacity, sizeof(node_t *));
-  return result->parameter_vars && result->parameter_qual_types &&
-         result->args;
+  return result->parameter_vars && result->parameter_qual_types;
 }
 
 int psx_apply_function_definition_parameter_pipeline(
@@ -572,7 +559,6 @@ int psx_apply_function_definition_parameter_pipeline(
     state->result->parameter_qual_types[0] =
         (psx_qual_type_t){
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-    state->result->args[0] = NULL;
     return 1;
   }
   if (applied > 0) state->result->has_unnamed_parameter = 1;
@@ -746,6 +732,8 @@ int psx_finish_static_local_declaration_pipeline(
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = request->semantic_context,
+          .global_registry = request->global_registry,
+          .local_registry = request->local_registry,
           .type = ps_lvar_decl_qual_type(result->alias),
           .kind = request->initializer->kind,
           .initializer = request->initializer->value,
@@ -825,6 +813,8 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = request->semantic_context,
+          .global_registry = request->global_registry,
+          .local_registry = request->local_registry,
           .type = ps_lvar_decl_qual_type(result->alias),
           .kind = request->initializer->kind,
           .initializer = request->initializer->value,
@@ -922,20 +912,9 @@ static void diagnose_local_declaration(
   }
 }
 
-static node_t *append_local_initialization(
-    psx_lowering_context_t *lowering_context, node_t *chain, node_t *node) {
-  if (!node) return chain;
-  return chain ? ps_node_new_comma_in(
-                     ps_lowering_resolution_store(lowering_context),
-                     ps_lowering_arena(lowering_context),
-                     chain, node)
-               : node;
-}
-
-static int begin_automatic_local_declaration_pipeline(
+int psx_begin_automatic_local_declaration_hir_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result,
-    int materialize_compatibility_ast) {
+    psx_automatic_local_declaration_pipeline_result_t *result) {
   if (result)
     *result = (psx_automatic_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->name || request->name_len <= 0 ||
@@ -1024,11 +1003,8 @@ static int begin_automatic_local_declaration_pipeline(
                 request->semantic_context, dimension->expression_id))
           return 0;
       }
-      vla = materialize_compatibility_ast
-                ? lower_vla_declaration(&lowering)
-                : lower_vla_declaration_plan(&lowering);
+      vla = lower_vla_declaration_plan(&lowering);
       result->var = vla.var;
-      result->initialization = vla.init;
       result->vla_runtime_plan = vla.runtime_plan;
       break;
     }
@@ -1047,11 +1023,8 @@ static int begin_automatic_local_declaration_pipeline(
               .requested_alignment = request->requested_alignment,
               .diag_tok = request->diag_tok,
       };
-      vla = materialize_compatibility_ast
-                ? lower_pointer_to_vla_declaration(&lowering)
-                : lower_pointer_to_vla_declaration_plan(&lowering);
+      vla = lower_pointer_to_vla_declaration_plan(&lowering);
       result->var = vla.var;
-      result->initialization = vla.init;
       result->vla_runtime_plan = vla.runtime_plan;
       break;
     }
@@ -1059,89 +1032,6 @@ static int begin_automatic_local_declaration_pipeline(
   if (!result->var) return 0;
 
   return 1;
-}
-
-int psx_begin_automatic_local_declaration_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result) {
-  return begin_automatic_local_declaration_pipeline(
-      request, result, 1);
-}
-
-int psx_begin_automatic_local_declaration_hir_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result) {
-  return begin_automatic_local_declaration_pipeline(
-      request, result, 0);
-}
-
-int psx_finish_automatic_local_declaration_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result) {
-  if (!request || !result || !result->var || !request->initializer)
-    return 0;
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(request->semantic_context);
-  psx_type_shape_t declaration_shape = {0};
-  if (!psx_semantic_type_table_describe(
-          semantic_types, request->type.type_id, &declaration_shape))
-    return 0;
-  if (declaration_shape.kind == PSX_TYPE_ARRAY &&
-      declaration_shape.array_len <= 0 && !declaration_shape.is_vla) {
-    psx_qual_type_t completed_identity = {
-        PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-    if (!request->initializer->has_initializer ||
-        !psx_resolve_incomplete_array_initializer_qual_type_in(
-            request->semantic_context, request->type,
-            request->initializer->kind,
-            request->initializer->value, &completed_identity)) {
-      ps_diag_ctx_in(
-          ps_lowering_diagnostics(request->lowering_context),
-          request->initializer->value_tok, "decl", "%s",
-          diag_message_for_in(
-              ps_lowering_diagnostics(request->lowering_context),
-              DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-    }
-    if (completed_identity.type_id == PSX_TYPE_ID_INVALID) {
-      return 0;
-    }
-    if (!complete_declared_local_object(
-            result->var,
-            &(psx_local_object_request_t){
-                .local_registry = request->local_registry,
-                .lowering_context = request->lowering_context,
-                .name = request->name,
-                .name_len = request->name_len,
-                .type = completed_identity,
-                .requested_alignment = request->requested_alignment,
-                .diag_tok = request->diag_tok,
-            })) {
-      return 0;
-    }
-  }
-
-  if (request->initializer->has_initializer) {
-    node_t *initializer = psx_bind_local_initializer_target_in(
-        ps_lowering_resolution_store(request->lowering_context),
-        ps_lowering_arena(request->lowering_context),
-        result->var, request->initializer->value,
-        request->initializer->kind,
-        request->initializer->value_tok);
-    result->initialization = append_local_initialization(
-        request->lowering_context, result->initialization, initializer);
-  }
-  return 1;
-}
-
-int psx_apply_automatic_local_declaration_pipeline(
-    const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result) {
-  if (!psx_begin_automatic_local_declaration_pipeline(
-          request, result)) {
-    return 0;
-  }
-  return psx_finish_automatic_local_declaration_pipeline(
-      request, result);
 }
 
 int psx_apply_block_extern_declaration_pipeline(

@@ -6,9 +6,6 @@
 #include "../type_system/type_shape.h"
 #include "resolution_state_access.h"
 
-typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
-typedef struct lvar_t lvar_t;
-
 psx_qual_type_t ps_node_qual_type(
     const psx_resolution_store_t *store, const node_t *node);
 int ps_node_type_shape(
@@ -46,44 +43,4 @@ int ps_node_is_unsigned_type(
     const psx_resolution_store_t *store, node_t *node);
 int ps_node_deref_decays_to_address(
     const psx_resolution_store_t *store, node_t *node);
-psx_lvar_usage_region_t *ps_node_lvar_usage_region(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_lvar_usage_region(
-    psx_resolution_store_t *store, node_t *node,
-    psx_lvar_usage_region_t *region);
-lvar_t *ps_node_lvar_usage_symbol(
-    const psx_resolution_store_t *store, const node_t *node);
-int ps_node_records_lvar_usage(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_record_lvar_usage(
-    psx_resolution_store_t *store, node_t *node, lvar_t *local);
-int ps_node_lvar_usage_is_unevaluated(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_lvar_usage_unevaluated(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-int psx_compound_literal_requires_addressable_storage(
-    const psx_resolution_store_t *store, const node_t *node);
-void psx_compound_literal_require_addressable_storage(
-    psx_resolution_store_t *store, node_t *node);
-int ps_node_is_decl_initializer(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_decl_initializer(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-int ps_node_is_source_assignment(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_source_assignment(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-int ps_node_is_source_cast(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_source_cast(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-int ps_node_is_implicit_int_return(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_implicit_int_return(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-int ps_node_widen_zext_i64(
-    const psx_resolution_store_t *store, const node_t *node);
-void ps_node_set_widen_zext_i64(
-    psx_resolution_store_t *store, node_t *node, int enabled);
-
 #endif

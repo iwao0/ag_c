@@ -4,7 +4,6 @@
 #include "../semantic/resolved_node.h"
 #include "../semantic/resolved_node_kind.h"
 #include "../semantic/resolved_object_ref.h"
-#include "../semantic/generic_selection_resolution.h"
 #include "../semantic/type_name_resolution.h"
 #include "lvar_internal.h"
 #include "decl.h"
@@ -1956,60 +1955,6 @@ psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv) {
   return ps_gvar_decl_qual_type(gv).type_id;
 }
 
-int ps_node_generic_selection_index(
-    const psx_resolution_store_t *store,
-    node_generic_selection_t *selection) {
-  if (!selection || !selection->control ||
-      selection->association_count <= 0) {
-    return -1;
-  }
-  int count = selection->association_count;
-  psx_qual_type_t *types =
-      calloc((size_t)count, sizeof(*types));
-  unsigned char *defaults = calloc((size_t)count, sizeof(*defaults));
-  if (!types || !defaults) {
-    free(types);
-    free(defaults);
-    return -1;
-  }
-  const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(store, &selection->base);
-  const psx_generic_selection_resolution_state_t *resolution =
-      state ? &state->generic_selection : NULL;
-  for (int i = 0; i < count; i++) {
-    types[i] = resolution && resolution->association_type_names &&
-                       i < resolution->association_type_name_count
-                   ? psx_type_name_resolved_qual_type(
-                         &resolution->association_type_names[i])
-                   : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                       PSX_TYPE_QUALIFIER_NONE};
-    defaults[i] = selection->associations[i].is_default;
-  }
-  psx_generic_selection_resolution_t selection_result;
-  psx_resolve_generic_selection_qual_types_in(
-      ps_node_qual_type(store, selection->control),
-      types, defaults, count, &selection_result);
-  free(types);
-  free(defaults);
-  return selection_result.status == PSX_GENERIC_SELECTION_RESOLUTION_OK
-             ? selection_result.selected_index : -1;
-}
-
-static node_t *generic_selection_semantic_expression(
-    const psx_resolution_store_t *store,
-    node_generic_selection_t *selection) {
-  if (!selection) return NULL;
-  const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(store, &selection->base);
-  const psx_generic_selection_resolution_state_t *resolution =
-      state ? &state->generic_selection : NULL;
-  int selected = resolution && resolution->is_resolved
-                     ? resolution->selected_index
-                     : ps_node_generic_selection_index(store, selection);
-  return selected >= 0 && selected < selection->association_count
-             ? selection->associations[selected].expression : NULL;
-}
-
 static int node_type_accepts_vla_runtime_view(
     const psx_resolution_store_t *store, const node_t *node) {
   psx_qual_type_t type = ps_node_qual_type(store, node);
@@ -2507,18 +2452,6 @@ void ps_node_reject_const_assign_at_in(
     const char *op, token_t *tok) {
   (void)op;
   if (!node) return;
-  if (node->kind == ND_GENERIC_SELECTION) {
-    node_generic_selection_t *selection =
-        (node_generic_selection_t *)node;
-    node_t *selected =
-        generic_selection_semantic_expression(
-            ps_ctx_resolution_store(semantic_context), selection);
-    if (selected) {
-      ps_node_reject_const_assign_at_in(
-          semantic_context, diagnostics, selected, op, tok);
-    }
-    return;
-  }
   psx_resolution_node_kind_t resolved_kind =
       psx_resolved_object_ref_node_kind(
           ps_ctx_resolution_store(semantic_context), node);
@@ -2570,11 +2503,6 @@ void ps_node_reject_const_qual_discard_at_in(
 int ps_node_is_lvalue_in(
     const psx_resolution_store_t *store,
     const node_t *node) {
-  if (node && node->kind == ND_GENERIC_SELECTION) {
-    const node_t *selected = generic_selection_semantic_expression(
-        store, (node_generic_selection_t *)node);
-    return selected && ps_node_is_lvalue_in(store, selected);
-  }
   psx_resolution_node_kind_t resolved_kind =
       psx_resolved_object_ref_node_kind(store, node);
   psx_type_shape_t shape = {0};
@@ -2588,9 +2516,7 @@ int ps_node_is_lvalue_in(
           resolved_kind == ND_SUBSCRIPT ||
           resolved_kind == ND_DEREF || resolved_kind == ND_GVAR ||
           resolved_kind == ND_COMPOUND_LITERAL ||
-          (resolved_kind == ND_CAST &&
-           ps_node_is_source_cast(store, node) &&
-           is_tag_aggregate));
+          (resolved_kind == ND_CAST && is_tag_aggregate));
 }
 
 void ps_node_expect_lvalue_at_in(

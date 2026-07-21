@@ -7,8 +7,6 @@
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
-#include "resolution_state_access.h"
-#include "resolution_state.h"
 #include "type_identity.h"
 
 static psx_floating_kind_t literal_floating_kind(
@@ -152,21 +150,4 @@ int psx_resolve_string_literal_value_in_contexts(
   }
   return finish_literal_resolution(
       semantic_context, type, resolution);
-}
-
-void psx_string_literal_bind_label(
-    psx_resolution_store_t *store,
-    node_string_t *literal, char *label) {
-  psx_node_resolution_state_t *state =
-      ps_node_resolution_state(store, literal ? &literal->base : NULL);
-  if (state) state->literal.string_label = label;
-}
-
-char *psx_string_literal_label(
-    const psx_resolution_store_t *store,
-    const node_string_t *literal) {
-  const psx_node_resolution_state_t *state =
-      ps_node_resolution_state_const(
-          store, literal ? &literal->base : NULL);
-  return state ? state->literal.string_label : NULL;
 }

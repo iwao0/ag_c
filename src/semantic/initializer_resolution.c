@@ -1,7 +1,6 @@
 #include "initializer_resolution.h"
 
 #include "character_array_initializer.h"
-#include "constant_expression.h"
 #include "../diag/diag.h"
 #include "../parser/arena.h"
 #include "../parser/diag.h"
@@ -973,107 +972,6 @@ int psx_resolve_initializer_member_target_with_records(
   return initializer_target_descend_member(semantic_types, record_decls,
                                            record_layouts, data_layout,
                                            logical_member, target_inout);
-}
-
-static long long resolve_designator_index(
-    const psx_resolution_store_t *store,
-    ag_diagnostic_context_t *diagnostics, node_t *expr,
-    token_t *designator_tok, token_t *fallback_tok) {
-  int ok = 1;
-  long long index = psx_eval_const_int(store, expr, &ok);
-  token_t *tok = designator_tok ? designator_tok : fallback_tok;
-  if (!ok) {
-    ps_diag_ctx_in(
-        diagnostics, tok, "init", "%s",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
-        diag_text_for_in(
-            diagnostics, DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-  }
-  if (index < 0) {
-    ps_diag_ctx_in(
-        diagnostics, tok, "init", "%s",
-        diag_message_for_in(
-            diagnostics, DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
-        diag_text_for_in(
-            diagnostics, DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-  }
-  return index;
-}
-
-psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
-    const psx_resolution_store_t *store, ag_diagnostic_context_t *diagnostics,
-    const psx_semantic_type_table_t *semantic_types,
-    const psx_record_decl_table_t *record_decls,
-    const psx_record_layout_table_t *record_layouts,
-    const ag_data_layout_t *data_layout, const psx_initializer_entry_t *entry,
-    psx_type_id_t root_type_id, int root_relative_offset,
-    token_t *fallback_tok) {
-  psx_initializer_target_t target = {
-      .type_id = root_type_id,
-      .relative_offset = root_relative_offset,
-      .first_array_index = -1,
-      .first_member_index = -1,
-      .union_relative_offset = -1,
-      .union_member_index = -1,
-  };
-  if (!semantic_types || !record_decls || !record_layouts ||
-      !ag_data_layout_is_valid(data_layout))
-    return target;
-  if (!entry) return target;
-  for (int d = 0; d < entry->designator_count; d++) {
-    const psx_initializer_designator_t *designator = &entry->designators[d];
-    if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
-      psx_type_shape_t target_shape = {0};
-      if (!psx_semantic_type_table_describe(
-              semantic_types, target.type_id, &target_shape) ||
-          target_shape.kind != PSX_TYPE_ARRAY) {
-        ps_diag_ctx_in(
-            diagnostics,
-            designator->tok ? designator->tok : fallback_tok,
-            "init", "%s",
-            diag_message_for_in(
-                diagnostics,
-                d > 0 ? DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY
-                      : DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-      }
-      long long index = resolve_designator_index(
-          store, diagnostics, designator->index_expr,
-          designator->tok, fallback_tok);
-      if (index >= target_shape.array_len) {
-        ps_diag_ctx_in(
-            diagnostics,
-            designator->tok ? designator->tok : fallback_tok,
-            "init", "%s",
-            diag_message_for_in(
-                diagnostics,
-                DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-      }
-      if (target.first_array_index < 0)
-        target.first_array_index = (int)index;
-      psx_type_id_t element_type_id = psx_semantic_type_table_base(
-          semantic_types, target.type_id).type_id;
-      target.relative_offset +=
-          (int)index * initializer_type_size(semantic_types, record_layouts,
-                                             element_type_id, data_layout);
-      target.type_id = element_type_id;
-      target.member_ref = (psx_initializer_member_ref_t){0};
-      continue;
-    }
-
-    if (!psx_resolve_initializer_member_target_with_records(
-            semantic_types, record_decls, record_layouts, data_layout,
-            designator->member_name, designator->member_len, &target)) {
-      ps_diag_ctx_in(
-          diagnostics,
-          designator->tok ? designator->tok : fallback_tok,
-          "init", "%s",
-          diag_message_for_in(
-              diagnostics,
-              DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-    }
-  }
-  return target;
 }
 
 static int append_scalar_leaf(

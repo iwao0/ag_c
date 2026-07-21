@@ -968,16 +968,16 @@ static int resolve_direct_sizeof_type_name(
     direct_type_query_binding_t *binding) {
   if (!context || !query || !query->type_name.syntax || !binding)
     return 0;
-  psx_type_name_resolution_state_t base_state = {0};
-  if (!psx_bind_type_name_ref_in_contexts(
+  psx_type_name_base_resolution_t base_resolution = {0};
+  if (!psx_resolve_type_name_base_in_contexts(
           context->semantic_context, context->global_registry,
           context->local_registry, &query->type_name,
-          &base_state))
+          &base_resolution))
     return 0;
   psx_qual_type_t base_qual_type =
-      psx_type_name_bound_base_qual_type(&base_state);
+      base_resolution.base_qual_type;
   const psx_runtime_declarator_application_t *runtime_application =
-      psx_type_name_bound_runtime_application(&base_state);
+      base_resolution.runtime_application;
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
 
   const psx_parsed_declarator_t *declarator =
@@ -4928,7 +4928,6 @@ static int preflight_direct_local_declaration(
     psx_automatic_local_declaration_pipeline_result_t result;
     if (!psx_begin_automatic_local_declaration_hir_pipeline(
             &request, &result) || !result.var ||
-        (result.initialization && !result.vla_runtime_plan) ||
         (has_vla_type && !result.vla_runtime_plan))
       return 0;
     psx_qual_type_t declaration_qual_type =
@@ -6774,7 +6773,7 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
   psx_semantic_node_t *function =
       psx_semantic_node_builder_statement(
           &context.builder, &function_spec, children, edges,
-          child_count, ND_FUNCDEF);
+          child_count, syntax_function->body->kind);
   psx_typed_hir_tree_t *tree = wrap_typed_root(
       semantic_context, function, syntax_function->body, failure);
   if (!tree) {

@@ -1,7 +1,6 @@
 #ifndef AGC_LOWERING_CAST_LOWERING_H
 #define AGC_LOWERING_CAST_LOWERING_H
 
-#include "../parser/ast.h"
 #include "../compilation_options.h"
 #include "../semantic/aggregate_cast_resolution.h"
 #include "../semantic/source_cast_type_resolution.h"
@@ -47,13 +46,6 @@ int psx_plan_aggregate_source_cast_qual_types(
     psx_qual_type_t target_qual_type,
     psx_qual_type_t operand_qual_type,
     token_t *diag_tok,
-    const ag_compilation_options_t *options,
-    psx_aggregate_source_cast_plan_t *plan);
-
-int psx_plan_aggregate_source_cast(
-    psx_lowering_context_t *lowering_context,
-    psx_local_registry_t *local_registry,
-    node_source_cast_t *cast, token_t *fallback_diag_tok,
     const ag_compilation_options_t *options,
     psx_aggregate_source_cast_plan_t *plan);
 
