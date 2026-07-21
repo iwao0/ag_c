@@ -6,8 +6,6 @@
 #include "dynarray.h"
 #include "runtime_context.h"
 #include "syntax_node.h"
-#include "type.h"
-#include "type_builder.h"
 #include "declaration_syntax.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"

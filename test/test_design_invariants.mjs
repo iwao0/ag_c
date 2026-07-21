@@ -4679,16 +4679,21 @@ if (wasmFunctionCodegenViolations.length ||
 }
 
 const wasmObjSource = await readFile("src/arch/wasm32/wasm32_obj.c", "utf8");
-if (/^static\s+obj_ctx_t\s+g_obj\s*;/m.test(wasmObjSource) ||
-    /^static\s+wb_t\s+g_obj_capture\s*;/m.test(wasmObjSource) ||
-    /\b_Thread_local\b/.test(wasmObjSource) ||
-    /wasm32_obj_context_(?:activate|active)\s*\(/.test(wasmObjSource) ||
+const wasmObjInternalSource = await readFile(
+  "src/arch/wasm32/wasm32_obj_internal.h",
+  "utf8",
+);
+const wasmObjStateSources = `${wasmObjSource}\n${wasmObjInternalSource}`;
+if (/^static\s+obj_ctx_t\s+g_obj\s*;/m.test(wasmObjStateSources) ||
+    /^static\s+wb_t\s+g_obj_capture\s*;/m.test(wasmObjStateSources) ||
+    /\b_Thread_local\b/.test(wasmObjStateSources) ||
+    /wasm32_obj_context_(?:activate|active)\s*\(/.test(wasmObjStateSources) ||
     /^static\s+(?:ir_type_t|unsigned char|int)\s*\*?g_emit_local_/m.test(
-      wasmObjSource,
+      wasmObjStateSources,
     ) ||
-    !/struct\s+wasm32_obj_context_t\s*\{/.test(wasmObjSource) ||
+    !/struct\s+wasm32_obj_context_t\s*\{/.test(wasmObjInternalSource) ||
     !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
-      wasmObjSource,
+      wasmObjInternalSource,
     ) ||
     /\bdiag_(?:emit_internalf|message_for)\s*\(/.test(wasmObjSource) ||
     !/wasm32_obj_clear_module\s*\(&g_obj\)/.test(wasmObjSource)) {
@@ -8070,6 +8075,7 @@ const declaratorShapeBuilderApiRe = new RegExp(
 );
 const declaratorShapeBuilderUsers = new Set([
   "src/parser/declarator_shape_builder.h",
+  "src/parser/declarator_shape_builder.c",
   "src/parser/type.c",
   "src/parser/declaration_syntax.c",
   "src/semantic/type_name_resolution.c",
@@ -8098,6 +8104,7 @@ for (const file of typeBuilderFiles) {
     );
   }
   if (file !== "src/parser/type.c" &&
+      file !== "src/parser/declarator_shape_builder.c" &&
       /->(?:array_len|is_incomplete_array|is_vla_array|function_is_variadic)\s*=(?!=)/.test(
         source,
       )) {
@@ -12784,6 +12791,7 @@ const mutableCompatibilityTestOnlySources = [
   "src/frontend/local_declaration_legacy.c",
   "src/semantic/parser_type_compatibility.c",
   "src/semantic/type_compatibility_view.c",
+  "src/parser/type.c",
 ];
 const declaredTestOnlySources = new Set(
   [...makefileSource.matchAll(/^TEST_ONLY_SRCS(?:\+)?=(.*)$/gm)]
@@ -13345,6 +13353,14 @@ const wasmObjectWriterSource = await readFile(
   "src/arch/wasm32/wasm32_obj.c",
   "utf8",
 );
+const wasmObjectBufferSource = await readFile(
+  "src/arch/wasm32/wasm32_obj_buffer.c",
+  "utf8",
+);
+const wasmObjectSectionsSource = await readFile(
+  "src/arch/wasm32/wasm32_obj_sections.c",
+  "utf8",
+);
 const wasmWatRuntimeSource = await readFile(
   "src/arch/wasm32/wasm32_wat_runtime.c",
   "utf8",
@@ -13629,8 +13645,18 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
     ) ||
     !/\bwasm32_machine_argument_t\b/.test(wasmWatWriterSource) ||
     !/\bwasm32_machine_argument_t\b/.test(wasmObjectWriterSource) ||
-    !/\bvariadic_arguments\b/.test(wasmWatWriterSource) ||
-    !/\bvariadic_arguments\b/.test(wasmObjectWriterSource) ||
+    !/\bwasm32_machine_call_visit_variadic_prepare\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/\bwasm32_machine_call_visit_variadic_restore\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    !/\bwasm32_machine_call_visit_variadic_prepare\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/\bwasm32_machine_call_visit_variadic_restore\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
     !/\bvariadic_area_size\b/.test(wasmMachineFunctionSource) ||
     /\bnargs_var\b/.test(wasmWatWriterSource) ||
     /\bnargs_var\b/.test(wasmObjectWriterSource) ||
@@ -13639,6 +13665,58 @@ if (!/wasm32_machine_signature_from_abi\s*\(/.test(
     )) {
   throw new Error(
     "Wasm WAT and object writers must serialize the preplanned Machine call ABI",
+  );
+}
+
+if (!/compute_instruction_liveness\s*\(/.test(
+      wasmMachineFunctionSource,
+    ) ||
+    !/dst_used_after/.test(wasmMachineFunctionHeader) ||
+    /vreg_used_after\s*\(|inst_uses_vreg\s*\(/.test(
+      wasmWatWriterSource,
+    ) ||
+    /vreg_used_after\s*\(|inst_uses_vreg\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    /for\s*\([^)]*variadic_argument_count/.test(
+      wasmWatWriterSource,
+    ) ||
+    /for\s*\([^)]*variadic_argument_count/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm writers must consume Machine liveness and variadic action plans without replanning them",
+  );
+}
+
+if (!/wasm32_obj_buffer_reserve\s*\(/.test(
+      wasmObjectBufferSource,
+    ) ||
+    !/wasm32_obj_buffer_(?:uleb|sleb|section)\s*\(/.test(
+      wasmObjectBufferSource,
+    ) ||
+    /static\s+(?:int|void|uint32_t)\s+wb_(?:reserve|u8|bytes|uleb|sleb)\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm object serialization must keep byte and section encoding in its serializer buffer module",
+  );
+}
+
+if (!/wasm32_obj_serialize_sections\s*\(/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/void\s+wasm32_obj_serialize_sections\s*\(/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    !/emit_(?:type|import|function|code|data|linking|reloc)_section\s*\(/.test(
+      wasmObjectSectionsSource,
+    ) ||
+    /static\s+void\s+emit_(?:type|import|function|code|data|linking|reloc)_section\s*\(/.test(
+      wasmObjectWriterSource,
+    )) {
+  throw new Error(
+    "Wasm object module assembly must delegate section and relocation serialization to its section writer",
   );
 }
 

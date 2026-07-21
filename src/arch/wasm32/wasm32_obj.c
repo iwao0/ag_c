@@ -2,146 +2,13 @@
 #include "wasm32_machine_abi.h"
 #include "wasm32_machine_function.h"
 #include "wasm32_machine_ir.h"
+#include "wasm32_obj_internal.h"
 #include "../../diag/diag.h"
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-enum {
-  WASM_SEC_TYPE = 1,
-  WASM_SEC_IMPORT = 2,
-  WASM_SEC_FUNCTION = 3,
-  WASM_SEC_CODE = 10,
-  WASM_SEC_DATA = 11,
-  WASM_SEC_DATACOUNT = 12,
-
-  R_WASM_FUNCTION_INDEX_LEB = 0,
-  R_WASM_TABLE_INDEX_SLEB = 1,
-  R_WASM_TABLE_INDEX_I32 = 2,
-  R_WASM_MEMORY_ADDR_LEB = 3,
-  R_WASM_MEMORY_ADDR_I32 = 5,
-  R_WASM_TYPE_INDEX_LEB = 6,
-  R_WASM_GLOBAL_INDEX_LEB = 7,
-
-  WASM_SYM_FUNCTION = 0,
-  WASM_SYM_DATA = 1,
-  WASM_SYM_GLOBAL = 2,
-
-  WASM_SYMBOL_BINDING_LOCAL = 0x2,
-  WASM_SYMBOL_UNDEFINED = 0x10,
-  WASM_SYMBOL_EXPLICIT_NAME = 0x40,
-
-  WASM_SEGMENT_INFO = 5,
-  WASM_SYMBOL_TABLE = 8,
-};
-
-typedef struct {
-  ag_diagnostic_context_t *diagnostic_context;
-  unsigned char *data;
-  uint32_t len;
-  uint32_t cap;
-  uint32_t max_len;
-  int overflow;
-} wb_t;
-
-typedef struct {
-  int target_sym;
-  int target_is_data;
-  int target_is_global;
-  int target_is_type;
-  uint32_t body_off;
-  int type;
-  int addend;
-} obj_reloc_t;
-
-typedef wasm32_machine_signature_t obj_sig_t;
-
-typedef struct {
-  char *name;
-  int name_len;
-  char *c_signature;
-  int c_signature_len;
-  obj_sig_t sig;
-  int imported;
-  int defined;
-  int is_static;
-  int type_index;
-  int func_index;
-  int symbol_index;
-  wb_t body;
-  obj_reloc_t *relocs;
-  int reloc_count;
-  int reloc_cap;
-} obj_func_t;
-
-typedef struct {
-  char *name;
-  int name_len;
-  wb_t bytes;
-  size_t alloc_size;
-  int align;
-  int segment_index;
-  int symbol_index;
-  int is_static;
-  int is_undefined;
-  int is_emitted;
-  obj_reloc_t *relocs;
-  int reloc_count;
-  int reloc_cap;
-} obj_data_t;
-
-typedef struct {
-  char *name;
-  int name_len;
-  int global_index;
-  int symbol_index;
-} obj_global_t;
-
-typedef struct {
-  FILE *out;
-  int capture_output;
-  obj_func_t *funcs;
-  int func_count;
-  int func_cap;
-  obj_data_t *data;
-  int data_count;
-  int data_cap;
-  obj_global_t *globals;
-  int global_count;
-  int global_cap;
-  obj_sig_t *types;
-  int type_count;
-  int type_cap;
-  obj_reloc_t *code_relocs;
-  int code_reloc_count;
-  int code_reloc_cap;
-  obj_reloc_t *data_relocs;
-  int data_reloc_count;
-  int data_reloc_cap;
-  int symbol_count;
-  int has_indirect_call;
-  char *continuation_entry;
-  char *continuation_condition;
-  char *continuation_step;
-  char *continuation_start;
-  char *continuation_resume;
-  char *continuation_status;
-  char *continuation_result;
-} obj_ctx_t;
-
-struct wasm32_obj_context_t {
-  ag_diagnostic_context_t *diagnostic_context;
-  obj_ctx_t obj;
-  wb_t capture;
-  uint32_t capture_limit;
-  int capture_limit_exceeded;
-  ir_type_t *emit_local_types;
-  unsigned char *emit_local_unsigned;
-  int emit_local_count;
-  const wasm32_machine_primitive_plan_t *primitives;
-};
 
 static void wasm32_obj_clear_module(obj_ctx_t *obj) {
   if (!obj) return;
@@ -249,109 +116,6 @@ static char *dup_name(
 
 static int name_eq(const char *a, int alen, const char *b, int blen) {
   return alen == blen && a && b && memcmp(a, b, (size_t)alen) == 0;
-}
-
-static int wb_reserve(wb_t *b, size_t add) {
-  if (add > UINT32_MAX || b->len > UINT32_MAX - (uint32_t)add) {
-    b->overflow = 1;
-    return 0;
-  }
-  uint32_t need = b->len + (uint32_t)add;
-  if (b->max_len && need > b->max_len) {
-    b->overflow = 1;
-    return 0;
-  }
-  if (need <= b->cap) return 1;
-  uint32_t ncap = b->cap
-      ? (b->cap > UINT32_MAX / 2 ? UINT32_MAX : b->cap * 2)
-      : 128;
-  while (ncap < need && ncap <= UINT32_MAX / 2) ncap *= 2;
-  if (ncap < need) ncap = need;
-  if (b->max_len && ncap > b->max_len) ncap = b->max_len;
-  b->data = xrealloc(b->diagnostic_context, b->data, ncap);
-  b->cap = ncap;
-  return 1;
-}
-
-static void wb_u8(wb_t *b, unsigned v) {
-  if (!wb_reserve(b, 1)) return;
-  b->data[b->len++] = (unsigned char)v;
-}
-
-static void wb_bytes(wb_t *b, const void *p, size_t n) {
-  if (n == 0) return;
-  if (!wb_reserve(b, n)) return;
-  memcpy(b->data + b->len, p, n);
-  b->len += (uint32_t)n;
-}
-
-static void wb_u32le(wb_t *b, uint32_t v) {
-  wb_u8(b, v & 0xff);
-  wb_u8(b, (v >> 8) & 0xff);
-  wb_u8(b, (v >> 16) & 0xff);
-  wb_u8(b, (v >> 24) & 0xff);
-}
-
-static void wb_uleb(wb_t *b, uint32_t v) {
-  do {
-    unsigned char byte = (unsigned char)(v & 0x7f);
-    v >>= 7;
-    if (v) byte |= 0x80;
-    wb_u8(b, byte);
-  } while (v);
-}
-
-static void wb_sleb(wb_t *b, int64_t v) {
-  int more = 1;
-  while (more) {
-    unsigned char byte = (unsigned char)(v & 0x7f);
-    int sign = byte & 0x40;
-    uint64_t shifted = (uint64_t)v >> 7;
-    if (v < 0) shifted |= (~(uint64_t)0) << (64 - 7);
-    v = (int64_t)shifted;
-    if ((v == 0 && !sign) || (v == -1 && sign)) more = 0;
-    else byte |= 0x80;
-    wb_u8(b, byte);
-  }
-}
-
-static uint32_t wb_uleb5(wb_t *b, uint32_t v) {
-  uint32_t off = b->len;
-  for (int i = 0; i < 5; i++) {
-    unsigned char byte = (unsigned char)(v & 0x7f);
-    v >>= 7;
-    if (i != 4) byte |= 0x80;
-    wb_u8(b, byte);
-  }
-  return off;
-}
-
-static void wb_patch_uleb5(unsigned char *p, uint32_t v) {
-  for (int i = 0; i < 5; i++) {
-    unsigned char byte = (unsigned char)(v & 0x7f);
-    v >>= 7;
-    if (i != 4) byte |= 0x80;
-    p[i] = byte;
-  }
-}
-
-static void wb_str(wb_t *b, const char *s, int len) {
-  wb_uleb(b, (uint32_t)len);
-  wb_bytes(b, s, (size_t)len);
-}
-
-static void emit_section(wb_t *out, int id, wb_t *payload) {
-  wb_u8(out, (unsigned)id);
-  wb_uleb(out, (uint32_t)payload->len);
-  wb_bytes(out, payload->data, payload->len);
-}
-
-static void emit_custom_section(wb_t *out, const char *name, wb_t *payload) {
-  wb_t sec = {.diagnostic_context = out->diagnostic_context};
-  wb_str(&sec, name, (int)strlen(name));
-  wb_bytes(&sec, payload->data, payload->len);
-  emit_section(out, 0, &sec);
-  free(sec.data);
 }
 
 static unsigned wasm_valtype(
@@ -660,46 +424,6 @@ static void data_add_reloc(
   r->target_is_global = 0;
   r->target_is_type = 0;
   r->addend = addend;
-}
-
-static void add_global_reloc(
-                             wasm32_obj_context_t *context,
-                             obj_reloc_t **arr, int *count, int *cap, int type,
-                             uint32_t off, int target_sym, int addend) {
-  if (*count == *cap) {
-    int ncap = *cap ? *cap * 2 : 16;
-    *arr = xrealloc(
-        context->diagnostic_context, *arr,
-        (size_t)ncap * sizeof(**arr));
-    *cap = ncap;
-  }
-  obj_reloc_t *r = &(*arr)[(*count)++];
-  r->body_off = (uint32_t)off;
-  r->type = type;
-  r->target_sym = target_sym;
-  r->target_is_data = 0;
-  r->target_is_global = 0;
-  r->target_is_type = 0;
-  r->addend = addend;
-}
-
-static void add_code_reloc(
-    wasm32_obj_context_t *context, uint32_t off, obj_reloc_t *src) {
-  if (g_obj.code_reloc_count == g_obj.code_reloc_cap) {
-    int ncap = g_obj.code_reloc_cap ? g_obj.code_reloc_cap * 2 : 16;
-    g_obj.code_relocs = xrealloc(
-        context->diagnostic_context, g_obj.code_relocs,
-        (size_t)ncap * sizeof(*g_obj.code_relocs));
-    g_obj.code_reloc_cap = ncap;
-  }
-  obj_reloc_t *r = &g_obj.code_relocs[g_obj.code_reloc_count++];
-  r->body_off = off;
-  r->type = src->type;
-  r->target_sym = src->target_sym;
-  r->target_is_data = 0;
-  r->target_is_global = 0;
-  r->target_is_type = 0;
-  r->addend = src->addend;
 }
 
 static int intern_type(
@@ -1197,64 +921,131 @@ static void emit_parameter_bind(
   }
 }
 
-static int emit_variadic_arg_area_prepare(
-                                          wasm32_obj_context_t *context,
-                                          wb_t *b, obj_func_t *of, obj_global_t *stack_pointer,
-                                          obj_global_t **va_arg_area, int old_va_arg_area_local,
-                                          const wasm32_machine_call_t *call,
-                                          int param_count) {
-  if (!call->is_variadic) return 0;
-  const wasm32_machine_argument_t *arguments = call->arguments;
-  int bytes = call->variadic_area_size;
-  if (bytes <= 0) return 0;
-  if (!stack_pointer)
+typedef struct {
+  wasm32_obj_context_t *context;
+  wb_t *body;
+  obj_func_t *function;
+  obj_global_t *stack_pointer;
+  obj_global_t **va_arg_area;
+  const wasm32_machine_call_t *call;
+  int old_va_arg_area_local;
+  int param_count;
+} wasm_obj_vararg_visitor_t;
+
+static int emit_obj_vararg_action(
+    void *user, const wasm32_machine_vararg_action_t *action) {
+  wasm_obj_vararg_visitor_t *visitor = user;
+  wasm32_obj_context_t *context = visitor->context;
+  wb_t *body = visitor->body;
+  obj_func_t *function = visitor->function;
+  if (!visitor->stack_pointer)
     obj_unsupported_msg(
         context, "variadic call without stack pointer in Wasm object mode");
-  if (!*va_arg_area) *va_arg_area = intern_va_arg_area_global(context);
-
-  emit_stack_global_get(context, b, of, *va_arg_area);
-  emit_local_set(b, old_va_arg_area_local);
-
-  emit_stack_global_get(context, b, of, stack_pointer);
-  emit_const(context, b, IR_TY_I32, bytes);
-  wb_u8(b, 0x6b);
-  emit_stack_global_set(context, b, of, stack_pointer);
-
-  emit_stack_global_get(context, b, of, stack_pointer);
-  emit_stack_global_set(context, b, of, *va_arg_area);
-
-  for (int i = 0; i < call->variadic_argument_count; i++) {
-    const wasm32_machine_variadic_argument_t *variadic =
-        &call->variadic_arguments[i];
-    emit_stack_global_get(context, b, of, *va_arg_area);
-    emit_const(context, b, IR_TY_I32, variadic->byte_offset);
-    wb_u8(b, 0x6a);
-    emit_abi_argument(
-        context, b, &arguments[variadic->argument_index],
-        variadic->argument_type, param_count);
-    if (variadic->conversion.opcode != WASM32_MI_COPY)
+  if (!*visitor->va_arg_area)
+    *visitor->va_arg_area = intern_va_arg_area_global(context);
+  switch (action->kind) {
+    case WASM32_MACHINE_VARARG_SAVE_AREA:
+      emit_stack_global_get(
+          context, body, function, *visitor->va_arg_area);
+      emit_local_set(body, visitor->old_va_arg_area_local);
+      return 1;
+    case WASM32_MACHINE_VARARG_RESERVE_STACK:
+      emit_stack_global_get(
+          context, body, function, visitor->stack_pointer);
+      emit_const(context, body, IR_TY_I32, action->byte_count);
+      wb_u8(body, 0x6b);
+      emit_stack_global_set(
+          context, body, function, visitor->stack_pointer);
+      return 1;
+    case WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK:
+      emit_stack_global_get(
+          context, body, function, visitor->stack_pointer);
+      emit_stack_global_set(
+          context, body, function, *visitor->va_arg_area);
+      return 1;
+    case WASM32_MACHINE_VARARG_STORE_ARGUMENT: {
+      const wasm32_machine_variadic_argument_t *variadic =
+          action->argument;
+      if (!variadic || variadic->argument_index < 0 ||
+          variadic->argument_index >= visitor->call->argument_count)
+        return 0;
+      emit_stack_global_get(
+          context, body, function, *visitor->va_arg_area);
+      emit_const(context, body, IR_TY_I32, variadic->byte_offset);
+      wb_u8(body, 0x6a);
+      emit_abi_argument(
+          context, body,
+          &visitor->call->arguments[variadic->argument_index],
+          variadic->argument_type, visitor->param_count);
+      if (variadic->conversion.opcode != WASM32_MI_COPY)
+        wb_u8(
+            body, conversion_binary_or_unsupported(
+                      context, variadic->conversion));
       wb_u8(
-          b, conversion_binary_or_unsupported(
-                 context, variadic->conversion));
-    wb_u8(b, memory_binary_or_unsupported(context, variadic->store));
-    emit_selected_memarg(b, &variadic->store);
+          body, memory_binary_or_unsupported(
+                    context, variadic->store));
+      emit_selected_memarg(body, &variadic->store);
+      return 1;
+    }
+    case WASM32_MACHINE_VARARG_RELEASE_STACK:
+      emit_stack_global_get(
+          context, body, function, visitor->stack_pointer);
+      emit_const(context, body, IR_TY_I32, action->byte_count);
+      wb_u8(body, 0x6a);
+      emit_stack_global_set(
+          context, body, function, visitor->stack_pointer);
+      return 1;
+    case WASM32_MACHINE_VARARG_RESTORE_AREA:
+      emit_local_get(body, visitor->old_va_arg_area_local);
+      emit_stack_global_set(
+          context, body, function, *visitor->va_arg_area);
+      return 1;
   }
-  return bytes;
+  return 0;
+}
+
+static void emit_variadic_arg_area_prepare(
+    wasm32_obj_context_t *context, wb_t *body, obj_func_t *function,
+    obj_global_t *stack_pointer, obj_global_t **va_arg_area,
+    int old_va_arg_area_local, const wasm32_machine_call_t *call,
+    int param_count) {
+  if (!call || call->variadic_area_size <= 0) return;
+  wasm_obj_vararg_visitor_t visitor = {
+      .context = context,
+      .body = body,
+      .function = function,
+      .stack_pointer = stack_pointer,
+      .va_arg_area = va_arg_area,
+      .call = call,
+      .old_va_arg_area_local = old_va_arg_area_local,
+      .param_count = param_count,
+  };
+  if (!wasm32_machine_call_visit_variadic_prepare(
+          call, emit_obj_vararg_action, &visitor))
+    obj_unsupported_msg(
+        context, "invalid Wasm variadic argument preparation plan");
 }
 
 static void emit_variadic_arg_area_restore(
-                                           wasm32_obj_context_t *context,
-                                           wb_t *b, obj_func_t *of, obj_global_t *stack_pointer,
-                                           obj_global_t *va_arg_area,
-                                           int old_va_arg_area_local, int bytes) {
-  if (bytes <= 0) return;
-  emit_stack_global_get(context, b, of, stack_pointer);
-  emit_const(context, b, IR_TY_I32, bytes);
-  wb_u8(b, 0x6a);
-  emit_stack_global_set(context, b, of, stack_pointer);
-
-  emit_local_get(b, old_va_arg_area_local);
-  emit_stack_global_set(context, b, of, va_arg_area);
+    wasm32_obj_context_t *context, wb_t *body, obj_func_t *function,
+    obj_global_t *stack_pointer, obj_global_t **va_arg_area,
+    int old_va_arg_area_local, const wasm32_machine_call_t *call,
+    int param_count) {
+  if (!call || call->variadic_area_size <= 0) return;
+  wasm_obj_vararg_visitor_t visitor = {
+      .context = context,
+      .body = body,
+      .function = function,
+      .stack_pointer = stack_pointer,
+      .va_arg_area = va_arg_area,
+      .call = call,
+      .old_va_arg_area_local = old_va_arg_area_local,
+      .param_count = param_count,
+  };
+  if (!wasm32_machine_call_visit_variadic_restore(
+          call, emit_obj_vararg_action, &visitor))
+    obj_unsupported_msg(
+        context, "invalid Wasm variadic argument restore plan");
 }
 
 static void emit_direct_aggregate_call_result(
@@ -1803,10 +1594,9 @@ static void gen_func_body(
           const obj_sig_t *csig = &call->signature;
           int argument_count = call->argument_count;
           const wasm32_machine_argument_t *arguments = call->arguments;
-          int vararg_area_bytes =
-              emit_variadic_arg_area_prepare(context, &body, of, stack_pointer, &va_arg_area,
-                                             old_va_arg_area_local, call,
-                                             param_count);
+          emit_variadic_arg_area_prepare(
+              context, &body, of, stack_pointer, &va_arg_area,
+              old_va_arg_area_local, call, param_count);
           if (i->callee.id != IR_VAL_NONE) {
             int type_index = intern_type(context, csig);
             g_obj.has_indirect_call = 1;
@@ -1837,8 +1627,9 @@ static void gen_func_body(
             } else if (csig->result != IR_TY_VOID && i->dst.id >= 0) {
               emit_local_set(&body, local_index(param_count, i->dst.id));
             }
-            emit_variadic_arg_area_restore(context, &body, of, stack_pointer, va_arg_area,
-                                           old_va_arg_area_local, vararg_area_bytes);
+            emit_variadic_arg_area_restore(
+                context, &body, of, stack_pointer, &va_arg_area,
+                old_va_arg_area_local, call, param_count);
             break;
           }
           if (!i->sym) obj_unsupported_inst(context, i);
@@ -1878,8 +1669,9 @@ static void gen_func_body(
           } else if (emit_sig->result != IR_TY_VOID && i->dst.id >= 0) {
             emit_local_set(&body, local_index(param_count, i->dst.id));
           }
-          emit_variadic_arg_area_restore(context, &body, of, stack_pointer, va_arg_area,
-                                         old_va_arg_area_local, vararg_area_bytes);
+          emit_variadic_arg_area_restore(
+              context, &body, of, stack_pointer, &va_arg_area,
+              old_va_arg_area_local, call, param_count);
           break;
         }
         case WASM32_MACHINE_INST_CONTROL:
@@ -2184,291 +1976,6 @@ static void synthesize_continuation_helpers(
   (void)result_fn_index;
 }
 
-static int defined_data_count(wasm32_obj_context_t *context) {
-  int n = 0;
-  for (int i = 0; i < g_obj.data_count; i++) {
-    if (!g_obj.data[i].is_undefined) n++;
-  }
-  return n;
-}
-
-static void emit_type_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)g_obj.type_count);
-  for (int i = 0; i < g_obj.type_count; i++) {
-    obj_sig_t *s = &g_obj.types[i];
-    wb_u8(&p, 0x60);
-    wb_uleb(&p, (uint32_t)s->nparams);
-    for (int a = 0; a < s->nparams; a++)
-      wb_u8(&p, wasm_valtype(context, s->params[a]));
-    if (s->result == IR_TY_VOID) {
-      wb_uleb(&p, 0);
-    } else {
-      wb_uleb(&p, 1);
-      wb_u8(&p, wasm_valtype(context, s->result));
-    }
-  }
-  emit_section(out, WASM_SEC_TYPE, &p);
-  free(p.data);
-}
-
-static void emit_import_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int nimports = 0;
-  for (int i = 0; i < g_obj.func_count; i++) if (g_obj.funcs[i].imported) nimports++;
-  if (g_obj.has_indirect_call) nimports++;
-  nimports++;
-  nimports += g_obj.global_count;
-  if (nimports == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)nimports);
-  for (int i = 0; i < g_obj.func_count; i++) {
-    obj_func_t *f = &g_obj.funcs[i];
-    if (!f->imported) continue;
-    wb_str(&p, "env", 3);
-    wb_str(&p, f->name, f->name_len);
-    wb_u8(&p, 0x00);
-    wb_uleb(&p, (uint32_t)f->type_index);
-  }
-  if (g_obj.has_indirect_call) {
-    wb_str(&p, "env", 3);
-    wb_str(&p, "__indirect_function_table", 25);
-    wb_u8(&p, 0x01);
-    wb_u8(&p, 0x70);
-    wb_u8(&p, 0x00);
-    wb_uleb(&p, 0);
-  }
-  wb_str(&p, "env", 3);
-  wb_str(&p, "__linear_memory", 15);
-  wb_u8(&p, 0x02);
-  wb_u8(&p, 0x00);
-  wb_uleb(&p, 0);
-  for (int i = 0; i < g_obj.global_count; i++) {
-    obj_global_t *g = &g_obj.globals[i];
-    wb_str(&p, "env", 3);
-    wb_str(&p, g->name, g->name_len);
-    wb_u8(&p, 0x03);
-    wb_u8(&p, wasm_valtype(context, IR_TY_I32));
-    wb_u8(&p, 0x01);
-  }
-  emit_section(out, WASM_SEC_IMPORT, &p);
-  free(p.data);
-}
-
-static void emit_function_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int ndefs = 0;
-  for (int i = 0; i < g_obj.func_count; i++) if (g_obj.funcs[i].defined) ndefs++;
-  if (ndefs == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)ndefs);
-  for (int i = 0; i < g_obj.func_count; i++) {
-    if (g_obj.funcs[i].defined) wb_uleb(&p, (uint32_t)g_obj.funcs[i].type_index);
-  }
-  emit_section(out, WASM_SEC_FUNCTION, &p);
-  free(p.data);
-}
-
-static void emit_datacount_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int ndata = defined_data_count(context);
-  if (ndata == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)ndata);
-  emit_section(out, WASM_SEC_DATACOUNT, &p);
-  free(p.data);
-}
-
-static void emit_code_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int ndefs = 0;
-  for (int i = 0; i < g_obj.func_count; i++) if (g_obj.funcs[i].defined) ndefs++;
-  if (ndefs == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)ndefs);
-  for (int i = 0; i < g_obj.func_count; i++) {
-    obj_func_t *f = &g_obj.funcs[i];
-    if (!f->defined) continue;
-    wb_t body_size = {
-        .diagnostic_context = context->diagnostic_context};
-    wb_uleb(&body_size, (uint32_t)f->body.len);
-    uint32_t body_payload_start = p.len + body_size.len;
-    wb_bytes(&p, body_size.data, body_size.len);
-    wb_bytes(&p, f->body.data, f->body.len);
-    for (int r = 0; r < f->reloc_count; r++) {
-      add_code_reloc(
-          context, body_payload_start + f->relocs[r].body_off,
-          &f->relocs[r]);
-    }
-    free(body_size.data);
-  }
-  emit_section(out, WASM_SEC_CODE, &p);
-  free(p.data);
-}
-
-static void emit_data_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int ndata = defined_data_count(context);
-  if (ndata == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)ndata);
-  int seg_index = 0;
-  for (int i = 0; i < g_obj.data_count; i++) {
-    obj_data_t *d = &g_obj.data[i];
-    if (d->is_undefined) continue;
-    d->segment_index = seg_index++;
-    wb_u8(&p, 0x00);
-    wb_u8(&p, 0x41);
-    wb_uleb(&p, 0);
-    wb_u8(&p, 0x0b);
-    wb_uleb(&p, (uint32_t)d->bytes.len);
-    uint32_t data_start = p.len;
-    wb_bytes(&p, d->bytes.data, d->bytes.len);
-    for (int r = 0; r < d->reloc_count; r++) {
-      int sym = d->relocs[r].target_is_data
-                  ? g_obj.data[d->relocs[r].target_sym].symbol_index
-                  : g_obj.funcs[d->relocs[r].target_sym].symbol_index;
-      add_global_reloc(
-                       context,
-                       &g_obj.data_relocs, &g_obj.data_reloc_count, &g_obj.data_reloc_cap,
-                       d->relocs[r].type, (uint32_t)data_start + d->relocs[r].body_off,
-                       sym, d->relocs[r].addend);
-    }
-  }
-  emit_section(out, WASM_SEC_DATA, &p);
-  free(p.data);
-}
-
-static void emit_symbol_entry(wb_t *p, obj_func_t *f) {
-  uint32_t flags = (f->is_static ? WASM_SYMBOL_BINDING_LOCAL : 0) | WASM_SYMBOL_EXPLICIT_NAME;
-  if (f->imported) flags |= WASM_SYMBOL_UNDEFINED;
-  wb_u8(p, WASM_SYM_FUNCTION);
-  wb_uleb(p, flags);
-  wb_uleb(p, (uint32_t)f->func_index);
-  wb_str(p, f->name, f->name_len);
-}
-
-static void emit_data_symbol_entry(wb_t *p, obj_data_t *d) {
-  uint32_t flags = d->is_static ? WASM_SYMBOL_BINDING_LOCAL : 0;
-  if (d->is_undefined) flags |= WASM_SYMBOL_UNDEFINED;
-  wb_u8(p, WASM_SYM_DATA);
-  wb_uleb(p, flags);
-  wb_str(p, d->name, d->name_len);
-  if (d->is_undefined) return;
-  wb_uleb(p, (uint32_t)d->segment_index);
-  wb_uleb(p, 0);
-  wb_uleb(p, (uint32_t)(d->alloc_size > d->bytes.len ? d->alloc_size : d->bytes.len));
-}
-
-static void emit_global_symbol_entry(wb_t *p, obj_global_t *g) {
-  uint32_t flags = WASM_SYMBOL_UNDEFINED | WASM_SYMBOL_EXPLICIT_NAME;
-  wb_u8(p, WASM_SYM_GLOBAL);
-  wb_uleb(p, flags);
-  wb_uleb(p, (uint32_t)g->global_index);
-  wb_str(p, g->name, g->name_len);
-}
-
-static void emit_linking_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  wb_t payload = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 2);
-
-  wb_t symtab = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&symtab, (uint32_t)g_obj.symbol_count);
-  for (int i = 0; i < g_obj.func_count; i++) emit_symbol_entry(&symtab, &g_obj.funcs[i]);
-  for (int i = 0; i < g_obj.data_count; i++) emit_data_symbol_entry(&symtab, &g_obj.data[i]);
-  for (int i = 0; i < g_obj.global_count; i++) emit_global_symbol_entry(&symtab, &g_obj.globals[i]);
-  wb_u8(&payload, WASM_SYMBOL_TABLE);
-  wb_uleb(&payload, (uint32_t)symtab.len);
-  wb_bytes(&payload, symtab.data, symtab.len);
-
-  int ndata = defined_data_count(context);
-  if (ndata > 0) {
-    wb_t segs = {.diagnostic_context = context->diagnostic_context};
-    wb_uleb(&segs, (uint32_t)ndata);
-    for (int i = 0; i < g_obj.data_count; i++) {
-      if (g_obj.data[i].is_undefined) continue;
-      wb_str(&segs, g_obj.data[i].name, g_obj.data[i].name_len);
-      wb_uleb(&segs, (uint32_t)g_obj.data[i].align);
-      wb_uleb(&segs, 0);
-    }
-    wb_u8(&payload, WASM_SEGMENT_INFO);
-    wb_uleb(&payload, (uint32_t)segs.len);
-    wb_bytes(&payload, segs.data, segs.len);
-    free(segs.data);
-  }
-
-  emit_custom_section(out, "linking", &payload);
-  free(symtab.data);
-  free(payload.data);
-}
-
-static void emit_c_signature_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  int count = 0;
-  for (int i = 0; i < g_obj.func_count; i++) {
-    if (g_obj.funcs[i].c_signature) count++;
-  }
-  if (count == 0) return;
-
-  wb_t payload = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 1); /* format version */
-  wb_uleb(&payload, (uint32_t)count);
-  for (int i = 0; i < g_obj.func_count; i++) {
-    obj_func_t *f = &g_obj.funcs[i];
-    if (!f->c_signature) continue;
-    wb_str(&payload, f->name, f->name_len);
-    wb_str(&payload, f->c_signature, f->c_signature_len);
-  }
-  emit_custom_section(out, "agc.c_signature", &payload);
-  free(payload.data);
-}
-
-static void emit_continuation_section(
-    wasm32_obj_context_t *context, wb_t *out) {
-  if (!g_obj.continuation_entry) return;
-  wb_t payload = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&payload, 1); /* metadata version */
-  wb_str(&payload, g_obj.continuation_entry,
-         (int)strlen(g_obj.continuation_entry));
-  wb_str(&payload, g_obj.continuation_condition,
-         (int)strlen(g_obj.continuation_condition));
-  wb_str(&payload, g_obj.continuation_step,
-         (int)strlen(g_obj.continuation_step));
-  wb_str(&payload, g_obj.continuation_start,
-         (int)strlen(g_obj.continuation_start));
-  wb_str(&payload, g_obj.continuation_resume,
-         (int)strlen(g_obj.continuation_resume));
-  wb_str(&payload, g_obj.continuation_status,
-         (int)strlen(g_obj.continuation_status));
-  wb_str(&payload, g_obj.continuation_result,
-         (int)strlen(g_obj.continuation_result));
-  emit_custom_section(out, "agc.continuation", &payload);
-  free(payload.data);
-}
-
-static void emit_reloc_section(
-    wasm32_obj_context_t *context,
-    wb_t *out, const char *name, int target_section,
-    obj_reloc_t *relocs, int reloc_count) {
-  if (reloc_count == 0) return;
-  wb_t p = {.diagnostic_context = context->diagnostic_context};
-  wb_uleb(&p, (uint32_t)target_section);
-  wb_uleb(&p, (uint32_t)reloc_count);
-  for (int i = 0; i < reloc_count; i++) {
-    wb_uleb(&p, (uint32_t)relocs[i].type);
-    wb_uleb(&p, (uint32_t)relocs[i].body_off);
-    wb_uleb(&p, (uint32_t)relocs[i].target_sym);
-    if (relocs[i].type == R_WASM_MEMORY_ADDR_LEB ||
-        relocs[i].type == R_WASM_MEMORY_ADDR_I32) {
-      wb_sleb(&p, relocs[i].addend);
-    }
-  }
-  emit_custom_section(out, name, &p);
-  free(p.data);
-}
-
 void wasm32_obj_set_output_file_in(wasm32_obj_context_t *ctx, FILE *out) {
   if (!ctx) abort();
   ctx->obj.out = out;
@@ -2713,44 +2220,11 @@ void wasm32_obj_emit_machine_data_segments_in(
 static void wasm32_obj_end_context(wasm32_obj_context_t *context) {
   assign_indices(context);
 
-  int has_imports = 1; /* __linear_memory is always imported. */
-  int has_defs = 0;
-  for (int i = 0; i < g_obj.func_count; i++) {
-    if (g_obj.funcs[i].imported) has_imports = 1;
-    if (g_obj.funcs[i].defined) has_defs = 1;
-  }
-  if (g_obj.has_indirect_call) has_imports = 1;
-  if (g_obj.global_count > 0) has_imports = 1;
-  int section_index = 0;
-  int code_section_index = -1;
-  int data_section_index = -1;
-  int ndata = defined_data_count(context);
-  section_index++; /* Type */
-  if (has_imports) section_index++;
-  if (has_defs) section_index++; /* Function */
-  if (ndata > 0) section_index++; /* DataCount */
-  if (has_defs) code_section_index = section_index++;
-  if (ndata > 0) data_section_index = section_index++;
-
   wb_t out = {.diagnostic_context = context->diagnostic_context};
   if (g_obj.capture_output) out.max_len = g_obj_capture_limit;
   wb_u32le(&out, 0x6d736100);
   wb_u32le(&out, 1);
-  emit_type_section(context, &out);
-  emit_import_section(context, &out);
-  emit_function_section(context, &out);
-  emit_datacount_section(context, &out);
-  emit_code_section(context, &out);
-  emit_data_section(context, &out);
-  emit_c_signature_section(context, &out);
-  emit_continuation_section(context, &out);
-  emit_linking_section(context, &out);
-  emit_reloc_section(
-      context, &out, "reloc.CODE", code_section_index,
-      g_obj.code_relocs, g_obj.code_reloc_count);
-  emit_reloc_section(
-      context, &out, "reloc.DATA", data_section_index,
-      g_obj.data_relocs, g_obj.data_reloc_count);
+  wasm32_obj_serialize_sections(context, &out);
 
   if (out.overflow) {
     free(out.data);

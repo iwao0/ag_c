@@ -2,7 +2,6 @@
 #define PARSER_TAG_FLAT_COVER_H
 
 #include "core.h"
-#include "type.h"
 #include "../semantic/record_decl.h"
 #include "../semantic/record_layout.h"
 

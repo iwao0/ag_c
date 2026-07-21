@@ -3,7 +3,6 @@
 
 #include "core.h"
 #include "init_slot.h"
-#include "type.h"
 #include "../semantic/record_decl.h"
 #include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"

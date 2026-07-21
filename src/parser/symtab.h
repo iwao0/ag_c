@@ -8,7 +8,6 @@
 #include "../tokenizer/token.h"
 #include "gvar_public.h"
 #include "literal_public.h"
-#include "type.h"
 
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 

@@ -77,6 +77,24 @@ typedef struct {
   wasm32_machine_memory_t store;
 } wasm32_machine_variadic_argument_t;
 
+typedef enum {
+  WASM32_MACHINE_VARARG_SAVE_AREA = 0,
+  WASM32_MACHINE_VARARG_RESERVE_STACK,
+  WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK,
+  WASM32_MACHINE_VARARG_STORE_ARGUMENT,
+  WASM32_MACHINE_VARARG_RELEASE_STACK,
+  WASM32_MACHINE_VARARG_RESTORE_AREA,
+} wasm32_machine_vararg_action_kind_t;
+
+typedef struct {
+  wasm32_machine_vararg_action_kind_t kind;
+  int byte_count;
+  const wasm32_machine_variadic_argument_t *argument;
+} wasm32_machine_vararg_action_t;
+
+typedef int (*wasm32_machine_vararg_action_visitor_t)(
+    void *user, const wasm32_machine_vararg_action_t *action);
+
 typedef struct {
   wasm32_machine_signature_t signature;
   wasm32_machine_argument_t *arguments;
@@ -158,6 +176,7 @@ typedef struct {
   wasm32_machine_parameter_bind_t parameter_bind;
   wasm32_machine_control_t control;
   wasm32_machine_signature_t reference_signature;
+  unsigned char dst_used_after;
 } wasm32_machine_inst_t;
 
 typedef struct {
@@ -208,6 +227,12 @@ int wasm32_machine_function_build(
     const ir_func_t *function,
     const ir_abi_module_t *abi_module,
     wasm32_machine_function_t *machine_function);
+int wasm32_machine_call_visit_variadic_prepare(
+    const wasm32_machine_call_t *call,
+    wasm32_machine_vararg_action_visitor_t visitor, void *user);
+int wasm32_machine_call_visit_variadic_restore(
+    const wasm32_machine_call_t *call,
+    wasm32_machine_vararg_action_visitor_t visitor, void *user);
 void wasm32_machine_function_dispose(
     wasm32_machine_function_t *machine_function);
 ir_type_t wasm32_machine_function_vreg_type(

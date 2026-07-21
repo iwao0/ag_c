@@ -50,6 +50,56 @@ static int align_to(int value, int alignment) {
   return (value + alignment - 1) & ~(alignment - 1);
 }
 
+static int visit_vararg_action(
+    wasm32_machine_vararg_action_visitor_t visitor, void *user,
+    wasm32_machine_vararg_action_kind_t kind, int byte_count,
+    const wasm32_machine_variadic_argument_t *argument) {
+  if (!visitor) return 0;
+  const wasm32_machine_vararg_action_t action = {
+      .kind = kind,
+      .byte_count = byte_count,
+      .argument = argument,
+  };
+  return visitor(user, &action);
+}
+
+int wasm32_machine_call_visit_variadic_prepare(
+    const wasm32_machine_call_t *call,
+    wasm32_machine_vararg_action_visitor_t visitor, void *user) {
+  if (!call || !visitor) return 0;
+  if (!call->is_variadic || call->variadic_area_size <= 0) return 1;
+  if (!visit_vararg_action(
+          visitor, user, WASM32_MACHINE_VARARG_SAVE_AREA,
+          call->variadic_area_size, NULL) ||
+      !visit_vararg_action(
+          visitor, user, WASM32_MACHINE_VARARG_RESERVE_STACK,
+          call->variadic_area_size, NULL) ||
+      !visit_vararg_action(
+          visitor, user, WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK,
+          call->variadic_area_size, NULL))
+    return 0;
+  for (int index = 0; index < call->variadic_argument_count; index++) {
+    if (!visit_vararg_action(
+            visitor, user, WASM32_MACHINE_VARARG_STORE_ARGUMENT,
+            call->variadic_area_size, &call->variadic_arguments[index]))
+      return 0;
+  }
+  return 1;
+}
+
+int wasm32_machine_call_visit_variadic_restore(
+    const wasm32_machine_call_t *call,
+    wasm32_machine_vararg_action_visitor_t visitor, void *user) {
+  if (!call || !visitor) return 0;
+  if (!call->is_variadic || call->variadic_area_size <= 0) return 1;
+  return visit_vararg_action(
+             visitor, user, WASM32_MACHINE_VARARG_RELEASE_STACK,
+             call->variadic_area_size, NULL) &&
+         visit_vararg_action(
+             visitor, user, WASM32_MACHINE_VARARG_RESTORE_AREA,
+             call->variadic_area_size, NULL);
+}
+
 static int valid_vreg(
     const wasm32_machine_function_t *function, ir_val_t value) {
   return value.id >= 0 && value.id < function->vreg_count;
@@ -62,6 +112,46 @@ static void note_value(
   if (function->vreg_types[value.id] == IR_TY_I32)
     function->vreg_types[value.id] =
         wasm32_machine_value_type(value.type);
+}
+
+static void note_live_value(
+    const wasm32_machine_function_t *function,
+    unsigned char *live, ir_val_t value) {
+  if (valid_vreg(function, value)) live[value.id] = 1;
+}
+
+static int compute_instruction_liveness(
+    wasm32_machine_function_t *function) {
+  if (!function || function->vreg_count <= 0) return 1;
+  unsigned char *live = calloc(
+      (size_t)function->vreg_count, sizeof(*live));
+  if (!live) return 0;
+  for (int index = function->instruction_count - 1;
+       index >= 0; index--) {
+    wasm32_machine_inst_t *instruction =
+        &function->instructions[index];
+    if (valid_vreg(function, instruction->dst)) {
+      instruction->dst_used_after = live[instruction->dst.id];
+      live[instruction->dst.id] = 0;
+    }
+    note_live_value(function, live, instruction->src1);
+    note_live_value(function, live, instruction->src2);
+    note_live_value(function, live, instruction->src3);
+    note_live_value(function, live, instruction->callee);
+    note_live_value(function, live, instruction->result_storage);
+    if (instruction->kind == WASM32_MACHINE_INST_CALL) {
+      note_live_value(function, live, instruction->call.result_area);
+      for (int argument = 0;
+           argument < instruction->call.argument_count; argument++)
+        note_live_value(
+            function, live,
+            instruction->call.arguments[argument].source);
+    }
+    if (instruction->kind == WASM32_MACHINE_INST_CONTROL)
+      note_live_value(function, live, instruction->control.value);
+  }
+  free(live);
+  return 1;
 }
 
 static int force_i32(
@@ -1017,6 +1107,10 @@ int wasm32_machine_function_build(
     return 0;
   }
   if (!select_instructions(function, source)) {
+    wasm32_machine_function_dispose(function);
+    return 0;
+  }
+  if (!compute_instruction_liveness(function)) {
     wasm32_machine_function_dispose(function);
     return 0;
   }

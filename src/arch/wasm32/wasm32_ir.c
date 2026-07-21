@@ -1099,85 +1099,105 @@ static void emit_parameter_bind(
   }
 }
 
-static int val_uses_vreg(ir_val_t v, int id) {
-  return v.id == id;
-}
+typedef struct {
+  wasm_func_ctx_t *function;
+  const wasm32_machine_call_t *call;
+  int indent;
+} wasm_wat_vararg_visitor_t;
 
-static int inst_uses_vreg(
-    const wasm32_machine_inst_t *planned, int id) {
-  const wasm32_machine_inst_t *i = planned;
-  if (!i) return 0;
-  if (val_uses_vreg(i->src1, id) || val_uses_vreg(i->src2, id) ||
-      val_uses_vreg(i->src3, id) || val_uses_vreg(i->callee, id) ||
-      val_uses_vreg(i->result_storage, id)) {
-    return 1;
-  }
-  if (planned->kind == WASM32_MACHINE_INST_CALL) {
-    for (int a = 0; a < planned->call.argument_count; a++) {
-      if (val_uses_vreg(planned->call.arguments[a].source, id)) return 1;
+static int emit_wat_vararg_action(
+    void *user, const wasm32_machine_vararg_action_t *action) {
+  wasm_wat_vararg_visitor_t *visitor = user;
+  wasm_func_ctx_t *ctx = visitor->function;
+  wasm32_ir_context_t *context = ctx->context;
+  const wasm32_machine_call_t *call = visitor->call;
+  int indent = visitor->indent;
+  switch (action->kind) {
+    case WASM32_MACHINE_VARARG_SAVE_AREA:
+      wasm_emitf(
+          indent,
+          "(local.set $old_va_arg_area (global.get $__ag_va_arg_area))\n");
+      return 1;
+    case WASM32_MACHINE_VARARG_RESERVE_STACK:
+      wasm_emitf(
+          indent,
+          "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
+          action->byte_count);
+      return 1;
+    case WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK:
+      wasm_emitf(
+          indent,
+          "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
+      return 1;
+    case WASM32_MACHINE_VARARG_STORE_ARGUMENT: {
+      const wasm32_machine_variadic_argument_t *variadic =
+          action->argument;
+      if (!variadic || variadic->argument_index < 0 ||
+          variadic->argument_index >= call->argument_count)
+        return 0;
+      const char *store = memory_wat_or_unsupported(
+          context, variadic->store);
+      const char *conversion =
+          wasm32_machine_opcode_wat(variadic->conversion.opcode);
+      wasm_emitf(
+          indent,
+          "(%s (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ",
+          store, variadic->byte_offset);
+      if (variadic->conversion.opcode != WASM32_MI_COPY) {
+        if (!conversion)
+          wasm_unsupported_msg(
+              context,
+              "missing Wasm variadic argument conversion opcode");
+        wasm_cg_emitf("(%s ", conversion);
+      }
+      emit_abi_argument_expr_as(
+          ctx, &call->arguments[variadic->argument_index],
+          variadic->argument_type);
+      if (variadic->conversion.opcode != WASM32_MI_COPY)
+        wasm_cg_emitf(")");
+      wasm_cg_emitf(")\n");
+      return 1;
     }
+    case WASM32_MACHINE_VARARG_RELEASE_STACK:
+      wasm_emitf(
+          indent,
+          "(global.set $__stack_pointer (i32.add (global.get $__stack_pointer) (i32.const %d)))\n",
+          action->byte_count);
+      return 1;
+    case WASM32_MACHINE_VARARG_RESTORE_AREA:
+      wasm_emitf(
+          indent,
+          "(global.set $__ag_va_arg_area (local.get $old_va_arg_area))\n");
+      return 1;
   }
   return 0;
 }
 
-static int vreg_used_after(
-    wasm_func_ctx_t *ctx, const wasm32_machine_inst_t *from, int id) {
-  if (!from || id < 0 || !ctx->machine.instructions) return 0;
-  ptrdiff_t index = from - ctx->machine.instructions;
-  if (index < 0 || index >= ctx->machine.instruction_count) return 0;
-  for (int i = (int)index + 1; i < ctx->machine.instruction_count; i++) {
-    if (inst_uses_vreg(&ctx->machine.instructions[i], id)) return 1;
-  }
-  return 0;
-}
-
-static int emit_variadic_arg_area_prepare(
+static void emit_variadic_arg_area_prepare(
     wasm_func_ctx_t *ctx, const wasm32_machine_call_t *call,
     int indent) {
   wasm32_ir_context_t *context = ctx->context;
-  if (!call->is_variadic) return 0;
-  const wasm32_machine_argument_t *arguments = call->arguments;
   int bytes = call->variadic_area_size;
-  if (bytes <= 0) return 0;
-  wasm_emitf(indent, "(local.set $old_va_arg_area (global.get $__ag_va_arg_area))\n");
-  wasm_emitf(indent, "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
-             bytes);
-  wasm_emitf(indent, "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
-  for (int i = 0; i < call->variadic_argument_count; i++) {
-    const wasm32_machine_variadic_argument_t *variadic =
-        &call->variadic_arguments[i];
-    const char *store = memory_wat_or_unsupported(
-        context, variadic->store);
-    const char *conversion =
-        wasm32_machine_opcode_wat(variadic->conversion.opcode);
-    wasm_emitf(
-        indent,
-        "(%s (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ",
-        store, variadic->byte_offset);
-    if (variadic->conversion.opcode != WASM32_MI_COPY) {
-      if (!conversion)
-        wasm_unsupported_msg(
-            context,
-            "missing Wasm variadic argument conversion opcode");
-      wasm_cg_emitf("(%s ", conversion);
-    }
-    emit_abi_argument_expr_as(
-        ctx, &arguments[variadic->argument_index],
-        variadic->argument_type);
-    if (variadic->conversion.opcode != WASM32_MI_COPY)
-      wasm_cg_emitf(")");
-    wasm_cg_emitf(")\n");
-  }
-  return bytes;
+  if (bytes <= 0) return;
+  wasm_wat_vararg_visitor_t visitor = {
+      .function = ctx, .call = call, .indent = indent};
+  if (!wasm32_machine_call_visit_variadic_prepare(
+          call, emit_wat_vararg_action, &visitor))
+    wasm_unsupported_msg(
+        context, "invalid Wasm variadic argument preparation plan");
 }
 
 static void emit_variadic_arg_area_restore(
-    wasm_func_ctx_t *ctx, int bytes, int indent) {
+    wasm_func_ctx_t *ctx, const wasm32_machine_call_t *call,
+    int indent) {
   wasm32_ir_context_t *context = ctx->context;
-  if (bytes <= 0) return;
-  wasm_emitf(indent, "(global.set $__stack_pointer (i32.add (global.get $__stack_pointer) (i32.const %d)))\n",
-             bytes);
-  wasm_emitf(indent, "(global.set $__ag_va_arg_area (local.get $old_va_arg_area))\n");
+  if (!call || call->variadic_area_size <= 0) return;
+  wasm_wat_vararg_visitor_t visitor = {
+      .function = ctx, .call = call, .indent = indent};
+  if (!wasm32_machine_call_visit_variadic_restore(
+          call, emit_wat_vararg_action, &visitor))
+    wasm_unsupported_msg(
+        context, "invalid Wasm variadic argument restore plan");
 }
 
 static void emit_call(
@@ -1190,8 +1210,7 @@ static void emit_call(
   const wasm32_machine_signature_t *call_signature = &call->signature;
   int argument_count = call->argument_count;
   const wasm32_machine_argument_t *arguments = call->arguments;
-  int vararg_area_bytes =
-      emit_variadic_arg_area_prepare(ctx, call, indent);
+  emit_variadic_arg_area_prepare(ctx, call, indent);
   if (i->callee.id != IR_VAL_NONE) {
     g_func_table.needs_table = 1;
     int returns_hidden = call_signature->has_hidden_result;
@@ -1205,7 +1224,7 @@ static void emit_call(
     }
     int returns_void = call_signature->result == IR_TY_VOID;
     int result_unused =
-        !returns_void && !vreg_used_after(ctx, selected, i->dst.id);
+        !returns_void && !selected->dst_used_after;
     const char *ret_ty = returns_void ? NULL :
         wasm_any_type_or_unsupported(context, call_signature->result);
     if (returns_direct_aggregate) {
@@ -1248,7 +1267,7 @@ static void emit_call(
     if (result_unused || !returns_void || returns_direct_aggregate)
       wasm_cg_emitf(")");
     wasm_cg_emitf("\n");
-    emit_variadic_arg_area_restore(ctx, vararg_area_bytes, indent);
+    emit_variadic_arg_area_restore(ctx, call, indent);
     return;
   }
   if (!i->sym) wasm_unsupported_inst(context, i);
@@ -1308,7 +1327,7 @@ static void emit_call(
     wasm_cg_emitf(")");
   }
   wasm_cg_emitf("\n");
-  emit_variadic_arg_area_restore(ctx, vararg_area_bytes, indent);
+  emit_variadic_arg_area_restore(ctx, call, indent);
 }
 
 static void emit_indirect_ret_copy(

@@ -2,7 +2,6 @@
 #define PARSER_TAG_PUBLIC_H
 
 #include "tag_flat_cover.h"
-#include "type.h"
 #include "../semantic/record_layout.h"
 
 struct global_var_t;

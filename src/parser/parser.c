@@ -15,7 +15,6 @@
 #include "local_registry.h"
 #include "lvar_internal.h"
 #include "stmt.h"
-#include "type.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"

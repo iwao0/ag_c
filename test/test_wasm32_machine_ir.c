@@ -200,6 +200,25 @@ static const unary_case_t unary_cases[] = {
      "f64.neg", 0x9a},
 };
 
+typedef struct {
+  wasm32_machine_vararg_action_kind_t kinds[8];
+  int byte_counts[8];
+  int argument_indices[8];
+  int count;
+} vararg_action_log_t;
+
+static int collect_vararg_action(
+    void *user, const wasm32_machine_vararg_action_t *action) {
+  vararg_action_log_t *log = user;
+  if (!log || !action || log->count >= 8) return 0;
+  int index = log->count++;
+  log->kinds[index] = action->kind;
+  log->byte_counts[index] = action->byte_count;
+  log->argument_indices[index] = action->argument
+      ? action->argument->argument_index : -1;
+  return 1;
+}
+
 int main(void) {
   wasm32_machine_alignment_t alignment_plan;
   if (!wasm32_machine_alignment_plan_build(32, 16, &alignment_plan) ||
@@ -763,6 +782,17 @@ int main(void) {
       &machine_function.instructions[15];
   const wasm32_machine_block_t *selected_block =
       wasm32_machine_function_block(&machine_function, 0);
+  vararg_action_log_t prepare_actions = {0};
+  vararg_action_log_t restore_actions = {0};
+  if (!wasm32_machine_call_visit_variadic_prepare(
+          &selected_call->call, collect_vararg_action,
+          &prepare_actions) ||
+      !wasm32_machine_call_visit_variadic_restore(
+          &selected_call->call, collect_vararg_action,
+          &restore_actions)) {
+    fprintf(stderr, "FAIL: machine variadic action plan visit\n");
+    return 1;
+  }
   if (!machine_function.name ||
       machine_function.name == function.name ||
       machine_function.name_len != function.name_len ||
@@ -837,9 +867,11 @@ int main(void) {
       !selected_binary ||
       selected_binary->kind != WASM32_MACHINE_INST_BINARY ||
       selected_binary->binary.opcode != WASM32_MI_I64_ADD ||
+      !selected_binary->dst_used_after ||
       !selected_unary ||
       selected_unary->kind != WASM32_MACHINE_INST_UNARY ||
       selected_unary->unary.opcode != WASM32_MI_I64_XOR ||
+      selected_unary->dst_used_after ||
       !selected_atomic ||
       selected_atomic->kind != WASM32_MACHINE_INST_ATOMIC ||
       selected_atomic->atomic.kind != WASM32_MACHINE_ATOMIC_RMW ||
@@ -885,6 +917,21 @@ int main(void) {
           WASM32_MI_COPY ||
       selected_call->call.variadic_arguments[0].store.opcode !=
           WASM32_MI_I64_STORE ||
+      prepare_actions.count != 4 ||
+      prepare_actions.kinds[0] != WASM32_MACHINE_VARARG_SAVE_AREA ||
+      prepare_actions.kinds[1] != WASM32_MACHINE_VARARG_RESERVE_STACK ||
+      prepare_actions.byte_counts[1] != 16 ||
+      prepare_actions.kinds[2] !=
+          WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK ||
+      prepare_actions.kinds[3] !=
+          WASM32_MACHINE_VARARG_STORE_ARGUMENT ||
+      prepare_actions.argument_indices[3] != 1 ||
+      restore_actions.count != 2 ||
+      restore_actions.kinds[0] !=
+          WASM32_MACHINE_VARARG_RELEASE_STACK ||
+      restore_actions.byte_counts[0] != 16 ||
+      restore_actions.kinds[1] !=
+          WASM32_MACHINE_VARARG_RESTORE_AREA ||
       !selected_parameter ||
       selected_parameter->kind !=
           WASM32_MACHINE_INST_PARAMETER_BIND ||
