@@ -479,14 +479,19 @@ resolve_parsed_function_typed_hir_from_syntax_in_contexts(
   if (direct_status == PSX_SYNTAX_TYPED_HIR_FAILED) {
     ag_diagnostic_context_t *diagnostics =
         ps_ctx_diagnostics(semantic_context);
-    diag_emit_internalf_in(
+    const token_t *failure_token = direct_failure.source_token
+        ? direct_failure.source_token : fallback_diag_tok;
+    diag_emit_tokf_in(
         diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED,
+        (token_t *)failure_token,
         "%s: direct function Syntax to Typed HIR resolution failed "
-        "(status %d, node kind %d)",
+        "(status %d, node kind %d, function '%.*s')",
         diag_message_for_in(
             diagnostics, DIAG_ERR_INTERNAL_INVARIANT_FAILED),
         (int)direct_failure.status,
-        direct_failure.source_node_kind);
+        direct_failure.source_node_kind,
+        syntax_function->declarator.identifier->len,
+        syntax_function->declarator.identifier->str);
     return NULL;
   }
   if (diagnose_direct_syntax_rejection(

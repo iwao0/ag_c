@@ -25,6 +25,9 @@ struct arena_context_t {
   arena_cleanup_t *cleanups;
   size_t reserved_bytes;
   size_t peak_bytes;
+  size_t allocation_count;
+  size_t fail_after_allocation_count;
+  int allocation_failure_enabled;
 };
 
 static void arena_run_cleanups_until(
@@ -51,6 +54,21 @@ size_t arena_current_reserved_bytes_in(const arena_context_t *context) {
   return context ? context->reserved_bytes : 0;
 }
 
+void arena_fail_allocations_after_in(
+    arena_context_t *context, size_t successful_allocations) {
+  if (!context) return;
+  context->allocation_count = 0;
+  context->fail_after_allocation_count = successful_allocations;
+  context->allocation_failure_enabled = 1;
+}
+
+void arena_clear_allocation_failure_in(arena_context_t *context) {
+  if (!context) return;
+  context->allocation_count = 0;
+  context->fail_after_allocation_count = 0;
+  context->allocation_failure_enabled = 0;
+}
+
 static arena_block_t *arena_new_block(
     arena_context_t *context, size_t min_size) {
   size_t cap = min_size > ARENA_BLOCK_SIZE ? min_size : ARENA_BLOCK_SIZE;
@@ -67,6 +85,12 @@ static arena_block_t *arena_new_block(
 
 void *arena_alloc_in(arena_context_t *context, size_t size) {
   if (!context) return NULL;
+  if (context->allocation_failure_enabled) {
+    if (context->allocation_count >=
+        context->fail_after_allocation_count)
+      return NULL;
+    context->allocation_count++;
+  }
   // 8-byte alignment
   size = (size + 7) & ~(size_t)7;
 

@@ -682,6 +682,9 @@ static psx_semantic_node_t *apply_direct_expression_decay(
 static psx_semantic_node_t *build_direct_statement(
     direct_resolution_context_t *context,
     const node_t *syntax);
+static psx_semantic_node_t *build_direct_statement_impl(
+    direct_resolution_context_t *context,
+    const node_t *syntax);
 static psx_semantic_node_t *build_direct_block_excluding(
     direct_resolution_context_t *context,
     const node_block_t *block, const node_t *excluded);
@@ -691,9 +694,10 @@ static void set_failure(
     psx_resolved_hir_build_status_t status,
     const node_t *source) {
   if (!failure) return;
-  failure->status = status;
-  failure->source_node_kind = source ? source->kind : -1;
-  failure->source_token = source ? source->tok : NULL;
+  psx_resolved_hir_build_failure_note(
+      failure, status,
+      source ? source->kind : PSX_SYNTAX_NODE_INVALID,
+      source ? source->tok : NULL);
 }
 
 static int note_direct_rejection(
@@ -2649,7 +2653,13 @@ static psx_semantic_node_t *build_direct_expression(
                     syntax->kind, &binary_kind, NULL)
           ? build_direct_binary_expression(context, syntax)
           : build_direct_expression_impl(context, syntax);
-  return apply_direct_expression_decay(context, syntax, expression);
+  expression = apply_direct_expression_decay(
+      context, syntax, expression);
+  if (!expression)
+    set_failure(
+        context ? context->failure : NULL,
+        PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE, syntax);
+  return expression;
 }
 
 typedef struct direct_binary_build_frame_t {
@@ -5269,7 +5279,13 @@ static psx_semantic_node_t *build_direct_declared_local(
     direct_resolution_context_t *context,
     const direct_local_declarator_binding_t *declarator,
     int source_node_kind) {
-  if (!context || !declarator || !declarator->local) return NULL;
+  if (!context || !declarator || !declarator->local) {
+    psx_semantic_node_builder_fail(
+        context ? &context->builder : NULL,
+        PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL,
+        source_node_kind);
+    return NULL;
+  }
   psx_hir_node_spec_t local_spec = {
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
@@ -5280,8 +5296,12 @@ static psx_semantic_node_t *build_direct_declared_local(
   };
   if (!psx_resolve_local_hir_node_spec_in(
           context->semantic_context, declarator->local,
-          ps_lvar_offset(declarator->local), &local_spec))
+          ps_lvar_offset(declarator->local), &local_spec)) {
+    psx_semantic_node_builder_fail(
+        &context->builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source_node_kind);
     return NULL;
+  }
   return psx_semantic_node_builder_leaf_expression(
       &context->builder, &local_spec,
       declarator->declaration_qual_type, NULL,
@@ -5293,8 +5313,12 @@ static psx_semantic_node_t *build_direct_initializer_target(
     lvar_t *local, const psx_local_initializer_item_t *item,
     int source_node_kind) {
   if (!context || !local || !item ||
-      item->target_qual_type.type_id == PSX_TYPE_ID_INVALID)
+      item->target_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    psx_semantic_node_builder_fail(
+        context ? &context->builder : NULL,
+        PSX_RESOLVED_HIR_BUILD_INVALID_INPUT, source_node_kind);
     return NULL;
+  }
   psx_hir_node_spec_t local_spec = {
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
@@ -5309,8 +5333,12 @@ static psx_semantic_node_t *build_direct_initializer_target(
   if (!psx_resolve_local_hir_node_spec_in(
           context->semantic_context, local,
           ps_lvar_offset(local) + item->relative_offset,
-          &local_spec))
+          &local_spec)) {
+    psx_semantic_node_builder_fail(
+        &context->builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source_node_kind);
     return NULL;
+  }
   return psx_semantic_node_builder_leaf_expression(
       &context->builder, &local_spec, item->target_qual_type,
       NULL, source_node_kind);
@@ -5328,8 +5356,12 @@ static psx_semantic_node_t *build_direct_flat_initializer(
       plan->object_qual_type.type_id !=
           object_qual_type.type_id ||
       (plan->evaluation_group_count > 0 &&
-       !binding->evaluation_temporaries))
+       !binding->evaluation_temporaries)) {
+    psx_semantic_node_builder_fail(
+        context ? &context->builder : NULL,
+        PSX_RESOLVED_HIR_BUILD_INVALID_INPUT, source_node_kind);
     return NULL;
+  }
 
   size_t active_item_count = 0;
   for (int i = 0; i < plan->item_count; i++) {
@@ -5343,7 +5375,12 @@ static psx_semantic_node_t *build_direct_flat_initializer(
   psx_hir_edge_kind_t *edges = arena_alloc_in(
       ps_ctx_arena(context->semantic_context),
       count * sizeof(*edges));
-  if (!children || !edges) return NULL;
+  if (!children || !edges) {
+    psx_semantic_node_builder_fail(
+        &context->builder, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        source_node_kind);
+    return NULL;
+  }
 
   size_t child_index = 0;
   for (int i = 0; i < plan->evaluation_group_count; i++) {
@@ -5362,13 +5399,22 @@ static psx_semantic_node_t *build_direct_flat_initializer(
             context, value_syntax, &constant_value) &&
         constant_value == 0;
     psx_assignment_types_resolution_t assignment;
+    psx_qual_type_t initialization_target_type =
+        psx_semantic_node_expression_qual_type(target);
+    initialization_target_type.qualifiers =
+        PSX_TYPE_QUALIFIER_NONE;
     psx_resolve_assignment_qual_types_in(
         context->semantic_context,
-        psx_semantic_node_expression_qual_type(target),
+        initialization_target_type,
         psx_semantic_node_expression_qual_type(value),
         is_null_pointer_constant, &assignment);
-    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
+    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK) {
+      psx_semantic_node_builder_fail(
+          &context->builder,
+          PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+          source_node_kind);
       return NULL;
+    }
     psx_semantic_node_t *assignment_children[] = {target, value};
     psx_hir_edge_kind_t assignment_edges[] = {
         PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
@@ -5451,13 +5497,22 @@ static psx_semantic_node_t *build_direct_flat_initializer(
       continue;
     }
     psx_assignment_types_resolution_t assignment;
+    psx_qual_type_t initialization_target_type =
+        psx_semantic_node_expression_qual_type(target);
+    initialization_target_type.qualifiers =
+        PSX_TYPE_QUALIFIER_NONE;
     psx_resolve_assignment_qual_types_in(
         context->semantic_context,
-        psx_semantic_node_expression_qual_type(target),
+        initialization_target_type,
         psx_semantic_node_expression_qual_type(value),
         is_null_pointer_constant, &assignment);
-    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
+    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK) {
+      psx_semantic_node_builder_fail(
+          &context->builder,
+          PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+          source_node_kind);
       return NULL;
+    }
     psx_semantic_node_t *assignment_children[] = {target, value};
     psx_hir_edge_kind_t assignment_edges[] = {
         PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
@@ -5465,6 +5520,7 @@ static psx_semantic_node_t *build_direct_flat_initializer(
         .kind = PSX_HIR_ASSIGN,
         .attached_qual_type = {
             PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .is_declaration_initializer = 1,
     };
     children[child_index] = psx_semantic_node_builder_expression(
         &context->builder, &assignment_spec,
@@ -5641,7 +5697,13 @@ static psx_semantic_node_t *build_direct_local_declaration(
     const node_local_declaration_t *syntax) {
   direct_local_declaration_binding_t *binding =
       find_direct_local_declaration(context, syntax);
-  if (!binding) return NULL;
+  if (!binding) {
+    psx_semantic_node_builder_fail(
+        &context->builder,
+        PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL,
+        ND_LOCAL_DECLARATION);
+    return NULL;
+  }
   if (binding->is_semantic_only) {
     psx_hir_node_spec_t nop_spec = {
         .kind = PSX_HIR_NOP,
@@ -5652,7 +5714,12 @@ static psx_semantic_node_t *build_direct_local_declaration(
         &context->builder, &nop_spec, NULL, NULL, 0,
         ND_LOCAL_DECLARATION);
   }
-  if (binding->declarator_count <= 0) return NULL;
+  if (binding->declarator_count <= 0) {
+    psx_semantic_node_builder_fail(
+        &context->builder, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+        ND_LOCAL_DECLARATION);
+    return NULL;
+  }
   size_t count = (size_t)binding->declarator_count;
   psx_semantic_node_t **children = arena_alloc_in(
       ps_ctx_arena(context->semantic_context),
@@ -5792,12 +5859,7 @@ static psx_semantic_node_t *build_direct_local_declaration(
 
     psx_semantic_node_t *target = build_direct_declared_local(
         context, declarator, ND_IDENTIFIER);
-    if (!target) {
-      set_failure(
-          context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
-          &syntax->base);
-      return NULL;
-    }
+    if (!target) return NULL;
     psx_semantic_node_t *value = build_direct_expression(
         context, initializer->value);
     if (!target || !value) return NULL;
@@ -5967,6 +6029,18 @@ static psx_semantic_node_t *build_direct_jump_statement(
 static psx_semantic_node_t *build_direct_statement(
     direct_resolution_context_t *context,
     const node_t *syntax) {
+  psx_semantic_node_t *statement =
+      build_direct_statement_impl(context, syntax);
+  if (!statement)
+    set_failure(
+        context ? context->failure : NULL,
+        PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE, syntax);
+  return statement;
+}
+
+static psx_semantic_node_t *build_direct_statement_impl(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
   if (!context || !syntax) return NULL;
   switch (syntax->kind) {
     case ND_BLOCK:
@@ -6068,10 +6142,7 @@ resolve_syntax_expression_direct_to_typed_hir(
   if (typed_hir) *typed_hir = NULL;
   if (constant_result)
     *constant_result = (psx_syntax_integer_constant_result_t){0};
-  if (failure) {
-    memset(failure, 0, sizeof(*failure));
-    failure->source_node_kind = PSX_SYNTAX_NODE_INVALID;
-  }
+  psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_expression || !typed_hir) {
     set_failure(
@@ -6272,10 +6343,7 @@ resolve_syntax_initializer_direct_to_typed_hir(
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
-  if (failure) {
-    memset(failure, 0, sizeof(*failure));
-    failure->source_node_kind = PSX_SYNTAX_NODE_INVALID;
-  }
+  psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_initializer || !typed_hir) {
     set_failure(
@@ -6392,10 +6460,7 @@ psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
-  if (failure) {
-    memset(failure, 0, sizeof(*failure));
-    failure->source_node_kind = PSX_SYNTAX_NODE_INVALID;
-  }
+  psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
       !syntax_statement || !typed_hir) {
     set_failure(
@@ -6521,10 +6586,7 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
-  if (failure) {
-    memset(failure, 0, sizeof(*failure));
-    failure->source_node_kind = PSX_SYNTAX_NODE_INVALID;
-  }
+  psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
       !lowering_context || !options || !syntax_function ||
       !syntax_function->body || !syntax_function->declarator.identifier ||
@@ -6597,6 +6659,14 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
 
   psx_semantic_node_t *body = build_direct_statement(
       &context, syntax_function->body);
+  if (!body) {
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+        syntax_function->body);
+    rollback_direct_function_resolution(
+        &transaction, context.function_declarations, 1);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
   size_t child_count = (size_t)header.parameter_count + 1;
   psx_semantic_node_t **children = arena_alloc_in(
       ps_ctx_arena(semantic_context),
@@ -6604,11 +6674,10 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
   psx_hir_edge_kind_t *edges = arena_alloc_in(
       ps_ctx_arena(semantic_context),
       child_count * sizeof(*edges));
-  if (!body || !children || !edges) {
-    if (failure && failure->status == PSX_RESOLVED_HIR_BUILD_OK)
-      set_failure(
-          failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
-          syntax_function->body);
+  if (!children || !edges) {
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        syntax_function->body);
     rollback_direct_function_resolution(
         &transaction, context.function_declarations, 1);
     return PSX_SYNTAX_TYPED_HIR_FAILED;

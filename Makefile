@@ -70,6 +70,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/declaration_pipeline.o $(OBJROOT)/semantic/call_reso
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/declarator_bound_resolution.o $(OBJROOT)/semantic/hir_local_resolution.o $(OBJROOT)/semantic/hir_symbol_resolution.o $(OBJROOT)/semantic/local_declaration_tree_resolution.o $(OBJROOT)/semantic/resolved_function.o $(OBJROOT)/semantic/resolved_lvalue.o $(OBJROOT)/semantic/resolved_node_kind.o $(OBJROOT)/semantic/resolved_node_type.o $(OBJROOT)/semantic/resolved_object_ref.o $(OBJROOT)/semantic/semantic_invariants.o $(OBJROOT)/semantic/semantic_node_builder.o $(OBJROOT)/semantic/semantic_tree_resolution.o $(OBJROOT)/semantic/static_initializer_materialization.o $(OBJROOT)/semantic/tree_walk.o $(OBJROOT)/semantic/type_identity_pass.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/aggregate_cast_resolution.o $(OBJROOT)/semantic/assignment_resolution.o $(OBJROOT)/semantic/assignment_validation.o $(OBJROOT)/semantic/character_array_initializer.o $(OBJROOT)/semantic/compound_literal_semantics.o $(OBJROOT)/semantic/continuation_syntax_validation.o $(OBJROOT)/semantic/lowered_tree_validation.o $(OBJROOT)/semantic/source_cast_type_resolution.o $(OBJROOT)/semantic/type_query_semantics.o
 PARSER_LIB_OBJS+=$(OBJROOT)/hir/hir.o $(OBJROOT)/semantic/typed_hir_tree.o $(OBJROOT)/semantic/typed_hir_emission.o $(OBJROOT)/semantic/typed_hir_diagnostics.o $(OBJROOT)/semantic/syntax_typed_hir_resolution.o $(OBJROOT)/lowering/static_hir_initializer.o
+PARSER_LIB_OBJS+=$(OBJROOT)/semantic/typed_hir_build_status.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/record_decl.o $(OBJROOT)/semantic/record_decl_table.o $(OBJROOT)/semantic/record_layout.o $(OBJROOT)/semantic/resolution_store.o $(OBJROOT)/semantic/parser_type_compatibility.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/scope_graph.o $(OBJROOT)/semantic/prototype_parameter.o
 PARSER_LIB_OBJS+=$(OBJROOT)/type_system/integer_conversion.o
@@ -220,6 +221,12 @@ $(WASM_SELFHOST_API): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 
 wasm-selfhost-api: $(WASM_SELFHOST_API)
 
+test-wasm-selfhost-source: $(WASM_TARGET)
+	@mkdir -p build/wasm_selfhost_regression/semantic
+	@AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c \
+		-o build/wasm_selfhost_regression/semantic/legacy_syntax_diagnostics.o \
+		src/semantic/legacy_syntax_diagnostics.c
+
 test-wasm-js-api: check-runtime-symbol-manifest $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_package_exports.mjs
@@ -294,6 +301,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan test-design-invariants test-e2e-sandbox generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan test-design-invariants test-e2e-sandbox generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-selfhost-source test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)

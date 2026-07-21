@@ -14029,6 +14029,41 @@ if (!/PSX_HIR_VARARG_CURSOR/.test(hirHeader) ||
   );
 }
 
+const typedHirBuildStatusSource = await readFile(
+  "src/semantic/typed_hir_build_status.c",
+  "utf8",
+);
+const arenaSource = await readFile("src/parser/arena.c", "utf8");
+const selfhostBuildScript = await readFile(
+  "scripts/build_wasm_selfhost_api.sh",
+  "utf8",
+);
+if (!/PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE/.test(
+      typedHirBuildStatusHeader,
+    ) ||
+    !/failure->status\s*==\s*PSX_RESOLVED_HIR_BUILD_OK/.test(
+      typedHirBuildStatusSource,
+    ) ||
+    !/failure->source_node_kind\s*<\s*0/.test(
+      typedHirBuildStatusSource,
+    ) ||
+    !/if\s*\(!failure->source_token\)/.test(
+      typedHirBuildStatusSource,
+    ) ||
+    !/PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,\s*syntax/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/diag_emit_tokf_in\s*\([\s\S]*?direct function Syntax to Typed HIR resolution failed[\s\S]*?function '%\.\*s'/.test(
+      semanticTreeResolutionSource,
+    ) ||
+    !/allocation_failure_enabled/.test(arenaSource) ||
+    !/test-wasm-selfhost-source:/.test(makefileSource) ||
+    !/self-host compile failed: %s/.test(selfhostBuildScript)) {
+  throw new Error(
+    "direct Typed HIR failures must preserve the first status, node, token, and self-host source identity",
+  );
+}
+
 console.log(
   "design invariants: ok (IR/backend isolation, canonical type ownership, and record identity verified)",
 );

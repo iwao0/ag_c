@@ -30,8 +30,8 @@ void psx_semantic_node_builder_fail(
   if (!builder || !builder->failure ||
       builder->failure->status != PSX_RESOLVED_HIR_BUILD_OK)
     return;
-  builder->failure->status = status;
-  builder->failure->source_node_kind = source_node_kind;
+  psx_resolved_hir_build_failure_note(
+      builder->failure, status, source_node_kind, NULL);
 }
 
 int psx_semantic_node_builder_has_canonical_type(

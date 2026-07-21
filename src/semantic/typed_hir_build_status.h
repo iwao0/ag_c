@@ -12,6 +12,7 @@ typedef enum {
   PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE,
   PSX_RESOLVED_HIR_BUILD_MISSING_RESOLVED_SYMBOL,
   PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+  PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
 } psx_resolved_hir_build_status_t;
 
 typedef enum {
@@ -81,5 +82,12 @@ typedef struct psx_resolved_hir_build_failure_t {
   int source_name_length;
   long long source_integer_value;
 } psx_resolved_hir_build_failure_t;
+
+void psx_resolved_hir_build_failure_init(
+    psx_resolved_hir_build_failure_t *failure);
+void psx_resolved_hir_build_failure_note(
+    psx_resolved_hir_build_failure_t *failure,
+    psx_resolved_hir_build_status_t status,
+    int source_node_kind, const token_t *source_token);
 
 #endif

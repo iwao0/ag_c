@@ -32,4 +32,10 @@ void arena_free_all_in(arena_context_t *context);
 size_t arena_total_reserved_bytes_in(const arena_context_t *context);
 size_t arena_current_reserved_bytes_in(const arena_context_t *context);
 
+// Test support: fail arena_alloc_in() after the requested number of
+// successful allocation calls. The limit belongs to this arena only.
+void arena_fail_allocations_after_in(
+    arena_context_t *context, size_t successful_allocations);
+void arena_clear_allocation_failure_in(arena_context_t *context);
+
 #endif

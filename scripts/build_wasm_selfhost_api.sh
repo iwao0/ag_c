@@ -34,7 +34,11 @@ for src in "${sources[@]}"; do
   obj="$obj_dir/${src#src/}"
   obj="${obj%.c}.o"
   mkdir -p "$(dirname "$obj")"
-  (cd "$root" && AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o "$obj" "$src")
+  if ! (cd "$root" && AGC_SUPPRESS_WARNINGS=1 \
+      ./build/ag_c_wasm -c -o "$obj" "$src"); then
+    printf 'self-host compile failed: %s\n' "$src" >&2
+    exit 1
+  fi
   printf '%s\n' "$obj" >> "$list_file"
 done
 

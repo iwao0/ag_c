@@ -7959,6 +7959,64 @@ static void assert_direct_function_resolution(const char *source) {
   reset_test_translation_unit_state();
 }
 
+static void test_typed_hir_build_failure_first_cause_boundary() {
+  printf("test_typed_hir_build_failure_first_cause_boundary...\n");
+  token_t child_token = {.line_no = 3};
+  token_t parent_token = {.line_no = 1};
+  psx_resolved_hir_build_failure_t failure;
+  psx_resolved_hir_build_failure_init(&failure);
+  psx_resolved_hir_build_failure_note(
+      &failure, PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+      ND_IDENTIFIER, &child_token);
+  psx_resolved_hir_build_failure_note(
+      &failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+      ND_BLOCK, &parent_token);
+  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+            failure.status);
+  ASSERT_EQ(ND_IDENTIFIER, failure.source_node_kind);
+  ASSERT_TRUE(failure.source_token == &child_token);
+
+  arena_context_t *arena_context = arena_context_create();
+  ASSERT_TRUE(arena_context != NULL);
+  psx_semantic_node_builder_t builder;
+  psx_resolved_hir_build_failure_init(&failure);
+  psx_semantic_node_builder_init(
+      &builder, arena_context, test_semantic_context(), &failure);
+  arena_fail_allocations_after_in(arena_context, 0);
+  const psx_hir_node_spec_t nop_spec = {
+      .kind = PSX_HIR_NOP,
+      .attached_qual_type = {
+          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+  };
+  ASSERT_TRUE(psx_semantic_node_builder_statement(
+                  &builder, &nop_spec, NULL, NULL, 0,
+                  ND_NULL_STMT) == NULL);
+  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+            failure.status);
+  ASSERT_EQ(ND_NULL_STMT, failure.source_node_kind);
+  arena_clear_allocation_failure_in(arena_context);
+  arena_context_destroy(arena_context);
+}
+
+static void test_direct_const_aggregate_initializer_boundary() {
+  printf("test_direct_const_aggregate_initializer_boundary...\n");
+  assert_direct_function_resolution(
+      "int __direct_const_aggregate(void *semantic_context, "
+      "char *function_name, int function_name_len, "
+      "const void *fallback_diag_tok) { "
+      "struct lookup_point { int scope_id; int declaration_order; }; "
+      "struct binding_request { void *semantic_context; "
+      "char *function_name; int function_name_len; "
+      "const void *fallback_diag_tok; "
+      "struct lookup_point lookup_point; unsigned char has_lookup; }; "
+      "const struct binding_request request = {"
+      ".semantic_context = semantic_context, "
+      ".function_name = function_name, "
+      ".function_name_len = function_name_len, "
+      ".fallback_diag_tok = fallback_diag_tok}; "
+      "return request.function_name_len + request.has_lookup; }");
+}
+
 static void test_predefined_function_name_typed_hir_boundary() {
   printf("test_predefined_function_name_typed_hir_boundary...\n");
   const char *source =
@@ -31826,6 +31884,7 @@ int main() {
   test_predefined_function_name_typed_hir_boundary();
   test_builtin_expect_typed_hir_boundary();
   test_direct_statement_typed_hir_resolution_boundary();
+  test_typed_hir_build_failure_first_cause_boundary();
   test_expr_number();
   test_expr_add_sub();
   test_additive_typed_hir_boundary();
@@ -31845,6 +31904,7 @@ int main() {
   test_function_definition_header_resolution_boundary();
   test_global_registry_checkpoint_boundary();
   test_direct_function_typed_hir_resolution_boundary();
+  test_direct_const_aggregate_initializer_boundary();
   test_direct_string_pointer_initializer_boundary();
   test_case_label_syntax_hir_boundary();
   test_toplevel_static_assert_frontend_boundary();
