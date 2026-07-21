@@ -20,8 +20,7 @@ typedef struct {
 } hir_case_target_t;
 
 typedef struct {
-  const char *name;
-  size_t name_length;
+  int label_id;
   ir_block_t *block;
 } hir_label_target_t;
 
@@ -160,8 +159,7 @@ int hir_ir_cfg_push_loop(
     ir_block_t *break_block);
 void hir_ir_cfg_pop_loop(hir_ir_context_t *context);
 ir_block_t *hir_ir_cfg_lookup_label(
-    const hir_ir_context_t *context, const char *name,
-    size_t name_length);
+    const hir_ir_context_t *context, int label_id);
 int hir_ir_cfg_collect_labels(
     hir_ir_context_t *context, const psx_hir_node_t *node);
 

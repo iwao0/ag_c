@@ -24,7 +24,8 @@ typedef struct {
   const ag_data_layout_t *data_layout;
   psx_initializer_constant_index_resolver_t resolve_index;
   psx_initializer_value_type_resolver_t resolve_value_type;
-  void *resolve_index_context;
+  psx_record_member_name_lookup_t resolve_member;
+  void *resolver_context;
   psx_initializer_scalar_leaf_list_t *leaves;
   psx_local_initializer_plan_t *plan;
   psx_local_initializer_status_t failure_status;
@@ -62,20 +63,6 @@ static psx_initializer_member_ref_t initializer_member_ref(
       record_layouts, record_id, data_layout, member_index);
   if (layout) ref.layout = *layout;
   return ref;
-}
-
-static int aggregate_member_index_by_name(
-    const psx_record_decl_t *record,
-    const psx_initializer_designator_t *designator) {
-  if (!record || !designator) return -1;
-  for (int i = 0; i < record->member_count; i++) {
-    const psx_record_member_decl_t *member = &record->members[i];
-    if (member->len == designator->member_len && member->name &&
-        memcmp(member->name, designator->member_name,
-               (size_t)designator->member_len) == 0)
-      return i;
-  }
-  return -1;
 }
 
 static int flat_initializer_leaf_count(
@@ -276,14 +263,16 @@ static int flat_initializer_record_has_named_member(
     psx_type_id_t aggregate_type_id,
     const psx_initializer_designator_t *designator) {
   psx_type_shape_t shape = {0};
-  const psx_record_decl_t *record =
-      context && psx_semantic_type_table_describe(
+  int member_index = -1;
+  int has_record =
+      context && context->resolve_member &&
+      psx_semantic_type_table_describe(
           context->semantic_types, aggregate_type_id, &shape) &&
-      psx_type_kind_is_aggregate(shape.kind)
-          ? psx_record_decl_table_lookup(
-                context->record_decls, shape.record_id)
-          : NULL;
-  return aggregate_member_index_by_name(record, designator) >= 0;
+      psx_type_kind_is_aggregate(shape.kind);
+  return has_record && designator && context->resolve_member(
+      context->resolver_context, shape.record_id,
+      designator->member_name, designator->member_len,
+      &member_index) && member_index >= 0;
 }
 
 static int flat_initializer_designated_member_span(
@@ -321,7 +310,13 @@ static int flat_initializer_designated_member_span(
         context, &anonymous_span, designator, target);
   }
 
-  int member_index = aggregate_member_index_by_name(record, designator);
+  int member_index = -1;
+  if (!context->resolve_member ||
+      !context->resolve_member(
+          context->resolver_context, shape.record_id,
+          designator->member_name, designator->member_len,
+          &member_index))
+    return 0;
   return member_index >= 0 &&
          flat_initializer_child_span(
              context, aggregate, member_index, target);
@@ -403,7 +398,7 @@ static int flat_initializer_aggregate_value_span(
     return 0;
   psx_qual_type_t value_type;
   if (!context->resolve_value_type(
-          context->resolve_index_context, value, &value_type))
+          context->resolver_context, value, &value_type))
     return 0;
   psx_initializer_object_span_t candidate = *object;
   for (;;) {
@@ -462,7 +457,7 @@ static int flat_initializer_designated_span(
           return 0;
         index = range_indices[i];
       } else if (!context->resolve_index(
-                     context->resolve_index_context,
+                     context->resolver_context,
                      designator->index_expr, &index)) {
         return 0;
       }
@@ -518,10 +513,10 @@ static int flat_initializer_entry_ranges(
     long long begin = 0;
     long long end = 0;
     if (!context->resolve_index(
-            context->resolve_index_context,
+            context->resolver_context,
             designator->index_expr, &begin) ||
         !context->resolve_index(
-            context->resolve_index_context,
+            context->resolver_context,
             designator->range_end_expr, &end) ||
         begin < 0 || end < begin)
       return 0;
@@ -788,9 +783,10 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, psx_qual_type_t object_qual_type,
     const node_init_list_t *initializer,
+    psx_record_member_name_lookup_t resolve_member,
     psx_initializer_constant_index_resolver_t resolve_index,
     psx_initializer_value_type_resolver_t resolve_value_type,
-    void *resolve_index_context, psx_local_initializer_plan_t *plan) {
+    void *resolver_context, psx_local_initializer_plan_t *plan) {
   if (plan) *plan = (psx_local_initializer_plan_t){0};
   if (!arena_context || !semantic_types || !record_decls || !record_layouts ||
       !ag_data_layout_is_valid(data_layout) || !initializer || !plan ||
@@ -807,9 +803,10 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
       .record_decls = record_decls,
       .record_layouts = record_layouts,
       .data_layout = data_layout,
+      .resolve_member = resolve_member,
       .resolve_index = resolve_index,
       .resolve_value_type = resolve_value_type,
-      .resolve_index_context = resolve_index_context,
+      .resolver_context = resolver_context,
       .plan = plan,
   };
   psx_initializer_scalar_leaf_list_t leaves = {0};
@@ -872,19 +869,6 @@ initializer_type_size(const psx_semantic_type_table_t *semantic_types,
                            data_layout);
 }
 
-static int initializer_record_member_index(
-    const psx_record_decl_t *record,
-    const char *member_name, int member_name_len) {
-  if (!record || !member_name || member_name_len <= 0) return -1;
-  for (int i = 0; i < record->member_count; i++) {
-    const psx_record_member_decl_t *member = &record->members[i];
-    if (member->len == member_name_len && member->name &&
-        memcmp(member->name, member_name, (size_t)member_name_len) == 0)
-      return i;
-  }
-  return -1;
-}
-
 static int initializer_target_descend_member(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -926,7 +910,8 @@ int psx_resolve_initializer_member_target_with_records(
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, const char *member_name,
-    int member_name_len, psx_initializer_target_t *target_inout) {
+    int member_name_len, psx_record_member_name_lookup_t resolve_member,
+    void *resolver_context, psx_initializer_target_t *target_inout) {
   if (!semantic_types || !record_decls || !record_layouts ||
       !ag_data_layout_is_valid(data_layout) || !target_inout)
     return 0;
@@ -938,9 +923,12 @@ int psx_resolve_initializer_member_target_with_records(
           ? psx_record_decl_table_lookup(
                 record_decls, aggregate_shape.record_id)
           : NULL;
-  int logical_member = initializer_record_member_index(
-      record, member_name, member_name_len);
-  if (logical_member < 0) return 0;
+  int logical_member = -1;
+  if (!resolve_member || !resolve_member(
+          resolver_context, aggregate_shape.record_id,
+          member_name, member_name_len, &logical_member) ||
+      logical_member < 0 || logical_member >= record->member_count)
+    return 0;
   if (target_inout->first_member_index < 0)
     target_inout->first_member_index = logical_member;
 
@@ -959,15 +947,19 @@ int psx_resolve_initializer_member_target_with_records(
             ? psx_record_decl_table_lookup(
                   record_decls, nested_shape.record_id)
             : NULL;
-    if (initializer_record_member_index(
-            nested_record, member_name, member_name_len) < 0)
+    int nested_member = -1;
+    if (!nested_record || !resolve_member(
+            resolver_context, nested_shape.record_id,
+            member_name, member_name_len, &nested_member) ||
+        nested_member < 0)
       continue;
     return initializer_target_descend_member(semantic_types, record_decls,
                                              record_layouts, data_layout, i,
                                              target_inout) &&
            psx_resolve_initializer_member_target_with_records(
                semantic_types, record_decls, record_layouts, data_layout,
-               member_name, member_name_len, target_inout);
+               member_name, member_name_len, resolve_member,
+               resolver_context, target_inout);
   }
   return initializer_target_descend_member(semantic_types, record_decls,
                                            record_layouts, data_layout,

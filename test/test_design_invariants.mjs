@@ -266,10 +266,6 @@ const identifierResolverBody =
   scopeGraphIdentifierResolutionSource.match(
     /void\s+psx_resolve_identifier\s*\([^]*?\n}\n\nstatic\s+psx_qual_type_t/,
   )?.[0] ?? "";
-const tagScopeLookupBody =
-  scopeGraphSemanticContextSource.match(
-    /static\s+tag_type_t\s*\*find_tag_type_at_scope_in\s*\([^]*?\n}\n\nstatic\s+tag_type_t\s*\*find_tag_type_by_record_id_in/,
-  )?.[0] ?? "";
 if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
     /\bpsx_local_lookup_point_t\b/.test(
@@ -332,9 +328,9 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     /\b(?:gvars_by_bucket|lvars_by_bucket|tags_by_bucket|aggregate_members_by_bucket|enum_entries_by_bucket|typedef_entries_by_bucket|function_symbols_by_bucket|label_definitions_by_bucket|next_hash)\b/.test(
       scopeGraphRegistrySources,
     ) ||
-    !tagScopeLookupBody ||
-    !/psx_scope_graph_declaration_at\s*\(/.test(tagScopeLookupBody) ||
-    /context->tags_all/.test(tagScopeLookupBody) ||
+    /\bfind_tag_type_at_scope_in\s*\(|\bps_ctx_(?:get|find)_tag_member_at_scope_in\s*\(|\bps_ctx_get_tag_member_count_at_scope_in\s*\(/.test(
+      `${scopeGraphSemanticContextHeader}\n${scopeGraphSemanticContextSource}`,
+    ) ||
     /\b(?:current_scope_seq|next_declaration_seq|scope_parent_by_seq)\s*;/.test(
       scopeGraphLocalRegistrySource,
     ) ||
@@ -365,7 +361,7 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/insert_tag_member_record_in\s*\([^]*?psx_scope_graph_declare_at\s*\([^]*?PSX_NAMESPACE_MEMBER[^]*?PSX_DECL_MEMBER/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/find_tag_member_impl_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_MEMBER/.test(
+    !/ps_ctx_find_record_member_in\s*\([^]*?psx_scope_graph_lookup_declaration_in_scope\s*\([^]*?PSX_NAMESPACE_MEMBER/.test(
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_scope_graph\s*\(\s*request->semantic_context\s*\)[^]*?psx_scope_graph_lookup\s*\([^]*?switch\s*\(declaration->kind\)/.test(
@@ -3343,9 +3339,7 @@ if (!aggregateMemberResolutionType ||
     !/ps_ctx_register_record_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
       aggregateRegistryHeader,
     ) ||
-    !/ps_ctx_register_tag_members_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declarations\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layouts/s.test(
-      aggregateRegistryHeader,
-    ) ||
+    /\bps_ctx_register_tag_members_in\s*\(/.test(aggregateRegistryHeader) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
     )) {
@@ -3544,11 +3538,14 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
     /\bps_type_find_aggregate_member\s*\(/.test(
       memberResolutionSource,
     ) ||
-    !/\bps_ctx_get_record_decl_in\s*\(/.test(
+    !/\bps_ctx_find_record_member_in\s*\(/.test(
       memberResolutionSource,
     ) ||
-    !/resolution->member_index\s*=\s*aggregate_member_index/.test(
+    /\baggregate_member_(?:index|named)\s*\(|\bmemcmp\s*\(/.test(
       memberResolutionSource,
+    ) ||
+    !/ps_ctx_find_record_member_in\s*\([^]*?psx_scope_graph_lookup_declaration_in_scope\s*\([^]*?PSX_NAMESPACE_MEMBER/.test(
+      scopeGraphSemanticContextSource,
     ) ||
     !/resolution->record_id\s*=/.test(memberResolutionSource) ||
     !/\bpsx_resolve_member_access_qual_type_in\s*\(/.test(
@@ -5340,12 +5337,11 @@ if (/\bpsx_type_t\b|parser_type_compatibility\.h|\bps_node_(?:get_type|bind_type
     "legacy parser-type node builders must be absent",
   );
 }
-if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
+if (/\bps_ctx_(?:get|find)_tag_member(?:_info)?(?:_at_scope)?_in\s*\(/.test(
       nodeUtilsSource,
-    ) ||
-    !/\bps_ctx_get_tag_member_in\s*\(/.test(nodeUtilsSource)) {
+    )) {
   throw new Error(
-    "parser node utilities must query member declarations and layouts through the split API",
+    "parser node utilities must traverse canonical RecordDecl and RecordLayout data without tag lookup compatibility APIs",
   );
 }
 const removedContextBoundSlotHelpers = [
@@ -5375,29 +5371,30 @@ if (removedContextBoundSlotHelpers.some((source) => source) ||
     "resolved aggregate slot traversal must use canonical TypeId and DataLayout inputs",
   );
 }
-const splitTagTraversalFunctions = [
+const removedSplitTagTraversalFunctions = [
   "ps_tag_flat_cover_state_note_in",
   "ps_tag_find_unnamed_union_covering_offset_in",
+  "ps_record_member_decl_flat_slots_in",
+  "ps_record_member_decl_elem_flat_slots_in",
+  "ps_record_member_decl_subscript_stride_slots_in",
   "ps_tag_flat_slot_count_in",
   "ps_tag_member_at_flat_slot_in",
   "ps_tag_next_named_member_in",
+  "ps_tag_first_named_member_in",
   "ps_tag_find_named_member_in",
   "ps_tag_select_union_member_for_init_slot_in",
   "ps_tag_union_init_member_for_slot_in",
   "ps_tag_member_designator_slot_in",
-].map((name) =>
-  nodeUtilsSource.match(
-    new RegExp(`(?:void|int)\\s+${name}\\s*\\([^]*?\\n\\}`),
-  )?.[0]
-);
-const splitTagTraversalSource = splitTagTraversalFunctions.join("\n");
-if (splitTagTraversalFunctions.some((source) => !source) ||
-    /\btag_member_info_t\b|\bctx_get_tag_member_compat_view\s*\(|\bsplit_tag_member_compat_view\s*\(/.test(
-      splitTagTraversalSource,
-    ) ||
-    !/\bps_ctx_get_tag_member_in\s*\(/.test(splitTagTraversalSource)) {
+];
+const remainingSplitTagTraversalFunctions =
+  removedSplitTagTraversalFunctions.filter((name) =>
+    new RegExp(`\\b${name}\\s*\\(`).test(
+      `${nodeUtilsSource}\n${nodeUtilsHeaderSource}`,
+    ));
+if (remainingSplitTagTraversalFunctions.length) {
   throw new Error(
-    "tag lookup and flat-slot traversal must process declarations and target layouts directly",
+    "unused parser tag traversal compatibility APIs must not return:\n" +
+      remainingSplitTagTraversalFunctions.join("\n"),
   );
 }
 for (const removedApi of [
@@ -6483,16 +6480,8 @@ const tagContextSource = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
-const tagPublicSource = await readFile(
-  "src/parser/tag_public.h",
-  "utf8",
-);
 const semanticContextHeaderSource = await readFile(
   "src/parser/semantic_ctx.h",
-  "utf8",
-);
-const tagFlatCoverSource = await readFile(
-  "src/parser/tag_flat_cover.h",
   "utf8",
 );
 const recordLayoutHeaderSource = await readFile(
@@ -6520,17 +6509,13 @@ if (allSourceFiles.includes("src/parser/tag_member_public.h") ||
       compatibilityTagMemberViolations.join("\n"),
   );
 }
-if (/\btag_member_info_t\b|#include\s+"tag_member_public\.h"/.test(
-      tagPublicSource,
-    ) ||
-    /\bps_record_member_decl_is_(?:tag|struct|union|unnamed)_aggregate\s*\(/.test(
-      tagPublicSource,
-    ) ||
-    !/\bps_record_member_decl_flat_slots_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*/s.test(
-      tagPublicSource,
+if (allSourceFiles.includes("src/parser/tag_public.h") ||
+    allSourceFiles.includes("src/parser/tag_flat_cover.h") ||
+    /#include\s+"(?:tag_public|tag_flat_cover)\.h"/.test(
+      `${nodeUtilsHeaderSource}\n${nodeUtilsSource}`,
     )) {
   throw new Error(
-    "public tag APIs must expose semantic member declarations without compatibility views or semantic type predicates",
+    "unused public tag traversal compatibility headers must not return",
   );
 }
 if (/#include\s+"tag_member_public\.h"/.test(
@@ -6539,36 +6524,6 @@ if (/#include\s+"tag_member_public\.h"/.test(
     /\btag_member_info_t\b/.test(nodeUtilsHeaderSource)) {
   throw new Error(
     "compatibility tag member views must stay out of production parser headers and type implementation",
-  );
-}
-for (const functionName of [
-  "ps_tag_member_at_flat_slot_in",
-  "ps_tag_next_named_member_in",
-  "ps_tag_first_named_member_in",
-  "ps_tag_find_named_member_in",
-  "ps_tag_select_union_member_for_init_slot_in",
-  "ps_tag_union_init_member_for_slot_in",
-]) {
-  const signature = tagPublicSource.match(
-    new RegExp(`\\b${functionName}\\s*\\([^;]*;`, "s"),
-  )?.[0];
-  if (!signature ||
-      !/psx_record_member_decl_t\s*\*/.test(signature) ||
-      !/psx_record_member_layout_t\s*\*/.test(signature)) {
-    throw new Error(
-      `${functionName} must return member declarations and target layouts separately`,
-    );
-  }
-}
-if (/\btag_member_info_t\b/.test(tagFlatCoverSource) ||
-    !/ps_tag_flat_cover_state_covers\s*\([^;]*int\s+member_offset/s.test(
-      tagFlatCoverSource,
-    ) ||
-    !/ps_tag_flat_cover_state_note_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declaration\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layout/s.test(
-      tagFlatCoverSource,
-    )) {
-  throw new Error(
-    "flat-cover APIs must receive member declaration and target layout separately",
   );
 }
 const tagTypeStruct = tagContextSource.match(
@@ -6602,8 +6557,8 @@ const tagDeclarationRequestStruct =
 const refreshRecordDeclFunction = tagContextSource.match(
   /static\s+void\s+refresh_cached_record_decl\s*\([^]*?\n\}/,
 );
-const getTagMemberFunction = tagContextSource.match(
-  /static\s+bool\s+get_tag_member_impl_in\s*\([^]*?\n\}/,
+const findRecordMemberFunction = tagContextSource.match(
+  /bool\s+ps_ctx_find_record_member_in\s*\([^]*?\n\}/,
 );
 const recordDeclStruct = recordDeclHeaderSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
@@ -6647,19 +6602,19 @@ if (!registerTagTypeFunction ||
     "tag declaration must own RecordDecl state while aggregate layout is published explicitly",
   );
 }
-if (!getTagMemberFunction ||
-    !/\bcollect_tag_member_declarations_in\s*\(/.test(
-      getTagMemberFunction[0],
+if (!findRecordMemberFunction ||
+    !/\bpsx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
+      findRecordMemberFunction[0],
     ) ||
-    /\bsort_tag_members_in\s*\(/.test(getTagMemberFunction[0]) ||
-    !/\bps_ctx_get_tag_member_in\s*\([^;]*psx_record_member_decl_t\s*\*\s*out_declaration\s*,[^;]*psx_record_member_layout_t\s*\*\s*out_layout/s.test(
+    !/\bPSX_NAMESPACE_MEMBER\b/.test(findRecordMemberFunction[0]) ||
+    !/\bps_ctx_find_record_member_in\s*\([^;]*psx_record_id_t\s+record_id[^;]*int\s*\*\s*out_member_index[^;]*psx_record_member_decl_t\s*\*\s*out_declaration/s.test(
       aggregateRegistryHeader,
     ) ||
-    !/\bps_ctx_find_tag_member_in\s*\([^;]*psx_record_member_decl_t\s*\*\s*out_declaration\s*,[^;]*psx_record_member_layout_t\s*\*\s*out_layout/s.test(
-      aggregateRegistryHeader,
+    /\bps_ctx_(?:get|find)_tag_member_in\s*\(|\bps_ctx_get_tag_member_count_in\s*\(|\bps_ctx_register_tag_members_in\s*\(/.test(
+      `${aggregateRegistryHeader}\n${tagContextSource}`,
     )) {
   throw new Error(
-    "tag member queries must preserve declaration order and return declaration and layout separately",
+    "record member name lookup must use the scope graph and legacy tag-name member query APIs must stay removed",
   );
 }
 if (/#include\s+"\.\.\/parser\//.test(

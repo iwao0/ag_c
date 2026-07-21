@@ -405,10 +405,8 @@ int hir_ir_build_statement(
              hir_ir_cfg_switch_to_block(context, dead_block);
     }
     case PSX_HIR_GOTO: {
-      size_t name_length = 0;
-      const char *name = psx_hir_node_name(node, &name_length);
       ir_block_t *target = hir_ir_cfg_lookup_label(
-          context, name, name_length);
+          context, psx_hir_node_label_id(node));
       ir_block_t *dead_block = hir_ir_cfg_new_block(context);
       if (!target || !dead_block) {
         if (context->status == IR_HIR_BUILD_OK)
@@ -419,10 +417,8 @@ int hir_ir_build_statement(
              hir_ir_cfg_switch_to_block(context, dead_block);
     }
     case PSX_HIR_LABEL: {
-      size_t name_length = 0;
-      const char *name = psx_hir_node_name(node, &name_length);
       ir_block_t *target = hir_ir_cfg_lookup_label(
-          context, name, name_length);
+          context, psx_hir_node_label_id(node));
       const psx_hir_node_t *statement = hir_ir_child_for_edge(
           context, node, PSX_HIR_EDGE_RHS, 0);
       if (!target) {

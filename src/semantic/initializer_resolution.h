@@ -5,6 +5,7 @@
 #include "type_identity.h"
 #include "record_decl_table.h"
 #include "record_layout.h"
+#include "record_member_lookup.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct arena_context_t arena_context_t;
@@ -82,16 +83,18 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, psx_qual_type_t object_qual_type,
     const node_init_list_t *initializer,
+    psx_record_member_name_lookup_t resolve_member,
     psx_initializer_constant_index_resolver_t resolve_index,
     psx_initializer_value_type_resolver_t resolve_value_type,
-    void *resolve_index_context, psx_local_initializer_plan_t *plan);
+    void *resolver_context, psx_local_initializer_plan_t *plan);
 
 int psx_resolve_initializer_member_target_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, const char *member_name,
-    int member_name_len, psx_initializer_target_t *target_inout);
+    int member_name_len, psx_record_member_name_lookup_t resolve_member,
+    void *resolver_context, psx_initializer_target_t *target_inout);
 int psx_collect_initializer_scalar_leaves_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,

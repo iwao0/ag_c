@@ -4100,6 +4100,16 @@ static int resolve_direct_initializer_index(
       (direct_resolution_context_t *)opaque, expression, value);
 }
 
+static int resolve_direct_initializer_member(
+    void *opaque, psx_record_id_t record_id,
+    const char *member_name, int member_name_len,
+    int *out_member_index) {
+  direct_resolution_context_t *context = opaque;
+  return context && ps_ctx_find_record_member_in(
+      context->semantic_context, record_id, member_name,
+      member_name_len, out_member_index, NULL);
+}
+
 static int resolve_direct_initializer_value_type(
     void *opaque, const node_t *expression, psx_qual_type_t *type) {
   direct_resolution_context_t *context =
@@ -4219,7 +4229,8 @@ static int preflight_direct_flat_initializer(
           ps_ctx_record_decl_table_in(context->semantic_context),
           ps_ctx_record_layout_table_in(context->semantic_context),
           ps_lowering_data_layout(context->lowering_context), object_qual_type,
-          list, resolve_direct_initializer_index,
+          list, resolve_direct_initializer_member,
+          resolve_direct_initializer_index,
           resolve_direct_initializer_value_type, context, plan);
   if (status == PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY) {
     context->preflight_failed = 1;
@@ -6049,6 +6060,18 @@ static psx_semantic_node_t *build_direct_labeled_statement(
 static psx_semantic_node_t *build_direct_jump_statement(
     direct_resolution_context_t *context,
     const node_jump_t *jump, psx_hir_node_kind_t kind) {
+  psx_scope_graph_t *graph = context
+      ? ps_ctx_scope_graph(context->semantic_context) : NULL;
+  psx_scope_id_t label_scope = direct_label_scope(context);
+  psx_decl_id_t declaration_id =
+      graph && jump && jump->name && jump->name_len > 0 &&
+              label_scope != PSX_SCOPE_ID_INVALID
+          ? psx_scope_graph_lookup_in_scope(
+                graph, label_scope, PSX_NAMESPACE_LABEL,
+                jump->name, jump->name_len)
+          : PSX_DECL_ID_INVALID;
+  if (declaration_id == PSX_DECL_ID_INVALID || declaration_id > INT_MAX)
+    return NULL;
   psx_semantic_node_t *body = kind == PSX_HIR_LABEL && jump->base.rhs
       ? build_direct_statement(context, jump->base.rhs) : NULL;
   psx_semantic_node_t *children[] = {body};
@@ -6060,6 +6083,7 @@ static psx_semantic_node_t *build_direct_jump_statement(
       .name = jump->name,
       .name_length = jump->name_len > 0
                          ? (size_t)jump->name_len : 0,
+      .label_id = (int)declaration_id,
   };
   return psx_semantic_node_builder_statement(
       &context->builder, &spec,

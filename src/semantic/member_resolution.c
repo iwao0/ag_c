@@ -2,33 +2,6 @@
 
 #include <string.h>
 
-static int aggregate_member_index(
-    const psx_record_decl_t *record, const char *member_name,
-    int member_name_len) {
-  if (!record || !record->members) return -1;
-  for (int i = 0; i < record->member_count; i++) {
-    const psx_record_member_decl_t *candidate = &record->members[i];
-    if (candidate->name && candidate->len == member_name_len &&
-        memcmp(candidate->name, member_name, (size_t)member_name_len) == 0)
-      return i;
-  }
-  return -1;
-}
-
-static const psx_record_member_decl_t *aggregate_member_named(
-    const psx_record_decl_t *record, const char *member_name,
-    int member_name_len) {
-  if (!record || !record->members || !member_name || member_name_len <= 0)
-    return NULL;
-  for (int i = 0; i < record->member_count; i++) {
-    const psx_record_member_decl_t *member = &record->members[i];
-    if (member->name && member->len == member_name_len &&
-        memcmp(member->name, member_name, (size_t)member_name_len) == 0)
-      return member;
-  }
-  return NULL;
-}
-
 void psx_resolve_member_access_qual_type_in(
     psx_semantic_context_t *semantic_context,
     psx_qual_type_t base_qual_type,
@@ -73,18 +46,14 @@ void psx_resolve_member_access_qual_type_in(
 
   resolution->base_object_qual_type = object_qual_type;
   resolution->record_id = object_shape.record_id;
-  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-      semantic_context, resolution->record_id);
-  const psx_record_member_decl_t *member = aggregate_member_named(
-      record, member_name, member_name_len);
-  if (!member) {
+  if (!ps_ctx_find_record_member_in(
+          semantic_context, resolution->record_id,
+          member_name, member_name_len, &resolution->member_index,
+          &resolution->declaration)) {
     resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
     return;
   }
 
-  resolution->member_index = aggregate_member_index(
-      record, member_name, member_name_len);
-  resolution->declaration = *member;
   resolution->member_qual_type =
       psx_semantic_type_table_record_member(
           semantic_types, object_qual_type.type_id,

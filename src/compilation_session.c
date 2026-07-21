@@ -23,6 +23,15 @@ static char *session_strdup(const char *text) {
   return copy;
 }
 
+static int session_record_member_lookup(
+    void *context, psx_record_id_t record_id,
+    const char *member_name, int member_name_len,
+    int *out_member_index) {
+  return ps_ctx_find_record_member_in(
+      context, record_id, member_name, member_name_len,
+      out_member_index, NULL);
+}
+
 static void dispose_continuation_options(ag_continuation_options_t *options) {
   if (!options) return;
   free(options->entry);
@@ -95,6 +104,8 @@ int ag_compilation_session_init(
           ps_ctx_record_decl_table_in(session->semantic_context),
       .record_layouts =
           ps_ctx_record_layout_table_in(session->semantic_context),
+      .record_member_lookup = session_record_member_lookup,
+      .record_member_lookup_context = session->semantic_context,
   };
   session->lowering_context = ps_lowering_context_create(
       &lowering_dependencies);

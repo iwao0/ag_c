@@ -1,7 +1,5 @@
 #include "hir_ir_builder_internal.h"
 
-#include <string.h>
-
 static int append_instruction(
     hir_ir_context_t *context, ir_inst_t *instruction) {
   if (!instruction) {
@@ -88,14 +86,11 @@ void hir_ir_cfg_pop_loop(hir_ir_context_t *context) {
 }
 
 ir_block_t *hir_ir_cfg_lookup_label(
-    const hir_ir_context_t *context, const char *name,
-    size_t name_length) {
-  if (!name || name_length == 0) return NULL;
+    const hir_ir_context_t *context, int label_id) {
+  if (!context || label_id <= 0) return NULL;
   for (size_t i = 0; i < context->label_count; i++) {
     const hir_label_target_t *target = &context->label_targets[i];
-    if (target->name_length == name_length &&
-        memcmp(target->name, name, name_length) == 0)
-      return target->block;
+    if (target->label_id == label_id) return target->block;
   }
   return NULL;
 }
@@ -104,23 +99,22 @@ int hir_ir_cfg_collect_labels(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   if (!node) return 1;
   if (psx_hir_node_kind(node) == PSX_HIR_LABEL) {
-    size_t name_length = 0;
-    const char *name = psx_hir_node_name(node, &name_length);
-    if (!name || name_length == 0 ||
+    int label_id = psx_hir_node_label_id(node);
+    if (label_id <= 0 ||
         context->label_count >=
             sizeof(context->label_targets) /
                 sizeof(context->label_targets[0])) {
       context->status = IR_HIR_BUILD_INVALID;
       return 0;
     }
-    if (hir_ir_cfg_lookup_label(context, name, name_length)) {
+    if (hir_ir_cfg_lookup_label(context, label_id)) {
       context->status = IR_HIR_BUILD_INVALID;
       return 0;
     }
     ir_block_t *block = hir_ir_cfg_new_block(context);
     if (!block) return 0;
     context->label_targets[context->label_count++] =
-        (hir_label_target_t){name, name_length, block};
+        (hir_label_target_t){label_id, block};
   }
   for (size_t i = 0; i < psx_hir_node_child_count(node); i++) {
     const psx_hir_node_t *child = psx_hir_module_lookup(

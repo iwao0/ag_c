@@ -639,6 +639,15 @@ static psx_initializer_target_t aggregate_positional_target(
   return target;
 }
 
+static int aggregate_record_member_lookup(
+    void *context, psx_record_id_t record_id,
+    const char *member_name, int member_name_len,
+    int *out_member_index) {
+  return ps_lowering_lookup_record_member(
+      context, record_id, member_name, member_name_len,
+      out_member_index);
+}
+
 static psx_initializer_target_t aggregate_designated_target(
     const static_hir_aggregate_t *aggregate,
     const psx_hir_node_t *entry,
@@ -702,7 +711,8 @@ static psx_initializer_target_t aggregate_designated_target(
             ps_lowering_record_decls(aggregate->eval.lowering_context),
             ps_lowering_record_layouts(aggregate->eval.lowering_context),
             ps_lowering_data_layout(aggregate->eval.lowering_context), name,
-            (int)name_length, &target))
+            (int)name_length, aggregate_record_member_lookup,
+            aggregate->eval.lowering_context, &target))
       return (psx_initializer_target_t){0};
   }
   return target;

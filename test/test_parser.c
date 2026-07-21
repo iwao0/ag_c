@@ -45,7 +45,6 @@
 #include "../src/parser/stmt.h"
 #include "../src/parser/statement_syntax_adapter.h"
 #include "../src/parser/symtab.h"
-#include "../src/parser/tag_public.h"
 #include "../src/pragma_pack.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/semantic/aggregate_member_resolution.h"
@@ -119,33 +118,6 @@ static int test_target_scalar_alignment(const ag_target_info_t *target,
   return ag_data_layout_scalar_alignment(ag_target_info_data_layout(target),
                                          kind);
 }
-
-typedef struct {
-  char *name;
-  int len;
-  int offset;
-  int bit_width;
-  int bit_offset;
-  int bit_is_signed;
-  psx_qual_type_t decl_qual_type;
-} tag_member_info_t;
-
-static tag_member_info_t ps_tag_member_declaration_view(
-    const psx_record_member_decl_t *member) {
-  return member
-             ? (tag_member_info_t){
-                   .name = member->name,
-                   .len = member->len,
-                   .bit_width = member->bit_width,
-                   .bit_is_signed = member->bit_is_signed,
-                   .decl_qual_type = member->decl_qual_type,
-               }
-             : (tag_member_info_t){0};
-}
-
-
-
-
 
 static int resolve_program_input_hir(const char *input);
 static void expect_parse_fail(const char *input);
@@ -284,34 +256,52 @@ static psx_local_registry_t *test_local_registry(void) {
   return ag_compilation_session_local_registry(test_suite_session);
 }
 
-static int test_materialize_tag_member_info(
-    const psx_record_member_decl_t *declaration,
-    const psx_record_member_layout_t *layout,
-    tag_member_info_t *out) {
-  if (!declaration || !layout || !out) return 0;
-  *out = ps_tag_member_declaration_view(declaration);
-  out->offset = layout->offset;
-  out->bit_offset = layout->bit_offset;
-  return 1;
-}
-
-static bool ps_ctx_find_tag_member_info_in(
+static bool test_find_tag_member(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, char *name, int len,
-    char *member_name, int member_len, tag_member_info_t *out) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  return ps_ctx_find_tag_member_in(
-             semantic_context, kind, name, len,
-             member_name, member_len, &declaration, &layout) &&
-         test_materialize_tag_member_info(
-             &declaration, &layout, out);
+    char *member_name, int member_len,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  if (!semantic_context || !out_declaration || !out_layout) return false;
+  psx_record_id_t record_id = ps_ctx_resolve_tag_record_id_in(
+      semantic_context, kind, name, len);
+  int member_index = -1;
+  if (record_id == PSX_RECORD_ID_INVALID ||
+      !ps_ctx_find_record_member_in(
+          semantic_context, record_id, member_name, member_len,
+          &member_index, out_declaration))
+    return false;
+  const psx_record_layout_t *record_layout =
+      psx_record_layout_table_lookup(
+          ps_ctx_record_layout_table_in(semantic_context),
+          record_id, ps_ctx_data_layout(semantic_context));
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(record_layout, member_index);
+  if (!member_layout) return false;
+  *out_layout = *member_layout;
+  return true;
 }
 
 static bool test_semantic_has_tag_type(
     token_kind_t kind, char *name, int len) {
   return ps_ctx_has_tag_type_in(
       test_semantic_context(), kind, name, len);
+}
+
+static int test_tag_member_count(
+    token_kind_t kind, char *name, int len) {
+  psx_semantic_context_t *context = test_semantic_context();
+  psx_qual_type_t tag_type = ps_ctx_tag_qual_type_at_in(
+      context, kind, name, len,
+      psx_scope_graph_capture_lookup_point(ps_ctx_scope_graph(context)));
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(context), tag_type.type_id,
+          &shape))
+    return -1;
+  const psx_record_decl_t *record = psx_record_decl_table_lookup(
+      ps_ctx_record_decl_table_in(context), shape.record_id);
+  return record ? record->member_count : -1;
 }
 
 static int test_semantic_register_tag_type(
@@ -4773,21 +4763,20 @@ static void test_member_access_typed_hir_boundary() {
       {.offset = 0},
       {.offset = 4},
   };
-  int conflict_index = -1;
-  ASSERT_TRUE(ps_ctx_register_tag_members_in(
-      semantic_context, TK_STRUCT, (char *)member_tag_name,
-      member_tag_len, member_declarations, member_layouts, 2,
-      &conflict_index));
-  ASSERT_EQ(-1, conflict_index);
-  ASSERT_TRUE(test_semantic_register_tag_type(
-      TK_STRUCT, (char *)member_tag_name, member_tag_len,
-      1, 2, 8, 4));
-
   const psx_record_decl_t *member_record =
       ps_ctx_ensure_tag_record_decl_in(
           semantic_context, TK_STRUCT, (char *)member_tag_name,
           member_tag_len);
   ASSERT_TRUE(member_record != NULL);
+  int conflict_index = -1;
+  ASSERT_TRUE(ps_ctx_register_record_members_in(
+      semantic_context, member_record->record_id, member_declarations,
+      member_layouts, 2, &conflict_index));
+  ASSERT_EQ(-1, conflict_index);
+  ASSERT_TRUE(test_semantic_register_tag_type(
+      TK_STRUCT, (char *)member_tag_name, member_tag_len,
+      1, 2, 8, 4));
+
   ASSERT_EQ(2, member_record->member_count);
   const psx_record_layout_t *member_layout = psx_record_layout_table_lookup(
       ps_ctx_record_layout_table_in(semantic_context),
@@ -8011,10 +8000,10 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_TRUE(item.value.declaration.is_standalone_tag);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
+  ASSERT_EQ(-1, test_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseTag", 10));
   apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
+  ASSERT_EQ(1, test_tag_member_count(
                    TK_STRUCT, (char *)"__PhaseTag", 10));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
@@ -10244,10 +10233,11 @@ static void test_aggregate_body_phase_boundary() {
             callback_parameters->items[0].specifier.source);
   ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
 
-  tag_member_info_t member = {0};
-  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
+  psx_record_member_decl_t member_declaration = {0};
+  psx_record_member_layout_t member_layout = {0};
+  ASSERT_TRUE(!test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"a", 1, &member));
+      (char *)"a", 1, &member_declaration, &member_layout));
   ASSERT_TRUE(!test_semantic_has_tag_type(
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
   ASSERT_TRUE(!test_semantic_has_tag_type(
@@ -10280,6 +10270,25 @@ static void test_aggregate_body_phase_boundary() {
                    &size, &alignment));
   ASSERT_EQ(72, size);
   ASSERT_EQ(8, alignment);
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .kind = TK_STRUCT,
+          .name = (char *)"__ParsedBody",
+          .name_len = 12,
+          .mode = PSX_TAG_DECLARATION_DEFINITION,
+          .member_count = 10,
+      },
+      &tag);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag.status);
+  const psx_record_decl_t *parsed_record =
+      ps_ctx_ensure_tag_record_decl_in(
+          test_semantic_context(), TK_STRUCT,
+          (char *)"__ParsedBody", 12);
+  ASSERT_TRUE(parsed_record != NULL);
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), parsed_record->record_id,
+      size, alignment));
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
   psx_type_shape_t member_shape = {0};
@@ -10289,18 +10298,18 @@ static void test_aggregate_body_phase_boundary() {
                   .bit_width_expression.node != NULL);
   ASSERT_TRUE(body.items[7].value.member_declaration.specifier
                   .alignas_specifiers[0].expression != NULL);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"a", 1, &member));
-  ASSERT_EQ(0, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+      (char *)"a", 1, &member_declaration, &member_layout));
+  ASSERT_EQ(0, member_layout.offset);
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"b", 1, &member));
-  ASSERT_EQ(8, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+      (char *)"b", 1, &member_declaration, &member_layout));
+  ASSERT_EQ(8, member_layout.offset);
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"c", 1, &member));
-  ASSERT_EQ(16, member.offset);
+      (char *)"c", 1, &member_declaration, &member_layout));
+  ASSERT_EQ(16, member_layout.offset);
   ASSERT_TRUE(test_semantic_has_tag_type(
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
   ASSERT_EQ(4, ps_ctx_get_tag_size_in(test_semantic_context(),
@@ -10313,41 +10322,43 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"PhaseEnumNext", 13, &enum_value));
   ASSERT_EQ(5, enum_value);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"arr", 3, &member));
-  ASSERT_EQ(28, member.offset);
-  ASSERT_TRUE(member.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+      (char *)"arr", 3, &member_declaration, &member_layout));
+  ASSERT_EQ(28, member_layout.offset);
+  ASSERT_TRUE(member_declaration.decl_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      types, member.decl_qual_type.type_id, &member_shape));
+      types, member_declaration.decl_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_ARRAY, member_shape.kind);
   ASSERT_EQ(5, member_shape.array_len);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"flags", 5, &member));
-  ASSERT_EQ(48, member.offset);
-  ASSERT_EQ(3, member.bit_width);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+      (char *)"flags", 5, &member_declaration, &member_layout));
+  ASSERT_EQ(48, member_layout.offset);
+  ASSERT_EQ(3, member_declaration.bit_width);
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"aligned", 7, &member));
-  ASSERT_EQ(56, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+      (char *)"aligned", 7, &member_declaration, &member_layout));
+  ASSERT_EQ(56, member_layout.offset);
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"late", 4, &member));
-  ASSERT_EQ(60, member.offset);
+      (char *)"late", 4, &member_declaration, &member_layout));
+  ASSERT_EQ(60, member_layout.offset);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      types, member.decl_qual_type.type_id, &member_shape));
+      types, member_declaration.decl_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, member_shape.kind);
-  ASSERT_EQ(4, test_type_size_id(member.decl_qual_type.type_id));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
+  ASSERT_EQ(4, test_type_size_id(
+                   member_declaration.decl_qual_type.type_id));
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
-      (char *)"callback", 8, &member));
-  ASSERT_EQ(64, member.offset);
+      (char *)"callback", 8, &member_declaration, &member_layout));
+  ASSERT_EQ(64, member_layout.offset);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      types, member.decl_qual_type.type_id, &member_shape));
+      types, member_declaration.decl_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_POINTER, member_shape.kind);
   psx_qual_type_t callback = psx_semantic_type_table_base(
-      types, member.decl_qual_type.type_id);
+      types, member_declaration.decl_qual_type.type_id);
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, callback.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_FUNCTION, member_shape.kind);
@@ -10399,14 +10410,14 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_declaration_phase_base_qual_type(&phase).type_id);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
+  ASSERT_EQ(-1, test_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   psx_qual_type_t unapplied_type =
       psx_resolve_decl_specifier_qual_type_in_context(
           test_semantic_context(), &phase.syntax);
   ASSERT_EQ(PSX_TYPE_ID_INVALID, unapplied_type.type_id);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
+  ASSERT_EQ(-1, test_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
@@ -10426,7 +10437,7 @@ static void test_declaration_phase_boundary() {
           phase_shape.record_id);
   ASSERT_TRUE(phase_record != NULL);
   ASSERT_EQ(1, phase_record->member_count);
-  ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
+  ASSERT_EQ(1, test_tag_member_count(
                    TK_STRUCT, (char *)"__PhaseObject", 13));
   psx_dispose_declaration_phase(&phase);
 

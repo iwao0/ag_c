@@ -7,7 +7,6 @@
 #include "init_slot.h"
 #include "gvar_public.h"
 #include "syntax_node.h"
-#include "tag_public.h"
 #include "../target_info.h"
 
 #endif
