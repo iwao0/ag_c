@@ -23,7 +23,6 @@
 #include "../src/lowering/translation_unit_data_lowering.h"
 #include "../src/lowering/vla_lowering.h"
 #include "../src/parser/aggregate_member_syntax.h"
-#include "../src/parser/alignas_value.h"
 #include "../src/parser/arena.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/declaration_binding_events.h"
@@ -119,25 +118,29 @@ static int test_target_scalar_alignment(const ag_target_info_t *target,
                                          kind);
 }
 
-static int resolve_program_input_hir(const char *input);
-static void expect_parse_fail(const char *input);
+static int resolve_program_input_hir(
+    ag_compilation_session_t *test_suite_session, const char *input);
+static void expect_parse_fail(
+    ag_compilation_session_t *test_suite_session, const char *input);
 static const psx_hir_node_t *find_test_hir_node_kind(
     const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
     size_t occurrence);
 static const psx_hir_node_t *find_test_named_hir_node(
     const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
     const char *expected_name, size_t occurrence);
-static ag_compilation_session_t *test_suite_session;
 
-static ag_diagnostic_context_t *test_diagnostics(void) {
+static ag_diagnostic_context_t *test_diagnostics(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_diagnostic_context(test_suite_session);
 }
 
-static arena_context_t *test_arena_context(void) {
+static arena_context_t *test_arena_context(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_arena_context(test_suite_session);
 }
 
-static tokenizer_context_t *test_tokenizer(void) {
+static tokenizer_context_t *test_tokenizer(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_tokenizer(test_suite_session);
 }
 
@@ -147,13 +150,14 @@ typedef struct {
 } test_semantic_context_fixture_t;
 
 static int test_semantic_context_fixture_init(
+    ag_compilation_session_t *test_suite_session,
     test_semantic_context_fixture_t *fixture,
     const ag_target_info_t *target) {
   if (!fixture) return 0;
   memset(fixture, 0, sizeof(*fixture));
   fixture->scope_graph = psx_scope_graph_create();
   fixture->context = ps_ctx_create(
-      test_arena_context(), test_diagnostics(),
+      test_arena_context(test_suite_session), test_diagnostics(test_suite_session),
       fixture->scope_graph, target);
   if (fixture->context) return 1;
   psx_scope_graph_destroy(fixture->scope_graph);
@@ -169,21 +173,25 @@ static void test_semantic_context_fixture_dispose(
   memset(fixture, 0, sizeof(*fixture));
 }
 #define ps_declarator_shape_append_pointer(...) \
-  ps_declarator_shape_append_pointer_in(test_arena_context(), __VA_ARGS__)
+  ps_declarator_shape_append_pointer_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_shape_append_array(...) \
-  ps_declarator_shape_append_array_in(test_arena_context(), __VA_ARGS__)
+  ps_declarator_shape_append_array_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_shape_append_array_ex(...) \
-  ps_declarator_shape_append_array_ex_in(test_arena_context(), __VA_ARGS__)
+  ps_declarator_shape_append_array_ex_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_shape_append_vla_array(...) \
   ps_declarator_shape_append_vla_array_in( \
-      test_arena_context(), __VA_ARGS__)
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_shape_append_function(...) \
-  ps_declarator_shape_append_function_in(test_arena_context(), __VA_ARGS__)
+  ps_declarator_shape_append_function_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_op_set_function_param_qual_types(...) \
   ps_declarator_op_set_function_param_qual_types_in( \
-      test_arena_context(), __VA_ARGS__)
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_declarator_shape_copy(...) \
-  ps_declarator_shape_copy_in(test_arena_context(), __VA_ARGS__)
+  ps_declarator_shape_copy_in(test_arena_context(test_suite_session), __VA_ARGS__)
 
 #define ps_node_type_size(...) test_node_type_size(__VA_ARGS__)
 #define ps_node_storage_type_size(...) \
@@ -204,39 +212,51 @@ static void test_semantic_context_fixture_dispose(
 #define ps_gvar_initializer_element_count(...) \
   test_gvar_initializer_element_count(__VA_ARGS__)
 #define psx_node_new_raw_binary(...) \
-  psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_raw_binary_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define ps_node_compound_literal_array_size(...) \
   test_node_compound_literal_array_size(__VA_ARGS__)
-static psx_semantic_context_t *test_semantic_context(void);
+static psx_semantic_context_t *test_semantic_context(
+    ag_compilation_session_t *test_suite_session);
 
 #define psx_node_new_source_cast(...) \
-  psx_node_new_source_cast_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_source_cast_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_unary_deref_syntax_for(...) \
-  psx_node_new_unary_deref_syntax_for_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_unary_deref_syntax_for_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_subscript_syntax_for(...) \
-  psx_node_new_subscript_syntax_for_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_subscript_syntax_for_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_raw_assign(...) \
-  psx_node_new_raw_assign_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_raw_assign_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_raw_decl_initializer(...) \
-  psx_node_new_raw_decl_initializer_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_raw_decl_initializer_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_compound_literal(...) \
-  psx_node_new_compound_literal_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_compound_literal_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_raw_decl_initializer_list(...) \
   psx_node_new_raw_decl_initializer_list_in( \
-      test_arena_context(), __VA_ARGS__)
+      test_arena_context(test_suite_session), __VA_ARGS__)
 #define psx_node_new_initializer_list(...) \
-  psx_node_new_initializer_list_in(test_arena_context(), __VA_ARGS__)
+  psx_node_new_initializer_list_in( \
+      test_arena_context(test_suite_session), __VA_ARGS__)
 
-static psx_semantic_context_t *test_semantic_context(void) {
+static psx_semantic_context_t *test_semantic_context(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_semantic_context(test_suite_session);
 }
 
-static psx_scope_graph_t *test_scope_graph(void) {
-  return ps_ctx_scope_graph(test_semantic_context());
+static psx_scope_graph_t *test_scope_graph(
+    ag_compilation_session_t *test_suite_session) {
+  return ps_ctx_scope_graph(test_semantic_context(test_suite_session));
 }
 
-static psx_scope_lookup_point_t test_scope_lookup_point(void) {
-  return psx_scope_graph_capture_lookup_point(test_scope_graph());
+static psx_scope_lookup_point_t test_scope_lookup_point(
+    ag_compilation_session_t *test_suite_session) {
+  return psx_scope_graph_capture_lookup_point(test_scope_graph(test_suite_session));
 }
 
 static int test_has_function_type_in(
@@ -248,11 +268,13 @@ static int test_has_function_type_in(
 }
 
 
-static psx_global_registry_t *test_global_registry(void) {
+static psx_global_registry_t *test_global_registry(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_global_registry(test_suite_session);
 }
 
-static psx_local_registry_t *test_local_registry(void) {
+static psx_local_registry_t *test_local_registry(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_local_registry(test_suite_session);
 }
 
@@ -283,14 +305,16 @@ static bool test_find_tag_member(
 }
 
 static bool test_semantic_has_tag_type(
+    ag_compilation_session_t *test_suite_session,
     token_kind_t kind, char *name, int len) {
   return ps_ctx_has_tag_type_in(
-      test_semantic_context(), kind, name, len);
+      test_semantic_context(test_suite_session), kind, name, len);
 }
 
 static int test_tag_member_count(
+    ag_compilation_session_t *test_suite_session,
     token_kind_t kind, char *name, int len) {
-  psx_semantic_context_t *context = test_semantic_context();
+  psx_semantic_context_t *context = test_semantic_context(test_suite_session);
   psx_qual_type_t tag_type = ps_ctx_tag_qual_type_at_in(
       context, kind, name, len,
       psx_scope_graph_capture_lookup_point(ps_ctx_scope_graph(context)));
@@ -305,60 +329,67 @@ static int test_tag_member_count(
 }
 
 static int test_semantic_register_tag_type(
+    ag_compilation_session_t *test_suite_session,
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count, int tag_size, int tag_align);
 
 static void test_semantic_define_tag_type_with_layout(
+    ag_compilation_session_t *test_suite_session,
     token_kind_t kind, char *name, int len,
     int member_count, int tag_size, int tag_align) {
   int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
-  ASSERT_TRUE(test_semantic_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(test_suite_session,
       kind, name, len, is_complete, member_count, tag_size, tag_align));
 }
 
 static int test_semantic_register_tag_type(
+    ag_compilation_session_t *test_suite_session,
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count, int tag_size, int tag_align) {
   if (!ps_ctx_register_tag_type_in(
-      test_semantic_context(),
+      test_semantic_context(test_suite_session),
       kind, name, len, is_complete, member_count))
     return 0;
   if (!is_complete || (kind != TK_STRUCT && kind != TK_UNION)) return 1;
   const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
-      test_semantic_context(), kind, name, len);
+      test_semantic_context(test_suite_session), kind, name, len);
   return record && ps_ctx_publish_record_layout_in(
-      test_semantic_context(), record->record_id,
+      test_semantic_context(test_suite_session), record->record_id,
       tag_size, tag_align > 0 ? tag_align : 1);
 }
 
 static int test_semantic_define_enum_const(
+    ag_compilation_session_t *test_suite_session,
     char *name, int len, long long value) {
   return ps_ctx_register_enum_const_in(
-      test_semantic_context(),
+      test_semantic_context(test_suite_session),
       name, len, value, NULL);
 }
 
 static int test_semantic_define_typedef_name(
+    ag_compilation_session_t *test_suite_session,
     char *name, int len, const psx_typedef_info_t *info) {
   return ps_ctx_register_typedef_name_in(
-      test_semantic_context(),
+      test_semantic_context(test_suite_session),
       name, len, info, NULL, NULL);
 }
 
-static ir_abi_module_t *test_lower_ir_abi(const ir_module_t *module) {
+static ir_abi_module_t *test_lower_ir_abi(
+    ag_compilation_session_t *test_suite_session, const ir_module_t *module) {
   ir_abi_type_context_t context = {
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .target = ag_compilation_session_target(test_suite_session),
   };
   return ir_abi_lower_module(&context, module);
 }
 
 static long test_function_abi_value(
+    ag_compilation_session_t *test_suite_session,
     const ir_module_t *module, int field, size_t index) {
-  ir_abi_module_t *abi = test_lower_ir_abi(module);
+  ir_abi_module_t *abi = test_lower_ir_abi(test_suite_session, module);
   const ir_abi_signature_t *signature = abi && module && module->funcs
       ? ir_abi_function_signature(abi, module->funcs) : NULL;
   long value = -1;
@@ -390,9 +421,10 @@ static long test_function_abi_value(
 }
 
 static long test_call_abi_value(
+    ag_compilation_session_t *test_suite_session,
     const ir_module_t *module, const ir_inst_t *call,
     int field, size_t index) {
-  ir_abi_module_t *abi = test_lower_ir_abi(module);
+  ir_abi_module_t *abi = test_lower_ir_abi(test_suite_session, module);
   const ir_abi_signature_t *signature =
       abi ? ir_abi_call_signature(abi, call) : NULL;
   long value = -1;
@@ -411,9 +443,10 @@ static long test_call_abi_value(
 }
 
 static long test_reference_abi_value(
+    ag_compilation_session_t *test_suite_session,
     const ir_module_t *module, const ir_inst_t *reference,
     int field, size_t index) {
-  ir_abi_module_t *abi = test_lower_ir_abi(module);
+  ir_abi_module_t *abi = test_lower_ir_abi(test_suite_session, module);
   const ir_abi_signature_t *signature =
       abi ? ir_abi_reference_signature(abi, reference) : NULL;
   long value = -1;
@@ -464,40 +497,46 @@ static lvar_t *find_test_local_var_in(
           ps_local_registry_scope_graph(registry)));
 }
 
-static global_var_t *find_test_global_var(char *name, int len) {
-  return find_test_global_var_in(test_global_registry(), name, len);
+static global_var_t *find_test_global_var(
+    ag_compilation_session_t *test_suite_session, char *name, int len) {
+  return find_test_global_var_in(test_global_registry(test_suite_session), name, len);
 }
 
 static bool iter_test_float_literals(
+    ag_compilation_session_t *test_suite_session,
     float_lit_visitor_t visitor, void *user) {
   return ps_iter_float_literals_in(
-      test_global_registry(), visitor, user);
+      test_global_registry(test_suite_session), visitor, user);
 }
 
-static ag_compilation_options_t *test_compilation_options(void) {
+static ag_compilation_options_t *test_compilation_options(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_options(test_suite_session);
 }
 
-static psx_lowering_context_t *test_lowering_context(void) {
+static psx_lowering_context_t *test_lowering_context(
+    ag_compilation_session_t *test_suite_session) {
   return ag_compilation_session_lowering_context(test_suite_session);
 }
 
 static void set_test_typedef_fixture_type(
+    ag_compilation_session_t *test_suite_session,
     psx_typedef_info_t *info, psx_qual_type_t type) {
   ASSERT_TRUE(info != NULL);
   ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
   info->decl_type_table = ps_ctx_semantic_type_table_in(
-      test_semantic_context());
+      test_semantic_context(test_suite_session));
   info->decl_qual_type = type;
   ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
       info->decl_type_table, info->decl_qual_type));
 }
 
-static int test_type_size_id(psx_type_id_t type_id) {
+static int test_type_size_id(
+    ag_compilation_session_t *test_suite_session, psx_type_id_t type_id) {
   return psx_type_layout_sizeof(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_ctx_record_layout_table_in(test_semantic_context()), type_id,
-      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)), type_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context(test_suite_session))));
 }
 
 
@@ -531,18 +570,21 @@ static int test_type_size_id(psx_type_id_t type_id) {
 
 
 
-static void reset_test_locals(void) {
+static void reset_test_locals(
+    ag_compilation_session_t *test_suite_session) {
   ps_decl_reset_locals_in(
       ag_compilation_session_local_registry(test_suite_session));
-  local_storage_reset(test_lowering_context());
+  local_storage_reset(test_lowering_context(test_suite_session));
 }
 
-static void set_test_current_funcname(char *name, int len) {
+static void set_test_current_funcname(
+    ag_compilation_session_t *test_suite_session, char *name, int len) {
   ps_decl_set_current_funcname_in(
       ag_compilation_session_local_registry(test_suite_session), name, len);
 }
 
-static void reset_test_translation_unit_state(void) {
+static void reset_test_translation_unit_state(
+    ag_compilation_session_t *test_suite_session) {
   ASSERT_TRUE(ag_compilation_session_reset_translation_unit(
       test_suite_session));
 }
@@ -558,12 +600,14 @@ static int resolve_test_program_hir_from_in_session(
   return psx_frontend_stream_end(&stream);
 }
 
-static int resolve_test_program_hir_from(token_t *start) {
+static int resolve_test_program_hir_from(
+    ag_compilation_session_t *test_suite_session, token_t *start) {
   return resolve_test_program_hir_from_in_session(
       test_suite_session, start);
 }
 
-static node_t *parse_test_expression_from(token_t *start) {
+static node_t *parse_test_expression_from(
+    ag_compilation_session_t *test_suite_session, token_t *start) {
   psx_parser_runtime_context_t *runtime =
       ag_compilation_session_parser_runtime_context(test_suite_session);
   tokenizer_context_t *tokenizer =
@@ -572,7 +616,7 @@ static node_t *parse_test_expression_from(token_t *start) {
       ps_parser_runtime_bind_tokenizer(runtime, tokenizer);
   tk_set_current_token_ctx(tokenizer, start);
   psx_name_classifier_t classifier =
-      ps_ctx_name_classifier(test_semantic_context());
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session));
   node_t *node = psx_expr_expr_with_syntax_services(
       runtime, &classifier, NULL);
   if (previous)
@@ -597,8 +641,7 @@ static node_t *parse_test_toplevel_assignment_expression(
     void *context) {
   psx_parser_stream_t *stream = context;
   return psx_expr_assign_with_syntax_services(
-      ag_compilation_session_parser_runtime_context(
-          test_suite_session),
+      stream ? stream->runtime_context : NULL,
       stream ? &stream->syntax.name_classifier : NULL, NULL);
 }
 
@@ -611,9 +654,9 @@ static int parse_test_toplevel_static_assert(
       assertion,
       &(psx_static_assert_syntax_context_t){
           .context = context,
-          .runtime_context =
-              ag_compilation_session_parser_runtime_context(
-                  test_suite_session),
+          .runtime_context = context
+              ? ((psx_parser_stream_t *)context)->runtime_context
+              : NULL,
           .parse_assignment_expression =
               parse_test_toplevel_assignment_expression,
       });
@@ -629,9 +672,9 @@ static int parse_test_toplevel_declaration_head(
       &(psx_toplevel_declaration_syntax_context_t){
           .context = context,
           .name_classifier = *name_classifier,
-          .runtime_context =
-              ag_compilation_session_parser_runtime_context(
-                  test_suite_session),
+          .runtime_context = context
+              ? ((psx_parser_stream_t *)context)->runtime_context
+              : NULL,
           .parse_assignment_expression =
               parse_test_toplevel_assignment_expression,
       });
@@ -646,15 +689,16 @@ static int finish_test_toplevel_declaration(
       &(psx_toplevel_declaration_syntax_context_t){
           .context = context,
           .name_classifier = *name_classifier,
-          .runtime_context =
-              ag_compilation_session_parser_runtime_context(
-                  test_suite_session),
+          .runtime_context = context
+              ? ((psx_parser_stream_t *)context)->runtime_context
+              : NULL,
           .parse_assignment_expression =
               parse_test_toplevel_assignment_expression,
       });
 }
 
 static void begin_test_parser_stream(
+    ag_compilation_session_t *test_suite_session,
     psx_parser_stream_t *stream,
     tokenizer_context_t *tokenizer_context, token_t *start) {
   psx_parser_syntax_services_t syntax = {
@@ -663,7 +707,7 @@ static void begin_test_parser_stream(
           ag_compilation_session_parser_runtime_context(
               test_suite_session),
       .name_classifier = ps_ctx_name_classifier(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .parse_static_assert =
           parse_test_toplevel_static_assert,
       .parse_toplevel_declaration_head =
@@ -695,9 +739,10 @@ static int test_aggregate_name_is_typedef(
              &classifier_context->outer, token);
 }
 
-static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
+static void parse_test_aggregate_body(
+    ag_compilation_session_t *test_suite_session, psx_parsed_aggregate_body_t *body) {
   test_aggregate_name_classifier_context_t classifier_context = {
-      .outer = ps_ctx_name_classifier(test_semantic_context()),
+      .outer = ps_ctx_name_classifier(test_semantic_context(test_suite_session)),
   };
   psx_name_classifier_t name_classifier = {
       .context = &classifier_context,
@@ -721,11 +766,12 @@ static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
 }
 
 static int parse_test_toplevel_declaration_syntax(
+    ag_compilation_session_t *test_suite_session,
     psx_parsed_toplevel_declaration_t *declaration) {
   psx_parser_name_environment_t name_environment;
   ps_parser_name_environment_init(
       &name_environment,
-      ps_ctx_name_classifier(test_semantic_context()));
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session)));
   psx_name_classifier_t name_classifier =
       ps_parser_name_environment_classifier(&name_environment);
   test_declaration_expression_service_t expression_service = {
@@ -748,9 +794,10 @@ static int parse_test_toplevel_declaration_syntax(
 }
 
 static void parse_test_decl_specifier_syntax(
+    ag_compilation_session_t *test_suite_session,
     psx_parsed_decl_specifier_t *specifier) {
   psx_name_classifier_t name_classifier =
-      ps_ctx_name_classifier(test_semantic_context());
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session));
   test_declaration_expression_service_t expression_service = {
       .runtime_context =
           ag_compilation_session_parser_runtime_context(test_suite_session),
@@ -768,9 +815,10 @@ static void parse_test_decl_specifier_syntax(
 }
 
 static int parse_test_type_name_syntax_at(
+    ag_compilation_session_t *test_suite_session,
     token_t *start, psx_parsed_type_name_t *type_name) {
   psx_name_classifier_t name_classifier =
-      ps_ctx_name_classifier(test_semantic_context());
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session));
   test_declaration_expression_service_t expression_service = {
       .runtime_context =
           ag_compilation_session_parser_runtime_context(test_suite_session),
@@ -806,7 +854,8 @@ static int test_name_classifier_is_typedef(
                  (size_t)identifier->len) == 0;
 }
 
-static void test_parser_name_environment_boundary() {
+static void test_parser_name_environment_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parser_name_environment_boundary...\n");
   test_name_classifier_context_t outer_context = {
       .name = "Alias",
@@ -821,8 +870,8 @@ static void test_parser_name_environment_boundary() {
   psx_name_classifier_t classifier =
       ps_parser_name_environment_classifier(&environment);
 
-  token_t *alias = tk_tokenize_ctx(test_tokenizer(), (char *)"Alias");
-  token_t *local = tk_tokenize_ctx(test_tokenizer(), (char *)"Local");
+  token_t *alias = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"Alias");
+  token_t *local = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"Local");
   ASSERT_TRUE(ps_name_classifier_is_typedef_name(
       &classifier, alias));
 
@@ -848,7 +897,7 @@ static void test_parser_name_environment_boundary() {
       &classifier, alias));
   ps_parser_name_environment_dispose(&environment);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef int T; int main(void) { "
       "int T = 3; "
       "{ typedef int T; T value = 4; if (value != 4) return 1; } "
@@ -899,10 +948,11 @@ static void test_statement_leave_block_scope(void *context) {
   services->block_leave_count++;
 }
 
-static void test_parser_name_classifier_boundary() {
+static void test_parser_name_classifier_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parser_name_classifier_boundary...\n");
-  reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"Alias value;");
+  reset_test_translation_unit_state(test_suite_session);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"Alias value;");
   test_name_classifier_context_t classifier_context = {
       .name = "Alias",
       .name_len = 5,
@@ -925,14 +975,14 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(5, specifier.typedef_name->len);
   ASSERT_EQ(1, classifier_context.call_count);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
-      test_semantic_context(), (char *)"Alias", 5, NULL));
+      test_semantic_context(test_suite_session), (char *)"Alias", 5, NULL));
   ASSERT_TRUE(tk_get_current_token_ctx(
                   ag_compilation_session_tokenizer(test_suite_session)) ==
               tokens->next);
   ps_dispose_decl_specifier_syntax(&specifier);
 
   classifier_context.call_count = 0;
-  tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(Alias)");
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"sizeof(Alias)");
   node_t *sizeof_alias = psx_expr_expr_with_syntax_services(
       ag_compilation_session_parser_runtime_context(test_suite_session),
       &classifier, NULL);
@@ -941,10 +991,10 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(((node_sizeof_query_t *)sizeof_alias)->is_type_name);
   ASSERT_TRUE(classifier_context.call_count > 0);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
-      test_semantic_context(), (char *)"Alias", 5, NULL));
+      test_semantic_context(test_suite_session), (char *)"Alias", 5, NULL));
 
   classifier_context.call_count = 0;
-  tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(Alias)");
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"sizeof(Alias)");
   test_expression_syntax_services_t syntax_services = {
       .runtime_context =
           ag_compilation_session_parser_runtime_context(
@@ -965,7 +1015,7 @@ static void test_parser_name_classifier_boundary() {
       ((node_sizeof_query_t *)standalone_sizeof)->is_type_name);
   ASSERT_TRUE(classifier_context.call_count > 0);
 
-  tk_tokenize_ctx(test_tokenizer(), (char *)"__va_arg_area");
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"__va_arg_area");
   node_t *va_arg_area_syntax = psx_expr_expr_with_syntax_services(
       ag_compilation_session_parser_runtime_context(test_suite_session),
       &classifier, NULL);
@@ -973,7 +1023,7 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, va_arg_area_syntax->kind);
   ASSERT_EQ(13, ((node_identifier_t *)va_arg_area_syntax)->name_len);
 
-  tk_tokenize_ctx(test_tokenizer(), (char *)"&value");
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"&value");
   node_t *address_syntax = psx_expr_expr_with_syntax_services(
       ag_compilation_session_parser_runtime_context(test_suite_session),
       &classifier, NULL);
@@ -982,7 +1032,7 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(address_syntax->lhs != NULL);
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
 
-  tk_tokenize_ctx(test_tokenizer(), (char *)"{ if (0) ; }");
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"{ if (0) ; }");
   test_statement_syntax_services_t statement_services = {
       .expression = {
           .runtime_context = syntax_services.runtime_context,
@@ -1015,7 +1065,8 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(1, statement_services.block_leave_count);
 }
 
-static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
+static psx_parsed_declarator_t parse_test_declarator_syntax_tree(
+    ag_compilation_session_t *test_suite_session) {
   test_declaration_expression_service_t expression_service = {
       .runtime_context =
           ag_compilation_session_parser_runtime_context(test_suite_session),
@@ -1033,13 +1084,14 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
 }
 
 static psx_frontend_expression_hir_t resolve_test_expression_hir(
+    ag_compilation_session_t *test_suite_session,
     const node_t *syntax) {
   psx_frontend_expression_hir_t result = {
       .root = PSX_HIR_NODE_ID_INVALID,
   };
   ASSERT_TRUE(psx_frontend_resolve_expression_to_hir_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), test_lowering_context(),
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
       ag_compilation_session_options_view(test_suite_session),
       syntax, syntax ? syntax->tok : NULL, &result));
   ASSERT_TRUE(result.module != NULL);
@@ -1068,72 +1120,79 @@ static const psx_hir_node_t *test_hir_child(
 }
 
 static psx_type_shape_t test_hir_type_shape(
+    ag_compilation_session_t *test_suite_session,
     const psx_hir_node_t *node) {
   psx_type_shape_t shape = {0};
   ASSERT_TRUE(node != NULL);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       psx_hir_node_qual_type(node).type_id, &shape));
   return shape;
 }
 
-static psx_type_shape_t test_qual_type_shape(psx_qual_type_t type) {
+static psx_type_shape_t test_qual_type_shape(
+    ag_compilation_session_t *test_suite_session, psx_qual_type_t type) {
   psx_type_shape_t shape = {0};
   ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       type.type_id, &shape));
   return shape;
 }
 
-static psx_qual_type_t test_qual_type_base(psx_qual_type_t type) {
+static psx_qual_type_t test_qual_type_base(
+    ag_compilation_session_t *test_suite_session, psx_qual_type_t type) {
   ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
   psx_qual_type_t base = psx_semantic_type_table_base(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       type.type_id);
   ASSERT_TRUE(base.type_id != PSX_TYPE_ID_INVALID);
   return base;
 }
 
 static const psx_hir_node_t *test_hir_array_decay_source(
+    ag_compilation_session_t *test_suite_session,
     const psx_frontend_expression_hir_t *expression) {
   const psx_hir_node_t *address =
       test_expression_hir_root(expression);
   ASSERT_TRUE(address != NULL);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(address));
-  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(address).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(test_suite_session, address).kind);
   ASSERT_EQ(1, psx_hir_node_child_count(address));
   const psx_hir_node_t *source = psx_hir_module_lookup(
       expression->module, psx_hir_node_child_at(address, 0));
   ASSERT_TRUE(source != NULL);
   ASSERT_EQ(PSX_HIR_STMT_EXPR, psx_hir_node_kind(source));
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_hir_type_shape(source).kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_hir_type_shape(test_suite_session, source).kind);
   return source;
 }
 
 static psx_type_shape_t test_hir_attached_type_shape(
+    ag_compilation_session_t *test_suite_session,
     const psx_hir_node_t *node) {
   psx_type_shape_t shape = {0};
   ASSERT_TRUE(node != NULL);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       psx_hir_node_attached_qual_type(node).type_id, &shape));
   return shape;
 }
 
 static void apply_test_toplevel_declaration(
+    ag_compilation_session_t *test_suite_session,
     psx_parsed_toplevel_declaration_t *declaration) {
   psx_apply_toplevel_declaration_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
-      test_lowering_context(),
+      test_lowering_context(test_suite_session),
       ag_compilation_session_options_view(test_suite_session),
       declaration);
 }
 
 static int apply_test_declaration_phase(
+    ag_compilation_session_t *test_suite_session,
     psx_declaration_phase_t *phase, int standalone_tag) {
   return psx_apply_declaration_phase_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
@@ -1143,6 +1202,7 @@ static int apply_test_declaration_phase(
 }
 
 static int apply_test_parsed_aggregate_body_layout(
+    ag_compilation_session_t *test_suite_session,
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align) {
@@ -1154,6 +1214,7 @@ static int apply_test_parsed_aggregate_body_layout(
 }
 
 static void apply_test_runtime_parsed_declarator(
+    ag_compilation_session_t *test_suite_session,
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application) {
   psx_apply_runtime_parsed_declarator_in_contexts(
@@ -1165,11 +1226,12 @@ static void apply_test_runtime_parsed_declarator(
 
 
 static void parse_test_initializer_syntax_value(
+    ag_compilation_session_t *test_suite_session,
     psx_parsed_initializer_t *initializer, token_t *assign_tok) {
   psx_frontend_local_declaration_syntax_adapter_t adapter;
   psx_local_declaration_callbacks_t syntax;
   psx_name_classifier_t classifier =
-      ps_ctx_name_classifier(test_semantic_context());
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session));
   psx_frontend_init_local_declaration_syntax_adapter(
       &adapter, &syntax,
       ag_compilation_session_parser_runtime_context(test_suite_session),
@@ -1182,6 +1244,7 @@ static void parse_test_initializer_syntax_value(
  * replace it with the exact type under test. Production registration accepts
  * only an explicit canonical type. */
 static lvar_t *register_test_qual_type_storage_fixture_in(
+    ag_compilation_session_t *test_suite_session,
     psx_lowering_context_t *lowering_context,
     char *name, int len, int size, int align,
     psx_qual_type_t qual_type) {
@@ -1194,19 +1257,21 @@ static lvar_t *register_test_qual_type_storage_fixture_in(
 }
 
 static lvar_t *register_test_qual_type_storage_fixture(
+    ag_compilation_session_t *test_suite_session,
     char *name, int len, int size, int align,
     psx_qual_type_t qual_type) {
-  return register_test_qual_type_storage_fixture_in(
-      test_lowering_context(), name, len, size, align, qual_type);
+  return register_test_qual_type_storage_fixture_in(test_suite_session,
+      test_lowering_context(test_suite_session), name, len, size, align, qual_type);
 }
 
 static lvar_t *register_test_storage_fixture_in(
+    ag_compilation_session_t *test_suite_session,
     psx_lowering_context_t *lowering_context,
     char *name, int len, int size, int elem_size, int is_array) {
   int scalar_size = elem_size > 0 ? elem_size : size;
   if (scalar_size <= 0) scalar_size = 1;
   psx_qual_type_t type = ps_ctx_intern_integer_qual_type_in(
-      test_semantic_context(),
+      test_semantic_context(test_suite_session),
       scalar_size > 4 ? PSX_INTEGER_KIND_LONG : PSX_INTEGER_KIND_INT,
       0, 0);
   if (is_array) {
@@ -1214,29 +1279,32 @@ static lvar_t *register_test_storage_fixture_in(
                         ? size / scalar_size
                         : 0;
     type = ps_ctx_intern_array_of_qual_type_in(
-        test_semantic_context(), type, array_len, 0);
+        test_semantic_context(test_suite_session), type, array_len, 0);
   }
-  return register_test_qual_type_storage_fixture_in(
+  return register_test_qual_type_storage_fixture_in(test_suite_session,
       lowering_context, name, len, size, 0, type);
 }
 
 static lvar_t *register_test_storage_fixture(
+    ag_compilation_session_t *test_suite_session,
     char *name, int len, int size, int elem_size, int is_array) {
-  return register_test_storage_fixture_in(
-      test_lowering_context(), name, len, size, elem_size, is_array);
+  return register_test_storage_fixture_in(test_suite_session,
+      test_lowering_context(test_suite_session), name, len, size, elem_size, is_array);
 }
 
-static lvar_t *register_test_default_storage_fixture(char *name, int len) {
-  return register_test_storage_fixture(name, len, 8, 8, 0);
+static lvar_t *register_test_default_storage_fixture(
+    ag_compilation_session_t *test_suite_session, char *name, int len) {
+  return register_test_storage_fixture(test_suite_session, name, len, 8, 8, 0);
 }
 
 static void set_test_storage_fixture_type(
+    ag_compilation_session_t *test_suite_session,
     lvar_t *var, psx_qual_type_t type) {
   ASSERT_TRUE(var != NULL);
   ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
   var->decl_qual_type = type;
   var->decl_type_table = ps_ctx_semantic_type_table_in(
-      test_semantic_context());
+      test_semantic_context(test_suite_session));
   ASSERT_TRUE(ps_lvar_decl_type_id(var) != PSX_TYPE_ID_INVALID);
 }
 
@@ -1248,36 +1316,40 @@ static void find_long_double_float_literal(float_lit_t *lit, void *user) {
 
 /* Standalone expression tests model a function body without parsing its
  * declaration block, so predeclare the short fixture names they use. */
-static void preregister_test_locals(void) {
+static void preregister_test_locals(
+    ag_compilation_session_t *test_suite_session) {
   static char names[] = "abcdefghijklmnopqrstuvwxyz";
   for (int i = 0; i < 26; i++) {
-    register_test_default_storage_fixture(&names[i], 1);
+    register_test_default_storage_fixture(test_suite_session, &names[i], 1);
   }
 }
 
-static node_t *parse_expr_input_with_existing_locals(const char *input) {
-  set_test_current_funcname((char *)"__test__", 8);
-  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-  return parse_test_expression_from(head);
+static node_t *parse_expr_input_with_existing_locals(
+    ag_compilation_session_t *test_suite_session, const char *input) {
+  set_test_current_funcname(test_suite_session, (char *)"__test__", 8);
+  token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+  return parse_test_expression_from(test_suite_session, head);
 }
 
 static psx_frontend_expression_hir_t resolve_test_expression_input_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, node_t **out_syntax) {
-  reset_test_locals();
-  preregister_test_locals();
-  node_t *syntax = parse_expr_input_with_existing_locals(input);
+  reset_test_locals(test_suite_session);
+  preregister_test_locals(test_suite_session);
+  node_t *syntax = parse_expr_input_with_existing_locals(test_suite_session, input);
   ASSERT_TRUE(syntax != NULL);
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(syntax);
+      resolve_test_expression_hir(test_suite_session, syntax);
   if (out_syntax) *out_syntax = syntax;
   return expression;
 }
 
 static psx_frontend_expression_hir_t resolve_test_cast_input_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, node_t **out_syntax) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(input, &syntax);
+      resolve_test_expression_input_hir(test_suite_session, input, &syntax);
   ASSERT_EQ(ND_SOURCE_CAST, syntax->kind);
   ASSERT_TRUE(syntax->lhs != NULL);
   ASSERT_EQ(PSX_HIR_CAST,
@@ -1287,14 +1359,15 @@ static psx_frontend_expression_hir_t resolve_test_cast_input_hir(
 }
 
 static void assert_test_integer_cast_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, psx_integer_kind_t expected_kind,
     int expected_unsigned, psx_type_qualifiers_t expected_qualifiers,
     long long expected_operand) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_cast_input_hir(input, &syntax);
+      resolve_test_cast_input_hir(test_suite_session, input, &syntax);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
-  psx_type_shape_t shape = test_hir_type_shape(root);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(expected_kind, shape.integer_kind);
   ASSERT_EQ(expected_unsigned, shape.is_unsigned);
@@ -1307,17 +1380,18 @@ static void assert_test_integer_cast_hir(
 }
 
 static void assert_test_nested_integer_cast_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, psx_integer_kind_t expected_outer_kind,
     int expected_outer_unsigned, psx_integer_kind_t expected_inner_kind,
     int expected_inner_unsigned) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_cast_input_hir(input, &syntax);
+      resolve_test_cast_input_hir(test_suite_session, input, &syntax);
   const psx_hir_node_t *outer = test_expression_hir_root(&expression);
   const psx_hir_node_t *inner = test_hir_child(&expression, outer, 0);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner));
-  psx_type_shape_t outer_shape = test_hir_type_shape(outer);
-  psx_type_shape_t inner_shape = test_hir_type_shape(inner);
+  psx_type_shape_t outer_shape = test_hir_type_shape(test_suite_session, outer);
+  psx_type_shape_t inner_shape = test_hir_type_shape(test_suite_session, inner);
   ASSERT_EQ(PSX_TYPE_INTEGER, outer_shape.kind);
   ASSERT_EQ(expected_outer_kind, outer_shape.integer_kind);
   ASSERT_EQ(expected_outer_unsigned, outer_shape.is_unsigned);
@@ -1328,16 +1402,17 @@ static void assert_test_nested_integer_cast_hir(
 }
 
 static void assert_test_type_query_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, psx_syntax_node_kind_t expected_syntax_kind,
     long long expected_value) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(input, &syntax);
+      resolve_test_expression_input_hir(test_suite_session, input, &syntax);
   ASSERT_EQ(expected_syntax_kind, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(root));
   ASSERT_EQ(expected_value, psx_hir_node_integer_value(root));
-  psx_type_shape_t shape = test_hir_type_shape(root);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, shape.integer_kind);
   ASSERT_TRUE(shape.is_unsigned);
@@ -1345,42 +1420,45 @@ static void assert_test_type_query_hir(
 }
 
 static void assert_test_integer_expression_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, psx_hir_node_kind_t expected_hir_kind,
     psx_integer_kind_t expected_integer_kind, int expected_unsigned,
     int expected_size) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(input, &syntax);
+      resolve_test_expression_input_hir(test_suite_session, input, &syntax);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(expected_hir_kind, psx_hir_node_kind(root));
-  psx_type_shape_t shape = test_hir_type_shape(root);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(expected_integer_kind, shape.integer_kind);
   ASSERT_EQ(expected_unsigned, shape.is_unsigned);
   ASSERT_EQ(expected_size,
-            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+            test_type_size_id(test_suite_session, psx_hir_node_qual_type(root).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void assert_test_generic_number_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, long long expected_value) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(input, &syntax);
+      resolve_test_expression_input_hir(test_suite_session, input, &syntax);
   ASSERT_EQ(ND_GENERIC_SELECTION, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(root));
   ASSERT_EQ(expected_value, psx_hir_node_integer_value(root));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
 static void assert_test_compound_assignment_hir(
+    ag_compilation_session_t *test_suite_session,
     const char *input, token_kind_t expected_syntax_operator,
     psx_hir_compound_operator_t expected_hir_operator) {
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(input, &syntax);
+      resolve_test_expression_input_hir(test_suite_session, input, &syntax);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, syntax->kind);
   ASSERT_EQ(expected_syntax_operator, syntax->source_op);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
@@ -1397,27 +1475,28 @@ static void assert_test_compound_assignment_hir(
 }
 
 
-static void test_syntax_literal_type_boundary() {
+static void test_syntax_literal_type_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_syntax_literal_type_boundary...\n");
-  reset_test_locals();
-  preregister_test_locals();
+  reset_test_locals(test_suite_session);
+  preregister_test_locals(test_suite_session);
 
   node_t *integer =
-      parse_expr_input_with_existing_locals("0UL");
+      parse_expr_input_with_existing_locals(test_suite_session, "0UL");
   ASSERT_EQ(ND_NUM, integer->kind);
   ASSERT_TRUE(integer->tok != NULL);
   ASSERT_EQ(TK_NUM, integer->tok->kind);
 
   node_t *floating =
-      parse_expr_input_with_existing_locals("1.0f");
+      parse_expr_input_with_existing_locals(test_suite_session, "1.0f");
   ASSERT_EQ(ND_NUM, floating->kind);
 
   node_t *string =
-      parse_expr_input_with_existing_locals("\"syntax\"");
+      parse_expr_input_with_existing_locals(test_suite_session, "\"syntax\"");
   ASSERT_EQ(ND_STRING, string->kind);
 
   node_t *function_name =
-      parse_expr_input_with_existing_locals("__func__");
+      parse_expr_input_with_existing_locals(test_suite_session, "__func__");
   ASSERT_EQ(ND_IDENTIFIER, function_name->kind);
   const node_identifier_t *function_name_identifier =
       (const node_identifier_t *)function_name;
@@ -1426,7 +1505,7 @@ static void test_syntax_literal_type_boundary() {
       function_name_identifier->name, "__func__", 8) == 0);
 
   node_t *unary_plus =
-      parse_expr_input_with_existing_locals("+(unsigned char)1");
+      parse_expr_input_with_existing_locals(test_suite_session, "+(unsigned char)1");
   ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
   ASSERT_EQ(ND_SOURCE_CAST, unary_plus->lhs->kind);
   ASSERT_TRUE(unary_plus->rhs == NULL);
@@ -1434,7 +1513,7 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(TK_PLUS, unary_plus->tok->kind);
 
   node_t *logical_not =
-      parse_expr_input_with_existing_locals("!0");
+      parse_expr_input_with_existing_locals(test_suite_session, "!0");
   ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
   ASSERT_EQ(ND_NUM, logical_not->lhs->kind);
   ASSERT_TRUE(logical_not->rhs == NULL);
@@ -1442,7 +1521,7 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(TK_BANG, logical_not->tok->kind);
 
   node_t *bitwise_not =
-      parse_expr_input_with_existing_locals("~1");
+      parse_expr_input_with_existing_locals(test_suite_session, "~1");
   ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
   ASSERT_EQ(ND_NUM, bitwise_not->lhs->kind);
   ASSERT_TRUE(bitwise_not->rhs == NULL);
@@ -1450,10 +1529,11 @@ static void test_syntax_literal_type_boundary() {
   ASSERT_EQ(TK_TILDE, bitwise_not->tok->kind);
 }
 
-static void test_direct_literal_typed_hir_resolution_boundary() {
+static void test_direct_literal_typed_hir_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_direct_literal_typed_hir_resolution_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "enum DirectTypedEnum { DirectEnum = 41 }; "
       "long DirectGlobal = 9; int DirectArray[3]; "
       "double _Complex DirectComplex; "
@@ -1481,7 +1561,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
       ag_compilation_session_hir_module(test_suite_session);
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
@@ -1560,16 +1640,17 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
   ASSERT_TRUE(found_direct_array);
   ASSERT_TRUE(found_direct_complex);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int value; }; "
       "struct S object = {0}; return object.missing; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { int value = 1; return *value; }");
 }
 
 static node_t *parse_direct_test_statement_syntax(
+    ag_compilation_session_t *test_suite_session,
     const char *input) {
-  tk_tokenize_ctx(test_tokenizer(), (char *)input);
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
   test_statement_syntax_services_t services = {
       .expression = {
           .runtime_context =
@@ -1590,11 +1671,12 @@ static node_t *parse_direct_test_statement_syntax(
   return statement;
 }
 
-static void test_direct_statement_typed_hir_resolution_boundary() {
+static void test_direct_statement_typed_hir_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_direct_statement_typed_hir_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  node_t *syntax = parse_direct_test_statement_syntax(
+  node_t *syntax = parse_direct_test_statement_syntax(test_suite_session,
       "{ if (1) { while (0) continue; } "
       "else do break; while (0); "
       "for (1; 1; 1) break; "
@@ -1610,7 +1692,7 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(ND_LABEL, syntax_block->body[4]->kind);
 
   psx_scope_graph_t *scope_graph =
-      ps_ctx_scope_graph(test_semantic_context());
+      ps_ctx_scope_graph(test_semantic_context(test_suite_session));
   psx_scope_id_t label_scope =
       psx_scope_graph_current_scope(scope_graph);
   int preexisting_label_payload = 1;
@@ -1624,8 +1706,8 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), syntax, &typed_statement, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), syntax, &typed_statement, &failure));
   ASSERT_TRUE(typed_statement != NULL);
   ASSERT_EQ(PSX_DECL_ID_INVALID,
             psx_scope_graph_lookup_in_scope(
@@ -1744,39 +1826,39 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(PSX_HIR_EDGE_LHS,
             psx_hir_node_child_edge_at(return_hir, 0));
 
-  node_t *duplicate_case = parse_direct_test_statement_syntax(
+  node_t *duplicate_case = parse_direct_test_statement_syntax(test_suite_session,
       "{ switch (0) { case 1: break; case 1: break; } }");
   const psx_typed_hir_tree_t *invalid_hir = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), duplicate_case, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), duplicate_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_CASE,
             failure.rejection);
   ASSERT_EQ(ND_CASE, failure.source_node_kind);
   ASSERT_EQ(1, failure.source_integer_value);
 
-  node_t *duplicate_default = parse_direct_test_statement_syntax(
+  node_t *duplicate_default = parse_direct_test_statement_syntax(test_suite_session,
       "{ switch (0) { default: break; default: break; } }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), duplicate_default, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), duplicate_default, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_DEFAULT,
             failure.rejection);
   ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
 
-  node_t *duplicate_label = parse_direct_test_statement_syntax(
+  node_t *duplicate_label = parse_direct_test_statement_syntax(test_suite_session,
       "{ duplicate: ; duplicate: ; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), duplicate_label, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), duplicate_label, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DUPLICATE_LABEL,
             failure.rejection);
@@ -1788,12 +1870,12 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
                 PSX_NAMESPACE_LABEL, "duplicate", 9));
 
   node_t *undefined_goto =
-      parse_direct_test_statement_syntax("{ goto missing; }");
+      parse_direct_test_statement_syntax(test_suite_session, "{ goto missing; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), undefined_goto, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), undefined_goto, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_UNDEFINED_GOTO,
             failure.rejection);
@@ -1801,55 +1883,55 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_TRUE(memcmp(failure.source_name, "missing", 7) == 0);
 
   node_t *invalid_break =
-      parse_direct_test_statement_syntax("{ break; }");
+      parse_direct_test_statement_syntax(test_suite_session, "{ break; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_break, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), invalid_break, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_BREAK_OUTSIDE_LOOP_OR_SWITCH,
             failure.rejection);
   ASSERT_EQ(ND_BREAK, failure.source_node_kind);
 
   node_t *invalid_continue =
-      parse_direct_test_statement_syntax("{ continue; }");
+      parse_direct_test_statement_syntax(test_suite_session, "{ continue; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_continue, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), invalid_continue, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_CONTINUE_OUTSIDE_LOOP,
             failure.rejection);
   ASSERT_EQ(ND_CONTINUE, failure.source_node_kind);
 
   node_t *invalid_case =
-      parse_direct_test_statement_syntax("{ case 1: ; }");
+      parse_direct_test_statement_syntax(test_suite_session, "{ case 1: ; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_case, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), invalid_case, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_OUTSIDE_SWITCH,
             failure.rejection);
   ASSERT_EQ(ND_CASE, failure.source_node_kind);
 
   node_t *invalid_default =
-      parse_direct_test_statement_syntax("{ default: ; }");
+      parse_direct_test_statement_syntax(test_suite_session, "{ default: ; }");
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_default, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), invalid_default, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_DEFAULT_OUTSIDE_SWITCH,
             failure.rejection);
   ASSERT_EQ(ND_DEFAULT, failure.source_node_kind);
 
   node_t *empty_if_syntax =
-      parse_direct_test_statement_syntax("if (0);");
+      parse_direct_test_statement_syntax(test_suite_session, "if (0);");
   ASSERT_TRUE(empty_if_syntax != NULL);
   ASSERT_EQ(ND_IF, empty_if_syntax->kind);
   ASSERT_TRUE(empty_if_syntax->rhs != NULL);
@@ -1858,8 +1940,8 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_statement_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), empty_if_syntax,
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), empty_if_syntax,
           &typed_empty_if, &failure));
   psx_hir_node_id_t empty_if_id = psx_typed_hir_tree_emit(
       hir, typed_empty_if, &failure);
@@ -1871,23 +1953,25 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   ASSERT_EQ(PSX_HIR_NOP, psx_hir_node_kind(empty_body_hir));
 
   psx_hir_module_destroy(hir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static int resolve_program_input_hir(const char *input) {
-  return resolve_test_program_hir_from(tk_tokenize_ctx(test_tokenizer(), (char *)input));
+static int resolve_program_input_hir(
+    ag_compilation_session_t *test_suite_session, const char *input) {
+  return resolve_test_program_hir_from(test_suite_session, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input));
 }
 
-static void test_typed_hir_ownership_and_type_boundary() {
+static void test_typed_hir_ownership_and_type_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_ownership_and_type_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { return 1+2; }"));
 
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
@@ -1943,9 +2027,9 @@ static void test_typed_hir_ownership_and_type_boundary() {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = types,
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -1956,7 +2040,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_TRUE(ir != NULL);
   ASSERT_TRUE(ir->funcs != NULL);
   ASSERT_TRUE(strcmp(ir->funcs->name, "main") == 0);
-  ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 8, 0));
+  ASSERT_EQ(IR_TY_I32, test_function_abi_value(test_suite_session, ir, 8, 0));
   ASSERT_TRUE(ir->funcs->entry != NULL);
   ASSERT_TRUE(ir->funcs->entry->head != NULL);
   ASSERT_EQ(IR_ADD, ir->funcs->entry->head->op);
@@ -1964,7 +2048,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_EQ(IR_RET, ir->funcs->entry->head->next->op);
   ir_module_free(ir);
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   ASSERT_EQ(0, psx_hir_module_node_count(hir));
   ASSERT_EQ(0, psx_hir_module_root_count(hir));
 }
@@ -1995,10 +2079,11 @@ static int max_ir_alloca_size(const ir_func_t *function) {
   return maximum;
 }
 
-static void test_typed_hir_local_lowering_without_ast() {
+static void test_typed_hir_local_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_local_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int main(void) { int x = 3; int before = ++x; --x; "
       "x = x + 4; return before + x; }");
   ASSERT_TRUE(program_resolved);
@@ -2012,11 +2097,11 @@ static void test_typed_hir_local_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2036,13 +2121,14 @@ static void test_typed_hir_local_lowering_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_SUB) >= 1);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_overaligned_local_without_ast() {
+static void test_typed_hir_overaligned_local_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_overaligned_local_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int aligned_local(void) { "
       "_Alignas(64) int value = 7; "
       "return value + ((unsigned long)&value % 64); }");
@@ -2057,11 +2143,11 @@ static void test_typed_hir_overaligned_local_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2085,13 +2171,14 @@ static void test_typed_hir_overaligned_local_without_ast() {
   }
   ASSERT_TRUE(found_overaligned_alloca);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_parameter_lowering_without_ast() {
+static void test_typed_hir_parameter_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_parameter_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int add(int left, short right) { return left + right; }");
   ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
@@ -2104,11 +2191,11 @@ static void test_typed_hir_parameter_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2122,20 +2209,21 @@ static void test_typed_hir_parameter_lowering_without_ast() {
   ASSERT_EQ(2, ir->funcs->function_type.param_count);
   ASSERT_TRUE(ir->funcs->function_type.has_prototype);
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM_BIND));
-  ASSERT_EQ(2, test_function_abi_value(ir, 0, 0));
-  ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 1, 0));
-  ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 1, 1));
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, ir, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_function_abi_value(test_suite_session, ir, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_function_abi_value(test_suite_session, ir, 1, 1));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 2);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 2);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_pointer_lowering_without_ast() {
+static void test_typed_hir_pointer_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_pointer_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int *touch(int *p) { int x = *p; int *q = &x; "
       "int *before = ++q; --q; *before = x + 1; "
       "long address = (long)q; q = (int *)address; "
@@ -2151,11 +2239,11 @@ static void test_typed_hir_pointer_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2164,9 +2252,9 @@ static void test_typed_hir_pointer_lowering_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 8, 0));
-  ASSERT_EQ(1, test_function_abi_value(ir, 0, 0));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 8, 0));
+  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 0, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 1, 0));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ALLOCA) >= 4);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 8);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 8);
@@ -2174,13 +2262,14 @@ static void test_typed_hir_pointer_lowering_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_SUB) >= 1);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_post_inc_lowering_without_ast() {
+static void test_typed_hir_post_inc_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_post_inc_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int assign_once(int *dst, int *index) { "
       "dst[(*index)++] = 7; return *index; }");
   ASSERT_TRUE(program_resolved);
@@ -2194,11 +2283,11 @@ static void test_typed_hir_post_inc_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2207,20 +2296,21 @@ static void test_typed_hir_post_inc_lowering_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(2, test_function_abi_value(ir, 0, 0));
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, ir, 0, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_ADD));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MUL));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_LEA));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_STORE));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_vla_parameter_metadata_without_ast() {
+static void test_typed_hir_vla_parameter_metadata_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_vla_parameter_metadata_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int rstride(int n, int a[n][n]) { "
       "return a[1][0] + a[2][1]; }");
   ASSERT_TRUE(program_resolved);
@@ -2252,11 +2342,11 @@ static void test_typed_hir_vla_parameter_metadata_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2269,13 +2359,14 @@ static void test_typed_hir_vla_parameter_metadata_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_ZEXT) >= 1);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_vla_allocation_without_ast() {
+static void test_typed_hir_vla_allocation_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_vla_allocation_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int first(int outer, int middle, int inner) { "
       "int values[outer][middle][inner]; "
       "values[0][0][0] = 42; "
@@ -2314,11 +2405,11 @@ static void test_typed_hir_vla_allocation_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2333,13 +2424,14 @@ static void test_typed_hir_vla_allocation_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 5);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_direct_call_lowering_without_ast() {
+static void test_typed_hir_direct_call_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_direct_call_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int add(int left, int right) { return left + right; } "
       "int sink(int tag, ...) { return tag; } "
       "int twice(int value) { "
@@ -2359,11 +2451,11 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2393,14 +2485,14 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_EQ(3, call->sym_len);
   ASSERT_TRUE(strncmp(call->sym, "add", 3) == 0);
   ASSERT_EQ(2, call->nargs);
-  ASSERT_EQ(2, test_call_abi_value(ir, call, 0, 0));
+  ASSERT_EQ(2, test_call_abi_value(test_suite_session, ir, call, 0, 0));
   ASSERT_TRUE(call->has_function_type);
   ASSERT_TRUE(call->function_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(2, call->function_type.param_count);
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 4, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 1));
-  ir_abi_module_t *call_abi = test_lower_ir_abi(ir);
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 4, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 1));
+  ir_abi_module_t *call_abi = test_lower_ir_abi(test_suite_session, ir);
   size_t lowered_argument_count = 0;
   const ir_abi_argument_t *lowered_arguments = ir_abi_call_arguments(
       call_abi, call, &lowered_argument_count);
@@ -2416,14 +2508,14 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ir_abi_module_free(call_abi);
   ASSERT_TRUE(variadic_call != NULL);
   ASSERT_EQ(2, variadic_call->nargs);
-  ASSERT_EQ(1, test_call_abi_value(ir, variadic_call, 0, 0));
-  ASSERT_TRUE(test_call_abi_value(ir, variadic_call, 2, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, variadic_call, 0, 0));
+  ASSERT_TRUE(test_call_abi_value(test_suite_session, ir, variadic_call, 2, 0));
   ASSERT_TRUE(variadic_call->has_function_type);
   ASSERT_EQ(1, variadic_call->function_type.param_count);
   ASSERT_TRUE(variadic_call->function_type.is_variadic);
-  ASSERT_TRUE(test_call_abi_value(ir, variadic_call, 2, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, variadic_call, 1, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, variadic_call, 1, 1));
+  ASSERT_TRUE(test_call_abi_value(test_suite_session, ir, variadic_call, 2, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, variadic_call, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, variadic_call, 1, 1));
   ir_module_free(ir);
 
   status = IR_HIR_BUILD_INVALID;
@@ -2431,10 +2523,10 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
       hir, variadic_root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_TRUE(test_function_abi_value(ir, 2, 0));
-  ASSERT_EQ(1, test_function_abi_value(ir, 0, 0));
-  ASSERT_EQ(1, test_function_abi_value(ir, 0, 0));
-  ASSERT_EQ(IR_TY_I32, test_function_abi_value(ir, 1, 0));
+  ASSERT_TRUE(test_function_abi_value(test_suite_session, ir, 2, 0));
+  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 0, 0));
+  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_function_abi_value(test_suite_session, ir, 1, 0));
   ir_module_free(ir);
 
   status = IR_HIR_BUILD_INVALID;
@@ -2458,16 +2550,17 @@ static void test_typed_hir_direct_call_lowering_without_ast() {
   ASSERT_EQ(5, recursive_call->sym_len);
   ASSERT_TRUE(strncmp(recursive_call->sym, "recur", 5) == 0);
   ASSERT_TRUE(recursive_call->has_function_type);
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, recursive_call, 4, 0));
-  ASSERT_EQ(1, test_call_abi_value(ir, recursive_call, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, recursive_call, 4, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, recursive_call, 0, 0));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_variadic_aggregate_call_without_ast() {
+static void test_typed_hir_variadic_aggregate_call_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_variadic_aggregate_call_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Payload { char bytes[9]; }; "
       "int sink(int marker, ...); "
       "int invoke_sink(void) { "
@@ -2483,11 +2576,11 @@ static void test_typed_hir_variadic_aggregate_call_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2508,17 +2601,17 @@ static void test_typed_hir_variadic_aggregate_call_without_ast() {
     }
   }
   ASSERT_TRUE(call != NULL);
-  ASSERT_TRUE(test_call_abi_value(ir, call, 2, 0));
-  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
+  ASSERT_TRUE(test_call_abi_value(test_suite_session, ir, call, 2, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
   ASSERT_EQ(2, call->nargs);
   ASSERT_TRUE(call->args[0].type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(call->args[1].type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
             call->args[1].representation);
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
-  ASSERT_EQ(IR_TY_I64, test_call_abi_value(ir, call, 1, 1));
-  ASSERT_EQ(IR_TY_I64, test_call_abi_value(ir, call, 1, 2));
-  ir_abi_module_t *call_abi = test_lower_ir_abi(ir);
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I64, test_call_abi_value(test_suite_session, ir, call, 1, 1));
+  ASSERT_EQ(IR_TY_I64, test_call_abi_value(test_suite_session, ir, call, 1, 2));
+  ir_abi_module_t *call_abi = test_lower_ir_abi(test_suite_session, ir);
   size_t physical_argument_count = 0;
   const ir_abi_argument_t *physical_arguments = ir_abi_call_arguments(
       call_abi, call, &physical_argument_count);
@@ -2534,13 +2627,14 @@ static void test_typed_hir_variadic_aggregate_call_without_ast() {
   ir_abi_module_free(call_abi);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_atomic_lowering_without_ast() {
+static void test_typed_hir_atomic_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_atomic_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "long __ag_atomic_load(void *obj); "
       "long __ag_atomic_store(void *obj, long value); "
       "long __ag_atomic_fetch_add(void *obj, long value); "
@@ -2567,11 +2661,11 @@ static void test_typed_hir_atomic_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2616,13 +2710,14 @@ static void test_typed_hir_atomic_lowering_without_ast() {
   ASSERT_TRUE(saw_wide_cas);
   ASSERT_TRUE(saw_fence);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_va_arg_area_lowering_without_ast() {
+static void test_typed_hir_va_arg_area_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_va_arg_area_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int has_args(int count, ...) { "
       "void *area = __va_arg_area; "
       "return count && area != (void *)0; }");
@@ -2637,11 +2732,11 @@ static void test_typed_hir_va_arg_area_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2650,17 +2745,18 @@ static void test_typed_hir_va_arg_area_lowering_without_ast() {
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_TRUE(test_function_abi_value(ir, 2, 0));
+  ASSERT_TRUE(test_function_abi_value(test_suite_session, ir, 2, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_VARARG_CURSOR));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_register_aggregate_lowering_without_ast() {
+static void test_typed_hir_register_aggregate_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_register_aggregate_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Pair { int left; int right; }; "
       "struct Pair make_pair(int left, int right) { "
       "struct Pair pair; pair.left = left; pair.right = right; "
@@ -2682,11 +2778,11 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2695,7 +2791,7 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
       hir, make_root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_I64, test_function_abi_value(ir, 8, 0));
+  ASSERT_EQ(IR_TY_I64, test_function_abi_value(test_suite_session, ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
 
@@ -2731,13 +2827,14 @@ static void test_typed_hir_register_aggregate_lowering_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_MEMCPY));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
+static void test_typed_hir_aggregate_parameter_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_aggregate_parameter_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Pair { int left; int right; }; "
       "struct Triple { int first; int second; int third; }; "
       "int sum_pair(struct Pair value) { "
@@ -2761,11 +2858,11 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2775,7 +2872,7 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
-  ASSERT_EQ(IR_TY_I64, test_function_abi_value(ir, 1, 0));
+  ASSERT_EQ(IR_TY_I64, test_function_abi_value(test_suite_session, ir, 1, 0));
   ir_module_free(ir);
 
   status = IR_HIR_BUILD_INVALID;
@@ -2785,7 +2882,7 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 1, 0));
   ASSERT_TRUE(max_ir_alloca_size(ir->funcs) >= 12);
   ir_module_free(ir);
 
@@ -2797,13 +2894,14 @@ static void test_typed_hir_aggregate_parameter_lowering_without_ast() {
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_CALL));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 1);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_indirect_aggregate_return_without_ast() {
+static void test_typed_hir_indirect_aggregate_return_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_indirect_aggregate_return_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Triple { int first; int second; int third; }; "
       "struct Triple make_triple(int value) { "
       "struct Triple result = {value, value + 1, value + 2}; "
@@ -2823,11 +2921,11 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2836,11 +2934,11 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
       hir, make_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(12, test_function_abi_value(ir, 3, 0));
-  ASSERT_EQ(1, test_function_abi_value(ir, 9, 0));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 10, 0));
+  ASSERT_EQ(12, test_function_abi_value(test_suite_session, ir, 3, 0));
+  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 9, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 10, 0));
   ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
-            test_function_abi_value(ir, 12, 0));
+            test_function_abi_value(test_suite_session, ir, 12, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
@@ -2862,17 +2960,18 @@ static void test_typed_hir_indirect_aggregate_return_without_ast() {
     }
   }
   ASSERT_TRUE(call != NULL);
-  ASSERT_EQ(12, test_call_abi_value(ir, call, 3, 0));
+  ASSERT_EQ(12, test_call_abi_value(test_suite_session, ir, call, 3, 0));
   ASSERT_TRUE(call->result_storage.id != IR_VAL_NONE);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 1);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
+static void test_typed_hir_odd_sized_aggregate_abi_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_odd_sized_aggregate_abi_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct P3 { char x; char y; char z; }; "
       "struct P3 combine(struct P3 left, struct P3 right) { "
       "struct P3 result = { "
@@ -2891,7 +2990,7 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
   psx_hir_node_id_t caller_root =
       psx_hir_module_root_at(hir, 1);
   const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
 
@@ -2899,9 +2998,9 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = semantic_types,
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2910,13 +3009,13 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
       hir, combine_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(3, test_function_abi_value(ir, 3, 0));
-  ASSERT_EQ(1, test_function_abi_value(ir, 9, 0));
+  ASSERT_EQ(3, test_function_abi_value(test_suite_session, ir, 3, 0));
+  ASSERT_EQ(1, test_function_abi_value(test_suite_session, ir, 9, 0));
   ASSERT_EQ(IR_ABI_PIECE_INDIRECT,
-            test_function_abi_value(ir, 12, 0));
-  ASSERT_EQ(2, test_function_abi_value(ir, 0, 0));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 0));
-  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(ir, 1, 1));
+            test_function_abi_value(test_suite_session, ir, 12, 0));
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, ir, 0, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 1, 0));
+  ASSERT_EQ(IR_TY_PTR, test_function_abi_value(test_suite_session, ir, 1, 1));
   ASSERT_EQ(2, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_EQ(0, count_ir_op(ir->funcs, IR_MEMCPY));
   ir_module_free(ir);
@@ -2929,13 +3028,14 @@ static void test_typed_hir_odd_sized_aggregate_abi_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 3);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_aggregate_ternary_without_ast() {
+static void test_typed_hir_aggregate_ternary_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_aggregate_ternary_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Triple { int first; int second; int third; }; "
       "struct Triple make_triple(int base) { "
       "struct Triple result = {base, base + 1, base + 2}; "
@@ -2960,11 +3060,11 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -2973,7 +3073,7 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
       hir, choose_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(12, test_function_abi_value(ir, 3, 0));
+  ASSERT_EQ(12, test_function_abi_value(test_suite_session, ir, 3, 0));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_BR_COND));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 2);
   ir_module_free(ir);
@@ -2986,13 +3086,14 @@ static void test_typed_hir_aggregate_ternary_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_MEMCPY) >= 1);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_aggregate_member_storage_without_ast() {
+static void test_typed_hir_aggregate_member_storage_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_aggregate_member_storage_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct S { int x; int y; int z; }; "
       "int main(void) { "
       "struct S value = {1, 2, 3}; struct S *pointer = &value; "
@@ -3036,11 +3137,11 @@ static void test_typed_hir_aggregate_member_storage_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3054,13 +3155,14 @@ static void test_typed_hir_aggregate_member_storage_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 4);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_floating_lowering_without_ast() {
+static void test_typed_hir_floating_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_floating_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int convert(double input, int increment) { "
       "double value = input + (double)increment + 1.5; "
       "if (value) return (int)-value; "
@@ -3076,11 +3178,11 @@ static void test_typed_hir_floating_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3133,13 +3235,14 @@ static void test_typed_hir_floating_lowering_without_ast() {
   }
   ASSERT_EQ(parameter_binding_mask, wasm_parameter_binding_mask);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_float_inc_dec_without_ast() {
+static void test_typed_hir_float_inc_dec_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_float_inc_dec_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int update(void) { "
       "float first = 1.5f; double second = 4.0; "
       "first++; --second; "
@@ -3155,11 +3258,11 @@ static void test_typed_hir_float_inc_dec_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3173,13 +3276,14 @@ static void test_typed_hir_float_inc_dec_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_FP_IMM) >= 4);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_structural_sequence_types_without_ast() {
+static void test_typed_hir_structural_sequence_types_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_structural_sequence_types_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct N { int v; struct N *next; }; "
       "struct Holder { struct N *items[3]; }; "
       "int read_members(void) { "
@@ -3230,11 +3334,11 @@ static void test_typed_hir_structural_sequence_types_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3246,13 +3350,14 @@ static void test_typed_hir_structural_sequence_types_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 9);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_complex_copy_comparison_without_ast() {
+static void test_typed_hir_complex_copy_comparison_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_complex_copy_comparison_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "double _Complex identity(double _Complex value) { return value; } "
       "int compare(void) { "
       "_Complex double first = 3.0; "
@@ -3272,11 +3377,11 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3285,26 +3390,26 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
       hir, identity_root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(identity_ir != NULL && identity_ir->funcs != NULL);
-  ASSERT_EQ(2, test_function_abi_value(identity_ir, 0, 0));
-  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 1, 0));
-  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 1, 1));
-  ASSERT_EQ(0, test_function_abi_value(identity_ir, 5, 0));
-  ASSERT_EQ(0, test_function_abi_value(identity_ir, 5, 1));
-  ASSERT_EQ(0, test_function_abi_value(identity_ir, 6, 0));
-  ASSERT_EQ(8, test_function_abi_value(identity_ir, 6, 1));
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, identity_ir, 0, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(test_suite_session, identity_ir, 1, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(test_suite_session, identity_ir, 1, 1));
+  ASSERT_EQ(0, test_function_abi_value(test_suite_session, identity_ir, 5, 0));
+  ASSERT_EQ(0, test_function_abi_value(test_suite_session, identity_ir, 5, 1));
+  ASSERT_EQ(0, test_function_abi_value(test_suite_session, identity_ir, 6, 0));
+  ASSERT_EQ(8, test_function_abi_value(test_suite_session, identity_ir, 6, 1));
   ASSERT_EQ(IR_ABI_PIECE_COMPLEX_REAL,
-            test_function_abi_value(identity_ir, 7, 0));
+            test_function_abi_value(test_suite_session, identity_ir, 7, 0));
   ASSERT_EQ(IR_ABI_PIECE_COMPLEX_IMAGINARY,
-            test_function_abi_value(identity_ir, 7, 1));
-  ASSERT_EQ(2, test_function_abi_value(identity_ir, 9, 0));
-  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 10, 0));
-  ASSERT_EQ(IR_TY_F64, test_function_abi_value(identity_ir, 10, 1));
-  ASSERT_EQ(0, test_function_abi_value(identity_ir, 11, 0));
-  ASSERT_EQ(8, test_function_abi_value(identity_ir, 11, 1));
+            test_function_abi_value(test_suite_session, identity_ir, 7, 1));
+  ASSERT_EQ(2, test_function_abi_value(test_suite_session, identity_ir, 9, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(test_suite_session, identity_ir, 10, 0));
+  ASSERT_EQ(IR_TY_F64, test_function_abi_value(test_suite_session, identity_ir, 10, 1));
+  ASSERT_EQ(0, test_function_abi_value(test_suite_session, identity_ir, 11, 0));
+  ASSERT_EQ(8, test_function_abi_value(test_suite_session, identity_ir, 11, 1));
   ASSERT_EQ(IR_ABI_PIECE_COMPLEX_REAL,
-            test_function_abi_value(identity_ir, 12, 0));
+            test_function_abi_value(test_suite_session, identity_ir, 12, 0));
   ASSERT_EQ(IR_ABI_PIECE_COMPLEX_IMAGINARY,
-            test_function_abi_value(identity_ir, 12, 1));
+            test_function_abi_value(test_suite_session, identity_ir, 12, 1));
   ir_module_free(identity_ir);
   status = IR_HIR_BUILD_INVALID;
   ir_module_t *ir = ir_build_function_module_from_hir(
@@ -3328,7 +3433,7 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
               PSX_TYPE_ID_INVALID);
   ASSERT_EQ(IR_CALL_ARGUMENT_ADDRESS,
             identity_call->args[0].representation);
-  ir_abi_module_t *identity_call_abi = test_lower_ir_abi(ir);
+  ir_abi_module_t *identity_call_abi = test_lower_ir_abi(test_suite_session, ir);
   size_t identity_piece_count = 0;
   const ir_abi_argument_t *identity_pieces = ir_abi_call_arguments(
       identity_call_abi, identity_call, &identity_piece_count);
@@ -3346,13 +3451,14 @@ static void test_typed_hir_complex_copy_comparison_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_AND));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_complex_width_conversion_without_ast() {
+static void test_typed_hir_complex_width_conversion_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_complex_width_conversion_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int convert_complex(void) { "
       "double _Complex wide = {3.0, 4.0}; "
       "float _Complex narrow = wide; "
@@ -3370,11 +3476,11 @@ static void test_typed_hir_complex_width_conversion_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3386,13 +3492,14 @@ static void test_typed_hir_complex_width_conversion_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_F2F) >= 6);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_indirect_call_lowering_without_ast() {
+static void test_typed_hir_indirect_call_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_indirect_call_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int apply(int (*callback)(int), int value) { "
       "return callback(value); }");
   ASSERT_TRUE(program_resolved);
@@ -3406,11 +3513,11 @@ static void test_typed_hir_indirect_call_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3436,19 +3543,20 @@ static void test_typed_hir_indirect_call_lowering_without_ast() {
   ASSERT_TRUE(call->callee.id >= 0);
   ASSERT_EQ(IR_TY_PTR, call->callee.type);
   ASSERT_TRUE(call->has_function_type);
-  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 4, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 4, 0));
   ASSERT_EQ(1, call->nargs);
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_unprototyped_indirect_call_without_ast() {
+static void test_typed_hir_unprototyped_indirect_call_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_unprototyped_indirect_call_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "typedef int (*callback_t)(); "
       "int apply_unprototyped(callback_t callback) { "
       "return callback(7); }");
@@ -3463,11 +3571,11 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3490,18 +3598,19 @@ static void test_typed_hir_unprototyped_indirect_call_without_ast() {
   ASSERT_TRUE(call != NULL);
   ASSERT_TRUE(call->sym == NULL);
   ASSERT_EQ(1, call->nargs);
-  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
   ASSERT_TRUE(call->has_function_type);
-  ASSERT_EQ(1, test_call_abi_value(ir, call, 0, 0));
-  ASSERT_EQ(IR_TY_I32, test_call_abi_value(ir, call, 1, 0));
+  ASSERT_EQ(1, test_call_abi_value(test_suite_session, ir, call, 0, 0));
+  ASSERT_EQ(IR_TY_I32, test_call_abi_value(test_suite_session, ir, call, 1, 0));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_void_function_lowering_without_ast() {
+static void test_typed_hir_void_function_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_void_function_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "void assign(int *pointer, int value) { *pointer = value; return; } "
       "void clear(int *pointer) { *pointer = 0; } "
       "int run(void) { int value = 1; assign(&value, 7); "
@@ -3519,11 +3628,11 @@ static void test_typed_hir_void_function_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3532,7 +3641,7 @@ static void test_typed_hir_void_function_lowering_without_ast() {
       hir, assign_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(assign_ir != NULL && assign_ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(assign_ir, 8, 0));
+  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(test_suite_session, assign_ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(assign_ir->funcs, IR_RET));
   ir_module_free(assign_ir);
 
@@ -3541,7 +3650,7 @@ static void test_typed_hir_void_function_lowering_without_ast() {
       hir, clear_root, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(clear_ir != NULL && clear_ir->funcs != NULL);
-  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(clear_ir, 8, 0));
+  ASSERT_EQ(IR_TY_VOID, test_function_abi_value(test_suite_session, clear_ir, 8, 0));
   ASSERT_EQ(1, count_ir_op(clear_ir->funcs, IR_RET));
   ir_module_free(clear_ir);
 
@@ -3565,13 +3674,14 @@ static void test_typed_hir_void_function_lowering_without_ast() {
   ASSERT_EQ(2, void_call_count);
   ASSERT_EQ(1, count_ir_op(run_ir->funcs, IR_RET));
   ir_module_free(run_ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_symbol_reference_lowering_without_ast() {
+static void test_typed_hir_symbol_reference_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_symbol_reference_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int consume(const char *text, int (*callback)(int)); "
       "int increment(int value) { return value + 1; } "
       "int run(void) { return consume(\"x\", increment); }");
@@ -3586,11 +3696,11 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3615,21 +3725,21 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
   }
   ASSERT_TRUE(function_reference != NULL);
   ASSERT_TRUE(function_reference->is_function_symbol);
-  ASSERT_TRUE(function_reference->is_got_funcref);
+  ASSERT_TRUE(!function_reference->is_external_symbol);
   ASSERT_TRUE(function_reference->has_function_type);
   ASSERT_TRUE(
       function_reference->function_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_EQ(1, function_reference->function_type.param_count);
-  ASSERT_EQ(1, test_reference_abi_value(
+  ASSERT_EQ(1, test_reference_abi_value(test_suite_session,
                    ir, function_reference, 0, 0));
-  ASSERT_EQ(IR_TY_I32, test_reference_abi_value(
+  ASSERT_EQ(IR_TY_I32, test_reference_abi_value(test_suite_session,
                             ir, function_reference, 2, 0));
   ir_symbol_t *callback_slots = ir_module_add_symbol(
       ir, "callback_slots", 14);
   ir_symbol_func_ref_t *callback_ref = ir_symbol_add_func_ref(
       callback_slots, 0, function_reference->sym,
       function_reference->sym_len, &function_reference->function_type);
-  ir_abi_module_t *symbol_abi = test_lower_ir_abi(ir);
+  ir_abi_module_t *symbol_abi = test_lower_ir_abi(test_suite_session, ir);
   const ir_abi_signature_t *callback_ref_abi =
       ir_abi_symbol_reference_signature(symbol_abi, callback_ref);
   ASSERT_TRUE(callback_ref_abi != NULL);
@@ -3639,13 +3749,14 @@ static void test_typed_hir_symbol_reference_lowering_without_ast() {
             ir_abi_signature_direct_result_type(callback_ref_abi));
   ir_abi_module_free(symbol_abi);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_global_symbol_lowering_without_ast() {
+static void test_typed_hir_global_symbol_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_global_symbol_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "extern int external_value; static int internal_value; "
       "_Thread_local int tls_value; "
       "int use_globals(int value) { internal_value = value; "
@@ -3692,11 +3803,11 @@ static void test_typed_hir_global_symbol_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3706,7 +3817,7 @@ static void test_typed_hir_global_symbol_lowering_without_ast() {
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_SYM) >= 3);
-  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_TLV_ADDR) >= 2);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD_TLS_SYM) >= 2);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_LOAD) >= 3);
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_PARAM_BIND));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_STORE) >= 2);
@@ -3720,14 +3831,15 @@ static void test_typed_hir_global_symbol_lowering_without_ast() {
   ASSERT_TRUE(
       ir_module_find_symbol(ir, "tls_value", 9)->is_thread_local);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   ASSERT_EQ(0, psx_hir_module_symbol_count(hir));
 }
 
-static void test_typed_hir_bitfield_lowering_without_ast() {
+static void test_typed_hir_bitfield_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_bitfield_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "struct Bits { unsigned int a:3; int b:5; }; "
       "struct Bits bits = {3, -2}; "
       "int set_bits(int value) { bits.a = value; "
@@ -3768,11 +3880,11 @@ static void test_typed_hir_bitfield_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3789,13 +3901,14 @@ static void test_typed_hir_bitfield_lowering_without_ast() {
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_SHR) >= 1);
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_XOR) >= 1);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_conditional_expr_lowering_without_ast() {
+static void test_typed_hir_conditional_expr_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_conditional_expr_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "void fail(void); "
       "int select(int *pointer, int condition) { "
       "int a = condition && ((*pointer = *pointer + 1) != 0); "
@@ -3813,11 +3926,11 @@ static void test_typed_hir_conditional_expr_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3835,13 +3948,14 @@ static void test_typed_hir_conditional_expr_lowering_without_ast() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_control_flow_lowering_without_ast() {
+static void test_typed_hir_control_flow_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_control_flow_lowering_without_ast...\n");
-  reset_test_translation_unit_state();
-  int program_resolved = resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
       "int sum(int n) { int r = 0; int branch; "
       "if (n > 10) branch = 1; else branch = 2; r = r + branch; "
       "goto start; r = 99; start: "
@@ -3865,11 +3979,11 @@ static void test_typed_hir_control_flow_lowering_without_ast() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(test_suite_session),
   };
@@ -3899,31 +4013,32 @@ static void test_typed_hir_control_flow_lowering_without_ast() {
   ASSERT_EQ(3, count_ir_op(ir->funcs, IR_RET));
   ASSERT_TRUE(count_ir_op(ir->funcs, IR_BR_COND) >= 2);
   ir_module_free(ir);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
 static int parse_raw_function_item(
+    ag_compilation_session_t *test_suite_session,
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
-  ps_decl_reset_locals_in(test_local_registry());
-  local_storage_reset(test_lowering_context());
+  ps_decl_reset_locals_in(test_local_registry(test_suite_session));
+  local_storage_reset(test_lowering_context(test_suite_session));
   token_ident_t *function_name =
       item->value.function_header.declarator.identifier;
   ps_decl_set_current_funcname_in(
-      test_local_registry(),
+      test_local_registry(test_suite_session),
       function_name ? function_name->str : NULL,
       function_name ? function_name->len : 0);
   psx_parser_name_environment_t name_environment;
   ps_parser_name_environment_init(
       &name_environment,
-      ps_ctx_name_classifier(test_semantic_context()));
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session)));
   psx_scope_lookup_point_t function_lookup_point =
-      test_scope_lookup_point();
+      test_scope_lookup_point(test_suite_session);
   ps_parser_name_environment_reset_at(
       &name_environment,
-      ps_ctx_name_classifier(test_semantic_context()),
+      ps_ctx_name_classifier(test_semantic_context(test_suite_session)),
       function_lookup_point.scope_id,
-      psx_scope_graph_next_scope_id(test_scope_graph()),
+      psx_scope_graph_next_scope_id(test_scope_graph(test_suite_session)),
       function_lookup_point.declaration_order);
   psx_name_classifier_t local_classifier =
       ps_parser_name_environment_classifier(
@@ -3965,30 +4080,31 @@ static int parse_raw_function_item(
   int parsed = ps_parse_function_definition_body(
       stream, &item->value.function_header, &statement_syntax);
   ps_decl_set_current_funcname_in(
-      test_local_registry(), NULL, 0);
+      test_local_registry(test_suite_session), NULL, 0);
   ps_parser_name_environment_dispose(&name_environment);
   return parsed;
 }
 
 static void assert_direct_function_rejection(
+    ag_compilation_session_t *test_suite_session,
     const char *source,
     psx_syntax_typed_hir_rejection_t expected_rejection,
     int expected_node_kind) {
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
 
   const psx_typed_hir_tree_t *typed_hir = NULL;
   psx_resolved_hir_build_failure_t failure;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           &item.value.function_header, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir == NULL);
@@ -3998,17 +4114,18 @@ static void assert_direct_function_rejection(
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void assert_direct_function_resolution(const char *source) {
-  reset_test_translation_unit_state();
+static void assert_direct_function_resolution(
+    ag_compilation_session_t *test_suite_session, const char *source) {
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
 
   const node_t *syntax_body = item.value.function_header.body;
   const psx_typed_hir_tree_t *typed_hir = NULL;
@@ -4016,8 +4133,8 @@ static void assert_direct_function_resolution(const char *source) {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           &item.value.function_header, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -4026,10 +4143,11 @@ static void assert_direct_function_resolution(const char *source) {
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_typed_hir_build_failure_first_cause_boundary() {
+static void test_typed_hir_build_failure_first_cause_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typed_hir_build_failure_first_cause_boundary...\n");
   token_t child_token = {.line_no = 3};
   token_t parent_token = {.line_no = 1};
@@ -4051,7 +4169,7 @@ static void test_typed_hir_build_failure_first_cause_boundary() {
   psx_semantic_node_builder_t builder;
   psx_resolved_hir_build_failure_init(&failure);
   psx_semantic_node_builder_init(
-      &builder, arena_context, test_semantic_context(), &failure);
+      &builder, arena_context, test_semantic_context(test_suite_session), &failure);
   arena_fail_allocations_after_in(arena_context, 0);
   const psx_hir_node_spec_t nop_spec = {
       .kind = PSX_HIR_NOP,
@@ -4068,9 +4186,10 @@ static void test_typed_hir_build_failure_first_cause_boundary() {
   arena_context_destroy(arena_context);
 }
 
-static void test_direct_const_aggregate_initializer_boundary() {
+static void test_direct_const_aggregate_initializer_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_direct_const_aggregate_initializer_boundary...\n");
-  assert_direct_function_resolution(
+  assert_direct_function_resolution(test_suite_session,
       "int __direct_const_aggregate(void *semantic_context, "
       "char *function_name, int function_name_len, "
       "const void *fallback_diag_tok) { "
@@ -4087,20 +4206,21 @@ static void test_direct_const_aggregate_initializer_boundary() {
       "return request.function_name_len + request.has_lookup; }");
 }
 
-static void test_predefined_function_name_typed_hir_boundary() {
+static void test_predefined_function_name_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_predefined_function_name_typed_hir_boundary...\n");
   const char *source =
       "int direct_func_name(void) { "
       "return __func__[0] + sizeof __func__; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
 
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
@@ -4122,8 +4242,8 @@ static void test_predefined_function_name_typed_hir_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -4160,14 +4280,15 @@ static void test_predefined_function_name_typed_hir_boundary() {
   psx_hir_module_destroy(hir);
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_builtin_expect_typed_hir_boundary() {
+static void test_builtin_expect_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_builtin_expect_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  node_t *syntax = parse_expr_input_with_existing_locals(
+  node_t *syntax = parse_expr_input_with_existing_locals(test_suite_session,
       "__builtin_expect(1 + 2, 0)");
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
   node_function_call_t *call = (node_function_call_t *)syntax;
@@ -4184,11 +4305,11 @@ static void test_builtin_expect_typed_hir_boundary() {
   node_t *value_syntax = call->arguments[0];
   node_t *expectation_syntax = call->arguments[1];
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(syntax);
+      resolve_test_expression_hir(test_suite_session, syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(root));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   ASSERT_EQ(3, psx_hir_module_node_count(expression.module));
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
   ASSERT_TRUE(call->arguments[0] == value_syntax);
@@ -4203,28 +4324,28 @@ static void test_builtin_expect_typed_hir_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), NULL, syntax,
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), NULL, syntax,
           &constant_hir, &constant, &failure));
   ASSERT_TRUE(constant_hir != NULL);
   ASSERT_TRUE(constant.is_constant);
   ASSERT_EQ(3, constant.value);
 
-  node_t *invalid = parse_expr_input_with_existing_locals(
+  node_t *invalid = parse_expr_input_with_existing_locals(test_suite_session,
       "__builtin_expect(1)");
   ASSERT_EQ(ND_FUNCALL, invalid->kind);
   const psx_typed_hir_tree_t *invalid_hir = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid, &invalid_hir, &failure));
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), invalid, &invalid_hir, &failure));
   ASSERT_TRUE(invalid_hir == NULL);
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
       failure.rejection);
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
@@ -4239,11 +4360,12 @@ static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 
 
 static void assert_canonical_qual_type_signature(
+    ag_compilation_session_t *test_suite_session,
     psx_qual_type_t type, const char *expected) {
   char actual[512];
   int len = psx_format_canonical_type_signature(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), type,
-      ps_ctx_data_layout(test_semantic_context()), actual,
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)), type,
+      ps_ctx_data_layout(test_semantic_context(test_suite_session)), actual,
       sizeof(actual));
   ASSERT_TRUE(len >= 0);
   ASSERT_TRUE((size_t)len < sizeof(actual));
@@ -4317,10 +4439,11 @@ static const psx_scope_declaration_t *find_test_scope_declaration(
   return NULL;
 }
 
-static void test_local_declaration_frontend_boundary() {
+static void test_local_declaration_frontend_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_local_declaration_frontend_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { int block_fn(int); "
       "int self = sizeof self, a = 2, b = a + 3; "
       "typedef int T, U; T value = b; U other = 1; "
@@ -4335,18 +4458,19 @@ static void test_local_declaration_frontend_boundary() {
   ASSERT_TRUE(find_test_named_hir_node(
                   hir, PSX_HIR_LOCAL, "value", 0) != NULL);
   ASSERT_TRUE(find_test_scope_declaration(
-                  test_scope_graph(), "s",
+                  test_scope_graph(test_suite_session), "s",
                   PSX_DECL_LOCAL_OBJECT, 0) != NULL);
   psx_qual_type_t block_function = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"block_fn", 8);
+      test_semantic_context(test_suite_session), (char *)"block_fn", 8);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(block_function).kind);
+            test_qual_type_shape(test_suite_session, block_function).kind);
 }
 
-static void test_function_parameter_point_of_declaration_boundary() {
+static void test_function_parameter_point_of_declaration_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_function_parameter_point_of_declaration_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __parameter_order(int m, int k, int t[][m][3][k]); "
       "int __parameter_order(int m, int k, int t[][m][3][k]) { "
       "return t[0][0][0][0]; }"));
@@ -4364,7 +4488,7 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_TRUE(m != NULL);
   ASSERT_TRUE(k != NULL);
   ASSERT_TRUE(t != NULL);
-  psx_scope_graph_t *scope_graph = test_scope_graph();
+  psx_scope_graph_t *scope_graph = test_scope_graph(test_suite_session);
   const psx_scope_declaration_t *prototype_m = NULL;
   for (size_t i = 0;
        i < psx_scope_graph_declaration_count(scope_graph); i++) {
@@ -4385,11 +4509,11 @@ static void test_function_parameter_point_of_declaration_boundary() {
       psx_prototype_parameter_qual_type(prototype_m->payload);
   psx_type_shape_t prototype_m_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       prototype_m_type.type_id, &prototype_m_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, prototype_m_shape.kind);
   ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       prototype_m_type, psx_hir_node_qual_type(m)));
   ASSERT_EQ(3, psx_hir_node_vla_dimension_count(t));
   ASSERT_EQ(psx_hir_node_storage_offset(m),
@@ -4398,8 +4522,8 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_EQ(psx_hir_node_storage_offset(k),
             psx_hir_node_vla_dimension_source_offset(t, 2));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __deep_parameter_vla(int n, "
       "int t[][n][40000][n][n][n][n][n][n][n][n]) { return 0; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -4418,8 +4542,8 @@ static void test_function_parameter_point_of_declaration_boundary() {
             psx_hir_node_vla_dimension_source_offset(t, 9));
   ASSERT_EQ(0, psx_hir_node_vla_dimension_constant(t, 10));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __parameter_vla_scopes(int n, int m, int g[n][m]) { "
       "int sum = 0; "
       "for (int i = 0; i < n; i++) "
@@ -4435,8 +4559,8 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_TRUE(find_test_named_hir_node(
                   hir, PSX_HIR_LOCAL, "j", 0) != NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __function_pointer_target(int c, int b) { return c - b; } "
       "int (*__function_pointer_factory(int a, int b))(int c, int b) { "
       "if (a != b) return __function_pointer_target; return 0; }"));
@@ -4451,12 +4575,13 @@ static void test_function_parameter_point_of_declaration_boundary() {
 }
 
 static void assert_identifier_resolution_kind(
+    ag_compilation_session_t *test_suite_session,
     char *name, int name_len, int is_call,
     psx_identifier_resolution_kind_t expected) {
   psx_identifier_resolution_t resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = name,
           .name_len = name_len,
           .is_call = is_call,
@@ -4465,49 +4590,50 @@ static void assert_identifier_resolution_kind(
   ASSERT_EQ(expected, resolution.kind);
 }
 
-static void test_identifier_resolution_boundary() {
+static void test_identifier_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_identifier_resolution_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
       "int __identifier_array[3]; "
       "int __identifier_function(int value);"));
-  lvar_t *local = register_test_default_storage_fixture(
+  lvar_t *local = register_test_default_storage_fixture(test_suite_session,
       (char *)"__identifier_local", 18);
   ASSERT_TRUE(local != NULL);
-  lvar_t *local_array = register_test_default_storage_fixture(
+  lvar_t *local_array = register_test_default_storage_fixture(test_suite_session,
       (char *)"__identifier_local_array", 24);
   ASSERT_TRUE(local_array != NULL);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       local_array,
       ps_ctx_intern_array_of_qual_type_in(
-          test_semantic_context(),
+          test_semantic_context(test_suite_session),
           ps_ctx_intern_integer_qual_type_in(
-              test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0),
+              test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0),
           4, 0));
 
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_local", 18, 0, PSX_IDENTIFIER_LOCAL);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_enum", 17, 0,
       PSX_IDENTIFIER_ENUM_CONSTANT);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_global", 19, 0,
       PSX_IDENTIFIER_GLOBAL_OBJECT);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_global", 19, 1,
       PSX_IDENTIFIER_GLOBAL_OBJECT);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_function", 21, 0,
       PSX_IDENTIFIER_FUNCTION);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__va_arg_area", 13, 0,
       PSX_IDENTIFIER_BUILTIN_VA_ARG_AREA);
   psx_identifier_resolution_t function_call;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__identifier_function",
           .name_len = 21,
           .is_call = 1,
@@ -4516,20 +4642,20 @@ static void test_identifier_resolution_boundary() {
   ASSERT_EQ(PSX_IDENTIFIER_FUNCTION, function_call.kind);
   ASSERT_TRUE(function_call.function != NULL);
   ASSERT_TRUE(function_call.function ==
-              ps_ctx_find_function_symbol_in(test_semantic_context(),
+              ps_ctx_find_function_symbol_in(test_semantic_context(test_suite_session),
                   (char *)"__identifier_function", 21));
   psx_qual_type_t resolved_function_type =
       ps_function_symbol_qual_type(function_call.function);
   ASSERT_TRUE(resolved_function_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t resolved_function_shape =
-      test_qual_type_shape(resolved_function_type);
+      test_qual_type_shape(test_suite_session, resolved_function_type);
   ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_shape.kind);
   ASSERT_EQ(1, resolved_function_shape.parameter_count);
   ASSERT_TRUE(!resolved_function_shape.is_variadic_function);
   psx_identifier_expression_resolution_t function_expression;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__identifier_function",
           .name_len = 21,
       },
@@ -4538,7 +4664,7 @@ static void test_identifier_resolution_boundary() {
             function_expression.symbol.kind);
   ASSERT_TRUE(function_expression.decays_function_to_pointer);
   const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_type_shape_t function_declaration_shape = {0};
   psx_type_shape_t function_expression_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -4556,7 +4682,7 @@ static void test_identifier_resolution_boundary() {
   psx_identifier_expression_resolution_t array_expression;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__identifier_array",
           .name_len = 18,
       },
@@ -4587,7 +4713,7 @@ static void test_identifier_resolution_boundary() {
   psx_identifier_expression_resolution_t local_array_expression;
   psx_resolve_identifier_expression(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__identifier_local_array",
           .name_len = 24,
       },
@@ -4610,57 +4736,58 @@ static void test_identifier_resolution_boundary() {
       &local_array_expression_shape));
   ASSERT_EQ(PSX_TYPE_ARRAY, local_array_declaration_shape.kind);
   ASSERT_EQ(PSX_TYPE_POINTER, local_array_expression_shape.kind);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_missing", 20, 0,
       PSX_IDENTIFIER_UNDEFINED);
-  assert_identifier_resolution_kind(
+  assert_identifier_resolution_kind(test_suite_session,
       (char *)"__identifier_missing", 20, 1,
       PSX_IDENTIFIER_UNDECLARED_CALL);
 }
 
-static void test_persistent_local_scope_lookup_boundary() {
+static void test_persistent_local_scope_lookup_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_persistent_local_scope_lookup_boundary...\n");
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
 
   psx_scope_graph_t *scope_graph =
-      ps_local_registry_scope_graph(test_local_registry());
+      ps_local_registry_scope_graph(test_local_registry(test_suite_session));
   psx_scope_id_t function_scope =
       psx_scope_graph_current_scope(scope_graph);
   ASSERT_EQ(PSX_SCOPE_FUNCTION,
             psx_scope_graph_scope_kind(scope_graph, function_scope));
-  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
   ASSERT_EQ(function_scope,
             psx_scope_graph_current_scope(scope_graph));
 
-  lvar_t *outer = register_test_storage_fixture(
+  lvar_t *outer = register_test_storage_fixture(test_suite_session,
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(outer != NULL);
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t before_inner =
-      test_scope_lookup_point();
-  lvar_t *inner = register_test_storage_fixture(
+      test_scope_lookup_point(test_suite_session);
+  lvar_t *inner = register_test_storage_fixture(test_suite_session,
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(inner != NULL);
   psx_scope_lookup_point_t after_inner =
-      test_scope_lookup_point();
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+      test_scope_lookup_point(test_suite_session);
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__scope_value", 13, before_inner) == outer);
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__scope_value", 13, after_inner) == inner);
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t nested =
-      test_scope_lookup_point();
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+      test_scope_lookup_point(test_suite_session);
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__scope_value", 13, nested) == inner);
-  ps_decl_leave_scope_in(test_local_registry());
-  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
 
   psx_identifier_resolution_t delayed_resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_lookup_point = 1,
@@ -4671,7 +4798,7 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_TRUE(delayed_resolution.local == outer);
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_lookup_point = 1,
@@ -4681,61 +4808,62 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
   ASSERT_TRUE(delayed_resolution.local == inner);
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t sibling_before_decl =
-      test_scope_lookup_point();
-  lvar_t *sibling = register_test_storage_fixture(
+      test_scope_lookup_point(test_suite_session);
+  lvar_t *sibling = register_test_storage_fixture(test_suite_session,
       (char *)"__sibling_only", 14, 4, 4, 0);
   ASSERT_TRUE(sibling != NULL);
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__sibling_only", 14,
                   sibling_before_decl) == NULL);
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__scope_value", 13,
                   sibling_before_decl) == outer);
-  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t other_sibling =
-      test_scope_lookup_point();
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+      test_scope_lookup_point(test_suite_session);
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__sibling_only", 14,
                   other_sibling) == NULL);
-  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(),
+  ASSERT_TRUE(find_test_visible_local_var_in(test_local_registry(test_suite_session),
                   (char *)"__scope_value", 13,
                   other_sibling) == outer);
-  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t before_enum =
-      test_scope_lookup_point();
-  ASSERT_TRUE(test_semantic_define_enum_const(
+      test_scope_lookup_point(test_suite_session);
+  ASSERT_TRUE(test_semantic_define_enum_const(test_suite_session,
       (char *)"__scoped_enum", 13, 29));
   psx_scope_lookup_point_t after_enum =
-      test_scope_lookup_point();
-  ps_decl_leave_scope_in(test_local_registry());
+      test_scope_lookup_point(test_suite_session);
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
   long long enum_value = 0;
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(test_suite_session),
       (char *)"__scoped_enum", 13, before_enum, &enum_value));
-  ASSERT_TRUE(ps_ctx_find_enum_const_at_in(test_semantic_context(),
+  ASSERT_TRUE(ps_ctx_find_enum_const_at_in(test_semantic_context(test_suite_session),
       (char *)"__scoped_enum", 13, after_enum, &enum_value));
   ASSERT_EQ(29, enum_value);
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   psx_scope_lookup_point_t enum_sibling =
-      test_scope_lookup_point();
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(),
+      test_scope_lookup_point(test_suite_session);
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in(test_semantic_context(test_suite_session),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
-  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
 }
 
-static void test_member_access_typed_hir_boundary() {
+static void test_member_access_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_member_access_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  psx_semantic_context_t *semantic_context = test_semantic_context();
+  reset_test_translation_unit_state(test_suite_session);
+  psx_semantic_context_t *semantic_context = test_semantic_context(test_suite_session);
   const char member_tag_name[] = "__MemberBoundary";
   const int member_tag_len = (int)sizeof(member_tag_name) - 1;
-  ASSERT_TRUE(test_semantic_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(test_suite_session,
       TK_STRUCT, (char *)member_tag_name, member_tag_len,
       0, 0, 0, 0));
 
@@ -4773,7 +4901,7 @@ static void test_member_access_typed_hir_boundary() {
       semantic_context, member_record->record_id, member_declarations,
       member_layouts, 2, &conflict_index));
   ASSERT_EQ(-1, conflict_index);
-  ASSERT_TRUE(test_semantic_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(test_suite_session,
       TK_STRUCT, (char *)member_tag_name, member_tag_len,
       1, 2, 8, 4));
 
@@ -4842,11 +4970,11 @@ static void test_member_access_typed_hir_boundary() {
       &resolution));
   ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, resolution.member.status);
 
-  reset_test_locals();
-  lvar_t *raw_object = register_test_qual_type_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *raw_object = register_test_qual_type_storage_fixture(test_suite_session,
       (char *)"object", 6, 8, 4, object_qual_type);
   ASSERT_TRUE(raw_object != NULL);
-  node_t *raw_access = parse_expr_input_with_existing_locals(
+  node_t *raw_access = parse_expr_input_with_existing_locals(test_suite_session,
       "object.value");
   ASSERT_EQ(ND_MEMBER_ACCESS, raw_access->kind);
   node_member_access_t *member_syntax =
@@ -4856,7 +4984,7 @@ static void test_member_access_typed_hir_boundary() {
   ASSERT_TRUE(strncmp(member_syntax->member_name, "value", 5) == 0);
   node_t *raw_base = member_syntax->base.lhs;
   psx_frontend_expression_hir_t access_expression =
-      resolve_test_expression_hir(raw_access);
+      resolve_test_expression_hir(test_suite_session, raw_access);
   const psx_hir_node_t *access_hir =
       test_expression_hir_root(&access_expression);
   ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
@@ -4870,7 +4998,7 @@ static void test_member_access_typed_hir_boundary() {
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(base_hir));
   ASSERT_EQ(ps_lvar_offset(raw_object),
             psx_hir_node_storage_offset(base_hir));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(access_hir).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, access_hir).kind);
   ASSERT_EQ(ND_MEMBER_ACCESS, raw_access->kind);
   ASSERT_TRUE(member_syntax->base.lhs == raw_base);
   psx_frontend_expression_hir_dispose(&access_expression);
@@ -4900,7 +5028,7 @@ static void test_member_access_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct __MemberProgram { char prefix; int value; }; "
       "int __typed_hir_member_access(struct __MemberProgram *pointer) { "
       "struct __MemberProgram object; object.value = 1; "
@@ -4915,7 +5043,7 @@ static void test_member_access_typed_hir_boundary() {
         psx_hir_node_kind(hir_node) != PSX_HIR_MEMBER_ACCESS)
       continue;
     ASSERT_EQ(4, psx_hir_node_member_offset(hir_node));
-    ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(hir_node).kind);
+    ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, hir_node).kind);
     if (psx_hir_node_member_from_pointer(hir_node))
       pointer_member_count++;
     else
@@ -4939,16 +5067,17 @@ typedef struct {
 
 
 
-static void expect_parse_fail(const char *input) {
+static void expect_parse_fail(
+    ag_compilation_session_t *test_suite_session, const char *input) {
   fflush(NULL);
   pid_t pid = fork();
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    int resolved = resolve_test_program_hir_from(head);
-    _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    int resolved = resolve_test_program_hir_from(test_suite_session, head);
+    _exit(!resolved || diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -4958,16 +5087,17 @@ static void expect_parse_fail(const char *input) {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
-static void expect_parse_ok(const char *input) {
+static void expect_parse_ok(
+    ag_compilation_session_t *test_suite_session, const char *input) {
   fflush(NULL);
   pid_t pid = fork();
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    int resolved = resolve_test_program_hir_from(head);
-    _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    int resolved = resolve_test_program_hir_from(test_suite_session, head);
+    _exit(!resolved || diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -4980,7 +5110,8 @@ static void expect_parse_ok(const char *input) {
 
 
 
-static void expect_parse_fail_with_message(const char *input, const char *needle) {
+static void expect_parse_fail_with_message(
+    ag_compilation_session_t *test_suite_session, const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
 
@@ -4991,10 +5122,10 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    (void)resolve_test_program_hir_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    (void)resolve_test_program_hir_from(test_suite_session, head);
+    _exit(diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -5021,7 +5152,8 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
   ASSERT_TRUE(strstr(buf, needle) != NULL);
 }
 
-static void expect_parse_fail_without_message(const char *input, const char *needle) {
+static void expect_parse_fail_without_message(
+    ag_compilation_session_t *test_suite_session, const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
 
@@ -5032,10 +5164,10 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    (void)resolve_test_program_hir_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    (void)resolve_test_program_hir_from(test_suite_session, head);
+    _exit(diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -5058,7 +5190,8 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
 }
 
 
-static void expect_parse_ok_without_message(const char *input, const char *needle) {
+static void expect_parse_ok_without_message(
+    ag_compilation_session_t *test_suite_session, const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
 
@@ -5069,10 +5202,10 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    (void)resolve_test_program_hir_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    (void)resolve_test_program_hir_from(test_suite_session, head);
+    _exit(diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -5099,7 +5232,8 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
   ASSERT_TRUE(strstr(buf, needle) == NULL);
 }
 
-static void expect_parse_ok_with_message(const char *input, const char *needle) {
+static void expect_parse_ok_with_message(
+    ag_compilation_session_t *test_suite_session, const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
 
@@ -5110,10 +5244,10 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-    (void)resolve_test_program_hir_from(head);
-    _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
+    diag_reset_records_in(test_diagnostics(test_suite_session));
+    token_t *head = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)input);
+    (void)resolve_test_program_hir_from(test_suite_session, head);
+    _exit(diag_has_error_records_in(test_diagnostics(test_suite_session)) ? 1 : 0);
   }
 
   close(fds[1]);
@@ -5176,7 +5310,8 @@ static void assert_catalog_format_parity(
   ASSERT_TRUE(strcmp(ja_signature, en_signature) == 0);
 }
 
-static void test_diagnostic_catalog_localization(void) {
+static void test_diagnostic_catalog_localization(
+    ag_compilation_session_t *test_suite_session) {
   static const diag_warn_id_t warning_ids[] = {
       DIAG_WARN_PARSER_MISSING_RETURN,
       DIAG_WARN_PARSER_RETURN_STACK_ADDRESS,
@@ -5281,59 +5416,61 @@ static void test_diagnostic_catalog_localization(void) {
   ag_source_manager_destroy(en_sources);
   ag_source_manager_destroy(ja_sources);
 
-  diag_context_set_locale(test_diagnostics(), "en");
-  expect_parse_ok_with_message(
+  diag_context_set_locale(test_diagnostics(test_suite_session), "en");
+  expect_parse_ok_with_message(test_suite_session,
       "int main(void){ return printf(); }", "function 'printf'");
-  diag_context_set_locale(test_diagnostics(), "ja");
-  expect_parse_ok_with_message(
+  diag_context_set_locale(test_diagnostics(test_suite_session), "ja");
+  expect_parse_ok_with_message(test_suite_session,
       "int main(void){ return printf(); }", "関数 'printf'");
 }
 #endif
 
-static void test_expr_number() {
+static void test_expr_number(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_number...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("42", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "42", &syntax);
   const psx_hir_node_t *number =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NUM, syntax->kind);
   ASSERT_EQ(42, as_num(syntax)->val);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(number));
   ASSERT_EQ(42, psx_hir_node_integer_value(number));
-  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer(test_suite_session))->kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir("0L", &syntax);
+  expression = resolve_test_expression_input_hir(test_suite_session, "0L", &syntax);
   number = test_expression_hir_root(&expression);
-  psx_type_shape_t shape = test_hir_type_shape(number);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, number);
   ASSERT_EQ(ND_NUM, syntax->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, shape.integer_kind);
-  ASSERT_EQ(8, test_type_size_id(
+  ASSERT_EQ(8, test_type_size_id(test_suite_session,
                    psx_hir_node_qual_type(number).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir("0UL", &syntax);
+  expression = resolve_test_expression_input_hir(test_suite_session, "0UL", &syntax);
   number = test_expression_hir_root(&expression);
-  shape = test_hir_type_shape(number);
+  shape = test_hir_type_shape(test_suite_session, number);
   ASSERT_EQ(ND_NUM, syntax->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, shape.integer_kind);
   ASSERT_TRUE(shape.is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir("0LL", &syntax);
+  expression = resolve_test_expression_input_hir(test_suite_session, "0LL", &syntax);
   number = test_expression_hir_root(&expression);
-  shape = test_hir_type_shape(number);
+  shape = test_hir_type_shape(test_suite_session, number);
   ASSERT_EQ(ND_NUM, syntax->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG, shape.integer_kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_float() {
+static void test_expr_float(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_float...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("3.14 + 1.5f", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "3.14 + 1.5f", &syntax);
   const psx_hir_node_t *addition =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_ADD, syntax->kind);
@@ -5351,9 +5488,9 @@ static void test_expr_float() {
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(lhs));
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(rhs));
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_hir_type_shape(lhs).floating_kind);
+            test_hir_type_shape(test_suite_session, lhs).floating_kind);
   ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
-            test_hir_type_shape(rhs).floating_kind);
+            test_hir_type_shape(test_suite_session, rhs).floating_kind);
   ASSERT_TRUE(psx_hir_node_floating_value(lhs) > 3.13 &&
               psx_hir_node_floating_value(lhs) < 3.15);
   ASSERT_TRUE(psx_hir_node_floating_value(rhs) > 1.49 &&
@@ -5361,11 +5498,12 @@ static void test_expr_float() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_long_double_suffix_metadata() {
+static void test_expr_long_double_suffix_metadata(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_long_double_suffix_metadata...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("4.0L", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "4.0L", &syntax);
   const psx_hir_node_t *number =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NUM, syntax->kind);
@@ -5374,20 +5512,21 @@ static void test_expr_long_double_suffix_metadata() {
               as_num(syntax)->fval < 4.1);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(number));
   ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE,
-            test_hir_type_shape(number).floating_kind);
+            test_hir_type_shape(test_suite_session, number).floating_kind);
   ASSERT_TRUE(psx_hir_node_floating_value(number) > 3.9 &&
               psx_hir_node_floating_value(number) < 4.1);
   psx_frontend_expression_hir_dispose(&expression);
 
   bool found = false;
-  iter_test_float_literals(find_long_double_float_literal, &found);
+  iter_test_float_literals(test_suite_session, find_long_double_float_literal, &found);
   ASSERT_TRUE(found);
 }
 
-static void test_expr_compound_literal_typed_hir_boundary() {
+static void test_expr_compound_literal_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_compound_literal_typed_hir_boundary...\n");
-  reset_test_locals();
-  node_t *raw = parse_expr_input_with_existing_locals("(int){3}");
+  reset_test_locals(test_suite_session);
+  node_t *raw = parse_expr_input_with_existing_locals(test_suite_session, "(int){3}");
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
   ASSERT_TRUE(compound->type_name.syntax != NULL);
@@ -5395,19 +5534,19 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   ASSERT_EQ(
       PSX_COMPOUND_LITERAL_STORAGE_AUTOMATIC,
       psx_compound_literal_storage_duration_in_scope_graph(
-          ps_ctx_scope_graph(test_semantic_context()),
+          ps_ctx_scope_graph(test_semantic_context(test_suite_session)),
           compound->type_name.scope_seq, 1));
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   psx_parsed_type_name_t *type_name_syntax = compound->type_name.syntax;
   node_t *initializer_syntax = raw->rhs;
   psx_frontend_expression_hir_t compound_expression =
-      resolve_test_expression_hir(raw);
+      resolve_test_expression_hir(test_suite_session, raw);
   const psx_hir_node_t *compound_hir =
       test_expression_hir_root(&compound_expression);
   ASSERT_EQ(PSX_HIR_STMT_EXPR,
             psx_hir_node_kind(compound_hir));
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_hir_type_shape(compound_hir).kind);
+            test_hir_type_shape(test_suite_session, compound_hir).kind);
   ASSERT_EQ(2, psx_hir_node_child_count(compound_hir));
   const psx_hir_node_t *initializer_hir = psx_hir_module_lookup(
       compound_expression.module,
@@ -5427,7 +5566,7 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __typed_hir_compound_literal(void) { return (int){3}; }"));
   int found_compound_sequence = 0;
   for (size_t i = hir_checkpoint + 1;
@@ -5449,7 +5588,7 @@ static void test_expr_compound_literal_typed_hir_boundary() {
   }
   ASSERT_TRUE(found_compound_sequence);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct __CompoundValue {"
       "  int kind;"
       "  union {"
@@ -5464,71 +5603,73 @@ static void test_expr_compound_literal_typed_hir_boundary() {
       "}"));
 }
 
-static void test_expr_compound_literal_array_subscript() {
+static void test_expr_compound_literal_array_subscript(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_compound_literal_array_subscript...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("(int[3]){1,2,3}", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "(int[3]){1,2,3}", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   const psx_hir_node_t *array_value =
-      test_hir_array_decay_source(&expression);
+      test_hir_array_decay_source(test_suite_session, &expression);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax->kind);
   ASSERT_EQ(ND_INIT_LIST, syntax->rhs->kind);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(root));
-  ASSERT_EQ(3, test_hir_type_shape(array_value).array_len);
-  ASSERT_EQ(12, test_type_size_id(
+  ASSERT_EQ(3, test_hir_type_shape(test_suite_session, array_value).array_len);
+  ASSERT_EQ(12, test_type_size_id(test_suite_session,
                     psx_hir_node_qual_type(array_value).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
   // 配列型複合リテラルへの添字アクセス: ((int[2]){1,2})[1]
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "((int[2]){1,2})[1]", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_SUBSCRIPT, syntax->kind);
   ASSERT_EQ(PSX_HIR_SUBSCRIPT, psx_hir_node_kind(root));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(int[]){1,2,3}", &syntax);
   root = test_expression_hir_root(&expression);
-  array_value = test_hir_array_decay_source(&expression);
+  array_value = test_hir_array_decay_source(test_suite_session, &expression);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax->kind);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(root));
-  ASSERT_EQ(3, test_hir_type_shape(array_value).array_len);
-  ASSERT_EQ(12, test_type_size_id(
+  ASSERT_EQ(3, test_hir_type_shape(test_suite_session, array_value).array_len);
+  ASSERT_EQ(12, test_type_size_id(test_suite_session,
                     psx_hir_node_qual_type(array_value).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(char[]){\"abc\"}", &syntax);
   root = test_expression_hir_root(&expression);
-  array_value = test_hir_array_decay_source(&expression);
+  array_value = test_hir_array_decay_source(test_suite_session, &expression);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax->kind);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(root));
-  ASSERT_EQ(4, test_hir_type_shape(array_value).array_len);
-  ASSERT_EQ(4, test_type_size_id(
+  ASSERT_EQ(4, test_hir_type_shape(test_suite_session, array_value).array_len);
+  ASSERT_EQ(4, test_type_size_id(test_suite_session,
                    psx_hir_node_qual_type(array_value).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(int *[]){0,0}", &syntax);
   root = test_expression_hir_root(&expression);
-  array_value = test_hir_array_decay_source(&expression);
+  array_value = test_hir_array_decay_source(test_suite_session, &expression);
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax->kind);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(root));
-  ASSERT_EQ(2, test_hir_type_shape(array_value).array_len);
-  ASSERT_EQ(16, test_type_size_id(
+  ASSERT_EQ(2, test_hir_type_shape(test_suite_session, array_value).array_len);
+  ASSERT_EQ(16, test_type_size_id(test_suite_session,
                     psx_hir_node_qual_type(array_value).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_add_sub() {
+static void test_expr_add_sub(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_add_sub...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 + 2 - 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 + 2 - 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   const psx_hir_node_t *addition =
@@ -5540,14 +5681,15 @@ static void test_expr_add_sub() {
   ASSERT_EQ(3, as_num(syntax->rhs)->val);
   ASSERT_EQ(PSX_HIR_SUB, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(addition));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_additive_typed_hir_boundary() {
+static void test_additive_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_additive_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "double _Complex additive_probe(int condition) { "
       "  unsigned char uc = 1; short s = 2; "
       "  unsigned int ui = 3; long sl = 4; "
@@ -5590,11 +5732,11 @@ static void test_additive_typed_hir_boundary() {
   ASSERT_TRUE(difference != NULL);
 
   psx_type_shape_t promoted_shape =
-      test_hir_type_shape(promoted);
+      test_hir_type_shape(test_suite_session, promoted);
   psx_type_shape_t ranked_shape =
-      test_hir_type_shape(ranked);
+      test_hir_type_shape(test_suite_session, ranked);
   psx_type_shape_t complex_shape =
-      test_hir_type_shape(complex_sum);
+      test_hir_type_shape(test_suite_session, complex_sum);
   ASSERT_EQ(PSX_TYPE_INTEGER, promoted_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
             promoted_shape.integer_kind);
@@ -5607,9 +5749,9 @@ static void test_additive_typed_hir_boundary() {
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             complex_shape.floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_hir_type_shape(advanced).kind);
+            test_hir_type_shape(test_suite_session, advanced).kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            test_hir_type_shape(difference).integer_kind);
+            test_hir_type_shape(test_suite_session, difference).integer_kind);
   ASSERT_TRUE(find_test_hir_node_kind(
                   hir, PSX_HIR_ADD, 0) != NULL);
   ASSERT_TRUE(find_test_hir_node_kind(
@@ -5620,10 +5762,11 @@ static void test_additive_typed_hir_boundary() {
                   hir, PSX_HIR_TERNARY, 0) != NULL);
 }
 
-static void test_subscript_typed_hir_boundary() {
+static void test_subscript_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_subscript_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int subscript_probe(int rows, int columns, "
       "                    int matrix[rows][columns]) { "
       "  int fixed[2][3] = {{1,2,3},{4,5,6}}; "
@@ -5655,15 +5798,15 @@ static void test_subscript_typed_hir_boundary() {
   ASSERT_TRUE(function != NULL);
   ASSERT_TRUE(matrix != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_hir_type_shape(row).kind);
+            test_hir_type_shape(test_suite_session, row).kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_hir_type_shape(matrix).kind);
+            test_hir_type_shape(test_suite_session, matrix).kind);
   ASSERT_TRUE(psx_hir_node_vla_dimension_count(matrix) >= 1);
 
   size_t subscript_count = 0;
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   for (size_t i = 1;
        i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *node =
@@ -5680,10 +5823,11 @@ static void test_subscript_typed_hir_boundary() {
   ASSERT_TRUE(subscript_count >= 5);
 }
 
-static void test_unary_deref_typed_hir_boundary() {
+static void test_unary_deref_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_unary_deref_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int dereference_probe(int *p, int **q) { "
       "  int value = **q; "
       "  *p = 7; "
@@ -5692,11 +5836,11 @@ static void test_unary_deref_typed_hir_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -5752,10 +5896,11 @@ static void test_unary_deref_typed_hir_boundary() {
   ASSERT_TRUE(integer_pointer_address_count >= 1);
 }
 
-static void test_unary_operator_typed_hir_boundary() {
+static void test_unary_operator_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_unary_operator_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __typed_hir_neg_char(signed char x) { return -x; } "
       "int __typed_hir_neg_i(int x) { return -x; } "
       "double __typed_hir_neg_d(double x) { return -x; } "
@@ -5766,7 +5911,7 @@ static void test_unary_operator_typed_hir_boundary() {
       "int __typed_hir_imag_i(int x) { return __imag__ x; }"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -5814,14 +5959,15 @@ static void test_unary_operator_typed_hir_boundary() {
   ASSERT_EQ(1, found_imaginary_integer);
 }
 
-static void test_generic_selection_typed_hir_boundary() {
+static void test_generic_selection_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_generic_selection_typed_hir_boundary...\n");
   psx_qual_type_t integer_type =
       ps_ctx_intern_integer_qual_type_in(
-          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0);
+          test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0);
   psx_qual_type_t floating_type =
       ps_ctx_intern_floating_qual_type_in(
-          test_semantic_context(), PSX_FLOATING_KIND_DOUBLE, 0);
+          test_semantic_context(test_suite_session), PSX_FLOATING_KIND_DOUBLE, 0);
   psx_qual_type_t association_types[2] = {
       integer_type,
       {PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
@@ -5834,7 +5980,7 @@ static void test_generic_selection_typed_hir_boundary() {
   ASSERT_EQ(0, resolution.selected_index);
   psx_type_shape_t selected_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       association_types[resolution.selected_index].type_id,
       &selected_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, selected_shape.kind);
@@ -5868,14 +6014,14 @@ static void test_generic_selection_typed_hir_boundary() {
             resolution.status);
   ASSERT_EQ(0, resolution.conflict_index);
 
-  reset_test_locals();
-  lvar_t *value = register_test_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *value = register_test_storage_fixture(test_suite_session,
       (char *)"x", 1, 4, 4, 0);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       value, ps_ctx_intern_integer_qual_type_in(
-                 test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
+                 test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0));
 
-  node_t *raw = parse_expr_input_with_existing_locals(
+  node_t *raw = parse_expr_input_with_existing_locals(test_suite_session,
       "_Generic(x, int: x + 1, default: x + 2)");
   ASSERT_EQ(ND_GENERIC_SELECTION, raw->kind);
   node_generic_selection_t *selection =
@@ -5887,11 +6033,11 @@ static void test_generic_selection_typed_hir_boundary() {
   ASSERT_TRUE(selection->associations[1].is_default);
 
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(raw);
+      resolve_test_expression_hir(test_suite_session, raw);
   const psx_hir_node_t *selected =
       test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(selected));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(selected).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, selected).kind);
   ASSERT_EQ(2, psx_hir_node_child_count(selected));
   const psx_hir_node_t *selected_rhs = psx_hir_module_lookup(
       expression.module, psx_hir_node_child_at(selected, 1));
@@ -5902,7 +6048,7 @@ static void test_generic_selection_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __typed_hir_generic(int x) { "
       "return _Generic(x, int: x + 1, default: x + 200); }"));
   int found_selected_literal = 0;
@@ -5921,10 +6067,11 @@ static void test_generic_selection_typed_hir_boundary() {
   ASSERT_TRUE(!found_unselected_literal);
 }
 
-static void test_sizeof_typed_hir_boundary() {
+static void test_sizeof_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_sizeof_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "unsigned long sizeof_probe(int n, int i) { "
       "  int x = 0; int fixed[3] = {0}; int vla[n][n]; "
       "  return sizeof(x) + sizeof(int[3]) "
@@ -5933,11 +6080,11 @@ static void test_sizeof_typed_hir_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -5948,11 +6095,11 @@ static void test_sizeof_typed_hir_boundary() {
 
   const psx_scope_declaration_t *fixed_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "fixed",
+          test_scope_graph(test_suite_session), "fixed",
           PSX_DECL_LOCAL_OBJECT, 0);
   const psx_scope_declaration_t *vla_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "vla",
+          test_scope_graph(test_suite_session), "vla",
           PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(fixed_declaration != NULL);
   ASSERT_TRUE(vla_declaration != NULL);
@@ -6024,7 +6171,7 @@ static void test_sizeof_typed_hir_boundary() {
     ASSERT_TRUE(psx_hir_node_storage_offset(runtime_size) != 0);
     ASSERT_TRUE(psx_hir_node_storage_offset(prefix) !=
                 psx_hir_node_storage_offset(runtime_size));
-    psx_type_shape_t vla_size_shape = test_hir_type_shape(hir_node);
+    psx_type_shape_t vla_size_shape = test_hir_type_shape(test_suite_session, hir_node);
     ASSERT_EQ(PSX_TYPE_INTEGER, vla_size_shape.kind);
     ASSERT_EQ(PSX_INTEGER_KIND_LONG, vla_size_shape.integer_kind);
     ASSERT_TRUE(vla_size_shape.is_unsigned);
@@ -6044,7 +6191,7 @@ static void test_sizeof_typed_hir_boundary() {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = types,
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = record_layouts,
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(
@@ -6059,42 +6206,44 @@ static void test_sizeof_typed_hir_boundary() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "unsigned long invalid_sizeof(void) { "
       "return sizeof(int[-1]); }");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "unsigned long zero_length_sizeof(void) { "
       "return sizeof(int[0]); }",
       "GNU 拡張は使用できません");
 }
 
-static void test_expression_typed_hir_type_boundary() {
+static void test_expression_typed_hir_type_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expression_typed_hir_type_boundary...\n");
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
   node_t *ternary =
-      parse_expr_input_with_existing_locals("(1, 2) ? 3 : 4");
+      parse_expr_input_with_existing_locals(test_suite_session, "(1, 2) ? 3 : 4");
   ASSERT_EQ(ND_TERNARY, ternary->kind);
   ASSERT_EQ(ND_COMMA, ternary->lhs->kind);
 
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(ternary);
+      resolve_test_expression_hir(test_suite_session, ternary);
   const psx_hir_node_t *typed_ternary =
       test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_TERNARY, psx_hir_node_kind(typed_ternary));
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_hir_type_shape(typed_ternary).kind);
+            test_hir_type_shape(test_suite_session, typed_ternary).kind);
   const psx_hir_node_t *typed_comma = psx_hir_module_lookup(
       expression.module, psx_hir_node_child_at(typed_ternary, 0));
   ASSERT_EQ(PSX_HIR_COMMA, psx_hir_node_kind(typed_comma));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(typed_comma).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, typed_comma).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_function_call_typed_hir_boundary() {
+static void test_function_call_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_function_call_typed_hir_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "double call_target(int value) { return value; } "
       "double call_probe(double (*fp)(int)) { "
       "  double (*saved)(int) = call_target; "
@@ -6107,7 +6256,7 @@ static void test_function_call_typed_hir_boundary() {
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
 
@@ -6192,11 +6341,11 @@ static void test_function_call_typed_hir_boundary() {
 
   const psx_scope_declaration_t *target_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "call_target",
+          test_scope_graph(test_suite_session), "call_target",
           PSX_DECL_FUNCTION, 0);
   const psx_scope_declaration_t *saved_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "saved",
+          test_scope_graph(test_suite_session), "saved",
           PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(target_declaration != NULL);
   ASSERT_TRUE(saved_declaration != NULL);
@@ -6215,28 +6364,29 @@ static void test_function_call_typed_hir_boundary() {
   ASSERT_EQ(1, saved_shape.parameter_count);
   ASSERT_TRUE(saved_shape.has_function_prototype);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { int value = 0; return value(); }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "double target(int value) { return value; } "
       "int main(void) { return (int)target(); }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "double target(int value) { return value; } "
       "int main(void) { "
       "  double (**pointer)(int) = 0; "
       "  return (int)pointer(1); "
       "}");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "double target(int value) { return value; } "
       "int main(void) { "
       "  double (*array[2])(int) = {target, target}; "
       "  return (int)array(1); "
       "}");
 }
-static void test_function_prototype_type_identity_boundary() {
+static void test_function_prototype_type_identity_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_function_prototype_type_identity_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __unprototyped(); int __void_prototype(void); "
       "int __prototype_use(void) { "
       "return __unprototyped(1) + __void_prototype(); }"));
@@ -6245,18 +6395,18 @@ static void test_function_prototype_type_identity_boundary() {
   static char void_prototype_name[] = "__void_prototype";
   psx_qual_type_t unprototyped_type =
       ps_ctx_get_function_qual_type_in(
-          test_semantic_context(), unprototyped_name,
+          test_semantic_context(test_suite_session), unprototyped_name,
           (int)sizeof(unprototyped_name) - 1);
   psx_qual_type_t void_prototype_type =
       ps_ctx_get_function_qual_type_in(
-          test_semantic_context(), void_prototype_name,
+          test_semantic_context(test_suite_session), void_prototype_name,
           (int)sizeof(void_prototype_name) - 1);
   ASSERT_TRUE(unprototyped_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(void_prototype_type.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t unprototyped_shape =
-      test_qual_type_shape(unprototyped_type);
+      test_qual_type_shape(test_suite_session, unprototyped_type);
   psx_type_shape_t void_prototype_shape =
-      test_qual_type_shape(void_prototype_type);
+      test_qual_type_shape(test_suite_session, void_prototype_type);
   ASSERT_EQ(PSX_TYPE_FUNCTION, unprototyped_shape.kind);
   ASSERT_EQ(PSX_TYPE_FUNCTION, void_prototype_shape.kind);
   ASSERT_TRUE(!unprototyped_shape.has_function_prototype);
@@ -6267,30 +6417,31 @@ static void test_function_prototype_type_identity_boundary() {
 
   char signature[16];
   ASSERT_EQ(5, ps_ctx_format_function_signature_in(
-                   test_semantic_context(), void_prototype_name,
+                   test_semantic_context(test_suite_session), void_prototype_name,
                    (int)sizeof(void_prototype_name) - 1,
                    signature, sizeof(signature)));
   ASSERT_TRUE(strcmp(signature, "i32()") == 0);
 
   psx_call_types_resolution_t resolution;
   psx_resolve_call_qual_types_in(
-      test_semantic_context(), unprototyped_type, 1, &resolution);
+      test_semantic_context(test_suite_session), unprototyped_type, 1, &resolution);
   ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
   psx_resolve_call_qual_types_in(
-      test_semantic_context(), void_prototype_type, 1, &resolution);
+      test_semantic_context(test_suite_session), void_prototype_type, 1, &resolution);
   ASSERT_EQ(PSX_CALL_TYPES_ARGUMENT_COUNT_MISMATCH,
             resolution.status);
   psx_resolve_call_qual_types_in(
-      test_semantic_context(), void_prototype_type, 0, &resolution);
+      test_semantic_context(test_suite_session), void_prototype_type, 0, &resolution);
   ASSERT_EQ(PSX_CALL_TYPES_OK, resolution.status);
 }
 
-static void test_cast_typed_hir_boundary() {
+static void test_cast_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_cast_typed_hir_boundary...\n");
-  reset_test_locals();
-  preregister_test_locals();
+  reset_test_locals(test_suite_session);
+  preregister_test_locals(test_suite_session);
   node_t *node =
-      parse_expr_input_with_existing_locals("(int)(unsigned long)a");
+      parse_expr_input_with_existing_locals(test_suite_session, "(int)(unsigned long)a");
   ASSERT_EQ(ND_SOURCE_CAST, node->kind);
   node_source_cast_t *outer = (node_source_cast_t *)node;
   ASSERT_TRUE(outer->type_name.syntax != NULL);
@@ -6299,18 +6450,18 @@ static void test_cast_typed_hir_boundary() {
   ASSERT_TRUE(inner->type_name.syntax != NULL);
 
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(node);
+      resolve_test_expression_hir(test_suite_session, node);
   const psx_hir_node_t *typed_outer =
       test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(typed_outer));
-  psx_type_shape_t outer_shape = test_hir_type_shape(typed_outer);
+  psx_type_shape_t outer_shape = test_hir_type_shape(test_suite_session, typed_outer);
   ASSERT_EQ(PSX_TYPE_INTEGER, outer_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, outer_shape.integer_kind);
   ASSERT_EQ(1, psx_hir_node_child_count(typed_outer));
   const psx_hir_node_t *typed_inner = psx_hir_module_lookup(
       expression.module, psx_hir_node_child_at(typed_outer, 0));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(typed_inner));
-  psx_type_shape_t inner_shape = test_hir_type_shape(typed_inner);
+  psx_type_shape_t inner_shape = test_hir_type_shape(test_suite_session, typed_inner);
   ASSERT_EQ(PSX_TYPE_INTEGER, inner_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, inner_shape.integer_kind);
   ASSERT_TRUE(inner_shape.is_unsigned);
@@ -6319,10 +6470,11 @@ static void test_cast_typed_hir_boundary() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_aggregate_cast_semantic_lowering_boundary() {
+static void test_aggregate_cast_semantic_lowering_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_aggregate_cast_semantic_lowering_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { struct S { int x; int y; }; "
       "return ((struct S)7).x; }"));
   const psx_hir_module_t *hir =
@@ -6339,21 +6491,21 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   psx_qual_type_t temporary_qual_type =
       psx_hir_node_qual_type(aggregate_value);
   psx_type_shape_t temporary_shape =
-      test_qual_type_shape(temporary_qual_type);
+      test_qual_type_shape(test_suite_session, temporary_qual_type);
   ASSERT_EQ(PSX_TYPE_STRUCT, temporary_shape.kind);
   ASSERT_TRUE(temporary_shape.record_id != PSX_RECORD_ID_INVALID);
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-      test_semantic_context(), temporary_shape.record_id);
+      test_semantic_context(test_suite_session), temporary_shape.record_id);
   ASSERT_TRUE(record != NULL);
   ASSERT_EQ(2, record->member_count);
   ASSERT_EQ(1, record->members[0].len);
   ASSERT_TRUE(strncmp(record->members[0].name, "x", 1) == 0);
   ASSERT_TRUE(!psx_hir_node_member_from_pointer(member));
   ASSERT_EQ(0, psx_hir_node_member_offset(member));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(member).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, member).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __typed_hir_aggregate_address(void) { "
       "struct S { int x; }; return (&((struct S)7))->x; }"));
   hir =
@@ -6369,10 +6521,11 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
                   hir, PSX_HIR_ADDRESS, 0) != NULL);
 }
 
-static void test_implicit_conversion_hir_boundary() {
+static void test_implicit_conversion_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_implicit_conversion_hir_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "double id(double x) { return x; } "
       "double retconv(int x) { return x; } "
       "double same(double x) { double y=id(x); return y; } "
@@ -6388,16 +6541,16 @@ static void test_implicit_conversion_hir_boundary() {
       hir, psx_hir_node_child_at(retconv_return, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(retconv_value));
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_hir_type_shape(retconv_value).kind);
+            test_hir_type_shape(test_suite_session, retconv_value).kind);
 
   const psx_hir_node_t *same_call =
       find_test_hir_node_kind(hir, PSX_HIR_CALL, 0);
   ASSERT_TRUE(same_call != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_hir_attached_type_shape(same_call).kind);
-  ASSERT_EQ(PSX_TYPE_FLOAT, test_hir_type_shape(same_call).kind);
+            test_hir_attached_type_shape(test_suite_session, same_call).kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, test_hir_type_shape(test_suite_session, same_call).kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_hir_type_shape(same_call).floating_kind);
+            test_hir_type_shape(test_suite_session, same_call).floating_kind);
 
   int declaration_initializer_count = 0;
   int source_assignment_count = 0;
@@ -6415,7 +6568,7 @@ static void test_implicit_conversion_hir_boundary() {
   const psx_hir_node_t *cast =
       find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
   ASSERT_TRUE(cast != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(cast).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, cast).kind);
   const psx_hir_node_t *call = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(cast, 0));
   ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(call));
@@ -6423,23 +6576,24 @@ static void test_implicit_conversion_hir_boundary() {
   const psx_hir_node_t *argument = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(call, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(argument));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(argument).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, argument).kind);
 }
 
-static void test_compound_assignment_typed_hir_boundary() {
+static void test_compound_assignment_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_compound_assignment_typed_hir_boundary...\n");
-  reset_test_locals();
-  lvar_t *value = register_test_storage_fixture((char *)"a", 1, 4, 4, 0);
-  set_test_storage_fixture_type(
+  reset_test_locals(test_suite_session);
+  lvar_t *value = register_test_storage_fixture(test_suite_session, (char *)"a", 1, 4, 4, 0);
+  set_test_storage_fixture_type(test_suite_session,
       value, ps_ctx_intern_integer_qual_type_in(
-                 test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
-  node_t *node = parse_expr_input_with_existing_locals("a += 2");
+                 test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0));
+  node_t *node = parse_expr_input_with_existing_locals(test_suite_session, "a += 2");
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   ASSERT_EQ(TK_PLUSEQ, node->source_op);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
   psx_frontend_expression_hir_t assignment_expression =
-      resolve_test_expression_hir(node);
+      resolve_test_expression_hir(test_suite_session, node);
   const psx_hir_node_t *assignment_hir =
       test_expression_hir_root(&assignment_expression);
   ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
@@ -6447,7 +6601,7 @@ static void test_compound_assignment_typed_hir_boundary() {
   ASSERT_EQ(PSX_HIR_COMPOUND_ADD,
             psx_hir_node_compound_operator(assignment_hir));
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_hir_type_shape(assignment_hir).kind);
+            test_hir_type_shape(test_suite_session, assignment_hir).kind);
   ASSERT_EQ(2, psx_hir_node_child_count(assignment_hir));
   ASSERT_EQ(PSX_HIR_LOCAL,
             psx_hir_node_kind(psx_hir_module_lookup(
@@ -6461,18 +6615,18 @@ static void test_compound_assignment_typed_hir_boundary() {
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   psx_frontend_expression_hir_dispose(&assignment_expression);
 
-  reset_test_locals();
-  lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
-  set_test_storage_fixture_type(
+  reset_test_locals(test_suite_session);
+  lvar_t *pointer = register_test_storage_fixture(test_suite_session, (char *)"p", 1, 8, 4, 0);
+  set_test_storage_fixture_type(test_suite_session,
       pointer,
       ps_ctx_intern_pointer_to_qual_type_in(
-          test_semantic_context(),
+          test_semantic_context(test_suite_session),
           ps_ctx_intern_integer_qual_type_in(
-              test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0)));
-  node = parse_expr_input_with_existing_locals("*p += 2");
+              test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0)));
+  node = parse_expr_input_with_existing_locals(test_suite_session, "*p += 2");
   ASSERT_EQ(ND_COMPOUND_ASSIGN, node->kind);
   psx_frontend_expression_hir_t deref_assignment_expression =
-      resolve_test_expression_hir(node);
+      resolve_test_expression_hir(test_suite_session, node);
   const psx_hir_node_t *deref_assignment_hir =
       test_expression_hir_root(&deref_assignment_expression);
   ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
@@ -6491,7 +6645,7 @@ static void test_compound_assignment_typed_hir_boundary() {
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   size_t hir_checkpoint = psx_hir_module_node_count(hir);
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __typed_hir_subscript_compound(int *values, int index) { "
       "values[index] += 2; return values[index]; }"));
   int found_subscript_compound = 0;
@@ -6510,7 +6664,7 @@ static void test_compound_assignment_typed_hir_boundary() {
   ASSERT_TRUE(found_subscript_compound);
 
   hir_checkpoint = psx_hir_module_node_count(hir);
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct __TypedHirMemberCompound { int value; }; "
       "int __typed_hir_member_compound("
       "struct __TypedHirMemberCompound *object) { "
@@ -6542,32 +6696,33 @@ static void test_compound_assignment_typed_hir_boundary() {
   ASSERT_TRUE(found_member_compound);
 }
 
-static void test_translation_unit_frontend_boundary() {
+static void test_translation_unit_frontend_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_frontend_boundary...\n");
   const char *source =
       "int __frontend_boundary(int input) { "
       "int x=input; x += 2; return x; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(),
+  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__frontend_boundary", 19));
   ASSERT_EQ(1, item.value.function_header.declarator
                    .function_suffixes[0].parameters->count);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
-  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(),
+  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__frontend_boundary", 19));
   ASSERT_TRUE(find_test_local_var_in(
-                  test_local_registry(), (char *)"input", 5) == NULL);
+                  test_local_registry(test_suite_session), (char *)"input", 5) == NULL);
   ASSERT_TRUE(find_test_local_var_in(
-                  test_local_registry(), (char *)"x", 1) == NULL);
+                  test_local_registry(test_suite_session), (char *)"x", 1) == NULL);
   node_block_t *parsed_body = as_block(syntax_function->body);
   ASSERT_EQ(ND_LOCAL_DECLARATION, parsed_body->body[0]->kind);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, parsed_body->body[1]->kind);
@@ -6580,13 +6735,13 @@ static void test_translation_unit_frontend_boundary() {
       test_suite_session, syntax_function,
       (token_t *)syntax_function->declarator.identifier, &hir_root));
   ASSERT_TRUE(hir_root != PSX_HIR_NODE_ID_INVALID);
-  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(),
+  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__frontend_boundary", 19));
   ASSERT_TRUE(find_test_local_var_in(
-                  test_local_registry(), (char *)"input", 5) != NULL);
+                  test_local_registry(test_suite_session), (char *)"input", 5) != NULL);
   ASSERT_TRUE(
       find_test_local_var_in(
-          test_local_registry(), (char *)"x", 1) != NULL);
+          test_local_registry(test_suite_session), (char *)"x", 1) != NULL);
   ASSERT_EQ(ND_COMPOUND_ASSIGN, raw_compound_assignment->kind);
   ASSERT_EQ(TK_PLUSEQ, raw_compound_assignment->source_op);
   ASSERT_TRUE(parsed_body->body[1] == raw_compound_assignment);
@@ -6612,20 +6767,21 @@ static void test_translation_unit_frontend_boundary() {
   ps_parser_stream_end(&stream);
 }
 
-static void test_function_definition_header_resolution_boundary() {
+static void test_function_definition_header_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_function_definition_header_resolution_boundary...\n");
   const char *source =
       "long __direct_header_value(int left, double right) { "
       "return left; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
   node_block_t *syntax_body = as_block(syntax_function->body);
@@ -6637,8 +6793,8 @@ static void test_function_definition_header_resolution_boundary() {
 
   psx_function_definition_header_resolution_t resolution;
   ASSERT_TRUE(psx_resolve_function_definition_header_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), test_lowering_context(),
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
       syntax_function, &resolution));
   ASSERT_EQ((int)strlen("__direct_header_value"), resolution.name_len);
   ASSERT_TRUE(strncmp(
@@ -6647,10 +6803,10 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_TRUE(resolution.signature_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_qual_type_t registered_signature =
       ps_ctx_get_function_qual_type_in(
-          test_semantic_context(), resolution.name,
+          test_semantic_context(test_suite_session), resolution.name,
           resolution.name_len);
   ASSERT_EQ(resolution.signature_qual_type.type_id,
             registered_signature.type_id);
@@ -6694,29 +6850,30 @@ static void test_function_definition_header_resolution_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, syntax_return_value->kind);
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_global_registry_checkpoint_boundary() {
+static void test_global_registry_checkpoint_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_global_registry_checkpoint_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
   global_var_t existing = {
       .name = (char *)"__checkpoint_existing",
       .name_len = (int)strlen("__checkpoint_existing"),
       .is_extern_decl = 1,
   };
-  ps_register_global_var_in(test_global_registry(), &existing);
+  ps_register_global_var_in(test_global_registry(test_suite_session), &existing);
   ASSERT_EQ(0, ps_global_registry_next_string_literal_id(
-                   test_global_registry()));
+                   test_global_registry(test_suite_session)));
 
   psx_global_registry_checkpoint_t checkpoint = {0};
   ASSERT_TRUE(psx_global_registry_checkpoint_begin(
-      test_global_registry(), &checkpoint));
+      test_global_registry(test_suite_session), &checkpoint));
   ASSERT_TRUE(psx_global_registry_checkpoint_is_active(
-      test_global_registry()));
+      test_global_registry(test_suite_session)));
   ASSERT_TRUE(psx_global_registry_note_global_mutation(
-      test_global_registry(), &existing));
+      test_global_registry(test_suite_session), &existing));
   existing.is_extern_decl = 0;
   existing.is_static = 1;
 
@@ -6724,59 +6881,60 @@ static void test_global_registry_checkpoint_boundary() {
       .name = (char *)"__checkpoint_added",
       .name_len = (int)strlen("__checkpoint_added"),
   };
-  ps_register_global_var_in(test_global_registry(), &added);
+  ps_register_global_var_in(test_global_registry(test_suite_session), &added);
   string_lit_t literal = {
       .label = (char *)".L.checkpoint",
       .str = (char *)"checkpoint",
       .len = 10,
   };
-  psx_register_string_lit_in(test_global_registry(), &literal);
+  psx_register_string_lit_in(test_global_registry(test_suite_session), &literal);
   ASSERT_EQ(1, ps_global_registry_next_string_literal_id(
-                   test_global_registry()));
+                   test_global_registry(test_suite_session)));
 
   psx_global_registry_checkpoint_rollback(
-      test_global_registry(), &checkpoint);
+      test_global_registry(test_suite_session), &checkpoint);
   ASSERT_TRUE(!psx_global_registry_checkpoint_is_active(
-      test_global_registry()));
+      test_global_registry(test_suite_session)));
   ASSERT_TRUE(find_test_global_var_in(
-      test_global_registry(), existing.name, existing.name_len) ==
+      test_global_registry(test_suite_session), existing.name, existing.name_len) ==
               &existing);
   ASSERT_TRUE(find_test_global_var_in(
-      test_global_registry(), added.name, added.name_len) == NULL);
+      test_global_registry(test_suite_session), added.name, added.name_len) == NULL);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
-      test_global_registry(), literal.label) == NULL);
+      test_global_registry(test_suite_session), literal.label) == NULL);
   ASSERT_TRUE(existing.is_extern_decl);
   ASSERT_TRUE(!existing.is_static);
   ASSERT_EQ(1, ps_global_registry_next_string_literal_id(
-                   test_global_registry()));
+                   test_global_registry(test_suite_session)));
 
   ASSERT_TRUE(psx_global_registry_checkpoint_begin(
-      test_global_registry(), &checkpoint));
+      test_global_registry(test_suite_session), &checkpoint));
   ASSERT_TRUE(psx_global_registry_note_global_mutation(
-      test_global_registry(), &existing));
+      test_global_registry(test_suite_session), &existing));
   existing.is_static = 1;
-  ps_register_global_var_in(test_global_registry(), &added);
+  ps_register_global_var_in(test_global_registry(test_suite_session), &added);
   psx_global_registry_checkpoint_commit(
-      test_global_registry(), &checkpoint);
+      test_global_registry(test_suite_session), &checkpoint);
   ASSERT_TRUE(!psx_global_registry_checkpoint_is_active(
-      test_global_registry()));
+      test_global_registry(test_suite_session)));
   ASSERT_TRUE(existing.is_static);
   ASSERT_TRUE(find_test_global_var_in(
-      test_global_registry(), added.name, added.name_len) == &added);
+      test_global_registry(test_suite_session), added.name, added.name_len) == &added);
 
   psx_local_registry_checkpoint_t local_checkpoint = {0};
   ASSERT_TRUE(psx_local_registry_checkpoint_begin(
-      test_local_registry(), &local_checkpoint));
+      test_local_registry(test_suite_session), &local_checkpoint));
   ASSERT_TRUE(psx_local_registry_checkpoint_is_active(
-      test_local_registry()));
+      test_local_registry(test_suite_session)));
   psx_local_registry_checkpoint_rollback(
-      test_local_registry(), &local_checkpoint);
+      test_local_registry(test_suite_session), &local_checkpoint);
   ASSERT_TRUE(!psx_local_registry_checkpoint_is_active(
-      test_local_registry()));
-  reset_test_translation_unit_state();
+      test_local_registry(test_suite_session)));
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_direct_function_typed_hir_resolution_boundary() {
+static void test_direct_function_typed_hir_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_direct_function_typed_hir_resolution_boundary...\n");
   const char *source =
       "static int __direct_function_hir(int left, int right) { "
@@ -6850,14 +7008,14 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "sum += sizeof(__DirectVla) + sizeof(typedef_values); } "
       "if (left) return sum; return 0; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
   node_block_t *syntax_body = as_block(syntax_function->body);
@@ -7193,8 +7351,8 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -7217,22 +7375,22 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_EQ(ND_COMPOUND_LITERAL, syntax_compound_string->kind);
   ASSERT_EQ(ND_STRING, syntax_compound_string_value->kind);
   global_var_t *direct_external = find_test_global_var_in(
-      test_global_registry(), (char *)"__direct_external_value",
+      test_global_registry(test_suite_session), (char *)"__direct_external_value",
       (int)strlen("__direct_external_value"));
   ASSERT_TRUE(direct_external != NULL);
   ASSERT_TRUE(ps_gvar_is_extern_decl(direct_external));
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
-      test_semantic_context(), (char *)"__direct_declared_function",
+      test_semantic_context(test_suite_session), (char *)"__direct_declared_function",
       (int)strlen("__direct_declared_function")) != NULL);
   global_var_t *direct_static = find_test_global_var_in(
-      test_global_registry(),
+      test_global_registry(test_suite_session),
       (char *)"__direct_function_hir.__direct_static_counter.0",
       (int)strlen(
           "__direct_function_hir.__direct_static_counter.0"));
   ASSERT_TRUE(direct_static != NULL);
   ASSERT_TRUE(ps_gvar_is_static_storage(direct_static));
   global_var_t *direct_static_initialized = find_test_global_var_in(
-      test_global_registry(),
+      test_global_registry(test_suite_session),
       (char *)"__direct_function_hir.__direct_static_initialized.1",
       (int)strlen(
           "__direct_function_hir.__direct_static_initialized.1"));
@@ -7241,7 +7399,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(direct_static_initialized->has_init);
   ASSERT_EQ(17, direct_static_initialized->init_val);
   global_var_t *direct_static_values = find_test_global_var_in(
-      test_global_registry(),
+      test_global_registry(test_suite_session),
       (char *)"__direct_function_hir.__direct_static_values.ac0",
       (int)strlen(
           "__direct_function_hir.__direct_static_values.ac0"));
@@ -7428,11 +7586,11 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ir_build_options_t options = {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(
               test_suite_session),
@@ -7452,7 +7610,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   const char *rollback_source =
       "int __direct_function_rollback(int input) { "
       "int __direct_fallback_transient = input; "
@@ -7464,17 +7622,17 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "__direct_fallback_external + "
       "__direct_fallback_declared(input); }";
   stream = (psx_parser_stream_t){0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)rollback_source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)rollback_source));
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   syntax_function = &item.value.function_header;
   typed_hir = NULL;
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_REJECTED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir == NULL);
@@ -7485,24 +7643,24 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   ASSERT_TRUE(memcmp(
       failure.source_name, "__direct_missing_identifier", 27) == 0);
   ASSERT_TRUE(!test_has_function_type_in(
-      test_semantic_context(),
+      test_semantic_context(test_suite_session),
       (char *)"__direct_function_rollback",
       (int)strlen("__direct_function_rollback")));
   ASSERT_TRUE(find_test_global_var_in(
-      test_global_registry(), (char *)"__direct_fallback_external",
+      test_global_registry(test_suite_session), (char *)"__direct_fallback_external",
       (int)strlen("__direct_fallback_external")) == NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
-      test_semantic_context(), (char *)"__direct_fallback_declared",
+      test_semantic_context(test_suite_session), (char *)"__direct_fallback_declared",
       (int)strlen("__direct_fallback_declared")) == NULL);
   ASSERT_TRUE(find_test_local_var_in(
-      test_local_registry(), (char *)"__direct_fallback_transient",
+      test_local_registry(test_suite_session), (char *)"__direct_fallback_transient",
       (int)strlen("__direct_fallback_transient")) == NULL);
-  ASSERT_EQ(0, test_lowering_context()->local_frame_layout.next_offset);
+  ASSERT_EQ(0, test_lowering_context(test_suite_session)->local_frame_layout.next_offset);
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  assert_direct_function_resolution(
+  assert_direct_function_resolution(test_suite_session,
       "int __direct_generic_address(int choose) { "
       "struct S { int value; }; int local=7; int helper(int); "
       "_Generic(choose, int: local, default: local)=12; "
@@ -7512,292 +7670,293 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "(&_Generic(choose, int: (struct S)10, "
       "default: (struct S)11))->value + "
       "(&_Generic(choose, int: helper, default: helper) != 0); }");
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_return_value_required(void) { return; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_REQUIRED,
       ND_RETURN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "void __direct_return_value_forbidden(void) { return 1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_VALUE_FORBIDDEN,
       ND_RETURN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_return_pointer_as_integer(void) { "
       "int *value = 0; return value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE,
       ND_RETURN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int *__direct_return_nonzero_integer(void) { return 1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_TYPES_INCOMPATIBLE,
       ND_RETURN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int *__direct_return_discards_qualifiers(const int *value) { "
       "return value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_RETURN_DISCARDS_QUALIFIERS,
       ND_RETURN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_aggregate_mismatch(void) { "
       "struct S { int x; }; union U { int y; }; union U value={1}; "
       "(struct S)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_AGGREGATE_TYPE_MISMATCH,
       ND_SOURCE_CAST);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_target_array(void) { "
       "int value=1; (int[2])value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_TARGET_NOT_VOID_OR_SCALAR,
       ND_SOURCE_CAST);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_aggregate_operand(void) { "
       "struct S { int x; }; struct S value={1}; return (int)value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_OPERAND_NOT_SCALAR,
       ND_SOURCE_CAST);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_rvalue(void) { return &1 != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
       ND_ADDRESS_OF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_comma(void) { "
       "int left=1, right=2; return &(left, right) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
       ND_ADDRESS_OF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_generic_rvalue(void) { "
       "return &_Generic(0, int: 1, default: 2) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_REQUIRES_ADDRESSABLE_VALUE,
       ND_ADDRESS_OF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_bitfield(void) { "
       "struct S { int bits:3; } value={1}; return &value.bits != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
       ND_ADDRESS_OF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_address_generic_bitfield(void) { "
       "struct S { int bits:3; } value={1}; "
       "return &_Generic(0, int: value.bits, default: value.bits) != 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
       ND_ADDRESS_OF);
-  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
-  assert_direct_function_rejection(
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = false;
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_struct_extension_disabled(void) { "
       "struct S { int x; }; int value=1; (struct S)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_STRUCT_EXTENSION_DISABLED,
       ND_SOURCE_CAST);
-  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
-  test_compilation_options()->enable_union_scalar_pointer_cast = false;
-  assert_direct_function_rejection(
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = false;
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_cast_union_extension_disabled(void) { "
       "union U { int x; }; int value=1; (union U)value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CAST_UNION_EXTENSION_DISABLED,
       ND_SOURCE_CAST);
-  test_compilation_options()->enable_union_scalar_pointer_cast = true;
-  assert_direct_function_rejection(
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = true;
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_static_assert_not_constant(void) { "
       "int value = 1; _Static_assert(value, \"ng\"); return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_NOT_CONSTANT,
       ND_STATIC_ASSERT);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_static_assert_failed(void) { "
       "_Static_assert(0, \"ng\"); return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_STATIC_ASSERT_FAILED,
       ND_STATIC_ASSERT);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_case_not_constant(int value) { "
       "switch (value) { case value: return 1; } return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CASE_NOT_INTEGER_CONSTANT,
       ND_CASE);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_dot_base(void) { int value = 0; return value.x; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_DOT_BASE_NOT_AGGREGATE,
       ND_MEMBER_ACCESS);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_arrow_base(void) { int *value = 0; "
       "return value->x; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARROW_BASE_NOT_AGGREGATE_POINTER,
       ND_MEMBER_ACCESS);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_member_not_found(void) { "
       "struct S { int x; } value = {0}; return value.y; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_MEMBER_NOT_FOUND,
       ND_MEMBER_ACCESS);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_deref_nonpointer(void) { "
       "int value = 1; return *value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_REQUIRES_POINTER,
       ND_UNARY_DEREF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_deref_void_pointer(void) { "
       "void *value = 0; return *value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_DEREF_VOID_POINTER,
       ND_UNARY_DEREF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_invalid_subscript(void) { "
       "int value = 1; return value[0]; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INVALID_SUBSCRIPT_OPERANDS,
       ND_SUBSCRIPT);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_plus_pointer(void) { "
       "int *value = 0; return +value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_UNARY_PLUS);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_negate_pointer(void) { "
       "int *value = 0; return -value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_UNARY_NEGATE);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_bitwise_not_float(void) { "
       "double value = 1.0; return ~value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_BITWISE_NOT_REQUIRES_INTEGER,
       ND_BITWISE_NOT);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_real_pointer(void) { "
       "int *value = 0; return __real__ value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_CREAL);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_imag_pointer(void) { "
       "int *value = 0; return __imag__ value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ARITHMETIC_UNARY_REQUIRES_ARITHMETIC,
       ND_CIMAG);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_incdec_non_lvalue(void) { return ++1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
       ND_PRE_INC);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_post_inc_comma(void) { "
       "int left=1, right=2; return (left, right)++; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_REQUIRES_LVALUE,
       ND_POST_INC);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_incdec_const(void) { "
       "const int value = 0; return ++value; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
       ND_PRE_INC);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_incdec_complex(void) { "
       "_Complex double value = 0; ++value; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_INVALID_OPERAND_TYPE,
       ND_PRE_INC);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_non_lvalue(void) { 1 = 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_const(void) { "
       "const int value = 0; value = 1; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_function(void) { "
       "int target(void); target = target; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_FUNCTION_TARGET,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_array(void) { "
       "int values[1]; values = values; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_discards_qualifiers(void) { "
       "const int source = 0; const int *from = &source; "
       "int *to = 0; to = from; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_DISCARDS_QUALIFIERS,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_assign_incompatible(void) { "
       "int value = 0; int *pointer = 0; value = pointer; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
       ND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_compound_assign_incompatible(void) { "
       "int *pointer = 0; pointer *= 2; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
       ND_COMPOUND_ASSIGN);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_conditional_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
       "return condition ? 1 : 2; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_CONDITION_NOT_SCALAR,
       ND_TERNARY);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_conditional_branch_types(int condition) { "
       "return condition ? (void)0 : 1; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONDITIONAL_BRANCH_TYPES_INCOMPATIBLE,
       ND_TERNARY);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_call_not_callable(void) { "
       "int value = 0; return value(); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_NOT_CALLABLE,
       ND_FUNCALL);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_call_double_pointer(void) { "
       "int (**function)(void) = 0; return function(); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_NOT_CALLABLE,
       ND_FUNCALL);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_call_argument_count(void) { "
       "int function(int value); return function(); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
       ND_FUNCALL);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_generic_duplicate_default(void) { "
       "return _Generic(1, default: 1, default: 2); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT,
       ND_GENERIC_SELECTION);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_generic_duplicate_type(void) { "
       "return _Generic(1, int: 1, signed int: 2, default: 3); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_COMPATIBLE_TYPE,
       ND_GENERIC_SELECTION);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_generic_no_match(void) { "
       "return _Generic(1, float: 2); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_NO_MATCH,
       ND_GENERIC_SELECTION);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_if_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
       "if (condition) return 1; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
       ND_IF);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_while_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
       "while (condition) return 1; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
       ND_WHILE);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_do_while_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
       "do { return 1; } while (condition); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
       ND_DO_WHILE);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_for_condition_type(void) { "
       "struct S { int value; } condition = {0}; "
       "for (; condition;) return 1; return 0; }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_CONTROL_CONDITION_NOT_SCALAR,
       ND_FOR);
-  assert_direct_function_rejection(
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_switch_condition_type(void) { "
       "switch (1.0) { default: return 1; } }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_SWITCH_CONDITION_NOT_INTEGER,
       ND_SWITCH);
 }
 
-static void test_direct_string_pointer_initializer_boundary() {
+static void test_direct_string_pointer_initializer_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_direct_string_pointer_initializer_boundary...\n");
   const char *source =
       "int __direct_string_pointer_initializer(void) { "
       "const char *text = \"abc\"; return text[0]; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
   const node_block_t *syntax_body = as_block(syntax_function->body);
@@ -7814,8 +7973,8 @@ static void test_direct_string_pointer_initializer_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -7824,24 +7983,25 @@ static void test_direct_string_pointer_initializer_boundary() {
 
   ps_dispose_function_definition_syntax(syntax_function);
   ps_parser_stream_end(&stream);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_case_label_syntax_hir_boundary() {
+static void test_case_label_syntax_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_case_label_syntax_hir_boundary...\n");
   const char *source =
       "int __case_label_boundary(void) { "
       "enum E { A = 2 }; "
       "switch (4) { case A * 2: return 4; default: return 0; } }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
   node_block_t *syntax_body =
@@ -7860,8 +8020,8 @@ static void test_case_label_syntax_hir_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -7887,16 +8047,17 @@ static void test_case_label_syntax_hir_boundary() {
   ps_parser_stream_end(&stream);
 }
 
-static void test_toplevel_static_assert_frontend_boundary() {
+static void test_toplevel_static_assert_frontend_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_static_assert_frontend_boundary...\n");
   const char *source =
       "_Static_assert(0, \"deferred\"); "
       "int __after_static_assert(void) { return 0; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
 
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -7906,7 +8067,7 @@ static void test_toplevel_static_assert_frontend_boundary() {
   ASSERT_EQ(0, as_num(item.value.static_assertion.condition)->val);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
   ASSERT_TRUE(!ps_parse_next_toplevel_item(&stream, &item));
@@ -7914,20 +8075,21 @@ static void test_toplevel_static_assert_frontend_boundary() {
   ps_parser_stream_end(&stream);
 }
 
-static void test_block_static_assert_syntax_hir_boundary() {
+static void test_block_static_assert_syntax_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_block_static_assert_syntax_hir_boundary...\n");
   const char *source =
       "int __block_static_assert(void) { "
       "_Static_assert(1 + 1 == 2, \"ok\"); return 7; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   psx_parsed_function_definition_t *syntax_function =
       &item.value.function_header;
   node_block_t *syntax_body =
@@ -7943,8 +8105,8 @@ static void test_block_static_assert_syntax_hir_boundary() {
   ASSERT_EQ(
       PSX_SYNTAX_TYPED_HIR_RESOLVED,
       psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), test_lowering_context(),
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), test_lowering_context(test_suite_session),
           ag_compilation_session_options_view(test_suite_session),
           syntax_function, &typed_hir, &failure));
   ASSERT_TRUE(typed_hir != NULL);
@@ -7969,7 +8131,8 @@ static void test_block_static_assert_syntax_hir_boundary() {
   ps_parser_stream_end(&stream);
 }
 
-static void test_toplevel_declaration_frontend_boundary() {
+static void test_toplevel_declaration_frontend_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_declaration_frontend_boundary...\n");
   const char *source =
       "typedef unsigned long __PhaseWord; "
@@ -7979,10 +8142,10 @@ static void test_toplevel_declaration_frontend_boundary() {
       "__PhaseWord __phase_initialized = 7; "
       "int __phase_function(void) { return 0; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -7990,30 +8153,30 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_TRUE(item.value.declaration.is_typedef);
   ASSERT_EQ(1, item.value.declaration.declarator_count);
   psx_typedef_info_t typedef_info;
-  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(test_semantic_context(),
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(test_semantic_context(test_suite_session),
       (char *)"__PhaseWord", 11, &typedef_info));
-  apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(),
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(test_suite_session),
       (char *)"__PhaseWord", 11, &typedef_info));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_TRUE(item.value.declaration.is_standalone_tag);
-  ASSERT_EQ(-1, test_tag_member_count(
+  ASSERT_EQ(-1, test_tag_member_count(test_suite_session,
                     TK_STRUCT, (char *)"__PhaseTag", 10));
-  apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_EQ(1, test_tag_member_count(
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
+  ASSERT_EQ(1, test_tag_member_count(test_suite_session,
                    TK_STRUCT, (char *)"__PhaseTag", 10));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_EQ(1, item.value.declaration.declarator_count);
-  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(),
+  ASSERT_TRUE(!test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__phase_proto", 13));
-  apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(),
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
+  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__phase_proto", 13));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
@@ -8022,9 +8185,9 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_TRUE(!item.value.declaration.is_typedef);
   ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
             item.value.declaration.specifier.source);
-  ASSERT_TRUE(find_test_global_var("__phase_global", 14) == NULL);
-  apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(find_test_global_var("__phase_global", 14) != NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__phase_global", 14) == NULL);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__phase_global", 14) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -8033,29 +8196,30 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             item.value.declaration.initializers[0].kind);
   ASSERT_EQ(ND_NUM, item.value.declaration.initializers[0].value->kind);
-  ASSERT_TRUE(find_test_global_var("__phase_initialized", 19) == NULL);
-  apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(find_test_global_var("__phase_initialized", 19) != NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__phase_initialized", 19) == NULL);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__phase_initialized", 19) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
   ps_parser_stream_end(&stream);
 }
 
-static void test_parser_owned_typedef_classifier_boundary() {
+static void test_parser_owned_typedef_classifier_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parser_owned_typedef_classifier_boundary...\n");
   const char *source =
       "typedef int __ParserOwnedWord; "
       "__ParserOwnedWord __parser_owned_value;";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_frontend_stream_t stream = {0};
   ASSERT_TRUE(psx_frontend_stream_begin(
       &stream, test_suite_session, NULL,
-      tk_tokenize_ctx(test_tokenizer(), (char *)source)));
+      tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source)));
 
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(
@@ -8063,7 +8227,7 @@ static void test_parser_owned_typedef_classifier_boundary() {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_TRUE(item.value.declaration.is_typedef);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
-      test_semantic_context(), (char *)"__ParserOwnedWord", 17,
+      test_semantic_context(test_suite_session), (char *)"__ParserOwnedWord", 17,
       NULL));
   ps_dispose_toplevel_declaration_syntax(
       &item.value.declaration);
@@ -8074,26 +8238,27 @@ static void test_parser_owned_typedef_classifier_boundary() {
   ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
             item.value.declaration.specifier.source);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
-      test_semantic_context(), (char *)"__ParserOwnedWord", 17,
+      test_semantic_context(test_suite_session), (char *)"__ParserOwnedWord", 17,
       NULL));
   ps_dispose_toplevel_declaration_syntax(
       &item.value.declaration);
   ASSERT_TRUE(psx_frontend_stream_end(&stream));
 }
 
-static void test_toplevel_callback_context_boundary() {
+static void test_toplevel_callback_context_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_callback_context_boundary...\n");
-  ASSERT_TRUE(test_tokenizer() ==
+  ASSERT_TRUE(test_tokenizer(test_suite_session) ==
               ag_compilation_session_tokenizer(test_suite_session));
-  reset_test_translation_unit_state();
-  tk_tokenize_ctx(test_tokenizer(), (char *)"int __callback_global = 23;");
+  reset_test_translation_unit_state(test_suite_session);
+  tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
-  ASSERT_TRUE(parse_test_toplevel_declaration_syntax(&declaration));
-  global_var_t *global = find_test_global_var(
+  ASSERT_TRUE(parse_test_toplevel_declaration_syntax(test_suite_session, &declaration));
+  global_var_t *global = find_test_global_var(test_suite_session,
       (char *)"__callback_global", 17);
   ASSERT_TRUE(global == NULL);
-  apply_test_toplevel_declaration(&declaration);
-  global = find_test_global_var(
+  apply_test_toplevel_declaration(test_suite_session, &declaration);
+  global = find_test_global_var(test_suite_session,
       (char *)"__callback_global", 17);
   ASSERT_TRUE(global != NULL);
   ASSERT_TRUE(global->has_init);
@@ -8101,7 +8266,8 @@ static void test_toplevel_callback_context_boundary() {
   ps_dispose_toplevel_declaration_syntax(&declaration);
 }
 
-static void test_toplevel_compound_initializer_frontend_boundary() {
+static void test_toplevel_compound_initializer_frontend_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_compound_initializer_frontend_boundary...\n");
   const char *source =
       "struct __phase_pair { int x; int y; }; "
@@ -8111,16 +8277,16 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
       "    &((struct __phase_pair){33,34}).y; "
       "int __phase_compound_function(void) { return 0; }";
 
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_TRUE(item.value.declaration.is_standalone_tag);
-  apply_test_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -8139,14 +8305,14 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)scalar_compound)
                 ->type_name.scope_seq);
-  ASSERT_TRUE(find_test_global_var("__phase_scalar", 14) == NULL);
-  ASSERT_TRUE(find_test_global_var("__compound_lit_0", 16) == NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__phase_scalar", 14) == NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "__compound_lit_0", 16) == NULL);
 
-  apply_test_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
   global_var_t *scalar_pointer =
-      find_test_global_var("__phase_scalar", 14);
+      find_test_global_var(test_suite_session, "__phase_scalar", 14);
   global_var_t *scalar_object =
-      find_test_global_var("__compound_lit_0", 16);
+      find_test_global_var(test_suite_session, "__compound_lit_0", 16);
   ASSERT_TRUE(scalar_pointer != NULL);
   ASSERT_TRUE(scalar_object != NULL);
   ASSERT_TRUE(ps_gvar_is_static_storage(scalar_object));
@@ -8177,11 +8343,11 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)array_compound)
                 ->type_name.scope_seq);
-  apply_test_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
   global_var_t *array_pointer =
-      find_test_global_var("__phase_array", 13);
+      find_test_global_var(test_suite_session, "__phase_array", 13);
   global_var_t *array_object =
-      find_test_global_var("__compound_lit_1", 16);
+      find_test_global_var(test_suite_session, "__compound_lit_1", 16);
   ASSERT_TRUE(array_pointer != NULL);
   ASSERT_TRUE(array_object != NULL);
   ASSERT_TRUE(ps_gvar_is_static_storage(array_object));
@@ -8214,11 +8380,11 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_EQ(PSX_SCOPE_ID_TRANSLATION_UNIT,
             ((const node_compound_literal_t *)member_compound)
                 ->type_name.scope_seq);
-  apply_test_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(test_suite_session, &item.value.declaration);
   global_var_t *member_pointer =
-      find_test_global_var("__phase_member", 14);
+      find_test_global_var(test_suite_session, "__phase_member", 14);
   global_var_t *member_object =
-      find_test_global_var("__compound_lit_2", 16);
+      find_test_global_var(test_suite_session, "__compound_lit_2", 16);
   ASSERT_TRUE(member_pointer != NULL);
   ASSERT_TRUE(member_object != NULL);
   ASSERT_TRUE(ps_gvar_is_static_storage(member_object));
@@ -8234,22 +8400,23 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
-  ASSERT_TRUE(parse_raw_function_item(&stream, &item));
+  ASSERT_TRUE(parse_raw_function_item(test_suite_session, &stream, &item));
   ps_dispose_function_definition_syntax(
       &item.value.function_header);
   ps_parser_stream_end(&stream);
 }
 
-static void test_toplevel_point_of_declaration_boundary() {
+static void test_toplevel_point_of_declaration_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_point_of_declaration_boundary...\n");
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __point_self = sizeof __point_self; "
       "int __point_first = sizeof __point_first, "
       "__point_second = sizeof __point_second; "
       "int main(void) { return 0; }"));
-  global_var_t *self = find_test_global_var("__point_self", 12);
-  global_var_t *first = find_test_global_var("__point_first", 13);
-  global_var_t *second = find_test_global_var("__point_second", 14);
+  global_var_t *self = find_test_global_var(test_suite_session, "__point_self", 12);
+  global_var_t *first = find_test_global_var(test_suite_session, "__point_first", 13);
+  global_var_t *second = find_test_global_var(test_suite_session, "__point_second", 14);
   ASSERT_TRUE(self != NULL);
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(second != NULL);
@@ -8259,12 +8426,13 @@ static void test_toplevel_point_of_declaration_boundary() {
 }
 
 static void assert_toplevel_syntax_kind(
+    ag_compilation_session_t *test_suite_session,
     const char *source, psx_toplevel_item_kind_t expected_kind,
     int expected_declarator_count) {
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_parser_stream_t stream = {0};
-  begin_test_parser_stream(
-      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
+  begin_test_parser_stream(test_suite_session,
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(expected_kind, item.kind);
@@ -8280,40 +8448,42 @@ static void assert_toplevel_syntax_kind(
   ps_parser_stream_end(&stream);
 }
 
-static void test_toplevel_single_parse_classification_boundary() {
+static void test_toplevel_single_parse_classification_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_single_parse_classification_boundary...\n");
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "int (*proto(void))(int);", PSX_TOPLEVEL_ITEM_DECLARATION, 1);
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "int (*definition(void))(int) { return 0; }",
       PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, 0);
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "struct R { int x; } (*tag_proto(void))[3];",
       PSX_TOPLEVEL_ITEM_DECLARATION, 1);
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "struct R { int x; } (*tag_definition(void))[3] { return 0; }",
       PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, 0);
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "int (parenthesized)(void) { return 0; }",
       PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, 0);
-  assert_toplevel_syntax_kind(
+  assert_toplevel_syntax_kind(test_suite_session,
       "int first(int), second(int), object;",
       PSX_TOPLEVEL_ITEM_DECLARATION, 3);
 }
 
-static void test_frontend_stream_lifecycle_boundary() {
+static void test_frontend_stream_lifecycle_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_frontend_stream_lifecycle_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_test_program_hir_from(
-      tk_tokenize_ctx(test_tokenizer(),
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_test_program_hir_from(test_suite_session,
+      tk_tokenize_ctx(test_tokenizer(test_suite_session),
           (char *)"int __stream_previous(void) { return 0; }")));
-  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(),
+  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__stream_previous", 17));
 
   psx_parser_stream_t parser_stream = {0};
-  begin_test_parser_stream(
-      &parser_stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)""));
-  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(),
+  begin_test_parser_stream(test_suite_session,
+      &parser_stream, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)""));
+  ASSERT_TRUE(test_has_function_type_in(test_semantic_context(test_suite_session),
                   (char *)"__stream_previous", 17));
   ps_parser_stream_end(&parser_stream);
 
@@ -8325,7 +8495,7 @@ static void test_frontend_stream_lifecycle_boundary() {
   ag_compilation_session_t *outer_session = test_suite_session;
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
-      &frontend_stream, NULL, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)"")));
+      &frontend_stream, NULL, NULL, tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"")));
   psx_frontend_function_t frontend_function;
   ASSERT_TRUE(!psx_frontend_next_function(
       &frontend_stream, &frontend_function));
@@ -8341,13 +8511,13 @@ static void test_frontend_stream_lifecycle_boundary() {
                   &session_context) == NULL);
   ASSERT_TRUE(!psx_frontend_stream_begin(
       &frontend_stream, &session_context, NULL,
-      tk_tokenize_ctx(test_tokenizer(), (char *)"int __incomplete_session(void);")));
+      tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"int __incomplete_session(void);")));
   session_context.diagnostic_context = session_diagnostic_context;
   ASSERT_TRUE(ag_compilation_session_is_complete(&session_context));
 
   ASSERT_TRUE(psx_frontend_stream_begin(
       &frontend_stream, &session_context, NULL,
-      tk_tokenize_ctx(test_tokenizer(), (char *)
+      tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)
           "int __stream_explicit(void) { return 0; }")));
   ASSERT_TRUE(psx_frontend_next_function(
       &frontend_stream, &frontend_function));
@@ -8390,10 +8560,11 @@ static void test_frontend_stream_lifecycle_boundary() {
   ASSERT_TRUE(ag_compilation_session_dispose(&session_context));
 }
 
-static void test_complex_initializer_semantic_lowering_boundary() {
+static void test_complex_initializer_semantic_lowering_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_complex_initializer_semantic_lowering_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int complex_initializer_probe(void) { "
       "  double _Complex z = {3.0, 4.0}; "
       "  float _Complex f = {1.0f, 2.0f}; "
@@ -8407,11 +8578,11 @@ static void test_complex_initializer_semantic_lowering_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -8428,7 +8599,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
        i < sizeof(names) / sizeof(names[0]); i++) {
     const psx_scope_declaration_t *declaration =
         find_test_scope_declaration(
-            test_scope_graph(), names[i],
+            test_scope_graph(test_suite_session), names[i],
             PSX_DECL_LOCAL_OBJECT, 0);
     ASSERT_TRUE(declaration != NULL);
     locals[i] = (lvar_t *)declaration->payload;
@@ -8506,7 +8677,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = types,
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = record_layouts,
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(
@@ -8523,18 +8694,19 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ir_module_free(ir);
 }
 
-static void test_local_declaration_storage_plan_boundary() {
+static void test_local_declaration_storage_plan_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_local_declaration_storage_plan_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_semantic_type_table_t *types =
       (psx_semantic_type_table_t *)
           ps_ctx_semantic_type_table_in(
-              test_semantic_context());
+              test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
   ASSERT_TRUE(data_layout != NULL);
@@ -8575,7 +8747,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_qual_type_t completed_incomplete = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
-      test_semantic_context(), incomplete,
+      test_semantic_context(test_suite_session), incomplete,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
       },
@@ -8601,7 +8773,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_qual_type_t completed_partial_flat_matrix = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
-      test_semantic_context(), partial_flat_matrix,
+      test_semantic_context(test_suite_session), partial_flat_matrix,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
           .entries_initialize_outer_elements = 0,
@@ -8622,7 +8794,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_qual_type_t completed_nested_matrix = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
-      test_semantic_context(), nested_matrix,
+      test_semantic_context(test_suite_session), nested_matrix,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 2,
           .entries_initialize_outer_elements = 1,
@@ -8653,11 +8825,11 @@ static void test_local_declaration_storage_plan_boundary() {
       data_layout, &plan));
   ASSERT_EQ(4, plan.storage_size);
 
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
   lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
           .name = (char *)"matrix",
           .name_len = 6,
           .type = matrix,
@@ -8688,14 +8860,14 @@ static void test_local_declaration_storage_plan_boundary() {
                     ps_lvar_decl_type_id(lowered),
                     data_layout));
   ASSERT_EQ(lowered, find_test_local_var_in(
-                         test_local_registry(),
+                         test_local_registry(test_suite_session),
                          (char *)"matrix", 6));
 
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
   lvar_t *declared = declare_incomplete_local_object(
       &(psx_local_object_request_t){
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
           .name = (char *)"deferred",
           .name_len = 8,
           .type = incomplete,
@@ -8706,10 +8878,10 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(0, ps_lvar_frame_storage_size(declared));
   ASSERT_EQ(declared,
             find_test_local_var_in(
-                test_local_registry(),
+                test_local_registry(test_suite_session),
                 (char *)"deferred", 8));
   ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
-      test_local_registry(), declared, integer));
+      test_local_registry(test_suite_session), declared, integer));
   psx_qual_type_t floating =
       psx_semantic_type_table_intern_floating(
           types, PSX_FLOATING_KIND_FLOAT, 0);
@@ -8717,11 +8889,11 @@ static void test_local_declaration_storage_plan_boundary() {
       psx_semantic_type_table_intern_array_of(
           types, floating, 3, 0);
   ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
-      test_local_registry(), declared, float_array));
+      test_local_registry(test_suite_session), declared, float_array));
   psx_qual_type_t complete_deferred_type = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_TRUE(psx_resolve_completed_incomplete_array_qual_type_in(
-      test_semantic_context(), incomplete,
+      test_semantic_context(test_suite_session), incomplete,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 3,
       },
@@ -8732,8 +8904,8 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(complete_declared_local_object(
       declared,
       &(psx_local_object_request_t){
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
           .name = (char *)"deferred",
           .name_len = 8,
           .type = complete_deferred_type,
@@ -8745,10 +8917,10 @@ static void test_local_declaration_storage_plan_boundary() {
       &completed_shape));
   ASSERT_EQ(3, completed_shape.array_len);
   ASSERT_TRUE(!ps_local_registry_complete_array_qual_type(
-      test_local_registry(), declared,
+      test_local_registry(test_suite_session), declared,
       complete_deferred_type));
 
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
   psx_qual_type_t qualified_local_type = integer;
   qualified_local_type.qualifiers =
       PSX_TYPE_QUALIFIER_CONST |
@@ -8757,8 +8929,8 @@ static void test_local_declaration_storage_plan_boundary() {
       types, qualified_local_type));
   lvar_t *qualified_local = lower_complete_local_object(
       &(psx_local_object_request_t){
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
           .name = (char *)"qualified_local",
           .name_len = 15,
           .type = qualified_local_type,
@@ -8771,7 +8943,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_lvar_decl_qual_type(qualified_local).qualifiers);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int local_storage_pipeline(void) { "
       "  int pipeline_deferred[] = {1, 2, 3}; "
       "  int *pointers[] = {0}; "
@@ -8784,11 +8956,11 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(hir != NULL);
   const psx_scope_declaration_t *deferred_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "pipeline_deferred",
+          test_scope_graph(test_suite_session), "pipeline_deferred",
           PSX_DECL_LOCAL_OBJECT, 0);
   const psx_scope_declaration_t *pointers_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "pointers",
+          test_scope_graph(test_suite_session), "pointers",
           PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(deferred_declaration != NULL);
   ASSERT_TRUE(pointers_declaration != NULL);
@@ -8817,9 +8989,10 @@ static void test_local_declaration_storage_plan_boundary() {
                    pipeline_pointers));
 }
 
-static void test_target_type_layout_boundary() {
+static void test_target_type_layout_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_target_type_layout_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
   ag_target_info_t host = ag_target_info_host();
   ag_target_info_t wasm = ag_target_info_wasm32();
@@ -8883,10 +9056,10 @@ static void test_target_type_layout_boundary() {
   psx_semantic_type_table_t *types =
       (psx_semantic_type_table_t *)
           ps_ctx_semantic_type_table_in(
-              test_semantic_context());
+              test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *session_layouts =
       ps_ctx_record_layout_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(session_layouts != NULL);
 
@@ -8999,6 +9172,18 @@ static void test_target_type_layout_boundary() {
   wide_short_target.data_layout
       .scalar[AG_TARGET_SCALAR_SHORT] =
       (ag_target_scalar_layout_t){4, 4};
+  ASSERT_EQ(2, psx_type_layout_character_code_unit_width(
+                   types, unsigned_short.type_id,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(4, psx_type_layout_character_code_unit_width(
+                   types, unsigned_short.type_id,
+                   ag_target_info_data_layout(&wide_short_target)));
+  ASSERT_EQ(4, psx_type_layout_character_code_unit_width(
+                   types, integer.type_id,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(2, psx_type_layout_character_code_unit_width(
+                   types, integer.type_id,
+                   ag_target_info_data_layout(&narrow_int_target)));
   ir_mir_type_context_t mir_type_context = {
       .semantic_types = types,
       .record_layouts = session_layouts,
@@ -9037,7 +9222,7 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(psx_record_decl_table_define(
       (psx_record_decl_table_t *)
           ps_ctx_record_decl_table_in(
-              test_semantic_context()),
+              test_semantic_context(test_suite_session)),
       &record));
   psx_qual_type_t record_type =
       psx_semantic_type_table_intern_record(
@@ -9151,20 +9336,19 @@ static void test_target_type_layout_boundary() {
   psx_parameter_storage_plan_t parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, pointer.type_id,
-      ag_target_info_data_layout(&wasm),
-      wasm_abi_policy, &parameter));
+      ag_target_info_data_layout(&wasm), &parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
 
   const psx_lowering_context_dependencies_t dependencies = {
-      .arena_context = test_arena_context(),
-      .diagnostic_context = test_diagnostics(),
+      .arena_context = test_arena_context(test_suite_session),
+      .diagnostic_context = test_diagnostics(test_suite_session),
       .target = &wasm,
       .semantic_types = types,
       .record_decls =
           ps_ctx_record_decl_table_in(
-              test_semantic_context()),
+              test_semantic_context(test_suite_session)),
       .record_layouts = record_layouts,
   };
   psx_lowering_context_t *lowering =
@@ -9182,12 +9366,13 @@ static void test_target_type_layout_boundary() {
   psx_record_layout_table_destroy(record_layouts);
 }
 
-static void test_dynamic_abi_piece_capacity() {
+static void test_dynamic_abi_piece_capacity(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_dynamic_abi_piece_capacity...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   enum { PARAM_COUNT = 40 };
   psx_qual_type_t integer = ps_ctx_intern_integer_qual_type_in(
-      test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0);
+      test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0);
   ASSERT_TRUE(integer.type_id != PSX_TYPE_ID_INVALID);
   psx_qual_type_t parameters[PARAM_COUNT];
   for (size_t i = 0; i < PARAM_COUNT; i++) parameters[i] = integer;
@@ -9202,9 +9387,9 @@ static void test_dynamic_abi_piece_capacity() {
 
   ir_abi_type_context_t context = {
       .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = ps_ctx_record_layout_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .target = ag_compilation_session_target(test_suite_session),
   };
   ir_abi_module_t *lowered = ir_abi_lower_module(&context, module);
@@ -9221,7 +9406,49 @@ static void test_dynamic_abi_piece_capacity() {
 
   ir_abi_module_free(lowered);
   ir_module_free(module);
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_dynamic_function_parameter_capacity(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_dynamic_function_parameter_capacity...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  enum { PARAM_COUNT = PS_MAX_DECLARATOR_COUNT + 1 };
+  size_t capacity = (size_t)PARAM_COUNT * 24 + 64;
+  char *source = malloc(capacity);
+  ASSERT_TRUE(source != NULL);
+  size_t used = 0;
+  int written = snprintf(
+      source + used, capacity - used, "int many_parameters(");
+  ASSERT_TRUE(written > 0 && (size_t)written < capacity - used);
+  used += (size_t)written;
+  for (int i = 0; i < PARAM_COUNT; i++) {
+    written = snprintf(
+        source + used, capacity - used,
+        i == 0 ? "int p%d" : ", int p%d", i);
+    ASSERT_TRUE(written > 0 && (size_t)written < capacity - used);
+    used += (size_t)written;
+  }
+  written = snprintf(source + used, capacity - used, ");");
+  ASSERT_TRUE(written > 0 && (size_t)written < capacity - used);
+
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, source));
+  const psx_scope_declaration_t *declaration =
+      find_test_scope_declaration(
+          test_scope_graph(test_suite_session), "many_parameters",
+          PSX_DECL_FUNCTION, 0);
+  ASSERT_TRUE(declaration != NULL && declaration->payload != NULL);
+  psx_qual_type_t function_type = ps_function_symbol_qual_type(
+      (const psx_function_symbol_t *)declaration->payload);
+  psx_type_shape_t shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      function_type.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, shape.kind);
+  ASSERT_EQ(PARAM_COUNT, shape.parameter_count);
+  free(source);
+  reset_test_translation_unit_state(test_suite_session);
 }
 
 static void test_wasm_target_global_pointer_data_layout() {
@@ -9298,11 +9525,12 @@ static void test_wasm_target_global_pointer_data_layout() {
   ASSERT_TRUE(ag_compilation_session_dispose(&session));
 }
 
-static void test_vla_lowering_request_boundary() {
+static void test_vla_lowering_request_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_vla_lowering_request_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int vla_request_probe(int n, int k, "
       "    int tensor[][n][3][k]) { "
       "  _Alignas(16) int values[n]; "
@@ -9315,11 +9543,11 @@ static void test_vla_lowering_request_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -9336,7 +9564,7 @@ static void test_vla_lowering_request_boundary() {
        i < sizeof(local_names) / sizeof(local_names[0]); i++) {
     const psx_scope_declaration_t *declaration =
         find_test_scope_declaration(
-            test_scope_graph(), local_names[i],
+            test_scope_graph(test_suite_session), local_names[i],
             PSX_DECL_LOCAL_OBJECT, 0);
     ASSERT_TRUE(declaration != NULL);
     locals[i] = (lvar_t *)declaration->payload;
@@ -9359,7 +9587,7 @@ static void test_vla_lowering_request_boundary() {
       psx_semantic_type_table_base(
           types, ps_lvar_decl_type_id(locals[1]));
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(pointer_element).kind);
+            test_qual_type_shape(test_suite_session, pointer_element).kind);
   ASSERT_EQ(8, psx_type_layout_sizeof(
                    types, record_layouts,
                    pointer_element.type_id, data_layout));
@@ -9436,7 +9664,7 @@ static void test_vla_lowering_request_boundary() {
       .semantic_types = types,
       .record_decls =
           ps_ctx_record_decl_table_in(
-              test_semantic_context()),
+              test_semantic_context(test_suite_session)),
       .record_layouts = record_layouts,
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(
@@ -9455,33 +9683,31 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(1, count_ir_op(ir->funcs, IR_RET));
   ir_module_free(ir);
 }
-static void test_parameter_declaration_storage_plan_boundary() {
+static void test_parameter_declaration_storage_plan_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parameter_declaration_storage_plan_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
   psx_semantic_type_table_t *types =
       (psx_semantic_type_table_t *)
           ps_ctx_semantic_type_table_in(
-              test_semantic_context());
+              test_semantic_context(test_suite_session));
   psx_record_layout_table_t *record_layouts =
       (psx_record_layout_table_t *)
           ps_ctx_record_layout_table_in(
-              test_semantic_context());
+              test_semantic_context(test_suite_session));
   psx_record_decl_table_t *record_decls =
       (psx_record_decl_table_t *)
           ps_ctx_record_decl_table_in(
-              test_semantic_context());
+              test_semantic_context(test_suite_session));
   const ag_target_info_t *target =
-      ps_ctx_target_info(test_semantic_context());
+      ps_ctx_target_info(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
       ag_target_info_data_layout(target);
-  const ir_abi_target_policy_t *abi_policy =
-      ir_abi_target_policy_for(target);
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
   ASSERT_TRUE(record_decls != NULL);
   ASSERT_TRUE(data_layout != NULL);
-  ASSERT_TRUE(abi_policy != NULL);
 
   psx_qual_type_t integer =
       psx_semantic_type_table_intern_integer(
@@ -9529,64 +9755,59 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_parameter_storage_plan_t plan = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, integer.type_id,
-      data_layout, abi_policy, &plan));
+      data_layout, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_SCALAR, plan.kind);
   ASSERT_EQ(4, plan.storage_size);
-  ASSERT_TRUE(!plan.is_byref);
 
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, pointer.type_id,
-      data_layout, abi_policy, &plan));
+      data_layout, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
-  ASSERT_TRUE(!plan.is_byref);
 
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, small_aggregate.type_id,
-      data_layout, abi_policy, &plan));
+      data_layout, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
             plan.kind);
   ASSERT_EQ(12, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
-  ASSERT_TRUE(!plan.is_byref);
 
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, large_aggregate.type_id,
-      data_layout, abi_policy, &plan));
-  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF,
+      data_layout, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
             plan.kind);
-  ASSERT_EQ(8, plan.storage_size);
+  ASSERT_EQ(24, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
-  ASSERT_TRUE(plan.is_byref);
 
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
       types, record_layouts, complex.type_id,
-      data_layout, abi_policy, &plan));
+      data_layout, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
   ASSERT_EQ(16, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
-  ASSERT_TRUE(!plan.is_byref);
   ASSERT_TRUE(!psx_plan_parameter_storage_for_type_id(
       types, record_layouts, PSX_TYPE_ID_INVALID,
-      data_layout, abi_policy, &plan));
+      data_layout, &plan));
 
-  reset_test_locals();
+  reset_test_locals(test_suite_session);
   psx_parameter_declaration_resolution_t large_resolution = {
       .declaration_qual_type = large_aggregate,
       .lowering_kind = PSX_PARAMETER_LOWER_NORMAL,
   };
   lvar_t *lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
+          .local_registry = test_local_registry(test_suite_session),
+          .lowering_context = test_lowering_context(test_suite_session),
           .name = (char *)"value",
           .name_len = 5,
           .resolution = &large_resolution,
       });
   ASSERT_TRUE(lowered != NULL);
   ASSERT_TRUE(ps_lvar_is_param(lowered));
-  ASSERT_EQ(8, ps_lvar_frame_storage_size(lowered));
+  ASSERT_EQ(24, ps_lvar_frame_storage_size(lowered));
   ASSERT_EQ(8, ps_lvar_align_bytes(lowered));
   ASSERT_EQ(large_aggregate.type_id,
             ps_lvar_decl_type_id(lowered));
@@ -9595,7 +9816,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
                     ps_lvar_decl_type_id(lowered),
                     data_layout));
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int *planned_function(int value, int *pointer) { "
       "  return value ? pointer : 0; "
       "} "
@@ -9639,13 +9860,13 @@ static void test_parameter_declaration_storage_plan_boundary() {
       psx_semantic_type_table_base(
           types, planned_type.type_id);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(planned_result).kind);
+            test_qual_type_shape(test_suite_session, planned_result).kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 psx_semantic_type_table_parameter(
                     types, planned_type.type_id, 0)).kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 psx_semantic_type_table_parameter(
                     types, planned_type.type_id, 1)).kind);
 
@@ -9655,16 +9876,16 @@ static void test_parameter_declaration_storage_plan_boundary() {
       psx_semantic_type_table_base(
           types, funcptr_type.type_id);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(returned_pointer).kind);
+            test_qual_type_shape(test_suite_session, returned_pointer).kind);
   psx_qual_type_t returned_callable =
       psx_semantic_type_table_base(
           types, returned_pointer.type_id);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(returned_callable).kind);
-  ASSERT_EQ(1, test_qual_type_shape(
+            test_qual_type_shape(test_suite_session, returned_callable).kind);
+  ASSERT_EQ(1, test_qual_type_shape(test_suite_session,
                    returned_callable).parameter_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 psx_semantic_type_table_base(
                     types,
                     returned_callable.type_id)).kind);
@@ -9674,16 +9895,17 @@ static void test_parameter_declaration_storage_plan_boundary() {
           hir, vla_function, "values");
   ASSERT_TRUE(values != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_hir_type_shape(values).kind);
+            test_hir_type_shape(test_suite_session, values).kind);
   ASSERT_TRUE(psx_hir_node_vla_dimension_count(
                   values) >= 1);
   ASSERT_EQ(8, psx_hir_node_object_size(values));
 }
-static void test_global_declaration_resolution_boundary() {
+static void test_global_declaration_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_global_declaration_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "extern int boundary_global[]; "
       "int boundary_global[3]; "
       "extern int boundary_inferred[]; "
@@ -9698,31 +9920,31 @@ static void test_global_declaration_resolution_boundary() {
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
   ASSERT_TRUE(data_layout != NULL);
 
   const psx_scope_declaration_t *global_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_global",
+          test_scope_graph(test_suite_session), "boundary_global",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *inferred_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_inferred",
+          test_scope_graph(test_suite_session), "boundary_inferred",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *static_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_static",
+          test_scope_graph(test_suite_session), "boundary_static",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *record_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_record",
+          test_scope_graph(test_suite_session), "boundary_record",
           PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(global_declaration != NULL);
   ASSERT_TRUE(inferred_declaration != NULL);
@@ -9780,7 +10002,7 @@ static void test_global_declaration_resolution_boundary() {
   const psx_record_decl_t *record_definition =
       psx_record_decl_table_lookup(
           ps_ctx_record_decl_table_in(
-              test_semantic_context()),
+              test_semantic_context(test_suite_session)),
           shape.record_id);
   ASSERT_TRUE(record_definition != NULL);
   ASSERT_TRUE(record_definition->is_complete);
@@ -9793,47 +10015,48 @@ static void test_global_declaration_resolution_boundary() {
 
   const psx_scope_declaration_t *function_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_function_name",
+          test_scope_graph(test_suite_session), "boundary_function_name",
           PSX_DECL_FUNCTION, 0);
   const psx_scope_declaration_t *typedef_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_typedef_name",
+          test_scope_graph(test_suite_session), "boundary_typedef_name",
           PSX_DECL_TYPEDEF, 0);
   const psx_scope_declaration_t *enum_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "boundary_enum_name",
+          test_scope_graph(test_suite_session), "boundary_enum_name",
           PSX_DECL_ENUM_CONSTANT, 0);
   ASSERT_TRUE(function_declaration != NULL);
   ASSERT_TRUE(typedef_declaration != NULL);
   ASSERT_TRUE(enum_declaration != NULL);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct Incomplete; "
       "struct Incomplete incomplete_object; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "extern int conflicting_global[]; "
       "int *conflicting_global; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int conflicting_function(void); "
       "int conflicting_function; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "typedef int conflicting_typedef; "
       "int conflicting_typedef; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "enum ConflictEnum { conflicting_enum }; "
       "int conflicting_enum; "
       "int main(void) { return 0; }");
 }
 
-static void test_declaration_pipeline_order_boundary() {
+static void test_declaration_pipeline_order_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_declaration_pipeline_order_boundary...\n");
-  reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"= 37");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  reset_test_translation_unit_state(test_suite_session);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"= 37");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_initializer_t initializer;
   psx_prepare_optional_initializer_syntax(
       &initializer,
@@ -9841,37 +10064,38 @@ static void test_declaration_pipeline_order_boundary() {
   char *name = (char *)"__pipeline_object";
   int name_len = 17;
   psx_global_declaration_pipeline_request_t request = {
-      .semantic_context = test_semantic_context(),
-      .global_registry = test_global_registry(),
-      .local_registry = test_local_registry(),
-      .lowering_context = test_lowering_context(),
-      .options = test_compilation_options(),
+      .semantic_context = test_semantic_context(test_suite_session),
+      .global_registry = test_global_registry(test_suite_session),
+      .local_registry = test_local_registry(test_suite_session),
+      .lowering_context = test_lowering_context(test_suite_session),
+      .options = test_compilation_options(test_suite_session),
       .name = name,
       .name_len = name_len,
       .type = ps_ctx_intern_integer_qual_type_in(
-          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0),
+          test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0),
       .initializer = &initializer,
       .diag_tok = tokens,
   };
   psx_global_declaration_pipeline_result_t result;
   ASSERT_TRUE(psx_begin_global_declaration_pipeline(&request, &result));
-  ASSERT_TRUE(find_test_global_var(name, name_len) != NULL);
-  token_t *assign_tok = tk_get_current_token_ctx(test_tokenizer());
+  ASSERT_TRUE(find_test_global_var(test_suite_session, name, name_len) != NULL);
+  token_t *assign_tok = tk_get_current_token_ctx(test_tokenizer(test_suite_session));
   ASSERT_EQ(TK_ASSIGN, assign_tok->kind);
-  tk_set_current_token_ctx(test_tokenizer(), assign_tok->next);
-  parse_test_initializer_syntax_value(&initializer, assign_tok);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), assign_tok->next);
+  parse_test_initializer_syntax_value(test_suite_session, &initializer, assign_tok);
   ASSERT_TRUE(psx_finish_global_declaration_pipeline(&request, &result));
   ASSERT_TRUE(result.global != NULL);
   ASSERT_TRUE(result.initialized);
   ASSERT_EQ(37, result.global->init_val);
-  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer(test_suite_session))->kind);
 }
 
-static void test_tag_declaration_resolution_boundary() {
+static void test_tag_declaration_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_tag_declaration_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   psx_tag_declaration_resolution_request_t request = {
-      .semantic_context = test_semantic_context(),
+      .semantic_context = test_semantic_context(test_suite_session),
       .kind = TK_STRUCT,
       .name = (char *)"__TagBoundary",
       .name_len = 13,
@@ -9888,36 +10112,36 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(!resolution.registered);
   const psx_record_decl_t *cached_definition =
-      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(test_suite_session),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(cached_definition != NULL);
   ASSERT_TRUE(cached_definition->record_id != PSX_RECORD_ID_INVALID);
   ASSERT_TRUE(!cached_definition->is_complete);
   psx_record_id_t outer_record_id = cached_definition->record_id;
   ASSERT_TRUE(psx_record_layout_table_lookup(
-                  ps_ctx_record_layout_table_in(test_semantic_context()),
+                  ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)),
                   outer_record_id,
                   ag_target_info_data_layout(
-                      ps_ctx_target_info(test_semantic_context()))) == NULL);
+                      ps_ctx_target_info(test_semantic_context(test_suite_session)))) == NULL);
 
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(cached_definition,
-            ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
+            ps_ctx_ensure_tag_record_decl_in(test_semantic_context(test_suite_session),
                 TK_STRUCT, (char *)"__TagBoundary", 13));
   ASSERT_TRUE(cached_definition->is_complete);
   ASSERT_EQ(outer_record_id, cached_definition->record_id);
   const psx_record_layout_t *outer_layout = psx_record_layout_table_lookup(
-      ps_ctx_record_layout_table_in(test_semantic_context()), outer_record_id,
-      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)), outer_record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context(test_suite_session))));
   ASSERT_TRUE(outer_layout == NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
-      test_semantic_context(), outer_record_id, 0, 1));
+      test_semantic_context(test_suite_session), outer_record_id, 0, 1));
   outer_layout = psx_record_layout_table_lookup(
-      ps_ctx_record_layout_table_in(test_semantic_context()), outer_record_id,
-      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context())));
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)), outer_record_id,
+      ag_target_info_data_layout(ps_ctx_target_info(test_semantic_context(test_suite_session))));
   ASSERT_TRUE(outer_layout != NULL);
   ASSERT_EQ(1, outer_layout->alignment);
   psx_resolve_tag_declaration(&request, &resolution);
@@ -9928,7 +10152,7 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
 
-  ps_decl_enter_scope_in(test_local_registry());
+  ps_decl_enter_scope_in(test_local_registry(test_suite_session));
   request.kind = TK_STRUCT;
   request.mode = PSX_TAG_DECLARATION_FORWARD;
   psx_resolve_tag_declaration(&request, &resolution);
@@ -9936,7 +10160,7 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(1, resolution.scope_depth);
   const psx_record_decl_t *shadow_definition =
-      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(test_suite_session),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(shadow_definition != NULL);
   ASSERT_TRUE(shadow_definition->record_id != outer_record_id);
@@ -9944,16 +10168,17 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_EQ(1, resolution.scope_depth);
-  ps_decl_leave_scope_in(test_local_registry());
-  ASSERT_EQ(0, ps_ctx_get_tag_scope_depth_in(test_semantic_context(),
+  ps_decl_leave_scope_in(test_local_registry(test_suite_session));
+  ASSERT_EQ(0, ps_ctx_get_tag_scope_depth_in(test_semantic_context(test_suite_session),
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
 
-static void test_record_decl_ownership_boundary() {
+static void test_record_decl_ownership_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_record_decl_ownership_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct DefinitionOwner; "
       "struct DefinitionOwner *forward_owner; "
       "struct DefinitionOwner { const int value; }; "
@@ -9974,13 +10199,13 @@ static void test_record_decl_ownership_boundary() {
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_decl_table_t *records =
-      ps_ctx_record_decl_table_in(test_semantic_context());
+      ps_ctx_record_decl_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(records != NULL);
@@ -9989,19 +10214,19 @@ static void test_record_decl_ownership_boundary() {
 
   const psx_scope_declaration_t *forward_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "forward_owner",
+          test_scope_graph(test_suite_session), "forward_owner",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *outer_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "outer_owner",
+          test_scope_graph(test_suite_session), "outer_owner",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *order_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "order_owner",
+          test_scope_graph(test_suite_session), "order_owner",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *inner_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "inner_owner",
+          test_scope_graph(test_suite_session), "inner_owner",
           PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(forward_declaration != NULL);
   ASSERT_TRUE(outer_declaration != NULL);
@@ -10108,7 +10333,7 @@ static void test_record_decl_ownership_boundary() {
       psx_semantic_type_table_base(
           types, function_type.type_id);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(result_pointer).kind);
+            test_qual_type_shape(test_suite_session, result_pointer).kind);
   psx_qual_type_t result_record =
       psx_semantic_type_table_base(
           types, result_pointer.type_id);
@@ -10120,7 +10345,7 @@ static void test_record_decl_ownership_boundary() {
       psx_semantic_type_table_parameter(
           types, function_type.type_id, 0);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 parameter_pointer).kind);
   psx_qual_type_t parameter_record =
       psx_semantic_type_table_base(
@@ -10132,14 +10357,15 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(shape.record_id != outer_record_id);
 }
 
-static void test_aggregate_body_phase_boundary() {
+static void test_aggregate_body_phase_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_aggregate_body_phase_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
   psx_tag_declaration_resolution_t tag;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .kind = TK_STRUCT,
           .name = (char *)"__ParsedBody",
           .name_len = 12,
@@ -10148,7 +10374,7 @@ static void test_aggregate_body_phase_boundary() {
       &tag);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag.status);
 
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(),
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session),
       (char *)"int a, *b; _Static_assert(1, \"ok\"); char c; "
                "struct PhaseInnerTag { int x; } inner; "
                "enum PhaseEnumTag { PhaseEnumZero = 3, "
@@ -10159,9 +10385,9 @@ static void test_aggregate_body_phase_boundary() {
                "DeferredAlias late; "
                "int (*callback)(DeferredParam, int *, "
                "struct PrototypeOnly *, ...); }");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_aggregate_body_t body;
-  parse_test_aggregate_body(&body);
+  parse_test_aggregate_body(test_suite_session, &body);
   ASSERT_EQ(10, body.item_count);
   ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
             body.items[0].kind);
@@ -10231,48 +10457,48 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(3, callback_parameters->count);
   ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
             callback_parameters->items[0].specifier.source);
-  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer(test_suite_session))->kind);
 
   psx_record_member_decl_t member_declaration = {0};
   psx_record_member_layout_t member_layout = {0};
-  ASSERT_TRUE(!test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(!test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"a", 1, &member_declaration, &member_layout));
-  ASSERT_TRUE(!test_semantic_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(test_suite_session,
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_TRUE(!test_semantic_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(test_suite_session,
       TK_ENUM, (char *)"PhaseEnumTag", 12));
   long long enum_value = 0;
-  ASSERT_TRUE(!ps_ctx_find_enum_const_in(test_semantic_context(),
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(test_semantic_context(test_suite_session),
       (char *)"PhaseEnumZero", 13, &enum_value));
   psx_typedef_info_t deferred_alias_lookup = {0};
-  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(test_semantic_context(),
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(test_semantic_context(test_suite_session),
       (char *)"DeferredAlias", 13, &deferred_alias_lookup));
 
   psx_typedef_info_t deferred_alias = {0};
-  set_test_typedef_fixture_type(
+  set_test_typedef_fixture_type(test_suite_session,
       &deferred_alias, ps_ctx_intern_integer_qual_type_in(
-          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
-  ASSERT_TRUE(test_semantic_define_typedef_name(
+          test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0));
+  ASSERT_TRUE(test_semantic_define_typedef_name(test_suite_session,
       (char *)"DeferredAlias", 13, &deferred_alias));
   psx_typedef_info_t deferred_parameter = {0};
-  set_test_typedef_fixture_type(
+  set_test_typedef_fixture_type(test_suite_session,
       &deferred_parameter,
       ps_ctx_intern_floating_qual_type_in(
-          test_semantic_context(), PSX_FLOATING_KIND_DOUBLE, 0));
-  ASSERT_TRUE(test_semantic_define_typedef_name(
+          test_semantic_context(test_suite_session), PSX_FLOATING_KIND_DOUBLE, 0));
+  ASSERT_TRUE(test_semantic_define_typedef_name(test_suite_session,
       (char *)"DeferredParam", 13, &deferred_parameter));
 
   int size = 0;
   int alignment = 0;
-  ASSERT_EQ(10, apply_test_parsed_aggregate_body_layout(
+  ASSERT_EQ(10, apply_test_parsed_aggregate_body_layout(test_suite_session,
                    &body, TK_STRUCT, (char *)"__ParsedBody", 12,
                    &size, &alignment));
   ASSERT_EQ(72, size);
   ASSERT_EQ(8, alignment);
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = test_semantic_context(),
+          .semantic_context = test_semantic_context(test_suite_session),
           .kind = TK_STRUCT,
           .name = (char *)"__ParsedBody",
           .name_len = 12,
@@ -10283,14 +10509,14 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag.status);
   const psx_record_decl_t *parsed_record =
       ps_ctx_ensure_tag_record_decl_in(
-          test_semantic_context(), TK_STRUCT,
+          test_semantic_context(test_suite_session), TK_STRUCT,
           (char *)"__ParsedBody", 12);
   ASSERT_TRUE(parsed_record != NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
-      test_semantic_context(), parsed_record->record_id,
+      test_semantic_context(test_suite_session), parsed_record->record_id,
       size, alignment));
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_type_shape_t member_shape = {0};
   ASSERT_TRUE(body.items[5].value.member_declaration.declarators[0]
                   .array_bounds[0].expression.node != NULL);
@@ -10298,31 +10524,31 @@ static void test_aggregate_body_phase_boundary() {
                   .bit_width_expression.node != NULL);
   ASSERT_TRUE(body.items[7].value.member_declaration.specifier
                   .alignas_specifiers[0].expression != NULL);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"a", 1, &member_declaration, &member_layout));
   ASSERT_EQ(0, member_layout.offset);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"b", 1, &member_declaration, &member_layout));
   ASSERT_EQ(8, member_layout.offset);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"c", 1, &member_declaration, &member_layout));
   ASSERT_EQ(16, member_layout.offset);
-  ASSERT_TRUE(test_semantic_has_tag_type(
+  ASSERT_TRUE(test_semantic_has_tag_type(test_suite_session,
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_EQ(4, ps_ctx_get_tag_size_in(test_semantic_context(),
+  ASSERT_EQ(4, ps_ctx_get_tag_size_in(test_semantic_context(test_suite_session),
                    TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_TRUE(test_semantic_has_tag_type(
+  ASSERT_TRUE(test_semantic_has_tag_type(test_suite_session,
       TK_ENUM, (char *)"PhaseEnumTag", 12));
-  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(test_suite_session),
       (char *)"PhaseEnumZero", 13, &enum_value));
   ASSERT_EQ(3, enum_value);
-  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(test_suite_session),
       (char *)"PhaseEnumNext", 13, &enum_value));
   ASSERT_EQ(5, enum_value);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"arr", 3, &member_declaration, &member_layout));
   ASSERT_EQ(28, member_layout.offset);
@@ -10332,25 +10558,25 @@ static void test_aggregate_body_phase_boundary() {
       types, member_declaration.decl_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_ARRAY, member_shape.kind);
   ASSERT_EQ(5, member_shape.array_len);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"flags", 5, &member_declaration, &member_layout));
   ASSERT_EQ(48, member_layout.offset);
   ASSERT_EQ(3, member_declaration.bit_width);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"aligned", 7, &member_declaration, &member_layout));
   ASSERT_EQ(56, member_layout.offset);
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"late", 4, &member_declaration, &member_layout));
   ASSERT_EQ(60, member_layout.offset);
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, member_declaration.decl_qual_type.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, member_shape.kind);
-  ASSERT_EQ(4, test_type_size_id(
+  ASSERT_EQ(4, test_type_size_id(test_suite_session,
                    member_declaration.decl_qual_type.type_id));
-  ASSERT_TRUE(test_find_tag_member(test_semantic_context(),
+  ASSERT_TRUE(test_find_tag_member(test_semantic_context(test_suite_session),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"callback", 8, &member_declaration, &member_layout));
   ASSERT_EQ(64, member_layout.offset);
@@ -10390,40 +10616,41 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, pointee.type_id, &member_shape));
   ASSERT_EQ(PSX_TYPE_STRUCT, member_shape.kind);
-  ASSERT_TRUE(!test_semantic_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(test_suite_session,
       TK_STRUCT, (char *)"PrototypeOnly", 13));
   psx_dispose_parsed_aggregate_body(&body);
 }
 
-static void test_declaration_phase_boundary() {
+static void test_declaration_phase_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_declaration_phase_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(),
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session),
       (char *)"struct __PhaseObject { int value; }");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_declaration_phase_t phase;
   psx_parsed_decl_specifier_t syntax;
-  parse_test_decl_specifier_syntax(&syntax);
+  parse_test_decl_specifier_syntax(test_suite_session, &syntax);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(PSX_PARSED_DECL_TYPE_NONE, syntax.source);
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_declaration_phase_base_qual_type(&phase).type_id);
-  ASSERT_EQ(-1, test_tag_member_count(
+  ASSERT_EQ(-1, test_tag_member_count(test_suite_session,
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   psx_qual_type_t unapplied_type =
       psx_resolve_decl_specifier_qual_type_in_context(
-          test_semantic_context(), &phase.syntax);
+          test_semantic_context(test_suite_session), &phase.syntax);
   ASSERT_EQ(PSX_TYPE_ID_INVALID, unapplied_type.type_id);
-  ASSERT_EQ(-1, test_tag_member_count(
+  ASSERT_EQ(-1, test_tag_member_count(test_suite_session,
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
-  ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
+  ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 0));
   ASSERT_EQ(PSX_DECLARATION_PHASE_RESOLVED_TYPE, phase.state);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_qual_type_t phase_base =
       psx_declaration_phase_base_qual_type(&phase);
   ASSERT_TRUE(phase_base.type_id != PSX_TYPE_ID_INVALID);
@@ -10433,20 +10660,20 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_STRUCT, phase_shape.kind);
   const psx_record_decl_t *phase_record =
       psx_record_decl_table_lookup(
-          ps_ctx_record_decl_table_in(test_semantic_context()),
+          ps_ctx_record_decl_table_in(test_semantic_context(test_suite_session)),
           phase_shape.record_id);
   ASSERT_TRUE(phase_record != NULL);
   ASSERT_EQ(1, phase_record->member_count);
-  ASSERT_EQ(1, test_tag_member_count(
+  ASSERT_EQ(1, test_tag_member_count(test_suite_session,
                    TK_STRUCT, (char *)"__PhaseObject", 13));
   psx_dispose_declaration_phase(&phase);
 
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignas(16) int");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  parse_test_decl_specifier_syntax(&syntax);
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"_Alignas(16) int");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  parse_test_decl_specifier_syntax(test_suite_session, &syntax);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(0, phase.requested_alignment);
-  ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
+  ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 0));
   ASSERT_EQ(16, phase.requested_alignment);
   phase_base = psx_declaration_phase_base_qual_type(&phase);
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -10454,18 +10681,18 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, phase_shape.kind);
   psx_dispose_declaration_phase(&phase);
 
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignas(int *) char");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  parse_test_decl_specifier_syntax(&syntax);
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"_Alignas(int *) char");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  parse_test_decl_specifier_syntax(test_suite_session, &syntax);
   ASSERT_EQ(1, syntax.alignas_specifier_count);
   ASSERT_EQ(PSX_PARSED_ALIGNAS_TYPE_NAME,
             syntax.alignas_specifiers[0].kind);
   ASSERT_TRUE(syntax.alignas_specifiers[0].type_name != NULL);
   ASSERT_TRUE(syntax.alignas_specifiers[0].expression == NULL);
   psx_begin_declaration_phase(&phase, &syntax);
-  ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
+  ASSERT_TRUE(apply_test_declaration_phase(test_suite_session, &phase, 0));
   ASSERT_EQ(test_target_pointer_alignment(
-                ps_ctx_target_info(test_semantic_context())),
+                ps_ctx_target_info(test_semantic_context(test_suite_session))),
             phase.requested_alignment);
   phase_base = psx_declaration_phase_base_qual_type(&phase);
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -10474,14 +10701,15 @@ static void test_declaration_phase_boundary() {
   psx_dispose_declaration_phase(&phase);
 }
 
-static void test_type_name_phase_boundary() {
+static void test_type_name_phase_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_type_name_phase_boundary...\n");
-  reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"int (*)(double),");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  reset_test_translation_unit_state(test_suite_session);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"int (*)(double),");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_type_name_t syntax;
-  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
-  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer()) == tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(test_suite_session, tokens, &syntax));
+  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer(test_suite_session)) == tokens);
   ASSERT_TRUE(syntax.end != NULL);
   ASSERT_EQ(TK_COMMA, syntax.end->kind);
   ASSERT_TRUE(syntax.atomic_inner == NULL);
@@ -10489,25 +10717,25 @@ static void test_type_name_phase_boundary() {
   psx_type_name_ref_t reference = {.syntax = &syntax};
   psx_type_name_base_resolution_t base_resolution = {0};
   ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &base_resolution));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &base_resolution));
   ASSERT_TRUE(base_resolution.base_qual_type.type_id !=
               PSX_TYPE_ID_INVALID);
   psx_qual_type_t resolved = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_TRUE(psx_resolve_type_name_qual_type_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &resolved));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &resolved));
   ASSERT_TRUE(resolved.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(base_resolution.runtime_application == NULL);
 
   psx_qual_type_t type =
       psx_apply_parsed_type_name_qual_type_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), &syntax);
+          test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+          test_local_registry(test_suite_session), &syntax);
   ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_type_shape_t shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, type.type_id, &shape));
@@ -10526,14 +10754,14 @@ static void test_type_name_phase_boundary() {
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, shape.floating_kind);
   psx_dispose_type_name_syntax(&syntax);
 
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"const int,");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"const int,");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(test_suite_session, tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
   base_resolution = (psx_type_name_base_resolution_t){0};
   ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &base_resolution));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &base_resolution));
   psx_qual_type_t qualified_base =
       base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
@@ -10543,26 +10771,26 @@ static void test_type_name_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   psx_dispose_type_name_syntax(&syntax);
 
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Atomic(int),");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"_Atomic(int),");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(test_suite_session, tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
   base_resolution = (psx_type_name_base_resolution_t){0};
   ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &base_resolution));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &base_resolution));
   qualified_base = base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
   psx_dispose_type_name_syntax(&syntax);
 
   char tag_name[] = "__TypeNameTag";
-  test_semantic_define_tag_type_with_layout(
+  test_semantic_define_tag_type_with_layout(test_suite_session,
       TK_STRUCT, tag_name, 13, 0, 4, 4);
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"const struct __TypeNameTag,");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
-  psx_scope_lookup_point_t point = test_scope_lookup_point();
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"const struct __TypeNameTag,");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(test_suite_session, tokens, &syntax));
+  psx_scope_lookup_point_t point = test_scope_lookup_point(test_suite_session);
   reference = (psx_type_name_ref_t){
       .syntax = &syntax,
       .scope_seq = point.scope_id,
@@ -10570,8 +10798,8 @@ static void test_type_name_phase_boundary() {
   };
   base_resolution = (psx_type_name_base_resolution_t){0};
   ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &base_resolution));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &base_resolution));
   qualified_base = base_resolution.base_qual_type;
   ASSERT_TRUE((qualified_base.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
@@ -10582,17 +10810,17 @@ static void test_type_name_phase_boundary() {
 
   const psx_typedef_info_t alias = {
       .decl_type_table =
-          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       .decl_qual_type = ps_ctx_intern_integer_qual_type_in(
-          test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0),
+          test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0),
   };
   char alias_name[] = "__TypeNameAlias";
   ASSERT_TRUE(ps_ctx_register_typedef_name_in(
-      test_semantic_context(), alias_name, 15, &alias, NULL, NULL));
-  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"volatile __TypeNameAlias,");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
-  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
-  point = test_scope_lookup_point();
+      test_semantic_context(test_suite_session), alias_name, 15, &alias, NULL, NULL));
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"volatile __TypeNameAlias,");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
+  ASSERT_TRUE(parse_test_type_name_syntax_at(test_suite_session, tokens, &syntax));
+  point = test_scope_lookup_point(test_suite_session);
   reference = (psx_type_name_ref_t){
       .syntax = &syntax,
       .scope_seq = point.scope_id,
@@ -10600,8 +10828,8 @@ static void test_type_name_phase_boundary() {
   };
   base_resolution = (psx_type_name_base_resolution_t){0};
   ASSERT_TRUE(psx_resolve_type_name_base_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(), &reference, &base_resolution));
+      test_semantic_context(test_suite_session), test_global_registry(test_suite_session),
+      test_local_registry(test_suite_session), &reference, &base_resolution));
   qualified_base = base_resolution.base_qual_type;
   ASSERT_EQ(alias.decl_qual_type.type_id, qualified_base.type_id);
   ASSERT_TRUE((qualified_base.qualifiers &
@@ -10609,17 +10837,18 @@ static void test_type_name_phase_boundary() {
   psx_dispose_type_name_syntax(&syntax);
 }
 
-static void test_toplevel_declarator_phase_boundary() {
+static void test_toplevel_declarator_phase_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_toplevel_declarator_phase_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int __phase_fn(int), __phase_object;"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_qual_type_t function = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"__phase_fn", 10);
+      test_semantic_context(test_suite_session), (char *)"__phase_fn", 10);
   ASSERT_TRUE(function.type_id != PSX_TYPE_ID_INVALID);
   psx_type_shape_t function_shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -10634,22 +10863,23 @@ static void test_toplevel_declarator_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, parameter_shape.kind);
 
   global_var_t *object =
-      find_test_global_var((char *)"__phase_object", 14);
+      find_test_global_var(test_suite_session, (char *)"__phase_object", 14);
   ASSERT_TRUE(object != NULL);
   psx_type_shape_t object_shape = {0};
   ASSERT_TRUE(ps_gvar_decl_type_shape(object, &object_shape));
   ASSERT_EQ(PSX_TYPE_INTEGER, object_shape.kind);
 }
 
-static void test_local_declarator_application_boundary() {
+static void test_local_declarator_application_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_local_declarator_application_boundary...\n");
-  reset_test_translation_unit_state();
-  register_test_default_storage_fixture((char *)"n", 1);
+  reset_test_translation_unit_state(test_suite_session);
+  register_test_default_storage_fixture(test_suite_session, (char *)"n", 1);
 
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"matrix[n][4]");
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), (char *)"matrix[n][4]");
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_declarator_t syntax =
-      parse_test_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree(test_suite_session);
   ASSERT_TRUE(syntax.identifier != NULL);
   ASSERT_EQ(2, syntax.array_bound_count);
   ASSERT_EQ(2, syntax.declarator_shape.count);
@@ -10664,11 +10894,11 @@ static void test_local_declarator_application_boundary() {
   ASSERT_TRUE(strncmp(
       syntax.array_bounds[0].expression.identifier_name, "n", 1) == 0);
   ASSERT_TRUE(syntax.array_bounds[1].expression.identifier_name == NULL);
-  token_t *after_syntax = tk_get_current_token_ctx(test_tokenizer());
+  token_t *after_syntax = tk_get_current_token_ctx(test_tokenizer(test_suite_session));
 
   psx_runtime_declarator_application_t applied;
-  apply_test_runtime_parsed_declarator(&syntax, &applied);
-  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer()) == after_syntax);
+  apply_test_runtime_parsed_declarator(test_suite_session, &syntax, &applied);
+  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer(test_suite_session)) == after_syntax);
   ASSERT_EQ(2, applied.array_bound_count);
   ASSERT_TRUE(applied.shape.ops[0].is_vla_array);
   ASSERT_EQ(0, applied.shape.ops[0].array_len);
@@ -10676,7 +10906,7 @@ static void test_local_declarator_application_boundary() {
   ASSERT_TRUE(applied.array_bounds[0].expression_id !=
               PSX_SEMANTIC_EXPR_ID_INVALID);
   ASSERT_TRUE(ps_ctx_semantic_expression_in(
-                  test_semantic_context(),
+                  test_semantic_context(test_suite_session),
                   applied.array_bounds[0].expression_id) != NULL);
   ASSERT_TRUE(!applied.shape.ops[1].is_vla_array);
   ASSERT_EQ(4, applied.shape.ops[1].array_len);
@@ -10685,11 +10915,12 @@ static void test_local_declarator_application_boundary() {
   psx_dispose_declarator_syntax(&syntax);
 }
 
-static void test_local_declaration_resolution_boundary() {
+static void test_local_declaration_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_local_declaration_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct LocalRecordElement { int first; int second; }; "
       "int local_declaration_probe(int n) { "
       "  int scalar = 1; "
@@ -10703,11 +10934,11 @@ static void test_local_declaration_resolution_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
   ASSERT_TRUE(data_layout != NULL);
@@ -10721,7 +10952,7 @@ static void test_local_declaration_resolution_boundary() {
        i < sizeof(names) / sizeof(names[0]); i++) {
     const psx_scope_declaration_t *declaration =
         find_test_scope_declaration(
-            test_scope_graph(), names[i],
+            test_scope_graph(test_suite_session), names[i],
             PSX_DECL_LOCAL_OBJECT, 0);
     ASSERT_TRUE(declaration != NULL);
     locals[i] = (lvar_t *)declaration->payload;
@@ -10783,15 +11014,16 @@ static void test_local_declaration_resolution_boundary() {
                     types, record_layouts,
                     ps_lvar_decl_type_id(locals[4]), data_layout));
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { int incomplete[]; return 0; }");
 }
 
-static void test_aggregate_member_resolution_boundary() {
+static void test_aggregate_member_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_aggregate_member_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct LayoutBoundary { "
       "  char c; int a : 20; int b : 16; short tail; "
       "}; "
@@ -10821,12 +11053,12 @@ static void test_aggregate_member_resolution_boundary() {
           test_suite_session);
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
@@ -10853,7 +11085,7 @@ static void test_aggregate_member_resolution_boundary() {
        i < sizeof(local_names) / sizeof(local_names[0]); i++) {
     const psx_scope_declaration_t *declaration =
         find_test_scope_declaration(
-            test_scope_graph(), local_names[i],
+            test_scope_graph(test_suite_session), local_names[i],
             PSX_DECL_LOCAL_OBJECT, 0);
     ASSERT_TRUE(declaration != NULL);
     lvar_t *local = (lvar_t *)declaration->payload;
@@ -10939,7 +11171,7 @@ static void test_aggregate_member_resolution_boundary() {
       psx_semantic_type_table_base(
           types, pointer_array_member.type_id);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 pointer_array_element).kind);
 
   psx_qual_type_t same_record =
@@ -10989,20 +11221,20 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(width16_count >= 1);
   ASSERT_TRUE(promoted_bitfield_count >= 1);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct BadWidth { int value : 33; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct BadPointer { int *value : 1; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct BadFunction { int value(void); }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct Missing; "
       "struct BadIncomplete { struct Missing value; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct BadDuplicate { int value; long value; }; "
       "int main(void) { return 0; }");
 }
@@ -11024,11 +11256,12 @@ static void test_static_assert_resolution_boundary() {
   ASSERT_EQ(PSX_STATIC_ASSERT_NOT_CONSTANT, resolution.status);
 }
 
-static void test_typedef_declaration_resolution_boundary() {
+static void test_typedef_declaration_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_typedef_declaration_resolution_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef int TypeBoundary; "
       "typedef int TypeBoundary; "
       "TypeBoundary typedef_global; "
@@ -11041,12 +11274,12 @@ static void test_typedef_declaration_resolution_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
 
   psx_typedef_info_t global_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(
-      test_semantic_context(), (char *)"TypeBoundary", 12,
+      test_semantic_context(test_suite_session), (char *)"TypeBoundary", 12,
       &global_info));
   psx_type_shape_t shape = {0};
   ASSERT_TRUE(psx_semantic_type_table_describe(
@@ -11056,15 +11289,15 @@ static void test_typedef_declaration_resolution_boundary() {
 
   const psx_scope_declaration_t *global_typedef =
       find_test_scope_declaration(
-          test_scope_graph(), "TypeBoundary",
+          test_scope_graph(test_suite_session), "TypeBoundary",
           PSX_DECL_TYPEDEF, 0);
   const psx_scope_declaration_t *local_typedef =
       find_test_scope_declaration(
-          test_scope_graph(), "TypeBoundary",
+          test_scope_graph(test_suite_session), "TypeBoundary",
           PSX_DECL_TYPEDEF, 1);
   const psx_scope_declaration_t *vla_typedef =
       find_test_scope_declaration(
-          test_scope_graph(), "VlaTypeBoundary",
+          test_scope_graph(test_suite_session), "VlaTypeBoundary",
           PSX_DECL_TYPEDEF, 0);
   ASSERT_TRUE(global_typedef != NULL);
   ASSERT_TRUE(local_typedef != NULL);
@@ -11078,7 +11311,7 @@ static void test_typedef_declaration_resolution_boundary() {
 
   psx_typedef_info_t local_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_at_in(
-      test_semantic_context(), (char *)"TypeBoundary", 12,
+      test_semantic_context(test_suite_session), (char *)"TypeBoundary", 12,
       (psx_scope_lookup_point_t){
           .scope_id = local_typedef->scope_id,
           .declaration_order = UINT32_MAX,
@@ -11093,7 +11326,7 @@ static void test_typedef_declaration_resolution_boundary() {
 
   psx_typedef_info_t vla_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_at_in(
-      test_semantic_context(), (char *)"VlaTypeBoundary", 15,
+      test_semantic_context(test_suite_session), (char *)"VlaTypeBoundary", 15,
       (psx_scope_lookup_point_t){
           .scope_id = vla_typedef->scope_id,
           .declaration_order = UINT32_MAX,
@@ -11115,7 +11348,7 @@ static void test_typedef_declaration_resolution_boundary() {
 
   const psx_scope_declaration_t *values_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "values",
+          test_scope_graph(test_suite_session), "values",
           PSX_DECL_LOCAL_OBJECT, 0);
   ASSERT_TRUE(values_declaration != NULL);
   lvar_t *values = (lvar_t *)values_declaration->payload;
@@ -11123,21 +11356,21 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(vla_info.decl_qual_type.type_id,
             ps_lvar_decl_type_id(values));
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "typedef int ConflictType; "
       "typedef long ConflictType; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int TypeObject; typedef int TypeObject; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int TypeFunction(void); typedef int TypeFunction; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "enum TypeEnumValues { TypeEnum = 1 }; "
       "typedef int TypeEnum; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { "
       "  int BlockTypeObject; "
       "  typedef int BlockTypeObject; "
@@ -11145,17 +11378,18 @@ static void test_typedef_declaration_resolution_boundary() {
       "}");
 }
 
-static void test_enum_constant_resolution_boundary() {
+static void test_enum_constant_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_enum_constant_resolution_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "enum { __EnumBoundary = 7 }; "
       "int enum_boundary_probe(void) { "
       "  enum { __EnumBoundary = 11 }; "
       "  return __EnumBoundary; "
       "}"));
 
-  const psx_scope_graph_t *graph = test_scope_graph();
+  const psx_scope_graph_t *graph = test_scope_graph(test_suite_session);
   const psx_scope_declaration_t *outer =
       find_test_scope_declaration(
           graph, "__EnumBoundary",
@@ -11175,10 +11409,10 @@ static void test_enum_constant_resolution_boundary() {
                 graph, inner->scope_id));
   long long value = 0;
   ASSERT_TRUE(ps_ctx_enum_const_value_by_declaration_id_in(
-      test_semantic_context(), outer->id, &value));
+      test_semantic_context(test_suite_session), outer->id, &value));
   ASSERT_EQ(7, value);
   ASSERT_TRUE(ps_ctx_enum_const_value_by_declaration_id_in(
-      test_semantic_context(), inner->id, &value));
+      test_semantic_context(test_suite_session), inner->id, &value));
   ASSERT_EQ(11, value);
 
   const psx_hir_module_t *hir =
@@ -11194,27 +11428,28 @@ static void test_enum_constant_resolution_boundary() {
   }
   ASSERT_TRUE(found_inner_value);
 
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "enum { DuplicateEnum = 1, DuplicateEnum = 2 }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int __EnumObject; enum { __EnumObject = 1 }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int __EnumFunction(void); enum { __EnumFunction = 1 }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "typedef int __EnumType; enum { __EnumType = 1 }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { int __EnumLocal; "
       "enum { __EnumLocal = 1 }; return 0; }");
 }
 
-static void test_initializer_resolution_boundary() {
+static void test_initializer_resolution_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_initializer_resolution_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct InitBoundary { const int x; int a[2]; }; "
       "struct InitBoundary designated_init = {.a[1] = 9}; "
       "const struct InitBoundary qualified_init = "
@@ -11224,13 +11459,13 @@ static void test_initializer_resolution_boundary() {
       "struct RecursiveInit recursive_init = {0, 4};"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_decl_table_t *records =
-      ps_ctx_record_decl_table_in(test_semantic_context());
+      ps_ctx_record_decl_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(records != NULL);
   ASSERT_TRUE(record_layouts != NULL);
@@ -11238,15 +11473,15 @@ static void test_initializer_resolution_boundary() {
 
   const psx_scope_declaration_t *designated_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "designated_init",
+          test_scope_graph(test_suite_session), "designated_init",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *qualified_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "qualified_init",
+          test_scope_graph(test_suite_session), "qualified_init",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *recursive_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "recursive_init",
+          test_scope_graph(test_suite_session), "recursive_init",
           PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(designated_declaration != NULL);
   ASSERT_TRUE(qualified_declaration != NULL);
@@ -11353,10 +11588,11 @@ static void test_initializer_resolution_boundary() {
   ir_data_module_free(module);
 }
 
-static void test_local_initializer_parse_lowering_boundary() {
+static void test_local_initializer_parse_lowering_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_local_initializer_parse_lowering_boundary...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct LocalInitBoundary { "
       "    int (*fn)(void); int value; }; "
       "union LocalUnionBoundary { int value; }; "
@@ -11372,11 +11608,11 @@ static void test_local_initializer_parse_lowering_boundary() {
       "}"));
 
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_TRUE(types != NULL);
@@ -11393,7 +11629,7 @@ static void test_local_initializer_parse_lowering_boundary() {
        i < sizeof(names) / sizeof(names[0]); i++) {
     const psx_scope_declaration_t *declaration =
         find_test_scope_declaration(
-            test_scope_graph(), names[i],
+            test_scope_graph(test_suite_session), names[i],
             PSX_DECL_LOCAL_OBJECT, 0);
     ASSERT_TRUE(declaration != NULL);
     locals[i] = (lvar_t *)declaration->payload;
@@ -11453,7 +11689,7 @@ static void test_local_initializer_parse_lowering_boundary() {
       .target = ag_compilation_session_target(test_suite_session),
       .semantic_types = types,
       .record_decls = ps_ctx_record_decl_table_in(
-          test_semantic_context()),
+          test_semantic_context(test_suite_session)),
       .record_layouts = record_layouts,
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(
@@ -11470,11 +11706,12 @@ static void test_local_initializer_parse_lowering_boundary() {
   ir_module_free(ir);
 }
 
-static void test_static_data_initializer_boundary() {
+static void test_static_data_initializer_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_static_data_initializer_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "const int qualified_global = 5; "
       "int initialized_array[3] = {1, [2] = 7}; "
       "union InitUnion { long raw; int a[2]; }; "
@@ -11491,27 +11728,27 @@ static void test_static_data_initializer_boundary() {
 
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(
-          test_semantic_context());
+          test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_TRUE(types != NULL);
   ASSERT_TRUE(record_layouts != NULL);
   ASSERT_TRUE(data_layout != NULL);
 
   const psx_scope_declaration_t *inferred_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "inferred_array",
+          test_scope_graph(test_suite_session), "inferred_array",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *pointer_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "string_pointers",
+          test_scope_graph(test_suite_session), "string_pointers",
           PSX_DECL_GLOBAL_OBJECT, 0);
   const psx_scope_declaration_t *qualified_declaration =
       find_test_scope_declaration(
-          test_scope_graph(), "qualified_global",
+          test_scope_graph(test_suite_session), "qualified_global",
           PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(inferred_declaration != NULL);
   ASSERT_TRUE(pointer_declaration != NULL);
@@ -11642,11 +11879,12 @@ static void test_static_data_initializer_boundary() {
   ir_data_module_free(module);
 }
 
-static void test_expr_mul_div() {
+static void test_expr_mul_div(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_mul_div...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 * 2 / 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 * 2 / 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_DIV, syntax->kind);
@@ -11657,30 +11895,32 @@ static void test_expr_mul_div() {
   ASSERT_EQ(PSX_HIR_DIV, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_MUL,
             psx_hir_node_kind(test_hir_child(&expression, root, 0)));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_mod() {
+static void test_expr_mod(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_mod...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("10 % 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "10 % 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_MOD, syntax->kind);
   ASSERT_EQ(10, as_num(syntax->lhs)->val);
   ASSERT_EQ(3, as_num(syntax->rhs)->val);
   ASSERT_EQ(PSX_HIR_MOD, psx_hir_node_kind(root));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_precedence() {
+static void test_expr_precedence(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_precedence...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 + 2 * 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 + 2 * 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_ADD, syntax->kind);
@@ -11694,11 +11934,12 @@ static void test_expr_precedence() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_parentheses() {
+static void test_expr_parentheses(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_parentheses...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("(1 + 2) * 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "(1 + 2) * 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_MUL, syntax->kind);
@@ -11712,11 +11953,12 @@ static void test_expr_parentheses() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_eq_neq() {
+static void test_expr_eq_neq(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_eq_neq...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 == 2 != 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 == 2 != 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NE, syntax->kind);
@@ -11728,15 +11970,16 @@ static void test_expr_eq_neq() {
   ASSERT_EQ(PSX_HIR_EQ,
             psx_hir_node_kind(test_hir_child(&expression, root, 0)));
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            test_hir_type_shape(root).integer_kind);
+            test_hir_type_shape(test_suite_session, root).integer_kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_relational() {
+static void test_expr_relational(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_relational...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(
+      resolve_test_expression_input_hir(test_suite_session,
           "1 < 2 <= 3 > 4 >= 5", &syntax);
   const psx_hir_node_t *ge =
       test_expression_hir_root(&expression);
@@ -11761,11 +12004,12 @@ static void test_expr_relational() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_logical_and_or() {
+static void test_expr_logical_and_or(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_logical_and_or...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 && 0 || 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 && 0 || 3", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_LOGOR, syntax->kind);
@@ -11775,15 +12019,16 @@ static void test_expr_logical_and_or() {
   ASSERT_EQ(PSX_HIR_LOGAND,
             psx_hir_node_kind(test_hir_child(&expression, root, 0)));
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            test_hir_type_shape(root).integer_kind);
+            test_hir_type_shape(test_suite_session, root).integer_kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_bitwise() {
+static void test_expr_bitwise(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_bitwise...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 | 2 ^ 3 & 4", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 | 2 ^ 3 & 4", &syntax);
   const psx_hir_node_t *bit_or =
       test_expression_hir_root(&expression);
   const psx_hir_node_t *bit_xor =
@@ -11801,11 +12046,12 @@ static void test_expr_bitwise() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_shift() {
+static void test_expr_shift(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_shift...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("1 + 2 << 3 >> 1", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "1 + 2 << 3 >> 1", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   const psx_hir_node_t *left_shift =
@@ -11821,28 +12067,28 @@ static void test_expr_shift() {
       psx_hir_node_kind(test_hir_child(&expression, left_shift, 0)));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(unsigned char)a >> 1", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_SHR, syntax->kind);
   ASSERT_EQ(PSX_HIR_SHR, psx_hir_node_kind(root));
-  psx_type_shape_t shape = test_hir_type_shape(root);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
   ASSERT_TRUE(!shape.is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(unsigned int)a >> 1", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_SHR, syntax->kind);
   ASSERT_EQ(PSX_HIR_SHR, psx_hir_node_kind(root));
-  shape = test_hir_type_shape(root);
+  shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
   ASSERT_TRUE(shape.is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(int)(unsigned long)a", &syntax);
   root = test_expression_hir_root(&expression);
   const psx_hir_node_t *inner_cast =
@@ -11851,11 +12097,11 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
-  ASSERT_TRUE(!test_hir_type_shape(root).is_unsigned);
-  ASSERT_TRUE(test_hir_type_shape(inner_cast).is_unsigned);
+  ASSERT_TRUE(!test_hir_type_shape(test_suite_session, root).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, inner_cast).is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(signed)(unsigned long)a", &syntax);
   root = test_expression_hir_root(&expression);
   inner_cast = test_hir_child(&expression, root, 0);
@@ -11863,11 +12109,11 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
-  ASSERT_TRUE(!test_hir_type_shape(root).is_unsigned);
-  ASSERT_TRUE(test_hir_type_shape(inner_cast).is_unsigned);
+  ASSERT_TRUE(!test_hir_type_shape(test_suite_session, root).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, inner_cast).is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(unsigned)(long)a", &syntax);
   root = test_expression_hir_root(&expression);
   inner_cast = test_hir_child(&expression, root, 0);
@@ -11875,16 +12121,17 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_SOURCE_CAST, syntax->lhs->kind);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(inner_cast));
-  ASSERT_TRUE(test_hir_type_shape(root).is_unsigned);
-  ASSERT_TRUE(!test_hir_type_shape(inner_cast).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, root).is_unsigned);
+  ASSERT_TRUE(!test_hir_type_shape(test_suite_session, inner_cast).is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_ternary() {
+static void test_expr_ternary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_ternary...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(
+      resolve_test_expression_input_hir(test_suite_session,
           "1 ? 2 : 3 ? 4 : 5", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
@@ -11897,11 +12144,12 @@ static void test_expr_ternary() {
   ASSERT_EQ(
       PSX_HIR_TERNARY,
       psx_hir_node_kind(test_hir_child(&expression, root, 2)));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_unary_ops() {
+static void test_expr_unary_ops(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_unary_ops...\n");
 
   const struct {
@@ -11918,7 +12166,7 @@ static void test_expr_unary_ops() {
   for (size_t i = 0; i < sizeof(unary_cases) / sizeof(unary_cases[0]); i++) {
     node_t *syntax = NULL;
     psx_frontend_expression_hir_t expression =
-        resolve_test_expression_input_hir(
+        resolve_test_expression_input_hir(test_suite_session,
             unary_cases[i].input, &syntax);
     const psx_hir_node_t *root =
         test_expression_hir_root(&expression);
@@ -11926,7 +12174,7 @@ static void test_expr_unary_ops() {
     ASSERT_EQ(ND_NUM, syntax->lhs->kind);
     ASSERT_EQ(unary_cases[i].operand, as_num(syntax->lhs)->val);
     ASSERT_EQ(unary_cases[i].hir_kind, psx_hir_node_kind(root));
-    psx_type_shape_t shape = test_hir_type_shape(root);
+    psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
     ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
     ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
     psx_frontend_expression_hir_dispose(&expression);
@@ -11934,229 +12182,229 @@ static void test_expr_unary_ops() {
 
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_cast_input_hir("(void)1", &syntax);
+      resolve_test_cast_input_hir(test_suite_session, "(void)1", &syntax);
   const psx_hir_node_t *root =
       test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NUM, syntax->lhs->kind);
   ASSERT_EQ(1, as_num(syntax->lhs)->val);
-  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(int *)0x1000", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NUM, syntax->lhs->kind);
   ASSERT_EQ(0x1000, as_num(syntax->lhs)->val);
   psx_qual_type_t type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
-  ASSERT_EQ(8, test_type_size_id(type.type_id));
-  psx_qual_type_t base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, type.type_id));
+  psx_qual_type_t base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(double (*)[2])0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
-  ASSERT_EQ(8, test_type_size_id(type.type_id));
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(2, test_qual_type_shape(base).array_len);
-  ASSERT_EQ(16, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, type.type_id));
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(2, test_qual_type_shape(test_suite_session, base).array_len);
+  ASSERT_EQ(16, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_qual_type_shape(base).floating_kind);
-  ASSERT_EQ(8, test_type_size_id(base.type_id));
+            test_qual_type_shape(test_suite_session, base).floating_kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir("(int **)0", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(int **)0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
-  ASSERT_EQ(8, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
-  ASSERT_EQ(4, test_type_size_id(base.type_id));
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(4, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(long (*)[2])0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(16, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(16, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            test_qual_type_shape(base).integer_kind);
+            test_qual_type_shape(test_suite_session, base).integer_kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(long * (*)[2])0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(16, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
-  base = test_qual_type_base(base);
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(16, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, base).kind);
+  base = test_qual_type_base(test_suite_session, base);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            test_qual_type_shape(base).integer_kind);
+            test_qual_type_shape(test_suite_session, base).integer_kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(int * (*)[2][3])0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
-  ASSERT_EQ(8, test_type_size_id(type.type_id));
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(2, test_qual_type_shape(base).array_len);
-  ASSERT_EQ(48, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(3, test_qual_type_shape(base).array_len);
-  ASSERT_EQ(24, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
-  ASSERT_EQ(8, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
-  ASSERT_EQ(4, test_type_size_id(base.type_id));
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, type.type_id));
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(2, test_qual_type_shape(test_suite_session, base).array_len);
+  ASSERT_EQ(48, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(3, test_qual_type_shape(test_suite_session, base).array_len);
+  ASSERT_EQ(24, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(4, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(unsigned char (*)[3])0", &syntax);
   root = test_expression_hir_root(&expression);
-  base = test_qual_type_base(psx_hir_node_qual_type(root));
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(3, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
+  base = test_qual_type_base(test_suite_session, psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(3, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
   ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
-            test_qual_type_shape(base).integer_kind);
-  ASSERT_TRUE(test_qual_type_shape(base).is_unsigned);
-  ASSERT_EQ(1, test_type_size_id(base.type_id));
+            test_qual_type_shape(test_suite_session, base).integer_kind);
+  ASSERT_TRUE(test_qual_type_shape(test_suite_session, base).is_unsigned);
+  ASSERT_EQ(1, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(_Bool (*)[2])0", &syntax);
   root = test_expression_hir_root(&expression);
-  base = test_qual_type_base(psx_hir_node_qual_type(root));
-  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(base).kind);
-  ASSERT_EQ(2, test_type_size_id(base.type_id));
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(base).kind);
-  ASSERT_EQ(1, test_type_size_id(base.type_id));
+  base = test_qual_type_base(test_suite_session, psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_ARRAY, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(2, test_type_size_id(test_suite_session, base.type_id));
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(1, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir("(_Bool *)0", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(_Bool *)0", &syntax);
   root = test_expression_hir_root(&expression);
-  base = test_qual_type_base(psx_hir_node_qual_type(root));
-  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(base).kind);
-  ASSERT_EQ(1, test_type_size_id(base.type_id));
+  base = test_qual_type_base(test_suite_session, psx_hir_node_qual_type(root));
+  ASSERT_EQ(PSX_TYPE_BOOL, test_qual_type_shape(test_suite_session, base).kind);
+  ASSERT_EQ(1, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir("(_Bool)3", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(_Bool)3", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_NUM, syntax->lhs->kind);
   ASSERT_EQ(3, as_num(syntax->lhs)->val);
-  ASSERT_EQ(PSX_TYPE_BOOL, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_BOOL, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(const int)7", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_CONST, 7);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(volatile int)8", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_VOLATILE, 8);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(int const)12", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_CONST, 12);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(int const const)21", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_CONST, 21);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(int const * volatile * restrict)0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_RESTRICT, type.qualifiers);
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(base).kind);
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, base).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_VOLATILE, base.qualifiers);
-  base = test_qual_type_base(base);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  base = test_qual_type_base(test_suite_session, base);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, base.qualifiers);
-  assert_canonical_qual_type_signature(
+  assert_canonical_qual_type_signature(test_suite_session,
       psx_hir_node_qual_type(root), "Rp<Vp<ki32>>");
   psx_frontend_expression_hir_dispose(&expression);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(unsigned int const)13", PSX_INTEGER_KIND_INT, 1,
       PSX_TYPE_QUALIFIER_CONST, 13);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(int (*const)(int))0", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, type.qualifiers);
-  base = test_qual_type_base(type);
-  psx_type_shape_t function_shape = test_qual_type_shape(base);
+  base = test_qual_type_base(test_suite_session, type);
+  psx_type_shape_t function_shape = test_qual_type_shape(test_suite_session, base);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(1, function_shape.parameter_count);
   ASSERT_TRUE(function_shape.has_function_prototype);
-  psx_qual_type_t function_result = test_qual_type_base(base);
+  psx_qual_type_t function_result = test_qual_type_base(test_suite_session, base);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_qual_type_shape(function_result).kind);
+            test_qual_type_shape(test_suite_session, function_result).kind);
   const psx_hir_node_t *funcptr_operand =
       test_hir_child(&expression, root, 0);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(funcptr_operand));
   ASSERT_EQ(0, psx_hir_node_integer_value(funcptr_operand));
   psx_frontend_expression_hir_dispose(&expression);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(long long)14", PSX_INTEGER_KIND_LONG_LONG, 0,
       PSX_TYPE_QUALIFIER_NONE, 14);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(unsigned long)15", PSX_INTEGER_KIND_LONG, 1,
       PSX_TYPE_QUALIFIER_NONE, 15);
 
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(long)(unsigned int)a", PSX_INTEGER_KIND_LONG, 0,
       PSX_INTEGER_KIND_INT, 1);
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(long)(int)a", PSX_INTEGER_KIND_LONG, 0,
       PSX_INTEGER_KIND_INT, 0);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(unsigned short int)16", PSX_INTEGER_KIND_SHORT, 1,
       PSX_TYPE_QUALIFIER_NONE, 16);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(signed char)17", PSX_INTEGER_KIND_CHAR, 0,
       PSX_TYPE_QUALIFIER_NONE, 17);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(unsigned char)18", PSX_INTEGER_KIND_CHAR, 1,
       PSX_TYPE_QUALIFIER_NONE, 18);
 
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(long)(unsigned char)a", PSX_INTEGER_KIND_LONG, 0,
       PSX_INTEGER_KIND_CHAR, 1);
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(long)(unsigned short)a", PSX_INTEGER_KIND_LONG, 0,
       PSX_INTEGER_KIND_SHORT, 1);
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(unsigned)(short)a", PSX_INTEGER_KIND_INT, 1,
       PSX_INTEGER_KIND_SHORT, 0);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int cast_unsigned_short_compare(short s) { "
       "return (unsigned)s > 5; }"));
   const psx_hir_module_t *hir =
@@ -12164,18 +12412,18 @@ static void test_expr_unary_ops() {
   const psx_hir_node_t *comparison =
       find_test_hir_node_kind(hir, PSX_HIR_GT, 0);
   ASSERT_TRUE(comparison != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(comparison).kind);
-  ASSERT_TRUE(!test_hir_type_shape(comparison).is_unsigned);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, comparison).kind);
+  ASSERT_TRUE(!test_hir_type_shape(test_suite_session, comparison).is_unsigned);
   const psx_hir_node_t *converted_short = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(comparison, 0));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(converted_short));
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_hir_type_shape(converted_short).kind);
+            test_hir_type_shape(test_suite_session, converted_short).kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            test_hir_type_shape(converted_short).integer_kind);
-  ASSERT_TRUE(test_hir_type_shape(converted_short).is_unsigned);
+            test_hir_type_shape(test_suite_session, converted_short).integer_kind);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, converted_short).is_unsigned);
 
-  assert_test_nested_integer_cast_hir(
+  assert_test_nested_integer_cast_hir(test_suite_session,
       "(long)(short)a", PSX_INTEGER_KIND_LONG, 0,
       PSX_INTEGER_KIND_SHORT, 0);
 
@@ -12185,23 +12433,23 @@ static void test_expr_unary_ops() {
   };
   for (size_t i = 0;
        i < sizeof(restrict_casts) / sizeof(restrict_casts[0]); i++) {
-    expression = resolve_test_cast_input_hir(
+    expression = resolve_test_cast_input_hir(test_suite_session,
         restrict_casts[i], &syntax);
     root = test_expression_hir_root(&expression);
     type = psx_hir_node_qual_type(root);
-    ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+    ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
     ASSERT_EQ(PSX_TYPE_QUALIFIER_RESTRICT, type.qualifiers);
-    assert_canonical_qual_type_signature(type, "Rp<i32>");
+    assert_canonical_qual_type_signature(test_suite_session, type, "Rp<i32>");
     psx_frontend_expression_hir_dispose(&expression);
   }
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(_Atomic int)9", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_ATOMIC, 9);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(_Atomic const int)10", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_ATOMIC | PSX_TYPE_QUALIFIER_CONST, 10);
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(_Atomic(_Atomic(int)))11", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_ATOMIC, 11);
 
@@ -12221,8 +12469,8 @@ static void test_expr_unary_ops() {
   for (size_t i = 0;
        i < sizeof(aggregate_cast_cases) / sizeof(aggregate_cast_cases[0]);
        i++) {
-    reset_test_translation_unit_state();
-    ASSERT_TRUE(resolve_program_input_hir(aggregate_cast_cases[i]));
+    reset_test_translation_unit_state(test_suite_session);
+    ASSERT_TRUE(resolve_program_input_hir(test_suite_session, aggregate_cast_cases[i]));
     hir = ag_compilation_session_hir_module(test_suite_session);
     ASSERT_EQ(1, psx_hir_module_root_count(hir));
     ASSERT_EQ(PSX_HIR_FUNCTION,
@@ -12232,11 +12480,12 @@ static void test_expr_unary_ops() {
 }
 
 static void assert_test_program_return_hir_integer_at(
+    ag_compilation_session_t *test_suite_session,
     const char *source, size_t return_occurrence,
     long long expected_value,
     psx_integer_kind_t expected_kind, int expected_unsigned) {
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(source));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, source));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *ret =
@@ -12249,56 +12498,60 @@ static void assert_test_program_return_hir_integer_at(
   ASSERT_TRUE(value != NULL);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(value));
   ASSERT_EQ(expected_value, psx_hir_node_integer_value(value));
-  psx_type_shape_t shape = test_hir_type_shape(value);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, value);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(expected_kind, shape.integer_kind);
   ASSERT_EQ(expected_unsigned, shape.is_unsigned);
 }
 
 static void assert_test_program_return_hir_int(
+    ag_compilation_session_t *test_suite_session,
     const char *source, long long expected_value) {
-  assert_test_program_return_hir_integer_at(
+  assert_test_program_return_hir_integer_at(test_suite_session,
       source, 0, expected_value, PSX_INTEGER_KIND_INT, 0);
 }
 
 static void assert_test_program_return_hir_int_at(
+    ag_compilation_session_t *test_suite_session,
     const char *source, size_t return_occurrence,
     long long expected_value) {
-  assert_test_program_return_hir_integer_at(
+  assert_test_program_return_hir_integer_at(test_suite_session,
       source, return_occurrence, expected_value,
       PSX_INTEGER_KIND_INT, 0);
 }
 
 static void assert_test_program_return_hir_number(
+    ag_compilation_session_t *test_suite_session,
     const char *source, long long expected_value) {
-  assert_test_program_return_hir_integer_at(
+  assert_test_program_return_hir_integer_at(test_suite_session,
       source, 0, expected_value, PSX_INTEGER_KIND_LONG, 1);
 }
 
-static void test_expr_generic() {
+static void test_expr_generic(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_generic...\n");
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "typedef double ExprCanonicalParam; "
       "int main(void){ return _Generic("
       "(int (*)(ExprCanonicalParam, int *, ...))0, "
       "int (*)(ExprCanonicalParam, int *, ...): 53, default: 7); }",
       53);
-  node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
+  node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(test_suite_session,
       "(int (*)(ExprCanonicalParam, int *, ...))0");
   ASSERT_EQ(ND_SOURCE_CAST, canonical_expr_funcptr->kind);
   node_t *canonical_expr_operand = canonical_expr_funcptr->lhs;
   psx_frontend_expression_hir_t canonical_funcptr_expression =
-      resolve_test_expression_hir(canonical_expr_funcptr);
+      resolve_test_expression_hir(test_suite_session, canonical_expr_funcptr);
   const psx_hir_node_t *canonical_funcptr_hir =
       test_expression_hir_root(&canonical_funcptr_expression);
   ASSERT_EQ(PSX_HIR_CAST,
             psx_hir_node_kind(canonical_funcptr_hir));
   psx_type_shape_t pointer_shape =
-      test_hir_type_shape(canonical_funcptr_hir);
+      test_hir_type_shape(test_suite_session, canonical_funcptr_hir);
   ASSERT_EQ(PSX_TYPE_POINTER, pointer_shape.kind);
   const psx_semantic_type_table_t *canonical_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_qual_type_t canonical_function = psx_semantic_type_table_base(
       canonical_types,
       psx_hir_node_qual_type(canonical_funcptr_hir).type_id);
@@ -12331,30 +12584,30 @@ static void test_expr_generic() {
   psx_frontend_expression_hir_dispose(
       &canonical_funcptr_expression);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef int (*unary_fn)(int); int generic_id(int x){return x;} "
       "int main(){return 0;}"));
   psx_typedef_info_t unary_info = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), (char *)"unary_fn", 8, &unary_info));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(test_suite_session), (char *)"unary_fn", 8, &unary_info));
   psx_qual_type_t generic_id_function =
       ps_ctx_get_function_qual_type_in(
-          test_semantic_context(), (char *)"generic_id", 10);
+          test_semantic_context(test_suite_session), (char *)"generic_id", 10);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(generic_id_function).kind);
+            test_qual_type_shape(test_suite_session, generic_id_function).kind);
   psx_qual_type_t unary_type =
       ps_ctx_typedef_decl_qual_type(&unary_info);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(unary_type).kind);
+            test_qual_type_shape(test_suite_session, unary_type).kind);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(
-                test_qual_type_base(unary_type)).kind);
-  assert_canonical_qual_type_signature(
+            test_qual_type_shape(test_suite_session,
+                test_qual_type_base(test_suite_session, unary_type)).kind);
+  assert_canonical_qual_type_signature(test_suite_session,
       generic_id_function, "i32(i32)");
-  assert_canonical_qual_type_signature(unary_type, "p<i32(i32)>");
+  assert_canonical_qual_type_signature(test_suite_session, unary_type, "p<i32(i32)>");
   node_t *generic_id_syntax = NULL;
   psx_frontend_expression_hir_t generic_id_expression =
-      resolve_test_expression_input_hir(
+      resolve_test_expression_input_hir(test_suite_session,
           "generic_id", &generic_id_syntax);
   const psx_hir_node_t *generic_id_ref =
       test_expression_hir_root(&generic_id_expression);
@@ -12363,65 +12616,65 @@ static void test_expr_generic() {
   psx_qual_type_t generic_id_ref_type =
       psx_hir_node_qual_type(generic_id_ref);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(generic_id_ref_type).kind);
+            test_qual_type_shape(test_suite_session, generic_id_ref_type).kind);
   ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       generic_id_ref_type, ps_ctx_typedef_decl_qual_type(&unary_info)));
   psx_frontend_expression_hir_dispose(&generic_id_expression);
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "typedef int (*unary_fn)(int); int id(int x){return x;} "
       "int main(){return _Generic(id, unary_fn:9, int:4, default:5);}",
       1, 9);
 
-  assert_test_generic_number_hir(
+  assert_test_generic_number_hir(test_suite_session,
       "_Generic(1, int: 11, default: 22)", 11);
-  assert_test_generic_number_hir(
+  assert_test_generic_number_hir(test_suite_session,
       "_Generic(1.0, float: 11, double: 33, default: 22)", 33);
-  assert_test_generic_number_hir(
+  assert_test_generic_number_hir(test_suite_session,
       "_Generic(1, _Atomic(int): 41, default: 42)", 41);
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ return _Generic(1, _Atomic(_Atomic(int)):1, default:2); }");
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main() { int *p=0; "
       "return _Generic(p, int*: 3, default: 7); }",
       3);
 
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "typedef int (*fp_t)(int); "
       "int f(int x){ return x; } "
       "int main(){ fp_t p=f; "
       "return _Generic(p, int (*)(int): 13, default: 7); }",
       1, 13);
 
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "double fd(double x){ return x; } "
       "int main(){ return _Generic("
       "fd, double (*)(double): 17, default: 7); }",
       1, 17);
 
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "int fg(int x){ return x; } "
       "int main(){ int (*p)(int)=fg; "
       "return _Generic((p), int (*)(int): 19, default: 7); }",
       1, 19);
 
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "int (*__tm_gen_rowfn(void))[3] { return 0; } "
       "int main(){ int (*(*p)(void))[3]=__tm_gen_rowfn; "
       "return _Generic((p), int (*(*)(void))[3]: 23, default: 7); }",
       1, 23);
 
-  assert_test_program_return_hir_int_at(
+  assert_test_program_return_hir_int_at(test_suite_session,
       "int (*__tm_gen_growfn(void))[3] { return 0; } "
       "int (*(*__tm_gen_gfp)(void))[3]; "
       "int main(){ return _Generic((__tm_gen_gfp), "
       "int (*(*)(void))[3]: 29, default: 7); }",
       1, 29);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(void) { int (*(*p)(void))[3]; "
       "return _Generic(p, int (*(*)(void))[3]: 31, default: 7); }",
       31);
@@ -12443,137 +12696,138 @@ static void test_expr_generic() {
        i < sizeof(returned_function_pointer_cases) /
                sizeof(returned_function_pointer_cases[0]);
        i++) {
-    assert_test_program_return_hir_int(
+    assert_test_program_return_hir_int(test_suite_session,
         returned_function_pointer_cases[i],
         returned_function_pointer_expected[i]);
   }
 
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ struct S{int x;}; "
       "return _Generic((struct S){1}, struct S: 1, default: 2); }",
       1);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ struct S{int x;}; struct T{int x;}; "
       "return _Generic((struct S){1}, struct T: 1, default: 2); }",
       2);
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ double d=1.0; double *p=&d; return _Generic(*p, double:42, default:99); }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ float f=1.0f; float *p=&f; return _Generic(*p, float:11, default:99); }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "int main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; "
       "return _Generic(pc, int*:1, char*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ double d=1.0; double *pd=&d; "
       "return _Generic(pd, int*:1, double*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ struct S{int x;}; struct T{int x;}; "
       "struct S s={1}; struct S *ps=&s; "
       "return _Generic(ps, struct T*:1, struct S*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; const int *p=&x; "
       "return _Generic(p, int*:1, const int*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "typedef const int *cip_t; int main(){ int x=0; cip_t p=&x; "
       "return _Generic(p, int*:1, const int*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "typedef volatile int *vip_t; int main(){ int x=0; vip_t p=&x; "
       "return _Generic(p, volatile int*:2, int*:1, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; "
       "int **ppi=&pi; "
       "return _Generic(ppi, char**:1, int**:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; "
       "return _Generic(pu, int*:1, unsigned int*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "typedef unsigned int *uip_t; int main(){ unsigned int u=0; "
       "uip_t pu=&u; "
       "return _Generic(pu, int*:1, unsigned int*:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; int *p=&x; int * const *pp=&p; "
       "return _Generic(pp, int**:1, int * const *:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; int *p=&x; int * volatile *pp=&p; "
       "return _Generic(pp, int**:1, int * volatile *:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ unsigned long ul=1; "
       "return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ long l=1; "
       "return _Generic(l, unsigned long:1, long:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic((1 ? (char)1 : (char)2), "
       "char:1, int:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic("
       "(1 ? (long double)1.0 : (double)2.0), "
       "long double:4, double:5, default:6); }",
       4);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic((long double){1.0}, "
       "long double:4, double:5, default:6); }",
       4);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic((_Complex double)1, "
       "double:5, _Complex double:4, default:6); }",
       4);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ _Complex double z=1; return _Generic(z, "
       "double:5, _Complex double:4, default:6); }",
       4);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic(1, int const:2, default:3); }",
       2);
 
-  assert_test_program_return_hir_int(
+  assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; int const *p=&x; "
       "return _Generic(p, int const *:2, int *:1, default:3); }",
       2);
 }
 
-static void test_expr_sizeof() {
+static void test_expr_sizeof(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_sizeof...\n");
 
   const struct {
@@ -12605,96 +12859,96 @@ static void test_expr_sizeof() {
   };
   for (size_t i = 0;
        i < sizeof(type_queries) / sizeof(type_queries[0]); i++) {
-    assert_test_type_query_hir(
+    assert_test_type_query_hir(test_suite_session,
         type_queries[i].input, type_queries[i].syntax_kind,
         type_queries[i].value);
   }
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "int main() { int x; return sizeof(x); }", 4);
-  expect_parse_ok_without_message("int main(void){ int x; return sizeof(x); }", "W3004");
-  expect_parse_ok_without_message("int main(void){ int a[3]; return sizeof(a); }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int n=3; int a[n]; return sizeof(a); }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int n=2,m=4; int v[n][m]; int idx=1; return sizeof(v[idx]); }", "W3003");
-  expect_parse_ok_without_message("int main(void){ static int a[3]; return sizeof(a); }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int (*p)[3][4]; return sizeof(*p); }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; return sizeof(x); }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int a[3]; return sizeof(a); }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int n=3; int a[n]; return sizeof(a); }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int n=2,m=4; int v[n][m]; int idx=1; return sizeof(v[idx]); }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ static int a[3]; return sizeof(a); }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int (*p)[3][4]; return sizeof(*p); }", "W3004");
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "int main() { struct S { int x; }; return sizeof(struct S); }",
       4);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "typedef struct Forward Forward; "
       "struct Forward { void *items; int count; int capacity; }; "
       "int main(void) { Forward *body = 0; return sizeof(*body); }",
       16);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "int main() { struct S { int x; }; "
       "return _Alignof(struct S); }",
       4);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "int main() { struct S { int x; }; "
       "return sizeof(struct S (*)[3]); }",
       8);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "typedef int A3[3]; int main() { return sizeof(A3 (*)[2]); }",
       8);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "int main() { struct S { int x; }; return sizeof(struct S[3]); }",
       12);
 
-  assert_test_program_return_hir_number(
+  assert_test_program_return_hir_number(test_suite_session,
       "typedef int A3[3]; int main() { return sizeof(A3[2]); }",
       24);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(char)300", PSX_INTEGER_KIND_CHAR, 0,
       PSX_TYPE_QUALIFIER_NONE, 300);
 
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_cast_input_hir("(_Complex double)1", &syntax);
+      resolve_test_cast_input_hir(test_suite_session, "(_Complex double)1", &syntax);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
-  psx_type_shape_t shape = test_hir_type_shape(root);
+  psx_type_shape_t shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_COMPLEX, shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, shape.floating_kind);
   ASSERT_EQ(16,
-            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+            test_type_size_id(test_suite_session, psx_hir_node_qual_type(root).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir(
+  expression = resolve_test_cast_input_hir(test_suite_session,
       "(float _Imaginary)1", &syntax);
   root = test_expression_hir_root(&expression);
-  shape = test_hir_type_shape(root);
+  shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_COMPLEX, shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, shape.floating_kind);
   ASSERT_EQ(8,
-            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+            test_type_size_id(test_suite_session, psx_hir_node_qual_type(root).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir("(long double)1", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(long double)1", &syntax);
   root = test_expression_hir_root(&expression);
-  shape = test_hir_type_shape(root);
+  shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_FLOAT, shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE, shape.floating_kind);
   psx_frontend_expression_hir_dispose(&expression);
 
-  assert_test_integer_cast_hir(
+  assert_test_integer_cast_hir(test_suite_session,
       "(_Atomic(int))1", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_ATOMIC, 1);
 
-  expression = resolve_test_cast_input_hir("(_Atomic(int*))0", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(_Atomic(int*))0", &syntax);
   root = test_expression_hir_root(&expression);
   psx_qual_type_t type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_ATOMIC, type.qualifiers);
-  ASSERT_EQ(8, test_type_size_id(type.type_id));
-  psx_qual_type_t base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(base).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, type.type_id));
+  psx_qual_type_t base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_qual_type_shape(test_suite_session, base).kind);
   psx_frontend_expression_hir_dispose(&expression);
 
   const struct {
@@ -12709,67 +12963,67 @@ static void test_expr_sizeof() {
   };
   for (size_t i = 0;
        i < sizeof(integer_casts) / sizeof(integer_casts[0]); i++) {
-    expression = resolve_test_cast_input_hir(
+    expression = resolve_test_cast_input_hir(test_suite_session,
         integer_casts[i].input, &syntax);
     root = test_expression_hir_root(&expression);
-    shape = test_hir_type_shape(root);
+    shape = test_hir_type_shape(test_suite_session, root);
     ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
     ASSERT_EQ(integer_casts[i].integer_kind, shape.integer_kind);
     ASSERT_EQ(integer_casts[i].is_unsigned, shape.is_unsigned);
     ASSERT_EQ(integer_casts[i].size,
-              test_type_size_id(psx_hir_node_qual_type(root).type_id));
+              test_type_size_id(test_suite_session, psx_hir_node_qual_type(root).type_id));
     psx_frontend_expression_hir_dispose(&expression);
   }
 
-  expression = resolve_test_cast_input_hir("(float)a", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(float)a", &syntax);
   root = test_expression_hir_root(&expression);
-  shape = test_hir_type_shape(root);
+  shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_FLOAT, shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, shape.floating_kind);
   ASSERT_EQ(4,
-            test_type_size_id(psx_hir_node_qual_type(root).type_id));
+            test_type_size_id(test_suite_session, psx_hir_node_qual_type(root).type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_cast_input_hir("(double*)a", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(double*)a", &syntax);
   root = test_expression_hir_root(&expression);
   type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
-  ASSERT_EQ(8, test_type_size_id(type.type_id));
-  base = test_qual_type_base(type);
-  ASSERT_EQ(PSX_TYPE_FLOAT, test_qual_type_shape(base).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, type.type_id));
+  base = test_qual_type_base(test_suite_session, type);
+  ASSERT_EQ(PSX_TYPE_FLOAT, test_qual_type_shape(test_suite_session, base).kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_qual_type_shape(base).floating_kind);
-  ASSERT_EQ(8, test_type_size_id(base.type_id));
+            test_qual_type_shape(test_suite_session, base).floating_kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, base.type_id));
   psx_frontend_expression_hir_dispose(&expression);
 
-  assert_test_integer_expression_hir(
+  assert_test_integer_expression_hir(test_suite_session,
       "(unsigned char)1 + (short)2", PSX_HIR_ADD,
       PSX_INTEGER_KIND_INT, 0, 4);
-  assert_test_integer_expression_hir(
+  assert_test_integer_expression_hir(test_suite_session,
       "(unsigned int)1 + (long)-1", PSX_HIR_ADD,
       PSX_INTEGER_KIND_LONG, 0, 8);
-  assert_test_integer_expression_hir(
+  assert_test_integer_expression_hir(test_suite_session,
       "(unsigned long)1 + (long)-1", PSX_HIR_ADD,
       PSX_INTEGER_KIND_LONG, 1, 8);
-  assert_test_integer_expression_hir(
+  assert_test_integer_expression_hir(test_suite_session,
       "((unsigned long long)9ULL) ^ ((unsigned short)3)",
       PSX_HIR_BITXOR, PSX_INTEGER_KIND_LONG_LONG, 1, 8);
-  assert_test_integer_expression_hir(
+  assert_test_integer_expression_hir(test_suite_session,
       "1 ? (unsigned int)1 : (long)-1", PSX_HIR_TERNARY,
       PSX_INTEGER_KIND_LONG, 0, 8);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "(unsigned int)1 < (long)-1", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_LT, psx_hir_node_kind(root));
-  shape = test_hir_type_shape(root);
+  shape = test_hir_type_shape(test_suite_session, root);
   ASSERT_EQ(PSX_TYPE_INTEGER, shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, shape.integer_kind);
   ASSERT_TRUE(!shape.is_unsigned);
   const psx_hir_node_t *left = test_hir_child(&expression, root, 0);
   const psx_hir_node_t *right = test_hir_child(&expression, root, 1);
-  psx_type_shape_t left_shape = test_hir_type_shape(left);
-  psx_type_shape_t right_shape = test_hir_type_shape(right);
+  psx_type_shape_t left_shape = test_hir_type_shape(test_suite_session, left);
+  psx_type_shape_t right_shape = test_hir_type_shape(test_suite_session, right);
   ASSERT_EQ(PSX_INTEGER_KIND_INT, left_shape.integer_kind);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, right_shape.integer_kind);
   ASSERT_TRUE(left_shape.is_unsigned);
@@ -12778,20 +13032,21 @@ static void test_expr_sizeof() {
       psx_usual_integer_conversion_for_data_layout(
           psx_integer_conversion_from_shape(&left_shape),
           psx_integer_conversion_from_shape(&right_shape),
-          ps_ctx_data_layout(test_semantic_context()));
+          ps_ctx_data_layout(test_semantic_context(test_suite_session)));
   ASSERT_EQ(4, comparison_type.rank);
   ASSERT_TRUE(!comparison_type.is_unsigned);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_inc_dec_typed_hir_boundary() {
+static void test_expr_inc_dec_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_inc_dec_typed_hir_boundary...\n");
-  reset_test_locals();
-  lvar_t *integer = register_test_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *integer = register_test_storage_fixture(test_suite_session,
       (char *)"a", 1, 4, 4, 0);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       integer, ps_ctx_intern_integer_qual_type_in(
-                   test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
+                   test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0));
 
   const struct {
     const char *source;
@@ -12805,17 +13060,17 @@ static void test_expr_inc_dec_typed_hir_boundary() {
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
     node_t *syntax =
-        parse_expr_input_with_existing_locals(cases[i].source);
+        parse_expr_input_with_existing_locals(test_suite_session, cases[i].source);
     ASSERT_EQ(cases[i].syntax_kind, syntax->kind);
     ASSERT_EQ(ND_IDENTIFIER, syntax->lhs->kind);
     ASSERT_TRUE(syntax->tok != NULL);
     node_t *operand_syntax = syntax->lhs;
     psx_frontend_expression_hir_t expression =
-        resolve_test_expression_hir(syntax);
+        resolve_test_expression_hir(test_suite_session, syntax);
     const psx_hir_node_t *root =
         test_expression_hir_root(&expression);
     ASSERT_EQ(cases[i].hir_kind, psx_hir_node_kind(root));
-    ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+    ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
     ASSERT_EQ(1, psx_hir_node_child_count(root));
     ASSERT_EQ(PSX_HIR_LOCAL,
               psx_hir_node_kind(psx_hir_module_lookup(
@@ -12826,11 +13081,12 @@ static void test_expr_inc_dec_typed_hir_boundary() {
   }
 }
 
-static void test_expr_assign() {
+static void test_expr_assign(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_assign...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("a = 3", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "a = 3", &syntax);
   ASSERT_EQ(ND_ASSIGN, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_ASSIGN, psx_hir_node_kind(root));
@@ -12839,11 +13095,12 @@ static void test_expr_assign() {
   const psx_hir_node_t *rhs = test_hir_child(&expression, root, 1);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(rhs));
   ASSERT_EQ(3, psx_hir_node_integer_value(rhs));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(root).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, root).kind);
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_compound_assign() {
+static void test_expr_compound_assign(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_compound_assign...\n");
   const struct {
     const char *input;
@@ -12862,17 +13119,18 @@ static void test_expr_compound_assign() {
       {"a |= 3", TK_OREQ, PSX_HIR_COMPOUND_BITOR},
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-    assert_test_compound_assignment_hir(
+    assert_test_compound_assignment_hir(test_suite_session,
         cases[i].input, cases[i].syntax_operator,
         cases[i].hir_operator);
   }
 }
 
-static void test_expr_comma() {
+static void test_expr_comma(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_comma...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(
+      resolve_test_expression_input_hir(test_suite_session,
           "a=1, b=2, a+b", &syntax);
   ASSERT_EQ(ND_COMMA, syntax->kind);
   ASSERT_EQ(ND_COMMA, syntax->lhs->kind);
@@ -12886,10 +13144,11 @@ static void test_expr_comma() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_program_funcdef() {
+static void test_program_funcdef(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_program_funcdef...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { int a=1; int b=2; a+b; }"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -12931,11 +13190,12 @@ static void test_program_funcdef() {
   ASSERT_TRUE(found_second_local);
 }
 
-static void test_funcall() {
+static void test_funcall(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_funcall...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("add(1, 2)", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "add(1, 2)", &syntax);
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(root));
@@ -12946,7 +13206,7 @@ static void test_funcall() {
                    test_hir_child(&expression, root, 1)));
   psx_frontend_expression_hir_dispose(&expression);
 
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "foo((1,2), 3)", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_FUNCALL, syntax->kind);
@@ -12963,10 +13223,11 @@ static void test_funcall() {
 
 // --- ここから追加テスト ---
 
-static void test_funcdef_with_params() {
+static void test_funcdef_with_params(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_funcdef_with_params...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int add(int a, int b) { return a+b; }"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -12974,7 +13235,7 @@ static void test_funcdef_with_params() {
   const psx_hir_node_t *function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
   ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(function));
-  psx_type_shape_t function_shape = test_qual_type_shape(
+  psx_type_shape_t function_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(function));
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(2, function_shape.parameter_count);
@@ -12987,58 +13248,58 @@ static void test_funcdef_with_params() {
                   hir, psx_hir_node_child_at(function, i))));
   }
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int apply(int (*fp)(int), int x) { return x; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
-  function_shape = test_qual_type_shape(
+  function_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(function));
   ASSERT_EQ(2, function_shape.parameter_count);
   psx_qual_type_t first_parameter = psx_semantic_type_table_parameter(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       psx_hir_node_attached_qual_type(function).type_id, 0);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(first_parameter).kind);
+            test_qual_type_shape(test_suite_session, first_parameter).kind);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(test_qual_type_base(first_parameter)).kind);
+            test_qual_type_shape(test_suite_session, test_qual_type_base(test_suite_session, first_parameter)).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int sum(int a[], int n) { return n; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
-  function_shape = test_qual_type_shape(
+  function_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(function));
   ASSERT_EQ(2, function_shape.parameter_count);
   first_parameter = psx_semantic_type_table_parameter(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session)),
       psx_hir_node_attached_qual_type(function).type_id, 0);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(first_parameter).kind);
+            test_qual_type_shape(test_suite_session, first_parameter).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int sum_variadic(int first, ...) { return first; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
-  function_shape = test_qual_type_shape(
+  function_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(function));
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(1, function_shape.parameter_count);
   ASSERT_TRUE(function_shape.is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int proto(int); int main() { return 0; }"));
   psx_qual_type_t prototype = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"proto", 5);
+      test_semantic_context(test_suite_session), (char *)"proto", 5);
   ASSERT_TRUE(prototype.type_id != PSX_TYPE_ID_INVALID);
-  function_shape = test_qual_type_shape(prototype);
+  function_shape = test_qual_type_shape(test_suite_session, prototype);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(1, function_shape.parameter_count);
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13046,37 +13307,38 @@ static void test_funcdef_with_params() {
       hir, psx_hir_module_root_at(hir, 0));
   ASSERT_EQ(1, psx_hir_node_child_count(function));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef void VoidAlias; int no_args(VoidAlias); "
       "int main(void) { return 0; }"));
   prototype = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"no_args", 7);
-  function_shape = test_qual_type_shape(prototype);
+      test_semantic_context(test_suite_session), (char *)"no_args", 7);
+  function_shape = test_qual_type_shape(test_suite_session, prototype);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(0, function_shape.parameter_count);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef int (*F0)(); typedef int (*F1)(F0); "
       "int nested(int (int()), F0); "
       "int nested(F1 fp, F0 arg) { return fp(arg); }"));
   prototype = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"nested", 6);
-  function_shape = test_qual_type_shape(prototype);
+      test_semantic_context(test_suite_session), (char *)"nested", 6);
+  function_shape = test_qual_type_shape(test_suite_session, prototype);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(2, function_shape.parameter_count);
 
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "typedef union __attribute__((packed)) AttrUnion { int value; } "
       "AttrUnion; int attr_fn(void) { AttrUnion value; return 0; }",
       "E3096");
 }
 
-static void test_stmt_return() {
+static void test_stmt_return(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_stmt_return...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir("int main() { return 42; }"));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, "int main() { return 42; }"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *ret =
@@ -13088,15 +13350,15 @@ static void test_stmt_return() {
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(value));
   ASSERT_EQ(42, psx_hir_node_integer_value(value));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir("void noop() { return; }"));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, "void noop() { return; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
   ASSERT_TRUE(ret != NULL);
   ASSERT_EQ(0, psx_hir_node_child_count(ret));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "_Bool flag(void) { return 200; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
@@ -13104,29 +13366,29 @@ static void test_stmt_return() {
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(value));
   ASSERT_EQ(200, psx_hir_node_integer_value(value));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "char narrow(int x) { return x; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
   value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(value).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, value).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int cast_unsigned_local(void) { unsigned u; return (int)u; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *cast =
       find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
   ASSERT_TRUE(cast != NULL);
-  psx_type_shape_t cast_shape = test_hir_type_shape(cast);
+  psx_type_shape_t cast_shape = test_hir_type_shape(test_suite_session, cast);
   ASSERT_EQ(PSX_TYPE_INTEGER, cast_shape.kind);
   ASSERT_TRUE(!cast_shape.is_unsigned);
   const psx_hir_node_t *cast_operand = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(cast, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
-  ASSERT_TRUE(test_hir_type_shape(cast_operand).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, cast_operand).is_unsigned);
 
   const struct {
     const char *source;
@@ -13141,118 +13403,119 @@ static void test_stmt_return() {
   for (size_t i = 0;
        i < sizeof(pointer_cast_cases) / sizeof(pointer_cast_cases[0]);
        i++) {
-    reset_test_translation_unit_state();
-    ASSERT_TRUE(resolve_program_input_hir(pointer_cast_cases[i].source));
+    reset_test_translation_unit_state(test_suite_session);
+    ASSERT_TRUE(resolve_program_input_hir(test_suite_session, pointer_cast_cases[i].source));
     hir = ag_compilation_session_hir_module(test_suite_session);
     cast = find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
     ASSERT_TRUE(cast != NULL);
-    cast_shape = test_hir_type_shape(cast);
+    cast_shape = test_hir_type_shape(test_suite_session, cast);
     ASSERT_EQ(PSX_TYPE_INTEGER, cast_shape.kind);
     ASSERT_EQ(pointer_cast_cases[i].expected_integer_kind,
               cast_shape.integer_kind);
     ASSERT_EQ(pointer_cast_cases[i].expected_size,
-              test_type_size_id(psx_hir_node_qual_type(cast).type_id));
+              test_type_size_id(test_suite_session, psx_hir_node_qual_type(cast).type_id));
     cast_operand = psx_hir_module_lookup(
         hir, psx_hir_node_child_at(cast, 0));
     ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
     ASSERT_EQ(PSX_TYPE_POINTER,
-              test_hir_type_shape(cast_operand).kind);
+              test_hir_type_shape(test_suite_session, cast_operand).kind);
   }
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int deref_intptr_cast(long addr) { return *(int *)addr; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *deref =
       find_test_hir_node_kind(hir, PSX_HIR_DEREF, 0);
   ASSERT_TRUE(deref != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(deref).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, deref).kind);
   cast = psx_hir_module_lookup(hir, psx_hir_node_child_at(deref, 0));
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(cast));
-  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(cast).kind);
-  ASSERT_EQ(4, test_type_size_id(
-      test_qual_type_base(psx_hir_node_qual_type(cast)).type_id));
+  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(test_suite_session, cast).kind);
+  ASSERT_EQ(4, test_type_size_id(test_suite_session,
+      test_qual_type_base(test_suite_session, psx_hir_node_qual_type(cast)).type_id));
   cast_operand = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(cast, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(cast_operand).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, cast_operand).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "double void_cast_keeps_operand_fp(double d) { "
       "(void)d; return d; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   cast = find_test_hir_node_kind(hir, PSX_HIR_CAST, 0);
   ASSERT_TRUE(cast != NULL);
-  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(cast).kind);
+  ASSERT_EQ(PSX_TYPE_VOID, test_hir_type_shape(test_suite_session, cast).kind);
   cast_operand = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(cast, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(cast_operand));
-  ASSERT_EQ(PSX_TYPE_FLOAT, test_hir_type_shape(cast_operand).kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, test_hir_type_shape(test_suite_session, cast_operand).kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_hir_type_shape(cast_operand).floating_kind);
+            test_hir_type_shape(test_suite_session, cast_operand).floating_kind);
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
   value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            test_hir_type_shape(value).floating_kind);
+            test_hir_type_shape(test_suite_session, value).floating_kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "unsigned char unarrow(int x) { return x; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
   value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
   ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(value));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct __ret_meta_s { int a; int b; } __ret_meta_struct(void) { "
       "struct __ret_meta_s r; return r; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
-  psx_qual_type_t return_type = test_qual_type_base(
+  psx_qual_type_t return_type = test_qual_type_base(test_suite_session,
       psx_hir_node_attached_qual_type(function));
-  ASSERT_EQ(PSX_TYPE_STRUCT, test_qual_type_shape(return_type).kind);
-  ASSERT_EQ(8, test_type_size_id(return_type.type_id));
+  ASSERT_EQ(PSX_TYPE_STRUCT, test_qual_type_shape(test_suite_session, return_type).kind);
+  ASSERT_EQ(8, test_type_size_id(test_suite_session, return_type.type_id));
   ret = find_test_hir_node_kind(hir, PSX_HIR_RETURN, 0);
   value = psx_hir_module_lookup(hir, psx_hir_node_child_at(ret, 0));
   ASSERT_EQ(return_type.type_id,
             psx_hir_node_qual_type(value).type_id);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "_Complex double __ret_meta_complex(void) { return 1; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   function = psx_hir_module_lookup(
       hir, psx_hir_module_root_at(hir, 0));
-  return_type = test_qual_type_base(
+  return_type = test_qual_type_base(test_suite_session,
       psx_hir_node_attached_qual_type(function));
-  psx_type_shape_t return_shape = test_qual_type_shape(return_type);
+  psx_type_shape_t return_shape = test_qual_type_shape(test_suite_session, return_type);
   ASSERT_EQ(PSX_TYPE_COMPLEX, return_shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, return_shape.floating_kind);
 }
 
-static void test_expr_deref_address_typed_hir_boundary() {
+static void test_expr_deref_address_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_deref_address_typed_hir_boundary...\n");
-  reset_test_locals();
-  lvar_t *integer = register_test_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *integer = register_test_storage_fixture(test_suite_session,
       (char *)"a", 1, 4, 4, 0);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       integer, ps_ctx_intern_integer_qual_type_in(
-                   test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0));
+                   test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0));
   node_t *address_syntax =
-      parse_expr_input_with_existing_locals("&a");
+      parse_expr_input_with_existing_locals(test_suite_session, "&a");
   ASSERT_EQ(ND_ADDRESS_OF, address_syntax->kind);
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
   node_t *address_operand_syntax = address_syntax->lhs;
   psx_frontend_expression_hir_t address_expression =
-      resolve_test_expression_hir(address_syntax);
+      resolve_test_expression_hir(test_suite_session, address_syntax);
   const psx_hir_node_t *address_hir =
       test_expression_hir_root(&address_expression);
   ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(address_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(address_hir).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_hir_type_shape(test_suite_session, address_hir).kind);
   ASSERT_EQ(PSX_HIR_LOCAL,
             psx_hir_node_kind(psx_hir_module_lookup(
                 address_expression.module,
@@ -13260,25 +13523,25 @@ static void test_expr_deref_address_typed_hir_boundary() {
   ASSERT_TRUE(address_syntax->lhs == address_operand_syntax);
   psx_frontend_expression_hir_dispose(&address_expression);
 
-  reset_test_locals();
-  lvar_t *pointer = register_test_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *pointer = register_test_storage_fixture(test_suite_session,
       (char *)"a", 1, 8, 4, 0);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       pointer,
       ps_ctx_intern_pointer_to_qual_type_in(
-          test_semantic_context(),
+          test_semantic_context(test_suite_session),
           ps_ctx_intern_integer_qual_type_in(
-              test_semantic_context(), PSX_INTEGER_KIND_INT, 0, 0)));
-  node_t *deref = parse_expr_input_with_existing_locals("*a");
+              test_semantic_context(test_suite_session), PSX_INTEGER_KIND_INT, 0, 0)));
+  node_t *deref = parse_expr_input_with_existing_locals(test_suite_session, "*a");
   ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
   ASSERT_EQ(ND_IDENTIFIER, deref->lhs->kind);
   node_t *deref_operand_syntax = deref->lhs;
   psx_frontend_expression_hir_t deref_expression =
-      resolve_test_expression_hir(deref);
+      resolve_test_expression_hir(test_suite_session, deref);
   const psx_hir_node_t *deref_hir =
       test_expression_hir_root(&deref_expression);
   ASSERT_EQ(PSX_HIR_DEREF, psx_hir_node_kind(deref_hir));
-  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(deref_hir).kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, test_hir_type_shape(test_suite_session, deref_hir).kind);
   ASSERT_EQ(PSX_HIR_LOCAL,
             psx_hir_node_kind(psx_hir_module_lookup(
                 deref_expression.module,
@@ -13302,10 +13565,11 @@ static const psx_hir_node_t *find_test_hir_node_kind(
   return NULL;
 }
 
-static void test_expr_member_access() {
+static void test_expr_member_access(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_member_access...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main() { struct S { int a; int b; }; struct S s; "
       "s.b = 3; return s.b; }"));
   const psx_hir_module_t *hir =
@@ -13318,7 +13582,7 @@ static void test_expr_member_access() {
   ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
             psx_hir_node_kind(assigned_member));
   ASSERT_EQ(4, psx_hir_node_member_offset(assigned_member));
-  ASSERT_EQ(4, test_type_size_id(
+  ASSERT_EQ(4, test_type_size_id(test_suite_session,
       psx_hir_node_qual_type(assigned_member).type_id));
   ASSERT_EQ(PSX_HIR_LOCAL,
             psx_hir_node_kind(psx_hir_module_lookup(
@@ -13328,8 +13592,8 @@ static void test_expr_member_access() {
   ASSERT_TRUE(find_test_hir_node_kind(
       hir, PSX_HIR_MEMBER_ACCESS, 1) != NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int f(void) { static struct { int n; int m; } s = {3, 4}; "
       "s.n += 1; return s.n + s.m; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13338,20 +13602,20 @@ static void test_expr_member_access() {
   ASSERT_TRUE(anonymous_member != NULL);
   const psx_hir_node_t *anonymous_base = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(anonymous_member, 0));
-  psx_type_shape_t anonymous_shape = test_qual_type_shape(
+  psx_type_shape_t anonymous_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_qual_type(anonymous_base));
   ASSERT_EQ(PSX_TYPE_STRUCT, anonymous_shape.kind);
   const psx_record_decl_t *anonymous_record =
       ps_ctx_get_record_decl_in(
-          test_semantic_context(), anonymous_shape.record_id);
+          test_semantic_context(test_suite_session), anonymous_shape.record_id);
   ASSERT_TRUE(anonymous_record != NULL);
   ASSERT_TRUE(anonymous_record->member_count == 2);
   ASSERT_TRUE(anonymous_record->members[0].name != NULL);
   ASSERT_TRUE(anonymous_record->members[0].len == 1);
   ASSERT_TRUE(memcmp(anonymous_record->members[0].name, "n", 1) == 0);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; return s.a; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13359,14 +13623,14 @@ static void test_expr_member_access() {
       hir, PSX_HIR_MEMBER_ACCESS, 0);
   ASSERT_TRUE(unsigned_member != NULL);
   psx_type_shape_t unsigned_member_shape =
-      test_hir_type_shape(unsigned_member);
+      test_hir_type_shape(test_suite_session, unsigned_member);
   ASSERT_EQ(PSX_TYPE_INTEGER, unsigned_member_shape.kind);
   ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
             unsigned_member_shape.integer_kind);
   ASSERT_TRUE(unsigned_member_shape.is_unsigned);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; "
       "return (int)s.a; }"));
@@ -13374,11 +13638,11 @@ static void test_expr_member_access() {
   unsigned_member = find_test_hir_node_kind(
       hir, PSX_HIR_MEMBER_ACCESS, 0);
   ASSERT_TRUE(unsigned_member != NULL);
-  ASSERT_TRUE(test_hir_type_shape(unsigned_member).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, unsigned_member).is_unsigned);
   ASSERT_TRUE(find_test_hir_node_kind(hir, PSX_HIR_CAST, 0) != NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; "
       "return (signed)s.a; }"));
@@ -13386,10 +13650,10 @@ static void test_expr_member_access() {
   unsigned_member = find_test_hir_node_kind(
       hir, PSX_HIR_MEMBER_ACCESS, 0);
   ASSERT_TRUE(unsigned_member != NULL);
-  ASSERT_TRUE(test_hir_type_shape(unsigned_member).is_unsigned);
+  ASSERT_TRUE(test_hir_type_shape(test_suite_session, unsigned_member).is_unsigned);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main() { struct S { int a; int b; }; struct S s; "
       "struct S *p; p=&s; p->b=5; return p->b; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13405,8 +13669,8 @@ static void test_expr_member_access() {
   }
   ASSERT_EQ(2, pointer_member_count);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main() { struct S { int a[2]; }; "
       "struct S s={{1,2}}; return s.a[0]; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13414,14 +13678,14 @@ static void test_expr_member_access() {
       hir, PSX_HIR_MEMBER_ACCESS, 0);
   ASSERT_TRUE(array_member != NULL);
   psx_type_shape_t array_member_shape =
-      test_hir_type_shape(array_member);
+      test_hir_type_shape(test_suite_session, array_member);
   ASSERT_EQ(PSX_TYPE_ARRAY, array_member_shape.kind);
   ASSERT_EQ(2, array_member_shape.array_len);
   ASSERT_TRUE(find_test_hir_node_kind(
       hir, PSX_HIR_SUBSCRIPT, 0) != NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int first(char *p) { return p[0]; } "
       "int main() { struct C { char x[1]; }; "
       "struct C c = {\"Z\"}; return first(c.x); }"));
@@ -13430,14 +13694,14 @@ static void test_expr_member_access() {
   array_member = find_test_hir_node_kind(
       hir, PSX_HIR_MEMBER_ACCESS, 0);
   ASSERT_TRUE(array_member != NULL);
-  array_member_shape = test_hir_type_shape(array_member);
+  array_member_shape = test_hir_type_shape(test_suite_session, array_member);
   ASSERT_EQ(PSX_TYPE_ARRAY, array_member_shape.kind);
   ASSERT_EQ(1, array_member_shape.array_len);
-  ASSERT_EQ(1, test_type_size_id(
+  ASSERT_EQ(1, test_type_size_id(test_suite_session,
       psx_hir_node_qual_type(array_member).type_id));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { struct B { signed int x:3; }; "
       "struct B b; return b.x; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13452,8 +13716,8 @@ static void test_expr_member_access() {
   ASSERT_EQ(3, bit_width);
   ASSERT_EQ(1, bit_is_signed);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "enum CanonicalBitfieldEnum { CanonicalBitfieldValue }; "
       "typedef enum CanonicalBitfieldEnum CanonicalBitfieldEnumType; "
       "int main(void) { struct B { CanonicalBitfieldEnumType x:3; }; "
@@ -13468,20 +13732,21 @@ static void test_expr_member_access() {
   ASSERT_EQ(0, bit_is_signed);
 }
 
-static void test_expr_string() {
+static void test_expr_string(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_string...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("\"hello\"", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "\"hello\"", &syntax);
   ASSERT_EQ(ND_STRING, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(root));
   psx_qual_type_t type = psx_hir_node_qual_type(root);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(type).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, type).kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_qual_type_shape(test_qual_type_base(type)).kind);
+            test_qual_type_shape(test_suite_session, test_qual_type_base(test_suite_session, type)).kind);
   ASSERT_EQ(PSX_INTEGER_KIND_CHAR,
-            test_qual_type_shape(test_qual_type_base(type)).integer_kind);
+            test_qual_type_shape(test_suite_session, test_qual_type_base(test_suite_session, type)).integer_kind);
   size_t literal_length = 0;
   const char *literal =
       psx_hir_node_literal_contents(root, &literal_length);
@@ -13494,11 +13759,12 @@ static void test_expr_string() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_expr_concat_string() {
+static void test_expr_concat_string(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_concat_string...\n");
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir("\"he\" \"llo\"", &syntax);
+      resolve_test_expression_input_hir(test_suite_session, "\"he\" \"llo\"", &syntax);
   ASSERT_EQ(ND_STRING, syntax->kind);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(root));
@@ -13511,7 +13777,8 @@ static void test_expr_concat_string() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_type_decl() {
+static void test_type_decl(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_type_decl...\n");
   const char *declaration_cases[] = {
       "int main() { int x = 5; }",
@@ -13637,8 +13904,8 @@ static void test_type_decl() {
   for (size_t i = 0;
        i < sizeof(declaration_cases) / sizeof(declaration_cases[0]);
        i++) {
-    reset_test_translation_unit_state();
-    if (!resolve_program_input_hir(declaration_cases[i])) {
+    reset_test_translation_unit_state(test_suite_session);
+    if (!resolve_program_input_hir(test_suite_session, declaration_cases[i])) {
       fprintf(stderr, "type declaration HIR case %zu failed: %s\n",
               i, declaration_cases[i]);
       exit(1);
@@ -13652,8 +13919,8 @@ static void test_type_decl() {
     ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(function));
   }
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { int x=5; int a, b=1; return x+b; }"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -13675,8 +13942,8 @@ static void test_type_decl() {
   ASSERT_TRUE(find_test_named_hir_node(
                   hir, PSX_HIR_LOCAL, "b", 0) != NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { const int cx=1; volatile int vx=2; "
       "int *const *volatile pp=0; return cx+vx+(pp==0); }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13694,14 +13961,14 @@ static void test_type_decl() {
   ASSERT_TRUE((psx_hir_node_qual_type(vx).qualifiers &
                PSX_TYPE_QUALIFIER_VOLATILE) != 0);
   psx_qual_type_t pp_type = psx_hir_node_qual_type(pp);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(pp_type).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, pp_type).kind);
   ASSERT_TRUE((pp_type.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0);
-  psx_qual_type_t pp_base = test_qual_type_base(pp_type);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(pp_base).kind);
+  psx_qual_type_t pp_base = test_qual_type_base(test_suite_session, pp_type);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, pp_base).kind);
   ASSERT_TRUE((pp_base.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { int x=42; int *p=&x; int **pp=&p; "
       "return **pp; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13711,16 +13978,16 @@ static void test_type_decl() {
       find_test_hir_node_kind(hir, PSX_HIR_DEREF, 1);
   ASSERT_TRUE(outer_deref != NULL);
   ASSERT_TRUE(inner_deref != NULL);
-  psx_type_shape_t first_deref_shape = test_hir_type_shape(outer_deref);
-  psx_type_shape_t second_deref_shape = test_hir_type_shape(inner_deref);
+  psx_type_shape_t first_deref_shape = test_hir_type_shape(test_suite_session, outer_deref);
+  psx_type_shape_t second_deref_shape = test_hir_type_shape(test_suite_session, inner_deref);
   ASSERT_TRUE(
       (first_deref_shape.kind == PSX_TYPE_POINTER &&
        second_deref_shape.kind == PSX_TYPE_INTEGER) ||
       (second_deref_shape.kind == PSX_TYPE_POINTER &&
        first_deref_shape.kind == PSX_TYPE_INTEGER));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main(void) { struct S { int x; int y; }; "
       "struct S s={.y=2,.x=1}; return s.y; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
@@ -13730,40 +13997,41 @@ static void test_type_decl() {
   ASSERT_EQ(4, psx_hir_node_member_offset(member));
   const psx_hir_node_t *member_base = psx_hir_module_lookup(
       hir, psx_hir_node_child_at(member, 0));
-  psx_type_shape_t record_shape = test_hir_type_shape(member_base);
+  psx_type_shape_t record_shape = test_hir_type_shape(test_suite_session, member_base);
   ASSERT_EQ(PSX_TYPE_STRUCT, record_shape.kind);
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
-      test_semantic_context(), record_shape.record_id);
+      test_semantic_context(test_suite_session), record_shape.record_id);
   ASSERT_TRUE(record != NULL);
   ASSERT_EQ(2, record->member_count);
-  ASSERT_EQ(8, test_type_size_id(
+  ASSERT_EQ(8, test_type_size_id(test_suite_session,
                    psx_hir_node_qual_type(member_base).type_id));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "extern int a[]; int main(void) { return 0; }"));
   const psx_scope_declaration_t *external =
       find_test_scope_declaration(
-          test_scope_graph(), "a", PSX_DECL_GLOBAL_OBJECT, 0);
+          test_scope_graph(test_suite_session), "a", PSX_DECL_GLOBAL_OBJECT, 0);
   ASSERT_TRUE(external != NULL);
   ASSERT_TRUE(external->payload != NULL);
   psx_qual_type_t external_type =
       ps_gvar_decl_qual_type(external->payload);
   psx_type_shape_t external_shape =
-      test_qual_type_shape(external_type);
+      test_qual_type_shape(test_suite_session, external_type);
   ASSERT_EQ(PSX_TYPE_ARRAY, external_shape.kind);
   ASSERT_EQ(0, external_shape.array_len);
 }
 
-static void test_bool_assignment_typed_hir_boundary() {
+static void test_bool_assignment_typed_hir_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_bool_assignment_typed_hir_boundary...\n");
-  reset_test_locals();
-  lvar_t *target = register_test_storage_fixture(
+  reset_test_locals(test_suite_session);
+  lvar_t *target = register_test_storage_fixture(test_suite_session,
       (char *)"typed_bool_target", 17, 1, 1, 0);
-  set_test_storage_fixture_type(
+  set_test_storage_fixture_type(test_suite_session,
       target, ps_ctx_intern_integer_qual_type_in(
-                  test_semantic_context(), PSX_INTEGER_KIND_BOOL, 0, 0));
-  node_t *syntax = parse_expr_input_with_existing_locals(
+                  test_semantic_context(test_suite_session), PSX_INTEGER_KIND_BOOL, 0, 0));
+  node_t *syntax = parse_expr_input_with_existing_locals(test_suite_session,
       "typed_bool_target = 3");
   ASSERT_EQ(ND_ASSIGN, syntax->kind);
   ASSERT_TRUE(syntax->lhs != NULL);
@@ -13773,13 +14041,13 @@ static void test_bool_assignment_typed_hir_boundary() {
   node_t *lhs_syntax = syntax->lhs;
   node_t *rhs_syntax = syntax->rhs;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_hir(syntax);
+      resolve_test_expression_hir(test_suite_session, syntax);
   const psx_hir_node_t *assignment_hir =
       test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_ASSIGN,
             psx_hir_node_kind(assignment_hir));
   ASSERT_EQ(PSX_TYPE_BOOL,
-            test_hir_type_shape(assignment_hir).kind);
+            test_hir_type_shape(test_suite_session, assignment_hir).kind);
   ASSERT_EQ(2, psx_hir_node_child_count(assignment_hir));
   const psx_hir_node_t *lhs_hir = psx_hir_module_lookup(
       expression.module, psx_hir_node_child_at(assignment_hir, 0));
@@ -13793,7 +14061,8 @@ static void test_bool_assignment_typed_hir_boundary() {
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static void test_type_metadata_bridge() {
+static void test_type_metadata_bridge(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_type_metadata_bridge...\n");
 
   psx_semantic_type_table_t *types =
@@ -13940,9 +14209,9 @@ static void test_type_metadata_bridge() {
       types, dynamic_function));
 
   const psx_record_layout_table_t *session_record_layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
+      ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session));
   const ag_data_layout_t *data_layout =
-      ps_ctx_data_layout(test_semantic_context());
+      ps_ctx_data_layout(test_semantic_context(test_suite_session));
   ASSERT_EQ(4, psx_type_layout_sizeof(
                    types, session_record_layouts,
                    int_type.type_id, data_layout));
@@ -13968,8 +14237,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(strcmp(canonical_signature, "p<kAi32>") == 0);
   psx_semantic_type_table_destroy(types);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct MetaPair { int x; char y; }; "
       "union MetaValue { long long i; double d; }; "
       "int gmatrix[2][3]; const int gconst=7; "
@@ -13977,7 +14246,7 @@ static void test_type_metadata_bridge() {
       "int metadata_signature(int (*cb)(double), const int *p, ...); "
       "int main(void) { return gmatrix[0][0] + gconst + gpair.x; }"));
 
-  psx_scope_graph_t *scope_graph = test_scope_graph();
+  psx_scope_graph_t *scope_graph = test_scope_graph(test_suite_session);
   const psx_scope_declaration_t *matrix_declaration =
       find_test_scope_declaration(
           scope_graph, "gmatrix", PSX_DECL_GLOBAL_OBJECT, 0);
@@ -13993,41 +14262,41 @@ static void test_type_metadata_bridge() {
   psx_qual_type_t matrix_type =
       ps_gvar_decl_qual_type(matrix_declaration->payload);
   psx_type_shape_t matrix_shape =
-      test_qual_type_shape(matrix_type);
+      test_qual_type_shape(test_suite_session, matrix_type);
   ASSERT_EQ(PSX_TYPE_ARRAY, matrix_shape.kind);
   ASSERT_EQ(2, matrix_shape.array_len);
   psx_qual_type_t matrix_row =
-      test_qual_type_base(matrix_type);
+      test_qual_type_base(test_suite_session, matrix_type);
   ASSERT_EQ(PSX_TYPE_ARRAY,
-            test_qual_type_shape(matrix_row).kind);
-  ASSERT_EQ(3, test_qual_type_shape(matrix_row).array_len);
-  ASSERT_EQ(24, test_type_size_id(matrix_type.type_id));
+            test_qual_type_shape(test_suite_session, matrix_row).kind);
+  ASSERT_EQ(3, test_qual_type_shape(test_suite_session, matrix_row).array_len);
+  ASSERT_EQ(24, test_type_size_id(test_suite_session, matrix_type.type_id));
   psx_qual_type_t const_global_type =
       ps_gvar_decl_qual_type(const_declaration->payload);
   ASSERT_TRUE((const_global_type.qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_EQ(PSX_TYPE_STRUCT,
-            test_qual_type_shape(
+            test_qual_type_shape(test_suite_session,
                 ps_gvar_decl_qual_type(
                     pair_declaration->payload)).kind);
 
   psx_record_id_t pair_record_id =
       ps_ctx_resolve_tag_record_id_in(
-          test_semantic_context(), TK_STRUCT,
+          test_semantic_context(test_suite_session), TK_STRUCT,
           (char *)"MetaPair", 8);
   psx_record_id_t value_record_id =
       ps_ctx_resolve_tag_record_id_in(
-          test_semantic_context(), TK_UNION,
+          test_semantic_context(test_suite_session), TK_UNION,
           (char *)"MetaValue", 9);
   ASSERT_TRUE(pair_record_id != PSX_RECORD_ID_INVALID);
   ASSERT_TRUE(value_record_id != PSX_RECORD_ID_INVALID);
   ASSERT_TRUE(pair_record_id != value_record_id);
   const psx_record_decl_t *pair_record =
       ps_ctx_get_record_decl_in(
-          test_semantic_context(), pair_record_id);
+          test_semantic_context(test_suite_session), pair_record_id);
   const psx_record_decl_t *value_record =
       ps_ctx_get_record_decl_in(
-          test_semantic_context(), value_record_id);
+          test_semantic_context(test_suite_session), value_record_id);
   ASSERT_TRUE(pair_record != NULL);
   ASSERT_TRUE(value_record != NULL);
   ASSERT_TRUE(pair_record->is_complete);
@@ -14036,11 +14305,11 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, value_record->member_count);
   const psx_record_layout_t *pair_layout =
       psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(test_semantic_context()),
+          ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)),
           pair_record_id, data_layout);
   const psx_record_layout_t *value_layout =
       psx_record_layout_table_lookup(
-          ps_ctx_record_layout_table_in(test_semantic_context()),
+          ps_ctx_record_layout_table_in(test_semantic_context(test_suite_session)),
           value_record_id, data_layout);
   ASSERT_TRUE(pair_layout != NULL);
   ASSERT_TRUE(value_layout != NULL);
@@ -14055,15 +14324,15 @@ static void test_type_metadata_bridge() {
 
   psx_qual_type_t signature =
       ps_ctx_get_function_qual_type_in(
-          test_semantic_context(),
+          test_semantic_context(test_suite_session),
           (char *)"metadata_signature", 18);
   psx_type_shape_t signature_shape =
-      test_qual_type_shape(signature);
+      test_qual_type_shape(test_suite_session, signature);
   ASSERT_EQ(PSX_TYPE_FUNCTION, signature_shape.kind);
   ASSERT_EQ(2, signature_shape.parameter_count);
   ASSERT_TRUE(signature_shape.is_variadic_function);
   const psx_semantic_type_table_t *session_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   psx_qual_type_t callback_parameter =
       psx_semantic_type_table_parameter(
           session_types, signature.type_id, 0);
@@ -14071,17 +14340,17 @@ static void test_type_metadata_bridge() {
       psx_semantic_type_table_parameter(
           session_types, signature.type_id, 1);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(callback_parameter).kind);
+            test_qual_type_shape(test_suite_session, callback_parameter).kind);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
-            test_qual_type_shape(
-                test_qual_type_base(callback_parameter)).kind);
+            test_qual_type_shape(test_suite_session,
+                test_qual_type_base(test_suite_session, callback_parameter)).kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(pointer_parameter).kind);
-  ASSERT_TRUE((test_qual_type_base(pointer_parameter).qualifiers &
+            test_qual_type_shape(test_suite_session, pointer_parameter).kind);
+  ASSERT_TRUE((test_qual_type_base(test_suite_session, pointer_parameter).qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int metadata_vla(int n, int rows[][n][3]) { "
       "int matrix[2][3]={{1,2,3},{4,5,6}}; "
       "int *const *volatile pp=0; "
@@ -14118,7 +14387,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(atomic_value != NULL);
   psx_qual_type_t pp_type = psx_hir_node_qual_type(pp);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(pp_type).kind);
+            test_qual_type_shape(test_suite_session, pp_type).kind);
   ASSERT_TRUE((pp_type.qualifiers &
                PSX_TYPE_QUALIFIER_VOLATILE) != 0);
   ASSERT_TRUE((psx_hir_node_qual_type(atomic_value).qualifiers &
@@ -14129,56 +14398,60 @@ static void test_type_metadata_bridge() {
                   hir, PSX_HIR_RETURN, 0) != NULL);
 }
 
-static void test_translation_unit_reset_static_local_state() {
+static void test_translation_unit_reset_static_local_state(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_reset_static_local_state...\n");
 
   const char *input = "int f(void) { static int x=1; return x; }";
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(input));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, input));
   ASSERT_EQ(1, psx_hir_module_root_count(
                    ag_compilation_session_hir_module(
                        test_suite_session)));
-  ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
-  ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "f.x.0", 5) != NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "f.x.1", 5) == NULL);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(input));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, input));
   ASSERT_EQ(1, psx_hir_module_root_count(
                    ag_compilation_session_hir_module(
                        test_suite_session)));
-  ASSERT_TRUE(find_test_global_var("f.x.0", 5) != NULL);
-  ASSERT_TRUE(find_test_global_var("f.x.1", 5) == NULL);
-  reset_test_translation_unit_state();
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "f.x.0", 5) != NULL);
+  ASSERT_TRUE(find_test_global_var(test_suite_session, "f.x.1", 5) == NULL);
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_translation_unit_reset_anonymous_tag_state() {
+static void test_translation_unit_reset_anonymous_tag_state(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_reset_anonymous_tag_state...\n");
 
   const char *input = "struct { int x; } g; int main(void) { return 0; }";
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(input));
-  ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
-  ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, input));
+  ASSERT_TRUE(test_semantic_has_tag_type(test_suite_session, TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!test_semantic_has_tag_type(test_suite_session, TK_STRUCT, "__anon_tag_1", 12));
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(input));
-  ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
-  ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session, input));
+  ASSERT_TRUE(test_semantic_has_tag_type(test_suite_session, TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!test_semantic_has_tag_type(test_suite_session, TK_STRUCT, "__anon_tag_1", 12));
+  reset_test_translation_unit_state(test_suite_session);
 }
 
-static void test_translation_unit_reset_decl_locals_state() {
+static void test_translation_unit_reset_decl_locals_state(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_reset_decl_locals_state...\n");
 
   char name[] = "x";
-  reset_test_locals();
-  ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
-  ASSERT_TRUE(find_test_local_var_in(test_local_registry(), name, 1) != NULL);
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(find_test_local_var_in(test_local_registry(), name, 1) == NULL);
+  reset_test_locals(test_suite_session);
+  ASSERT_TRUE(register_test_default_storage_fixture(test_suite_session, name, 1) != NULL);
+  ASSERT_TRUE(find_test_local_var_in(test_local_registry(test_suite_session), name, 1) != NULL);
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(find_test_local_var_in(test_local_registry(test_suite_session), name, 1) == NULL);
 }
 
-static void test_translation_unit_reset_pragma_pack_state() {
+static void test_translation_unit_reset_pragma_pack_state(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_translation_unit_reset_pragma_pack_state...\n");
 
   psx_parser_runtime_context_t *runtime_context =
@@ -14187,7 +14460,7 @@ static void test_translation_unit_reset_pragma_pack_state() {
   pragma_pack_set_in(runtime_context, 8);
   pragma_pack_push_in(runtime_context, 1);
   ASSERT_EQ(1, pragma_pack_current_alignment_in(runtime_context));
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
   ASSERT_EQ(0, pragma_pack_current_alignment_in(runtime_context));
   pragma_pack_pop_in(runtime_context);
   ASSERT_EQ(0, pragma_pack_current_alignment_in(runtime_context));
@@ -14210,10 +14483,11 @@ static const psx_hir_node_t *assert_test_hir_function_root(
   return function;
 }
 
-static void test_multiple_funcdefs() {
+static void test_multiple_funcdefs(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_multiple_funcdefs...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int foo(void) { 1; } int bar(void) { 2; }"));
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
@@ -14221,103 +14495,103 @@ static void test_multiple_funcdefs() {
   assert_test_hir_function_root(hir, 0, "foo");
   assert_test_hir_function_root(hir, 1, "bar");
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int add(int a, int b); "
       "int add(int a, int b) { return a+b; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   assert_test_hir_function_root(hir, 0, "add");
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int log(const char *fmt, ...); int main() { return 0; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   assert_test_hir_function_root(hir, 0, "main");
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int **sig_proto_pp(void); int main(void) { return 0; }"));
   psx_qual_type_t signature = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"sig_proto_pp", 12);
-  psx_qual_type_t derived = test_qual_type_base(signature);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
-  derived = test_qual_type_base(derived);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
+      test_semantic_context(test_suite_session), (char *)"sig_proto_pp", 12);
+  psx_qual_type_t derived = test_qual_type_base(test_suite_session, signature);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, derived).kind);
+  derived = test_qual_type_base(test_suite_session, derived);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, derived).kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_qual_type_shape(test_qual_type_base(derived)).kind);
+            test_qual_type_shape(test_suite_session, test_qual_type_base(test_suite_session, derived)).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int **sig_def_pp(void) { return 0; }"));
   signature = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"sig_def_pp", 10);
-  derived = test_qual_type_base(signature);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
-  derived = test_qual_type_base(derived);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(derived).kind);
+      test_semantic_context(test_suite_session), (char *)"sig_def_pp", 10);
+  derived = test_qual_type_base(test_suite_session, signature);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, derived).kind);
+  derived = test_qual_type_base(test_suite_session, derived);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, derived).kind);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }"));
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   signature = ps_ctx_get_function_qual_type_in(
-      test_semantic_context(), (char *)"sig_deep", 8);
+      test_semantic_context(test_suite_session), (char *)"sig_deep", 8);
   psx_qual_type_t int_function_pointer =
       psx_semantic_type_table_base(types, signature.type_id);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(int_function_pointer).kind);
+            test_qual_type_shape(test_suite_session, int_function_pointer).kind);
   psx_qual_type_t int_function =
-      test_qual_type_base(int_function_pointer);
-  psx_type_shape_t function_shape = test_qual_type_shape(int_function);
+      test_qual_type_base(test_suite_session, int_function_pointer);
+  psx_type_shape_t function_shape = test_qual_type_shape(test_suite_session, int_function);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(1, function_shape.parameter_count);
   ASSERT_EQ(PSX_TYPE_INTEGER,
-            test_qual_type_shape(psx_semantic_type_table_parameter(
+            test_qual_type_shape(test_suite_session, psx_semantic_type_table_parameter(
                 types, int_function.type_id, 0)).kind);
   psx_qual_type_t double_function_pointer =
-      test_qual_type_base(int_function);
+      test_qual_type_base(test_suite_session, int_function);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            test_qual_type_shape(double_function_pointer).kind);
+            test_qual_type_shape(test_suite_session, double_function_pointer).kind);
   psx_qual_type_t double_function =
-      test_qual_type_base(double_function_pointer);
-  function_shape = test_qual_type_shape(double_function);
+      test_qual_type_base(test_suite_session, double_function_pointer);
+  function_shape = test_qual_type_shape(test_suite_session, double_function);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function_shape.kind);
   ASSERT_EQ(1, function_shape.parameter_count);
-  psx_type_shape_t double_parameter = test_qual_type_shape(
+  psx_type_shape_t double_parameter = test_qual_type_shape(test_suite_session,
       psx_semantic_type_table_parameter(
           types, double_function.type_id, 0));
   ASSERT_EQ(PSX_TYPE_FLOAT, double_parameter.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
             double_parameter.floating_kind);
-  psx_qual_type_t array_pointer = test_qual_type_base(double_function);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(array_pointer).kind);
-  psx_qual_type_t array = test_qual_type_base(array_pointer);
-  psx_type_shape_t array_shape = test_qual_type_shape(array);
+  psx_qual_type_t array_pointer = test_qual_type_base(test_suite_session, double_function);
+  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(test_suite_session, array_pointer).kind);
+  psx_qual_type_t array = test_qual_type_base(test_suite_session, array_pointer);
+  psx_type_shape_t array_shape = test_qual_type_shape(test_suite_session, array);
   ASSERT_EQ(PSX_TYPE_ARRAY, array_shape.kind);
   ASSERT_EQ(3, array_shape.array_len);
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int variadic(...){ return 0; } "
       "int main() { return variadic(); }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(2, psx_hir_module_root_count(hir));
   const psx_hir_node_t *variadic =
       assert_test_hir_function_root(hir, 0, "variadic");
-  ASSERT_TRUE(test_qual_type_shape(
+  ASSERT_TRUE(test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(variadic)).is_variadic_function);
   assert_test_hir_function_root(hir, 1, "main");
 
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int f(int a[static 3], int b[restrict static 2]) { return 7; }"));
   hir = ag_compilation_session_hir_module(test_suite_session);
   const psx_hir_node_t *array_function =
       assert_test_hir_function_root(hir, 0, "f");
-  function_shape = test_qual_type_shape(
+  function_shape = test_qual_type_shape(test_suite_session,
       psx_hir_node_attached_qual_type(array_function));
   ASSERT_EQ(2, function_shape.parameter_count);
 
@@ -14340,8 +14614,8 @@ static void test_multiple_funcdefs() {
   };
   for (size_t i = 0;
        i < sizeof(root_cases) / sizeof(root_cases[0]); i++) {
-    reset_test_translation_unit_state();
-    ASSERT_TRUE(resolve_program_input_hir(root_cases[i].source));
+    reset_test_translation_unit_state(test_suite_session);
+    ASSERT_TRUE(resolve_program_input_hir(test_suite_session, root_cases[i].source));
     hir = ag_compilation_session_hir_module(test_suite_session);
     size_t expected_roots = root_cases[i].second_function ? 2 : 1;
     ASSERT_EQ(expected_roots, psx_hir_module_root_count(hir));
@@ -14353,301 +14627,304 @@ static void test_multiple_funcdefs() {
   }
 }
 
-static void test_parse_invalid() {
+static void test_parse_invalid(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parse_invalid...\n");
-  expect_parse_fail("int main(void { return 0; }"); // ')' がない
-  expect_parse_fail("int main() { return 0; ");     // '}' がない
-  expect_parse_fail("int main() { return 0 }");     // ';' がない
-  expect_parse_fail("int main() { if (1) return 1; else }"); // else ブロック不正
-  expect_parse_fail("int main() { int ; return 0; }");       // 変数名なし
-  expect_parse_fail("int main() { int a[; return 0; }");     // 配列サイズ不正
-  expect_parse_fail("int main() { int a[1 return 0; }");     // ']' がない
-  expect_parse_fail("int main() { return (1+2; }");          // ')' がない
-  expect_parse_fail("int main() { if 1) return 0; }");       // '(' がない
-  expect_parse_fail("int main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
-  expect_parse_fail("int main() { ++1; }");                  // lvalueでない
-  expect_parse_fail("int main() { 1++; }");                  // lvalueでない
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "int main(void { return 0; }"); // ')' がない
+  expect_parse_fail(test_suite_session, "int main() { return 0; ");     // '}' がない
+  expect_parse_fail(test_suite_session, "int main() { return 0 }");     // ';' がない
+  expect_parse_fail(test_suite_session, "int main() { if (1) return 1; else }"); // else ブロック不正
+  expect_parse_fail(test_suite_session, "int main() { int ; return 0; }");       // 変数名なし
+  expect_parse_fail(test_suite_session, "int main() { int a[; return 0; }");     // 配列サイズ不正
+  expect_parse_fail(test_suite_session, "int main() { int a[1 return 0; }");     // ']' がない
+  expect_parse_fail(test_suite_session, "int main() { return (1+2; }");          // ')' がない
+  expect_parse_fail(test_suite_session, "int main() { if 1) return 0; }");       // '(' がない
+  expect_parse_fail(test_suite_session, "int main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
+  expect_parse_fail(test_suite_session, "int main() { ++1; }");                  // lvalueでない
+  expect_parse_fail(test_suite_session, "int main() { 1++; }");                  // lvalueでない
+  expect_parse_fail(test_suite_session,
       "int main(void) { const int value=0; value++; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "typedef int *P; int main(void) { int x=0; const P p=&x; "
       "p=&x; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct S { const int c; }; int main(void) { "
       "struct S s={0}; s.c=1; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int x; } value; value++; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { _Complex double value=0; ++value; return 0; }");
-  expect_parse_ok("int main() { float f=1.0; ++f; }");       // C11: 浮動小数点の ++ は合法
-  expect_parse_ok("int main() { double d=1.0; d--; }");      // C11: 浮動小数点の -- は合法
-  expect_parse_fail("int main() { 1 += 2; }");               // lvalueでない
-  expect_parse_fail("int main() { return; }");               // 非void関数で式なしreturn
-  expect_parse_fail("void f() { return 1; }");           // void関数で値return
-  expect_parse_fail(
+  expect_parse_ok(test_suite_session, "int main() { float f=1.0; ++f; }");       // C11: 浮動小数点の ++ は合法
+  expect_parse_ok(test_suite_session, "int main() { double d=1.0; d--; }");      // C11: 浮動小数点の -- は合法
+  expect_parse_fail(test_suite_session, "int main() { 1 += 2; }");               // lvalueでない
+  expect_parse_fail(test_suite_session, "int main() { return; }");               // 非void関数で式なしreturn
+  expect_parse_fail(test_suite_session, "void f() { return 1; }");           // void関数で値return
+  expect_parse_fail(test_suite_session,
       "int f(void) { int *value = 0; return value; }");
-  expect_parse_fail("int *f(void) { return 1; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "int *f(void) { return 1; }");
+  expect_parse_fail(test_suite_session,
       "int *f(const int *value) { return value; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { int value=1; (int[2])value; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "return (int)value; }");
-  expect_parse_fail("int main(void) { return &1 != 0; }");
-  expect_parse_ok(
+  expect_parse_fail(test_suite_session, "int main(void) { return &1 != 0; }");
+  expect_parse_ok(test_suite_session,
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "(void)value; return 0; }");
-  expect_parse_fail("int main() { return missing_value; }"); // 未定義変数
-  expect_parse_fail("int main() { goto MISSING; return 0; }"); // 未定義ラベル
-  expect_parse_fail("int main() { struct T x; return 0; }");   // 未定義タグ参照
-  expect_parse_ok(
+  expect_parse_fail(test_suite_session, "int main() { return missing_value; }"); // 未定義変数
+  expect_parse_fail(test_suite_session, "int main() { goto MISSING; return 0; }"); // 未定義ラベル
+  expect_parse_fail(test_suite_session, "int main() { struct T x; return 0; }");   // 未定義タグ参照
+  expect_parse_ok(test_suite_session,
       "int main(void) { struct Forward (*p); (void)p; return 0; }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "typedef struct Forward Forward; struct Holder { Forward *p; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct Holder { struct Forward values[2]; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "typedef int FunctionType(int); struct Holder { FunctionType f; }; "
       "int main(void) { return 0; }");
-  expect_parse_fail("struct S; union S; int main(void) { return 0; }");
-  expect_parse_fail("struct E {}; struct E {}; int main(void) { return 0; }");
-  expect_parse_fail("struct S { int x; int x; }; int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "struct S; union S; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "struct E {}; struct E {}; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "struct S { int x; int x; }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
       "struct S { int x; struct { int x; }; }; int main(void) { return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "struct S { unsigned int x : 33; }; int main(void) { return 0; }");
-  expect_parse_ok(
+  expect_parse_ok(test_suite_session,
       "struct S { struct { int x; }; struct { int y; }; }; "
       "int main(void) { struct S s = {{1}, {2}}; return s.x + s.y; }");
-  expect_parse_ok("typedef int X; typedef int X; int main(void) { return 0; }");
-  expect_parse_fail("typedef int X; typedef long X; int main(void) { return 0; }");
-  expect_parse_fail("int X; typedef int X; int main(void) { return 0; }");
-  expect_parse_fail("int f(void); typedef int f; int main(void) { return 0; }");
-  expect_parse_fail("enum E { X }; typedef int X; int main(void) { return 0; }");
-  expect_parse_fail("int main(void) { int x; typedef int x; return 0; }");
-  expect_parse_fail("int X; enum E { X }; int main(void) { return 0; }");
-  expect_parse_fail("int f(void); enum E { f }; int main(void) { return 0; }");
-  expect_parse_fail("typedef int T; enum E { T }; int main(void) { return 0; }");
-  expect_parse_fail("int main(void) { int x; enum E { x }; return 0; }");
-  expect_parse_ok("int X; int main(void) { enum E { X }; return 0; }");
-  expect_parse_ok("typedef int T; int main(void) { enum E { T }; return 0; }");
-  expect_parse_ok("int main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
-  expect_parse_fail("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }"); // 非同種非スカラ型cast未対応
-  expect_parse_fail("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }"); // 同サイズでも別タグは互換structではない
-  expect_parse_fail("int main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
-  expect_parse_fail("int main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
-  expect_parse_fail("int main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
-  expect_parse_fail("int main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
-  expect_parse_fail("int main() { int a[-1]; return 0; }");         // 配列サイズは負数不可
-  expect_parse_fail("int main() { return sizeof(int[-1]); }");      // sizeof 型名も同じ制約
-  expect_parse_fail("int main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
-  expect_parse_fail(
+  expect_parse_ok(test_suite_session, "typedef int X; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "typedef int X; typedef long X; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "int X; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "int f(void); typedef int f; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "enum E { X }; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "int main(void) { int x; typedef int x; return 0; }");
+  expect_parse_fail(test_suite_session, "int X; enum E { X }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "int f(void); enum E { f }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "typedef int T; enum E { T }; int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session, "int main(void) { int x; enum E { x }; return 0; }");
+  expect_parse_ok(test_suite_session, "int X; int main(void) { enum E { X }; return 0; }");
+  expect_parse_ok(test_suite_session, "typedef int T; int main(void) { enum E { T }; return 0; }");
+  expect_parse_ok(test_suite_session, "int main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
+  expect_parse_fail(test_suite_session, "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }"); // 非同種非スカラ型cast未対応
+  expect_parse_fail(test_suite_session, "int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }"); // 同サイズでも別タグは互換structではない
+  expect_parse_fail(test_suite_session, "int main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
+  expect_parse_fail(test_suite_session, "int main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
+  expect_parse_fail(test_suite_session, "int main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
+  expect_parse_fail(test_suite_session, "int main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
+  expect_parse_fail(test_suite_session, "int main() { int a[-1]; return 0; }");         // 配列サイズは負数不可
+  expect_parse_fail(test_suite_session, "int main() { return sizeof(int[-1]); }");      // sizeof 型名も同じ制約
+  expect_parse_fail(test_suite_session, "int main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
+  expect_parse_fail(test_suite_session,
       "int main() { return _Generic(1, int:1, signed int:2, default:3); }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main() { return _Generic(1, int:1, default:2, default:3); }");
-  expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
-  expect_parse_fail("int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
-  expect_parse_fail("int main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
-  expect_parse_fail("int main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
+  expect_parse_fail(test_suite_session, "int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
+  expect_parse_fail(test_suite_session, "int main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
+  expect_parse_fail(test_suite_session, "int main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
+  expect_parse_fail(test_suite_session,
       "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
-  expect_parse_fail("int main() { int x; x.y=1; }");            // 非構造体への .
-  expect_parse_fail("int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "int main() { int x; x.y=1; }");            // 非構造体への .
+  expect_parse_fail(test_suite_session, "int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
+  expect_parse_fail(test_suite_session,
       "int main() { struct S { int x; } s={0}; return s.y; }");
-  expect_parse_fail("int main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
-  expect_parse_fail("int main(void) { int *p=0; return -p; }");
-  expect_parse_fail("int main(void) { int *p=0; return __real__ p; }");
-  expect_parse_fail("int main(void) { int value=0; return value(); }");
-  expect_parse_fail("int main(void) { int (**pp)(void)=0; return pp(); }");
-  expect_parse_fail("int main(void) { struct S { int bits:3; } s; return &s.bits != 0; }");
-  expect_parse_fail("int main() { break; }");                // ループ/switch外
-  expect_parse_fail("int main() { continue; }");             // ループ外
-  expect_parse_fail("int main(void) { int x = ({ continue; 0; }); return x; }");
-  expect_parse_fail("int main(void) { while (({ continue; 1; })) return 0; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session, "int main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
+  expect_parse_fail(test_suite_session, "int main(void) { int *p=0; return -p; }");
+  expect_parse_fail(test_suite_session, "int main(void) { int *p=0; return __real__ p; }");
+  expect_parse_fail(test_suite_session, "int main(void) { int value=0; return value(); }");
+  expect_parse_fail(test_suite_session, "int main(void) { int (**pp)(void)=0; return pp(); }");
+  expect_parse_fail(test_suite_session, "int main(void) { struct S { int bits:3; } s; return &s.bits != 0; }");
+  expect_parse_fail(test_suite_session, "int main() { break; }");                // ループ/switch外
+  expect_parse_fail(test_suite_session, "int main() { continue; }");             // ループ外
+  expect_parse_fail(test_suite_session, "int main(void) { int x = ({ continue; 0; }); return x; }");
+  expect_parse_fail(test_suite_session, "int main(void) { while (({ continue; 1; })) return 0; return 0; }");
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int value; } s = {0}; if (s) return 1; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int value; } s = {0}; while (s) return 1; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int value; } s = {0}; do {} while (s); return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { struct S { int value; } s = {0}; for (; s;) return 1; return 0; }");
-  expect_parse_fail(
+  expect_parse_fail(test_suite_session,
       "int main(void) { switch (1.0) { default: return 0; } }");
-  expect_parse_fail("int main() { case 1: return 0; }");     // switch外のcase
-  expect_parse_fail("int main() { default: return 0; }");    // switch外のdefault
-  expect_parse_fail("int main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
-  expect_parse_fail("int main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
-  expect_parse_fail("int main() { switch (1) { default: 0; default: 1; } }"); // default 重複
-  expect_parse_fail("enum E { A = 2147483648 }; int main(void){ return 0; }"); // enum定数はint幅
-  expect_parse_fail("int main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
-  expect_parse_fail("int main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
-  expect_parse_fail("int main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
-  expect_parse_fail("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
-  expect_parse_fail("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
-  expect_parse_fail("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
-  expect_parse_fail("int main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
+  expect_parse_fail(test_suite_session, "int main() { case 1: return 0; }");     // switch外のcase
+  expect_parse_fail(test_suite_session, "int main() { default: return 0; }");    // switch外のdefault
+  expect_parse_fail(test_suite_session, "int main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
+  expect_parse_fail(test_suite_session, "int main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
+  expect_parse_fail(test_suite_session, "int main() { switch (1) { default: 0; default: 1; } }"); // default 重複
+  expect_parse_fail(test_suite_session, "enum E { A = 2147483648 }; int main(void){ return 0; }"); // enum定数はint幅
+  expect_parse_fail(test_suite_session, "int main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
+  expect_parse_fail(test_suite_session, "int main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
+  expect_parse_fail(test_suite_session, "int main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
+  expect_parse_fail(test_suite_session, "int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
+  expect_parse_fail(test_suite_session, "int main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
+  expect_parse_fail(test_suite_session, "int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
+  expect_parse_fail(test_suite_session, "int main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
   // C11 6.7.9p19: 同一 subobject への複数指定初期化子は後勝ちで受理される。
-  expect_parse_ok("int main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator (後勝ち)
-  expect_parse_ok("int main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後の上書き
-  expect_parse_ok("int main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator (後勝ち)
+  expect_parse_ok(test_suite_session, "int main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator (後勝ち)
+  expect_parse_ok(test_suite_session, "int main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後の上書き
+  expect_parse_ok(test_suite_session, "int main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator (後勝ち)
 }
 
-static void test_parse_invalid_diagnostics() {
+static void test_parse_invalid_diagnostics(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parse_invalid_diagnostics...\n");
-  expect_parse_fail_with_message("int main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
-  expect_parse_fail_with_message("int main() { L1: return 0; L1: return 1; }", "識別子が重複しています (ラベル): 'L1'");
-  expect_parse_fail_with_message("int main() { struct T x; return 0; }", "不完全型のオブジェクトは宣言できません");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] struct 値へのキャストは未対応です（型不整合）");
-  expect_parse_fail_with_message("int main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（型不整合）");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session, "int main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
+  expect_parse_fail_with_message(test_suite_session, "int main() { L1: return 0; L1: return 1; }", "識別子が重複しています (ラベル): 'L1'");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct T x; return 0; }", "不完全型のオブジェクトは宣言できません");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] struct 値へのキャストは未対応です（型不整合）");
+  expect_parse_fail_with_message(test_suite_session, "int main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（型不整合）");
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int value=1; (int[2])value; return 0; }",
       "キャスト先の型は void またはスカラ型である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { struct S { int x; }; struct S value={1}; "
       "return (int)value; }",
       "void 以外へのキャストのオペランドはスカラ型である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { return &1 != 0; }",
       "& のオペランドは関数指示子またはオブジェクトを指す左辺値である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { struct S { int bits:3; } value={1}; "
       "return &value.bits != 0; }",
       "ビットフィールドのアドレスは取得できません");
-  expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "E3099");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "E3099");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "E3099");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "E3099");
-  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "E3036");
-  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "E3036");
-  expect_parse_fail_with_message("int main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
-  expect_parse_fail_with_message("int main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
-  expect_parse_fail_with_message("int main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
-  expect_parse_fail_with_message("int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
-  expect_parse_fail_with_message("int main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "E3099");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct S { int x; }; struct S s=1; return 0; }", "E3099");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "E3099");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "E3099");
+  expect_parse_fail_with_message(test_suite_session, "int main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "E3036");
+  expect_parse_fail_with_message(test_suite_session, "int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "E3036");
+  expect_parse_fail_with_message(test_suite_session, "int main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
+  expect_parse_fail_with_message(test_suite_session, "int main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+  expect_parse_fail_with_message(test_suite_session, "int main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message(test_suite_session,
       "int main() { struct S { int *p:1; }; return 0; }",
       "bit-field has non-integer canonical type");
-  expect_parse_fail("int main() { struct S { int a[2]:1; }; return 0; }");
-  expect_parse_fail("int main() { struct S { float f:1; }; return 0; }");
-  expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
-  expect_parse_fail_with_message("int main() { int x; int *p=&x; return *(void *)p; }",
+  expect_parse_fail(test_suite_session, "int main() { struct S { int a[2]:1; }; return 0; }");
+  expect_parse_fail(test_suite_session, "int main() { struct S { float f:1; }; return 0; }");
+  expect_parse_fail_with_message(test_suite_session, "int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
+  expect_parse_fail_with_message(test_suite_session, "int main() { int x; int *p=&x; return *(void *)p; }",
                                  "void* の deref はできません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int value=1; return *value; }",
       "deref のオペランドはポインタ型でなければなりません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int value=1; return value[0]; }",
       "サブスクリプトの両辺ともポインタ/配列ではありません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int *value=0; return -value; }",
       "単項 - のオペランドは算術型でなければなりません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int *value=0; return __real__ value; }",
       "__real__ のオペランドは算術型でなければなりません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int *value=0; return __imag__ value; }",
       "__imag__ のオペランドは算術型でなければなりません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { return ++1; }",
       "++ の対象は左辺値である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { const int value=0; return ++value; }",
       "const修飾された変数への代入はできません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { _Complex double value=0; ++value; return 0; }",
       "++ のオペランドは実数型またはポインタ型でなければなりません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { 1=2; return 0; }",
       "= の対象は左辺値である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { const int value=0; value=1; return 0; }",
       "const修飾された変数への代入はできません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int target(void); target=target; return 0; }",
       "関数識別子に代入することはできません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { const int source=0; const int *from=&source; "
       "int *to=0; to=from; return 0; }",
       "const修飾されたポインタからconst無しポインタへの暗黙変換はできません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int value=0; int *pointer=0; "
       "value=pointer; return 0; }",
       "代入する型に互換性がありません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { int *pointer=0; pointer*=2; return 0; }",
       "代入する型に互換性がありません");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void) { struct S { int value; } condition={0}; "
       "return condition ? 1 : 2; }",
       "条件演算子の第1オペランドはスカラ型である必要があります");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(int condition) { return condition ? (void)0 : 1; }",
       "条件演算子の第2・第3オペランドの型に互換性がありません");
-  expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
+  expect_parse_fail_with_message(test_suite_session, "void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "E3099");
-  expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",
+  expect_parse_fail_with_message(test_suite_session, "void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",
                                  "E3099");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
-  expect_parse_fail_without_message("int main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
-  expect_parse_fail_without_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message(test_suite_session, "int main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message(test_suite_session, "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] この型へのキャストは未対応です");
 
   // Parser拡張設定: 同種同サイズの非スカラcast受理を無効化できること。
-  test_compilation_options()->enable_size_compatible_nonscalar_cast = false;
-  expect_parse_fail_with_message(
+  test_compilation_options(test_suite_session)->enable_size_compatible_nonscalar_cast = false;
+  expect_parse_fail_with_message(test_suite_session,
       "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }",
       "[cast] struct 値へのキャストは未対応です（型不整合）");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "struct S { int x; }; int main() { struct S outer={1}; { struct S { int y; }; return ((struct S)outer).y; } }",
       "[cast] struct 値へのキャストは未対応です（型不整合）");
-  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
+  test_compilation_options(test_suite_session)->enable_size_compatible_nonscalar_cast = true;
 
   // Parser拡張設定: struct への scalar/pointer cast 受理を無効化できること。
-  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
-  expect_parse_fail_with_message(
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = false;
+  expect_parse_fail_with_message(test_suite_session,
       "int main() { struct S { int x; }; int a=0; return (struct S)a; }",
       "[cast] struct への scalar/pointer cast は設定で無効です");
-  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = true;
 
   // Parser拡張設定: union への scalar/pointer cast 受理を無効化できること。
-  test_compilation_options()->enable_union_scalar_pointer_cast = false;
-  expect_parse_fail_with_message(
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = false;
+  expect_parse_fail_with_message(test_suite_session,
       "int main() { union U { int x; char y; }; int a=0; return (union U)a; }",
       "[cast] union への scalar/pointer cast は設定で無効です");
-  test_compilation_options()->enable_union_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = true;
 
   // Parser拡張設定: union 先頭配列メンバの非波括弧初期化受理を無効化できること。
-  test_compilation_options()->enable_union_array_member_nonbrace_init = false;
-  expect_parse_fail_with_message(
+  test_compilation_options(test_suite_session)->enable_union_array_member_nonbrace_init = false;
+  expect_parse_fail_with_message(test_suite_session,
       "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
       "E3075");
-  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
+  test_compilation_options(test_suite_session)->enable_union_array_member_nonbrace_init = true;
 
   // 入れ子 designator: 非配列メンバに .member[idx]=val は診断エラー
-  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
+  expect_parse_fail_with_message(test_suite_session, "int main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
                                  "入れ子designatorの対象が配列メンバではありません");
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
   // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。
-  expect_parse_fail_without_message("int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
+  expect_parse_fail_without_message(test_suite_session, "int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
-  expect_parse_fail_without_message("int main() { struct T { int f(int); }; return 0; }",
+  expect_parse_fail_without_message(test_suite_session, "int main() { struct T { int f(int); }; return 0; }",
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
 }
 
 // 意地悪テスト: パーサーの境界ケース
-static void test_parse_evil_edge_cases() {
+static void test_parse_evil_edge_cases(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parse_evil_edge_cases...\n");
 
   // ネストした三項演算子: a?b?c:d:e は a?(b?c:d):e
   node_t *syntax = NULL;
   psx_frontend_expression_hir_t expression =
-      resolve_test_expression_input_hir(
+      resolve_test_expression_input_hir(test_suite_session,
           "1 ? 2 ? 3 : 4 : 5", &syntax);
   const psx_hir_node_t *root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_TERNARY, syntax->kind);
@@ -14665,7 +14942,7 @@ static void test_parse_evil_edge_cases() {
   psx_frontend_expression_hir_dispose(&expression);
 
   // 複雑な優先順位: 1+2*3==7&&1||0 → (((1+(2*3))==7)&&1)||0
-  expression = resolve_test_expression_input_hir(
+  expression = resolve_test_expression_input_hir(test_suite_session,
       "1+2*3==7&&1||0", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_LOGOR, psx_hir_node_kind(root));
@@ -14685,7 +14962,7 @@ static void test_parse_evil_edge_cases() {
 
   // ビット演算と論理演算の優先順位: 1&2|3^4
   // → (1&2) | (3^4) → ND_BITOR( ND_BITAND(1,2), ND_BITXOR(3,4) )
-  expression = resolve_test_expression_input_hir("1&2|3^4", &syntax);
+  expression = resolve_test_expression_input_hir(test_suite_session, "1&2|3^4", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_BITOR, psx_hir_node_kind(root));
   ASSERT_EQ(PSX_HIR_BITAND,
@@ -14695,12 +14972,12 @@ static void test_parse_evil_edge_cases() {
   psx_frontend_expression_hir_dispose(&expression);
 
   // x+++y の式解析: (x++) + y
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main() { int x=1; int y=2; return x+++y; }"));
   // パースが成功すればOK
 
   // キャストと単項マイナスのネスト: (int)-(char)5
-  expression = resolve_test_cast_input_hir("(int)-(char)5", &syntax);
+  expression = resolve_test_cast_input_hir(test_suite_session, "(int)-(char)5", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(root));
   const psx_hir_node_t *negation = test_hir_child(&expression, root, 0);
@@ -14711,7 +14988,7 @@ static void test_parse_evil_edge_cases() {
   psx_frontend_expression_hir_dispose(&expression);
 
   // シフトと比較の優先順位: 1<<2<8 → (1<<2)<8
-  expression = resolve_test_expression_input_hir("1<<2<8", &syntax);
+  expression = resolve_test_expression_input_hir(test_suite_session, "1<<2<8", &syntax);
   root = test_expression_hir_root(&expression);
   ASSERT_EQ(ND_LT, syntax->kind);
   ASSERT_EQ(TK_LT, syntax->source_op);
@@ -14734,7 +15011,7 @@ static void test_parse_evil_edge_cases() {
   };
   for (size_t i = 0;
        i < sizeof(comparisons) / sizeof(comparisons[0]); i++) {
-    expression = resolve_test_expression_input_hir(
+    expression = resolve_test_expression_input_hir(test_suite_session,
         comparisons[i].input, &syntax);
     root = test_expression_hir_root(&expression);
     ASSERT_EQ(comparisons[i].syntax_kind, syntax->kind);
@@ -14748,193 +15025,193 @@ static void test_parse_evil_edge_cases() {
   }
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
-  ASSERT_TRUE(resolve_program_input_hir(
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "int main() { int a; int b; a=1,b=2; }"));
   // パースが成功すればOK
 
   // 複雑な式文のパース
-  expect_parse_ok("int main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
-  expect_parse_ok_without_message("int main() { int x; *(&x) = 1; return x; }", "W3004");
-  expect_parse_ok_without_message(
+  expect_parse_ok(test_suite_session, "int main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
+  expect_parse_ok_without_message(test_suite_session, "int main() { int x; *(&x) = 1; return x; }", "W3004");
+  expect_parse_ok_without_message(test_suite_session,
       "typedef _Atomic int atomic_int; int main(void){ atomic_int x; ((void)(*(&x)=10)); return x; }",
       "W3004");
-  expect_parse_ok_without_message(
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }",
       "W3004");
-  expect_parse_ok_without_message(
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",
       "W3004");
-  expect_parse_ok_without_message("int main(void){ int x; int *p=&x; return p==0; }", "W3004");
-  expect_parse_ok_without_message("int main(void){ int x; int *p=&x; return p==0; }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int x; x=1; return 0; }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int x; return &x==0; }", "W3003");
-  expect_parse_ok_without_message("int main(void){ int x; return &x==0; }", "W3004");
-  expect_parse_ok_with_message("int main(void){ int x=1; return 0; }", "W3003");
-  expect_parse_ok_with_message("int main(void){ int x; x=x; return 0; }", "W3012");
-  expect_parse_ok_with_message("int main(void){ int x=1.5; return 0; }", "W3010");
-  expect_parse_ok_with_message("int main(void){ int x; x=1.5; return 0; }", "W3010");
-  expect_parse_ok_with_message("int main(void){ return 1.5; }", "W3010");
-  expect_parse_ok_with_message("int main(void){ int x=1; return x==x; }", "W3013");
-  expect_parse_ok_with_message("int main(void){ int x=1; return x&&x; }", "W3020");
-  expect_parse_ok_with_message("int main(void){ unsigned int u=1; int s=-1; return s<u; }",
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; int *p=&x; return p==0; }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; int *p=&x; return p==0; }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; x=1; return 0; }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; return &x==0; }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; return &x==0; }", "W3004");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return 0; }", "W3003");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x; x=x; return 0; }", "W3012");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1.5; return 0; }", "W3010");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x; x=1.5; return 0; }", "W3010");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1.5; }", "W3010");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return x==x; }", "W3013");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return x&&x; }", "W3020");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned int u=1; int s=-1; return s<u; }",
                                "W3018");
-  expect_parse_ok_without_message("int main(void){ unsigned int u=1; long s=-1; return s<u; }",
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ unsigned int u=1; long s=-1; return s<u; }",
                                   "W3018");
-  expect_parse_ok_without_message(
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ unsigned char u=1; int s=-1; return s<u; }", "W3018");
-  expect_parse_ok_with_message(
+  expect_parse_ok_with_message(test_suite_session,
       "int main(void){ unsigned long u=1; long s=-1; return s<u; }", "W3018");
-  expect_parse_ok_with_message("int main(void){ unsigned int u=1; return u>=0; }", "W3019");
-  expect_parse_ok_with_message("int main(void){ unsigned int u=1; return 0>u; }", "W3019");
-  expect_parse_ok_with_message("int main(void){ unsigned char u=1; return u<0; }", "W3019");
-  expect_parse_ok_with_message("int main(void){ unsigned short u=1; return 0<=u; }", "W3019");
-  expect_parse_ok_with_message(
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned int u=1; return u>=0; }", "W3019");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned int u=1; return 0>u; }", "W3019");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned char u=1; return u<0; }", "W3019");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned short u=1; return 0<=u; }", "W3019");
+  expect_parse_ok_with_message(test_suite_session,
       "unsigned char f(void){ return 1; } int main(void){ return f()<0; }", "W3019");
-  expect_parse_ok_with_message("int main(void){ int x=1; return (unsigned char)x<0; }",
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return (unsigned char)x<0; }",
                                "W3019");
-  expect_parse_ok_without_message("int main(void){ signed char s=1; return s<0; }", "W3019");
-  expect_parse_ok_with_message("int main(void){ int *p; return p==5; }", "W3022");
-  expect_parse_ok_with_message("int main(void){ int x=1; return !x==0; }", "W3021");
-  expect_parse_ok_with_message("int main(void){ int x=0; if (x=1) return x; return 0; }",
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ signed char s=1; return s<0; }", "W3019");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int *p; return p==5; }", "W3022");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return !x==0; }", "W3021");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=0; if (x=1) return x; return 0; }",
                                "W3007");
-  expect_parse_ok_with_message("int main(void){ int x=0; while (x=1) return x; return 0; }",
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=0; while (x=1) return x; return 0; }",
                                "W3007");
-  expect_parse_ok_with_message("int main(void){ int x=0; if (x,1) return x; return 0; }",
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=0; if (x,1) return x; return 0; }",
                                "W3008");
-  expect_parse_ok_with_message("int main(void){ int x=0; if (x); return x; }", "W3009");
-  expect_parse_ok_with_message("int *f(void){ int x=0; return &x; }", "W3006");
-  expect_parse_ok_without_message("int *f(void){ static int x; return &x; }", "W3006");
-  expect_parse_ok_without_message("int g; int *f(void){ return &g; }", "W3006");
-  expect_parse_ok_with_message(
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=0; if (x); return x; }", "W3009");
+  expect_parse_ok_with_message(test_suite_session, "int *f(void){ int x=0; return &x; }", "W3006");
+  expect_parse_ok_without_message(test_suite_session, "int *f(void){ static int x; return &x; }", "W3006");
+  expect_parse_ok_without_message(test_suite_session, "int g; int *f(void){ return &g; }", "W3006");
+  expect_parse_ok_with_message(test_suite_session,
       "int main(void){ int x=0; switch(x){ case 0: x=1; case 1: return x; } return 0; }",
       "W3017");
-  expect_parse_ok_without_message(
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ int x=0; switch(x){ case 0: x=1; break; case 1: return x; } return 0; }",
       "W3017");
-  expect_parse_ok_without_message(
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ int x=0; switch(x){ case 0: case 1: return 1; } return x; }",
       "W3017");
-  expect_parse_ok_with_message("int main(void){ char c=200; return c; }", "W3011");
-  expect_parse_ok_with_message("int main(void){ unsigned char c=300; return c; }", "W3011");
-  expect_parse_ok_without_message("int main(void){ unsigned char c=-1; return c; }", "W3011");
-  expect_parse_ok_without_message("int main(void){ _Bool b=300; return b; }", "W3011");
-  expect_parse_ok_with_message("int main(void){ return 2147483647 + 1; }", "W3023");
-  expect_parse_ok_with_message("int main(void){ return 2147483647 * 2; }", "W3023");
-  expect_parse_ok_without_message("int main(void){ return 2147483647L + 1L; }", "W3023");
-  expect_parse_ok_without_message("int main(void){ int a[4]; int *p=a; return *(p + 2147483647); }",
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ char c=200; return c; }", "W3011");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ unsigned char c=300; return c; }", "W3011");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ unsigned char c=-1; return c; }", "W3011");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ _Bool b=300; return b; }", "W3011");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 2147483647 + 1; }", "W3023");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 2147483647 * 2; }", "W3023");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ return 2147483647L + 1L; }", "W3023");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int a[4]; int *p=a; return *(p + 2147483647); }",
                                   "W3023");
-  expect_parse_ok_with_message("int main(void){ return 1 << 32; }", "W3014");
-  expect_parse_ok_with_message("long main(void){ return 1L << 64; }", "W3014");
-  expect_parse_ok_with_message("int main(void){ return 1 / 0; }", "W3015");
-  expect_parse_ok_with_message("int main(void){ return 1 % 0; }", "W3015");
-  expect_parse_ok_with_message("int main(void){ return f(); } int f(void){ return 1; }", "W3016");
-  expect_parse_ok_without_message("int f(void); int main(void){ return f(); }", "W3016");
-  expect_parse_fail_with_message("main(void){ return 0; }", "E3088");
-  expect_parse_ok_without_message("int main(void){ return 0; }", "W3001");
-  expect_parse_ok_without_message("int main(void){ int x=2.0; return 0; }", "W3010");
-  expect_parse_ok_without_message("int main(void){ int x; x=2.0; return 0; }", "W3010");
-  expect_parse_ok_without_message("double main(void){ return 1.5; }", "W3010");
-  expect_parse_ok_without_message("int f(int x){ return x; } int main(void){ return f(3); }", "W3004");
-  expect_parse_ok_without_message("int main(void){ int x=7; return x; }", "W3004");
-  expect_parse_ok_without_message("int main(void){ static int x; return x; }", "W3004");
-  expect_parse_fail_with_message(
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 << 32; }", "W3014");
+  expect_parse_ok_with_message(test_suite_session, "long main(void){ return 1L << 64; }", "W3014");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 / 0; }", "W3015");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return 1 % 0; }", "W3015");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ return f(); } int f(void){ return 1; }", "W3016");
+  expect_parse_ok_without_message(test_suite_session, "int f(void); int main(void){ return f(); }", "W3016");
+  expect_parse_fail_with_message(test_suite_session, "main(void){ return 0; }", "E3088");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ return 0; }", "W3001");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x=2.0; return 0; }", "W3010");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x; x=2.0; return 0; }", "W3010");
+  expect_parse_ok_without_message(test_suite_session, "double main(void){ return 1.5; }", "W3010");
+  expect_parse_ok_without_message(test_suite_session, "int f(int x){ return x; } int main(void){ return f(3); }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ int x=7; return x; }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ static int x; return x; }", "W3004");
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void){ while(1){ ({ continue; 0; }); } return 0; }",
       "E3096");
-  expect_parse_fail_with_message(
+  expect_parse_fail_with_message(test_suite_session,
       "int main(void){ int x=0; switch(x){ case 0: ({ break; 0; }); } return 0; }",
       "E3096");
-  expect_parse_ok("int main(void){ int x=0; switch(x){ case (0 ? 1 : 2147483648): return 1; } return 0; }");
-  expect_parse_ok("int main(void){ int x=0; switch(x){ case 1: switch(x){ case 1: return 1; } return 0; } return 0; }");
-  expect_parse_ok_without_message(
+  expect_parse_ok(test_suite_session, "int main(void){ int x=0; switch(x){ case (0 ? 1 : 2147483648): return 1; } return 0; }");
+  expect_parse_ok(test_suite_session, "int main(void){ int x=0; switch(x){ case 1: switch(x){ case 1: return 1; } return 0; } return 0; }");
+  expect_parse_ok_without_message(test_suite_session,
       "int main(void){ struct S { char c; int i; }; struct S s; long o=(char*)&s.i-(char*)&s; return o>0; }",
       "W3004");
-  expect_parse_ok_with_message("int main(void){ int *p; return &*p == 0; }", "W3004");
-  expect_parse_ok_with_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3002");
-  expect_parse_ok_without_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3004");
-  expect_parse_ok_without_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3003");
-  expect_parse_ok_with_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3002");
-  expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3003");
-  expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3004");
-  expect_parse_ok("int main() { int a; int b; int c; a = b = c = 42; return a; }");
-  expect_parse_ok("int main() { return 1?2:3?4:5?6:7; }");
-  expect_parse_ok("int main() { int x=1; return x<<1|x<<2|x<<3; }");
-  expect_parse_ok("int main() { int x=1; return !!!!!x; }");
-  expect_parse_ok("int main() { int x=255; return ~~~x; }");
-  expect_parse_ok("struct S { int x; }; int f(struct S (*p)) { return p->x; } int main() { struct S s={3}; return f(&s); }");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ int *p; return &*p == 0; }", "W3004");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ goto L; int x; return x; L: return 0; }", "W3002");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ goto L; int x; return x; L: return 0; }", "W3004");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ goto L; int x; return x; L: return 0; }", "W3003");
+  expect_parse_ok_with_message(test_suite_session, "int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3002");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3003");
+  expect_parse_ok_without_message(test_suite_session, "int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3004");
+  expect_parse_ok(test_suite_session, "int main() { int a; int b; int c; a = b = c = 42; return a; }");
+  expect_parse_ok(test_suite_session, "int main() { return 1?2:3?4:5?6:7; }");
+  expect_parse_ok(test_suite_session, "int main() { int x=1; return x<<1|x<<2|x<<3; }");
+  expect_parse_ok(test_suite_session, "int main() { int x=1; return !!!!!x; }");
+  expect_parse_ok(test_suite_session, "int main() { int x=255; return ~~~x; }");
+  expect_parse_ok(test_suite_session, "struct S { int x; }; int f(struct S (*p)) { return p->x; } int main() { struct S s={3}; return f(&s); }");
 
   // sizeof内の型
-  expect_parse_ok("int main() { return sizeof(int); }");
-  expect_parse_ok("int main() { return sizeof(int*); }");
-  expect_parse_ok("int main() { return sizeof(int (*[3])(int)); }");
-  expect_parse_ok("int main() { return sizeof(int (*[2])[3]); }");
-  expect_parse_ok("int main() { return sizeof(int (*(*[2])[3])); }");
-  expect_parse_ok("int main() { return sizeof(int (*(*)(void))[3]); }");
-  expect_parse_ok("int main() { return sizeof(int (*(*[2])(void))[3]); }");
-  expect_parse_ok("int main() { return sizeof(int (*(*)(void))(int)); }");
-  expect_parse_ok("int main() { return sizeof(int (*(*(*)(void))(int))[3]); }");
-  expect_parse_ok("int main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
-  expect_parse_ok("int main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int*); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*[3])(int)); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*[2])[3]); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*(*[2])[3])); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*(*)(void))[3]); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*(*[2])(void))[3]); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*(*)(void))(int)); }");
+  expect_parse_ok(test_suite_session, "int main() { return sizeof(int (*(*(*)(void))(int))[3]); }");
+  expect_parse_ok(test_suite_session, "int main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
+  expect_parse_ok(test_suite_session, "int main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }");
 
   // 関数宣言のプロトタイプ
-  expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
-  expect_parse_ok("int (f)(int x) { return x; } int main() { return f(42); }");
-  expect_parse_ok("int (*f(void))(int) { return 0; } int main() { return 0; }");
-  expect_parse_ok("int (*f(int n))(int) { return 0; } int main() { return 0; }");
-  expect_parse_ok("int (*(*f(void))(int))[3] { return 0; } int main() { return 0; }");
-  expect_parse_ok("struct S { int x; } (f)(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
-  expect_parse_ok("union U { int x; } (f)(void){ union U u; return u; } int main(){ return 0; }");
-  expect_parse_ok("int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
-  expect_parse_ok("typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
-  expect_parse_ok("typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
-  expect_parse_ok("typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "int f(int a, int b, int c); int main() { return f(1,2,3); }");
+  expect_parse_ok(test_suite_session, "int (f)(int x) { return x; } int main() { return f(42); }");
+  expect_parse_ok(test_suite_session, "int (*f(void))(int) { return 0; } int main() { return 0; }");
+  expect_parse_ok(test_suite_session, "int (*f(int n))(int) { return 0; } int main() { return 0; }");
+  expect_parse_ok(test_suite_session, "int (*(*f(void))(int))[3] { return 0; } int main() { return 0; }");
+  expect_parse_ok(test_suite_session, "struct S { int x; } (f)(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
+  expect_parse_ok(test_suite_session, "union U { int x; } (f)(void){ union U u; return u; } int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
+  expect_parse_ok(test_suite_session, "typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
+  expect_parse_ok(test_suite_session, "typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main(){ return 0; }");
 
   // for文の複雑な初期化
-  expect_parse_ok("int main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
+  expect_parse_ok(test_suite_session, "int main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
 
   // do-while の後に式文
-  expect_parse_ok("int main() { int x=0; do { x=x+1; } while(x<3); return x; }");
+  expect_parse_ok(test_suite_session, "int main() { int x=0; do { x=x+1; } while(x<3); return x; }");
 
   // switch内のfall-through
-  expect_parse_ok("int main() { int x=2; int r=0; switch(x) { case 1: r=10; case 2: r=r+20; case 3: r=r+30; default: r=r+1; } return r; }");
+  expect_parse_ok(test_suite_session, "int main() { int x=2; int r=0; switch(x) { case 1: r=10; case 2: r=r+20; case 3: r=r+30; default: r=r+1; } return r; }");
 
   // ネストしたブロック
-  expect_parse_ok("int main() { { { { int x=42; return x; } } } }");
+  expect_parse_ok(test_suite_session, "int main() { { { { int x=42; return x; } } } }");
 
   // 意地悪テスト: 宣言・型の境界ケース
 
   // typedefで作った型名の使用
-  expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
-  expect_parse_ok("struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
-  expect_parse_ok("union U { int x; } f(void){ union U u; return u; } int main(){ return 0; }");
-  expect_parse_ok("typedef struct S S; struct S { int x; }; int main(){ S s; s.x=7; return s.x; }");
-  expect_parse_ok("typedef struct { int x; } S; int main(){ S s; s.x=5; return s.x; }");
-  expect_parse_ok("typedef union U U; union U { int x; }; int main(){ U u; u.x=8; return u.x; }");
-  expect_parse_ok("typedef union { int x; } U; int main(){ U u; u.x=6; return u.x; }");
-  expect_parse_ok("typedef int (*(*arr_t)[2])(int); int main() { arr_t p; return 0; }");
-  expect_parse_ok("int main(){ typedef int (*(*fp_t))(int); return 0; }");
-  expect_parse_ok("int main(){ typedef struct L L; return 0; }");
-  expect_parse_ok("int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }");
-  expect_parse_ok("int main(){ typedef union L L; return 0; }");
-  expect_parse_ok("int main(){ typedef union { int y; } L; L l; l.y=4; return l.y; }");
-  expect_parse_ok("int main(){ typedef int A[]; A *p=0; return p==0; }");
-  expect_parse_ok("int main(){ extern int (*fp)(int); return 0; }");
-  expect_parse_ok("int main(){ extern int (*arr[2])(int); return 0; }");
-  expect_parse_ok("int main(){ extern int a[]; return 0; }");
-  expect_parse_ok("int (*arr[2])(int); int main(){ return 0; }");
-  expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
+  expect_parse_ok(test_suite_session, "typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
+  expect_parse_ok(test_suite_session, "struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
+  expect_parse_ok(test_suite_session, "union U { int x; } f(void){ union U u; return u; } int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "typedef struct S S; struct S { int x; }; int main(){ S s; s.x=7; return s.x; }");
+  expect_parse_ok(test_suite_session, "typedef struct { int x; } S; int main(){ S s; s.x=5; return s.x; }");
+  expect_parse_ok(test_suite_session, "typedef union U U; union U { int x; }; int main(){ U u; u.x=8; return u.x; }");
+  expect_parse_ok(test_suite_session, "typedef union { int x; } U; int main(){ U u; u.x=6; return u.x; }");
+  expect_parse_ok(test_suite_session, "typedef int (*(*arr_t)[2])(int); int main() { arr_t p; return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef int (*(*fp_t))(int); return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef struct L L; return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef union L L; return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef union { int y; } L; L l; l.y=4; return l.y; }");
+  expect_parse_ok(test_suite_session, "int main(){ typedef int A[]; A *p=0; return p==0; }");
+  expect_parse_ok(test_suite_session, "int main(){ extern int (*fp)(int); return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ extern int (*arr[2])(int); return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ extern int a[]; return 0; }");
+  expect_parse_ok(test_suite_session, "int (*arr[2])(int); int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "int main(){ int (*arr[2])(int); return 0; }");
 
   // 複数の変数宣言（カンマ区切り）
-  expect_parse_ok("int main() { int a=1, b=2, c=3; return a+b+c; }");
+  expect_parse_ok(test_suite_session, "int main() { int a=1, b=2, c=3; return a+b+c; }");
 
   // 関数ポインタ宣言
-  expect_parse_ok("int add(int a, int b) { return a+b; } int main() { int (*f)(int,int) = add; return f(20,22); }");
-  expect_parse_ok("int inc(int x){return x+1;} int apply(int (**pp)(int), int x){ return (*pp)(x); } int main(){ int (*p)(int)=inc; int (**pp)(int)=&p; return apply(pp,41); }");
-  expect_parse_ok("int main(){ int (*(*pp))(int); return 0; }");
-  expect_parse_ok("int main() { struct S { int (*fp)(int); }; return 0; }");
-  expect_parse_ok("int main() { struct S { int (*arr[2])(int); }; return 0; }");
+  expect_parse_ok(test_suite_session, "int add(int a, int b) { return a+b; } int main() { int (*f)(int,int) = add; return f(20,22); }");
+  expect_parse_ok(test_suite_session, "int inc(int x){return x+1;} int apply(int (**pp)(int), int x){ return (*pp)(x); } int main(){ int (*p)(int)=inc; int (**pp)(int)=&p; return apply(pp,41); }");
+  expect_parse_ok(test_suite_session, "int main(){ int (*(*pp))(int); return 0; }");
+  expect_parse_ok(test_suite_session, "int main() { struct S { int (*fp)(int); }; return 0; }");
+  expect_parse_ok(test_suite_session, "int main() { struct S { int (*arr[2])(int); }; return 0; }");
 
   // enumの値パース
-  expect_parse_ok("int main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
+  expect_parse_ok(test_suite_session, "int main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
   // 匿名enumの値指定は既知のバグ（enum初期化子パース未対応）で現在パースエラー
   // expect_parse_ok("int main() { enum { A=10, B=20, C=30 }; return B; }");
 
@@ -14943,44 +15220,44 @@ static void test_parse_evil_edge_cases() {
   // expect_parse_ok("int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
 
   // void* の宣言と使用
-  expect_parse_ok("int main() { void *p = 0; return p == 0 ? 42 : 0; }");
+  expect_parse_ok(test_suite_session, "int main() { void *p = 0; return p == 0 ? 42 : 0; }");
 
   // const修飾
-  expect_parse_ok("int main() { const int x = 42; return x; }");
-  expect_parse_ok("static const char *__const_leak_roots[]={\"\"}; typedef struct __ConstLeakFrame __ConstLeakFrame; struct __ConstLeakFrame{__ConstLeakFrame *next; const char *path;}; static __ConstLeakFrame *__const_leak_g; void f(void){ __ConstLeakFrame *p=0; __const_leak_g=p; }");
-  expect_parse_ok("static const char *__const_ptr_tbl[4]; void f(const char *name){ __const_ptr_tbl[0]=name; }");
-  expect_parse_ok("struct __ConstMemberPtr{const char *path;}; void f(struct __ConstMemberPtr *m,const char *path){ m->path=path; }");
-  expect_parse_ok("void f(const char *); void f(const char *p){(void)p;}");
-  expect_parse_ok("void f(const int *); void f(const int *p){(void)p;}");
-  expect_parse_ok("void f(volatile char *); void f(volatile char *p){(void)p;}");
-  expect_parse_ok("void f(char *); void f(char * const p){(void)p;}");
-  expect_parse_fail("void f(char *); void f(const char *p){(void)p;}");
-  expect_parse_fail("void f(const char **); void f(char **p){(void)p;}");
-  expect_parse_ok("struct __PtrSubSym814{char *name; int len;}; struct __PtrSubData814{struct __PtrSubSym814 *symbols;}; static struct __PtrSubData814 __ptr_sub_g814; int main(void){__ptr_sub_g814.symbols[0].name=\"main\";return __ptr_sub_g814.symbols[0].name[0];}");
+  expect_parse_ok(test_suite_session, "int main() { const int x = 42; return x; }");
+  expect_parse_ok(test_suite_session, "static const char *__const_leak_roots[]={\"\"}; typedef struct __ConstLeakFrame __ConstLeakFrame; struct __ConstLeakFrame{__ConstLeakFrame *next; const char *path;}; static __ConstLeakFrame *__const_leak_g; void f(void){ __ConstLeakFrame *p=0; __const_leak_g=p; }");
+  expect_parse_ok(test_suite_session, "static const char *__const_ptr_tbl[4]; void f(const char *name){ __const_ptr_tbl[0]=name; }");
+  expect_parse_ok(test_suite_session, "struct __ConstMemberPtr{const char *path;}; void f(struct __ConstMemberPtr *m,const char *path){ m->path=path; }");
+  expect_parse_ok(test_suite_session, "void f(const char *); void f(const char *p){(void)p;}");
+  expect_parse_ok(test_suite_session, "void f(const int *); void f(const int *p){(void)p;}");
+  expect_parse_ok(test_suite_session, "void f(volatile char *); void f(volatile char *p){(void)p;}");
+  expect_parse_ok(test_suite_session, "void f(char *); void f(char * const p){(void)p;}");
+  expect_parse_fail(test_suite_session, "void f(char *); void f(const char *p){(void)p;}");
+  expect_parse_fail(test_suite_session, "void f(const char **); void f(char **p){(void)p;}");
+  expect_parse_ok(test_suite_session, "struct __PtrSubSym814{char *name; int len;}; struct __PtrSubData814{struct __PtrSubSym814 *symbols;}; static struct __PtrSubData814 __ptr_sub_g814; int main(void){__ptr_sub_g814.symbols[0].name=\"main\";return __ptr_sub_g814.symbols[0].name[0];}");
   // 後置const (int const x) は変数宣言で現在パースエラー
   // expect_parse_ok("int main() { int const x = 42; return x; }");
 
   // 配列の宣言と初期化
-  expect_parse_ok("int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
+  expect_parse_ok(test_suite_session, "int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
 
   // 構造体のネストした初期化
-  expect_parse_ok("int main() { struct P { int x; int y; }; struct R { struct P p; int z; }; struct R r = {{1,2},3}; return r.p.x + r.p.y + r.z; }");
+  expect_parse_ok(test_suite_session, "int main() { struct P { int x; int y; }; struct R { struct P p; int z; }; struct R r = {{1,2},3}; return r.p.x + r.p.y + r.z; }");
 
   // for文のスコープ付き変数宣言
-  expect_parse_ok("int main() { int s=0; for (int i=0; i<5; i=i+1) s=s+i; return s; }");
+  expect_parse_ok(test_suite_session, "int main() { int s=0; for (int i=0; i<5; i=i+1) s=s+i; return s; }");
 
   // 構造体のサイズオフ
-  expect_parse_ok("int main() { struct S { char a; int b; char c; }; return sizeof(struct S); }");
+  expect_parse_ok(test_suite_session, "int main() { struct S { char a; int b; char c; }; return sizeof(struct S); }");
 
   // union の基本使用
-  expect_parse_ok("int main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
+  expect_parse_ok(test_suite_session, "int main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
 
   // _Static_assert 正常系
   // _Static_assert with sizeof==4 — 定数式評価で==未対応の可能性
   // expect_parse_ok("_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
 
   // _Generic の複雑なケース
-  expect_parse_ok("int main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
+  expect_parse_ok(test_suite_session, "int main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
 
   // 複合リテラルの使用 — 現在パースエラーの可能性があるため個別検証
   //expect_parse_ok("int main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
@@ -14992,7 +15269,8 @@ static void test_parse_evil_edge_cases() {
   // expect_parse_fail("int main() { int a[-1]; return 0; }");
 }
 
-static void test_parser_config_matrix() {
+static void test_parser_config_matrix(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parser_config_matrix...\n");
   const char *struct_scalar_cast = "int main() { struct S { int x; int y; }; return ((struct S)7).x; }";
   const char *struct_pointer_cast = "int main() { struct S { int *p; int q; }; int x=3; return *((struct S)&x).p; }";
@@ -15003,34 +15281,34 @@ static void test_parser_config_matrix() {
       "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
 
   // baseline: all extensions enabled
-  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
-  test_compilation_options()->enable_union_scalar_pointer_cast = true;
-  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
-  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
-  expect_parse_ok(struct_scalar_cast);
-  expect_parse_ok(struct_pointer_cast);
-  expect_parse_ok(union_scalar_cast);
-  expect_parse_ok(union_pointer_cast);
-  expect_parse_ok(union_nonbrace_init);
-  expect_parse_ok(same_size_nonscalar_cast);
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_array_member_nonbrace_init = true;
+  test_compilation_options(test_suite_session)->enable_size_compatible_nonscalar_cast = true;
+  expect_parse_ok(test_suite_session, struct_scalar_cast);
+  expect_parse_ok(test_suite_session, struct_pointer_cast);
+  expect_parse_ok(test_suite_session, union_scalar_cast);
+  expect_parse_ok(test_suite_session, union_pointer_cast);
+  expect_parse_ok(test_suite_session, union_nonbrace_init);
+  expect_parse_ok(test_suite_session, same_size_nonscalar_cast);
 
   // all extensions disabled: all extension snippets should fail
-  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
-  test_compilation_options()->enable_union_scalar_pointer_cast = false;
-  test_compilation_options()->enable_union_array_member_nonbrace_init = false;
-  test_compilation_options()->enable_size_compatible_nonscalar_cast = false;
-  expect_parse_fail(struct_scalar_cast);
-  expect_parse_fail(struct_pointer_cast);
-  expect_parse_fail(union_scalar_cast);
-  expect_parse_fail(union_pointer_cast);
-  expect_parse_fail(union_nonbrace_init);
-  expect_parse_fail(same_size_nonscalar_cast);
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = false;
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = false;
+  test_compilation_options(test_suite_session)->enable_union_array_member_nonbrace_init = false;
+  test_compilation_options(test_suite_session)->enable_size_compatible_nonscalar_cast = false;
+  expect_parse_fail(test_suite_session, struct_scalar_cast);
+  expect_parse_fail(test_suite_session, struct_pointer_cast);
+  expect_parse_fail(test_suite_session, union_scalar_cast);
+  expect_parse_fail(test_suite_session, union_pointer_cast);
+  expect_parse_fail(test_suite_session, union_nonbrace_init);
+  expect_parse_fail(test_suite_session, same_size_nonscalar_cast);
 
   // restore defaults for subsequent tests
-  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
-  test_compilation_options()->enable_union_scalar_pointer_cast = true;
-  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
-  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
+  test_compilation_options(test_suite_session)->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_scalar_pointer_cast = true;
+  test_compilation_options(test_suite_session)->enable_union_array_member_nonbrace_init = true;
+  test_compilation_options(test_suite_session)->enable_size_compatible_nonscalar_cast = true;
 }
 
 static char *build_nested_paren_program(int depth) {
@@ -15047,16 +15325,17 @@ static char *build_nested_paren_program(int depth) {
   return buf;
 }
 
-static void test_expr_nest_limits() {
+static void test_expr_nest_limits(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_expr_nest_limits...\n");
   char *ok = build_nested_paren_program(256);
   ASSERT_TRUE(ok != NULL);
-  expect_parse_ok(ok);
+  expect_parse_ok(test_suite_session, ok);
   free(ok);
 
   char *too_deep = build_nested_paren_program(1300);
   ASSERT_TRUE(too_deep != NULL);
-  expect_parse_fail_with_message(too_deep, "深すぎます");
+  expect_parse_fail_with_message(test_suite_session, too_deep, "深すぎます");
   free(too_deep);
 }
 
@@ -15098,34 +15377,36 @@ static char *build_many_array_init_elements_program(int nelems) {
   return buf;
 }
 
-static void test_parser_width_limits() {
+static void test_parser_width_limits(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_parser_width_limits...\n");
 
   char *ok_decls = build_many_declarators_program(64);
   ASSERT_TRUE(ok_decls != NULL);
-  expect_parse_ok(ok_decls);
+  expect_parse_ok(test_suite_session, ok_decls);
   free(ok_decls);
 
   char *too_many_decls = build_many_declarators_program(1300);
   ASSERT_TRUE(too_many_decls != NULL);
-  expect_parse_fail_with_message(too_many_decls, "宣言子列が多すぎます");
+  expect_parse_fail_with_message(test_suite_session, too_many_decls, "宣言子列が多すぎます");
   free(too_many_decls);
 
   char *ok_inits = build_many_array_init_elements_program(128);
   ASSERT_TRUE(ok_inits != NULL);
-  expect_parse_ok(ok_inits);
+  expect_parse_ok(test_suite_session, ok_inits);
   free(ok_inits);
 
   char *too_many_inits = build_many_array_init_elements_program(5000);
   ASSERT_TRUE(too_many_inits != NULL);
-  expect_parse_fail_with_message(too_many_inits, "初期化子要素数が多すぎます");
+  expect_parse_fail_with_message(test_suite_session, too_many_inits, "初期化子要素数が多すぎます");
   free(too_many_inits);
 }
 
-static void test_semantic_canonical_type_invariant() {
+static void test_semantic_canonical_type_invariant(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_canonical_type_invariant...\n");
-  reset_test_translation_unit_state();
-  ASSERT_TRUE(resolve_program_input_hir(
+  reset_test_translation_unit_state(test_suite_session);
+  ASSERT_TRUE(resolve_program_input_hir(test_suite_session,
       "struct S { int x; int y; }; "
       "int inc(int x) { return x + 1; } "
       "int apply(int (*fp)(int), int value) { return fp(value); } "
@@ -15141,7 +15422,7 @@ static void test_semantic_canonical_type_invariant() {
   const psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
+      ps_ctx_semantic_type_table_in(test_semantic_context(test_suite_session));
   ASSERT_TRUE(hir != NULL);
   ASSERT_TRUE(types != NULL);
   ASSERT_EQ(3, psx_hir_module_root_count(hir));
@@ -15157,7 +15438,7 @@ static void test_semantic_canonical_type_invariant() {
     ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
         types, signature));
     ASSERT_EQ(PSX_TYPE_FUNCTION,
-              test_qual_type_shape(signature).kind);
+              test_qual_type_shape(test_suite_session, signature).kind);
   }
 
   size_t expression_count = 0;
@@ -15195,9 +15476,10 @@ static void test_semantic_canonical_type_invariant() {
       types, psx_hir_node_attached_qual_type(call)));
 }
 
-static void test_recursive_declarator_capacity_boundary() {
+static void test_recursive_declarator_capacity_boundary(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_recursive_declarator_capacity_boundary...\n");
-  reset_test_translation_unit_state();
+  reset_test_translation_unit_state(test_suite_session);
 
   char pointer_declarator[512] = {0};
   size_t used = 0;
@@ -15213,10 +15495,10 @@ static void test_recursive_declarator_capacity_boundary() {
   }
   memcpy(pointer_declarator + used, "deep_pointer;", 14);
   token_t *tokens = tk_tokenize_ctx(
-      test_tokenizer(), pointer_declarator);
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+      test_tokenizer(test_suite_session), pointer_declarator);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_declarator_t pointer_syntax =
-      parse_test_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree(test_suite_session);
   ASSERT_EQ(96, pointer_syntax.declarator_shape.count);
   ASSERT_TRUE(pointer_syntax.declarator_shape.capacity >= 96);
   psx_declarator_shape_t pointer_shape;
@@ -15237,10 +15519,10 @@ static void test_recursive_declarator_capacity_boundary() {
   }
   array_declarator[used++] = ';';
   array_declarator[used] = '\0';
-  tokens = tk_tokenize_ctx(test_tokenizer(), array_declarator);
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), array_declarator);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_declarator_t array_syntax =
-      parse_test_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree(test_suite_session);
   ASSERT_EQ(40, array_syntax.declarator_shape.count);
   ASSERT_EQ(40, array_syntax.array_bound_count);
   ASSERT_TRUE(array_syntax.array_bound_capacity >= 40);
@@ -15260,10 +15542,10 @@ static void test_recursive_declarator_capacity_boundary() {
   }
   function_declarator[used++] = ';';
   function_declarator[used] = '\0';
-  tokens = tk_tokenize_ctx(test_tokenizer(), function_declarator);
-  tk_set_current_token_ctx(test_tokenizer(), tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(test_suite_session), function_declarator);
+  tk_set_current_token_ctx(test_tokenizer(test_suite_session), tokens);
   psx_parsed_declarator_t function_syntax =
-      parse_test_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree(test_suite_session);
   ASSERT_EQ(26, function_syntax.function_suffix_count);
   ASSERT_TRUE(function_syntax.function_suffix_capacity >= 26);
   ASSERT_EQ(51, function_syntax.declarator_shape.count);
@@ -15328,9 +15610,10 @@ static void count_arena_cleanup(void *data) {
   (*count)++;
 }
 
-static void test_arena_checkpoint_rollback() {
+static void test_arena_checkpoint_rollback(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_arena_checkpoint_rollback...\n");
-  arena_context_t *arena_context = test_arena_context();
+  arena_context_t *arena_context = test_arena_context(test_suite_session);
   arena_free_all_in(arena_context);
   int *retained = arena_alloc_in(arena_context, sizeof(*retained));
   *retained = 41;
@@ -15355,10 +15638,11 @@ static void test_arena_checkpoint_rollback() {
   ASSERT_EQ(1, retained_cleanup_count);
 }
 
-static void test_semantic_type_identity() {
+static void test_semantic_type_identity(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_type_identity...\n");
   test_semantic_context_fixture_t fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
+  ASSERT_TRUE(test_semantic_context_fixture_init(test_suite_session,
       &fixture, ag_compilation_session_target(test_suite_session)));
   psx_semantic_context_t *context = fixture.context;
   ASSERT_TRUE(context != NULL);
@@ -15477,26 +15761,26 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(PSX_TYPE_VOID, shape.kind);
 
   psx_qual_type_t first_enum =
-      ps_ctx_intern_enum_qual_type_in(
-          context, "SemanticMode", 12, 2);
+      psx_semantic_type_table_intern_enum(
+          types, 0x1001u, "SemanticMode", 12);
   psx_qual_type_t equivalent_enum =
-      ps_ctx_intern_enum_qual_type_in(
-          context, "SemanticMode", 12, 2);
+      psx_semantic_type_table_intern_enum(
+          types, 0x1001u, "SemanticMode", 12);
   psx_qual_type_t shadowed_enum =
-      ps_ctx_intern_enum_qual_type_in(
-          context, "SemanticMode", 12, 3);
+      psx_semantic_type_table_intern_enum(
+          types, 0x1002u, "SemanticMode", 12);
   ASSERT_EQ(first_enum.type_id, equivalent_enum.type_id);
   ASSERT_TRUE(first_enum.type_id != shadowed_enum.type_id);
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, first_enum.type_id, &shape));
   ASSERT_EQ(PSX_INTEGER_KIND_ENUM, shape.integer_kind);
   ASSERT_EQ(12, shape.enum_tag_length);
-  ASSERT_EQ(2, shape.enum_tag_scope_depth_p1);
+  ASSERT_EQ(0x1001u, shape.enum_decl_id);
 
   char owned_enum_name[] = "OwnedSemanticMode";
   psx_qual_type_t owned_enum =
-      ps_ctx_intern_enum_qual_type_in(
-          context, owned_enum_name, 17, 4);
+      psx_semantic_type_table_intern_enum(
+          types, 0x1003u, owned_enum_name, 17);
   owned_enum_name[0] = 'X';
   ASSERT_TRUE(psx_semantic_type_table_describe(
       types, owned_enum.type_id, &shape));
@@ -15574,15 +15858,16 @@ static void test_semantic_type_identity() {
   test_semantic_context_fixture_dispose(&fixture);
 }
 
-static void test_semantic_context_isolation() {
+static void test_semantic_context_isolation(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_semantic_context_isolation...\n");
   const ag_target_info_t *target =
       ag_compilation_session_target(test_suite_session);
   test_semantic_context_fixture_t first_fixture;
   test_semantic_context_fixture_t second_fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
+  ASSERT_TRUE(test_semantic_context_fixture_init(test_suite_session,
       &first_fixture, target));
-  ASSERT_TRUE(test_semantic_context_fixture_init(
+  ASSERT_TRUE(test_semantic_context_fixture_init(test_suite_session,
       &second_fixture, target));
   psx_semantic_context_t *first = first_fixture.context;
   psx_semantic_context_t *second = second_fixture.context;
@@ -15739,7 +16024,8 @@ static void test_semantic_context_isolation() {
   test_semantic_context_fixture_dispose(&first_fixture);
   test_semantic_context_fixture_dispose(&second_fixture);
 }
-static void test_compilation_session_registry_isolation() {
+static void test_compilation_session_registry_isolation(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_compilation_session_registry_isolation...\n");
   ag_compilation_session_t first;
   ag_compilation_session_t second;
@@ -16026,7 +16312,8 @@ static void test_backend_destroy(void *context) {
   backend->destroy_count++;
 }
 
-static void test_compilation_session_owns_target_and_tokenizer() {
+static void test_compilation_session_owns_target_and_tokenizer(
+    ag_compilation_session_t *test_suite_session) {
   printf("test_compilation_session_owns_target_and_tokenizer...\n");
   ag_target_info_t host_target = ag_target_info_host();
   ag_target_info_t wasm_target = ag_target_info_wasm32();
@@ -16282,7 +16569,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.codegen_emit_context != NULL);
   ASSERT_TRUE(wasm.codegen_emit_context != NULL);
   ASSERT_TRUE(host.codegen_emit_context != wasm.codegen_emit_context);
-  tokenizer_context_t *suite_tokenizer = test_tokenizer();
+  tokenizer_context_t *suite_tokenizer = test_tokenizer(test_suite_session);
   token_t *suite_cursor_before_explicit_statement =
       tk_get_current_token_ctx(suite_tokenizer);
   token_t wasm_statement_eof = {.kind = TK_EOF};
@@ -16691,166 +16978,166 @@ int main() {
   ag_compilation_session_t suite_session;
   ag_target_info_t suite_target = ag_target_info_host();
   ASSERT_TRUE(ag_compilation_session_init(&suite_session, &suite_target));
-  test_suite_session = &suite_session;
+  ag_compilation_session_t *test_suite_session = &suite_session;
   printf("Running tests for Parser...\n");
 
   test_scope_graph_namespace_and_transaction_boundary();
-  test_arena_checkpoint_rollback();
-  test_parser_name_environment_boundary();
-  test_parser_name_classifier_boundary();
-  test_typed_hir_ownership_and_type_boundary();
-  test_typed_hir_local_lowering_without_ast();
-  test_typed_hir_overaligned_local_without_ast();
-  test_typed_hir_parameter_lowering_without_ast();
-  test_typed_hir_pointer_lowering_without_ast();
-  test_typed_hir_post_inc_lowering_without_ast();
-  test_typed_hir_vla_parameter_metadata_without_ast();
-  test_typed_hir_vla_allocation_without_ast();
-  test_typed_hir_direct_call_lowering_without_ast();
-  test_typed_hir_variadic_aggregate_call_without_ast();
-  test_typed_hir_atomic_lowering_without_ast();
-  test_typed_hir_va_arg_area_lowering_without_ast();
-  test_typed_hir_register_aggregate_lowering_without_ast();
-  test_typed_hir_aggregate_parameter_lowering_without_ast();
-  test_typed_hir_indirect_aggregate_return_without_ast();
-  test_typed_hir_odd_sized_aggregate_abi_without_ast();
-  test_typed_hir_aggregate_ternary_without_ast();
-  test_typed_hir_aggregate_member_storage_without_ast();
-  test_typed_hir_floating_lowering_without_ast();
-  test_typed_hir_float_inc_dec_without_ast();
-  test_typed_hir_structural_sequence_types_without_ast();
-  test_typed_hir_complex_copy_comparison_without_ast();
-  test_typed_hir_complex_width_conversion_without_ast();
-  test_typed_hir_indirect_call_lowering_without_ast();
-  test_typed_hir_unprototyped_indirect_call_without_ast();
-  test_typed_hir_void_function_lowering_without_ast();
-  test_typed_hir_symbol_reference_lowering_without_ast();
-  test_typed_hir_global_symbol_lowering_without_ast();
-  test_typed_hir_bitfield_lowering_without_ast();
-  test_typed_hir_conditional_expr_lowering_without_ast();
-  test_typed_hir_control_flow_lowering_without_ast();
-  test_semantic_type_identity();
-  test_semantic_context_isolation();
+  test_arena_checkpoint_rollback(test_suite_session);
+  test_parser_name_environment_boundary(test_suite_session);
+  test_parser_name_classifier_boundary(test_suite_session);
+  test_typed_hir_ownership_and_type_boundary(test_suite_session);
+  test_typed_hir_local_lowering_without_ast(test_suite_session);
+  test_typed_hir_overaligned_local_without_ast(test_suite_session);
+  test_typed_hir_parameter_lowering_without_ast(test_suite_session);
+  test_typed_hir_pointer_lowering_without_ast(test_suite_session);
+  test_typed_hir_post_inc_lowering_without_ast(test_suite_session);
+  test_typed_hir_vla_parameter_metadata_without_ast(test_suite_session);
+  test_typed_hir_vla_allocation_without_ast(test_suite_session);
+  test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
+  test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
+  test_typed_hir_atomic_lowering_without_ast(test_suite_session);
+  test_typed_hir_va_arg_area_lowering_without_ast(test_suite_session);
+  test_typed_hir_register_aggregate_lowering_without_ast(test_suite_session);
+  test_typed_hir_aggregate_parameter_lowering_without_ast(test_suite_session);
+  test_typed_hir_indirect_aggregate_return_without_ast(test_suite_session);
+  test_typed_hir_odd_sized_aggregate_abi_without_ast(test_suite_session);
+  test_typed_hir_aggregate_ternary_without_ast(test_suite_session);
+  test_typed_hir_aggregate_member_storage_without_ast(test_suite_session);
+  test_typed_hir_floating_lowering_without_ast(test_suite_session);
+  test_typed_hir_float_inc_dec_without_ast(test_suite_session);
+  test_typed_hir_structural_sequence_types_without_ast(test_suite_session);
+  test_typed_hir_complex_copy_comparison_without_ast(test_suite_session);
+  test_typed_hir_complex_width_conversion_without_ast(test_suite_session);
+  test_typed_hir_indirect_call_lowering_without_ast(test_suite_session);
+  test_typed_hir_unprototyped_indirect_call_without_ast(test_suite_session);
+  test_typed_hir_void_function_lowering_without_ast(test_suite_session);
+  test_typed_hir_symbol_reference_lowering_without_ast(test_suite_session);
+  test_typed_hir_global_symbol_lowering_without_ast(test_suite_session);
+  test_typed_hir_bitfield_lowering_without_ast(test_suite_session);
+  test_typed_hir_conditional_expr_lowering_without_ast(test_suite_session);
+  test_typed_hir_control_flow_lowering_without_ast(test_suite_session);
+  test_semantic_type_identity(test_suite_session);
+  test_semantic_context_isolation(test_suite_session);
 #if defined(DIAG_LANG_ALL)
-  test_diagnostic_catalog_localization();
+  test_diagnostic_catalog_localization(test_suite_session);
 #endif
-  test_compilation_session_owns_target_and_tokenizer();
+  test_compilation_session_owns_target_and_tokenizer(test_suite_session);
   test_compilation_session_owns_preprocessor_roots();
-  test_compilation_session_registry_isolation();
-  test_syntax_literal_type_boundary();
-  test_direct_literal_typed_hir_resolution_boundary();
-  test_predefined_function_name_typed_hir_boundary();
-  test_builtin_expect_typed_hir_boundary();
-  test_direct_statement_typed_hir_resolution_boundary();
-  test_typed_hir_build_failure_first_cause_boundary();
-  test_expr_number();
-  test_expr_add_sub();
-  test_additive_typed_hir_boundary();
-  test_subscript_typed_hir_boundary();
-  test_unary_deref_typed_hir_boundary();
-  test_unary_operator_typed_hir_boundary();
-  test_generic_selection_typed_hir_boundary();
-  test_sizeof_typed_hir_boundary();
-  test_expression_typed_hir_type_boundary();
-  test_function_call_typed_hir_boundary();
-  test_function_prototype_type_identity_boundary();
-  test_cast_typed_hir_boundary();
-  test_aggregate_cast_semantic_lowering_boundary();
-  test_implicit_conversion_hir_boundary();
-  test_compound_assignment_typed_hir_boundary();
-  test_translation_unit_frontend_boundary();
-  test_function_definition_header_resolution_boundary();
-  test_global_registry_checkpoint_boundary();
-  test_direct_function_typed_hir_resolution_boundary();
-  test_direct_const_aggregate_initializer_boundary();
-  test_direct_string_pointer_initializer_boundary();
-  test_case_label_syntax_hir_boundary();
-  test_toplevel_static_assert_frontend_boundary();
-  test_block_static_assert_syntax_hir_boundary();
-  test_toplevel_declaration_frontend_boundary();
-  test_parser_owned_typedef_classifier_boundary();
-  test_toplevel_callback_context_boundary();
-  test_toplevel_compound_initializer_frontend_boundary();
-  test_toplevel_point_of_declaration_boundary();
-  test_toplevel_single_parse_classification_boundary();
-  test_frontend_stream_lifecycle_boundary();
-  test_local_declaration_frontend_boundary();
-  test_function_parameter_point_of_declaration_boundary();
-  test_identifier_resolution_boundary();
-  test_persistent_local_scope_lookup_boundary();
-  test_member_access_typed_hir_boundary();
-  test_complex_initializer_semantic_lowering_boundary();
-  test_local_declaration_storage_plan_boundary();
-  test_target_type_layout_boundary();
-  test_dynamic_abi_piece_capacity();
+  test_compilation_session_registry_isolation(test_suite_session);
+  test_syntax_literal_type_boundary(test_suite_session);
+  test_direct_literal_typed_hir_resolution_boundary(test_suite_session);
+  test_predefined_function_name_typed_hir_boundary(test_suite_session);
+  test_builtin_expect_typed_hir_boundary(test_suite_session);
+  test_direct_statement_typed_hir_resolution_boundary(test_suite_session);
+  test_typed_hir_build_failure_first_cause_boundary(test_suite_session);
+  test_expr_number(test_suite_session);
+  test_expr_add_sub(test_suite_session);
+  test_additive_typed_hir_boundary(test_suite_session);
+  test_subscript_typed_hir_boundary(test_suite_session);
+  test_unary_deref_typed_hir_boundary(test_suite_session);
+  test_unary_operator_typed_hir_boundary(test_suite_session);
+  test_generic_selection_typed_hir_boundary(test_suite_session);
+  test_sizeof_typed_hir_boundary(test_suite_session);
+  test_expression_typed_hir_type_boundary(test_suite_session);
+  test_function_call_typed_hir_boundary(test_suite_session);
+  test_function_prototype_type_identity_boundary(test_suite_session);
+  test_cast_typed_hir_boundary(test_suite_session);
+  test_aggregate_cast_semantic_lowering_boundary(test_suite_session);
+  test_implicit_conversion_hir_boundary(test_suite_session);
+  test_compound_assignment_typed_hir_boundary(test_suite_session);
+  test_translation_unit_frontend_boundary(test_suite_session);
+  test_function_definition_header_resolution_boundary(test_suite_session);
+  test_global_registry_checkpoint_boundary(test_suite_session);
+  test_direct_function_typed_hir_resolution_boundary(test_suite_session);
+  test_direct_const_aggregate_initializer_boundary(test_suite_session);
+  test_direct_string_pointer_initializer_boundary(test_suite_session);
+  test_case_label_syntax_hir_boundary(test_suite_session);
+  test_toplevel_static_assert_frontend_boundary(test_suite_session);
+  test_block_static_assert_syntax_hir_boundary(test_suite_session);
+  test_toplevel_declaration_frontend_boundary(test_suite_session);
+  test_parser_owned_typedef_classifier_boundary(test_suite_session);
+  test_toplevel_callback_context_boundary(test_suite_session);
+  test_toplevel_compound_initializer_frontend_boundary(test_suite_session);
+  test_toplevel_point_of_declaration_boundary(test_suite_session);
+  test_toplevel_single_parse_classification_boundary(test_suite_session);
+  test_frontend_stream_lifecycle_boundary(test_suite_session);
+  test_local_declaration_frontend_boundary(test_suite_session);
+  test_function_parameter_point_of_declaration_boundary(test_suite_session);
+  test_identifier_resolution_boundary(test_suite_session);
+  test_persistent_local_scope_lookup_boundary(test_suite_session);
+  test_member_access_typed_hir_boundary(test_suite_session);
+  test_complex_initializer_semantic_lowering_boundary(test_suite_session);
+  test_local_declaration_storage_plan_boundary(test_suite_session);
+  test_target_type_layout_boundary(test_suite_session);
+  test_dynamic_function_parameter_capacity(test_suite_session);
+  test_dynamic_abi_piece_capacity(test_suite_session);
   test_wasm_target_global_pointer_data_layout();
-  test_vla_lowering_request_boundary();
-  test_parameter_declaration_storage_plan_boundary();
-  test_global_declaration_resolution_boundary();
-  test_declaration_pipeline_order_boundary();
-  test_tag_declaration_resolution_boundary();
-  test_record_decl_ownership_boundary();
-  test_aggregate_body_phase_boundary();
-  test_declaration_phase_boundary();
-  test_type_name_phase_boundary();
-  test_toplevel_declarator_phase_boundary();
-  test_local_declarator_application_boundary();
-  test_local_declaration_resolution_boundary();
-  test_aggregate_member_resolution_boundary();
+  test_vla_lowering_request_boundary(test_suite_session);
+  test_parameter_declaration_storage_plan_boundary(test_suite_session);
+  test_global_declaration_resolution_boundary(test_suite_session);
+  test_declaration_pipeline_order_boundary(test_suite_session);
+  test_tag_declaration_resolution_boundary(test_suite_session);
+  test_record_decl_ownership_boundary(test_suite_session);
+  test_aggregate_body_phase_boundary(test_suite_session);
+  test_declaration_phase_boundary(test_suite_session);
+  test_type_name_phase_boundary(test_suite_session);
+  test_toplevel_declarator_phase_boundary(test_suite_session);
+  test_local_declarator_application_boundary(test_suite_session);
+  test_local_declaration_resolution_boundary(test_suite_session);
+  test_aggregate_member_resolution_boundary(test_suite_session);
   test_static_assert_resolution_boundary();
-  test_typedef_declaration_resolution_boundary();
-  test_enum_constant_resolution_boundary();
-  test_initializer_resolution_boundary();
-  test_local_initializer_parse_lowering_boundary();
-  test_static_data_initializer_boundary();
-  test_expr_mul_div();
-  test_expr_mod();
-  test_expr_precedence();
-  test_expr_parentheses();
-  test_expr_eq_neq();
-  test_expr_relational();
-  test_expr_bitwise();
-  test_expr_shift();
-  test_expr_logical_and_or();
-  test_expr_ternary();
-  test_expr_unary_ops();
-  test_expr_generic();
-  test_expr_sizeof();
-  test_expr_inc_dec_typed_hir_boundary();
-  test_expr_assign();
-  test_expr_compound_assign();
-  test_expr_comma();
-  test_program_funcdef();
-  test_funcall();
-  test_funcdef_with_params();
-  test_stmt_return();
-  test_expr_deref_address_typed_hir_boundary();
-  test_expr_member_access();
-  test_expr_string();
-  test_expr_concat_string();
-  test_expr_float();
-  test_expr_long_double_suffix_metadata();
-  test_expr_compound_literal_typed_hir_boundary();
-  test_expr_compound_literal_array_subscript();
-  test_type_decl();
-  test_bool_assignment_typed_hir_boundary();
-  test_type_metadata_bridge();
-  test_recursive_declarator_capacity_boundary();
-  test_translation_unit_reset_static_local_state();
-  test_translation_unit_reset_anonymous_tag_state();
-  test_translation_unit_reset_decl_locals_state();
-  test_translation_unit_reset_pragma_pack_state();
-  test_multiple_funcdefs();
-  test_parse_invalid();
-  test_parse_invalid_diagnostics();
-  test_parse_evil_edge_cases();
-  test_parser_config_matrix();
-  test_expr_nest_limits();
-  test_parser_width_limits();
-  test_semantic_canonical_type_invariant();
+  test_typedef_declaration_resolution_boundary(test_suite_session);
+  test_enum_constant_resolution_boundary(test_suite_session);
+  test_initializer_resolution_boundary(test_suite_session);
+  test_local_initializer_parse_lowering_boundary(test_suite_session);
+  test_static_data_initializer_boundary(test_suite_session);
+  test_expr_mul_div(test_suite_session);
+  test_expr_mod(test_suite_session);
+  test_expr_precedence(test_suite_session);
+  test_expr_parentheses(test_suite_session);
+  test_expr_eq_neq(test_suite_session);
+  test_expr_relational(test_suite_session);
+  test_expr_bitwise(test_suite_session);
+  test_expr_shift(test_suite_session);
+  test_expr_logical_and_or(test_suite_session);
+  test_expr_ternary(test_suite_session);
+  test_expr_unary_ops(test_suite_session);
+  test_expr_generic(test_suite_session);
+  test_expr_sizeof(test_suite_session);
+  test_expr_inc_dec_typed_hir_boundary(test_suite_session);
+  test_expr_assign(test_suite_session);
+  test_expr_compound_assign(test_suite_session);
+  test_expr_comma(test_suite_session);
+  test_program_funcdef(test_suite_session);
+  test_funcall(test_suite_session);
+  test_funcdef_with_params(test_suite_session);
+  test_stmt_return(test_suite_session);
+  test_expr_deref_address_typed_hir_boundary(test_suite_session);
+  test_expr_member_access(test_suite_session);
+  test_expr_string(test_suite_session);
+  test_expr_concat_string(test_suite_session);
+  test_expr_float(test_suite_session);
+  test_expr_long_double_suffix_metadata(test_suite_session);
+  test_expr_compound_literal_typed_hir_boundary(test_suite_session);
+  test_expr_compound_literal_array_subscript(test_suite_session);
+  test_type_decl(test_suite_session);
+  test_bool_assignment_typed_hir_boundary(test_suite_session);
+  test_type_metadata_bridge(test_suite_session);
+  test_recursive_declarator_capacity_boundary(test_suite_session);
+  test_translation_unit_reset_static_local_state(test_suite_session);
+  test_translation_unit_reset_anonymous_tag_state(test_suite_session);
+  test_translation_unit_reset_decl_locals_state(test_suite_session);
+  test_translation_unit_reset_pragma_pack_state(test_suite_session);
+  test_multiple_funcdefs(test_suite_session);
+  test_parse_invalid(test_suite_session);
+  test_parse_invalid_diagnostics(test_suite_session);
+  test_parse_evil_edge_cases(test_suite_session);
+  test_parser_config_matrix(test_suite_session);
+  test_expr_nest_limits(test_suite_session);
+  test_parser_width_limits(test_suite_session);
+  test_semantic_canonical_type_invariant(test_suite_session);
 
   ASSERT_TRUE(ag_compilation_session_dispose(&suite_session));
-  test_suite_session = NULL;
   printf("OK: All unit tests passed!\n");
   return 0;
 }

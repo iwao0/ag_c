@@ -34,6 +34,7 @@ typedef struct {
   token_kind_t kind;
   char *name;
   int name_len;
+  unsigned char is_anonymous;
   token_t *diagnostic_token;
   psx_parsed_aggregate_body_t *aggregate_body;
   psx_parsed_enum_body_t *enum_body;

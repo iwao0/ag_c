@@ -8,11 +8,13 @@
 #include "../../ir/ir.h"
 
 typedef struct ir_abi_module_t ir_abi_module_t;
+typedef struct ag_data_layout_t ag_data_layout_t;
 
 typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 
 void gen_ir_module_in(
     ag_codegen_emit_context_t *emit_context, ir_module_t *m,
-    const ir_abi_module_t *abi);
+    const ir_abi_module_t *abi,
+    const ag_data_layout_t *data_layout);
 
 #endif

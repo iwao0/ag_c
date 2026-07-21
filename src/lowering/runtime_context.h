@@ -6,7 +6,6 @@
 #include "../semantic/record_decl_table.h"
 #include "../semantic/type_identity.h"
 #include "../semantic/record_layout.h"
-#include "../semantic/record_member_lookup.h"
 #include "../target_info.h"
 
 typedef struct arena_context_t arena_context_t;
@@ -19,8 +18,6 @@ typedef struct psx_lowering_context_t {
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
-  psx_record_member_name_lookup_t record_member_lookup;
-  void *record_member_lookup_context;
   frame_layout_t local_frame_layout;
   int static_local_sequences[PSX_STATIC_LOCAL_KIND_COUNT];
   int file_scope_compound_sequence;
@@ -39,8 +36,6 @@ typedef struct {
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
-  psx_record_member_name_lookup_t record_member_lookup;
-  void *record_member_lookup_context;
 } psx_lowering_context_dependencies_t;
 
 typedef struct {
@@ -69,10 +64,6 @@ const psx_record_decl_table_t *ps_lowering_record_decls(
     const psx_lowering_context_t *ctx);
 const psx_record_layout_table_t *ps_lowering_record_layouts(
     const psx_lowering_context_t *ctx);
-int ps_lowering_lookup_record_member(
-    const psx_lowering_context_t *ctx, psx_record_id_t record_id,
-    const char *member_name, int member_name_len,
-    int *out_member_index);
 int ps_lowering_type_id_size(
     const psx_lowering_context_t *ctx, psx_type_id_t type_id);
 int ps_lowering_type_id_alignment(

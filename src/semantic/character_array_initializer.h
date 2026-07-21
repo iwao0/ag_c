@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "../target_info.h"
 #include "../type_system/type_ids.h"
 
 typedef struct arena_context_t arena_context_t;
@@ -41,6 +42,7 @@ psx_character_array_initializer_status_t
 psx_plan_character_array_string_initializer(
     arena_context_t *arena_context,
     const psx_semantic_type_table_t *semantic_types,
+    const ag_data_layout_t *data_layout,
     psx_qual_type_t object_qual_type,
     const char *literal_contents, int literal_length,
     int character_width,

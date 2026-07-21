@@ -20,6 +20,8 @@ typedef struct {
   int object_size;
   int object_align;
   int member_offset;
+  int initializer_union_offset;
+  int initializer_union_member_index;
   int vla_stride_frame_offset;
   int vla_stride_source_offset;
   int vla_stride_element_size;
@@ -40,6 +42,8 @@ typedef struct {
   unsigned char is_implicit_call;
   unsigned char is_source_assignment;
   unsigned char is_declaration_initializer;
+  unsigned char is_resolved_initializer_entry;
+  unsigned char has_initializer_union_member;
 } psx_hir_node_spec_t;
 
 typedef struct {

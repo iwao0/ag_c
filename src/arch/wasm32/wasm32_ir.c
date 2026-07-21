@@ -200,6 +200,25 @@ void wasm_unsupported_msg(
                       msg);
 }
 
+static const char *machine_opcode_wat_or_unsupported(
+    wasm32_ir_context_t *context,
+    wasm32_machine_opcode_t opcode) {
+  const char *text = wasm32_machine_opcode_wat(opcode);
+  if (!text)
+    wasm_unsupported_msg(
+        context, "missing preselected Wasm Machine opcode");
+  return text;
+}
+
+static const char *machine_binary_wat_or_unsupported(
+    wasm32_ir_context_t *context,
+    const wasm32_machine_binary_t *binary) {
+  if (!binary)
+    wasm_unsupported_msg(
+        context, "missing preselected Wasm Machine binary operation");
+  return machine_opcode_wat_or_unsupported(context, binary->opcode);
+}
+
 static int name_eq(const char *a, int alen, const char *b, int blen) {
   return alen == blen && a && b && memcmp(a, b, (size_t)alen) == 0;
 }
@@ -413,7 +432,7 @@ static void record_function_call_signature(
 }
 
 static int has_minimal_libc_stub_function(char *name, int name_len) {
-  static const char *stub_names[] = {
+  static const char *const stub_names[] = {
       "__assert_rtn", "__error",
       "_Exit", "abs", "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl",
       "aligned_alloc", "asctime", "asin", "asinf", "asinh", "asinhf", "asinhl",
@@ -772,7 +791,9 @@ static void emit_abi_argument_expr_as(
   if (argument->byte_offset == 0) {
     emit_val_expr_as(ctx, argument->source, IR_TY_PTR);
   } else {
-    wasm_cg_emitf("(i32.add ");
+    wasm_cg_emitf(
+        "(%s ", machine_binary_wat_or_unsupported(
+                     context, &g_machine_primitives->i32_add));
     emit_val_expr_as(ctx, argument->source, IR_TY_PTR);
     wasm_cg_emitf(" (i32.const %d))", argument->byte_offset);
   }
@@ -811,7 +832,9 @@ static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
     emit_addr_expr(ctx, base);
     return;
   }
-  wasm_cg_emitf("(i32.add ");
+  wasm_cg_emitf(
+      "(%s ", machine_binary_wat_or_unsupported(
+                   context, &g_machine_primitives->i32_add));
   emit_addr_expr(ctx, base);
   wasm_cg_emitf(" (i32.const %d))", off);
 }
@@ -1062,7 +1085,9 @@ static void emit_parameter_copy(
       wasm_cg_emitf("(local.get $p%d)", parameter_slot);
     } else {
       wasm_cg_emitf(
-          "(i32.add (local.get $p%d) (i32.const %d))",
+          "(%s (local.get $p%d) (i32.const %d))",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add),
           parameter_slot, chunk->offset);
     }
     wasm_cg_emitf("))\n");
@@ -1121,7 +1146,9 @@ static int emit_wat_vararg_action(
     case WASM32_MACHINE_VARARG_RESERVE_STACK:
       wasm_emitf(
           indent,
-          "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
+          "(global.set $__stack_pointer (%s (global.get $__stack_pointer) (i32.const %d)))\n",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_subtract),
           action->byte_count);
       return 1;
     case WASM32_MACHINE_VARARG_SET_AREA_FROM_STACK:
@@ -1141,8 +1168,11 @@ static int emit_wat_vararg_action(
           wasm32_machine_opcode_wat(variadic->conversion.opcode);
       wasm_emitf(
           indent,
-          "(%s (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ",
-          store, variadic->byte_offset);
+          "(%s (%s (global.get $__ag_va_arg_area) (i32.const %d)) ",
+          store,
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add),
+          variadic->byte_offset);
       if (variadic->conversion.opcode != WASM32_MI_COPY) {
         if (!conversion)
           wasm_unsupported_msg(
@@ -1161,7 +1191,9 @@ static int emit_wat_vararg_action(
     case WASM32_MACHINE_VARARG_RELEASE_STACK:
       wasm_emitf(
           indent,
-          "(global.set $__stack_pointer (i32.add (global.get $__stack_pointer) (i32.const %d)))\n",
+          "(global.set $__stack_pointer (%s (global.get $__stack_pointer) (i32.const %d)))\n",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add),
           action->byte_count);
       return 1;
     case WASM32_MACHINE_VARARG_RESTORE_AREA:
@@ -1348,7 +1380,9 @@ static void emit_indirect_ret_copy(
       wasm_cg_emitf("(local.get $p0)");
     else
       wasm_cg_emitf(
-          "(i32.add (local.get $p0) (i32.const %d))",
+          "(%s (local.get $p0) (i32.const %d))",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add),
           chunk->offset);
     wasm_cg_emitf(" (%s ", load);
     emit_addr_plus_const(ctx, source, chunk->offset);
@@ -1395,7 +1429,13 @@ static void emit_inst(
     case WASM32_MACHINE_INST_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
       if (off < 0) wasm_unsupported_inst(context, i);
-      wasm_emitf(indent, "(local.set $v%d (i32.add (local.get $fp) (i32.const %d)))\n", i->dst.id, off);
+      wasm_emitf(
+          indent,
+          "(local.set $v%d (%s (local.get $fp) (i32.const %d)))\n",
+          i->dst.id,
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add),
+          off);
       return;
     }
     case WASM32_MACHINE_INST_INTEGER_CONSTANT:
@@ -1470,7 +1510,12 @@ static void emit_inst(
       emit_memcpy(ctx, i, indent);
       return;
     case WASM32_MACHINE_INST_ALIGN_POINTER: {
-      wasm_emitf(indent, "(local.set $v%d (i32.and (i32.add ", i->dst.id);
+      wasm_emitf(
+          indent, "(local.set $v%d (%s (%s ", i->dst.id,
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_and),
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add));
       emit_addr_expr(ctx, i->src1);
       wasm_cg_emitf(
           " (i32.const %d)) (i32.const %d)))\n",
@@ -1478,8 +1523,18 @@ static void emit_inst(
       return;
     }
     case WASM32_MACHINE_INST_DYNAMIC_ALLOCA:
-      wasm_emitf(indent, "(local.set $v%d (i32.sub (global.get $__stack_pointer) ", i->dst.id);
-      wasm_cg_emitf("(i32.and (i32.add ");
+      wasm_emitf(
+          indent,
+          "(local.set $v%d (%s (global.get $__stack_pointer) ",
+          i->dst.id,
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_subtract));
+      wasm_cg_emitf(
+          "(%s (%s ",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_and),
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add));
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
       wasm_cg_emitf(
           " (i32.const %d)) (i32.const %d))))\n",
@@ -1490,7 +1545,10 @@ static void emit_inst(
       wasm_emitf(indent, "(local.set $v%d (global.get $__ag_va_arg_area))\n", i->dst.id);
       return;
     case WASM32_MACHINE_INST_ADDRESS_ADD:
-      wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
+      wasm_emitf(
+          indent, "(local.set $v%d (%s ", i->dst.id,
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_add));
       emit_addr_expr(ctx, i->src1);
       wasm_cg_emitf(" ");
       emit_addr_expr(ctx, i->src2);
@@ -1528,10 +1586,12 @@ static void emit_inst(
                             selected->is_unsigned;
       if (selected->guard_zero_divisor) {
         const char *type = wasm_any_type_or_unsupported(context, op_ty);
+        const char *zero_test = machine_opcode_wat_or_unsupported(
+            context, selected->zero_test.opcode);
         wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
         emit_wasm_type_cast_prefix(
             ctx, result_ty, dst_ty, result_unsigned);
-        wasm_cg_emitf("(if (result %s) (%s.eqz ", type, type);
+        wasm_cg_emitf("(if (result %s) (%s ", type, zero_test);
         emit_val_expr_as(ctx, i->src2, op_ty);
         wasm_cg_emitf(") (then ");
         emit_val_expr_as(ctx, i->src1, op_ty);
@@ -1685,8 +1745,12 @@ static void emit_func(
   if (ctx.machine.stack.saves_stack_pointer)
     wasm_emitf(4, "(local.set $old_sp (global.get $__stack_pointer))\n");
   if (ctx.machine.stack.fixed_frame_size > 0) {
-    wasm_emitf(4, "(local.set $fp (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
-               ctx.machine.stack.fixed_frame_size);
+    wasm_emitf(
+        4,
+        "(local.set $fp (%s (global.get $__stack_pointer) (i32.const %d)))\n",
+        machine_binary_wat_or_unsupported(
+            context, &g_machine_primitives->i32_subtract),
+        ctx.machine.stack.fixed_frame_size);
     wasm_emitf(4, "(global.set $__stack_pointer (local.get $fp))\n");
   }
   if (ctx.machine.has_control_flow) {
@@ -1702,7 +1766,9 @@ static void emit_func(
       const wasm32_machine_block_t *block =
           &ctx.machine.blocks[block_index];
       wasm_emitf(
-          8, "(if (i32.eq (local.get $pc) (i32.const %d))\n",
+          8, "(if (%s (local.get $pc) (i32.const %d))\n",
+          machine_binary_wat_or_unsupported(
+              context, &g_machine_primitives->i32_equal),
           block->id);
       wasm_emitf(10, "(then\n");
       for (int i = 0; i < block->instruction_count; i++) {

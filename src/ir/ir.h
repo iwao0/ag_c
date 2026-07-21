@@ -35,7 +35,13 @@ typedef enum {
   IR_TY_PTR,
 } ir_type_t;
 
-int ir_type_size(ir_type_t t);
+typedef struct ag_data_layout_t ag_data_layout_t;
+
+/* Integer and floating MIR widths are intrinsic. Pointer width is deliberately
+ * excluded because it belongs to the selected target DataLayout. */
+int ir_type_fixed_size(ir_type_t type);
+int ir_type_size_for_layout(
+    ir_type_t type, const ag_data_layout_t *data_layout);
 const char *ir_type_name(ir_type_t t);
 
 /* Target-independent C function type retained by MIR. TypeId/QualType are
@@ -96,10 +102,9 @@ typedef enum {
 
   /* 即値ロード */
   IR_LOAD_IMM, IR_LOAD_FP_IMM, IR_LOAD_STR, IR_LOAD_SYM,
-  /* Apple ARM64 TLS: _<sym>@TLVPPAGE 経由で thread-local 変数のアドレスを解決。
-   * 内部で __tlv_bootstrap (関数ポインタ) を blr するため、IR_CALL と同様に
-   * caller-saved レジスタを clobber する。dst は PTR (TLS 変数のアドレス)。 */
-  IR_LOAD_TLV_ADDR,
+  /* C thread-local objectのアドレス参照。具体的なTLS modelと呼出し規約は
+   * target側で選択する。dst は PTR (TLS変数のアドレス)。 */
+  IR_LOAD_TLS_SYM,
 
   /* 制御フロー */
   IR_BR, IR_BR_COND, IR_LABEL, IR_RET,
@@ -242,11 +247,9 @@ typedef struct ir_inst_t {
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
   unsigned char is_unsigned;
   ir_function_type_t function_type;
-  /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
-   * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
-   * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
-   * 有効なので関数アドレスは常に GOT 経由にする。 */
-  unsigned char is_got_funcref;
+  /* IR_LOAD_SYM linkage and symbol category. The selected backend decides the
+   * concrete address materialization strategy. */
+  unsigned char is_external_symbol;
   unsigned char is_function_symbol;
   unsigned char has_function_type;
 
@@ -440,7 +443,9 @@ size_t ir_print_module_to_buf(ir_module_t *m, char *buf, size_t buf_size);
 void ir_regalloc_function(ir_func_t *f);
 
 /* Phase 6: モジュール全体の最適化パス。 */
-void ir_opt_const_fold(ir_module_t *m);     /* 即値伝播 + 算術畳み込み */
+void ir_opt_const_fold(
+    ir_module_t *m, const ag_data_layout_t *data_layout);
+                                             /* 即値伝播 + 算術畳み込み */
 void ir_opt_copy_propagate(ir_module_t *m); /* 現状 const_fold が兼ねる */
 void ir_opt_dce(ir_module_t *m);            /* 副作用なしで dst が使われない命令を NOP 化 */
 

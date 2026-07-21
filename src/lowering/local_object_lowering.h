@@ -1,10 +1,12 @@
 #ifndef LOWERING_LOCAL_OBJECT_LOWERING_H
 #define LOWERING_LOCAL_OBJECT_LOWERING_H
 
-#include "../parser/decl.h"
+#include "../type_system/type_ids.h"
 
+typedef struct lvar_t lvar_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct token_t token_t;
 
 typedef struct {
   psx_local_registry_t *local_registry;

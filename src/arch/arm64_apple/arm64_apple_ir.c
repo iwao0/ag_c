@@ -19,6 +19,7 @@
 #include "../../diag/diag.h"
 #include "../../lowering/frame_layout.h"
 #include "../../lowering/abi_lowering.h"
+#include "../../target_info.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +28,7 @@
 typedef struct {
   ag_codegen_emit_context_t *emit_context;
   const ir_abi_module_t *abi;
+  const ag_data_layout_t *data_layout;
   ir_func_t *f;
   int *vreg_off;
   int alloca_base;
@@ -46,6 +48,12 @@ typedef struct {
 static const ir_abi_signature_t *function_abi(
     const gen_ctx_t *ctx) {
   return ctx ? ir_abi_function_signature(ctx->abi, ctx->f) : NULL;
+}
+
+static int arm64_ir_type_size(
+    const gen_ctx_t *ctx, ir_type_t type) {
+  return ir_type_size_for_layout(
+      type, ctx ? ctx->data_layout : NULL);
 }
 
 static const ir_abi_signature_t *call_abi(
@@ -304,7 +312,7 @@ static void to_w_name(const char *xname, char *out, size_t sz) {
  * dispatch 本体は switch で各 helper を呼ぶだけにする。 */
 static void gen_inst_load_str(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst);
-static void gen_inst_load_tlv_addr(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_load_tls_sym(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_va_arg_area(gen_ctx_t *ctx, ir_inst_t *inst);
@@ -337,7 +345,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_NOP:           return;
     case IR_LOAD_STR:      gen_inst_load_str(ctx, inst); return;
     case IR_LOAD_SYM:      gen_inst_load_sym(ctx, inst); return;
-    case IR_LOAD_TLV_ADDR: gen_inst_load_tlv_addr(ctx, inst); return;
+    case IR_LOAD_TLS_SYM:  gen_inst_load_tls_sym(ctx, inst); return;
     case IR_ZEXT:
     case IR_SEXT:
     case IR_TRUNC:         gen_inst_int_cast(ctx, inst); return;
@@ -410,7 +418,7 @@ static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-      if (inst->is_got_funcref) {
+      if (inst->is_function_symbol || inst->is_external_symbol) {
         /* 関数アドレス: GOT 経由 (外部 libc 関数は @PAGE 直参照だと「does not have
          * address」でリンク失敗。GOT はローカル定義にも有効)。
          *   adrp d, _sym@GOTPAGE ; ldr d, [d, _sym@GOTPAGEOFF] */
@@ -424,7 +432,7 @@ static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
   release_dst(ctx, inst->dst, d, spill);
 }
 
-static void gen_inst_load_tlv_addr(gen_ctx_t *ctx, ir_inst_t *inst) {
+static void gen_inst_load_tls_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* Apple ARM64 thread-local 解決:
        *   adrp x0, _<sym>@TLVPPAGE
        *   ldr  x0, [x0, _<sym>@TLVPPAGEOFF]   ; descriptor pointer
@@ -754,7 +762,7 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
       const char *spill_reg = d;
       char w1[8], w2[8], wd[8];
-      if (ir_type_size(inst->dst.type) <= 4) {
+      if (arm64_ir_type_size(ctx, inst->dst.type) <= 4) {
         to_w_name(s1, w1, sizeof(w1));
         to_w_name(s2, w2, sizeof(w2));
         to_w_name(d, wd, sizeof(wd));
@@ -767,12 +775,12 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_DIV: arm64_cg_emitf(ctx, "  sdiv %s, %s, %s\n", d, s1, s2); break;
         case IR_UDIV: arm64_cg_emitf(ctx, "  udiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
-          arm64_cg_emitf(ctx, "  sdiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
-          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
+          arm64_cg_emitf(ctx, "  sdiv %s11, %s, %s\n", arm64_ir_type_size(ctx, inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, arm64_ir_type_size(ctx, inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
         case IR_UMOD:
-          arm64_cg_emitf(ctx, "  udiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
-          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
+          arm64_cg_emitf(ctx, "  udiv %s11, %s, %s\n", arm64_ir_type_size(ctx, inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, arm64_ir_type_size(ctx, inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
         case IR_AND: arm64_cg_emitf(ctx, "  and %s, %s, %s\n", d, s1, s2); break;
         case IR_OR:  arm64_cg_emitf(ctx, "  orr %s, %s, %s\n", d, s1, s2); break;
@@ -798,7 +806,8 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
        * 符号は IR が ULT/ULE か LT/LE かで既に振り分け済み (operand の is_unsigned)。
        * ポインタ / long (i64) は従来どおり 64bit 比較。 */
       char w1[8], w2[8];
-      if (ir_type_size(inst->src1.type) <= 4 && ir_type_size(inst->src2.type) <= 4) {
+      if (arm64_ir_type_size(ctx, inst->src1.type) <= 4 &&
+          arm64_ir_type_size(ctx, inst->src2.type) <= 4) {
         to_w_name(s1, w1, sizeof(w1));
         to_w_name(s2, w2, sizeof(w2));
         s1 = w1; s2 = w2;
@@ -1319,13 +1328,15 @@ static void gen_inst_align_ptr(gen_ctx_t *ctx, ir_inst_t *inst) {
 
 static void gen_func(
     ag_codegen_emit_context_t *emit_context, ir_func_t *f,
-    const ir_abi_module_t *abi) {
+    const ir_abi_module_t *abi,
+    const ag_data_layout_t *data_layout) {
   /* レジスタ割り付け */
   ir_regalloc_function(f);
 
   gen_ctx_t ctx = {0};
   ctx.emit_context = emit_context;
   ctx.abi = abi;
+  ctx.data_layout = data_layout;
   ctx.f = f;
   layout_frame(&ctx);
 
@@ -1354,10 +1365,11 @@ static void gen_func(
 
 void gen_ir_module_in(
     ag_codegen_emit_context_t *emit_context, ir_module_t *m,
-    const ir_abi_module_t *abi) {
-  if (!emit_context) abort();
+    const ir_abi_module_t *abi,
+    const ag_data_layout_t *data_layout) {
+  if (!emit_context || !ag_data_layout_is_valid(data_layout)) abort();
   if (!m) return;
   for (ir_func_t *f = m->funcs; f; f = f->next) {
-    gen_func(emit_context, f, abi);
+    gen_func(emit_context, f, abi, data_layout);
   }
 }

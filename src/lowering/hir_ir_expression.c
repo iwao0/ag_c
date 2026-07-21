@@ -19,7 +19,7 @@ static ir_val_t global_address(
   if (result < 0) return ir_val_none();
   ir_inst_t *load = ir_inst_new(
       psx_hir_symbol_is_thread_local(symbol)
-          ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+          ? IR_LOAD_TLS_SYM : IR_LOAD_SYM);
   if (!load) {
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
     return ir_val_none();
@@ -27,7 +27,7 @@ static ir_val_t global_address(
   load->dst = ir_val_vreg(result, IR_TY_PTR);
   load->sym = (char *)name;
   load->sym_len = (int)name_length;
-  load->is_got_funcref = psx_hir_symbol_is_extern(symbol) ? 1 : 0;
+  load->is_external_symbol = psx_hir_symbol_is_extern(symbol) ? 1 : 0;
   if (!hir_ir_append_instruction(context, load)) return ir_val_none();
   return load->dst;
 }
@@ -326,7 +326,7 @@ static ir_val_t build_complex_assignment(
   ir_mir_type_info_t component_type = {
       .type = target_type.type,
       .type_class = IR_MIR_TYPE_FLOAT,
-      .source_size = ir_type_size(target_type.type),
+      .source_size = ir_type_fixed_size(target_type.type),
   };
   if (context->status == IR_HIR_BUILD_OK)
     real = hir_ir_coerce_direct_value(
@@ -371,7 +371,7 @@ static ir_val_t build_complex_comparison(
       left.type != IR_TY_PTR || right.type != IR_TY_PTR ||
       !hir_ir_is_complex_type(type))
     return hir_ir_unsupported_expr(context);
-  int half = ir_type_size(type.type);
+  int half = ir_type_fixed_size(type.type);
   ir_val_t left_imaginary = hir_ir_pointer_with_offset(context, left, half);
   ir_val_t right_imaginary = hir_ir_pointer_with_offset(context, right, half);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
@@ -473,8 +473,8 @@ ir_val_t hir_ir_materialize_complex_operand(
         source_type.source_size == target_type.source_size)
       return source;
 
-    int source_half = ir_type_size(source_type.type);
-    int target_half = ir_type_size(target_type.type);
+    int source_half = ir_type_fixed_size(source_type.type);
+    int target_half = ir_type_fixed_size(target_type.type);
     int slot = hir_ir_allocate_scalar_temp(
         context, target_type.source_size,
         target_half >= 8 ? 8 : 4);
@@ -515,7 +515,7 @@ ir_val_t hir_ir_materialize_complex_operand(
   }
   if (!hir_ir_is_scalar_value_type(source_type))
     return hir_ir_unsupported_expr(context);
-  int half = ir_type_size(target_type.type);
+  int half = ir_type_fixed_size(target_type.type);
   int slot = hir_ir_allocate_scalar_temp(
       context, target_type.source_size, half >= 8 ? 8 : 4);
   if (slot < 0) return ir_val_none();
@@ -575,7 +575,7 @@ static ir_val_t build_complex_binary(
   if (context->status != IR_HIR_BUILD_OK ||
       left.type != IR_TY_PTR || right.type != IR_TY_PTR)
     return hir_ir_unsupported_expr(context);
-  int half = ir_type_size(type.type);
+  int half = ir_type_fixed_size(type.type);
   ir_val_t left_imaginary = hir_ir_pointer_with_offset(context, left, half);
   ir_val_t right_imaginary = hir_ir_pointer_with_offset(context, right, half);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
@@ -669,7 +669,7 @@ static ir_val_t build_complex_negate(
   if (context->status != IR_HIR_BUILD_OK ||
       source.type != IR_TY_PTR)
     return hir_ir_unsupported_expr(context);
-  int half = ir_type_size(type.type);
+  int half = ir_type_fixed_size(type.type);
   ir_val_t imaginary_source = hir_ir_pointer_with_offset(
       context, source, half);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
@@ -739,7 +739,7 @@ static ir_val_t build_complex_component(
     return hir_ir_unsupported_expr(context);
   if (!is_real)
     value = hir_ir_pointer_with_offset(
-        context, value, ir_type_size(result_type.type));
+        context, value, ir_type_fixed_size(result_type.type));
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
   return load_direct_value(context, value, result_type.type);
 }
@@ -810,7 +810,7 @@ ir_val_t hir_ir_emit_integer_width_conversion(
   int result = hir_ir_new_vreg(context);
   if (result < 0) return ir_val_none();
   ir_inst_t *conversion = ir_inst_new(
-      ir_type_size(value.type) > ir_type_size(target)
+      ir_type_fixed_size(value.type) > ir_type_fixed_size(target)
           ? IR_TRUNC : sign_extend ? IR_SEXT : IR_ZEXT);
   if (!conversion) {
     context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
@@ -906,7 +906,7 @@ static int valid_bitfield(int bit_width, int bit_offset) {
 
 static int valid_bitfield_storage(
     ir_type_t memory_type, int bit_width, int bit_offset) {
-  int storage_size = ir_type_size(memory_type);
+  int storage_size = ir_type_fixed_size(memory_type);
   return hir_ir_is_integer_type(memory_type) && storage_size > 0 &&
          valid_bitfield(bit_width, bit_offset) &&
          bit_width + bit_offset <= storage_size * 8;
@@ -1132,7 +1132,7 @@ static ir_val_t build_logical_not(
         ir_val_imm(value.type, 0), result_type.type);
   }
   if (value.type != IR_TY_PTR) return hir_ir_unsupported_expr(context);
-  int half = ir_type_size(operand_type.type);
+  int half = ir_type_fixed_size(operand_type.type);
   ir_val_t components[2] = {
       value, hir_ir_pointer_with_offset(context, value, half)};
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
@@ -1644,7 +1644,6 @@ static ir_val_t build_function_reference(
   load->dst = ir_val_vreg(result_vreg, IR_TY_PTR);
   load->sym = (char *)name;
   load->sym_len = (int)name_length;
-  load->is_got_funcref = 1;
   load->is_function_symbol = 1;
   if (!ir_function_type_from_type_id(
           context->options->semantic_types,
@@ -2070,7 +2069,7 @@ ir_val_t hir_ir_build_expr(
     ir_mir_type_info_t arithmetic_type = {
         .type = fp_type,
         .type_class = IR_MIR_TYPE_FLOAT,
-        .source_size = ir_type_size(fp_type),
+        .source_size = ir_type_fixed_size(fp_type),
     };
     left = hir_ir_coerce_direct_value(
         context, left, left_type, arithmetic_type);

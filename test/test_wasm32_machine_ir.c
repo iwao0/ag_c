@@ -7,53 +7,69 @@
 #include "../src/arch/wasm32/wasm32_machine_ir.h"
 #include "../src/arch/wasm32/wasm32_machine_module.h"
 
-static const ir_func_t *fixture_function;
-static const ir_abi_signature_t *fixture_function_abi;
-static const ir_inst_t *fixture_call;
-static const ir_abi_signature_t *fixture_call_abi;
-static const ir_abi_argument_t *fixture_call_arguments;
-static size_t fixture_call_argument_count;
-static const ir_inst_t *fixture_reference;
-static const ir_abi_signature_t *fixture_reference_abi;
-static const ir_data_reloc_t *fixture_data_relocation;
-static const ir_abi_signature_t *fixture_data_relocation_abi;
+typedef struct {
+  ir_abi_module_t module;
+  const ir_func_t *function;
+  const ir_abi_signature_t *function_abi;
+  const ir_inst_t *call;
+  const ir_abi_signature_t *call_abi;
+  const ir_abi_argument_t *call_arguments;
+  size_t call_argument_count;
+  const ir_inst_t *reference;
+  const ir_abi_signature_t *reference_abi;
+} fixture_abi_module_t;
+
+typedef struct {
+  ir_abi_data_module_t module;
+  const ir_data_reloc_t *relocation;
+  const ir_abi_signature_t *relocation_abi;
+} fixture_abi_data_module_t;
 
 const ir_abi_signature_t *ir_abi_function_signature(
     const ir_abi_module_t *module, const ir_func_t *function) {
-  (void)module;
-  return function == fixture_function ? fixture_function_abi : NULL;
+  const fixture_abi_module_t *fixture =
+      (const fixture_abi_module_t *)module;
+  return fixture && function == fixture->function
+             ? fixture->function_abi : NULL;
 }
 
 const ir_abi_signature_t *ir_abi_call_signature(
     const ir_abi_module_t *module, const ir_inst_t *call) {
-  (void)module;
-  return call == fixture_call ? fixture_call_abi : NULL;
+  const fixture_abi_module_t *fixture =
+      (const fixture_abi_module_t *)module;
+  return fixture && call == fixture->call
+             ? fixture->call_abi : NULL;
 }
 
 const ir_abi_argument_t *ir_abi_call_arguments(
     const ir_abi_module_t *module, const ir_inst_t *call,
     size_t *argument_count) {
-  (void)module;
-  if (call != fixture_call) {
+  const fixture_abi_module_t *fixture =
+      (const fixture_abi_module_t *)module;
+  if (!fixture || call != fixture->call) {
     if (argument_count) *argument_count = 0;
     return NULL;
   }
-  if (argument_count) *argument_count = fixture_call_argument_count;
-  return fixture_call_arguments;
+  if (argument_count)
+    *argument_count = fixture->call_argument_count;
+  return fixture->call_arguments;
 }
 
 const ir_abi_signature_t *ir_abi_reference_signature(
     const ir_abi_module_t *module, const ir_inst_t *reference) {
-  (void)module;
-  return reference == fixture_reference ? fixture_reference_abi : NULL;
+  const fixture_abi_module_t *fixture =
+      (const fixture_abi_module_t *)module;
+  return fixture && reference == fixture->reference
+             ? fixture->reference_abi : NULL;
 }
 
 const ir_abi_signature_t *ir_abi_data_relocation_signature(
     const ir_abi_data_module_t *module,
     const ir_data_reloc_t *relocation) {
-  (void)module;
-  return relocation == fixture_data_relocation
-             ? fixture_data_relocation_abi : NULL;
+  const fixture_abi_data_module_t *fixture =
+      (const fixture_abi_data_module_t *)module;
+  return fixture && relocation == fixture->relocation
+             ? fixture->relocation_abi : NULL;
 }
 
 typedef struct {
@@ -292,6 +308,13 @@ int main(void) {
       planned_conversion->opcode != WASM32_MI_I64_EXTEND_I32_U ||
       !planned_load || planned_load->opcode != WASM32_MI_I32_LOAD16_U ||
       !planned_store || planned_store->opcode != WASM32_MI_F64_STORE ||
+      primitives.i32_add.opcode != WASM32_MI_I32_ADD ||
+      primitives.i32_subtract.opcode != WASM32_MI_I32_SUB ||
+      primitives.i32_and.opcode != WASM32_MI_I32_AND ||
+      primitives.i32_equal.opcode != WASM32_MI_I32_EQ ||
+      primitives.i32_not_equal.opcode != WASM32_MI_I32_NE ||
+      primitives.i32_zero_test.opcode != WASM32_MI_I32_EQZ ||
+      primitives.i64_zero_test.opcode != WASM32_MI_I64_EQZ ||
       wasm32_machine_planned_conversion(
           &primitives, IR_TY_VOID, IR_TY_I32, 0) ||
       wasm32_machine_planned_load(&primitives, IR_TY_VOID, 0) ||
@@ -316,6 +339,12 @@ int main(void) {
         wasm32_machine_opcode_binary(selected.opcode) != test->binary ||
         selected.is_comparison != is_comparison ||
         selected.guard_zero_divisor != guards_zero ||
+        (guards_zero &&
+         (selected.zero_test.operand_type != test->operand_type ||
+          strcmp(
+              wasm32_machine_opcode_wat(selected.zero_test.opcode),
+              test->operand_type == IR_TY_I64
+                  ? "i64.eqz" : "i32.eqz") != 0)) ||
         selected.result_type !=
             (is_comparison ? IR_TY_I32 : test->operand_type)) {
       fprintf(stderr, "FAIL: machine binary case %zu (%s)\n", i, test->wat);
@@ -739,18 +768,19 @@ int main(void) {
           .access = IR_ABI_ARGUMENT_DIRECT,
       },
   };
-  ir_abi_module_t fake_abi_module = {0};
-  fixture_function = &function;
-  fixture_function_abi = &function_abi_with_parameter;
-  fixture_call = &function_instructions[12];
-  fixture_call_abi = &planned_call_abi;
-  fixture_call_arguments = planned_call_arguments;
-  fixture_call_argument_count = 2;
-  fixture_reference = &function_instructions[5];
-  fixture_reference_abi = &reference_abi;
+  fixture_abi_module_t fake_abi = {
+      .function = &function,
+      .function_abi = &function_abi_with_parameter,
+      .call = &function_instructions[12],
+      .call_abi = &planned_call_abi,
+      .call_arguments = planned_call_arguments,
+      .call_argument_count = 2,
+      .reference = &function_instructions[5],
+      .reference_abi = &reference_abi,
+  };
   wasm32_machine_function_t machine_function;
   if (!wasm32_machine_function_build(
-          &function, &fake_abi_module, &machine_function)) {
+          &function, &fake_abi.module, &machine_function)) {
     fprintf(stderr, "FAIL: machine function plan build\n");
     return 1;
   }
@@ -999,7 +1029,7 @@ int main(void) {
   const char *source_instruction_name = function_instructions[14].sym;
   wasm32_machine_module_t machine_module;
   if (!wasm32_machine_module_build(
-          &source_module, &fake_abi_module, &machine_module)) {
+          &source_module, &fake_abi.module, &machine_module)) {
     fprintf(stderr, "FAIL: machine module plan build\n");
     return 1;
   }
@@ -1046,10 +1076,13 @@ int main(void) {
       .objects = &target_object,
       .objects_tail = &holder_object,
   };
-  fixture_data_relocation = &function_data_relocation;
-  fixture_data_relocation_abi = &reference_abi;
+  fixture_abi_data_module_t fake_data_abi = {
+      .relocation = &function_data_relocation,
+      .relocation_abi = &reference_abi,
+  };
   if (!wasm32_machine_module_build_data(
-          &machine_module, &source_data_module, NULL)) {
+          &machine_module, &source_data_module,
+          &fake_data_abi.module)) {
     fprintf(stderr, "FAIL: machine data module plan build\n");
     return 1;
   }

@@ -182,13 +182,13 @@ static int is_scalar_mir_type(ir_mir_type_info_t type) {
 int hir_ir_is_float_value_type(ir_mir_type_info_t type) {
   return type.type_class == IR_MIR_TYPE_FLOAT &&
          hir_ir_is_float_type(type.type) &&
-         type.source_size == ir_type_size(type.type);
+         type.source_size == ir_type_fixed_size(type.type);
 }
 
 int hir_ir_is_complex_type(ir_mir_type_info_t type) {
   return type.type_class == IR_MIR_TYPE_COMPLEX &&
          hir_ir_is_float_type(type.type) &&
-         type.source_size == 2 * ir_type_size(type.type);
+         type.source_size == 2 * ir_type_fixed_size(type.type);
 }
 
 int hir_ir_is_scalar_value_type(ir_mir_type_info_t type) {
@@ -197,6 +197,15 @@ int hir_ir_is_scalar_value_type(ir_mir_type_info_t type) {
 
 int hir_ir_is_direct_value_type(ir_mir_type_info_t type) {
   return hir_ir_is_scalar_value_type(type);
+}
+
+int hir_ir_type_size_for_target(
+    const hir_ir_context_t *context, ir_type_t type) {
+  return context && context->options
+             ? ir_type_size_for_layout(
+                   type, ag_target_info_data_layout(
+                             context->options->target))
+             : 0;
 }
 
 ir_type_t hir_ir_integer_storage_type(ir_mir_type_info_t type) {
@@ -362,7 +371,8 @@ static ir_val_t coerce_integer(
   }
   int result = hir_ir_new_vreg(context);
   if (result < 0) return ir_val_none();
-  ir_op_t op = ir_type_size(value.type) > ir_type_size(target.type)
+  ir_op_t op = ir_type_fixed_size(value.type) >
+                       ir_type_fixed_size(target.type)
                    ? IR_TRUNC
                    : source.is_unsigned ? IR_ZEXT : IR_SEXT;
   ir_inst_t *conversion = ir_inst_new(op);

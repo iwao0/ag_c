@@ -155,7 +155,8 @@ static int wasm_emit_function_direct(
   ir_module_t *m = build_resolved_function_module(
       stream, function, options);
   if (!m) return 0;
-  ir_opt_const_fold(m);
+  ir_opt_const_fold(
+      m, ag_target_info_data_layout(options->target));
   ir_opt_dce(m);
   ir_abi_module_t *abi = lower_module_abi(m, options);
   if (!abi) {
@@ -175,9 +176,10 @@ static int wasm_emit_function_direct(
 
 #ifndef AGC_TARGET_WASM32
 static void arm64_emit_ir_module(
-    ir_module_t *module, const ir_abi_module_t *abi, void *context) {
+    ir_module_t *module, const ir_abi_module_t *abi, void *context,
+    const ag_data_layout_t *data_layout) {
   gen_ir_module_in(
-      (ag_codegen_emit_context_t *)context, module, abi);
+      (ag_codegen_emit_context_t *)context, module, abi, data_layout);
 }
 #endif
 
@@ -841,7 +843,9 @@ int main(int argc, char **argv) {
       return 1;
     }
 #ifndef AGC_TARGET_WASM32
-    ir_opt_const_fold(function_module);
+    ir_opt_const_fold(
+        function_module,
+        ag_target_info_data_layout(ir_options.target));
     ir_opt_dce(function_module);
     dump_ir_if_requested(function_module);
     ir_abi_module_t *abi = lower_module_abi(
@@ -856,7 +860,9 @@ int main(int argc, char **argv) {
       free(source);
       return 1;
     }
-    arm64_emit_ir_module(function_module, abi, emit_context);
+    arm64_emit_ir_module(
+        function_module, abi, emit_context,
+        ag_target_info_data_layout(ir_options.target));
     ir_abi_module_free(abi);
     ir_module_free(function_module);
 #endif

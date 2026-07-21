@@ -79,6 +79,8 @@ int hir_ir_is_float_value_type(ir_mir_type_info_t type);
 int hir_ir_is_complex_type(ir_mir_type_info_t type);
 int hir_ir_is_scalar_value_type(ir_mir_type_info_t type);
 int hir_ir_is_direct_value_type(ir_mir_type_info_t type);
+int hir_ir_type_size_for_target(
+    const hir_ir_context_t *context, ir_type_t type);
 ir_type_t hir_ir_integer_storage_type(ir_mir_type_info_t type);
 ir_type_t hir_ir_scalar_storage_type(ir_mir_type_info_t type);
 long long hir_ir_normalize_integer_immediate(

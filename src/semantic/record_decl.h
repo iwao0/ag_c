@@ -19,6 +19,7 @@ typedef struct psx_record_decl_t {
   psx_type_kind_t record_kind;
   char *tag_name;
   int tag_len;
+  unsigned char is_anonymous;
   unsigned char is_complete;
   int member_count;
   const psx_record_member_decl_t *members;

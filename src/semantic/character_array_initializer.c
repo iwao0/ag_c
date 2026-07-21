@@ -5,6 +5,7 @@
 
 #include "../parser/arena.h"
 #include "../tokenizer/literals.h"
+#include "../type_layout.h"
 #include "type_identity.h"
 
 psx_character_array_initializer_status_t
@@ -49,12 +50,14 @@ psx_character_array_initializer_status_t
 psx_plan_character_array_string_initializer(
     arena_context_t *arena_context,
     const psx_semantic_type_table_t *semantic_types,
+    const ag_data_layout_t *data_layout,
     psx_qual_type_t object_qual_type,
     const char *literal_contents, int literal_length,
     int character_width,
     psx_character_array_initializer_plan_t *plan) {
   if (plan) *plan = (psx_character_array_initializer_plan_t){0};
-  if (!arena_context || !semantic_types || !plan ||
+  if (!arena_context || !semantic_types ||
+      !ag_data_layout_is_valid(data_layout) || !plan ||
       object_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return PSX_CHARACTER_ARRAY_INITIALIZER_INVALID;
   psx_type_shape_t object_shape = {0};
@@ -73,7 +76,8 @@ psx_plan_character_array_string_initializer(
   psx_character_array_initializer_status_t status =
       psx_resolve_character_array_string_shape(
           object_shape.array_len,
-          psx_type_shape_character_code_unit_width(&element_shape),
+          psx_type_layout_character_code_unit_width(
+              semantic_types, element_qual_type.type_id, data_layout),
           literal_contents, literal_length,
           character_width, &shape);
   if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK) return status;

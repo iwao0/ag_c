@@ -1,9 +1,11 @@
 #ifndef LOWERING_STATIC_LOCAL_LOWERING_H
 #define LOWERING_STATIC_LOCAL_LOWERING_H
 
-#include "../parser/decl.h"
+#include "../type_system/type_ids.h"
 #include "static_data_initializer.h"
 
+typedef struct lvar_t lvar_t;
+typedef struct global_var_t global_var_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
@@ -26,39 +28,16 @@ typedef struct {
   int function_name_len;
   char *name;
   int name_len;
-  global_var_t *global;
   psx_qual_type_t type;
-} psx_static_local_object_request_t;
-
-typedef struct {
-  psx_global_registry_t *global_registry;
-  psx_local_registry_t *local_registry;
-  psx_lowering_context_t *lowering_context;
-  psx_static_local_kind_t kind;
-  char *function_name;
-  int function_name_len;
-  char *name;
-  int name_len;
-  psx_qual_type_t type;
-  const psx_static_initializer_lowering_input_t *initializer;
 } psx_static_local_declaration_request_t;
 
 typedef struct {
   global_var_t *global;
   lvar_t *alias;
-  int type_completed;
 } psx_static_local_declaration_result_t;
 
 void psx_static_local_lowering_reset_in(
     psx_lowering_context_t *lowering_context);
-int psx_static_local_prepare_global(
-    psx_global_registry_t *global_registry, global_var_t *global,
-    psx_qual_type_t type);
-lvar_t *lower_static_local_object(
-    const psx_static_local_object_request_t *request);
-int lower_static_local_declaration(
-    const psx_static_local_declaration_request_t *request,
-    psx_static_local_declaration_result_t *result);
 int lower_static_local_declaration_storage(
     const psx_static_local_declaration_request_t *request,
     psx_static_local_declaration_result_t *result);

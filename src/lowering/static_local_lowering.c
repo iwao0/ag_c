@@ -4,7 +4,6 @@
 #include "runtime_context.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
-#include "../parser/node_utils.h"
 #include "../parser/symtab.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +16,7 @@ void psx_static_local_lowering_reset_in(
          sizeof(lowering_context->static_local_sequences));
 }
 
-int psx_static_local_prepare_global(
+static int prepare_static_local_global(
     psx_global_registry_t *global_registry, global_var_t *global,
     psx_qual_type_t type) {
   if (!global || type.type_id == PSX_TYPE_ID_INVALID) return 0;
@@ -63,8 +62,21 @@ static char *mangle_static_local_name(
   return mangled;
 }
 
-lvar_t *lower_static_local_object(
-    const psx_static_local_object_request_t *request) {
+typedef struct {
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+  psx_lowering_context_t *lowering_context;
+  psx_static_local_kind_t kind;
+  char *function_name;
+  int function_name_len;
+  char *name;
+  int name_len;
+  global_var_t *global;
+  psx_qual_type_t type;
+} static_local_object_request_t;
+
+static lvar_t *lower_static_local_object(
+    const static_local_object_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
       !request->global || request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->global_registry ||
@@ -78,7 +90,7 @@ lvar_t *lower_static_local_object(
   if (!mangled) return NULL;
 
   global_var_t *global = request->global;
-  if (!psx_static_local_prepare_global(
+  if (!prepare_static_local_global(
           request->global_registry, global, request->type)) {
     free(mangled);
     return NULL;
@@ -109,14 +121,14 @@ int lower_static_local_declaration_storage(
 
   global_var_t *global = calloc(1, sizeof(*global));
   if (!global) return 0;
-  if (!psx_static_local_prepare_global(
+  if (!prepare_static_local_global(
           request->global_registry, global, request->type)) {
     free(global);
     return 0;
   }
 
   lvar_t *alias = lower_static_local_object(
-      &(psx_static_local_object_request_t){
+      &(static_local_object_request_t){
           .global_registry = request->global_registry,
           .local_registry = request->local_registry,
           .lowering_context = request->lowering_context,
@@ -151,27 +163,5 @@ int lower_static_local_declaration_initializer(
   }
   if (type_completed)
     *type_completed = initializer_result.type_completed;
-  return 1;
-}
-
-int lower_static_local_declaration(
-    const psx_static_local_declaration_request_t *request,
-    psx_static_local_declaration_result_t *result) {
-  psx_static_local_declaration_result_t lowered = {0};
-  if (!lower_static_local_declaration_storage(request, &lowered)) return 0;
-  if (request->initializer &&
-      !lower_static_local_declaration_initializer(
-          request->global_registry, request->lowering_context,
-          lowered.global,
-          request->initializer, &lowered.type_completed)) {
-    return 0;
-  }
-  if (lowered.type_completed &&
-      !ps_local_registry_complete_array_qual_type(
-          request->local_registry, lowered.alias,
-          request->initializer->resolution->object_qual_type)) {
-    return 0;
-  }
-  if (result) *result = lowered;
   return 1;
 }

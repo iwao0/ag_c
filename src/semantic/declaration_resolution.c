@@ -13,12 +13,10 @@ static psx_qual_type_t invalid_qual_type(void) {
 static psx_qual_type_t resolve_tag_base_qual_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, char *name, int name_len) {
-  int scope_depth = ps_ctx_get_tag_scope_depth_in(
-      semantic_context, kind, name, name_len);
   if (kind == TK_ENUM) {
-    return ps_ctx_intern_enum_qual_type_in(
-        semantic_context, name, name_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0);
+    return ps_ctx_tag_qual_type_at_in(
+        semantic_context, kind, name, name_len,
+        (psx_scope_lookup_point_t){PSX_SCOPE_ID_INVALID, 0});
   }
   if (!ps_ctx_is_tag_aggregate_kind(kind)) return invalid_qual_type();
   psx_record_id_t record_id = ps_ctx_resolve_tag_record_id_in(
@@ -321,6 +319,7 @@ int psx_resolve_completed_incomplete_array_qual_type_in(
 
 static long long initializer_string_count(
     const psx_semantic_type_table_t *semantic_types,
+    const ag_data_layout_t *data_layout,
     psx_qual_type_t array_type, const node_t *initializer) {
   psx_type_shape_t array_shape = {0};
   if (!initializer || initializer->kind != ND_STRING ||
@@ -337,7 +336,8 @@ static long long initializer_string_count(
   const node_string_t *string = (const node_string_t *)initializer;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
-  if (psx_type_shape_character_code_unit_width(&element_shape) != width)
+  if (psx_type_layout_character_code_unit_width(
+          semantic_types, element.type_id, data_layout) != width)
     return 0;
   return (long long)string->byte_len + 1;
 }
@@ -350,7 +350,7 @@ static long long initializer_list_count(
   if (!list || !resolve_index || !entries_initialize_outer_elements)
     return 0;
   if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
-    node_t *value = list->entries[0].value;
+    const node_t *value = list->entries[0].value;
     if (value && value->kind == ND_STRING) return -1;
   }
 
@@ -411,7 +411,8 @@ int psx_resolve_incomplete_array_initializer_shape_in(
   int entries_initialize_outer_elements = 0;
   if (initializer_kind == PSX_DECL_INIT_EXPR) {
     count = initializer_string_count(
-        semantic_types, incomplete_type, initializer);
+        semantic_types, ps_ctx_data_layout(semantic_context),
+        incomplete_type, initializer);
   } else if (initializer_kind == PSX_DECL_INIT_LIST &&
              initializer->kind == ND_INIT_LIST) {
     const node_init_list_t *list =
@@ -421,7 +422,8 @@ int psx_resolve_incomplete_array_initializer_shape_in(
         &entries_initialize_outer_elements);
     if (count < 0) {
       count = initializer_string_count(
-          semantic_types, incomplete_type,
+          semantic_types, ps_ctx_data_layout(semantic_context),
+          incomplete_type,
           list->entries[0].value);
       if (count <= 0) count = list->entry_count;
     }

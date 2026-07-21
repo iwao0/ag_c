@@ -43,6 +43,8 @@ typedef enum {
   WASM32_MI_I64_LE_S,
   WASM32_MI_I32_LE_U,
   WASM32_MI_I64_LE_U,
+  WASM32_MI_I32_EQZ,
+  WASM32_MI_I64_EQZ,
   WASM32_MI_F32_ADD,
   WASM32_MI_F64_ADD,
   WASM32_MI_F32_SUB,
@@ -103,7 +105,13 @@ typedef enum {
 typedef struct {
   wasm32_machine_opcode_t opcode;
   ir_type_t operand_type;
+} wasm32_machine_zero_test_t;
+
+typedef struct {
+  wasm32_machine_opcode_t opcode;
+  ir_type_t operand_type;
   ir_type_t result_type;
+  wasm32_machine_zero_test_t zero_test;
   unsigned char is_comparison;
   unsigned char is_unsigned;
   unsigned char is_shift;
@@ -179,6 +187,13 @@ typedef struct {
                       [WASM32_MACHINE_IR_TYPE_COUNT][2];
   unsigned char load_valid[WASM32_MACHINE_IR_TYPE_COUNT][2];
   unsigned char store_valid[WASM32_MACHINE_IR_TYPE_COUNT];
+  wasm32_machine_binary_t i32_add;
+  wasm32_machine_binary_t i32_subtract;
+  wasm32_machine_binary_t i32_and;
+  wasm32_machine_binary_t i32_equal;
+  wasm32_machine_binary_t i32_not_equal;
+  wasm32_machine_zero_test_t i32_zero_test;
+  wasm32_machine_zero_test_t i64_zero_test;
 } wasm32_machine_primitive_plan_t;
 
 ir_type_t wasm32_machine_value_type(ir_type_t type);
@@ -192,6 +207,9 @@ int wasm32_machine_select_conversion(
 int wasm32_machine_select_unary(
     ir_op_t source_op, ir_type_t operand_type,
     wasm32_machine_unary_t *selected);
+int wasm32_machine_select_zero_test(
+    ir_type_t operand_type,
+    wasm32_machine_zero_test_t *selected);
 int wasm32_machine_select_atomic_rmw(
     ir_atomic_rmw_op_t source_op, ir_type_t operand_type,
     wasm32_machine_binary_t *selected);

@@ -176,3 +176,28 @@ int psx_type_layout_alignof(const psx_semantic_type_table_t *types,
              ? layout.alignment
              : 0;
 }
+
+int psx_type_layout_character_code_unit_width(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout) {
+  psx_type_shape_t type = {0};
+  if (!types || !ag_data_layout_is_valid(data_layout) ||
+      !psx_semantic_type_table_describe(types, type_id, &type) ||
+      type.kind != PSX_TYPE_INTEGER)
+    return 0;
+  ag_target_scalar_kind_t scalar_kind;
+  switch (type.integer_kind) {
+    case PSX_INTEGER_KIND_CHAR:
+      scalar_kind = AG_TARGET_SCALAR_CHAR;
+      break;
+    case PSX_INTEGER_KIND_SHORT:
+      scalar_kind = AG_TARGET_SCALAR_SHORT;
+      break;
+    case PSX_INTEGER_KIND_INT:
+      scalar_kind = AG_TARGET_SCALAR_INT;
+      break;
+    default:
+      return 0;
+  }
+  return ag_data_layout_scalar_size(data_layout, scalar_kind);
+}

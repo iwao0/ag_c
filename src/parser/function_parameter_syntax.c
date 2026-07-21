@@ -26,11 +26,6 @@ static ag_diagnostic_context_t *diagnostics(
 static psx_parsed_function_parameter_t *append_function_parameter(
     psx_parsed_function_parameters_t *parameters,
     psx_parser_runtime_context_t *runtime_context) {
-  if (parameters->count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx_in(diagnostics(runtime_context), current_token(runtime_context),
-                   "function-parameter-syntax",
-                   "function parameter limit exceeded");
-  }
   if (parameters->count == parameters->capacity) {
     parameters->capacity = pda_next_cap_in(
         diagnostics(runtime_context), parameters->capacity,

@@ -139,6 +139,11 @@ static void apply_decl_tag_action(
           : PSX_TAG_DECLARATION_REFERENCE,
       0,
       action->diagnostic_token);
+  if (action->is_anonymous &&
+      (action->kind == TK_STRUCT || action->kind == TK_UNION) &&
+      !ps_ctx_mark_tag_record_anonymous_in(
+          semantic_context, action->kind, action->name, action->name_len))
+    return;
   if (action->action != PSX_PARSED_TAG_DEFINITION) return;
 
   int member_count = 0;

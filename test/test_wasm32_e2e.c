@@ -1040,7 +1040,7 @@ static int symbol_set_add(symbol_set_t *set, const char *name, size_t len) {
 }
 
 static int collect_stub_table_symbols(const char *src, symbol_set_t *out) {
-  const char *start = strstr(src, "static const char *stub_names[] = {");
+  const char *start = strstr(src, "stub_names[] = {");
   if (!start) return 1;
   start = strchr(start, '{');
   if (!start) return 1;

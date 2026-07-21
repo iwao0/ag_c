@@ -3,6 +3,7 @@
 
 #include "scope_graph.h"
 #include "typed_hir_build_status.h"
+#include "../type_system/type_ids.h"
 
 typedef struct node_t node_t;
 typedef struct ag_compilation_options_t ag_compilation_options_t;
@@ -55,20 +56,13 @@ psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
     psx_resolved_hir_build_failure_t *failure);
 
 psx_syntax_typed_hir_resolution_status_t
-psx_resolve_syntax_initializer_direct_to_typed_hir_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const node_t *syntax_initializer,
-    const psx_typed_hir_tree_t **typed_hir,
-    psx_resolved_hir_build_failure_t *failure);
-psx_syntax_typed_hir_resolution_status_t
-psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts(
+psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
+    psx_qual_type_t object_qual_type,
     const node_t *syntax_initializer,
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure);

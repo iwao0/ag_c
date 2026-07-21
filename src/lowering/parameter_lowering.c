@@ -1,10 +1,8 @@
 #include "parameter_lowering.h"
 
 #include "../parser/arena.h"
-#include "../parser/decl.h"
 #include "../parser/local_registry.h"
 #include "../semantic/type_identity.h"
-#include "abi_target_policy.h"
 #include "local_storage.h"
 #include "runtime_context.h"
 #include "vla_lowering.h"
@@ -12,12 +10,10 @@
 static int plan_parameter_storage(psx_lowering_context_t *lowering_context,
                                   psx_type_id_t type_id,
                                   psx_parameter_storage_plan_t *storage) {
-  const ag_target_info_t *target = ps_lowering_target(lowering_context);
   return psx_plan_parameter_storage_for_type_id(
       ps_lowering_semantic_types(lowering_context),
       ps_lowering_record_layouts(lowering_context), type_id,
-      ps_lowering_data_layout(lowering_context),
-      ir_abi_target_policy_for(target), storage);
+      ps_lowering_data_layout(lowering_context), storage);
 }
 
 static lvar_t *lower_parameter_with_plan(
@@ -38,7 +34,7 @@ static lvar_t *lower_parameter_with_plan(
       storage->storage_size, storage->alignment, type,
       diagnostic_token);
   if (!var) return NULL;
-  ps_local_registry_mark_parameter(var, storage->is_byref);
+  ps_local_registry_mark_parameter(var);
   return var;
 }
 

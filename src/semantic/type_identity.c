@@ -105,19 +105,10 @@ static int semantic_type_shapes_match(
     case PSX_TYPE_INTEGER:
       if (canonical->integer_kind == PSX_INTEGER_KIND_ENUM ||
           candidate->integer_kind == PSX_INTEGER_KIND_ENUM) {
-        if (canonical->integer_kind != PSX_INTEGER_KIND_ENUM ||
-            candidate->integer_kind != PSX_INTEGER_KIND_ENUM ||
-            canonical->enum_tag_length != candidate->enum_tag_length)
-          return 0;
-        if (canonical->enum_tag_length > 0 &&
-            (!canonical->enum_tag_name || !candidate->enum_tag_name ||
-             strncmp(canonical->enum_tag_name, candidate->enum_tag_name,
-                     (size_t)canonical->enum_tag_length) != 0))
-          return 0;
-        return canonical->enum_tag_scope_depth_p1 == 0 ||
-               candidate->enum_tag_scope_depth_p1 == 0 ||
-               canonical->enum_tag_scope_depth_p1 ==
-                   candidate->enum_tag_scope_depth_p1;
+        return canonical->integer_kind == PSX_INTEGER_KIND_ENUM &&
+               candidate->integer_kind == PSX_INTEGER_KIND_ENUM &&
+               canonical->enum_decl_id != PSX_DECL_ID_INVALID &&
+               canonical->enum_decl_id == candidate->enum_decl_id;
       }
       return canonical->is_unsigned == candidate->is_unsigned &&
              canonical->is_plain_char == candidate->is_plain_char &&
@@ -406,17 +397,17 @@ psx_qual_type_t psx_semantic_type_table_intern_void(
 }
 
 psx_qual_type_t psx_semantic_type_table_intern_enum(
-    psx_semantic_type_table_t *table,
-    const char *tag_name, int tag_length, int tag_scope_depth_p1) {
+    psx_semantic_type_table_t *table, psx_decl_id_t declaration_id,
+    const char *tag_name, int tag_length) {
   if (tag_length < 0 || (tag_length > 0 && !tag_name) ||
-      tag_scope_depth_p1 < 0)
+      declaration_id == PSX_DECL_ID_INVALID)
     return invalid_qual_type();
   const psx_type_shape_t shape = {
       .kind = PSX_TYPE_INTEGER,
       .integer_kind = PSX_INTEGER_KIND_ENUM,
       .enum_tag_name = tag_name,
       .enum_tag_length = tag_length,
-      .enum_tag_scope_depth_p1 = tag_scope_depth_p1,
+      .enum_decl_id = declaration_id,
   };
   return psx_semantic_type_table_intern_shape(
       table, &shape, invalid_qual_type(), NULL, 0);

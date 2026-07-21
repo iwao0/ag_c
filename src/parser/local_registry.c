@@ -325,10 +325,9 @@ void ps_local_registry_update_storage_object_in(
   registry->lvars_by_offset[bucket] = var;
 }
 
-void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
+void ps_local_registry_mark_parameter(lvar_t *var) {
   if (!var) return;
   var->is_param = 1;
-  var->is_byref_param = is_byref ? 1 : 0;
 }
 
 int ps_local_registry_complete_array_qual_type(

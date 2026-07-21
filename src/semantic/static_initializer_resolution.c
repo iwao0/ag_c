@@ -48,7 +48,7 @@ void psx_resolve_static_initializer(
   }
 
   psx_decl_init_kind_t kind = request->kind;
-  node_t *initializer = request->initializer;
+  const node_t *initializer = request->initializer;
   psx_semantic_context_t *semantic_context = request->semantic_context;
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
@@ -94,7 +94,7 @@ void psx_resolve_static_initializer(
       return;
     }
 
-    node_init_list_t *list = (node_init_list_t *)initializer;
+    const node_init_list_t *list = (const node_init_list_t *)initializer;
     if (list->entry_count != 1 || !list->entries ||
         list->entries[0].designator_count > 0 ||
         !list->entries[0].value ||

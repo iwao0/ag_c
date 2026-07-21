@@ -4,12 +4,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../type_system/type_ids.h"
+
 typedef uint32_t psx_scope_id_t;
-typedef uint32_t psx_decl_id_t;
 
 #define PSX_SCOPE_ID_TRANSLATION_UNIT ((psx_scope_id_t)0)
 #define PSX_SCOPE_ID_INVALID UINT32_MAX
-#define PSX_DECL_ID_INVALID ((psx_decl_id_t)0)
 
 typedef enum {
   PSX_SCOPE_TRANSLATION_UNIT = 0,

@@ -488,7 +488,8 @@ ir_val_t hir_ir_build_call(
   if (is_complex_result || is_aggregate_result) {
     int slot = hir_ir_allocate_scalar_temp(
         context, result_type.source_size,
-        ir_type_size(result_type.type) >= 8 ? 8 : 4);
+        hir_ir_type_size_for_target(context, result_type.type) >= 8
+            ? 8 : 4);
     if (slot < 0) {
       free(arguments);
       free(call);

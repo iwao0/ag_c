@@ -26,7 +26,6 @@ typedef struct {
   int is_volatile_qualified;
   int is_extern;
   int is_static;
-  int alignas_value;
 } psx_type_spec_result_t;
 
 typedef struct {

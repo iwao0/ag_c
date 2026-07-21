@@ -708,6 +708,7 @@ static void parse_tag_specifier(
     action->name = tag->str;
     action->name_len = tag->len;
   } else if (current_token(runtime_context)->kind == TK_LBRACE) {
+    action->is_anonymous = 1;
     psx_make_anonymous_tag_name_in(
         options->runtime_context, &action->name, &action->name_len);
   } else {

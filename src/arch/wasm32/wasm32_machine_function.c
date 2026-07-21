@@ -471,7 +471,7 @@ static int select_instruction(
     case IR_LOAD_SYM:
       selected->kind = WASM32_MACHINE_INST_SYMBOL_ADDRESS;
       return 1;
-    case IR_LOAD_TLV_ADDR:
+    case IR_LOAD_TLS_SYM:
       selected->kind = WASM32_MACHINE_INST_TLS_ADDRESS;
       return 1;
     case IR_MEMCPY:
@@ -826,7 +826,7 @@ static int propagate_forced_i32(
           case IR_ALLOCA:
           case IR_LOAD_STR:
           case IR_LOAD_SYM:
-          case IR_LOAD_TLV_ADDR:
+          case IR_LOAD_TLS_SYM:
             changed |= force_i32(
                 function, forced_i32, instruction->dst);
             break;

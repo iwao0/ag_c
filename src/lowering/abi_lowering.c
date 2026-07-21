@@ -27,6 +27,14 @@ static ir_abi_param_info_t abi_param_unknown(void) {
   };
 }
 
+static int abi_ir_type_size(
+    const ir_abi_type_context_t *context, ir_type_t type) {
+  return context && context->target
+             ? ir_type_size_for_layout(
+                   type, ag_target_info_data_layout(context->target))
+             : 0;
+}
+
 static ir_abi_param_info_t ir_abi_classify_type_id(
     const ir_abi_type_context_t *context, psx_type_id_t type_id) {
   if (!context || !context->semantic_types || !context->record_layouts ||
@@ -133,7 +141,7 @@ static int lower_result_pieces(
         .type = info.type,
         .source_index = SIZE_MAX,
         .source_size = info.source_size,
-        .byte_offset = ir_type_size(info.type),
+        .byte_offset = abi_ir_type_size(context, info.type),
         .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
     };
     return 1;
@@ -203,7 +211,7 @@ static int lower_function_type_signature(
           .type = info.type,
           .source_index = i,
           .source_size = info.source_size,
-          .byte_offset = ir_type_size(info.type),
+          .byte_offset = abi_ir_type_size(context, info.type),
           .kind = IR_ABI_PIECE_COMPLEX_IMAGINARY,
       };
     } else {
@@ -372,7 +380,7 @@ static int lower_logical_call_arguments(
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
           return 0;
         type = info.type;
-        offset = (int)piece_index * ir_type_size(type);
+        offset = (int)piece_index * abi_ir_type_size(context, type);
         access = IR_ABI_ARGUMENT_LOAD;
       } else if (info.param_class == IR_ABI_PARAM_AGGREGATE) {
         if (logical_argument->representation != IR_CALL_ARGUMENT_ADDRESS)
@@ -535,8 +543,8 @@ ir_abi_module_t *ir_abi_lower_module(
             call->signature.param_pieces[i] = (ir_abi_piece_t){
                 .type = instruction->args[i].value.type,
                 .source_index = SIZE_MAX,
-                .source_size = ir_type_size(
-                    instruction->args[i].value.type),
+                .source_size = abi_ir_type_size(
+                    context, instruction->args[i].value.type),
                 .byte_offset = 0,
                 .kind = IR_ABI_PIECE_VARIADIC,
             };

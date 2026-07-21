@@ -20,6 +20,8 @@ struct psx_hir_node_t {
   int object_size;
   int object_align;
   int member_offset;
+  int initializer_union_offset;
+  int initializer_union_member_index;
   int vla_stride_frame_offset;
   int vla_stride_source_offset;
   int vla_stride_element_size;
@@ -40,6 +42,8 @@ struct psx_hir_node_t {
   unsigned char is_implicit_call;
   unsigned char is_source_assignment;
   unsigned char is_declaration_initializer;
+  unsigned char is_resolved_initializer_entry;
+  unsigned char has_initializer_union_member;
 };
 
 typedef struct {
@@ -340,6 +344,9 @@ static psx_hir_node_id_t add_node(
   node->object_size = spec->object_size;
   node->object_align = spec->object_align;
   node->member_offset = spec->member_offset;
+  node->initializer_union_offset = spec->initializer_union_offset;
+  node->initializer_union_member_index =
+      spec->initializer_union_member_index;
   node->vla_stride_frame_offset = spec->vla_stride_frame_offset;
   node->vla_stride_source_offset = spec->vla_stride_source_offset;
   node->vla_stride_element_size = spec->vla_stride_element_size;
@@ -357,6 +364,10 @@ static psx_hir_node_id_t add_node(
   node->is_source_assignment = spec->is_source_assignment;
   node->is_declaration_initializer =
       spec->is_declaration_initializer;
+  node->is_resolved_initializer_entry =
+      spec->is_resolved_initializer_entry;
+  node->has_initializer_union_member =
+      spec->has_initializer_union_member;
   if (spec->child_count) {
     node->children = malloc(spec->child_count * sizeof(*node->children));
     node->child_edges = malloc(
@@ -549,6 +560,25 @@ int psx_hir_node_member_offset(const psx_hir_node_t *node) {
 
 int psx_hir_node_member_from_pointer(const psx_hir_node_t *node) {
   return node && node->member_from_pointer;
+}
+
+int psx_hir_node_is_resolved_initializer_entry(
+    const psx_hir_node_t *node) {
+  return node && node->kind == PSX_HIR_INITIALIZER_ENTRY &&
+         node->is_resolved_initializer_entry;
+}
+
+int psx_hir_node_initializer_union_member(
+    const psx_hir_node_t *node, int *relative_offset,
+    int *member_index) {
+  if (!node || node->kind != PSX_HIR_INITIALIZER_ENTRY ||
+      !node->has_initializer_union_member)
+    return 0;
+  if (relative_offset)
+    *relative_offset = node->initializer_union_offset;
+  if (member_index)
+    *member_index = node->initializer_union_member_index;
+  return 1;
 }
 
 int psx_hir_node_is_source_assignment(const psx_hir_node_t *node) {

@@ -3,7 +3,7 @@
 #include "frame_layout.h"
 #include "local_storage.h"
 #include "runtime_context.h"
-#include "../parser/decl.h"
+#include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
 #include "../diag/diag.h"
@@ -365,6 +365,6 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   }
 
   /* Keep the current name ineligible while resolving preceding parameters. */
-  ps_local_registry_mark_parameter(result.var, 0);
+  ps_local_registry_mark_parameter(result.var);
   return result;
 }

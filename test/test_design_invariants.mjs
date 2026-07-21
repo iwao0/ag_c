@@ -197,6 +197,10 @@ const scopeGraphHeader = await readFile(
   "src/semantic/scope_graph.h",
   "utf8",
 );
+const scopeGraphTypeIdsHeader = await readFile(
+  "src/type_system/type_ids.h",
+  "utf8",
+);
 const scopeGraphSource = await readFile(
   "src/semantic/scope_graph.c",
   "utf8",
@@ -267,7 +271,12 @@ const identifierResolverBody =
     /void\s+psx_resolve_identifier\s*\([^]*?\n}\n\nstatic\s+psx_qual_type_t/,
   )?.[0] ?? "";
 if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
-    !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(scopeGraphHeader) ||
+    !/typedef\s+uint32_t\s+psx_decl_id_t\s*;/.test(
+      scopeGraphTypeIdsHeader,
+    ) ||
+    !/#include\s+"\.\.\/type_system\/type_ids\.h"/.test(
+      scopeGraphHeader,
+    ) ||
     /\bpsx_local_lookup_point_t\b/.test(
       scopeGraphLocalRegistryHeader + scopeGraphSemanticContextHeader,
     ) ||
@@ -350,6 +359,9 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_tag_qual_type_at_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
+      scopeGraphSemanticContextSource,
+    ) ||
+    !/ps_ctx_intern_enum_qual_type_in\s*\([^]*?psx_scope_graph_declaration\s*\([^]*?tag_type_from_declaration_in\s*\([^]*?tag->kind\s*!=\s*TK_ENUM[^]*?psx_semantic_type_table_intern_enum\s*\([^]*?declaration->id/.test(
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
@@ -677,6 +689,17 @@ if (/\baggregate_definition\b/.test(loweringLayerSource)) {
     "lowering must resolve aggregate identity through RecordId and RecordDeclTable",
   );
 }
+if (/#include\s+["<][^">]*parser\/(?:ast|node_utils|decl)\.h[">]/.test(
+      loweringLayerSource,
+    ) ||
+    /\bnode_t\b|\bnode_kind_t\b/.test(loweringLayerSource) ||
+    /\blower_(?:global_object|static_local)_declaration\s*\(/.test(
+      loweringLayerSource,
+    )) {
+  throw new Error(
+    "lowering must consume semantic IDs and resolved plans without Syntax AST compatibility entry points",
+  );
+}
 const explicitArenaDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
@@ -758,7 +781,6 @@ const explicitParserTokenizerSources = [
   await readFile("src/parser/local_declaration_syntax.c", "utf8"),
   await readFile("src/parser/toplevel_declaration_syntax.c", "utf8"),
   await readFile("src/parser/enum_const.c", "utf8"),
-  await readFile("src/parser/alignas_value.c", "utf8"),
 ];
 const parserCoreHeader = await readFile("src/parser/core.h", "utf8");
 if (!/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
@@ -1347,6 +1369,7 @@ const irAllocationStatsHeader = await readFile(
   "utf8",
 );
 const irAllocationSource = await readFile("src/ir/ir_alloc.c", "utf8");
+const irOptimizationSource = await readFile("src/ir/ir_opt.c", "utf8");
 if (/\bps_node_atomic_pointer_info\s*\(/.test(
       `${parserLayerSource}\n${loweringLayerSource}`,
     )) {
@@ -2498,6 +2521,19 @@ const tokenizerUnitTestSource = await readFile(
   "test/test_tokenizer.c",
   "utf8",
 );
+const wasmMachineIrUnitTestSource = await readFile(
+  "test/test_wasm32_machine_ir.c",
+  "utf8",
+);
+const unitTestSourcePaths = (await readdir(
+  "test", { withFileTypes: true},
+))
+  .filter((entry) => entry.isFile() && /^test_.*\.[ch]$/.test(entry.name))
+  .map((entry) => `test/${entry.name}`)
+  .sort();
+const unitTestCompatibilityCorpus = (
+  await Promise.all(unitTestSourcePaths.map((file) => readFile(file, "utf8")))
+).join("\n");
 const declarationRegistrationBoundarySource = await readFile(
   "src/semantic/declaration_registration.c",
   "utf8",
@@ -2567,7 +2603,11 @@ for (const testName of [
   "test_expr_sizeof",
 ]) {
   const body = parserUnitTestSource.match(
-    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+    new RegExp(
+      `static\\s+void\\s+${testName}\\s*\\(\\s*` +
+      `ag_compilation_session_t\\s*\\*\\s*test_suite_session\\s*` +
+      `\\)\\s*\\{([^]*?)\\n\\}`,
+    ),
   );
   if (!body || /\banalyze_test_expression\s*\(/.test(body[1]) ||
       /\bparse_expr_input\s*\(/.test(body[1]) ||
@@ -2615,7 +2655,11 @@ if (!directProgramHirHelper ||
 }
 for (const testName of directProgramHirTests) {
   const body = parserUnitTestSource.match(
-    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+    new RegExp(
+      `static\\s+void\\s+${testName}\\s*\\(\\s*` +
+      `ag_compilation_session_t\\s*\\*\\s*test_suite_session\\s*` +
+      `\\)\\s*\\{([^]*?)\\n\\}`,
+    ),
   );
   if (!body || !/\bresolve_program_input_hir\s*\(/.test(body[1]) ||
       /\bparse_program_input\s*\(/.test(body[1])) {
@@ -2647,7 +2691,11 @@ if (typedHirBoundaryTests.length === 0) {
 }
 for (const testName of typedHirBoundaryTests) {
   const body = parserUnitTestSource.match(
-    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+    new RegExp(
+      `static\\s+void\\s+${testName}\\s*\\(\\s*` +
+      `ag_compilation_session_t\\s*\\*\\s*test_suite_session\\s*` +
+      `\\)\\s*\\{([^]*?)\\n\\}`,
+    ),
   );
   if (!body || /\bparse_program_input\s*\(/.test(body[1])) {
     throw new Error(
@@ -2672,7 +2720,11 @@ for (const testName of [
   "test_parse_evil_edge_cases",
 ]) {
   const body = parserUnitTestSource.match(
-    new RegExp(`static\\s+void\\s+${testName}\\s*\\(\\s*\\)\\s*\\{([^]*?)\\n\\}`),
+    new RegExp(
+      `static\\s+void\\s+${testName}\\s*\\(\\s*` +
+      `ag_compilation_session_t\\s*\\*\\s*test_suite_session\\s*` +
+      `\\)\\s*\\{([^]*?)\\n\\}`,
+    ),
   );
   if (!body || !/\bresolve_program_input_hir\s*\(/.test(body[1]) ||
       /\bparse_program_input\s*\(/.test(body[1])) {
@@ -3737,10 +3789,10 @@ if (/\bpsx_type_t\b|\bps_type_(?:new|clone|apply|add|set|is_tag|record_id|charac
     !/\bps_ctx_intern_record_qual_type_in\s*\(/.test(
       declarationResolutionSource,
     ) ||
-    !/\bps_ctx_intern_enum_qual_type_in\s*\(/.test(
+    !/\bps_ctx_tag_qual_type_at_in\s*\(/.test(
       declarationResolutionSource,
     ) ||
-    !/\bpsx_type_shape_character_code_unit_width\s*\(/.test(
+    !/\bpsx_type_layout_character_code_unit_width\s*\(/.test(
       declarationResolutionSource,
     ) ||
     /\btype->(?:record_id|is_plain_char|floating_kind)\s*=/.test(
@@ -4009,8 +4061,16 @@ if (!/psx_scope_graph_lookup_declaration_in_scope\s*\(/.test(
     ) ||
     /\bps_register_global_var\s*\(/.test(globalObjectLoweringSource) ||
     /\bps_global_registry_active\s*\(/.test(globalObjectLoweringSource) ||
-    !/!request->semantic_context\b/.test(globalObjectLoweringSource) ||
-    !/!request->global_registry\b/.test(globalObjectLoweringSource)) {
+    !/lower_resolved_global_object_declaration\s*\(/.test(
+      globalObjectLoweringSource,
+    ) ||
+    !/!request->global_registry\b/.test(globalObjectLoweringSource) ||
+    !/request->resolution->status\s*!=\s*PSX_GLOBAL_DECLARATION_OK/.test(
+      globalObjectLoweringSource,
+    ) ||
+    /\b(?:semantic_context|psx_resolve_global_declaration)\b/.test(
+      globalObjectLoweringSource,
+    )) {
   throw new Error(
     "global declarations must classify names through the scope graph and lowering must use explicit registries",
   );
@@ -4032,6 +4092,7 @@ if (/\bpsx_(?:semantic_context|global_registry|local_registry)_t\s*\*/.test(
     /#include\s+"(?:semantic_ctx|global_registry|local_registry)\.h"/.test(
       initializerSyntaxSource,
     ) ||
+    !/const\s+node_t\s*\*value\s*;/.test(initializerSyntaxHeader) ||
     !/psx_initializer_syntax_context_t/.test(initializerSyntaxHeader) ||
     !/parse_assignment_expression/.test(initializerSyntaxHeader)) {
   throw new Error(
@@ -4051,6 +4112,9 @@ if (!/node_t\s*\*initializer\s*;/.test(enumConstHeader) ||
     /psx_parsed_enum_expr_t|PSX_ENUM_EXPR_/.test(
       `${enumConstHeader}\n${enumBodySyntaxBoundary}`,
     ) ||
+    /psx_semantic_context_t|ps_ctx_|psx_(?:parse|eval)_.*const_expr/.test(
+      `${enumConstHeader}\n${enumConstSource}`,
+    ) ||
     !/parse_assignment_expression\s*\(/.test(enumBodySyntaxBoundary) ||
     /psx_semantic_context_t|ps_ctx_|psx_resolve_/.test(
       enumBodySyntaxBoundary,
@@ -4062,10 +4126,6 @@ if (!/node_t\s*\*initializer\s*;/.test(enumConstHeader) ||
     "enum initializers must remain immutable Syntax AST until direct semantic resolution",
   );
 }
-const alignasValueSource = await readFile(
-  "src/parser/alignas_value.c",
-  "utf8",
-);
 const functionParameterResolutionSource = await readFile(
   "src/semantic/function_parameter_resolution.c",
   "utf8",
@@ -4157,7 +4217,6 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts\s*\(/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
-    !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
     !/ag_compilation_session_reset_translation_unit\s*\(/.test(
       compilerMainSource,
     ) ||
@@ -4354,6 +4413,31 @@ const abiLoweringHeader = await readFile(
   "src/lowering/abi_lowering.h",
   "utf8",
 );
+const explicitIrLayoutCorpus =
+  `${irHeaderSource}\n${irAllocationSource}\n${irOptimizationSource}\n` +
+  `${abiLoweringSource}\n${hirIrBuilder}\n${arm64IrEmitSource}\n` +
+  compilerMainSource;
+if (!/ir_type_fixed_size\s*\(\s*ir_type_t\s+type\s*\)/.test(
+      irAllocationSource,
+    ) ||
+    !/ir_type_size_for_layout\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
+      irAllocationSource,
+    ) ||
+    /case\s+IR_TY_PTR\s*:\s*return\s+\d+/.test(irAllocationSource) ||
+    /\bir_type_size\s*\(/.test(explicitIrLayoutCorpus) ||
+    !/ir_opt_const_fold\s*\([^]*?const\s+ag_data_layout_t\s*\*data_layout/.test(
+      irOptimizationSource,
+    ) ||
+    (compilerMainSource.match(
+      /\bir_opt_const_fold\s*\([^;]*ag_target_info_data_layout\s*\(/g,
+    ) ?? []).length !== 2 ||
+    !/gen_ir_module_in\s*\([^;]*const\s+ag_data_layout_t\s*\*data_layout/.test(
+      arm64IrEmitSource,
+    )) {
+  throw new Error(
+    "MIR pointer width and optimization/codegen size queries must receive the selected DataLayout explicitly",
+  );
+}
 const abiTargetPolicySource = await readFile(
   "src/lowering/abi_target_policy.c",
   "utf8",
@@ -4398,6 +4482,7 @@ if (/\bps_find_global_var\s*\(/.test(irSymbolLoweringSource)) {
 if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test(
       irSymbolLoweringSource,
     ) ||
+    /abi_lowering\.h/.test(irSymbolLoweringSource) ||
     !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
@@ -4443,7 +4528,9 @@ for (const name of forbiddenGenericIrAbiMetadata) {
     throw new Error(`generic IR must not own target ABI metadata: ${name}`);
   }
 }
-if (/\bx8\b|\bret_type\b/.test(irHeaderSource) ||
+if (/\bx8\b|\bret_type\b|\bTLV\b|\bGOT\b|\bis_got_funcref\b|IR_LOAD_TLV_ADDR/.test(irHeaderSource) ||
+    !/\bIR_LOAD_TLS_SYM\b/.test(irHeaderSource) ||
+    !/\bis_external_symbol\b/.test(irHeaderSource) ||
     /\bIR_(?:PARAM|RESULT_AREA)\b/.test(irHeaderSource) ||
     /\bresult_area_vreg\b/.test(abiLoweringHeader) ||
     !/\bir_abi_reference_signature\s*\(/.test(
@@ -4581,7 +4668,7 @@ for (const [name, source] of [
     );
   }
 }
-if (!/ir_opt_const_fold\s*\(m\)[\s\S]*?ir_opt_dce\s*\(m\)[\s\S]*?lower_module_abi\s*\(m/.test(
+if (!/ir_opt_const_fold\s*\(\s*m\s*,[^;]*\);[\s\S]*?ir_opt_dce\s*\(m\)[\s\S]*?lower_module_abi\s*\(m/.test(
       compilerMainSource,
     ) ||
     /\bir_opt_(?:const_fold|dce)\s*\(/.test(arm64IrEmitSource) ||
@@ -4601,6 +4688,8 @@ const legacyRecursiveTypeMetadata = [];
 const mutableProcessState = [];
 const mutableStaticDataRe =
   /^\s*static\s+(?!const\b|inline\b)(?:[A-Za-z_][A-Za-z0-9_]*\s+)*(?:\*+\s*)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\[[^\n;]*\]\s*)?(?:=|;)/gm;
+const mutableStaticConstPointerRe =
+  /^\s*static\s+const\s+[^;\n]*\*\s*(?!const\b)[A-Za-z_][A-Za-z0-9_]*\s*(?:\[[^\n;]*\]\s*)?(?:=|;)/gm;
 for (const file of sourceFiles) {
   const source = await readFile(file, "utf8");
   for (const match of source.matchAll(legacyTypeMutationRe)) {
@@ -4614,10 +4703,13 @@ for (const file of sourceFiles) {
       )) {
     legacyRecursiveTypeMetadata.push(file);
   }
-  if (file.endsWith(".c") && mutableStaticDataRe.test(source)) {
+  if (file.endsWith(".c") &&
+      (mutableStaticDataRe.test(source) ||
+       mutableStaticConstPointerRe.test(source))) {
     mutableProcessState.push(file);
   }
   mutableStaticDataRe.lastIndex = 0;
+  mutableStaticConstPointerRe.lastIndex = 0;
 }
 if (mutableProcessState.length) {
   throw new Error(
@@ -4674,6 +4766,9 @@ const syntaxTypedHirResolutionSource = await readFile(
   "utf8",
 );
 if (/\bpsx_type_t\b|\bps_ctx_type_by_id_in\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /\(\s*node_t\s*\*\s*\)\s*syntax_initializer/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(
@@ -5548,10 +5643,8 @@ const initializerLeafType = initializerResolutionHeader.match(
 );
 const initializerLayoutApis = [
   "psx_resolve_flat_local_initializer_plan",
-  "psx_resolve_initializer_member_target_with_records",
   "psx_collect_initializer_scalar_leaves_with_records",
   "psx_initializer_flat_slot_count_with_records",
-  "psx_initializer_leaf_cursor_after_target_with_records",
 ];
 if (!initializerTargetType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerTargetType[1]) ||
@@ -5708,6 +5801,13 @@ const diagnosticUiTextsSource = await readFile(
   "utf8",
 );
 const makefileSource = await readFile("Makefile", "utf8");
+if (/alignas_value(?:\.o|\.h)/.test(
+      `${makefileSource}\n${parserUnitTestSource}`,
+    )) {
+  throw new Error(
+    "the removed token-semantic alignas compatibility layer must not return",
+  );
+}
 if (semanticWarningCalls.length === 0 ||
     semanticWarningCalls.some((body) =>
       !body.includes("diag_warn_message_for_in(")) ||
@@ -5837,6 +5937,15 @@ const functionParameterSyntaxSource = await readFile(
   "src/parser/function_parameter_syntax.c",
   "utf8",
 );
+if (/\bPS_MAX_DECLARATOR_COUNT\b|function parameter limit exceeded/.test(
+      functionParameterSyntaxSource,
+    ) ||
+    !/\bpda_next_cap_in\s*\(/.test(functionParameterSyntaxSource) ||
+    !/\bpda_xreallocarray_in\s*\(/.test(functionParameterSyntaxSource)) {
+  throw new Error(
+    "function parameter syntax must use dynamic storage without a fixed argument-count cap",
+  );
+}
 const parserDeclarationSyntaxSource = await readFile(
   "src/parser/declaration_syntax.c",
   "utf8",
@@ -6115,8 +6224,11 @@ if (!/\bpsx_character_array_initializer_plan_t\b/.test(
     !/psx_semantic_type_table_describe\s*\(/.test(
       characterArrayInitializerSource,
     ) ||
-    !/psx_type_shape_character_code_unit_width\s*\(/.test(
+    !/psx_type_layout_character_code_unit_width\s*\(/.test(
       characterArrayInitializerSource,
+    ) ||
+    !/const\s+ag_data_layout_t\s*\*data_layout/.test(
+      characterArrayInitializerHeader,
     ) ||
     !/psx_resolve_character_array_string_shape\s*\(\s*int\s+array_capacity\s*,\s*int\s+element_width/.test(
       characterArrayInitializerHeader,
@@ -6560,6 +6672,9 @@ const refreshRecordDeclFunction = tagContextSource.match(
 const findRecordMemberFunction = tagContextSource.match(
   /bool\s+ps_ctx_find_record_member_in\s*\([^]*?\n\}/,
 );
+const registerTagMembersFunction = tagContextSource.match(
+  /static\s+int\s+register_tag_members_for_owner_in\s*\([^]*?\n\}/,
+);
 const recordDeclStruct = recordDeclHeaderSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
@@ -6617,6 +6732,24 @@ if (!findRecordMemberFunction ||
     "record member name lookup must use the scope graph and legacy tag-name member query APIs must stay removed",
   );
 }
+if (!registerTagMembersFunction ||
+    !/\bpsx_scope_graph_checkpoint_begin\s*\(/.test(
+      registerTagMembersFunction[0],
+    ) ||
+    !/\bpsx_scope_graph_lookup_in_scope\s*\(/.test(
+      registerTagMembersFunction[0],
+    ) ||
+    !/\bpsx_scope_graph_checkpoint_rollback\s*\(/.test(
+      registerTagMembersFunction[0],
+    ) ||
+    !/\bpsx_scope_graph_checkpoint_commit\s*\(/.test(
+      registerTagMembersFunction[0],
+    ) ||
+    /\b(?:strncmp|memcmp)\s*\(/.test(registerTagMembersFunction[0])) {
+  throw new Error(
+    "record member registration must use the scope graph as its sole duplicate-name authority and roll back atomically",
+  );
+}
 if (/#include\s+"\.\.\/parser\//.test(
       `${recordDeclHeaderSource}\n${recordDeclImplementationSource}`,
     ) ||
@@ -6637,6 +6770,13 @@ if (/#include\s+"\.\.\/parser\//.test(
     !recordDeclStruct ||
     !/\bconst\s+psx_record_member_decl_t\s*\*\s*members\s*;/.test(
       recordDeclStruct[1],
+    ) ||
+    !/\bunsigned\s+char\s+is_anonymous\s*;/.test(
+      recordDeclStruct[1],
+    ) ||
+    /__anon_tag_/.test(declarationPipelineSource) ||
+    !/leaf_record\s*&&\s*leaf_record->is_anonymous/.test(
+      declarationPipelineSource,
     ) ||
     !refreshRecordDeclFunction ||
     !/members\s*\[\s*i\s*\]\s*=\s*\(psx_record_member_decl_t\)/.test(
@@ -6846,14 +6986,14 @@ if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_alignment\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
-    !/\bag_data_layout_pointer_alignment\s*\(/.test(
-      alignasValueSource,
+    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+      declarationApplicationSource,
     ) ||
-    !/wants_alignment\s*\?\s*alignment\s*:\s*size/.test(
-      enumConstSource,
+    !/resolve_parsed_alignas_expression\s*\([^]*?psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
+      declarationApplicationSource,
     )) {
   throw new Error(
-    "parser type-name constants must derive size and alignment independently from DataLayout",
+    "declaration alignment must resolve through Typed HIR and explicit DataLayout rather than parser-side constant evaluation",
   );
 }
 
@@ -6923,16 +7063,18 @@ for (const [name, header, source, functionName] of [
       !/const\s+ag_data_layout_t\s*\*data_layout/.test(header) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
       (name === "parameter" &&
-       (!/const\s+ir_abi_target_policy_t\s*\*abi_policy/.test(header) ||
-        !/ir_abi_policy_parameter_aggregate_is_indirect\s*\(/.test(
-          source,
+       (/\bir_abi_target_policy_t\b|\bir_abi_policy_/.test(
+          `${header}\n${source}`,
         ) ||
-        /\bsize\s*>\s*16\b/.test(source))) ||
+        /#include\s+"abi_target_policy\.h"/.test(source) ||
+        /PSX_PARAMETER_STORAGE_AGGREGATE_BYREF|\bis_byref\b/.test(
+          `${header}\n${source}`,
+        ))) ||
       /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
         header,
       )) {
     throw new Error(
-      `${name} storage planning must separate TypeId layout from target ABI policy`,
+      `${name} storage planning must derive source-object layout from TypeId without target ABI policy`,
     );
   }
 }
@@ -6968,11 +7110,14 @@ if (!automaticLocalPipeline ||
     /\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/\bpsx_plan_parameter_storage_for_type_id\s*\([^]*?\bir_abi_target_policy_for\s*\(/.test(
+    !/\bpsx_plan_parameter_storage_for_type_id\s*\(/.test(
+      parameterLoweringSource,
+    ) ||
+    /\bir_abi_target_policy_for\s*\(|#include\s+"abi_target_policy\.h"/.test(
       parameterLoweringSource,
     )) {
   throw new Error(
-    "parameter ABI storage planning must occur in lowering after semantic TypeId resolution",
+    "parameter source-object storage planning must occur after TypeId resolution without pre-MIR ABI classification",
   );
 }
 if (/\bpsx_decl_parse_initializer_for_var_in_contexts\s*\(/.test(
@@ -7330,11 +7475,17 @@ if (!semanticTypeEntry ||
     /\b(?:qualifiers|size|alignment)\s*;/.test(semanticTypeShapeHeader) ||
     !/\brecord_tag_name\s*;/.test(semanticTypeShapeHeader) ||
     !/\benum_tag_name\s*;/.test(semanticTypeShapeHeader) ||
-    !/\benum_tag_scope_depth_p1\s*;/.test(
+    !/\benum_decl_id\s*;/.test(
       semanticTypeShapeHeader,
+    ) ||
+    /\benum_tag_scope_depth_p1\s*;/.test(
+      semanticTypeShapeHeader,
+    ) ||
+    !/canonical->enum_decl_id\s*!=\s*PSX_DECL_ID_INVALID[^]*?canonical->enum_decl_id\s*==\s*candidate->enum_decl_id/.test(
+      semanticTypeIdentitySource,
     )) {
   throw new Error(
-    "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
+    "semantic TypeId shape must own target-independent identity, use scope DeclId for enum identity, and resolve record relations through RecordDeclTable",
   );
 }
 for (const [contextInterner, tableInterner] of [
@@ -7915,6 +8066,7 @@ const lvarPublicSource = await readFile("src/parser/lvar_public.h", "utf8");
 const gvarPublicSource = await readFile("src/parser/gvar_public.h", "utf8");
 if (!lvarStruct ||
     /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(lvarStruct[1]) ||
+    /\bis_byref_param\b/.test(lvarStruct[1]) ||
     !gvarStruct ||
     /\bpsx_type_t\s*\*\s*decl_type\s*;/.test(gvarStruct[1]) ||
     /\bps_lvar_get_decl_type\b|\bpsx_type_t\b/.test(
@@ -8078,7 +8230,7 @@ if (!/\bpsx_record_member_decl_leaf_shape\s*\(/.test(
   );
 }
 const staticDataInitializerBoundary = parserUnitTestSource.match(
-  /static\s+void\s+test_static_data_initializer_boundary\s*\(\s*\)\s*\{([^]*?)\n\}/,
+  /static\s+void\s+test_static_data_initializer_boundary\s*\(\s*ag_compilation_session_t\s*\*\s*test_suite_session\s*\)\s*\{([^]*?)\n\}/,
 );
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     /\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
@@ -8177,10 +8329,8 @@ const canonicalLoweringTypeFields = [
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
-  ["src/lowering/global_object_lowering.h", "psx_global_object_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/lowering/local_object_lowering.h", "psx_local_object_request_t", "type"],
-  ["src/lowering/static_local_lowering.h", "psx_static_local_object_request_t", "type"],
   ["src/lowering/static_local_lowering.h", "psx_static_local_declaration_request_t", "type"],
 ];
 for (const [file, typeName, fieldName] of canonicalLoweringTypeFields) {
@@ -8492,9 +8642,27 @@ if (/\bmember->offset\b/.test(staticHirInitializerSource) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       staticHirInitializerSource,
     ) ||
-    !/\baggregate_member_layout\s*\(/.test(staticHirInitializerSource)) {
+    !/\bpsx_hir_node_is_resolved_initializer_entry\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\bpsx_hir_node_object_offset\s*\(/.test(
+      staticHirInitializerSource,
+    ) ||
+    /\baggregate_member_layout\s*\(|\bps_lowering_lookup_record_member\s*\(|\bpsx_resolve_initializer_member_target_with_records\s*\(/.test(
+      staticHirInitializerSource,
+    )) {
   throw new Error(
-    "initializer lowering must resolve member offsets from RecordLayoutTable",
+    "initializer lowering must consume semantic TypeId and offset metadata without re-resolving members",
+  );
+}
+if (/\brecord_member_lookup(?:_context)?\b|\bps_lowering_lookup_record_member\s*\(/.test(
+      `${loweringRuntimeSource}\n${loweringRuntimeHeader}\n${compilationSession}`,
+    ) ||
+    /\bpsx_resolve_initializer_member_target_with_records\s*\(/.test(
+      `${initializerResolutionHeader}\n${explicitDiagnosticInitializerResolutionSource}`,
+    )) {
+  throw new Error(
+    "record member names must be resolved during semantic initializer planning, not through lowering callbacks",
   );
 }
 if (/\baggregate_definition\b/.test(initializerResolutionSource) ||
@@ -8810,7 +8978,6 @@ const nameClassifierUsers = [
   "src/parser/expr.c",
   "src/parser/stmt.c",
   "src/parser/enum_const.c",
-  "src/parser/alignas_value.c",
 ];
 const directTypedefLookupUsers = [];
 const implicitNameClassifierUsers = [];
@@ -10045,7 +10212,7 @@ const directSyntaxTypedHirDispatch =
   );
 const directInitializerTypedHirDispatch =
   semanticTreeResolutionSource.indexOf(
-    "psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts",
+    "psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts",
     nonfunctionTypedResolutionStart,
   );
 const directDiagnosticDispatch =
@@ -10100,42 +10267,37 @@ if (!/MAP\s*\(\s*ND_COMMA\s*,\s*PSX_HIR_COMMA\s*,\s*PSX_TYPE_BINARY_COMMA\s*\)/.
 }
 if (directInitializerTypedHirDispatch < nonfunctionTypedResolutionStart ||
     directInitializerTypedHirDispatch > directDiagnosticDispatch ||
-    !/psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
+    !/psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts\s*\([^]*?psx_qual_type_t\s+object_qual_type/.test(
       syntaxTypedHirResolutionHeader,
     ) ||
     !/PSX_HIR_INITIALIZER_LIST/.test(syntaxTypedHirResolutionSource) ||
     !/PSX_HIR_INITIALIZER_ENTRY/.test(syntaxTypedHirResolutionSource) ||
-    !/PSX_HIR_MEMBER_DESIGNATOR/.test(syntaxTypedHirResolutionSource) ||
-    !/PSX_HIR_INDEX_DESIGNATOR/.test(syntaxTypedHirResolutionSource)) {
+    !/\.is_resolved_initializer_entry\s*=\s*1/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/\.attached_qual_type\s*=\s*item->target_qual_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    /PSX_HIR_(?:MEMBER|INDEX)_DESIGNATOR/.test(
+      `${syntaxTypedHirResolutionSource}\n${hirHeader}`,
+    ) ||
+    /PSX_HIR_EDGE_DESIGNATOR/.test(
+      `${syntaxTypedHirResolutionSource}\n${hirHeader}`,
+    )) {
   throw new Error(
-    "initializer resolution must build structural Typed HIR from immutable Syntax before direct diagnostics",
+    "initializer resolution must emit target-typed resolved entries without carrying raw designators into HIR",
   );
 }
-if (!/designator->range_end_expr[^]*?range_end_value\s*<\s*index_value/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/PSX_HIR_EDGE_DESIGNATOR_RANGE_END/.test(
-      syntaxTypedHirResolutionSource,
-    ) ||
-    !/static\s+int\s+aggregate_entry_range\s*\(/.test(
-      staticHirInitializerSource,
-    ) ||
-    !/PSX_HIR_EDGE_DESIGNATOR_RANGE_END/.test(
-      staticHirInitializerSource,
-    ) ||
-    !/designator\s*==\s*range_override\s*\?\s*range_index/.test(
-      staticHirInitializerSource,
-    ) ||
-    !/for\s*\(\s*long long index\s*=\s*range_begin\s*;\s*;\s*index\+\+\s*\)/.test(
-      staticHirInitializerSource,
-    ) ||
-    !/static\s+int\s+flat_initializer_entry_ranges\s*\(/.test(
+if (!/static\s+int\s+flat_initializer_entry_ranges\s*\(/.test(
       initializerResolutionSource,
     ) ||
     !/static\s+int\s+flat_initializer_apply_designated_ranges\s*\(/.test(
       initializerResolutionSource,
     ) ||
     !/designator_index\s*\+\s*1/.test(initializerResolutionSource) ||
+    /aggregate_entry_range|range_override|PSX_HIR_EDGE_DESIGNATOR/.test(
+      staticHirInitializerSource,
+    ) ||
     !/item->evaluation_group\s*=\s*group/.test(
       initializerResolutionSource,
     ) ||
@@ -10386,7 +10548,7 @@ if (!/active_transaction/.test(globalRegistrySource) ||
     !/psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
-    !/psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts\s*\(/.test(
+    !/psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts\s*\(/.test(
       semanticTreeResolutionSource,
     ) ||
     !/\.options\s*=\s*options/.test(syntaxTypedHirResolutionSource)) {
@@ -10414,11 +10576,14 @@ if (/\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     /type_compatibility_view\.h/.test(syntaxTypedHirResolutionSource) ||
-    !/resolve_direct_completed_array_qual_type\s*\([^]*?psx_type_shape_character_code_unit_width\s*\(/.test(
+    /node_num_t\s+[A-Za-z_][A-Za-z0-9_]*\s*=|\.base\.kind\s*=\s*ND_/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/resolve_direct_completed_array_qual_type\s*\([^]*?psx_type_layout_character_code_unit_width\s*\(/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "direct Typed HIR resolution must classify canonical types through TypeShape without compatibility views",
+    "direct Typed HIR resolution must classify canonical types through TypeShape and must not reconstruct mutable Syntax AST compatibility nodes",
   );
 }
 const functionDefinitionResolutionHeader = await readFile(
@@ -10840,6 +11005,10 @@ const wasmMachineIrSource = await readFile(
   "src/arch/wasm32/wasm32_machine_ir.c",
   "utf8",
 );
+const wasmMachineIrHeader = await readFile(
+  "src/arch/wasm32/wasm32_machine_ir.h",
+  "utf8",
+);
 const wasmMachineAbiSource = await readFile(
   "src/arch/wasm32/wasm32_machine_abi.c",
   "utf8",
@@ -11113,6 +11282,21 @@ if (!/WASM32_MACHINE_INST_CONVERSION/.test(wasmMachineFunctionSource) ||
       wasmWatWriterSource,
     ) ||
     /wasm32_machine_primitive_plan_t\s+primitives\s*;/.test(
+      wasmObjectWriterSource,
+    ) ||
+    !/wasm32_machine_binary_t\s+i32_add\s*;/.test(
+      wasmMachineIrHeader,
+    ) ||
+    !/wasm32_machine_zero_test_t\s+i64_zero_test\s*;/.test(
+      wasmMachineIrHeader,
+    ) ||
+    !/wasm32_machine_select_zero_test\s*\(/.test(
+      wasmMachineIrSource,
+    ) ||
+    /i(?:32|64)\.(?:add|sub|and|eq|eqz|ne)/.test(
+      wasmWatWriterSource,
+    ) ||
+    /\b0x(?:45|46|47|50|6a|6b|71)\b/.test(
       wasmObjectWriterSource,
     ) ||
     !/wasm32_machine_planned_conversion\s*\(/.test(
@@ -11558,6 +11742,9 @@ if (contextlessTokenizerTestApi.test(parserUnitTestSource) ||
 if (/static\s+node_t\s*\*\*\s*parsed_code\s*;/.test(
       parserUnitTestSource,
     ) ||
+    /^\s*static\s+(?:ag_compilation_session_t|psx_semantic_context_t|psx_scope_graph_t|psx_global_registry_t|psx_local_registry_t|psx_lowering_context_t|tokenizer_context_t)\s*\*+\s*[A-Za-z_][A-Za-z0-9_]*\s*(?:=|;)/m.test(
+      parserUnitTestSource,
+    ) ||
     /static\s+psx_record_id_t\s+next_record_id\s*=/.test(
       parserUnitTestSource,
     )) {
@@ -11565,11 +11752,18 @@ if (/static\s+node_t\s*\*\*\s*parsed_code\s*;/.test(
     "parser tests must not retain mutable process-global compatibility state",
   );
 }
-if (/\bpsx_type_t\b|type_compatibility_view|parser_type_compatibility|semantic_ctx_legacy|node_utils_legacy|parser\/type(?:_builder)?\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_ctx_intern_qual_type_in\s*\(|\bps_node_(?:get|bind)_type\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
-      parserUnitTestSource,
+if (/^\s*static\s+[^;\n]*\bfixture_(?:function|call|reference|data_relocation)\b/m.test(
+      wasmMachineIrUnitTestSource,
     )) {
   throw new Error(
-    "parser tests must use canonical QualType APIs without mutable parser type compatibility paths",
+    "Wasm Machine IR tests must carry ABI fixtures through explicit module arguments without process-global test doubles",
+  );
+}
+if (/\bpsx_type_t\b|type_compatibility_view|parser_type_compatibility|semantic_ctx_legacy|node_utils_legacy|parser\/type(?:_builder)?\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_ctx_intern_qual_type_in\s*\(|\bps_node_(?:get|bind)_type\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
+      unitTestCompatibilityCorpus,
+    )) {
+  throw new Error(
+    "unit tests must use canonical QualType APIs without mutable parser type compatibility paths",
   );
 }
 
@@ -11602,6 +11796,10 @@ if (!/PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE/.test(
     ) ||
     !/allocation_failure_enabled/.test(arenaSource) ||
     !/test-wasm-selfhost-source:/.test(makefileSource) ||
+    !/test-wasm-selfhost-source:[^]*?src\/semantic\/syntax_typed_hir_resolution\.c/.test(
+      makefileSource,
+    ) ||
+    /src\/semantic\/legacy_syntax_diagnostics\.c/.test(makefileSource) ||
     !/self-host compile failed: %s/.test(selfhostBuildScript)) {
   throw new Error(
     "direct Typed HIR failures must preserve the first status, node, token, and self-host source identity",

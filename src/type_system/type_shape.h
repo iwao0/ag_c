@@ -48,7 +48,7 @@ typedef struct {
   int record_tag_length;
   const char *enum_tag_name;
   int enum_tag_length;
-  int enum_tag_scope_depth_p1;
+  psx_decl_id_t enum_decl_id;
   int parameter_count;
   unsigned char is_unsigned;
   unsigned char is_plain_char;
@@ -65,19 +65,6 @@ static inline int psx_type_kind_is_scalar(psx_type_kind_t kind) {
 
 static inline int psx_type_kind_is_aggregate(psx_type_kind_t kind) {
   return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
-}
-
-static inline int psx_type_shape_character_code_unit_width(
-    const psx_type_shape_t *shape) {
-  if (!shape || shape->kind != PSX_TYPE_INTEGER ||
-      shape->integer_kind == PSX_INTEGER_KIND_ENUM)
-    return 0;
-  switch (shape->integer_kind) {
-    case PSX_INTEGER_KIND_CHAR: return 1;
-    case PSX_INTEGER_KIND_SHORT: return 2;
-    case PSX_INTEGER_KIND_INT: return 4;
-    default: return 0;
-  }
 }
 
 #endif

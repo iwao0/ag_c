@@ -16,7 +16,7 @@ typedef struct {
 typedef struct {
   int has_initializer;
   psx_decl_init_kind_t kind;
-  node_t *value;
+  const node_t *value;
   token_t *assign_tok;
   token_t *value_tok;
 } psx_parsed_initializer_t;

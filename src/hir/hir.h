@@ -82,8 +82,6 @@ typedef enum {
   PSX_HIR_STMT_EXPR,
   PSX_HIR_INITIALIZER_LIST,
   PSX_HIR_INITIALIZER_ENTRY,
-  PSX_HIR_MEMBER_DESIGNATOR,
-  PSX_HIR_INDEX_DESIGNATOR,
 } psx_hir_node_kind_t;
 
 typedef enum {
@@ -117,10 +115,7 @@ typedef enum {
   PSX_HIR_EDGE_ELSE,
   PSX_HIR_EDGE_VLA_DIMENSION,
   PSX_HIR_EDGE_INITIALIZER_ENTRY,
-  PSX_HIR_EDGE_DESIGNATOR,
   PSX_HIR_EDGE_INITIALIZER_VALUE,
-  PSX_HIR_EDGE_DESIGNATOR_INDEX,
-  PSX_HIR_EDGE_DESIGNATOR_RANGE_END,
 } psx_hir_edge_kind_t;
 
 typedef struct psx_hir_node_t psx_hir_node_t;
@@ -165,6 +160,11 @@ int psx_hir_node_object_size(const psx_hir_node_t *node);
 int psx_hir_node_object_align(const psx_hir_node_t *node);
 int psx_hir_node_member_offset(const psx_hir_node_t *node);
 int psx_hir_node_member_from_pointer(const psx_hir_node_t *node);
+int psx_hir_node_is_resolved_initializer_entry(
+    const psx_hir_node_t *node);
+int psx_hir_node_initializer_union_member(
+    const psx_hir_node_t *node, int *relative_offset,
+    int *member_index);
 int psx_hir_node_vla_stride_frame_offset(const psx_hir_node_t *node);
 int psx_hir_node_vla_stride_source_offset(const psx_hir_node_t *node);
 int psx_hir_node_vla_stride_element_size(const psx_hir_node_t *node);

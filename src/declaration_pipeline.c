@@ -160,7 +160,7 @@ int psx_begin_global_declaration_pipeline(
   return 1;
 }
 
-static node_t *selected_static_initializer_syntax(
+static const node_t *selected_static_initializer_syntax(
     const psx_parsed_initializer_t *initializer,
     const psx_static_initializer_resolution_t *resolution) {
   if (!initializer || !initializer->value || !resolution)
@@ -169,7 +169,8 @@ static node_t *selected_static_initializer_syntax(
     return initializer->value;
   if (initializer->value->kind != ND_INIT_LIST)
     return NULL;
-  node_init_list_t *list = (node_init_list_t *)initializer->value;
+  const node_init_list_t *list =
+      (const node_init_list_t *)initializer->value;
   return list->entry_count == 1 && list->entries
              ? list->entries[0].value : NULL;
 }
@@ -205,7 +206,7 @@ static int finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
-      node_t *initializer = selected_static_initializer_syntax(
+      const node_t *initializer = selected_static_initializer_syntax(
           request->initializer, &initializer_resolution);
       if (!initializer) return 0;
       psx_frontend_expression_hir_t expression_hir = {
@@ -678,13 +679,16 @@ int psx_begin_static_local_declaration_pipeline(
     return 0;
   }
 
-  if (psx_type_kind_is_aggregate(leaf_shape.kind) &&
-      leaf_shape.record_tag_name && leaf_shape.record_tag_length >= 11 &&
-      memcmp(leaf_shape.record_tag_name, "__anon_tag_", 11) == 0) {
+  const psx_record_decl_t *leaf_record =
+      psx_type_kind_is_aggregate(leaf_shape.kind)
+          ? ps_ctx_get_record_decl_in(
+                request->semantic_context, leaf_shape.record_id)
+          : NULL;
+  if (leaf_record && leaf_record->is_anonymous) {
     ps_ctx_promote_tag_to_file_scope_in(
         request->semantic_context,
         leaf_shape.kind == PSX_TYPE_STRUCT ? TK_STRUCT : TK_UNION,
-        (char *)leaf_shape.record_tag_name, leaf_shape.record_tag_length);
+        leaf_record->tag_name, leaf_record->tag_len);
   }
 
   psx_static_local_kind_t kind = PSX_STATIC_LOCAL_SCALAR;
@@ -746,7 +750,7 @@ int psx_finish_static_local_declaration_pipeline(
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
   }
-  node_t *initializer = selected_static_initializer_syntax(
+  const node_t *initializer = selected_static_initializer_syntax(
       request->initializer, &resolution);
   if (!initializer) return 0;
   psx_frontend_expression_hir_t expression_hir = {

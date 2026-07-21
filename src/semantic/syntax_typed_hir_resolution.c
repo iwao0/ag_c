@@ -218,6 +218,7 @@ typedef struct {
   int enforce_function_return_type;
   int preflight_failed;
   int suppress_value_decay_depth;
+  int is_static_initializer;
 } direct_resolution_context_t;
 
 typedef struct {
@@ -2395,11 +2396,16 @@ static psx_semantic_node_t *build_direct_identifier(
   if (!resolve_direct_identifier(context, identifier, &resolution))
     return NULL;
   if (resolution.symbol.kind == PSX_IDENTIFIER_ENUM_CONSTANT) {
-    node_num_t literal = {0};
-    literal.base.kind = ND_NUM;
-    literal.base.tok = identifier->base.tok;
-    literal.val = resolution.symbol.enum_value;
-    return build_direct_literal(context, &literal.base);
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_NUMBER,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .integer_value = resolution.symbol.enum_value,
+    };
+    return psx_semantic_node_builder_leaf_expression(
+        &context->builder, &spec,
+        resolution.expression_qual_type, NULL,
+        identifier->base.kind);
   }
 
   if (resolution.symbol.kind ==
@@ -3546,175 +3552,122 @@ static int direct_integer_constant(
       syntax->kind, lhs, rhs, value);
 }
 
-static int preflight_direct_initializer(
-    direct_resolution_context_t *context, const node_t *syntax) {
-  if (!context || !syntax) return 0;
-  if (syntax->kind == ND_STRING) return 1;
-  if (syntax->kind != ND_INIT_LIST) {
-    psx_qual_type_t qual_type;
-    return preflight_direct_expression(context, syntax, &qual_type);
-  }
-
-  const node_init_list_t *list = (const node_init_list_t *)syntax;
-  if (list->entry_count < 0 ||
-      (list->entry_count > 0 && !list->entries))
-    return 0;
-  for (int i = 0; i < list->entry_count; i++) {
-    const psx_initializer_entry_t *entry = &list->entries[i];
-    if (!entry->value || entry->designator_count > 8) return 0;
-    for (int d = 0; d < entry->designator_count; d++) {
-      const psx_initializer_designator_t *designator =
-          &entry->designators[d];
-      if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
-        if (!designator->member_name || designator->member_len <= 0)
-          return 0;
-        continue;
-      }
-      if (designator->kind != PSX_INIT_DESIGNATOR_INDEX ||
-          !designator->index_expr)
-        return 0;
-      psx_qual_type_t index_type;
-      long long index_value = 0;
-      if (!preflight_direct_expression(
-              context, designator->index_expr, &index_type))
-        return 0;
-      if (!direct_qual_type_is_integer(context, index_type) ||
-          !direct_integer_constant(
-              context, designator->index_expr, &index_value) ||
-          index_value < 0)
-        return 0;
-      if (designator->is_range) {
-        psx_qual_type_t range_end_type;
-        long long range_end_value = 0;
-        if (!designator->range_end_expr ||
-            !preflight_direct_expression(
-                context, designator->range_end_expr,
-                &range_end_type))
-          return 0;
-        if (!direct_qual_type_is_integer(context, range_end_type) ||
-            !direct_integer_constant(
-                context, designator->range_end_expr,
-                &range_end_value) ||
-            range_end_value < index_value)
-          return 0;
-      } else if (designator->range_end_expr) {
-        return 0;
-      }
-    }
-    if (!preflight_direct_initializer(context, entry->value))
-      return 0;
-  }
-  return 1;
-}
-
-static psx_semantic_node_t *build_direct_initializer(
-    direct_resolution_context_t *context, const node_t *syntax);
-
-static psx_semantic_node_t *build_direct_initializer_designator(
+static psx_semantic_node_t *build_resolved_initializer_value(
     direct_resolution_context_t *context,
-    const psx_initializer_designator_t *designator,
-    const node_t *source) {
-  if (!context || !designator || !source) return NULL;
-  psx_hir_node_spec_t spec = {
-      .kind = designator->kind == PSX_INIT_DESIGNATOR_MEMBER
-                  ? PSX_HIR_MEMBER_DESIGNATOR
-                  : PSX_HIR_INDEX_DESIGNATOR,
-      .attached_qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-      .integer_value = designator->is_range ? 1 : 0,
-  };
-  psx_semantic_node_t *children[2] = {0};
-  psx_hir_edge_kind_t edges[2] = {0};
-  size_t child_count = 0;
-  if (designator->kind == PSX_INIT_DESIGNATOR_MEMBER) {
-    spec.name = designator->member_name;
-    spec.name_length = designator->member_len > 0
-                           ? (size_t)designator->member_len : 0;
-  } else {
-    children[child_count] = build_direct_expression(
-        context, designator->index_expr);
-    edges[child_count++] = PSX_HIR_EDGE_DESIGNATOR_INDEX;
-    if (designator->range_end_expr) {
-      children[child_count] = build_direct_expression(
-          context, designator->range_end_expr);
-      edges[child_count++] = PSX_HIR_EDGE_DESIGNATOR_RANGE_END;
-    }
-  }
-  return psx_semantic_node_builder_statement(
-      &context->builder, &spec,
-      child_count ? children : NULL,
-      child_count ? edges : NULL, child_count, source->kind);
-}
-
-static psx_semantic_node_t *build_direct_initializer_entry(
-    direct_resolution_context_t *context,
-    const psx_initializer_entry_t *entry,
-    const node_t *source) {
-  if (!context || !entry || !entry->value || !source ||
-      entry->designator_count > 8)
+    const psx_local_initializer_item_t *item,
+    int source_node_kind) {
+  if (!context || !item ||
+      item->target_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
-  psx_semantic_node_t *children[9] = {0};
-  psx_hir_edge_kind_t edges[9] = {0};
-  size_t child_count = 0;
-  for (int i = 0; i < entry->designator_count; i++) {
-    children[child_count] = build_direct_initializer_designator(
-        context, &entry->designators[i], source);
-    edges[child_count++] = PSX_HIR_EDGE_DESIGNATOR;
+  if (item->has_integer_value) {
+    psx_hir_node_spec_t spec = {
+        .kind = PSX_HIR_NUMBER,
+        .attached_qual_type = {
+            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        .integer_value = item->integer_value,
+    };
+    return psx_semantic_node_builder_leaf_expression(
+        &context->builder, &spec, item->target_qual_type,
+        NULL, source_node_kind);
   }
-  children[child_count] = build_direct_initializer(
-      context, entry->value);
-  edges[child_count++] = PSX_HIR_EDGE_INITIALIZER_VALUE;
-  psx_hir_node_spec_t spec = {
-      .kind = PSX_HIR_INITIALIZER_ENTRY,
-      .attached_qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-  };
-  return psx_semantic_node_builder_statement(
-      &context->builder, &spec, children, edges, child_count,
-      source->kind);
+  return item->value
+             ? build_direct_expression(context, item->value)
+             : NULL;
 }
 
-static psx_semantic_node_t *build_direct_initializer(
-    direct_resolution_context_t *context, const node_t *syntax) {
-  if (!context || !syntax) return NULL;
-  if (syntax->kind == ND_STRING)
-    return build_direct_literal(context, syntax);
-  if (syntax->kind != ND_INIT_LIST)
-    return build_direct_expression(context, syntax);
+static psx_semantic_node_t *build_direct_resolved_initializer(
+    direct_resolution_context_t *context,
+    psx_qual_type_t object_qual_type,
+    const direct_flat_initializer_binding_t *binding,
+    const node_t *syntax) {
+  if (!context || !binding || !syntax ||
+      object_qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return NULL;
+  const psx_local_initializer_plan_t *plan = &binding->plan;
+  psx_type_shape_t object_shape = {0};
+  if (!plan->items || plan->item_count <= 0 ||
+      plan->object_qual_type.type_id != object_qual_type.type_id ||
+      !psx_semantic_type_table_describe(
+          direct_semantic_types(context), object_qual_type.type_id,
+          &object_shape))
+    return NULL;
 
-  const node_init_list_t *list = (const node_init_list_t *)syntax;
-  size_t child_count = list->entry_count > 0
-                           ? (size_t)list->entry_count : 0;
-  psx_semantic_node_t **children = child_count
+  if (psx_type_kind_is_scalar(object_shape.kind)) {
+    for (int i = 0; i < plan->item_count; i++) {
+      const psx_local_initializer_item_t *item = &plan->items[i];
+      if (!item->is_active ||
+          (!item->value && !item->has_integer_value))
+        continue;
+      return build_resolved_initializer_value(
+          context, item, syntax->kind);
+    }
+    return NULL;
+  }
+
+  size_t entry_count = 0;
+  for (int i = 0; i < plan->item_count; i++) {
+    const psx_local_initializer_item_t *item = &plan->items[i];
+    if (item->is_active &&
+        (item->value || item->has_integer_value))
+      entry_count++;
+  }
+  psx_semantic_node_t **entries = entry_count
       ? arena_alloc_in(
             ps_ctx_arena(context->semantic_context),
-            child_count * sizeof(*children))
+            entry_count * sizeof(*entries))
       : NULL;
-  psx_hir_edge_kind_t *edges = child_count
+  psx_hir_edge_kind_t *entry_edges = entry_count
       ? arena_alloc_in(
             ps_ctx_arena(context->semantic_context),
-            child_count * sizeof(*edges))
+            entry_count * sizeof(*entry_edges))
       : NULL;
-  if (child_count && (!children || !edges)) {
+  if (entry_count && (!entries || !entry_edges)) {
     context->preflight_failed = 1;
     set_failure(
         context->failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
         syntax);
     return NULL;
   }
-  for (size_t i = 0; i < child_count; i++) {
-    children[i] = build_direct_initializer_entry(
-        context, &list->entries[i], syntax);
-    edges[i] = PSX_HIR_EDGE_INITIALIZER_ENTRY;
+
+  size_t entry_index = 0;
+  for (int i = 0; i < plan->item_count; i++) {
+    const psx_local_initializer_item_t *item = &plan->items[i];
+    if (!item->is_active ||
+        (!item->value && !item->has_integer_value))
+      continue;
+    psx_semantic_node_t *value = build_resolved_initializer_value(
+        context, item, syntax->kind);
+    if (!value) return NULL;
+    psx_semantic_node_t *children[] = {value};
+    psx_hir_edge_kind_t edges[] = {
+        PSX_HIR_EDGE_INITIALIZER_VALUE};
+    psx_hir_node_spec_t entry_spec = {
+        .kind = PSX_HIR_INITIALIZER_ENTRY,
+        .attached_qual_type = item->target_qual_type,
+        .object_offset = item->relative_offset,
+        .initializer_union_offset = item->union_relative_offset,
+        .initializer_union_member_index = item->union_member_index,
+        .bit_width = item->bit_width,
+        .bit_offset = item->bit_offset,
+        .bit_is_signed = item->bit_is_signed,
+        .is_resolved_initializer_entry = 1,
+        .has_initializer_union_member =
+            item->union_member_index >= 0,
+    };
+    entries[entry_index] = psx_semantic_node_builder_statement(
+        &context->builder, &entry_spec, children, edges, 1,
+        syntax->kind);
+    if (!entries[entry_index]) return NULL;
+    entry_edges[entry_index++] = PSX_HIR_EDGE_INITIALIZER_ENTRY;
   }
-  psx_hir_node_spec_t spec = {
+
+  psx_hir_node_spec_t list_spec = {
       .kind = PSX_HIR_INITIALIZER_LIST,
-      .attached_qual_type = {
-          PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+      .attached_qual_type = object_qual_type,
   };
   return psx_semantic_node_builder_statement(
-      &context->builder, &spec, children, edges, child_count,
-      syntax->kind);
+      &context->builder, &list_spec,
+      entries, entry_edges, entry_count, syntax->kind);
 }
 
 static int bind_direct_case_value(
@@ -4331,7 +4284,8 @@ static int preflight_direct_flat_initializer(
   }
 
   if (plan->evaluation_group_count <= 0 ||
-      context->unevaluated_depth > 0)
+      context->unevaluated_depth > 0 ||
+      context->is_static_initializer)
     return 1;
   binding->evaluation_temporaries = arena_alloc_in(
       ps_ctx_arena(context->semantic_context),
@@ -4417,7 +4371,9 @@ static psx_qual_type_t resolve_direct_completed_array_qual_type(
     psx_character_array_string_shape_t shape;
     if (psx_resolve_character_array_string_shape(
             array_shape.array_len,
-            psx_type_shape_character_code_unit_width(&element_shape),
+            psx_type_layout_character_code_unit_width(
+                semantic_types, element.type_id,
+                ps_ctx_data_layout(context->semantic_context)),
             string->literal_contents, string->literal_length,
             (int)string->char_width, &shape) !=
         PSX_CHARACTER_ARRAY_INITIALIZER_OK)
@@ -4549,6 +4505,7 @@ static int resolve_direct_compound_literal(
         psx_plan_character_array_string_initializer(
             ps_ctx_arena(context->semantic_context),
             ps_ctx_semantic_type_table_in(context->semantic_context),
+            ps_ctx_data_layout(context->semantic_context),
             object_qual_type, string_initializer->literal_contents,
             string_initializer->literal_length,
             (int)string_initializer->char_width,
@@ -4862,14 +4819,33 @@ static int preflight_direct_local_declaration(
       if (initializer->has_initializer) {
         if (!initializer->value)
           return 0;
+        psx_qual_type_t static_initializer_type =
+            ps_lvar_decl_qual_type(static_result.alias);
+        psx_type_shape_t static_initializer_shape = {0};
+        if (psx_semantic_type_table_describe(
+                direct_semantic_types(context),
+                static_initializer_type.type_id,
+                &static_initializer_shape) &&
+            static_initializer_shape.kind == PSX_TYPE_ARRAY &&
+            static_initializer_shape.array_len <= 0 &&
+            !static_initializer_shape.is_vla) {
+          static_initializer_type =
+              resolve_direct_completed_array_qual_type(
+                  context, static_initializer_type, initializer);
+        }
+        if (static_initializer_type.type_id == PSX_TYPE_ID_INVALID)
+          return 0;
         const psx_typed_hir_tree_t *initializer_typed_hir = NULL;
         psx_resolved_hir_build_failure_t initializer_failure;
         psx_syntax_typed_hir_resolution_status_t initializer_status =
             initializer->kind == PSX_DECL_INIT_LIST
-                ? psx_resolve_syntax_initializer_direct_to_typed_hir_in_contexts(
+                ? psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
                       context->semantic_context,
                       context->global_registry,
-                      context->local_registry, initializer->value,
+                      context->local_registry,
+                      context->lowering_context, context->options,
+                      static_initializer_type,
+                      initializer->value,
                       &initializer_typed_hir, &initializer_failure)
                 : psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
                       context->semantic_context,
@@ -4956,6 +4932,7 @@ static int preflight_direct_local_declaration(
           psx_plan_character_array_string_initializer(
               ps_ctx_arena(context->semantic_context),
               ps_ctx_semantic_type_table_in(context->semantic_context),
+              ps_ctx_data_layout(context->semantic_context),
               declaration_qual_type,
               string_initializer->literal_contents,
               string_initializer->literal_length,
@@ -6404,13 +6381,18 @@ resolve_syntax_initializer_direct_to_typed_hir(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
+    psx_qual_type_t object_qual_type,
     const node_t *syntax_initializer,
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   if (typed_hir) *typed_hir = NULL;
   psx_resolved_hir_build_failure_init(failure);
   if (!semantic_context || !global_registry || !local_registry ||
-      !syntax_initializer || !typed_hir) {
+      !lowering_context || !options || !syntax_initializer ||
+      syntax_initializer->kind != ND_INIT_LIST || !typed_hir ||
+      !psx_semantic_type_table_qual_type_is_valid(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          object_qual_type)) {
     set_failure(
         failure, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
         syntax_initializer);
@@ -6419,7 +6401,7 @@ resolve_syntax_initializer_direct_to_typed_hir(
 
   psx_global_registry_checkpoint_t global_checkpoint = {0};
   psx_lowering_context_checkpoint_t lowering_checkpoint = {0};
-  int transactional = lowering_context != NULL &&
+  int transactional =
       !psx_global_registry_checkpoint_is_active(global_registry);
   if (transactional) {
     if (!psx_global_registry_checkpoint_begin(
@@ -6432,16 +6414,6 @@ resolve_syntax_initializer_direct_to_typed_hir(
     psx_lowering_context_checkpoint(
         lowering_context, &lowering_checkpoint);
   }
-  if (lowering_context && !options) {
-    if (transactional)
-      psx_global_registry_checkpoint_rollback(
-          global_registry, &global_checkpoint);
-    set_failure(
-        failure, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
-        syntax_initializer);
-    return PSX_SYNTAX_TYPED_HIR_FAILED;
-  }
-
   direct_resolution_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -6449,11 +6421,20 @@ resolve_syntax_initializer_direct_to_typed_hir(
       .lowering_context = lowering_context,
       .options = options,
       .failure = failure,
+      .is_static_initializer = 1,
   };
   psx_semantic_node_builder_init(
       &context.builder, ps_ctx_arena(semantic_context),
       semantic_context, failure);
-  if (!preflight_direct_initializer(&context, syntax_initializer)) {
+  psx_parsed_initializer_t initializer = {
+      .has_initializer = 1,
+      .kind = PSX_DECL_INIT_LIST,
+      .value = syntax_initializer,
+      .value_tok = syntax_initializer->tok,
+  };
+  direct_flat_initializer_binding_t binding = {0};
+  if (!preflight_direct_flat_initializer(
+          &context, object_qual_type, &initializer, &binding)) {
     psx_syntax_typed_hir_resolution_status_t status =
         context.preflight_failed
             ? PSX_SYNTAX_TYPED_HIR_FAILED
@@ -6466,8 +6447,8 @@ resolve_syntax_initializer_direct_to_typed_hir(
     }
     return status;
   }
-  psx_semantic_node_t *root = build_direct_initializer(
-      &context, syntax_initializer);
+  psx_semantic_node_t *root = build_direct_resolved_initializer(
+      &context, object_qual_type, &binding, syntax_initializer);
   psx_typed_hir_tree_t *tree = wrap_typed_root(
       semantic_context, root, syntax_initializer, failure);
   if (!tree) {
@@ -6488,32 +6469,20 @@ resolve_syntax_initializer_direct_to_typed_hir(
 }
 
 psx_syntax_typed_hir_resolution_status_t
-psx_resolve_syntax_initializer_direct_to_typed_hir_in_contexts(
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
-    const node_t *syntax_initializer,
-    const psx_typed_hir_tree_t **typed_hir,
-    psx_resolved_hir_build_failure_t *failure) {
-  return resolve_syntax_initializer_direct_to_typed_hir(
-      semantic_context, global_registry, local_registry,
-      NULL, NULL, syntax_initializer, typed_hir, failure);
-}
-
-psx_syntax_typed_hir_resolution_status_t
-psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts(
+psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
+    psx_qual_type_t object_qual_type,
     const node_t *syntax_initializer,
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure) {
   return resolve_syntax_initializer_direct_to_typed_hir(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, syntax_initializer, typed_hir,
-      failure);
+      lowering_context, options, object_qual_type,
+      syntax_initializer, typed_hir, failure);
 }
 
 psx_syntax_typed_hir_resolution_status_t

@@ -87,7 +87,7 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       break;
     case IR_LOAD_STR:
     case IR_LOAD_SYM:
-    case IR_LOAD_TLV_ADDR:
+    case IR_LOAD_TLS_SYM:
       sink_printf(s, "@%.*s", i->sym_len, i->sym ? i->sym : "");
       break;
     case IR_LOAD:

@@ -258,6 +258,12 @@ static psx_decl_specifier_value_status_t resolve_tag_action_value(
           ? PSX_TAG_DECLARATION_FORWARD
           : PSX_TAG_DECLARATION_REFERENCE,
       0, action->diagnostic_token);
+  if (action->is_anonymous &&
+      (action->kind == TK_STRUCT || action->kind == TK_UNION) &&
+      !ps_ctx_mark_tag_record_anonymous_in(
+          context->semantic_context, action->kind,
+          action->name, action->name_len))
+    return PSX_DECL_SPECIFIER_VALUE_INVALID;
   if (action->action != PSX_PARSED_TAG_DEFINITION)
     return PSX_DECL_SPECIFIER_VALUE_OK;
   psx_decl_specifier_value_status_t status =

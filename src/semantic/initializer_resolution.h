@@ -17,6 +17,8 @@ typedef int (*psx_initializer_value_type_resolver_t)(
 typedef struct {
   int relative_offset;
   psx_qual_type_t target_qual_type;
+  int union_relative_offset;
+  int union_member_index;
   unsigned char bit_width;
   unsigned char bit_offset;
   unsigned char bit_is_signed;
@@ -56,8 +58,6 @@ typedef struct {
   psx_type_id_t type_id;
   int relative_offset;
   psx_initializer_member_ref_t member_ref;
-  int first_array_index;
-  int first_member_index;
   int union_relative_offset;
   int union_member_index;
 } psx_initializer_target_t;
@@ -88,13 +88,6 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     psx_initializer_value_type_resolver_t resolve_value_type,
     void *resolver_context, psx_local_initializer_plan_t *plan);
 
-int psx_resolve_initializer_member_target_with_records(
-    const psx_semantic_type_table_t *semantic_types,
-    const psx_record_decl_table_t *record_decls,
-    const psx_record_layout_table_t *record_layouts,
-    const ag_data_layout_t *data_layout, const char *member_name,
-    int member_name_len, psx_record_member_name_lookup_t resolve_member,
-    void *resolver_context, psx_initializer_target_t *target_inout);
 int psx_collect_initializer_scalar_leaves_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -106,12 +99,6 @@ int psx_initializer_flat_slot_count_with_records(
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_data_layout_t *data_layout, psx_type_id_t aggregate_type_id);
-int psx_initializer_leaf_cursor_after_target_with_records(
-    const psx_semantic_type_table_t *semantic_types,
-    const psx_record_layout_table_t *record_layouts,
-    const ag_data_layout_t *data_layout,
-    const psx_initializer_scalar_leaf_list_t *leaves,
-    const psx_initializer_target_t *target);
 void psx_initializer_scalar_leaf_list_dispose(
     psx_initializer_scalar_leaf_list_t *list);
 

@@ -48,6 +48,8 @@ static const wasm32_opcode_encoding_t opcode_encodings[WASM32_MI_COUNT] = {
     [WASM32_MI_I64_LE_S] = {"i64.le_s", 0x57},
     [WASM32_MI_I32_LE_U] = {"i32.le_u", 0x4d},
     [WASM32_MI_I64_LE_U] = {"i64.le_u", 0x58},
+    [WASM32_MI_I32_EQZ] = {"i32.eqz", 0x45},
+    [WASM32_MI_I64_EQZ] = {"i64.eqz", 0x50},
     [WASM32_MI_F32_ADD] = {"f32.add", 0x92},
     [WASM32_MI_F64_ADD] = {"f64.add", 0xa0},
     [WASM32_MI_F32_SUB] = {"f32.sub", 0x93},
@@ -180,6 +182,10 @@ int wasm32_machine_select_binary(
       wasm32_machine_opcode_is_shift(opcode) ? 1 : 0;
   selected->guard_zero_divisor =
       wasm32_machine_opcode_is_remainder(opcode) ? 1 : 0;
+  if (selected->guard_zero_divisor &&
+      !wasm32_machine_select_zero_test(
+          operand_type, &selected->zero_test))
+    return 0;
   selected->tracks_address =
       ((wasm32_machine_opcode_is_add(opcode) ||
         wasm32_machine_opcode_is_subtract(opcode)) &&
@@ -272,6 +278,22 @@ int wasm32_machine_select_unary(
       .operand_type = operand_type,
       .result_type = operand_type,
       .form = form,
+  };
+  return 1;
+}
+
+int wasm32_machine_select_zero_test(
+    ir_type_t operand_type,
+    wasm32_machine_zero_test_t *selected) {
+  if (!selected) return 0;
+  operand_type = wasm32_machine_value_type(operand_type);
+  if (operand_type != IR_TY_I32 && operand_type != IR_TY_I64)
+    return 0;
+  *selected = (wasm32_machine_zero_test_t){
+      .opcode = operand_type == IR_TY_I64
+                    ? WASM32_MI_I64_EQZ
+                    : WASM32_MI_I32_EQZ,
+      .operand_type = operand_type,
   };
   return 1;
 }
@@ -513,7 +535,20 @@ int wasm32_machine_primitive_plan_build(
             ? 1
             : 0;
   }
-  return 1;
+  return wasm32_machine_select_binary(
+             IR_ADD, IR_TY_I32, &plan->i32_add) &&
+         wasm32_machine_select_binary(
+             IR_SUB, IR_TY_I32, &plan->i32_subtract) &&
+         wasm32_machine_select_binary(
+             IR_AND, IR_TY_I32, &plan->i32_and) &&
+         wasm32_machine_select_binary(
+             IR_EQ, IR_TY_I32, &plan->i32_equal) &&
+         wasm32_machine_select_binary(
+             IR_NE, IR_TY_I32, &plan->i32_not_equal) &&
+         wasm32_machine_select_zero_test(
+             IR_TY_I32, &plan->i32_zero_test) &&
+         wasm32_machine_select_zero_test(
+             IR_TY_I64, &plan->i64_zero_test);
 }
 
 static int valid_plan_type(ir_type_t type) {

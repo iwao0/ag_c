@@ -142,9 +142,9 @@ void ir_regalloc_function(ir_func_t *f) {
     for (ir_inst_t *inst = b->head; inst; inst = inst->next) {
       int v = inst->dst.id;
       if (v >= 0 && v < nvregs && last_use[v] >= 0) {
-        /* CALL / TLV_ADDR は caller-saved を全 clobber するので、dst は
+        /* CALL / TLS symbol resolution は caller-saved をclobberし得るので、dstは
          * 常に frame slot に書く (phys 割り付け対象外)。 */
-        if (inst->op != IR_CALL && inst->op != IR_LOAD_TLV_ADDR &&
+        if (inst->op != IR_CALL && inst->op != IR_LOAD_TLS_SYM &&
             inst->op != IR_VLA_ALLOC) {
           int reg = try_alloc_reg(reg_holder, last_use, v, n);
           f->vreg_phys_reg[v] = reg;

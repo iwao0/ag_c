@@ -5,20 +5,27 @@
  */
 
 #include "ir.h"
+#include "../target_info.h"
 #include <stdlib.h>
 #include <string.h>
 
-int ir_type_size(ir_type_t t) {
-  switch (t) {
+int ir_type_fixed_size(ir_type_t type) {
+  switch (type) {
     case IR_TY_I8:  return 1;
     case IR_TY_I16: return 2;
     case IR_TY_I32: return 4;
     case IR_TY_I64: return 8;
     case IR_TY_F32: return 4;
     case IR_TY_F64: return 8;
-    case IR_TY_PTR: return 8;
     default:        return 0;
   }
+}
+
+int ir_type_size_for_layout(
+    ir_type_t type, const ag_data_layout_t *data_layout) {
+  return type == IR_TY_PTR
+             ? ag_data_layout_pointer_size(data_layout)
+             : ir_type_fixed_size(type);
 }
 
 const char *ir_type_name(ir_type_t t) {
@@ -80,7 +87,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_LOAD_FP_IMM:  return "load_fp_imm";
     case IR_LOAD_STR:     return "load_str";
     case IR_LOAD_SYM:     return "load_sym";
-    case IR_LOAD_TLV_ADDR:return "load_tlv_addr";
+    case IR_LOAD_TLS_SYM: return "load_tls_sym";
     case IR_BR:           return "br";
     case IR_BR_COND:      return "br_cond";
     case IR_LABEL:        return "label";

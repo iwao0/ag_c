@@ -7,6 +7,7 @@
 
 #include "../src/ir/ir.h"
 #include "../src/ir/ir_data.h"
+#include "../src/target_info.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -213,9 +214,22 @@ static void test_call(void) {
 
 /* ---- test 5: 各種ヘルパの値検査 ---- */
 static void test_helpers(void) {
-  if (ir_type_size(IR_TY_I32) != 4) { failures++; fprintf(stderr, "FAIL: ir_type_size(I32)\n"); }
-  if (ir_type_size(IR_TY_I64) != 8) { failures++; fprintf(stderr, "FAIL: ir_type_size(I64)\n"); }
-  if (ir_type_size(IR_TY_F64) != 8) { failures++; fprintf(stderr, "FAIL: ir_type_size(F64)\n"); }
+  ag_target_info_t host_target = ag_target_info_host();
+  ag_target_info_t wasm_target = ag_target_info_wasm32();
+  if (ir_type_fixed_size(IR_TY_I32) != 4) { failures++; fprintf(stderr, "FAIL: ir_type_fixed_size(I32)\n"); }
+  if (ir_type_fixed_size(IR_TY_I64) != 8) { failures++; fprintf(stderr, "FAIL: ir_type_fixed_size(I64)\n"); }
+  if (ir_type_fixed_size(IR_TY_F64) != 8) { failures++; fprintf(stderr, "FAIL: ir_type_fixed_size(F64)\n"); }
+  if (ir_type_fixed_size(IR_TY_PTR) != 0) { failures++; fprintf(stderr, "FAIL: pointer must not have a fixed IR size\n"); }
+  if (ir_type_size_for_layout(
+          IR_TY_PTR, ag_target_info_data_layout(&host_target)) != 8) {
+    failures++;
+    fprintf(stderr, "FAIL: host pointer layout size\n");
+  }
+  if (ir_type_size_for_layout(
+          IR_TY_PTR, ag_target_info_data_layout(&wasm_target)) != 4) {
+    failures++;
+    fprintf(stderr, "FAIL: wasm32 pointer layout size\n");
+  }
   if (strcmp(ir_type_name(IR_TY_PTR), "ptr") != 0) { failures++; fprintf(stderr, "FAIL: ir_type_name(PTR)\n"); }
   if (strcmp(ir_op_name(IR_ADD), "add") != 0) { failures++; fprintf(stderr, "FAIL: ir_op_name(ADD)\n"); }
 

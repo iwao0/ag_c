@@ -21,9 +21,6 @@ psx_lowering_context_t *ps_lowering_context_create(
     ctx->semantic_types = dependencies->semantic_types;
     ctx->record_decls = dependencies->record_decls;
     ctx->record_layouts = dependencies->record_layouts;
-    ctx->record_member_lookup = dependencies->record_member_lookup;
-    ctx->record_member_lookup_context =
-        dependencies->record_member_lookup_context;
   }
   return ctx;
 }
@@ -46,17 +43,6 @@ const psx_record_decl_table_t *ps_lowering_record_decls(
 const psx_record_layout_table_t *ps_lowering_record_layouts(
     const psx_lowering_context_t *ctx) {
   return ctx ? ctx->record_layouts : NULL;
-}
-
-int ps_lowering_lookup_record_member(
-    const psx_lowering_context_t *ctx, psx_record_id_t record_id,
-    const char *member_name, int member_name_len,
-    int *out_member_index) {
-  if (out_member_index) *out_member_index = -1;
-  return ctx && ctx->record_member_lookup &&
-         ctx->record_member_lookup(
-             ctx->record_member_lookup_context, record_id,
-             member_name, member_name_len, out_member_index);
 }
 
 int ps_lowering_type_id_size(

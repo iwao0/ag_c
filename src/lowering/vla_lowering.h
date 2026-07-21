@@ -1,12 +1,12 @@
 #ifndef LOWERING_VLA_LOWERING_H
 #define LOWERING_VLA_LOWERING_H
 
-#include "../parser/ast.h"
 #include "../parser/lvar_public.h"
 #include "../semantic/vla_runtime_plan.h"
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct token_t token_t;
 
 typedef struct {
   psx_local_registry_t *local_registry;

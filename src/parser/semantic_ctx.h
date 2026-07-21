@@ -58,8 +58,7 @@ psx_qual_type_t ps_ctx_intern_floating_qual_type_in(
 psx_qual_type_t ps_ctx_intern_void_qual_type_in(
     psx_semantic_context_t *context);
 psx_qual_type_t ps_ctx_intern_enum_qual_type_in(
-    psx_semantic_context_t *context,
-    const char *tag_name, int tag_length, int tag_scope_depth_p1);
+    psx_semantic_context_t *context, psx_decl_id_t declaration_id);
 psx_qual_type_t ps_ctx_intern_record_qual_type_in(
     psx_semantic_context_t *context, psx_record_id_t record_id);
 psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
@@ -140,6 +139,9 @@ int ps_ctx_find_tag_kind_at_current_scope_in(
     psx_semantic_context_t *context,
     char *name, int len, token_kind_t *out_kind);
 const psx_record_decl_t *ps_ctx_ensure_tag_record_decl_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+int ps_ctx_mark_tag_record_anonymous_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
 psx_record_id_t ps_ctx_resolve_tag_record_id_in(

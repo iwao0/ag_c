@@ -98,6 +98,26 @@ static void obj_unsupported_msg(
                       msg);
 }
 
+static unsigned machine_opcode_binary_or_unsupported(
+    wasm32_obj_context_t *context,
+    wasm32_machine_opcode_t opcode) {
+  unsigned binary = wasm32_machine_opcode_binary(opcode);
+  if (!binary)
+    obj_unsupported_msg(
+        context, "missing preselected Wasm Machine opcode");
+  return binary;
+}
+
+static unsigned machine_binary_binary_or_unsupported(
+    wasm32_obj_context_t *context,
+    const wasm32_machine_binary_t *binary) {
+  if (!binary)
+    obj_unsupported_msg(
+        context, "missing preselected Wasm Machine binary operation");
+  return machine_opcode_binary_or_unsupported(
+      context, binary->opcode);
+}
+
 static void *xrealloc(
     ag_diagnostic_context_t *diagnostics, void *p, size_t n) {
   void *q = realloc(p, n);
@@ -708,7 +728,9 @@ static void emit_abi_argument(
   emit_addr_val(context, b, argument->source, param_count);
   if (argument->byte_offset != 0) {
     emit_const(context, b, IR_TY_I32, argument->byte_offset);
-    wb_u8(b, 0x6a); /* i32.add */
+    wb_u8(
+        b, machine_binary_binary_or_unsupported(
+               context, &g_obj_machine_primitives->i32_add));
   }
   wb_u8(b, memory_binary_or_unsupported(context, argument->load));
   emit_selected_memarg(b, &argument->load);
@@ -806,7 +828,9 @@ static void emit_addr_plus_const(
   emit_addr_val(context, b, v, param_count);
   if (off == 0) return;
   emit_const(context, b, IR_TY_I32, off);
-  wb_u8(b, 0x6a);
+  wb_u8(
+      b, machine_binary_binary_or_unsupported(
+             context, &g_obj_machine_primitives->i32_add));
 }
 
 static void emit_copy_chunk(
@@ -839,7 +863,9 @@ static void emit_parameter_copy_chunk(
   emit_local_get(b, parameter_slot);
   if (chunk->offset != 0) {
     emit_const(context, b, IR_TY_I32, chunk->offset);
-    wb_u8(b, 0x6a);
+    wb_u8(
+        b, machine_binary_binary_or_unsupported(
+               context, &g_obj_machine_primitives->i32_add));
   }
   wb_u8(b, memory_binary_or_unsupported(context, chunk->load));
   emit_selected_memarg(b, &chunk->load);
@@ -864,7 +890,9 @@ static void emit_return_copy_chunk(
   emit_local_get(body, 0);
   if (chunk->offset != 0) {
     emit_const(context, body, IR_TY_I32, chunk->offset);
-    wb_u8(body, 0x6a);
+    wb_u8(
+        body, machine_binary_binary_or_unsupported(
+                  context, &g_obj_machine_primitives->i32_add));
   }
   emit_addr_plus_const(
       context, body, source, chunk->offset, param_count);
@@ -953,7 +981,10 @@ static int emit_obj_vararg_action(
       emit_stack_global_get(
           context, body, function, visitor->stack_pointer);
       emit_const(context, body, IR_TY_I32, action->byte_count);
-      wb_u8(body, 0x6b);
+      wb_u8(
+          body, machine_binary_binary_or_unsupported(
+                    context,
+                    &g_obj_machine_primitives->i32_subtract));
       emit_stack_global_set(
           context, body, function, visitor->stack_pointer);
       return 1;
@@ -972,7 +1003,9 @@ static int emit_obj_vararg_action(
       emit_stack_global_get(
           context, body, function, *visitor->va_arg_area);
       emit_const(context, body, IR_TY_I32, variadic->byte_offset);
-      wb_u8(body, 0x6a);
+      wb_u8(
+          body, machine_binary_binary_or_unsupported(
+                    context, &g_obj_machine_primitives->i32_add));
       emit_abi_argument(
           context, body,
           &visitor->call->arguments[variadic->argument_index],
@@ -991,7 +1024,9 @@ static int emit_obj_vararg_action(
       emit_stack_global_get(
           context, body, function, visitor->stack_pointer);
       emit_const(context, body, IR_TY_I32, action->byte_count);
-      wb_u8(body, 0x6a);
+      wb_u8(
+          body, machine_binary_binary_or_unsupported(
+                    context, &g_obj_machine_primitives->i32_add));
       emit_stack_global_set(
           context, body, function, visitor->stack_pointer);
       return 1;
@@ -1200,7 +1235,10 @@ static void gen_func_body(
   } else if (frame_size > 0) {
     emit_stack_global_get(context, &body, of, stack_pointer);
     emit_const(context, &body, IR_TY_I32, frame_size);
-    wb_u8(&body, 0x6b);
+    wb_u8(
+        &body, machine_binary_binary_or_unsupported(
+                   context,
+                   &g_obj_machine_primitives->i32_subtract));
     emit_local_set(&body, fp_local);
     emit_local_get(&body, fp_local);
     emit_stack_global_set(context, &body, of, stack_pointer);
@@ -1209,11 +1247,16 @@ static void gen_func_body(
     /* command=-1 is start; all other values resume the pending condition. */
     emit_local_get(&body, 0);
     emit_const(context, &body, IR_TY_I32, -1);
-    wb_u8(&body, 0x46); /* i32.eq */
+    wb_u8(
+        &body, machine_binary_binary_or_unsupported(
+                   context, &g_obj_machine_primitives->i32_equal));
     wb_u8(&body, 0x04); wb_u8(&body, 0x40); /* if */
     emit_continuation_data_load(
         context, &body, of, continuation_status_data);
-    wb_u8(&body, 0x45); /* i32.eqz */
+    wb_u8(
+        &body, machine_opcode_binary_or_unsupported(
+                   context,
+                   g_obj_machine_primitives->i32_zero_test.opcode));
     wb_u8(&body, 0x04); wb_u8(&body, 0x40);
     wb_u8(&body, 0x05); /* else: invalid double start */
     emit_const(context, &body, IR_TY_I32, -1); wb_u8(&body, 0x0f);
@@ -1222,7 +1265,9 @@ static void gen_func_body(
     emit_continuation_data_load(
         context, &body, of, continuation_status_data);
     emit_const(context, &body, IR_TY_I32, 2);
-    wb_u8(&body, 0x46);
+    wb_u8(
+        &body, machine_binary_binary_or_unsupported(
+                   context, &g_obj_machine_primitives->i32_equal));
     wb_u8(&body, 0x04); wb_u8(&body, 0x40);
     wb_u8(&body, 0x05); /* else: resume without suspension */
     emit_const(context, &body, IR_TY_I32, -1); wb_u8(&body, 0x0f);
@@ -1232,7 +1277,10 @@ static void gen_func_body(
         context, &body, of, continuation_status_data, 1);
     emit_local_get(&body, 0);
     emit_const(context, &body, IR_TY_I32, -1);
-    wb_u8(&body, 0x47); /* i32.ne */
+    wb_u8(
+        &body, machine_binary_binary_or_unsupported(
+                   context,
+                   &g_obj_machine_primitives->i32_not_equal));
     emit_local_set(&body, resumed_local);
 
     if (has_persistent_continuation_frame) {
@@ -1248,7 +1296,9 @@ static void gen_func_body(
         int off = slot ? slot->offset : -1;
         emit_local_get(&body, fp_local);
         emit_const(context, &body, IR_TY_I32, off);
-        wb_u8(&body, 0x6a);
+        wb_u8(
+            &body, machine_binary_binary_or_unsupported(
+                       context, &g_obj_machine_primitives->i32_add));
         emit_local_set(
             &body, local_index(param_count, instruction->dst.id));
       }
@@ -1262,11 +1312,15 @@ static void gen_func_body(
         emit_const(
             context, &body, IR_TY_I32,
             instruction->alignment.addend);
-        wb_u8(&body, 0x6a);
+        wb_u8(
+            &body, machine_binary_binary_or_unsupported(
+                       context, &g_obj_machine_primitives->i32_add));
         emit_const(
             context, &body, IR_TY_I32,
             instruction->alignment.mask);
-        wb_u8(&body, 0x71);
+        wb_u8(
+            &body, machine_binary_binary_or_unsupported(
+                       context, &g_obj_machine_primitives->i32_and));
         emit_local_set(
             &body, local_index(param_count, instruction->dst.id));
       }
@@ -1300,7 +1354,9 @@ static void gen_func_body(
     if (has_control_flow) {
       emit_local_get(&body, pc_local);
       emit_const(context, &body, IR_TY_I32, block->id);
-      wb_u8(&body, 0x46);
+      wb_u8(
+          &body, machine_binary_binary_or_unsupported(
+                     context, &g_obj_machine_primitives->i32_equal));
       wb_u8(&body, 0x04);
       wb_u8(&body, 0x40);
     }
@@ -1329,7 +1385,9 @@ static void gen_func_body(
             obj_unsupported_inst(context, i);
           emit_local_get(&body, fp_local);
           emit_const(context, &body, IR_TY_I32, off);
-          wb_u8(&body, 0x6a);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_add));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
@@ -1524,11 +1582,18 @@ static void gen_func_body(
           emit_val(context, &body, i->src1, IR_TY_I32, param_count);
           emit_const(
               context, &body, IR_TY_I32, i->alignment.addend);
-          wb_u8(&body, 0x6a);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_add));
           emit_const(
               context, &body, IR_TY_I32, i->alignment.mask);
-          wb_u8(&body, 0x71);
-          wb_u8(&body, 0x6b);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_and));
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context,
+                         &g_obj_machine_primitives->i32_subtract));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           emit_local_get(&body, local_index(param_count, i->dst.id));
           emit_stack_global_set(context, &body, of, stack_pointer);
@@ -1543,7 +1608,9 @@ static void gen_func_body(
         case WASM32_MACHINE_INST_ADDRESS_ADD:
           emit_addr_val(context, &body, i->src1, param_count);
           emit_val(context, &body, i->src2, IR_TY_I32, param_count);
-          wb_u8(&body, 0x6a);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_add));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case WASM32_MACHINE_INST_ALIGN_POINTER: {
@@ -1551,10 +1618,14 @@ static void gen_func_body(
           emit_addr_val(context, &body, i->src1, param_count);
           emit_const(
               context, &body, IR_TY_I32, i->alignment.addend);
-          wb_u8(&body, 0x6a);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_add));
           emit_const(
               context, &body, IR_TY_I32, i->alignment.mask);
-          wb_u8(&body, 0x71);
+          wb_u8(
+              &body, machine_binary_binary_or_unsupported(
+                         context, &g_obj_machine_primitives->i32_and));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
@@ -1568,7 +1639,9 @@ static void gen_func_body(
           ir_type_t op_ty = selected->binary.operand_type;
           if (selected->binary.guard_zero_divisor) {
             emit_val(context, &body, i->src2, op_ty, param_count);
-            wb_u8(&body, op_ty == IR_TY_I64 ? 0x50 : 0x45);
+            wb_u8(
+                &body, machine_opcode_binary_or_unsupported(
+                           context, selected->binary.zero_test.opcode));
             wb_u8(&body, 0x04);
             wb_u8(&body, wasm_valtype(context, op_ty));
             emit_val(context, &body, i->src1, op_ty, param_count);

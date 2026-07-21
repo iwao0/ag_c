@@ -56,6 +56,8 @@ ps_local_registry_set_current_usage_region_in(
     psx_lvar_usage_region_t *region);
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var);
+lvar_t *psx_decl_find_lvar_by_offset_in(
+    const psx_local_registry_t *registry, int offset);
 lvar_t *ps_local_registry_create_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
@@ -74,7 +76,7 @@ void ps_local_registry_update_storage_object_in(
     psx_local_registry_t *registry,
     lvar_t *var, int offset, int storage_size, int alignment);
 
-void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
+void ps_local_registry_mark_parameter(lvar_t *var);
 int ps_local_registry_complete_array_qual_type(
     psx_local_registry_t *registry, lvar_t *var,
     psx_qual_type_t complete_type);

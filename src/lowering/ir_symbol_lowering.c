@@ -1,6 +1,5 @@
 #include "ir_symbol_lowering.h"
 
-#include "abi_lowering.h"
 #include "function_type_lowering.h"
 #include "../parser/gvar_public.h"
 #include "../parser/symtab.h"

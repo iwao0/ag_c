@@ -86,7 +86,7 @@ int psx_frontend_resolve_static_aggregate_initializer_plan_in_contexts(
   psx_hir_node_id_t root = PSX_HIR_NODE_ID_INVALID;
   int resolved = psx_resolve_initializer_hir_from_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
-      lowering_context, options, syntax, fallback_diag_tok,
+      lowering_context, options, type, syntax, fallback_diag_tok,
       hir, &root);
   int built = resolved &&
               psx_build_static_aggregate_hir_initializer_plan(

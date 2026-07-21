@@ -10,6 +10,7 @@
  */
 
 #include "ir.h"
+#include "../target_info.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,8 +50,12 @@ static void substitute_with_const(const_map_t *cm, ir_val_t *val, int nvregs) {
 
 /* 整数二項演算を host 側で計算。成功なら out にセットして 1 を返す。
  * 0 除算は失敗扱い (元の命令を残す)。 */
-static int eval_binop(ir_op_t op, long long a, long long b, ir_type_t ty, long long *out) {
-  int is_i32 = ir_type_size(ty) <= 4;
+static int eval_binop(
+    ir_op_t op, long long a, long long b, ir_type_t ty,
+    const ag_data_layout_t *data_layout, long long *out) {
+  int type_size = ir_type_size_for_layout(ty, data_layout);
+  if (type_size <= 0) return 0;
+  int is_i32 = type_size <= 4;
   switch (op) {
     case IR_ADD: *out = a + b; return 1;
     case IR_SUB: *out = a - b; return 1;
@@ -95,7 +100,8 @@ static int eval_binop(ir_op_t op, long long a, long long b, ir_type_t ty, long l
   }
 }
 
-static void const_fold_func(ir_func_t *f) {
+static void const_fold_func(
+    ir_func_t *f, const ag_data_layout_t *data_layout) {
   int nvregs = f->next_vreg_id;
   if (nvregs <= 0) return;
   const_map_t cm;
@@ -123,7 +129,9 @@ static void const_fold_func(ir_func_t *f) {
       if (inst->src1.id == IR_VAL_IMM && inst->src2.id == IR_VAL_IMM &&
           inst->dst.id >= 0 && inst->dst.id < nvregs) {
         long long v;
-        if (eval_binop(inst->op, inst->src1.imm, inst->src2.imm, inst->dst.type, &v)) {
+        if (eval_binop(
+                inst->op, inst->src1.imm, inst->src2.imm,
+                inst->dst.type, data_layout, &v)) {
           inst->op = IR_LOAD_IMM;
           inst->src1.id = IR_VAL_IMM;
           inst->src1.type = inst->dst.type;
@@ -155,10 +163,11 @@ static void const_fold_func(ir_func_t *f) {
   cm_free(&cm);
 }
 
-void ir_opt_const_fold(ir_module_t *m) {
-  if (!m) return;
+void ir_opt_const_fold(
+    ir_module_t *m, const ag_data_layout_t *data_layout) {
+  if (!m || !ag_data_layout_is_valid(data_layout)) return;
   for (ir_func_t *f = m->funcs; f; f = f->next) {
-    const_fold_func(f);
+    const_fold_func(f, data_layout);
   }
 }
 
@@ -179,7 +188,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_LABEL:
     case IR_PARAM_BIND:
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */
-    case IR_LOAD_TLV_ADDR: /* 内部で blr __tlv_bootstrap を発行する */
+    case IR_LOAD_TLS_SYM: /* target TLS model may call a resolver */
     case IR_VLA_ALLOC:    /* SP を動的に変更する */
     case IR_ATOMIC:       /* メモリ書き換え / 順序付け効果。結果未使用でも消さない */
       return 1;

@@ -28,5 +28,8 @@ int psx_type_layout_alignof(const psx_semantic_type_table_t *types,
                             const psx_record_layout_table_t *record_layouts,
                             psx_type_id_t type_id,
                             const ag_data_layout_t *data_layout);
+int psx_type_layout_character_code_unit_width(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout);
 
 #endif

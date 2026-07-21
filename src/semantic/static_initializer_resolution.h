@@ -14,7 +14,7 @@ typedef struct {
   psx_local_registry_t *local_registry;
   psx_qual_type_t type;
   psx_decl_init_kind_t kind;
-  node_t *initializer;
+  const node_t *initializer;
   token_t *diag_tok;
   int already_initialized;
 } psx_static_initializer_resolution_request_t;

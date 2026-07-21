@@ -291,7 +291,7 @@ int main(void) {
                        "struct P{double a; int b;}; struct P g[2]; "
                        "int main(){g[1].a=2.5; g[1].b=4; return (int)g[0].a+(int)g[1].a+g[1].b;}\n",
                        global_zero_mixed_struct_array, 3, 6);
-  const char *global_struct_char_array[] = {"(data (i32.const", "\"abc\\00\""};
+  const char *global_struct_char_array[] = {"(data (i32.const", "abc\\00"};
   failures += run_case("global_struct_char_array",
                        "struct S{char name[4]; int id;}; struct S g={\"abc\",5}; int main(){return g.name[1]+g.id;}\n",
                        global_struct_char_array, 2, 103);

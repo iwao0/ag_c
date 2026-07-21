@@ -4,6 +4,7 @@
 #include "static_hir_initializer.h"
 
 #include "../parser/global_registry.h"
+#include "../parser/symtab.h"
 
 int psx_apply_static_aggregate_initializer_plan(
     global_var_t *global,

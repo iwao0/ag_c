@@ -142,7 +142,7 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 #define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
 #define PP_MAX_IF_EXPR_TOKENS 4096
 #define PP_MAX_IF_EXPR_EVAL_STEPS 8192
-static const char *k_include_search_roots[] = {
+static const char *const k_include_search_roots[] = {
     "",
     "include/",
 };
@@ -169,7 +169,7 @@ static token_t *preprocess_tokens(
 static _Noreturn void pp_error(
     ag_preprocessor_context_t *context,
     diag_error_id_t id, const char *arg);
-static const char *k_pp_month_names[] = {
+static const char *const k_pp_month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };

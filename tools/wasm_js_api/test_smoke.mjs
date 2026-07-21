@@ -194,7 +194,7 @@ for (const [name, source, expectedCodes] of [
   ["identical-logical", "int f(void){int x=1;return x&&x;}", ["W3020"]],
   ["sign-compare", "int f(void){unsigned u=1;int s=-1;return s<u;}", ["W3018"]],
   ["unsigned-zero", "int f(void){unsigned u=1;return u<0;}", ["W3019"]],
-  ["pointer-integer", "int f(void){int *p;return p==5;}", ["W3022"]],
+  ["pointer-integer", "int f(void){int *p=0;return p==5;}", ["W3022"]],
   ["integer-overflow", "int f(void){return 2147483647+1;}", ["W3023"]],
   ["shift-range", "int f(void){return 1<<32;}", ["W3014"]],
   ["divide-zero", "int f(void){return 1/0;}", ["W3015"]],

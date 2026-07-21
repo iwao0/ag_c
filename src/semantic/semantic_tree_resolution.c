@@ -527,15 +527,15 @@ resolve_nonfunction_typed_hir_from_syntax_in_contexts(
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
     const node_t *syntax, const token_t *fallback_diag_tok,
-    int is_initializer) {
+    int is_initializer, psx_qual_type_t initializer_type) {
   if (!semantic_context || !syntax) return NULL;
   const psx_typed_hir_tree_t *direct_typed_hir = NULL;
   psx_resolved_hir_build_failure_t direct_failure;
   psx_syntax_typed_hir_resolution_status_t direct_status =
       is_initializer
-          ? psx_resolve_syntax_initializer_direct_to_typed_hir_with_lowering_in_contexts(
+          ? psx_resolve_syntax_initializer_for_object_direct_to_typed_hir_in_contexts(
                 semantic_context, global_registry, local_registry,
-                lowering_context, options, syntax,
+                lowering_context, options, initializer_type, syntax,
                 &direct_typed_hir, &direct_failure)
           : psx_resolve_syntax_expression_direct_to_typed_hir_with_lowering_in_contexts(
                 semantic_context, global_registry, local_registry,
@@ -645,7 +645,9 @@ int psx_resolve_expression_hir_from_syntax_in_contexts(
       resolve_nonfunction_typed_hir_from_syntax_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax_expression,
-          fallback_diag_tok, 0);
+          fallback_diag_tok, 0,
+          (psx_qual_type_t){
+              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE});
   return emit_resolved_typed_hir(
       semantic_context, typed_hir, fallback_diag_tok,
       "expression", hir, hir_root);
@@ -657,6 +659,7 @@ int psx_resolve_initializer_hir_from_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
     const ag_compilation_options_t *options,
+    psx_qual_type_t initializer_type,
     const node_t *syntax_initializer,
     const token_t *fallback_diag_tok,
     psx_hir_module_t *hir, psx_hir_node_id_t *hir_root) {
@@ -667,7 +670,7 @@ int psx_resolve_initializer_hir_from_syntax_in_contexts(
       resolve_nonfunction_typed_hir_from_syntax_in_contexts(
           semantic_context, global_registry, local_registry,
           lowering_context, options, syntax_initializer,
-          fallback_diag_tok, 1);
+          fallback_diag_tok, 1, initializer_type);
   return emit_resolved_typed_hir(
       semantic_context, typed_hir, fallback_diag_tok,
       "initializer", hir, hir_root);
