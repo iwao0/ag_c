@@ -7,6 +7,8 @@
 #include "../lowering/runtime_context.h"
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
+#include "../semantic/hir_control_flow_diagnostics.h"
+#include "../semantic/lvar_usage_analysis.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
 #include "toplevel_declaration.h"
@@ -288,6 +290,15 @@ int psx_frontend_next_function_with_resolver(
             ag_compilation_session_arena_context(session), arena_mark);
         return 0;
       }
+      psx_emit_hir_control_flow_warnings(
+          ag_compilation_session_hir_module(session), result->hir_root,
+          ag_compilation_session_diagnostic_context(session),
+          (token_t *)function_name);
+      psx_analyze_recorded_lvar_usage_in(
+          ag_compilation_session_diagnostic_context(session),
+          local_registry,
+          ps_decl_get_storage_objects_in(local_registry),
+          (token_t *)function_name);
       ps_dispose_function_definition_syntax(
           &item.value.function_header);
       ps_local_registry_enter_translation_unit_in(local_registry);

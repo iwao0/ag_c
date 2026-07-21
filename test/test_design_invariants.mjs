@@ -2596,6 +2596,10 @@ const parserUnitTestSource = await readFile(
   "test/test_parser.c",
   "utf8",
 );
+const tokenizerUnitTestSource = await readFile(
+  "test/test_tokenizer.c",
+  "utf8",
+);
 const semanticTreeResolutionTestSupportHeader = await readFile(
   "src/semantic/semantic_tree_resolution_test_support.h",
   "utf8",
@@ -10066,14 +10070,14 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bresolve_test_global_decl_type\s*\([^]*?psx_semantic_type_table_find\s*\(/.test(
+    /\bpsx_type_t\b|resolve_test_global_decl_type|ps_global_registry_(?:bind_decl_type|complete_array_type)\s*\(/.test(
       parserCompatibilityTestHook,
     ) ||
-    !/\bps_global_registry_bind_decl_type\s*\([^]*?resolve_test_global_decl_type\s*\([^]*?ps_global_registry_bind_decl_qual_type\s*\(/.test(
-      parserCompatibilityTestHook,
+    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
+      parserUnitTestSource,
     ) ||
-    !/\bps_global_registry_complete_array_type\s*\([^]*?resolve_test_global_decl_type\s*\([^]*?ps_global_registry_complete_array_qual_type\s*\(/.test(
-      parserCompatibilityTestHook,
+    !/\bps_global_registry_complete_array_qual_type\s*\(/.test(
+      parserUnitTestSource,
     ) ||
     !/ps_global_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
@@ -14026,6 +14030,28 @@ if (!/PSX_HIR_VARARG_CURSOR/.test(hirHeader) ||
     /Apple ARM64 ABI variadic argument-area builtin/.test(irHeaderSource)) {
   throw new Error(
     "generic HIR and IR must model a target-independent variadic cursor",
+  );
+}
+
+const contextlessTokenizerTestApi =
+  /\btk_(?:get_default_context|context_activate|context_active|test_context_shutdown|get_current_token|set_current_token|consume|consume_str|consume_ident|expect|expect_number|at_eof|tokenize|set_strict_c11_mode|get_strict_c11_mode|set_enable_trigraphs|get_enable_trigraphs|set_enable_binary_literals|get_enable_binary_literals|set_enable_c11_audit_extensions|get_enable_c11_audit_extensions|reset_tokenizer_stats|get_tokenizer_stats|set_max_token_len_for_test)\s*\(/;
+if (contextlessTokenizerTestApi.test(parserUnitTestSource) ||
+    contextlessTokenizerTestApi.test(tokenizerUnitTestSource) ||
+    /tokenizer_test(?:\.h|_hook\.c)/.test(
+      `${parserUnitTestSource}\n${tokenizerUnitTestSource}\n${makefileSource}`,
+    )) {
+  throw new Error(
+    "tokenizer tests must use explicit tokenizer contexts without active/default compatibility APIs",
+  );
+}
+if (/static\s+node_t\s*\*\*\s*parsed_code\s*;/.test(
+      parserUnitTestSource,
+    ) ||
+    /static\s+psx_record_id_t\s+next_record_id\s*=/.test(
+      parserUnitTestSource,
+    )) {
+  throw new Error(
+    "parser tests must not retain mutable process-global compatibility state",
   );
 }
 

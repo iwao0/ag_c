@@ -299,9 +299,8 @@ void psx_collect_lvar_usage_events_in(
 
 static void record_preinitialized_locals(
     psx_local_registry_t *local_registry,
-    node_function_definition_t *function) {
-  if (!function) return;
-  for (lvar_t *var = function->lvars; var;
+    lvar_t *storage_objects) {
+  for (lvar_t *var = storage_objects; var;
        var = ps_lvar_next_storage(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
     if (view.is_param) {
@@ -317,10 +316,9 @@ static void record_preinitialized_locals(
 
 static void emit_usage_warnings(
     ag_diagnostic_context_t *diagnostics,
-    node_function_definition_t *function,
+    lvar_t *storage_objects,
     const token_t *fallback) {
-  if (!function) return;
-  for (lvar_t *var = function->lvars; var;
+  for (lvar_t *var = storage_objects; var;
        var = ps_lvar_next_storage(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
     if (view.suppress_unreachable_warnings) continue;
@@ -343,6 +341,19 @@ static void emit_usage_warnings(
   }
 }
 
+void psx_analyze_recorded_lvar_usage_in(
+    ag_diagnostic_context_t *diagnostics,
+    psx_local_registry_t *local_registry,
+    lvar_t *storage_objects,
+    const token_t *fallback_diag_tok) {
+  if (!local_registry) return;
+  record_preinitialized_locals(local_registry, storage_objects);
+  ps_decl_replay_lvar_usage_events_in(
+      local_registry, storage_objects);
+  emit_usage_warnings(
+      diagnostics, storage_objects, fallback_diag_tok);
+}
+
 void psx_analyze_function_lvar_usage_in(
     const psx_resolution_store_t *store,
     ag_diagnostic_context_t *diagnostics,
@@ -352,8 +363,7 @@ void psx_analyze_function_lvar_usage_in(
   if (!local_registry || !function) return;
   psx_collect_lvar_usage_events_in(
       store, local_registry, (node_t *)function, NULL);
-  record_preinitialized_locals(local_registry, function);
-  ps_decl_replay_lvar_usage_events_in(
-      local_registry, function->lvars);
-  emit_usage_warnings(diagnostics, function, fallback_diag_tok);
+  psx_analyze_recorded_lvar_usage_in(
+      diagnostics, local_registry, function->lvars,
+      fallback_diag_tok);
 }

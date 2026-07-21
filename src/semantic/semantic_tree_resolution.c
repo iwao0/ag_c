@@ -442,6 +442,13 @@ static int diagnose_direct_syntax_rejection(
                            diagnostics,
                            DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_UNION_ARRAY_MEMBER_NONBRACE_DISABLED:
       diag_emit_tokf_in(
           diagnostics,

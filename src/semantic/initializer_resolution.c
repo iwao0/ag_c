@@ -449,8 +449,13 @@ static int flat_initializer_designated_span(
     int child_index = -1;
     if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
       long long index = -1;
-      if (shape.kind != PSX_TYPE_ARRAY || !designator->index_expr ||
-          !context->resolve_index)
+      if (shape.kind != PSX_TYPE_ARRAY) {
+        if (i > 0)
+          context->failure_status =
+              PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY;
+        return 0;
+      }
+      if (!designator->index_expr || !context->resolve_index)
         return 0;
       if (designator->is_range) {
         if (!range_overrides || !range_indices ||
@@ -587,7 +592,7 @@ static int flat_initializer_apply_list(
     const psx_initializer_entry_t *entry = &list->entries[i];
     if (!entry->value) return 0;
     if (object_shape.kind == PSX_TYPE_UNION &&
-        union_has_designated_initializer &&
+        (union_has_designated_initializer || positional_union_active) &&
         entry->designator_count == 0) {
       context->failure_status =
           PSX_LOCAL_INITIALIZER_UNION_TOO_MANY_ELEMENTS;

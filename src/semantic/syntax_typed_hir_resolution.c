@@ -111,6 +111,7 @@ enum {
   DIRECT_IDENTIFIER_USAGE_EVALUATED = 1u << 0,
   DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN = 1u << 1,
   DIRECT_IDENTIFIER_USAGE_INITIALIZED = 1u << 2,
+  DIRECT_IDENTIFIER_USAGE_UNEVALUATED = 1u << 3,
 };
 
 struct direct_identifier_binding_t {
@@ -807,6 +808,8 @@ static int resolve_direct_identifier_with_usage(
     if (binding->syntax != identifier) continue;
     if (context->unevaluated_depth == 0)
       binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_EVALUATED;
+    else
+      binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_UNEVALUATED;
     if (resolution) *resolution = binding->resolution;
     return 1;
   }
@@ -868,7 +871,8 @@ static int resolve_direct_identifier_with_usage(
       .syntax = identifier,
       .resolution = resolved,
       .usage_flags = context->unevaluated_depth == 0
-                         ? DIRECT_IDENTIFIER_USAGE_EVALUATED : 0,
+                         ? DIRECT_IDENTIFIER_USAGE_EVALUATED
+                         : DIRECT_IDENTIFIER_USAGE_UNEVALUATED,
       .next = context->identifier_bindings,
   };
   context->identifier_bindings = binding;
@@ -1538,6 +1542,36 @@ static void mark_direct_assignment_target(
   }
 }
 
+static void mark_direct_address_taken(
+    direct_resolution_context_t *context, const node_t *syntax) {
+  if (!context || !syntax || context->unevaluated_depth != 0)
+    return;
+  if (syntax->kind == ND_GENERIC_SELECTION) {
+    mark_direct_address_taken(
+        context, direct_selected_expression(context, syntax));
+    return;
+  }
+  if (syntax->kind == ND_COMMA) {
+    mark_direct_address_taken(context, syntax->rhs);
+    return;
+  }
+  if (syntax->kind == ND_IDENTIFIER) {
+    direct_identifier_binding_t *binding =
+        direct_identifier_binding(
+            context, (const node_identifier_t *)syntax);
+    if (binding &&
+        binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL)
+      binding->usage_flags |= DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN;
+    return;
+  }
+  if (syntax->kind == ND_MEMBER_ACCESS) {
+    const node_member_access_t *access =
+        (const node_member_access_t *)syntax;
+    if (!access->from_pointer)
+      mark_direct_address_taken(context, syntax->lhs);
+  }
+}
+
 static int direct_binary_kind(
     psx_syntax_node_kind_t syntax_kind,
     psx_hir_node_kind_t *hir_kind,
@@ -2030,18 +2064,7 @@ static int preflight_direct_expression_impl(
           PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
           syntax);
     if (resolution.status != PSX_ADDRESS_OPERAND_OK) return 0;
-    if (context->unevaluated_depth == 0 &&
-        syntax->lhs->kind == ND_IDENTIFIER) {
-      direct_identifier_binding_t *binding =
-          direct_identifier_binding(
-              context,
-              (const node_identifier_t *)syntax->lhs);
-      if (binding &&
-          binding->resolution.symbol.kind == PSX_IDENTIFIER_LOCAL) {
-        binding->usage_flags |=
-            DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN;
-      }
-    }
+    mark_direct_address_taken(context, syntax->lhs);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
   }
@@ -2487,6 +2510,11 @@ static void record_direct_identifier_usage(
       ps_decl_record_lvar_usage_in_region_in(
           context->local_registry, local,
           PSX_LVAR_USAGE_EVALUATED, NULL);
+    }
+    if (binding->usage_flags & DIRECT_IDENTIFIER_USAGE_UNEVALUATED) {
+      ps_decl_record_lvar_usage_in_region_in(
+          context->local_registry, local,
+          PSX_LVAR_USAGE_UNEVALUATED, NULL);
     }
     if (binding->usage_flags &
         DIRECT_IDENTIFIER_USAGE_ADDRESS_TAKEN) {
@@ -4195,6 +4223,11 @@ static int preflight_direct_flat_initializer(
     return note_direct_semantic_rejection(
         context,
         PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS,
+        initializer->value);
+  if (status == PSX_LOCAL_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_NESTED_DESIGNATOR_NOT_ARRAY,
         initializer->value);
   if (status != PSX_LOCAL_INITIALIZER_OK) return 0;
 

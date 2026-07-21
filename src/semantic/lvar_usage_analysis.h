@@ -19,5 +19,10 @@ void psx_analyze_function_lvar_usage_in(
     psx_local_registry_t *local_registry,
     node_function_definition_t *function,
     const token_t *fallback_diag_tok);
+void psx_analyze_recorded_lvar_usage_in(
+    ag_diagnostic_context_t *diagnostics,
+    psx_local_registry_t *local_registry,
+    lvar_t *storage_objects,
+    const token_t *fallback_diag_tok);
 
 #endif

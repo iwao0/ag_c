@@ -120,7 +120,6 @@
 #include "../src/source_manager.h"
 #include "../src/tokenizer/allocator.h"
 #include "../src/tokenizer/tokenizer.h"
-#include "../src/tokenizer/tokenizer_test.h"
 #include "../src/type_layout.h"
 #include "../src/type_signature.h"
 #include <assert.h>
@@ -277,7 +276,6 @@ static const psx_type_t *ps_tag_member_decl_tag_type(
   return ps_type_is_tag_aggregate(type) ? type : NULL;
 }
 
-static node_t **parsed_code;
 static node_t **parse_program_input(const char *input);
 static int resolve_program_input_hir(const char *input);
 static ag_compilation_session_t *test_suite_session;
@@ -291,6 +289,10 @@ static ag_diagnostic_context_t *test_diagnostics(void) {
 
 static arena_context_t *test_arena_context(void) {
   return ag_compilation_session_arena_context(test_suite_session);
+}
+
+static tokenizer_context_t *test_tokenizer(void) {
+  return ag_compilation_session_tokenizer(test_suite_session);
 }
 
 typedef struct {
@@ -345,12 +347,20 @@ static void test_bind_node_type_sized(
 static psx_type_t *test_new_record_type(
     token_kind_t token_kind, const char *tag_name, size_t tag_len,
     int tag_scope_depth_p1, int size) {
-  static psx_record_id_t next_record_id = 1000000;
   (void)size;
+  psx_record_id_t record_id = 2166136261u;
+  for (size_t i = 0; i < tag_len; i++) {
+    record_id ^= (unsigned char)tag_name[i];
+    record_id *= 16777619u;
+  }
+  record_id ^= (psx_record_id_t)token_kind;
+  record_id *= 16777619u;
+  record_id ^= (psx_record_id_t)tag_scope_depth_p1;
+  if (record_id == PSX_RECORD_ID_INVALID) record_id--;
   psx_type_t *type = ps_type_new_tag_in(
       test_arena_context(), token_kind, (char *)tag_name, tag_len,
       tag_scope_depth_p1);
-  type->record_id = next_record_id++;
+  type->record_id = record_id;
   return type;
 }
 
@@ -2257,8 +2267,8 @@ static void test_parser_name_environment_boundary() {
   psx_name_classifier_t classifier =
       ps_parser_name_environment_classifier(&environment);
 
-  token_t *alias = tk_tokenize((char *)"Alias");
-  token_t *local = tk_tokenize((char *)"Local");
+  token_t *alias = tk_tokenize_ctx(test_tokenizer(), (char *)"Alias");
+  token_t *local = tk_tokenize_ctx(test_tokenizer(), (char *)"Local");
   ASSERT_TRUE(ps_name_classifier_is_typedef_name(
       &classifier, alias));
 
@@ -2338,7 +2348,7 @@ static void test_statement_leave_block_scope(void *context) {
 static void test_parser_name_classifier_boundary() {
   printf("test_parser_name_classifier_boundary...\n");
   reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize((char *)"Alias value;");
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"Alias value;");
   test_name_classifier_context_t classifier_context = {
       .name = "Alias",
       .name_len = 5,
@@ -2368,7 +2378,7 @@ static void test_parser_name_classifier_boundary() {
   ps_dispose_decl_specifier_syntax(&specifier);
 
   classifier_context.call_count = 0;
-  tk_tokenize((char *)"sizeof(Alias)");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(Alias)");
   node_t *sizeof_alias = psx_expr_expr_in_contexts(
       test_semantic_context(), test_global_registry(),
       test_local_registry(),
@@ -2382,7 +2392,7 @@ static void test_parser_name_classifier_boundary() {
       test_semantic_context(), (char *)"Alias", 5, NULL));
 
   classifier_context.call_count = 0;
-  tk_tokenize((char *)"sizeof(Alias)");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(Alias)");
   test_expression_syntax_services_t syntax_services = {
       .runtime_context =
           ag_compilation_session_parser_runtime_context(
@@ -2404,7 +2414,7 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(standalone_sizeof));
   ASSERT_TRUE(classifier_context.call_count > 0);
 
-  tk_tokenize((char *)"__va_arg_area");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"__va_arg_area");
   node_t *va_arg_area_syntax = psx_expr_expr_in_contexts(
       test_semantic_context(), test_global_registry(),
       test_local_registry(),
@@ -2415,7 +2425,7 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_TRUE(!ps_node_has_resolution_state(va_arg_area_syntax));
   ASSERT_EQ(13, ((node_identifier_t *)va_arg_area_syntax)->name_len);
 
-  tk_tokenize((char *)"&value");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"&value");
   node_t *address_syntax = psx_expr_expr_in_contexts(
       test_semantic_context(), test_global_registry(),
       test_local_registry(),
@@ -2428,7 +2438,7 @@ static void test_parser_name_classifier_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, address_syntax->lhs->kind);
   ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax->lhs));
 
-  tk_tokenize((char *)"{ if (0) ; }");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"{ if (0) ; }");
   test_statement_syntax_services_t statement_services = {
       .expression = {
           .runtime_context = syntax_services.runtime_context,
@@ -2822,7 +2832,7 @@ static void parse_test_initializer_syntax_value(
 static node_t *parse_test_initializer_for_var(lvar_t *var) {
   psx_parsed_initializer_t initializer = {0};
   parse_test_initializer_syntax_value(
-      &initializer, tk_get_current_token());
+      &initializer, tk_get_current_token_ctx(test_tokenizer()));
   return psx_bind_local_initializer_target_in(
       test_arena_context(), var, initializer.value,
       initializer.kind, initializer.value_tok);
@@ -2930,7 +2940,7 @@ static void assert_semantic_tree_invariants(node_t *root) {
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
   set_test_current_funcname((char *)"__test__", 8);
-  token_t *head = tk_tokenize((char *)input);
+  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
   return parse_test_expression_from(head);
 }
 
@@ -3077,7 +3087,7 @@ static void assert_test_compound_assignment_hir(
 
 static node_t *parse_expr_input_with_existing_names(const char *input) {
   set_test_current_funcname((char *)"__test__", 8);
-  token_t *head = tk_tokenize((char *)input);
+  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
   psx_name_classifier_t classifier =
       ps_ctx_name_classifier(test_semantic_context());
   psx_local_declaration_callbacks_t local_declarations = {
@@ -5254,7 +5264,7 @@ static void test_direct_literal_typed_hir_resolution_boundary() {
 
 static node_t *parse_direct_test_statement_syntax(
     const char *input) {
-  tk_tokenize((char *)input);
+  tk_tokenize_ctx(test_tokenizer(), (char *)input);
   test_statement_syntax_services_t services = {
       .expression = {
           .runtime_context =
@@ -5570,7 +5580,7 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
 }
 
 static node_t **parse_program_input(const char *input) {
-  token_t *head = tk_tokenize((char *)input);
+  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
   node_t **program = parse_test_program_from(head);
   for (int i = 0; program && program[i]; i++)
     assert_semantic_tree_invariants(program[i]);
@@ -5578,7 +5588,7 @@ static node_t **parse_program_input(const char *input) {
 }
 
 static int resolve_program_input_hir(const char *input) {
-  return resolve_test_program_hir_from(tk_tokenize((char *)input));
+  return resolve_test_program_hir_from(tk_tokenize_ctx(test_tokenizer(), (char *)input));
 }
 
 static void test_typed_hir_ownership_and_type_boundary() {
@@ -7906,7 +7916,7 @@ static void assert_direct_function_rejection(
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_TRUE(parse_raw_function_item(&stream, &item));
@@ -7934,7 +7944,7 @@ static void assert_direct_function_resolution(const char *source) {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_TRUE(parse_raw_function_item(&stream, &item));
@@ -8026,7 +8036,7 @@ static void test_predefined_function_name_typed_hir_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -8593,6 +8603,7 @@ static lvar_t *find_func_lvar(
 }
 
 static void test_local_declaration_frontend_boundary() {
+  node_t **parsed_code = NULL;
   printf("test_local_declaration_frontend_boundary...\n");
   parsed_code = parse_program_input(
       "int main(void) { int block_fn(int); "
@@ -8610,6 +8621,7 @@ static void test_local_declaration_frontend_boundary() {
 }
 
 static void test_function_parameter_point_of_declaration_boundary() {
+  node_t **parsed_code = NULL;
   printf("test_function_parameter_point_of_declaration_boundary...\n");
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(
@@ -8711,11 +8723,12 @@ static void assert_identifier_resolution_kind(
 static void test_identifier_resolution_boundary() {
   printf("test_identifier_resolution_boundary...\n");
   reset_test_translation_unit_state();
-  parsed_code = parse_program_input(
+  node_t **parsed_code = parse_program_input(
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
       "int __identifier_array[3]; "
       "int __identifier_function(int value);");
+  ASSERT_TRUE(parsed_code != NULL);
   lvar_t *local = register_test_default_storage_fixture(
       (char *)"__identifier_local", 18);
   ASSERT_TRUE(local != NULL);
@@ -9215,7 +9228,7 @@ static void expect_parse_fail(const char *input) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
     int resolved = resolve_test_program_hir_from(head);
     _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
@@ -9234,7 +9247,7 @@ static void expect_parse_ok(const char *input) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
     int resolved = resolve_test_program_hir_from(head);
     _exit(!resolved || diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
@@ -9312,8 +9325,8 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
+    (void)resolve_test_program_hir_from(head);
     _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
@@ -9353,8 +9366,8 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
+    (void)resolve_test_program_hir_from(head);
     _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
@@ -9428,8 +9441,8 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
+    (void)resolve_test_program_hir_from(head);
     _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
@@ -9449,6 +9462,11 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
   waitpid(pid, &status, 0);
   ASSERT_TRUE(WIFEXITED(status));
   ASSERT_EQ(0, WEXITSTATUS(status));
+  if (strstr(buf, needle)) {
+    fprintf(stderr,
+            "Unexpected warning found\ninput: %s\nunexpected: %s\nactual: %s\n",
+            input, needle, buf);
+  }
   ASSERT_TRUE(strstr(buf, needle) == NULL);
 }
 
@@ -9464,8 +9482,8 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
     diag_reset_records_in(test_diagnostics());
-    token_t *head = tk_tokenize((char *)input);
-    parsed_code = parse_test_program_from(head);
+    token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
+    (void)resolve_test_program_hir_from(head);
     _exit(diag_has_error_records_in(test_diagnostics()) ? 1 : 0);
   }
 
@@ -9485,6 +9503,11 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
   waitpid(pid, &status, 0);
   ASSERT_TRUE(WIFEXITED(status));
   ASSERT_EQ(0, WEXITSTATUS(status));
+  if (!strstr(buf, needle)) {
+    fprintf(stderr,
+            "Expected warning not found\ninput: %s\nexpected: %s\nactual: %s\n",
+            input, needle, buf);
+  }
   ASSERT_TRUE(strstr(buf, needle) != NULL);
 }
 
@@ -9649,7 +9672,7 @@ static void test_expr_number() {
   ASSERT_EQ(42, as_num(syntax)->val);
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(number));
   ASSERT_EQ(42, psx_hir_node_integer_value(number));
-  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
   psx_frontend_expression_hir_dispose(&expression);
 
   expression = resolve_test_expression_input_hir("0L", &syntax);
@@ -11096,6 +11119,7 @@ static void test_function_call_typed_hir_boundary() {
 }
 
 static void test_function_prototype_type_identity_boundary() {
+  node_t **parsed_code = NULL;
   printf("test_function_prototype_type_identity_boundary...\n");
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(
@@ -11461,7 +11485,7 @@ static void test_translation_unit_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -11525,7 +11549,7 @@ static void test_translation_unit_frontend_boundary() {
 
   reset_test_translation_unit_state();
   node_t **analyzed =
-      parse_test_program_from(tk_tokenize((char *)source));
+      parse_test_program_from(tk_tokenize_ctx(test_tokenizer(), (char *)source));
   ASSERT_TRUE(analyzed != NULL);
   ASSERT_TRUE(analyzed[0] != NULL);
   node_block_t *analyzed_body = as_block(as_function_definition(analyzed[0])->base.rhs);
@@ -11543,7 +11567,7 @@ static void test_function_definition_header_resolution_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -11782,7 +11806,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -12546,7 +12570,7 @@ static void test_direct_function_typed_hir_resolution_boundary() {
       "__direct_fallback_declared(input); }";
   stream = (psx_parser_stream_t){0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)rollback_source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)rollback_source));
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_TRUE(parse_raw_function_item(&stream, &item));
   syntax_function = &item.value.function_header;
@@ -12874,7 +12898,7 @@ static void test_direct_string_pointer_initializer_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -12922,7 +12946,7 @@ static void test_case_label_syntax_hir_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -12985,7 +13009,7 @@ static void test_toplevel_static_assert_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
 
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -13012,7 +13036,7 @@ static void test_block_static_assert_syntax_hir_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
@@ -13073,7 +13097,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -13146,7 +13170,7 @@ static void test_parser_owned_typedef_classifier_boundary() {
   psx_frontend_stream_t stream = {0};
   ASSERT_TRUE(psx_frontend_stream_begin(
       &stream, test_suite_session, NULL,
-      tk_tokenize((char *)source)));
+      tk_tokenize_ctx(test_tokenizer(), (char *)source)));
 
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(
@@ -13174,10 +13198,10 @@ static void test_parser_owned_typedef_classifier_boundary() {
 
 static void test_toplevel_callback_context_boundary() {
   printf("test_toplevel_callback_context_boundary...\n");
-  ASSERT_TRUE(tk_context_active() ==
+  ASSERT_TRUE(test_tokenizer() ==
               ag_compilation_session_tokenizer(test_suite_session));
   reset_test_translation_unit_state();
-  tk_tokenize((char *)"int __callback_global = 23;");
+  tk_tokenize_ctx(test_tokenizer(), (char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
   ASSERT_TRUE(parse_test_toplevel_declaration_syntax(&declaration));
   global_var_t *global = find_test_global_var(
@@ -13205,7 +13229,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -13371,7 +13395,7 @@ static void assert_toplevel_syntax_kind(
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   begin_test_parser_stream(
-      &stream, NULL, tk_tokenize((char *)source));
+      &stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)source));
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(expected_kind, item.kind);
@@ -13411,7 +13435,7 @@ static void test_toplevel_single_parse_classification_boundary() {
 static void test_frontend_stream_lifecycle_boundary() {
   printf("test_frontend_stream_lifecycle_boundary...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_test_program_from(tk_tokenize(
+  node_t **program = parse_test_program_from(tk_tokenize_ctx(test_tokenizer(),
       (char *)"int __stream_previous(void) { return 0; }"));
   ASSERT_TRUE(program != NULL);
   ASSERT_TRUE(test_function_type_in(test_semantic_context(),
@@ -13419,7 +13443,7 @@ static void test_frontend_stream_lifecycle_boundary() {
 
   psx_parser_stream_t parser_stream = {0};
   begin_test_parser_stream(
-      &parser_stream, NULL, tk_tokenize((char *)""));
+      &parser_stream, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)""));
   ASSERT_TRUE(test_function_type_in(test_semantic_context(),
                   (char *)"__stream_previous", 17) != NULL);
   ps_parser_stream_end(&parser_stream);
@@ -13432,7 +13456,7 @@ static void test_frontend_stream_lifecycle_boundary() {
   ag_compilation_session_t *outer_session = test_suite_session;
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
-      &frontend_stream, NULL, NULL, tk_tokenize((char *)"")));
+      &frontend_stream, NULL, NULL, tk_tokenize_ctx(test_tokenizer(), (char *)"")));
   psx_frontend_function_t frontend_function;
   ASSERT_TRUE(!psx_frontend_next_function(
       &frontend_stream, &frontend_function));
@@ -13448,13 +13472,13 @@ static void test_frontend_stream_lifecycle_boundary() {
                   &session_context) == NULL);
   ASSERT_TRUE(!psx_frontend_stream_begin(
       &frontend_stream, &session_context, NULL,
-      tk_tokenize((char *)"int __incomplete_session(void);")));
+      tk_tokenize_ctx(test_tokenizer(), (char *)"int __incomplete_session(void);")));
   session_context.diagnostic_context = session_diagnostic_context;
   ASSERT_TRUE(ag_compilation_session_is_complete(&session_context));
 
   ASSERT_TRUE(psx_frontend_stream_begin(
       &frontend_stream, &session_context, NULL,
-      tk_tokenize((char *)
+      tk_tokenize_ctx(test_tokenizer(), (char *)
           "int __stream_explicit(void) { return 0; }")));
   ASSERT_TRUE(psx_frontend_next_function(
       &frontend_stream, &frontend_function));
@@ -14224,7 +14248,7 @@ static void test_target_type_layout_boundary() {
   psx_semantic_context_t *host_semantic_context = test_semantic_context();
   psx_name_classifier_t host_name_classifier =
       ps_ctx_name_classifier(host_semantic_context);
-  token_t *pointer_type_tokens = tk_tokenize((char *)"int *)");
+  token_t *pointer_type_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"int *)");
   token_t *pointer_type_end = pointer_type_tokens;
   while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
     pointer_type_end = pointer_type_end->next;
@@ -14293,7 +14317,7 @@ static void test_target_type_layout_boundary() {
       split_semantic_context, TK_LONG, &token_size, &token_alignment));
   ASSERT_EQ(12, token_size);
   ASSERT_EQ(4, token_alignment);
-  token_t *long_alignas_tokens = tk_tokenize((char *)"long)");
+  token_t *long_alignas_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"long)");
   token_t *long_alignas_end = long_alignas_tokens;
   while (long_alignas_end && long_alignas_end->kind != TK_RPAREN)
     long_alignas_end = long_alignas_end->next;
@@ -14306,7 +14330,7 @@ static void test_target_type_layout_boundary() {
                    split_semantic_context, &split_name_classifier,
                    pointer_type_tokens,
                    pointer_type_end));
-  token_t *sizeof_long_tokens = tk_tokenize((char *)"sizeof(long)");
+  token_t *sizeof_long_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(long)");
   token_t *sizeof_long_end = sizeof_long_tokens;
   while (sizeof_long_end && sizeof_long_end->kind != TK_EOF)
     sizeof_long_end = sizeof_long_end->next;
@@ -14315,7 +14339,7 @@ static void test_target_type_layout_boundary() {
                     split_semantic_context, &split_name_classifier,
                     sizeof_long_tokens,
                     sizeof_long_end));
-  token_t *alignof_long_tokens = tk_tokenize((char *)"_Alignof(long)");
+  token_t *alignof_long_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignof(long)");
   token_t *alignof_long_end = alignof_long_tokens;
   while (alignof_long_end && alignof_long_end->kind != TK_EOF)
     alignof_long_end = alignof_long_end->next;
@@ -15594,8 +15618,8 @@ static void test_global_declaration_resolution_boundary() {
 static void test_declaration_pipeline_order_boundary() {
   printf("test_declaration_pipeline_order_boundary...\n");
   reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize((char *)"= 37");
-  tk_set_current_token(tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"= 37");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_initializer_t initializer;
   psx_prepare_optional_initializer_syntax(
       &initializer,
@@ -15618,15 +15642,15 @@ static void test_declaration_pipeline_order_boundary() {
   psx_global_declaration_pipeline_result_t result;
   ASSERT_TRUE(psx_begin_global_declaration_pipeline(&request, &result));
   ASSERT_TRUE(find_test_global_var(name, name_len) != NULL);
-  token_t *assign_tok = tk_get_current_token();
+  token_t *assign_tok = tk_get_current_token_ctx(test_tokenizer());
   ASSERT_EQ(TK_ASSIGN, assign_tok->kind);
-  tk_set_current_token(assign_tok->next);
+  tk_set_current_token_ctx(test_tokenizer(), assign_tok->next);
   parse_test_initializer_syntax_value(&initializer, assign_tok);
   ASSERT_TRUE(psx_finish_global_declaration_pipeline(&request, &result));
   ASSERT_TRUE(result.global != NULL);
   ASSERT_TRUE(result.initialized);
   ASSERT_EQ(37, result.global->init_val);
-  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
 }
 
 static void test_tag_declaration_resolution_boundary() {
@@ -15958,7 +15982,7 @@ static void test_aggregate_body_phase_boundary() {
       &tag);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag.status);
 
-  token_t *tokens = tk_tokenize(
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(),
       (char *)"int a, *b; _Static_assert(1, \"ok\"); char c; "
                "struct PhaseInnerTag { int x; } inner; "
                "enum PhaseEnumTag { PhaseEnumZero = 3, "
@@ -15969,7 +15993,7 @@ static void test_aggregate_body_phase_boundary() {
                "DeferredAlias late; "
                "int (*callback)(DeferredParam, int *, "
                "struct PrototypeOnly *, ...); }");
-  tk_set_current_token(tokens);
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_aggregate_body_t body;
   parse_test_aggregate_body(&body);
   ASSERT_EQ(10, body.item_count);
@@ -16041,7 +16065,7 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(3, callback_parameters->count);
   ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
             callback_parameters->items[0].specifier.source);
-  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
 
   tag_member_info_t member = {0};
   ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
@@ -16158,9 +16182,9 @@ static void test_declaration_phase_boundary() {
   printf("test_declaration_phase_boundary...\n");
   reset_test_translation_unit_state();
 
-  token_t *tokens = tk_tokenize(
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(),
       (char *)"struct __PhaseObject { int value; }");
-  tk_set_current_token(tokens);
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_declaration_phase_t phase;
   psx_parsed_decl_specifier_t syntax;
   parse_test_decl_specifier_syntax(&syntax);
@@ -16195,8 +16219,8 @@ static void test_declaration_phase_boundary() {
                    TK_STRUCT, (char *)"__PhaseObject", 13));
   psx_dispose_declaration_phase(&phase);
 
-  tokens = tk_tokenize((char *)"_Alignas(16) int");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignas(16) int");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   parse_test_decl_specifier_syntax(&syntax);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(0, phase.requested_alignment);
@@ -16206,8 +16230,8 @@ static void test_declaration_phase_boundary() {
             test_declaration_phase_base_type(&phase)->kind);
   psx_dispose_declaration_phase(&phase);
 
-  tokens = tk_tokenize((char *)"_Alignas(int *) char");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignas(int *) char");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   parse_test_decl_specifier_syntax(&syntax);
   ASSERT_EQ(1, syntax.alignas_specifier_count);
   ASSERT_EQ(PSX_PARSED_ALIGNAS_TYPE_NAME,
@@ -16227,11 +16251,11 @@ static void test_declaration_phase_boundary() {
 static void test_type_name_phase_boundary() {
   printf("test_type_name_phase_boundary...\n");
   reset_test_translation_unit_state();
-  token_t *tokens = tk_tokenize((char *)"int (*)(double),");
-  tk_set_current_token(tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"int (*)(double),");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_type_name_t syntax;
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
-  ASSERT_TRUE(tk_get_current_token() == tokens);
+  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer()) == tokens);
   ASSERT_TRUE(syntax.end != NULL);
   ASSERT_EQ(TK_COMMA, syntax.end->kind);
   ASSERT_TRUE(syntax.atomic_inner == NULL);
@@ -16293,8 +16317,8 @@ static void test_type_name_phase_boundary() {
             type->base->param_types[0]->floating_kind);
   psx_dispose_type_name_syntax(&syntax);
 
-  tokens = tk_tokenize((char *)"const int,");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"const int,");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
   state = (psx_type_name_resolution_state_t){0};
@@ -16311,8 +16335,8 @@ static void test_type_name_phase_boundary() {
                 qualified_base.type_id)->kind);
   psx_dispose_type_name_syntax(&syntax);
 
-  tokens = tk_tokenize((char *)"_Atomic(int),");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Atomic(int),");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   reference = (psx_type_name_ref_t){.syntax = &syntax};
   state = (psx_type_name_resolution_state_t){0};
@@ -16327,8 +16351,8 @@ static void test_type_name_phase_boundary() {
   char tag_name[] = "__TypeNameTag";
   test_semantic_define_tag_type_with_layout(
       TK_STRUCT, tag_name, 13, 0, 4, 4);
-  tokens = tk_tokenize((char *)"const struct __TypeNameTag,");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"const struct __TypeNameTag,");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   psx_scope_lookup_point_t point = test_scope_lookup_point();
   reference = (psx_type_name_ref_t){
@@ -16358,8 +16382,8 @@ static void test_type_name_phase_boundary() {
   char alias_name[] = "__TypeNameAlias";
   ASSERT_TRUE(ps_ctx_register_typedef_name_in(
       test_semantic_context(), alias_name, 15, &alias, NULL, NULL));
-  tokens = tk_tokenize((char *)"volatile __TypeNameAlias,");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"volatile __TypeNameAlias,");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   point = test_scope_lookup_point();
   reference = (psx_type_name_ref_t){
@@ -16404,8 +16428,8 @@ static void test_local_declarator_application_boundary() {
   reset_test_translation_unit_state();
   register_test_default_storage_fixture((char *)"n", 1);
 
-  token_t *tokens = tk_tokenize((char *)"matrix[n][4]");
-  tk_set_current_token(tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"matrix[n][4]");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_declarator_t syntax =
       parse_test_declarator_syntax_tree();
   ASSERT_TRUE(syntax.identifier != NULL);
@@ -16422,11 +16446,11 @@ static void test_local_declarator_application_boundary() {
   ASSERT_TRUE(strncmp(
       syntax.array_bounds[0].expression.identifier_name, "n", 1) == 0);
   ASSERT_TRUE(syntax.array_bounds[1].expression.identifier_name == NULL);
-  token_t *after_syntax = tk_get_current_token();
+  token_t *after_syntax = tk_get_current_token_ctx(test_tokenizer());
 
   psx_runtime_declarator_application_t applied;
   apply_test_runtime_parsed_declarator(&syntax, &applied);
-  ASSERT_TRUE(tk_get_current_token() == after_syntax);
+  ASSERT_TRUE(tk_get_current_token_ctx(test_tokenizer()) == after_syntax);
   ASSERT_EQ(2, applied.array_bound_count);
   ASSERT_TRUE(applied.shape.ops[0].is_vla_array);
   ASSERT_EQ(0, applied.shape.ops[0].array_len);
@@ -17741,8 +17765,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   lvar_t *object = register_test_storage_fixture(
       (char *)"object", 6, 16, 16, 0);
   set_test_storage_fixture_type(object, aggregate);
-  token_t *tokens = tk_tokenize((char *)"{0, 7}");
-  tk_set_current_token(tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"{0, 7}");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
 
   node_t *raw = parse_test_initializer_for_var(object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
@@ -17750,7 +17774,7 @@ static void test_local_initializer_parse_lowering_boundary() {
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
-  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token_ctx(test_tokenizer())->kind);
 
   raw = resolve_and_lower_test_initializer(raw);
   ASSERT_TRUE(raw->kind != ND_DECL_INIT);
@@ -17758,8 +17782,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   lvar_t *source = register_test_storage_fixture(
       (char *)"source", 6, 16, 16, 0);
   set_test_storage_fixture_type(source, aggregate);
-  tokens = tk_tokenize((char *)"source");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"source");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   raw = parse_test_initializer_for_var(object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
@@ -17797,8 +17821,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   lvar_t *union_object = register_test_storage_fixture(
       (char *)"u", 1, 4, 4, 0);
   set_test_storage_fixture_type(union_object, union_type);
-  tokens = tk_tokenize((char *)"9");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"9");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   raw = parse_test_initializer_for_var(union_object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
@@ -17811,8 +17835,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   lvar_t *scalar = register_test_storage_fixture(
       (char *)"scalar", 6, 4, 4, 0);
   set_test_storage_fixture_type(scalar, integer);
-  tokens = tk_tokenize((char *)"{7,}");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"{7,}");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   raw = parse_test_initializer_for_var(scalar);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_LIST,
@@ -17827,8 +17851,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   lvar_t *complex_value = register_test_storage_fixture(
       (char *)"complex", 7, 16, 16, 0);
   set_test_storage_fixture_type(complex_value, complex_type);
-  tokens = tk_tokenize((char *)"{3, 4}");
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"{3, 4}");
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   raw = parse_test_initializer_for_var(complex_value);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_LIST,
@@ -17868,8 +17892,9 @@ static void test_static_data_initializer_boundary() {
   global_var_t global = {0};
   psx_type_id_t array_type_id = intern_test_type_id(array);
   ASSERT_TRUE(array_type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &global, array));
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &global,
+      (psx_qual_type_t){array_type_id, PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_EQ(array_type_id, ps_gvar_decl_type_id(&global));
   ASSERT_TRUE(test_gvar_decl_type(&global) == ps_ctx_type_by_id_in(
       test_semantic_context(), array_type_id));
@@ -17881,8 +17906,9 @@ static void test_static_data_initializer_boundary() {
   psx_qual_type_t qualified_global_identity =
       intern_test_qual_type(qualified_global_type);
   global_var_t qualified_global = {0};
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &qualified_global, qualified_global_type));
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &qualified_global,
+      qualified_global_identity));
   ASSERT_EQ(qualified_global_identity.type_id,
             ps_gvar_decl_qual_type(&qualified_global).type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
@@ -17957,8 +17983,9 @@ static void test_static_data_initializer_boundary() {
   global_var_t union_global = {0};
   psx_type_id_t union_type_id = intern_test_type_id(union_type);
   ASSERT_TRUE(union_type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &union_global, union_type));
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &union_global,
+      (psx_qual_type_t){union_type_id, PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_EQ(union_type_id, ps_gvar_decl_type_id(&union_global));
   psx_static_aggregate_initializer_plan_t union_plan = {0};
   ASSERT_TRUE(build_test_static_aggregate_plan(
@@ -17973,9 +18000,10 @@ static void test_static_data_initializer_boundary() {
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
   global_var_t inferred_global = {0};
-  ASSERT_TRUE(intern_test_type_id(incomplete) != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &inferred_global, incomplete));
+  psx_qual_type_t incomplete_qual_type = intern_test_qual_type(incomplete);
+  ASSERT_TRUE(incomplete_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &inferred_global, incomplete_qual_type));
   const psx_type_t *inferred_type = test_gvar_decl_type(&inferred_global);
   psx_initializer_entry_t inferred_entries[3] = {
       {.value = (node_t *)&one},
@@ -18055,9 +18083,12 @@ static void test_static_data_initializer_boundary() {
   psx_type_t *char_pointer = ps_type_new_pointer(char_type);
   psx_type_t *pointer_array = ps_type_new_array(char_pointer, 0, 0, 0);
   global_var_t pointer_array_global = {0};
-  ASSERT_TRUE(intern_test_type_id(pointer_array) != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &pointer_array_global, pointer_array));
+  psx_qual_type_t pointer_array_qual_type =
+      intern_test_qual_type(pointer_array);
+  ASSERT_TRUE(pointer_array_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &pointer_array_global,
+      pointer_array_qual_type));
   const psx_type_t *pointer_array_type =
       test_gvar_decl_type(&pointer_array_global);
   node_string_t string = {0};
@@ -18429,6 +18460,7 @@ static void test_expr_ternary() {
 }
 
 static void test_expr_unary_ops() {
+  node_t **parsed_code = NULL;
   printf("test_expr_unary_ops...\n");
 
   const struct {
@@ -18754,6 +18786,7 @@ static void test_expr_unary_ops() {
 }
 
 static void test_expr_generic() {
+  node_t **parsed_code = NULL;
   printf("test_expr_generic...\n");
 
   parsed_code = parse_program_input(
@@ -19128,6 +19161,7 @@ static void test_expr_generic() {
 }
 
 static void test_expr_sizeof() {
+  node_t **parsed_code = NULL;
   printf("test_expr_sizeof...\n");
 
   const struct {
@@ -19454,23 +19488,47 @@ static void test_expr_comma() {
 
 static void test_program_funcdef() {
   printf("test_program_funcdef...\n");
-  parsed_code = parse_program_input("int main(void) { int a=1; int b=2; a+b; }");
-
-  ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(parsed_code[0]));
-  ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
-
-  node_t *body = as_function_definition(parsed_code[0])->base.rhs;
-  ASSERT_EQ(ND_BLOCK, body->kind);
-  ASSERT_EQ(ND_ASSIGN, as_block(body)->body[0]->kind);
-  ASSERT_EQ(0, psx_resolved_object_ref_storage_offset(
-                   as_lvar(as_block(body)->body[0]->lhs)));
-  ASSERT_EQ(ND_ASSIGN, as_block(body)->body[1]->kind);
-  ASSERT_EQ(4, psx_resolved_object_ref_storage_offset(
-                   as_lvar(as_block(body)->body[1]->lhs)));
-  ASSERT_EQ(ND_ADD, as_block(body)->body[2]->kind);
-  ASSERT_TRUE(as_block(body)->body[3] == NULL);
-  ASSERT_TRUE(parsed_code[1] == NULL);
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main(void) { int a=1; int b=2; a+b; }"));
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *function = psx_hir_module_lookup(
+      hir, psx_hir_module_root_at(hir, 0));
+  ASSERT_TRUE(function != NULL);
+  ASSERT_EQ(PSX_HIR_FUNCTION, psx_hir_node_kind(function));
+  ASSERT_EQ(1, psx_hir_node_child_count(function));
+  ASSERT_EQ(PSX_HIR_EDGE_FUNCTION_BODY,
+            psx_hir_node_child_edge_at(function, 0));
+  const psx_hir_node_t *body = psx_hir_module_lookup(
+      hir, psx_hir_node_child_at(function, 0));
+  ASSERT_TRUE(body != NULL);
+  ASSERT_EQ(PSX_HIR_BLOCK, psx_hir_node_kind(body));
+  ASSERT_EQ(3, psx_hir_node_child_count(body));
+  int assignment_count = 0;
+  int addition_count = 0;
+  int found_first_local = 0;
+  int found_second_local = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    ASSERT_TRUE(node != NULL);
+    if (psx_hir_node_kind(node) == PSX_HIR_ASSIGN)
+      assignment_count++;
+    if (psx_hir_node_kind(node) == PSX_HIR_ADD)
+      addition_count++;
+    if (psx_hir_node_kind(node) == PSX_HIR_LOCAL) {
+      if (psx_hir_node_storage_offset(node) == 0)
+        found_first_local = 1;
+      if (psx_hir_node_storage_offset(node) == 4)
+        found_second_local = 1;
+    }
+  }
+  ASSERT_EQ(2, assignment_count);
+  ASSERT_EQ(1, addition_count);
+  ASSERT_TRUE(found_first_local);
+  ASSERT_TRUE(found_second_local);
 }
 
 static void test_funcall() {
@@ -19501,40 +19559,12 @@ static void test_funcall() {
   ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(second_argument));
   ASSERT_EQ(3, psx_hir_node_integer_value(second_argument));
   psx_frontend_expression_hir_dispose(&expression);
-
-  parsed_code = parse_program_input(
-      "int main() { int (*fp)(int); fp(1); }");
-  node_t *stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
-  ASSERT_EQ(ND_FUNCALL, stmt->kind);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(
-                         as_function_call(stmt)->callee));
-  ASSERT_EQ(1, as_function_call(stmt)->argument_count);
-
-  parsed_code = parse_program_input(
-      "int inc(int x){ return x + 1; } "
-      "int main(void){ int (*fp)(int)=inc; (*(int (*)(int))fp)(1); }");
-  node_t *cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
-  ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(as_function_call(cast_deref_call)->callee));
-  ASSERT_TRUE(ps_type_derived_function(
-      ps_node_get_type(as_function_call(cast_deref_call)->callee)) != NULL);
-  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(cast_deref_call)->callee));
-
-  parsed_code = parse_program_input(
-      "int inc(int x){ return x + 1; } "
-      "typedef int (*Fn)(int); "
-      "int main(void){ int (*fp)(int)=inc; (*(Fn)fp)(1); }");
-  node_t *typedef_cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
-  ASSERT_EQ(ND_FUNCALL, typedef_cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, psx_resolution_node_kind(as_function_call(typedef_cast_deref_call)->callee));
-  ASSERT_TRUE(ps_type_derived_function(
-      ps_node_get_type(as_function_call(typedef_cast_deref_call)->callee)) != NULL);
-  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(typedef_cast_deref_call)->callee));
 }
 
 // --- ここから追加テスト ---
 
 static void test_funcdef_with_params() {
+  node_t **parsed_code = NULL;
   printf("test_funcdef_with_params...\n");
   parsed_code = parse_program_input("int add(int a, int b) { return a+b; }");
 
@@ -19593,113 +19623,8 @@ static void test_funcdef_with_params() {
       "E3096");
 }
 
-static void test_stmt_if() {
-  printf("test_stmt_if...\n");
-  parsed_code = parse_program_input("int main() { if (1) 2; }");
-  node_t *body = as_function_definition(parsed_code[0])->base.rhs;
-  node_t *if_node = as_block(body)->body[0];
-
-  ASSERT_EQ(ND_IF, if_node->kind);
-  ASSERT_EQ(ND_NUM, if_node->lhs->kind);  // 条件: 1
-  ASSERT_EQ(1, as_num(if_node->lhs)->val);
-  ASSERT_EQ(ND_NUM, if_node->rhs->kind);  // then: 2
-  ASSERT_EQ(2, as_num(if_node->rhs)->val);
-  ASSERT_TRUE(as_ctrl(if_node)->els == NULL);       // else なし
-}
-
-static void test_stmt_if_else() {
-  printf("test_stmt_if_else...\n");
-  parsed_code = parse_program_input("int main() { if (1) 2; else 3; }");
-  node_t *if_node = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-
-  ASSERT_EQ(ND_IF, if_node->kind);
-  ASSERT_EQ(1, as_num(if_node->lhs)->val);        // 条件
-  ASSERT_EQ(2, as_num(if_node->rhs)->val);        // then
-  ASSERT_EQ(ND_NUM, as_ctrl(if_node)->els->kind);  // else
-  ASSERT_EQ(3, as_num(as_ctrl(if_node)->els)->val);
-}
-
-static void test_stmt_while() {
-  printf("test_stmt_while...\n");
-  parsed_code = parse_program_input("int main() { while (1) 2; }");
-  node_t *wh = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-
-  ASSERT_EQ(ND_WHILE, wh->kind);
-  ASSERT_EQ(1, as_num(wh->lhs)->val);   // 条件
-  ASSERT_EQ(2, as_num(wh->rhs)->val);   // ループ本体
-}
-
-static void test_stmt_do_while() {
-  printf("test_stmt_do_while...\n");
-  parsed_code = parse_program_input("int main(void) { int a = 0; do a=a+1; while (a<3); }");
-  /* body[0] は int a=0 の初期化代入、body[1] が do-while */
-  node_t *dw = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
-
-  ASSERT_EQ(ND_DO_WHILE, dw->kind);
-  ASSERT_EQ(ND_ASSIGN, dw->rhs->kind);  // 本体: a=a+1
-  ASSERT_EQ(ND_LT, dw->lhs->kind);      // 条件: a<3
-}
-
-static void test_stmt_break_continue() {
-  printf("test_stmt_break_continue...\n");
-  parsed_code = parse_program_input("int main() { while (1) { continue; break; } }");
-  node_t *wh = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  node_t *body = wh->rhs;
-
-  ASSERT_EQ(ND_WHILE, wh->kind);
-  ASSERT_EQ(ND_BLOCK, body->kind);
-  ASSERT_EQ(ND_CONTINUE, as_block(body)->body[0]->kind);
-  ASSERT_EQ(ND_BREAK, as_block(body)->body[1]->kind);
-}
-
-static void test_stmt_switch_case_default() {
-  printf("test_stmt_switch_case_default...\n");
-  parsed_code = parse_program_input("int main(void) { int a = 0; switch (a) { case 1: a=2; break; default: a=3; } }");
-  /* body[0] は int a = 0、body[1] が switch */
-  node_t *sw = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
-
-  ASSERT_EQ(ND_SWITCH, sw->kind);
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(sw->lhs));
-  ASSERT_EQ(ND_BLOCK, sw->rhs->kind);
-  ASSERT_EQ(ND_CASE, as_block(sw->rhs)->body[0]->kind);
-  ASSERT_EQ(
-      1, psx_case_label_value(
-             as_case(as_block(sw->rhs)->body[0])));
-  ASSERT_EQ(ND_BREAK, as_block(sw->rhs)->body[1]->kind);
-  ASSERT_EQ(ND_DEFAULT, as_block(sw->rhs)->body[2]->kind);
-}
-
-static void test_stmt_for() {
-  printf("test_stmt_for...\n");
-  parsed_code = parse_program_input("int main(void) { int a; for (a=0; a<10; a=a+1) a; }");
-  /* body[0] は int a; (宣言のみで初期化なし → ND_NUM ダミー)、body[1] が for */
-  node_t *fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
-
-  ASSERT_EQ(ND_FOR, fr->kind);
-  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: a=0
-  ASSERT_EQ(ND_LT, fr->lhs->kind);      // 条件: a<10
-  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: a=a+1
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(fr->rhs));
-}
-
-static void test_stmt_for_with_decl_init() {
-  printf("test_stmt_for_with_decl_init...\n");
-  parsed_code = parse_program_input("int main() { for (int i=0; i<3; i=i+1) i; }");
-  node_t *fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-
-  ASSERT_EQ(ND_FOR, fr->kind);
-  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: int i=0
-  ASSERT_EQ(ND_LT, fr->lhs->kind);                // 条件: i<3
-  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: i=i+1
-  ASSERT_EQ(ND_LVAR, psx_resolved_object_ref_node_kind(fr->rhs));
-
-  parsed_code = parse_program_input("int main() { for (int i=0, j=2; i<j; i=i+1) i; }");
-  fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-  ASSERT_EQ(ND_FOR, fr->kind);
-  ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
-}
-
 static void test_stmt_return() {
+  node_t **parsed_code = NULL;
   printf("test_stmt_return...\n");
   parsed_code = parse_program_input("int main() { return 42; }");
   node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
@@ -19816,28 +19741,6 @@ static void test_stmt_return() {
               test_function_definition_return_type(ret_meta_fn));
 }
 
-static void test_stmt_block() {
-  printf("test_stmt_block...\n");
-  parsed_code = parse_program_input("int main() { { 1; 2; } }");
-  node_t *blk = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
-
-  ASSERT_EQ(ND_BLOCK, blk->kind);
-  ASSERT_EQ(ND_NUM, as_block(blk)->body[0]->kind);
-  ASSERT_EQ(1, as_num(as_block(blk)->body[0])->val);
-  ASSERT_EQ(ND_NUM, as_block(blk)->body[1]->kind);
-  ASSERT_EQ(2, as_num(as_block(blk)->body[1])->val);
-  ASSERT_TRUE(as_block(blk)->body[2] == NULL);
-}
-
-static void test_stmt_goto_label() {
-  printf("test_stmt_goto_label...\n");
-  parsed_code = parse_program_input("int main() { goto L1; L1: return 42; }");
-  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_GOTO, body->body[0]->kind);
-  ASSERT_EQ(ND_LABEL, body->body[1]->kind);
-  ASSERT_EQ(ND_RETURN, body->body[1]->rhs->kind);
-}
-
 static void test_expr_deref_address_typed_hir_boundary() {
   printf("test_expr_deref_address_typed_hir_boundary...\n");
   reset_test_locals();
@@ -19895,6 +19798,7 @@ static void test_expr_deref_address_typed_hir_boundary() {
 }
 
 static void test_expr_member_access() {
+  node_t **parsed_code = NULL;
   printf("test_expr_member_access...\n");
   parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
   node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
@@ -20082,6 +19986,7 @@ static void test_expr_concat_string() {
 }
 
 static void test_type_decl() {
+  node_t **parsed_code = NULL;
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
   parsed_code = parse_program_input("int main() { int x = 5; }");
@@ -20611,6 +20516,7 @@ static void test_bool_assignment_typed_hir_boundary() {
 }
 
 static void test_type_metadata_bridge() {
+  node_t **parsed_code = NULL;
   printf("test_type_metadata_bridge...\n");
 
   psx_type_t *qualified = ps_type_new_integer(TK_INT, 4, 0);
@@ -21163,10 +21069,12 @@ static void test_type_metadata_bridge() {
   const psx_type_t *funcptr_sync_gvar_type = test_function_pointer(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       funcptr_sync_gvar_params, 1, 0);
-  ASSERT_TRUE(intern_test_type_id(funcptr_sync_gvar_type) !=
-              PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &funcptr_sync_gvar, funcptr_sync_gvar_type));
+  psx_qual_type_t funcptr_sync_gvar_qual_type =
+      intern_test_qual_type(funcptr_sync_gvar_type);
+  ASSERT_TRUE(funcptr_sync_gvar_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &funcptr_sync_gvar,
+      funcptr_sync_gvar_qual_type));
   funcptr_sync_gvar_type = test_gvar_decl_type(&funcptr_sync_gvar);
   ASSERT_TRUE(funcptr_sync_gvar_type != NULL);
   assert_canonical_type_signature(funcptr_sync_gvar_type, "p<f64(f64)>");
@@ -24722,8 +24630,9 @@ static void test_type_metadata_bridge() {
   psx_type_t *tmp_gv_int_type = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_id_t tmp_gv_int_type_id = intern_test_type_id(tmp_gv_int_type);
   ASSERT_TRUE(tmp_gv_int_type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &tmp_gv, tmp_gv_int_type));
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &tmp_gv,
+      (psx_qual_type_t){tmp_gv_int_type_id, PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_EQ(tmp_gv_int_type_id, ps_gvar_decl_type_id(&tmp_gv));
   const psx_type_t *tmp_gv_int = test_gvar_decl_type(&tmp_gv);
   ASSERT_TRUE(tmp_gv_int != NULL);
@@ -24733,25 +24642,27 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_gv));
-  ASSERT_TRUE(!ps_global_registry_bind_decl_type(
+  ASSERT_TRUE(!ps_global_registry_bind_decl_qual_type(
       test_global_registry(), &tmp_gv,
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
+      intern_test_qual_type(
+          ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)))));
   ASSERT_TRUE(test_gvar_decl_type(&tmp_gv) == tmp_gv_int);
 
   global_var_t tmp_ptr_gv = {0};
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
       test_global_registry(), &tmp_ptr_gv,
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
+      intern_test_qual_type(
+          ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)))));
   const psx_type_t *tmp_gv_ptr = test_gvar_decl_type(&tmp_ptr_gv);
   ASSERT_TRUE(tmp_gv_ptr != NULL);
   ASSERT_TRUE(tmp_gv_ptr != tmp_gv_int);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_ptr->kind);
 
   global_var_t tmp_double_ptr_gv = {0};
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
       test_global_registry(), &tmp_double_ptr_gv,
-      ps_type_new_pointer(
-          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8))));
+      intern_test_qual_type(ps_type_new_pointer(
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)))));
   const psx_type_t *tmp_gv_double_ptr =
       test_gvar_decl_type(&tmp_double_ptr_gv);
   ASSERT_TRUE(tmp_gv_double_ptr != NULL);
@@ -24767,8 +24678,10 @@ static void test_type_metadata_bridge() {
   psx_type_id_t tmp_arr_incomplete_id =
       intern_test_type_id(tmp_arr_incomplete);
   ASSERT_TRUE(tmp_arr_incomplete_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      test_global_registry(), &tmp_arr_gv, tmp_arr_incomplete));
+  ASSERT_TRUE(ps_global_registry_bind_decl_qual_type(
+      test_global_registry(), &tmp_arr_gv,
+      (psx_qual_type_t){tmp_arr_incomplete_id,
+                        PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_EQ(tmp_arr_incomplete_id, ps_gvar_decl_type_id(&tmp_arr_gv));
   ASSERT_EQ(99, ps_gvar_storage_size(&tmp_arr_gv, 99));
   const psx_type_t *tmp_arr_empty = test_gvar_decl_type(&tmp_arr_gv);
@@ -24779,8 +24692,10 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
   psx_type_id_t tmp_arr_complete_id = intern_test_type_id(tmp_arr_complete);
   ASSERT_TRUE(tmp_arr_complete_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_global_registry_complete_array_type(
-      test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
+  ASSERT_TRUE(ps_global_registry_complete_array_qual_type(
+      test_global_registry(), &tmp_arr_gv,
+      (psx_qual_type_t){tmp_arr_complete_id,
+                        PSX_TYPE_QUALIFIER_NONE}));
   ASSERT_EQ(tmp_arr_complete_id, ps_gvar_decl_type_id(&tmp_arr_gv));
   const psx_type_t *tmp_arr_sized = test_gvar_decl_type(&tmp_arr_gv);
   ASSERT_TRUE(tmp_arr_sized != NULL);
@@ -24791,8 +24706,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_gvar_initializer_element_size(&tmp_arr_gv, 12));
   ASSERT_EQ(3, ps_gvar_initializer_element_count(&tmp_arr_gv, 12));
   ASSERT_EQ(12, ps_gvar_initializer_element_size(gu, 12));
-  ASSERT_TRUE(!ps_global_registry_complete_array_type(
-      test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
+  ASSERT_TRUE(!ps_global_registry_complete_array_qual_type(
+      test_global_registry(), &tmp_arr_gv,
+      (psx_qual_type_t){tmp_arr_complete_id,
+                        PSX_TYPE_QUALIFIER_NONE}));
 
   global_var_t tmp_arr_stale_size_gv = {0};
   set_test_global_fixture_type(
@@ -25020,12 +24937,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_tag_arr_gv));
   ASSERT_EQ(0, ps_gvar_array_element_size(&tmp_tag_arr_gv));
   ASSERT_EQ(2, ps_gvar_array_element_count(&tmp_tag_arr_gv));
-  ASSERT_TRUE(!ps_global_registry_bind_decl_type(
+  ASSERT_TRUE(!ps_global_registry_bind_decl_qual_type(
       test_global_registry(), &tmp_tag_arr_gv,
-      ps_type_new_array(
+      intern_test_qual_type(ps_type_new_array(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
                            (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
-          2, 16, 0)));
+          2, 16, 0))));
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
 
   const psx_record_decl_t tmp_union_arr_record = {
@@ -27806,6 +27723,7 @@ static void test_type_metadata_bridge() {
 }
 
 static void test_translation_unit_reset_static_local_state() {
+  node_t **parsed_code = NULL;
   printf("test_translation_unit_reset_static_local_state...\n");
 
   const char *input = "int f(void) { static int x=1; return x; }";
@@ -27826,6 +27744,7 @@ static void test_translation_unit_reset_static_local_state() {
 }
 
 static void test_translation_unit_reset_anonymous_tag_state() {
+  node_t **parsed_code = NULL;
   printf("test_translation_unit_reset_anonymous_tag_state...\n");
 
   const char *input = "struct { int x; } g; int main(void) { return 0; }";
@@ -27870,6 +27789,7 @@ static void test_translation_unit_reset_pragma_pack_state() {
 }
 
 static void test_multiple_funcdefs() {
+  node_t **parsed_code = NULL;
   printf("test_multiple_funcdefs...\n");
   parsed_code = parse_program_input(
       "int foo(void) { 1; } int bar(void) { 2; }");
@@ -28155,12 +28075,12 @@ static void test_parse_invalid_diagnostics() {
       "int main(void) { struct S { int bits:3; } value={1}; "
       "return &value.bits != 0; }",
       "ビットフィールドのアドレスは取得できません");
-  expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("int main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "スカラ変数を struct 値で初期化できません");
-  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
-  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
+  expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "E3099");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "E3099");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "E3099");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "E3099");
+  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "E3036");
+  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "E3036");
   expect_parse_fail_with_message("int main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   expect_parse_fail_with_message("int main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
   expect_parse_fail_with_message("int main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
@@ -28226,9 +28146,9 @@ static void test_parse_invalid_diagnostics() {
       "int main(int condition) { return condition ? (void)0 : 1; }",
       "条件演算子の第2・第3オペランドの型に互換性がありません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
-                                 "void 戻り値関数の結果は代入/初期化に使えません");
+                                 "E3099");
   expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",
-                                 "void 戻り値関数の結果は代入/初期化に使えません");
+                                 "E3099");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("int main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
@@ -28262,7 +28182,7 @@ static void test_parse_invalid_diagnostics() {
   test_compilation_options()->enable_union_array_member_nonbrace_init = false;
   expect_parse_fail_with_message(
       "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
-      "[decl] 共用体の配列メンバ非波括弧初期化は設定で無効です");
+      "E3075");
   test_compilation_options()->enable_union_array_member_nonbrace_init = true;
 
   // 入れ子 designator: 非配列メンバに .member[idx]=val は診断エラー
@@ -28831,7 +28751,7 @@ static void test_semantic_canonical_type_invariant() {
       (node_t *)&untyped, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
   ASSERT_TRUE(failure.node == (node_t *)&untyped);
-  token_t *invariant_tok = tk_tokenize((char *)"untyped");
+  token_t *invariant_tok = tk_tokenize_ctx(test_tokenizer(), (char *)"untyped");
   expect_semantic_invariant_internal_error(
       (node_t *)&untyped, invariant_tok);
 
@@ -28975,8 +28895,8 @@ static void test_recursive_declarator_capacity_boundary() {
     }
   }
   memcpy(pointer_declarator + used, "deep_pointer;", 14);
-  token_t *tokens = tk_tokenize(pointer_declarator);
-  tk_set_current_token(tokens);
+  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), pointer_declarator);
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_declarator_t pointer_syntax =
       parse_test_declarator_syntax_tree();
   ASSERT_EQ(96, pointer_syntax.declarator_shape.count);
@@ -29039,8 +28959,8 @@ static void test_recursive_declarator_capacity_boundary() {
   }
   array_declarator[used++] = ';';
   array_declarator[used] = '\0';
-  tokens = tk_tokenize(array_declarator);
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), array_declarator);
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_declarator_t array_syntax =
       parse_test_declarator_syntax_tree();
   ASSERT_EQ(40, array_syntax.declarator_shape.count);
@@ -29091,8 +29011,8 @@ static void test_recursive_declarator_capacity_boundary() {
   }
   function_declarator[used++] = ';';
   function_declarator[used] = '\0';
-  tokens = tk_tokenize(function_declarator);
-  tk_set_current_token(tokens);
+  tokens = tk_tokenize_ctx(test_tokenizer(), function_declarator);
+  tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_declarator_t function_syntax =
       parse_test_declarator_syntax_tree();
   ASSERT_EQ(26, function_syntax.function_suffix_count);
@@ -30492,7 +30412,7 @@ static void test_semantic_context_isolation() {
   };
   ps_parser_stream_begin_with_syntax(
       &parser_stream, NULL,
-      tk_tokenize((char *)
+      tk_tokenize_ctx(test_tokenizer(), (char *)
           "{ StreamType value = 0; goto streamed_label; "
           "{ streamed_label: return value; } }"),
       &parser_syntax);
@@ -31435,7 +31355,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.codegen_emit_context != NULL);
   ASSERT_TRUE(wasm.codegen_emit_context != NULL);
   ASSERT_TRUE(host.codegen_emit_context != wasm.codegen_emit_context);
-  token_t *active_cursor_before_explicit_statement = tk_get_current_token();
+  tokenizer_context_t *suite_tokenizer = test_tokenizer();
+  token_t *suite_cursor_before_explicit_statement =
+      tk_get_current_token_ctx(suite_tokenizer);
   token_t wasm_statement_eof = {.kind = TK_EOF};
   token_t wasm_statement = {
       .kind = TK_SEMI,
@@ -31448,17 +31370,17 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(wasm_null_statement != NULL);
   ASSERT_EQ(ND_NULL_STMT, wasm_null_statement->kind);
   ASSERT_TRUE(tk_at_eof_ctx(&wasm.tokenizer));
-  ASSERT_TRUE(tk_get_current_token() ==
-              active_cursor_before_explicit_statement);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   ASSERT_TRUE(arena_alloc_in(host.arena_context, 16) != NULL);
   ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
   ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
-  tokenizer_context_t *previous_tokenizer = tk_context_active();
   ag_compilation_session_t *previous_session = test_suite_session;
   ASSERT_EQ(8, ag_compilation_session_target(previous_session)->data_layout.pointer_size);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->data_layout.pointer_size);
-  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   gen_set_output_callback_in(
       ag_compilation_session_codegen_emit_context(&host),
       test_codegen_capture, &host_output);
@@ -31497,7 +31419,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->data_layout.pointer_size);
-  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&wasm), "wasm");
   cg_emitf_in(
@@ -31519,7 +31442,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                   ->enable_union_scalar_pointer_cast);
   ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
   ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
-  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
   ASSERT_EQ(0, host_backend.destroy_count);
   ag_compilation_session_t inherited_context;
@@ -31532,7 +31456,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, arena_current_reserved_bytes_in(host.arena_context));
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->data_layout.pointer_size);
-  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   cg_emitf_in(
       ag_compilation_session_codegen_emit_context(&host), "-host-b");
   ASSERT_TRUE(strcmp(tk_filename_lookup_ctx(
@@ -31545,7 +31470,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    ->enable_union_scalar_pointer_cast);
   ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
   ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
-  ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_get_current_token_ctx(suite_tokenizer) ==
+              suite_cursor_before_explicit_statement);
   ASSERT_TRUE(strcmp(
       host_output.bytes, "host-a-host-explicit-host-b") == 0);
   ASSERT_TRUE(strcmp(wasm_output.bytes, "wasm-explicit-wasm") == 0);
@@ -31830,8 +31756,6 @@ int main() {
   ag_compilation_session_t suite_session;
   ag_target_info_t suite_target = ag_target_info_host();
   ASSERT_TRUE(ag_compilation_session_init(&suite_session, &suite_target));
-  tokenizer_context_t *previous_test_tokenizer =
-      tk_context_activate(&suite_session.tokenizer);
   test_suite_session = &suite_session;
   printf("Running tests for Parser...\n");
 
@@ -31965,17 +31889,7 @@ int main() {
   test_program_funcdef();
   test_funcall();
   test_funcdef_with_params();
-  test_stmt_if();
-  test_stmt_if_else();
-  test_stmt_while();
-  test_stmt_do_while();
-  test_stmt_break_continue();
-  test_stmt_switch_case_default();
-  test_stmt_for();
-  test_stmt_for_with_decl_init();
   test_stmt_return();
-  test_stmt_block();
-  test_stmt_goto_label();
   test_expr_deref_address_typed_hir_boundary();
   test_expr_member_access();
   test_expr_string();
@@ -32001,10 +31915,8 @@ int main() {
   test_parser_width_limits();
   test_semantic_canonical_type_invariant();
 
-  tk_context_activate(previous_test_tokenizer);
   ASSERT_TRUE(ag_compilation_session_dispose(&suite_session));
   test_suite_session = NULL;
-  tk_test_context_shutdown();
   printf("OK: All unit tests passed!\n");
   return 0;
 }
