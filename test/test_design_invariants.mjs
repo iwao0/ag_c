@@ -2693,6 +2693,9 @@ if (/\b(?:analyze_test_expression|parse_expr_input)\s*\(/.test(
   );
 }
 const directProgramHirHelper = parserUnitTestSource.match(
+  /static\s+int\s+resolve_test_program_hir_from_in_session\s*\([^)]*\)\s*\{([^]*?)\n\}/,
+);
+const directProgramHirWrapper = parserUnitTestSource.match(
   /static\s+int\s+resolve_test_program_hir_from\s*\([^)]*\)\s*\{([^]*?)\n\}/,
 );
 const directProgramHirTests = [
@@ -2705,6 +2708,10 @@ const directProgramHirTests = [
 ];
 if (!directProgramHirHelper ||
     !/\bpsx_frontend_next_function\s*\(/.test(directProgramHirHelper[1]) ||
+    !directProgramHirWrapper ||
+    !/\bresolve_test_program_hir_from_in_session\s*\(/.test(
+      directProgramHirWrapper[1],
+    ) ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
@@ -10041,6 +10048,9 @@ if (!/\bpsx_record_member_decl_leaf_shape\s*\(/.test(
     "record member leaf meaning must be exposed as TypeShape without materializing parser type views",
   );
 }
+const staticDataInitializerBoundary = parserUnitTestSource.match(
+  /static\s+void\s+test_static_data_initializer_boundary\s*\(\s*\)\s*\{([^]*?)\n\}/,
+);
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     /\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
     !/\bpsx_qual_type_t\s+ps_gvar_decl_qual_type\s*\(/.test(
@@ -10062,8 +10072,12 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
-      parserUnitTestSource,
+    !staticDataInitializerBoundary ||
+    !/\bps_gvar_decl_qual_type\s*\(/.test(
+      staticDataInitializerBoundary[1],
+    ) ||
+    !/PSX_DECL_GLOBAL_OBJECT/.test(
+      staticDataInitializerBoundary[1],
     ) ||
     !/\bps_global_registry_complete_array_qual_type\s*\(/.test(
       globalObjectLoweringSource,
