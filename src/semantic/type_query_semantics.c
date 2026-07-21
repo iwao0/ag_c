@@ -59,7 +59,7 @@ int psx_resolve_sizeof_qual_type_plan_in(
                        : qual_type_size(
                              semantic_context, queried_qual_type);
   if (!has_constant_override && shape.kind == PSX_TYPE_VOID) size = 1;
-  if (size <= 0) return 0;
+  if (size < 0 || (!has_constant_override && size == 0)) return 0;
   plan->kind = PSX_TYPE_QUERY_PLAN_CONSTANT;
   plan->constant_factor = size;
   return 1;

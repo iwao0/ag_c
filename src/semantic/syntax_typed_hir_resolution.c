@@ -1052,10 +1052,19 @@ static int resolve_direct_sizeof_type_name(
               bound->expression_id;
       continue;
     }
-    if (op->array_len <= 0 || factor <= 0 ||
-        factor > LLONG_MAX / op->array_len)
+    if (op->is_incomplete_array || op->array_len < 0 || factor < 0)
       return 0;
+    if (op->array_len == 0) {
+      factor = 0;
+      continue;
+    }
+    if (factor > LLONG_MAX / op->array_len) return 0;
     factor *= op->array_len;
+  }
+  if (factor == 0) {
+    return psx_resolve_sizeof_qual_type_plan_in(
+        context->semantic_context, queried_qual_type, 1, 0,
+        &binding->plan);
   }
   if (binding->runtime_factor_count > 0) {
     return psx_resolve_sizeof_runtime_product_plan_in(
@@ -3937,7 +3946,7 @@ static int resolve_direct_declarator_application(
     int is_constant = direct_integer_constant(
         context, bound->expression.node, &value);
     if (is_constant) {
-      if (value <= 0 || value > INT_MAX) return 0;
+      if (value < 0 || value > INT_MAX) return 0;
       resolved_bounds[i] = (psx_runtime_array_bound_t){
           .declarator_op_index = bound->declarator_op_index,
           .expression_id = PSX_SEMANTIC_EXPR_ID_INVALID,
