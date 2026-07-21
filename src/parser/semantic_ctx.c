@@ -1,12 +1,8 @@
 #include "semantic_ctx.h"
 #include "../semantic/resolution_store.h"
-#include "type_owned_internal.h"
 #include "diag.h"
-#include "type.h"
-#include "type_builder.h"
 #include "../diag/diag.h"
 #include "../semantic/type_identity.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../semantic/record_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
@@ -37,6 +33,12 @@ static int tag_type_is_complete(const tag_type_t *tag) {
   if (!tag) return 0;
   if (tag->kind == TK_ENUM) return tag->enum_is_complete ? 1 : 0;
   return tag->record_decl && tag->record_decl->is_complete;
+}
+
+static psx_type_kind_t record_kind_from_tag_kind(token_kind_t kind) {
+  if (kind == TK_STRUCT) return PSX_TYPE_STRUCT;
+  if (kind == TK_UNION) return PSX_TYPE_UNION;
+  return PSX_TYPE_INVALID;
 }
 typedef struct tag_member_t tag_member_t;
 typedef struct tag_member_decl_t {
@@ -113,7 +115,7 @@ static void refresh_cached_record_decl(
 
   ctx_release_in(context, tag->record_decl_members);
   tag->record_decl_members = members;
-  record_decl->record_kind = ps_type_kind_from_tag_kind(tag->kind);
+  record_decl->record_kind = record_kind_from_tag_kind(tag->kind);
   record_decl->tag_name = tag->name;
   record_decl->tag_len = tag->len;
   record_decl->member_count = member_count;
@@ -310,15 +312,6 @@ ps_ctx_semantic_expression_table_in(
   return context ? context->semantic_expressions : NULL;
 }
 
-psx_qual_type_t ps_ctx_intern_qual_type_in(
-    psx_semantic_context_t *context, const psx_type_t *type) {
-  if (!context) {
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  }
-  return psx_semantic_type_table_intern(context->semantic_types, type);
-}
-
 psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     psx_semantic_context_t *context,
     psx_integer_kind_t integer_kind, int is_unsigned,
@@ -418,22 +411,6 @@ psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
       context, result, NULL, 0, 0, 0);
 }
 
-psx_qual_type_t ps_ctx_find_interned_qual_type_in(
-    const psx_semantic_context_t *context, const psx_type_t *type) {
-  if (!context) {
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  }
-  return psx_semantic_type_table_find(context->semantic_types, type);
-}
-
-const psx_type_t *ps_ctx_type_by_id_in(
-    const psx_semantic_context_t *context, psx_type_id_t type_id) {
-  return context
-             ? psx_type_compatibility_canonical_view_for(context->semantic_types, type_id)
-             : NULL;
-}
-
 const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
     const psx_semantic_context_t *context) {
   return context ? context->semantic_types : NULL;
@@ -529,27 +506,6 @@ const ag_target_info_t *ps_ctx_target_info(
 const ag_data_layout_t *
 ps_ctx_data_layout(const psx_semantic_context_t *context) {
   return ag_target_info_data_layout(ps_ctx_target_info(context));
-}
-
-static psx_type_t *ctx_type_clone_persistent_in(
-    psx_semantic_context_t *context, const psx_type_t *src) {
-  if (!src) return NULL;
-  psx_type_t *dst = ctx_calloc_in(context, 1, sizeof(*dst));
-  if (!dst) return NULL;
-  *dst = *src;
-  dst->param_types = NULL;
-  dst->base = ctx_type_clone_persistent_in(context, src->base);
-  if (src->param_count > 0) {
-    const psx_type_t **params =
-        ctx_calloc_in(context, (size_t)src->param_count, sizeof(*params));
-    if (!params) return NULL;
-    for (int i = 0; i < src->param_count; i++)
-      params[i] = ctx_type_clone_persistent_in(
-          context,
-          src->param_types ? src->param_types[i] : NULL);
-    dst->param_types = params;
-  }
-  return dst;
 }
 
 static const psx_record_member_layout_t *find_tag_member_layout_draft(
@@ -820,12 +776,13 @@ bool ps_ctx_has_tag_type_in(
   return find_tag_type_in(context, kind, name, len) != NULL;
 }
 
-psx_type_t *ps_ctx_clone_tag_type_at_in(
+psx_qual_type_t ps_ctx_tag_qual_type_at_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     psx_scope_lookup_point_t point) {
   if (!context || !context->scope_graph || !name || len <= 0)
-    return NULL;
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
   psx_scope_lookup_point_t graph_point =
       point.scope_id == PSX_SCOPE_ID_INVALID
           ? psx_scope_graph_capture_lookup_point(context->scope_graph)
@@ -835,25 +792,17 @@ psx_type_t *ps_ctx_clone_tag_type_at_in(
       graph_point);
   tag_type_t *tag = tag_type_from_declaration_in(
       context, declaration_id);
-  if (!tag || tag->kind != kind) return NULL;
+  if (!tag || tag->kind != kind)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
   if (kind == TK_ENUM) {
     int scope_depth = tag_scope_depth_in(context, tag);
-    return ps_type_new_enum_in(
-        context->arena_context, name, len,
-        scope_depth >= 0 ? scope_depth + 1 : 0);
+    return ps_ctx_intern_enum_qual_type_in(
+        context, name, len, scope_depth >= 0 ? scope_depth + 1 : 0);
   }
-  return ps_type_new_record_in(
-      context->arena_context, tag->record_decl);
-}
-
-psx_qual_type_t ps_ctx_tag_qual_type_at_in(
-    psx_semantic_context_t *context,
-    token_kind_t kind, char *name, int len,
-    psx_scope_lookup_point_t point) {
-  psx_type_t *type = ps_ctx_clone_tag_type_at_in(
-      context, kind, name, len, point);
-  return type
-             ? ps_ctx_intern_qual_type_in(context, type)
+  return tag->record_decl
+             ? ps_ctx_intern_record_qual_type_in(
+                   context, tag->record_decl->record_id)
              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                                  PSX_TYPE_QUALIFIER_NONE};
 }
@@ -904,7 +853,7 @@ int ps_ctx_register_tag_type_in(
         context, 1, sizeof(psx_record_decl_t));
     if (!t->record_decl) return 0;
     t->record_decl->record_id = allocate_record_id(context);
-    t->record_decl->record_kind = ps_type_kind_from_tag_kind(kind);
+    t->record_decl->record_kind = record_kind_from_tag_kind(kind);
     t->record_decl->tag_name = name;
     t->record_decl->tag_len = len;
     t->record_decl->is_complete = is_complete ? 1 : 0;
@@ -974,7 +923,7 @@ const psx_record_decl_t *ps_ctx_ensure_tag_record_decl_in(
   if (!record_decl) return NULL;
   tag->record_decl = record_decl;
   record_decl->record_id = allocate_record_id(context);
-  record_decl->record_kind = ps_type_kind_from_tag_kind(kind);
+  record_decl->record_kind = record_kind_from_tag_kind(kind);
   record_decl->tag_name = name;
   record_decl->tag_len = len;
   if (record_decl->record_id != PSX_RECORD_ID_INVALID &&
@@ -1238,27 +1187,6 @@ int ps_ctx_register_record_members_in(
   return register_tag_members_for_owner_in(
       context, tag,
       declarations, layouts, member_count, out_conflict_index);
-}
-
-/* Resolve aggregate identity across the complete owned type tree. Record
- * declarations remain owned by RecordDeclTable and are not retained by types. */
-void ps_ctx_bind_record_ids_in(
-    psx_semantic_context_t *context, psx_type_t *type) {
-  if (!context || !type) return;
-  if (ps_type_is_tag_aggregate(type)) {
-    psx_record_id_t record_id = type->record_id;
-    if (record_id == PSX_RECORD_ID_INVALID && type->tag_name &&
-        type->tag_len > 0) {
-      record_id = ps_ctx_resolve_tag_record_id_in(
-          context, ps_type_tag_token_kind(type),
-          type->tag_name, type->tag_len);
-    }
-    type->record_id = record_id;
-  }
-  ps_ctx_bind_record_ids_in(context, psx_type_owned_base_mut(type));
-  for (int i = 0; i < type->param_count; i++)
-    ps_ctx_bind_record_ids_in(
-        context, psx_type_owned_param_mut(type, i));
 }
 
 static bool fill_tag_member_in(
@@ -1544,20 +1472,6 @@ clone_typedef_runtime_application(
     copy->array_bound_count = source->array_bound_count;
   }
   return copy;
-}
-
-psx_qual_type_t ps_ctx_intern_declaration_qual_type_in(
-    psx_semantic_context_t *context, const psx_type_t *type) {
-  if (!context || !type)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  psx_type_t *resolved_type = ctx_type_clone_persistent_in(
-      context, type);
-  if (!resolved_type)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  ps_ctx_bind_record_ids_in(context, resolved_type);
-  return ps_ctx_intern_qual_type_in(context, resolved_type);
 }
 
 static psx_qual_type_t resolve_typedef_decl_qual_type(

@@ -2,28 +2,12 @@
 
 #include "../parser/arena.h"
 #include "../parser/type.h"
-#include "type_compatibility_cache_internal.h"
+#include "type_compatibility_cache_storage_internal.h"
 #include "type_identity_internal.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-enum { PSX_QUALIFIER_VIEW_COUNT = 16 };
-
-typedef struct {
-  const psx_type_t *canonical_view;
-  const psx_type_t *views[PSX_QUALIFIER_VIEW_COUNT];
-  int record_tag_scope_depth_p1;
-  unsigned char canonical_materializing;
-  unsigned char materializing[PSX_QUALIFIER_VIEW_COUNT];
-} psx_type_compatibility_entry_t;
-
-struct psx_type_compatibility_cache_t {
-  arena_context_t *arena_context;
-  psx_type_compatibility_entry_t *entries;
-  size_t capacity;
-};
 
 static int psx_type_compatibility_cache_remember_import(
     psx_type_compatibility_cache_t *cache, psx_qual_type_t identity,
@@ -31,52 +15,6 @@ static int psx_type_compatibility_cache_remember_import(
 static psx_qual_type_t psx_type_compatibility_view_identity(
     const psx_type_compatibility_cache_t *cache,
     const psx_type_t *view);
-
-psx_type_compatibility_cache_t *psx_type_compatibility_cache_create(void) {
-  psx_type_compatibility_cache_t *cache = calloc(1, sizeof(*cache));
-  if (!cache) return NULL;
-  cache->arena_context = arena_context_create();
-  if (!cache->arena_context) {
-    free(cache);
-    return NULL;
-  }
-  return cache;
-}
-
-void psx_type_compatibility_cache_destroy(
-    psx_type_compatibility_cache_t *cache) {
-  if (!cache) return;
-  arena_context_destroy(cache->arena_context);
-  free(cache->entries);
-  free(cache);
-}
-
-void psx_type_compatibility_cache_reset(
-    psx_type_compatibility_cache_t *cache) {
-  if (!cache) return;
-  arena_free_all_in(cache->arena_context);
-  free(cache->entries);
-  cache->entries = NULL;
-  cache->capacity = 0;
-}
-
-static int reserve_type_id(
-    psx_type_compatibility_cache_t *cache, psx_type_id_t type_id) {
-  if ((size_t)type_id < cache->capacity) return 1;
-  size_t capacity = cache->capacity ? cache->capacity * 2 : 16;
-  while (capacity <= (size_t)type_id) {
-    if (capacity > SIZE_MAX / 2) return 0;
-    capacity *= 2;
-  }
-  psx_type_compatibility_entry_t *entries = realloc(
-      cache->entries, capacity * sizeof(*entries));
-  if (!entries) return 0;
-  memset(entries + cache->capacity, 0,
-         (capacity - cache->capacity) * sizeof(*entries));
-  cache->entries = entries;
-  cache->capacity = capacity;
-  return 1;
-}
 
 static psx_qual_type_t invalid_qual_type(void) {
   return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
@@ -228,7 +166,8 @@ static int psx_type_compatibility_cache_remember_import(
     psx_type_compatibility_cache_t *cache, psx_qual_type_t identity,
     const psx_type_t *source) {
   if (!cache || !source || identity.type_id == PSX_TYPE_ID_INVALID ||
-      !reserve_type_id(cache, identity.type_id))
+      !psx_type_compatibility_cache_reserve_type_id(
+          cache, identity.type_id))
     return 0;
   if (source->kind != PSX_TYPE_STRUCT && source->kind != PSX_TYPE_UNION)
     return 1;
@@ -252,7 +191,7 @@ static const psx_type_t *materialize_view(
   if (!cache || !types || type.type_id == PSX_TYPE_ID_INVALID ||
       (type.qualifiers & ~supported) != 0 ||
       !psx_semantic_type_table_describe(types, type.type_id, &shape) ||
-      !reserve_type_id(cache, type.type_id))
+      !psx_type_compatibility_cache_reserve_type_id(cache, type.type_id))
     return NULL;
 
   unsigned view_index = type.qualifiers;

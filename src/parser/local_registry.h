@@ -4,7 +4,6 @@
 #include "lvar_public.h"
 #include "../semantic/scope_graph.h"
 
-typedef struct psx_type_t psx_type_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct global_var_t global_var_t;
 typedef struct token_t token_t;
@@ -57,29 +56,15 @@ ps_local_registry_set_current_usage_region_in(
     psx_lvar_usage_region_t *region);
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var);
-lvar_t *ps_local_registry_create_storage_object_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type,
-    token_t *diagnostic_token);
 lvar_t *ps_local_registry_create_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
     int alignment, psx_qual_type_t decl_qual_type,
     token_t *diagnostic_token);
-lvar_t *ps_local_registry_create_internal_storage_object_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type);
 lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
     int alignment, psx_qual_type_t decl_qual_type);
-lvar_t *ps_local_registry_create_static_alias_in(
-    psx_local_registry_t *registry,
-    global_var_t *global,
-    char *name, int name_len, char *global_name, int global_name_len,
-    const psx_type_t *type);
 lvar_t *ps_local_registry_create_static_alias_qual_type_in(
     psx_local_registry_t *registry,
     global_var_t *global,
@@ -90,9 +75,6 @@ void ps_local_registry_update_storage_object_in(
     lvar_t *var, int offset, int storage_size, int alignment);
 
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
-int ps_local_registry_complete_array_type(
-    psx_local_registry_t *registry, lvar_t *var,
-    const psx_type_t *complete_type);
 int ps_local_registry_complete_array_qual_type(
     psx_local_registry_t *registry, lvar_t *var,
     psx_qual_type_t complete_type);

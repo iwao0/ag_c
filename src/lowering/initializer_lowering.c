@@ -4,6 +4,7 @@
 #include "../parser/lvar_public.h"
 #include "../semantic/resolution_state.h"
 #include "../parser/node_utils.h"
+#include "../parser/node_utils_legacy.h"
 #include "../parser/diag.h"
 #include "../diag/diag.h"
 #include "../semantic/compound_literal_resolution.h"

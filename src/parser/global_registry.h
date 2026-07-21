@@ -5,7 +5,6 @@
 #include "literal_public.h"
 #include "../semantic/scope_graph.h"
 
-typedef struct psx_type_t psx_type_t;
 typedef struct string_lit_t string_lit_t;
 typedef struct float_lit_t float_lit_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
@@ -66,15 +65,9 @@ void psx_global_registry_checkpoint_rollback(
     psx_global_registry_t *registry,
     psx_global_registry_checkpoint_t *checkpoint);
 
-int ps_global_registry_bind_decl_type(
-    psx_global_registry_t *registry, global_var_t *global,
-    const psx_type_t *type);
 int ps_global_registry_bind_decl_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t type);
-int ps_global_registry_complete_array_type(
-    psx_global_registry_t *registry, global_var_t *global,
-    const psx_type_t *complete_type);
 int ps_global_registry_complete_array_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t complete_type);

@@ -16,6 +16,7 @@
 #include "../parser/diag.h"
 #include "../parser/lvar_internal.h"
 #include "../parser/node_utils.h"
+#include "../parser/node_utils_legacy.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
 #include "../diag/diag.h"

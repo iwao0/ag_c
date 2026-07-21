@@ -5,11 +5,8 @@
 #include "global_registry.h"
 #include "lvar_internal.h"
 #include "node_utils.h"
-#include "type.h"
-#include "type_builder.h"
 #include "../semantic/scope_graph.h"
 #include "../semantic/type_identity.h"
-#include "../semantic/type_compatibility_view.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -188,20 +185,6 @@ psx_scope_graph_t *ps_local_registry_scope_graph(
   return registry ? registry->scope_graph : NULL;
 }
 
-static psx_qual_type_t resolve_local_decl_type(
-    const psx_local_registry_t *registry, const psx_type_t *type) {
-  if (!registry || !registry->semantic_types || !type)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  psx_qual_type_t qual_type = psx_semantic_type_table_find(
-      registry->semantic_types, type);
-  return psx_semantic_type_table_qual_type_is_valid(
-             registry->semantic_types, qual_type)
-             ? qual_type
-             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
-}
-
 static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
@@ -248,21 +231,6 @@ void psx_local_registry_add_in(
   index_add(registry, var);
 }
 
-lvar_t *ps_local_registry_create_storage_object_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type,
-    token_t *diagnostic_token) {
-  if (!registry || !decl_type) return NULL;
-  psx_qual_type_t qual_type = resolve_local_decl_type(
-      registry, decl_type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
-  return ps_local_registry_create_storage_object_qual_type_in(
-      registry, name, name_len, offset, storage_size, alignment,
-      qual_type, diagnostic_token);
-}
-
 lvar_t *ps_local_registry_create_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
@@ -293,17 +261,6 @@ lvar_t *ps_local_registry_create_storage_object_qual_type_in(
   return var;
 }
 
-lvar_t *ps_local_registry_create_internal_storage_object_in(
-    psx_local_registry_t *registry,
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type) {
-  if (!registry || !decl_type) return NULL;
-  psx_qual_type_t qual_type = resolve_local_decl_type(
-      registry, decl_type);
-  return ps_local_registry_create_internal_storage_object_qual_type_in(
-      registry, name, name_len, offset, storage_size, alignment, qual_type);
-}
-
 lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
     psx_local_registry_t *registry,
     char *name, int name_len, int offset, int storage_size,
@@ -327,23 +284,6 @@ lvar_t *ps_local_registry_create_internal_storage_object_qual_type_in(
   var->next_offhash = registry->lvars_by_offset[bucket];
   registry->lvars_by_offset[bucket] = var;
   return var;
-}
-
-lvar_t *ps_local_registry_create_static_alias_in(
-    psx_local_registry_t *registry,
-    global_var_t *global,
-    char *name, int name_len, char *global_name, int global_name_len,
-    const psx_type_t *type) {
-  if (!registry || !global || !name || name_len <= 0 ||
-      !global_name || global_name_len <= 0 ||
-      !type)
-    return NULL;
-  psx_qual_type_t qual_type = resolve_local_decl_type(registry, type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return NULL;
-  return ps_local_registry_create_static_alias_qual_type_in(
-      registry, global, name, name_len, global_name, global_name_len,
-      qual_type);
 }
 
 lvar_t *ps_local_registry_create_static_alias_qual_type_in(
@@ -389,17 +329,6 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
   if (!var) return;
   var->is_param = 1;
   var->is_byref_param = is_byref ? 1 : 0;
-}
-
-int ps_local_registry_complete_array_type(
-    psx_local_registry_t *registry, lvar_t *var,
-    const psx_type_t *complete_type) {
-  psx_qual_type_t qual_type = resolve_local_decl_type(
-      registry, complete_type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
-  return ps_local_registry_complete_array_qual_type(
-      registry, var, qual_type);
 }
 
 int ps_local_registry_complete_array_qual_type(

@@ -1,10 +1,7 @@
 #include "global_registry.h"
 #include "literal_public.h"
 #include "symtab.h"
-#include "type.h"
-#include "type_builder.h"
 #include "../semantic/type_identity.h"
-#include "../semantic/type_compatibility_view.h"
 #include "../semantic/scope_graph.h"
 #include <stdlib.h>
 #include <string.h>
@@ -215,33 +212,6 @@ psx_scope_graph_t *ps_global_registry_scope_graph(
   return registry ? registry->scope_graph : NULL;
 }
 
-static psx_qual_type_t resolve_global_decl_type(
-    const psx_global_registry_t *registry, const psx_type_t *type) {
-  if (!registry || !registry->semantic_types || !type)
-    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                             PSX_TYPE_QUALIFIER_NONE};
-  psx_qual_type_t qual_type = psx_semantic_type_table_find(
-      registry->semantic_types, type);
-  return psx_semantic_type_table_qual_type_is_valid(
-             registry->semantic_types, qual_type)
-             ? qual_type
-             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                                 PSX_TYPE_QUALIFIER_NONE};
-}
-
-int ps_global_registry_bind_decl_type(
-    psx_global_registry_t *registry, global_var_t *global,
-    const psx_type_t *type) {
-  if (!global ||
-      global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID || !type)
-    return 0;
-  psx_qual_type_t qual_type = resolve_global_decl_type(registry, type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
-  return ps_global_registry_bind_decl_qual_type(
-      registry, global, qual_type);
-}
-
 int ps_global_registry_bind_decl_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t type) {
@@ -257,17 +227,6 @@ int ps_global_registry_bind_decl_qual_type(
   global->decl_type_table = registry->semantic_types;
   global->decl_qual_type = type;
   return 1;
-}
-
-int ps_global_registry_complete_array_type(
-    psx_global_registry_t *registry, global_var_t *global,
-    const psx_type_t *complete_type) {
-  psx_qual_type_t qual_type = resolve_global_decl_type(
-      registry, complete_type);
-  if (qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
-  return ps_global_registry_complete_array_qual_type(
-      registry, global, qual_type);
 }
 
 int ps_global_registry_complete_array_qual_type(

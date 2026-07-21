@@ -6,6 +6,7 @@
 #include "../parser/global_registry.h"
 #include "resolution_state.h"
 #include "../parser/node_utils.h"
+#include "../parser/node_utils_legacy.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"

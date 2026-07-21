@@ -392,7 +392,7 @@ if (!/typedef\s+uint32_t\s+psx_scope_id_t\s*;/.test(scopeGraphHeader) ||
     !/psx_scope_graph_declare\s*\([^]*?PSX_NAMESPACE_TAG[^]*?PSX_DECL_TAG/.test(
       scopeGraphSemanticContextSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
+    !/ps_ctx_tag_qual_type_at_in\s*\([^]*?psx_scope_graph_lookup\s*\([^]*?PSX_NAMESPACE_TAG/.test(
       scopeGraphSemanticContextSource,
     ) ||
     !/ps_ctx_find_tag_kind_at_current_scope_in\s*\([^]*?psx_scope_graph_lookup_in_scope\s*\([^]*?PSX_NAMESPACE_TAG/.test(
@@ -1185,6 +1185,14 @@ const semanticContextOwnershipSource = await readFile(
 );
 const semanticContextOwnershipHeader = await readFile(
   "src/parser/semantic_ctx.h",
+  "utf8",
+);
+const semanticContextLegacySource = await readFile(
+  "src/parser/semantic_ctx_legacy.c",
+  "utf8",
+);
+const semanticContextLegacyHeader = await readFile(
+  "src/parser/semantic_ctx_legacy.h",
   "utf8",
 );
 if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
@@ -2395,7 +2403,7 @@ if (/psx_decl_find_lvar_by_offset\s*\(/.test(nodeUtilsSourceForRegistry)) {
 if (!/ps_ctx_register_tag_type_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
+    !/ps_ctx_tag_qual_type_at_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
     !/ps_ctx_register_enum_const_in\s*\(/.test(
@@ -3909,7 +3917,7 @@ if (!semanticQualifierDiagnosticSection ||
     !/\bps_node_qual_type\s*\(/.test(
       semanticQualifierDiagnosticSection[0],
     ) ||
-    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+    /\bps_ctx_intern_qual_type_in\s*\(|\bps_node_get_type\s*\(/.test(
       semanticQualifierDiagnosticSection[0],
     ) ||
     !/\bpsx_semantic_type_table_pointee_value\s*\(/.test(
@@ -5419,7 +5427,8 @@ const parserSyntaxSources = (
       .filter((path) =>
         path.startsWith("src/parser/") &&
         path.endsWith(".c") &&
-        path !== "src/parser/node_utils.c")
+        path !== "src/parser/node_utils.c" &&
+        path !== "src/parser/node_utils_legacy.c")
       .map((path) => readFile(path, "utf8")),
   )
 ).join("\n");
@@ -6065,6 +6074,14 @@ const nodeUtilsHeaderSource = await readFile(
   "src/parser/node_utils.h",
   "utf8",
 );
+const nodeUtilsLegacySource = await readFile(
+  "src/parser/node_utils_legacy.c",
+  "utf8",
+);
+const nodeUtilsLegacyHeaderSource = await readFile(
+  "src/parser/node_utils_legacy.h",
+  "utf8",
+);
 if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     allSourceFiles.includes("src/parser/node_resolution_state.h") ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_node_get_type\s*\(/.test(
@@ -6087,6 +6104,17 @@ if (allSourceFiles.includes("src/parser/node_type_public.h") ||
     )) {
   throw new Error(
     "resolved node type state must be canonical while parser type views remain in the explicit compatibility module",
+  );
+}
+if (/\bpsx_type_t\b|parser_type_compatibility\.h|\bps_node_(?:get_type|bind_type)\s*\(/.test(
+      `${nodeUtilsHeaderSource}\n${nodeUtilsSource}`,
+    ) ||
+    !/\bps_node_new_binary_for_data_layout_in\s*\(/.test(
+      nodeUtilsLegacySource,
+    ) ||
+    !/\bps_node_new_assign_in\s*\(/.test(nodeUtilsLegacySource)) {
+  throw new Error(
+    "parser-type node builders must remain isolated in the test-only node_utils_legacy module",
   );
 }
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
@@ -6153,7 +6181,7 @@ const initializerLoweringSourceForLocalLayout = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
 );
-const arrayDecayPointerArithmeticType = nodeUtilsSource.match(
+const arrayDecayPointerArithmeticType = nodeUtilsLegacySource.match(
   /const\s+psx_type_t\s*\*ps_node_array_decay_pointer_arith_type_in\s*\([^]*?\n\}/,
 );
 for (const removedApi of [
@@ -6645,7 +6673,7 @@ const explicitDiagnosticCastLoweringSource = await readFile(
   "src/lowering/cast_lowering.c",
   "utf8",
 );
-const explicitWidthShiftConstructor = nodeUtilsSource.match(
+const explicitWidthShiftConstructor = nodeUtilsLegacySource.match(
   /node_t\s*\*ps_node_new_shift_trunc_extend_for_width_in\s*\([^]*?\n\}/,
 );
 const explicitHirCastCoercion = hirIrBuilder.match(
@@ -6662,7 +6690,7 @@ if (!explicitWidthShiftConstructor ||
     "shift truncation must consume a width already resolved against the active target",
   );
 }
-const dataLayoutAwareBinaryConstructor = nodeUtilsSource.match(
+const dataLayoutAwareBinaryConstructor = nodeUtilsLegacySource.match(
   /node_t\s*\*ps_node_new_binary_for_data_layout_in\s*\([^]*?\n\}/,
 );
 if (!dataLayoutAwareBinaryConstructor ||
@@ -7946,9 +7974,10 @@ const typeBuilderUsers = new Set([
   "src/parser/type.c",
   "src/parser/expr.c",
   "src/parser/semantic_ctx.c",
+  "src/parser/semantic_ctx_legacy.c",
   "src/parser/local_registry.c",
   "src/parser/global_registry.c",
-  "src/parser/node_utils.c",
+  "src/parser/node_utils_legacy.c",
   "src/declaration_pipeline.c",
   "src/semantic/parameter_declaration_resolution.c",
   "src/semantic/declaration_application.c",
@@ -8424,7 +8453,7 @@ if (!tagTypeStruct ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       tagAlignLookupFunction[0],
     ) ||
-    !/ps_type_new_record_in\s*\([^]*?tag->record_decl\s*\)/.test(
+    !/ps_ctx_intern_record_qual_type_in\s*\([^]*?tag->record_decl->record_id\s*\)/.test(
       tagContextSource,
     )) {
   throw new Error(
@@ -8991,6 +9020,14 @@ const typeCompatibilityCacheInternalHeader = await readFile(
   "src/semantic/type_compatibility_cache_internal.h",
   "utf8",
 );
+const typeCompatibilityCacheStorageInternalHeader = await readFile(
+  "src/semantic/type_compatibility_cache_storage_internal.h",
+  "utf8",
+);
+const typeCompatibilityCacheSource = await readFile(
+  "src/semantic/type_compatibility_cache.c",
+  "utf8",
+);
 const semanticTypeShapeHeader = await readFile(
   "src/type_system/type_shape.h",
   "utf8",
@@ -9059,7 +9096,7 @@ if (!/PSX_TYPE_QUALIFIER_RESTRICT\s*=\s*1u\s*<<\s*3/.test(
       declarationResolutionSource,
     ) ||
     !/PSX_QUALIFIER_VIEW_COUNT\s*=\s*16/.test(
-      typeCompatibilityViewSource,
+      typeCompatibilityCacheStorageInternalHeader,
     ) ||
     !/PSX_TYPE_QUALIFIER_RESTRICT/.test(semanticTypeIdentitySource) ||
     !/type\.qualifiers\s*&\s*PSX_TYPE_QUALIFIER_RESTRICT[^]*?write_literal\(writer,\s*"R"\)/.test(
@@ -9144,13 +9181,25 @@ if (!semanticTypeEntry ||
     "semantic TypeId shape must own target-independent identity and resolve record relations through RecordDeclTable",
   );
 }
-if (!/const\s+psx_type_t\s*\*canonical_view\s*;/.test(
-      typeCompatibilityViewSource,
+if (!/const\s+void\s*\*canonical_view\s*;/.test(
+      typeCompatibilityCacheStorageInternalHeader,
     ) ||
-    !/const\s+psx_type_t\s*\*views\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
-      typeCompatibilityViewSource,
+    !/const\s+void\s*\*views\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
+      typeCompatibilityCacheStorageInternalHeader,
     ) ||
     !/arena_context_t\s*\*arena_context\s*;/.test(
+      typeCompatibilityCacheStorageInternalHeader,
+    ) ||
+    /\bpsx_type_t\b|parser\/type\.h/.test(
+      `${typeCompatibilityCacheStorageInternalHeader}\n${typeCompatibilityCacheSource}`,
+    ) ||
+    !/\bpsx_type_compatibility_cache_create\s*\(/.test(
+      typeCompatibilityCacheSource,
+    ) ||
+    !/\bpsx_type_compatibility_cache_reserve_type_id\s*\(/.test(
+      typeCompatibilityCacheSource,
+    ) ||
+    /\bpsx_type_compatibility_cache_(?:create|destroy|reset)\s*\(/.test(
       typeCompatibilityViewSource,
     ) ||
     !/psx_semantic_type_table_describe\s*\(/.test(
@@ -9381,14 +9430,14 @@ if (!/\bconst\s+ag_data_layout_t\s*\*\s*ps_ctx_data_layout\s*\(/.test(
     !/\bps_ctx_register_record_members_in\s*\(/.test(
       semanticContextSource,
     ) ||
-    !/\bpsx_qual_type_t\s+ps_ctx_intern_qual_type_in\s*\(/.test(
-      semanticContextSource,
+    /\bpsx_type_t\b|type_compatibility_view\.h|\bps_ctx_(?:intern_qual_type_in|intern_declaration_qual_type_in|find_interned_qual_type_in|type_by_id_in|clone_tag_type_at_in|bind_record_ids_in)\s*\(/.test(
+      `${semanticContextSource}\n${parserSemanticContextImplementation}`,
     ) ||
-    !/\bpsx_qual_type_t\s+ps_ctx_find_interned_qual_type_in\s*\(/.test(
-      semanticContextSource,
+    !/\bpsx_qual_type_t\s+ps_ctx_intern_qual_type_in\s*\(/.test(
+      semanticContextLegacyHeader,
     ) ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_ctx_type_by_id_in\s*\(/.test(
-      semanticContextSource,
+      semanticContextLegacyHeader,
     ) ||
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       `${semanticContextSource}\n${parserSemanticContextImplementation}`,
@@ -9423,7 +9472,7 @@ for (const path of allSourceFiles) {
     );
   }
 }
-const recordIdBinder = parserSemanticContextImplementation.match(
+const recordIdBinder = semanticContextLegacySource.match(
   /void\s+ps_ctx_bind_record_ids_in\s*\([^]*?\n\}/,
 );
 const sourcesWithLegacyRecordOwnership = [];
@@ -9437,7 +9486,7 @@ for (const path of allSourceFiles) {
 }
 if (sourcesWithLegacyRecordOwnership.length > 0 ||
     !/\bvoid\s+ps_ctx_bind_record_ids_in\s*\(/.test(
-      semanticContextSource,
+      semanticContextLegacyHeader,
     ) ||
     !recordIdBinder ||
     !/type->record_id\s*=\s*record_id/.test(recordIdBinder[0]) ||
@@ -9875,13 +9924,9 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       localRegistrySource,
     ) ||
-    !/\bstatic\s+psx_qual_type_t\s+resolve_local_decl_type\s*\(/.test(
-      localRegistrySource,
+    /\bpsx_type_t\b|type_compatibility_view\.h|resolve_local_decl_type|ps_local_registry_(?:create_storage_object_in|create_internal_storage_object_in|create_static_alias_in|complete_array_type)\s*\(/.test(
+      `${localRegistryHeader}\n${localRegistrySource}`,
     ) ||
-    !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
-      localRegistrySource,
-    ) ||
-    !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
     /\bps_type_clone_persistent\s*\(/.test(localRegistrySource) ||
     !/ps_local_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
@@ -9977,7 +10022,7 @@ if (!recordMemberDeclStruct ||
       parserSemanticContextImplementation,
     ) ||
     !/views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
-      typeCompatibilityViewSource,
+      typeCompatibilityCacheStorageInternalHeader,
     )) {
   throw new Error(
     "record members must store QualType only without publishing parser type views",
@@ -10004,16 +10049,24 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       globalRegistrySource,
     ) ||
-    !/\bstatic\s+psx_qual_type_t\s+resolve_global_decl_type\s*\(/.test(
-      globalRegistrySource,
+    /\bpsx_type_t\b|type_compatibility_view\.h|resolve_global_decl_type|ps_global_registry_(?:bind_decl_type|complete_array_type)\s*\(/.test(
+      `${globalRegistryHeader}\n${globalRegistrySource}`,
     ) ||
     !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
     /\bps_type_clone_persistent\s*\(/.test(globalRegistrySource) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       globalRegistrySource,
+    ) ||
+    !/\bresolve_test_global_decl_type\s*\([^]*?psx_semantic_type_table_find\s*\(/.test(
+      parserCompatibilityTestHook,
+    ) ||
+    !/\bps_global_registry_bind_decl_type\s*\([^]*?resolve_test_global_decl_type\s*\([^]*?ps_global_registry_bind_decl_qual_type\s*\(/.test(
+      parserCompatibilityTestHook,
+    ) ||
+    !/\bps_global_registry_complete_array_type\s*\([^]*?resolve_test_global_decl_type\s*\([^]*?ps_global_registry_complete_array_qual_type\s*\(/.test(
+      parserCompatibilityTestHook,
     ) ||
     !/ps_global_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
@@ -10176,7 +10229,7 @@ if (!/\bpsx_qual_type_t\s+psx_apply_parsed_type_name_qual_type_in_contexts\s*\(/
 }
 
 const readonlySemanticTypeResults = [
-  ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
+  ["src/parser/node_utils_legacy.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
 for (const [file, functionName] of readonlySemanticTypeResults) {
   const source = await readFile(file, "utf8");
@@ -10840,7 +10893,7 @@ const stringNodeStruct = astSource.match(
   /struct node_string_t\s*\{([^{}]*)\};/,
 );
 const syntaxIntConstructor = nodeUtilsSource.match(
-  /node_t\s*\*psx_node_new_syntax_int_in\s*\([^]*?\n\}\n\nnode_t\s*\*ps_node_new_num_in/,
+  /node_t\s*\*psx_node_new_syntax_int_in\s*\([^]*?\n\}/,
 );
 const syntaxLiteralParserSource = [
   parserExpressionSource,
@@ -12723,6 +12776,14 @@ const mutableCompatibilityTestOnlySources = [
   "src/semantic/type_identity_pass.c",
   "src/semantic/tree_walk.c",
   "src/semantic/lvar_usage_analysis.c",
+  "src/parser/parser_legacy.c",
+  "src/parser/stmt_legacy.c",
+  "src/parser/name_classifier_legacy.c",
+  "src/parser/semantic_ctx_legacy.c",
+  "src/parser/node_utils_legacy.c",
+  "src/frontend/local_declaration_legacy.c",
+  "src/semantic/parser_type_compatibility.c",
+  "src/semantic/type_compatibility_view.c",
 ];
 const declaredTestOnlySources = new Set(
   [...makefileSource.matchAll(/^TEST_ONLY_SRCS(?:\+)?=(.*)$/gm)]
@@ -13069,6 +13130,7 @@ const symbolTypeRootOwners = new Set([
 ]);
 const ownedChildMutationUsers = new Set([
   "src/parser/semantic_ctx.c",
+  "src/parser/semantic_ctx_legacy.c",
   "src/parser/type.c",
   "src/parser/type_owned_internal.h",
 ]);

@@ -5,7 +5,6 @@
 #include "function_public.h"
 #include "local_registry.h"
 #include "name_classifier.h"
-#include "type.h"
 #include "../semantic/expression_identity.h"
 #include "../semantic/declarator_application_types.h"
 #include "../semantic/record_decl_table.h"
@@ -53,10 +52,6 @@ const psx_typed_hir_tree_t *ps_ctx_semantic_expression_in(
 const psx_semantic_expression_table_t *
 ps_ctx_semantic_expression_table_in(
     const psx_semantic_context_t *context);
-psx_qual_type_t ps_ctx_intern_qual_type_in(
-    psx_semantic_context_t *context, const psx_type_t *type);
-psx_qual_type_t ps_ctx_intern_declaration_qual_type_in(
-    psx_semantic_context_t *context, const psx_type_t *type);
 psx_qual_type_t ps_ctx_intern_integer_qual_type_in(
     psx_semantic_context_t *context,
     psx_integer_kind_t integer_kind, int is_unsigned,
@@ -82,10 +77,6 @@ psx_qual_type_t ps_ctx_intern_function_qual_type_in(
     int has_prototype, int is_variadic);
 psx_qual_type_t ps_ctx_intern_implicit_function_qual_type_in(
     psx_semantic_context_t *context);
-psx_qual_type_t ps_ctx_find_interned_qual_type_in(
-    const psx_semantic_context_t *context, const psx_type_t *type);
-const psx_type_t *ps_ctx_type_by_id_in(
-    const psx_semantic_context_t *context, psx_type_id_t type_id);
 const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
     const psx_semantic_context_t *context);
 const psx_record_decl_table_t *ps_ctx_record_decl_table_in(
@@ -140,10 +131,6 @@ int ps_ctx_format_function_signature_in(
 bool ps_ctx_has_tag_type_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
-psx_type_t *ps_ctx_clone_tag_type_at_in(
-    psx_semantic_context_t *context,
-    token_kind_t kind, char *name, int len,
-    psx_scope_lookup_point_t point);
 psx_qual_type_t ps_ctx_tag_qual_type_at_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
@@ -218,8 +205,6 @@ int psx_ctx_register_tag_member_in(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const psx_record_member_decl_t *declaration,
     const psx_record_member_layout_t *layout, int *out_created);
-void ps_ctx_bind_record_ids_in(
-    psx_semantic_context_t *context, psx_type_t *type);
 void ps_ctx_promote_tag_to_file_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);

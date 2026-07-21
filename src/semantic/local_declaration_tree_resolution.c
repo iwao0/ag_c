@@ -12,6 +12,7 @@
 #include "../parser/diag.h"
 #include "../parser/expr.h"
 #include "../parser/node_utils.h"
+#include "../parser/node_utils_legacy.h"
 #include "../parser/local_registry.h"
 #include "../parser/global_registry.h"
 #include "../parser/runtime_context.h"

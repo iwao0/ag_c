@@ -1,8 +1,50 @@
 #include "parser_compatibility_test_hook.h"
 
 #include "../../src/frontend/translation_unit_resolver.h"
+#include "../../src/parser/global_registry.h"
 #include "../../src/semantic/semantic_tree_resolution_test_support.h"
+#include "../../src/semantic/type_compatibility_view.h"
+#include "../../src/semantic/type_identity.h"
 #include "../../src/semantic/typed_hir_materialization.h"
+
+static psx_qual_type_t resolve_test_global_decl_type(
+    const psx_global_registry_t *registry, const psx_type_t *type) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_global_registry_semantic_types(registry);
+  if (!semantic_types || !type)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t qual_type =
+      psx_semantic_type_table_find(semantic_types, type);
+  return psx_semantic_type_table_qual_type_is_valid(
+             semantic_types, qual_type)
+             ? qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
+int ps_global_registry_bind_decl_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *type) {
+  if (!global ||
+      ps_gvar_decl_qual_type(global).type_id != PSX_TYPE_ID_INVALID || !type)
+    return 0;
+  psx_qual_type_t qual_type =
+      resolve_test_global_decl_type(registry, type);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  return ps_global_registry_bind_decl_qual_type(
+      registry, global, qual_type);
+}
+
+int ps_global_registry_complete_array_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *complete_type) {
+  psx_qual_type_t qual_type =
+      resolve_test_global_decl_type(registry, complete_type);
+  if (qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  return ps_global_registry_complete_array_qual_type(
+      registry, global, qual_type);
+}
 
 typedef struct {
   node_t **compatibility_root;
