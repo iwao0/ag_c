@@ -90,18 +90,15 @@
 #include "../src/semantic/prototype_parameter.h"
 #include "../src/semantic/resolution_state.h"
 #include "../src/semantic/resolution_store.h"
-#include "../src/semantic/resolution_work_tree_internal.h"
 #include "../src/semantic/resolved_lvalue.h"
 #include "../src/semantic/resolved_node.h"
 #include "../src/semantic/resolved_node_kind.h"
 #include "../src/semantic/resolved_node_type.h"
 #include "../src/semantic/resolved_object_ref.h"
 #include "../src/semantic/scope_graph.h"
-#include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_node_builder.h"
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/semantic_tree_resolution.h"
-#include "../src/semantic/semantic_tree_resolution_test_support.h"
 #include "../src/semantic/sizeof_query_resolution.h"
 #include "../src/semantic/source_cast_resolution.h"
 #include "../src/semantic/static_assert_resolution.h"
@@ -133,7 +130,6 @@
 #include <unistd.h>
 
 #include "test_common.h"
-#include "support/parser_compatibility_test_hook.h"
 
 static int test_target_pointer_size(const ag_target_info_t *target) {
   return ag_data_layout_pointer_size(ag_target_info_data_layout(target));
@@ -239,49 +235,20 @@ static const psx_type_t *ps_tag_member_decl_type(
   return member ? member->decl_type : NULL;
 }
 
-static const psx_type_t *ps_tag_member_decl_value_type(
-    const tag_member_info_t *member) {
-  return ps_type_array_leaf_type(ps_tag_member_decl_type(member));
-}
 
-static tk_float_kind_t ps_tag_member_decl_fp_kind(
-    const tag_member_info_t *member) {
-  const psx_type_t *type = ps_tag_member_decl_value_type(member);
-  return type &&
-                 (type->kind == PSX_TYPE_FLOAT ||
-                  type->kind == PSX_TYPE_COMPLEX)
-             ? ps_type_floating_token_kind(type)
-             : TK_FLOAT_KIND_NONE;
-}
 
-static int ps_tag_member_decl_is_bool(
-    const tag_member_info_t *member) {
-  const psx_type_t *type = ps_tag_member_decl_value_type(member);
-  return type && type->kind == PSX_TYPE_BOOL;
-}
 
-static int ps_tag_member_decl_is_unsigned(
-    const tag_member_info_t *member) {
-  const psx_type_t *type = ps_tag_member_decl_value_type(member);
-  return type ? ps_type_is_unsigned(type) : 0;
-}
 
-static const psx_type_t *ps_tag_member_decl_tag_type(
-    const tag_member_info_t *member) {
-  const psx_type_t *type = ps_tag_member_decl_type(member);
-  while (type &&
-         (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
-    type = type->base;
-  }
-  return ps_type_is_tag_aggregate(type) ? type : NULL;
-}
 
-static node_t **parse_program_input(const char *input);
 static int resolve_program_input_hir(const char *input);
+static void expect_parse_fail(const char *input);
+static const psx_hir_node_t *find_test_hir_node_kind(
+    const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
+    size_t occurrence);
+static const psx_hir_node_t *find_test_named_hir_node(
+    const psx_hir_module_t *hir, psx_hir_node_kind_t kind,
+    const char *expected_name, size_t occurrence);
 static ag_compilation_session_t *test_suite_session;
-static node_t *test_node_new_lvar_type_at_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    const psx_type_t *type);
 
 static ag_diagnostic_context_t *test_diagnostics(void) {
   return ag_compilation_session_diagnostic_context(test_suite_session);
@@ -344,48 +311,12 @@ static void test_bind_node_type_sized(
 #define test_bind_node_type(node, type) \
   test_bind_node_type_sized((node), sizeof(*(node)), (type))
 
-static psx_type_t *test_new_record_type(
-    token_kind_t token_kind, const char *tag_name, size_t tag_len,
-    int tag_scope_depth_p1, int size) {
-  (void)size;
-  psx_record_id_t record_id = 2166136261u;
-  for (size_t i = 0; i < tag_len; i++) {
-    record_id ^= (unsigned char)tag_name[i];
-    record_id *= 16777619u;
-  }
-  record_id ^= (psx_record_id_t)token_kind;
-  record_id *= 16777619u;
-  record_id ^= (psx_record_id_t)tag_scope_depth_p1;
-  if (record_id == PSX_RECORD_ID_INVALID) record_id--;
-  psx_type_t *type = ps_type_new_tag_in(
-      test_arena_context(), token_kind, (char *)tag_name, tag_len,
-      tag_scope_depth_p1);
-  type->record_id = record_id;
-  return type;
-}
 
-static void test_set_resolved_node_kind_sized(
-    void *storage, size_t storage_size,
-    psx_resolved_node_kind_t kind) {
-  node_t *node = storage;
-  ASSERT_TRUE(ps_node_prepare_resolution_state_for_size_in(
-      test_resolution_store(), test_arena_context(), node, storage_size));
-  ASSERT_TRUE(psx_resolution_node_set_kind(
-      test_resolution_store(), node, kind));
-}
 
 #define test_set_resolved_node_kind(node, kind) \
   test_set_resolved_node_kind_sized(              \
       (node), sizeof(*(node)), (kind))
 
-static void test_set_invalid_vla_runtime_view(
-    node_t *node, int row_stride_frame_off) {
-  ASSERT_TRUE(ps_node_prepare_resolution_state_in(
-      test_resolution_store(), test_arena_context(), node));
-  ps_node_resolution_state(
-      test_resolution_store(), node)->expr.vla_runtime.row_stride_frame_off =
-      row_stride_frame_off;
-}
 
 /* Test fixtures use the suite session explicitly without repeating it at
  * every constructor call. Production code is forbidden from these aliases. */
@@ -407,9 +338,6 @@ static void test_set_invalid_vla_runtime_view(
   ps_node_resolution_state_const(test_resolution_store(), (node))
 #define ps_node_has_resolution_state(node) \
   ps_node_has_resolution_state(test_resolution_store(), (node))
-#define psx_resolution_work_tree_create_from_syntax(arena, root) \
-  psx_resolution_work_tree_create_from_syntax(                    \
-      test_resolution_store(), (arena), (root))
 #define ps_node_lvar_usage_region(node) \
   ps_node_lvar_usage_region(test_resolution_store(), (node))
 #define ps_node_value_fp_kind(node) \
@@ -478,18 +406,12 @@ static void test_set_invalid_vla_runtime_view(
   ps_node_value_is_pointer_like(test_resolution_store(), (node))
 #define ps_node_conversion_value_is_unsigned(node) \
   ps_node_conversion_value_is_unsigned(test_resolution_store(), (node))
-#define ps_node_new_lvar_type_at_for_in(arena, owner, offset, type) \
-  test_node_new_lvar_type_at_for_in(                                \
-      (arena), (owner), (offset), (type))
 #define psx_bind_local_initializer_target_in(                         \
     arena, var, initializer, kind, tok)                               \
   psx_bind_local_initializer_target_in(                               \
       test_resolution_store(), (arena),                               \
       (var), (initializer),                                           \
       (kind), (tok))
-#define psx_semantic_tree_has_canonical_expression_types(root, failure) \
-  psx_semantic_tree_has_canonical_expression_types(                     \
-      test_semantic_context(), (root), (failure))
 #define psx_string_literal_label(literal) \
   psx_string_literal_label(test_resolution_store(), (literal))
 #define psx_resolution_node_kind(node) \
@@ -722,62 +644,10 @@ static int test_type_alignof_for_target(
   psx_node_new_lvar_identifier_ref_for_in(            \
       test_resolution_store(), test_arena_context(), __VA_ARGS__)
 static psx_semantic_context_t *test_semantic_context(void);
-static psx_qual_type_t test_array_decay_qual_type(
-    psx_qual_type_t declaration_qual_type) {
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  psx_qual_type_t element_type = psx_semantic_type_table_base(
-      semantic_types, declaration_qual_type.type_id);
-  return ps_ctx_intern_pointer_to_qual_type_in(
-      test_semantic_context(), element_type);
-}
 
-static psx_qual_type_t test_array_address_qual_type(
-    psx_qual_type_t declaration_qual_type) {
-  psx_type_shape_t shape = {0};
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  return psx_semantic_type_table_describe(
-             semantic_types, declaration_qual_type.type_id, &shape) &&
-         shape.kind == PSX_TYPE_ARRAY
-             ? test_array_decay_qual_type(declaration_qual_type)
-             : declaration_qual_type;
-}
 
-static node_t *test_node_new_vla_decay_ref_for(lvar_t *var) {
-  psx_qual_type_t decay_type = test_array_decay_qual_type(
-      ps_lvar_decl_qual_type(var));
-  return psx_node_new_vla_decay_ref_for_in(
-      test_resolution_store(), test_arena_context(), var, decay_type);
-}
 
-static node_t *test_node_new_gvar_array_addr_for(global_var_t *global) {
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  return ps_node_new_gvar_array_addr_for_in(
-      test_resolution_store(), test_arena_context(), semantic_types,
-      global, test_array_address_qual_type(
-                  ps_gvar_decl_qual_type(global)));
-}
 
-static node_t *test_node_new_static_local_array_addr_for(lvar_t *var) {
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  psx_qual_type_t declaration_qual_type = var->static_global
-      ? ps_gvar_decl_qual_type(var->static_global)
-      : ps_lvar_decl_qual_type(var);
-  return psx_node_new_static_local_array_addr_for_in(
-      test_resolution_store(), test_arena_context(), semantic_types,
-      var, test_array_address_qual_type(declaration_qual_type));
-}
-
-static node_t *test_node_new_lvar_array_addr_for(lvar_t *var) {
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  return ps_node_new_lvar_array_addr_for_in(
-      test_resolution_store(), test_arena_context(), semantic_types,
-      var, test_array_address_qual_type(ps_lvar_decl_qual_type(var)));
-}
 #define psx_node_new_vla_decay_ref_for(...) \
   test_node_new_vla_decay_ref_for(__VA_ARGS__)
 #define ps_node_new_param_lvar_for(...) \
@@ -952,14 +822,6 @@ static psx_type_t *test_apply_declarator_shape(
       resolve_test_qual_type_view, test_semantic_context());
 }
 
-static void bind_test_function_call_type(
-    node_function_call_t *call, const psx_type_t *type) {
-  psx_qual_type_t qual_type =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
-  ASSERT_TRUE(qual_type.type_id != PSX_TYPE_ID_INVALID);
-  (psx_function_call_bind_qual_type)(
-      test_resolution_store(), call, qual_type);
-}
 
 static const psx_type_t *test_function_symbol_type(
     const psx_function_symbol_t *symbol) {
@@ -976,14 +838,6 @@ static const psx_type_t *test_function_type_in(
       ps_ctx_get_function_qual_type_in(semantic_context, name, len));
 }
 
-static const psx_type_t *test_function_return_type_in(
-    psx_semantic_context_t *semantic_context,
-    char *name, int len) {
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      psx_ctx_get_function_return_qual_type_in(
-          semantic_context, name, len));
-}
 
 static const psx_function_symbol_t *test_register_function_type_in(
     psx_semantic_context_t *semantic_context,
@@ -1349,14 +1203,6 @@ static psx_qual_type_t intern_test_qual_type(const psx_type_t *type) {
   return ps_ctx_intern_qual_type_in(test_semantic_context(), type);
 }
 
-static node_t *test_node_new_lvar_type_at_for_in(
-    arena_context_t *arena_context, lvar_t *owner, int offset,
-    const psx_type_t *type) {
-  return ps_node_new_lvar_qual_type_at_for_in(
-      test_resolution_store(), arena_context, owner, offset,
-      intern_test_qual_type(type));
-}
-
 static psx_qual_type_t intern_test_declaration_qual_type(
     const psx_type_t *type) {
   return ps_ctx_intern_declaration_qual_type_in(
@@ -1390,11 +1236,6 @@ static void set_test_global_fixture_type_in(
   ASSERT_TRUE(test_gvar_decl_type(global) != NULL);
 }
 
-static void set_test_global_fixture_type(
-    global_var_t *global, const psx_type_t *type) {
-  set_test_global_fixture_type_in(
-      test_semantic_context(), global, type);
-}
 
 static int define_test_record_decl(const psx_record_decl_t *record) {
   return psx_record_decl_table_define(
@@ -1414,9 +1255,6 @@ static const psx_record_decl_t *test_record_decl(
   return test_record_decl_in(test_semantic_context(), type);
 }
 
-static psx_record_decl_t *test_record_decl_mut(const psx_type_t *type) {
-  return (psx_record_decl_t *)test_record_decl(type);
-}
 
 static int test_type_size_id(psx_type_id_t type_id) {
   return psx_type_layout_sizeof(
@@ -1447,86 +1285,13 @@ static int test_semantic_type_alignof_in(
       ag_target_info_data_layout(ps_ctx_target_info(semantic_context)));
 }
 
-static int test_tag_member_decl_value_size(const tag_member_info_t *member) {
-  return test_semantic_type_sizeof_in(
-      test_semantic_context(), ps_tag_member_decl_value_type(member));
-}
 
-static int test_tag_member_decl_storage_size(const tag_member_info_t *member) {
-  return test_semantic_type_sizeof_in(
-      test_semantic_context(), ps_tag_member_decl_type(member));
-}
 
-static int test_node_atomic_pointer_info(
-    node_t *pointer, const ag_target_info_t *target,
-    int *width, int *is_unsigned) {
-  if (!pointer || !target) return 0;
-  const psx_type_t *pointee = ps_type_pointee_value_type(
-      ps_node_get_type(pointer));
-  int pointee_width = ps_type_sizeof_for_target(pointee, target);
-  if (pointee_width != 1 && pointee_width != 2 &&
-      pointee_width != 4 && pointee_width != 8) {
-    pointee_width = 4;
-  }
-  if (width) *width = pointee_width;
-  if (is_unsigned) {
-    *is_unsigned = psx_resolution_node_kind(pointer) == ND_ADDR &&
-                           pointer->lhs
-                       ? ps_node_is_unsigned_type(pointer->lhs)
-                       : ps_type_is_unsigned(pointee);
-  }
-  return 1;
-}
 
-static int test_node_type_size(node_t *node) {
-  return node ? ps_type_sizeof_for_target(
-                    ps_node_get_type(node),
-                    ps_ctx_target_info(test_semantic_context()))
-              : 0;
-}
 
-static int test_node_deref_size(node_t *node) {
-  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
-  if (!type || !type->base ||
-      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
-    return 0;
-  }
-  return ps_type_sizeof_for_target(
-      type->base, ps_ctx_target_info(test_semantic_context()));
-}
 
-static int test_node_aggregate_value_size(node_t *node) {
-  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
-  return ps_type_is_tag_aggregate(type) ? test_node_type_size(node) : 0;
-}
 
-static int test_node_cast_i64_extension_info(
-    node_t *node, int *target_size,
-    int *widen_zext_i64, int *needs_i64_extend) {
-  if (target_size) *target_size = 0;
-  if (widen_zext_i64) *widen_zext_i64 = 0;
-  if (needs_i64_extend) *needs_i64_extend = 0;
-  if (!node) return 0;
-  int size = test_node_type_size(node);
-  if (target_size) *target_size = size;
-  if (widen_zext_i64)
-    *widen_zext_i64 = ps_node_widen_zext_i64(node);
-  if (needs_i64_extend) {
-    *needs_i64_extend =
-        !ps_node_value_is_pointer_like(node) && size >= 8;
-  }
-  return 1;
-}
 
-static int test_node_i64_widen_source_is_unsigned(node_t *node) {
-  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
-  if (!type || (type->kind != PSX_TYPE_BOOL &&
-                type->kind != PSX_TYPE_INTEGER)) {
-    return 0;
-  }
-  return test_node_type_size(node) >= 4 &&
-         ps_node_conversion_value_is_unsigned(node);
-}
 
 static int test_gvar_decl_sizeof(
     const global_var_t *global, int fallback_size) {
@@ -1536,36 +1301,8 @@ static int test_gvar_decl_sizeof(
   return size > 0 ? size : fallback_size;
 }
 
-static int test_gvar_array_element_size(const global_var_t *global) {
-  const psx_type_t *type = test_gvar_decl_type(global);
-  if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return 0;
-  return ps_type_sizeof_for_target(
-      type->base, ps_ctx_target_info(test_semantic_context()));
-}
 
-static int test_gvar_initializer_element_size(
-    const global_var_t *global, int fallback_size) {
-  const psx_type_t *type = test_gvar_decl_type(global);
-  if (!type || type->kind != PSX_TYPE_ARRAY) return fallback_size;
-  return ps_type_sizeof_for_target(
-      ps_type_array_leaf_type(type),
-      ps_ctx_target_info(test_semantic_context()));
-}
 
-static int test_gvar_initializer_element_count(
-    const global_var_t *global, int fallback_size) {
-  const psx_type_t *type = test_gvar_decl_type(global);
-  if (!type || type->kind != PSX_TYPE_ARRAY) {
-    return ps_gvar_has_explicit_initializer(global) ? 1 : 0;
-  }
-  if (ps_type_is_incomplete_array(type)) return 0;
-  int element_size = test_gvar_initializer_element_size(
-      global, fallback_size);
-  int storage_size = test_gvar_decl_sizeof(global, fallback_size);
-  return element_size > 0
-             ? (storage_size + element_size - 1) / element_size
-             : 0;
-}
 
 static int test_lvar_decl_sizeof(
     const lvar_t *var, int fallback_size) {
@@ -1592,101 +1329,10 @@ static int test_lvar_array_scalar_element_size(const lvar_t *var) {
       element, ps_ctx_target_info(test_semantic_context()));
 }
 
-static token_kind_t test_integer_kind_for_storage_size(int size) {
-  if (size <= 1) return TK_CHAR;
-  if (size == 2) return TK_SHORT;
-  if (size >= 8) return TK_LONG;
-  return TK_INT;
-}
 
-static const psx_type_t *test_array_element_type_for_size(
-    const psx_type_t *type, int type_size) {
-  while (type && type->kind == PSX_TYPE_ARRAY && type->base) {
-    int element_size = ps_type_sizeof_for_target(
-        type->base, ps_ctx_target_info(test_semantic_context()));
-    if (element_size == type_size) return type->base;
-    type = type->base;
-  }
-  return NULL;
-}
 
-static node_t *test_node_new_lvar_typed_at_for(
-    lvar_t *owner, int offset, int type_size) {
-  const psx_type_t *type = NULL;
-  if (owner) {
-    const psx_type_t *owner_type = test_lvar_decl_type(owner);
-    int relative_offset = offset - ps_lvar_offset(owner);
-    int scalar_size = test_lvar_array_scalar_element_size(owner);
-    if (relative_offset == 0 &&
-        test_lvar_decl_sizeof(owner, 0) == type_size) {
-      type = owner_type;
-    } else if (relative_offset >= 0 && scalar_size > 0 &&
-               relative_offset % scalar_size == 0) {
-      type = test_array_element_type_for_size(owner_type, type_size);
-    }
-  }
-  if (!type) {
-    type = ps_type_new_integer(
-        test_integer_kind_for_storage_size(
-            type_size > 0 ? type_size : 8),
-        type_size, 0);
-  }
-  return ps_node_new_lvar_type_at_for_in(
-      test_arena_context(), owner, offset, type);
-}
 
-static node_t *test_node_new_array_elem_lvar_for(
-    lvar_t *var, int index) {
-  const psx_type_t *array_type = test_lvar_decl_type(var);
-  const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  int element_size = test_lvar_array_scalar_element_size(var);
-  if (!element) element = ps_type_new_integer(TK_INT, 4, 0);
-  return ps_node_new_lvar_type_at_for_in(
-      test_arena_context(), var,
-      ps_lvar_offset(var) + index * element_size, element);
-}
 
-static int test_node_compound_literal_array_size(node_t *node) {
-  if (!node) return 0;
-  if (node->kind == ND_COMPOUND_LITERAL) {
-    const psx_node_resolution_state_t *state =
-        ps_node_resolution_state_const(node);
-    const psx_compound_literal_resolution_t *resolution =
-        state ? &state->compound_literal : NULL;
-    const psx_type_t *object_type = NULL;
-    if (resolution &&
-        resolution->kind != PSX_COMPOUND_LITERAL_UNPLANNED) {
-      if (resolution->local_object) {
-        object_type = test_lvar_decl_type(resolution->local_object);
-      } else if (resolution->global_object) {
-        object_type = test_gvar_decl_type(resolution->global_object);
-      }
-    }
-    return object_type && object_type->kind == PSX_TYPE_ARRAY
-               ? ps_type_sizeof_for_target(
-                     object_type,
-                     ps_ctx_target_info(test_semantic_context()))
-               : 0;
-  }
-  if (node->kind == ND_COMMA) {
-    return test_node_compound_literal_array_size(node->rhs);
-  }
-  if (psx_resolution_node_kind(node) != ND_ADDR ||
-      !node->lhs) {
-    return 0;
-  }
-  const psx_type_t *address_type = ps_node_get_type(node);
-  if (address_type && address_type->kind == PSX_TYPE_POINTER &&
-      address_type->base && address_type->base->kind == PSX_TYPE_ARRAY) {
-    return 0;
-  }
-  const psx_type_t *object_type = ps_node_get_type(node->lhs);
-  return object_type && object_type->kind == PSX_TYPE_ARRAY
-             ? ps_type_sizeof_for_target(
-                   object_type,
-                   ps_ctx_target_info(test_semantic_context()))
-             : 0;
-}
 
 static int plan_test_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *plan) {
@@ -1707,220 +1353,26 @@ static int plan_test_parameter_storage(
       ir_abi_target_policy_for(&target), plan);
 }
 
-static int test_tag_flat_slot_count(
-    token_kind_t tag_kind, char *tag_name, int tag_len) {
-  return ps_tag_flat_slot_count_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len);
-}
 
-static psx_record_member_decl_t test_record_member_declaration(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration = {0};
-  if (!member) return declaration;
-  declaration.name = member->name;
-  declaration.len = member->len;
-  declaration.bit_width = member->bit_width;
-  declaration.bit_is_signed = member->bit_is_signed;
-  set_test_record_member_fixture_from_tag_member_in(
-      test_semantic_context(), &declaration, member);
-  return declaration;
-}
 
-static psx_record_member_layout_t test_record_member_layout(
-    const tag_member_info_t *member) {
-  return member
-             ? (psx_record_member_layout_t){
-                   .offset = member->offset,
-                   .bit_offset = member->bit_offset,
-               }
-             : (psx_record_member_layout_t){0};
-}
 
-static void test_materialize_tag_member(
-    const psx_record_member_decl_t *declaration,
-    const psx_record_member_layout_t *layout,
-    tag_member_info_t *out) {
-  if (!out) return;
-  *out = ps_tag_member_declaration_view(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), declaration);
-  if (layout) {
-    out->offset = layout->offset;
-    out->bit_offset = layout->bit_offset;
-  }
-}
 
-static int ps_tag_member_is_tag_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_tag_aggregate(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int ps_tag_member_is_struct_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_struct_aggregate(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int ps_tag_member_is_union_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_union_aggregate(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int ps_tag_member_is_unnamed_struct(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_unnamed_struct(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int ps_tag_member_is_unnamed_union(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_unnamed_union(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int ps_tag_member_is_unnamed_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return psx_record_member_decl_is_unnamed_aggregate(
-      ps_ctx_semantic_type_table_in(test_semantic_context()), &declaration);
-}
 
-static int test_tag_member_flat_slots(const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return ps_record_member_decl_flat_slots_in(
-      test_semantic_context(), &declaration);
-}
 
-static int test_tag_member_elem_flat_slots(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  return ps_record_member_decl_elem_flat_slots_in(
-      test_semantic_context(), &declaration);
-}
 
-static int test_tag_find_named_member(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    char *member_name, int member_len,
-    tag_member_info_t *out, int *out_ordinal) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = ps_tag_find_named_member_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      member_name, member_len, &declaration, &layout, out_ordinal);
-  if (found) test_materialize_tag_member(&declaration, &layout, out);
-  return found;
-}
 
-static int test_tag_select_union_member_for_init_slot(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const global_var_t *global, int index, tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      test_record_member_declaration(member);
-  psx_record_member_layout_t layout = test_record_member_layout(member);
-  int selected = ps_tag_select_union_member_for_init_slot_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      global, index, &declaration, &layout);
-  test_materialize_tag_member(&declaration, &layout, member);
-  return selected;
-}
 
-static int test_tag_union_init_member_for_slot(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const global_var_t *global, int index, tag_member_info_t *out) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = ps_tag_union_init_member_for_slot_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      global, index, &declaration, &layout);
-  if (found) test_materialize_tag_member(&declaration, &layout, out);
-  return found;
-}
 
-static int test_tag_first_named_member(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    tag_member_info_t *out, int *out_ordinal) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = ps_tag_first_named_member_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      &declaration, &layout, out_ordinal);
-  if (found) test_materialize_tag_member(&declaration, &layout, out);
-  return found;
-}
 
-static int test_tag_next_named_member(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int *ordinal_inout, tag_member_info_t *out) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = ps_tag_next_named_member_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      ordinal_inout, &declaration, &layout);
-  if (found) test_materialize_tag_member(&declaration, &layout, out);
-  return found;
-}
 
-static int test_tag_member_at_flat_slot(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int flat_slot, tag_member_info_t *out, int *out_ordinal) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = ps_tag_member_at_flat_slot_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      flat_slot, &declaration, &layout, out_ordinal);
-  if (found) test_materialize_tag_member(&declaration, &layout, out);
-  return found;
-}
 
-static void test_tag_flat_cover_state_note(
-    psx_tag_flat_cover_state_t *state,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration = {
-      .name = member->name,
-      .len = member->len,
-      .bit_width = member->bit_width,
-      .bit_is_signed = member->bit_is_signed,
-  };
-  set_test_record_member_fixture_from_tag_member_in(
-      test_semantic_context(), &declaration, member);
-  psx_record_member_layout_t layout = {
-      .offset = member->offset,
-      .bit_offset = member->bit_offset,
-  };
-  ps_tag_flat_cover_state_note_in(
-      test_semantic_context(), state, tag_kind, tag_name, tag_len,
-      &declaration, &layout);
-}
 
-static int test_tag_member_designator_slot(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    char *member_name, int member_len, int *out_ordinal) {
-  return ps_tag_member_designator_slot_in(
-      test_semantic_context(), tag_kind, tag_name, tag_len,
-      member_name, member_len, out_ordinal);
-}
 
-static int test_gvar_walk_aggregate_initializer(
-    global_var_t *global, long long base_offset,
-    const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
-  return ps_gvar_walk_aggregate_initializer_in(
-      test_semantic_context(), global, base_offset, ops, user);
-}
 
 static void reset_test_locals(void) {
   ps_decl_reset_locals_in(
@@ -1936,49 +1388,6 @@ static void set_test_current_funcname(char *name, int len) {
 static void reset_test_translation_unit_state(void) {
   ASSERT_TRUE(ag_compilation_session_reset_translation_unit(
       test_suite_session));
-}
-
-static node_t **parse_test_program_from(token_t *start) {
-  psx_frontend_stream_t stream = {0};
-  if (!psx_frontend_stream_begin(
-          &stream, test_suite_session, NULL, start))
-    return NULL;
-  int capacity = 16;
-  int count = 0;
-  node_t **program = calloc(
-      (size_t)capacity, sizeof(*program));
-  if (!program) {
-    psx_frontend_stream_end(&stream);
-    return NULL;
-  }
-  psx_frontend_function_t frontend_function;
-  node_t *function = NULL;
-  while (psx_test_frontend_next_function_compatibility_tree(
-      &stream, &frontend_function, &function)) {
-    if (!function) {
-      free(program);
-      psx_frontend_stream_end(&stream);
-      return NULL;
-    }
-    if (count >= capacity - 1) {
-      capacity *= 2;
-      node_t **grown = realloc(
-          program, (size_t)capacity * sizeof(*program));
-      if (!grown) {
-        free(program);
-        psx_frontend_stream_end(&stream);
-        return NULL;
-      }
-      program = grown;
-    }
-    program[count++] = function;
-  }
-  program[count] = NULL;
-  if (!psx_frontend_stream_end(&stream)) {
-    free(program);
-    return NULL;
-  }
-  return program;
 }
 
 static int resolve_test_program_hir_from(token_t *start) {
@@ -2803,15 +2212,6 @@ static void apply_test_runtime_parsed_declarator(
       declarator, application);
 }
 
-static void apply_test_parsed_declarator(
-    const psx_parsed_declarator_t *declarator,
-    psx_declarator_shape_t *shape, int *bit_width) {
-  psx_apply_parsed_declarator_in_contexts(
-      ag_compilation_session_semantic_context(test_suite_session),
-      ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session),
-      declarator, shape, bit_width);
-}
 
 static void parse_test_initializer_syntax_value(
     psx_parsed_initializer_t *initializer, token_t *assign_tok) {
@@ -2866,11 +2266,6 @@ static lvar_t *register_test_typed_storage_fixture_in(
       lowering_context, name, len, size, align, qual_type);
 }
 
-static lvar_t *register_test_typed_storage_fixture(
-    char *name, int len, int size, int align, const psx_type_t *type) {
-  return register_test_typed_storage_fixture_in(
-      test_lowering_context(), name, len, size, align, type);
-}
 
 static lvar_t *register_test_storage_fixture_in(
     psx_lowering_context_t *lowering_context,
@@ -2914,10 +2309,6 @@ static void find_long_double_float_literal(float_lit_t *lit, void *user) {
   if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) *found = true;
 }
 
-static void count_float_literal(float_lit_t *lit, void *user) {
-  (void)lit;
-  (*(int *)user)++;
-}
 
 /* Standalone expression tests model a function body without parsing its
  * declaration block, so predeclare the short fixture names they use. */
@@ -2926,14 +2317,6 @@ static void preregister_test_locals(void) {
   for (int i = 0; i < 26; i++) {
     register_test_default_storage_fixture(&names[i], 1);
   }
-}
-
-static void assert_semantic_tree_invariants(node_t *root) {
-  psx_semantic_invariant_failure_t failure;
-  if (psx_semantic_tree_has_canonical_expression_types(root, &failure)) return;
-  fprintf(stderr, "semantic invariant failed: status=%d kind=%d\n",
-          failure.status, failure.node ? failure.node->kind : -1);
-  exit(1);
 }
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
@@ -3083,24 +2466,6 @@ static void assert_test_compound_assignment_hir(
   psx_frontend_expression_hir_dispose(&expression);
 }
 
-static node_t *parse_expr_input_with_existing_names(const char *input) {
-  set_test_current_funcname((char *)"__test__", 8);
-  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-  psx_name_classifier_t classifier =
-      ps_ctx_name_classifier(test_semantic_context());
-  psx_local_declaration_callbacks_t local_declarations = {
-      .name_classifier = classifier,
-      .runtime_context =
-          ag_compilation_session_parser_runtime_context(
-              test_suite_session),
-  };
-  return ps_expr_in_contexts(
-      test_semantic_context(), test_global_registry(),
-      test_local_registry(),
-      ag_compilation_session_parser_runtime_context(
-          test_suite_session),
-      &local_declarations, NULL, head);
-}
 
 static void test_syntax_literal_type_boundary() {
   printf("test_syntax_literal_type_boundary...\n");
@@ -3175,2089 +2540,118 @@ static void test_syntax_literal_type_boundary() {
 static void test_direct_literal_typed_hir_resolution_boundary() {
   printf("test_direct_literal_typed_hir_resolution_boundary...\n");
   reset_test_translation_unit_state();
-
-  node_t *integer =
-      parse_expr_input_with_existing_locals("17UL");
-  ASSERT_EQ(ND_NUM, integer->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(integer));
-  const psx_typed_hir_tree_t *typed_integer = NULL;
-  psx_resolved_hir_build_failure_t failure = {0};
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), integer,
-          &typed_integer, &failure));
-  ASSERT_TRUE(typed_integer != NULL);
-  ASSERT_EQ(ND_NUM, integer->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(integer));
-  ASSERT_TRUE(ps_node_get_type(integer) == NULL);
-
-  psx_hir_module_t *hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t integer_id = psx_typed_hir_tree_emit(
-      hir, typed_integer, &failure);
-  ASSERT_TRUE(integer_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *integer_hir =
-      psx_hir_module_lookup(hir, integer_id);
-  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(integer_hir));
-  ASSERT_EQ(17, psx_hir_node_integer_value(integer_hir));
-  psx_qual_type_t integer_type =
-      psx_hir_node_qual_type(integer_hir);
-  ASSERT_TRUE(integer_type.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(ps_ctx_type_by_id_in(
-                  test_semantic_context(), integer_type.type_id) != NULL);
-  psx_hir_module_destroy(hir);
-
-  node_t *unary_plus =
-      parse_expr_input_with_existing_locals("+(unsigned char)1");
-  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(unary_plus));
-  const psx_typed_hir_tree_t *typed_unary_plus = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), unary_plus,
-          &typed_unary_plus, &failure));
-  ASSERT_TRUE(typed_unary_plus != NULL);
-  ASSERT_EQ(ND_UNARY_PLUS, unary_plus->kind);
-  ASSERT_TRUE(ps_node_get_type(unary_plus) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t unary_plus_id = psx_typed_hir_tree_emit(
-      hir, typed_unary_plus, &failure);
-  ASSERT_TRUE(unary_plus_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *unary_plus_hir =
-      psx_hir_module_lookup(hir, unary_plus_id);
-  ASSERT_EQ(PSX_HIR_UNARY_PLUS,
-            psx_hir_node_kind(unary_plus_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(unary_plus_hir));
-  const psx_type_t *unary_plus_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(unary_plus_hir).type_id);
-  ASSERT_TRUE(unary_plus_type != NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            unary_plus_type->integer_kind);
-  ASSERT_TRUE(!ps_type_is_unsigned(unary_plus_type));
-  psx_hir_module_destroy(hir);
-
-  node_t *logical_not =
-      parse_expr_input_with_existing_locals("!1.0");
-  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(logical_not));
-  const psx_typed_hir_tree_t *typed_logical_not = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), logical_not,
-          &typed_logical_not, &failure));
-  ASSERT_TRUE(typed_logical_not != NULL);
-  ASSERT_EQ(ND_LOGICAL_NOT, logical_not->kind);
-  ASSERT_TRUE(ps_node_get_type(logical_not) == NULL);
-  ASSERT_TRUE(ps_node_get_type(logical_not->lhs) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t logical_not_id = psx_typed_hir_tree_emit(
-      hir, typed_logical_not, &failure);
-  ASSERT_TRUE(logical_not_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *logical_not_hir =
-      psx_hir_module_lookup(hir, logical_not_id);
-  ASSERT_EQ(PSX_HIR_LOGICAL_NOT,
-            psx_hir_node_kind(logical_not_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(logical_not_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_LHS,
-            psx_hir_node_child_edge_at(logical_not_hir, 0));
-  const psx_type_t *logical_not_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(logical_not_hir).type_id);
-  ASSERT_TRUE(logical_not_type != NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            logical_not_type->integer_kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *bitwise_not =
-      parse_expr_input_with_existing_locals("~(unsigned char)1");
-  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(bitwise_not));
-  const psx_typed_hir_tree_t *typed_bitwise_not = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), bitwise_not,
-          &typed_bitwise_not, &failure));
-  ASSERT_TRUE(typed_bitwise_not != NULL);
-  ASSERT_EQ(ND_BITWISE_NOT, bitwise_not->kind);
-  ASSERT_TRUE(ps_node_get_type(bitwise_not) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t bitwise_not_id = psx_typed_hir_tree_emit(
-      hir, typed_bitwise_not, &failure);
-  ASSERT_TRUE(bitwise_not_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *bitwise_not_hir =
-      psx_hir_module_lookup(hir, bitwise_not_id);
-  ASSERT_EQ(PSX_HIR_BITWISE_NOT,
-            psx_hir_node_kind(bitwise_not_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(bitwise_not_hir));
-  const psx_type_t *bitwise_not_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(bitwise_not_hir).type_id);
-  ASSERT_TRUE(bitwise_not_type != NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            bitwise_not_type->integer_kind);
-  ASSERT_TRUE(!ps_type_is_unsigned(bitwise_not_type));
-  psx_hir_module_destroy(hir);
-
-  node_t *string =
-      parse_expr_input_with_existing_locals("\"direct\"");
-  ASSERT_EQ(ND_STRING, string->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(string));
-  ASSERT_TRUE(psx_string_literal_label(
-                  (const node_string_t *)string) == NULL);
-  const psx_typed_hir_tree_t *typed_string = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), string,
-          &typed_string, &failure));
-  ASSERT_TRUE(typed_string != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(string));
-  ASSERT_TRUE(ps_node_get_type(string) == NULL);
-  ASSERT_TRUE(psx_string_literal_label(
-                  (const node_string_t *)string) == NULL);
-
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t string_id = psx_typed_hir_tree_emit(
-      hir, typed_string, &failure);
-  ASSERT_TRUE(string_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *string_hir =
-      psx_hir_module_lookup(hir, string_id);
-  ASSERT_EQ(PSX_HIR_STRING, psx_hir_node_kind(string_hir));
-  size_t label_length = 0;
-  ASSERT_TRUE(psx_hir_node_name(
-                  string_hir, &label_length) != NULL);
-  ASSERT_TRUE(label_length > 0);
-  size_t literal_length = 0;
-  ASSERT_TRUE(psx_hir_node_literal_contents(
-                  string_hir, &literal_length) != NULL);
-  ASSERT_EQ(6, literal_length);
-  ASSERT_TRUE(psx_hir_node_qual_type(string_hir).type_id !=
-              PSX_TYPE_ID_INVALID);
-  psx_hir_module_destroy(hir);
-
-  node_t *addition =
-      parse_expr_input_with_existing_locals("1 + 2 * 3");
-  const psx_typed_hir_tree_t *typed_addition = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), addition,
-          &typed_addition, &failure));
-  ASSERT_TRUE(typed_addition != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(addition));
-  ASSERT_TRUE(ps_node_get_type(addition) == NULL);
-  ASSERT_TRUE(ps_node_get_type(addition->lhs) == NULL);
-  ASSERT_TRUE(ps_node_get_type(addition->rhs) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t addition_id = psx_typed_hir_tree_emit(
-      hir, typed_addition, &failure);
-  ASSERT_TRUE(addition_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *addition_hir =
-      psx_hir_module_lookup(hir, addition_id);
-  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(addition_hir));
-  ASSERT_EQ(2, psx_hir_node_child_count(addition_hir));
-  const psx_hir_node_t *product_hir = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(addition_hir, 1));
-  ASSERT_EQ(PSX_HIR_MUL, psx_hir_node_kind(product_hir));
-  ASSERT_TRUE(psx_hir_node_qual_type(addition_hir).type_id !=
-              PSX_TYPE_ID_INVALID);
-  psx_hir_module_destroy(hir);
-
-  node_t *greater =
-      parse_expr_input_with_existing_locals("1 > 2");
-  ASSERT_EQ(ND_GT, greater->kind);
-  ASSERT_EQ(1, ((node_num_t *)greater->lhs)->val);
-  ASSERT_EQ(2, ((node_num_t *)greater->rhs)->val);
-  const psx_typed_hir_tree_t *typed_greater = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), greater,
-          &typed_greater, &failure));
-  ASSERT_TRUE(typed_greater != NULL);
-  ASSERT_EQ(ND_GT, greater->kind);
-  ASSERT_EQ(1, ((node_num_t *)greater->lhs)->val);
-  ASSERT_EQ(2, ((node_num_t *)greater->rhs)->val);
-  ASSERT_TRUE(!ps_node_has_resolution_state(greater));
-  ASSERT_TRUE(ps_node_get_type(greater) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t greater_id = psx_typed_hir_tree_emit(
-      hir, typed_greater, &failure);
-  ASSERT_TRUE(greater_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *greater_hir =
-      psx_hir_module_lookup(hir, greater_id);
-  ASSERT_EQ(PSX_HIR_GT, psx_hir_node_kind(greater_hir));
-  ASSERT_EQ(2, psx_hir_node_child_count(greater_hir));
-  const psx_hir_node_t *greater_lhs = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(greater_hir, 0));
-  const psx_hir_node_t *greater_rhs = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(greater_hir, 1));
-  ASSERT_EQ(1, psx_hir_node_integer_value(greater_lhs));
-  ASSERT_EQ(2, psx_hir_node_integer_value(greater_rhs));
-  psx_hir_module_destroy(hir);
-
-  node_t *conditional =
-      parse_expr_input_with_existing_locals(
-          "-(1 + 2) ? 4L : 5");
-  ASSERT_EQ(ND_TERNARY, conditional->kind);
-  node_ctrl_t *conditional_syntax =
-      (node_ctrl_t *)conditional;
-  const psx_typed_hir_tree_t *typed_conditional = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), conditional,
-          &typed_conditional, &failure));
-  ASSERT_TRUE(typed_conditional != NULL);
-  ASSERT_EQ(ND_TERNARY, conditional->kind);
-  ASSERT_EQ(ND_UNARY_NEGATE, conditional->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(conditional));
-  ASSERT_TRUE(ps_node_get_type(conditional) == NULL);
-  ASSERT_TRUE(ps_node_get_type(conditional->lhs) == NULL);
-  ASSERT_TRUE(ps_node_get_type(conditional->rhs) == NULL);
-  ASSERT_TRUE(ps_node_get_type(conditional_syntax->els) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t conditional_id = psx_typed_hir_tree_emit(
-      hir, typed_conditional, &failure);
-  ASSERT_TRUE(conditional_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *conditional_hir =
-      psx_hir_module_lookup(hir, conditional_id);
-  ASSERT_EQ(PSX_HIR_TERNARY,
-            psx_hir_node_kind(conditional_hir));
-  ASSERT_EQ(3, psx_hir_node_child_count(conditional_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_LHS,
-            psx_hir_node_child_edge_at(conditional_hir, 0));
-  ASSERT_EQ(PSX_HIR_EDGE_RHS,
-            psx_hir_node_child_edge_at(conditional_hir, 1));
-  ASSERT_EQ(PSX_HIR_EDGE_ELSE,
-            psx_hir_node_child_edge_at(conditional_hir, 2));
-  const psx_hir_node_t *negate_hir = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(conditional_hir, 0));
-  ASSERT_EQ(PSX_HIR_NEGATE, psx_hir_node_kind(negate_hir));
-  psx_qual_type_t conditional_type =
-      psx_hir_node_qual_type(conditional_hir);
-  ASSERT_TRUE(conditional_type.type_id != PSX_TYPE_ID_INVALID);
-  const psx_type_t *canonical_conditional =
-      ps_ctx_type_by_id_in(
-          test_semantic_context(), conditional_type.type_id);
-  ASSERT_TRUE(canonical_conditional != NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            canonical_conditional->integer_kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *mixed =
-      parse_expr_input_with_existing_locals("\"value\" + 1");
-  const psx_typed_hir_tree_t *typed_string_addition = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), mixed,
-          &typed_string_addition, &failure));
-  ASSERT_TRUE(typed_string_addition != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(mixed));
-  ASSERT_TRUE(ps_node_get_type(mixed->lhs) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t string_addition_id = psx_typed_hir_tree_emit(
-      hir, typed_string_addition, &failure);
-  ASSERT_TRUE(string_addition_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *string_addition_hir =
-      psx_hir_module_lookup(hir, string_addition_id);
-  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(string_addition_hir));
-  ASSERT_EQ(
-      PSX_HIR_STRING,
-      psx_hir_node_kind(psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(string_addition_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  char enum_name[] = "DirectTypedEnum";
-  ASSERT_TRUE(ps_ctx_register_enum_const_in(
-      test_semantic_context(),
-      enum_name, 15, 41, NULL));
-  node_t *enum_syntax =
-      parse_expr_input_with_existing_locals(enum_name);
-  ASSERT_EQ(ND_IDENTIFIER, enum_syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(enum_syntax));
-  const psx_typed_hir_tree_t *typed_enum = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), enum_syntax,
-          &typed_enum, &failure));
-  ASSERT_TRUE(typed_enum != NULL);
-  ASSERT_EQ(ND_IDENTIFIER, enum_syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(enum_syntax));
-  ASSERT_TRUE(ps_node_get_type(enum_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t enum_id = psx_typed_hir_tree_emit(
-      hir, typed_enum, &failure);
-  ASSERT_TRUE(enum_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *enum_hir =
-      psx_hir_module_lookup(hir, enum_id);
-  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(enum_hir));
-  ASSERT_EQ(41, psx_hir_node_integer_value(enum_hir));
-  ASSERT_TRUE(psx_hir_node_qual_type(enum_hir).type_id !=
-              PSX_TYPE_ID_INVALID);
-  psx_hir_module_destroy(hir);
-
   ASSERT_TRUE(resolve_program_input_hir(
+      "enum DirectTypedEnum { DirectEnum = 41 }; "
       "long DirectGlobal = 9; int DirectArray[3]; "
       "double _Complex DirectComplex; "
-      "int DirectFunction(int); "
-      "typedef unsigned long DirectWord; "
-      "typedef int (*DirectCallbackType)(int); "
+      "int DirectFunction(int value) { return value; } "
       "struct DirectRecord { char prefix; int value; "
       "int (*callback)(int); }; "
-      "struct DirectRecord DirectRecordObject; "
-      "struct DirectRecord *DirectRecordPointer; "
-      "const struct DirectRecord DirectConstRecord;"));
+      "int use_direct_values(int input) { "
+      "  unsigned long integer = 17UL; "
+      "  int local = input; int array[3] = {1, 2, 3}; "
+      "  int (*callback)(int) = DirectFunction; "
+      "  int unary = +(unsigned char)local; "
+      "  int logical = !1.0; "
+      "  int bits = ~(unsigned char)local; "
+      "  int string_value = \"direct\"[0]; "
+      "  long conditional = -(1 + 2) ? 4L : 5; "
+      "  local = callback(array[0]) + (DirectGlobal > 2) "
+      "      + DirectArray[0] "
+      "      + (int)__real__ DirectComplex + DirectEnum; "
+      "  return _Generic(local, int: local, default: 0) "
+      "      + unary + logical + bits + string_value "
+      "      + (int)conditional + (int)integer; "
+      "}"));
 
-  int float_count_before = 0;
-  iter_test_float_literals(
-      count_float_literal, &float_count_before);
-  node_t *global_addition =
-      parse_expr_input_with_existing_locals(
-          "DirectGlobal + 2.5");
-  ASSERT_EQ(ND_ADD, global_addition->kind);
-  ASSERT_EQ(ND_IDENTIFIER, global_addition->lhs->kind);
-  const psx_typed_hir_tree_t *typed_global_addition = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), global_addition,
-          &typed_global_addition, &failure));
-  ASSERT_TRUE(typed_global_addition != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(global_addition));
-  ASSERT_TRUE(!ps_node_has_resolution_state(global_addition->lhs));
-  ASSERT_TRUE(ps_node_get_type(global_addition) == NULL);
-  ASSERT_TRUE(ps_node_get_type(global_addition->lhs) == NULL);
-  int float_count_after = 0;
-  iter_test_float_literals(
-      count_float_literal, &float_count_after);
-  ASSERT_EQ(float_count_before + 1, float_count_after);
-  hir = psx_hir_module_create();
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context());
   ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t global_addition_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_global_addition, &failure);
-  ASSERT_TRUE(global_addition_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *global_addition_hir =
-      psx_hir_module_lookup(hir, global_addition_id);
-  ASSERT_EQ(PSX_HIR_ADD,
-            psx_hir_node_kind(global_addition_hir));
-  const psx_hir_node_t *global_hir = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(global_addition_hir, 0));
-  ASSERT_EQ(PSX_HIR_GLOBAL, psx_hir_node_kind(global_hir));
-  psx_hir_symbol_id_t global_symbol_id =
-      psx_hir_node_symbol_id(global_hir);
-  ASSERT_TRUE(global_symbol_id != PSX_HIR_SYMBOL_ID_INVALID);
-  const psx_hir_symbol_t *global_symbol =
-      psx_hir_module_symbol_lookup(hir, global_symbol_id);
-  ASSERT_TRUE(global_symbol != NULL);
-  size_t global_name_len = 0;
-  const char *global_name =
-      psx_hir_symbol_name(global_symbol, &global_name_len);
-  ASSERT_EQ(12, global_name_len);
-  ASSERT_TRUE(strncmp(global_name, "DirectGlobal", 12) == 0);
-  ASSERT_TRUE(psx_hir_symbol_byte_size(global_symbol) > 0);
-  ASSERT_TRUE(psx_hir_symbol_alignment(global_symbol) > 0);
-  const psx_type_t *global_addition_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(global_addition_hir).type_id);
-  ASSERT_TRUE(global_addition_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, global_addition_type->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            global_addition_type->floating_kind);
-  psx_hir_module_destroy(hir);
+  ASSERT_TRUE(types != NULL);
+  ASSERT_EQ(2, psx_hir_module_root_count(hir));
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_FUNCTION,
+                  "DirectFunction", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_FUNCTION,
+                  "use_direct_values", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL,
+                  "integer", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL,
+                  "callback", 0) != NULL);
 
-  node_t *complex_real_syntax =
-      parse_expr_input_with_existing_locals(
-          "__real__ DirectComplex");
-  ASSERT_EQ(ND_CREAL, complex_real_syntax->kind);
-  ASSERT_TRUE(ps_node_get_type(complex_real_syntax) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(complex_real_syntax));
-  const psx_typed_hir_tree_t *typed_complex_real = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), complex_real_syntax,
-          &typed_complex_real, &failure));
-  ASSERT_TRUE(ps_node_get_type(complex_real_syntax) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(complex_real_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t complex_real_id = psx_typed_hir_tree_emit(
-      hir, typed_complex_real, &failure);
-  const psx_hir_node_t *complex_real_hir =
-      psx_hir_module_lookup(hir, complex_real_id);
-  ASSERT_TRUE(complex_real_hir != NULL);
-  ASSERT_EQ(PSX_HIR_CREAL,
-            psx_hir_node_kind(complex_real_hir));
-  const psx_type_t *complex_real_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(complex_real_hir).type_id);
-  ASSERT_TRUE(complex_real_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, complex_real_type->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            complex_real_type->floating_kind);
-  psx_hir_module_destroy(hir);
+  const psx_hir_node_kind_t required_kinds[] = {
+      PSX_HIR_NUMBER,
+      PSX_HIR_STRING,
+      PSX_HIR_UNARY_PLUS,
+      PSX_HIR_LOGICAL_NOT,
+      PSX_HIR_BITWISE_NOT,
+      PSX_HIR_NEGATE,
+      PSX_HIR_TERNARY,
+      PSX_HIR_ASSIGN,
+      PSX_HIR_CALL,
+      PSX_HIR_SUBSCRIPT,
+      PSX_HIR_GLOBAL,
+      PSX_HIR_FUNCTION_REF,
+      PSX_HIR_CREAL,
+      PSX_HIR_CAST,
+  };
+  for (size_t i = 0;
+       i < sizeof(required_kinds) /
+           sizeof(required_kinds[0]); i++)
+    ASSERT_TRUE(find_test_hir_node_kind(
+                    hir, required_kinds[i], 0) != NULL);
 
-  node_t *integer_imag_syntax =
-      parse_expr_input_with_existing_locals(
-          "__imag__ DirectGlobal");
-  ASSERT_EQ(ND_CIMAG, integer_imag_syntax->kind);
-  ASSERT_TRUE(ps_node_get_type(integer_imag_syntax) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(integer_imag_syntax));
-  const psx_typed_hir_tree_t *typed_integer_imag = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), integer_imag_syntax,
-          &typed_integer_imag, &failure));
-  ASSERT_TRUE(ps_node_get_type(integer_imag_syntax) == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(integer_imag_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t integer_imag_id = psx_typed_hir_tree_emit(
-      hir, typed_integer_imag, &failure);
-  const psx_hir_node_t *integer_imag_hir =
-      psx_hir_module_lookup(hir, integer_imag_id);
-  ASSERT_TRUE(integer_imag_hir != NULL);
-  ASSERT_EQ(PSX_HIR_CIMAG,
-            psx_hir_node_kind(integer_imag_hir));
-  const psx_type_t *integer_imag_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(integer_imag_hir).type_id);
-  ASSERT_TRUE(integer_imag_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, integer_imag_type->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *array_syntax =
-      parse_expr_input_with_existing_locals("DirectArray");
-  ASSERT_EQ(ND_IDENTIFIER, array_syntax->kind);
-  const psx_typed_hir_tree_t *typed_array = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), array_syntax,
-          &typed_array, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(array_syntax));
-  ASSERT_TRUE(ps_node_get_type(array_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t array_id = psx_typed_hir_tree_emit(
-      hir, typed_array, &failure);
-  const psx_hir_node_t *array_hir =
-      psx_hir_module_lookup(hir, array_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(array_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(array_hir));
-  const psx_hir_node_t *array_object_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(array_hir, 0));
-  ASSERT_EQ(PSX_HIR_GLOBAL,
-            psx_hir_node_kind(array_object_hir));
-  const psx_type_t *array_expression_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(array_hir).type_id);
-  const psx_type_t *array_object_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(array_object_hir).type_id);
-  ASSERT_TRUE(array_expression_type != NULL);
-  ASSERT_TRUE(array_object_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, array_expression_type->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY, array_object_type->kind);
-  ASSERT_TRUE(psx_hir_node_symbol_id(array_object_hir) !=
-              PSX_HIR_SYMBOL_ID_INVALID);
-  psx_hir_module_destroy(hir);
-
-  node_t *function_syntax =
-      parse_expr_input_with_existing_locals("DirectFunction");
-  ASSERT_EQ(ND_IDENTIFIER, function_syntax->kind);
-  const psx_typed_hir_tree_t *typed_function = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), function_syntax,
-          &typed_function, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(function_syntax));
-  ASSERT_TRUE(ps_node_get_type(function_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t function_id = psx_typed_hir_tree_emit(
-      hir, typed_function, &failure);
-  const psx_hir_node_t *function_hir =
-      psx_hir_module_lookup(hir, function_id);
-  ASSERT_EQ(PSX_HIR_FUNCTION_REF,
-            psx_hir_node_kind(function_hir));
-  const psx_type_t *function_expression_type =
-      ps_ctx_type_by_id_in(
-          test_semantic_context(),
-          psx_hir_node_qual_type(function_hir).type_id);
-  ASSERT_TRUE(function_expression_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, function_expression_type->kind);
-  ASSERT_TRUE(function_expression_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION,
-            function_expression_type->base->kind);
-  ASSERT_EQ(0, psx_hir_module_symbol_count(hir));
-  psx_hir_module_destroy(hir);
-
-  node_t *direct_call_syntax =
-      parse_expr_input_with_existing_locals("DirectFunction(3)");
-  ASSERT_EQ(ND_FUNCALL, direct_call_syntax->kind);
-  node_function_call_t *direct_call =
-      (node_function_call_t *)direct_call_syntax;
-  ASSERT_TRUE(direct_call->callee != NULL);
-  ASSERT_EQ(ND_IDENTIFIER, direct_call->callee->kind);
-  const node_t *direct_call_callee_syntax = direct_call->callee;
-  node_t *direct_call_argument_syntax = direct_call->arguments[0];
-  const psx_typed_hir_tree_t *typed_direct_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), direct_call_syntax,
-          &typed_direct_call, &failure));
-  ASSERT_TRUE(direct_call->callee == direct_call_callee_syntax);
-  ASSERT_TRUE(
-      direct_call->arguments[0] == direct_call_argument_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(direct_call_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(direct_call->callee));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t direct_call_id = psx_typed_hir_tree_emit(
-      hir, typed_direct_call, &failure);
-  const psx_hir_node_t *direct_call_hir =
-      psx_hir_module_lookup(hir, direct_call_id);
-  ASSERT_EQ(PSX_HIR_CALL,
-            psx_hir_node_kind(direct_call_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(direct_call_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_ARGUMENT,
-            psx_hir_node_child_edge_at(direct_call_hir, 0));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(direct_call_hir, 0))));
-  size_t direct_call_name_length = 0;
-  const char *direct_call_name = psx_hir_node_name(
-      direct_call_hir, &direct_call_name_length);
-  ASSERT_TRUE(direct_call_name != NULL);
-  ASSERT_EQ(14, direct_call_name_length);
-  ASSERT_TRUE(strncmp(
-      direct_call_name, "DirectFunction",
-      direct_call_name_length) == 0);
-  ASSERT_EQ(PSX_TYPE_FUNCTION,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_attached_qual_type(
-                    direct_call_hir).type_id)->kind);
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    direct_call_hir).type_id)->kind);
-  ASSERT_TRUE(!psx_hir_node_is_implicit_call(direct_call_hir));
-  psx_hir_module_destroy(hir);
-
-  node_t *implicit_call_syntax =
-      parse_expr_input_with_existing_locals("DirectImplicit(5)");
-  const psx_typed_hir_tree_t *typed_implicit_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), implicit_call_syntax,
-          &typed_implicit_call, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(implicit_call_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      ((node_function_call_t *)implicit_call_syntax)->callee));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t implicit_call_id = psx_typed_hir_tree_emit(
-      hir, typed_implicit_call, &failure);
-  const psx_hir_node_t *implicit_call_hir =
-      psx_hir_module_lookup(hir, implicit_call_id);
-  ASSERT_EQ(PSX_HIR_CALL,
-            psx_hir_node_kind(implicit_call_hir));
-  ASSERT_TRUE(psx_hir_node_is_implicit_call(implicit_call_hir));
-  ASSERT_EQ(PSX_TYPE_FUNCTION,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_attached_qual_type(
-                    implicit_call_hir).type_id)->kind);
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    implicit_call_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  const psx_typed_hir_tree_t *invalid_direct_call = NULL;
-  node_t *too_few_call =
-      parse_expr_input_with_existing_locals("DirectFunction()");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), too_few_call,
-          &invalid_direct_call, &failure));
-  node_t *too_many_call =
-      parse_expr_input_with_existing_locals(
-          "DirectFunction(1, 2)");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), too_many_call,
-          &invalid_direct_call, &failure));
-
-  lvar_t *direct_local = register_test_storage_fixture(
-      (char *)"DirectLocal", 11, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_local, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *local_syntax =
-      parse_expr_input_with_existing_locals("DirectLocal");
-  const psx_typed_hir_tree_t *typed_local = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), local_syntax,
-          &typed_local, &failure));
-  ASSERT_TRUE(typed_local != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(local_syntax));
-  ASSERT_TRUE(ps_node_get_type(local_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t local_id = psx_typed_hir_tree_emit(
-      hir, typed_local, &failure);
-  const psx_hir_node_t *local_hir =
-      psx_hir_module_lookup(hir, local_id);
-  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(local_hir));
-  ASSERT_EQ(ps_lvar_offset(direct_local),
-            psx_hir_node_storage_offset(local_hir));
-  ASSERT_EQ(ps_lvar_offset(direct_local),
-            psx_hir_node_object_offset(local_hir));
-  ASSERT_EQ(ps_lvar_frame_storage_size(direct_local),
-            psx_hir_node_object_size(local_hir));
-  ASSERT_EQ(ps_lvar_align_bytes(direct_local),
-            psx_hir_node_object_align(local_hir));
-  const psx_type_t *local_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(local_hir).type_id);
-  ASSERT_TRUE(local_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, local_type->kind);
-  psx_hir_module_destroy(hir);
-
-  lvar_t *direct_unevaluated = register_test_storage_fixture(
-      (char *)"DirectUnevaluated", 17, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_unevaluated, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *sizeof_local_syntax =
-      parse_expr_input_with_existing_locals(
-          "sizeof(DirectUnevaluated)");
-  ASSERT_EQ(ND_SIZEOF_QUERY, sizeof_local_syntax->kind);
-  node_sizeof_query_t *sizeof_local_query =
-      (node_sizeof_query_t *)sizeof_local_syntax;
-  ASSERT_TRUE(sizeof_local_query->operand != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_local_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      sizeof_local_query->operand));
-  const psx_typed_hir_tree_t *typed_sizeof_local = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), sizeof_local_syntax,
-          &typed_sizeof_local, &failure));
-  ASSERT_TRUE(typed_sizeof_local != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_local_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      sizeof_local_query->operand));
-  ASSERT_TRUE(ps_node_get_type(sizeof_local_query->operand) == NULL);
-  ps_decl_replay_lvar_usage_events_in(
-      test_local_registry(),
-      ps_decl_get_storage_objects_in(test_local_registry()));
-  ASSERT_TRUE(!ps_lvar_registry_view(direct_unevaluated).is_used);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t sizeof_local_id = psx_typed_hir_tree_emit(
-      hir, typed_sizeof_local, &failure);
-  const psx_hir_node_t *sizeof_local_hir =
-      psx_hir_module_lookup(hir, sizeof_local_id);
-  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(sizeof_local_hir));
-  ASSERT_EQ(4, psx_hir_node_integer_value(sizeof_local_hir));
-  const psx_type_t *sizeof_result_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(sizeof_local_hir).type_id);
-  ASSERT_TRUE(sizeof_result_type != NULL);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            sizeof_result_type->integer_kind);
-  ASSERT_TRUE(ps_type_is_unsigned(sizeof_result_type));
-  psx_hir_module_destroy(hir);
-
-  node_t *alignof_syntax =
-      parse_expr_input_with_existing_locals("_Alignof(void *)");
-  ASSERT_EQ(ND_ALIGNOF_QUERY, alignof_syntax->kind);
-  node_alignof_query_t *alignof_query =
-      (node_alignof_query_t *)alignof_syntax;
-  ASSERT_TRUE(!ps_node_has_resolution_state(alignof_syntax));
-  ASSERT_TRUE(alignof_query->type_name.syntax != NULL);
-  const psx_typed_hir_tree_t *typed_alignof = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), alignof_syntax,
-          &typed_alignof, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(alignof_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t alignof_id = psx_typed_hir_tree_emit(
-      hir, typed_alignof, &failure);
-  const psx_hir_node_t *alignof_hir =
-      psx_hir_module_lookup(hir, alignof_id);
-  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(alignof_hir));
-  ASSERT_EQ(test_target_pointer_alignment(
-                ps_ctx_target_info(test_semantic_context())),
-            psx_hir_node_integer_value(alignof_hir));
-  psx_hir_module_destroy(hir);
-
-  lvar_t *direct_size_bound = register_test_storage_fixture(
-      (char *)"DirectSizeBound", 15, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_size_bound, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *sizeof_vla_type_syntax =
-      parse_expr_input_with_existing_locals(
-          "sizeof(int[DirectSizeBound])");
-  ASSERT_EQ(ND_SIZEOF_QUERY, sizeof_vla_type_syntax->kind);
-  node_sizeof_query_t *sizeof_vla_type_query =
-      (node_sizeof_query_t *)sizeof_vla_type_syntax;
-  ASSERT_TRUE(sizeof_vla_type_query->is_type_name);
-  ASSERT_TRUE(sizeof_vla_type_query->type_name.syntax != NULL);
-  psx_parsed_declarator_t *sizeof_vla_declarator =
-      &sizeof_vla_type_query->type_name.syntax->declarator;
-  ASSERT_EQ(1, sizeof_vla_declarator->array_bound_count);
-  const node_t *sizeof_vla_bound =
-      sizeof_vla_declarator->array_bounds[0].expression.node;
-  ASSERT_TRUE(sizeof_vla_bound != NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_vla_type_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_vla_bound));
-  const psx_typed_hir_tree_t *typed_sizeof_vla_type = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), sizeof_vla_type_syntax,
-          &typed_sizeof_vla_type, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_vla_type_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(sizeof_vla_bound));
-  ASSERT_TRUE(ps_node_get_type(sizeof_vla_bound) == NULL);
-  ps_decl_replay_lvar_usage_events_in(
-      test_local_registry(),
-      ps_decl_get_storage_objects_in(test_local_registry()));
-  ASSERT_TRUE(ps_lvar_registry_view(direct_size_bound).is_used);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t sizeof_vla_type_id = psx_typed_hir_tree_emit(
-      hir, typed_sizeof_vla_type, &failure);
-  const psx_hir_node_t *sizeof_vla_type_hir =
-      psx_hir_module_lookup(hir, sizeof_vla_type_id);
-  ASSERT_EQ(PSX_HIR_MUL,
-            psx_hir_node_kind(sizeof_vla_type_hir));
-  ASSERT_EQ(2, psx_hir_node_child_count(sizeof_vla_type_hir));
-  const psx_hir_node_t *sizeof_vla_factor = psx_hir_module_lookup(
-      hir, psx_hir_node_child_at(sizeof_vla_type_hir, 0));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(sizeof_vla_factor));
-  ASSERT_EQ(4, psx_hir_node_integer_value(sizeof_vla_factor));
-  ASSERT_EQ(PSX_HIR_CAST,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(sizeof_vla_type_hir, 1))));
-  psx_hir_module_destroy(hir);
-
-  lvar_t *direct_generic_control = register_test_storage_fixture(
-      (char *)"DirectGenericControl", 20, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_generic_control, ps_type_new_integer(TK_INT, 4, 0));
-  lvar_t *direct_generic_unselected = register_test_storage_fixture(
-      (char *)"DirectGenericUnselected", 23, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_generic_unselected, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *generic_syntax = parse_expr_input_with_existing_locals(
-      "_Generic(DirectGenericControl, "
-      "int: DirectLocal + 31, "
-      "default: DirectGenericUnselected + 99)");
-  ASSERT_EQ(ND_GENERIC_SELECTION, generic_syntax->kind);
-  node_generic_selection_t *generic_selection =
-      (node_generic_selection_t *)generic_syntax;
-  ASSERT_TRUE(!ps_node_has_resolution_state(generic_syntax));
-  ASSERT_TRUE(psx_generic_selection_type_name_state(
-                  generic_selection, 0) == NULL);
-  const node_t *generic_control_syntax = generic_selection->control;
-  const node_t *generic_selected_syntax =
-      generic_selection->associations[0].expression;
-  const node_t *generic_unselected_syntax =
-      generic_selection->associations[1].expression;
-  const psx_typed_hir_tree_t *typed_generic = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), generic_syntax,
-          &typed_generic, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(generic_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(generic_control_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(generic_selected_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(generic_unselected_syntax));
-  ASSERT_TRUE(psx_generic_selection_type_name_state(
-                  generic_selection, 0) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t generic_id = psx_typed_hir_tree_emit(
-      hir, typed_generic, &failure);
-  const psx_hir_node_t *generic_hir =
-      psx_hir_module_lookup(hir, generic_id);
-  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(generic_hir));
-  int found_selected_generic_literal = 0;
-  int found_unselected_generic_literal = 0;
-  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
-    const psx_hir_node_t *node = psx_hir_module_lookup(
-        hir, (psx_hir_node_id_t)i);
-    if (!node || psx_hir_node_kind(node) != PSX_HIR_NUMBER) continue;
-    if (psx_hir_node_integer_value(node) == 31)
-      found_selected_generic_literal = 1;
-    if (psx_hir_node_integer_value(node) == 99)
-      found_unselected_generic_literal = 1;
+  for (size_t i = 1;
+       i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(
+            hir, (psx_hir_node_id_t)i);
+    ASSERT_TRUE(node != NULL);
+    if (psx_hir_node_role(node) ==
+        PSX_HIR_ROLE_EXPRESSION)
+      ASSERT_TRUE(
+          psx_semantic_type_table_qual_type_is_valid(
+              types, psx_hir_node_qual_type(node)));
   }
-  ASSERT_TRUE(found_selected_generic_literal);
-  ASSERT_TRUE(!found_unselected_generic_literal);
-  psx_hir_module_destroy(hir);
 
-  node_t *duplicate_generic_syntax =
-      parse_expr_input_with_existing_locals(
-          "_Generic(DirectLocal, int: 1, int: 2)");
-  const psx_typed_hir_tree_t *invalid_generic_hir = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), duplicate_generic_syntax,
-          &invalid_generic_hir, &failure));
-  ASSERT_TRUE(invalid_generic_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(duplicate_generic_syntax));
-
-  const psx_function_symbol_t *direct_function_symbol =
-      ps_ctx_find_function_symbol_in(
-          test_semantic_context(),
-          (char *)"DirectFunction", 14);
-  ASSERT_TRUE(direct_function_symbol != NULL);
-  psx_type_t *direct_callback_type = ps_type_new_pointer(
-      test_function_symbol_type(direct_function_symbol));
-  lvar_t *direct_callback = register_test_typed_storage_fixture(
-      (char *)"DirectCallback", 14, 8, 8,
-      direct_callback_type);
-  ASSERT_TRUE(direct_callback != NULL);
-  node_t *indirect_call_syntax =
-      parse_expr_input_with_existing_locals("DirectCallback(5)");
-  node_function_call_t *indirect_call =
-      (node_function_call_t *)indirect_call_syntax;
-  const node_t *indirect_call_callee_syntax = indirect_call->callee;
-  const psx_typed_hir_tree_t *typed_indirect_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), indirect_call_syntax,
-          &typed_indirect_call, &failure));
-  ASSERT_TRUE(indirect_call->callee == indirect_call_callee_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(indirect_call_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t indirect_call_id = psx_typed_hir_tree_emit(
-      hir, typed_indirect_call, &failure);
-  const psx_hir_node_t *indirect_call_hir =
-      psx_hir_module_lookup(hir, indirect_call_id);
-  ASSERT_EQ(PSX_HIR_CALL,
-            psx_hir_node_kind(indirect_call_hir));
-  ASSERT_EQ(2, psx_hir_node_child_count(indirect_call_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_CALLEE,
-            psx_hir_node_child_edge_at(indirect_call_hir, 0));
-  ASSERT_EQ(PSX_HIR_EDGE_ARGUMENT,
-            psx_hir_node_child_edge_at(indirect_call_hir, 1));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(indirect_call_hir, 0))));
-  size_t indirect_call_name_length = 0;
-  ASSERT_TRUE(psx_hir_node_name(
-                  indirect_call_hir,
-                  &indirect_call_name_length) == NULL);
-  ASSERT_EQ(0, indirect_call_name_length);
-  psx_hir_module_destroy(hir);
-
-  node_t *member_call_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectRecordObject.callback(7)");
-  node_function_call_t *member_call =
-      (node_function_call_t *)member_call_syntax;
-  ASSERT_EQ(ND_MEMBER_ACCESS, member_call->callee->kind);
-  const node_t *member_call_callee_syntax = member_call->callee;
-  const psx_typed_hir_tree_t *typed_member_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), member_call_syntax,
-          &typed_member_call, &failure));
-  ASSERT_TRUE(member_call->callee == member_call_callee_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_call_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_call->callee));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t member_call_id = psx_typed_hir_tree_emit(
-      hir, typed_member_call, &failure);
-  const psx_hir_node_t *member_call_hir =
-      psx_hir_module_lookup(hir, member_call_id);
-  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(member_call_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_CALLEE,
-            psx_hir_node_child_edge_at(member_call_hir, 0));
-  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(member_call_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  psx_type_t *direct_callback_array_type = ps_type_new_array(
-      ps_type_clone(direct_callback_type), 2, 16, 0);
-  lvar_t *direct_callback_array = register_test_typed_storage_fixture(
-      (char *)"DirectCallbacks", 15, 16, 8,
-      direct_callback_array_type);
-  ASSERT_TRUE(direct_callback_array != NULL);
-  node_t *subscript_call_syntax =
-      parse_expr_input_with_existing_locals("DirectCallbacks[0](6)");
-  node_function_call_t *subscript_call =
-      (node_function_call_t *)subscript_call_syntax;
-  ASSERT_EQ(ND_SUBSCRIPT, subscript_call->callee->kind);
-  const node_t *subscript_call_callee_syntax =
-      subscript_call->callee;
-  const psx_typed_hir_tree_t *typed_subscript_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), subscript_call_syntax,
-          &typed_subscript_call, &failure));
-  ASSERT_TRUE(subscript_call->callee == subscript_call_callee_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(subscript_call_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t subscript_call_id = psx_typed_hir_tree_emit(
-      hir, typed_subscript_call, &failure);
-  const psx_hir_node_t *subscript_call_hir =
-      psx_hir_module_lookup(hir, subscript_call_id);
-  ASSERT_EQ(PSX_HIR_CALL,
-            psx_hir_node_kind(subscript_call_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_CALLEE,
-            psx_hir_node_child_edge_at(subscript_call_hir, 0));
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         subscript_call_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *cast_call_syntax = parse_expr_input_with_existing_names(
-      "((DirectCallbackType)DirectCallback)(8)");
-  node_function_call_t *cast_call =
-      (node_function_call_t *)cast_call_syntax;
-  ASSERT_EQ(ND_SOURCE_CAST, cast_call->callee->kind);
-  const psx_typed_hir_tree_t *typed_cast_call = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), cast_call_syntax,
-          &typed_cast_call, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(cast_call_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t cast_call_id = psx_typed_hir_tree_emit(
-      hir, typed_cast_call, &failure);
-  const psx_hir_node_t *cast_call_hir =
-      psx_hir_module_lookup(hir, cast_call_id);
-  ASSERT_EQ(PSX_HIR_CALL, psx_hir_node_kind(cast_call_hir));
-  ASSERT_EQ(PSX_HIR_CAST,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(cast_call_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *invalid_callee_call =
-      parse_expr_input_with_existing_locals("DirectLocal(1)");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_callee_call,
-          &invalid_direct_call, &failure));
-
-  node_t *cast_syntax =
-      parse_expr_input_with_existing_names(
-          "(DirectWord)DirectLocal");
-  ASSERT_EQ(ND_SOURCE_CAST, cast_syntax->kind);
-  const node_t *cast_operand_syntax = cast_syntax->lhs;
-  const psx_typed_hir_tree_t *typed_cast = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), cast_syntax,
-          &typed_cast, &failure));
-  ASSERT_TRUE(typed_cast != NULL);
-  ASSERT_EQ(ND_SOURCE_CAST, cast_syntax->kind);
-  ASSERT_TRUE(cast_syntax->lhs == cast_operand_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(cast_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(cast_syntax->lhs));
-  ASSERT_TRUE(ps_node_get_type(cast_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t cast_id = psx_typed_hir_tree_emit(
-      hir, typed_cast, &failure);
-  ASSERT_TRUE(cast_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *cast_hir =
-      psx_hir_module_lookup(hir, cast_id);
-  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(cast_hir));
-  ASSERT_EQ(1, psx_hir_node_child_count(cast_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_LHS,
-            psx_hir_node_child_edge_at(cast_hir, 0));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(cast_hir, 0))));
-  const psx_type_t *cast_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(cast_hir).type_id);
-  ASSERT_TRUE(cast_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, cast_type->kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG, cast_type->integer_kind);
-  ASSERT_TRUE(ps_type_is_unsigned(cast_type));
-  psx_hir_module_destroy(hir);
-
-  node_t *pointer_cast_syntax =
-      parse_expr_input_with_existing_locals("(int *)0");
-  const psx_typed_hir_tree_t *typed_pointer_cast = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), pointer_cast_syntax,
-          &typed_pointer_cast, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t pointer_cast_id = psx_typed_hir_tree_emit(
-      hir, typed_pointer_cast, &failure);
-  const psx_hir_node_t *pointer_cast_hir =
-      psx_hir_module_lookup(hir, pointer_cast_id);
-  ASSERT_EQ(PSX_HIR_CAST,
-            psx_hir_node_kind(pointer_cast_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    pointer_cast_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *void_cast_syntax =
-      parse_expr_input_with_existing_locals("(void)DirectLocal");
-  const psx_typed_hir_tree_t *typed_void_cast = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), void_cast_syntax,
-          &typed_void_cast, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t void_cast_id = psx_typed_hir_tree_emit(
-      hir, typed_void_cast, &failure);
-  const psx_hir_node_t *void_cast_hir =
-      psx_hir_module_lookup(hir, void_cast_id);
-  ASSERT_EQ(PSX_HIR_CAST, psx_hir_node_kind(void_cast_hir));
-  ASSERT_EQ(PSX_TYPE_VOID,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    void_cast_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *aggregate_cast_syntax =
-      parse_expr_input_with_existing_locals(
-          "(struct DirectRecord)DirectRecordObject");
-  const psx_typed_hir_tree_t *aggregate_cast_hir = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), aggregate_cast_syntax,
-          &aggregate_cast_hir, &failure));
-  ASSERT_TRUE(aggregate_cast_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(aggregate_cast_syntax));
-
-  lvar_t *direct_local_array = register_test_storage_fixture(
-      (char *)"DirectLocalArray", 16, 12, 4, 1);
-  node_t *local_array_syntax =
-      parse_expr_input_with_existing_locals("DirectLocalArray");
-  const psx_typed_hir_tree_t *typed_local_array = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), local_array_syntax,
-          &typed_local_array, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(local_array_syntax));
-  ASSERT_TRUE(ps_node_get_type(local_array_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t local_array_id = psx_typed_hir_tree_emit(
-      hir, typed_local_array, &failure);
-  const psx_hir_node_t *local_array_hir =
-      psx_hir_module_lookup(hir, local_array_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(local_array_hir));
-  const psx_hir_node_t *local_array_object_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(local_array_hir, 0));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(local_array_object_hir));
-  ASSERT_EQ(ps_lvar_offset(direct_local_array),
-            psx_hir_node_storage_offset(local_array_object_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(local_array_hir).type_id)->kind);
-  ASSERT_EQ(PSX_TYPE_ARRAY,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    local_array_object_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  psx_type_t *direct_vla_type = ps_type_new_array(
-      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 1);
-  lvar_t *direct_vla = register_test_typed_storage_fixture(
-      (char *)"DirectVLA", 9, 8, 8, direct_vla_type);
-  ASSERT_TRUE(direct_vla != NULL);
-  ps_local_registry_set_vla_descriptor(
-      direct_vla, 96, 2, 104, 4);
-  int direct_vla_inner_constants[1] = {3};
-  int direct_vla_inner_offsets[1] = {112};
-  ps_local_registry_set_vla_param_inner_dims(
-      test_local_registry(), direct_vla,
-      direct_vla_inner_constants, direct_vla_inner_offsets,
-      1, NULL);
-  node_t *vla_syntax =
-      parse_expr_input_with_existing_locals("DirectVLA");
-  const psx_typed_hir_tree_t *typed_vla = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), vla_syntax,
-          &typed_vla, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(vla_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t vla_id = psx_typed_hir_tree_emit(
-      hir, typed_vla, &failure);
-  const psx_hir_node_t *vla_hir =
-      psx_hir_module_lookup(hir, vla_id);
-  ASSERT_EQ(PSX_HIR_LOCAL, psx_hir_node_kind(vla_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(vla_hir).type_id)->kind);
-  ASSERT_EQ(96, psx_hir_node_vla_stride_frame_offset(vla_hir));
-  ASSERT_EQ(104, psx_hir_node_vla_stride_source_offset(vla_hir));
-  ASSERT_EQ(4, psx_hir_node_vla_stride_element_size(vla_hir));
-  ASSERT_EQ(PSX_VLA_RUNTIME_SLOT_SIZE,
-            psx_hir_node_vla_stride_slot_size(vla_hir));
-  ASSERT_EQ(1, psx_hir_node_vla_dimension_count(vla_hir));
-  ASSERT_EQ(3, psx_hir_node_vla_dimension_constant(vla_hir, 0));
-  ASSERT_EQ(112,
-            psx_hir_node_vla_dimension_source_offset(vla_hir, 0));
-  psx_hir_module_destroy(hir);
-
-  psx_static_local_declaration_result_t direct_static = {0};
-  psx_type_t *direct_static_type =
-      ps_type_new_integer(TK_INT, 4, 0);
-  psx_qual_type_t direct_static_identity =
-      intern_test_qual_type(direct_static_type);
-  ASSERT_TRUE(lower_static_local_declaration_storage(
-      &(psx_static_local_declaration_request_t){
-          .global_registry = test_global_registry(),
-          .local_registry = test_local_registry(),
-          .lowering_context = test_lowering_context(),
-          .kind = PSX_STATIC_LOCAL_SCALAR,
-          .function_name = (char *)"direct",
-          .function_name_len = 6,
-          .name = (char *)"DirectStatic",
-          .name_len = 12,
-          .type = direct_static_identity,
-      },
-      &direct_static));
-  ASSERT_TRUE(direct_static.global != NULL);
-  ASSERT_TRUE(direct_static.alias != NULL);
-  node_t *static_syntax =
-      parse_expr_input_with_existing_locals("DirectStatic");
-  const psx_typed_hir_tree_t *typed_static = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), static_syntax,
-          &typed_static, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(static_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t static_id = psx_typed_hir_tree_emit(
-      hir, typed_static, &failure);
-  const psx_hir_node_t *static_hir =
-      psx_hir_module_lookup(hir, static_id);
-  ASSERT_EQ(PSX_HIR_GLOBAL, psx_hir_node_kind(static_hir));
-  psx_hir_symbol_id_t static_symbol_id =
-      psx_hir_node_symbol_id(static_hir);
-  const psx_hir_symbol_t *static_symbol =
-      psx_hir_module_symbol_lookup(hir, static_symbol_id);
-  ASSERT_TRUE(static_symbol != NULL);
-  ASSERT_TRUE(psx_hir_symbol_is_static(static_symbol));
-  size_t static_name_length = 0;
-  const char *static_name =
-      psx_hir_symbol_name(static_symbol, &static_name_length);
-  ASSERT_EQ(direct_static.global->name_len, static_name_length);
-  ASSERT_TRUE(strncmp(
-      static_name, direct_static.global->name,
-      static_name_length) == 0);
-  psx_hir_module_destroy(hir);
-
-  lvar_t *direct_address_only = register_test_storage_fixture(
-      (char *)"DirectAddressOnly", 17, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_address_only, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *address_syntax =
-      parse_expr_input_with_existing_locals("&DirectAddressOnly");
-  ASSERT_EQ(ND_ADDRESS_OF, address_syntax->kind);
-  const psx_typed_hir_tree_t *typed_address = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), address_syntax,
-          &typed_address, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(address_syntax->lhs));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t address_id = psx_typed_hir_tree_emit(
-      hir, typed_address, &failure);
-  const psx_hir_node_t *address_hir =
-      psx_hir_module_lookup(hir, address_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS, psx_hir_node_kind(address_hir));
-  const psx_hir_node_t *address_object_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(address_hir, 0));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(address_object_hir));
-  const psx_type_t *address_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(address_hir).type_id);
-  ASSERT_TRUE(address_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, address_type->kind);
-  ASSERT_TRUE(address_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, address_type->base->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *comma_address_syntax =
-      parse_expr_input_with_existing_locals(
-          "&(DirectAddressOnly, DirectAddressOnly)");
-  ASSERT_EQ(ND_ADDRESS_OF, comma_address_syntax->kind);
-  ASSERT_EQ(ND_COMMA, comma_address_syntax->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, comma_address_syntax->lhs->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, comma_address_syntax->lhs->rhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_address_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_address_syntax->lhs));
-
-  node_t *array_address_syntax =
-      parse_expr_input_with_existing_locals("&DirectLocalArray");
-  const psx_typed_hir_tree_t *typed_array_address = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), array_address_syntax,
-          &typed_array_address, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t array_address_id = psx_typed_hir_tree_emit(
-      hir, typed_array_address, &failure);
-  const psx_hir_node_t *array_address_hir =
-      psx_hir_module_lookup(hir, array_address_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(array_address_hir));
-  const psx_type_t *array_address_type = ps_ctx_type_by_id_in(
-      test_semantic_context(),
-      psx_hir_node_qual_type(array_address_hir).type_id);
-  ASSERT_TRUE(array_address_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, array_address_type->kind);
-  ASSERT_TRUE(array_address_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, array_address_type->base->kind);
-  const psx_hir_node_t *explicit_array_object_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(array_address_hir, 0));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(explicit_array_object_hir));
-  ASSERT_EQ(PSX_TYPE_ARRAY,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    explicit_array_object_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  psx_type_t *direct_pointer_type = ps_type_new_pointer(
-      ps_type_new_integer(TK_INT, 4, 0));
-  lvar_t *direct_pointer = register_test_typed_storage_fixture(
-      (char *)"DirectPointer", 13, 8, 8,
-      direct_pointer_type);
-  ASSERT_TRUE(direct_pointer != NULL);
-  const char *incdec_sources[] = {
-      "++DirectLocal", "--DirectLocal",
-      "DirectLocal++", "DirectPointer--"};
-  const psx_syntax_node_kind_t incdec_syntax_kinds[] = {
-      ND_PRE_INC, ND_PRE_DEC, ND_POST_INC, ND_POST_DEC};
-  const psx_hir_node_kind_t incdec_hir_kinds[] = {
-      PSX_HIR_PRE_INC, PSX_HIR_PRE_DEC,
-      PSX_HIR_POST_INC, PSX_HIR_POST_DEC};
-  for (size_t i = 0; i < 4; i++) {
-    node_t *incdec_syntax = parse_expr_input_with_existing_locals(
-        incdec_sources[i]);
-    ASSERT_EQ(incdec_syntax_kinds[i], incdec_syntax->kind);
-    const node_t *incdec_operand_syntax = incdec_syntax->lhs;
-    ASSERT_TRUE(incdec_operand_syntax != NULL);
-    ASSERT_TRUE(ps_node_get_type(incdec_syntax) == NULL);
-    ASSERT_TRUE(ps_node_get_type(incdec_operand_syntax) == NULL);
-    const psx_typed_hir_tree_t *typed_incdec = NULL;
-    ASSERT_EQ(
-        PSX_SYNTAX_TYPED_HIR_RESOLVED,
-        psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-            test_semantic_context(), test_global_registry(),
-            test_local_registry(), incdec_syntax,
-            &typed_incdec, &failure));
-    ASSERT_TRUE(incdec_syntax->lhs == incdec_operand_syntax);
-    ASSERT_TRUE(!ps_node_has_resolution_state(incdec_syntax));
-    ASSERT_TRUE(!ps_node_has_resolution_state(
-        incdec_operand_syntax));
-    hir = psx_hir_module_create();
-    ASSERT_TRUE(hir != NULL);
-    psx_hir_node_id_t incdec_id = psx_typed_hir_tree_emit(
-        hir, typed_incdec, &failure);
-    const psx_hir_node_t *incdec_hir =
-        psx_hir_module_lookup(hir, incdec_id);
-    ASSERT_EQ(incdec_hir_kinds[i], psx_hir_node_kind(incdec_hir));
-    ASSERT_EQ(1, psx_hir_node_child_count(incdec_hir));
-    ASSERT_EQ(PSX_HIR_EDGE_LHS,
-              psx_hir_node_child_edge_at(incdec_hir, 0));
-    ASSERT_EQ(PSX_HIR_LOCAL,
-              psx_hir_node_kind(psx_hir_module_lookup(
-                  hir, psx_hir_node_child_at(incdec_hir, 0))));
-    ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-              psx_hir_node_qual_type(incdec_hir).qualifiers);
-    ASSERT_EQ(i == 3 ? PSX_TYPE_POINTER : PSX_TYPE_INTEGER,
-              ps_ctx_type_by_id_in(
-                  test_semantic_context(),
-                  psx_hir_node_qual_type(incdec_hir).type_id)->kind);
-    psx_hir_module_destroy(hir);
+  ASSERT_TRUE(psx_hir_module_symbol_count(hir) >= 3);
+  int found_direct_global = 0;
+  int found_direct_array = 0;
+  int found_direct_complex = 0;
+  for (size_t i = 1;
+       i <= psx_hir_module_symbol_count(hir); i++) {
+    const psx_hir_symbol_t *symbol =
+        psx_hir_module_symbol_lookup(
+            hir, (psx_hir_symbol_id_t)i);
+    size_t name_length = 0;
+    const char *name =
+        psx_hir_symbol_name(symbol, &name_length);
+    ASSERT_TRUE(name != NULL);
+    if (name_length == 12 &&
+        memcmp(name, "DirectGlobal", 12) == 0)
+      found_direct_global = 1;
+    if (name_length == 11 &&
+        memcmp(name, "DirectArray", 11) == 0)
+      found_direct_array = 1;
+    if (name_length == 13 &&
+        memcmp(name, "DirectComplex", 13) == 0)
+      found_direct_complex = 1;
   }
-  node_t *deref_syntax =
-      parse_expr_input_with_existing_locals("*DirectPointer");
-  ASSERT_EQ(ND_UNARY_DEREF, deref_syntax->kind);
-  const psx_typed_hir_tree_t *typed_deref = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), deref_syntax,
-          &typed_deref, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(deref_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(deref_syntax->lhs));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t deref_id = psx_typed_hir_tree_emit(
-      hir, typed_deref, &failure);
-  const psx_hir_node_t *deref_hir =
-      psx_hir_module_lookup(hir, deref_id);
-  ASSERT_EQ(PSX_HIR_DEREF, psx_hir_node_kind(deref_hir));
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(deref_hir).type_id)->kind);
-  const psx_hir_node_t *deref_pointer_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(deref_hir, 0));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(deref_pointer_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    deref_pointer_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
+  ASSERT_TRUE(found_direct_global);
+  ASSERT_TRUE(found_direct_array);
+  ASSERT_TRUE(found_direct_complex);
 
-  lvar_t *direct_assignment = register_test_storage_fixture(
-      (char *)"DirectAssignment", 16, 4, 4, 0);
-  set_test_storage_fixture_type(
-      direct_assignment, ps_type_new_integer(TK_INT, 4, 0));
-  node_t *assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectAssignment = 7");
-  ASSERT_EQ(ND_ASSIGN, assignment_syntax->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(assignment_syntax));
-  const psx_typed_hir_tree_t *typed_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), assignment_syntax,
-          &typed_assignment, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(assignment_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      assignment_syntax->lhs));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      assignment_syntax->rhs));
-  ASSERT_TRUE(ps_node_get_type(assignment_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t assignment_id = psx_typed_hir_tree_emit(
-      hir, typed_assignment, &failure);
-  const psx_hir_node_t *assignment_hir =
-      psx_hir_module_lookup(hir, assignment_id);
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(assignment_hir));
-  ASSERT_EQ(2, psx_hir_node_child_count(assignment_hir));
-  ASSERT_EQ(PSX_HIR_EDGE_LHS,
-            psx_hir_node_child_edge_at(assignment_hir, 0));
-  ASSERT_EQ(PSX_HIR_EDGE_RHS,
-            psx_hir_node_child_edge_at(assignment_hir, 1));
-  const psx_hir_node_t *assignment_target_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(assignment_hir, 0));
-  const psx_hir_node_t *assignment_value_hir =
-      psx_hir_module_lookup(
-          hir, psx_hir_node_child_at(assignment_hir, 1));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(assignment_target_hir));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(assignment_value_hir));
-  psx_qual_type_t assignment_type =
-      psx_hir_node_qual_type(assignment_hir);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            assignment_type.qualifiers);
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                assignment_type.type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *pointer_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectPointer = 0");
-  const psx_typed_hir_tree_t *typed_pointer_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), pointer_assignment_syntax,
-          &typed_pointer_assignment, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t pointer_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_pointer_assignment, &failure);
-  const psx_hir_node_t *pointer_assignment_hir =
-      psx_hir_module_lookup(hir, pointer_assignment_id);
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(pointer_assignment_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    pointer_assignment_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *comma_syntax = parse_expr_input_with_existing_locals(
-      "DirectAssignment = 22, DirectAssignment + 1");
-  ASSERT_EQ(ND_COMMA, comma_syntax->kind);
-  const node_t *comma_left_syntax = comma_syntax->lhs;
-  const node_t *comma_right_syntax = comma_syntax->rhs;
-  const psx_typed_hir_tree_t *typed_comma = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), comma_syntax,
-          &typed_comma, &failure));
-  ASSERT_TRUE(comma_syntax->lhs == comma_left_syntax);
-  ASSERT_TRUE(comma_syntax->rhs == comma_right_syntax);
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_left_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_right_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t comma_id = psx_typed_hir_tree_emit(
-      hir, typed_comma, &failure);
-  const psx_hir_node_t *comma_hir =
-      psx_hir_module_lookup(hir, comma_id);
-  ASSERT_EQ(PSX_HIR_COMMA, psx_hir_node_kind(comma_hir));
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(comma_hir, 0))));
-  ASSERT_EQ(PSX_HIR_ADD,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(comma_hir, 1))));
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(comma_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *indirect_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "*DirectPointer = 9");
-  const psx_typed_hir_tree_t *typed_indirect_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), indirect_assignment_syntax,
-          &typed_indirect_assignment, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t indirect_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_indirect_assignment, &failure);
-  const psx_hir_node_t *indirect_assignment_hir =
-      psx_hir_module_lookup(hir, indirect_assignment_id);
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(indirect_assignment_hir));
-  ASSERT_EQ(PSX_HIR_DEREF,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         indirect_assignment_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *compound_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectAssignment += 5");
-  ASSERT_EQ(ND_COMPOUND_ASSIGN,
-            compound_assignment_syntax->kind);
-  const psx_typed_hir_tree_t *typed_compound_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), compound_assignment_syntax,
-          &typed_compound_assignment, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      compound_assignment_syntax));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t compound_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_compound_assignment, &failure);
-  const psx_hir_node_t *compound_assignment_hir =
-      psx_hir_module_lookup(hir, compound_assignment_id);
-  ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
-            psx_hir_node_kind(compound_assignment_hir));
-  ASSERT_EQ(PSX_HIR_COMPOUND_ADD,
-            psx_hir_node_compound_operator(
-                compound_assignment_hir));
-  ASSERT_EQ(PSX_HIR_LOCAL,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         compound_assignment_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *pointer_compound_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectPointer += 2");
-  const psx_typed_hir_tree_t *typed_pointer_compound_assignment =
-      NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), pointer_compound_assignment_syntax,
-          &typed_pointer_compound_assignment, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t pointer_compound_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_pointer_compound_assignment, &failure);
-  const psx_hir_node_t *pointer_compound_assignment_hir =
-      psx_hir_module_lookup(
-          hir, pointer_compound_assignment_id);
-  ASSERT_EQ(PSX_HIR_COMPOUND_ASSIGN,
-            psx_hir_node_kind(
-                pointer_compound_assignment_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    pointer_compound_assignment_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *subscript_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectLocalArray[1]");
-  ASSERT_EQ(ND_SUBSCRIPT, subscript_syntax->kind);
-  const node_t *subscript_syntax_left = subscript_syntax->lhs;
-  const node_t *subscript_syntax_right = subscript_syntax->rhs;
-  const psx_typed_hir_tree_t *typed_subscript = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), subscript_syntax,
-          &typed_subscript, &failure));
-  ASSERT_TRUE(subscript_syntax->lhs == subscript_syntax_left);
-  ASSERT_TRUE(subscript_syntax->rhs == subscript_syntax_right);
-  ASSERT_TRUE(!ps_node_has_resolution_state(subscript_syntax));
-  ASSERT_TRUE(ps_node_get_type(subscript_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t subscript_id = psx_typed_hir_tree_emit(
-      hir, typed_subscript, &failure);
-  const psx_hir_node_t *subscript_hir =
-      psx_hir_module_lookup(hir, subscript_id);
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(subscript_hir));
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(subscript_hir, 0))));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(subscript_hir, 1))));
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(subscript_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *comma_subscript_syntax =
-      parse_expr_input_with_existing_locals(
-          "(0, DirectLocalArray)[1]");
-  ASSERT_EQ(ND_SUBSCRIPT, comma_subscript_syntax->kind);
-  ASSERT_EQ(ND_COMMA, comma_subscript_syntax->lhs->kind);
-  ASSERT_EQ(ND_NUM, comma_subscript_syntax->lhs->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, comma_subscript_syntax->lhs->rhs->kind);
-  const node_t *comma_subscript_base = comma_subscript_syntax->lhs;
-  const psx_typed_hir_tree_t *typed_comma_subscript = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), comma_subscript_syntax,
-          &typed_comma_subscript, &failure));
-  ASSERT_TRUE(comma_subscript_syntax->lhs == comma_subscript_base);
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_subscript_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_subscript_base));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t comma_subscript_id = psx_typed_hir_tree_emit(
-      hir, typed_comma_subscript, &failure);
-  const psx_hir_node_t *comma_subscript_hir =
-      psx_hir_module_lookup(hir, comma_subscript_id);
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(comma_subscript_hir));
-  ASSERT_EQ(PSX_HIR_COMMA,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(comma_subscript_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *comma_post_inc_syntax =
-      parse_expr_input_with_existing_locals(
-          "(DirectAddressOnly, DirectAddressOnly)++");
-  ASSERT_EQ(ND_POST_INC, comma_post_inc_syntax->kind);
-  ASSERT_EQ(ND_COMMA, comma_post_inc_syntax->lhs->kind);
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_post_inc_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(comma_post_inc_syntax->lhs));
-
-  node_t *reversed_subscript_syntax =
-      parse_expr_input_with_existing_locals(
-          "1[DirectLocalArray]");
-  ASSERT_EQ(ND_NUM, reversed_subscript_syntax->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, reversed_subscript_syntax->rhs->kind);
-  const node_t *reversed_left = reversed_subscript_syntax->lhs;
-  const node_t *reversed_right = reversed_subscript_syntax->rhs;
-  const psx_typed_hir_tree_t *typed_reversed_subscript = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), reversed_subscript_syntax,
-          &typed_reversed_subscript, &failure));
-  ASSERT_TRUE(reversed_subscript_syntax->lhs == reversed_left);
-  ASSERT_TRUE(reversed_subscript_syntax->rhs == reversed_right);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t reversed_subscript_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_reversed_subscript, &failure);
-  const psx_hir_node_t *reversed_subscript_hir =
-      psx_hir_module_lookup(hir, reversed_subscript_id);
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(reversed_subscript_hir));
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         reversed_subscript_hir, 0))));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         reversed_subscript_hir, 1))));
-  psx_hir_module_destroy(hir);
-
-  node_t *subscript_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectLocalArray[2] = 4");
-  const psx_typed_hir_tree_t *typed_subscript_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), subscript_assignment_syntax,
-          &typed_subscript_assignment, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t subscript_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_subscript_assignment, &failure);
-  const psx_hir_node_t *subscript_assignment_hir =
-      psx_hir_module_lookup(hir, subscript_assignment_id);
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(subscript_assignment_hir));
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         subscript_assignment_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *subscript_address_syntax =
-      parse_expr_input_with_existing_locals(
-          "&DirectLocalArray[0]");
-  const psx_typed_hir_tree_t *typed_subscript_address = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), subscript_address_syntax,
-          &typed_subscript_address, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t subscript_address_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_subscript_address, &failure);
-  const psx_hir_node_t *subscript_address_hir =
-      psx_hir_module_lookup(hir, subscript_address_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(subscript_address_hir));
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         subscript_address_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *member_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectRecordObject.value");
-  ASSERT_EQ(ND_MEMBER_ACCESS, member_syntax->kind);
-  const psx_typed_hir_tree_t *typed_member = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), member_syntax,
-          &typed_member, &failure));
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(member_syntax->lhs));
-  ASSERT_TRUE(ps_node_get_type(member_syntax) == NULL);
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t member_id = psx_typed_hir_tree_emit(
-      hir, typed_member, &failure);
-  const psx_hir_node_t *member_hir =
-      psx_hir_module_lookup(hir, member_id);
-  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
-            psx_hir_node_kind(member_hir));
-  ASSERT_EQ(4, psx_hir_node_member_offset(member_hir));
-  ASSERT_TRUE(!psx_hir_node_member_from_pointer(member_hir));
-  ASSERT_EQ(PSX_HIR_GLOBAL,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(member_hir, 0))));
-  ASSERT_EQ(PSX_TYPE_INTEGER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(member_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *pointer_member_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectRecordPointer->value");
-  const psx_typed_hir_tree_t *typed_pointer_member = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), pointer_member_syntax,
-          &typed_pointer_member, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t pointer_member_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_pointer_member, &failure);
-  const psx_hir_node_t *pointer_member_hir =
-      psx_hir_module_lookup(hir, pointer_member_id);
-  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
-            psx_hir_node_kind(pointer_member_hir));
-  ASSERT_TRUE(
-      psx_hir_node_member_from_pointer(pointer_member_hir));
-  ASSERT_EQ(4,
-            psx_hir_node_member_offset(pointer_member_hir));
-  psx_hir_module_destroy(hir);
-
-  node_t *member_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectRecordObject.value = 6");
-  const psx_typed_hir_tree_t *typed_member_assignment = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), member_assignment_syntax,
-          &typed_member_assignment, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t member_assignment_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_member_assignment, &failure);
-  const psx_hir_node_t *member_assignment_hir =
-      psx_hir_module_lookup(hir, member_assignment_id);
-  ASSERT_EQ(PSX_HIR_ASSIGN,
-            psx_hir_node_kind(member_assignment_hir));
-  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         member_assignment_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  node_t *member_address_syntax =
-      parse_expr_input_with_existing_locals(
-          "&DirectRecordObject.value");
-  const psx_typed_hir_tree_t *typed_member_address = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), member_address_syntax,
-          &typed_member_address, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t member_address_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_member_address, &failure);
-  const psx_hir_node_t *member_address_hir =
-      psx_hir_module_lookup(hir, member_address_id);
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(member_address_hir));
-  ASSERT_EQ(PSX_HIR_MEMBER_ACCESS,
-            psx_hir_node_kind(psx_hir_module_lookup(
-                hir, psx_hir_node_child_at(
-                         member_address_hir, 0))));
-  psx_hir_module_destroy(hir);
-
-  psx_type_t *direct_const_type =
-      ps_type_new_integer(TK_INT, 4, 0);
-  ps_type_add_qualifiers(
-      direct_const_type, PSX_TYPE_QUALIFIER_CONST);
-  lvar_t *direct_const = register_test_typed_storage_fixture(
-      (char *)"DirectConst", 11, 4, 4,
-      direct_const_type);
-  ASSERT_TRUE(direct_const != NULL);
-  node_t *const_incdec_syntax =
-      parse_expr_input_with_existing_locals("++DirectConst");
-  const psx_typed_hir_tree_t *invalid_incdec_hir = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), const_incdec_syntax,
-          &invalid_incdec_hir, &failure));
-  ASSERT_TRUE(invalid_incdec_hir == NULL);
-  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
-            failure.rejection);
-  ASSERT_TRUE(!ps_node_has_resolution_state(const_incdec_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      const_incdec_syntax->lhs));
-  node_t *const_assignment_syntax =
-      parse_expr_input_with_existing_locals("DirectConst = 1");
-  const psx_typed_hir_tree_t *invalid_assignment_hir = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), const_assignment_syntax,
-          &invalid_assignment_hir, &failure));
-  ASSERT_TRUE(invalid_assignment_hir == NULL);
-  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_CONST_TARGET,
-            failure.rejection);
-  node_t *incompatible_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectLocal = DirectPointer");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), incompatible_assignment_syntax,
-          &invalid_assignment_hir, &failure));
-  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-            failure.rejection);
-  node_t *array_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectLocalArray = DirectLocalArray");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), array_assignment_syntax,
-          &invalid_assignment_hir, &failure));
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_TARGET_NOT_MODIFIABLE,
-      failure.rejection);
-  node_t *invalid_compound_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectPointer *= 2");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_compound_assignment_syntax,
-          &invalid_assignment_hir, &failure));
-  ASSERT_EQ(PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_INCOMPATIBLE_TYPES,
-            failure.rejection);
-  node_t *invalid_subscript_syntax =
-      parse_expr_input_with_existing_locals("DirectLocal[0]");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_subscript_syntax,
-          &invalid_assignment_hir, &failure));
-  node_t *const_member_assignment_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectConstRecord.value = 1");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), const_member_assignment_syntax,
-          &invalid_assignment_hir, &failure));
-  node_t *missing_member_syntax =
-      parse_expr_input_with_existing_locals(
-          "DirectRecordObject.missing");
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), missing_member_syntax,
-          &invalid_assignment_hir, &failure));
-
-  node_t *function_address_syntax =
-      parse_expr_input_with_existing_locals("&DirectFunction");
-  const psx_typed_hir_tree_t *typed_function_address = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_RESOLVED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), function_address_syntax,
-          &typed_function_address, &failure));
-  hir = psx_hir_module_create();
-  ASSERT_TRUE(hir != NULL);
-  psx_hir_node_id_t function_address_id =
-      psx_typed_hir_tree_emit(
-          hir, typed_function_address, &failure);
-  const psx_hir_node_t *function_address_hir =
-      psx_hir_module_lookup(hir, function_address_id);
-  ASSERT_EQ(PSX_HIR_FUNCTION_REF,
-            psx_hir_node_kind(function_address_hir));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_ctx_type_by_id_in(
-                test_semantic_context(),
-                psx_hir_node_qual_type(
-                    function_address_hir).type_id)->kind);
-  psx_hir_module_destroy(hir);
-
-  node_t *invalid_deref_syntax =
-      parse_expr_input_with_existing_locals("*DirectLocal");
-  const psx_typed_hir_tree_t *invalid_deref_hir = NULL;
-  ASSERT_EQ(
-      PSX_SYNTAX_TYPED_HIR_REJECTED,
-      psx_resolve_syntax_expression_direct_to_typed_hir_in_contexts(
-          test_semantic_context(), test_global_registry(),
-          test_local_registry(), invalid_deref_syntax,
-          &invalid_deref_hir, &failure));
-  ASSERT_TRUE(invalid_deref_hir == NULL);
-  ASSERT_TRUE(!ps_node_has_resolution_state(invalid_deref_syntax));
-  ASSERT_TRUE(!ps_node_has_resolution_state(
-      invalid_deref_syntax->lhs));
-
-  ps_decl_replay_lvar_usage_events_in(
-      test_local_registry(),
-      ps_decl_get_storage_objects_in(test_local_registry()));
-  ASSERT_TRUE(ps_lvar_registry_view(direct_local).is_used);
-  ASSERT_TRUE(!ps_lvar_registry_view(direct_generic_control).is_used);
-  ASSERT_TRUE(!ps_lvar_registry_view(
-      direct_generic_unselected).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_callback).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_local_array).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_vla).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_static.alias).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_pointer).is_used);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_pointer).is_initialized);
-  ASSERT_TRUE(ps_lvar_registry_view(direct_assignment).is_initialized);
-  ASSERT_TRUE(
-      ps_lvar_registry_view(direct_address_only).is_address_taken);
-  ASSERT_TRUE(!ps_lvar_registry_view(direct_address_only).is_used);
-  reset_test_translation_unit_state();
+  expect_parse_fail(
+      "int main(void) { struct S { int value; }; "
+      "struct S object = {0}; return object.missing; }");
+  expect_parse_fail(
+      "int main(void) { int value = 1; return *value; }");
 }
 
 static node_t *parse_direct_test_statement_syntax(
@@ -5577,14 +2971,6 @@ static void test_direct_statement_typed_hir_resolution_boundary() {
   reset_test_translation_unit_state();
 }
 
-static node_t **parse_program_input(const char *input) {
-  token_t *head = tk_tokenize_ctx(test_tokenizer(), (char *)input);
-  node_t **program = parse_test_program_from(head);
-  for (int i = 0; program && program[i]; i++)
-    assert_semantic_tree_invariants(program[i]);
-  return program;
-}
-
 static int resolve_program_input_hir(const char *input) {
   return resolve_test_program_hir_from(tk_tokenize_ctx(test_tokenizer(), (char *)input));
 }
@@ -5592,215 +2978,18 @@ static int resolve_program_input_hir(const char *input) {
 static void test_typed_hir_ownership_and_type_boundary() {
   printf("test_typed_hir_ownership_and_type_boundary...\n");
   reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "int main(void) { return 1+2; }"));
 
-  node_num_t syntax_number = {0};
-  syntax_number.base.kind = ND_NUM;
-  syntax_number.val = 7;
-  psx_resolution_work_tree_t *unfinalized =
-      psx_resolution_work_tree_create_from_syntax(
-          test_arena_context(), (node_t *)&syntax_number);
-  ASSERT_TRUE(unfinalized != NULL);
-  ASSERT_EQ(PSX_RESOLUTION_WORK_CLONED,
-            psx_resolution_work_tree_phase(unfinalized));
-  psx_hir_module_t *isolated_hir = psx_hir_module_create();
-  ASSERT_TRUE(isolated_hir != NULL);
-  psx_resolved_hir_build_failure_t failure = {0};
-  ASSERT_TRUE(!psx_resolution_work_tree_materialize_typed_hir(
-      unfinalized, test_semantic_context(), &failure));
-  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_UNFINALIZED_RESOLUTION,
-            failure.status);
-  failure = (psx_resolved_hir_build_failure_t){0};
-  ASSERT_EQ(PSX_HIR_NODE_ID_INVALID,
-            psx_typed_hir_tree_emit(
-                isolated_hir, NULL, &failure));
-  ASSERT_EQ(PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
-            failure.status);
-  ASSERT_EQ(0, psx_hir_module_root_count(isolated_hir));
-  ASSERT_TRUE(!ps_node_has_resolution_state(&syntax_number.base));
-  psx_hir_module_destroy(isolated_hir);
-
-  node_identifier_t rebound_syntax_identifier = {
-      .base = {.kind = ND_IDENTIFIER},
-      .name = (char *)"x",
-      .name_len = 1,
-  };
-  ASSERT_TRUE(ps_node_prepare_resolution_state_in(
-      test_arena_context(), &rebound_syntax_identifier.base));
-  ps_node_bind_type(
-      &rebound_syntax_identifier.base,
-      ps_type_new_integer(TK_INT, 4, 0));
-  psx_resolution_work_tree_t *rebound_identifier_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          test_arena_context(), &rebound_syntax_identifier.base);
-  ASSERT_TRUE(rebound_identifier_tree == NULL);
-
-  node_t resolved_only = {0};
-  test_set_resolved_node_kind(&resolved_only, ND_DEREF);
-  ASSERT_EQ(PSX_SYNTAX_NODE_INVALID, resolved_only.kind);
-  ASSERT_EQ(ND_DEREF, psx_resolution_node_kind(&resolved_only));
-  ASSERT_TRUE(psx_resolution_work_tree_create_from_syntax(
-                  test_arena_context(), &resolved_only) == NULL);
-
-  node_num_t typed_number = {0};
-  typed_number.base.kind = ND_NUM;
-  typed_number.val = 11;
-  psx_resolution_work_tree_t *typed_work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          test_arena_context(), (node_t *)&typed_number);
-  ASSERT_TRUE(typed_work_tree != NULL);
-  node_t *typed_root =
-      psx_resolution_work_tree_compatibility_root_mut(
-          typed_work_tree);
-  ASSERT_TRUE(typed_root != NULL);
-  ASSERT_TRUE(typed_root != (node_t *)&typed_number);
-  const psx_type_t *int_type =
-      ps_type_new_integer(TK_INT, 4, 0);
-  psx_qual_type_t int_qual_type =
-      intern_test_qual_type(int_type);
-  ASSERT_TRUE(int_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  ps_node_bind_qual_type(typed_root, int_qual_type);
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      typed_work_tree, PSX_RESOLUTION_WORK_CLONED,
-      PSX_RESOLUTION_WORK_BOUND));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      typed_work_tree, PSX_RESOLUTION_WORK_BOUND,
-      PSX_RESOLUTION_WORK_TYPED));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      typed_work_tree, PSX_RESOLUTION_WORK_TYPED,
-      PSX_RESOLUTION_WORK_LOWERED));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      typed_work_tree, PSX_RESOLUTION_WORK_LOWERED,
-      PSX_RESOLUTION_WORK_FINALIZED));
-  failure = (psx_resolved_hir_build_failure_t){0};
-  ASSERT_TRUE(psx_resolution_work_tree_materialize_typed_hir(
-      typed_work_tree, test_semantic_context(), &failure));
-  const psx_typed_hir_tree_t *typed_tree =
-      psx_resolution_work_tree_typed_hir(typed_work_tree);
-  ASSERT_TRUE(typed_tree != NULL);
-  ASSERT_EQ(PSX_RESOLUTION_WORK_HIR_READY,
-            psx_resolution_work_tree_phase(typed_work_tree));
-  isolated_hir = psx_hir_module_create();
-  ASSERT_TRUE(isolated_hir != NULL);
-  psx_hir_node_id_t typed_root_id = psx_typed_hir_tree_emit(
-      isolated_hir, typed_tree, &failure);
-  ASSERT_TRUE(typed_root_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *typed_hir_root =
-      psx_hir_module_lookup(isolated_hir, typed_root_id);
-  ASSERT_TRUE(typed_hir_root != NULL);
-  ASSERT_EQ(PSX_HIR_NUMBER, psx_hir_node_kind(typed_hir_root));
-  ASSERT_EQ(11, psx_hir_node_integer_value(typed_hir_root));
-  ASSERT_EQ(int_qual_type.type_id,
-            psx_hir_node_qual_type(typed_hir_root).type_id);
-  psx_hir_module_destroy(isolated_hir);
-
-  node_num_t syntax_initializer_value = {
-      .base = {.kind = ND_NUM},
-      .val = 23,
-  };
-  node_num_t syntax_designator_index = {
-      .base = {.kind = ND_NUM},
-      .val = 1,
-  };
-  psx_initializer_entry_t syntax_entry = {
-      .value = &syntax_initializer_value.base,
-      .designators = {{
-          .kind = PSX_INIT_DESIGNATOR_INDEX,
-          .index_expr = &syntax_designator_index.base,
-      }},
-      .designator_count = 1,
-  };
-  node_init_list_t syntax_initializer_list = {
-      .base = {.kind = ND_INIT_LIST},
-      .entries = &syntax_entry,
-      .entry_count = 1,
-  };
-  psx_resolution_work_tree_t *initializer_work_tree =
-      psx_resolution_work_tree_create_from_syntax(
-          test_arena_context(), &syntax_initializer_list.base);
-  ASSERT_TRUE(initializer_work_tree != NULL);
-  node_init_list_t *initializer_root = (node_init_list_t *)
-      psx_resolution_work_tree_compatibility_root_mut(
-          initializer_work_tree);
-  ASSERT_TRUE(initializer_root != NULL);
-  ASSERT_TRUE(initializer_root->entries[0].value !=
-              syntax_entry.value);
-  ps_node_bind_qual_type(
-      initializer_root->entries[0].value, int_qual_type);
-  ps_node_bind_qual_type(
-      initializer_root->entries[0].designators[0].index_expr,
-      int_qual_type);
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      initializer_work_tree, PSX_RESOLUTION_WORK_CLONED,
-      PSX_RESOLUTION_WORK_BOUND));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      initializer_work_tree, PSX_RESOLUTION_WORK_BOUND,
-      PSX_RESOLUTION_WORK_TYPED));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      initializer_work_tree, PSX_RESOLUTION_WORK_TYPED,
-      PSX_RESOLUTION_WORK_LOWERED));
-  ASSERT_TRUE(psx_resolution_work_tree_advance(
-      initializer_work_tree, PSX_RESOLUTION_WORK_LOWERED,
-      PSX_RESOLUTION_WORK_FINALIZED));
-  ASSERT_TRUE(psx_resolution_work_tree_materialize_typed_hir(
-      initializer_work_tree, test_semantic_context(), &failure));
-  isolated_hir = psx_hir_module_create();
-  ASSERT_TRUE(isolated_hir != NULL);
-  psx_hir_node_id_t initializer_root_id = psx_typed_hir_tree_emit(
-      isolated_hir,
-      psx_resolution_work_tree_typed_hir(initializer_work_tree),
-      &failure);
-  ASSERT_TRUE(initializer_root_id != PSX_HIR_NODE_ID_INVALID);
-  const psx_hir_node_t *initializer_hir_root =
-      psx_hir_module_lookup(isolated_hir, initializer_root_id);
-  ASSERT_EQ(PSX_HIR_INITIALIZER_LIST,
-            psx_hir_node_kind(initializer_hir_root));
-  ASSERT_EQ(1, psx_hir_node_child_count(initializer_hir_root));
-  ASSERT_EQ(PSX_HIR_EDGE_INITIALIZER_ENTRY,
-            psx_hir_node_child_edge_at(initializer_hir_root, 0));
-  const psx_hir_node_t *initializer_hir_entry =
-      psx_hir_module_lookup(
-          isolated_hir,
-          psx_hir_node_child_at(initializer_hir_root, 0));
-  ASSERT_EQ(PSX_HIR_INITIALIZER_ENTRY,
-            psx_hir_node_kind(initializer_hir_entry));
-  ASSERT_EQ(2, psx_hir_node_child_count(initializer_hir_entry));
-  const psx_hir_node_t *initializer_hir_designator =
-      psx_hir_module_lookup(
-          isolated_hir,
-          psx_hir_node_child_at(initializer_hir_entry, 0));
-  const psx_hir_node_t *initializer_hir_value =
-      psx_hir_module_lookup(
-          isolated_hir,
-          psx_hir_node_child_at(initializer_hir_entry, 1));
-  ASSERT_EQ(PSX_HIR_INDEX_DESIGNATOR,
-            psx_hir_node_kind(initializer_hir_designator));
-  ASSERT_EQ(PSX_HIR_EDGE_DESIGNATOR_INDEX,
-            psx_hir_node_child_edge_at(
-                initializer_hir_designator, 0));
-  const psx_hir_node_t *initializer_hir_index =
-      psx_hir_module_lookup(
-          isolated_hir,
-          psx_hir_node_child_at(initializer_hir_designator, 0));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(initializer_hir_index));
-  ASSERT_EQ(int_qual_type.type_id,
-            psx_hir_node_qual_type(initializer_hir_index).type_id);
-  ASSERT_EQ(PSX_HIR_EDGE_INITIALIZER_VALUE,
-            psx_hir_node_child_edge_at(initializer_hir_entry, 1));
-  ASSERT_EQ(PSX_HIR_NUMBER,
-            psx_hir_node_kind(initializer_hir_value));
-  ASSERT_EQ(int_qual_type.type_id,
-            psx_hir_node_qual_type(initializer_hir_value).type_id);
-  psx_hir_module_destroy(isolated_hir);
-
-  int program_resolved = resolve_program_input_hir(
-      "int main(void) { return 1+2; }");
-  ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
   ASSERT_TRUE(hir != NULL);
+  ASSERT_TRUE(types != NULL);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
   ASSERT_TRUE(psx_hir_module_node_count(hir) > 0);
+
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
   const psx_hir_node_t *root = psx_hir_module_lookup(hir, root_id);
   ASSERT_TRUE(root != NULL);
@@ -5808,39 +2997,35 @@ static void test_typed_hir_ownership_and_type_boundary() {
   ASSERT_EQ(PSX_HIR_ROLE_STATEMENT, psx_hir_node_role(root));
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_hir_node_qual_type(root).type_id);
-  ASSERT_TRUE(
-      psx_hir_node_attached_qual_type(root).type_id !=
-      PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+      types, psx_hir_node_attached_qual_type(root)));
+
   size_t name_length = 0;
   ASSERT_TRUE(strcmp(psx_hir_node_name(root, &name_length), "main") == 0);
   ASSERT_EQ(4, name_length);
   int found_function_body = 0;
+  int found_two = 0;
   for (size_t i = 0; i < psx_hir_node_child_count(root); i++) {
     if (psx_hir_node_child_edge_at(root, i) ==
-        PSX_HIR_EDGE_FUNCTION_BODY) {
+        PSX_HIR_EDGE_FUNCTION_BODY)
       found_function_body = 1;
-    }
   }
-  ASSERT_TRUE(found_function_body);
-
-  int found_two = 0;
   for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
     const psx_hir_node_t *node =
         psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
     ASSERT_TRUE(node != NULL);
-    psx_qual_type_t type = psx_hir_node_qual_type(node);
     if (psx_hir_node_role(node) == PSX_HIR_ROLE_EXPRESSION) {
-      ASSERT_TRUE(type.type_id != PSX_TYPE_ID_INVALID);
-      ASSERT_TRUE(ps_ctx_type_by_id_in(
-                      test_semantic_context(), type.type_id) != NULL);
+      ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+          types, psx_hir_node_qual_type(node)));
     } else {
-      ASSERT_EQ(PSX_TYPE_ID_INVALID, type.type_id);
+      ASSERT_EQ(PSX_TYPE_ID_INVALID,
+                psx_hir_node_qual_type(node).type_id);
     }
     if (psx_hir_node_kind(node) == PSX_HIR_NUMBER &&
-        psx_hir_node_integer_value(node) == 2) {
+        psx_hir_node_integer_value(node) == 2)
       found_two = 1;
-    }
   }
+  ASSERT_TRUE(found_function_body);
   ASSERT_TRUE(found_two);
 
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
@@ -5853,8 +3038,7 @@ static void test_typed_hir_ownership_and_type_boundary() {
 
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(test_suite_session),
-      .semantic_types = ps_ctx_semantic_type_table_in(
-          test_semantic_context()),
+      .semantic_types = types,
       .record_decls = ps_ctx_record_decl_table_in(
           test_semantic_context()),
       .record_layouts = ps_ctx_record_layout_table_in(
@@ -8173,55 +5357,7 @@ static void test_builtin_expect_typed_hir_boundary() {
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
-static node_t *find_binary_tree_node_kind(
-    node_t *node, psx_resolution_node_kind_t kind) {
-  if (!node) return NULL;
-  if (node->kind == kind) return node;
-  node_t *found = find_binary_tree_node_kind(node->lhs, kind);
-  return found ? found : find_binary_tree_node_kind(node->rhs, kind);
-}
 
-static void assert_typed_sizeof(
-    node_t *node, int expected_size) {
-  ASSERT_TRUE(node != NULL);
-  node_t *query_node =
-      find_binary_tree_node_kind(node, ND_SIZEOF_QUERY);
-  ASSERT_TRUE(query_node != NULL);
-  node_sizeof_query_t *query =
-      (node_sizeof_query_t *)query_node;
-  ASSERT_EQ(expected_size, psx_sizeof_query_resolved_size(query));
-  ASSERT_TRUE(ps_node_qual_type(query_node).type_id !=
-              PSX_TYPE_ID_INVALID);
-}
-static node_t *as_lvar(node_t *n) {
-  ASSERT_TRUE(n != NULL);
-  ASSERT_EQ(PSX_RESOLVED_OBJECT_REF_LOCAL,
-            psx_resolved_object_ref_kind(n));
-  return n;
-}
-static node_function_definition_t *as_function_definition(node_t *n) {
-  ASSERT_TRUE(n != NULL);
-  ASSERT_EQ(ND_FUNCDEF, psx_resolution_node_kind(n));
-  return (node_function_definition_t *)n;
-}
-static const psx_type_t *test_function_definition_signature_type(
-    const node_function_definition_t *function) {
-  return psx_type_compatibility_view_for(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_function_definition_signature_qual_type(function));
-}
-static const psx_type_t *test_function_definition_return_type(
-    const node_function_definition_t *function) {
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  return psx_type_compatibility_view_for(
-      types, ps_function_definition_return_qual_type(types, function));
-}
-static node_function_call_t *as_function_call(node_t *n) {
-  ASSERT_TRUE(n != NULL);
-  ASSERT_EQ(ND_FUNCALL, n->kind);
-  return (node_function_call_t *)n;
-}
 static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
@@ -8267,11 +5403,6 @@ static int test_type_alignof_for_target(
              : 0;
 }
 
-static int test_type_format_canonical_signature(
-    const psx_type_t *type, char *out, size_t out_size) {
-  return ps_type_format_canonical_signature_for_data_layout(
-      type, ps_ctx_data_layout(test_semantic_context()), out, out_size);
-}
 
 static int test_type_deref_size(const psx_type_t *type) {
   if (!type ||
@@ -8289,20 +5420,7 @@ static int test_type_pointee_value_size(const psx_type_t *type) {
   return test_type_sizeof(ps_type_pointee_value_type(type));
 }
 
-static int test_type_array_scalar_element_size(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-  return test_type_sizeof(ps_type_array_leaf_type(type));
-}
 
-static int test_type_array_subscript_stride_bytes(
-    const psx_type_t *type, int depth) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || depth < 0) return 0;
-  while (depth-- > 0) {
-    type = type->base;
-    if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-  }
-  return test_type_sizeof(type->base);
-}
 
 static int test_type_subscript_static_stride(const psx_type_t *type) {
   if (!type || !type->base ||
@@ -8336,149 +5454,21 @@ static int test_type_pointer_view_structural_ptr_array_pointee_bytes(
   return bytes > 0 ? bytes : 0;
 }
 
-static const psx_type_t *canonical_node_pointee_type(node_t *node) {
-  return node ? ps_type_pointee_value_type(ps_node_get_type(node)) : NULL;
-}
 
-static int canonical_pointer_qual_levels(const psx_type_t *type) {
-  return type && type->kind == PSX_TYPE_POINTER && type->base
-             ? ps_type_pointer_depth(type)
-             : 0;
-}
 
-static int canonical_node_pointer_qual_levels(node_t *node) {
-  return node ? canonical_pointer_qual_levels(ps_node_get_type(node)) : 0;
-}
 
-static int canonical_node_base_deref_size(node_t *node) {
-  return node ? ps_type_pointer_view_structural_base_deref_size(
-                    ps_node_get_type(node))
-              : 0;
-}
 
-static int canonical_node_ptr_array_pointee_bytes(node_t *node) {
-  return node ? ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-                    ps_node_get_type(node))
-              : 0;
-}
 
-static const psx_type_t *canonical_pointer_level(
-    const psx_type_t *type, int level) {
-  if (level < 0) return NULL;
-  while (type && type->kind == PSX_TYPE_POINTER && level > 0) {
-    type = type->base;
-    level--;
-  }
-  return type && type->kind == PSX_TYPE_POINTER && level == 0
-             ? type
-             : NULL;
-}
 
-static void assert_pointer_qualifiers(
-    const psx_type_t *type, const char *const_levels,
-    const char *volatile_levels) {
-  ASSERT_TRUE(const_levels != NULL);
-  ASSERT_TRUE(volatile_levels != NULL);
-  int levels = (int)strlen(const_levels);
-  ASSERT_EQ(levels, (int)strlen(volatile_levels));
-  ASSERT_EQ(levels, ps_type_pointer_depth(type));
-  for (int i = 0; i < levels; i++) {
-    const psx_type_t *pointer = canonical_pointer_level(type, i);
-    ASSERT_TRUE(pointer != NULL);
-    ASSERT_EQ(const_levels[i] == '1', ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_CONST));
-    ASSERT_EQ(volatile_levels[i] == '1',
-              ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_VOLATILE));
-  }
-}
 
-static void assert_node_pointer_qualifiers(
-    node_t *node, const char *const_levels,
-    const char *volatile_levels) {
-  ASSERT_TRUE(node != NULL);
-  ASSERT_TRUE(const_levels != NULL);
-  ASSERT_TRUE(volatile_levels != NULL);
-  int levels = (int)strlen(const_levels);
-  ASSERT_EQ(levels, (int)strlen(volatile_levels));
-  ASSERT_EQ(levels, ps_type_pointer_depth(ps_node_get_type(node)));
-  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
-    assert_pointer_qualifiers(
-        ps_node_get_type(node), const_levels, volatile_levels);
-    return;
-  }
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  psx_qual_type_t current = ps_node_qual_type(node);
-  for (int i = 0; i < levels; i++) {
-    const psx_type_t *pointer = psx_type_compatibility_canonical_view_for(
-        types, current.type_id);
-    ASSERT_TRUE(pointer != NULL);
-    ASSERT_EQ(PSX_TYPE_POINTER, pointer->kind);
-    ASSERT_EQ(const_levels[i] == '1',
-              (current.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0);
-    ASSERT_EQ(volatile_levels[i] == '1',
-              (current.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0);
-    current = psx_semantic_type_table_base(types, current.type_id);
-  }
-}
 
-static int canonical_node_pointee_is_unsigned(node_t *node) {
-  return ps_type_is_unsigned(canonical_node_pointee_type(node));
-}
 
-static int canonical_node_pointee_is_bool(node_t *node) {
-  const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && type->kind == PSX_TYPE_BOOL;
-}
 
-static int canonical_node_pointee_is_void(node_t *node) {
-  const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && type->kind == PSX_TYPE_VOID;
-}
 
-static int canonical_node_pointee_is_const_qualified(node_t *node) {
-  if (!node) return 0;
-  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
-    const psx_type_t *type = canonical_node_pointee_type(node);
-    return type &&
-           ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST);
-  }
-  psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_node_qual_type(node).type_id);
-  return (pointee.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0;
-}
 
-static int canonical_node_pointee_is_volatile_qualified(node_t *node) {
-  if (!node) return 0;
-  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
-    const psx_type_t *type = canonical_node_pointee_type(node);
-    return type &&
-           ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE);
-  }
-  psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      ps_node_qual_type(node).type_id);
-  return (pointee.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0;
-}
 
-static tk_float_kind_t canonical_node_pointee_fp_kind(node_t *node) {
-  const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && (type->kind == PSX_TYPE_FLOAT ||
-                  type->kind == PSX_TYPE_COMPLEX)
-             ? ps_type_floating_token_kind(type)
-             : TK_FLOAT_KIND_NONE;
-}
 
-static int canonical_node_array_subscript_stride_bytes(node_t *node,
-                                                       int depth) {
-  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
-  while (type && type->kind == PSX_TYPE_POINTER) type = type->base;
-  return ps_type_array_subscript_stride_bytes(type, depth);
-}
 
-static int canonical_lvar_pointer_qual_levels(lvar_t *var) {
-  return var ? canonical_pointer_qual_levels(test_lvar_decl_type(var)) : 0;
-}
 
 static psx_type_t *test_function_pointer(
     psx_type_t *return_type, const psx_type_t *const *param_types,
@@ -8489,18 +5479,6 @@ static psx_type_t *test_function_pointer(
   return ps_type_new_pointer(function);
 }
 
-static void assert_canonical_type_signature(const psx_type_t *type,
-                                            const char *expected) {
-  char actual[512];
-  int len = ps_type_format_canonical_signature(type, actual, sizeof(actual));
-  ASSERT_TRUE(len >= 0);
-  ASSERT_TRUE((size_t)len < sizeof(actual));
-  if (strcmp(expected, actual) != 0) {
-    fprintf(stderr, "canonical type mismatch: expected %s, got %s\n",
-            expected, actual);
-    exit(1);
-  }
-}
 
 static void assert_canonical_qual_type_signature(
     psx_qual_type_t type, const char *expected) {
@@ -9213,29 +6191,7 @@ typedef struct {
   int padding_sizes[16];
 } aggregate_walk_trace_t;
 
-static void aggregate_walk_trace_scalar(
-    void *user, const psx_record_member_decl_t *member,
-    psx_type_id_t value_type_id, int slot, long long offset) {
-  aggregate_walk_trace_t *trace = user;
-  if (!trace || trace->scalar_count >= 16) return;
-  int idx = trace->scalar_count++;
-  psx_gvar_init_member_value_t value =
-      ps_gvar_init_member_value(
-          ps_ctx_semantic_type_table_in(test_semantic_context()), trace->gv,
-          slot, member, test_type_size_id(value_type_id));
-  trace->scalar_offsets[idx] = offset;
-  trace->scalar_values[idx] = value.value;
-  trace->scalar_sizes[idx] = value.size;
-  trace->scalar_type_ids[idx] = value_type_id;
-}
 
-static void aggregate_walk_trace_padding(void *user, long long offset, int size) {
-  aggregate_walk_trace_t *trace = user;
-  if (!trace || trace->padding_count >= 16) return;
-  int idx = trace->padding_count++;
-  trace->padding_offsets[idx] = offset;
-  trace->padding_sizes[idx] = size;
-}
 
 static void expect_parse_fail(const char *input) {
   fflush(NULL);
@@ -9275,59 +6231,8 @@ static void expect_parse_ok(const char *input) {
   ASSERT_EQ(0, WEXITSTATUS(status));
 }
 
-static void expect_const_assign_ok_for_node(node_t *node) {
-  fflush(NULL);
-  pid_t pid = fork();
-  if (pid == 0) {
-    freopen("/dev/null", "w", stdout);
-    freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_assign_at_in(
-        test_semantic_context(),
-        ag_compilation_session_diagnostic_context(test_suite_session),
-        node, "=", NULL);
-    _exit(0);
-  }
-  int status;
-  waitpid(pid, &status, 0);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_EQ(0, WEXITSTATUS(status));
-}
 
-static void expect_const_assign_fail_for_node(node_t *node) {
-  fflush(NULL);
-  pid_t pid = fork();
-  if (pid == 0) {
-    freopen("/dev/null", "w", stdout);
-    freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_assign_at_in(
-        test_semantic_context(),
-        ag_compilation_session_diagnostic_context(test_suite_session),
-        node, "=", NULL);
-    _exit(0);
-  }
-  int status;
-  waitpid(pid, &status, 0);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_TRUE(WEXITSTATUS(status) != 0);
-}
 
-static void expect_const_qual_discard_fail_for_nodes(node_t *lhs, node_t *rhs) {
-  fflush(NULL);
-  pid_t pid = fork();
-  if (pid == 0) {
-    freopen("/dev/null", "w", stdout);
-    freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_qual_discard_at_in(
-        test_semantic_context(),
-        ag_compilation_session_diagnostic_context(test_suite_session),
-        lhs, rhs, NULL);
-    _exit(0);
-  }
-  int status;
-  waitpid(pid, &status, 0);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_TRUE(WEXITSTATUS(status) != 0);
-}
 
 static void expect_parse_fail_with_message(const char *input, const char *needle) {
   int fds[2];
@@ -9406,44 +6311,6 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
   ASSERT_TRUE(strstr(buf, needle) == NULL);
 }
 
-static void expect_semantic_invariant_internal_error(
-    node_t *node, const token_t *fallback_diag_tok) {
-  int fds[2];
-  ASSERT_TRUE(pipe(fds) == 0);
-
-  fflush(NULL);
-  pid_t pid = fork();
-  if (pid == 0) {
-    close(fds[0]);
-    dup2(fds[1], STDERR_FILENO);
-    close(fds[1]);
-    freopen("/dev/null", "w", stdout);
-    diag_reset_records_in(test_diagnostics());
-    psx_require_semantic_tree_has_canonical_expression_types(
-        ag_compilation_session_diagnostic_context(test_suite_session),
-        node, fallback_diag_tok);
-    _exit(0);
-  }
-
-  close(fds[1]);
-  char buf[4096];
-  size_t used = 0;
-  for (;;) {
-    ssize_t nread = read(fds[0], buf + used, sizeof(buf) - 1 - used);
-    if (nread <= 0) break;
-    used += (size_t)nread;
-    if (used >= sizeof(buf) - 1) break;
-  }
-  buf[used] = '\0';
-  close(fds[0]);
-
-  int status;
-  waitpid(pid, &status, 0);
-  ASSERT_TRUE(WIFEXITED(status));
-  ASSERT_TRUE(WEXITSTATUS(status) != 0);
-  ASSERT_TRUE(strstr(buf, "E0006") != NULL);
-  ASSERT_TRUE(strstr(buf, "E3064") == NULL);
-}
 
 static void expect_parse_ok_without_message(const char *input, const char *needle) {
   int fds[2];
@@ -9940,273 +6807,138 @@ static void test_expr_add_sub() {
 
 static void test_additive_typed_hir_boundary() {
   printf("test_additive_typed_hir_boundary...\n");
-  reset_test_locals();
-  lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
-  set_test_storage_fixture_type(
-      pointer,
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
-  lvar_t *integer = register_test_storage_fixture(
-      (char *)"i", 1, 4, 4, 0);
-  set_test_storage_fixture_type(
-      integer, ps_type_new_integer(TK_INT, 4, 0));
-  lvar_t *floating = register_test_storage_fixture(
-      (char *)"d", 1, 8, 8, 0);
-  set_test_storage_fixture_type(
-      floating, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  reset_test_translation_unit_state();
+  ASSERT_TRUE(resolve_program_input_hir(
+      "double _Complex additive_probe(int condition) { "
+      "  unsigned char uc = 1; short s = 2; "
+      "  unsigned int ui = 3; long sl = 4; "
+      "  float _Complex cf = 1.0f; double d = 2.0; "
+      "  int values[3] = {1,2,3}; int *p = values; "
+      "  int *advanced = p + 1; "
+      "  long difference = advanced - p; "
+      "  int promoted = uc + s; "
+      "  long ranked = ui + sl; "
+      "  double _Complex complex_sum = cf + d; "
+      "  double comma_value = (promoted, d); "
+      "  long conditional = condition ? ui : sl; "
+      "  return complex_sum + comma_value + difference "
+      "      + ranked + conditional + *advanced; "
+      "}"));
 
-  node_t *node = parse_expr_input_with_existing_locals("p + 2");
-  ASSERT_EQ(ND_ADD, node->kind);
-  ASSERT_EQ(TK_PLUS, node->source_op);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_EQ(ND_NUM, node->rhs->kind);
-  ASSERT_EQ(2, as_num(node->rhs)->val);
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *promoted =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "promoted", 0);
+  const psx_hir_node_t *ranked =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "ranked", 0);
+  const psx_hir_node_t *complex_sum =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "complex_sum", 0);
+  const psx_hir_node_t *advanced =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "advanced", 0);
+  const psx_hir_node_t *difference =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "difference", 0);
+  ASSERT_TRUE(promoted != NULL);
+  ASSERT_TRUE(ranked != NULL);
+  ASSERT_TRUE(complex_sum != NULL);
+  ASSERT_TRUE(advanced != NULL);
+  ASSERT_TRUE(difference != NULL);
 
-  psx_frontend_expression_hir_t pointer_addition =
-      resolve_test_expression_hir(node);
-  const psx_hir_node_t *pointer_addition_root =
-      test_expression_hir_root(&pointer_addition);
-  ASSERT_TRUE(pointer_addition_root != NULL);
-  ASSERT_EQ(PSX_HIR_ADD,
-            psx_hir_node_kind(pointer_addition_root));
-  psx_type_shape_t pointer_addition_type =
-      test_hir_type_shape(pointer_addition_root);
-  ASSERT_EQ(PSX_TYPE_POINTER, pointer_addition_type.kind);
-  ASSERT_EQ(ND_ADD, node->kind);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  psx_frontend_expression_hir_dispose(&pointer_addition);
-
-  node_t *mixed = parse_expr_input_with_existing_locals("i + d");
-  ASSERT_EQ(ND_ADD, mixed->kind);
-  ASSERT_TRUE(ps_node_get_type(mixed) == NULL);
-  ASSERT_TRUE(ps_node_get_type(mixed) == NULL);
-  psx_frontend_expression_hir_t mixed_addition =
-      resolve_test_expression_hir(mixed);
-  const psx_hir_node_t *mixed_addition_root =
-      test_expression_hir_root(&mixed_addition);
-  ASSERT_TRUE(mixed_addition_root != NULL);
-  ASSERT_EQ(PSX_HIR_ADD, psx_hir_node_kind(mixed_addition_root));
-  psx_type_shape_t mixed_addition_type =
-      test_hir_type_shape(mixed_addition_root);
-  ASSERT_EQ(PSX_TYPE_FLOAT, mixed_addition_type.kind);
+  psx_type_shape_t promoted_shape =
+      test_hir_type_shape(promoted);
+  psx_type_shape_t ranked_shape =
+      test_hir_type_shape(ranked);
+  psx_type_shape_t complex_shape =
+      test_hir_type_shape(complex_sum);
+  ASSERT_EQ(PSX_TYPE_INTEGER, promoted_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            promoted_shape.integer_kind);
+  ASSERT_TRUE(!promoted_shape.is_unsigned);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ranked_shape.kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            ranked_shape.integer_kind);
+  ASSERT_TRUE(!ranked_shape.is_unsigned);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, complex_shape.kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
-            mixed_addition_type.floating_kind);
-  ASSERT_TRUE(ps_node_get_type(mixed) == NULL);
-  psx_frontend_expression_hir_dispose(&mixed_addition);
-
-  node_t *difference = parse_expr_input_with_existing_locals("p - p");
-  ASSERT_EQ(ND_SUB, difference->kind);
-  ASSERT_TRUE(ps_node_get_type(difference) == NULL);
-  psx_frontend_expression_hir_t pointer_difference_hir =
-      resolve_test_expression_hir(difference);
-  const psx_hir_node_t *pointer_difference_root =
-      test_expression_hir_root(&pointer_difference_hir);
-  ASSERT_TRUE(pointer_difference_root != NULL);
-  ASSERT_EQ(PSX_HIR_SUB,
-            psx_hir_node_kind(pointer_difference_root));
-  psx_qual_type_t pointer_difference_qual_type =
-      psx_hir_node_qual_type(pointer_difference_root);
-  psx_type_shape_t pointer_difference_type =
-      test_hir_type_shape(pointer_difference_root);
-  ASSERT_EQ(PSX_TYPE_INTEGER, pointer_difference_type.kind);
-  ASSERT_EQ(8, psx_type_layout_sizeof(
-                   ps_ctx_semantic_type_table_in(test_semantic_context()),
-                   ps_lowering_record_layouts(test_lowering_context()),
-                   pointer_difference_qual_type.type_id,
-                   ps_lowering_data_layout(test_lowering_context())));
-  ASSERT_TRUE(!pointer_difference_type.is_unsigned);
-  ASSERT_EQ(ND_SUB, difference->kind);
-  ASSERT_TRUE(ps_node_get_type(difference) == NULL);
-  psx_frontend_expression_hir_dispose(&pointer_difference_hir);
-
-  const psx_type_t *promoted = ps_type_usual_arithmetic_result(
-      ps_type_new_integer(TK_CHAR, 1, 1),
-      ps_type_new_integer(TK_SHORT, 2, 0),
-      PSX_FLOATING_KIND_NONE, 0);
-  ASSERT_EQ(PSX_TYPE_INTEGER, promoted->kind);
-  ASSERT_EQ(4, ps_type_sizeof(promoted));
-  ASSERT_TRUE(!ps_type_is_unsigned(promoted));
-
-  const psx_type_t *ranked = ps_type_usual_arithmetic_result(
-      ps_type_new_integer(TK_UNSIGNED, 4, 1),
-      ps_type_new_integer(TK_LONG, 8, 0),
-      PSX_FLOATING_KIND_NONE, 0);
-  ASSERT_EQ(8, ps_type_sizeof(ranked));
-  ASSERT_TRUE(!ps_type_is_unsigned(ranked));
-
-  psx_type_t *complex_float = ps_type_new(PSX_TYPE_COMPLEX);
-  complex_float->floating_kind = PSX_FLOATING_KIND_FLOAT;
-  const psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
-      complex_float, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
-      PSX_FLOATING_KIND_NONE, 0);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, complex_promoted->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, complex_promoted->floating_kind);
-  ASSERT_EQ(16, ps_type_sizeof(complex_promoted));
-
-  psx_type_t *pointer_type = ps_type_new_pointer(
-      ps_type_new_integer(TK_INT, 4, 0));
-  const psx_type_t *pointer_sum = ps_type_binary_result(
-      PSX_TYPE_BINARY_ADD, pointer_type,
-      ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_EQ(PSX_TYPE_POINTER, pointer_sum->kind);
-  ASSERT_TRUE(pointer_sum != pointer_type);
-  const psx_type_t *pointer_difference = ps_type_binary_result(
-      PSX_TYPE_BINARY_SUB, pointer_type, pointer_type);
-  ASSERT_EQ(PSX_TYPE_INTEGER, pointer_difference->kind);
-  ASSERT_EQ(8, ps_type_sizeof(pointer_difference));
-  ASSERT_TRUE(!ps_type_is_unsigned(pointer_difference));
-
-  psx_type_t *array_type = ps_type_new_array(
-      ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
-  ASSERT_TRUE(!ps_type_is_pointer(array_type));
-  ASSERT_TRUE(ps_type_is_pointer_like(array_type));
-  const psx_type_t *array_sum = ps_type_binary_result(
-      PSX_TYPE_BINARY_ADD, array_type,
-      ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_EQ(PSX_TYPE_POINTER, array_sum->kind);
-  ASSERT_EQ(PSX_TYPE_INTEGER, array_sum->base->kind);
-  const psx_type_t *array_conditional = ps_type_conditional_result(
-      array_type, pointer_type);
-  ASSERT_EQ(PSX_TYPE_POINTER, array_conditional->kind);
-  ASSERT_EQ(PSX_TYPE_INTEGER, array_conditional->base->kind);
-  psx_qual_type_t array_qual_type =
-      intern_test_qual_type(array_type);
-  psx_qual_type_t pointer_qual_type =
-      intern_test_qual_type(pointer_type);
-  ASSERT_EQ(PSX_DEREF_OPERAND_OK,
-            psx_resolve_deref_operand_qual_type_in(
-                test_semantic_context(), array_qual_type));
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_resolve_incdec_result_qual_type_in(
-                test_semantic_context(), array_qual_type).type_id);
-  ASSERT_TRUE(psx_resolve_incdec_result_qual_type_in(
-                  test_semantic_context(), pointer_qual_type).type_id !=
-              PSX_TYPE_ID_INVALID);
-
-  psx_type_t *comma_rhs = ps_type_new_float(
-      TK_FLOAT_KIND_DOUBLE, 8);
-  const psx_type_t *comma_result = ps_type_binary_result(
-      PSX_TYPE_BINARY_COMMA,
-      ps_type_new_integer(TK_INT, 4, 0), comma_rhs);
-  ASSERT_EQ(PSX_TYPE_FLOAT, comma_result->kind);
-  ASSERT_TRUE(comma_result != comma_rhs);
-  const psx_type_t *conditional_result = ps_type_conditional_result(
-      ps_type_new_integer(TK_UNSIGNED, 4, 1),
-      ps_type_new_integer(TK_LONG, 8, 0));
-  ASSERT_EQ(8, ps_type_sizeof(conditional_result));
-  ASSERT_TRUE(!ps_type_is_unsigned(conditional_result));
-  const psx_type_t *void_type = ps_type_new(PSX_TYPE_VOID);
-  const psx_type_t *void_conditional = ps_type_conditional_result(
-      void_type, void_type);
-  ASSERT_TRUE(void_conditional != NULL);
-  ASSERT_EQ(PSX_TYPE_VOID, void_conditional->kind);
-  ASSERT_TRUE(ps_type_conditional_result(
-                  void_type, ps_type_new_integer(TK_INT, 4, 0)) == NULL);
+            complex_shape.floating_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_hir_type_shape(advanced).kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            test_hir_type_shape(difference).integer_kind);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_ADD, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_SUB, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_COMMA, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_TERNARY, 0) != NULL);
 }
 
 static void test_subscript_typed_hir_boundary() {
   printf("test_subscript_typed_hir_boundary...\n");
-  reset_test_locals();
-  psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
-  psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
-  psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
-  const psx_type_t *decayed_matrix = ps_type_decay_array(matrix);
-  ASSERT_TRUE(decayed_matrix != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, decayed_matrix->kind);
-  ASSERT_TRUE(decayed_matrix->base == row);
-  const psx_type_t *addressed_matrix = ps_type_address_result(matrix);
-  ASSERT_TRUE(addressed_matrix != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, addressed_matrix->kind);
-  ASSERT_TRUE(addressed_matrix->base == matrix);
-  lvar_t *array = register_test_storage_fixture(
-      (char *)"a", 1, 24, 12, 1);
-  set_test_storage_fixture_type(array, matrix);
-  ASSERT_EQ(12, ps_type_subscript_static_stride(matrix));
-  const psx_type_t *matrix_row_type = ps_type_subscript_result(matrix);
-  ASSERT_TRUE(matrix_row_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, matrix_row_type->kind);
-  ASSERT_EQ(4, ps_type_subscript_static_stride(matrix_row_type));
-  const psx_type_t *matrix_element_type =
-      ps_type_subscript_result(matrix_row_type);
-  ASSERT_TRUE(matrix_element_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, matrix_element_type->kind);
-
-  psx_type_t *vla_cell = ps_type_new_array(integer, 0, 0, 1);
-  psx_type_t *vla_row = ps_type_new_array(vla_cell, 0, 0, 1);
-  psx_type_t *vla_matrix = ps_type_new_array(vla_row, 0, 0, 1);
-  const psx_type_t *vla_result = ps_type_subscript_result(vla_matrix);
-  ASSERT_TRUE(vla_result != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->kind);
-  ASSERT_TRUE(vla_result->base != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->base->kind);
-  psx_type_t *vla_scalar_pointer = ps_type_new_pointer(integer);
-  const psx_type_t *vla_scalar_result =
-      ps_type_subscript_result(vla_scalar_pointer);
-  ASSERT_TRUE(vla_scalar_result != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, vla_scalar_result->kind);
-
-  node_t *node = parse_expr_input_with_existing_locals("a[0][1]");
-  ASSERT_EQ(ND_SUBSCRIPT, node->kind);
-  ASSERT_EQ(ND_SUBSCRIPT, node->lhs->kind);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
-
-  psx_frontend_expression_hir_t nested_subscript =
-      resolve_test_expression_hir(node);
-  const psx_hir_node_t *nested_subscript_root =
-      test_expression_hir_root(&nested_subscript);
-  ASSERT_TRUE(nested_subscript_root != NULL);
-  ASSERT_EQ(PSX_HIR_SUBSCRIPT,
-            psx_hir_node_kind(nested_subscript_root));
-  psx_type_shape_t nested_subscript_type =
-      test_hir_type_shape(nested_subscript_root);
-  ASSERT_EQ(PSX_TYPE_INTEGER, nested_subscript_type.kind);
-  ASSERT_EQ(ND_SUBSCRIPT, node->kind);
-  ASSERT_EQ(ND_SUBSCRIPT, node->lhs->kind);
-  ASSERT_TRUE(ps_node_get_type(node) == NULL);
-  ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
-  psx_frontend_expression_hir_dispose(&nested_subscript);
-
-  node_t *reversed = parse_expr_input_with_existing_locals("1[a]");
-  ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
-  ASSERT_EQ(ND_NUM, reversed->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, reversed->rhs->kind);
-  psx_frontend_expression_hir_t reversed_subscript =
-      resolve_test_expression_hir(reversed);
-  const psx_hir_node_t *reversed_subscript_root =
-      test_expression_hir_root(&reversed_subscript);
-  ASSERT_TRUE(reversed_subscript_root != NULL);
-  ASSERT_EQ(PSX_HIR_ADDRESS,
-            psx_hir_node_kind(reversed_subscript_root));
-  ASSERT_EQ(PSX_TYPE_POINTER,
-            test_hir_type_shape(reversed_subscript_root).kind);
-  ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
-  ASSERT_EQ(ND_NUM, reversed->lhs->kind);
-  ASSERT_EQ(ND_IDENTIFIER, reversed->rhs->kind);
-  ASSERT_TRUE(ps_node_get_type(reversed) == NULL);
-  psx_frontend_expression_hir_dispose(&reversed_subscript);
-
-  psx_hir_module_t *hir =
-      ag_compilation_session_hir_module(test_suite_session);
-  size_t hir_checkpoint = psx_hir_module_node_count(hir);
+  reset_test_translation_unit_state();
   ASSERT_TRUE(resolve_program_input_hir(
-      "int __typed_hir_subscript(int *value) { return value[1]; }"));
-  int found_typed_hir_subscript = 0;
-  for (size_t i = hir_checkpoint + 1;
+      "int subscript_probe(int rows, int columns, "
+      "                    int matrix[rows][columns]) { "
+      "  int fixed[2][3] = {{1,2,3},{4,5,6}}; "
+      "  int *row = fixed[1]; "
+      "  int fixed_value = fixed[1][2]; "
+      "  int variable_value = matrix[rows-1][columns-1]; "
+      "  return fixed_value + variable_value + row[0]; "
+      "}"));
+
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *fixed =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "fixed", 0);
+  const psx_hir_node_t *row =
+      find_test_named_hir_node(
+          hir, PSX_HIR_LOCAL, "row", 0);
+  const psx_hir_node_t *function =
+      find_test_named_hir_node(
+          hir, PSX_HIR_FUNCTION,
+          "subscript_probe", 0);
+  const psx_hir_node_t *matrix =
+      find_test_hir_function_parameter(
+          hir, function, "matrix");
+  ASSERT_TRUE(fixed != NULL);
+  ASSERT_TRUE(row != NULL);
+  ASSERT_TRUE(function != NULL);
+  ASSERT_TRUE(matrix != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_hir_type_shape(row).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_hir_type_shape(matrix).kind);
+  ASSERT_TRUE(psx_hir_node_vla_dimension_count(matrix) >= 1);
+
+  size_t subscript_count = 0;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(
+          test_semantic_context());
+  for (size_t i = 1;
        i <= psx_hir_module_node_count(hir); i++) {
-    const psx_hir_node_t *hir_node =
-        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
-    if (hir_node &&
-        psx_hir_node_kind(hir_node) == PSX_HIR_SUBSCRIPT &&
-        psx_hir_node_qual_type(hir_node).type_id !=
-            PSX_TYPE_ID_INVALID) {
-      found_typed_hir_subscript = 1;
-      break;
-    }
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(
+            hir, (psx_hir_node_id_t)i);
+    if (!node ||
+        psx_hir_node_kind(node) != PSX_HIR_SUBSCRIPT)
+      continue;
+    subscript_count++;
+    ASSERT_TRUE(
+        psx_semantic_type_table_qual_type_is_valid(
+            types, psx_hir_node_qual_type(node)));
   }
-  ASSERT_TRUE(found_typed_hir_subscript);
+  ASSERT_TRUE(subscript_count >= 5);
 }
 
 static void test_unary_deref_typed_hir_boundary() {
@@ -13832,10 +10564,18 @@ static void test_local_declaration_storage_plan_boundary() {
 
 static void test_target_type_layout_boundary() {
   printf("test_target_type_layout_boundary...\n");
+  reset_test_translation_unit_state();
+
   ag_target_info_t host = ag_target_info_host();
   ag_target_info_t wasm = ag_target_info_wasm32();
   ASSERT_TRUE(ag_target_info_is_valid(&host));
   ASSERT_TRUE(ag_target_info_is_valid(&wasm));
+  ASSERT_TRUE(!ag_target_info_equal(&host, &wasm));
+  ASSERT_TRUE(ag_data_layout_is_valid(
+      ag_target_info_data_layout(&host)));
+  ASSERT_TRUE(ag_data_layout_is_valid(
+      ag_target_info_data_layout(&wasm)));
+
   const ir_abi_target_policy_t *host_abi_policy =
       ir_abi_target_policy_for(&host);
   const ir_abi_target_policy_t *wasm_abi_policy =
@@ -13843,490 +10583,212 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(host_abi_policy != NULL);
   ASSERT_TRUE(wasm_abi_policy != NULL);
   ASSERT_TRUE(
-      !ir_abi_policy_parameter_aggregate_is_indirect(host_abi_policy, 16));
+      !ir_abi_policy_parameter_aggregate_is_indirect(
+          host_abi_policy, 16));
   ASSERT_TRUE(
-      ir_abi_policy_parameter_aggregate_is_indirect(host_abi_policy, 17));
+      ir_abi_policy_parameter_aggregate_is_indirect(
+          host_abi_policy, 17));
   ASSERT_TRUE(
-      !ir_abi_policy_parameter_aggregate_is_indirect(wasm_abi_policy, 16));
+      !ir_abi_policy_parameter_aggregate_is_indirect(
+          wasm_abi_policy, 16));
   ASSERT_TRUE(
-      ir_abi_policy_parameter_aggregate_is_indirect(wasm_abi_policy, 17));
-  ASSERT_TRUE(!ir_abi_policy_parameter_aggregate_is_indirect(NULL, 17));
+      ir_abi_policy_parameter_aggregate_is_indirect(
+          wasm_abi_policy, 17));
+
   ASSERT_TRUE(!ag_target_info_is_valid(NULL));
   ASSERT_EQ(0, test_target_pointer_size(NULL));
   ASSERT_EQ(0, test_target_pointer_alignment(NULL));
-  ASSERT_EQ(AG_TARGET_CALL_ABI_INVALID, ag_target_info_call_abi(NULL));
-  ASSERT_EQ(0, test_target_scalar_size(NULL, AG_TARGET_SCALAR_INT));
-  ASSERT_EQ(0, test_target_scalar_alignment(NULL, AG_TARGET_SCALAR_INT));
-  ASSERT_TRUE(!ag_target_info_equal(NULL, &host));
-  ASSERT_TRUE(ag_data_layout_is_valid(
-      ag_target_info_data_layout(&host)));
-  ASSERT_TRUE(ag_data_layout_equal(
-      ag_target_info_data_layout(&host),
-      ag_target_info_data_layout(&host)));
+  ASSERT_EQ(AG_TARGET_CALL_ABI_INVALID,
+            ag_target_info_call_abi(NULL));
+  ASSERT_EQ(0, test_target_scalar_size(
+                   NULL, AG_TARGET_SCALAR_INT));
+  ASSERT_EQ(0, test_target_scalar_alignment(
+                   NULL, AG_TARGET_SCALAR_INT));
+
   ag_target_info_t alternate_host_abi = host;
   alternate_host_abi.call_abi = AG_TARGET_CALL_ABI_WASM32;
   ASSERT_TRUE(ag_target_info_is_valid(&alternate_host_abi));
-  ASSERT_TRUE(!ag_target_info_equal(&host, &alternate_host_abi));
+  ASSERT_TRUE(!ag_target_info_equal(
+      &host, &alternate_host_abi));
   ASSERT_TRUE(ag_data_layout_equal(
       ag_target_info_data_layout(&host),
       ag_target_info_data_layout(&alternate_host_abi)));
-  ASSERT_TRUE(ag_data_layout_equal(
-      ps_ctx_data_layout(test_semantic_context()),
-      ag_target_info_data_layout(
-          ag_compilation_session_target(test_suite_session))));
-  ag_target_info_t invalid_abi_target = host;
-  invalid_abi_target.call_abi = AG_TARGET_CALL_ABI_INVALID;
-  ASSERT_TRUE(!ag_target_info_is_valid(&invalid_abi_target));
-  ASSERT_TRUE(ag_target_info_data_layout(&invalid_abi_target) != NULL);
+
   ag_target_info_t incomplete_target = host;
-  incomplete_target.data_layout.scalar[AG_TARGET_SCALAR_INT].alignment = 0;
+  incomplete_target.data_layout
+      .scalar[AG_TARGET_SCALAR_INT].alignment = 0;
   ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
-  ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), test_diagnostics(), test_resolution_store(),
-      test_suite_session->scope_graph, NULL) == NULL);
-  ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), test_diagnostics(), test_resolution_store(),
-      test_suite_session->scope_graph, &incomplete_target) == NULL);
-  ASSERT_TRUE(ps_ctx_create(
-      NULL, test_diagnostics(), test_resolution_store(),
-      test_suite_session->scope_graph, &host) == NULL);
-  ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), NULL, test_resolution_store(),
-      test_suite_session->scope_graph, &host) == NULL);
-  ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), test_diagnostics(), NULL,
-      test_suite_session->scope_graph, &host) == NULL);
-  ASSERT_TRUE(ps_ctx_create(
-      test_arena_context(), test_diagnostics(), test_resolution_store(),
-      NULL, &host) == NULL);
   ag_compilation_session_t invalid_session;
   ASSERT_TRUE(ag_compilation_session_create(NULL) == NULL);
-  ASSERT_TRUE(!ag_compilation_session_init(&invalid_session, NULL));
-  ASSERT_TRUE(!ag_compilation_session_is_complete(&invalid_session));
+  ASSERT_TRUE(!ag_compilation_session_init(
+      &invalid_session, NULL));
   ASSERT_TRUE(!ag_compilation_session_init(
       &invalid_session, &incomplete_target));
-  ASSERT_TRUE(!ag_compilation_session_is_complete(&invalid_session));
-  psx_type_t *semantic_plain_char = ps_type_new_integer_kind_in(
-      test_arena_context(), PSX_INTEGER_KIND_CHAR, 0, 1);
-  psx_type_t *semantic_signed_char = ps_type_new_integer_kind_in(
-      test_arena_context(), PSX_INTEGER_KIND_CHAR, 0, 0);
-  psx_type_t *semantic_long_long = ps_type_new_integer_kind_in(
-      test_arena_context(), PSX_INTEGER_KIND_LONG_LONG, 1, 0);
-  psx_type_t *semantic_bool = ps_type_new_integer_kind_in(
-      test_arena_context(), PSX_INTEGER_KIND_BOOL, 0, 0);
-  ASSERT_TRUE(semantic_plain_char != NULL);
-  ASSERT_TRUE(semantic_plain_char->is_plain_char);
-  ASSERT_TRUE(semantic_signed_char != NULL);
-  ASSERT_TRUE(!semantic_signed_char->is_plain_char);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
-            semantic_long_long->integer_kind);
-  ASSERT_TRUE(ps_type_is_unsigned(semantic_long_long));
-  ASSERT_EQ(PSX_TYPE_BOOL, semantic_bool->kind);
-  ASSERT_TRUE(ps_type_new_integer_kind_in(
-      test_arena_context(), PSX_INTEGER_KIND_NONE, 0, 0) == NULL);
-  psx_type_t *semantic_float = ps_type_new_floating_in(
-      test_arena_context(), PSX_FLOATING_KIND_FLOAT, 0);
-  psx_type_t *semantic_long_double_complex = ps_type_new_floating_in(
-      test_arena_context(), PSX_FLOATING_KIND_LONG_DOUBLE, 1);
-  ASSERT_EQ(PSX_TYPE_FLOAT, semantic_float->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, semantic_float->floating_kind);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, semantic_long_double_complex->kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE,
-            semantic_long_double_complex->floating_kind);
-  ASSERT_TRUE(ps_type_new_floating_in(
-      test_arena_context(), PSX_FLOATING_KIND_NONE, 0) == NULL);
-  psx_record_decl_t semantic_record = {
-      .record_id = 0xf001u,
-      .record_kind = PSX_TYPE_STRUCT,
-      .tag_name = (char *)"SemanticRecord",
-      .tag_len = 14,
-  };
-  psx_type_t *semantic_record_type = ps_type_new_record_in(
-      test_arena_context(), &semantic_record);
-  ASSERT_TRUE(semantic_record_type != NULL);
-  ASSERT_EQ(PSX_TYPE_STRUCT, semantic_record_type->kind);
-  ASSERT_EQ(semantic_record.record_id,
-            ps_type_record_id(semantic_record_type));
-  ASSERT_TRUE(semantic_record_type->tag_name == semantic_record.tag_name);
-  semantic_record.record_kind = PSX_TYPE_INTEGER;
-  ASSERT_TRUE(ps_type_new_record_in(
-      test_arena_context(), &semantic_record) == NULL);
-  psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
-  psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
-  psx_type_t *float_complex = ps_type_new_floating_in(
-      test_arena_context(), PSX_FLOATING_KIND_FLOAT, 1);
-  psx_type_t *pointer = ps_type_new_pointer(integer);
-  psx_type_t *pointer_array = ps_type_new_array(pointer, 3, 24, 0);
-  psx_type_layout_t layout = {0};
 
-  ASSERT_TRUE(ps_type_layout_of(pointer, &host, &layout));
-  ASSERT_TRUE(layout.is_complete);
-  ASSERT_EQ(8, layout.size);
-  ASSERT_EQ(8, layout.alignment);
-  ASSERT_EQ(4, ps_type_sizeof_for_target(pointer, &wasm));
-  ASSERT_EQ(4, ps_type_alignof_for_target(pointer, &wasm));
-  ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
-  ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
+  psx_semantic_type_table_t *types =
+      (psx_semantic_type_table_t *)
+          ps_ctx_semantic_type_table_in(
+              test_semantic_context());
+  const psx_record_layout_table_t *session_layouts =
+      ps_ctx_record_layout_table_in(
+          test_semantic_context());
+  ASSERT_TRUE(types != NULL);
+  ASSERT_TRUE(session_layouts != NULL);
+
+  psx_qual_type_t integer =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_INT, 0, 0);
+  psx_qual_type_t signed_long =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_LONG, 0, 0);
+  psx_qual_type_t unsigned_int =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_INT, 1, 0);
+  psx_qual_type_t unsigned_short =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_SHORT, 1, 0);
+  psx_qual_type_t float_complex =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_FLOAT, 1);
+  psx_qual_type_t pointer =
+      psx_semantic_type_table_intern_pointer_to(
+          types, integer);
+  psx_qual_type_t pointer_array =
+      psx_semantic_type_table_intern_array_of(
+          types, pointer, 3, 0);
+
+  ASSERT_EQ(8, psx_type_layout_sizeof(
+                   types, session_layouts, pointer.type_id,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(8, psx_type_layout_alignof(
+                   types, session_layouts, pointer.type_id,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(4, psx_type_layout_sizeof(
+                   types, session_layouts, pointer.type_id,
+                   ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(4, psx_type_layout_alignof(
+                   types, session_layouts, pointer.type_id,
+                   ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(24, psx_type_layout_sizeof(
+                    types, session_layouts,
+                    pointer_array.type_id,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(12, psx_type_layout_sizeof(
+                    types, session_layouts,
+                    pointer_array.type_id,
+                    ag_target_info_data_layout(&wasm)));
+
   ag_target_info_t wide_pointer_target = host;
   wide_pointer_target.data_layout.pointer_size = 16;
   wide_pointer_target.data_layout.pointer_alignment = 16;
-  ASSERT_EQ(16, test_target_pointer_size(&wide_pointer_target));
-  ASSERT_EQ(16, ps_type_sizeof_for_target(
-                    pointer, &wide_pointer_target));
-  ASSERT_EQ(16, ps_type_alignof_for_target(
-                    pointer, &wide_pointer_target));
-  ASSERT_EQ(48, ps_type_sizeof_for_target(
-                    pointer_array, &wide_pointer_target));
-  ASSERT_TRUE(!ag_target_info_equal(&host, &wide_pointer_target));
-  ASSERT_EQ(4, ps_type_sizeof_for_target(stale_integer, &host));
-  ASSERT_TRUE(ps_type_shape_matches(integer, stale_integer));
-  ag_target_info_t narrow_int_target = host;
-  narrow_int_target.data_layout.scalar[AG_TARGET_SCALAR_INT] =
-      (ag_target_scalar_layout_t){2, 2};
-  ASSERT_TRUE(ag_target_info_equal(&host, &host));
-  ASSERT_TRUE(!ag_target_info_equal(&host, &wasm));
-  ASSERT_TRUE(!ag_target_info_equal(&host, &narrow_int_target));
-  ASSERT_EQ(2, ps_type_sizeof_for_target(integer, &narrow_int_target));
-  ASSERT_EQ(2, ps_type_alignof_for_target(integer, &narrow_int_target));
-  char target_signature[16];
-  ASSERT_EQ(3, ps_type_format_canonical_signature_for_data_layout(
-                   stale_integer, ag_target_info_data_layout(&host),
-                   target_signature, sizeof(target_signature)));
-  ASSERT_TRUE(strcmp("i32", target_signature) == 0);
-  char alternate_abi_signature[16];
-  ASSERT_EQ(3,
-            ps_type_format_canonical_signature_for_data_layout(
-                stale_integer, ag_target_info_data_layout(&alternate_host_abi),
-                alternate_abi_signature, sizeof(alternate_abi_signature)));
-  ASSERT_TRUE(strcmp(target_signature, alternate_abi_signature) == 0);
-  ASSERT_EQ(3,
-            ps_type_format_canonical_signature_for_data_layout(
-                stale_integer, ag_target_info_data_layout(&narrow_int_target),
-                target_signature, sizeof(target_signature)));
-  ASSERT_TRUE(strcmp("i16", target_signature) == 0);
-  ASSERT_EQ(
-      -1, ps_type_format_canonical_signature_for_data_layout(
-              stale_integer, NULL, target_signature, sizeof(target_signature)));
-  ASSERT_EQ(8, ps_type_sizeof_for_target(float_complex, &host));
-  ASSERT_EQ(8, ps_type_alignof_for_target(float_complex, &host));
-  ag_target_info_t packed_complex_target = host;
-  packed_complex_target.data_layout.scalar[AG_TARGET_SCALAR_FLOAT_COMPLEX] =
-      (ag_target_scalar_layout_t){8, 2};
-  ASSERT_TRUE(!ag_target_info_equal(&host, &packed_complex_target));
-  ASSERT_EQ(8, ps_type_sizeof_for_target(
-                   float_complex, &packed_complex_target));
-  ASSERT_EQ(2, ps_type_alignof_for_target(
-                   float_complex, &packed_complex_target));
+  ASSERT_EQ(16, psx_type_layout_sizeof(
+                    types, session_layouts, pointer.type_id,
+                    ag_target_info_data_layout(
+                        &wide_pointer_target)));
+  ASSERT_EQ(16, psx_type_layout_alignof(
+                    types, session_layouts, pointer.type_id,
+                    ag_target_info_data_layout(
+                        &wide_pointer_target)));
+  ASSERT_EQ(48, psx_type_layout_sizeof(
+                    types, session_layouts,
+                    pointer_array.type_id,
+                    ag_target_info_data_layout(
+                        &wide_pointer_target)));
 
-  psx_type_t *stale_signed_long =
-      ps_type_new_integer(TK_LONG, 1, 0);
-  psx_type_t *stale_unsigned_long =
-      ps_type_new_integer(TK_LONG, 1, 1);
-  psx_type_t *stale_unsigned_int =
-      ps_type_new_integer(TK_INT, 64, 1);
-  const psx_type_t *host_conversion =
-      ps_type_usual_arithmetic_result_for_data_layout_in(
-          test_arena_context(), ag_target_info_data_layout(&host),
-          stale_signed_long, stale_unsigned_int, PSX_FLOATING_KIND_NONE, 0);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_conversion->integer_kind);
-  ASSERT_EQ(8, ps_type_sizeof_for_target(host_conversion, &host));
-  ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
-  const psx_type_t *shift_conversion =
-      ps_type_binary_result_for_data_layout_in(
-          test_arena_context(), ag_target_info_data_layout(&host),
-          PSX_TYPE_BINARY_SHL, stale_unsigned_long, stale_integer);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG, shift_conversion->integer_kind);
-  ASSERT_TRUE(ps_type_is_unsigned(shift_conversion));
+  ag_target_info_t narrow_int_target = host;
+  narrow_int_target.data_layout
+      .scalar[AG_TARGET_SCALAR_INT] =
+      (ag_target_scalar_layout_t){2, 2};
+  ASSERT_EQ(2, psx_type_layout_sizeof(
+                   types, session_layouts, integer.type_id,
+                   ag_target_info_data_layout(
+                       &narrow_int_target)));
+  ASSERT_EQ(2, psx_type_layout_alignof(
+                   types, session_layouts, integer.type_id,
+                   ag_target_info_data_layout(
+                       &narrow_int_target)));
+
+  char signature[64];
+  ASSERT_EQ(3, psx_format_canonical_type_signature(
+                   types, integer,
+                   ag_target_info_data_layout(&host),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("i32", signature) == 0);
+  ASSERT_EQ(3, psx_format_canonical_type_signature(
+                   types, integer,
+                   ag_target_info_data_layout(
+                       &narrow_int_target),
+                   signature, sizeof(signature)));
+  ASSERT_TRUE(strcmp("i16", signature) == 0);
+
+  ag_target_info_t packed_complex_target = host;
+  packed_complex_target.data_layout
+      .scalar[AG_TARGET_SCALAR_FLOAT_COMPLEX] =
+      (ag_target_scalar_layout_t){8, 2};
+  ASSERT_EQ(8, psx_type_layout_sizeof(
+                   types, session_layouts,
+                   float_complex.type_id,
+                   ag_target_info_data_layout(
+                       &packed_complex_target)));
+  ASSERT_EQ(2, psx_type_layout_alignof(
+                   types, session_layouts,
+                   float_complex.type_id,
+                   ag_target_info_data_layout(
+                       &packed_complex_target)));
 
   ag_target_info_t equal_width_integer_target = host;
-  equal_width_integer_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =
+  equal_width_integer_target.data_layout
+      .scalar[AG_TARGET_SCALAR_LONG] =
       (ag_target_scalar_layout_t){4, 4};
-  const psx_type_t *equal_width_conversion =
-      ps_type_usual_arithmetic_result_for_data_layout_in(
-          test_arena_context(),
-          ag_target_info_data_layout(&equal_width_integer_target),
-          stale_signed_long, stale_unsigned_int, PSX_FLOATING_KIND_NONE, 0);
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG, equal_width_conversion->integer_kind);
-  ASSERT_EQ(4, ps_type_sizeof_for_target(
-                   equal_width_conversion, &equal_width_integer_target));
-  ASSERT_TRUE(ps_type_is_unsigned(equal_width_conversion));
-
   ag_target_info_t wide_short_target = host;
-  wide_short_target.data_layout.scalar[AG_TARGET_SCALAR_SHORT] =
+  wide_short_target.data_layout
+      .scalar[AG_TARGET_SCALAR_SHORT] =
       (ag_target_scalar_layout_t){4, 4};
-  psx_type_t *stale_unsigned_short =
-      ps_type_new_integer(TK_SHORT, 1, 1);
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
-      stale_unsigned_short, ag_target_info_data_layout(&wide_short_target)));
-  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_data_layout(
-      stale_unsigned_short, ag_target_info_data_layout(&host)));
-
-  psx_qual_type_t host_signed_long = ps_ctx_intern_qual_type_in(
-      test_semantic_context(), stale_signed_long);
-  psx_qual_type_t host_unsigned_int = ps_ctx_intern_qual_type_in(
-      test_semantic_context(), stale_unsigned_int);
-  psx_qual_type_t host_result = psx_resolve_binary_result_qual_type_in(
-      test_semantic_context(), PSX_TYPE_BINARY_ADD,
-      host_signed_long, host_unsigned_int);
-  psx_type_shape_t host_result_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(test_semantic_context()),
-      host_result.type_id, &host_result_shape));
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_result_shape.integer_kind);
-  ASSERT_TRUE(!host_result_shape.is_unsigned);
-
-  test_semantic_context_fixture_t equal_width_semantic_fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
-      &equal_width_semantic_fixture, &equal_width_integer_target));
-  psx_semantic_context_t *equal_width_semantic_context =
-      equal_width_semantic_fixture.context;
-  psx_qual_type_t equal_width_signed_long = ps_ctx_intern_qual_type_in(
-      equal_width_semantic_context, stale_signed_long);
-  psx_qual_type_t equal_width_unsigned_int = ps_ctx_intern_qual_type_in(
-      equal_width_semantic_context, stale_unsigned_int);
-  psx_qual_type_t equal_width_result =
-      psx_resolve_binary_result_qual_type_in(
-          equal_width_semantic_context, PSX_TYPE_BINARY_ADD,
-          equal_width_signed_long, equal_width_unsigned_int);
-  psx_type_shape_t equal_width_result_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(equal_width_semantic_context),
-      equal_width_result.type_id, &equal_width_result_shape));
-  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
-            equal_width_result_shape.integer_kind);
-  ASSERT_TRUE(equal_width_result_shape.is_unsigned);
-  test_semantic_context_fixture_dispose(
-      &equal_width_semantic_fixture);
-
-  test_semantic_context_fixture_t wide_short_semantic_fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
-      &wide_short_semantic_fixture, &wide_short_target));
-  psx_semantic_context_t *wide_short_semantic_context =
-      wide_short_semantic_fixture.context;
-  psx_qual_type_t wide_unsigned_short = ps_ctx_intern_qual_type_in(
-      wide_short_semantic_context, stale_unsigned_short);
-  psx_qual_type_t wide_short_result =
-      psx_resolve_arithmetic_unary_result_qual_type_in(
-          wide_short_semantic_context, PSX_TYPE_UNARY_PLUS,
-          wide_unsigned_short);
-  psx_type_shape_t wide_short_result_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(wide_short_semantic_context),
-      wide_short_result.type_id, &wide_short_result_shape));
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            wide_short_result_shape.integer_kind);
-  ASSERT_TRUE(wide_short_result_shape.is_unsigned);
-  psx_qual_type_t float_identity = ps_ctx_intern_qual_type_in(
-      wide_short_semantic_context, semantic_float);
-  psx_qual_type_t long_double_complex_identity =
-      ps_ctx_intern_qual_type_in(
-          wide_short_semantic_context, semantic_long_double_complex);
-  psx_qual_type_t complex_result =
-      psx_resolve_binary_result_qual_type_in(
-          wide_short_semantic_context, PSX_TYPE_BINARY_ADD,
-          float_identity, long_double_complex_identity);
-  psx_type_shape_t complex_result_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(wide_short_semantic_context),
-      complex_result.type_id, &complex_result_shape));
-  ASSERT_EQ(PSX_TYPE_COMPLEX, complex_result_shape.kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE,
-            complex_result_shape.floating_kind);
-  test_semantic_context_fixture_dispose(
-      &wide_short_semantic_fixture);
-
-  psx_qual_type_t pointer_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
-  psx_qual_type_t pointer_array_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), pointer_array);
-  psx_qual_type_t integer_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), integer);
-  psx_qual_type_t stale_integer_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_integer);
-  const psx_semantic_type_table_t *types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  const psx_record_layout_table_t *layouts =
-      ps_ctx_record_layout_table_in(test_semantic_context());
-  ASSERT_TRUE(types != NULL);
-  ASSERT_TRUE(layouts != NULL);
-  ASSERT_EQ(integer_identity.type_id, stale_integer_identity.type_id);
-  char legacy_pointer_array_signature[64] = {0};
-  char type_id_pointer_array_signature[64] = {0};
-  int legacy_pointer_array_signature_length =
-      ps_type_format_canonical_signature_for_data_layout(
-          pointer_array, ag_target_info_data_layout(&host),
-          legacy_pointer_array_signature,
-          sizeof(legacy_pointer_array_signature));
-  ASSERT_EQ(legacy_pointer_array_signature_length,
-            psx_format_canonical_type_signature(
-                types, pointer_array_identity,
-                ag_target_info_data_layout(&host),
-                type_id_pointer_array_signature,
-                sizeof(type_id_pointer_array_signature)));
-  ASSERT_EQ(-1, psx_format_canonical_type_signature(
-                    types, pointer_array_identity, NULL, NULL, 0));
-  ASSERT_TRUE(strcmp(legacy_pointer_array_signature,
-                     type_id_pointer_array_signature) == 0);
-  psx_qual_type_t signed_long_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_signed_long);
-  psx_qual_type_t unsigned_int_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_unsigned_int);
-  psx_qual_type_t unsigned_short_identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_unsigned_short);
   ir_mir_type_context_t mir_type_context = {
       .semantic_types = types,
-      .record_layouts = ps_lowering_record_layouts(test_lowering_context()),
+      .record_layouts = session_layouts,
       .data_layout = ag_target_info_data_layout(&host),
   };
-  ir_mir_type_info_t signed_long_mir = ir_mir_classify_type_id(
-      &mir_type_context, signed_long_identity.type_id);
-  ir_mir_type_info_t unsigned_int_mir = ir_mir_classify_type_id(
-      &mir_type_context, unsigned_int_identity.type_id);
-  ir_mir_type_info_t unsigned_short_mir = ir_mir_classify_type_id(
-      &mir_type_context, unsigned_short_identity.type_id);
+  ir_mir_type_info_t signed_long_mir =
+      ir_mir_classify_type_id(
+          &mir_type_context, signed_long.type_id);
+  ir_mir_type_info_t unsigned_int_mir =
+      ir_mir_classify_type_id(
+          &mir_type_context, unsigned_int.type_id);
+  ir_mir_type_info_t unsigned_short_mir =
+      ir_mir_classify_type_id(
+          &mir_type_context, unsigned_short.type_id);
   ASSERT_TRUE(!ir_mir_usual_arithmetic_result_is_unsigned(
-      signed_long_mir, unsigned_int_mir, ag_target_info_data_layout(&host)));
+      signed_long_mir, unsigned_int_mir,
+      ag_target_info_data_layout(&host)));
   ASSERT_TRUE(ir_mir_usual_arithmetic_result_is_unsigned(
       signed_long_mir, unsigned_int_mir,
-      ag_target_info_data_layout(&equal_width_integer_target)));
+      ag_target_info_data_layout(
+          &equal_width_integer_target)));
   ASSERT_TRUE(!ir_mir_integer_promotion_is_unsigned(
-      unsigned_short_mir, ag_target_info_data_layout(&host)));
+      unsigned_short_mir,
+      ag_target_info_data_layout(&host)));
   ASSERT_TRUE(ir_mir_integer_promotion_is_unsigned(
-      unsigned_short_mir, ag_target_info_data_layout(&wide_short_target)));
-  const psx_type_t *canonical_pointer_array =
-      psx_type_compatibility_canonical_view_for(types, pointer_array_identity.type_id);
-  ASSERT_TRUE(canonical_pointer_array != NULL);
-  ASSERT_EQ(8, psx_type_layout_sizeof(types, layouts, pointer_identity.type_id,
-                                 ag_target_info_data_layout(&host)));
-  ASSERT_EQ(4, psx_type_layout_sizeof(types, layouts, pointer_identity.type_id,
-                                 ag_target_info_data_layout(&wasm)));
-  ASSERT_EQ(8, psx_type_layout_alignof(types, layouts, pointer_identity.type_id,
-                                  ag_target_info_data_layout(&host)));
-  ASSERT_EQ(4, psx_type_layout_alignof(types, layouts, pointer_identity.type_id,
-                                  ag_target_info_data_layout(&wasm)));
-  ASSERT_EQ(24,
-            psx_type_layout_sizeof(types, layouts, pointer_array_identity.type_id,
-                              ag_target_info_data_layout(&host)));
-  ASSERT_EQ(12,
-            psx_type_layout_sizeof(types, layouts, pointer_array_identity.type_id,
-                              ag_target_info_data_layout(&wasm)));
-  psx_semantic_context_t *host_semantic_context = test_semantic_context();
-  psx_name_classifier_t host_name_classifier =
-      ps_ctx_name_classifier(host_semantic_context);
-  token_t *pointer_type_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"int *)");
-  token_t *pointer_type_end = pointer_type_tokens;
-  while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
-    pointer_type_end = pointer_type_end->next;
-  ASSERT_TRUE(pointer_type_end != NULL);
-  test_semantic_context_fixture_t wasm_semantic_fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
-      &wasm_semantic_fixture, &wasm));
-  psx_semantic_context_t *wasm_semantic_context =
-      wasm_semantic_fixture.context;
-  ASSERT_TRUE(ag_target_info_equal(
-      ps_ctx_target_info(wasm_semantic_context), &wasm));
-  psx_name_classifier_t wasm_name_classifier =
-      ps_ctx_name_classifier(wasm_semantic_context);
-  psx_qual_type_t wasm_pointer_array_identity =
-      ps_ctx_intern_qual_type_in(wasm_semantic_context, pointer_array);
-  ASSERT_TRUE(wasm_pointer_array_identity.type_id != PSX_TYPE_ID_INVALID);
-  psx_type_query_plan_t pointer_array_query_plan = {0};
-  ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
-      wasm_semantic_context, wasm_pointer_array_identity, 0, 0,
-      &pointer_array_query_plan));
-  ASSERT_EQ(12, pointer_array_query_plan.constant_factor);
-  ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
-      wasm_semantic_context, wasm_pointer_array_identity,
-      &pointer_array_query_plan));
-  ASSERT_EQ(4, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(12, test_semantic_type_sizeof_in(
-                    wasm_semantic_context, pointer_array));
-  ASSERT_EQ(4, test_semantic_type_alignof_in(
-                   wasm_semantic_context, pointer_array));
-  ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   wasm_semantic_context, &wasm_name_classifier,
-                   pointer_type_tokens,
-                   pointer_type_end));
-  ASSERT_TRUE(psx_resolve_sizeof_qual_type_plan_in(
-      host_semantic_context, pointer_array_identity, 0, 0,
-      &pointer_array_query_plan));
-  ASSERT_EQ(24, pointer_array_query_plan.constant_factor);
-  ASSERT_TRUE(psx_resolve_alignof_qual_type_plan_in(
-      host_semantic_context, pointer_array_identity,
-      &pointer_array_query_plan));
-  ASSERT_EQ(8, pointer_array_query_plan.constant_factor);
-  ASSERT_EQ(24, test_semantic_type_sizeof_in(
-                    host_semantic_context, pointer_array));
-  ASSERT_EQ(8, test_semantic_type_alignof_in(
-                   host_semantic_context, pointer_array));
-  ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   host_semantic_context, &host_name_classifier,
-                   pointer_type_tokens,
-                   pointer_type_end));
-  ag_target_info_t split_layout_target = wasm;
-  split_layout_target.data_layout.pointer_alignment = 8;
-  split_layout_target.data_layout.scalar[AG_TARGET_SCALAR_LONG] =
-      (ag_target_scalar_layout_t){12, 4};
-  test_semantic_context_fixture_t split_semantic_fixture;
-  ASSERT_TRUE(test_semantic_context_fixture_init(
-      &split_semantic_fixture, &split_layout_target));
-  psx_semantic_context_t *split_semantic_context =
-      split_semantic_fixture.context;
-  ASSERT_TRUE(ag_target_info_equal(
-      ps_ctx_target_info(split_semantic_context), &split_layout_target));
-  psx_name_classifier_t split_name_classifier =
-      ps_ctx_name_classifier(split_semantic_context);
-  int token_size = 0;
-  int token_alignment = 0;
-  ASSERT_TRUE(psx_ctx_get_type_token_layout_in(
-      split_semantic_context, TK_LONG, &token_size, &token_alignment));
-  ASSERT_EQ(12, token_size);
-  ASSERT_EQ(4, token_alignment);
-  token_t *long_alignas_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"long)");
-  token_t *long_alignas_end = long_alignas_tokens;
-  while (long_alignas_end && long_alignas_end->kind != TK_RPAREN)
-    long_alignas_end = long_alignas_end->next;
-  ASSERT_TRUE(long_alignas_end != NULL);
-  ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
-                   split_semantic_context, &split_name_classifier,
-                   long_alignas_tokens,
-                   long_alignas_end));
-  ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
-                   split_semantic_context, &split_name_classifier,
-                   pointer_type_tokens,
-                   pointer_type_end));
-  token_t *sizeof_long_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"sizeof(long)");
-  token_t *sizeof_long_end = sizeof_long_tokens;
-  while (sizeof_long_end && sizeof_long_end->kind != TK_EOF)
-    sizeof_long_end = sizeof_long_end->next;
-  ASSERT_TRUE(sizeof_long_end != NULL);
-  ASSERT_EQ(12, psx_eval_parsed_enum_const_expr_in_context(
-                    split_semantic_context, &split_name_classifier,
-                    sizeof_long_tokens,
-                    sizeof_long_end));
-  token_t *alignof_long_tokens = tk_tokenize_ctx(test_tokenizer(), (char *)"_Alignof(long)");
-  token_t *alignof_long_end = alignof_long_tokens;
-  while (alignof_long_end && alignof_long_end->kind != TK_EOF)
-    alignof_long_end = alignof_long_end->next;
-  ASSERT_TRUE(alignof_long_end != NULL);
-  ASSERT_EQ(4, psx_eval_parsed_enum_const_expr_in_context(
-                   split_semantic_context, &split_name_classifier,
-                   alignof_long_tokens,
-                   alignof_long_end));
-  test_semantic_context_fixture_dispose(&split_semantic_fixture);
-  test_semantic_context_fixture_dispose(&wasm_semantic_fixture);
-  psx_record_decl_t *record = arena_alloc_in(
-      test_arena_context(), sizeof(*record));
-  memset(record, 0, sizeof(*record));
-  record->record_id = 0xfaceu;
-  record->record_kind = PSX_TYPE_STRUCT;
-  record->is_complete = 1;
-  psx_type_t *record_type = ps_type_new_tag(
-      TK_STRUCT, (char *)"__TargetRecord", 14, 1, 64);
-  record_type->record_id = record->record_id;
-  psx_qual_type_t record_identity = ps_ctx_intern_qual_type_in(
-      test_semantic_context(), record_type);
-  ASSERT_TRUE(record_identity.type_id != PSX_TYPE_ID_INVALID);
+      unsigned_short_mir,
+      ag_target_info_data_layout(&wide_short_target)));
+
+  psx_record_decl_t record = {
+      .record_id = 0xfaceu,
+      .record_kind = PSX_TYPE_STRUCT,
+      .tag_name = (char *)"__TargetRecord",
+      .tag_len = 14,
+      .is_complete = 1,
+  };
+  ASSERT_TRUE(psx_record_decl_table_define(
+      (psx_record_decl_table_t *)
+          ps_ctx_record_decl_table_in(
+              test_semantic_context()),
+      &record));
+  psx_qual_type_t record_type =
+      psx_semantic_type_table_intern_record(
+          types, record.record_id);
+  ASSERT_TRUE(record_type.type_id !=
+              PSX_TYPE_ID_INVALID);
 
   psx_record_layout_table_t *record_layouts =
       psx_record_layout_table_create();
@@ -14337,25 +10799,54 @@ static void test_target_type_layout_boundary() {
   const psx_record_member_layout_t wasm_members[] = {
       {.offset = 0}, {.offset = 4},
   };
-  ASSERT_TRUE(psx_record_layout_table_define(record_layouts, record->record_id,
-                                             ag_target_info_data_layout(&host),
-                                             16, 8, host_members, 2));
-  ASSERT_TRUE(psx_record_layout_table_define(record_layouts, record->record_id,
-                                             ag_target_info_data_layout(&wasm),
-                                             8, 4, wasm_members, 2));
-  ASSERT_EQ(0, psx_type_layout_sizeof(types, layouts, record_identity.type_id,
-                                 ag_target_info_data_layout(&host)));
-  ASSERT_EQ(16,
-            psx_type_layout_sizeof(types, record_layouts, record_identity.type_id,
-                              ag_target_info_data_layout(&host)));
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, record.record_id,
+      ag_target_info_data_layout(&host),
+      16, 8, host_members, 2));
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, record.record_id,
+      ag_target_info_data_layout(&wasm),
+      8, 4, wasm_members, 2));
+
   ASSERT_EQ(16, psx_type_layout_sizeof(
-                    types, record_layouts, record_identity.type_id,
-                    ag_target_info_data_layout(&alternate_host_abi)));
-  ASSERT_EQ(8,
-            psx_type_layout_alignof(types, record_layouts, record_identity.type_id,
-                               ag_target_info_data_layout(&host)));
-  ASSERT_EQ(8, psx_type_layout_sizeof(types, record_layouts, record_identity.type_id,
-                                 ag_target_info_data_layout(&wasm)));
+                    types, record_layouts,
+                    record_type.type_id,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(8, psx_type_layout_sizeof(
+                   types, record_layouts,
+                   record_type.type_id,
+                   ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, psx_type_layout_alignof(
+                   types, record_layouts,
+                   record_type.type_id,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(4, psx_type_layout_alignof(
+                   types, record_layouts,
+                   record_type.type_id,
+                   ag_target_info_data_layout(&wasm)));
+
+  const psx_record_layout_t *host_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record.record_id,
+          ag_target_info_data_layout(&host));
+  const psx_record_layout_t *alternate_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record.record_id,
+          ag_target_info_data_layout(
+              &alternate_host_abi));
+  const psx_record_layout_t *wasm_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record.record_id,
+          ag_target_info_data_layout(&wasm));
+  ASSERT_TRUE(host_record_layout != NULL);
+  ASSERT_TRUE(alternate_record_layout ==
+              host_record_layout);
+  ASSERT_TRUE(wasm_record_layout != NULL);
+  ASSERT_EQ(8, psx_record_layout_member(
+                   host_record_layout, 1)->offset);
+  ASSERT_EQ(4, psx_record_layout_member(
+                   wasm_record_layout, 1)->offset);
+
   ir_abi_type_context_t host_abi = {
       .semantic_types = types,
       .record_layouts = record_layouts,
@@ -14369,256 +10860,71 @@ static void test_target_type_layout_boundary() {
       abi_probe_module, "record_result", 13);
   ASSERT_TRUE(abi_probe_function != NULL);
   ASSERT_TRUE(ir_function_type_set(
-      &abi_probe_function->function_type, PSX_TYPE_ID_INVALID,
-      record_identity, NULL, 0, 0, 1));
-  ir_abi_module_t *host_lowered = ir_abi_lower_module(
-      &host_abi, abi_probe_module);
-  ir_abi_module_t *wasm_lowered = ir_abi_lower_module(
-      &wasm_abi, abi_probe_module);
+      &abi_probe_function->function_type,
+      PSX_TYPE_ID_INVALID, record_type, NULL, 0, 0, 1));
+  ir_abi_module_t *host_lowered =
+      ir_abi_lower_module(&host_abi, abi_probe_module);
+  ir_abi_module_t *wasm_lowered =
+      ir_abi_lower_module(&wasm_abi, abi_probe_module);
   const ir_abi_signature_t *host_signature =
-      ir_abi_function_signature(host_lowered, abi_probe_function);
+      ir_abi_function_signature(
+          host_lowered, abi_probe_function);
   const ir_abi_signature_t *wasm_signature =
-      ir_abi_function_signature(wasm_lowered, abi_probe_function);
+      ir_abi_function_signature(
+          wasm_lowered, abi_probe_function);
   ASSERT_TRUE(host_signature != NULL);
   ASSERT_TRUE(wasm_signature != NULL);
-  ASSERT_TRUE(ir_abi_signature_result_is_indirect(host_signature));
-  ASSERT_EQ(16, ir_abi_signature_result_source_size(host_signature));
-  ASSERT_EQ(1, host_signature->result_count);
-  ASSERT_EQ(IR_TY_PTR, host_signature->result_pieces[0].type);
+  ASSERT_TRUE(ir_abi_signature_result_is_indirect(
+      host_signature));
+  ASSERT_EQ(16, ir_abi_signature_result_source_size(
+                    host_signature));
   ASSERT_TRUE(ir_abi_signature_result_is_direct_aggregate(
       wasm_signature));
-  ASSERT_EQ(8, ir_abi_signature_result_source_size(wasm_signature));
-  ASSERT_EQ(1, wasm_signature->result_count);
-  ASSERT_EQ(IR_TY_I64, wasm_signature->result_pieces[0].type);
+  ASSERT_EQ(8, ir_abi_signature_result_source_size(
+                   wasm_signature));
   ir_abi_module_free(host_lowered);
   ir_abi_module_free(wasm_lowered);
   ir_module_free(abi_probe_module);
-  ASSERT_EQ(4,
-            psx_type_layout_alignof(types, record_layouts, record_identity.type_id,
-                               ag_target_info_data_layout(&wasm)));
-  const psx_record_layout_t *host_record_layout =
-      psx_record_layout_table_lookup(record_layouts, record->record_id,
-                                     ag_target_info_data_layout(&host));
-  const psx_record_layout_t *alternate_abi_record_layout =
-      psx_record_layout_table_lookup(
-          record_layouts, record->record_id,
-          ag_target_info_data_layout(&alternate_host_abi));
-  const psx_record_layout_t *wasm_record_layout =
-      psx_record_layout_table_lookup(record_layouts, record->record_id,
-                                     ag_target_info_data_layout(&wasm));
-  ASSERT_TRUE(host_record_layout != NULL);
-  ASSERT_TRUE(alternate_abi_record_layout == host_record_layout);
-  ASSERT_TRUE(wasm_record_layout != NULL);
-  ASSERT_EQ(8, psx_record_layout_member(host_record_layout, 1)->offset);
-  ASSERT_EQ(4, psx_record_layout_member(wasm_record_layout, 1)->offset);
-  int host_initializer_slots = psx_initializer_flat_slot_count_with_records(
-      types, ps_ctx_record_decl_table_in(test_semantic_context()),
-      record_layouts, ag_target_info_data_layout(&host),
-      record_identity.type_id);
-  int alternate_abi_initializer_slots =
-      psx_initializer_flat_slot_count_with_records(
-          types, ps_ctx_record_decl_table_in(test_semantic_context()),
-          record_layouts, ag_target_info_data_layout(&alternate_host_abi),
-          record_identity.type_id);
-  ASSERT_TRUE(host_initializer_slots > 0);
-  ASSERT_EQ(host_initializer_slots, alternate_abi_initializer_slots);
+
   psx_local_storage_plan_t local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, pointer_array_identity.type_id,
+      types, record_layouts, pointer_array.type_id,
       ag_target_info_data_layout(&wasm), &local));
   ASSERT_EQ(12, local.storage_size);
   ASSERT_EQ(4, local.alignment);
 
   psx_parameter_storage_plan_t parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, pointer_identity.type_id,
-      ag_target_info_data_layout(&wasm), ir_abi_target_policy_for(&wasm),
-      &parameter));
+      types, record_layouts, pointer.type_id,
+      ag_target_info_data_layout(&wasm),
+      wasm_abi_policy, &parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
 
-  psx_local_storage_plan_t host_record_local = {0};
-  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, record_identity.type_id,
-      ag_target_info_data_layout(&host), &host_record_local));
-  ASSERT_EQ(16, host_record_local.storage_size);
-  ASSERT_EQ(8, host_record_local.alignment);
-
-  psx_local_storage_plan_t alternate_host_record_local = {0};
-  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, record_identity.type_id,
-      ag_target_info_data_layout(&alternate_host_abi),
-      &alternate_host_record_local));
-  ASSERT_EQ(host_record_local.storage_size,
-            alternate_host_record_local.storage_size);
-  ASSERT_EQ(host_record_local.alignment, alternate_host_record_local.alignment);
-
-  psx_local_storage_plan_t wasm_record_local = {0};
-  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, record_layouts, record_identity.type_id,
-      ag_target_info_data_layout(&wasm), &wasm_record_local));
-  ASSERT_EQ(8, wasm_record_local.storage_size);
-  ASSERT_EQ(4, wasm_record_local.alignment);
-
-  psx_parameter_storage_plan_t host_record_parameter = {0};
-  ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, record_identity.type_id,
-      ag_target_info_data_layout(&host), ir_abi_target_policy_for(&host),
-      &host_record_parameter));
-  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
-            host_record_parameter.kind);
-  ASSERT_EQ(16, host_record_parameter.storage_size);
-  ASSERT_EQ(8, host_record_parameter.alignment);
-
-  psx_parameter_storage_plan_t wasm_record_parameter = {0};
-  ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, record_layouts, record_identity.type_id,
-      ag_target_info_data_layout(&wasm), ir_abi_target_policy_for(&wasm),
-      &wasm_record_parameter));
-  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
-            wasm_record_parameter.kind);
-  ASSERT_EQ(8, wasm_record_parameter.storage_size);
-  ASSERT_EQ(4, wasm_record_parameter.alignment);
-
-  ag_diagnostic_context_t *diagnostics =
-      ag_compilation_session_diagnostic_context(test_suite_session);
-  const psx_lowering_context_dependencies_t wasm_dependencies = {
+  const psx_lowering_context_dependencies_t dependencies = {
       .arena_context = test_arena_context(),
-      .diagnostic_context = diagnostics,
+      .diagnostic_context = test_diagnostics(),
       .resolution_store = test_resolution_store(),
       .target = &wasm,
       .semantic_types = types,
       .record_decls =
-          ps_ctx_record_decl_table_in(test_semantic_context()),
+          ps_ctx_record_decl_table_in(
+              test_semantic_context()),
       .record_layouts = record_layouts,
   };
-  psx_lowering_context_dependencies_t invalid_dependencies =
-      wasm_dependencies;
-  invalid_dependencies.target = NULL;
-  ASSERT_TRUE(ps_lowering_context_create(NULL) == NULL);
-  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
-  invalid_dependencies.target = &incomplete_target;
-  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
-  invalid_dependencies = wasm_dependencies;
-  invalid_dependencies.semantic_types = NULL;
-  ASSERT_TRUE(ps_lowering_context_create(&invalid_dependencies) == NULL);
-  psx_lowering_context_dependencies_t host_dependencies =
-      wasm_dependencies;
-  host_dependencies.target = &host;
-  psx_lowering_context_t *wasm_lowering =
-      ps_lowering_context_create(&wasm_dependencies);
-  psx_lowering_context_t *host_lowering =
-      ps_lowering_context_create(&host_dependencies);
-  ASSERT_TRUE(wasm_lowering != NULL);
-  ASSERT_TRUE(host_lowering != NULL);
-  ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(wasm_lowering), &wasm));
-  ASSERT_TRUE(ag_target_info_equal(ps_lowering_target(host_lowering), &host));
-  ASSERT_TRUE(ag_data_layout_equal(ps_lowering_data_layout(wasm_lowering),
-                                   ag_target_info_data_layout(&wasm)));
-  ASSERT_TRUE(ag_data_layout_equal(ps_lowering_data_layout(host_lowering),
-                                   ag_target_info_data_layout(&host)));
+  psx_lowering_context_t *lowering =
+      ps_lowering_context_create(&dependencies);
+  ASSERT_TRUE(lowering != NULL);
+  ASSERT_TRUE(ag_target_info_equal(
+      ps_lowering_target(lowering), &wasm));
   ASSERT_EQ(8, ps_lowering_type_id_size(
-                   wasm_lowering, record_identity.type_id));
+                   lowering, record_type.type_id));
   ASSERT_EQ(4, ps_lowering_type_id_alignment(
-                   wasm_lowering, record_identity.type_id));
+                   lowering, record_type.type_id));
   ASSERT_EQ(4, ps_lowering_type_id_size(
-                   wasm_lowering, pointer_identity.type_id));
-  psx_type_t *record_vla_type = ps_type_new_array(
-      record_type, 0, 0, 1);
-  psx_qual_type_t record_vla_qual_type =
-      intern_test_qual_type(record_vla_type);
-  ASSERT_TRUE(record_vla_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  const psx_typed_hir_tree_t *record_vla_dimension =
-      build_test_typed_number(3);
-  ASSERT_TRUE(record_vla_dimension != NULL);
-  psx_vla_runtime_dimension_t record_vla_dimensions[1] = {{
-      .expression_id = ps_ctx_register_semantic_expression_in(
-          test_semantic_context(), record_vla_dimension),
-  }};
-  ASSERT_TRUE(record_vla_dimensions[0].expression_id !=
-              PSX_SEMANTIC_EXPR_ID_INVALID);
-  psx_vla_lowering_request_t record_vla_request = {
-      .local_registry = test_local_registry(),
-      .lowering_context = wasm_lowering,
-      .name = (char *)"target_vla",
-      .name_len = 10,
-      .dimensions = record_vla_dimensions,
-      .dimension_count = 1,
-      .type = record_vla_qual_type,
-      .requested_alignment = 8,
-  };
-  reset_test_locals();
-  local_storage_reset(wasm_lowering);
-  psx_vla_lowering_result_t wasm_record_vla = lower_vla_declaration(
-      &record_vla_request);
-  ASSERT_TRUE(wasm_record_vla.var != NULL);
-  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(wasm_record_vla.init));
-  ASSERT_TRUE(wasm_record_vla.runtime_plan != NULL);
-  ASSERT_EQ(1, wasm_record_vla.runtime_plan->dimension_count);
-  ASSERT_EQ(record_vla_dimensions[0].expression_id,
-            wasm_record_vla.runtime_plan->dimensions[0].expression_id);
-  ASSERT_EQ(8, wasm_record_vla.runtime_plan->element_size);
-
-  reset_test_locals();
-  local_storage_reset(wasm_lowering);
-  lvar_t *wasm_dimension = register_test_storage_fixture_in(
-      wasm_lowering, (char *)"target_n", 8, 4, 4, 0);
-  wasm_dimension->is_param = 1;
-  psx_type_t *wasm_vla_parameter_type = ps_type_new_pointer(
-      ps_type_new_array(integer, 0, 0, 1));
-  psx_qual_type_t wasm_vla_parameter_qual_type =
-      intern_test_qual_type(wasm_vla_parameter_type);
-  ASSERT_TRUE(wasm_vla_parameter_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  psx_type_t *wasm_stride_storage_type =
-      ps_type_new_integer(TK_LONG, 8, 0);
-  psx_qual_type_t wasm_stride_storage_qual_type =
-      intern_test_qual_type(wasm_stride_storage_type);
-  ASSERT_TRUE(wasm_stride_storage_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  const psx_typed_hir_tree_t *wasm_parameter_expression =
-      build_test_typed_local(wasm_dimension);
-  ASSERT_TRUE(wasm_parameter_expression != NULL);
-  psx_parameter_vla_dimension_t wasm_parameter_dimension = {
-      .expression_id = ps_ctx_register_semantic_expression_in(
-          test_semantic_context(), wasm_parameter_expression),
-  };
-  ASSERT_TRUE(wasm_parameter_dimension.expression_id !=
-              PSX_SEMANTIC_EXPR_ID_INVALID);
-  psx_parameter_vla_lowering_result_t wasm_parameter_vla =
-      lower_parameter_vla_declaration(
-          &(psx_parameter_vla_lowering_request_t){
-              .local_registry = test_local_registry(),
-              .lowering_context = wasm_lowering,
-              .semantic_expressions = ps_ctx_semantic_expression_table_in(
-                  test_semantic_context()),
-              .name = (char *)"target_values",
-              .name_len = 13,
-              .inner_dimensions = &wasm_parameter_dimension,
-              .inner_dimension_count = 1,
-              .type = wasm_vla_parameter_qual_type,
-              .stride_storage_type = wasm_stride_storage_qual_type,
-          });
-  ASSERT_TRUE(wasm_parameter_vla.var != NULL);
-  ASSERT_EQ(4, ps_lvar_frame_storage_size(wasm_parameter_vla.var));
-  ASSERT_EQ(4, ps_lvar_align_bytes(wasm_parameter_vla.var));
-
-  ASSERT_EQ(16, ps_lowering_type_id_size(
-                    host_lowering, record_identity.type_id));
-  ASSERT_EQ(8, ps_lowering_type_id_alignment(
-                   host_lowering, record_identity.type_id));
-  ASSERT_EQ(8, ps_lowering_type_id_size(
-                   host_lowering, pointer_identity.type_id));
-  reset_test_locals();
-  local_storage_reset(host_lowering);
-  record_vla_request.lowering_context = host_lowering;
-  psx_vla_lowering_result_t host_record_vla = lower_vla_declaration(
-      &record_vla_request);
-  ASSERT_TRUE(host_record_vla.var != NULL);
-  ASSERT_EQ(ND_VLA_ALLOC, psx_resolution_node_kind(host_record_vla.init));
-  ASSERT_TRUE(host_record_vla.runtime_plan != NULL);
-  ASSERT_EQ(16, host_record_vla.runtime_plan->element_size);
-  ps_lowering_context_destroy(host_lowering);
-  ps_lowering_context_destroy(wasm_lowering);
+                   lowering, pointer.type_id));
+  ps_lowering_context_destroy(lowering);
   psx_record_layout_table_destroy(record_layouts);
 }
 
@@ -15922,14 +12228,6 @@ static void init_boundary_aggregate_layout(
   psx_aggregate_layout_init(layout, record);
 }
 
-static int register_test_tag_member(
-    token_kind_t tag_kind, char *tag_name, int tag_name_len,
-    const tag_member_info_t *member) {
-  int created = 0;
-  return test_semantic_register_tag_member(
-             tag_kind, tag_name, tag_name_len, member, &created) &&
-         created;
-}
 
 static void test_aggregate_body_phase_boundary() {
   printf("test_aggregate_body_phase_boundary...\n");
@@ -21661,7 +17959,7 @@ static void test_parser_width_limits() {
 static void test_semantic_canonical_type_invariant() {
   printf("test_semantic_canonical_type_invariant...\n");
   reset_test_translation_unit_state();
-  node_t **program = parse_program_input(
+  ASSERT_TRUE(resolve_program_input_hir(
       "struct S { int x; int y; }; "
       "int inc(int x) { return x + 1; } "
       "int apply(int (*fp)(int), int value) { return fp(value); } "
@@ -21672,189 +17970,63 @@ static void test_semantic_canonical_type_invariant() {
       "  int total = 0; "
       "  for (int i = 0; i < 2; i++) total += values[i]; "
       "  return _Generic(total, int: apply(fp, total), default: 0); "
-      "}");
-  ASSERT_TRUE(program != NULL);
-  for (int i = 0; program[i]; i++) {
-    node_function_definition_t *function =
-        as_function_definition(program[i]);
-    ASSERT_TRUE(ps_node_get_type((node_t *)function) == NULL);
-    ASSERT_TRUE(test_function_definition_return_type(function) != NULL);
-    psx_semantic_invariant_failure_t failure;
-    ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
-        program[i], &failure));
-    ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
-  ASSERT_TRUE(failure.node == NULL);
+      "}"));
+
+  const psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  ASSERT_TRUE(hir != NULL);
+  ASSERT_TRUE(types != NULL);
+  ASSERT_EQ(3, psx_hir_module_root_count(hir));
+
+  const char *function_names[] = {"inc", "apply", "main"};
+  for (size_t i = 0;
+       i < sizeof(function_names) / sizeof(function_names[0]); i++) {
+    const psx_hir_node_t *function = find_test_named_hir_node(
+        hir, PSX_HIR_FUNCTION, function_names[i], 0);
+    ASSERT_TRUE(function != NULL);
+    psx_qual_type_t signature =
+        psx_hir_node_attached_qual_type(function);
+    ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+        types, signature));
+    ASSERT_EQ(PSX_TYPE_FUNCTION,
+              test_qual_type_shape(signature).kind);
   }
 
-  psx_semantic_invariant_failure_t failure;
-  node_t *va_arg_syntax = NULL;
-  psx_frontend_expression_hir_t va_arg_expression =
-      resolve_test_expression_input_hir(
-          "__va_arg_area", &va_arg_syntax);
-  ASSERT_EQ(ND_IDENTIFIER, va_arg_syntax->kind);
-  const psx_hir_node_t *va_arg_area =
-      test_expression_hir_root(&va_arg_expression);
-  ASSERT_EQ(PSX_HIR_VARARG_CURSOR, psx_hir_node_kind(va_arg_area));
-  psx_qual_type_t va_arg_type = psx_hir_node_qual_type(va_arg_area);
-  ASSERT_EQ(PSX_TYPE_POINTER, test_qual_type_shape(va_arg_type).kind);
-  ASSERT_EQ(PSX_TYPE_VOID,
-            test_qual_type_shape(test_qual_type_base(va_arg_type)).kind);
-  psx_frontend_expression_hir_dispose(&va_arg_expression);
+  size_t expression_count = 0;
+  for (size_t i = 1; i <= psx_hir_module_node_count(hir); i++) {
+    const psx_hir_node_t *node =
+        psx_hir_module_lookup(hir, (psx_hir_node_id_t)i);
+    ASSERT_TRUE(node != NULL);
+    if (psx_hir_node_role(node) != PSX_HIR_ROLE_EXPRESSION)
+      continue;
+    expression_count++;
+    ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+        types, psx_hir_node_qual_type(node)));
+  }
+  ASSERT_TRUE(expression_count > 0);
 
-  node_function_definition_t duplicated_return_type = {0};
-  test_set_resolved_node_kind(
-      &duplicated_return_type, ND_FUNCDEF);
-  const psx_type_t *duplicated_signature = ps_type_new_function(
-      ps_type_new_integer(TK_INT, 4, 0));
-  duplicated_return_type.signature_qual_type =
-      ps_ctx_intern_qual_type_in(
-          test_semantic_context(), duplicated_signature);
-  const psx_semantic_type_table_t *duplicated_types =
-      ps_ctx_semantic_type_table_in(test_semantic_context());
-  psx_qual_type_t duplicated_return_qual_type =
-      psx_semantic_type_table_base(
-          duplicated_types,
-          duplicated_return_type.signature_qual_type.type_id);
-  ps_node_bind_qual_type(
-      (node_t *)&duplicated_return_type,
-      duplicated_return_qual_type);
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&duplicated_return_type, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
-            failure.status);
-  ASSERT_TRUE(failure.node == (node_t *)&duplicated_return_type);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL, "s", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL, "values", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL, "fp", 0) != NULL);
+  ASSERT_TRUE(find_test_named_hir_node(
+                  hir, PSX_HIR_LOCAL, "total", 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_MEMBER_ACCESS, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_SUBSCRIPT, 0) != NULL);
+  ASSERT_TRUE(find_test_hir_node_kind(
+                  hir, PSX_HIR_COMPOUND_ASSIGN, 0) != NULL);
 
-  node_num_t untyped = {0};
-  untyped.base.kind = ND_NUM;
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&untyped, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
-  ASSERT_TRUE(failure.node == (node_t *)&untyped);
-  token_t *invariant_tok = tk_tokenize_ctx(test_tokenizer(), (char *)"untyped");
-  expect_semantic_invariant_internal_error(
-      (node_t *)&untyped, invariant_tok);
-
-  node_t raw_subscript = {.kind = ND_SUBSCRIPT};
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      &raw_subscript, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE,
-            failure.status);
-  ASSERT_TRUE(failure.node == &raw_subscript);
-
-  node_t raw_initializer = {.kind = ND_INIT_LIST};
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      &raw_initializer, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX,
-            failure.status);
-  ASSERT_TRUE(failure.node == &raw_initializer);
-
-  node_t invalid_node_kind = {.kind = (psx_syntax_node_kind_t)999};
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      &invalid_node_kind, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, failure.status);
-  ASSERT_TRUE(failure.node == &invalid_node_kind);
-
-  node_t invalid_vla_view = {0};
-  test_set_resolved_node_kind(&invalid_vla_view, ND_LVAR);
-  test_bind_node_type(
-      &invalid_vla_view,
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(), &invalid_vla_view, NULL));
-  test_set_invalid_vla_runtime_view(&invalid_vla_view, 24);
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      &invalid_vla_view, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW,
-            failure.status);
-  ASSERT_TRUE(failure.node == &invalid_vla_view);
-
-  node_t *invalid_function_reference =
-      psx_node_new_function_reference_in(
-          test_arena_context(), "invalid", 7,
-          ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_TRUE(invalid_function_reference != NULL);
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(), invalid_function_reference, NULL));
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      invalid_function_reference, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
-            failure.status);
-  ASSERT_TRUE(failure.node == invalid_function_reference);
-
-  node_function_call_t invalid_function_call = {0};
-  invalid_function_call.base.kind = ND_FUNCALL;
-  test_bind_node_type(
-      &invalid_function_call,
-      ps_type_new_integer(TK_INT, 4, 0));
-  bind_test_function_call_type(
-      &invalid_function_call,
-      ps_type_new_function(
-          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(),
-      (node_t *)&invalid_function_call, NULL));
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&invalid_function_call, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
-            failure.status);
-  ASSERT_TRUE(failure.node == (node_t *)&invalid_function_call);
-
-  psx_type_t *callee_function = ps_type_new_function(
-      ps_type_new_integer(TK_INT, 4, 0));
-  node_t non_callable_callee = {0};
-  test_set_resolved_node_kind(&non_callable_callee, ND_LVAR);
-  test_bind_node_type(
-      &non_callable_callee,
-      ps_type_new_pointer(
-          ps_type_new_pointer(ps_type_clone(callee_function))));
-  node_function_call_t invalid_indirect_function_call = {0};
-  invalid_indirect_function_call.base.kind = ND_FUNCALL;
-  test_bind_node_type(
-      &invalid_indirect_function_call,
-      ps_type_new_integer(TK_INT, 4, 0));
-  invalid_indirect_function_call.callee = &non_callable_callee;
-  bind_test_function_call_type(
-      &invalid_indirect_function_call, callee_function);
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(),
-      (node_t *)&invalid_indirect_function_call, NULL));
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&invalid_indirect_function_call, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
-            failure.status);
-  ASSERT_TRUE(
-      failure.node == (node_t *)&invalid_indirect_function_call);
-
-  node_function_call_t invalid_implicit_function_call = {0};
-  invalid_implicit_function_call.base.kind = ND_FUNCALL;
-  test_bind_node_type(
-      &invalid_implicit_function_call,
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
-  psx_function_call_set_implicit_declaration(
-      &invalid_implicit_function_call, 1);
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(),
-      (node_t *)&invalid_implicit_function_call, NULL));
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&invalid_implicit_function_call, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
-            failure.status);
-  ASSERT_TRUE(
-      failure.node == (node_t *)&invalid_implicit_function_call);
-
-  node_function_call_t valid_implicit_function_call = {0};
-  valid_implicit_function_call.base.kind = ND_FUNCALL;
-  test_bind_node_type(
-      &valid_implicit_function_call,
-      ps_type_new_integer(TK_INT, 4, 0));
-  psx_function_call_set_implicit_declaration(
-      &valid_implicit_function_call, 1);
-  ASSERT_TRUE(psx_finalize_semantic_tree_types(
-      test_semantic_context(),
-      (node_t *)&valid_implicit_function_call, NULL));
-  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&valid_implicit_function_call, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
+  const psx_hir_node_t *call =
+      find_test_hir_node_kind(hir, PSX_HIR_CALL, 0);
+  ASSERT_TRUE(call != NULL);
+  ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+      types, psx_hir_node_attached_qual_type(call)));
 }
 
 static void test_recursive_declarator_capacity_boundary() {
@@ -21874,7 +18046,8 @@ static void test_recursive_declarator_capacity_boundary() {
     }
   }
   memcpy(pointer_declarator + used, "deep_pointer;", 14);
-  token_t *tokens = tk_tokenize_ctx(test_tokenizer(), pointer_declarator);
+  token_t *tokens = tk_tokenize_ctx(
+      test_tokenizer(), pointer_declarator);
   tk_set_current_token_ctx(test_tokenizer(), tokens);
   psx_parsed_declarator_t pointer_syntax =
       parse_test_declarator_syntax_tree();
@@ -21883,51 +18056,11 @@ static void test_recursive_declarator_capacity_boundary() {
   psx_declarator_shape_t pointer_shape;
   ASSERT_TRUE(ps_declarator_shape_copy(
       &pointer_shape, &pointer_syntax.declarator_shape));
-  ASSERT_TRUE(pointer_shape.ops != pointer_syntax.declarator_shape.ops);
+  ASSERT_TRUE(pointer_shape.ops !=
+              pointer_syntax.declarator_shape.ops);
   pointer_shape.ops[0].is_const_qualified = 1;
-  ASSERT_TRUE(!pointer_syntax.declarator_shape.ops[0].is_const_qualified);
-  psx_type_t *deep_pointer_type = ps_type_apply_declarator_shape(
-      ps_type_new_integer(TK_INT, 4, 0), &pointer_shape);
-  ASSERT_EQ(96, ps_type_pointer_depth(deep_pointer_type));
-  for (int i = 0; i < 96; i++) {
-    const psx_type_t *pointer = canonical_pointer_level(
-        deep_pointer_type, i);
-    ASSERT_TRUE(pointer != NULL);
-    ASSERT_EQ(i == 0 || i == 90,
-              ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_CONST));
-    ASSERT_EQ(i == 25, ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_VOLATILE));
-  }
-  char deep_pointer_signature[512];
-  ASSERT_EQ(294, ps_type_format_canonical_signature(
-                     deep_pointer_type, deep_pointer_signature,
-                     sizeof(deep_pointer_signature)));
-  ASSERT_EQ('k', deep_pointer_signature[0]);
-  ASSERT_EQ('p', deep_pointer_signature[1]);
-  ASSERT_EQ('>', deep_pointer_signature[293]);
-  node_t deep_pointer_node = {0};
-  test_set_resolved_node_kind(&deep_pointer_node, ND_LVAR);
-  test_bind_node_type(&deep_pointer_node, deep_pointer_type);
-  psx_semantic_invariant_failure_t invariant_failure;
-  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
-      test_semantic_context(), &deep_pointer_node,
-      &invariant_failure, 0));
-  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
-      &deep_pointer_node, &invariant_failure));
-
-  psx_type_t *cyclic_pointer = ps_type_new_pointer(NULL);
-  cyclic_pointer->base = cyclic_pointer;
-  ASSERT_TRUE(!ps_type_is_well_formed(cyclic_pointer));
-  ASSERT_EQ(-1, ps_type_format_canonical_signature(
-                    cyclic_pointer, deep_pointer_signature,
-                    sizeof(deep_pointer_signature)));
-  node_t cyclic_pointer_node = {0};
-  test_set_resolved_node_kind(&cyclic_pointer_node, ND_LVAR);
-  test_bind_node_type(&cyclic_pointer_node, cyclic_pointer);
-  ASSERT_TRUE(ps_node_get_type(&cyclic_pointer_node) == NULL);
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      &cyclic_pointer_node, &invariant_failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE,
-            invariant_failure.status);
+  ASSERT_TRUE(
+      !pointer_syntax.declarator_shape.ops[0].is_const_qualified);
   psx_dispose_declarator_syntax(&pointer_syntax);
 
   char array_declarator[512] = "deep_array";
@@ -21945,36 +18078,7 @@ static void test_recursive_declarator_capacity_boundary() {
   ASSERT_EQ(40, array_syntax.declarator_shape.count);
   ASSERT_EQ(40, array_syntax.array_bound_count);
   ASSERT_TRUE(array_syntax.array_bound_capacity >= 40);
-  psx_declarator_shape_t array_shape;
-  apply_test_parsed_declarator(&array_syntax, &array_shape, NULL);
-  ASSERT_TRUE(array_shape.ops != array_syntax.declarator_shape.ops);
-  psx_type_t *deep_array_type = ps_type_apply_declarator_shape(
-      ps_type_new_integer(TK_INT, 4, 0), &array_shape);
-  ASSERT_EQ(40, ps_type_array_rank(deep_array_type));
-  ASSERT_EQ(1, ps_type_array_dimension(deep_array_type, 39));
   psx_dispose_declarator_syntax(&array_syntax);
-
-  char deep_sizeof_expression[1024] = "sizeof(int";
-  used = strlen(deep_sizeof_expression);
-  for (int i = 0; i < 39; i++) {
-    memcpy(deep_sizeof_expression + used, "[1]", 3);
-    used += 3;
-  }
-  memcpy(deep_sizeof_expression + used, "[0])", 5);
-  node_sizeof_query_t *deep_sizeof_query =
-      (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
-          deep_sizeof_expression);
-  psx_sizeof_query_resolution_t deep_sizeof_resolution;
-  resolve_test_sizeof_query(deep_sizeof_query, &deep_sizeof_resolution);
-  ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK,
-            deep_sizeof_resolution.status);
-  ASSERT_EQ(1, deep_sizeof_resolution.zero_length_bound_count);
-  ASSERT_EQ(39, deep_sizeof_resolution.zero_length_bound_indices[0]);
-  const psx_type_t *deep_sizeof_type =
-      psx_node_resolved_type_name(&deep_sizeof_query->base);
-  ASSERT_TRUE(deep_sizeof_type != NULL);
-  ASSERT_EQ(40, ps_type_array_rank(
-                    deep_sizeof_type));
 
   char function_declarator[2048] = {0};
   used = 0;
@@ -21997,24 +18101,60 @@ static void test_recursive_declarator_capacity_boundary() {
   ASSERT_EQ(26, function_syntax.function_suffix_count);
   ASSERT_TRUE(function_syntax.function_suffix_capacity >= 26);
   ASSERT_EQ(51, function_syntax.declarator_shape.count);
-  psx_declarator_shape_t function_shape;
-  apply_test_parsed_declarator(&function_syntax, &function_shape, NULL);
-  psx_type_t *deep_function_type = ps_type_apply_declarator_shape(
-      ps_type_new_integer(TK_INT, 4, 0), &function_shape);
-  const psx_type_t *function_level = deep_function_type;
-  for (int i = 0; i < 26; i++) {
-    ASSERT_TRUE(function_level != NULL);
-    ASSERT_EQ(PSX_TYPE_FUNCTION, function_level->kind);
-    function_level = function_level->base;
-    if (i + 1 < 26) {
-      ASSERT_TRUE(function_level != NULL);
-      ASSERT_EQ(PSX_TYPE_POINTER, function_level->kind);
-      function_level = function_level->base;
-    }
-  }
-  ASSERT_TRUE(function_level != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, function_level->kind);
   psx_dispose_declarator_syntax(&function_syntax);
+
+  psx_semantic_type_table_t *types =
+      psx_semantic_type_table_create();
+  ASSERT_TRUE(types != NULL);
+  psx_qual_type_t int_type =
+      psx_semantic_type_table_intern_integer(
+          types, PSX_INTEGER_KIND_INT, 0, 0);
+
+  psx_qual_type_t deep_pointer = int_type;
+  for (int i = 0; i < 96; i++) {
+    if (i == 5)
+      deep_pointer.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+    if (i == 70)
+      deep_pointer.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+    deep_pointer = psx_semantic_type_table_intern_pointer_to(
+        types, deep_pointer);
+  }
+  psx_qual_type_t cursor = deep_pointer;
+  for (int i = 0; i < 96; i++) {
+    psx_type_shape_t shape = {0};
+    ASSERT_TRUE(psx_semantic_type_table_describe(
+        types, cursor.type_id, &shape));
+    ASSERT_EQ(PSX_TYPE_POINTER, shape.kind);
+    cursor = psx_semantic_type_table_base(
+        types, cursor.type_id);
+  }
+  ASSERT_EQ(int_type.type_id, cursor.type_id);
+
+  psx_qual_type_t deep_array = int_type;
+  for (int i = 0; i < 40; i++)
+    deep_array = psx_semantic_type_table_intern_array_of(
+        types, deep_array, 1, 0);
+  cursor = deep_array;
+  for (int i = 0; i < 40; i++) {
+    psx_type_shape_t shape = {0};
+    ASSERT_TRUE(psx_semantic_type_table_describe(
+        types, cursor.type_id, &shape));
+    ASSERT_EQ(PSX_TYPE_ARRAY, shape.kind);
+    ASSERT_EQ(1, shape.array_len);
+    cursor = psx_semantic_type_table_base(
+        types, cursor.type_id);
+  }
+  ASSERT_EQ(int_type.type_id, cursor.type_id);
+
+  char signature[1024];
+  int signature_length = psx_format_canonical_type_signature(
+      types, deep_pointer,
+      ag_target_info_data_layout(
+          ag_compilation_session_target(test_suite_session)),
+      signature, sizeof(signature));
+  ASSERT_TRUE(signature_length > 0);
+  ASSERT_TRUE((size_t)signature_length < sizeof(signature));
+  psx_semantic_type_table_destroy(types);
 }
 
 static void count_arena_cleanup(void *data) {
@@ -22123,791 +18263,216 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(test_semantic_context_fixture_init(
       &fixture, ag_compilation_session_target(test_suite_session)));
   psx_semantic_context_t *context = fixture.context;
-  if (!context) return;
+  ASSERT_TRUE(context != NULL);
+  psx_semantic_type_table_t *types =
+      (psx_semantic_type_table_t *)
+          ps_ctx_semantic_type_table_in(context);
+  ASSERT_TRUE(types != NULL);
 
-  psx_type_t *plain_int = ps_type_new_integer(TK_INT, 4, 0);
-  psx_type_t *stale_wide_int = ps_type_new_integer(TK_INT, 8, 0);
-  psx_type_t *stale_narrow_unsigned_int =
-      ps_type_new_integer(TK_UNSIGNED, 1, 1);
-  psx_type_t *stale_wide_unsigned_int =
-      ps_type_new_integer(TK_UNSIGNED, 8, 1);
-  ASSERT_EQ(3, ps_type_integer_rank(plain_int));
-  ASSERT_EQ(3, ps_type_integer_rank(stale_wide_int));
-  ASSERT_TRUE(ps_type_unqualified_semantic_matches(
-      plain_int, stale_wide_int));
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            stale_narrow_unsigned_int->integer_kind);
-  ASSERT_EQ(3, ps_type_integer_rank(stale_narrow_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
-      stale_narrow_unsigned_int, ps_ctx_data_layout(test_semantic_context())));
-  ASSERT_EQ(PSX_INTEGER_KIND_INT,
-            stale_wide_unsigned_int->integer_kind);
-  ASSERT_EQ(3, ps_type_integer_rank(stale_wide_unsigned_int));
-  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_data_layout(
-      stale_wide_unsigned_int, ps_ctx_data_layout(test_semantic_context())));
-  psx_type_t *stale_wide_short =
-      ps_type_new_integer(TK_SHORT, 64, 1);
-  psx_type_t *stale_narrow_int =
-      ps_type_new_integer(TK_INT, 1, 0);
-  psx_type_t *boolean = ps_type_new_integer(TK_BOOL, 1, 0);
-  ASSERT_EQ(2, ps_type_character_code_unit_width(stale_wide_short));
-  ASSERT_EQ(4, ps_type_character_code_unit_width(stale_narrow_int));
-  ASSERT_EQ(4, ps_type_character_code_unit_width(
-      stale_narrow_unsigned_int));
-  ASSERT_EQ(0, ps_type_character_code_unit_width(boolean));
-  node_string_t utf16_string = {0};
-  utf16_string.base.kind = ND_STRING;
-  utf16_string.char_width = TK_CHAR_WIDTH_CHAR16;
-  utf16_string.byte_len = 2;
-  psx_type_t *utf16_array = ps_type_new_array(
-      stale_wide_short, 0, 0, 0);
-  psx_qual_type_t completed_utf16_array = {
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  ASSERT_TRUE(psx_resolve_incomplete_array_initializer_qual_type_in(
-      context, ps_ctx_intern_qual_type_in(context, utf16_array),
-      PSX_DECL_INIT_EXPR, (node_t *)&utf16_string,
-      &completed_utf16_array));
-  psx_type_shape_t completed_utf16_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      completed_utf16_array.type_id, &completed_utf16_shape));
-  ASSERT_EQ(3, completed_utf16_shape.array_len);
-  psx_type_t *boolean_array = ps_type_new_array(boolean, 0, 0, 0);
-  psx_qual_type_t completed_boolean_array = {
-      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
-  ASSERT_TRUE(!psx_resolve_incomplete_array_initializer_qual_type_in(
-      context, ps_ctx_intern_qual_type_in(context, boolean_array),
-      PSX_DECL_INIT_EXPR, (node_t *)&utf16_string,
-      &completed_boolean_array));
-  ASSERT_EQ(0, boolean_array->array_len);
-  psx_type_t *const_int = ps_type_clone(plain_int);
-  ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);
-  psx_qual_type_t plain_int_identity =
-      ps_ctx_intern_qual_type_in(context, plain_int);
-  psx_qual_type_t const_int_identity =
-      ps_ctx_intern_qual_type_in(context, const_int);
-  ASSERT_TRUE(plain_int_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(plain_int_identity.type_id, const_int_identity.type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, plain_int_identity.qualifiers);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, const_int_identity.qualifiers);
-  const psx_semantic_type_table_t *semantic_types =
-      ps_ctx_semantic_type_table_in(context);
+  psx_qual_type_t plain_int =
+      ps_ctx_intern_integer_qual_type_in(
+          context, PSX_INTEGER_KIND_INT, 0, 0);
+  psx_qual_type_t unsigned_int =
+      ps_ctx_intern_integer_qual_type_in(
+          context, PSX_INTEGER_KIND_INT, 1, 0);
+  psx_qual_type_t boolean =
+      ps_ctx_intern_integer_qual_type_in(
+          context, PSX_INTEGER_KIND_BOOL, 0, 0);
   ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
-      semantic_types, plain_int_identity));
+      types, plain_int));
   ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
-      semantic_types, const_int_identity));
-  ASSERT_TRUE(!psx_semantic_type_table_qual_type_is_valid(
-      semantic_types,
-      (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                        PSX_TYPE_QUALIFIER_NONE}));
-  ASSERT_TRUE(!psx_semantic_type_table_qual_type_is_valid(
-      semantic_types,
-      (psx_qual_type_t){plain_int_identity.type_id, 1u << 4}));
-  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
-      semantic_types, plain_int_identity, const_int_identity));
-  ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(
-      semantic_types, plain_int_identity,
-      (psx_qual_type_t){PSX_TYPE_ID_INVALID,
-                        PSX_TYPE_QUALIFIER_NONE}));
-  psx_qual_type_t const_int_array_identity =
-      ps_ctx_intern_array_of_qual_type_in(
-          context, const_int_identity, 4, 0);
-  psx_qual_type_t repeated_const_int_array =
-      ps_ctx_intern_array_of_qual_type_in(
-          context, const_int_identity, 4, 0);
-  ASSERT_TRUE(const_int_array_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(const_int_array_identity.type_id,
-            repeated_const_int_array.type_id);
-  ASSERT_EQ(const_int_array_identity.type_id,
-            ps_ctx_intern_qual_type_in(
-                context,
-                ps_type_new_array(const_int, 4, 16, 0)).type_id);
-  psx_qual_type_t const_int_array_element =
-      psx_semantic_type_table_base(
-          ps_ctx_semantic_type_table_in(context),
-          const_int_array_identity.type_id);
-  ASSERT_EQ(const_int_identity.type_id,
-            const_int_array_element.type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            const_int_array_element.qualifiers);
-  psx_qual_type_t const_int_matrix_row =
-      ps_ctx_intern_array_of_qual_type_in(
-          context, const_int_identity, 3, 0);
-  psx_qual_type_t const_int_matrix =
-      ps_ctx_intern_array_of_qual_type_in(
-          context, const_int_matrix_row, 2, 0);
-  ASSERT_EQ(6, psx_semantic_type_table_array_flat_element_count(
-                   semantic_types, const_int_matrix.type_id));
-  ASSERT_EQ(3, psx_semantic_type_table_array_subscript_stride_elements(
-                   semantic_types, const_int_matrix.type_id, 0));
-  ASSERT_EQ(1, psx_semantic_type_table_array_subscript_stride_elements(
-                   semantic_types, const_int_matrix.type_id, 1));
-  ASSERT_EQ(0, psx_semantic_type_table_array_subscript_stride_elements(
-                   semantic_types, const_int_matrix.type_id, 2));
-  ASSERT_EQ(0, psx_semantic_type_table_array_subscript_stride_elements(
-                   semantic_types, plain_int_identity.type_id, 0));
-  const psx_type_t *interned_int =
-      ps_ctx_type_by_id_in(context, plain_int_identity.type_id);
-  ASSERT_TRUE(interned_int != NULL);
-  ASSERT_TRUE(interned_int != plain_int);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, ps_type_qualifiers(interned_int));
-  const psx_type_t *materialized_const_int =
-      psx_type_compatibility_view_for(
-          ps_ctx_semantic_type_table_in(context), const_int_identity);
-  ASSERT_TRUE(materialized_const_int != NULL);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            ps_type_qualifiers(materialized_const_int));
-  psx_type_shape_t plain_int_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      plain_int_identity.type_id, &plain_int_shape));
-  ASSERT_EQ(PSX_TYPE_INTEGER, plain_int_shape.kind);
-  ASSERT_EQ(PSX_INTEGER_KIND_INT, plain_int_shape.integer_kind);
-  ASSERT_EQ(plain_int_identity.type_id,
-            ps_ctx_intern_integer_qual_type_in(
-                context, PSX_INTEGER_KIND_INT, 0, 0).type_id);
-  ASSERT_EQ(ps_ctx_intern_qual_type_in(context, boolean).type_id,
-            ps_ctx_intern_integer_qual_type_in(
-                context, PSX_INTEGER_KIND_BOOL, 0, 0).type_id);
+      types, unsigned_int));
+  ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+      types, boolean));
+  ASSERT_TRUE(plain_int.type_id != unsigned_int.type_id);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_intern_integer_qual_type_in(
                 context, PSX_INTEGER_KIND_ENUM, 0, 0).type_id);
 
+  psx_qual_type_t const_int = plain_int;
+  const_int.qualifiers = PSX_TYPE_QUALIFIER_CONST;
+  ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+      types, const_int));
+  ASSERT_EQ(plain_int.type_id, const_int.type_id);
+  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
+      types, plain_int, const_int));
+
+  psx_qual_type_t const_array =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int, 4, 0);
+  psx_qual_type_t repeated_const_array =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int, 4, 0);
+  ASSERT_EQ(const_array.type_id,
+            repeated_const_array.type_id);
+  psx_qual_type_t array_element =
+      psx_semantic_type_table_base(
+          types, const_array.type_id);
+  ASSERT_EQ(const_int.type_id, array_element.type_id);
+  ASSERT_EQ(const_int.qualifiers, array_element.qualifiers);
+
+  psx_qual_type_t matrix_row =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, const_int, 3, 0);
+  psx_qual_type_t matrix =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, matrix_row, 2, 0);
+  ASSERT_EQ(6, psx_semantic_type_table_array_flat_element_count(
+                   types, matrix.type_id));
+  ASSERT_EQ(3, psx_semantic_type_table_array_subscript_stride_elements(
+                   types, matrix.type_id, 0));
+  ASSERT_EQ(1, psx_semantic_type_table_array_subscript_stride_elements(
+                   types, matrix.type_id, 1));
+  ASSERT_EQ(const_int.type_id,
+            psx_semantic_type_table_array_leaf(
+                types, matrix.type_id).type_id);
+  ASSERT_EQ(const_int.qualifiers,
+            psx_semantic_type_table_array_leaf(
+                types, matrix.type_id).qualifiers);
+
+  psx_qual_type_t pointer_to_int =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, plain_int);
+  psx_qual_type_t pointer_to_const =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, const_int);
+  ASSERT_TRUE(pointer_to_int.type_id !=
+              pointer_to_const.type_id);
+  ASSERT_EQ(const_int.type_id,
+            psx_semantic_type_table_base(
+                types, pointer_to_const.type_id).type_id);
+  ASSERT_EQ(const_int.qualifiers,
+            psx_semantic_type_table_base(
+                types, pointer_to_const.type_id).qualifiers);
+  ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(
+      types, pointer_to_int, pointer_to_const));
+
+  psx_qual_type_t vla =
+      ps_ctx_intern_array_of_qual_type_in(
+          context, plain_int, 0, 1);
+  psx_qual_type_t pointer_to_vla =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, vla);
+  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
+      types, vla.type_id));
+  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
+      types, pointer_to_vla.type_id));
+
   psx_qual_type_t direct_float =
       ps_ctx_intern_floating_qual_type_in(
           context, PSX_FLOATING_KIND_FLOAT, 0);
-  psx_qual_type_t parser_float = ps_ctx_intern_qual_type_in(
-      context, ps_type_new_floating_in(
-                   test_arena_context(), PSX_FLOATING_KIND_FLOAT, 0));
-  ASSERT_TRUE(direct_float.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(direct_float.type_id, parser_float.type_id);
-  psx_qual_type_t direct_float_complex =
+  psx_qual_type_t direct_complex =
       ps_ctx_intern_floating_qual_type_in(
           context, PSX_FLOATING_KIND_FLOAT, 1);
-  ASSERT_TRUE(direct_float_complex.type_id != PSX_TYPE_ID_INVALID);
+  psx_type_shape_t shape = {0};
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, direct_complex.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_COMPLEX, shape.kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, shape.floating_kind);
   ASSERT_EQ(direct_float.type_id,
             psx_semantic_type_table_base(
-                ps_ctx_semantic_type_table_in(context),
-                direct_float_complex.type_id).type_id);
-  psx_type_shape_t direct_float_complex_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      direct_float_complex.type_id, &direct_float_complex_shape));
-  ASSERT_EQ(PSX_TYPE_COMPLEX, direct_float_complex_shape.kind);
-  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
-            direct_float_complex_shape.floating_kind);
-  const psx_type_t *direct_float_complex_view =
-      ps_ctx_type_by_id_in(context, direct_float_complex.type_id);
-  ASSERT_TRUE(direct_float_complex_view != NULL);
-  ASSERT_EQ(PSX_TYPE_COMPLEX, direct_float_complex_view->kind);
-  ASSERT_TRUE(direct_float_complex_view->base ==
-              ps_ctx_type_by_id_in(context, direct_float.type_id));
-
+                types, direct_complex.type_id).type_id);
   psx_qual_type_t direct_void =
       ps_ctx_intern_void_qual_type_in(context);
-  psx_qual_type_t parser_void = ps_ctx_intern_qual_type_in(
-      context, ps_type_new_in(test_arena_context(), PSX_TYPE_VOID));
-  ASSERT_TRUE(direct_void.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(direct_void.type_id, parser_void.type_id);
-  ASSERT_EQ(PSX_TYPE_VOID,
-            ps_ctx_type_by_id_in(context, direct_void.type_id)->kind);
+  ASSERT_TRUE(psx_semantic_type_table_describe(
+      types, direct_void.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_VOID, shape.kind);
 
-  psx_type_t *first_enum = ps_type_new_enum_in(
-      test_arena_context(), (char *)"SemanticMode", 12, 2);
-  psx_type_t *equivalent_enum = ps_type_new_enum_in(
-      test_arena_context(), (char *)"SemanticMode", 12, 2);
-  psx_type_t *shadowed_enum = ps_type_new_enum_in(
-      test_arena_context(), (char *)"SemanticMode", 12, 3);
-  psx_qual_type_t first_enum_identity =
-      ps_ctx_intern_qual_type_in(context, first_enum);
-  psx_qual_type_t equivalent_enum_identity =
-      ps_ctx_intern_qual_type_in(context, equivalent_enum);
-  psx_qual_type_t shadowed_enum_identity =
-      ps_ctx_intern_qual_type_in(context, shadowed_enum);
-  psx_qual_type_t direct_enum_identity =
+  psx_qual_type_t first_enum =
       ps_ctx_intern_enum_qual_type_in(
           context, "SemanticMode", 12, 2);
-  ASSERT_EQ(first_enum_identity.type_id,
-            equivalent_enum_identity.type_id);
-  ASSERT_EQ(first_enum_identity.type_id, direct_enum_identity.type_id);
-  ASSERT_TRUE(first_enum_identity.type_id !=
-              shadowed_enum_identity.type_id);
-  psx_type_shape_t enum_shape = {0};
+  psx_qual_type_t equivalent_enum =
+      ps_ctx_intern_enum_qual_type_in(
+          context, "SemanticMode", 12, 2);
+  psx_qual_type_t shadowed_enum =
+      ps_ctx_intern_enum_qual_type_in(
+          context, "SemanticMode", 12, 3);
+  ASSERT_EQ(first_enum.type_id, equivalent_enum.type_id);
+  ASSERT_TRUE(first_enum.type_id != shadowed_enum.type_id);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      first_enum_identity.type_id, &enum_shape));
-  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, enum_shape.integer_kind);
-  ASSERT_EQ(12, enum_shape.enum_tag_length);
-  ASSERT_EQ(2, enum_shape.enum_tag_scope_depth_p1);
-  ASSERT_TRUE(strncmp("SemanticMode", enum_shape.enum_tag_name,
-                      (size_t)enum_shape.enum_tag_length) == 0);
+      types, first_enum.type_id, &shape));
+  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, shape.integer_kind);
+  ASSERT_EQ(12, shape.enum_tag_length);
+  ASSERT_EQ(2, shape.enum_tag_scope_depth_p1);
 
   char owned_enum_name[] = "OwnedSemanticMode";
-  psx_qual_type_t owned_enum_identity =
+  psx_qual_type_t owned_enum =
       ps_ctx_intern_enum_qual_type_in(
           context, owned_enum_name, 17, 4);
-  ASSERT_TRUE(owned_enum_identity.type_id != PSX_TYPE_ID_INVALID);
   owned_enum_name[0] = 'X';
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      owned_enum_identity.type_id, &enum_shape));
-  ASSERT_EQ(17, enum_shape.enum_tag_length);
-  ASSERT_TRUE(strncmp("OwnedSemanticMode", enum_shape.enum_tag_name,
-                      (size_t)enum_shape.enum_tag_length) == 0);
+      types, owned_enum.type_id, &shape));
+  ASSERT_TRUE(strncmp("OwnedSemanticMode", shape.enum_tag_name,
+                      (size_t)shape.enum_tag_length) == 0);
 
-  char direct_record_name[] = "DirectSemanticRecord";
+  char record_name[] = "DirectSemanticRecord";
   ASSERT_TRUE(ps_ctx_register_tag_type_in(
-      context, TK_STRUCT, direct_record_name, 20, 0, 0));
-  const psx_record_decl_t *direct_record =
+      context, TK_STRUCT, record_name, 20, 0, 0));
+  const psx_record_decl_t *record =
       ps_ctx_ensure_tag_record_decl_in(
-          context, TK_STRUCT, direct_record_name, 20);
-  ASSERT_TRUE(direct_record != NULL);
-  psx_qual_type_t direct_record_identity =
+          context, TK_STRUCT, record_name, 20);
+  ASSERT_TRUE(record != NULL);
+  psx_qual_type_t record_type =
       ps_ctx_intern_record_qual_type_in(
-          context, direct_record->record_id);
-  psx_qual_type_t parser_record_identity =
-      ps_ctx_intern_qual_type_in(
-          context, ps_type_new_record_in(
-                       test_arena_context(), direct_record));
-  ASSERT_TRUE(direct_record_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(direct_record_identity.type_id,
-            parser_record_identity.type_id);
-  psx_type_shape_t record_shape = {0};
+          context, record->record_id);
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      direct_record_identity.type_id, &record_shape));
-  ASSERT_EQ(PSX_TYPE_STRUCT, record_shape.kind);
-  ASSERT_EQ(direct_record->record_id, record_shape.record_id);
-  ASSERT_EQ(20, record_shape.record_tag_length);
-  ASSERT_TRUE(strncmp("DirectSemanticRecord", record_shape.record_tag_name,
-                      (size_t)record_shape.record_tag_length) == 0);
+      types, record_type.type_id, &shape));
+  ASSERT_EQ(PSX_TYPE_STRUCT, shape.kind);
+  ASSERT_EQ(record->record_id, shape.record_id);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_intern_record_qual_type_in(
                 context, PSX_RECORD_ID_INVALID).type_id);
 
-  psx_type_t *mutable_element = ps_type_new_integer(TK_INT, 4, 0);
-  psx_type_t *mutable_array = ps_type_new_array(
-      mutable_element, 0, 0, 0);
-  psx_type_t *equivalent_array = ps_type_new_array(
-      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
-  psx_qual_type_t immutable_array_identity =
-      ps_ctx_intern_qual_type_in(context, mutable_array);
-  ASSERT_EQ(immutable_array_identity.type_id,
-            ps_ctx_intern_qual_type_in(
-                context, equivalent_array).type_id);
-  const psx_type_t *immutable_array = ps_ctx_type_by_id_in(
-      context, immutable_array_identity.type_id);
-  ASSERT_TRUE(immutable_array != NULL);
-  ASSERT_TRUE(immutable_array != mutable_array);
-  ASSERT_TRUE(immutable_array->base != mutable_element);
-  ASSERT_EQ(0, immutable_array->array_len);
-  ASSERT_TRUE(!immutable_array->is_vla);
-  psx_type_shape_t immutable_array_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      immutable_array_identity.type_id, &immutable_array_shape));
-  ASSERT_EQ(PSX_TYPE_ARRAY, immutable_array_shape.kind);
-  ASSERT_EQ(0, immutable_array_shape.array_len);
-  ASSERT_TRUE(!immutable_array_shape.is_vla);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(immutable_array->base));
-  ASSERT_TRUE(ps_type_complete_array(mutable_array, 7));
-  ps_type_add_qualifiers(
-      mutable_element, PSX_TYPE_QUALIFIER_CONST);
-  ASSERT_EQ(0, immutable_array->array_len);
-  ASSERT_TRUE(!immutable_array->is_vla);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(immutable_array->base));
-  ASSERT_EQ(plain_int_identity.type_id,
+  const psx_qual_type_t parameters[2] = {
+      const_int, pointer_to_int};
+  psx_qual_type_t function =
+      ps_ctx_intern_function_qual_type_in(
+          context, plain_int, parameters, 2, 1, 0);
+  ASSERT_TRUE(psx_semantic_type_table_qual_type_is_valid(
+      types, function));
+  ASSERT_EQ(plain_int.type_id,
             psx_semantic_type_table_base(
-                ps_ctx_semantic_type_table_in(context),
-                immutable_array_identity.type_id).type_id);
+                types, function.type_id).type_id);
+  ASSERT_EQ(const_int.qualifiers,
+            psx_semantic_type_table_parameter(
+                types, function.type_id, 0).qualifiers);
+  ASSERT_EQ(pointer_to_int.type_id,
+            psx_semantic_type_table_parameter(
+                types, function.type_id, 1).type_id);
 
-  psx_type_t *host_pointer = ps_type_new_pointer(plain_int);
-  psx_type_t *wasm_pointer = ps_type_clone(host_pointer);
-  psx_qual_type_t host_pointer_identity =
-      ps_ctx_intern_qual_type_in(context, host_pointer);
-  psx_qual_type_t wasm_pointer_identity =
-      ps_ctx_intern_qual_type_in(context, wasm_pointer);
-  ASSERT_EQ(host_pointer_identity.type_id, wasm_pointer_identity.type_id);
-  psx_qual_type_t pointer_base_identity = psx_semantic_type_table_base(
-      ps_ctx_semantic_type_table_in(context), host_pointer_identity.type_id);
-  ASSERT_EQ(plain_int_identity.type_id, pointer_base_identity.type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, pointer_base_identity.qualifiers);
-  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(context, plain_int).type_id !=
-              PSX_TYPE_ID_INVALID);
-
-  psx_type_t *pointer_to_const = ps_type_new_pointer(const_int);
-  psx_qual_type_t pointer_to_const_identity =
-      ps_ctx_intern_qual_type_in(context, pointer_to_const);
-  ASSERT_TRUE(pointer_to_const_identity.type_id !=
-              host_pointer_identity.type_id);
-  psx_qual_type_t qualified_pointer_base = psx_semantic_type_table_base(
-      ps_ctx_semantic_type_table_in(context),
-      pointer_to_const_identity.type_id);
-  ASSERT_EQ(plain_int_identity.type_id, qualified_pointer_base.type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, qualified_pointer_base.qualifiers);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            psx_semantic_type_table_pointee_value(
-                ps_ctx_semantic_type_table_in(context),
-                pointer_to_const_identity.type_id).qualifiers);
-  ASSERT_TRUE(!psx_semantic_type_table_unqualified_types_match(
-      semantic_types, host_pointer_identity,
-      pointer_to_const_identity));
-  const psx_type_t *canonical_pointer_to_const =
-      ps_ctx_type_by_id_in(context, pointer_to_const_identity.type_id);
-  ASSERT_TRUE(canonical_pointer_to_const != NULL);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(canonical_pointer_to_const));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(canonical_pointer_to_const->base));
-  ASSERT_TRUE(canonical_pointer_to_const->base == interned_int);
-  const psx_type_t *materialized_pointer_to_const =
-      psx_type_compatibility_view_for(
-          ps_ctx_semantic_type_table_in(context),
-          pointer_to_const_identity);
-  ASSERT_TRUE(materialized_pointer_to_const != NULL);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(materialized_pointer_to_const));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            ps_type_qualifiers(materialized_pointer_to_const->base));
-  psx_qual_type_t pointer_to_pointer_to_const_identity =
+  psx_qual_type_t exact_int_void =
+      ps_ctx_intern_function_qual_type_in(
+          context, plain_int, NULL, 0, 1, 0);
+  psx_qual_type_t exact_int_void_pointer =
       ps_ctx_intern_pointer_to_qual_type_in(
-          context, pointer_to_const_identity);
-  psx_qual_type_t indirect_pointer_to_const_identity =
-      psx_resolve_indirection_result_qual_type_in(
-          context, pointer_to_pointer_to_const_identity);
-  ASSERT_EQ(pointer_to_const_identity.type_id,
-            indirect_pointer_to_const_identity.type_id);
-  ASSERT_EQ(pointer_to_const_identity.qualifiers,
-            indirect_pointer_to_const_identity.qualifiers);
-  psx_qual_type_t addressed_const_int_identity =
-      psx_resolve_address_result_qual_type_in(
-          context, const_int_identity);
-  ASSERT_EQ(pointer_to_const_identity.type_id,
-            addressed_const_int_identity.type_id);
-  psx_qual_type_t addressed_const_int_base =
-      psx_semantic_type_table_base(
-          ps_ctx_semantic_type_table_in(context),
-          addressed_const_int_identity.type_id);
-  ASSERT_EQ(const_int_identity.type_id,
-            addressed_const_int_base.type_id);
-  ASSERT_EQ(const_int_identity.qualifiers,
-            addressed_const_int_base.qualifiers);
+          context, exact_int_void);
+  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
+      types, exact_int_void));
+  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
+      types, exact_int_void_pointer));
+  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
+      types, function));
 
-  psx_type_t *const_int_array = ps_type_new_array(const_int, 3, 12, 0);
-  psx_type_t *nested_const_int_array = ps_type_new_array(
-      const_int_array, 2, 24, 0);
-  psx_type_t *nested_array_pointer = ps_type_new_pointer(
-      nested_const_int_array);
-  psx_qual_type_t nested_array_identity =
-      ps_ctx_intern_qual_type_in(context, nested_const_int_array);
-  psx_qual_type_t nested_array_pointer_identity =
-      ps_ctx_intern_qual_type_in(context, nested_array_pointer);
-  psx_qual_type_t array_leaf_identity =
-      psx_semantic_type_table_array_leaf(
-          ps_ctx_semantic_type_table_in(context),
-          nested_array_identity.type_id);
-  ASSERT_EQ(plain_int_identity.type_id, array_leaf_identity.type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, array_leaf_identity.qualifiers);
-  psx_qual_type_t pointee_value_identity =
-      psx_semantic_type_table_pointee_value(
-          ps_ctx_semantic_type_table_in(context),
-          nested_array_pointer_identity.type_id);
-  ASSERT_EQ(array_leaf_identity.type_id, pointee_value_identity.type_id);
-  ASSERT_EQ(array_leaf_identity.qualifiers,
-            pointee_value_identity.qualifiers);
-  ASSERT_TRUE(!psx_semantic_type_table_contains_vla_array(
-      ps_ctx_semantic_type_table_in(context),
-      nested_array_identity.type_id));
-  psx_type_t *vla_array = ps_type_new_array(plain_int, 0, 0, 1);
-  psx_type_t *vla_pointer = ps_type_new_pointer(vla_array);
-  psx_qual_type_t vla_array_identity =
-      ps_ctx_intern_qual_type_in(context, vla_array);
-  psx_qual_type_t vla_pointer_identity =
-      ps_ctx_intern_qual_type_in(context, vla_pointer);
-  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
-      ps_ctx_semantic_type_table_in(context),
-      vla_array_identity.type_id));
-  ASSERT_TRUE(psx_semantic_type_table_contains_vla_array(
-      ps_ctx_semantic_type_table_in(context),
-      vla_pointer_identity.type_id));
-  ASSERT_TRUE(!psx_semantic_type_table_contains_vla_array(
-      ps_ctx_semantic_type_table_in(context), PSX_TYPE_ID_INVALID));
-  psx_qual_type_t derived_array_pointer_identity =
-      ps_ctx_intern_pointer_to_qual_type_in(context,
-                                            nested_array_identity);
-  ASSERT_TRUE(derived_array_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(derived_array_pointer_identity.type_id,
-            ps_ctx_intern_pointer_to_qual_type_in(
-                context, nested_array_identity).type_id);
-  psx_qual_type_t derived_array_pointer_base =
-      psx_semantic_type_table_base(
-          ps_ctx_semantic_type_table_in(context),
-          derived_array_pointer_identity.type_id);
-  ASSERT_EQ(nested_array_identity.type_id,
-            derived_array_pointer_base.type_id);
-  ASSERT_EQ(nested_array_identity.qualifiers,
-            derived_array_pointer_base.qualifiers);
-
-  psx_qual_type_t const_nested_array_identity = nested_array_identity;
-  const_nested_array_identity.qualifiers = PSX_TYPE_QUALIFIER_CONST;
-  psx_qual_type_t derived_const_array_pointer_identity =
-      ps_ctx_intern_pointer_to_qual_type_in(
-          context, const_nested_array_identity);
-  ASSERT_TRUE(derived_const_array_pointer_identity.type_id !=
-              derived_array_pointer_identity.type_id);
-  psx_qual_type_t derived_const_array_pointer_base =
-      psx_semantic_type_table_base(
-          ps_ctx_semantic_type_table_in(context),
-          derived_const_array_pointer_identity.type_id);
-  ASSERT_EQ(const_nested_array_identity.type_id,
-            derived_const_array_pointer_base.type_id);
-  ASSERT_EQ(const_nested_array_identity.qualifiers,
-            derived_const_array_pointer_base.qualifiers);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_semantic_type_table_pointee_value(
-                ps_ctx_semantic_type_table_in(context),
-                plain_int_identity.type_id).type_id);
-
-  const psx_type_t *function_parameters[2] = {const_int, host_pointer};
-  psx_type_t *function_type = ps_type_new_function(plain_int);
-  ps_type_set_function_params(function_type, function_parameters, 2, 0);
-  psx_qual_type_t function_identity =
-      ps_ctx_intern_qual_type_in(context, function_type);
-  ASSERT_TRUE(function_identity.type_id != PSX_TYPE_ID_INVALID);
-  const psx_qual_type_t function_parameter_identities[2] = {
-      const_int_identity, host_pointer_identity};
-  ASSERT_EQ(function_identity.type_id,
-            ps_ctx_intern_function_qual_type_in(
-                context, plain_int_identity,
-                function_parameter_identities, 2, 1, 0).type_id);
-  psx_qual_type_t invalid_function_parameter = {
+  psx_qual_type_t invalid = {
       PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_intern_pointer_to_qual_type_in(
-                context, invalid_function_parameter).type_id);
+                context, invalid).type_id);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_intern_array_of_qual_type_in(
-                context, invalid_function_parameter, 1, 0).type_id);
+                context, invalid, 1, 0).type_id);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_intern_function_qual_type_in(
-                context, invalid_function_parameter,
-                NULL, 0, 1, 0).type_id);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            ps_ctx_intern_function_qual_type_in(
-                context, plain_int_identity,
-                &invalid_function_parameter, 1, 1, 0).type_id);
-  ASSERT_EQ(plain_int_identity.type_id,
-            psx_semantic_type_table_base(
-                ps_ctx_semantic_type_table_in(context),
-                function_identity.type_id).type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                function_identity.type_id, 0).qualifiers);
-  const psx_type_t *canonical_function =
-      ps_ctx_type_by_id_in(context, function_identity.type_id);
-  ASSERT_TRUE(canonical_function != NULL);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(canonical_function->param_types[0]));
-  ASSERT_TRUE(canonical_function->base == interned_int);
-  ASSERT_TRUE(canonical_function->param_types[0] == interned_int);
-  ASSERT_TRUE(canonical_function->param_types[1] ==
-              ps_ctx_type_by_id_in(context, host_pointer_identity.type_id));
-  const psx_type_t *materialized_function =
-      psx_type_compatibility_view_for(
-          ps_ctx_semantic_type_table_in(context), function_identity);
-  ASSERT_TRUE(materialized_function != NULL);
-  ASSERT_TRUE(materialized_function != canonical_function);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            ps_type_qualifiers(materialized_function->param_types[0]));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            ps_type_qualifiers(materialized_function->param_types[1]));
-  ASSERT_EQ(function_identity.type_id,
-            ps_ctx_find_interned_qual_type_in(
-                context, canonical_function).type_id);
-  ASSERT_EQ(function_identity.type_id,
-            ps_ctx_intern_qual_type_in(
-                context, canonical_function).type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                function_identity.type_id, 0).qualifiers);
-  ASSERT_EQ(host_pointer_identity.type_id,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                function_identity.type_id, 1).type_id);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                function_identity.type_id, 2).type_id);
+                context, invalid, NULL, 0, 1, 0).type_id);
 
-  psx_qual_type_t implicit_function_identity =
-      ps_ctx_intern_implicit_function_qual_type_in(context);
-  psx_type_shape_t implicit_function_shape = {0};
+  psx_type_id_t retained_id = pointer_to_const.type_id;
   ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      implicit_function_identity.type_id, &implicit_function_shape));
-  ASSERT_EQ(PSX_TYPE_FUNCTION, implicit_function_shape.kind);
-  ASSERT_EQ(0, implicit_function_shape.parameter_count);
-  ASSERT_TRUE(!implicit_function_shape.has_function_prototype);
-  ASSERT_EQ(plain_int_identity.type_id,
-            psx_semantic_type_table_base(
-                ps_ctx_semantic_type_table_in(context),
-                implicit_function_identity.type_id).type_id);
-
-  psx_type_t *exact_int_void_function = ps_type_new_function(plain_int);
-  ps_type_set_function_params(exact_int_void_function, NULL, 0, 0);
-  psx_qual_type_t exact_int_void_identity =
-      ps_ctx_intern_qual_type_in(context, exact_int_void_function);
-  psx_qual_type_t exact_int_void_pointer_identity =
-      ps_ctx_intern_qual_type_in(
-          context, ps_type_new_pointer(exact_int_void_function));
-  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
-      semantic_types, implicit_function_identity,
-      exact_int_void_identity));
-  ASSERT_TRUE(psx_semantic_type_table_unqualified_types_match(
-      semantic_types,
-      ps_ctx_intern_pointer_to_qual_type_in(
-          context, implicit_function_identity),
-      exact_int_void_pointer_identity));
-  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
-      ps_ctx_semantic_type_table_in(context), exact_int_void_identity));
-  ASSERT_TRUE(psx_semantic_type_is_exact_int_void_function(
-      ps_ctx_semantic_type_table_in(context),
-      exact_int_void_pointer_identity));
-  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
-      ps_ctx_semantic_type_table_in(context), function_identity));
-
-  psx_type_t *unsigned_int_void_function =
-      ps_type_new_function(stale_wide_unsigned_int);
-  ps_type_set_function_params(unsigned_int_void_function, NULL, 0, 0);
-  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
-      ps_ctx_semantic_type_table_in(context),
-      ps_ctx_intern_qual_type_in(context, unsigned_int_void_function)));
-  psx_type_t *variadic_int_function = ps_type_new_function(plain_int);
-  ps_type_set_function_params(variadic_int_function, NULL, 0, 1);
-  ASSERT_TRUE(!psx_semantic_type_is_exact_int_void_function(
-      ps_ctx_semantic_type_table_in(context),
-      ps_ctx_intern_qual_type_in(context, variadic_int_function)));
-
-  char record_name[] = "IdentityRecord";
-  psx_type_t *first_record = ps_type_new_tag(
-      TK_STRUCT, record_name, 14, 1, 8);
-  first_record->record_id = 41;
-  psx_type_t *same_record = ps_type_clone(first_record);
-  psx_type_t *other_record = ps_type_clone(first_record);
-  other_record->record_id = 42;
-  psx_qual_type_t first_record_identity =
-      ps_ctx_intern_qual_type_in(context, first_record);
-  psx_qual_type_t same_record_identity =
-      ps_ctx_intern_qual_type_in(context, same_record);
-  psx_qual_type_t other_record_identity =
-      ps_ctx_intern_qual_type_in(context, other_record);
-  ASSERT_EQ(first_record_identity.type_id, same_record_identity.type_id);
-  ASSERT_TRUE(first_record_identity.type_id != other_record_identity.type_id);
-  psx_type_t *unresolved_record = ps_type_clone(first_record);
-  unresolved_record->record_id = PSX_RECORD_ID_INVALID;
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            ps_ctx_intern_qual_type_in(
-                context, unresolved_record).type_id);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            ps_ctx_intern_qual_type_in(
-                context, ps_type_new_pointer(unresolved_record)).type_id);
-
-  char recursive_name[] = "RecursiveIdentityRecord";
-  psx_type_t *recursive_record = ps_type_new_tag(
-      TK_STRUCT, recursive_name, 23, 1, 8);
-  recursive_record->record_id = 43;
-  psx_type_t *recursive_pointer = ps_type_new_pointer(recursive_record);
-  psx_record_decl_t recursive_definition = {
-      .record_id = 43,
-      .record_kind = PSX_TYPE_STRUCT,
-      .tag_name = recursive_name,
-      .tag_len = 23,
-  };
-  ASSERT_TRUE(psx_record_decl_table_define(
-      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
-      &recursive_definition));
-  psx_record_member_decl_t recursive_member = {
-      .name = (char *)"next",
-      .len = 4,
-  };
-  set_test_record_member_fixture_type_in(
-      context, &recursive_member, recursive_pointer);
-  recursive_definition.is_complete = 1;
-  recursive_definition.member_count = 1;
-  recursive_definition.members = &recursive_member;
-  ASSERT_TRUE(psx_record_decl_table_define(
-      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
-      &recursive_definition));
-  psx_qual_type_t recursive_identity =
-      ps_ctx_intern_qual_type_in(context, recursive_record);
-  ASSERT_TRUE(recursive_identity.type_id != PSX_TYPE_ID_INVALID);
-  psx_qual_type_t recursive_pointer_identity =
-      ps_ctx_find_interned_qual_type_in(context, recursive_pointer);
-  ASSERT_TRUE(recursive_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(recursive_pointer_identity.type_id,
-            psx_semantic_type_table_record_member(
-                ps_ctx_semantic_type_table_in(context),
-                recursive_identity.type_id, 0).type_id);
-  ASSERT_EQ(recursive_identity.type_id,
-            psx_semantic_type_table_base(
-                ps_ctx_semantic_type_table_in(context),
-                recursive_pointer_identity.type_id).type_id);
-
-  char completed_record_name[] = "CompletedIdentityRecord";
-  psx_record_decl_t completed_definition = {
-      .record_id = 44,
-      .record_kind = PSX_TYPE_STRUCT,
-      .tag_name = completed_record_name,
-      .tag_len = 23,
-  };
-  psx_type_t *completed_record = ps_type_new_tag(
-      TK_STRUCT, completed_record_name, 23, 1, 0);
-  completed_record->record_id = completed_definition.record_id;
-  ASSERT_TRUE(psx_record_decl_table_define(
-      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
-      &completed_definition));
-  psx_qual_type_t incomplete_record_identity =
-      ps_ctx_intern_qual_type_in(context, completed_record);
-  ASSERT_TRUE(incomplete_record_identity.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(PSX_TYPE_ID_INVALID,
-            psx_semantic_type_table_record_member(
-                ps_ctx_semantic_type_table_in(context),
-                incomplete_record_identity.type_id, 0).type_id);
-  psx_record_member_decl_t completed_member = {
-      .name = (char *)"value",
-      .len = 5,
-  };
-  set_test_record_member_fixture_type_in(
-      context, &completed_member, const_int);
-  completed_definition.is_complete = 1;
-  completed_definition.member_count = 1;
-  completed_definition.members = &completed_member;
-  psx_qual_type_t completed_record_identity =
-      ps_ctx_intern_qual_type_in(context, completed_record);
-  ASSERT_EQ(incomplete_record_identity.type_id,
-            completed_record_identity.type_id);
-  ASSERT_EQ(plain_int_identity.type_id,
-            psx_semantic_type_table_record_member(
-                ps_ctx_semantic_type_table_in(context),
-                completed_record_identity.type_id, 0).type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            psx_semantic_type_table_record_member(
-                ps_ctx_semantic_type_table_in(context),
-                completed_record_identity.type_id, 0).qualifiers);
-
-  psx_type_id_t retained_id = pointer_to_const_identity.type_id;
-  ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
+      types, retained_id, &shape));
   psx_scope_graph_reset(ps_ctx_scope_graph(context));
   ps_ctx_reset_translation_unit_scope_in(context);
-  ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) == NULL);
-  psx_resolution_store_t *context_store =
-      ps_ctx_resolution_store(context);
-  ASSERT_TRUE(context_store != NULL);
+  ASSERT_TRUE(!psx_semantic_type_table_describe(
+      types, retained_id, &shape));
 
-  node_t typed_expression = {.kind = ND_NUM};
-  ASSERT_TRUE((ps_node_prepare_resolution_state_for_size_in)(
-      context_store, test_arena_context(), &typed_expression,
-      sizeof(typed_expression)));
-  (ps_node_bind_type)(context_store, &typed_expression, const_int);
-  psx_qual_type_t bound_expression_type =
-      (ps_node_qual_type)(context_store, &typed_expression);
-  ASSERT_TRUE(bound_expression_type.type_id != PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(bound_expression_type.type_id,
-            ps_ctx_find_interned_qual_type_in(
-                context, (ps_node_get_type)(
-                             context_store, &typed_expression)).type_id);
-  psx_semantic_invariant_failure_t failure = {0};
-  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
-      context, &typed_expression, &failure, 0));
-  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
-                  context, (ps_node_get_type)(
-                               context_store, &typed_expression)).type_id !=
-              PSX_TYPE_ID_INVALID);
-  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
-                context, (ps_node_get_type)(
-                             context_store, &typed_expression)).type_id,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).type_id);
-  ASSERT_EQ(bound_expression_type.type_id,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).qualifiers);
-  ASSERT_TRUE((ps_node_get_type)(context_store, &typed_expression) ==
-              psx_type_compatibility_view_for(
-                  ps_ctx_semantic_type_table_in(context),
-                  (ps_node_qual_type)(context_store, &typed_expression)));
-  (ps_node_bind_type)(context_store, &typed_expression, plain_int);
-  ASSERT_TRUE((ps_node_qual_type)(
-                  context_store, &typed_expression).type_id !=
-              PSX_TYPE_ID_INVALID);
-  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
-      context, &typed_expression, &failure, 0));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
-            (ps_node_qual_type)(
-                context_store, &typed_expression).qualifiers);
-
-  node_function_definition_t typed_function = {0};
-  ASSERT_TRUE((ps_node_prepare_resolution_state_for_size_in)(
-      context_store, test_arena_context(), &typed_function.base,
-      sizeof(typed_function)));
-  ASSERT_TRUE((psx_resolution_node_set_kind)(
-      context_store, &typed_function.base, ND_FUNCDEF));
-  typed_function.signature_qual_type =
-      ps_ctx_intern_qual_type_in(context, function_type);
-  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
-      context, (node_t *)&typed_function, &failure, 0));
-  psx_qual_type_t signature_identity =
-      ps_function_definition_signature_qual_type(&typed_function);
-  ASSERT_TRUE(signature_identity.type_id != PSX_TYPE_ID_INVALID);
-  psx_type_shape_t signature_shape = {0};
-  ASSERT_TRUE(psx_semantic_type_table_describe(
-      ps_ctx_semantic_type_table_in(context),
-      signature_identity.type_id, &signature_shape));
-  ASSERT_EQ(PSX_TYPE_FUNCTION, signature_shape.kind);
-  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
-                context, function_type).type_id,
-            signature_identity.type_id);
-
-  node_function_call_t typed_call = {0};
-  typed_call.base.kind = ND_FUNCALL;
-  ASSERT_TRUE((ps_node_prepare_resolution_state_for_size_in)(
-      context_store, test_arena_context(), &typed_call.base,
-      sizeof(typed_call)));
-  (ps_node_bind_type)(
-      context_store, &typed_call.base, function_type->base);
-  psx_qual_type_t typed_call_qual_type =
-      ps_ctx_intern_qual_type_in(context, function_type);
-  ASSERT_TRUE(typed_call_qual_type.type_id != PSX_TYPE_ID_INVALID);
-  (psx_function_call_bind_qual_type)(
-      context_store, &typed_call, typed_call_qual_type);
-  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
-      context, (node_t *)&typed_call, &failure, 0));
-  psx_qual_type_t callee_identity =
-      (psx_function_call_qual_type)(context_store, &typed_call);
-  ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
-  ASSERT_TRUE(psx_type_compatibility_view_for(
-                  ps_ctx_semantic_type_table_in(context),
-                  callee_identity) != NULL);
-  ASSERT_TRUE((ps_node_get_type)(context_store, (node_t *)&typed_call) ==
-              psx_type_compatibility_view_for(
-                  ps_ctx_semantic_type_table_in(context),
-                  (ps_node_qual_type)(context_store,
-                                      (node_t *)&typed_call)));
-  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
-                context, const_int).type_id,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                callee_identity.type_id, 0).type_id);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
-            psx_semantic_type_table_parameter(
-                ps_ctx_semantic_type_table_in(context),
-                callee_identity.type_id, 0).qualifiers);
   test_semantic_context_fixture_dispose(&fixture);
 }
 

@@ -2456,10 +2456,6 @@ const frontendTranslationUnitResolverHeader = await readFile(
   "src/frontend/translation_unit_resolver.h",
   "utf8",
 );
-const parserCompatibilityTestHook = await readFile(
-  "test/support/parser_compatibility_test_hook.c",
-  "utf8",
-);
 if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_frontend_function_t\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -2482,12 +2478,8 @@ if (!/typedef\s+struct\s*\{\s*psx_hir_node_id_t\s+hir_root\s*;\s*\}\s*psx_fronte
       `${frontendTranslationUnitSource}\n${frontendTranslationUnitHeader}\n${frontendTranslationUnitResolverHeader}`,
     ) ||
     /\bnode_t\b/.test(frontendTranslationUnitResolverHeader) ||
-    !/psx_resolve_parsed_function_compatibility_for_test_in_contexts\s*\(/.test(
-      parserCompatibilityTestHook,
-    ) ||
-    !/resolution\.compatibility_root/.test(
-      parserCompatibilityTestHook,
-    ) ||
+    allSourceFiles.includes("test/support/parser_compatibility_test_hook.c") ||
+    allSourceFiles.includes("test/support/parser_compatibility_test_hook.h") ||
     /psx_frontend_legacy_(?:program_ast|analyze_expression_ast)_in_session/.test(
       frontendTranslationUnitSource,
     ) ||
@@ -2687,7 +2679,7 @@ for (const testName of [
   if (!body || /\banalyze_test_expression\s*\(/.test(body[1]) ||
       /\bparse_expr_input\s*\(/.test(body[1]) ||
       (testName !== "test_syntax_literal_type_boundary" &&
-       !/\bresolve_test_expression(?:_input)?_hir\s*\(/.test(body[1]))) {
+       !/\b(?:resolve_test_expression(?:_input)?_hir|resolve_program_input_hir)\s*\(/.test(body[1]))) {
     throw new Error(
       `${testName} must validate immutable Syntax or production Typed HIR without the compatibility analyzer`,
     );
@@ -10070,14 +10062,11 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    /\bpsx_type_t\b|resolve_test_global_decl_type|ps_global_registry_(?:bind_decl_type|complete_array_type)\s*\(/.test(
-      parserCompatibilityTestHook,
-    ) ||
     !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
       parserUnitTestSource,
     ) ||
     !/\bps_global_registry_complete_array_qual_type\s*\(/.test(
-      parserUnitTestSource,
+      globalObjectLoweringSource,
     ) ||
     !/ps_global_registry_create\s*\([^]*?ps_ctx_semantic_type_table_in\s*\(\s*session->semantic_context\s*\)/.test(
       compilationSessionSource,
@@ -12892,7 +12881,7 @@ if (!parsedFunctionResolutionBoundary ||
       `${semanticTreeResolutionTestSupportHeader}\n${legacySyntaxDiagnosticsSource}`,
     ) ||
     /semantic_tree_resolution_internal\.h/.test(
-      `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}\n${parserCompatibilityTestHook}`,
+      `${semanticTreeResolutionSource}\n${legacySyntaxDiagnosticsSource}`,
     ) ||
     !/psx_resolution_work_tree_create_from_syntax\s*\(\s*psx_resolution_store_t\s*\*resolution_store\s*,\s*arena_context_t\s*\*arena_context\s*,\s*const\s+node_t\s*\*syntax_root\s*\)/.test(
       resolutionWorkTreeInternalHeader,

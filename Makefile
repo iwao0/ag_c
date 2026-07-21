@@ -125,7 +125,7 @@ $(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c test/support/parser_compatibility_test_hook.c $(TEST_ONLY_SRCS) $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
+$(TEST_PARSER): test/test_parser.c $(TEST_ONLY_SRCS) $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
