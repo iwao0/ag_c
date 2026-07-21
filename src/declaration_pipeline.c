@@ -24,7 +24,6 @@
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
-#include "semantic/identifier_binding.h"
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/local_initializer_binding.h"
 #include "semantic/static_initializer_resolution.h"

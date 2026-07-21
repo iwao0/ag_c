@@ -8,7 +8,7 @@
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
 #include "../semantic/hir_control_flow_diagnostics.h"
-#include "../semantic/lvar_usage_analysis.h"
+#include "../semantic/local_usage_diagnostics.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
 #include "toplevel_declaration.h"
@@ -312,13 +312,13 @@ static int resolve_function_to_hir(
       ag_compilation_session_local_registry(session);
   lvar_t *storage_objects =
       ps_decl_get_storage_objects_in(local_registry);
-  psx_prepare_recorded_lvar_usage_in(
+  psx_prepare_recorded_local_usage_in(
       local_registry, storage_objects);
   psx_emit_hir_control_flow_warnings(
       ag_compilation_session_hir_module(session), *hir_root,
       ag_compilation_session_diagnostic_context(session),
       local_registry, fallback_diag_tok);
-  psx_emit_recorded_lvar_usage_warnings_in(
+  psx_emit_recorded_local_usage_warnings_in(
       ag_compilation_session_diagnostic_context(session),
       storage_objects, fallback_diag_tok);
   return 1;

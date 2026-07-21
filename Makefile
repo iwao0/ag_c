@@ -78,7 +78,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/name_environment.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declarator_shape_builder.o
 PARSER_LIB_OBJS+=$(OBJROOT)/parser/declaration_binding_events.o
-PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/type_signature.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
+PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/type_signature.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o $(OBJROOT)/semantic/local_usage_diagnostics.o
 PARSER_LIB_OBJS:=$(filter-out $(TEST_ONLY_OBJS),$(PARSER_LIB_OBJS))
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
@@ -125,7 +125,7 @@ $(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c $(TEST_ONLY_SRCS) $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
+$(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

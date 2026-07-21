@@ -7743,7 +7743,13 @@ if (!directSizeofTypeName ||
     /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
       directSizeofTypeName[0],
     ) ||
-    !/op->array_len\s*<=\s*0\s*\|\|\s*factor\s*<=\s*0/.test(
+    !/op->is_incomplete_array\s*\|\|\s*op->array_len\s*<\s*0\s*\|\|\s*factor\s*<\s*0/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/if\s*\(op->array_len\s*==\s*0\)\s*\{[^]*?factor\s*=\s*0\s*;/.test(
+      directSizeofTypeName[0],
+    ) ||
+    !/if\s*\(factor\s*==\s*0\)\s*\{[^]*?psx_resolve_sizeof_qual_type_plan_in\s*\([^]*?queried_qual_type\s*,\s*1\s*,\s*0\s*,/.test(
       directSizeofTypeName[0],
     )) {
   throw new Error(
@@ -12843,7 +12849,7 @@ if (!parsedFunctionResolutionBoundary ||
     !/^PARSER_LIB_OBJS:=\$\(filter-out\s+\$\(TEST_ONLY_OBJS\),\$\(PARSER_LIB_OBJS\)\)$/m.test(
       makefileSource,
     ) ||
-    !/\$\(TEST_PARSER\):[^\n]*\$\(TEST_ONLY_SRCS\)/.test(
+    /\$\(TEST_PARSER\):[^\n]*\$\(TEST_ONLY_SRCS\)/.test(
       makefileSource,
     ) ||
     /psx_legacy_syntax_diagnostics_accept_/.test(
@@ -14055,6 +14061,13 @@ if (/static\s+node_t\s*\*\*\s*parsed_code\s*;/.test(
     )) {
   throw new Error(
     "parser tests must not retain mutable process-global compatibility state",
+  );
+}
+if (/\bpsx_type_t\b|type_compatibility_view|parser_type_compatibility|semantic_ctx_legacy|node_utils_legacy|parser\/type(?:_builder)?\.h|\bpsx_type_compatibility_(?:canonical_)?view_for\s*\(|\bps_ctx_intern_qual_type_in\s*\(|\bps_node_(?:get|bind)_type\s*\(|\bps_type_[A-Za-z0-9_]*\s*\(/.test(
+      parserUnitTestSource,
+    )) {
+  throw new Error(
+    "parser tests must use canonical QualType APIs without mutable parser type compatibility paths",
   );
 }
 
