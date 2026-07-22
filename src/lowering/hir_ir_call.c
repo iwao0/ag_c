@@ -81,7 +81,9 @@ static psx_qual_type_t atomic_pointee_type(
 
 static int atomic_operation_width(
     const hir_ir_context_t *context,
-    const psx_hir_node_t *pointer_argument, int *is_unsigned) {
+    const psx_hir_node_t *pointer_argument,
+    psx_qual_type_t *object_qual_type,
+    psx_type_shape_t *object_shape, int *is_unsigned) {
   psx_qual_type_t pointee = atomic_pointee_type(
       context, pointer_argument);
   psx_type_shape_t pointee_type = {0};
@@ -98,8 +100,42 @@ static int atomic_operation_width(
     return 0;
   }
   if (is_unsigned)
-    *is_unsigned = pointee_type.is_unsigned ? 1 : 0;
+    *is_unsigned = pointee_type.kind == PSX_TYPE_POINTER ||
+                   pointee_type.is_unsigned ? 1 : 0;
+  if (object_qual_type) *object_qual_type = pointee;
+  if (object_shape) *object_shape = pointee_type;
   return width;
+}
+
+static int atomic_value_matches_object(
+    psx_type_kind_t object_kind, ir_val_t value) {
+  return object_kind == PSX_TYPE_POINTER
+             ? value.type == IR_TY_PTR
+             : hir_ir_is_integer_type(value.type);
+}
+
+static ir_val_t scale_atomic_pointer_delta(
+    hir_ir_context_t *context, const psx_hir_node_t *value_node,
+    ir_val_t value, psx_qual_type_t pointer_object_type, int width) {
+  psx_qual_type_t element_type = psx_semantic_type_table_base(
+      context->options->semantic_types, pointer_object_type.type_id);
+  int stride = psx_type_layout_sizeof(
+      context->options->semantic_types, context->options->record_layouts,
+      element_type.type_id,
+      ag_target_info_data_layout(context->options->target));
+  ir_mir_type_info_t value_info = hir_ir_classify_node_type(
+      context, value_node);
+  if (stride <= 0 ||
+      value_info.type_class != IR_MIR_TYPE_INTEGER ||
+      !hir_ir_is_integer_type(value.type))
+    return hir_ir_unsupported_expr(context);
+  ir_type_t delta_type = width == 8 ? IR_TY_I64 : IR_TY_I32;
+  value = hir_ir_emit_integer_width_conversion(
+      context, value, delta_type, !value_info.is_unsigned);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return hir_ir_emit_integer_binary(
+      context, IR_MUL, value,
+      ir_val_imm(delta_type, stride), delta_type);
 }
 
 static ir_val_t hir_ir_build_atomic_call(
@@ -125,16 +161,22 @@ static ir_val_t hir_ir_build_atomic_call(
 
   const psx_hir_node_t *pointer_argument = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_ARGUMENT, 0);
+  psx_qual_type_t object_qual_type = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  psx_type_shape_t object_shape = {0};
   int is_unsigned = 0;
   int width = atomic_operation_width(
-      context, pointer_argument, &is_unsigned);
+      context, pointer_argument, &object_qual_type,
+      &object_shape, &is_unsigned);
   if (!pointer_argument || width == 0)
     return hir_ir_unsupported_expr(context);
   ir_val_t pointer = hir_ir_build_expr(context, pointer_argument);
   if (context->status != IR_HIR_BUILD_OK ||
       pointer.type != IR_TY_PTR)
     return hir_ir_unsupported_expr(context);
-  ir_type_t value_type = width == 8 ? IR_TY_I64 : IR_TY_I32;
+  ir_type_t value_type = object_shape.kind == PSX_TYPE_POINTER
+                             ? IR_TY_PTR
+                             : width == 8 ? IR_TY_I64 : IR_TY_I32;
 
   if (suffix_length == 4 && memcmp(suffix, "load", 4) == 0) {
     if (argument_count != 1) return hir_ir_unsupported_expr(context);
@@ -160,7 +202,7 @@ static ir_val_t hir_ir_build_atomic_call(
         context, node, PSX_HIR_EDGE_ARGUMENT, 1);
     ir_val_t value = hir_ir_build_expr(context, value_node);
     if (context->status != IR_HIR_BUILD_OK ||
-        !hir_ir_is_integer_type(value.type))
+        !atomic_value_matches_object(object_shape.kind, value))
       return hir_ir_unsupported_expr(context);
     ir_inst_t *atomic = ir_inst_new(IR_ATOMIC);
     if (!atomic) {
@@ -185,7 +227,7 @@ static ir_val_t hir_ir_build_atomic_call(
     ir_val_t desired = hir_ir_build_expr(context, desired_node);
     if (context->status != IR_HIR_BUILD_OK ||
         expected.type != IR_TY_PTR ||
-        !hir_ir_is_integer_type(desired.type))
+        !atomic_value_matches_object(object_shape.kind, desired))
       return hir_ir_unsupported_expr(context);
     int result = hir_ir_new_vreg(context);
     if (result < 0) return ir_val_none();
@@ -230,9 +272,19 @@ static ir_val_t hir_ir_build_atomic_call(
   const psx_hir_node_t *value_node = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_ARGUMENT, 1);
   ir_val_t value = hir_ir_build_expr(context, value_node);
-  if (context->status != IR_HIR_BUILD_OK ||
-      !hir_ir_is_integer_type(value.type))
+  if (context->status != IR_HIR_BUILD_OK)
     return hir_ir_unsupported_expr(context);
+  if (object_shape.kind == PSX_TYPE_POINTER) {
+    if (rmw_operation == IR_ARMW_ADD || rmw_operation == IR_ARMW_SUB) {
+      value = scale_atomic_pointer_delta(
+          context, value_node, value, object_qual_type, width);
+      if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    } else if (rmw_operation != IR_ARMW_XCHG || value.type != IR_TY_PTR) {
+      return hir_ir_unsupported_expr(context);
+    }
+  } else if (!hir_ir_is_integer_type(value.type)) {
+    return hir_ir_unsupported_expr(context);
+  }
   int result = hir_ir_new_vreg(context);
   if (result < 0) return ir_val_none();
   ir_inst_t *atomic = ir_inst_new(IR_ATOMIC);

@@ -468,6 +468,8 @@ static int resolve_direct_function_call(
     return 0;
   }
   psx_call_types_resolution_t resolution;
+  psx_builtin_call_kind_t builtin_kind =
+      psx_function_call_builtin_kind(call);
   psx_resolve_call_qual_types_in(
       context->semantic_context,
       callee_type,
@@ -483,6 +485,8 @@ static int resolve_direct_function_call(
         PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
         &call->base);
   if (resolution.status != PSX_CALL_TYPES_OK) return 0;
+  psx_qual_type_t atomic_argument_types[3] = {{0}};
+  unsigned char atomic_argument_is_null[3] = {0};
   for (int i = 0; i < call->argument_count; i++) {
     psx_qual_type_t argument_type;
     if (!preflight_direct_expression(
@@ -493,6 +497,18 @@ static int resolve_direct_function_call(
         direct_integer_constant(
             context, call->arguments[i], &argument_constant) &&
         argument_constant == 0;
+    if (psx_builtin_call_is_atomic(builtin_kind)) {
+      if (i >= (int)(sizeof(atomic_argument_types) /
+                     sizeof(atomic_argument_types[0])))
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
+            &call->base);
+      atomic_argument_types[i] = argument_type;
+      atomic_argument_is_null[i] =
+          argument_is_null_pointer_constant ? 1 : 0;
+      continue;
+    }
     psx_call_argument_types_status_t argument_status;
     psx_resolve_call_argument_qual_types_in(
         context->semantic_context, resolution.function_qual_type, i,
@@ -511,6 +527,15 @@ static int resolve_direct_function_call(
           call->arguments[i]);
     if (argument_status != PSX_CALL_ARGUMENT_TYPES_OK) return 0;
   }
+  if (psx_builtin_call_is_atomic(builtin_kind) &&
+      !psx_resolve_atomic_builtin_call(
+          context->semantic_context, builtin_kind, atomic_argument_types,
+          atomic_argument_is_null, call->argument_count,
+          &resolution.return_qual_type))
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_TYPES_INCOMPATIBLE,
+        &call->base);
 
   direct_call_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));

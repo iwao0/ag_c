@@ -11113,6 +11113,38 @@ const hirIrCallSource = await readFile(
   "src/lowering/hir_ir_call.c",
   "utf8",
 );
+const atomicPointerDeltaLowering = hirIrCallSource.match(
+  /static\s+ir_val_t\s+scale_atomic_pointer_delta\s*\([^]*?\n\}/,
+);
+if (!/PSX_BUILTIN_CALL_ATOMIC_LOAD/.test(functionCallResolutionHeader) ||
+    !/__ag_atomic_fetch_add[^]*?PSX_BUILTIN_CALL_ATOMIC_FETCH_ADD/.test(
+      functionCallResolutionSource,
+    ) ||
+    !/psx_resolve_atomic_builtin_call\s*\([^]*?resolution\.return_qual_type/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/atomic_builtin_returns_object_value[^]*?result_type->qualifiers\s*=\s*PSX_TYPE_QUALIFIER_NONE/.test(
+      functionCallResolutionSource,
+    ) ||
+    !/PSX_TYPE_POINTER[^]*?PSX_BUILTIN_CALL_ATOMIC_FETCH_ADD[^]*?PSX_BUILTIN_CALL_ATOMIC_FETCH_SUB[^]*?psx_semantic_pointer_points_to_complete_object_in/.test(
+      functionCallResolutionSource,
+    ) ||
+    !atomicPointerDeltaLowering ||
+    !/psx_semantic_type_table_base\s*\(/.test(
+      atomicPointerDeltaLowering[0],
+    ) ||
+    !/psx_type_layout_sizeof\s*\(/.test(atomicPointerDeltaLowering[0]) ||
+    !/IR_MUL/.test(atomicPointerDeltaLowering[0]) ||
+    !/object_shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?IR_TY_PTR/.test(
+      hirIrCallSource,
+    ) ||
+    !/IR_ARMW_ADD\s*\|\|\s*rmw_operation\s*==\s*IR_ARMW_SUB[^]*?scale_atomic_pointer_delta/.test(
+      hirIrCallSource,
+    )) {
+  throw new Error(
+    "stdatomic pointer operations must preserve pointer result types and scale fetch_add/sub by the pointed object layout",
+  );
+}
 const hirIrAggregateSource = await readFile(
   "src/lowering/hir_ir_aggregate.c",
   "utf8",

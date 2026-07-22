@@ -2637,7 +2637,9 @@ static void test_typed_hir_atomic_lowering_without_ast(
   int program_resolved = resolve_program_input_hir(test_suite_session,
       "long __ag_atomic_load(void *obj); "
       "long __ag_atomic_store(void *obj, long value); "
+      "long __ag_atomic_exchange(void *obj, long value); "
       "long __ag_atomic_fetch_add(void *obj, long value); "
+      "long __ag_atomic_fetch_sub(void *obj, long value); "
       "int __ag_atomic_cas(void *obj, void *expected, long desired); "
       "int __ag_atomic_fence(void); "
       "long run(void) { "
@@ -2649,11 +2651,43 @@ static void test_typed_hir_atomic_lowering_without_ast(
       "result = result + __ag_atomic_fetch_add(&wide, 4); "
       "result = result + __ag_atomic_cas(&wide, &expected, 9); "
       "__ag_atomic_fence(); "
-      "return result; }");
+      "int data[4]; _Atomic(int *) pointer = data; "
+      "int *expected_pointer = data; "
+      "int *old_pointer = __ag_atomic_load(&pointer); "
+      "__ag_atomic_store(&pointer, data + 1); "
+      "old_pointer = __ag_atomic_fetch_add(&pointer, 1); "
+      "old_pointer = __ag_atomic_fetch_sub(&pointer, 1); "
+      "old_pointer = __ag_atomic_exchange(&pointer, data + 2); "
+      "result = result + __ag_atomic_cas("
+      "&pointer, &expected_pointer, data + 3); "
+      "return result + (old_pointer == data); }");
   ASSERT_TRUE(program_resolved);
   psx_hir_module_t *hir =
       ag_compilation_session_hir_module(test_suite_session);
   ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  const psx_hir_node_t *pointer_load = find_test_named_hir_node(
+      hir, PSX_HIR_CALL, "__ag_atomic_load", 1);
+  const psx_hir_node_t *pointer_fetch_add = find_test_named_hir_node(
+      hir, PSX_HIR_CALL, "__ag_atomic_fetch_add", 1);
+  const psx_hir_node_t *pointer_exchange = find_test_named_hir_node(
+      hir, PSX_HIR_CALL, "__ag_atomic_exchange", 0);
+  ASSERT_TRUE(pointer_load != NULL);
+  ASSERT_TRUE(pointer_fetch_add != NULL);
+  ASSERT_TRUE(pointer_exchange != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session,
+                psx_hir_node_qual_type(pointer_load)).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session,
+                psx_hir_node_qual_type(pointer_fetch_add)).kind);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            test_qual_type_shape(
+                test_suite_session,
+                psx_hir_node_qual_type(pointer_exchange)).kind);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            psx_hir_node_qual_type(pointer_load).qualifiers);
   psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
   ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
       test_suite_session));
@@ -2674,12 +2708,18 @@ static void test_typed_hir_atomic_lowering_without_ast(
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(7, count_ir_op(ir->funcs, IR_ATOMIC));
+  ASSERT_EQ(14, count_ir_op(ir->funcs, IR_ATOMIC));
   int saw_unsigned_byte_load = 0;
   int saw_byte_store = 0;
   int saw_wide_rmw = 0;
   int saw_wide_cas = 0;
   int saw_fence = 0;
+  int saw_pointer_load = 0;
+  int saw_pointer_store = 0;
+  int saw_pointer_fetch_add = 0;
+  int saw_pointer_fetch_sub = 0;
+  int saw_pointer_exchange = 0;
+  int saw_pointer_cas = 0;
   for (const ir_block_t *block = ir->funcs->entry;
        block; block = block->next) {
     for (const ir_inst_t *instruction = block->head;
@@ -2702,6 +2742,31 @@ static void test_typed_hir_atomic_lowering_without_ast(
       } else if (instruction->atomic_kind == IR_ATOMIC_FENCE) {
         saw_fence = 1;
       }
+      if (instruction->atomic_width != 8) continue;
+      if (instruction->atomic_kind == IR_ATOMIC_LOAD &&
+          instruction->dst.type == IR_TY_PTR)
+        saw_pointer_load = 1;
+      if (instruction->atomic_kind == IR_ATOMIC_STORE &&
+          instruction->src2.type == IR_TY_PTR)
+        saw_pointer_store = 1;
+      if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+          instruction->dst.type == IR_TY_PTR &&
+          instruction->atomic_rmw_op == IR_ARMW_ADD &&
+          instruction->src2.type == IR_TY_I64)
+        saw_pointer_fetch_add = 1;
+      if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+          instruction->dst.type == IR_TY_PTR &&
+          instruction->atomic_rmw_op == IR_ARMW_SUB &&
+          instruction->src2.type == IR_TY_I64)
+        saw_pointer_fetch_sub = 1;
+      if (instruction->atomic_kind == IR_ATOMIC_RMW &&
+          instruction->dst.type == IR_TY_PTR &&
+          instruction->atomic_rmw_op == IR_ARMW_XCHG &&
+          instruction->src2.type == IR_TY_PTR)
+        saw_pointer_exchange = 1;
+      if (instruction->atomic_kind == IR_ATOMIC_CAS &&
+          instruction->src3.type == IR_TY_PTR)
+        saw_pointer_cas = 1;
     }
   }
   ASSERT_TRUE(saw_unsigned_byte_load);
@@ -2709,6 +2774,13 @@ static void test_typed_hir_atomic_lowering_without_ast(
   ASSERT_TRUE(saw_wide_rmw);
   ASSERT_TRUE(saw_wide_cas);
   ASSERT_TRUE(saw_fence);
+  ASSERT_TRUE(saw_pointer_load);
+  ASSERT_TRUE(saw_pointer_store);
+  ASSERT_TRUE(saw_pointer_fetch_add);
+  ASSERT_TRUE(saw_pointer_fetch_sub);
+  ASSERT_TRUE(saw_pointer_exchange);
+  ASSERT_TRUE(saw_pointer_cas);
+  ASSERT_TRUE(count_ir_op(ir->funcs, IR_MUL) >= 2);
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
