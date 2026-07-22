@@ -66,6 +66,18 @@ int psx_resolve_parameter_declaration(
         psx_semantic_type_table_base(types, identity.type_id);
     identity = ps_ctx_intern_pointer_to_qual_type_in(
         request->type.semantic_context, element);
+    const psx_declarator_shape_t *declarator_shape =
+        request->type.declarator_shape;
+    if (declarator_shape && declarator_shape->count > 0 &&
+        declarator_shape->ops[0].kind == PSX_DECL_OP_ARRAY) {
+      const psx_declarator_op_t *array_op = &declarator_shape->ops[0];
+      if (array_op->is_const_qualified)
+        identity.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+      if (array_op->is_volatile_qualified)
+        identity.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+      if (array_op->is_restrict_qualified)
+        identity.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
+    }
   } else if (shape.kind == PSX_TYPE_FUNCTION) {
     identity = ps_ctx_intern_pointer_to_qual_type_in(
         request->type.semantic_context, identity);

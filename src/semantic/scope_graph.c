@@ -386,20 +386,28 @@ psx_decl_id_t psx_scope_graph_lookup(
   if (!graph || !name || name_len <= 0 ||
       point.scope_id >= graph->scope_count)
     return PSX_DECL_ID_INVALID;
-  for (size_t index = graph->declaration_count; index > 0; index--) {
-    const psx_scope_declaration_t *declaration =
-        &graph->declarations[index - 1];
-    int same_order_domain =
-        graph->scopes[declaration->scope_id].order_root_id ==
-        graph->scopes[point.scope_id].order_root_id;
-    if ((name_space != PSX_NAMESPACE_LABEL && same_order_domain &&
-         declaration->declaration_order > point.declaration_order) ||
-        !declaration_name_matches(
-            declaration, name_space, name, name_len) ||
-        !psx_scope_graph_scope_is_visible_from(
-            graph, declaration->scope_id, point.scope_id))
-      continue;
-    return declaration->id;
+  psx_scope_id_t scope_id = point.scope_id;
+  for (;;) {
+    for (size_t index = graph->declaration_count; index > 0; index--) {
+      const psx_scope_declaration_t *declaration =
+          &graph->declarations[index - 1];
+      if (declaration->scope_id != scope_id ||
+          !declaration_name_matches(
+              declaration, name_space, name, name_len))
+        continue;
+      int same_order_domain =
+          graph->scopes[scope_id].order_root_id ==
+          graph->scopes[point.scope_id].order_root_id;
+      if (name_space != PSX_NAMESPACE_LABEL && same_order_domain &&
+          declaration->declaration_order > point.declaration_order)
+        continue;
+      return declaration->id;
+    }
+    if (scope_id == PSX_SCOPE_ID_TRANSLATION_UNIT) break;
+    scope_id = graph->scopes[scope_id].parent_id;
+    if (scope_id == PSX_SCOPE_ID_INVALID ||
+        scope_id >= graph->scope_count)
+      break;
   }
   return PSX_DECL_ID_INVALID;
 }

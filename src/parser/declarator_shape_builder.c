@@ -154,6 +154,12 @@ int ps_declarator_shape_append_shape_in(
         appended = ps_declarator_shape_append_array_ex_in(
             arena_context, shape, op->array_len,
             op->is_incomplete_array);
+      if (appended) {
+        psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
+        copy->is_const_qualified = op->is_const_qualified;
+        copy->is_volatile_qualified = op->is_volatile_qualified;
+        copy->is_restrict_qualified = op->is_restrict_qualified;
+      }
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       appended = ps_declarator_shape_append_function_in(
           arena_context, shape);

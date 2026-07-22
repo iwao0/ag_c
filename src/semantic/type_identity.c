@@ -540,6 +540,76 @@ int psx_semantic_type_table_unqualified_types_match(
   return semantic_qual_types_match(table, left, right, 0);
 }
 
+static int parameter_is_unchanged_by_default_argument_promotions(
+    const psx_semantic_type_table_t *table, psx_qual_type_t parameter) {
+  if (!semantic_type_id_is_valid(table, parameter.type_id)) return 0;
+  const psx_type_shape_t *shape = &table->entries[parameter.type_id].shape;
+  switch (shape->kind) {
+    case PSX_TYPE_INTEGER:
+      return shape->integer_kind >= PSX_INTEGER_KIND_INT;
+    case PSX_TYPE_FLOAT:
+      return shape->floating_kind != PSX_FLOATING_KIND_FLOAT;
+    case PSX_TYPE_COMPLEX:
+      return 1;
+    case PSX_TYPE_POINTER:
+    case PSX_TYPE_STRUCT:
+    case PSX_TYPE_UNION:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int psx_semantic_type_table_function_types_compatible(
+    const psx_semantic_type_table_t *table,
+    psx_qual_type_t left, psx_qual_type_t right) {
+  if (!semantic_type_id_is_valid(table, left.type_id) ||
+      !semantic_type_id_is_valid(table, right.type_id) ||
+      left.qualifiers != right.qualifiers)
+    return 0;
+  const psx_semantic_type_entry_t *left_entry =
+      &table->entries[left.type_id];
+  const psx_semantic_type_entry_t *right_entry =
+      &table->entries[right.type_id];
+  const psx_type_shape_t *left_shape = &left_entry->shape;
+  const psx_type_shape_t *right_shape = &right_entry->shape;
+  if (left_shape->kind != PSX_TYPE_FUNCTION ||
+      right_shape->kind != PSX_TYPE_FUNCTION ||
+      !semantic_qual_types_match(
+          table, left_entry->base_type, right_entry->base_type, 1))
+    return 0;
+
+  if (left_shape->has_function_prototype &&
+      right_shape->has_function_prototype)
+    return semantic_qual_types_match(table, left, right, 1);
+
+  if (!left_shape->has_function_prototype &&
+      !right_shape->has_function_prototype)
+    return left_entry->parameter_count == 0 ||
+           right_entry->parameter_count == 0 ||
+           semantic_qual_types_match(table, left, right, 1);
+
+  const psx_semantic_type_entry_t *prototype =
+      left_shape->has_function_prototype ? left_entry : right_entry;
+  const psx_semantic_type_entry_t *old_style =
+      left_shape->has_function_prototype ? right_entry : left_entry;
+  if (prototype->shape.is_variadic_function) return 0;
+  if (old_style->parameter_count > 0 &&
+      old_style->parameter_count != prototype->parameter_count)
+    return 0;
+  for (int i = 0; i < prototype->parameter_count; i++) {
+    if (!parameter_is_unchanged_by_default_argument_promotions(
+            table, prototype->parameter_types[i]))
+      return 0;
+    if (old_style->parameter_count > 0 &&
+        !semantic_qual_types_match(
+            table, prototype->parameter_types[i],
+            old_style->parameter_types[i], 1))
+      return 0;
+  }
+  return 1;
+}
+
 static psx_qual_type_t related_type(
     const psx_semantic_type_table_t *table, psx_qual_type_t relation) {
   if (!semantic_type_id_is_valid(table, relation.type_id))

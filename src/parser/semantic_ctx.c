@@ -1582,11 +1582,22 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
   }
   if (!f) return NULL;
   if (f->function_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    return f->function_qual_type.type_id == function_type.type_id &&
-                   f->function_qual_type.qualifiers ==
-                       function_type.qualifiers
-               ? f
-               : NULL;
+    if (!psx_semantic_type_table_function_types_compatible(
+            context->semantic_types, f->function_qual_type,
+            function_type))
+      return NULL;
+    psx_type_shape_t existing_shape = {0};
+    psx_type_shape_t incoming_shape = {0};
+    if (psx_semantic_type_table_describe(
+            context->semantic_types, f->function_qual_type.type_id,
+            &existing_shape) &&
+        psx_semantic_type_table_describe(
+            context->semantic_types, function_type.type_id,
+            &incoming_shape) &&
+        !existing_shape.has_function_prototype &&
+        incoming_shape.has_function_prototype)
+      f->function_qual_type = function_type;
+    return f;
   }
   f->function_qual_type = function_type;
   return f;

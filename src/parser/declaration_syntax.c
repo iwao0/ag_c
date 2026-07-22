@@ -337,6 +337,7 @@ struct declaration_declarator_parse_context_t {
   psx_parser_runtime_context_t *runtime_context;
   const psx_name_classifier_t *name_classifier;
   int allow_implicit_function_parameters;
+  int allow_vla_star;
   int has_syntax_error;
 };
 
@@ -399,7 +400,15 @@ static int consume_declarator_suffix(
       tk_set_current_token_ctx(
           tk_ctx, current_token(runtime_context)->next);
     }
-    int has_size = current_token(runtime_context)->kind != TK_RBRACKET;
+    int has_vla_star =
+        parse_context->allow_vla_star && !has_static &&
+        current_token(runtime_context)->kind == TK_MUL;
+    if (has_vla_star) {
+      tk_set_current_token_ctx(
+          tk_ctx, current_token(runtime_context)->next);
+    }
+    int has_size = !has_vla_star &&
+                   current_token(runtime_context)->kind != TK_RBRACKET;
     token_t *expression_start = NULL;
     token_t *expression_end = NULL;
     if (has_size) {
@@ -414,11 +423,23 @@ static int consume_declarator_suffix(
     }
     tk_expect_ctx(tk_ctx, ']');
     int op_index = declarator->declarator_shape.count;
-    if (!ps_declarator_shape_append_array_ex_in(
-            ps_parser_runtime_arena(parse_context->runtime_context),
-            &declarator->declarator_shape, 0, !has_size)) {
+    int appended = has_vla_star
+        ? ps_declarator_shape_append_vla_array_in(
+              ps_parser_runtime_arena(parse_context->runtime_context),
+              &declarator->declarator_shape)
+        : ps_declarator_shape_append_array_ex_in(
+              ps_parser_runtime_arena(parse_context->runtime_context),
+              &declarator->declarator_shape, 0, !has_size);
+    if (!appended) {
       diagnose_declarator_too_complex(
           context, current_token(runtime_context));
+    }
+    if (op_index < declarator->declarator_shape.count) {
+      psx_declarator_op_t *op =
+          &declarator->declarator_shape.ops[op_index];
+      op->is_const_qualified = is_const ? 1u : 0u;
+      op->is_volatile_qualified = is_volatile ? 1u : 0u;
+      op->is_restrict_qualified = is_restrict ? 1u : 0u;
     }
     if (has_size) {
       psx_parsed_array_bound_t *bound = append_array_bound(
@@ -534,7 +555,8 @@ static int parse_declarator_syntax_tree_into(
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
     const psx_decl_specifier_syntax_options_t *options,
-    int allow_implicit_function_parameters) {
+    int allow_implicit_function_parameters,
+    int allow_vla_star) {
   psx_parser_runtime_context_t *runtime_context =
       options ? options->runtime_context : NULL;
   memset(declarator, 0, sizeof(*declarator));
@@ -546,6 +568,7 @@ static int parse_declarator_syntax_tree_into(
       .name_classifier = options ? options->name_classifier : NULL,
       .allow_implicit_function_parameters =
           allow_implicit_function_parameters,
+      .allow_vla_star = allow_vla_star,
   };
   declarator->identifier = psx_parse_declarator_syntax(
       &(psx_declarator_syntax_t){
@@ -588,7 +611,7 @@ void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
   if (!declarator || !options || !options->runtime_context)
     return;
   parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, options, 0);
+      declarator, 0, NULL, options, 0, 0);
   psx_materialize_declarator_expression_syntax(declarator, options);
 }
 
@@ -598,7 +621,7 @@ int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_context
   if (!declarator || !options || !options->runtime_context)
     return 0;
   int parsed = parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, options, 0);
+      declarator, 0, NULL, options, 0, 0);
   if (parsed)
     psx_materialize_declarator_expression_syntax(declarator, options);
   return parsed;
@@ -608,7 +631,7 @@ psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
     const psx_decl_specifier_syntax_options_t *options) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
-      &declarator, 1, NULL, options, 0);
+      &declarator, 1, NULL, options, 0, 0);
   psx_materialize_declarator_expression_syntax(&declarator, options);
   return declarator;
 }
@@ -618,7 +641,7 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
       &declarator, 0, is_parameter_grouping_parenthesis,
-      options, 0);
+      options, 0, 1);
   psx_materialize_declarator_expression_syntax(&declarator, options);
   return declarator;
 }

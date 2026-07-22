@@ -16888,6 +16888,23 @@ static void test_scope_graph_namespace_and_transaction_boundary(void) {
   ASSERT_EQ(tag_id, psx_scope_graph_lookup(
       graph, PSX_NAMESPACE_TAG, "same", 4, function_point));
 
+  int lexical_local_payload = 13;
+  psx_decl_id_t lexical_local_id = psx_scope_graph_declare(
+      graph, PSX_NAMESPACE_ORDINARY, PSX_DECL_LOCAL_OBJECT,
+      "late_parent_shadow", 18, &lexical_local_payload);
+  psx_scope_lookup_point_t lexical_point =
+      psx_scope_graph_capture_lookup_point(graph);
+  ASSERT_TRUE(lexical_local_id != PSX_DECL_ID_INVALID);
+  int later_parent_payload = 14;
+  psx_decl_id_t later_parent_id = psx_scope_graph_declare_at(
+      graph, PSX_SCOPE_ID_TRANSLATION_UNIT, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_FUNCTION, "late_parent_shadow", 18,
+      &later_parent_payload);
+  ASSERT_TRUE(later_parent_id != PSX_DECL_ID_INVALID);
+  ASSERT_EQ(lexical_local_id, psx_scope_graph_lookup(
+      graph, PSX_NAMESPACE_ORDINARY, "late_parent_shadow", 18,
+      lexical_point));
+
   psx_scope_id_t block_scope = psx_scope_graph_enter_scope(
       graph, PSX_SCOPE_BLOCK);
   ASSERT_TRUE(block_scope != PSX_SCOPE_ID_INVALID);
