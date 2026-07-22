@@ -149,6 +149,7 @@ int psx_begin_global_declaration_pipeline(
           .name_len = request->name_len,
           .type = request->type,
           .is_extern_decl = request->is_extern_decl,
+          .is_static = request->is_static,
           .has_initializer = request->initializer->has_initializer,
       },
       &resolution);

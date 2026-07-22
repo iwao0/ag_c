@@ -4,6 +4,7 @@
 #include "../parser/symtab.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef enum {
   PSX_GLOBAL_DECLARATION_OK = 0,
@@ -21,6 +22,7 @@ typedef struct {
   int name_len;
   psx_qual_type_t type;
   int is_extern_decl;
+  int is_static;
   int has_initializer;
 } psx_global_declaration_resolution_request_t;
 
@@ -35,5 +37,9 @@ typedef struct {
 void psx_resolve_global_declaration(
     const psx_global_declaration_resolution_request_t *request,
     psx_global_declaration_resolution_t *resolution);
+
+int psx_finalize_tentative_global_arrays_in(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry);
 
 #endif

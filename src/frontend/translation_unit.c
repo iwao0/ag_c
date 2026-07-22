@@ -7,6 +7,7 @@
 #include "../lowering/runtime_context.h"
 #include "../hir/hir.h"
 #include "../semantic/declaration_registration.h"
+#include "../semantic/global_declaration_resolution.h"
 #include "../semantic/hir_control_flow_diagnostics.h"
 #include "../semantic/local_usage_diagnostics.h"
 #include "local_declaration.h"
@@ -334,13 +335,17 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session))
     return 0;
-  ps_ctx_emit_deferred_parser_diagnostics_in(
-      ag_compilation_session_semantic_context(stream->session));
+  psx_semantic_context_t *semantic_context =
+      ag_compilation_session_semantic_context(stream->session);
+  int finalized = psx_finalize_tentative_global_arrays_in(
+      semantic_context,
+      ag_compilation_session_global_registry(stream->session));
+  ps_ctx_emit_deferred_parser_diagnostics_in(semantic_context);
   ps_parser_stream_end(&stream->parser);
   ps_parser_name_environment_dispose(
       &stream->local_name_environment);
   stream->is_started = 0;
-  return 1;
+  return finalized;
 }
 
 void psx_frontend_stream_abort(psx_frontend_stream_t *stream) {

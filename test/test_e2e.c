@@ -1314,6 +1314,14 @@ static const test_case_t test_cases[] = {
     {"probes", "address_of_vla_subarray", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/address_of_vla_subarray.c", 0, 0},
     {"probes", "address_of_struct_member_subarray", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/address_of_struct_member_subarray.c", 0, 0},
     {"probes", "conditional_qualified_array_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/conditional_qualified_array_pointer.c", 0, 0},
+    {"probes", "global_subarray_address_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_subarray_address_initializer.c", 0, 0},
+    {"probes", "static_local_subarray_address_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_subarray_address_initializer.c", 0, 0},
+    {"probes", "compound_literal_subarray_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_subarray_address.c", 0, 0},
+    {"probes", "nested_parameter_subarray_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_parameter_subarray_address.c", 0, 0},
+    {"probes", "tentative_incomplete_array_completion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_array_completion.c", 0, 0},
+    {"probes", "tentative_definition_with_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_definition_with_initializer.c", 0, 0},
+    {"probes", "function_parameter_adjustment_redeclaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_parameter_adjustment_redeclaration.c", 0, 0},
+    {"probes", "block_scope_extern_binding", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_binding.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
@@ -1387,6 +1395,9 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"const_qual_discard_assign_rejected",
      "int main() { const int x = 5; const int *cp = &x; int *p; p = cp; return 0; }",
      "const修飾されたポインタからconst無しポインタへの暗黙変換はできません"},
+    {"static_tentative_incomplete_array_rejected",
+     "static int values[]; int main(void) { return 0; }",
+     "不完全型のオブジェクトは宣言できません"},
     {"funcdef_unnamed_param_rejected",
      "int bad(int) { return 0; }",
      "必要な項目がありません: 仮引数"},

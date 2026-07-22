@@ -90,7 +90,11 @@ ir_symbol_t *lower_ir_global_symbol(
     return NULL;
   int storage_size = psx_type_layout_sizeof(semantic_types, record_layouts, type_id,
                                        ag_target_info_data_layout(target));
-  if (storage_size <= 0 && ps_gvar_is_extern_decl(global)) {
+  int is_incomplete_array =
+      type.kind == PSX_TYPE_ARRAY && type.array_len <= 0 && !type.is_vla;
+  /* Keep streaming function lowering possible until the translation-unit
+   * finalizer supplies the tentative array's complete bound. */
+  if (storage_size <= 0 && is_incomplete_array) {
     psx_type_id_t base_type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
     storage_size =

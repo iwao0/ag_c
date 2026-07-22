@@ -23,8 +23,13 @@ int psx_resolve_global_hir_symbol_spec_in(
                                          qual_type.type_id, data_layout);
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts,
                                           qual_type.type_id, data_layout);
-  if ((byte_size <= 0 || alignment <= 0) &&
-      ps_gvar_is_extern_decl(global)) {
+  psx_type_shape_t shape = {0};
+  int is_incomplete_array = psx_semantic_type_table_describe(
+      semantic_types, qual_type.type_id, &shape) &&
+      shape.kind == PSX_TYPE_ARRAY && shape.array_len <= 0 && !shape.is_vla;
+  /* Function bodies may refer to the array before a later declaration
+   * completes its bound. The element size is sufficient for that access. */
+  if ((byte_size <= 0 || alignment <= 0) && is_incomplete_array) {
     psx_qual_type_t base = psx_semantic_type_table_base(
         semantic_types, qual_type.type_id);
     if (base.type_id != PSX_TYPE_ID_INVALID) {

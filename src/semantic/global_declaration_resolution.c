@@ -2,6 +2,7 @@
 
 #include "scope_graph.h"
 
+#include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
@@ -106,11 +107,13 @@ void psx_resolve_global_declaration(
           types, request->type.type_id, &incoming_shape))
     return;
 
+  /* An external-linkage incomplete array without an initializer is a
+   * tentative definition. A static one is forbidden by C11 6.9.2p3. */
   if (type_contains_incomplete_record(
           semantic_context, request->type.type_id) ||
       (incoming_shape.kind == PSX_TYPE_ARRAY &&
        incoming_shape.array_len <= 0 && !request->is_extern_decl &&
-       !request->has_initializer)) {
+       !request->has_initializer && request->is_static)) {
     resolution->status = PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }
@@ -168,4 +171,50 @@ void psx_resolve_global_declaration(
         resolution->existing->is_extern_decl && !request->is_extern_decl;
   }
   resolution->status = PSX_GLOBAL_DECLARATION_OK;
+}
+
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  int succeeded;
+} tentative_array_finalization_t;
+
+static void finalize_tentative_array(global_var_t *global, void *user) {
+  tentative_array_finalization_t *finalization = user;
+  if (!global || !finalization || !finalization->succeeded ||
+      ps_gvar_is_extern_decl(global))
+    return;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(finalization->semantic_context);
+  psx_qual_type_t current = ps_gvar_decl_qual_type(global);
+  psx_type_shape_t shape = {0};
+  if (!psx_semantic_type_table_describe(
+          types, current.type_id, &shape) ||
+      shape.kind != PSX_TYPE_ARRAY || shape.array_len > 0 || shape.is_vla)
+    return;
+  /* C11 6.9.2p5 completes an otherwise-incomplete tentative array as if
+   * it had one element at the end of the translation unit. */
+  psx_qual_type_t element =
+      psx_semantic_type_table_base(types, current.type_id);
+  psx_qual_type_t completed = ps_ctx_intern_array_of_qual_type_in(
+      finalization->semantic_context, element, 1, 0);
+  completed.qualifiers = current.qualifiers;
+  if (completed.type_id == PSX_TYPE_ID_INVALID ||
+      !ps_global_registry_complete_array_qual_type(
+          finalization->global_registry, global, completed))
+    finalization->succeeded = 0;
+}
+
+int psx_finalize_tentative_global_arrays_in(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry) {
+  if (!semantic_context || !global_registry) return 0;
+  tentative_array_finalization_t finalization = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .succeeded = 1,
+  };
+  ps_iter_globals_in(
+      global_registry, finalize_tentative_array, &finalization);
+  return finalization.succeeded;
 }
