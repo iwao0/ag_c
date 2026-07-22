@@ -343,6 +343,14 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   return 1;
 }
 
+void psx_frontend_stream_abort(psx_frontend_stream_t *stream) {
+  if (!stream || !stream->is_started) return;
+  ps_parser_stream_end(&stream->parser);
+  ps_parser_name_environment_dispose(
+      &stream->local_name_environment);
+  stream->is_started = 0;
+}
+
 int psx_frontend_free_processed_ast_in_session(
     ag_compilation_session_t *session) {
   if (!frontend_session_is_complete(session)) return 0;

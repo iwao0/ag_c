@@ -7,6 +7,8 @@
 #include "node_utils.h"
 #include "../semantic/scope_graph.h"
 #include "../semantic/type_identity.h"
+#include "../diag/diag.h"
+#include "../source_manager.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -201,13 +203,14 @@ static int has_local_object_in_current_scope(
   return declaration && declaration->kind == PSX_DECL_LOCAL_OBJECT;
 }
 
-static void index_add(psx_local_registry_t *registry, lvar_t *var) {
-  (void)psx_scope_graph_declare(
+static psx_decl_id_t index_add(psx_local_registry_t *registry, lvar_t *var) {
+  psx_decl_id_t declaration_id = psx_scope_graph_declare(
       registry->scope_graph, PSX_NAMESPACE_ORDINARY,
       PSX_DECL_LOCAL_OBJECT, var->name, var->len, var);
   unsigned offset_bucket = offset_hash(var->offset);
   var->next_offhash = registry->lvars_by_offset[offset_bucket];
   registry->lvars_by_offset[offset_bucket] = var;
+  return declaration_id;
 }
 
 static void offset_index_remove(
@@ -228,7 +231,7 @@ void psx_local_registry_add_in(
   if (!registry || !var) return;
   var->next_storage = registry->storage_objects;
   registry->storage_objects = var;
-  index_add(registry, var);
+  (void)index_add(registry, var);
 }
 
 lvar_t *ps_local_registry_create_storage_object_qual_type_in(
@@ -257,7 +260,18 @@ lvar_t *ps_local_registry_create_storage_object_qual_type_in(
   var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = decl_qual_type;
   psx_decl_attach_lvar_current_region_in(registry, var);
-  psx_local_registry_add_in(registry, var);
+  var->next_storage = registry->storage_objects;
+  registry->storage_objects = var;
+  psx_decl_id_t declaration_id = index_add(registry, var);
+  if (diagnostic_token && declaration_id != PSX_DECL_ID_INVALID) {
+    ag_source_manager_t *sources = diag_context_source_manager(
+        registry->diagnostic_context);
+    (void)psx_scope_graph_note_declaration_source(
+        registry->scope_graph, declaration_id,
+        ag_source_manager_name(sources, diagnostic_token->file_name_id),
+        diagnostic_token->source_input, diagnostic_token->byte_offset,
+        diagnostic_token->byte_length);
+  }
   return var;
 }
 

@@ -21,6 +21,20 @@ async function freshToolchain() {
   });
 }
 let toolchain = await freshToolchain();
+const toolchainAnalysisSource = {
+  name: "toolchain-analysis.c",
+  source: "int toolchain_symbol; toolchain_",
+};
+const toolchainAnalysis = toolchain.analyzeSource(toolchainAnalysisSource, {
+  cursor: {
+    sourceName: toolchainAnalysisSource.name,
+    byteOffset: Buffer.byteLength(toolchainAnalysisSource.source),
+  },
+});
+if (!toolchainAnalysis.completionItems.some((item) =>
+      item.name === "toolchain_symbol" && item.kind === "object")) {
+  throw new Error("toolchain analyzeSource did not delegate to the compiler snapshot API");
+}
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
 const synchronousContinuationProgram = await toolchain.instantiateLinkedWasm(`

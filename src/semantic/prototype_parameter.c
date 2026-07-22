@@ -5,6 +5,8 @@
 #include "../parser/semantic_ctx.h"
 #include "scope_graph.h"
 #include "type_identity.h"
+#include "../diag/diag.h"
+#include "../source_manager.h"
 
 struct psx_prototype_parameter_t {
   psx_qual_type_t declaration_qual_type;
@@ -39,11 +41,20 @@ const psx_prototype_parameter_t *psx_declare_prototype_parameter_in(
       ps_ctx_arena(semantic_context), sizeof(*parameter));
   if (!parameter) return NULL;
   parameter->declaration_qual_type = declaration_qual_type;
-  return psx_scope_graph_declare(
-             scope_graph, PSX_NAMESPACE_ORDINARY,
-             PSX_DECL_PARAMETER, name, name_len, parameter) !=
-             PSX_DECL_ID_INVALID
-             ? parameter : NULL;
+  psx_decl_id_t declaration_id = psx_scope_graph_declare(
+      scope_graph, PSX_NAMESPACE_ORDINARY,
+      PSX_DECL_PARAMETER, name, name_len, parameter);
+  if (declaration_id == PSX_DECL_ID_INVALID) return NULL;
+  if (diagnostic_token) {
+    ag_source_manager_t *sources = diag_context_source_manager(
+        ps_ctx_diagnostics(semantic_context));
+    (void)psx_scope_graph_note_declaration_source(
+        scope_graph, declaration_id,
+        ag_source_manager_name(sources, diagnostic_token->file_name_id),
+        diagnostic_token->source_input, diagnostic_token->byte_offset,
+        diagnostic_token->byte_length);
+  }
+  return parameter;
 }
 
 psx_qual_type_t psx_prototype_parameter_qual_type(

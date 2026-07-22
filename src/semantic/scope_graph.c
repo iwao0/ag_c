@@ -26,6 +26,7 @@ static void release_declarations_from(
   if (!graph || first > graph->declaration_count) return;
   for (size_t index = first; index < graph->declaration_count; index++) {
     free((void *)graph->declarations[index].name);
+    free(graph->declarations[index].source_name);
     graph->declarations[index] = (psx_scope_declaration_t){0};
   }
   graph->declaration_count = first;
@@ -321,10 +322,36 @@ void psx_scope_graph_forget_declaration(
   psx_scope_declaration_t *declaration =
       &graph->declarations[declaration_id - 1];
   free((void *)declaration->name);
+  free(declaration->source_name);
   declaration->kind = PSX_DECL_UNKNOWN;
   declaration->name = NULL;
   declaration->name_len = 0;
   declaration->payload = NULL;
+  declaration->source_name = NULL;
+  declaration->source_input = NULL;
+}
+
+int psx_scope_graph_note_declaration_source(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    const char *source_name, const char *source_input,
+    int byte_offset, int byte_length) {
+  if (!graph || declaration_id == PSX_DECL_ID_INVALID ||
+      declaration_id > graph->declaration_count || !source_name ||
+      !source_input || byte_offset < 0 || byte_length < 0)
+    return 0;
+  psx_scope_declaration_t *declaration =
+      &graph->declarations[declaration_id - 1];
+  if (declaration->kind == PSX_DECL_UNKNOWN) return 0;
+  size_t name_length = strlen(source_name);
+  char *owned_name = malloc(name_length + 1);
+  if (!owned_name) return 0;
+  memcpy(owned_name, source_name, name_length + 1);
+  free(declaration->source_name);
+  declaration->source_name = owned_name;
+  declaration->source_input = source_input;
+  declaration->source_byte_offset = byte_offset;
+  declaration->source_byte_length = byte_length;
+  return 1;
 }
 
 int psx_scope_graph_rehome_declaration_at(

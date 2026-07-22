@@ -29,6 +29,9 @@ int psx_frontend_stream_begin(
 int psx_frontend_next_function(
     psx_frontend_stream_t *stream, psx_frontend_function_t *function);
 int psx_frontend_stream_end(psx_frontend_stream_t *stream);
+/* Releases parser/name-environment state after a non-local diagnostic
+ * recovery without emitting additional deferred diagnostics. */
+void psx_frontend_stream_abort(psx_frontend_stream_t *stream);
 int psx_frontend_free_processed_ast_in_session(
     ag_compilation_session_t *session);
 

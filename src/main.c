@@ -1,5 +1,6 @@
 #include "codegen_emit.h"
 #include "compilation_session.h"
+#include "language_analysis.h"
 #include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
@@ -232,6 +233,7 @@ typedef struct {
   char diagnostic_locale[3];
   int diagnostic_record_limit;
   int diagnostic_byte_limit;
+  ag_language_analysis_error_t analysis_error;
 } agc_wasm_adapter_t;
 
 static agc_wasm_adapter_t *wasm_adapter_from_handle(int handle) {
@@ -575,6 +577,127 @@ int agc_wasm_adapter_compile_object_virtual(
       wasm_adapter_from_handle(handle), source_addr, source_name_addr,
       bundle_addr, bundle_len, max_files, max_file_bytes,
       max_total_bytes, max_depth, out_addr, out_cap, 1);
+}
+
+int agc_wasm_adapter_analyze_source_virtual(
+    int handle, int source_addr, int source_name_addr, int cursor_offset,
+    int bundle_addr, int bundle_len, int max_files, int max_file_bytes,
+    int max_total_bytes, int max_depth, int max_sources,
+    int max_source_bytes, int max_total_source_bytes, int max_symbols,
+    int max_completion_items, int max_string_bytes, int max_snapshot_bytes,
+    int out_addr, int out_cap) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  if (!adapter || !source_addr || !source_name_addr || cursor_offset < 0 ||
+      !out_addr || out_cap <= 0) return -1;
+  memset(&adapter->analysis_error, 0, sizeof(adapter->analysis_error));
+  ag_compilation_session_destroy(adapter->session);
+  adapter->session = NULL;
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  if (!session) return -4;
+  wasm_adapter_retain_session(adapter, session);
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(session);
+  diag_context_set_locale(diagnostics, adapter->diagnostic_locale);
+  if (diag_context_set_limits(
+          diagnostics, adapter->diagnostic_record_limit,
+          adapter->diagnostic_byte_limit) != 0)
+    return -4;
+  diag_reset_records_in(diagnostics);
+  const char *source = (const char *)(long)source_addr;
+  const char *source_name = (const char *)(long)source_name_addr;
+  size_t source_length = strlen(source);
+  if ((size_t)cursor_offset > source_length) return -1;
+  ag_language_analysis_snapshot_t snapshot = {0};
+  int ok = ag_language_analyze_source(
+      session,
+      &(ag_language_analysis_request_t){
+          .source_name = source_name,
+          .source = source,
+          .source_length = source_length,
+          .cursor_source_name = source_name,
+          .cursor_byte_offset = (size_t)cursor_offset,
+          .virtual_header_bundle = bundle_addr
+                                       ? (const unsigned char *)(long)bundle_addr
+                                       : NULL,
+          .virtual_header_bundle_length =
+              bundle_len > 0 ? (size_t)bundle_len : 0,
+          .max_header_files = max_files,
+          .max_header_file_bytes = max_file_bytes,
+          .max_header_total_bytes = max_total_bytes,
+          .max_include_depth = max_depth,
+          .limits = {
+              .max_sources = max_sources,
+              .max_source_bytes =
+                  max_source_bytes > 0 ? (size_t)max_source_bytes : 0,
+              .max_total_source_bytes =
+                  max_total_source_bytes > 0
+                      ? (size_t)max_total_source_bytes : 0,
+              .max_symbols = max_symbols,
+              .max_completion_items = max_completion_items,
+              .max_string_bytes = max_string_bytes,
+              .max_snapshot_bytes = max_snapshot_bytes,
+          },
+      },
+      &snapshot, &adapter->analysis_error);
+  if (!ok) {
+    return adapter->analysis_error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT
+               ? -7
+               : adapter->analysis_error.status ==
+                         AG_LANGUAGE_ANALYSIS_INVALID_REQUEST
+                     ? -6
+                     : -4;
+  }
+  int json_length = ag_language_analysis_snapshot_write_json(
+      &snapshot, NULL, 0);
+  if (json_length < 0) {
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    return -4;
+  }
+  if (json_length > max_snapshot_bytes) {
+    adapter->analysis_error = (ag_language_analysis_error_t){
+        .status = AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT,
+        .max = (size_t)max_snapshot_bytes,
+        .actual = (size_t)json_length,
+    };
+    snprintf(adapter->analysis_error.code,
+             sizeof(adapter->analysis_error.code),
+             "%s", "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES");
+    snprintf(adapter->analysis_error.limit,
+             sizeof(adapter->analysis_error.limit),
+             "%s", "maxAnalysisSnapshotBytes");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    return -7;
+  }
+  if (json_length + 1 > out_cap) {
+    ag_language_analysis_snapshot_dispose(&snapshot);
+    return -2;
+  }
+  int written = ag_language_analysis_snapshot_write_json(
+      &snapshot, (char *)(long)out_addr, (size_t)out_cap);
+  ag_language_analysis_snapshot_dispose(&snapshot);
+  return written;
+}
+
+int agc_wasm_adapter_analysis_error_code_ptr(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter ? (int)(long)adapter->analysis_error.code : 0;
+}
+
+int agc_wasm_adapter_analysis_error_limit_ptr(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter ? (int)(long)adapter->analysis_error.limit : 0;
+}
+
+int agc_wasm_adapter_analysis_error_max(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter ? (int)adapter->analysis_error.max : 0;
+}
+
+int agc_wasm_adapter_analysis_error_actual(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter ? (int)adapter->analysis_error.actual : 0;
 }
 
 static const ag_diagnostic_context_t *wasm_adapter_diagnostics(int handle) {

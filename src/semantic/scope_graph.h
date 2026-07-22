@@ -56,6 +56,10 @@ typedef struct {
   int name_len;
   uint32_t declaration_order;
   void *payload;
+  const char *source_input;
+  char *source_name;
+  int source_byte_offset;
+  int source_byte_length;
 } psx_scope_declaration_t;
 
 typedef struct {
@@ -123,6 +127,10 @@ size_t psx_scope_graph_declaration_count(
     const psx_scope_graph_t *graph);
 const psx_scope_declaration_t *psx_scope_graph_declaration_at(
     const psx_scope_graph_t *graph, size_t index);
+int psx_scope_graph_note_declaration_source(
+    psx_scope_graph_t *graph, psx_decl_id_t declaration_id,
+    const char *source_name, const char *source_input,
+    int byte_offset, int byte_length);
 void psx_scope_graph_forget_declaration(
     psx_scope_graph_t *graph, psx_decl_id_t declaration_id);
 int psx_scope_graph_rehome_declaration_at(

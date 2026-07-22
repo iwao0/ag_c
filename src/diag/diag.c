@@ -45,6 +45,9 @@ struct ag_diagnostic_context_t {
   size_t bytes;
   int limit_kind;
   int limits_enforced;
+  ag_diagnostic_fatal_recovery_fn fatal_recovery;
+  void *fatal_recovery_context;
+  int capture_only;
 };
 
 static ag_diagnostic_context_t *diag_prepare_context(
@@ -55,6 +58,13 @@ static ag_diagnostic_context_t *diag_prepare_context(
     context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
   }
   return context;
+}
+
+static void diag_recover_fatal_if_configured(
+    ag_diagnostic_context_t *context) {
+  if (!context || !context->fatal_recovery) return;
+  context->fatal_recovery(context->fatal_recovery_context);
+  abort();
 }
 
 static void diag_copy_text(char *dst, size_t cap, const char *src) {
@@ -519,6 +529,27 @@ const char *diag_context_get_locale(
   return context && context->locale[0] ? context->locale : "ja";
 }
 
+void diag_context_set_fatal_recovery(
+    ag_diagnostic_context_t *context,
+    ag_diagnostic_fatal_recovery_fn recovery, void *recovery_context) {
+  context = diag_prepare_context(context);
+  context->fatal_recovery = recovery;
+  context->fatal_recovery_context = recovery_context;
+}
+
+void diag_context_clear_fatal_recovery(
+    ag_diagnostic_context_t *context) {
+  context = diag_prepare_context(context);
+  context->fatal_recovery = (ag_diagnostic_fatal_recovery_fn)0;
+  context->fatal_recovery_context = NULL;
+}
+
+void diag_context_set_capture_only(
+    ag_diagnostic_context_t *context, int capture_only) {
+  context = diag_prepare_context(context);
+  context->capture_only = capture_only ? 1 : 0;
+}
+
 /**
  * @brief エラーIDに対応するメッセージを現在ロケールに従って取得する。
  * @param id エラーID。
@@ -630,6 +661,7 @@ static _Noreturn void diag_emit_at_va(
       context, AGC_DIAG_SEVERITY_ERROR, diag_error_code(id),
       input, loc, fmt, record_ap);
   va_end(record_ap);
+  diag_recover_fatal_if_configured(context);
   int pos = 0;
   if (input && loc && loc >= input) pos = (int)(loc - input);
   if (input) {
@@ -678,6 +710,7 @@ static _Noreturn void diag_emit_tok_va(
       context, AGC_DIAG_SEVERITY_ERROR, diag_error_code(id),
       tok, fmt, record_ap);
   va_end(record_ap);
+  diag_recover_fatal_if_configured(context);
   { const char *fn = diag_token_filename(context, tok);
     if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: ", diag_error_code(id));
@@ -706,6 +739,7 @@ static int diag_report_at_va(
       input, loc, fmt, record_ap);
   va_end(record_ap);
   if (!stored && context->limits_enforced) return 0;
+  if (context->capture_only) return stored;
   int pos = 0;
   if (input && loc && loc >= input) pos = (int)(loc - input);
   if (input) {
@@ -742,6 +776,7 @@ static int diag_report_tok_va(
       tok, fmt, record_ap);
   va_end(record_ap);
   if (!stored && context->limits_enforced) return 0;
+  if (context->capture_only) return stored;
   const char *fn = diag_token_filename(context, tok);
   if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no);
   fprintf(stderr, "%s: ", diag_error_code(id));
@@ -774,6 +809,7 @@ static void diag_warn_tok_va(
       tok, fmt, record_ap);
   va_end(record_ap);
   if (!stored && context->limits_enforced) return;
+  if (context->capture_only) return;
   { const char *fn = diag_token_filename(context, tok);
     if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: %s: ", diag_warn_code(id),
@@ -810,6 +846,7 @@ static _Noreturn void diag_emit_internal_va(
   diag_store_v(context, AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), NULL,
                0, 0, -1, 0, 0, -1, fmt, record_ap);
   va_end(record_ap);
+  diag_recover_fatal_if_configured(context);
   fprintf(stderr, "%s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
@@ -836,6 +873,7 @@ static void diag_report_internal_va(
                             0, 0, -1, 0, 0, -1, fmt, record_ap);
   va_end(record_ap);
   if (!stored && context->limits_enforced) return;
+  if (context->capture_only) return;
   fprintf(stderr, "%s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");

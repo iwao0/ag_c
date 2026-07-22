@@ -87,4 +87,18 @@ psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
     const psx_typed_hir_tree_t **typed_hir,
     psx_resolved_hir_build_failure_t *failure);
 
+/* Language-analysis preflight: registers the function signature, parameters,
+ * and declarations reached before a semantic rejection, but does not build
+ * Typed HIR or emit a fatal diagnostic. */
+psx_syntax_typed_hir_resolution_status_t
+psx_collect_syntax_function_declarations_for_analysis_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const psx_parsed_function_definition_t *syntax_function,
+    psx_scope_lookup_point_t *lookup_point,
+    psx_resolved_hir_build_failure_t *failure);
+
 #endif

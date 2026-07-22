@@ -8,6 +8,7 @@
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_source_manager_t ag_source_manager_t;
+typedef void (*ag_diagnostic_fatal_recovery_fn)(void *context);
 
 ag_diagnostic_context_t *diag_context_create(
     ag_source_manager_t *source_manager);
@@ -20,6 +21,19 @@ void diag_context_set_locale(
     ag_diagnostic_context_t *context, const char *locale);
 const char *diag_context_get_locale(
     const ag_diagnostic_context_t *context);
+
+/* Language-service callers may capture a fatal source diagnostic and leave
+ * the current parse through a caller-owned non-local recovery boundary.
+ * Normal compilation leaves this unset and retains the existing exit(1)
+ * behavior. The callback must not return. */
+void diag_context_set_fatal_recovery(
+    ag_diagnostic_context_t *context,
+    ag_diagnostic_fatal_recovery_fn recovery, void *recovery_context);
+void diag_context_clear_fatal_recovery(
+    ag_diagnostic_context_t *context);
+/* Capture-only mode stores diagnostics without writing them to stderr. */
+void diag_context_set_capture_only(
+    ag_diagnostic_context_t *context, int capture_only);
 
 const char *diag_message_for_in(
     const ag_diagnostic_context_t *context, diag_error_id_t id);

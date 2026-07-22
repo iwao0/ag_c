@@ -11,6 +11,24 @@
 #include "../parser/semantic_ctx.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
+#include "../source_manager.h"
+
+static void note_current_declaration_source(
+    psx_semantic_context_t *semantic_context,
+    psx_c_namespace_t name_space, const char *name, int name_len,
+    token_t *token) {
+  if (!semantic_context || !name || name_len <= 0 || !token) return;
+  psx_scope_graph_t *graph = ps_ctx_scope_graph(semantic_context);
+  psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+      graph, psx_scope_graph_current_scope(graph),
+      name_space, name, name_len);
+  ag_source_manager_t *sources = diag_context_source_manager(
+      ps_ctx_diagnostics(semantic_context));
+  (void)psx_scope_graph_note_declaration_source(
+      graph, declaration_id,
+      ag_source_manager_name(sources, token->file_name_id),
+      token->source_input, token->byte_offset, token->byte_length);
+}
 
 void psx_apply_parsed_typedef_declaration_in(
     psx_semantic_context_t *semantic_context,
@@ -28,7 +46,13 @@ void psx_apply_parsed_typedef_declaration_in(
           .decl_qual_type = decl_qual_type,
       },
       &resolution);
-  if (resolution.status == PSX_TYPEDEF_DECLARATION_OK) return;
+  if (resolution.status == PSX_TYPEDEF_DECLARATION_OK) {
+    if (resolution.created)
+      note_current_declaration_source(
+          semantic_context, PSX_NAMESPACE_ORDINARY,
+          name, name_len, diag_tok);
+    return;
+  }
   if (resolution.status == PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT) {
     ps_diag_ctx_in(diagnostics, diag_tok, "typedef",
                  "typedef名 '%.*s' の型が以前の宣言と異なります (C11 6.7p3)",
@@ -69,7 +93,13 @@ void psx_apply_parsed_enum_constant_in(
           .value = value,
       },
       &resolution);
-  if (resolution.status == PSX_ENUM_CONSTANT_OK) return;
+  if (resolution.status == PSX_ENUM_CONSTANT_OK) {
+    if (resolution.created)
+      note_current_declaration_source(
+          semantic_context, PSX_NAMESPACE_ORDINARY,
+          name, name_len, diag_tok);
+    return;
+  }
   if (resolution.status == PSX_ENUM_CONSTANT_DUPLICATE) {
     ps_diag_duplicate_with_name_in(diagnostics,
         diag_tok, "enum constant", name, name_len);
@@ -113,7 +143,13 @@ void psx_apply_parsed_tag_declaration_in(
           .member_count = member_count,
       },
       &resolution);
-  if (resolution.status == PSX_TAG_DECLARATION_OK) return;
+  if (resolution.status == PSX_TAG_DECLARATION_OK) {
+    if (resolution.registered)
+      note_current_declaration_source(
+          semantic_context, PSX_NAMESPACE_TAG,
+          name, name_len, diag_tok);
+    return;
+  }
   if (resolution.status == PSX_TAG_DECLARATION_REDEFINITION) {
     ps_diag_ctx_in(diagnostics, diag_tok, "tag",
                  "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",

@@ -25,6 +25,10 @@ export interface AgcResourceLimits {
   maxLinkedWasmBytes: number;
   maxDiagnostics: number;
   maxDiagnosticBytes: number;
+  maxAnalysisSymbols: number;
+  maxCompletionItems: number;
+  maxAnalysisStringBytes: number;
+  maxAnalysisSnapshotBytes: number;
 }
 
 export type AgcResourceLimitCode =
@@ -38,7 +42,11 @@ export type AgcResourceLimitCode =
   | "AGC_LIMIT_MAX_OBJECT_BYTES"
   | "AGC_LIMIT_MAX_LINKED_WASM_BYTES"
   | "AGC_LIMIT_MAX_DIAGNOSTICS"
-  | "AGC_LIMIT_MAX_DIAGNOSTIC_BYTES";
+  | "AGC_LIMIT_MAX_DIAGNOSTIC_BYTES"
+  | "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS"
+  | "AGC_LIMIT_MAX_COMPLETION_ITEMS"
+  | "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES"
+  | "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES";
 
 export class AgcResourceLimitError extends RangeError {
   readonly name: "AgcResourceLimitError";
@@ -114,6 +122,68 @@ export interface AgcCompileOptions {
   limits?: Partial<AgcResourceLimits>;
 }
 
+export interface AgcAnalysisCursor {
+  sourceName: string;
+  /** 0-based byte offset in normalized UTF-8. */
+  byteOffset: number;
+}
+
+export interface AgcAnalysisOptions extends AgcCompileOptions {
+  cursor: AgcAnalysisCursor;
+}
+
+export interface AgcLanguageSourceRange {
+  readonly sourceName: string;
+  readonly start: AgcDiagnosticPosition;
+  readonly end: AgcDiagnosticPosition;
+}
+
+export interface AgcLanguageInitializer {
+  readonly state: "none" | "explicitConstant" | "zero" | "indeterminate" | "runtime";
+  readonly constantValue: string | null;
+  readonly range: AgcLanguageSourceRange | null;
+}
+
+export interface AgcLanguageFunctionInfo {
+  readonly returnType: string;
+  readonly hasPrototype: boolean;
+  readonly variadic: boolean;
+  readonly parameters: readonly {
+    readonly name: string;
+    readonly type: string;
+  }[];
+}
+
+export interface AgcLanguageMacroInfo {
+  readonly functionLike: boolean;
+  readonly variadic: boolean;
+  readonly parameters: readonly string[];
+  readonly replacement: string;
+}
+
+export interface AgcLanguageSymbol {
+  readonly name: string;
+  readonly kind: "object" | "parameter" | "function" | "typedef" |
+    "enumConstant" | "tag" | "member" | "macro";
+  readonly nameSpace: "ordinary" | "tag" | "label" | "member" | "macro";
+  readonly type: string;
+  readonly signature: string;
+  readonly storageClass: string;
+  readonly scopeDepth: number;
+  readonly declarationOrder: number;
+  readonly declaration: AgcLanguageSourceRange;
+  readonly initializer: AgcLanguageInitializer;
+  readonly function: AgcLanguageFunctionInfo | null;
+  readonly macro: AgcLanguageMacroInfo | null;
+}
+
+export interface AgcLanguageAnalysisSnapshot {
+  readonly diagnostics: readonly AgcDiagnostic[];
+  readonly completionItems: readonly AgcLanguageSymbol[];
+  readonly hover: AgcLanguageSymbol | null;
+  readonly partial: boolean;
+}
+
 export interface AgcWasmCompiler {
   instance: WebAssembly.Instance;
   memory: WebAssembly.Memory;
@@ -133,6 +203,7 @@ export interface AgcWasmCompiler {
     source: AgcCompileInput,
     options?: AgcCompileOptions,
   ): AgcWasmObjectResult;
+  analyzeSource(source: AgcNamedSource, options: AgcAnalysisOptions): AgcLanguageAnalysisSnapshot;
   readStdout(): string;
   readStderr(): string;
   readDiagnostics(): readonly AgcDiagnostic[];

@@ -23,6 +23,8 @@
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
+#include "semantic/scope_graph.h"
+#include "source_manager.h"
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/static_initializer_materialization.h"
@@ -32,6 +34,22 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+static void note_pipeline_declaration_source(
+    psx_semantic_context_t *semantic_context, psx_scope_id_t scope_id,
+    psx_c_namespace_t name_space, const char *name, int name_len,
+    token_t *token) {
+  if (!semantic_context || !name || name_len <= 0 || !token) return;
+  psx_scope_graph_t *graph = ps_ctx_scope_graph(semantic_context);
+  psx_decl_id_t declaration_id = psx_scope_graph_lookup_in_scope(
+      graph, scope_id, name_space, name, name_len);
+  ag_source_manager_t *sources = diag_context_source_manager(
+      ps_ctx_diagnostics(semantic_context));
+  (void)psx_scope_graph_note_declaration_source(
+      graph, declaration_id,
+      ag_source_manager_name(sources, token->file_name_id),
+      token->source_input, token->byte_offset, token->byte_length);
+}
 
 static void diagnose_global_declaration(
     const psx_global_declaration_pipeline_request_t *request,
@@ -157,6 +175,10 @@ int psx_begin_global_declaration_pipeline(
   }
   result->global = lowered.global;
   result->created = lowered.created;
+  note_pipeline_declaration_source(
+      request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+      request->diag_tok);
   return 1;
 }
 
@@ -329,6 +351,10 @@ int psx_apply_function_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
     diagnose_function_declaration(request, resolution.status);
+  note_pipeline_declaration_source(
+      request->semantic_context, PSX_SCOPE_ID_TRANSLATION_UNIT,
+      PSX_NAMESPACE_ORDINARY, request->name, request->name_len,
+      request->diag_tok);
   return 1;
 }
 

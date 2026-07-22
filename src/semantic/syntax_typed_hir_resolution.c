@@ -6610,6 +6610,90 @@ static void commit_direct_function_resolution(
 }
 
 psx_syntax_typed_hir_resolution_status_t
+psx_collect_syntax_function_declarations_for_analysis_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_lowering_context_t *lowering_context,
+    const ag_compilation_options_t *options,
+    const psx_parsed_function_definition_t *syntax_function,
+    psx_scope_lookup_point_t *lookup_point,
+    psx_resolved_hir_build_failure_t *failure) {
+  if (lookup_point)
+    *lookup_point = (psx_scope_lookup_point_t){
+        PSX_SCOPE_ID_TRANSLATION_UNIT, 0};
+  psx_resolved_hir_build_failure_init(failure);
+  if (!semantic_context || !global_registry || !local_registry ||
+      !lowering_context || !options || !syntax_function ||
+      !syntax_function->body || !syntax_function->declarator.identifier ||
+      !lookup_point) {
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_INVALID_INPUT,
+        syntax_function ? syntax_function->body : NULL);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  token_ident_t *name = syntax_function->declarator.identifier;
+  direct_function_transaction_t transaction;
+  if (!begin_direct_function_transaction(
+          &transaction, semantic_context, global_registry, local_registry,
+          lowering_context, name)) {
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_OUT_OF_MEMORY,
+        syntax_function->body);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  psx_function_definition_header_resolution_t header;
+  if (!psx_resolve_function_definition_header_in_contexts(
+          semantic_context, global_registry, local_registry,
+          lowering_context, syntax_function, &header)) {
+    rollback_direct_function_resolution(&transaction, NULL, 1);
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE,
+        syntax_function->body);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  psx_qual_type_t return_qual_type = psx_semantic_type_table_base(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      header.signature_qual_type.type_id);
+  direct_resolution_context_t context = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .lowering_context = lowering_context,
+      .options = options,
+      .failure = failure,
+      .function_name = header.name,
+      .function_name_len = header.name_len,
+      .function_return_qual_type = return_qual_type,
+      .enforce_function_return_type = 1,
+  };
+  psx_semantic_node_builder_init(
+      &context.builder, ps_ctx_arena(semantic_context),
+      semantic_context, failure);
+  if (return_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    rollback_direct_function_resolution(&transaction, NULL, 1);
+    set_failure(
+        failure, PSX_RESOLVED_HIR_BUILD_MISSING_CANONICAL_TYPE,
+        syntax_function->body);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  int preflight_ok =
+      collect_direct_function_jumps(&context, syntax_function->body) &&
+      validate_direct_function_jumps(&context) &&
+      preflight_direct_statement(&context, syntax_function->body);
+  *lookup_point = psx_scope_graph_capture_lookup_point(
+      ps_ctx_scope_graph(semantic_context));
+  if (!preflight_ok && context.preflight_failed) {
+    rollback_direct_function_resolution(
+        &transaction, context.function_declarations, 1);
+    return PSX_SYNTAX_TYPED_HIR_FAILED;
+  }
+  commit_direct_function_resolution(&transaction);
+  return preflight_ok ? PSX_SYNTAX_TYPED_HIR_RESOLVED
+                      : PSX_SYNTAX_TYPED_HIR_REJECTED;
+}
+
+psx_syntax_typed_hir_resolution_status_t
 psx_resolve_syntax_function_direct_to_typed_hir_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

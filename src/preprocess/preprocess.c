@@ -1,6 +1,7 @@
 #include "preprocess.h"
 #include "../target_info.h"
 #include "../diag/diag.h"
+#include "../source_manager.h"
 #include "../tokenizer/allocator.h"
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +49,7 @@ struct ag_preprocessor_context_t {
   char include_root[PATH_MAX];
   bool have_project_root;
   bool have_include_root;
+  bool language_analysis_mode;
 };
 
 #define macros (context->macros)
@@ -86,6 +88,7 @@ struct macro {
   int num_params;    // 可変長時は合成 __VA_ARGS__ スロットを含む
   bool is_funclike;
   bool is_variadic;  // 末尾が `...` (合成パラメータ "__VA_ARGS__") の可変長マクロ
+  token_t *definition_token;
 };
 
 struct pp_owned_source {
@@ -783,13 +786,25 @@ static char *my_strndup(const char *s, size_t n) {
 
 static void add_macro(ag_preprocessor_context_t *context, char *name,
                       bool is_funclike, bool is_variadic, char **params,
-                      int num_params, token_t *body) {
+                      int num_params, token_t *body,
+                      token_t *definition_token) {
+  macro_t **link = &macros;
+  while (*link) {
+    macro_t *existing = *link;
+    if (strcmp(existing->name, name) == 0) {
+      *link = existing->next;
+      free_macro(existing);
+      break;
+    }
+    link = &existing->next;
+  }
   macro_t *m = calloc(1, sizeof(macro_t));
   m->name = name;
   m->body = body;
   m->is_funclike = is_funclike;
   m->is_variadic = is_variadic;
   m->num_params = num_params;
+  m->definition_token = definition_token;
   if (num_params <= MACRO_INLINE_PARAMS) {
     for (int i = 0; i < num_params; i++) m->inline_params[i] = params[i];
     m->params = m->inline_params;
@@ -807,6 +822,85 @@ static macro_t *find_macro(
       return m;
   }
   return NULL;
+}
+
+static macro_t *macro_at(
+    const ag_preprocessor_context_t *context, int index) {
+  if (!context || index < 0) return NULL;
+  macro_t *macro = macros;
+  while (macro && index-- > 0) macro = macro->next;
+  return macro;
+}
+
+int pp_macro_count_in(const ag_preprocessor_context_t *context) {
+  int count = 0;
+  if (!context) return 0;
+  for (macro_t *macro = macros; macro; macro = macro->next) count++;
+  return count;
+}
+
+int pp_macro_view_at_in(const ag_preprocessor_context_t *context, int index,
+                        ag_pp_macro_view_t *out) {
+  macro_t *macro = macro_at(context, index);
+  if (!macro || !out) return 0;
+  *out = (ag_pp_macro_view_t){
+      .name = macro->name,
+      .name_len = macro->name ? (int)strlen(macro->name) : 0,
+      .is_function_like = macro->is_funclike ? 1 : 0,
+      .is_variadic = macro->is_variadic ? 1 : 0,
+      .parameter_count = macro->num_params,
+      .source_name = macro->definition_token
+                         ? ag_source_manager_name(
+                               diag_context_source_manager(
+                                   context->diagnostic_context),
+                               macro->definition_token->file_name_id)
+                         : NULL,
+      .source_input = macro->definition_token
+                          ? macro->definition_token->source_input : NULL,
+      .source_byte_offset = macro->definition_token
+                                ? macro->definition_token->byte_offset : -1,
+      .source_byte_length = macro->definition_token
+                                ? macro->definition_token->byte_length : 0,
+  };
+  return 1;
+}
+
+const char *pp_macro_parameter_at_in(const ag_preprocessor_context_t *context,
+                                     int macro_index, int parameter_index) {
+  macro_t *macro = macro_at(context, macro_index);
+  return macro && parameter_index >= 0 && parameter_index < macro->num_params
+             ? macro->params[parameter_index]
+             : NULL;
+}
+
+int pp_macro_format_replacement_in(const ag_preprocessor_context_t *context,
+                                   int macro_index, char *out,
+                                   size_t out_size) {
+  macro_t *macro = macro_at(context, macro_index);
+  if (!macro) return -1;
+  size_t length = 0;
+  if (out && out_size > 0) out[0] = '\0';
+  for (token_t *token = macro->body; token; token = token->next) {
+    int token_len = 0;
+    const char *text = token_text(token, &token_len);
+    if (!text || token_len < 0) return -1;
+    if (length > 0) {
+      if (out && length + 1 < out_size) out[length] = ' ';
+      length++;
+    }
+    if (out && length < out_size - 1) {
+      size_t writable = out_size - 1 - length;
+      if (writable > (size_t)token_len) writable = (size_t)token_len;
+      memcpy(out + length, text, writable);
+    }
+    length += (size_t)token_len;
+    if (length > (size_t)INT_MAX) return -1;
+  }
+  if (out && out_size > 0) {
+    size_t end = length < out_size ? length : out_size - 1;
+    out[end] = '\0';
+  }
+  return (int)length;
 }
 
 // === pragma once ===
@@ -894,13 +988,15 @@ static token_t *make_string_token(
 static void add_int_macro(
     ag_preprocessor_context_t *context, const char *name, long long val) {
   token_t *tok = make_int_token(context, val, NULL);
-  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0,
+            tok, NULL);
 }
 
 static void add_string_macro(
     ag_preprocessor_context_t *context, const char *name, const char *s) {
   token_t *tok = make_string_token(context, s, NULL);
-  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
+  add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0,
+            tok, NULL);
 }
 
 static void pp_init_predefined_macros(
@@ -1784,6 +1880,7 @@ static token_t *handle_define(
     pp_error(context, DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
   }
   token_ident_t *id = as_ident(tok);
+  token_t *definition_token = tok;
   char *name = my_strndup(id->str, id->len);
   tok = tok->next;
 
@@ -1839,7 +1936,7 @@ static token_t *handle_define(
   cur_body->next = NULL;
 
   add_macro(context, name, is_funclike, is_variadic, params, num_params,
-            head.next);
+            head.next, definition_token);
   return tok;
 }
 
@@ -2851,6 +2948,18 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
     const pp_virtual_header_t *header = resolve_virtual_header(
         s->context, filename, current_file, &loaded_path);
     if (!header) {
+      if (context->language_analysis_mode) {
+        diag_report_tokf_in(
+            context->diagnostic_context,
+            DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND, after_hash,
+            diag_message_for_in(
+                context->diagnostic_context,
+                DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND),
+            filename);
+        free(filename);
+        free(loaded_path);
+        return;
+      }
       diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND,
                           diag_message_for_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND), filename);
     }
@@ -3106,6 +3215,10 @@ token_t *pp_stream_open_in(ag_preprocessor_context_t *context,
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
   if (!s) return NULL;
   s->context = context;
+  /* Publish ownership before token production. A language-analysis fatal
+   * recovery may leave pps_step non-locally, and the caller must still be
+   * able to close the partially opened stream. */
+  *out_s = s;
   /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に
    * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
   reset_macros(context);
@@ -3133,7 +3246,6 @@ token_t *pp_stream_open_in(ag_preprocessor_context_t *context,
   s->cursor = s->out_head;
   pps_refill(s);
   pps_activate(s);
-  *out_s = s;
   return s->out_head;
 }
 
@@ -3195,6 +3307,11 @@ tokenizer_context_t *pp_context_tokenizer(
 const ag_target_info_t *pp_context_target(
     const ag_preprocessor_context_t *context) {
   return context ? context->target : NULL;
+}
+
+void pp_context_set_language_analysis_mode(
+    ag_preprocessor_context_t *context, int enabled) {
+  if (context) context->language_analysis_mode = enabled ? true : false;
 }
 
 const char *pp_context_project_root(

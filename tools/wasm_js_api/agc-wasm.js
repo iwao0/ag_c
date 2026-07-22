@@ -284,6 +284,13 @@ export async function createCompiler(wasmSource, options = {}) {
   const compileObjectNamedExport = instance.exports.agc_wasm_adapter_compile_object_named;
   const compileWatVirtualExport = instance.exports.agc_wasm_adapter_compile_wat_virtual;
   const compileObjectVirtualExport = instance.exports.agc_wasm_adapter_compile_object_virtual;
+  const analyzeSourceExport = instance.exports.agc_wasm_adapter_analyze_source_virtual;
+  const analysisErrorExports = {
+    codePtr: instance.exports.agc_wasm_adapter_analysis_error_code_ptr,
+    limitPtr: instance.exports.agc_wasm_adapter_analysis_error_limit_ptr,
+    max: instance.exports.agc_wasm_adapter_analysis_error_max,
+    actual: instance.exports.agc_wasm_adapter_analysis_error_actual,
+  };
   const diagnosticLocaleExport = instance.exports.agc_wasm_adapter_set_diagnostic_locale;
   const continuationOptionsExport = instance.exports.agc_wasm_adapter_set_continuation_options;
   const diagnosticExports = {
@@ -848,6 +855,149 @@ export async function createCompiler(wasmSource, options = {}) {
     return { object, diagnostics: readStructuredDiagnostics() };
   }
 
+  function freezeAnalysisValue(value) {
+    if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+    if (Array.isArray(value)) {
+      for (const entry of value) freezeAnalysisValue(entry);
+    } else {
+      for (const entry of Object.values(value)) freezeAnalysisValue(entry);
+    }
+    return Object.freeze(value);
+  }
+
+  function analysisResourceError(resourceLimits) {
+    if (!Object.values(analysisErrorExports).every((value) => typeof value === "function")) {
+      return null;
+    }
+    const handle = requireAdapterHandle();
+    const limit = readCString(callNumberFunc(analysisErrorExports.limitPtr, [handle]));
+    if (!limit) return null;
+    return new AgcResourceLimitError(
+      limit,
+      callNumberFunc(analysisErrorExports.max, [handle]),
+      callNumberFunc(analysisErrorExports.actual, [handle]),
+      readStructuredDiagnostics(),
+    );
+  }
+
+  function analyzeSource(input, analysisOptions = {}) {
+    if (typeof analyzeSourceExport !== "function") {
+      throw new Error("ag_c wasm module does not support language analysis");
+    }
+    const normalized = normalizeCompileInput(input);
+    if (normalized.name === null) {
+      throw new TypeError("analyzeSource source must be { name, source }");
+    }
+    if (!analysisOptions || typeof analysisOptions !== "object" ||
+        Array.isArray(analysisOptions)) {
+      throw new TypeError("analysis options must be an object");
+    }
+    const cursor = analysisOptions.cursor;
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor) ||
+        cursor.sourceName !== normalized.name ||
+        !Number.isSafeInteger(cursor.byteOffset) || cursor.byteOffset < 0) {
+      throw new TypeError("cursor must name the analyzed source and contain a non-negative byteOffset");
+    }
+    const resourceLimits = resolveResourceLimits(
+      compilerResourceLimits, analysisOptions.limits ?? {},
+    );
+    const sourceByteLength = utf8ByteLength(normalized.source);
+    assertResourceLimit("maxSourceBytes", sourceByteLength, resourceLimits.maxSourceBytes);
+    assertResourceLimit(
+      "maxTotalSourceBytes", sourceByteLength, resourceLimits.maxTotalSourceBytes,
+    );
+    if (cursor.byteOffset > sourceByteLength) {
+      throw new RangeError("cursor.byteOffset is outside the normalized UTF-8 source");
+    }
+    configureDiagnosticLocale(analysisOptions.diagnosticLocale);
+    configureDiagnosticLimits(resourceLimits);
+    const virtualHeaders = prepareVirtualHeaders(
+      analysisOptions, encoder, resourceLimits,
+    );
+    const headerLimits = virtualHeaders?.limits ?? {
+      maxFiles: resourceLimits.maxHeaders,
+      maxFileBytes: resourceLimits.maxHeaderBytes,
+      maxTotalBytes: resourceLimits.maxTotalHeaderBytes,
+      maxIncludeDepth: resourceLimits.maxIncludeDepth,
+    };
+    const sourceBytes = encoder.encode(`${normalized.source}\0`);
+    const sourceNameBytes = encoder.encode(`${normalized.name}\0`);
+    const sourceAlloc = callPtrFunc(malloc, sourceBytes.length);
+    if (!sourceAlloc) throw new Error("ag_c wasm malloc failed for analysis source");
+    let sourceNameAlloc = 0;
+    let headerAlloc = 0;
+    let outputAlloc = 0;
+    try {
+      sourceNameAlloc = callPtrFunc(malloc, sourceNameBytes.length);
+      if (!sourceNameAlloc) throw new Error("ag_c wasm malloc failed for analysis source name");
+      let mem = new Uint8Array(memory.buffer);
+      ensureMemoryRange(memory, sourceAlloc, sourceBytes.length, "analysis source");
+      ensureMemoryRange(memory, sourceNameAlloc, sourceNameBytes.length, "analysis source name");
+      mem.set(sourceBytes, sourceAlloc);
+      mem.set(sourceNameBytes, sourceNameAlloc);
+      if (virtualHeaders) {
+        headerAlloc = callPtrFunc(malloc, virtualHeaders.bytes.length);
+        if (!headerAlloc) throw new Error("ag_c wasm malloc failed for analysis headers");
+        ensureMemoryRange(memory, headerAlloc, virtualHeaders.bytes.length, "analysis headers");
+        new Uint8Array(memory.buffer).set(virtualHeaders.bytes, headerAlloc);
+      }
+      let capacity = Math.min(
+        initialOutputCap, resourceLimits.maxAnalysisSnapshotBytes + 1,
+      );
+      for (;;) {
+        outputAlloc = callPtrFunc(malloc, capacity);
+        if (!outputAlloc) throw new Error("ag_c wasm malloc failed for analysis output");
+        ensureMemoryRange(memory, outputAlloc, capacity, "analysis output");
+        resetDiagnostics();
+        const rc = callNumberFunc(analyzeSourceExport, [
+          requireAdapterHandle(), sourceAlloc, sourceNameAlloc, cursor.byteOffset,
+          headerAlloc, virtualHeaders?.bytes.length ?? 0,
+          headerLimits.maxFiles, headerLimits.maxFileBytes,
+          headerLimits.maxTotalBytes, headerLimits.maxIncludeDepth,
+          resourceLimits.maxSources, resourceLimits.maxSourceBytes,
+          resourceLimits.maxTotalSourceBytes,
+          resourceLimits.maxAnalysisSymbols, resourceLimits.maxCompletionItems,
+          resourceLimits.maxAnalysisStringBytes,
+          resourceLimits.maxAnalysisSnapshotBytes,
+          outputAlloc, capacity,
+        ]);
+        if (rc === -2) {
+          callVoidPtrFunc(free, outputAlloc);
+          outputAlloc = 0;
+          if (capacity >= resourceLimits.maxAnalysisSnapshotBytes + 1) {
+            throw new AgcResourceLimitError(
+              "maxAnalysisSnapshotBytes",
+              resourceLimits.maxAnalysisSnapshotBytes,
+              resourceLimits.maxAnalysisSnapshotBytes + 1,
+              readStructuredDiagnostics(),
+            );
+          }
+          capacity = Math.min(
+            capacity * 2, resourceLimits.maxAnalysisSnapshotBytes + 1,
+          );
+          continue;
+        }
+        if (rc === -7) {
+          throw analysisResourceError(resourceLimits) ??
+            new Error("ag_c language analysis exceeded a resource limit");
+        }
+        if (rc === -6 || rc === -1) {
+          throw new TypeError("ag_c rejected the language analysis request");
+        }
+        if (rc < 0) throwCompileFailure(rc, capacity, resourceLimits);
+        throwIfDiagnosticResourceLimitExceeded(resourceLimits);
+        mem = new Uint8Array(memory.buffer);
+        const json = decoder.decode(mem.slice(outputAlloc, outputAlloc + rc));
+        return freezeAnalysisValue(JSON.parse(json));
+      }
+    } finally {
+      if (outputAlloc) callVoidPtrFunc(free, outputAlloc);
+      if (headerAlloc) callVoidPtrFunc(free, headerAlloc);
+      if (sourceNameAlloc) callVoidPtrFunc(free, sourceNameAlloc);
+      callVoidPtrFunc(free, sourceAlloc);
+    }
+  }
+
   function readDiagnosticBytes() {
     if (typeof diagnosticLimitExports.bytes !== "function") return 0;
     return callPtrFunc(diagnosticLimitExports.bytes, requireAdapterHandle());
@@ -872,6 +1022,7 @@ export async function createCompiler(wasmSource, options = {}) {
     compileWatWithDiagnostics,
     compileObject,
     compileObjectWithDiagnostics,
+    analyzeSource,
     readStdout,
     readStderr: readStderrText,
     readDiagnostics: readStructuredDiagnostics,

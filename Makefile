@@ -51,6 +51,7 @@ TEST_WASM32_BACKEND=build/test_wasm32_backend
 TEST_WASM32_MACHINE_IR=build/test_wasm32_machine_ir
 TEST_WASM32_E2E=build/test_wasm32_e2e
 TEST_WASM32_OBJECT=build/test_wasm32_object
+TEST_LANGUAGE_ANALYSIS=build/test_language_analysis
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/source_manager.o $(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/cursor.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/number.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o $(OBJROOT)/tokenizer/trigraph.o
@@ -74,6 +75,7 @@ IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_pr
 WASM_MAIN_OBJ=$(OBJROOT)/main_wasm32.o
 DEPS+=$(WASM_MAIN_OBJ:.o=.d)
 WASM_OBJS=$(filter-out $(OBJROOT)/main.o,$(OBJS)) $(WASM_MAIN_OBJ)
+LANGUAGE_ANALYSIS_LIB_OBJS=$(filter-out $(OBJROOT)/main.o,$(OBJS))
 
 
 $(TARGET): $(OBJS)
@@ -124,6 +126,13 @@ $(TEST_E2E): test/test_e2e.c $(TARGET)
 $(TEST_E2E_SANDBOX): test/test_e2e_sandbox.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_e2e_sandbox.c
+
+$(TEST_LANGUAGE_ANALYSIS): test/test_language_analysis.c $(LANGUAGE_ANALYSIS_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
+test-language-analysis: $(TEST_LANGUAGE_ANALYSIS)
+	$(TEST_LANGUAGE_ANALYSIS)
 
 # Host permission/resource-limit policy varies under CI and desktop sandboxes.
 test-e2e-sandbox: $(TEST_E2E_SANDBOX)
@@ -215,8 +224,9 @@ test-wasm-selfhost-source: $(WASM_TARGET)
 		-o build/wasm_selfhost_regression/semantic/syntax_typed_hir_resolution.o \
 		src/semantic/syntax_typed_hir_resolution.c
 
-test-wasm-js-api: check-runtime-symbol-manifest $(WASM_SELFHOST_API)
+test-wasm-js-api: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)
+	@node tools/wasm_js_api/test_language_analysis.mjs $(WASM_SELFHOST_API) $(TEST_LANGUAGE_ANALYSIS)
 	@node tools/wasm_js_api/test_package_exports.mjs
 
 $(WASM_LINKER_SELFHOST): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
@@ -247,11 +257,12 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_FRAME_LAYOUT) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_MACHINE_IR) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_LANGUAGE_ANALYSIS) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_FRAME_LAYOUT) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_MACHINE_IR) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(MAKE) test-design-invariants
 	$(TEST_PREPROCESS)
+	$(TEST_LANGUAGE_ANALYSIS)
 	$(TEST_FUZZ_QUICK)
 	$(TEST_IR)
 	$(TEST_FRAME_LAYOUT)

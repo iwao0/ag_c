@@ -1,6 +1,8 @@
 import type {
   AgcCompileInput,
   AgcCompileOptions,
+  AgcAnalysisOptions,
+  AgcLanguageAnalysisSnapshot,
   AgcDiagnostic,
   AgcResourceLimits,
   AgcWasmCompiler,
@@ -65,6 +67,8 @@ export interface AgcWasmToolchain {
     source: AgcCompileInput,
     options?: AgcCompileOptions,
   ): AgcWasmObjectResult;
+  analyzeSource(source: { name: string; source: string },
+                options: AgcAnalysisOptions): AgcLanguageAnalysisSnapshot;
   dispose(): void;
   /** Explicit source names must be unique using case-sensitive comparison. */
   compileLinkedWasm(

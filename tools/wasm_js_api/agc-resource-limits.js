@@ -10,6 +10,10 @@ export const DEFAULT_AGC_RESOURCE_LIMITS = Object.freeze({
   maxLinkedWasmBytes: 0x7fffffff,
   maxDiagnostics: 128,
   maxDiagnosticBytes: 1024 * 1024,
+  maxAnalysisSymbols: 4096,
+  maxCompletionItems: 4096,
+  maxAnalysisStringBytes: 64 * 1024,
+  maxAnalysisSnapshotBytes: 4 * 1024 * 1024,
 });
 
 const LIMIT_CODES = Object.freeze({
@@ -24,6 +28,10 @@ const LIMIT_CODES = Object.freeze({
   maxLinkedWasmBytes: "AGC_LIMIT_MAX_LINKED_WASM_BYTES",
   maxDiagnostics: "AGC_LIMIT_MAX_DIAGNOSTICS",
   maxDiagnosticBytes: "AGC_LIMIT_MAX_DIAGNOSTIC_BYTES",
+  maxAnalysisSymbols: "AGC_LIMIT_MAX_ANALYSIS_SYMBOLS",
+  maxCompletionItems: "AGC_LIMIT_MAX_COMPLETION_ITEMS",
+  maxAnalysisStringBytes: "AGC_LIMIT_MAX_ANALYSIS_STRING_BYTES",
+  maxAnalysisSnapshotBytes: "AGC_LIMIT_MAX_ANALYSIS_SNAPSHOT_BYTES",
 });
 
 function validateLimitObject(input, label) {
