@@ -205,6 +205,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE: return "Compound literal requires a complete object type or an array of unknown size (C11 6.5.2.5p1)";
     case DIAG_ERR_PARSER_EMPTY_INITIALIZER_LIST: return "An initializer list must contain at least one initializer (C11 6.7.9)";
     case DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT: return "An initializer for an object with static storage duration must use constant expressions (C11 6.7.9p4)";
+    case DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE: return "sizeof and _Alignof cannot be applied to a function type or an incomplete type (C11 6.5.3.4p1)";
+    case DIAG_ERR_PARSER_SIZEOF_BITFIELD: return "sizeof cannot be applied to a bit-field (C11 6.5.3.4p1)";
+    case DIAG_ERR_PARSER_ADDRESS_OF_REGISTER: return "The address of an object declared with register storage cannot be taken (C11 6.5.3.2p1)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

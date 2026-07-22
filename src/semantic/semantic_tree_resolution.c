@@ -442,6 +442,27 @@ static int diagnose_direct_syntax_rejection(
                          diagnostics,
                          DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_REGISTER:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_ADDRESS_OF_REGISTER,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_ADDRESS_OF_REGISTER));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_SIZEOF_BITFIELD,
+          token, "%s", diag_message_for_in(
+                         diagnostics,
+                         DIAG_ERR_PARSER_SIZEOF_BITFIELD));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE:
       diag_emit_tokf_in(
           diagnostics,

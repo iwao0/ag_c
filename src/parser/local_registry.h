@@ -77,6 +77,7 @@ void ps_local_registry_update_storage_object_in(
     lvar_t *var, int offset, int storage_size, int alignment);
 
 void ps_local_registry_mark_parameter(lvar_t *var);
+void ps_local_registry_mark_register(lvar_t *var);
 int ps_local_registry_complete_array_qual_type(
     psx_local_registry_t *registry, lvar_t *var,
     psx_qual_type_t complete_type);

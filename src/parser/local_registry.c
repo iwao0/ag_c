@@ -344,6 +344,11 @@ void ps_local_registry_mark_parameter(lvar_t *var) {
   var->is_param = 1;
 }
 
+void ps_local_registry_mark_register(lvar_t *var) {
+  if (!var) return;
+  var->is_register = 1;
+}
+
 int ps_local_registry_complete_array_qual_type(
     psx_local_registry_t *registry, lvar_t *var,
     psx_qual_type_t complete_type) {
@@ -449,6 +454,7 @@ psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
       .is_param = var->is_param,
       .is_array = ps_lvar_is_array(var),
       .is_static_local = var->is_static_local,
+      .is_register = var->is_register,
       .decl_region = var->decl_region,
   };
 }

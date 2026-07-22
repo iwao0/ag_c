@@ -10048,7 +10048,10 @@ if (!genericQualTypeResolution ||
     "generic selection resolution must stay outside Syntax AST and materialize its selected expression directly into Typed HIR",
   );
 }
-if (!/syntax->kind\s*==\s*ND_ALIGNOF_QUERY[^]*?psx_resolve_alignof_qual_type_plan_in/.test(
+if (!/syntax->kind\s*==\s*ND_ALIGNOF_QUERY[^]*?resolve_direct_alignof_type_name/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/static\s+int\s+resolve_direct_alignof_type_name\s*\([^]*?psx_resolve_alignof_qual_type_plan_in/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/\.kind\s*=\s*PSX_HIR_NUMBER/.test(

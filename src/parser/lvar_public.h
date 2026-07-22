@@ -19,6 +19,7 @@ typedef struct {
   int is_param;
   int is_array;
   int is_static_local;
+  int is_register;
   psx_lvar_usage_region_t *decl_region;
 } psx_lvar_registry_view_t;
 
@@ -35,6 +36,7 @@ int ps_lvar_frame_storage_size(const lvar_t *var);
 int ps_lvar_align_bytes(const lvar_t *var);
 int ps_lvar_is_param(const lvar_t *var);
 int ps_lvar_is_static_local(const lvar_t *var);
+int ps_lvar_is_register(const lvar_t *var);
 global_var_t *ps_lvar_static_storage_global(const lvar_t *var);
 int ps_lvar_is_vla(const lvar_t *var);
 int ps_lvar_is_array(const lvar_t *var);

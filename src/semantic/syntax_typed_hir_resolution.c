@@ -321,6 +321,10 @@ static int resolve_direct_identifier(
     direct_resolution_context_t *context,
     const node_identifier_t *identifier,
     psx_identifier_expression_resolution_t *resolution);
+static int resolve_direct_member_access(
+    direct_resolution_context_t *context,
+    const node_member_access_t *access, int preserve_lvalue,
+    psx_hir_member_resolution_t *resolution);
 static int resolve_direct_call_identifier(
     direct_resolution_context_t *context,
     const node_identifier_t *identifier,
@@ -1008,6 +1012,80 @@ static psx_qual_type_t direct_type_before_application(
   return current;
 }
 
+static int validate_direct_type_query_type(
+    direct_resolution_context_t *context,
+    const node_t *source, psx_qual_type_t queried_qual_type,
+    int is_sizeof, int allow_incomplete_extension) {
+  psx_type_shape_t shape = {0};
+  if (!context || !source ||
+      !direct_describe_qual_type(context, queried_qual_type, &shape))
+    return 0;
+  if (is_sizeof && shape.kind == PSX_TYPE_VOID)
+    return 1;
+  if (shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_FUNCTION)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
+  if (psx_semantic_type_table_contains_vla_array(
+          direct_semantic_types(context), queried_qual_type.type_id))
+    return 1;
+  if (allow_incomplete_extension) {
+    psx_qual_type_t element = queried_qual_type;
+    psx_type_shape_t element_shape = shape;
+    int saw_zero_length_array = 0;
+    while (element_shape.kind == PSX_TYPE_ARRAY) {
+      if (element_shape.array_len == 0)
+        saw_zero_length_array = 1;
+      element = psx_semantic_type_table_base(
+          direct_semantic_types(context), element.type_id);
+      if (!direct_describe_qual_type(
+              context, element, &element_shape))
+        return 0;
+    }
+    psx_type_layout_t element_layout = {0};
+    if (saw_zero_length_array &&
+        psx_type_layout_of(
+            direct_semantic_types(context),
+            ps_ctx_record_layout_table_in(context->semantic_context),
+            element.type_id,
+            ps_ctx_data_layout(context->semantic_context),
+            &element_layout) &&
+        element_layout.is_complete)
+      return 1;
+  }
+  psx_type_layout_t layout = {0};
+  if (!psx_type_layout_of(
+          direct_semantic_types(context),
+          ps_ctx_record_layout_table_in(context->semantic_context),
+          queried_qual_type.type_id,
+          ps_ctx_data_layout(context->semantic_context), &layout) ||
+      !layout.is_complete)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_TYPE_QUERY_INVALID_TYPE,
+        source);
+  return 1;
+}
+
+static int direct_sizeof_operand_is_bitfield(
+    direct_resolution_context_t *context,
+    const node_t *operand) {
+  if (!context) return 0;
+  context->unevaluated_depth++;
+  const node_t *selected = direct_selected_expression(context, operand);
+  if (!selected || selected->kind != ND_MEMBER_ACCESS) {
+    context->unevaluated_depth--;
+    return 0;
+  }
+  psx_hir_member_resolution_t member;
+  int resolved = resolve_direct_member_access(
+      context, (const node_member_access_t *)selected,
+      1, &member);
+  context->unevaluated_depth--;
+  return resolved && member.member.declaration.bit_width > 0;
+}
+
 static int resolve_direct_sizeof_type_name(
     direct_resolution_context_t *context,
     const node_sizeof_query_t *query,
@@ -1041,7 +1119,21 @@ static int resolve_direct_sizeof_type_name(
   psx_qual_type_t queried_qual_type =
       psx_apply_runtime_declarator_qual_type_in_context(
           context->semantic_context, base_qual_type, &application);
-  if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID) return 0;
+  int has_zero_length_array_extension = 0;
+  for (int i = 0; i < effective_application.shape.count; i++) {
+    const psx_declarator_op_t *op =
+        &effective_application.shape.ops[i];
+    if (op->kind == PSX_DECL_OP_ARRAY && op->array_len == 0 &&
+        !op->is_incomplete_array && !op->is_vla_array) {
+      has_zero_length_array_extension = 1;
+      break;
+    }
+  }
+  if (queried_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      !validate_direct_type_query_type(
+          context, &query->base, queried_qual_type, 1,
+          has_zero_length_array_extension))
+    return 0;
 
   int maximum_factors = effective_application.array_bound_count;
   if (maximum_factors > 0) {
@@ -1204,6 +1296,35 @@ static int resolve_direct_sizeof_vla_subscript(
       &binding->plan);
 }
 
+static int resolve_direct_alignof_type_name(
+    direct_resolution_context_t *context,
+    const node_alignof_query_t *query,
+    direct_type_query_binding_t *binding) {
+  if (!context || !query || !query->type_name.syntax || !binding)
+    return 0;
+  psx_type_name_base_resolution_t base_resolution = {0};
+  if (!psx_resolve_type_name_base_in_contexts(
+          context->semantic_context, context->global_registry,
+          context->local_registry, &query->type_name,
+          &base_resolution))
+    return 0;
+  psx_runtime_declarator_application_t application;
+  if (!resolve_direct_declarator_application(
+          context, &query->type_name.syntax->declarator,
+          &application))
+    return 0;
+  psx_qual_type_t queried_qual_type =
+      psx_apply_runtime_declarator_qual_type_in_context(
+          context->semantic_context,
+          base_resolution.base_qual_type, &application);
+  return queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
+         validate_direct_type_query_type(
+             context, &query->base, queried_qual_type, 0, 0) &&
+         psx_resolve_alignof_qual_type_plan_in(
+             context->semantic_context, queried_qual_type,
+             &binding->plan);
+}
+
 static int resolve_direct_type_query(
     direct_resolution_context_t *context, const node_t *syntax,
     direct_type_query_binding_t **out_binding) {
@@ -1234,15 +1355,8 @@ static int resolve_direct_type_query(
   if (syntax->kind == ND_ALIGNOF_QUERY) {
     const node_alignof_query_t *query =
         (const node_alignof_query_t *)syntax;
-    psx_qual_type_t queried_qual_type;
-    resolved = psx_resolve_type_name_qual_type_in_contexts(
-                   context->semantic_context,
-                   context->global_registry,
-                   context->local_registry, &query->type_name,
-                   &queried_qual_type) &&
-               psx_resolve_alignof_qual_type_plan_in(
-                   context->semantic_context, queried_qual_type,
-                   &binding->plan);
+    resolved = resolve_direct_alignof_type_name(
+        context, query, binding);
   } else {
     const node_sizeof_query_t *query =
         (const node_sizeof_query_t *)syntax;
@@ -1250,6 +1364,12 @@ static int resolve_direct_type_query(
       resolved = resolve_direct_sizeof_type_name(
           context, query, binding);
     } else if (query->operand) {
+      if (direct_sizeof_operand_is_bitfield(
+              context, query->operand))
+        return note_direct_semantic_rejection(
+            context,
+            PSX_SYNTAX_TYPED_HIR_REJECTION_SIZEOF_BITFIELD,
+            syntax);
       psx_qual_type_t queried_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
       if (query->operand->kind == ND_SUBSCRIPT &&
@@ -1297,6 +1417,10 @@ static int resolve_direct_type_query(
                      &queried_qual_type)) {
         return 0;
       }
+      if (queried_qual_type.type_id != PSX_TYPE_ID_INVALID &&
+          !validate_direct_type_query_type(
+              context, syntax, queried_qual_type, 1, 0))
+        return 0;
       if (!resolved && query->operand->kind == ND_STRING) {
         const node_string_t *string =
             (const node_string_t *)query->operand;
@@ -1628,6 +1752,29 @@ static void mark_direct_address_taken(
     if (!access->from_pointer)
       mark_direct_address_taken(context, syntax->lhs);
   }
+}
+
+static int direct_lvalue_designates_register_object(
+    direct_resolution_context_t *context,
+    const node_t *syntax) {
+  const node_t *selected = direct_selected_expression(context, syntax);
+  if (!selected) return 0;
+  if (selected->kind == ND_IDENTIFIER) {
+    psx_identifier_expression_resolution_t identifier;
+    return resolve_direct_identifier(
+               context, (const node_identifier_t *)selected,
+               &identifier) &&
+           identifier.symbol.kind == PSX_IDENTIFIER_LOCAL &&
+           ps_lvar_is_register(identifier.symbol.local);
+  }
+  if (selected->kind == ND_MEMBER_ACCESS) {
+    const node_member_access_t *access =
+        (const node_member_access_t *)selected;
+    return !access->from_pointer &&
+           direct_lvalue_designates_register_object(
+               context, selected->lhs);
+  }
+  return 0;
 }
 
 static int direct_binary_kind(
@@ -2155,6 +2302,12 @@ static int preflight_direct_expression_impl(
           PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_BITFIELD,
           syntax);
     if (resolution.status != PSX_ADDRESS_OPERAND_OK) return 0;
+    if (direct_lvalue_designates_register_object(
+            context, operand_syntax))
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_ADDRESS_OF_REGISTER,
+          syntax);
     mark_direct_address_taken(context, syntax->lhs);
     if (qual_type) *qual_type = resolution.result_qual_type;
     return 1;
@@ -5072,6 +5225,8 @@ static int preflight_direct_local_declaration(
             &request, &result) || !result.var ||
         (has_vla_type && !result.vla_runtime_plan))
       return 0;
+    if (declaration->specifier.type_spec.is_register)
+      ps_local_registry_mark_register(result.var);
     psx_qual_type_t declaration_qual_type =
         ps_lvar_decl_qual_type(result.var);
     if (declaration_qual_type.type_id == PSX_TYPE_ID_INVALID)

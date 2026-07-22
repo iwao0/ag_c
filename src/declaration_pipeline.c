@@ -637,6 +637,8 @@ static int append_definition_parameter(
         "canonical parameter lowering failed for '%.*s'",
         name->len, name->str);
   }
+  if (parameter->specifier.type_spec.is_register)
+    ps_local_registry_mark_register(lowered);
   result->parameter_vars[result->nargs] = lowered;
   result->parameter_qual_types[result->nargs] =
       resolution.declaration_qual_type;
