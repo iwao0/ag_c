@@ -19,7 +19,8 @@ typedef struct {
   int (*is_grouping_parenthesis)(void *context, int nesting_depth);
   int (*append_pointer)(void *context, int is_const_qualified,
                         int is_volatile_qualified,
-                        int is_restrict_qualified, int nesting_depth);
+                        int is_restrict_qualified,
+                        int is_atomic_qualified, int nesting_depth);
   void (*diagnose_missing_identifier)(void *context, token_t *tok);
   void (*diagnose_too_complex)(void *context, token_t *tok);
 } psx_declarator_syntax_t;

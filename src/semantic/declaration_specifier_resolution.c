@@ -66,6 +66,9 @@ static int decl_specifier_syntax_supported(
       specifier->alignas_specifier_count > 8 ||
       !tag_action_syntax_supported(&specifier->tag_action))
     return 0;
+  if (specifier->source == PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME &&
+      !specifier->atomic_type_name)
+    return 0;
   for (int i = 0; i < specifier->alignas_specifier_count; i++) {
     const psx_parsed_alignas_t *alignas =
         &specifier->alignas_specifiers[i];
@@ -124,8 +127,13 @@ static psx_qual_type_t resolve_decl_specifier_type_value(
   if (*status != PSX_DECL_SPECIFIER_VALUE_OK)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
-  psx_qual_type_t type = psx_resolve_decl_specifier_qual_type_in_context(
-      context->semantic_context, specifier);
+  psx_qual_type_t type =
+      specifier->source == PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME
+          ? psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+                context->semantic_context, context->global_registry,
+                context->local_registry, specifier)
+          : psx_resolve_decl_specifier_qual_type_in_context(
+                context->semantic_context, specifier);
   if (type.type_id == PSX_TYPE_ID_INVALID)
     *status = PSX_DECL_SPECIFIER_VALUE_INVALID;
   return type;
@@ -330,8 +338,12 @@ void psx_resolve_decl_specifier_value_in_contexts(
   if (resolution->status != PSX_DECL_SPECIFIER_VALUE_OK) return;
   if (request->is_standalone_tag) return;
   resolution->base_qual_type =
-      psx_resolve_decl_specifier_qual_type_in_context(
-          request->semantic_context, request->syntax);
+      request->syntax->source == PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME
+          ? psx_apply_parsed_decl_specifier_qual_type_in_contexts(
+                request->semantic_context, request->global_registry,
+                request->local_registry, request->syntax)
+          : psx_resolve_decl_specifier_qual_type_in_context(
+                request->semantic_context, request->syntax);
   if (resolution->base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_DECL_SPECIFIER_VALUE_INVALID;
     return;

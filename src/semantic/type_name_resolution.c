@@ -47,8 +47,8 @@ static psx_qual_type_t bind_base_qual_type(
             semantic_context, global_registry, local_registry,
             &inner, &inner_type))
       return inner_type;
-    inner_type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
-    return inner_type;
+    return psx_apply_atomic_type_specifier_qual_type_in(
+        semantic_context, inner_type, syntax->diagnostic_token);
   }
 
   const psx_parsed_decl_specifier_t *specifier = &syntax->specifier;

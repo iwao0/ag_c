@@ -15,6 +15,7 @@ typedef struct {
   unsigned int is_const_qualified : 1;
   unsigned int is_volatile_qualified : 1;
   unsigned int is_restrict_qualified : 1;
+  unsigned int is_atomic_qualified : 1;
   unsigned int is_incomplete_array : 1;
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;

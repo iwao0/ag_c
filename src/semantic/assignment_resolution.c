@@ -129,6 +129,11 @@ void psx_resolve_assignment_qual_types_in(
       !resolve_modifiable_target(
           semantic_context, target_type, resolution, &target))
     return;
+  if ((value_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0 &&
+      (target_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) == 0) {
+    resolution->status = PSX_ASSIGNMENT_TYPES_INCOMPATIBLE;
+    return;
+  }
 
   int compatible = 0;
   if (target.kind == PSX_TYPE_BOOL && kind_is_scalar(value.kind)) {
@@ -181,7 +186,7 @@ void psx_resolve_return_qual_types_in(
     psx_return_types_status_t *status) {
   if (!status) return;
   *status = PSX_RETURN_TYPES_INVALID;
-  return_type.qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  return_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_assignment_types_resolution_t assignment;
   psx_resolve_assignment_qual_types_in(
       semantic_context, return_type, value_type,

@@ -369,16 +369,16 @@ static void diagnose_declarator_too_complex(void *context, token_t *tok) {
 
 static int append_declarator_pointer(
     void *context, int is_const, int is_volatile, int is_restrict,
-    int nesting_depth) {
+    int is_atomic, int nesting_depth) {
   (void)nesting_depth;
   declaration_declarator_parse_context_t *parse_context = context;
   psx_parsed_declarator_t *declarator =
       parse_context ? parse_context->declarator : NULL;
-  return declarator && ps_declarator_shape_append_pointer_in(
+  return declarator && ps_declarator_shape_append_pointer_qualified_in(
                            ps_parser_runtime_arena(
                                parse_context->runtime_context),
                            &declarator->declarator_shape,
-                           is_const, is_volatile, is_restrict);
+                           is_const, is_volatile, is_restrict, is_atomic);
 }
 
 static int consume_declarator_suffix(
@@ -401,6 +401,7 @@ static int consume_declarator_suffix(
     int is_const = 0;
     int is_volatile = 0;
     int is_restrict = 0;
+    int is_atomic = 0;
     for (;;) {
       if (current_token(runtime_context)->kind == TK_STATIC) {
         has_static = 1;
@@ -410,6 +411,8 @@ static int consume_declarator_suffix(
         is_volatile = 1;
       } else if (current_token(runtime_context)->kind == TK_RESTRICT) {
         is_restrict = 1;
+      } else if (current_token(runtime_context)->kind == TK_ATOMIC) {
+        is_atomic = 1;
       } else {
         break;
       }
@@ -417,7 +420,8 @@ static int consume_declarator_suffix(
           tk_ctx, current_token(runtime_context)->next);
     }
     if (!parse_context->allow_vla_star &&
-        (has_static || is_const || is_volatile || is_restrict)) {
+        (has_static || is_const || is_volatile || is_restrict ||
+         is_atomic)) {
       ps_diag_ctx_in(
           diagnostics(runtime_context), current_token(runtime_context),
           "declaration-syntax",
@@ -471,6 +475,7 @@ static int consume_declarator_suffix(
       op->is_const_qualified = is_const ? 1u : 0u;
       op->is_volatile_qualified = is_volatile ? 1u : 0u;
       op->is_restrict_qualified = is_restrict ? 1u : 0u;
+      op->is_atomic_qualified = is_atomic ? 1u : 0u;
     }
     if (has_size) {
       psx_parsed_array_bound_t *bound = append_array_bound(
@@ -486,6 +491,7 @@ static int consume_declarator_suffix(
           .is_const_qualified = is_const,
           .is_volatile_qualified = is_volatile,
           .is_restrict_qualified = is_restrict,
+          .is_atomic_qualified = is_atomic,
       };
     }
     return 1;
@@ -813,6 +819,89 @@ static void parse_tag_specifier(
   }
 }
 
+static token_t *token_after_parenthesized_sequence(token_t *token) {
+  if (!token || token->kind != TK_LPAREN) return NULL;
+  int depth = 0;
+  for (token_t *current = token; current; current = current->next) {
+    if (current->kind == TK_LPAREN) depth++;
+    if (current->kind == TK_RPAREN && --depth == 0)
+      return current->next;
+  }
+  return NULL;
+}
+
+static int declaration_starts_atomic_type_name(token_t *token) {
+  while (token) {
+    if (token->kind == TK_ATOMIC && token->next &&
+        token->next->kind == TK_LPAREN)
+      return 1;
+    if (token->kind == TK_ALIGNAS && token->next &&
+        token->next->kind == TK_LPAREN) {
+      token = token_after_parenthesized_sequence(token->next);
+      continue;
+    }
+    if (!psx_is_decl_prefix_token(token->kind)) return 0;
+    token = token->next;
+  }
+  return 0;
+}
+
+static int try_parse_atomic_type_name_decl_specifier(
+    psx_parsed_decl_specifier_t *specifier,
+    const psx_decl_specifier_syntax_options_t *options,
+    declaration_alignas_parse_context_t *alignas_context) {
+  psx_parser_runtime_context_t *runtime_context =
+      options ? options->runtime_context : NULL;
+  if (!runtime_context ||
+      !declaration_starts_atomic_type_name(current_token(runtime_context)))
+    return 0;
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
+  psx_type_spec_syntax_t modifier_syntax = {
+      .context = options->context,
+      .diagnostics = diagnostics(runtime_context),
+      .tokenizer_context = tk_ctx,
+      .name_classifier = options->name_classifier,
+      .consume_alignas_context = alignas_context,
+      .consume_alignas = consume_declaration_alignas,
+      .diagnose_complex_requires_float =
+          options->diagnose_complex_requires_float,
+  };
+  specifier->type_spec.kind = TK_EOF;
+  psx_consume_decl_modifiers_with_syntax_ex(
+      &specifier->type_spec, &modifier_syntax);
+  token_t *atomic_token = current_token(runtime_context);
+  if (!atomic_token || atomic_token->kind != TK_ATOMIC ||
+      !atomic_token->next || atomic_token->next->kind != TK_LPAREN)
+    return 0;
+
+  specifier->atomic_type_name =
+      calloc(1, sizeof(*specifier->atomic_type_name));
+  if (!specifier->atomic_type_name ||
+      !parse_type_name_syntax_at(
+          atomic_token->next->next, options, 1,
+          specifier->atomic_type_name) ||
+      !specifier->atomic_type_name->end ||
+      specifier->atomic_type_name->end->kind != TK_RPAREN) {
+    if (specifier->atomic_type_name) {
+      psx_dispose_type_name_syntax(specifier->atomic_type_name);
+      free(specifier->atomic_type_name);
+      specifier->atomic_type_name = NULL;
+    }
+    ps_diag_ctx_in(
+        diagnostics(runtime_context), atomic_token, "decl", "%s",
+        diag_message_for_in(
+            diagnostics(runtime_context),
+            DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED));
+    return 1;
+  }
+  tk_set_current_token_ctx(
+      tk_ctx, specifier->atomic_type_name->end->next);
+  psx_consume_decl_modifiers_with_syntax_ex(
+      &specifier->type_spec, &modifier_syntax);
+  specifier->source = PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME;
+  return 1;
+}
+
 int psx_try_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options) {
@@ -831,6 +920,9 @@ int psx_try_parse_decl_specifier_syntax_ex(
       .options = options,
       .runtime_context = runtime_context,
   };
+  if (try_parse_atomic_type_name_decl_specifier(
+          specifier, options, &alignas_context))
+    return specifier->source != PSX_PARSED_DECL_TYPE_NONE;
 
   token_kind_t builtin_kind = psx_consume_type_kind_with_syntax_ex(
       &specifier->type_spec,
@@ -917,6 +1009,10 @@ void ps_dispose_decl_specifier_syntax(
       psx_dispose_type_name_syntax(alignas->type_name);
       free(alignas->type_name);
     }
+  }
+  if (specifier->atomic_type_name) {
+    psx_dispose_type_name_syntax(specifier->atomic_type_name);
+    free(specifier->atomic_type_name);
   }
   psx_parsed_tag_action_t *tag_action = &specifier->tag_action;
   if (tag_action->aggregate_body) {

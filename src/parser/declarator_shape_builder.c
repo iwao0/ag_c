@@ -48,12 +48,22 @@ int ps_declarator_shape_append_pointer_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int is_const_qualified, int is_volatile_qualified,
     int is_restrict_qualified) {
+  return ps_declarator_shape_append_pointer_qualified_in(
+      arena_context, shape, is_const_qualified,
+      is_volatile_qualified, is_restrict_qualified, 0);
+}
+
+int ps_declarator_shape_append_pointer_qualified_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int is_const_qualified, int is_volatile_qualified,
+    int is_restrict_qualified, int is_atomic_qualified) {
   psx_declarator_op_t *op = declarator_shape_append(
       arena_context, shape, PSX_DECL_OP_POINTER);
   if (!op) return 0;
   op->is_const_qualified = is_const_qualified ? 1u : 0u;
   op->is_volatile_qualified = is_volatile_qualified ? 1u : 0u;
   op->is_restrict_qualified = is_restrict_qualified ? 1u : 0u;
+  op->is_atomic_qualified = is_atomic_qualified ? 1u : 0u;
   return 1;
 }
 
@@ -143,9 +153,10 @@ int ps_declarator_shape_append_shape_in(
     const psx_declarator_op_t *op = &suffix->ops[i];
     int appended = 0;
     if (op->kind == PSX_DECL_OP_POINTER) {
-      appended = ps_declarator_shape_append_pointer_in(
+      appended = ps_declarator_shape_append_pointer_qualified_in(
           arena_context, shape, op->is_const_qualified,
-          op->is_volatile_qualified, op->is_restrict_qualified);
+          op->is_volatile_qualified, op->is_restrict_qualified,
+          op->is_atomic_qualified);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       if (op->is_vla_array)
         appended = ps_declarator_shape_append_vla_array_in(
@@ -159,6 +170,7 @@ int ps_declarator_shape_append_shape_in(
         copy->is_const_qualified = op->is_const_qualified;
         copy->is_volatile_qualified = op->is_volatile_qualified;
         copy->is_restrict_qualified = op->is_restrict_qualified;
+        copy->is_atomic_qualified = op->is_atomic_qualified;
       }
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       appended = ps_declarator_shape_append_function_in(

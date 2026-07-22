@@ -77,6 +77,8 @@ int psx_resolve_parameter_declaration(
         identity.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
       if (array_op->is_restrict_qualified)
         identity.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
+      if (array_op->is_atomic_qualified)
+        identity.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
     }
   } else if (shape.kind == PSX_TYPE_FUNCTION) {
     identity = ps_ctx_intern_pointer_to_qual_type_in(

@@ -50,6 +50,9 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name);
+psx_qual_type_t psx_apply_atomic_type_specifier_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t inner_type, token_t *diagnostic_token);
 psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

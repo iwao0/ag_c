@@ -16,6 +16,10 @@ int ps_declarator_shape_append_pointer_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int is_const_qualified, int is_volatile_qualified,
     int is_restrict_qualified);
+int ps_declarator_shape_append_pointer_qualified_in(
+    arena_context_t *arena_context, psx_declarator_shape_t *shape,
+    int is_const_qualified, int is_volatile_qualified,
+    int is_restrict_qualified, int is_atomic_qualified);
 int ps_declarator_shape_append_array_in(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     int array_len);

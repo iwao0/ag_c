@@ -132,6 +132,8 @@ static psx_qual_type_t apply_declarator_shape(
           type.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
         if (op->is_restrict_qualified)
           type.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
+        if (op->is_atomic_qualified)
+          type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
         break;
       case PSX_DECL_OP_ARRAY:
         type = ps_ctx_intern_array_of_qual_type_in(

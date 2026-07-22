@@ -45,6 +45,7 @@ typedef enum {
   PSX_PARSED_DECL_TYPE_BUILTIN,
   PSX_PARSED_DECL_TYPE_TAG,
   PSX_PARSED_DECL_TYPEDEF_NAME,
+  PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME,
   PSX_PARSED_DECL_TYPE_IMPLICIT_INT,
 } psx_parsed_decl_type_source_t;
 
@@ -76,6 +77,7 @@ typedef struct {
   psx_parsed_decl_type_source_t source;
   psx_type_spec_result_t type_spec;
   token_ident_t *typedef_name;
+  psx_parsed_type_name_t *atomic_type_name;
   token_t *diagnostic_token;
   psx_parsed_tag_action_t tag_action;
   psx_parsed_alignas_t alignas_specifiers[8];
@@ -90,6 +92,7 @@ typedef struct {
   int is_const_qualified;
   int is_volatile_qualified;
   int is_restrict_qualified;
+  int is_atomic_qualified;
 } psx_parsed_array_bound_t;
 
 typedef struct {

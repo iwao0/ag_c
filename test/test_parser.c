@@ -12464,9 +12464,8 @@ static void test_expr_unary_ops(
   assert_test_integer_cast_hir(test_suite_session,
       "(_Atomic const int)10", PSX_INTEGER_KIND_INT, 0,
       PSX_TYPE_QUALIFIER_ATOMIC | PSX_TYPE_QUALIFIER_CONST, 10);
-  assert_test_integer_cast_hir(test_suite_session,
-      "(_Atomic(_Atomic(int)))11", PSX_INTEGER_KIND_INT, 0,
-      PSX_TYPE_QUALIFIER_ATOMIC, 11);
+  expect_parse_fail(test_suite_session,
+      "int main(void) { return (_Atomic(_Atomic(int)))11; }");
 
   const char *aggregate_cast_cases[] = {
       "int main() { struct S { int x; }; struct S a={1}, b={2}; "
@@ -12646,10 +12645,12 @@ static void test_expr_generic(
   assert_test_generic_number_hir(test_suite_session,
       "_Generic(1.0, float: 11, double: 33, default: 22)", 33);
   assert_test_generic_number_hir(test_suite_session,
-      "_Generic(1, _Atomic(int): 41, default: 42)", 41);
+      "_Generic(1, _Atomic(int): 41, default: 42)", 42);
+  assert_test_generic_number_hir(test_suite_session,
+      "_Generic(1, const int: 41, int: 42)", 42);
   expect_parse_ok(test_suite_session,
       "int main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
-  expect_parse_ok(test_suite_session,
+  expect_parse_fail(test_suite_session,
       "int main(){ return _Generic(1, _Atomic(_Atomic(int)):1, default:2); }");
 
   assert_test_program_return_hir_int(test_suite_session,
@@ -12833,7 +12834,7 @@ static void test_expr_generic(
 
   assert_test_program_return_hir_int(test_suite_session,
       "int main(){ return _Generic(1, int const:2, default:3); }",
-      2);
+      3);
 
   assert_test_program_return_hir_int(test_suite_session,
       "int main(){ int x=0; int const *p=&x; "

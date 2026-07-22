@@ -1474,8 +1474,11 @@ static int preflight_direct_lvalue(
         context, syntax, qual_type);
   }
   if (syntax->kind == ND_SUBSCRIPT) {
-    return preflight_direct_expression(
+    context->suppress_value_decay_depth++;
+    int resolved = preflight_direct_expression(
         context, syntax, qual_type);
+    context->suppress_value_decay_depth--;
+    return resolved;
   }
   if (syntax->kind == ND_MEMBER_ACCESS) {
     psx_hir_member_resolution_t resolution;
@@ -1765,6 +1768,29 @@ static int note_direct_assignment_rejection(
       context, rejection, syntax);
 }
 
+static int direct_syntax_designates_lvalue(
+    direct_resolution_context_t *context, const node_t *syntax) {
+  if (!context || !syntax) return 0;
+  if (syntax->kind == ND_GENERIC_SELECTION)
+    return direct_syntax_designates_lvalue(
+        context, direct_selected_expression(context, syntax));
+  if (syntax->kind == ND_IDENTIFIER) {
+    psx_identifier_expression_resolution_t resolution;
+    if (!resolve_direct_identifier(
+            context, (const node_identifier_t *)syntax,
+            &resolution))
+      return 0;
+    return resolution.symbol.kind == PSX_IDENTIFIER_LOCAL ||
+           resolution.symbol.kind == PSX_IDENTIFIER_PARAMETER ||
+           resolution.symbol.kind == PSX_IDENTIFIER_GLOBAL_OBJECT;
+  }
+  return syntax->kind == ND_UNARY_DEREF ||
+         syntax->kind == ND_SUBSCRIPT ||
+         syntax->kind == ND_MEMBER_ACCESS ||
+         syntax->kind == ND_COMPOUND_LITERAL ||
+         syntax->kind == ND_STRING;
+}
+
 static int preflight_direct_expression(
     direct_resolution_context_t *context,
     const node_t *syntax,
@@ -1778,8 +1804,15 @@ static int preflight_direct_expression(
             context->semantic_context, *qual_type);
     if (converted.type_id == PSX_TYPE_ID_INVALID)
       resolved = 0;
-    else
+    else {
+      psx_type_shape_t shape = {0};
+      if (direct_syntax_designates_lvalue(context, syntax) &&
+          direct_describe_qual_type(context, converted, &shape) &&
+          shape.kind != PSX_TYPE_ARRAY &&
+          shape.kind != PSX_TYPE_FUNCTION)
+        converted.qualifiers = PSX_TYPE_QUALIFIER_NONE;
       *qual_type = converted;
+    }
   }
   if (!resolved && context && context->failure &&
       context->failure->status == PSX_RESOLVED_HIR_BUILD_OK &&
@@ -2769,13 +2802,22 @@ static psx_semantic_node_t *apply_direct_expression_decay(
           context->semantic_context, source_type);
   if (converted_type.type_id == PSX_TYPE_ID_INVALID)
     return NULL;
+  psx_type_shape_t converted_shape = {0};
+  if (direct_syntax_designates_lvalue(context, syntax) &&
+      direct_describe_qual_type(
+          context, converted_type, &converted_shape) &&
+      converted_shape.kind != PSX_TYPE_ARRAY &&
+      converted_shape.kind != PSX_TYPE_FUNCTION)
+    converted_type.qualifiers = PSX_TYPE_QUALIFIER_NONE;
   if (converted_type.type_id == source_type.type_id &&
       converted_type.qualifiers == source_type.qualifiers)
     return expression;
   psx_semantic_node_t *children[] = {expression};
   psx_hir_edge_kind_t edges[] = {PSX_HIR_EDGE_LHS};
   psx_hir_node_spec_t spec = {
-      .kind = PSX_HIR_ADDRESS,
+      .kind = converted_type.type_id == source_type.type_id
+                  ? PSX_HIR_CAST
+                  : PSX_HIR_ADDRESS,
       .attached_qual_type = {
           PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
   };
@@ -4257,7 +4299,8 @@ static int preflight_direct_flat_initializer(
       value_type = evaluation_types[item->evaluation_group];
       psx_qual_type_t temporary_type = {
           item->target_qual_type.type_id,
-          PSX_TYPE_QUALIFIER_NONE};
+          item->target_qual_type.qualifiers &
+              PSX_TYPE_QUALIFIER_ATOMIC};
       if (temporary_types[item->evaluation_group].type_id ==
           PSX_TYPE_ID_INVALID) {
         temporary_types[item->evaluation_group] = temporary_type;
@@ -4279,7 +4322,8 @@ static int preflight_direct_flat_initializer(
         context->semantic_context,
         (psx_qual_type_t){
             item->target_qual_type.type_id,
-            PSX_TYPE_QUALIFIER_NONE},
+            item->target_qual_type.qualifiers &
+                PSX_TYPE_QUALIFIER_ATOMIC},
         value_type, is_null_pointer_constant, &assignment);
     if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
       return note_direct_assignment_rejection(
@@ -5016,7 +5060,8 @@ static int preflight_direct_local_declaration(
             context->semantic_context,
             (psx_qual_type_t){
                 declaration_qual_type.type_id,
-                PSX_TYPE_QUALIFIER_NONE},
+                declaration_qual_type.qualifiers &
+                    PSX_TYPE_QUALIFIER_ATOMIC},
             value_type, is_null_pointer_constant, &assignment);
         if (assignment.status != PSX_ASSIGNMENT_TYPES_OK)
           return note_direct_assignment_rejection(
@@ -5467,8 +5512,8 @@ static psx_semantic_node_t *build_direct_flat_initializer(
     psx_assignment_types_resolution_t assignment;
     psx_qual_type_t initialization_target_type =
         psx_semantic_node_expression_qual_type(target);
-    initialization_target_type.qualifiers =
-        PSX_TYPE_QUALIFIER_NONE;
+    initialization_target_type.qualifiers &=
+        PSX_TYPE_QUALIFIER_ATOMIC;
     psx_resolve_assignment_qual_types_in(
         context->semantic_context,
         initialization_target_type,
@@ -5565,8 +5610,8 @@ static psx_semantic_node_t *build_direct_flat_initializer(
     psx_assignment_types_resolution_t assignment;
     psx_qual_type_t initialization_target_type =
         psx_semantic_node_expression_qual_type(target);
-    initialization_target_type.qualifiers =
-        PSX_TYPE_QUALIFIER_NONE;
+    initialization_target_type.qualifiers &=
+        PSX_TYPE_QUALIFIER_ATOMIC;
     psx_resolve_assignment_qual_types_in(
         context->semantic_context,
         initialization_target_type,

@@ -202,7 +202,9 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
         type_name->atomic_inner);
     if (base_qual_type.type_id == PSX_TYPE_ID_INVALID)
       return base_qual_type;
-    base_qual_type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+    base_qual_type = psx_apply_atomic_type_specifier_qual_type_in(
+        semantic_context, base_qual_type,
+        type_name->diagnostic_token);
   } else {
     apply_decl_tag_action(
         &type_name->specifier.tag_action, semantic_context,
@@ -224,6 +226,34 @@ psx_qual_type_t psx_apply_parsed_type_name_qual_type_in_contexts(
           .base_qual_type = base_qual_type,
           .declarator_shape = &shape,
       });
+}
+
+psx_qual_type_t psx_apply_atomic_type_specifier_qual_type_in(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t inner_type, token_t *diagnostic_token) {
+  psx_qual_type_t invalid = {
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
+  if (!semantic_context || inner_type.type_id == PSX_TYPE_ID_INVALID)
+    return invalid;
+  psx_type_shape_t shape = {0};
+  if (inner_type.qualifiers != PSX_TYPE_QUALIFIER_NONE ||
+      !psx_semantic_type_table_describe(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          inner_type.type_id, &shape) ||
+      shape.kind == PSX_TYPE_VOID || shape.kind == PSX_TYPE_ARRAY ||
+      shape.kind == PSX_TYPE_FUNCTION ||
+      psx_type_layout_sizeof(
+          ps_ctx_semantic_type_table_in(semantic_context),
+          ps_ctx_record_layout_table_in(semantic_context),
+          inner_type.type_id, ps_ctx_data_layout(semantic_context)) <= 0) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "atomic-type-specifier",
+        "_Atomic(type-name) requires an unqualified complete object type");
+    return invalid;
+  }
+  inner_type.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  return inner_type;
 }
 
 psx_qual_type_t psx_apply_parsed_declarator_qual_type_in_contexts(
@@ -382,6 +412,32 @@ psx_qual_type_t psx_apply_parsed_decl_specifier_qual_type_in_contexts(
   if (!semantic_context || !global_registry || !local_registry || !specifier)
     return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
                              PSX_TYPE_QUALIFIER_NONE};
+  if (specifier->source == PSX_PARSED_DECL_TYPE_ATOMIC_TYPE_NAME) {
+    if (!specifier->atomic_type_name)
+      return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                               PSX_TYPE_QUALIFIER_NONE};
+    psx_qual_type_t type = psx_apply_parsed_type_name_qual_type_in_contexts(
+        semantic_context, global_registry, local_registry,
+        specifier->atomic_type_name);
+    type = psx_apply_atomic_type_specifier_qual_type_in(
+        semantic_context, type, specifier->diagnostic_token);
+    if (type.type_id == PSX_TYPE_ID_INVALID) return type;
+    if (specifier->type_spec.is_const_qualified)
+      type.qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+    if (specifier->type_spec.is_volatile_qualified)
+      type.qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+    if (specifier->type_spec.is_restrict_qualified) {
+      psx_type_shape_t shape = {0};
+      if (!psx_semantic_type_table_describe(
+              ps_ctx_semantic_type_table_in(semantic_context),
+              type.type_id, &shape) ||
+          shape.kind != PSX_TYPE_POINTER)
+        return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+      type.qualifiers |= PSX_TYPE_QUALIFIER_RESTRICT;
+    }
+    return type;
+  }
   apply_decl_tag_action(
       &specifier->tag_action, semantic_context,
       global_registry, local_registry);
