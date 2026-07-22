@@ -592,6 +592,10 @@ probes_found_bugs/pp_active_macro_redefinition.c
 probes_found_bugs/qualified_pointer_array_function.c
 probes_found_bugs/prototype_typedef_array_qualifiers.c
 probes_found_bugs/local_typedef_object_shadow_restore.c
+probes_found_bugs/address_of_parameter_subarray.c
+probes_found_bugs/address_of_vla_subarray.c
+probes_found_bugs/address_of_struct_member_subarray.c
+probes_found_bugs/conditional_qualified_array_pointer.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c
