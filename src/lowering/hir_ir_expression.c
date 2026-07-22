@@ -460,67 +460,71 @@ static ir_val_t emit_float_binary(
   return instruction->dst;
 }
 
-ir_val_t hir_ir_materialize_complex_operand(
-    hir_ir_context_t *context, const psx_hir_node_t *node,
+static ir_val_t convert_complex_pointer(
+    hir_ir_context_t *context, ir_val_t source,
+    ir_mir_type_info_t source_type,
     ir_mir_type_info_t target_type) {
-  ir_mir_type_info_t source_type = hir_ir_classify_node_type(context, node);
-  if (hir_ir_is_complex_type(source_type)) {
-    ir_val_t source = hir_ir_build_expr(context, node);
-    if (context->status != IR_HIR_BUILD_OK ||
-        source.type != IR_TY_PTR)
-      return ir_val_none();
-    if (source_type.type == target_type.type &&
-        source_type.source_size == target_type.source_size)
-      return source;
+  if (source.type != IR_TY_PTR ||
+      !hir_ir_is_complex_type(source_type) ||
+      !hir_ir_is_complex_type(target_type))
+    return hir_ir_unsupported_expr(context);
+  if (source_type.type == target_type.type &&
+      source_type.source_size == target_type.source_size)
+    return source;
 
-    int source_half = ir_type_fixed_size(source_type.type);
-    int target_half = ir_type_fixed_size(target_type.type);
-    int slot = hir_ir_allocate_scalar_temp(
-        context, target_type.source_size,
-        target_half >= 8 ? 8 : 4);
-    if (slot < 0) return ir_val_none();
-    ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
-    ir_mir_type_info_t source_component = {
-        .type = source_type.type,
-        .type_class = IR_MIR_TYPE_FLOAT,
-        .source_size = source_half,
-    };
-    ir_mir_type_info_t target_component = {
-        .type = target_type.type,
-        .type_class = IR_MIR_TYPE_FLOAT,
-        .source_size = target_half,
-    };
-    for (int part = 0; part < 2; part++) {
-      ir_val_t source_pointer = source;
-      ir_val_t destination_pointer = destination;
-      if (part == 1) {
-        source_pointer = hir_ir_pointer_with_offset(
-            context, source, source_half);
-        destination_pointer = hir_ir_pointer_with_offset(
-            context, destination, target_half);
-      }
-      if (context->status != IR_HIR_BUILD_OK)
-        return ir_val_none();
-      ir_val_t component = load_direct_value(
-          context, source_pointer, source_type.type);
-      if (context->status == IR_HIR_BUILD_OK)
-        component = hir_ir_coerce_direct_value(
-            context, component, source_component, target_component);
-      if (context->status != IR_HIR_BUILD_OK ||
-          !hir_ir_store_direct_value(
-              context, destination_pointer, component))
-        return ir_val_none();
+  int source_half = ir_type_fixed_size(source_type.type);
+  int target_half = ir_type_fixed_size(target_type.type);
+  int slot = hir_ir_allocate_scalar_temp(
+      context, target_type.source_size,
+      target_half >= 8 ? 8 : 4);
+  if (slot < 0) return ir_val_none();
+  ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
+  ir_mir_type_info_t source_component = {
+      .type = source_type.type,
+      .type_class = IR_MIR_TYPE_FLOAT,
+      .source_size = source_half,
+  };
+  ir_mir_type_info_t target_component = {
+      .type = target_type.type,
+      .type_class = IR_MIR_TYPE_FLOAT,
+      .source_size = target_half,
+  };
+  for (int part = 0; part < 2; part++) {
+    ir_val_t source_pointer = source;
+    ir_val_t destination_pointer = destination;
+    if (part == 1) {
+      source_pointer = hir_ir_pointer_with_offset(
+          context, source, source_half);
+      destination_pointer = hir_ir_pointer_with_offset(
+          context, destination, target_half);
     }
-    return destination;
+    if (context->status != IR_HIR_BUILD_OK)
+      return ir_val_none();
+    ir_val_t component = load_direct_value(
+        context, source_pointer, source_type.type);
+    if (context->status == IR_HIR_BUILD_OK)
+      component = hir_ir_coerce_direct_value(
+          context, component, source_component, target_component);
+    if (context->status != IR_HIR_BUILD_OK ||
+        !hir_ir_store_direct_value(
+            context, destination_pointer, component))
+      return ir_val_none();
   }
-  if (!hir_ir_is_scalar_value_type(source_type))
+  return destination;
+}
+
+static ir_val_t materialize_direct_value_as_complex(
+    hir_ir_context_t *context, ir_val_t real,
+    ir_mir_type_info_t source_type,
+    ir_mir_type_info_t target_type) {
+  if (!hir_ir_is_scalar_value_type(source_type) ||
+      !hir_ir_is_complex_type(target_type))
     return hir_ir_unsupported_expr(context);
   int half = ir_type_fixed_size(target_type.type);
   int slot = hir_ir_allocate_scalar_temp(
       context, target_type.source_size, half >= 8 ? 8 : 4);
   if (slot < 0) return ir_val_none();
   ir_val_t destination = ir_val_vreg(slot, IR_TY_PTR);
-  ir_val_t real = hir_ir_build_expr(context, node);
   ir_mir_type_info_t component_type = {
       .type = target_type.type,
       .type_class = IR_MIR_TYPE_FLOAT,
@@ -549,31 +553,27 @@ ir_val_t hir_ir_materialize_complex_operand(
   return destination;
 }
 
-static ir_val_t build_complex_binary(
+ir_val_t hir_ir_materialize_complex_operand(
     hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t target_type) {
+  ir_mir_type_info_t source_type = hir_ir_classify_node_type(context, node);
+  ir_val_t source = hir_ir_build_expr(context, node);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (hir_ir_is_complex_type(source_type))
+    return convert_complex_pointer(
+        context, source, source_type, target_type);
+  return materialize_direct_value_as_complex(
+      context, source, source_type, target_type);
+}
+
+static ir_val_t emit_complex_binary_values(
+    hir_ir_context_t *context, psx_hir_node_kind_t kind,
+    ir_val_t left, ir_val_t right,
     ir_mir_type_info_t type) {
-  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
-  const psx_hir_node_t *left_node = hir_ir_child_for_edge(
-      context, node, PSX_HIR_EDGE_LHS, 0);
-  const psx_hir_node_t *right_node = hir_ir_child_for_edge(
-      context, node, PSX_HIR_EDGE_RHS, 0);
-  if (!left_node || !right_node || !hir_ir_is_complex_type(type) ||
+  if (!hir_ir_is_complex_type(type) ||
+      left.type != IR_TY_PTR || right.type != IR_TY_PTR ||
       (kind != PSX_HIR_ADD && kind != PSX_HIR_SUB &&
        kind != PSX_HIR_MUL && kind != PSX_HIR_DIV))
-    return hir_ir_unsupported_expr(context);
-  ir_mir_type_info_t left_type = hir_ir_classify_node_type(context, left_node);
-  ir_mir_type_info_t right_type = hir_ir_classify_node_type(context, right_node);
-  if ((!hir_ir_is_complex_type(left_type) &&
-       !hir_ir_is_scalar_value_type(left_type)) ||
-      (!hir_ir_is_complex_type(right_type) &&
-       !hir_ir_is_scalar_value_type(right_type)))
-    return hir_ir_unsupported_expr(context);
-  ir_val_t left = hir_ir_materialize_complex_operand(
-      context, left_node, type);
-  ir_val_t right = hir_ir_materialize_complex_operand(
-      context, right_node, type);
-  if (context->status != IR_HIR_BUILD_OK ||
-      left.type != IR_TY_PTR || right.type != IR_TY_PTR)
     return hir_ir_unsupported_expr(context);
   int half = ir_type_fixed_size(type.type);
   ir_val_t left_imaginary = hir_ir_pointer_with_offset(context, left, half);
@@ -640,6 +640,33 @@ static ir_val_t build_complex_binary(
       !hir_ir_store_direct_value(context, imaginary_destination, imaginary))
     return ir_val_none();
   return destination;
+}
+
+static ir_val_t build_complex_binary(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_mir_type_info_t type) {
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  const psx_hir_node_t *left_node = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_LHS, 0);
+  const psx_hir_node_t *right_node = hir_ir_child_for_edge(
+      context, node, PSX_HIR_EDGE_RHS, 0);
+  if (!left_node || !right_node || !hir_ir_is_complex_type(type))
+    return hir_ir_unsupported_expr(context);
+  ir_mir_type_info_t left_type = hir_ir_classify_node_type(context, left_node);
+  ir_mir_type_info_t right_type = hir_ir_classify_node_type(context, right_node);
+  if ((!hir_ir_is_complex_type(left_type) &&
+       !hir_ir_is_scalar_value_type(left_type)) ||
+      (!hir_ir_is_complex_type(right_type) &&
+       !hir_ir_is_scalar_value_type(right_type)))
+    return hir_ir_unsupported_expr(context);
+  ir_val_t left = hir_ir_materialize_complex_operand(
+      context, left_node, type);
+  ir_val_t right = hir_ir_materialize_complex_operand(
+      context, right_node, type);
+  if (context->status != IR_HIR_BUILD_OK)
+    return ir_val_none();
+  return emit_complex_binary_values(
+      context, kind, left, right, type);
 }
 
 static ir_val_t emit_float_negate(
