@@ -2,23 +2,35 @@
 
 #include "../type_layout.h"
 
-int psx_plan_local_storage_for_type_id(
+int psx_plan_local_storage_for_qual_type(
     const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts, psx_type_id_t type_id,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
     const ag_data_layout_t *data_layout, psx_local_storage_plan_t *out) {
   psx_type_shape_t type = {0};
-  if (!out || !psx_semantic_type_table_describe(types, type_id, &type) ||
+  if (!out || !psx_semantic_type_table_qual_type_is_valid(types, qual_type) ||
+      !psx_semantic_type_table_describe(types, qual_type.type_id, &type) ||
       type.kind == PSX_TYPE_FUNCTION || type.kind == PSX_TYPE_VOID ||
-      psx_semantic_type_table_contains_vla_array(types, type_id))
+      psx_semantic_type_table_contains_vla_array(types, qual_type.type_id))
     return 0;
-  int storage_size =
-      psx_type_layout_sizeof(types, record_layouts, type_id, data_layout);
+  int storage_size = psx_qual_type_layout_sizeof(
+      types, record_layouts, qual_type, data_layout);
   if (storage_size <= 0) return 0;
 
-  int alignment =
-      psx_type_layout_alignof(types, record_layouts, type_id, data_layout);
+  int alignment = psx_qual_type_layout_alignof(
+      types, record_layouts, qual_type, data_layout);
   if (alignment <= 0) return 0;
   out->storage_size = storage_size;
   out->alignment = alignment;
   return 1;
+}
+
+int psx_plan_local_storage_for_type_id(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts, psx_type_id_t type_id,
+    const ag_data_layout_t *data_layout, psx_local_storage_plan_t *out) {
+  return psx_plan_local_storage_for_qual_type(
+      types, record_layouts,
+      (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE},
+      data_layout, out);
 }

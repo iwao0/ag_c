@@ -123,23 +123,71 @@ static int complete_array_layout(
   return 1;
 }
 
-static int layout_of_id_recursive(
+static int apply_atomic_layout(
+    unsigned int qualifiers, const ag_data_layout_t *data_layout,
+    psx_type_layout_t *layout) {
+  if ((qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) == 0) return 1;
+  if (!layout || !layout->is_complete || layout->size <= 0) return 0;
+  int promoted_max =
+      ag_data_layout_atomic_promoted_max_size(data_layout);
+  int max_alignment =
+      ag_data_layout_atomic_max_alignment(data_layout);
+  if (promoted_max <= 0 || max_alignment <= 0) return 0;
+  if (layout->size > promoted_max) return 1;
+  int promoted_size = 1;
+  while (promoted_size < layout->size) {
+    if (promoted_size > promoted_max / 2) return 0;
+    promoted_size *= 2;
+  }
+  layout->size = promoted_size;
+  int atomic_alignment = promoted_size < max_alignment
+                             ? promoted_size : max_alignment;
+  if (atomic_alignment > layout->alignment)
+    layout->alignment = atomic_alignment;
+  return 1;
+}
+
+static int layout_of_qual_type_recursive(
     const psx_semantic_type_table_t *types,
-    const psx_record_layout_table_t *record_layouts, psx_type_id_t type_id,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
     const ag_data_layout_t *data_layout, psx_type_layout_t *out) {
   psx_type_shape_t type = {0};
-  if (!out || !psx_semantic_type_table_describe(types, type_id, &type))
+  if (!out || !psx_semantic_type_table_qual_type_is_valid(
+                  types, qual_type) ||
+      !psx_semantic_type_table_describe(
+          types, qual_type.type_id, &type))
     return 0;
-  if (type.kind != PSX_TYPE_ARRAY)
-    return layout_non_array_with_records(&type, record_layouts, data_layout,
-                                         out);
-  psx_type_id_t element_type_id = psx_semantic_type_table_base(
-      types, type_id).type_id;
+  if (type.kind != PSX_TYPE_ARRAY) {
+    if (!layout_non_array_with_records(
+            &type, record_layouts, data_layout, out))
+      return 0;
+    return apply_atomic_layout(
+        qual_type.qualifiers, data_layout, out);
+  }
+  if ((qual_type.qualifiers & PSX_TYPE_QUALIFIER_ATOMIC) != 0)
+    return 0;
+  psx_qual_type_t element_type = psx_semantic_type_table_base(
+      types, qual_type.type_id);
   psx_type_layout_t element = {0};
-  if (!layout_of_id_recursive(types, record_layouts, element_type_id,
-                              data_layout, &element))
+  if (!layout_of_qual_type_recursive(
+          types, record_layouts, element_type,
+          data_layout, &element))
     return 0;
   return complete_array_layout(&type, &element, out);
+}
+
+int psx_qual_type_layout_of(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
+    const ag_data_layout_t *data_layout,
+    psx_type_layout_t *out) {
+  if (!types || !record_layouts || !ag_data_layout_is_valid(data_layout) ||
+      !out)
+    return 0;
+  return layout_of_qual_type_recursive(
+      types, record_layouts, qual_type, data_layout, out);
 }
 
 int psx_type_layout_of(const psx_semantic_type_table_t *types,
@@ -150,8 +198,23 @@ int psx_type_layout_of(const psx_semantic_type_table_t *types,
   if (!types || !record_layouts || !ag_data_layout_is_valid(data_layout) ||
       !out)
     return 0;
-  return layout_of_id_recursive(types, record_layouts, type_id, data_layout,
-                                out);
+  return psx_qual_type_layout_of(
+      types, record_layouts,
+      (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE},
+      data_layout, out);
+}
+
+int psx_qual_type_layout_sizeof(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
+    const ag_data_layout_t *data_layout) {
+  psx_type_layout_t layout = {0};
+  return psx_qual_type_layout_of(
+             types, record_layouts, qual_type, data_layout, &layout) &&
+                 layout.is_complete
+             ? layout.size
+             : 0;
 }
 
 int psx_type_layout_sizeof(const psx_semantic_type_table_t *types,
@@ -173,6 +236,18 @@ int psx_type_layout_alignof(const psx_semantic_type_table_t *types,
   psx_type_layout_t layout = {0};
   return psx_type_layout_of(types, record_layouts, type_id, data_layout,
                             &layout)
+             ? layout.alignment
+             : 0;
+}
+
+int psx_qual_type_layout_alignof(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
+    const ag_data_layout_t *data_layout) {
+  psx_type_layout_t layout = {0};
+  return psx_qual_type_layout_of(
+             types, record_layouts, qual_type, data_layout, &layout)
              ? layout.alignment
              : 0;
 }

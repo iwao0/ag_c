@@ -9178,6 +9178,14 @@ static void test_target_type_layout_boundary(
       ag_target_info_data_layout(&host)));
   ASSERT_TRUE(ag_data_layout_is_valid(
       ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(16, ag_data_layout_atomic_promoted_max_size(
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, ag_data_layout_atomic_max_alignment(
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, ag_data_layout_atomic_promoted_max_size(
+                    ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, ag_data_layout_atomic_max_alignment(
+                   ag_target_info_data_layout(&wasm)));
 
   const ir_abi_target_policy_t *host_abi_policy =
       ir_abi_target_policy_for(&host);
@@ -9221,6 +9229,21 @@ static void test_target_type_layout_boundary(
   incomplete_target.data_layout
       .scalar[AG_TARGET_SCALAR_INT].alignment = 0;
   ASSERT_TRUE(!ag_target_info_is_valid(&incomplete_target));
+  ag_target_info_t missing_atomic_promotion = host;
+  missing_atomic_promotion.data_layout.atomic_promoted_max_size = 0;
+  ASSERT_TRUE(!ag_target_info_is_valid(&missing_atomic_promotion));
+  ag_target_info_t missing_atomic_alignment = host;
+  missing_atomic_alignment.data_layout.atomic_max_alignment = 0;
+  ASSERT_TRUE(!ag_target_info_is_valid(&missing_atomic_alignment));
+  ag_target_info_t excessive_atomic_alignment = host;
+  excessive_atomic_alignment.data_layout.atomic_max_alignment = 32;
+  ASSERT_TRUE(!ag_target_info_is_valid(&excessive_atomic_alignment));
+  ag_target_info_t narrower_atomic_alignment = host;
+  narrower_atomic_alignment.data_layout.atomic_max_alignment = 8;
+  ASSERT_TRUE(ag_target_info_is_valid(&narrower_atomic_alignment));
+  ASSERT_TRUE(!ag_data_layout_equal(
+      ag_target_info_data_layout(&host),
+      ag_target_info_data_layout(&narrower_atomic_alignment)));
   ag_compilation_session_t invalid_session;
   ASSERT_TRUE(ag_compilation_session_create(NULL) == NULL);
   ASSERT_TRUE(!ag_compilation_session_init(
@@ -9253,6 +9276,13 @@ static void test_target_type_layout_boundary(
   psx_qual_type_t float_complex =
       psx_semantic_type_table_intern_floating(
           types, PSX_FLOATING_KIND_FLOAT, 1);
+  psx_qual_type_t double_complex =
+      psx_semantic_type_table_intern_floating(
+          types, PSX_FLOATING_KIND_DOUBLE, 1);
+  psx_qual_type_t atomic_float_complex = float_complex;
+  atomic_float_complex.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  psx_qual_type_t atomic_double_complex = double_complex;
+  atomic_double_complex.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
   psx_qual_type_t pointer =
       psx_semantic_type_table_intern_pointer_to(
           types, integer);
@@ -9280,6 +9310,24 @@ static void test_target_type_layout_boundary(
                     types, session_layouts,
                     pointer_array.type_id,
                     ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, psx_qual_type_layout_sizeof(
+                   types, session_layouts, atomic_float_complex,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(8, psx_qual_type_layout_alignof(
+                   types, session_layouts, atomic_float_complex,
+                   ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_sizeof(
+                    types, session_layouts, atomic_double_complex,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_alignof(
+                    types, session_layouts, atomic_double_complex,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_sizeof(
+                    types, session_layouts, atomic_double_complex,
+                    ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, psx_qual_type_layout_alignof(
+                   types, session_layouts, atomic_double_complex,
+                   ag_target_info_data_layout(&wasm)));
 
   ag_target_info_t wide_pointer_target = host;
   wide_pointer_target.data_layout.pointer_size = 16;
@@ -9439,6 +9487,65 @@ static void test_target_type_layout_boundary(
                    types, record_layouts,
                    record_type.type_id,
                    ag_target_info_data_layout(&wasm)));
+
+  psx_record_id_t promoted_record_id = 0xfacedu;
+  psx_record_decl_t promoted_record = {
+      .record_id = promoted_record_id,
+      .record_kind = PSX_TYPE_STRUCT,
+      .tag_name = (char *)"__PromotedAtomicRecord",
+      .tag_len = 22,
+      .is_complete = 1,
+  };
+  ASSERT_TRUE(psx_record_decl_table_define(
+      (psx_record_decl_table_t *)
+          ps_ctx_record_decl_table_in(
+              test_semantic_context(test_suite_session)),
+      &promoted_record));
+  psx_qual_type_t promoted_record_type =
+      psx_semantic_type_table_intern_record(
+          types, promoted_record_id);
+  ASSERT_TRUE(promoted_record_type.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, promoted_record_id,
+      ag_target_info_data_layout(&host), 12, 4, NULL, 0));
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, promoted_record_id,
+      ag_target_info_data_layout(&wasm), 12, 4, NULL, 0));
+  psx_qual_type_t atomic_promoted_record = promoted_record_type;
+  atomic_promoted_record.qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  ASSERT_EQ(12, psx_type_layout_sizeof(
+                    types, record_layouts,
+                    promoted_record_type.type_id,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_sizeof(
+                    types, record_layouts, atomic_promoted_record,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_alignof(
+                    types, record_layouts, atomic_promoted_record,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(16, psx_qual_type_layout_sizeof(
+                    types, record_layouts, atomic_promoted_record,
+                    ag_target_info_data_layout(&wasm)));
+  ASSERT_EQ(8, psx_qual_type_layout_alignof(
+                   types, record_layouts, atomic_promoted_record,
+                   ag_target_info_data_layout(&wasm)));
+  psx_qual_type_t atomic_promoted_record_array =
+      psx_semantic_type_table_intern_array_of(
+          types, atomic_promoted_record, 2, 0);
+  ASSERT_EQ(32, psx_type_layout_sizeof(
+                    types, record_layouts,
+                    atomic_promoted_record_array.type_id,
+                    ag_target_info_data_layout(&host)));
+  ASSERT_EQ(32, psx_type_layout_sizeof(
+                    types, record_layouts,
+                    atomic_promoted_record_array.type_id,
+                    ag_target_info_data_layout(&wasm)));
+  psx_local_storage_plan_t atomic_local_plan = {0};
+  ASSERT_TRUE(psx_plan_local_storage_for_qual_type(
+      types, record_layouts, atomic_promoted_record,
+      ag_target_info_data_layout(&host), &atomic_local_plan));
+  ASSERT_EQ(16, atomic_local_plan.storage_size);
+  ASSERT_EQ(16, atomic_local_plan.alignment);
 
   const psx_record_layout_t *host_record_layout =
       psx_record_layout_table_lookup(

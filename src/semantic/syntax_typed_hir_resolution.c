@@ -1211,10 +1211,10 @@ static int resolve_direct_sizeof_type_name(
           semantic_types, factor_base_qual_type.type_id,
           &factor_base_shape))
     return 0;
-  long long factor = psx_type_layout_sizeof(
+  long long factor = psx_qual_type_layout_sizeof(
       semantic_types,
       ps_ctx_record_layout_table_in(context->semantic_context),
-      factor_base_qual_type.type_id,
+      factor_base_qual_type,
       ps_ctx_data_layout(context->semantic_context));
   if (factor_base_shape.kind == PSX_TYPE_VOID) factor = 1;
   for (int i = effective_application.shape.count - 1;

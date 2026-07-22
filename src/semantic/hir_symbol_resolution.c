@@ -19,10 +19,10 @@ int psx_resolve_global_hir_symbol_spec_in(
   const psx_record_layout_table_t *record_layouts =
       ps_ctx_record_layout_table_in(semantic_context);
   const ag_data_layout_t *data_layout = ps_ctx_data_layout(semantic_context);
-  int byte_size = psx_type_layout_sizeof(semantic_types, record_layouts,
-                                         qual_type.type_id, data_layout);
-  int alignment = psx_type_layout_alignof(semantic_types, record_layouts,
-                                          qual_type.type_id, data_layout);
+  int byte_size = psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, qual_type, data_layout);
+  int alignment = psx_qual_type_layout_alignof(
+      semantic_types, record_layouts, qual_type, data_layout);
   int requested_alignment = ps_gvar_requested_alignment(global);
   if (requested_alignment > alignment)
     alignment = requested_alignment;
@@ -40,11 +40,11 @@ int psx_resolve_global_hir_symbol_spec_in(
         semantic_types, qual_type.type_id);
     if (base.type_id != PSX_TYPE_ID_INVALID) {
       if (byte_size <= 0)
-        byte_size = psx_type_layout_sizeof(semantic_types, record_layouts,
-                                           base.type_id, data_layout);
+        byte_size = psx_qual_type_layout_sizeof(
+            semantic_types, record_layouts, base, data_layout);
       if (alignment <= 0)
-        alignment = psx_type_layout_alignof(semantic_types, record_layouts,
-                                            base.type_id, data_layout);
+        alignment = psx_qual_type_layout_alignof(
+            semantic_types, record_layouts, base, data_layout);
     }
   }
   /* An incomplete record object may likewise be named only for operations

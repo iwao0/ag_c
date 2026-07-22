@@ -188,7 +188,6 @@ static void resolve_aggregate_object_placement(
   state->bitfield_bits_used = 0;
 
   int alignment = request->natural_alignment;
-  if (alignment > 8) alignment = 8;
   if (request->pack_alignment > 0 && request->pack_alignment < alignment)
     alignment = request->pack_alignment;
   if (request->requested_alignment > alignment)
@@ -353,10 +352,10 @@ void psx_resolve_aggregate_member_declaration(
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
     const psx_record_layout_table_t *record_layouts =
         ps_ctx_record_layout_table_in(semantic_context);
-    int storage_size = psx_type_layout_sizeof(semantic_types, record_layouts,
-                                         identity.type_id, data_layout);
-    int storage_alignment = psx_type_layout_alignof(semantic_types, record_layouts,
-                                               identity.type_id, data_layout);
+    int storage_size = psx_qual_type_layout_sizeof(
+        semantic_types, record_layouts, identity, data_layout);
+    int storage_alignment = psx_qual_type_layout_alignof(
+        semantic_types, record_layouts, identity, data_layout);
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;

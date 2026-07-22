@@ -13,10 +13,10 @@ lvar_t *lower_complete_local_object(
       !request->lowering_context) return NULL;
 
   psx_local_storage_plan_t plan = {0};
-  if (!psx_plan_local_storage_for_type_id(
+  if (!psx_plan_local_storage_for_qual_type(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
-          request->type.type_id,
+          request->type,
           ps_lowering_data_layout(request->lowering_context), &plan))
     return NULL;
   int alignment = plan.alignment;
@@ -40,10 +40,10 @@ lvar_t *lower_complete_internal_local_object(
     return NULL;
 
   psx_local_storage_plan_t plan = {0};
-  if (!psx_plan_local_storage_for_type_id(
+  if (!psx_plan_local_storage_for_qual_type(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
-          request->type.type_id,
+          request->type,
           ps_lowering_data_layout(request->lowering_context), &plan))
     return NULL;
   int alignment = request->requested_alignment > 0
@@ -83,10 +83,10 @@ int complete_declared_local_object(
           request->type.type_id, &type) || type.kind != PSX_TYPE_ARRAY)
     return 0;
   psx_local_storage_plan_t plan = {0};
-  if (!psx_plan_local_storage_for_type_id(
+  if (!psx_plan_local_storage_for_qual_type(
           ps_lowering_semantic_types(request->lowering_context),
           ps_lowering_record_layouts(request->lowering_context),
-          request->type.type_id,
+          request->type,
           ps_lowering_data_layout(request->lowering_context), &plan))
     return 0;
   int alignment = request->requested_alignment > 0

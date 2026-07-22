@@ -514,9 +514,9 @@ static int resolve_parsed_alignas_type_name(
         "alignas", "alignment type name could not be resolved");
     return 1;
   }
-  int alignment = psx_type_layout_alignof(
+  int alignment = psx_qual_type_layout_alignof(
       ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context), qual_type.type_id,
+      ps_ctx_record_layout_table_in(semantic_context), qual_type,
       ps_ctx_data_layout(semantic_context));
   return alignment > 0 ? alignment : 1;
 }
@@ -656,10 +656,10 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
         "alignas", "alignment must be zero or a power of two");
     return 0;
   }
-  int natural_alignment = psx_type_layout_alignof(
+  int natural_alignment = psx_qual_type_layout_alignof(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context),
-      declared_type.type_id, ps_ctx_data_layout(semantic_context));
+      declared_type, ps_ctx_data_layout(semantic_context));
   if (natural_alignment > requested_alignment) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context), diagnostic_token,

@@ -32,6 +32,8 @@ typedef enum ag_target_call_abi_t {
 typedef struct ag_data_layout_t {
   int pointer_size;
   int pointer_alignment;
+  int atomic_promoted_max_size;
+  int atomic_max_alignment;
   ag_target_scalar_layout_t scalar[AG_TARGET_SCALAR_COUNT];
 } ag_data_layout_t;
 
@@ -52,6 +54,10 @@ int ag_data_layout_equal(
     const ag_data_layout_t *lhs, const ag_data_layout_t *rhs);
 int ag_data_layout_pointer_size(const ag_data_layout_t *layout);
 int ag_data_layout_pointer_alignment(const ag_data_layout_t *layout);
+int ag_data_layout_atomic_promoted_max_size(
+    const ag_data_layout_t *layout);
+int ag_data_layout_atomic_max_alignment(
+    const ag_data_layout_t *layout);
 int ag_data_layout_scalar_size(
     const ag_data_layout_t *layout, ag_target_scalar_kind_t kind);
 int ag_data_layout_scalar_alignment(

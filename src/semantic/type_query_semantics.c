@@ -8,19 +8,19 @@
 static int qual_type_size(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return psx_type_layout_sizeof(ps_ctx_semantic_type_table_in(semantic_context),
-                           ps_ctx_record_layout_table_in(semantic_context),
-                           qual_type.type_id,
-                           ps_ctx_data_layout(semantic_context));
+  return psx_qual_type_layout_sizeof(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context), qual_type,
+      ps_ctx_data_layout(semantic_context));
 }
 
 static int qual_type_alignment(
     const psx_semantic_context_t *semantic_context,
     psx_qual_type_t qual_type) {
-  return psx_type_layout_alignof(ps_ctx_semantic_type_table_in(semantic_context),
-                            ps_ctx_record_layout_table_in(semantic_context),
-                            qual_type.type_id,
-                            ps_ctx_data_layout(semantic_context));
+  return psx_qual_type_layout_alignof(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_layout_table_in(semantic_context), qual_type,
+      ps_ctx_data_layout(semantic_context));
 }
 
 static int begin_plan(

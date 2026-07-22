@@ -9,7 +9,7 @@
 #include <string.h>
 
 typedef struct {
-  psx_type_id_t type_id;
+  psx_qual_type_t qual_type;
   int relative_offset;
   int leaf_begin;
   int leaf_end;
@@ -69,12 +69,12 @@ static psx_initializer_member_ref_t initializer_member_ref(
 
 static int flat_initializer_leaf_count(
     const psx_flat_initializer_context_t *context,
-    psx_type_id_t type_id) {
+    psx_qual_type_t qual_type) {
   psx_initializer_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
           context->semantic_types, context->record_decls,
           context->record_layouts, context->data_layout,
-          (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE}, 0, &leaves)) {
+          qual_type, 0, &leaves)) {
     psx_initializer_scalar_leaf_list_dispose(&leaves);
     return 0;
   }
@@ -121,7 +121,8 @@ static int flat_initializer_activate_union_member(
   psx_type_shape_t union_shape = {0};
   const psx_record_decl_t *record =
       context && parent && psx_semantic_type_table_describe(
-          context->semantic_types, parent->type_id, &union_shape) &&
+          context->semantic_types, parent->qual_type.type_id,
+          &union_shape) &&
       union_shape.kind == PSX_TYPE_UNION
           ? psx_record_decl_table_lookup(
                 context->record_decls, union_shape.record_id)
@@ -130,7 +131,7 @@ static int flat_initializer_activate_union_member(
       member_index >= record->member_count)
     return 0;
   psx_qual_type_t member_type = psx_semantic_type_table_record_member(
-      context->semantic_types, parent->type_id, member_index);
+      context->semantic_types, parent->qual_type.type_id, member_index);
   int member_offset = initializer_member_offset(
       context->record_layouts, union_shape.record_id,
       context->data_layout, member_index);
@@ -162,7 +163,7 @@ static int flat_initializer_activate_union_member(
     }
   }
   *child = (psx_initializer_object_span_t){
-      .type_id = member_type.type_id,
+      .qual_type = member_type,
       .relative_offset = parent->relative_offset + member_offset,
       .leaf_begin = parent->leaf_begin,
       .leaf_end = parent->leaf_begin + selected.count,
@@ -184,20 +185,21 @@ static int flat_initializer_child_span(
   if (!context || !parent || !child || child_index < 0) return 0;
   psx_type_shape_t parent_shape = {0};
   if (!psx_semantic_type_table_describe(
-          context->semantic_types, parent->type_id, &parent_shape))
+          context->semantic_types, parent->qual_type.type_id,
+          &parent_shape))
     return 0;
   if (parent_shape.kind == PSX_TYPE_ARRAY) {
     if (child_index >= parent_shape.array_len) return 0;
-    psx_type_id_t child_type_id = psx_semantic_type_table_base(
-        context->semantic_types, parent->type_id).type_id;
+    psx_qual_type_t child_type = psx_semantic_type_table_base(
+        context->semantic_types, parent->qual_type.type_id);
     int child_leaf_count = flat_initializer_leaf_count(
-        context, child_type_id);
-    int child_size =
-        psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
-                          child_type_id, context->data_layout);
+        context, child_type);
+    int child_size = psx_qual_type_layout_sizeof(
+        context->semantic_types, context->record_layouts,
+        child_type, context->data_layout);
     if (child_leaf_count <= 0 || child_size < 0) return 0;
     *child = (psx_initializer_object_span_t){
-        .type_id = child_type_id,
+        .qual_type = child_type,
         .relative_offset = parent->relative_offset +
                            child_index * child_size,
         .leaf_begin = parent->leaf_begin +
@@ -217,19 +219,19 @@ static int flat_initializer_child_span(
   const psx_record_decl_t *record = psx_record_decl_table_lookup(
       context->record_decls, parent_shape.record_id);
   if (!record || child_index >= record->member_count) return 0;
-  psx_type_id_t member_type_id =
+  psx_qual_type_t member_type =
       psx_semantic_type_table_record_member(
-          context->semantic_types, parent->type_id,
-          child_index).type_id;
+          context->semantic_types, parent->qual_type.type_id,
+          child_index);
   int member_offset = initializer_member_offset(
       context->record_layouts, parent_shape.record_id,
       context->data_layout, child_index);
-  int member_size =
-      psx_type_layout_sizeof(context->semantic_types, context->record_layouts,
-                        member_type_id, context->data_layout);
+  int member_size = psx_qual_type_layout_sizeof(
+      context->semantic_types, context->record_layouts,
+      member_type, context->data_layout);
   int member_leaf_count = flat_initializer_leaf_count(
-      context, member_type_id);
-  if (member_type_id == PSX_TYPE_ID_INVALID ||
+      context, member_type);
+  if (member_type.type_id == PSX_TYPE_ID_INVALID ||
       member_offset < 0 || member_size <= 0 ||
       member_leaf_count <= 0)
     return 0;
@@ -254,7 +256,7 @@ static int flat_initializer_child_span(
       return 0;
   }
   *child = (psx_initializer_object_span_t){
-      .type_id = member_type_id,
+      .qual_type = member_type,
       .relative_offset = member_begin,
       .leaf_begin = leaf_begin,
       .leaf_end = leaf_end,
@@ -293,7 +295,8 @@ static int flat_initializer_designated_member_span(
   psx_type_shape_t shape = {0};
   const psx_record_decl_t *record =
       context && aggregate && psx_semantic_type_table_describe(
-          context->semantic_types, aggregate->type_id, &shape) &&
+          context->semantic_types, aggregate->qual_type.type_id,
+          &shape) &&
       psx_type_kind_is_aggregate(shape.kind)
           ? psx_record_decl_table_lookup(
                 context->record_decls, shape.record_id)
@@ -308,7 +311,7 @@ static int flat_initializer_designated_member_span(
             context->semantic_types, member))
       continue;
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
-        context->semantic_types, aggregate->type_id, i).type_id;
+        context->semantic_types, aggregate->qual_type.type_id, i).type_id;
     if (!flat_initializer_record_has_named_member(
             context, member_type_id, designator))
       continue;
@@ -338,7 +341,8 @@ static int flat_initializer_child_containing_leaf(
     psx_initializer_object_span_t *child) {
   psx_type_shape_t parent_shape = {0};
   if (!psx_semantic_type_table_describe(
-          context->semantic_types, parent->type_id, &parent_shape))
+          context->semantic_types, parent->qual_type.type_id,
+          &parent_shape))
     return 0;
   const psx_record_decl_t *record =
       parent_shape.kind == PSX_TYPE_STRUCT
@@ -390,7 +394,8 @@ static int flat_initializer_string_span(
     end++;
   }
   *target = (psx_initializer_object_span_t){
-      .type_id = leaf->string_array_type_id,
+      .qual_type = {leaf->string_array_type_id,
+                    PSX_TYPE_QUALIFIER_NONE},
       .relative_offset = leaf->string_array_offset,
       .leaf_begin = begin,
       .leaf_end = end,
@@ -416,17 +421,18 @@ static int flat_initializer_aggregate_value_span(
   for (;;) {
     psx_type_shape_t candidate_shape = {0};
     if (psx_semantic_type_table_describe(
-            context->semantic_types, candidate.type_id, &candidate_shape) &&
+            context->semantic_types, candidate.qual_type.type_id,
+            &candidate_shape) &&
         (psx_type_kind_is_aggregate(candidate_shape.kind) ||
          candidate_shape.kind == PSX_TYPE_ARRAY) &&
-        candidate.type_id == value_type.type_id) {
+        candidate.qual_type.type_id == value_type.type_id) {
       *target = candidate;
       return 1;
     }
     psx_initializer_object_span_t child;
     if (!flat_initializer_child_containing_leaf(
             context, &candidate, cursor, &child) ||
-        (child.type_id == candidate.type_id &&
+        (child.qual_type.type_id == candidate.qual_type.type_id &&
          child.leaf_begin == candidate.leaf_begin &&
          child.leaf_end == candidate.leaf_end))
       return 0;
@@ -450,7 +456,8 @@ static int flat_initializer_designated_span(
         &entry->designators[i];
     psx_type_shape_t shape = {0};
     if (!psx_semantic_type_table_describe(
-            context->semantic_types, target->type_id, &shape))
+            context->semantic_types, target->qual_type.type_id,
+            &shape))
       return 0;
     int child_index = -1;
     if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
@@ -588,7 +595,8 @@ static int flat_initializer_apply_list(
     return 0;
   psx_type_shape_t object_shape = {0};
   if (!psx_semantic_type_table_describe(
-          context->semantic_types, object->type_id, &object_shape))
+          context->semantic_types, object->qual_type.type_id,
+          &object_shape))
     return 0;
   psx_initializer_object_span_t positional_object = *object;
   int positional_union_active = 0;
@@ -602,7 +610,8 @@ static int flat_initializer_apply_list(
       psx_type_shape_t positional_shape = {0};
       int positional_array_active = positional_union_active &&
           psx_semantic_type_table_describe(
-              context->semantic_types, positional_object.type_id,
+              context->semantic_types,
+              positional_object.qual_type.type_id,
               &positional_shape) &&
           positional_shape.kind == PSX_TYPE_ARRAY;
       if (union_has_designated_initializer ||
@@ -666,7 +675,7 @@ static int flat_initializer_apply_list(
         target = positional_object;
       } else {
         target = (psx_initializer_object_span_t){
-            .type_id = context->leaves->items[cursor].qual_type.type_id,
+            .qual_type = context->leaves->items[cursor].qual_type,
             .relative_offset =
                 context->leaves->items[cursor].relative_offset,
             .leaf_begin = cursor,
@@ -709,7 +718,8 @@ static int flat_initializer_apply_value(
   if (value->kind == ND_STRING) {
     psx_type_shape_t target_shape = {0};
     if (psx_semantic_type_table_describe(
-            context->semantic_types, target->type_id, &target_shape) &&
+            context->semantic_types, target->qual_type.type_id,
+            &target_shape) &&
         target_shape.kind == PSX_TYPE_ARRAY) {
       const node_string_t *string = (const node_string_t *)value;
       psx_character_array_initializer_plan_t string_plan = {0};
@@ -717,8 +727,7 @@ static int flat_initializer_apply_value(
           psx_plan_character_array_string_initializer(
               context->arena_context, context->semantic_types,
               context->data_layout,
-              (psx_qual_type_t){
-                  target->type_id, PSX_TYPE_QUALIFIER_NONE},
+              target->qual_type,
               string->literal_contents, string->literal_length,
               (int)string->char_width, &string_plan);
       if (status != PSX_CHARACTER_ARRAY_INITIALIZER_OK ||
@@ -738,7 +747,8 @@ static int flat_initializer_apply_value(
   }
   psx_type_shape_t target_shape = {0};
   if (!psx_semantic_type_table_describe(
-          context->semantic_types, target->type_id, &target_shape))
+          context->semantic_types, target->qual_type.type_id,
+          &target_shape))
     return 0;
   if (target->leaf_end != target->leaf_begin + 1 ||
       psx_type_kind_is_aggregate(target_shape.kind)) {
@@ -749,8 +759,7 @@ static int flat_initializer_apply_value(
         &context->plan->items[target->leaf_begin];
     *item = (psx_local_initializer_item_t){
         .relative_offset = target->relative_offset,
-        .target_qual_type = {
-            target->type_id, PSX_TYPE_QUALIFIER_NONE},
+        .target_qual_type = target->qual_type,
         .union_relative_offset = target->union_relative_offset,
         .union_member_index = target->union_member_index,
         .is_active = 1,
@@ -769,8 +778,7 @@ static int flat_initializer_apply_value(
   psx_local_initializer_item_t *item =
       &context->plan->items[target->leaf_begin];
   item->relative_offset = target->relative_offset;
-  item->target_qual_type = (psx_qual_type_t){
-      target->type_id, PSX_TYPE_QUALIFIER_NONE};
+  item->target_qual_type = target->qual_type;
   item->union_relative_offset = target->union_relative_offset;
   item->union_member_index = target->union_member_index;
   item->bit_width = target->member_ref.declaration &&
@@ -868,7 +876,7 @@ psx_local_initializer_status_t psx_resolve_flat_local_initializer_plan(
     }
   }
   psx_initializer_object_span_t root = {
-      .type_id = object_qual_type.type_id,
+      .qual_type = object_qual_type,
       .relative_offset = 0,
       .leaf_begin = 0,
       .leaf_end = leaves.count,
@@ -896,6 +904,21 @@ initializer_type_size(const psx_semantic_type_table_t *semantic_types,
                       const ag_data_layout_t *data_layout) {
   return psx_type_layout_sizeof(semantic_types, record_layouts, type_id,
                            data_layout);
+}
+
+static int initializer_qual_type_size(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_qual_type_t qual_type,
+    const ag_data_layout_t *data_layout) {
+  return psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, qual_type, data_layout);
+}
+
+static psx_type_qualifiers_t inherited_subobject_qualifiers(
+    psx_type_qualifiers_t qualifiers) {
+  return qualifiers &
+         (PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
 static int append_scalar_leaf(
@@ -1038,10 +1061,11 @@ static int collect_initializer_scalar_leaves(
   if (shape.kind == PSX_TYPE_ARRAY) {
     psx_qual_type_t child_type = psx_semantic_type_table_base(
         semantic_types, qual_type.type_id);
-    child_type.qualifiers |= qual_type.qualifiers;
+    child_type.qualifiers |= inherited_subobject_qualifiers(
+        qual_type.qualifiers);
     psx_type_shape_t child_shape = {0};
-    int child_size = initializer_type_size(semantic_types, record_layouts,
-                                           child_type.type_id, data_layout);
+    int child_size = initializer_qual_type_size(
+        semantic_types, record_layouts, child_type, data_layout);
     if (!psx_semantic_type_table_describe(
             semantic_types, child_type.type_id, &child_shape))
       return 0;
@@ -1082,14 +1106,15 @@ static int collect_initializer_scalar_leaves(
       int max_slots = -1;
       for (int i = 0; i < record->member_count; i++) {
         const psx_record_member_decl_t *candidate = &record->members[i];
-        psx_type_id_t candidate_type_id =
+        psx_qual_type_t candidate_type =
             psx_semantic_type_table_record_member(
-                semantic_types, qual_type.type_id, i).type_id;
-        int bytes = initializer_type_size(semantic_types, record_layouts,
-                                          candidate_type_id, data_layout);
+                semantic_types, qual_type.type_id, i);
+        int bytes = initializer_qual_type_size(
+            semantic_types, record_layouts, candidate_type,
+            data_layout);
         int slots = canonical_member_flat_slot_count(
             semantic_types, record_decls, record_layouts, data_layout,
-            candidate, candidate_type_id);
+            candidate, candidate_type.type_id);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;
@@ -1108,7 +1133,8 @@ static int collect_initializer_scalar_leaves(
         continue;
       psx_qual_type_t member_type = psx_semantic_type_table_record_member(
           semantic_types, qual_type.type_id, i);
-      member_type.qualifiers |= qual_type.qualifiers;
+      member_type.qualifiers |= inherited_subobject_qualifiers(
+          qual_type.qualifiers);
       psx_type_shape_t member_shape = {0};
       if (!psx_semantic_type_table_describe(
               semantic_types, member_type.type_id, &member_shape))
@@ -1129,9 +1155,9 @@ static int collect_initializer_scalar_leaves(
         return 0;
       }
       if (shape.kind == PSX_TYPE_STRUCT && member->len <= 0) {
-        int member_size = initializer_type_size(semantic_types, record_layouts,
-                                                member_type.type_id,
-                                                data_layout);
+        int member_size = initializer_qual_type_size(
+            semantic_types, record_layouts, member_type,
+            data_layout);
         int end = member_offset + member_size;
         if (member_size > 0 && end > covered_end) covered_end = end;
       }
@@ -1141,7 +1167,8 @@ static int collect_initializer_scalar_leaves(
   if (shape.kind == PSX_TYPE_COMPLEX) {
     psx_qual_type_t component = psx_semantic_type_table_base(
         semantic_types, qual_type.type_id);
-    component.qualifiers |= qual_type.qualifiers;
+    component.qualifiers |= inherited_subobject_qualifiers(
+        qual_type.qualifiers);
     psx_type_shape_t component_shape = {0};
     int component_size = initializer_type_size(semantic_types, record_layouts,
                                                component.type_id, data_layout);

@@ -409,7 +409,7 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_id_t root_type_id);
+    const ag_target_info_t *target, psx_qual_type_t root_qual_type);
 static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
@@ -516,13 +516,15 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_id_t root_type_id) {
-  int type_size =
-      psx_type_layout_sizeof(semantic_types, record_layouts, root_type_id,
-                        ag_target_info_data_layout(target));
-  psx_type_id_t aggregate_type_id =
+    const ag_target_info_t *target, psx_qual_type_t root_qual_type) {
+  psx_type_id_t root_type_id = root_qual_type.type_id;
+  int type_size = psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, root_qual_type,
+      ag_target_info_data_layout(target));
+  psx_qual_type_t aggregate_type =
       psx_semantic_type_table_array_leaf(
-          semantic_types, root_type_id).type_id;
+          semantic_types, root_type_id);
+  psx_type_id_t aggregate_type_id = aggregate_type.type_id;
   psx_type_shape_t aggregate_shape = {0};
   psx_type_shape_t root_shape = {0};
   int has_root_shape = psx_semantic_type_table_describe(
@@ -547,9 +549,9 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
               : NULL,
   };
   if (layout.is_array) {
-    layout.elem_size =
-        psx_type_layout_sizeof(semantic_types, record_layouts, aggregate_type_id,
-                          ag_target_info_data_layout(target));
+    layout.elem_size = psx_qual_type_layout_sizeof(
+        semantic_types, record_layouts, aggregate_type,
+        ag_target_info_data_layout(target));
     layout.elem_count = psx_semantic_type_table_array_flat_element_count(
         semantic_types, root_type_id);
   }
@@ -1112,13 +1114,13 @@ static int gvar_walk_aggregate_initializer(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_id_t root_type_id,
+    const ag_target_info_t *target, psx_qual_type_t root_qual_type,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
   gvar_aggregate_layout_t layout =
       gvar_aggregate_layout(
           semantic_types, record_decls, record_layouts, target,
-          root_type_id);
+          root_qual_type);
   if (!layout.record_decl) return 0;
   gvar_init_cursor_t cur = gvar_init_cursor(gv);
   if (!layout.is_array) {
@@ -1183,7 +1185,7 @@ int ps_gvar_walk_aggregate_initializer_in(
       ps_ctx_semantic_type_table_in(semantic_context),
       ps_ctx_record_decl_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context),
-      ps_ctx_target_info(semantic_context), ps_gvar_decl_type_id(gv),
+      ps_ctx_target_info(semantic_context), ps_gvar_decl_qual_type(gv),
       gv, base_offset, ops, user);
 }
 
@@ -1191,14 +1193,14 @@ int ps_gvar_walk_resolved_aggregate_initializer(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_id_t root_type_id,
+    const ag_target_info_t *target, psx_qual_type_t root_qual_type,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
   if (!semantic_types || !record_decls || !record_layouts || !target ||
-      root_type_id == PSX_TYPE_ID_INVALID)
+      root_qual_type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   return gvar_walk_aggregate_initializer(
-      semantic_types, record_decls, record_layouts, target, root_type_id,
+      semantic_types, record_decls, record_layouts, target, root_qual_type,
       gv, base_offset, ops, user);
 }
 

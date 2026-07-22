@@ -89,9 +89,9 @@ static int atomic_operation_width(
   psx_type_shape_t pointee_type = {0};
   int has_pointee_type = hir_ir_type_shape(
       context, pointee.type_id, &pointee_type);
-  int width = psx_type_layout_sizeof(
+  int width = psx_qual_type_layout_sizeof(
       context->options->semantic_types, context->options->record_layouts,
-      pointee.type_id, ag_target_info_data_layout(context->options->target));
+      pointee, ag_target_info_data_layout(context->options->target));
   if (!has_pointee_type ||
       (pointee_type.kind != PSX_TYPE_BOOL &&
        pointee_type.kind != PSX_TYPE_INTEGER &&
@@ -119,9 +119,9 @@ static ir_val_t scale_atomic_pointer_delta(
     ir_val_t value, psx_qual_type_t pointer_object_type, int width) {
   psx_qual_type_t element_type = psx_semantic_type_table_base(
       context->options->semantic_types, pointer_object_type.type_id);
-  int stride = psx_type_layout_sizeof(
+  int stride = psx_qual_type_layout_sizeof(
       context->options->semantic_types, context->options->record_layouts,
-      element_type.type_id,
+      element_type,
       ag_target_info_data_layout(context->options->target));
   ir_mir_type_info_t value_info = hir_ir_classify_node_type(
       context, value_node);

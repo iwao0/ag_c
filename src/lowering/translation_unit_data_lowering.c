@@ -46,12 +46,22 @@ static int type_size_id(
                            lowering ? lowering->data_layout : NULL);
 }
 
-static int type_alignment_id(
+static int qual_type_size(
     const translation_unit_data_lowering_t *lowering,
-    psx_type_id_t type_id) {
-  return psx_type_layout_alignof(lowering ? lowering->semantic_types : NULL,
-                            lowering ? lowering->record_layouts : NULL, type_id,
-                            lowering ? lowering->data_layout : NULL);
+    psx_qual_type_t qual_type) {
+  return psx_qual_type_layout_sizeof(
+      lowering ? lowering->semantic_types : NULL,
+      lowering ? lowering->record_layouts : NULL, qual_type,
+      lowering ? lowering->data_layout : NULL);
+}
+
+static int qual_type_alignment(
+    const translation_unit_data_lowering_t *lowering,
+    psx_qual_type_t qual_type) {
+  return psx_qual_type_layout_alignof(
+      lowering ? lowering->semantic_types : NULL,
+      lowering ? lowering->record_layouts : NULL, qual_type,
+      lowering ? lowering->data_layout : NULL);
 }
 
 static psx_type_id_t scalar_element_type_id(
@@ -216,7 +226,7 @@ static int lower_init_slot(void *user, int index,
           : NULL;
   int offset = leaf ? leaf->relative_offset : index * layout->elem_size;
   if (leaf) {
-    int size = type_size_id(ctx->lowering, leaf->qual_type.type_id);
+    int size = qual_type_size(ctx->lowering, leaf->qual_type);
     if (size > 0) value.size = size;
   }
   if (!lower_init_value(ctx, offset, value,
@@ -285,7 +295,7 @@ static int lower_global_aggregate(
   return ps_gvar_walk_resolved_aggregate_initializer(
       ctx->lowering->semantic_types, ctx->lowering->record_decls,
       ctx->lowering->record_layouts, ctx->lowering->target,
-      ps_gvar_decl_type_id(ctx->global), ctx->global, 0,
+      ps_gvar_decl_qual_type(ctx->global), ctx->global, 0,
       &aggregate_lowering_ops, ctx);
 }
 
@@ -330,20 +340,19 @@ static void lower_global_object(global_var_t *global, void *user) {
   char *name = ps_gvar_name(global);
   int name_len = ps_gvar_name_len(global);
   psx_type_id_t type_id = ps_gvar_decl_type_id(global);
+  psx_qual_type_t qual_type = ps_gvar_decl_qual_type(global);
   psx_type_shape_t type = {0};
   int has_type = psx_semantic_type_table_describe(
       lowering->semantic_types, type_id, &type);
-  int storage_size = type_size_id(
-      lowering, type_id);
+  int storage_size = qual_type_size(lowering, qual_type);
   int is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
   if (storage_size <= 0 && is_extern && has_type &&
       type.kind == PSX_TYPE_ARRAY) {
-    storage_size = type_size_id(
+    storage_size = qual_type_size(
         lowering, psx_semantic_type_table_base(
-                      lowering->semantic_types, type_id).type_id);
+                      lowering->semantic_types, type_id));
   }
-  int alignment = type_alignment_id(
-      lowering, type_id);
+  int alignment = qual_type_alignment(lowering, qual_type);
   int requested_alignment = ps_gvar_requested_alignment(global);
   if (requested_alignment > alignment)
     alignment = requested_alignment;

@@ -6,6 +6,8 @@ static const ag_target_info_t standard_target = {
     .data_layout = {
         .pointer_size = 8,
         .pointer_alignment = 8,
+        .atomic_promoted_max_size = 16,
+        .atomic_max_alignment = 16,
         .scalar = {
             [AG_TARGET_SCALAR_CHAR] = {1, 1},
             [AG_TARGET_SCALAR_SHORT] = {2, 2},
@@ -31,13 +33,17 @@ ag_target_info_t ag_target_info_wasm32(void) {
   ag_target_info_t target = standard_target;
   target.data_layout.pointer_size = 4;
   target.data_layout.pointer_alignment = 4;
+  target.data_layout.atomic_max_alignment = 8;
   target.call_abi = AG_TARGET_CALL_ABI_WASM32;
   return target;
 }
 
 int ag_data_layout_is_valid(const ag_data_layout_t *layout) {
   if (!layout || layout->pointer_size <= 0 ||
-      layout->pointer_alignment <= 0)
+      layout->pointer_alignment <= 0 ||
+      layout->atomic_promoted_max_size <= 0 ||
+      layout->atomic_max_alignment <= 0 ||
+      layout->atomic_max_alignment > layout->atomic_promoted_max_size)
     return 0;
   for (int kind = 0; kind < AG_TARGET_SCALAR_COUNT; kind++) {
     if (layout->scalar[kind].size <= 0 ||
@@ -68,6 +74,18 @@ int ag_data_layout_pointer_alignment(const ag_data_layout_t *layout) {
              ? layout->pointer_alignment : 0;
 }
 
+int ag_data_layout_atomic_promoted_max_size(
+    const ag_data_layout_t *layout) {
+  return layout && layout->atomic_promoted_max_size > 0
+             ? layout->atomic_promoted_max_size : 0;
+}
+
+int ag_data_layout_atomic_max_alignment(
+    const ag_data_layout_t *layout) {
+  return layout && layout->atomic_max_alignment > 0
+             ? layout->atomic_max_alignment : 0;
+}
+
 int ag_data_layout_scalar_size(
     const ag_data_layout_t *layout, ag_target_scalar_kind_t kind) {
   if (kind < 0 || kind >= AG_TARGET_SCALAR_COUNT) return 0;
@@ -88,7 +106,11 @@ int ag_data_layout_equal(
       ag_data_layout_pointer_size(lhs) !=
           ag_data_layout_pointer_size(rhs) ||
       ag_data_layout_pointer_alignment(lhs) !=
-          ag_data_layout_pointer_alignment(rhs))
+          ag_data_layout_pointer_alignment(rhs) ||
+      ag_data_layout_atomic_promoted_max_size(lhs) !=
+          ag_data_layout_atomic_promoted_max_size(rhs) ||
+      ag_data_layout_atomic_max_alignment(lhs) !=
+          ag_data_layout_atomic_max_alignment(rhs))
     return 0;
   for (int kind = 0; kind < AG_TARGET_SCALAR_COUNT; ++kind) {
     if (ag_data_layout_scalar_size(lhs, (ag_target_scalar_kind_t)kind) !=

@@ -1384,11 +1384,15 @@ const compilationSessionInternalHeader = await readFile(
 const targetInfoSource = await readFile("src/target_info.c", "utf8");
 const targetInfoHeader = await readFile("src/target_info.h", "utf8");
 if (!/ag_target_info_is_valid\s*\(/.test(targetInfoHeader) ||
-    !/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?pointer_size[^]*?pointer_alignment[^]*?scalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\][^]*?\}\s*ag_data_layout_t\s*;/.test(
+    !/typedef\s+struct\s+ag_data_layout_t\s*\{[^]*?pointer_size[^]*?pointer_alignment[^]*?atomic_promoted_max_size[^]*?atomic_max_alignment[^]*?scalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\][^]*?\}\s*ag_data_layout_t\s*;/.test(
       targetInfoHeader,
     ) ||
     !/ag_data_layout_t\s+data_layout\s*;/.test(targetInfoHeader) ||
     !/ag_target_info_data_layout\s*\(/.test(targetInfoHeader) ||
+    !/ag_data_layout_atomic_promoted_max_size\s*\(/.test(
+      targetInfoHeader,
+    ) ||
+    !/ag_data_layout_atomic_max_alignment\s*\(/.test(targetInfoHeader) ||
     !/ag_target_info_is_valid\s*\(target\)/.test(
       compilationSessionSource,
     ) ||
@@ -3349,10 +3353,10 @@ if (!aggregateMemberResolutionType ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bpsx_type_layout_alignof\s*\(/.test(
+    !/\bpsx_qual_type_layout_alignof\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/\bps_ctx_record_layout_table_in\s*\(/.test(
@@ -3412,7 +3416,7 @@ if (!aggregateMemberResolutionType ||
       aggregateMemberResolutionSource,
     )) {
   throw new Error(
-    "aggregate member resolution must separate RecordDecl completeness from TypeId target layout",
+    "aggregate member resolution must separate RecordDecl completeness from QualType target layout",
   );
 }
 const declarationApplicationSource = await readFile(
@@ -3729,10 +3733,10 @@ if (/\bnode_t\b|\bnode_[A-Za-z0-9_]+_t\b|\bps_node_|\bND_[A-Z0-9_]+\b|parser\/as
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
-    !/\bpsx_type_layout_alignof\s*\(/.test(
+    !/\bpsx_qual_type_layout_alignof\s*\(/.test(
       typeQuerySemanticsSource,
     ) ||
     !/psx_type_query_plan_kind_t/.test(typeQuerySemanticsHeader) ||
@@ -6377,7 +6381,7 @@ if (!directSizeofTypeName ||
     /\bpsx_type_t\b|->(?:kind|base)\b/.test(
       directTypeBeforeApplication[0],
     ) ||
-    !/\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(
       directSizeofTypeName[0],
     ) ||
     /direct_type_before_application\(\s*base_type\s*,\s*runtime_application\s*\);[\s\S]{0,150}if\s*\(factor\s*<=\s*0\)\s*return\s+0/.test(
@@ -6913,6 +6917,9 @@ const typeIdLayoutFunction = typeLayoutSource.match(
 if (!/\bpsx_type_layout_of\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_type_layout_sizeof\s*\(/.test(typeLayoutHeader) ||
     !/\bpsx_type_layout_alignof\s*\(/.test(typeLayoutHeader) ||
+    !/\bpsx_qual_type_layout_of\s*\(/.test(typeLayoutHeader) ||
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(typeLayoutHeader) ||
+    !/\bpsx_qual_type_layout_alignof\s*\(/.test(typeLayoutHeader) ||
     !/\bpsx_semantic_type_table_describe\s*\(/.test(typeLayoutSource) ||
     /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(typeLayoutSource) ||
     /parser\/type\.h/.test(typeLayoutSource) ||
@@ -6926,7 +6933,11 @@ if (!/\bpsx_type_layout_of\s*\(/.test(typeLayoutSource) ||
     !/\bconst\s+psx_record_layout_table_t\s*\*/.test(
       typeIdLayoutFunction[0],
     ) ||
-    !/\blayout_of_id_recursive\s*\(/.test(typeIdLayoutFunction[0]) ||
+    !/\bpsx_qual_type_layout_of\s*\(/.test(typeIdLayoutFunction[0]) ||
+    !/\blayout_of_qual_type_recursive\s*\(/.test(typeLayoutSource) ||
+    !/\bapply_atomic_layout\s*\([^]*?ag_data_layout_atomic_promoted_max_size\s*\([^]*?ag_data_layout_atomic_max_alignment\s*\(/.test(
+      typeLayoutSource,
+    ) ||
     /\bps_type_layout_of\s*\(/.test(typeIdLayoutFunction[0]) ||
     /\bps_type_(?:layout_of_id_with_records|(?:size|align)of_id_with_records|(?:size|align)of_id_for_target)\s*\(/.test(
       `${typeLayoutHeader}\n${typeLayoutSource}`,
@@ -6938,7 +6949,17 @@ if (!/\bpsx_type_layout_of\s*\(/.test(typeLayoutSource) ||
       typeLayoutSource,
     )) {
   throw new Error(
-    "layout must resolve TypeId with an explicit target and get record completeness from RecordLayoutTable",
+    "layout must resolve QualType with an explicit target and get record completeness from RecordLayoutTable",
+  );
+}
+if (/alignment\s*>\s*8\)\s*alignment\s*=\s*8/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/psx_qual_type_layout_sizeof\s*\([^]*?psx_qual_type_layout_alignof\s*\(/.test(
+      aggregateMemberResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate member placement must retain QualType layout and target-provided natural alignment",
   );
 }
 if (!/\bpsx_record_layout_table_lookup\s*\(/.test(typeLayoutSource) ||
@@ -7014,7 +7035,7 @@ if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_size\s*\(/.test(tagContextSource) ||
     !/\bag_data_layout_scalar_alignment\s*\(/.test(tagContextSource) ||
     !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
-    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
+    !/resolve_parsed_alignas_type_name\s*\([^]*?psx_qual_type_layout_alignof\s*\([^]*?ps_ctx_data_layout\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/resolve_parsed_alignas_expression\s*\([^]*?psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts\s*\(/.test(
@@ -7079,12 +7100,15 @@ for (const [name, header, source, functionName] of [
     `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*const\\s+psx_record_layout_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
   );
   if (!signature.test(header) || !signature.test(source) ||
-      !/\bpsx_type_layout_sizeof\s*\(/.test(source) ||
+      !/\bpsx_(?:qual_type|type)_layout_sizeof\s*\(/.test(source) ||
       !/\bpsx_semantic_type_table_describe\s*\(/.test(source) ||
       /\bpsx_type_compatibility_canonical_view_for\s*\(/.test(source) ||
       /#include\s+"\.\.\/parser\/type\.h"/.test(source) ||
       (name === "local" &&
-       !/\bpsx_semantic_type_table_contains_vla_array\s*\(/.test(source)) ||
+       (!/\bpsx_semantic_type_table_contains_vla_array\s*\(/.test(source) ||
+        !/\bpsx_plan_local_storage_for_qual_type\s*\(/.test(header) ||
+        !/\bpsx_qual_type_layout_sizeof\s*\(/.test(source) ||
+        !/\bpsx_qual_type_layout_alignof\s*\(/.test(source))) ||
       /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
       /\bag_target_info_t\b/.test(`${header}\n${source}`) ||
@@ -7108,17 +7132,17 @@ for (const [name, header, source, functionName] of [
 }
 
 for (const [name, source, requiredLayoutCall] of [
-  ["pointer arithmetic", hirIrBuilder, /\bpsx_type_layout_sizeof\s*\(/],
-  ["subscript", hirIrBuilder, /\bpsx_type_layout_sizeof\s*\(/],
-  ["direct Typed HIR initializer", syntaxTypedHirResolutionSource, /\bpsx_type_layout_sizeof\s*\(/],
-  ["VLA", vlaLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
-  ["static HIR initializer", staticHirInitializerSource, /\bpsx_type_layout_sizeof\s*\(/],
-  ["translation unit data", translationUnitDataLoweringSource, /\bpsx_type_layout_sizeof\s*\(/],
+  ["pointer arithmetic", hirIrBuilder, /\bpsx_qual_type_layout_sizeof\s*\(/],
+  ["subscript", hirIrBuilder, /\bpsx_qual_type_layout_sizeof\s*\(/],
+  ["direct Typed HIR initializer", syntaxTypedHirResolutionSource, /\bpsx_qual_type_layout_sizeof\s*\(/],
+  ["VLA", vlaLoweringSource, /\bpsx_qual_type_layout_sizeof\s*\(/],
+  ["static HIR initializer", staticHirInitializerSource, /\bpsx_qual_type_layout_sizeof\s*\(/],
+  ["translation unit data", translationUnitDataLoweringSource, /\bpsx_qual_type_layout_sizeof\s*\(/],
 ]) {
   if (!requiredLayoutCall.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
     throw new Error(
-      `${name} lowering must obtain target layout through an interned TypeId`,
+      `${name} lowering must retain QualType while obtaining target layout`,
     );
   }
 }
@@ -7721,10 +7745,10 @@ if (!/\bconst\s+ag_data_layout_t\s*\*\s*ps_ctx_data_layout\s*\(/.test(
     /\bps_ctx_type_(?:size|align)of_in\s*\(/.test(
       `${semanticContextSource}\n${parserSemanticContextImplementation}`,
     ) ||
-    !/\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
-    !/\bpsx_type_layout_alignof\s*\(/.test(
+    !/\bpsx_qual_type_layout_alignof\s*\(/.test(
       parserSemanticContextImplementation,
     ) ||
     /\bps_ctx_refresh_type_completeness_in\s*\(/.test(
@@ -8794,7 +8818,7 @@ if (!canonicalArrayCompletion ||
     "canonical global array completion must validate TypeShape without restoring compatibility type views",
   );
 }
-if (!/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*global\s*\)\s*;[^]*?\btype_size_id\s*\(\s*lowering\s*,\s*type_id\s*\)/.test(
+if (!/\bpsx_qual_type_t\s+qual_type\s*=\s*ps_gvar_decl_qual_type\s*\(\s*global\s*\)\s*;[^]*?\bqual_type_size\s*\(\s*lowering\s*,\s*qual_type\s*\)/.test(
       translationUnitDataLoweringSource,
     ) ||
     !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([^]*?\bps_gvar_decl_qual_type\s*\(\s*ctx->global\s*\)\s*,\s*0\s*,/.test(
@@ -8904,13 +8928,13 @@ if (!aggregateWalkerLayoutSection ||
     /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_value_size\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bps_gvar_walk_resolved_aggregate_initializer\s*\(\s*const\s+psx_semantic_type_table_t\s*\*[^,]*,\s*const\s+psx_record_decl_table_t\s*\*[^,]*,\s*const\s+psx_record_layout_table_t\s*\*[^,]*,\s*const\s+ag_target_info_t\s*\*[^,]*,\s*psx_type_id_t\s+root_type_id/.test(
+    !/\bps_gvar_walk_resolved_aggregate_initializer\s*\(\s*const\s+psx_semantic_type_table_t\s*\*[^,]*,\s*const\s+psx_record_decl_table_t\s*\*[^,]*,\s*const\s+psx_record_layout_table_t\s*\*[^,]*,\s*const\s+ag_target_info_t\s*\*[^,]*,\s*psx_qual_type_t\s+root_qual_type/.test(
       gvarPublicSource,
     ) ||
     /\bps_gvar_storage_size\s*\(|\bsymbol_alignment\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    !/\bpsx_type_layout_(?:size|align)of\s*\(/.test(
+    !/\bpsx_qual_type_layout_(?:size|align)of\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
     /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
@@ -9313,10 +9337,10 @@ if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
     /ps_type_(?:sizeof|alignof)_id\s*\(/.test(
       hirSymbolResolutionSource,
     ) ||
-    !/psx_type_layout_sizeof\s*\(/.test(
+    !/psx_qual_type_layout_sizeof\s*\(/.test(
       hirSymbolResolutionSource,
     ) ||
-    !/psx_type_layout_alignof\s*\(/.test(
+    !/psx_qual_type_layout_alignof\s*\(/.test(
       hirSymbolResolutionSource,
     ) ||
     !/\bpsx_semantic_type_table_qual_type_is_valid\s*\(/.test(
@@ -11133,7 +11157,9 @@ if (!/PSX_BUILTIN_CALL_ATOMIC_LOAD/.test(functionCallResolutionHeader) ||
     !/psx_semantic_type_table_base\s*\(/.test(
       atomicPointerDeltaLowering[0],
     ) ||
-    !/psx_type_layout_sizeof\s*\(/.test(atomicPointerDeltaLowering[0]) ||
+    !/psx_qual_type_layout_sizeof\s*\(/.test(
+      atomicPointerDeltaLowering[0],
+    ) ||
     !/IR_MUL/.test(atomicPointerDeltaLowering[0]) ||
     !/object_shape\.kind\s*==\s*PSX_TYPE_POINTER[^]*?IR_TY_PTR/.test(
       hirIrCallSource,

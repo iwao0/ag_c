@@ -177,7 +177,7 @@ int ps_gvar_walk_resolved_aggregate_initializer(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, psx_type_id_t root_type_id,
+    const ag_target_info_t *target, psx_qual_type_t root_qual_type,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user);
 unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,

@@ -384,9 +384,9 @@ static int pointer_stride(
       ps_lowering_semantic_types(eval->lowering_context),
       psx_hir_node_qual_type(pointer).type_id);
   if (element.type_id == PSX_TYPE_ID_INVALID) return 0;
-  return psx_type_layout_sizeof(
+  return psx_qual_type_layout_sizeof(
       ps_lowering_semantic_types(eval->lowering_context),
-      ps_lowering_record_layouts(eval->lowering_context), element.type_id,
+      ps_lowering_record_layouts(eval->lowering_context), element,
       ag_target_info_data_layout(ps_lowering_target(eval->lowering_context)));
 }
 

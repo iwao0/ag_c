@@ -23,6 +23,15 @@ static int type_size(
       ag_target_info_data_layout(ps_lowering_target(lowering_context)));
 }
 
+static int qual_type_size(
+    const psx_lowering_context_t *lowering_context,
+    psx_qual_type_t qual_type) {
+  return psx_qual_type_layout_sizeof(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context), qual_type,
+      ag_target_info_data_layout(ps_lowering_target(lowering_context)));
+}
+
 static int type_alignment(
     const psx_lowering_context_t *lowering_context,
     psx_type_id_t type_id) {
@@ -78,8 +87,8 @@ psx_vla_lowering_result_t lower_vla_declaration_plan(
   int count = request->dimension_count;
   psx_qual_type_t element_type = pointee_value_type(
       request->lowering_context, request->type);
-  int element_size = type_size(
-      request->lowering_context, element_type.type_id);
+  int element_size = qual_type_size(
+      request->lowering_context, element_type);
   if (!request->local_registry ||
       request->type.type_id == PSX_TYPE_ID_INVALID || count <= 0 ||
       element_size <= 0 || !request->dimensions) {
@@ -177,8 +186,8 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration_plan(
       ps_lowering_diagnostics(request->lowering_context);
   psx_qual_type_t element_type = pointee_value_type(
       request->lowering_context, request->type);
-  int element_size = type_size(
-      request->lowering_context, element_type.type_id);
+  int element_size = qual_type_size(
+      request->lowering_context, element_type);
   if (!request->local_registry ||
       request->type.type_id == PSX_TYPE_ID_INVALID ||
       !request->name || request->name_len <= 0 ||
@@ -252,8 +261,8 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   int count = request->inner_dimension_count;
   psx_qual_type_t element_type = pointee_value_type(
       request->lowering_context, request->type);
-  int element_size = type_size(
-      request->lowering_context, element_type.type_id);
+  int element_size = qual_type_size(
+      request->lowering_context, element_type);
   int parameter_storage_size = type_size(
       request->lowering_context, request->type.type_id);
   int parameter_alignment = type_alignment(

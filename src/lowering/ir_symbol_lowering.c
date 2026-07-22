@@ -84,25 +84,28 @@ ir_symbol_t *lower_ir_global_symbol(
   ir_symbol_t *symbol = ir_module_find_symbol(module, name, name_len);
   if (symbol) return symbol;
 
-  psx_type_id_t type_id = ps_gvar_decl_type_id(global);
+  psx_qual_type_t qual_type = ps_gvar_decl_qual_type(global);
+  psx_type_id_t type_id = qual_type.type_id;
   psx_type_shape_t type = {0};
   if (!psx_semantic_type_table_describe(semantic_types, type_id, &type))
     return NULL;
-  int storage_size = psx_type_layout_sizeof(semantic_types, record_layouts, type_id,
-                                       ag_target_info_data_layout(target));
+  int storage_size = psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, qual_type,
+      ag_target_info_data_layout(target));
   int is_incomplete_array =
       type.kind == PSX_TYPE_ARRAY && type.array_len <= 0 && !type.is_vla;
   /* Keep streaming function lowering possible until the translation-unit
    * finalizer supplies the tentative array's complete bound. */
   if (storage_size <= 0 && is_incomplete_array) {
-    psx_type_id_t base_type_id = psx_semantic_type_table_base(
-        semantic_types, type_id).type_id;
-    storage_size =
-        psx_type_layout_sizeof(semantic_types, record_layouts, base_type_id,
-                          ag_target_info_data_layout(target));
+    psx_qual_type_t base_type = psx_semantic_type_table_base(
+        semantic_types, type_id);
+    storage_size = psx_qual_type_layout_sizeof(
+        semantic_types, record_layouts, base_type,
+        ag_target_info_data_layout(target));
   }
-  int alignment = psx_type_layout_alignof(semantic_types, record_layouts, type_id,
-                                     ag_target_info_data_layout(target));
+  int alignment = psx_qual_type_layout_alignof(
+      semantic_types, record_layouts, qual_type,
+      ag_target_info_data_layout(target));
   int requested_alignment = ps_gvar_requested_alignment(global);
   if (requested_alignment > alignment)
     alignment = requested_alignment;
@@ -137,7 +140,7 @@ ir_symbol_t *lower_ir_global_symbol(
   lower_func_ref(&ctx, 0, scalar, type_id);
   if (ps_gvar_has_aggregate_initializer(global)) {
     ps_gvar_walk_resolved_aggregate_initializer(
-        semantic_types, record_decls, record_layouts, target, type_id,
+        semantic_types, record_decls, record_layouts, target, qual_type,
         global, 0, &func_ref_walk_ops, &ctx);
   }
   return symbol;
