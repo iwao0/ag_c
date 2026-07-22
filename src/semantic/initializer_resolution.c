@@ -1114,6 +1114,7 @@ static int collect_initializer_scalar_leaves(
               semantic_types, member_type.type_id, &member_shape))
         return 0;
       if (member_shape.kind == PSX_TYPE_ARRAY ||
+          member_shape.kind == PSX_TYPE_COMPLEX ||
           psx_type_kind_is_aggregate(member_shape.kind)) {
         if (!collect_initializer_scalar_leaves(
                 semantic_types, record_decls, record_layouts, data_layout,

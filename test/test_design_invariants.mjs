@@ -8720,9 +8720,12 @@ if (/\brecord_member_lookup(?:_context)?\b|\bps_lowering_lookup_record_member\s*
 if (/\baggregate_definition\b/.test(initializerResolutionSource) ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       initializerResolutionSource,
+    ) ||
+    !/member_shape\.kind\s*==\s*PSX_TYPE_ARRAY\s*\|\|\s*member_shape\.kind\s*==\s*PSX_TYPE_COMPLEX\s*\|\|\s*psx_type_kind_is_aggregate\(member_shape\.kind\)/.test(
+      initializerResolutionSource,
     )) {
   throw new Error(
-    "initializer semantics must resolve aggregate declarations through RecordDeclTable",
+    "initializer semantics must resolve aggregate declarations through RecordDeclTable and flatten complex members into both components",
   );
 }
 
@@ -11031,6 +11034,33 @@ const hirIrExpressionSource = await readFile(
   "src/lowering/hir_ir_expression.c",
   "utf8",
 );
+const complexCompoundAssignmentLowering = hirIrExpressionSource.match(
+  /static\s+ir_val_t\s+build_complex_compound_assignment\s*\([^]*?\n\}/,
+);
+if (!complexCompoundAssignmentLowering ||
+    (complexCompoundAssignmentLowering[0].match(
+      /\bhir_ir_lvalue_address\s*\(/g,
+    ) ?? []).length !== 1 ||
+    !/\bemit_complex_binary_values\s*\(/.test(
+      complexCompoundAssignmentLowering[0],
+    ) ||
+    !/\bconvert_complex_pointer\s*\(/.test(
+      complexCompoundAssignmentLowering[0],
+    ) ||
+    !/\bcomplex_pointer_truth_value\s*\(/.test(
+      complexCompoundAssignmentLowering[0],
+    ) ||
+    !/\bIR_MEMCPY\b/.test(complexCompoundAssignmentLowering[0]) ||
+    !/hir_ir_is_complex_type\(target_type\)\s*\|\|[^]*?hir_ir_is_complex_type\(rhs_type\)[^]*?build_complex_compound_assignment\s*\(/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/kind\s*==\s*PSX_HIR_COMPOUND_ASSIGN[^]*?build_compound_assignment\s*\(/.test(
+      hirIrExpressionSource,
+    )) {
+  throw new Error(
+    "complex compound assignment must preserve one lvalue evaluation and lower through shared complex arithmetic",
+  );
+}
 const hirIrCallSource = await readFile(
   "src/lowering/hir_ir_call.c",
   "utf8",

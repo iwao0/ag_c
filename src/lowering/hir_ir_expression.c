@@ -1313,6 +1313,173 @@ static ir_val_t build_inc_dec(
              ? new_value : old_value;
 }
 
+static int complex_compound_binary_kind(
+    psx_hir_compound_operator_t compound_op,
+    psx_hir_node_kind_t *kind) {
+  if (!kind) return 0;
+  switch (compound_op) {
+    case PSX_HIR_COMPOUND_ADD: *kind = PSX_HIR_ADD; return 1;
+    case PSX_HIR_COMPOUND_SUB: *kind = PSX_HIR_SUB; return 1;
+    case PSX_HIR_COMPOUND_MUL: *kind = PSX_HIR_MUL; return 1;
+    case PSX_HIR_COMPOUND_DIV: *kind = PSX_HIR_DIV; return 1;
+    default: return 0;
+  }
+}
+
+static int is_arithmetic_mir_type(ir_mir_type_info_t type) {
+  return type.type_class == IR_MIR_TYPE_INTEGER ||
+         hir_ir_is_float_value_type(type) ||
+         hir_ir_is_complex_type(type);
+}
+
+static ir_mir_type_info_t complex_compound_operation_type(
+    ir_mir_type_info_t target_type,
+    ir_mir_type_info_t rhs_type) {
+  ir_type_t component_type = IR_TY_F32;
+  if (((hir_ir_is_float_value_type(target_type) ||
+        hir_ir_is_complex_type(target_type)) &&
+       target_type.type == IR_TY_F64) ||
+      ((hir_ir_is_float_value_type(rhs_type) ||
+        hir_ir_is_complex_type(rhs_type)) &&
+       rhs_type.type == IR_TY_F64))
+    component_type = IR_TY_F64;
+  int component_size = ir_type_fixed_size(component_type);
+  return (ir_mir_type_info_t){
+      .type = component_type,
+      .type_class = IR_MIR_TYPE_COMPLEX,
+      .source_size = 2 * component_size,
+  };
+}
+
+static ir_val_t complex_pointer_truth_value(
+    hir_ir_context_t *context, ir_val_t value,
+    ir_mir_type_info_t type) {
+  if (value.type != IR_TY_PTR || !hir_ir_is_complex_type(type))
+    return hir_ir_unsupported_expr(context);
+  ir_val_t imaginary_pointer = hir_ir_pointer_with_offset(
+      context, value, ir_type_fixed_size(type.type));
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t real = load_direct_value(context, value, type.type);
+  ir_val_t imaginary = load_direct_value(
+      context, imaginary_pointer, type.type);
+  if (context->status == IR_HIR_BUILD_OK)
+    real = hir_ir_scalar_truth_value(context, real);
+  if (context->status == IR_HIR_BUILD_OK)
+    imaginary = hir_ir_scalar_truth_value(context, imaginary);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return hir_ir_emit_integer_binary(
+      context, IR_OR, real, imaginary, IR_TY_I32);
+}
+
+static ir_val_t build_complex_compound_assignment(
+    hir_ir_context_t *context, const psx_hir_node_t *target,
+    const psx_hir_node_t *rhs_node,
+    ir_mir_type_info_t target_type,
+    ir_mir_type_info_t rhs_type,
+    psx_hir_compound_operator_t compound_op) {
+  psx_hir_node_kind_t binary_kind = PSX_HIR_ADD;
+  if (!target || !rhs_node || !hir_ir_node_is_lvalue(target) ||
+      !is_arithmetic_mir_type(target_type) ||
+      !is_arithmetic_mir_type(rhs_type) ||
+      !complex_compound_binary_kind(compound_op, &binary_kind))
+    return hir_ir_unsupported_expr(context);
+
+  ir_val_t pointer = hir_ir_lvalue_address(context, target);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int bit_width = 0;
+  int bit_offset = 0;
+  int bit_is_signed = 0;
+  int is_bitfield = psx_hir_node_bitfield_info(
+      target, &bit_width, &bit_offset, &bit_is_signed);
+  if (hir_ir_is_complex_type(target_type) && is_bitfield)
+    return hir_ir_unsupported_expr(context);
+
+  ir_mir_type_info_t operation_type =
+      complex_compound_operation_type(target_type, rhs_type);
+  ir_val_t left;
+  if (hir_ir_is_complex_type(target_type)) {
+    left = convert_complex_pointer(
+        context, pointer, target_type, operation_type);
+  } else {
+    ir_type_t target_storage_type =
+        hir_ir_scalar_storage_type(target_type);
+    ir_val_t old_value;
+    if (is_bitfield) {
+      old_value = emit_bitfield_load(
+          context, pointer, bit_width, bit_offset, bit_is_signed,
+          target_storage_type, target_storage_type);
+    } else {
+      old_value = load_direct_value(
+          context, pointer, target_storage_type);
+    }
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    left = materialize_direct_value_as_complex(
+        context, old_value, target_type, operation_type);
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+
+  ir_val_t right = hir_ir_materialize_complex_operand(
+      context, rhs_node, operation_type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t result = emit_complex_binary_values(
+      context, binary_kind, left, right, operation_type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+
+  if (hir_ir_is_complex_type(target_type)) {
+    result = convert_complex_pointer(
+        context, result, operation_type, target_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    ir_inst_t *copy = ir_inst_new(IR_MEMCPY);
+    if (!copy) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    copy->src1 = pointer;
+    copy->src2 = result;
+    copy->alloca_size = target_type.source_size;
+    if (!hir_ir_append_instruction(context, copy)) return ir_val_none();
+    return pointer;
+  }
+
+  psx_type_shape_t target_semantic_type = {0};
+  int target_is_bool =
+      hir_ir_node_type_shape(context, target, &target_semantic_type) &&
+      target_semantic_type.kind == PSX_TYPE_BOOL;
+  if (target_is_bool) {
+    result = complex_pointer_truth_value(
+        context, result, operation_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    result = hir_ir_coerce_direct_value(
+        context, result,
+        (ir_mir_type_info_t){
+            .type = IR_TY_I32,
+            .type_class = IR_MIR_TYPE_INTEGER,
+            .source_size = 4,
+            .is_unsigned = 1,
+        },
+        target_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  } else {
+    ir_mir_type_info_t component_type = {
+        .type = operation_type.type,
+        .type_class = IR_MIR_TYPE_FLOAT,
+        .source_size = ir_type_fixed_size(operation_type.type),
+    };
+    result = load_direct_value(context, result, operation_type.type);
+    if (context->status == IR_HIR_BUILD_OK)
+      result = hir_ir_coerce_direct_value(
+          context, result, component_type, target_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  }
+  if (is_bitfield)
+    return emit_bitfield_store(
+        context, pointer, result, bit_width, bit_offset,
+        hir_ir_scalar_storage_type(target_type));
+  if (!hir_ir_store_direct_value(context, pointer, result))
+    return ir_val_none();
+  return result;
+}
+
 static ir_val_t build_compound_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t target_type) {
@@ -1320,8 +1487,18 @@ static ir_val_t build_compound_assignment(
       context, node, PSX_HIR_EDGE_LHS, 0);
   const psx_hir_node_t *rhs_node = hir_ir_child_for_edge(
       context, node, PSX_HIR_EDGE_RHS, 0);
-  if (!target || !rhs_node || !hir_ir_node_is_lvalue(target) ||
-      !hir_ir_is_scalar_value_type(target_type))
+  if (!target || !rhs_node || !hir_ir_node_is_lvalue(target))
+    return hir_ir_unsupported_expr(context);
+
+  ir_mir_type_info_t rhs_type = hir_ir_classify_node_type(context, rhs_node);
+  psx_hir_compound_operator_t compound_op =
+      psx_hir_node_compound_operator(node);
+  if (hir_ir_is_complex_type(target_type) ||
+      hir_ir_is_complex_type(rhs_type))
+    return build_complex_compound_assignment(
+        context, target, rhs_node, target_type, rhs_type,
+        compound_op);
+  if (!hir_ir_is_scalar_value_type(target_type))
     return hir_ir_unsupported_expr(context);
 
   ir_val_t pointer = hir_ir_lvalue_address(context, target);
@@ -1354,12 +1531,9 @@ static ir_val_t build_compound_assignment(
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
 
   ir_val_t rhs = hir_ir_build_expr(context, rhs_node);
-  ir_mir_type_info_t rhs_type = hir_ir_classify_node_type(context, rhs_node);
   if (context->status != IR_HIR_BUILD_OK ||
       !hir_ir_is_scalar_value_type(rhs_type))
     return hir_ir_unsupported_expr(context);
-  psx_hir_compound_operator_t compound_op =
-      psx_hir_node_compound_operator(node);
 
   ir_val_t result;
   ir_mir_type_info_t operation_type = target_type;
@@ -1752,6 +1926,8 @@ ir_val_t hir_ir_build_expr(
       return build_unary_plus(context, node, type);
     if (kind == PSX_HIR_ASSIGN)
       return build_complex_assignment(context, node, type);
+    if (kind == PSX_HIR_COMPOUND_ASSIGN)
+      return build_compound_assignment(context, node, type);
     if (kind == PSX_HIR_NEGATE)
       return build_complex_negate(context, node, type);
     if (kind == PSX_HIR_ADD || kind == PSX_HIR_SUB ||

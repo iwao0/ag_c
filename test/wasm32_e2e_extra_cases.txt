@@ -643,6 +643,7 @@ probes_found_bugs/binary_operator_constraints.c
 probes_found_bugs/conditional_operator_constraints.c
 probes_found_bugs/atomic_pointer_conversion_constraints.c
 probes_found_bugs/array_pointer_qualification_constraints.c
+probes_found_bugs/complex_compound_assignment.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c
