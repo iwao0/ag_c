@@ -80,6 +80,14 @@ static node_t *parse_decl_like_stmt(
       context->syntax.context);
 }
 
+static void reject_declaration_as_statement(
+    psx_statement_parse_context_t *context) {
+  if (!context || !is_decl_like_start_stmt(context)) return;
+  ps_diag_ctx_in(
+      diagnostics(context), curtok(context), "statement",
+      "C11 declarations are block items, not statements; use a compound statement here");
+}
+
 static node_t *parse_expression(
     psx_statement_parse_context_t *context) {
   if (!context->syntax.parse_expression) {
@@ -130,7 +138,7 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   }
   if (curtok(context)->kind == TK_LBRACE) return parse_stmt_block(context);
   if (is_label_start_stmt(context)) return parse_stmt_label(context);
-  if (is_decl_like_start_stmt(context)) return parse_decl_like_stmt(context);
+  reject_declaration_as_statement(context);
   switch (curtok(context)->kind) {
     case TK_RETURN:   return parse_stmt_return(context);
     case TK_IF:       return parse_stmt_if(context);
@@ -458,6 +466,6 @@ node_t *psx_stmt_stmt_syntax(
       .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
   };
   if (!context.tokenizer_context) return NULL;
-  node_t *result = stmt_internal(&context);
+  node_t *result = block_item(&context);
   return result;
 }

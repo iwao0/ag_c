@@ -14743,6 +14743,10 @@ static void test_parse_invalid(
   expect_parse_fail(test_suite_session, "int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
   expect_parse_fail(test_suite_session, "int main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail(test_suite_session, "int main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
+  expect_parse_fail(test_suite_session, "int main() { _Static_assert((1, 1), \"ng\"); return 0; }");
+  expect_parse_fail(test_suite_session, "int main() { label: _Static_assert(1, \"ng\"); return 0; }");
+  expect_parse_fail(test_suite_session, "int main() { switch (1) { case 1: int value = 0; return value; } }");
+  expect_parse_fail(test_suite_session, "int main() { switch (1) { default: int value = 0; return value; } }");
   expect_parse_fail(test_suite_session,
       "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
   expect_parse_fail(test_suite_session, "int main() { int x; x.y=1; }");            // 非構造体への .
@@ -15180,6 +15184,7 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok(test_suite_session, "typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
   expect_parse_ok(test_suite_session, "typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
   expect_parse_ok(test_suite_session, "typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main(){ return 0; }");
+  expect_parse_ok(test_suite_session, "_Static_assert((int)1.0, \"ok\"); int main(void){ return 0; }");
 
   // for文の複雑な初期化
   expect_parse_ok(test_suite_session, "int main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");

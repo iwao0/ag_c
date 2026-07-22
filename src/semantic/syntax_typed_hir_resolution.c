@@ -3481,6 +3481,9 @@ static int direct_integer_constant(
     const node_t *syntax, long long *value) {
   if (!context || !syntax || !value) return 0;
   if (syntax->kind == ND_NUM) {
+    if (syntax->tok && syntax->tok->kind == TK_NUM &&
+        tk_as_num(syntax->tok)->num_kind == TK_NUM_KIND_FLOAT)
+      return 0;
     *value = ((const node_num_t *)syntax)->val;
     return 1;
   }
@@ -3543,10 +3546,8 @@ static int direct_integer_constant(
     return 1;
   }
   if (syntax->kind == ND_SOURCE_CAST) {
-    long long operand;
     psx_qual_type_t target_qual_type;
-    if (!direct_integer_constant(context, syntax->lhs, &operand) ||
-        !resolve_direct_source_cast(
+    if (!resolve_direct_source_cast(
             context, (const node_source_cast_t *)syntax,
             &target_qual_type))
       return 0;
@@ -3554,6 +3555,15 @@ static int direct_integer_constant(
     if (!psx_semantic_type_table_describe(
             ps_ctx_semantic_type_table_in(context->semantic_context),
             target_qual_type.type_id, &target))
+      return 0;
+    if (syntax->lhs && syntax->lhs->kind == ND_NUM &&
+        syntax->lhs->tok && syntax->lhs->tok->kind == TK_NUM &&
+        tk_as_num(syntax->lhs->tok)->num_kind == TK_NUM_KIND_FLOAT) {
+      return psx_normalize_floating_constant_cast(
+          &target, ((const node_num_t *)syntax->lhs)->fval, value);
+    }
+    long long operand;
+    if (!direct_integer_constant(context, syntax->lhs, &operand))
       return 0;
     return psx_normalize_integer_constant_cast(
         &target, operand, value);
@@ -3566,11 +3576,6 @@ static int direct_integer_constant(
       return 0;
     return direct_integer_constant(
         context, condition ? syntax->rhs : conditional->els, value);
-  }
-  if (syntax->kind == ND_COMMA) {
-    long long discarded;
-    return direct_integer_constant(context, syntax->lhs, &discarded) &&
-           direct_integer_constant(context, syntax->rhs, value);
   }
   if (syntax->kind == ND_FUNCALL) {
     const node_function_call_t *call =

@@ -50,8 +50,10 @@ void psx_parse_static_assert_syntax_with_context(
                        diagnostics,
                        DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
   }
-  tk_set_current_token_ctx(
-      tokenizer_context, current_token(runtime_context)->next);
+  do {
+    tk_set_current_token_ctx(
+        tokenizer_context, current_token(runtime_context)->next);
+  } while (current_token(runtime_context)->kind == TK_STRING);
   tk_expect_ctx(tokenizer_context, ')');
   tk_expect_ctx(tokenizer_context, ';');
 }

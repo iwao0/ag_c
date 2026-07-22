@@ -629,6 +629,10 @@ probes_found_bugs/declaration_qualifier_constraints.c
 probes_found_bugs/alignas_global_static_storage.c
 probes_found_bugs/storage_class_constraints.c
 probes_found_bugs/function_specifier_constraints.c
+probes_found_bugs/atomic_type_constraints.c
+probes_found_bugs/static_assert_constraints.c
+probes_found_bugs/integer_constant_contexts.c
+probes_found_bugs/statement_declaration_boundaries.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

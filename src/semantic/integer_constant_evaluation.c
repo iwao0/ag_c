@@ -1,5 +1,6 @@
 #include "integer_constant_evaluation.h"
 
+#include <limits.h>
 #include <stdint.h>
 
 static int integer_cast_width(const psx_type_shape_t *type) {
@@ -39,6 +40,39 @@ int psx_normalize_integer_constant_cast(
     normalized |= ~mask;
   *result = (long long)normalized;
   return 1;
+}
+
+int psx_normalize_floating_constant_cast(
+    const psx_type_shape_t *target, double operand, long long *result) {
+  if (!target || !result) return 0;
+  if (target->kind == PSX_TYPE_BOOL) {
+    *result = operand != 0.0;
+    return 1;
+  }
+  if (target->kind != PSX_TYPE_INTEGER || operand != operand) return 0;
+
+  int width = integer_cast_width(target);
+  int bits = width > 0 ? width * 8 : 64;
+  long double value = (long double)operand;
+  if (target->is_unsigned) {
+    long double maximum = bits >= 64
+                              ? (long double)ULLONG_MAX
+                              : (long double)((UINT64_C(1) << bits) - 1);
+    if (value <= -1.0L || value >= maximum + 1.0L) return 0;
+    unsigned long long converted = (unsigned long long)value;
+    return psx_normalize_integer_constant_cast(
+        target, (long long)converted, result);
+  }
+
+  long double minimum = bits >= 64
+                            ? (long double)LLONG_MIN
+                            : -(long double)(UINT64_C(1) << (bits - 1));
+  long double maximum = bits >= 64
+                            ? (long double)LLONG_MAX
+                            : (long double)((UINT64_C(1) << (bits - 1)) - 1);
+  if (value <= minimum - 1.0L || value >= maximum + 1.0L) return 0;
+  return psx_normalize_integer_constant_cast(
+      target, (long long)value, result);
 }
 
 int psx_apply_integer_constant_binary(

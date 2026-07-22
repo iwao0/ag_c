@@ -6,6 +6,8 @@
 
 int psx_normalize_integer_constant_cast(
     const psx_type_shape_t *target, long long operand, long long *result);
+int psx_normalize_floating_constant_cast(
+    const psx_type_shape_t *target, double operand, long long *result);
 int psx_apply_integer_constant_binary(
     psx_syntax_node_kind_t operation,
     long long lhs, long long rhs, long long *result);
