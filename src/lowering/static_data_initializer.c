@@ -11,13 +11,14 @@ int psx_apply_static_aggregate_initializer_plan(
     const psx_static_aggregate_initializer_plan_t *plan) {
   if (!global || !plan || plan->value_count <= 0 ||
       !plan->values || !plan->symbols ||
-      !plan->symbol_lengths || !plan->union_ordinals)
+      !plan->symbol_lengths || !plan->union_ordinals || !plan->offsets)
     return 0;
   global->init_values = plan->values;
   global->init_fvalues = plan->floating_values;
   global->init_value_symbols = plan->symbols;
   global->init_value_symbol_lens = plan->symbol_lengths;
   global->init_union_ordinals = plan->union_ordinals;
+  global->init_offsets = plan->offsets;
   global->init_count = plan->value_count;
   global->union_init_ordinal = plan->union_ordinal;
   return 1;

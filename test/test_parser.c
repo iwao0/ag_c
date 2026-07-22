@@ -7567,6 +7567,8 @@ static void test_direct_function_typed_hir_resolution_boundary(
   ASSERT_EQ(2, direct_static_values->init_count);
   ASSERT_EQ(18, ps_gvar_init_slot_view(direct_static_values, 0).value);
   ASSERT_EQ(19, ps_gvar_init_slot_view(direct_static_values, 1).value);
+  ASSERT_EQ(0, ps_gvar_init_slot_view(direct_static_values, 0).relative_offset);
+  ASSERT_EQ(4, ps_gvar_init_slot_view(direct_static_values, 1).relative_offset);
 
   psx_hir_module_t *hir = psx_hir_module_create();
   ASSERT_TRUE(hir != NULL);

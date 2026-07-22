@@ -14,6 +14,7 @@ typedef struct psx_static_aggregate_initializer_plan_t {
   char **symbols;
   int *symbol_lengths;
   int *union_ordinals;
+  int *offsets;
   int value_count;
   int union_ordinal;
   psx_static_aggregate_initializer_failure_t failure;

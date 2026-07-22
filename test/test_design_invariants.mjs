@@ -8752,6 +8752,25 @@ if (/\baggregate_definition\b/.test(initializerResolutionSource) ||
     "initializer semantics must resolve aggregate declarations through RecordDeclTable and flatten complex members into both components",
   );
 }
+if (!/\bunsigned\s+char\s+bit_width\s*;/.test(
+      initializerResolutionHeader,
+    ) ||
+    !/record->members\[child_index\]\.bit_width\s*>\s*0[^]*?leaf->member_ref\.record_id\s*!=\s*parent_shape\.record_id[^]*?leaf->member_ref\.member_index\s*!=\s*child_index/.test(
+      initializerResolutionSource,
+    ) ||
+    !/target\.bit_width\s*=\s*\(unsigned char\)bit_width/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/target->bit_width\s*>\s*0[^]*?unit_mask[^]*?packed\s*=\s*\(packed\s*&\s*~unit_mask\)/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/gvar_init_cursor_advance_at_offset\s*\([^,]*,\s*base_offset\s*\+\s*unit_off\s*\)/.test(
+      nodeUtilsSource,
+    )) {
+  throw new Error(
+    "bitfield initializer leaves sharing one offset must retain member identity and one packed storage unit",
+  );
+}
 
 const recordDeclTableHeader = await readFile(
   "src/semantic/record_decl_table.h",
@@ -8802,6 +8821,32 @@ if (!/\bpsx_qual_type_t\s+object_qual_type\b/.test(
     )) {
   throw new Error(
     "static aggregate initializer plans must preserve canonical QualType identity",
+  );
+}
+const staticInitializerPlanSource = await readFile(
+  "src/lowering/static_initializer_plan.h",
+  "utf8",
+);
+if (!/\bint\s*\*\s*init_offsets\s*;/.test(gvarStruct[1]) ||
+    !/\bps_gvar_init_slot_set_offset\s*\(/.test(gvarPublicSource) ||
+    !/\bint\s*\*\s*offsets\s*;/.test(staticInitializerPlanSource) ||
+    !/\bps_gvar_init_slot_set_offset\s*\([^]*?aggregate\.leaves\.items\[i\]\.relative_offset/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/\.offsets\s*=\s*temporary\.init_offsets/.test(
+      staticHirInitializerSource,
+    ) ||
+    !/global->init_offsets\s*=\s*plan->offsets/.test(
+      staticDataInitializerSource,
+    ) ||
+    !/gv->init_offsets\s*=\s*malloc\s*\(/.test(nodeUtilsSource) ||
+    !/gv->init_offsets\s*=\s*realloc\s*\(/.test(nodeUtilsSource) ||
+    !/gv->init_offsets\s*\)\s*gv->init_offsets\[idx\]\s*=\s*-1/.test(
+      nodeUtilsSource,
+    ) ||
+    !/\bgvar_init_cursor_advance_at_offset\s*\(/.test(nodeUtilsSource)) {
+  throw new Error(
+    "static aggregate initializer slots must preserve resolved byte offsets through recursive union walking",
   );
 }
 const canonicalArrayCompletion = globalRegistrySource.match(
@@ -8877,7 +8922,13 @@ if (!aggregateWalkerLayoutSection ||
     !/\bpsx_record_decl_table_lookup\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bpsx_type_layout_sizeof\s*\(/.test(
+    !/\bpsx_qual_type_layout_sizeof\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bgvar_member_value_size_for_target\s*\([^)]*\bpsx_qual_type_t\s+value_qual_type\b/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bgvar_member_storage_size_for_target\s*\([^)]*\bpsx_qual_type_t\s+member_qual_type\b/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bgvar_get_record_member_layout\s*\(/.test(
@@ -8959,7 +9010,7 @@ if (!aggregateWalkerLayoutSection ||
       compilerMainSource,
     )) {
   throw new Error(
-    "aggregate walking and IR symbol layout must consume TypeId and explicit TargetSpec",
+    "aggregate walking and IR symbol layout must preserve QualType and consume explicit TargetSpec",
   );
 }
 const nameClassifierHeader = await readFile(

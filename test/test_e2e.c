@@ -1369,6 +1369,12 @@ static const test_case_t test_cases[] = {
     {"probes", "atomic_compound_assignment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_compound_assignment.c", 0, 0},
     {"probes", "stdatomic_pointer_operations", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stdatomic_pointer_operations.c", 0, 0},
     {"probes", "atomic_qualified_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_qualified_layout.c", 0, 0},
+    {"probes", "atomic_aggregate_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_aggregate_member_array_layout.c", 0, 0},
+    {"probes", "atomic_union_member_array_layout", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_union_member_array_layout.c", 0, 0},
+    {"probes", "union_padded_struct_initializer_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_padded_struct_initializer_offsets.c", 0, 0},
+    {"probes", "union_bitfield_initializer_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_bitfield_initializer_offsets.c", 0, 0},
+    {"probes", "union_mixed_relocation_initializer_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_mixed_relocation_initializer_offsets.c", 0, 0},
+    {"probes", "union_array_active_member_offsets", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_array_active_member_offsets.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

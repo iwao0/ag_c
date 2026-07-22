@@ -31,6 +31,7 @@ struct global_var_t {
   char **init_value_symbols;
   int *init_value_symbol_lens;
   int *init_union_ordinals;  // 各 init slot の union active member ordinal (-1=未指定)
+  int *init_offsets;  // static aggregate scalar leaf の object-relative byte offset
   long long init_val; // 初期値（整数定数、スカラ用）
   long long init_symbol_offset;  // `&a[1]` / `a+1` のシンボルからのバイトオフセット
   double fval;        // 浮動小数スカラの初期値 (fp_kind != NONE のとき有効)

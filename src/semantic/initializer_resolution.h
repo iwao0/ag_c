@@ -60,6 +60,8 @@ typedef struct {
   psx_initializer_member_ref_t member_ref;
   int union_relative_offset;
   int union_member_index;
+  unsigned char bit_width;
+  unsigned char bit_offset;
 } psx_initializer_target_t;
 
 typedef struct {

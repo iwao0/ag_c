@@ -41,6 +41,8 @@ void ps_gvar_init_slot_write_fp_sentinel(
     global_var_t *gv, int idx, tk_float_kind_t fp_kind, int fp_size);
 void ps_gvar_init_slot_set_ordinal(
     global_var_t *gv, int idx, int ordinal);
+void ps_gvar_init_slot_set_offset(
+    global_var_t *gv, int idx, int relative_offset);
 
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,

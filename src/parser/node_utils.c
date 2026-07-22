@@ -446,6 +446,8 @@ static gvar_init_cursor_t gvar_init_cursor(const global_var_t *gv);
 static int gvar_init_cursor_has(const gvar_init_cursor_t *cur);
 static int gvar_init_cursor_index(const gvar_init_cursor_t *cur);
 static int gvar_init_cursor_advance(gvar_init_cursor_t *cur);
+static int gvar_init_cursor_advance_at_offset(
+    gvar_init_cursor_t *cur, long long relative_offset);
 static int gvar_init_cursor_consume_plain_zero_padding(gvar_init_cursor_t *cur,
                                                        int start_idx, int target_slots);
 static int gvar_init_cursor_consume_resolved_type_zero_padding(
@@ -459,7 +461,7 @@ static int gvar_init_cursor_pack_bitfield_unit(
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     const psx_record_decl_t *record_decl,
-    int member_index, gvar_init_cursor_t *cur,
+    int member_index, long long base_offset, gvar_init_cursor_t *cur,
     psx_gvar_bitfield_unit_t *out);
 static int record_union_init_member_for_slot(
     const psx_semantic_type_table_t *semantic_types,
@@ -476,17 +478,19 @@ static void gvar_aggregate_member_iter_note_cover(
 static int gvar_member_value_size_for_target(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t value_type_id, const ag_target_info_t *target) {
-  return psx_type_layout_sizeof(semantic_types, record_layouts, value_type_id,
-                           ag_target_info_data_layout(target));
+    psx_qual_type_t value_qual_type, const ag_target_info_t *target) {
+  return psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, value_qual_type,
+      ag_target_info_data_layout(target));
 }
 
 static int gvar_member_storage_size_for_target(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
-    psx_type_id_t member_type_id, const ag_target_info_t *target) {
-  return psx_type_layout_sizeof(semantic_types, record_layouts, member_type_id,
-                           ag_target_info_data_layout(target));
+    psx_qual_type_t member_qual_type, const ag_target_info_t *target) {
+  return psx_qual_type_layout_sizeof(
+      semantic_types, record_layouts, member_qual_type,
+      ag_target_info_data_layout(target));
 }
 
 static int gvar_get_record_member_layout(
@@ -701,11 +705,13 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
             semantic_types, record_layouts, target, aggregate_type_id,
             i, &member_layout))
       continue;
-    psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
-        semantic_types, aggregate_type_id, i).type_id;
-    int member_size =
-        psx_type_layout_sizeof(semantic_types, record_layouts, member_type_id,
-                          ag_target_info_data_layout(target));
+    psx_qual_type_t member_qual_type =
+        psx_semantic_type_table_record_member(
+            semantic_types, aggregate_type_id, i);
+    psx_type_id_t member_type_id = member_qual_type.type_id;
+    int member_size = psx_qual_type_layout_sizeof(
+        semantic_types, record_layouts, member_qual_type,
+        ag_target_info_data_layout(target));
     int start = base_offset + member_layout.offset;
     if (member_size <= 0 || target_offset < start ||
         target_offset >= start + member_size)
@@ -734,13 +740,14 @@ static void gvar_aggregate_member_iter_note_cover(
     const psx_record_member_layout_t *layout,
     int member_ordinal) {
   if (!iter || !declaration || !layout) return;
-  psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
-      iter->semantic_types, iter->aggregate_type_id,
-      member_ordinal).type_id;
+  psx_qual_type_t member_qual_type =
+      psx_semantic_type_table_record_member(
+          iter->semantic_types, iter->aggregate_type_id,
+          member_ordinal);
   if (psx_record_member_decl_is_unnamed_union(
           iter->semantic_types, declaration)) {
-    int member_size = psx_type_layout_sizeof(
-        iter->semantic_types, iter->record_layouts, member_type_id,
+    int member_size = psx_qual_type_layout_sizeof(
+        iter->semantic_types, iter->record_layouts, member_qual_type,
         ag_target_info_data_layout(iter->target));
     if (member_size > 0) {
       iter->cover_state.covered_union_off = layout->offset;
@@ -760,25 +767,32 @@ static void gvar_aggregate_member_iter_note_cover(
   }
 }
 
-static psx_type_id_t gvar_member_type_id(
+static psx_qual_type_t gvar_member_qual_type(
     const psx_semantic_type_table_t *semantic_types,
     psx_type_id_t aggregate_type_id, int member_ordinal) {
   return psx_semantic_type_table_record_member(
-      semantic_types, aggregate_type_id, member_ordinal).type_id;
+      semantic_types, aggregate_type_id, member_ordinal);
+}
+
+static psx_qual_type_t gvar_member_value_qual_type(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_type_id_t aggregate_type_id, int member_ordinal) {
+  psx_qual_type_t member_qual_type = gvar_member_qual_type(
+      semantic_types, aggregate_type_id, member_ordinal);
+  psx_type_shape_t member_shape = {0};
+  return psx_semantic_type_table_describe(
+             semantic_types, member_qual_type.type_id, &member_shape) &&
+         member_shape.kind == PSX_TYPE_ARRAY
+             ? psx_semantic_type_table_array_leaf(
+                   semantic_types, member_qual_type.type_id)
+             : member_qual_type;
 }
 
 static psx_type_id_t gvar_member_value_type_id(
     const psx_semantic_type_table_t *semantic_types,
     psx_type_id_t aggregate_type_id, int member_ordinal) {
-  psx_type_id_t member_type_id = gvar_member_type_id(
-      semantic_types, aggregate_type_id, member_ordinal);
-  psx_type_shape_t member_shape = {0};
-  return psx_semantic_type_table_describe(
-             semantic_types, member_type_id, &member_shape) &&
-         member_shape.kind == PSX_TYPE_ARRAY
-             ? psx_semantic_type_table_array_leaf(
-                   semantic_types, member_type_id).type_id
-             : member_type_id;
+  return gvar_member_value_qual_type(
+      semantic_types, aggregate_type_id, member_ordinal).type_id;
 }
 
 static int gvar_walk_struct_initializer(
@@ -804,10 +818,12 @@ static int gvar_walk_struct_initializer(
     if (!gvar_aggregate_member_next(
             &iter, &member, &member_layout, &ordinal))
       break;
-    psx_type_id_t member_type_id = gvar_member_type_id(
+    psx_qual_type_t member_qual_type = gvar_member_qual_type(
         semantic_types, aggregate_type_id, ordinal);
-    psx_type_id_t member_value_type_id = gvar_member_value_type_id(
+    psx_type_id_t member_type_id = member_qual_type.type_id;
+    psx_qual_type_t member_value_qual_type = gvar_member_value_qual_type(
         semantic_types, aggregate_type_id, ordinal);
+    psx_type_id_t member_value_type_id = member_value_qual_type.type_id;
     psx_type_id_t member_aggregate_type_id =
         psx_semantic_type_table_array_leaf(
             semantic_types, member_type_id).type_id;
@@ -821,8 +837,7 @@ static int gvar_walk_struct_initializer(
       psx_gvar_bitfield_unit_t unit = {0};
       if (!gvar_init_cursor_pack_bitfield_unit(
               semantic_types, record_layouts, target, aggregate_type_id,
-              record_decl,
-              ordinal, cur, &unit)) {
+              record_decl, ordinal, base_offset, cur, &unit)) {
         return 0;
       }
       ops->bitfield_unit(user, &unit, base_offset);
@@ -832,10 +847,10 @@ static int gvar_walk_struct_initializer(
     }
     int member_value_size =
         gvar_member_value_size_for_target(
-            semantic_types, record_layouts, member_value_type_id, target);
+            semantic_types, record_layouts, member_value_qual_type, target);
     int member_storage_size =
         gvar_member_storage_size_for_target(
-            semantic_types, record_layouts, member_type_id, target);
+            semantic_types, record_layouts, member_qual_type, target);
     int member_array_count =
         psx_semantic_type_table_array_flat_element_count(
             semantic_types, member.decl_qual_type.type_id);
@@ -885,7 +900,8 @@ static int gvar_walk_struct_initializer(
             }
             break;
           }
-          int slot = gvar_init_cursor_advance(cur);
+          int slot = gvar_init_cursor_advance_at_offset(cur, elem_off);
+          if (slot < 0) return 0;
           gvar_walk_emit_scalar(
               ops, user, &member, member_value_type_id, slot, elem_off);
         }
@@ -932,10 +948,12 @@ static int gvar_walk_struct_initializer(
       continue;
     }
     if (!gvar_walk_require_scalar(ops)) return 0;
-    int slot = gvar_init_cursor_advance(cur);
+    long long scalar_offset = base_offset + member_layout.offset;
+    int slot = gvar_init_cursor_advance_at_offset(cur, scalar_offset);
+    if (slot < 0) return 0;
     gvar_walk_emit_scalar(
         ops, user, &member, member_value_type_id, slot,
-        base_offset + member_layout.offset);
+        scalar_offset);
     prev_end = member_layout.offset + member_value_size;
   }
   if (prev_end < struct_size) {
@@ -976,19 +994,21 @@ static int gvar_walk_union_initializer(
           semantic_types, record_layouts, target, aggregate_type_id,
           member_ordinal, &member_layout))
     return 0;
-  psx_type_id_t member_type_id = gvar_member_type_id(
+  psx_qual_type_t member_qual_type = gvar_member_qual_type(
       semantic_types, aggregate_type_id, member_ordinal);
-  psx_type_id_t member_value_type_id = gvar_member_value_type_id(
+  psx_type_id_t member_type_id = member_qual_type.type_id;
+  psx_qual_type_t member_value_qual_type = gvar_member_value_qual_type(
       semantic_types, aggregate_type_id, member_ordinal);
+  psx_type_id_t member_value_type_id = member_value_qual_type.type_id;
   psx_type_id_t member_aggregate_type_id =
       psx_semantic_type_table_array_leaf(
           semantic_types, member_type_id).type_id;
   int member_value_size =
       gvar_member_value_size_for_target(
-          semantic_types, record_layouts, member_value_type_id, target);
+          semantic_types, record_layouts, member_value_qual_type, target);
   int member_storage_size =
       gvar_member_storage_size_for_target(
-          semantic_types, record_layouts, member_type_id, target);
+          semantic_types, record_layouts, member_qual_type, target);
   int member_array_count =
       psx_semantic_type_table_array_flat_element_count(
           semantic_types, member.decl_qual_type.type_id);
@@ -1000,10 +1020,12 @@ static int gvar_walk_union_initializer(
     gvar_walk_emit_padding(ops, user, base_offset, member_layout.offset);
   if (member.bit_width > 0) {
     if (!gvar_walk_require_bitfield_member(ops)) return 0;
-    int slot = gvar_init_cursor_advance(cur);
+    long long bitfield_offset = base_offset + member_layout.offset;
+    int slot = gvar_init_cursor_advance_at_offset(cur, bitfield_offset);
+    if (slot < 0) return 0;
     gvar_walk_emit_bitfield_member(
         ops, user, &member, &member_layout, member_value_type_id, slot,
-        base_offset + member_layout.offset);
+        bitfield_offset);
     gvar_init_cursor_consume_resolved_type_zero_padding(
         semantic_types, record_decls, record_layouts, target,
         aggregate_type_id, cur, start_idx);
@@ -1018,6 +1040,7 @@ static int gvar_walk_union_initializer(
     if (psx_record_member_decl_is_tag_aggregate(semantic_types, &member)) {
       for (int k = 0; k < member_array_count; k++) {
         if (!gvar_init_cursor_has(cur) && !gvar_walk_needs_padding(ops)) break;
+        int elem_start_idx = gvar_init_cursor_index(cur);
         long long elem_off = base_offset + member_layout.offset +
                              (long long)k * member_value_size;
         int ok = psx_record_member_decl_is_struct_aggregate(
@@ -1039,6 +1062,9 @@ static int gvar_walk_union_initializer(
                                           gv, cur, elem_off, member_value_size,
                                           ops, user);
         if (!ok) return 0;
+        gvar_init_cursor_consume_resolved_type_zero_padding(
+            semantic_types, record_decls, record_layouts, target,
+            member_aggregate_type_id, cur, elem_start_idx);
       }
     } else {
       if (!gvar_walk_require_scalar(ops)) return 0;
@@ -1052,7 +1078,8 @@ static int gvar_walk_union_initializer(
           }
           break;
         }
-        int slot = gvar_init_cursor_advance(cur);
+        int slot = gvar_init_cursor_advance_at_offset(cur, elem_off);
+        if (slot < 0) return 0;
         gvar_walk_emit_scalar(
             ops, user, &member, member_value_type_id, slot, elem_off);
       }
@@ -1095,10 +1122,12 @@ static int gvar_walk_union_initializer(
     return 1;
   }
   if (!gvar_walk_require_scalar(ops)) return 0;
-  int slot = gvar_init_cursor_advance(cur);
+  long long scalar_offset = base_offset + member_layout.offset;
+  int slot = gvar_init_cursor_advance_at_offset(cur, scalar_offset);
+  if (slot < 0) return 0;
   gvar_walk_emit_scalar(
       ops, user, &member, member_value_type_id, slot,
-      base_offset + member_layout.offset);
+      scalar_offset);
   gvar_init_cursor_consume_resolved_type_zero_padding(
       semantic_types, record_decls, record_layouts, target,
       aggregate_type_id, cur, start_idx);
@@ -1208,6 +1237,7 @@ psx_gvar_init_slot_t ps_gvar_init_slot_view(const global_var_t *gv, int idx) {
   psx_gvar_init_slot_t slot = {0};
   if (!gv || idx < 0 || idx >= gv->init_count) return slot;
   slot.in_range = 1;
+  slot.relative_offset = gv->init_offsets ? gv->init_offsets[idx] : -1;
   slot.symbol = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
   slot.symbol_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
   slot.value = gv->init_values ? gv->init_values[idx] : 0;
@@ -1238,6 +1268,23 @@ static int gvar_init_cursor_index(const gvar_init_cursor_t *cur) {
 static int gvar_init_cursor_advance(gvar_init_cursor_t *cur) {
   if (!gvar_init_cursor_has(cur)) return -1;
   return cur->index++;
+}
+
+static int gvar_init_cursor_advance_at_offset(
+    gvar_init_cursor_t *cur, long long relative_offset) {
+  if (!gvar_init_cursor_has(cur)) return -1;
+  if (!cur->gv || !cur->gv->init_offsets || relative_offset < 0 ||
+      relative_offset > INT32_MAX ||
+      cur->gv->init_offsets[cur->index] < 0)
+    return gvar_init_cursor_advance(cur);
+  int target = (int)relative_offset;
+  while (gvar_init_cursor_has(cur) &&
+         cur->gv->init_offsets[cur->index] < target)
+    cur->index++;
+  if (!gvar_init_cursor_has(cur) ||
+      cur->gv->init_offsets[cur->index] != target)
+    return -1;
+  return gvar_init_cursor_advance(cur);
 }
 
 static int gvar_init_cursor_consume_plain_zero_padding(gvar_init_cursor_t *cur,
@@ -1278,7 +1325,7 @@ static int gvar_init_cursor_pack_bitfield_unit(
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     const psx_record_decl_t *record_decl,
-    int member_index, gvar_init_cursor_t *cur,
+    int member_index, long long base_offset, gvar_init_cursor_t *cur,
     psx_gvar_bitfield_unit_t *out) {
   if (!cur || !out || !record_decl || !record_decl->members) return 0;
   psx_record_member_decl_t first = {0};
@@ -1301,6 +1348,33 @@ static int gvar_init_cursor_pack_bitfield_unit(
   unsigned long long packed = 0;
   int m = member_index;
   int last = member_index;
+  if (cur->gv && cur->gv->init_offsets &&
+      cur->index >= 0 && cur->index < cur->count &&
+      cur->gv->init_offsets[cur->index] >= 0) {
+    int slot = gvar_init_cursor_advance_at_offset(
+        cur, base_offset + unit_off);
+    if (slot < 0) return 0;
+    packed = (unsigned long long)ps_gvar_init_slot_view(
+        cur->gv, slot).value;
+    while (m < n_members) {
+      psx_record_member_layout_t member_layout = {0};
+      const psx_record_member_decl_t *member = &record_decl->members[m];
+      if (!gvar_get_record_member_layout(
+              semantic_types, record_layouts, target, aggregate_type_id,
+              m, &member_layout) ||
+          member->bit_width <= 0 || member_layout.offset != unit_off)
+        break;
+      last = m;
+      m++;
+    }
+    *out = (psx_gvar_bitfield_unit_t){
+        .offset = unit_off,
+        .size = unit_size,
+        .last_member_index = last,
+        .packed = packed,
+    };
+    return 1;
+  }
   while (m < n_members && gvar_init_cursor_has(cur)) {
     psx_record_member_decl_t member = {0};
     psx_record_member_layout_t member_layout = {0};
@@ -1332,8 +1406,9 @@ void ps_gvar_init_slots_alloc(global_var_t *gv, int cap, int with_fvalues) {
   gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
   gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
   gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+  gv->init_offsets = malloc((size_t)cap * sizeof(int));
   if (with_fvalues) gv->init_fvalues = calloc((size_t)cap, sizeof(double));
-  for (int i = 0; i < cap; i++) ps_gvar_init_slot_set_ordinal(gv, i, -1);
+  for (int i = 0; i < cap; i++) ps_gvar_init_slot_clear(gv, i);
 }
 
 void psx_gvar_init_slots_ensure_capacity(global_var_t *gv, int *cap, int min_cap) {
@@ -1346,6 +1421,7 @@ void psx_gvar_init_slots_ensure_capacity(global_var_t *gv, int *cap, int min_cap
     gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
     gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
     gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
+    gv->init_offsets = realloc(gv->init_offsets, (size_t)new_cap * sizeof(int));
     if (gv->init_fvalues) {
       gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
     }
@@ -1393,6 +1469,7 @@ void ps_gvar_init_slot_clear(global_var_t *gv, int idx) {
   if (gv->init_value_symbols) gv->init_value_symbols[idx] = NULL;
   if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = 0;
   if (gv->init_union_ordinals) gv->init_union_ordinals[idx] = -1;
+  if (gv->init_offsets) gv->init_offsets[idx] = -1;
   if (gv->init_fvalues) gv->init_fvalues[idx] = 0.0;
 }
 
@@ -1415,6 +1492,12 @@ void ps_gvar_init_slot_write_fp_sentinel(global_var_t *gv, int idx,
 void ps_gvar_init_slot_set_ordinal(global_var_t *gv, int idx, int ordinal) {
   if (!gv || idx < 0 || !gv->init_union_ordinals) return;
   gv->init_union_ordinals[idx] = ordinal;
+}
+
+void ps_gvar_init_slot_set_offset(
+    global_var_t *gv, int idx, int relative_offset) {
+  if (!gv || idx < 0 || !gv->init_offsets) return;
+  gv->init_offsets[idx] = relative_offset;
 }
 
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {

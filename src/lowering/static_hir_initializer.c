@@ -566,6 +566,10 @@ static psx_initializer_target_t aggregate_resolved_entry_target(
   int has_bitfield = psx_hir_node_bitfield_info(
       entry, &bit_width, &bit_offset, &bit_is_signed);
   (void)bit_is_signed;
+  if (has_bitfield) {
+    target.bit_width = (unsigned char)bit_width;
+    target.bit_offset = (unsigned char)bit_offset;
+  }
   for (int i = 0; i < aggregate->leaves.count; i++) {
     const psx_initializer_scalar_leaf_t *leaf =
         &aggregate->leaves.items[i];
@@ -659,6 +663,9 @@ static int aggregate_write_scalar(
     const psx_hir_node_t *value) {
   int index = aggregate_leaf_index_for_target(
       &aggregate->leaves, target);
+  if (target && target->bit_width > 0)
+    index = aggregate_leaf_index_at_offset(
+        &aggregate->leaves, target->relative_offset);
   psx_type_shape_t target_type = {0};
   if (index < 0 || index >= aggregate->leaves.count || !value ||
       !type_shape(&aggregate->eval, target->type_id, &target_type))
@@ -704,9 +711,26 @@ static int aggregate_write_scalar(
     }
     if (target_type.kind == PSX_TYPE_BOOL) integer = integer != 0;
   }
-  ps_gvar_init_slot_write(
-      aggregate->global, index, integer, floating,
-      (char *)symbol, symbol_len);
+  if (target->bit_width > 0) {
+    unsigned int width = target->bit_width;
+    unsigned int offset = target->bit_offset;
+    unsigned long long mask =
+        width >= 64 ? ~0ULL : ((1ULL << width) - 1ULL);
+    unsigned long long unit_mask =
+        offset >= 64 ? 0 : mask << offset;
+    unsigned long long packed =
+        (unsigned long long)aggregate->global->init_values[index];
+    unsigned long long shifted =
+        offset >= 64 ? 0 : ((unsigned long long)integer & mask) << offset;
+    packed = (packed & ~unit_mask) |
+             shifted;
+    ps_gvar_init_slot_write(
+        aggregate->global, index, (long long)packed, 0.0, NULL, 0);
+  } else {
+    ps_gvar_init_slot_write(
+        aggregate->global, index, integer, floating,
+        (char *)symbol, symbol_len);
+  }
   if (!symbol && target_type.kind == PSX_TYPE_FLOAT &&
       target->union_member_index >= 0) {
     tk_float_kind_t floating_kind =
@@ -873,8 +897,11 @@ int psx_build_static_aggregate_hir_initializer_plan(
       &temporary, aggregate.leaves.count,
       aggregate_type_contains_float(&aggregate, type_id));
   temporary.init_count = aggregate.leaves.count;
-  for (int i = 0; i < aggregate.leaves.count; i++)
+  for (int i = 0; i < aggregate.leaves.count; i++) {
     ps_gvar_init_slot_clear(&temporary, i);
+    ps_gvar_init_slot_set_offset(
+        &temporary, i, aggregate.leaves.items[i].relative_offset);
+  }
   int lowered = aggregate_lower_list(
       &aggregate, type_id, 0, initializer);
   psx_initializer_scalar_leaf_list_dispose(&aggregate.leaves);
@@ -888,6 +915,7 @@ int psx_build_static_aggregate_hir_initializer_plan(
       .symbols = temporary.init_value_symbols,
       .symbol_lengths = temporary.init_value_symbol_lens,
       .union_ordinals = temporary.init_union_ordinals,
+      .offsets = temporary.init_offsets,
       .value_count = temporary.init_count,
       .union_ordinal = temporary.union_init_ordinal,
   };

@@ -240,8 +240,14 @@ static int flat_initializer_child_span(
   int leaf_begin = -1;
   int leaf_end = -1;
   for (int i = parent->leaf_begin; i < parent->leaf_end; i++) {
-    int leaf_offset = context->leaves->items[i].relative_offset;
+    const psx_initializer_scalar_leaf_t *leaf =
+        &context->leaves->items[i];
+    int leaf_offset = leaf->relative_offset;
     if (leaf_offset < member_begin || leaf_offset >= member_end)
+      continue;
+    if (record->members[child_index].bit_width > 0 &&
+        (leaf->member_ref.record_id != parent_shape.record_id ||
+         leaf->member_ref.member_index != child_index))
       continue;
     leaf_begin = i;
     leaf_end = i + member_leaf_count;

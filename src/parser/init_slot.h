@@ -5,6 +5,7 @@
 
 typedef struct psx_gvar_init_slot_t {
   int in_range;
+  int relative_offset;
   char *symbol;
   int symbol_len;
   long long value;
