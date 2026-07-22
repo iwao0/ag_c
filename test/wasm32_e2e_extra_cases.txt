@@ -588,6 +588,10 @@ probes_found_bugs/scope_graph_namespace_lifetime.c
 probes_found_bugs/target_layout_pointer_record.c
 probes_found_bugs/vla_typedef_bound_identity.c
 probes_found_bugs/abi_dynamic_mixed_params.c
+probes_found_bugs/pp_active_macro_redefinition.c
+probes_found_bugs/qualified_pointer_array_function.c
+probes_found_bugs/prototype_typedef_array_qualifiers.c
+probes_found_bugs/local_typedef_object_shadow_restore.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

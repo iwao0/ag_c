@@ -2025,8 +2025,11 @@ static int preflight_direct_expression_impl(
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     psx_address_operand_category_t category =
         PSX_ADDRESS_OPERAND_NOT_ADDRESSABLE;
-    if (preflight_direct_lvalue(
-            context, operand_syntax, &operand_type)) {
+    context->suppress_value_decay_depth++;
+    int operand_is_lvalue = preflight_direct_lvalue(
+        context, operand_syntax, &operand_type);
+    context->suppress_value_decay_depth--;
+    if (operand_is_lvalue) {
       category = PSX_ADDRESS_OPERAND_OBJECT_LVALUE;
       if (operand_syntax->kind == ND_IDENTIFIER) {
         psx_identifier_expression_resolution_t identifier;
