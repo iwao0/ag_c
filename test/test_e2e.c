@@ -1302,6 +1302,10 @@ static const test_case_t test_cases[] = {
     {"probes", "wasm_nonvoid_indirect_unused_result", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c", 0, 0},
     {"probes", "indirect_struct_return_funcptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/indirect_struct_return_funcptr.c", 0, 0},
     {"probes", "typedef_void_funcptr_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_void_funcptr_param.c", 0, 0},
+    {"probes", "scope_graph_namespace_lifetime", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/scope_graph_namespace_lifetime.c", 0, 0},
+    {"probes", "target_layout_pointer_record", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/target_layout_pointer_record.c", 0, 0},
+    {"probes", "vla_typedef_bound_identity", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_typedef_bound_identity.c", 0, 0},
+    {"probes", "abi_dynamic_mixed_params", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/abi_dynamic_mixed_params.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

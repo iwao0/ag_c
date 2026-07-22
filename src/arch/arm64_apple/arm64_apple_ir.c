@@ -842,6 +842,24 @@ static int incoming_piece_index(
   return index;
 }
 
+static int incoming_piece_stack_slot(
+    const ir_abi_signature_t *signature, size_t physical_index) {
+  if (!signature || physical_index >= signature->param_count) abort();
+  int integer_count = 0;
+  int fp_count = 0;
+  int stack_slot = 0;
+  for (size_t i = 0; i <= physical_index; i++) {
+    int *class_count = abi_piece_is_fp(&signature->param_pieces[i])
+                           ? &fp_count
+                           : &integer_count;
+    int is_stack_piece = *class_count >= 8;
+    if (i == physical_index) return is_stack_piece ? stack_slot : -1;
+    if (is_stack_piece) stack_slot++;
+    (*class_count)++;
+  }
+  abort();
+}
+
 static const char *incoming_piece_register(
     gen_ctx_t *ctx, const ir_abi_signature_t *signature,
     size_t physical_index, char *buffer, size_t buffer_size) {
@@ -857,7 +875,9 @@ static const char *incoming_piece_register(
     }
     return buffer;
   }
-  int stack_offset = ctx->total_size + (index - 8) * 8;
+  int stack_slot = incoming_piece_stack_slot(signature, physical_index);
+  if (stack_slot < 0) abort();
+  int stack_offset = ctx->total_size + stack_slot * 8;
   if (fp) {
     snprintf(buffer, buffer_size, "%c17",
              piece->type == IR_TY_F64 ? 'd' : 's');
