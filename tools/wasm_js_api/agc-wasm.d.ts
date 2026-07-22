@@ -90,6 +90,8 @@ export interface AgcWasmDiagnosticError extends Error {
 export interface AgcWasmObjectResult {
   object: Uint8Array;
   diagnostics: readonly AgcDiagnostic[];
+  /** Sorted canonical virtual-header names opened by this translation unit. */
+  dependencies: readonly string[];
 }
 
 export interface AgcWasmWatResult {

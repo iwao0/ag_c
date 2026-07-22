@@ -700,6 +700,23 @@ int agc_wasm_adapter_analysis_error_actual(int handle) {
   return adapter ? (int)adapter->analysis_error.actual : 0;
 }
 
+int agc_wasm_adapter_dependency_count(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter && adapter->session
+             ? ag_compilation_session_virtual_header_dependency_count(
+                   adapter->session)
+             : 0;
+}
+
+int agc_wasm_adapter_dependency_name_ptr(int handle, int index) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  const char *name = adapter && adapter->session
+                         ? ag_compilation_session_virtual_header_dependency_name_at(
+                               adapter->session, index)
+                         : NULL;
+  return (int)(long)name;
+}
+
 static const ag_diagnostic_context_t *wasm_adapter_diagnostics(int handle) {
   agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
   return adapter && adapter->session

@@ -44,6 +44,10 @@ psx_local_registry_t *ag_compilation_session_local_registry(
     const ag_compilation_session_t *session);
 ag_preprocessor_context_t *ag_compilation_session_preprocessor_context(
     const ag_compilation_session_t *session);
+int ag_compilation_session_virtual_header_dependency_count(
+    const ag_compilation_session_t *session);
+const char *ag_compilation_session_virtual_header_dependency_name_at(
+    const ag_compilation_session_t *session, int index);
 arena_context_t *ag_compilation_session_arena_context(
     const ag_compilation_session_t *session);
 ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(

@@ -291,6 +291,10 @@ export async function createCompiler(wasmSource, options = {}) {
     max: instance.exports.agc_wasm_adapter_analysis_error_max,
     actual: instance.exports.agc_wasm_adapter_analysis_error_actual,
   };
+  const dependencyExports = {
+    count: instance.exports.agc_wasm_adapter_dependency_count,
+    namePtr: instance.exports.agc_wasm_adapter_dependency_name_ptr,
+  };
   const diagnosticLocaleExport = instance.exports.agc_wasm_adapter_set_diagnostic_locale;
   const continuationOptionsExport = instance.exports.agc_wasm_adapter_set_continuation_options;
   const diagnosticExports = {
@@ -542,6 +546,22 @@ export async function createCompiler(wasmSource, options = {}) {
       });
     }
     return freezeDiagnostics(diagnostics);
+  }
+
+  function readDependencies() {
+    if (typeof dependencyExports.count !== "function" ||
+        typeof dependencyExports.namePtr !== "function") {
+      return Object.freeze([]);
+    }
+    const handle = requireAdapterHandle();
+    const count = callNumberFunc(dependencyExports.count, [handle]);
+    const dependencies = [];
+    for (let index = 0; index < count; index++) {
+      dependencies.push(readCString(callNumberFunc(
+        dependencyExports.namePtr, [handle, index],
+      )));
+    }
+    return Object.freeze(dependencies);
   }
 
   function diagnosticResourceLimitError(resourceLimits, diagnostics = readStructuredDiagnostics()) {
@@ -852,7 +872,11 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function compileObjectWithDiagnostics(source, options = {}) {
     const object = compileObject(source, options);
-    return { object, diagnostics: readStructuredDiagnostics() };
+    return {
+      object,
+      diagnostics: readStructuredDiagnostics(),
+      dependencies: readDependencies(),
+    };
   }
 
   function freezeAnalysisValue(value) {

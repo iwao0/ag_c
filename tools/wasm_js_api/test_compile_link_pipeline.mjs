@@ -35,6 +35,20 @@ if (!toolchainAnalysis.completionItems.some((item) =>
       item.name === "toolchain_symbol" && item.kind === "object")) {
   throw new Error("toolchain analyzeSource did not delegate to the compiler snapshot API");
 }
+const toolchainDependencyResult = toolchain.compileObjectWithDiagnostics({
+  name: "toolchain-dependencies.c",
+  source: "#include <outer.h>\nint value(void) { return INNER_VALUE; }\n",
+}, {
+  headers: {
+    "outer.h": "#include <inner.h>\n",
+    "inner.h": "#define INNER_VALUE 42\n",
+    "unused.h": "#define UNUSED_VALUE 0\n",
+  },
+});
+if (JSON.stringify(toolchainDependencyResult.dependencies) !==
+    JSON.stringify(["inner.h", "outer.h"])) {
+  throw new Error("toolchain compileObjectWithDiagnostics lost dependencies");
+}
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
 const synchronousContinuationProgram = await toolchain.instantiateLinkedWasm(`
@@ -623,11 +637,27 @@ await expectSignedExportFailure(
   { name: "external_data", signature: "v()" },
   "signed export refers to an undefined data symbol: external_data",
 );
-await expectSignedExportFailure(
-  "void present(void) {}\n",
-  { name: "missing", signature: "v()" },
-  "signed export not found: missing",
-);
+for (const [exportSpec, signed] of [
+  ["missing", false],
+  [{ name: "missing_signed", signature: "v()" }, true],
+]) {
+  const isolatedToolchain = await freshToolchain();
+  try {
+    isolatedToolchain.compileLinkedWasm("void present(void) {}\n", {
+      exports: [exportSpec],
+      useStdlib: false,
+    });
+    throw new Error("missing export unexpectedly linked");
+  } catch (err) {
+    const exportName = typeof exportSpec === "string" ? exportSpec : exportSpec.name;
+    if (!(err instanceof AgcLinkError) ||
+        err.code !== "AGC_LINK_MISSING_EXPORT" ||
+        err.details?.exportName !== exportName ||
+        err.details?.signed !== signed) {
+      throw err;
+    }
+  }
+}
 
 const canonicalTypedefExports = await toolchain.instantiateLinkedWasm(`
 typedef void entry_t(void);

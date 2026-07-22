@@ -83,6 +83,54 @@ if (functionResult.hover.function.parameters[0].name !== "value") {
   throw new Error(`function parameter name was lost: ${JSON.stringify(functionResult.hover)}`);
 }
 
+const virtualHoverSource = {
+  name: "virtual-hover.c",
+  source: "#include <symbols.h>\n" +
+    "int main(void) { return header_function(header_object) + " +
+    "HEADER_LIMIT + (int)sizeof(HeaderSize); }\n",
+};
+const virtualHoverHeaders = {
+  "symbols.h": "#define HEADER_LIMIT 7\n" +
+    "typedef unsigned long HeaderSize;\n" +
+    "extern int header_object;\n" +
+    "int header_function(int value);\n",
+};
+const functionStart = virtualHoverSource.source.indexOf("header_function");
+for (const byteOffset of [
+  functionStart,
+  functionStart + 7,
+  functionStart + "header_function".length,
+]) {
+  const hoverResult = compiler.analyzeSource(virtualHoverSource, {
+    headers: virtualHoverHeaders,
+    cursor: { sourceName: virtualHoverSource.name, byteOffset },
+  });
+  if (hoverResult.hover?.name !== "header_function" ||
+      hoverResult.hover.kind !== "function" ||
+      hoverResult.hover.signature !== "int (int)" ||
+      hoverResult.hover.declaration.sourceName !== "symbols.h") {
+    throw new Error(`virtual header function hover failed: ${JSON.stringify(hoverResult)}`);
+  }
+}
+for (const [name, kind] of [
+  ["header_object", "object"],
+  ["HeaderSize", "typedef"],
+  ["HEADER_LIMIT", "macro"],
+]) {
+  const start = virtualHoverSource.source.indexOf(name);
+  const hoverResult = compiler.analyzeSource(virtualHoverSource, {
+    headers: virtualHoverHeaders,
+    cursor: {
+      sourceName: virtualHoverSource.name,
+      byteOffset: start + Buffer.byteLength(name),
+    },
+  });
+  if (hoverResult.hover?.name !== name || hoverResult.hover.kind !== kind ||
+      hoverResult.hover.declaration.sourceName !== "symbols.h") {
+    throw new Error(`virtual header ${kind} hover failed: ${JSON.stringify(hoverResult)}`);
+  }
+}
+
 const memberSource = {
   name: "member.c",
   source: "struct Player { int score; }; int main(void) { struct Player p; p.sc",

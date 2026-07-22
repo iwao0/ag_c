@@ -205,8 +205,8 @@ static char *build_recovery_source(const char *source, size_t cursor,
   int preprocessor_line = 0;
   char last_significant = 0;
   for (size_t i = 0; i < cursor; i++) {
-    char c = source[i];
-    char next = i + 1 < cursor ? source[i + 1] : 0;
+    char c = result[i];
+    char next = i + 1 < cursor ? result[i + 1] : 0;
     if (line_comment) {
       if (c == '\n') {
         line_comment = 0;

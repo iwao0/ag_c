@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createLinker } from "./ag-wasm-link.js";
+import { AgcLinkError, createLinker } from "./ag-wasm-link.js";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const wasmPath = process.argv[2] || path.join(root, "build/wasm_linker_selfhost/ag_wasm_link.wasm");
@@ -73,6 +73,24 @@ const singleObj = compileObject("single", "int main(void) { return 42; }\n");
 const linked = Buffer.from(linker.link([singleObj], { exports: ["main"] }));
 assertWasm(linked);
 fs.writeFileSync(linkedPath, linked);
+
+for (const [exportSpec, signed] of [
+  ["missing_entry", false],
+  [{ name: "missing_signed_entry", signature: "v()" }, true],
+]) {
+  try {
+    linker.link([singleObj], { exports: [exportSpec], useStdlib: false });
+    throw new Error("missing export unexpectedly linked");
+  } catch (error) {
+    const exportName = typeof exportSpec === "string" ? exportSpec : exportSpec.name;
+    if (!(error instanceof AgcLinkError) ||
+        error.code !== "AGC_LINK_MISSING_EXPORT" ||
+        error.details.exportName !== exportName ||
+        error.details.signed !== signed) {
+      throw error;
+    }
+  }
+}
 
 try {
   execFileSync("wasm-validate", [linkedPath], { stdio: "inherit" });

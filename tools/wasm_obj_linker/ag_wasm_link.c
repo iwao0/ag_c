@@ -245,6 +245,14 @@ static void die_link_diagnostic_two_objects(
   exit(1);
 }
 
+static void die_link_diagnostic_missing_export(
+    const char *export_name, int is_signed) {
+  fprintf(stderr,
+          "ag_wasm_link: AGC_LINK_DIAGNOSTIC\tAGC_LINK_MISSING_EXPORT\t%s\t%d\n",
+          export_name, is_signed ? 1 : 0);
+  exit(1);
+}
+
 static void *xmalloc(size_t n) {
   void *p = malloc(n ? n : 1);
   if (!p) die("out of memory");
@@ -3154,7 +3162,7 @@ static void validate_export_c_signature(const export_spec_t *export_spec,
       dief("signed export refers to an import-only function: %s", export_spec->name);
     if (find_symbol_kind(objs, obj_count, name, SYM_DATA, 1))
       dief("signed export refers to an undefined data symbol: %s", export_spec->name);
-    dief("signed export not found: %s", export_spec->name);
+    die_link_diagnostic_missing_export(export_spec->name, 1);
   }
   const c_signature_t *actual = find_c_signature(def_obj, name);
   if (!actual) dief("C signature metadata not found for export: %s", export_spec->name);
@@ -3461,7 +3469,8 @@ static void build_module_into(buf_t *out, const export_spec_t *exports, int expo
       func_t *f = &defs[i].obj->funcs[defs[i].func_index];
       if (str_eq(f->name, ex)) export_func = f->final_index;
     }
-    if (export_func < 0) dief("export not found: %s", exports[ei].name);
+    if (export_func < 0)
+      die_link_diagnostic_missing_export(exports[ei].name, 0);
     export_func_t ef = {ex, export_func};
     PUSH(export_funcs, export_func_count, export_func_cap, ef);
   }

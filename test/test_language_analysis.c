@@ -74,6 +74,14 @@ static const ag_language_symbol_t *find_symbol(
   return NULL;
 }
 
+static const ag_language_symbol_t *hover_symbol(
+    const ag_language_analysis_snapshot_t *snapshot) {
+  return snapshot && snapshot->hover_index >= 0 &&
+                 snapshot->hover_index < snapshot->completion_item_count
+             ? &snapshot->completion_items[snapshot->hover_index]
+             : NULL;
+}
+
 #define CHECK(condition, label)                                                  \
   do {                                                                           \
     if (!(condition)) {                                                           \
@@ -149,6 +157,58 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
   free(game.bytes);
 
+  const char *hover_paths[] = {"symbols.h"};
+  const char *hover_sources[] = {
+      "#define HEADER_LIMIT 7\n"
+      "typedef unsigned long HeaderSize;\n"
+      "extern int header_object;\n"
+      "int header_function(int value);\n"};
+  header_bundle_t hover_bundle = make_bundle(
+      hover_paths, hover_sources, 1);
+  source = "#include <symbols.h>\n"
+           "int main(void) { return header_function(header_object) + "
+           "HEADER_LIMIT + (int)sizeof(HeaderSize); }\n";
+  const char *function_use = strstr(source, "header_function");
+  size_t function_offsets[] = {
+      (size_t)(function_use - source),
+      (size_t)(function_use - source) + 7,
+      (size_t)(function_use - source) + strlen("header_function"),
+  };
+  for (size_t i = 0; i < sizeof(function_offsets) / sizeof(function_offsets[0]);
+       i++) {
+    CHECK(analyze(session, source, function_offsets[i], hover_bundle, defaults,
+                  &snapshot, &error), "virtual header function hover");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && hover->kind == AG_LANGUAGE_SYMBOL_FUNCTION &&
+              strcmp(hover->name, "header_function") == 0 &&
+              strcmp(hover->signature, "int (int)") == 0 &&
+              strcmp(hover->declaration.source_name, "symbols.h") == 0,
+          "virtual header function hover fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  struct {
+    const char *name;
+    ag_language_symbol_kind_t kind;
+  } header_hover_cases[] = {
+      {"header_object", AG_LANGUAGE_SYMBOL_OBJECT},
+      {"HeaderSize", AG_LANGUAGE_SYMBOL_TYPEDEF},
+      {"HEADER_LIMIT", AG_LANGUAGE_SYMBOL_MACRO},
+  };
+  for (size_t i = 0;
+       i < sizeof(header_hover_cases) / sizeof(header_hover_cases[0]); i++) {
+    const char *use = strstr(source, header_hover_cases[i].name);
+    size_t cursor = (size_t)(use - source) + strlen(header_hover_cases[i].name);
+    CHECK(analyze(session, source, cursor, hover_bundle, defaults,
+                  &snapshot, &error), "virtual header symbol hover");
+    const ag_language_symbol_t *hover = hover_symbol(&snapshot);
+    CHECK(hover && hover->kind == header_hover_cases[i].kind &&
+              strcmp(hover->name, header_hover_cases[i].name) == 0 &&
+              strcmp(hover->declaration.source_name, "symbols.h") == 0,
+          "virtual header symbol hover fields");
+    ag_language_analysis_snapshot_dispose(&snapshot);
+  }
+  free(hover_bundle.bytes);
+
   const char *stdio_paths[] = {"stdio.h"};
   const char *stdio_sources[] = {"int printf(const char *format, ...);\n"};
   header_bundle_t stdio = make_bundle(stdio_paths, stdio_sources, 1);
@@ -166,15 +226,29 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
   free(stdio.bytes);
 
-  const char *indirect_paths[] = {"project.h", "string.h"};
+  const char *indirect_paths[] = {
+      "project.h", "string.h", "unused.h", "false.h"};
   const char *indirect_sources[] = {
-      "#include <string.h>\n", "unsigned long strlen(const char *s);\n"};
-  header_bundle_t indirect = make_bundle(indirect_paths, indirect_sources, 2);
-  source = "#include <project.h>\nint main(void) { str";
+      "#pragma once\n#include <string.h>\n",
+      "unsigned long strlen(const char *s);\n",
+      "int unused_header_symbol;\n",
+      "int false_header_symbol;\n"};
+  header_bundle_t indirect = make_bundle(indirect_paths, indirect_sources, 4);
+  source = "#if 0\n#include <false.h>\n#endif\n"
+           "#include <project.h>\n#include <project.h>\n"
+           "int main(void) { str";
   CHECK(analyze(session, source, strlen(source), indirect, defaults,
                 &snapshot, &error), "indirect include");
   CHECK(find_symbol(&snapshot, "strlen", AG_LANGUAGE_SYMBOL_FUNCTION),
         "indirect symbol");
+  CHECK(ag_compilation_session_virtual_header_dependency_count(session) == 2 &&
+            strcmp(ag_compilation_session_virtual_header_dependency_name_at(
+                       session, 0),
+                   "project.h") == 0 &&
+            strcmp(ag_compilation_session_virtual_header_dependency_name_at(
+                       session, 1),
+                   "string.h") == 0,
+        "native virtual header dependencies");
   ag_language_analysis_snapshot_dispose(&snapshot);
   free(indirect.bytes);
 
@@ -435,6 +509,6 @@ int main(int argc, char **argv) {
   ag_language_analysis_snapshot_dispose(&snapshot);
 
   ag_compilation_session_destroy(session);
-  puts("language analysis tests passed (22 scenarios)");
+  puts("language analysis tests passed (28 scenarios)");
   return 0;
 }

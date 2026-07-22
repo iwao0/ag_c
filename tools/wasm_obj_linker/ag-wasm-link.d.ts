@@ -6,6 +6,7 @@ export interface AgcWasmSignedExport {
 export type AgcWasmExport = string | AgcWasmSignedExport;
 
 export type AgcLinkErrorCode =
+  | "AGC_LINK_MISSING_EXPORT"
   | "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY"
   | "AGC_LINK_DUPLICATE_SYMBOL"
   | "AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP";
@@ -16,6 +17,10 @@ export interface AgcLinkSourceReference {
 }
 
 export type AgcLinkErrorDetails =
+  | {
+      readonly exportName: string;
+      readonly signed: boolean;
+    }
   | {
       readonly entry: string;
       readonly objectIndices: readonly [number, number];

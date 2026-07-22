@@ -107,8 +107,37 @@ const typedefResult = compiler.compileObjectWithDiagnostics({
   name: "typedef-name.c",
   source: "typedef int value_type;\nvalue_type value;\n",
 });
-if (!(typedefResult.object instanceof Uint8Array) || typedefResult.diagnostics.length !== 0) {
+if (!(typedefResult.object instanceof Uint8Array) || typedefResult.diagnostics.length !== 0 ||
+    typedefResult.dependencies.length !== 0 ||
+    !Object.isFrozen(typedefResult.dependencies)) {
   throw new Error(`typedef name declaration regressed: ${JSON.stringify(typedefResult.diagnostics)}`);
+}
+
+const dependencyResult = compiler.compileObjectWithDiagnostics({
+  name: "dependency-main.c",
+  source: "#if 0\n#include <false.h>\n#endif\n" +
+    "#include <project.h>\n#include <project.h>\n" +
+    "int main(void) { return PLAYER_VALUE; }\n",
+}, {
+  headers: {
+    "unused.h": "#define UNUSED_VALUE 1\n",
+    "project.h": "#pragma once\n#include <nested/player.h>\n",
+    "nested/player.h": "#define PLAYER_VALUE 42\n",
+    "false.h": "#define FALSE_VALUE 0\n",
+  },
+});
+if (JSON.stringify(dependencyResult.dependencies) !==
+      JSON.stringify(["nested/player.h", "project.h"]) ||
+    !Object.isFrozen(dependencyResult.dependencies)) {
+  throw new Error(`virtual header dependencies are wrong: ${JSON.stringify(dependencyResult)}`);
+}
+const dependencySnapshot = JSON.stringify(dependencyResult.dependencies);
+compiler.compileObjectWithDiagnostics({
+  name: "dependency-later.c",
+  source: "#include <later.h>\nint later(void) { return LATER; }\n",
+}, { headers: { "later.h": "#define LATER 1\n" } });
+if (JSON.stringify(dependencyResult.dependencies) !== dependencySnapshot) {
+  throw new Error("a later compile changed an earlier dependency snapshot");
 }
 
 for (const [name, source, expectedLine, expectedColumn] of [
@@ -428,11 +457,13 @@ const fixedNamedResult = fixedCompiler.compileObjectWithDiagnostics({
 if (fixedNamedResult.diagnostics[0]?.sourceName !== "fixed.c") {
   throw new Error(`fixed-buffer named source failed: ${JSON.stringify(fixedNamedResult.diagnostics)}`);
 }
-const fixedVirtualObject = fixedCompiler.compileObject({
+const fixedVirtualResult = fixedCompiler.compileObjectWithDiagnostics({
   name: "fixed-main.c",
   source: '#include "fixed.h"\nint f(void) { return FIXED_VALUE; }\n',
 }, { headers: { "fixed.h": "#define FIXED_VALUE 7\n" } });
-if (!(fixedVirtualObject instanceof Uint8Array) || fixedVirtualObject.length === 0) {
+if (!(fixedVirtualResult.object instanceof Uint8Array) ||
+    fixedVirtualResult.object.length === 0 ||
+    JSON.stringify(fixedVirtualResult.dependencies) !== '["fixed.h"]') {
   throw new Error("fixed-buffer virtual header source did not compile");
 }
 
@@ -468,6 +499,10 @@ expectVirtualDiagnostic('#include "a.h"\n', {
 expectVirtualDiagnostic("int f(void){return 0;}\n", {
   headers: { "dir/../invalid.h": "" },
 }, "E1003");
+expectVirtualDiagnostic('#include "long-name.h"\nint f(void){return 0;}\n', {
+  headers: { "long-name.h": "" },
+  headerLimits: { maxTotalBytes: 4 },
+}, "E1041");
 
 for (const [pathName, code] of [
   ["/absolute.h", "E1002"],

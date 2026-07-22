@@ -66,5 +66,10 @@ void pp_virtual_headers_configure_in(
     int max_files, int max_file_bytes,
     int max_total_bytes, int max_include_depth);
 void pp_virtual_headers_clear_in(ag_preprocessor_context_t *context);
+void pp_virtual_dependencies_reset_in(ag_preprocessor_context_t *context);
+int pp_virtual_dependency_count_in(
+    const ag_preprocessor_context_t *context);
+const char *pp_virtual_dependency_name_at_in(
+    const ag_preprocessor_context_t *context, int index);
 
 #endif

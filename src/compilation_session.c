@@ -199,6 +199,7 @@ int ag_compilation_session_is_complete(
 int ag_compilation_session_reset_translation_unit(
     ag_compilation_session_t *session) {
   if (!ag_compilation_session_is_complete(session)) return 0;
+  pp_virtual_dependencies_reset_in(session->preprocessor_context);
   ag_source_manager_reset_translation_unit(session->source_manager);
   psx_hir_module_reset(session->hir_module);
   psx_scope_graph_reset(session->scope_graph);
@@ -279,6 +280,21 @@ ag_preprocessor_context_t *ag_compilation_session_preprocessor_context(
     const ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? session->preprocessor_context
+             : NULL;
+}
+
+int ag_compilation_session_virtual_header_dependency_count(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? pp_virtual_dependency_count_in(session->preprocessor_context)
+             : 0;
+}
+
+const char *ag_compilation_session_virtual_header_dependency_name_at(
+    const ag_compilation_session_t *session, int index) {
+  return ag_compilation_session_is_complete(session)
+             ? pp_virtual_dependency_name_at_in(
+                   session->preprocessor_context, index)
              : NULL;
 }
 

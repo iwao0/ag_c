@@ -36,6 +36,12 @@ struct ag_preprocessor_context_t {
   int virtual_header_count;
   int virtual_headers_enabled;
   int virtual_include_depth_limit;
+  char **virtual_dependencies;
+  int virtual_dependency_count;
+  int virtual_dependency_capacity;
+  size_t virtual_dependency_name_bytes;
+  int virtual_dependency_count_limit;
+  size_t virtual_dependency_name_bytes_limit;
   size_t if_expr_eval_steps;
   bool if_expr_eval;
   char date_buf[16];
@@ -234,13 +240,90 @@ static _Noreturn void pp_error(
   diag_emit_internalf_in(context->diagnostic_context, id, "%s", msg);
 }
 
+void pp_virtual_dependencies_reset_in(
+    ag_preprocessor_context_t *context) {
+  if (!context) return;
+  for (int i = 0; i < context->virtual_dependency_count; i++)
+    free(context->virtual_dependencies[i]);
+  free(context->virtual_dependencies);
+  context->virtual_dependencies = NULL;
+  context->virtual_dependency_count = 0;
+  context->virtual_dependency_capacity = 0;
+  context->virtual_dependency_name_bytes = 0;
+}
+
+int pp_virtual_dependency_count_in(
+    const ag_preprocessor_context_t *context) {
+  return context ? context->virtual_dependency_count : 0;
+}
+
+const char *pp_virtual_dependency_name_at_in(
+    const ag_preprocessor_context_t *context, int index) {
+  return context && index >= 0 && index < context->virtual_dependency_count
+             ? context->virtual_dependencies[index]
+             : NULL;
+}
+
+static void record_virtual_dependency(
+    ag_preprocessor_context_t *context, const char *path) {
+  if (!context || !path || !path[0]) return;
+  int insert_at = context->virtual_dependency_count;
+  for (int i = 0; i < context->virtual_dependency_count; i++) {
+    int order = strcmp(context->virtual_dependencies[i], path);
+    if (order == 0) return;
+    if (order > 0) {
+      insert_at = i;
+      break;
+    }
+  }
+  if (context->virtual_dependency_count >=
+      context->virtual_dependency_count_limit) {
+    pp_error(context,
+             DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED, NULL);
+  }
+  size_t path_length = strlen(path);
+  if (path_length > context->virtual_dependency_name_bytes_limit ||
+      context->virtual_dependency_name_bytes >
+          context->virtual_dependency_name_bytes_limit - path_length) {
+    pp_error(context,
+             DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED,
+             NULL);
+  }
+  if (context->virtual_dependency_count ==
+      context->virtual_dependency_capacity) {
+    int capacity = context->virtual_dependency_capacity
+                       ? context->virtual_dependency_capacity * 2
+                       : 8;
+    if (capacity > context->virtual_dependency_count_limit)
+      capacity = context->virtual_dependency_count_limit;
+    char **dependencies = realloc(
+        context->virtual_dependencies,
+        (size_t)capacity * sizeof(*dependencies));
+    if (!dependencies) pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
+    context->virtual_dependencies = dependencies;
+    context->virtual_dependency_capacity = capacity;
+  }
+  char *owned_path = my_strndup(path, path_length);
+  if (!owned_path) pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
+  memmove(context->virtual_dependencies + insert_at + 1,
+          context->virtual_dependencies + insert_at,
+          (size_t)(context->virtual_dependency_count - insert_at) *
+              sizeof(*context->virtual_dependencies));
+  context->virtual_dependencies[insert_at] = owned_path;
+  context->virtual_dependency_count++;
+  context->virtual_dependency_name_bytes += path_length;
+}
+
 void pp_virtual_headers_clear_in(ag_preprocessor_context_t *context) {
   if (!context) return;
+  pp_virtual_dependencies_reset_in(context);
   free(context->virtual_headers);
   context->virtual_headers = NULL;
   context->virtual_header_count = 0;
   context->virtual_headers_enabled = 0;
   context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+  context->virtual_dependency_count_limit = 0;
+  context->virtual_dependency_name_bytes_limit = 0;
 }
 
 static uint32_t virtual_bundle_u32(const unsigned char *p) {
@@ -380,6 +463,8 @@ void pp_virtual_headers_configure_in(
   context->virtual_header_count = (int)count;
   context->virtual_headers_enabled = 1;
   context->virtual_include_depth_limit = max_include_depth;
+  context->virtual_dependency_count_limit = max_files;
+  context->virtual_dependency_name_bytes_limit = (size_t)max_total_bytes;
 }
 
 static const pp_virtual_header_t *find_virtual_header(
@@ -2977,6 +3062,8 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
     }
   }
   if (!loaded_path) loaded_path = my_strndup(filename, strlen(filename));
+  if (g_virtual_headers_enabled)
+    record_virtual_dependency(context, loaded_path);
   if (pragma_once_seen(context, loaded_path)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
     free(filename);
     free(loaded_path);

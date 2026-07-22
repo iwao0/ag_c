@@ -4751,6 +4751,17 @@ wasm-validate "$out_dir/linked.wasm"
 wasm-interp "$out_dir/linked.wasm" --run-all-exports > "$out_dir/linked.interp"
 grep -q 'main() => i32:42' "$out_dir/linked.interp"
 
+if "$root/build/ag_wasm_link" --nostdlib --no-entry --export=missing_entry \
+  -o "$out_dir/linked_missing_export.wasm" \
+  "$out_dir/main.o" "$out_dir/other.o" \
+  > "$out_dir/linked_missing_export.out" \
+  2> "$out_dir/linked_missing_export.err"; then
+  echo "missing export unexpectedly linked"
+  exit 1
+fi
+grep -q $'AGC_LINK_DIAGNOSTIC\tAGC_LINK_MISSING_EXPORT\tmissing_entry\t0' \
+  "$out_dir/linked_missing_export.err"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/multi_export.o" "$out_dir/multi_export.c"
 "$root/build/ag_wasm_link" --no-entry --export=main --export=answer -o "$out_dir/linked_multi_export.wasm" \
   "$out_dir/multi_export.o"

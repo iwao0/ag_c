@@ -132,6 +132,9 @@ compileで変化しないimmutable snapshotです。複数sourceの`diagnostics`
 各source内の診断発生順に平坦化され、`sourceDiagnostics`からsourceごとの配列も取得できます。
 compile errorの例外にも同じschemaの`error.diagnostics`が付きます。
 `compileLinkedWasmWithDiagnostics()`では、失敗sourceまでのsnapshotが`error.sourceDiagnostics`に残ります。
+`compileObjectWithDiagnostics()`の`dependencies`には、そのtranslation unitが実際に開いた
+virtual headerのcanonical nameが重複なし・昇順で入ります。条件が偽の`#if`内や未使用のheader、
+source自身は含まれません。
 
 ```js
 const result = toolchain.compileLinkedWasmWithDiagnostics([

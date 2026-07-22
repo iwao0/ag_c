@@ -25,6 +25,13 @@ function parseLinkDiagnostic(stderr) {
   const [code, subject, firstText, secondText] = fields;
   const first = parseObjectIndex(firstText ?? "");
   const second = parseObjectIndex(secondText ?? "");
+  if (code === "AGC_LINK_MISSING_EXPORT" && subject &&
+      (firstText === "0" || firstText === "1") && fields.length === 3) {
+    return new AgcLinkError(code, {
+      exportName: subject,
+      signed: firstText === "1",
+    });
+  }
   if (code === "AGC_LINK_DUPLICATE_CONTINUATION_ENTRY" &&
       subject && first !== null && second !== null && fields.length === 4) {
     return new AgcLinkError(code, {

@@ -69,6 +69,7 @@ const linked = linker.link([mainObjectBytes, otherObjectBytes], {
 Link failures that callers are expected to handle use `AgcLinkError` with a
 stable `code` and immutable `details`. Current project-facing codes are:
 
+- `AGC_LINK_MISSING_EXPORT`: `exportName` and whether it was `signed`.
 - `AGC_LINK_DUPLICATE_CONTINUATION_ENTRY`: `entry` and two `objectIndices`.
 - `AGC_LINK_DUPLICATE_SYMBOL`: `symbol` and two `objectIndices`.
 - `AGC_LINK_FRAME_CONDITION_OUTSIDE_LOOP`: `frameCondition` and `objectIndex`.
