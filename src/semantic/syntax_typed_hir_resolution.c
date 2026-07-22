@@ -3974,35 +3974,38 @@ static psx_semantic_node_t *build_direct_resolved_initializer(
   }
 
   size_t entry_index = 0;
-  for (int i = 0; i < plan->item_count; i++) {
-    const psx_local_initializer_item_t *item = &plan->items[i];
-    if (!item->is_active ||
-        (!item->value && !item->has_integer_value))
-      continue;
-    psx_semantic_node_t *value = build_resolved_initializer_value(
-        context, item, syntax->kind);
-    if (!value) return NULL;
-    psx_semantic_node_t *children[] = {value};
-    psx_hir_edge_kind_t edges[] = {
-        PSX_HIR_EDGE_INITIALIZER_VALUE};
-    psx_hir_node_spec_t entry_spec = {
-        .kind = PSX_HIR_INITIALIZER_ENTRY,
-        .attached_qual_type = item->target_qual_type,
-        .object_offset = item->relative_offset,
-        .initializer_union_offset = item->union_relative_offset,
-        .initializer_union_member_index = item->union_member_index,
-        .bit_width = item->bit_width,
-        .bit_offset = item->bit_offset,
-        .bit_is_signed = item->bit_is_signed,
-        .is_resolved_initializer_entry = 1,
-        .has_initializer_union_member =
-            item->union_member_index >= 0,
-    };
-    entries[entry_index] = psx_semantic_node_builder_statement(
-        &context->builder, &entry_spec, children, edges, 1,
-        syntax->kind);
-    if (!entries[entry_index]) return NULL;
-    entry_edges[entry_index++] = PSX_HIR_EDGE_INITIALIZER_ENTRY;
+  for (int whole_pass = 1; whole_pass >= 0; whole_pass--) {
+    for (int i = 0; i < plan->item_count; i++) {
+      const psx_local_initializer_item_t *item = &plan->items[i];
+      if (!item->is_active) continue;
+      if (item->is_whole_object_value != whole_pass ||
+          (!item->value && !item->has_integer_value))
+        continue;
+      psx_semantic_node_t *value = build_resolved_initializer_value(
+          context, item, syntax->kind);
+      if (!value) return NULL;
+      psx_semantic_node_t *children[] = {value};
+      psx_hir_edge_kind_t edges[] = {
+          PSX_HIR_EDGE_INITIALIZER_VALUE};
+      psx_hir_node_spec_t entry_spec = {
+          .kind = PSX_HIR_INITIALIZER_ENTRY,
+          .attached_qual_type = item->target_qual_type,
+          .object_offset = item->relative_offset,
+          .initializer_union_offset = item->union_relative_offset,
+          .initializer_union_member_index = item->union_member_index,
+          .bit_width = item->bit_width,
+          .bit_offset = item->bit_offset,
+          .bit_is_signed = item->bit_is_signed,
+          .is_resolved_initializer_entry = 1,
+          .has_initializer_union_member =
+              item->union_member_index >= 0,
+      };
+      entries[entry_index] = psx_semantic_node_builder_statement(
+          &context->builder, &entry_spec, children, edges, 1,
+          syntax->kind);
+      if (!entries[entry_index]) return NULL;
+      entry_edges[entry_index++] = PSX_HIR_EDGE_INITIALIZER_ENTRY;
+    }
   }
 
   psx_hir_node_spec_t list_spec = {
@@ -5872,99 +5875,102 @@ static psx_semantic_node_t *build_direct_flat_initializer(
     child_index++;
   }
 
-  for (int i = 0; i < plan->item_count; i++) {
-    const psx_local_initializer_item_t *item =
-        &plan->items[i];
-    if (!item->is_active) continue;
-    psx_semantic_node_t *target = build_direct_initializer_target(
-        context, local, item, source_node_kind);
-    psx_semantic_node_t *value = NULL;
-    int is_null_pointer_constant = 0;
-    if (item->evaluation_group >= 0) {
-      value = build_direct_local_reference(
-          context,
-          binding->evaluation_temporaries[item->evaluation_group],
-          ps_lvar_decl_qual_type(
-              binding->evaluation_temporaries[item->evaluation_group]),
-          0, 0, 0, 0, source_node_kind);
-    } else if (item->value) {
-      value = build_direct_expression(context, item->value);
-      long long constant_value = 1;
-      is_null_pointer_constant = direct_integer_constant(
-          context, item->value, &constant_value) &&
-          constant_value == 0;
-    } else {
-      psx_qual_type_t value_qual_type = item->has_integer_value
-          ? (psx_qual_type_t){
-                item->target_qual_type.type_id,
-                PSX_TYPE_QUALIFIER_NONE}
-          : ps_ctx_intern_integer_qual_type_in(
-                context->semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
-      psx_hir_node_spec_t value_spec = {
-          .kind = PSX_HIR_NUMBER,
-          .attached_qual_type = {
-              PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-          .integer_value = item->has_integer_value
-                               ? item->integer_value : 0,
-      };
-      value = psx_semantic_node_builder_leaf_expression(
-          &context->builder, &value_spec, value_qual_type, NULL,
-          item->has_integer_value ? ND_STRING : ND_NUM);
-      is_null_pointer_constant = value_spec.integer_value == 0;
-    }
-    if (!target || !value)
-      return NULL;
-    if (item->is_object_copy) {
-      psx_semantic_node_t *copy_children[] = {target, value};
-      psx_hir_edge_kind_t copy_edges[] = {
+  for (int whole_pass = 1; whole_pass >= 0; whole_pass--) {
+    for (int i = 0; i < plan->item_count; i++) {
+      const psx_local_initializer_item_t *item =
+          &plan->items[i];
+      if (!item->is_active) continue;
+      if (item->is_whole_object_value != whole_pass) continue;
+      psx_semantic_node_t *target = build_direct_initializer_target(
+          context, local, item, source_node_kind);
+      psx_semantic_node_t *value = NULL;
+      int is_null_pointer_constant = 0;
+      if (item->evaluation_group >= 0) {
+        value = build_direct_local_reference(
+            context,
+            binding->evaluation_temporaries[item->evaluation_group],
+            ps_lvar_decl_qual_type(
+                binding->evaluation_temporaries[item->evaluation_group]),
+            0, 0, 0, 0, source_node_kind);
+      } else if (item->value) {
+        value = build_direct_expression(context, item->value);
+        long long constant_value = 1;
+        is_null_pointer_constant = direct_integer_constant(
+            context, item->value, &constant_value) &&
+            constant_value == 0;
+      } else {
+        psx_qual_type_t value_qual_type = item->has_integer_value
+            ? (psx_qual_type_t){
+                  item->target_qual_type.type_id,
+                  PSX_TYPE_QUALIFIER_NONE}
+            : ps_ctx_intern_integer_qual_type_in(
+                  context->semantic_context, PSX_INTEGER_KIND_INT, 0, 0);
+        psx_hir_node_spec_t value_spec = {
+            .kind = PSX_HIR_NUMBER,
+            .attached_qual_type = {
+                PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+            .integer_value = item->has_integer_value
+                                 ? item->integer_value : 0,
+        };
+        value = psx_semantic_node_builder_leaf_expression(
+            &context->builder, &value_spec, value_qual_type, NULL,
+            item->has_integer_value ? ND_STRING : ND_NUM);
+        is_null_pointer_constant = value_spec.integer_value == 0;
+      }
+      if (!target || !value)
+        return NULL;
+      if (item->is_object_copy) {
+        psx_semantic_node_t *copy_children[] = {target, value};
+        psx_hir_edge_kind_t copy_edges[] = {
+            PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
+        psx_hir_node_spec_t copy_spec = {
+            .kind = PSX_HIR_OBJECT_COPY,
+            .attached_qual_type = {
+                PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+        };
+        children[child_index] = psx_semantic_node_builder_expression(
+            &context->builder, &copy_spec,
+            item->target_qual_type, copy_children, copy_edges, 2,
+            NULL, source_node_kind);
+        edges[child_index] = PSX_HIR_EDGE_BLOCK_ITEM;
+        if (!children[child_index]) return NULL;
+        child_index++;
+        continue;
+      }
+      psx_assignment_types_resolution_t assignment;
+      psx_qual_type_t initialization_target_type =
+          psx_semantic_node_expression_qual_type(target);
+      initialization_target_type.qualifiers &=
+          PSX_TYPE_QUALIFIER_ATOMIC;
+      psx_resolve_assignment_qual_types_in(
+          context->semantic_context,
+          initialization_target_type,
+          psx_semantic_node_expression_qual_type(value),
+          is_null_pointer_constant, &assignment);
+      if (assignment.status != PSX_ASSIGNMENT_TYPES_OK) {
+        psx_semantic_node_builder_fail(
+            &context->builder,
+            PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
+            source_node_kind);
+        return NULL;
+      }
+      psx_semantic_node_t *assignment_children[] = {target, value};
+      psx_hir_edge_kind_t assignment_edges[] = {
           PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
-      psx_hir_node_spec_t copy_spec = {
-          .kind = PSX_HIR_OBJECT_COPY,
+      psx_hir_node_spec_t assignment_spec = {
+          .kind = PSX_HIR_ASSIGN,
           .attached_qual_type = {
               PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
+          .is_declaration_initializer = 1,
       };
       children[child_index] = psx_semantic_node_builder_expression(
-          &context->builder, &copy_spec,
-          item->target_qual_type, copy_children, copy_edges, 2,
-          NULL, source_node_kind);
+          &context->builder, &assignment_spec,
+          assignment.result_qual_type, assignment_children,
+          assignment_edges, 2, NULL, source_node_kind);
       edges[child_index] = PSX_HIR_EDGE_BLOCK_ITEM;
       if (!children[child_index]) return NULL;
       child_index++;
-      continue;
     }
-    psx_assignment_types_resolution_t assignment;
-    psx_qual_type_t initialization_target_type =
-        psx_semantic_node_expression_qual_type(target);
-    initialization_target_type.qualifiers &=
-        PSX_TYPE_QUALIFIER_ATOMIC;
-    psx_resolve_assignment_qual_types_in(
-        context->semantic_context,
-        initialization_target_type,
-        psx_semantic_node_expression_qual_type(value),
-        is_null_pointer_constant, &assignment);
-    if (assignment.status != PSX_ASSIGNMENT_TYPES_OK) {
-      psx_semantic_node_builder_fail(
-          &context->builder,
-          PSX_RESOLVED_HIR_BUILD_INTERNAL_FAILURE,
-          source_node_kind);
-      return NULL;
-    }
-    psx_semantic_node_t *assignment_children[] = {target, value};
-    psx_hir_edge_kind_t assignment_edges[] = {
-        PSX_HIR_EDGE_LHS, PSX_HIR_EDGE_RHS};
-    psx_hir_node_spec_t assignment_spec = {
-        .kind = PSX_HIR_ASSIGN,
-        .attached_qual_type = {
-            PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE},
-        .is_declaration_initializer = 1,
-    };
-    children[child_index] = psx_semantic_node_builder_expression(
-        &context->builder, &assignment_spec,
-        assignment.result_qual_type, assignment_children,
-        assignment_edges, 2, NULL, source_node_kind);
-    edges[child_index] = PSX_HIR_EDGE_BLOCK_ITEM;
-    if (!children[child_index]) return NULL;
-    child_index++;
   }
   psx_hir_node_spec_t block_spec = {
       .kind = PSX_HIR_BLOCK,

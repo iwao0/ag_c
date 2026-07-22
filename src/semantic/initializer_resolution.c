@@ -5,6 +5,7 @@
 #include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../type_layout.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,6 +20,14 @@ typedef struct {
 } psx_initializer_object_span_t;
 
 typedef struct {
+  psx_type_id_t union_type_id;
+  int relative_offset;
+  int leaf_begin;
+  int leaf_end;
+  int member_index;
+} psx_initializer_union_activation_t;
+
+typedef struct {
   arena_context_t *arena_context;
   const psx_semantic_type_table_t *semantic_types;
   const psx_record_decl_table_t *record_decls;
@@ -30,6 +39,9 @@ typedef struct {
   void *resolver_context;
   psx_initializer_scalar_leaf_list_t *leaves;
   psx_local_initializer_plan_t *plan;
+  psx_initializer_union_activation_t *union_activations;
+  int union_activation_count;
+  int union_activation_capacity;
   psx_local_initializer_status_t failure_status;
 } psx_flat_initializer_context_t;
 
@@ -114,6 +126,161 @@ static int flat_initializer_set_item_from_leaf(
   return target_qual_type.type_id != PSX_TYPE_ID_INVALID;
 }
 
+static int flat_initializer_union_activation_matches(
+    const psx_initializer_union_activation_t *activation,
+    const psx_initializer_object_span_t *parent) {
+  return activation && parent &&
+         activation->union_type_id == parent->qual_type.type_id &&
+         activation->relative_offset == parent->relative_offset &&
+         activation->leaf_begin == parent->leaf_begin;
+}
+
+static psx_initializer_union_activation_t *
+flat_initializer_find_union_activation(
+    psx_flat_initializer_context_t *context,
+    const psx_initializer_object_span_t *parent) {
+  if (!context || !parent) return NULL;
+  for (int i = 0; i < context->union_activation_count; i++) {
+    psx_initializer_union_activation_t *activation =
+        &context->union_activations[i];
+    if (flat_initializer_union_activation_matches(
+            activation, parent))
+      return activation;
+  }
+  return NULL;
+}
+
+static int flat_initializer_reserve_union_activation(
+    psx_flat_initializer_context_t *context) {
+  if (!context) return 0;
+  if (context->union_activation_count <
+      context->union_activation_capacity)
+    return 1;
+  if (context->union_activation_capacity > INT_MAX / 2) {
+    context->failure_status =
+        PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
+    return 0;
+  }
+  int next_capacity = context->union_activation_capacity > 0
+                          ? context->union_activation_capacity * 2
+                          : 8;
+  psx_initializer_union_activation_t *next = arena_alloc_in(
+      context->arena_context,
+      (size_t)next_capacity * sizeof(*next));
+  if (!next) {
+    context->failure_status =
+        PSX_LOCAL_INITIALIZER_OUT_OF_MEMORY;
+    return 0;
+  }
+  if (context->union_activation_count > 0) {
+    memcpy(next, context->union_activations,
+           (size_t)context->union_activation_count * sizeof(*next));
+  }
+  context->union_activations = next;
+  context->union_activation_capacity = next_capacity;
+  return 1;
+}
+
+static void flat_initializer_clear_nested_union_activations(
+    psx_flat_initializer_context_t *context,
+    const psx_initializer_object_span_t *parent) {
+  if (!context || !parent) return;
+  int write = 0;
+  for (int read = 0; read < context->union_activation_count;
+       read++) {
+    psx_initializer_union_activation_t activation =
+        context->union_activations[read];
+    int is_parent = flat_initializer_union_activation_matches(
+        &activation, parent);
+    int is_nested = !is_parent &&
+                    activation.leaf_begin >= parent->leaf_begin &&
+                    activation.leaf_begin < parent->leaf_end;
+    if (is_nested) continue;
+    context->union_activations[write++] = activation;
+  }
+  context->union_activation_count = write;
+}
+
+static int flat_initializer_union_activation_selects_target(
+    const psx_flat_initializer_context_t *context,
+    const psx_initializer_union_activation_t *activation,
+    const psx_initializer_object_span_t *target) {
+  psx_type_shape_t union_shape = {0};
+  if (!context || !activation || !target ||
+      !psx_semantic_type_table_describe(
+          context->semantic_types, activation->union_type_id,
+          &union_shape) ||
+      union_shape.kind != PSX_TYPE_UNION)
+    return 0;
+  psx_qual_type_t member_type =
+      psx_semantic_type_table_record_member(
+          context->semantic_types, activation->union_type_id,
+          activation->member_index);
+  int member_offset = initializer_member_offset(
+      context->record_layouts, union_shape.record_id,
+      context->data_layout, activation->member_index);
+  return member_type.type_id == target->qual_type.type_id &&
+         member_offset >= 0 &&
+         activation->relative_offset + member_offset ==
+             target->relative_offset &&
+         activation->leaf_begin == target->leaf_begin &&
+         activation->leaf_end == target->leaf_end;
+}
+
+static int flat_initializer_reset_aggregate_target(
+    psx_flat_initializer_context_t *context,
+    const psx_initializer_object_span_t *target) {
+  if (!context || !target) return 0;
+  int containing_index = -1;
+  for (int i = 0; i < context->union_activation_count; i++) {
+    if (flat_initializer_union_activation_selects_target(
+            context, &context->union_activations[i], target)) {
+      containing_index = i;
+      break;
+    }
+  }
+  psx_initializer_union_activation_t containing = {0};
+  if (containing_index >= 0)
+    containing = context->union_activations[containing_index];
+  psx_initializer_scalar_leaf_list_t replacement = {0};
+  if (!psx_collect_initializer_scalar_leaves_with_records(
+          context->semantic_types, context->record_decls,
+          context->record_layouts, context->data_layout,
+          target->qual_type, target->relative_offset,
+          &replacement) ||
+      replacement.count != target->leaf_end - target->leaf_begin) {
+    psx_initializer_scalar_leaf_list_dispose(&replacement);
+    return 0;
+  }
+  int write = 0;
+  for (int read = 0; read < context->union_activation_count;
+       read++) {
+    psx_initializer_union_activation_t activation =
+        context->union_activations[read];
+    int is_containing = containing_index >= 0 &&
+        activation.union_type_id == containing.union_type_id &&
+        activation.relative_offset == containing.relative_offset &&
+        activation.leaf_begin == containing.leaf_begin;
+    int is_nested = !is_containing &&
+                    activation.leaf_begin >= target->leaf_begin &&
+                    activation.leaf_begin < target->leaf_end;
+    if (is_nested) continue;
+    context->union_activations[write++] = activation;
+  }
+  context->union_activation_count = write;
+  for (int i = 0; i < replacement.count; i++) {
+    int target_index = target->leaf_begin + i;
+    context->leaves->items[target_index] = replacement.items[i];
+    if (!flat_initializer_set_item_from_leaf(
+            context, target_index, &replacement.items[i])) {
+      psx_initializer_scalar_leaf_list_dispose(&replacement);
+      return 0;
+    }
+  }
+  psx_initializer_scalar_leaf_list_dispose(&replacement);
+  return 1;
+}
+
 static int flat_initializer_activate_union_member(
     psx_flat_initializer_context_t *context,
     const psx_initializer_object_span_t *parent, int member_index,
@@ -135,6 +302,28 @@ static int flat_initializer_activate_union_member(
   int member_offset = initializer_member_offset(
       context->record_layouts, union_shape.record_id,
       context->data_layout, member_index);
+  psx_initializer_union_activation_t *activation =
+      flat_initializer_find_union_activation(context, parent);
+  if (activation && activation->member_index == member_index) {
+    if (member_type.type_id == PSX_TYPE_ID_INVALID ||
+        member_offset < 0 ||
+        activation->leaf_end <= parent->leaf_begin ||
+        activation->leaf_end > parent->leaf_end)
+      return 0;
+    *child = (psx_initializer_object_span_t){
+        .qual_type = member_type,
+        .relative_offset = parent->relative_offset + member_offset,
+        .leaf_begin = parent->leaf_begin,
+        .leaf_end = activation->leaf_end,
+        .member_ref = initializer_member_ref(
+            context->record_layouts, union_shape.record_id,
+            context->data_layout, member_index,
+            &record->members[member_index]),
+        .union_relative_offset = parent->relative_offset,
+        .union_member_index = member_index,
+    };
+    return 1;
+  }
   psx_initializer_scalar_leaf_list_t selected = {0};
   if (member_type.type_id == PSX_TYPE_ID_INVALID || member_offset < 0 ||
       !psx_collect_initializer_scalar_leaves_with_records(
@@ -143,6 +332,15 @@ static int flat_initializer_activate_union_member(
           parent->relative_offset + member_offset, &selected) ||
       selected.count <= 0 ||
       selected.count > parent->leaf_end - parent->leaf_begin) {
+    psx_initializer_scalar_leaf_list_dispose(&selected);
+    return 0;
+  }
+  if (activation) {
+    flat_initializer_clear_nested_union_activations(
+        context, parent);
+    activation = flat_initializer_find_union_activation(
+        context, parent);
+  } else if (!flat_initializer_reserve_union_activation(context)) {
     psx_initializer_scalar_leaf_list_dispose(&selected);
     return 0;
   }
@@ -162,6 +360,17 @@ static int flat_initializer_activate_union_member(
       return 0;
     }
   }
+  if (!activation) {
+    activation = &context->union_activations[
+        context->union_activation_count++];
+  }
+  *activation = (psx_initializer_union_activation_t){
+      .union_type_id = parent->qual_type.type_id,
+      .relative_offset = parent->relative_offset,
+      .leaf_begin = parent->leaf_begin,
+      .leaf_end = parent->leaf_begin + selected.count,
+      .member_index = member_index,
+  };
   *child = (psx_initializer_object_span_t){
       .qual_type = member_type,
       .relative_offset = parent->relative_offset + member_offset,
@@ -515,6 +724,33 @@ static int flat_initializer_apply_value(
     const psx_initializer_object_span_t *target,
     const node_t *value, int range_grouped);
 
+static int flat_initializer_relocate_whole_object_value(
+    psx_flat_initializer_context_t *context, int item_index) {
+  if (!context || !context->plan || item_index < 0 ||
+      item_index >= context->plan->item_count)
+    return 0;
+  psx_local_initializer_item_t *item =
+      &context->plan->items[item_index];
+  if (!item->is_active || !item->is_whole_object_value)
+    return 1;
+  if (item->whole_leaf_begin < 0 ||
+      item->whole_leaf_begin > item_index ||
+      item->whole_leaf_end <= item_index ||
+      item->whole_leaf_end > context->plan->item_count)
+    return 0;
+  psx_local_initializer_item_t whole = *item;
+  for (int i = whole.whole_leaf_begin;
+       i < whole.whole_leaf_end; i++) {
+    if (i == item_index || context->plan->items[i].is_active)
+      continue;
+    context->plan->items[i] = whole;
+    *item = (psx_local_initializer_item_t){0};
+    return 1;
+  }
+  *item = (psx_local_initializer_item_t){0};
+  return 1;
+}
+
 static int flat_initializer_entry_ranges(
     const psx_flat_initializer_context_t *context,
     const psx_initializer_entry_t *entry,
@@ -717,10 +953,20 @@ static int flat_initializer_apply_value(
     const psx_initializer_object_span_t *target,
     const node_t *value, int range_grouped) {
   if (!context || !target || !value) return 0;
-  if (value->kind == ND_INIT_LIST)
+  if (value->kind == ND_INIT_LIST) {
+    psx_type_shape_t target_shape = {0};
+    if (psx_semantic_type_table_describe(
+            context->semantic_types, target->qual_type.type_id,
+            &target_shape) &&
+        (target_shape.kind == PSX_TYPE_ARRAY ||
+         psx_type_kind_is_aggregate(target_shape.kind)) &&
+        !flat_initializer_reset_aggregate_target(
+            context, target))
+      return 0;
     return flat_initializer_apply_list(
         context, target, (const node_init_list_t *)value,
         range_grouped);
+  }
   if (value->kind == ND_STRING) {
     psx_type_shape_t target_shape = {0};
     if (psx_semantic_type_table_describe(
@@ -770,8 +1016,11 @@ static int flat_initializer_apply_value(
         .union_member_index = target->union_member_index,
         .is_active = 1,
         .is_object_copy = target_shape.kind == PSX_TYPE_ARRAY,
+        .is_whole_object_value = 1,
         .value = value,
         .evaluation_group = -1,
+        .whole_leaf_begin = target->leaf_begin,
+        .whole_leaf_end = target->leaf_end,
     };
     for (int i = target->leaf_begin + 1; i < target->leaf_end; i++) {
       context->plan->items[i].is_active = 0;
@@ -781,6 +1030,9 @@ static int flat_initializer_apply_value(
     }
     return 1;
   }
+  if (!flat_initializer_relocate_whole_object_value(
+          context, target->leaf_begin))
+    return 0;
   psx_local_initializer_item_t *item =
       &context->plan->items[target->leaf_begin];
   item->relative_offset = target->relative_offset;
@@ -797,9 +1049,15 @@ static int flat_initializer_apply_value(
                          : 0;
   item->bit_is_signed = target->member_ref.declaration &&
                         target->member_ref.declaration->bit_is_signed;
+  item->is_active = 1;
+  item->is_object_copy = 0;
+  item->is_whole_object_value = 0;
   item->has_integer_value = 0;
   item->integer_value = 0;
   item->value = value;
+  item->evaluation_group = -1;
+  item->whole_leaf_begin = 0;
+  item->whole_leaf_end = 0;
   if (range_grouped) {
     int group = -1;
     for (int i = 0; i < context->plan->evaluation_group_count; i++) {

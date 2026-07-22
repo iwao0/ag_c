@@ -24,10 +24,13 @@ typedef struct {
   unsigned char bit_is_signed;
   unsigned char is_active;
   unsigned char is_object_copy;
+  unsigned char is_whole_object_value;
   unsigned char has_integer_value;
   long long integer_value;
   const node_t *value;
   int evaluation_group;
+  int whole_leaf_begin;
+  int whole_leaf_end;
 } psx_local_initializer_item_t;
 
 typedef struct {

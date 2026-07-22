@@ -8771,6 +8771,37 @@ if (!/\bunsigned\s+char\s+bit_width\s*;/.test(
     "bitfield initializer leaves sharing one offset must retain member identity and one packed storage unit",
   );
 }
+if (!/\}\s*psx_initializer_union_activation_t\s*;/.test(
+      initializerResolutionSource,
+    ) ||
+    !/activation\s*&&\s*activation->member_index\s*==\s*member_index/.test(
+      initializerResolutionSource,
+    ) ||
+    !/flat_initializer_clear_nested_union_activations\s*\(\s*context\s*,\s*parent\s*\)/.test(
+      initializerResolutionSource,
+    ) ||
+    !/flat_initializer_reset_aggregate_target\s*\(\s*context\s*,\s*target\s*\)/.test(
+      initializerResolutionSource,
+    ) ||
+    !/replacement\.count\s*!=\s*target->leaf_end\s*-\s*target->leaf_begin/.test(
+      initializerResolutionSource,
+    ) ||
+    !/\bunsigned\s+char\s+is_whole_object_value\s*;/.test(
+      initializerResolutionHeader,
+    ) ||
+    !/flat_initializer_relocate_whole_object_value\s*\(\s*context\s*,\s*target->leaf_begin\s*\)/.test(
+      initializerResolutionSource,
+    ) ||
+    !/item->is_active\s*=\s*1\s*;[^]*?item->is_object_copy\s*=\s*0\s*;[^]*?item->is_whole_object_value\s*=\s*0\s*;/.test(
+      initializerResolutionSource,
+    ) ||
+    !/for\s*\(\s*int\s+whole_pass\s*=\s*1\s*;\s*whole_pass\s*>=\s*0\s*;\s*whole_pass--\s*\)/.test(
+      syntaxTypedHirResolutionSource,
+    )) {
+  throw new Error(
+    "repeated designators must rebuild whole subobjects and emit retained whole-object values before scalar overrides",
+  );
+}
 
 const recordDeclTableHeader = await readFile(
   "src/semantic/record_decl_table.h",

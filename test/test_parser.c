@@ -12015,6 +12015,14 @@ static void test_static_data_initializer_boundary(
       "int initialized_array[3] = {1, [2] = 7}; "
       "union InitUnion { long raw; int a[2]; }; "
       "union InitUnion initialized_union = {.a[1] = 7}; "
+      "union RepeatUnion { unsigned char bytes[8]; unsigned int word; }; "
+      "union RepeatUnion repeated_union = "
+      "    {.bytes[5] = 9, .bytes[2] = 6}; "
+      "union RepeatUnion reset_union = "
+      "    {.bytes[5] = 9, .bytes = {[2] = 6}}; "
+      "struct RepeatStruct { int values[3]; }; "
+      "struct RepeatStruct repeated_struct = "
+      "    {.values[1] = 9, .values = {[2] = 7}}; "
       "int inferred_array[] = {1, 2, 7}; "
       "char *string_pointers[] = {\"boundary\"}; "
       "struct InitPair { int first; int second; }; "
@@ -12095,6 +12103,15 @@ static void test_static_data_initializer_boundary(
   ir_data_object_t *united =
       ir_data_module_find_object(
           module, "initialized_union", 17);
+  ir_data_object_t *repeated =
+      ir_data_module_find_object(
+          module, "repeated_union", 14);
+  ir_data_object_t *reset =
+      ir_data_module_find_object(
+          module, "reset_union", 11);
+  ir_data_object_t *repeated_struct =
+      ir_data_module_find_object(
+          module, "repeated_struct", 15);
   ir_data_object_t *inferred =
       ir_data_module_find_object(
           module, "inferred_array", 14);
@@ -12116,6 +12133,9 @@ static void test_static_data_initializer_boundary(
   ASSERT_TRUE(qualified != NULL);
   ASSERT_TRUE(array != NULL);
   ASSERT_TRUE(united != NULL);
+  ASSERT_TRUE(repeated != NULL);
+  ASSERT_TRUE(reset != NULL);
+  ASSERT_TRUE(repeated_struct != NULL);
   ASSERT_TRUE(inferred != NULL);
   ASSERT_TRUE(pointers != NULL);
   ASSERT_TRUE(pair != NULL);
@@ -12135,6 +12155,18 @@ static void test_static_data_initializer_boundary(
   ASSERT_EQ(8, united->byte_size);
   ASSERT_EQ(0, united->bytes[0]);
   ASSERT_EQ(7, united->bytes[4]);
+
+  ASSERT_EQ(8, repeated->byte_size);
+  ASSERT_EQ(6, repeated->bytes[2]);
+  ASSERT_EQ(9, repeated->bytes[5]);
+
+  ASSERT_EQ(8, reset->byte_size);
+  ASSERT_EQ(6, reset->bytes[2]);
+  ASSERT_EQ(0, reset->bytes[5]);
+
+  ASSERT_EQ(12, repeated_struct->byte_size);
+  ASSERT_EQ(0, repeated_struct->bytes[4]);
+  ASSERT_EQ(7, repeated_struct->bytes[8]);
 
   ASSERT_EQ(12, inferred->byte_size);
   ASSERT_EQ(1, inferred->bytes[0]);
