@@ -2656,7 +2656,7 @@ if (!directProgramHirHelper ||
     /compatibility|psx_test_frontend_next_function/.test(
       directProgramHirHelper[1],
     ) ||
-    directProgramHirTests.length !== 31) {
+    directProgramHirTests.length !== 32) {
   throw new Error(
     "Typed HIR program tests must enter through the production frontend",
   );
@@ -11059,6 +11059,54 @@ if (!complexCompoundAssignmentLowering ||
     )) {
   throw new Error(
     "complex compound assignment must preserve one lvalue evaluation and lower through shared complex arithmetic",
+  );
+}
+const atomicCompoundAssignmentLowering = hirIrExpressionSource.match(
+  /static\s+ir_val_t\s+build_direct_atomic_compound_assignment\s*\([^]*?\n\}\n\nstatic\s+ir_val_t\s+build_compound_assignment/,
+);
+const directAtomicUpdateFinish = hirIrExpressionSource.match(
+  /static\s+ir_val_t\s+finish_direct_atomic_update\s*\([^]*?\n\}/,
+);
+if (!atomicCompoundAssignmentLowering ||
+    (atomicCompoundAssignmentLowering[0].match(
+      /\bhir_ir_lvalue_address\s*\(/g,
+    ) ?? []).length !== 1 ||
+    (atomicCompoundAssignmentLowering[0].match(
+      /\bhir_ir_build_expr\s*\(/g,
+    ) ?? []).length !== 1 ||
+    !/\bbegin_direct_atomic_update\s*\(/.test(
+      atomicCompoundAssignmentLowering[0],
+    ) ||
+    !/\bfinish_direct_atomic_update\s*\(/.test(
+      atomicCompoundAssignmentLowering[0],
+    ) ||
+    !directAtomicUpdateFinish ||
+    !/atomic_kind\s*=\s*IR_ATOMIC_CAS/.test(
+      directAtomicUpdateFinish[0],
+    ) ||
+    !/\bhir_ir_emit_conditional_branch\s*\([^]*?success_block[^]*?retry_block/.test(
+      directAtomicUpdateFinish[0],
+    ) ||
+    !/PSX_TYPE_QUALIFIER_ATOMIC[^]*?build_direct_atomic_compound_assignment\s*\(/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/node_has_atomic_qualifier\(target\)[^]*?build_atomic_inc_dec\s*\(/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/node_has_atomic_qualifier\(node\)[^]*?load_direct_atomic_value\s*\(/.test(
+      hirIrExpressionSource,
+    ) ||
+    (hirIrExpressionSource.match(
+      /\bload_direct_lvalue_value\s*\(/g,
+    ) ?? []).length < 6 ||
+    !/node_has_atomic_qualifier\(target\)[^]*?store_direct_atomic_value\s*\(/.test(
+      hirIrExpressionSource,
+    ) ||
+    !/target\.kind\s*==\s*PSX_TYPE_POINTER[^]*?target_type\.qualifiers\s*&[^]*?PSX_TYPE_QUALIFIER_ATOMIC[^]*?==\s*0/.test(
+      assignmentResolutionSource,
+    )) {
+  throw new Error(
+    "direct atomic loads, stores, inc/dec, and compound assignment must use atomic IR while compound pointer arithmetic remains rejected",
   );
 }
 const hirIrCallSource = await readFile(

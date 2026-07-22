@@ -1366,6 +1366,7 @@ static const test_case_t test_cases[] = {
     {"probes", "atomic_pointer_conversion_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_pointer_conversion_constraints.c", 0, 0},
     {"probes", "array_pointer_qualification_constraints", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_pointer_qualification_constraints.c", 0, 0},
     {"probes", "complex_compound_assignment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_compound_assignment.c", 0, 0},
+    {"probes", "atomic_compound_assignment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/atomic_compound_assignment.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

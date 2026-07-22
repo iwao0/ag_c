@@ -2674,7 +2674,7 @@ static void test_typed_hir_atomic_lowering_without_ast(
       hir, root_id, &options, &status);
   ASSERT_EQ(IR_HIR_BUILD_OK, status);
   ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
-  ASSERT_EQ(5, count_ir_op(ir->funcs, IR_ATOMIC));
+  ASSERT_EQ(7, count_ir_op(ir->funcs, IR_ATOMIC));
   int saw_unsigned_byte_load = 0;
   int saw_byte_store = 0;
   int saw_wide_rmw = 0;
@@ -2709,6 +2709,92 @@ static void test_typed_hir_atomic_lowering_without_ast(
   ASSERT_TRUE(saw_wide_rmw);
   ASSERT_TRUE(saw_wide_cas);
   ASSERT_TRUE(saw_fence);
+  ir_module_free(ir);
+  reset_test_translation_unit_state(test_suite_session);
+}
+
+static void test_typed_hir_atomic_compound_lowering_without_ast(
+    ag_compilation_session_t *test_suite_session) {
+  printf("test_typed_hir_atomic_compound_lowering_without_ast...\n");
+  reset_test_translation_unit_state(test_suite_session);
+  int program_resolved = resolve_program_input_hir(test_suite_session,
+      "int side_effect(void); "
+      "int run(void) { "
+      "_Atomic int value = 96; "
+      "_Atomic unsigned char byte = 250; "
+      "_Atomic float real = 8.0f; "
+      "int result = (value += side_effect()); "
+      "value -= 2; value *= 4; value /= 2; value %= 13; "
+      "value <<= 2; value >>= 1; value &= 31; value ^= 7; value |= 64; "
+      "byte += 10; real /= 4.0f; "
+      "int post = value++; int pre = ++value; value = 3; "
+      "int observed = value; "
+      "int data[3]; _Atomic(int *) pointer = data; "
+      "int *old_pointer = pointer++; ++pointer; pointer = data + 1; "
+      "int *pointer_snapshot = pointer; "
+      "return result + value + byte + (int)real + post + pre + observed + "
+      "(old_pointer == data) + (pointer_snapshot == data + 1); }");
+  ASSERT_TRUE(program_resolved);
+  psx_hir_module_t *hir =
+      ag_compilation_session_hir_module(test_suite_session);
+  ASSERT_EQ(1, psx_hir_module_root_count(hir));
+  psx_hir_node_id_t root_id = psx_hir_module_root_at(hir, 0);
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(
+      test_suite_session));
+
+  ir_build_options_t options = {
+      .target = ag_compilation_session_target(test_suite_session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          test_semantic_context(test_suite_session)),
+      .record_layouts = ps_ctx_record_layout_table_in(
+          test_semantic_context(test_suite_session)),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(test_suite_session),
+  };
+  ir_hir_build_status_t status = IR_HIR_BUILD_INVALID;
+  ir_module_t *ir = ir_build_function_module_from_hir(
+      hir, root_id, &options, &status);
+  ASSERT_EQ(IR_HIR_BUILD_OK, status);
+  ASSERT_TRUE(ir != NULL && ir->funcs != NULL);
+
+  int atomic_load_count = 0;
+  int atomic_cas_count = 0;
+  int atomic_store_count = 0;
+  int byte_cas_count = 0;
+  int word_cas_count = 0;
+  int wide_cas_count = 0;
+  int conditional_branch_count = 0;
+  for (const ir_block_t *block = ir->funcs->entry;
+       block; block = block->next) {
+    for (const ir_inst_t *instruction = block->head;
+         instruction; instruction = instruction->next) {
+      if (instruction->op == IR_BR_COND)
+        conditional_branch_count++;
+      if (instruction->op != IR_ATOMIC) continue;
+      if (instruction->atomic_kind == IR_ATOMIC_LOAD)
+        atomic_load_count++;
+      if (instruction->atomic_kind == IR_ATOMIC_STORE)
+        atomic_store_count++;
+      if (instruction->atomic_kind != IR_ATOMIC_CAS) continue;
+      atomic_cas_count++;
+      if (instruction->atomic_width == 1)
+        byte_cas_count++;
+      if (instruction->atomic_width == 4)
+        word_cas_count++;
+      if (instruction->atomic_width == 8)
+        wide_cas_count++;
+    }
+  }
+  ASSERT_EQ(21, atomic_load_count);
+  ASSERT_EQ(16, atomic_cas_count);
+  ASSERT_EQ(6, atomic_store_count);
+  ASSERT_EQ(1, byte_cas_count);
+  ASSERT_EQ(13, word_cas_count);
+  ASSERT_EQ(2, wide_cas_count);
+  ASSERT_EQ(16, conditional_branch_count);
+  ASSERT_EQ(1, count_ir_op(ir->funcs, IR_CALL));
   ir_module_free(ir);
   reset_test_translation_unit_state(test_suite_session);
 }
@@ -17052,6 +17138,7 @@ int main() {
   test_typed_hir_direct_call_lowering_without_ast(test_suite_session);
   test_typed_hir_variadic_aggregate_call_without_ast(test_suite_session);
   test_typed_hir_atomic_lowering_without_ast(test_suite_session);
+  test_typed_hir_atomic_compound_lowering_without_ast(test_suite_session);
   test_typed_hir_va_arg_area_lowering_without_ast(test_suite_session);
   test_typed_hir_register_aggregate_lowering_without_ast(test_suite_session);
   test_typed_hir_aggregate_parameter_lowering_without_ast(test_suite_session);

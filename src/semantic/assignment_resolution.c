@@ -254,7 +254,9 @@ void psx_resolve_compound_assignment_qual_types_in(
     case PSX_COMPOUND_ASSIGN_ADD:
     case PSX_COMPOUND_ASSIGN_SUB:
       compatible = target.kind == PSX_TYPE_POINTER
-                       ? kind_is_integer(value.kind) &&
+                       ? (target_type.qualifiers &
+                          PSX_TYPE_QUALIFIER_ATOMIC) == 0 &&
+                             kind_is_integer(value.kind) &&
                              psx_semantic_pointer_points_to_complete_object_in(
                                  semantic_context, target_type)
                        : kind_is_arithmetic(target.kind) &&

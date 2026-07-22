@@ -9,6 +9,12 @@
 #include "../semantic/type_identity.h"
 #include "../type_layout.h"
 
+static ir_val_t build_atomic_inc_dec(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    const psx_hir_node_t *target, ir_mir_type_info_t type,
+    ir_val_t pointer);
+static int node_has_atomic_qualifier(const psx_hir_node_t *node);
+
 static ir_val_t global_address(
     hir_ir_context_t *context, const psx_hir_node_t *node) {
   const psx_hir_symbol_t *symbol = hir_ir_resolved_global_symbol(context, node);
@@ -1211,6 +1217,9 @@ static ir_val_t build_inc_dec(
 
   ir_val_t pointer = hir_ir_lvalue_address(context, target);
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  if (node_has_atomic_qualifier(target))
+    return build_atomic_inc_dec(
+        context, node, target, type, pointer);
   ir_type_t value_type = hir_ir_scalar_storage_type(type);
   int bit_width = 0;
   int bit_offset = 0;
@@ -1295,6 +1304,15 @@ static ir_val_t build_inc_dec(
         value_type);
   }
   if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  psx_type_shape_t target_shape = {0};
+  if (hir_ir_node_type_shape(context, target, &target_shape) &&
+      target_shape.kind == PSX_TYPE_BOOL) {
+    new_value = hir_ir_scalar_truth_value(context, new_value);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    new_value = hir_ir_emit_integer_width_conversion(
+        context, new_value, value_type, 0);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  }
   if (is_bitfield) {
     (void)emit_bitfield_store(
         context, pointer, new_value, bit_width, bit_offset, value_type);
@@ -1480,6 +1498,450 @@ static ir_val_t build_complex_compound_assignment(
   return result;
 }
 
+static ir_val_t compute_direct_compound_assignment_value(
+    hir_ir_context_t *context, const psx_hir_node_t *target,
+    ir_mir_type_info_t target_type, ir_val_t old_value,
+    ir_mir_type_info_t rhs_type, ir_val_t rhs,
+    psx_hir_compound_operator_t compound_op) {
+  if (!target ||
+      !hir_ir_is_scalar_value_type(target_type) ||
+      target_type.type_class == IR_MIR_TYPE_POINTER ||
+      !hir_ir_is_scalar_value_type(rhs_type) ||
+      rhs_type.type_class == IR_MIR_TYPE_POINTER)
+    return hir_ir_unsupported_expr(context);
+
+  ir_val_t result;
+  ir_mir_type_info_t operation_type = target_type;
+  if (hir_ir_is_float_value_type(target_type) ||
+      hir_ir_is_float_value_type(rhs_type)) {
+    if (compound_op != PSX_HIR_COMPOUND_ADD &&
+        compound_op != PSX_HIR_COMPOUND_SUB &&
+        compound_op != PSX_HIR_COMPOUND_MUL &&
+        compound_op != PSX_HIR_COMPOUND_DIV)
+      return hir_ir_unsupported_expr(context);
+    operation_type =
+        hir_ir_is_float_value_type(rhs_type) &&
+                (!hir_ir_is_float_value_type(target_type) ||
+                 rhs_type.source_size > target_type.source_size)
+            ? rhs_type : target_type;
+    old_value = hir_ir_coerce_direct_value(
+        context, old_value, target_type, operation_type);
+    rhs = hir_ir_coerce_direct_value(
+        context, rhs, rhs_type, operation_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    ir_op_t op = compound_op == PSX_HIR_COMPOUND_ADD ? IR_FADD
+                 : compound_op == PSX_HIR_COMPOUND_SUB ? IR_FSUB
+                 : compound_op == PSX_HIR_COMPOUND_MUL ? IR_FMUL
+                                                       : IR_FDIV;
+    result = emit_float_binary(
+        context, op, old_value, rhs, operation_type.type);
+  } else {
+    if (target_type.type_class != IR_MIR_TYPE_INTEGER ||
+        rhs_type.type_class != IR_MIR_TYPE_INTEGER)
+      return hir_ir_unsupported_expr(context);
+    int operation_size = target_type.source_size;
+    if (operation_size < 4) operation_size = 4;
+    if (compound_op != PSX_HIR_COMPOUND_SHL &&
+        compound_op != PSX_HIR_COMPOUND_SHR &&
+        rhs_type.source_size > operation_size)
+      operation_size = rhs_type.source_size;
+    operation_type = (ir_mir_type_info_t){
+        .type = operation_size >= 8 ? IR_TY_I64 : IR_TY_I32,
+        .type_class = IR_MIR_TYPE_INTEGER,
+        .source_size = operation_size >= 8 ? 8 : 4,
+    };
+    operation_type.is_unsigned =
+        compound_op == PSX_HIR_COMPOUND_SHL ||
+                compound_op == PSX_HIR_COMPOUND_SHR
+            ? ir_mir_integer_promotion_is_unsigned(
+                  target_type,
+                  ag_target_info_data_layout(context->options->target))
+            : ir_mir_usual_arithmetic_result_is_unsigned(
+                  target_type, rhs_type,
+                  ag_target_info_data_layout(context->options->target));
+    old_value = hir_ir_coerce_direct_value(
+        context, old_value, target_type, operation_type);
+    rhs = hir_ir_coerce_direct_value(
+        context, rhs, rhs_type, operation_type);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    ir_op_t op;
+    switch (compound_op) {
+      case PSX_HIR_COMPOUND_ADD: op = IR_ADD; break;
+      case PSX_HIR_COMPOUND_SUB: op = IR_SUB; break;
+      case PSX_HIR_COMPOUND_MUL: op = IR_MUL; break;
+      case PSX_HIR_COMPOUND_DIV:
+        op = operation_type.is_unsigned ? IR_UDIV : IR_DIV;
+        break;
+      case PSX_HIR_COMPOUND_MOD:
+        op = operation_type.is_unsigned ? IR_UMOD : IR_MOD;
+        break;
+      case PSX_HIR_COMPOUND_SHL: op = IR_SHL; break;
+      case PSX_HIR_COMPOUND_SHR:
+        op = operation_type.is_unsigned ? IR_LSR : IR_SHR;
+        break;
+      case PSX_HIR_COMPOUND_BITAND: op = IR_AND; break;
+      case PSX_HIR_COMPOUND_BITXOR: op = IR_XOR; break;
+      case PSX_HIR_COMPOUND_BITOR: op = IR_OR; break;
+      default: return hir_ir_unsupported_expr(context);
+    }
+    result = hir_ir_emit_integer_binary(
+        context, op, old_value, rhs, operation_type.type);
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  result = hir_ir_coerce_direct_value(
+      context, result, operation_type, target_type);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  psx_type_shape_t target_semantic_type = {0};
+  if (hir_ir_node_type_shape(context, target, &target_semantic_type) &&
+      target_semantic_type.kind == PSX_TYPE_BOOL) {
+    result = hir_ir_scalar_truth_value(context, result);
+    if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+    result = hir_ir_coerce_direct_value(
+        context, result,
+        (ir_mir_type_info_t){
+            .type = IR_TY_I32,
+            .type_class = IR_MIR_TYPE_INTEGER,
+            .source_size = 4,
+            .is_unsigned = 1,
+        },
+        target_type);
+  }
+  return context->status == IR_HIR_BUILD_OK
+             ? result : ir_val_none();
+}
+
+static ir_val_t emit_atomic_load_value(
+    hir_ir_context_t *context, ir_val_t pointer, int width,
+    int is_unsigned) {
+  int result = hir_ir_new_vreg(context);
+  if (result < 0) return ir_val_none();
+  ir_inst_t *atomic = ir_inst_new(IR_ATOMIC);
+  if (!atomic) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  atomic->atomic_kind = IR_ATOMIC_LOAD;
+  atomic->atomic_width = (unsigned char)width;
+  atomic->is_unsigned = (unsigned char)(is_unsigned ? 1 : 0);
+  atomic->src1 = pointer;
+  atomic->dst = ir_val_vreg(
+      result, width == 8 ? IR_TY_I64 : IR_TY_I32);
+  if (!hir_ir_append_instruction(context, atomic)) return ir_val_none();
+  return atomic->dst;
+}
+
+static ir_type_t atomic_bits_type(
+    ir_mir_type_info_t value_type, int width) {
+  if (width == 8) return IR_TY_I64;
+  if (width == 4 || hir_ir_is_float_value_type(value_type))
+    return IR_TY_I32;
+  return hir_ir_integer_storage_type(value_type);
+}
+
+static int store_atomic_loaded_bits(
+    hir_ir_context_t *context, int slot, ir_val_t bits,
+    ir_type_t bits_type, int sign_extend) {
+  if (bits.type != bits_type)
+    bits = hir_ir_emit_integer_width_conversion(
+        context, bits, bits_type, sign_extend);
+  return context->status == IR_HIR_BUILD_OK &&
+         store_scalar_temp(context, slot, bits);
+}
+
+static ir_val_t load_direct_atomic_value(
+    hir_ir_context_t *context, ir_val_t pointer,
+    ir_mir_type_info_t value_type) {
+  int width = value_type.source_size;
+  if (!hir_ir_is_scalar_value_type(value_type) ||
+      width < 1 || width > 8)
+    return hir_ir_unsupported_expr(context);
+  int alignment = width >= 8 ? 8 : width >= 4 ? 4 : width >= 2 ? 2 : 1;
+  int slot = hir_ir_allocate_scalar_temp(context, width, alignment);
+  if (slot < 0) return ir_val_none();
+  ir_type_t bits_type = atomic_bits_type(value_type, width);
+  ir_val_t bits = emit_atomic_load_value(
+      context, pointer, width, value_type.is_unsigned);
+  if (context->status != IR_HIR_BUILD_OK ||
+      !store_atomic_loaded_bits(
+          context, slot, bits, bits_type,
+          !value_type.is_unsigned))
+    return ir_val_none();
+  return load_scalar_temp(
+      context, slot, hir_ir_scalar_storage_type(value_type),
+      value_type.is_unsigned);
+}
+
+static int store_direct_atomic_value(
+    hir_ir_context_t *context, ir_val_t pointer, ir_val_t value,
+    ir_mir_type_info_t value_type) {
+  int width = value_type.source_size;
+  if (!hir_ir_is_scalar_value_type(value_type) ||
+      width < 1 || width > 8)
+    return 0;
+  int alignment = width >= 8 ? 8 : width >= 4 ? 4 : width >= 2 ? 2 : 1;
+  int slot = hir_ir_allocate_scalar_temp(context, width, alignment);
+  if (slot < 0 || !store_scalar_temp(context, slot, value)) return 0;
+  ir_type_t bits_type = atomic_bits_type(value_type, width);
+  ir_val_t bits = load_scalar_temp(context, slot, bits_type, 1);
+  if (context->status != IR_HIR_BUILD_OK) return 0;
+  ir_inst_t *atomic = ir_inst_new(IR_ATOMIC);
+  if (!atomic) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return 0;
+  }
+  atomic->atomic_kind = IR_ATOMIC_STORE;
+  atomic->atomic_width = (unsigned char)width;
+  atomic->src1 = pointer;
+  atomic->src2 = bits;
+  return hir_ir_append_instruction(context, atomic);
+}
+
+static int node_has_atomic_qualifier(const psx_hir_node_t *node) {
+  return node &&
+         (psx_hir_node_qual_type(node).qualifiers &
+          PSX_TYPE_QUALIFIER_ATOMIC) != 0;
+}
+
+static ir_val_t load_direct_lvalue_value(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    ir_val_t pointer, ir_mir_type_info_t type) {
+  if (node_has_atomic_qualifier(node))
+    return load_direct_atomic_value(context, pointer, type);
+  int result = hir_ir_new_vreg(context);
+  if (result < 0) return ir_val_none();
+  ir_inst_t *load = ir_inst_new(IR_LOAD);
+  if (!load) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
+  load->src1 = pointer;
+  load->is_unsigned = type.is_unsigned ? 1 : 0;
+  if (!hir_ir_append_instruction(context, load)) return ir_val_none();
+  return load->dst;
+}
+
+typedef struct {
+  ir_mir_type_info_t value_type;
+  ir_val_t pointer;
+  ir_type_t storage_type;
+  ir_type_t bits_type;
+  int width;
+  int expected_slot;
+  int desired_slot;
+  ir_block_t *retry_block;
+  ir_block_t *success_block;
+} direct_atomic_update_t;
+
+static int begin_direct_atomic_update(
+    hir_ir_context_t *context, ir_val_t pointer,
+    ir_mir_type_info_t value_type,
+    direct_atomic_update_t *update) {
+  if (!update || !hir_ir_is_scalar_value_type(value_type) ||
+      value_type.source_size < 1 || value_type.source_size > 8)
+    return 0;
+  memset(update, 0, sizeof(*update));
+  update->value_type = value_type;
+  update->pointer = pointer;
+  update->width = value_type.source_size;
+  update->storage_type = hir_ir_scalar_storage_type(value_type);
+  update->bits_type = atomic_bits_type(value_type, update->width);
+  int alignment = update->width >= 8 ? 8
+                  : update->width >= 4 ? 4
+                  : update->width >= 2 ? 2 : 1;
+  update->expected_slot = hir_ir_allocate_scalar_temp(
+      context, update->width, alignment);
+  update->desired_slot = hir_ir_allocate_scalar_temp(
+      context, update->width, alignment);
+  if (update->expected_slot < 0 || update->desired_slot < 0)
+    return 0;
+
+  ir_val_t initial = emit_atomic_load_value(
+      context, pointer, update->width, value_type.is_unsigned);
+  if (!store_atomic_loaded_bits(
+          context, update->expected_slot, initial,
+          update->bits_type, !value_type.is_unsigned))
+    return 0;
+  update->retry_block = hir_ir_cfg_new_block(context);
+  update->success_block = hir_ir_cfg_new_block(context);
+  return update->retry_block && update->success_block &&
+         hir_ir_cfg_emit_branch(context, update->retry_block) &&
+         hir_ir_cfg_switch_to_block(context, update->retry_block);
+}
+
+static ir_val_t direct_atomic_update_old_value(
+    hir_ir_context_t *context,
+    const direct_atomic_update_t *update) {
+  return load_scalar_temp(
+      context, update->expected_slot, update->storage_type,
+      update->value_type.is_unsigned);
+}
+
+static ir_val_t finish_direct_atomic_update(
+    hir_ir_context_t *context, const direct_atomic_update_t *update,
+    ir_val_t desired, int return_old_value) {
+  if (!store_scalar_temp(context, update->desired_slot, desired))
+    return ir_val_none();
+  ir_val_t desired_bits = load_scalar_temp(
+      context, update->desired_slot, update->bits_type, 1);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int success_vreg = hir_ir_new_vreg(context);
+  if (success_vreg < 0) return ir_val_none();
+  ir_inst_t *compare_exchange = ir_inst_new(IR_ATOMIC);
+  if (!compare_exchange) {
+    context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+    return ir_val_none();
+  }
+  compare_exchange->atomic_kind = IR_ATOMIC_CAS;
+  compare_exchange->atomic_width = (unsigned char)update->width;
+  compare_exchange->is_unsigned =
+      (unsigned char)(update->value_type.is_unsigned ? 1 : 0);
+  compare_exchange->src1 = update->pointer;
+  compare_exchange->src2 =
+      ir_val_vreg(update->expected_slot, IR_TY_PTR);
+  compare_exchange->src3 = desired_bits;
+  compare_exchange->dst = ir_val_vreg(success_vreg, IR_TY_I32);
+  if (!hir_ir_append_instruction(context, compare_exchange) ||
+      !hir_ir_emit_conditional_branch(
+          context, compare_exchange->dst,
+          update->success_block, update->retry_block) ||
+      !hir_ir_cfg_switch_to_block(context, update->success_block))
+    return ir_val_none();
+  int result_slot = return_old_value
+                        ? update->expected_slot : update->desired_slot;
+  return load_scalar_temp(
+      context, result_slot, update->storage_type,
+      update->value_type.is_unsigned);
+}
+
+static ir_val_t build_atomic_inc_dec(
+    hir_ir_context_t *context, const psx_hir_node_t *node,
+    const psx_hir_node_t *target, ir_mir_type_info_t type,
+    ir_val_t pointer) {
+  if (!node || !target || !hir_ir_is_scalar_value_type(type))
+    return hir_ir_unsupported_expr(context);
+  ir_type_t storage_type = hir_ir_scalar_storage_type(type);
+
+  long long step = 1;
+  ir_val_t step_value = ir_val_none();
+  if (type.type_class == IR_MIR_TYPE_POINTER) {
+    int stride_offset = psx_hir_node_vla_stride_frame_offset(target);
+    if (stride_offset != 0) {
+      int slot_size = psx_hir_node_vla_stride_slot_size(target);
+      if (slot_size <= 0) slot_size = type.source_size;
+      int stride_pointer = hir_ir_local_storage_address(
+          context, stride_offset, slot_size,
+          slot_size >= 8 ? 8 : 4);
+      if (stride_pointer < 0) return ir_val_none();
+      int stride_vreg = hir_ir_new_vreg(context);
+      if (stride_vreg < 0) return ir_val_none();
+      ir_inst_t *load_stride = ir_inst_new(IR_LOAD);
+      if (!load_stride) {
+        context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+        return ir_val_none();
+      }
+      load_stride->dst = ir_val_vreg(stride_vreg, storage_type);
+      load_stride->src1 = ir_val_vreg(stride_pointer, IR_TY_PTR);
+      if (!hir_ir_append_instruction(context, load_stride))
+        return ir_val_none();
+      step_value = load_stride->dst;
+    } else {
+      psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
+          context->options->semantic_types,
+          psx_hir_node_qual_type(target).type_id);
+      step = psx_type_layout_sizeof(
+          context->options->semantic_types,
+          context->options->record_layouts, pointee.type_id,
+          ag_target_info_data_layout(context->options->target));
+      if (step <= 0) return hir_ir_unsupported_expr(context);
+    }
+  }
+
+  psx_hir_node_kind_t kind = psx_hir_node_kind(node);
+  int is_increment = kind == PSX_HIR_PRE_INC ||
+                     kind == PSX_HIR_POST_INC;
+  ir_val_t float_step = ir_val_none();
+  if (hir_ir_is_float_value_type(type)) {
+    int one_vreg = hir_ir_new_vreg(context);
+    if (one_vreg < 0) return ir_val_none();
+    ir_inst_t *one = ir_inst_new(IR_LOAD_FP_IMM);
+    if (!one) {
+      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
+      return ir_val_none();
+    }
+    one->dst = ir_val_vreg(one_vreg, storage_type);
+    one->src1 = ir_val_fp_imm(storage_type, 1.0);
+    if (!hir_ir_append_instruction(context, one)) return ir_val_none();
+    float_step = one->dst;
+  }
+
+  direct_atomic_update_t update;
+  if (!begin_direct_atomic_update(
+          context, pointer, type, &update))
+    return ir_val_none();
+  ir_val_t old_value = direct_atomic_update_old_value(
+      context, &update);
+  ir_val_t new_value;
+  if (hir_ir_is_float_value_type(type)) {
+    new_value = emit_float_binary(
+        context, is_increment ? IR_FADD : IR_FSUB,
+        old_value, float_step, storage_type);
+  } else {
+    new_value = hir_ir_emit_integer_binary(
+        context, is_increment ? IR_ADD : IR_SUB, old_value,
+        step_value.id == IR_VAL_NONE
+            ? ir_val_imm(storage_type, step) : step_value,
+        storage_type);
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  psx_type_shape_t target_shape = {0};
+  if (hir_ir_node_type_shape(context, target, &target_shape) &&
+      target_shape.kind == PSX_TYPE_BOOL) {
+    new_value = hir_ir_scalar_truth_value(context, new_value);
+    if (context->status == IR_HIR_BUILD_OK)
+      new_value = hir_ir_emit_integer_width_conversion(
+          context, new_value, storage_type, 0);
+  }
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  int return_old_value = kind == PSX_HIR_POST_INC ||
+                         kind == PSX_HIR_POST_DEC;
+  return finish_direct_atomic_update(
+      context, &update, new_value, return_old_value);
+}
+
+static ir_val_t build_direct_atomic_compound_assignment(
+    hir_ir_context_t *context, const psx_hir_node_t *target,
+    const psx_hir_node_t *rhs_node,
+    ir_mir_type_info_t target_type,
+    ir_mir_type_info_t rhs_type,
+    psx_hir_compound_operator_t compound_op) {
+  if (!target || !rhs_node ||
+      !hir_ir_is_scalar_value_type(target_type) ||
+      target_type.type_class == IR_MIR_TYPE_POINTER ||
+      !hir_ir_is_scalar_value_type(rhs_type) ||
+      rhs_type.type_class == IR_MIR_TYPE_POINTER ||
+      target_type.source_size < 1 || target_type.source_size > 8)
+    return hir_ir_unsupported_expr(context);
+
+  ir_val_t pointer = hir_ir_lvalue_address(context, target);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  ir_val_t rhs = hir_ir_build_expr(context, rhs_node);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+
+  direct_atomic_update_t update;
+  if (!begin_direct_atomic_update(
+          context, pointer, target_type, &update))
+    return ir_val_none();
+  ir_val_t old_value = direct_atomic_update_old_value(
+      context, &update);
+  ir_val_t desired = compute_direct_compound_assignment_value(
+      context, target, target_type, old_value,
+      rhs_type, rhs, compound_op);
+  if (context->status != IR_HIR_BUILD_OK) return ir_val_none();
+  return finish_direct_atomic_update(
+      context, &update, desired, 0);
+}
+
 static ir_val_t build_compound_assignment(
     hir_ir_context_t *context, const psx_hir_node_t *node,
     ir_mir_type_info_t target_type) {
@@ -1496,6 +1958,11 @@ static ir_val_t build_compound_assignment(
   if (hir_ir_is_complex_type(target_type) ||
       hir_ir_is_complex_type(rhs_type))
     return build_complex_compound_assignment(
+        context, target, rhs_node, target_type, rhs_type,
+        compound_op);
+  if ((psx_hir_node_qual_type(target).qualifiers &
+       PSX_TYPE_QUALIFIER_ATOMIC) != 0)
+    return build_direct_atomic_compound_assignment(
         context, target, rhs_node, target_type, rhs_type,
         compound_op);
   if (!hir_ir_is_scalar_value_type(target_type))
@@ -2020,18 +2487,7 @@ ir_val_t hir_ir_build_expr(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
-    int result = hir_ir_new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
-    load->src1 = pointer;
-    load->is_unsigned = type.is_unsigned ? 1 : 0;
-    if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-    return load->dst;
+    return load_direct_lvalue_value(context, node, pointer, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_ADDRESS) {
@@ -2058,18 +2514,7 @@ ir_val_t hir_ir_build_expr(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
-    int result = hir_ir_new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
-    load->src1 = pointer;
-    load->is_unsigned = type.is_unsigned ? 1 : 0;
-    if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-    return load->dst;
+    return load_direct_lvalue_value(context, node, pointer, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_SUBSCRIPT) {
@@ -2079,18 +2524,7 @@ ir_val_t hir_ir_build_expr(
     if (result_kind == PSX_TYPE_ARRAY ||
         result_kind == PSX_TYPE_FUNCTION)
       return pointer;
-    int result = hir_ir_new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
-    load->src1 = pointer;
-    load->is_unsigned = type.is_unsigned ? 1 : 0;
-    if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-    return load->dst;
+    return load_direct_lvalue_value(context, node, pointer, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_MEMBER_ACCESS) {
@@ -2109,18 +2543,7 @@ ir_val_t hir_ir_build_expr(
           context, pointer, bit_width, bit_offset, bit_is_signed,
           hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
-    int result = hir_ir_new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
-    load->src1 = pointer;
-    load->is_unsigned = type.is_unsigned ? 1 : 0;
-    if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-    return load->dst;
+    return load_direct_lvalue_value(context, node, pointer, type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_LOCAL) {
@@ -2139,18 +2562,8 @@ ir_val_t hir_ir_build_expr(
           context, ir_val_vreg(pointer, IR_TY_PTR), bit_width,
           bit_offset, bit_is_signed, hir_ir_scalar_storage_type(type),
           hir_ir_scalar_storage_type(type));
-    int result = hir_ir_new_vreg(context);
-    if (result < 0) return ir_val_none();
-    ir_inst_t *load = ir_inst_new(IR_LOAD);
-    if (!load) {
-      context->status = IR_HIR_BUILD_OUT_OF_MEMORY;
-      return ir_val_none();
-    }
-    load->dst = ir_val_vreg(result, hir_ir_scalar_storage_type(type));
-    load->src1 = ir_val_vreg(pointer, IR_TY_PTR);
-    load->is_unsigned = type.is_unsigned ? 1 : 0;
-    if (!hir_ir_append_instruction(context, load)) return ir_val_none();
-    return load->dst;
+    return load_direct_lvalue_value(
+        context, node, ir_val_vreg(pointer, IR_TY_PTR), type);
   }
 
   if (psx_hir_node_kind(node) == PSX_HIR_CAST ||
@@ -2217,6 +2630,12 @@ ir_val_t hir_ir_build_expr(
       return emit_bitfield_store(
           context, pointer, value, bit_width, bit_offset,
           hir_ir_scalar_storage_type(target_type));
+    }
+    if (node_has_atomic_qualifier(target)) {
+      if (!store_direct_atomic_value(
+              context, pointer, value, target_type))
+        return ir_val_none();
+      return value;
     }
     ir_inst_t *store = ir_inst_new(IR_STORE);
     if (!store) {
