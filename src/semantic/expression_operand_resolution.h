@@ -33,6 +33,26 @@ psx_qual_type_t psx_resolve_binary_result_qual_type_in(
     psx_qual_type_t rhs_type);
 
 typedef enum {
+  PSX_BINARY_TYPES_OK = 0,
+  PSX_BINARY_TYPES_INVALID,
+  PSX_BINARY_OPERANDS_INCOMPATIBLE,
+} psx_binary_types_status_t;
+
+typedef struct {
+  psx_binary_types_status_t status;
+  psx_qual_type_t result_qual_type;
+} psx_binary_types_resolution_t;
+
+void psx_resolve_binary_qual_types_in(
+    psx_semantic_context_t *semantic_context,
+    psx_type_binary_op_t operator,
+    psx_qual_type_t lhs_type,
+    psx_qual_type_t rhs_type,
+    int lhs_is_null_pointer_constant,
+    int rhs_is_null_pointer_constant,
+    psx_binary_types_resolution_t *resolution);
+
+typedef enum {
   PSX_CONDITIONAL_TYPES_OK = 0,
   PSX_CONDITIONAL_TYPES_INVALID,
   PSX_CONDITIONAL_CONDITION_NOT_SCALAR,
@@ -90,6 +110,7 @@ typedef enum {
   PSX_INCDEC_OPERAND_OK = 0,
   PSX_INCDEC_OPERAND_CONST,
   PSX_INCDEC_OPERAND_INVALID_TYPE,
+  PSX_INCDEC_OPERAND_POINTER_NOT_COMPLETE_OBJECT,
 } psx_incdec_operand_status_t;
 
 typedef struct {
@@ -98,11 +119,11 @@ typedef struct {
 } psx_incdec_operand_resolution_t;
 
 void psx_resolve_incdec_operand_qual_type_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type,
     psx_incdec_operand_resolution_t *resolution);
 psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type);
 psx_qual_type_t psx_resolve_value_decay_qual_type_in(
     psx_semantic_context_t *semantic_context,

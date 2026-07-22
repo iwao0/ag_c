@@ -5883,6 +5883,15 @@ if (
   !/\bpsx_resolve_binary_result_qual_type_in\s*\(/.test(
     expressionOperandResolutionHeader,
   ) ||
+  !/\bpsx_resolve_binary_qual_types_in\s*\(/.test(
+    expressionOperandResolutionHeader,
+  ) ||
+  !/\bpsx_resolve_binary_qual_types_in\s*\(/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
+  !/PSX_BINARY_OPERANDS_INCOMPATIBLE/.test(
+    syntaxTypedHirResolutionSource,
+  ) ||
   !/\bpsx_resolve_binary_result_qual_type_in\s*\(/.test(
     syntaxTypedHirResolutionSource,
   ) ||
@@ -9330,6 +9339,9 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/(?:ast|type)\.h|\bpsx_type_t\
     !/\bpsx_semantic_type_table_unqualified_types_match\s*\(/.test(
       assignmentResolutionSource,
     ) ||
+    !/\bpsx_semantic_type_table_function_types_compatible\s*\(/.test(
+      assignmentResolutionSource,
+    ) ||
     !/static\s+int\s+semantic_qual_types_match\s*\([^]*?case\s+PSX_TYPE_POINTER:[^]*?case\s+PSX_TYPE_ARRAY:[^]*?case\s+PSX_TYPE_FUNCTION:/.test(
       typeIdentityImplementationSource,
     ) ||
@@ -9356,8 +9368,20 @@ const sharedCallTypeRuleUses = [
 ].filter((source) =>
   /\bpsx_resolve_call_qual_types_in\s*\(/.test(source)
 ).length;
+const callArgumentQualTypeRule = callResolutionSource.match(
+  /void\s+psx_resolve_call_argument_qual_types_in\s*\([^]*?\n\}/,
+);
+const sharedCallArgumentTypeRuleUses = [
+  syntaxTypedHirResolutionSource,
+].filter((source) =>
+  /\bpsx_resolve_call_argument_qual_types_in\s*\(/.test(source)
+).length;
 if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
       `${callResolutionHeader}\n${callResolutionSource}`,
+    ) ||
+    !callArgumentQualTypeRule ||
+    /\bnode_t\b|\bND_[A-Z0-9_]+\b|\bPSX_HIR_/.test(
+      callArgumentQualTypeRule?.[0] ?? "",
     ) ||
     !/canonical->has_function_prototype\s*==\s*[^;]*candidate->has_function_prototype/.test(
       typeIdentityImplementationSource,
@@ -9384,10 +9408,23 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       callResolutionSource,
     ) ||
+    !/\bpsx_semantic_type_table_parameter\s*\(/.test(
+      callArgumentQualTypeRule?.[0] ?? "",
+    ) ||
+    !/\bpsx_resolve_assignment_qual_types_in\s*\(/.test(
+      callArgumentQualTypeRule?.[0] ?? "",
+    ) ||
     /\bpsx_resolve_function_call_type\b|\bpsx_function_call_resolution_t\b|\bPSX_FUNCTION_CALL_RESOLUTION_/.test(
       `${functionCallResolutionHeader}\n${functionCallResolutionSource}`,
     ) ||
     sharedCallTypeRuleUses !== 1 ||
+    sharedCallArgumentTypeRuleUses !== 1 ||
+    !/PSX_CALL_ARGUMENT_TYPES_INCOMPATIBLE/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
+    !/PSX_CALL_ARGUMENT_TYPES_DISCARDS_QUALIFIERS/.test(
+      syntaxTypedHirResolutionSource,
+    ) ||
     !/\bPSX_HIR_CALL\b/.test(syntaxTypedHirResolutionSource) ||
     !/\bPSX_HIR_EDGE_CALLEE\b/.test(
       syntaxTypedHirResolutionSource,
@@ -9399,7 +9436,7 @@ if (/\bnode_t\b|\bND_[A-Z0-9_]+\b|PSX_HIR_|parser\/ast\.h/.test(
       syntaxTypedHirResolutionSource,
     )) {
   throw new Error(
-    "function call typing must use one AST-independent QualType rule in direct Typed HIR resolution",
+    "function call typing and argument conversion must use AST-independent QualType rules in direct Typed HIR resolution",
   );
 }
 
@@ -9663,7 +9700,7 @@ for (const core of obsoleteOperandTypeViewCores) {
 const sharedOperandQualTypeRuleCores = new Map([
   ["promoted_integer_result", 4],
   ["usual_arithmetic_result", 3],
-  ["decay_pointer_like", 6],
+  ["decay_pointer_like", 8],
 ]);
 for (const [core, expectedCalls] of sharedOperandQualTypeRuleCores) {
   const calls = expressionOperandResolutionSource.match(
@@ -9885,10 +9922,10 @@ if (!/\bND_GT\b/.test(syntaxNodeKindHeader) ||
     /new_binary_with_source_op\s*\(\s*ctx,\s*ND_(?:LT|LE),\s*rhs,\s*node,\s*TK_(?:GT|GE)\s*\)/.test(
       parserExpressionSource,
     ) ||
-    !/MAP\s*\(\s*ND_GT,\s*PSX_HIR_GT,\s*PSX_TYPE_BINARY_COMPARE\s*\)/.test(
+    !/MAP\s*\(\s*ND_GT,\s*PSX_HIR_GT,\s*PSX_TYPE_BINARY_RELATIONAL\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
-    !/MAP\s*\(\s*ND_GE,\s*PSX_HIR_GE,\s*PSX_TYPE_BINARY_COMPARE\s*\)/.test(
+    !/MAP\s*\(\s*ND_GE,\s*PSX_HIR_GE,\s*PSX_TYPE_BINARY_RELATIONAL\s*\)/.test(
       syntaxTypedHirResolutionSource,
     ) ||
     !/kind\s*==\s*PSX_HIR_GT\s*\|\|\s*kind\s*==\s*PSX_HIR_GE/.test(

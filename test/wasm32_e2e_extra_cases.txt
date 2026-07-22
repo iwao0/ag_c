@@ -637,6 +637,9 @@ probes_found_bugs/generic_selection_constraints.c
 probes_found_bugs/compound_literal_scalar_lvalue.c
 probes_found_bugs/atomic_brace_initializer_extension.c
 probes_found_bugs/type_query_register_constraints.c
+probes_found_bugs/function_argument_return_constraints.c
+probes_found_bugs/function_default_argument_promotions.c
+probes_found_bugs/binary_operator_constraints.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

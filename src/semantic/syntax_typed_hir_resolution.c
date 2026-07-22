@@ -282,6 +282,9 @@ static int preflight_direct_expression(
 static int preflight_direct_expression_impl(
     direct_resolution_context_t *context,
     const node_t *syntax, psx_qual_type_t *qual_type);
+static int direct_integer_constant(
+    direct_resolution_context_t *context,
+    const node_t *syntax, long long *value);
 static int preflight_direct_statement(
     direct_resolution_context_t *context,
     const node_t *syntax);
@@ -485,6 +488,28 @@ static int resolve_direct_function_call(
     if (!preflight_direct_expression(
             context, call->arguments[i], &argument_type))
       return 0;
+    long long argument_constant = 0;
+    int argument_is_null_pointer_constant =
+        direct_integer_constant(
+            context, call->arguments[i], &argument_constant) &&
+        argument_constant == 0;
+    psx_call_argument_types_status_t argument_status;
+    psx_resolve_call_argument_qual_types_in(
+        context->semantic_context, resolution.function_qual_type, i,
+        argument_type, argument_is_null_pointer_constant,
+        &argument_status);
+    if (argument_status == PSX_CALL_ARGUMENT_TYPES_INCOMPATIBLE)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_TYPES_INCOMPATIBLE,
+          call->arguments[i]);
+    if (argument_status ==
+        PSX_CALL_ARGUMENT_TYPES_DISCARDS_QUALIFIERS)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_DISCARDS_QUALIFIERS,
+          call->arguments[i]);
+    if (argument_status != PSX_CALL_ARGUMENT_TYPES_OK) return 0;
   }
 
   direct_call_binding_t *binding = arena_alloc_in(
@@ -1799,12 +1824,12 @@ static int direct_binary_kind(
     MAP(ND_BITOR, PSX_HIR_BITOR, PSX_TYPE_BINARY_BITOR);
     MAP(ND_SHL, PSX_HIR_SHL, PSX_TYPE_BINARY_SHL);
     MAP(ND_SHR, PSX_HIR_SHR, PSX_TYPE_BINARY_SHR);
-    MAP(ND_EQ, PSX_HIR_EQ, PSX_TYPE_BINARY_COMPARE);
-    MAP(ND_NE, PSX_HIR_NE, PSX_TYPE_BINARY_COMPARE);
-    MAP(ND_LT, PSX_HIR_LT, PSX_TYPE_BINARY_COMPARE);
-    MAP(ND_LE, PSX_HIR_LE, PSX_TYPE_BINARY_COMPARE);
-    MAP(ND_GT, PSX_HIR_GT, PSX_TYPE_BINARY_COMPARE);
-    MAP(ND_GE, PSX_HIR_GE, PSX_TYPE_BINARY_COMPARE);
+    MAP(ND_EQ, PSX_HIR_EQ, PSX_TYPE_BINARY_EQUALITY);
+    MAP(ND_NE, PSX_HIR_NE, PSX_TYPE_BINARY_EQUALITY);
+    MAP(ND_LT, PSX_HIR_LT, PSX_TYPE_BINARY_RELATIONAL);
+    MAP(ND_LE, PSX_HIR_LE, PSX_TYPE_BINARY_RELATIONAL);
+    MAP(ND_GT, PSX_HIR_GT, PSX_TYPE_BINARY_RELATIONAL);
+    MAP(ND_GE, PSX_HIR_GE, PSX_TYPE_BINARY_RELATIONAL);
     MAP(ND_LOGAND, PSX_HIR_LOGAND, PSX_TYPE_BINARY_LOGICAL);
     MAP(ND_LOGOR, PSX_HIR_LOGOR, PSX_TYPE_BINARY_LOGICAL);
     MAP(ND_COMMA, PSX_HIR_COMMA, PSX_TYPE_BINARY_COMMA);
@@ -2167,6 +2192,12 @@ static int preflight_direct_expression_impl(
           context,
           PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_CONST_OPERAND,
           syntax);
+    if (resolution.status ==
+        PSX_INCDEC_OPERAND_POINTER_NOT_COMPLETE_OBJECT)
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_POINTER_NOT_COMPLETE_OBJECT,
+          syntax);
     if (resolution.status != PSX_INCDEC_OPERAND_OK)
       return note_direct_semantic_rejection(
           context,
@@ -2412,11 +2443,28 @@ static int preflight_direct_expression_impl(
       !preflight_direct_expression(
           context, syntax->rhs, &rhs_type))
     return 0;
-  psx_qual_type_t result = psx_resolve_binary_result_qual_type_in(
+  long long lhs_constant = 0;
+  long long rhs_constant = 0;
+  int lhs_is_null_pointer_constant =
+      direct_integer_constant(
+          context, syntax->lhs, &lhs_constant) &&
+      lhs_constant == 0;
+  int rhs_is_null_pointer_constant =
+      direct_integer_constant(
+          context, syntax->rhs, &rhs_constant) &&
+      rhs_constant == 0;
+  psx_binary_types_resolution_t resolution;
+  psx_resolve_binary_qual_types_in(
       context->semantic_context, type_operator,
-      lhs_type, rhs_type);
-  if (result.type_id == PSX_TYPE_ID_INVALID) return 0;
-  if (qual_type) *qual_type = result;
+      lhs_type, rhs_type, lhs_is_null_pointer_constant,
+      rhs_is_null_pointer_constant, &resolution);
+  if (resolution.status == PSX_BINARY_OPERANDS_INCOMPATIBLE)
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_BINARY_OPERANDS_INCOMPATIBLE,
+        syntax);
+  if (resolution.status != PSX_BINARY_TYPES_OK) return 0;
+  if (qual_type) *qual_type = resolution.result_qual_type;
   return 1;
 }
 

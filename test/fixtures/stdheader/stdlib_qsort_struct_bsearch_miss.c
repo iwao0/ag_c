@@ -8,9 +8,9 @@ struct Rec {
     int value;
 };
 
-static int rec_cmp(void *ap, void *bp) {
-    struct Rec *a = (struct Rec *)ap;
-    struct Rec *b = (struct Rec *)bp;
+static int rec_cmp(const void *ap, const void *bp) {
+    const struct Rec *a = (const struct Rec *)ap;
+    const struct Rec *b = (const struct Rec *)bp;
     if (a->key != b->key) return (a->key > b->key) - (a->key < b->key);
     return (a->value > b->value) - (a->value < b->value);
 }

@@ -1,16 +1,12 @@
-// 続き54: ポインタを非ゼロ整数定数と比較するのを W3022 で警告
-// (clang -Wpointer-integer-compare 相当、C11 6.5.16.1)。
+// ポインタ比較のうち、NULLポインタ定数・互換ポインタ・明示的に
+// ポインタへ変換した値を使う合法形がE3122にならないことを確認する。
 //
-// equality() で warn_if_pointer_int_compare を呼び、片方が pointer で他方が
-// ND_NUM の非ゼロなら警告。明示 pointer cast は ND_CAST の pointer result なので
-// pointer-vs-pointer 比較として扱われる。
-//
-// 抑制条件:
+// 合法条件:
 //   - `p == 0` (NULL ポインタ定数)
-//   - `p == (void*)5` (明示キャスト、ND_CAST pointer result)
+//   - `p == (void*)5` (明示的にポインタへ変換済み)
 //   - 両辺ポインタ、両辺整数 (符号比較や signed/unsigned は別経路で扱う)
 //
-// 本 fixture は合法形のみ。
+// 非ゼロ整数との直接比較は別のcompile-fail caseでE3122を確認する。
 #include <assert.h>
 
 int main(void) {

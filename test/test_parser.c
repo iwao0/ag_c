@@ -15107,7 +15107,8 @@ static void test_parse_evil_edge_cases(
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return (unsigned char)x<0; }",
                                "W3019");
   expect_parse_ok_without_message(test_suite_session, "int main(void){ signed char s=1; return s<0; }", "W3019");
-  expect_parse_ok_with_message(test_suite_session, "int main(void){ int *p; return p==5; }", "W3022");
+  expect_parse_fail_with_message(test_suite_session,
+      "int main(void){ int *p; return p==5; }", "E3122");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=1; return !x==0; }", "W3021");
   expect_parse_ok_with_message(test_suite_session, "int main(void){ int x=0; if (x=1) return x; return 0; }",
                                "W3007");

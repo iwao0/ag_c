@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
-static int int_cmp(void *ap, void *bp) {
-    int a = *(int *)ap;
-    int b = *(int *)bp;
+static int int_cmp(const void *ap, const void *bp) {
+    int a = *(const int *)ap;
+    int b = *(const int *)bp;
     return (a > b) - (a < b);
 }
 

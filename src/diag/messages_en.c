@@ -208,6 +208,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE: return "sizeof and _Alignof cannot be applied to a function type or an incomplete type (C11 6.5.3.4p1)";
     case DIAG_ERR_PARSER_SIZEOF_BITFIELD: return "sizeof cannot be applied to a bit-field (C11 6.5.3.4p1)";
     case DIAG_ERR_PARSER_ADDRESS_OF_REGISTER: return "The address of an object declared with register storage cannot be taken (C11 6.5.3.2p1)";
+    case DIAG_ERR_PARSER_CALL_ARGUMENT_TYPES_INCOMPATIBLE: return "Function call argument is not assignable to the corresponding unqualified parameter type (C11 6.5.2.2p2)";
+    case DIAG_ERR_PARSER_CALL_ARGUMENT_DISCARDS_QUALIFIERS: return "Function call argument conversion discards pointed-to type qualifiers (C11 6.5.2.2p2, 6.5.16.1p2)";
+    case DIAG_ERR_PARSER_BINARY_OPERANDS_INCOMPATIBLE: return "Binary operator operands do not satisfy the required type constraints (C11 6.5.5-6.5.14)";
+    case DIAG_ERR_PARSER_INCDEC_POINTER_NOT_COMPLETE_OBJECT: return "Pointer increment or decrement requires a pointer to a complete object type (C11 6.5.6p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

@@ -33,6 +33,10 @@ static int kind_is_arithmetic(psx_type_kind_t kind) {
          kind == PSX_TYPE_COMPLEX;
 }
 
+static int kind_is_real(psx_type_kind_t kind) {
+  return kind_is_integer(kind) || kind == PSX_TYPE_FLOAT;
+}
+
 static int kind_is_pointer_like(psx_type_kind_t kind) {
   return kind == PSX_TYPE_POINTER || kind == PSX_TYPE_ARRAY;
 }
@@ -76,6 +80,85 @@ static psx_qual_type_t decay_pointer_like(
              ? invalid_qual_type()
              : ps_ctx_intern_pointer_to_qual_type_in(
                    semantic_context, element);
+}
+
+static int type_is_complete_object(
+    psx_semantic_context_t *semantic_context,
+    psx_type_id_t type_id) {
+  psx_type_shape_t type = {0};
+  if (!describe_type(
+          semantic_context,
+          (psx_qual_type_t){
+              type_id, PSX_TYPE_QUALIFIER_NONE},
+          &type) ||
+      type.kind == PSX_TYPE_INVALID || type.kind == PSX_TYPE_VOID ||
+      type.kind == PSX_TYPE_FUNCTION)
+    return 0;
+  if (psx_type_kind_is_aggregate(type.kind)) {
+    const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+        semantic_context, type.record_id);
+    return record && record->is_complete;
+  }
+  if (type.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element = psx_semantic_type_table_base(
+        ps_ctx_semantic_type_table_in(semantic_context), type_id);
+    return (type.array_len > 0 || type.is_vla) &&
+           type_is_complete_object(
+               semantic_context, element.type_id);
+  }
+  return 1;
+}
+
+static int pointer_points_to_complete_object(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t pointer_type) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t pointee = psx_semantic_type_table_base(
+      types, pointer_type.type_id);
+  return pointee.type_id != PSX_TYPE_ID_INVALID &&
+         type_is_complete_object(
+             semantic_context, pointee.type_id);
+}
+
+static int pointer_types_are_compatible(
+    psx_semantic_context_t *semantic_context,
+    psx_qual_type_t left, psx_qual_type_t right,
+    int allow_void_object_conversion,
+    int allow_function_comparison,
+    int require_complete_object) {
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  psx_qual_type_t left_base = psx_semantic_type_table_base(
+      types, left.type_id);
+  psx_qual_type_t right_base = psx_semantic_type_table_base(
+      types, right.type_id);
+  psx_type_shape_t left_shape = {0};
+  psx_type_shape_t right_shape = {0};
+  if (!describe_type(semantic_context, left_base, &left_shape) ||
+      !describe_type(semantic_context, right_base, &right_shape))
+    return 0;
+  int left_function = left_shape.kind == PSX_TYPE_FUNCTION;
+  int right_function = right_shape.kind == PSX_TYPE_FUNCTION;
+  if (left_function || right_function)
+    return allow_function_comparison && !require_complete_object &&
+           left_function && right_function &&
+           psx_semantic_type_table_function_types_compatible(
+               types, left_base, right_base);
+  if (allow_void_object_conversion &&
+      (left_shape.kind == PSX_TYPE_VOID ||
+       right_shape.kind == PSX_TYPE_VOID))
+    return 1;
+  if (left_shape.kind == PSX_TYPE_VOID ||
+      right_shape.kind == PSX_TYPE_VOID ||
+      !psx_semantic_type_table_unqualified_types_match(
+          types, left_base, right_base))
+    return 0;
+  return !require_complete_object ||
+         (type_is_complete_object(
+              semantic_context, left_base.type_id) &&
+          type_is_complete_object(
+              semantic_context, right_base.type_id));
 }
 
 static psx_qual_type_t usual_arithmetic_result(
@@ -176,7 +259,8 @@ psx_qual_type_t psx_resolve_binary_result_qual_type_in(
        !describe_type(semantic_context, lhs_type, &lhs)))
     return invalid_qual_type();
   if (operator == PSX_TYPE_BINARY_COMMA) return unqualified(rhs_type);
-  if (operator == PSX_TYPE_BINARY_COMPARE ||
+  if (operator == PSX_TYPE_BINARY_EQUALITY ||
+      operator == PSX_TYPE_BINARY_RELATIONAL ||
       operator == PSX_TYPE_BINARY_LOGICAL)
     return integer_result(
         semantic_context, PSX_INTEGER_KIND_INT, 0);
@@ -200,6 +284,113 @@ psx_qual_type_t psx_resolve_binary_result_qual_type_in(
   }
   return usual_arithmetic_result(
       semantic_context, &lhs, &rhs);
+}
+
+void psx_resolve_binary_qual_types_in(
+    psx_semantic_context_t *semantic_context,
+    psx_type_binary_op_t operator,
+    psx_qual_type_t lhs_type, psx_qual_type_t rhs_type,
+    int lhs_is_null_pointer_constant,
+    int rhs_is_null_pointer_constant,
+    psx_binary_types_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  resolution->status = PSX_BINARY_TYPES_INVALID;
+  resolution->result_qual_type = invalid_qual_type();
+  psx_type_shape_t lhs = {0};
+  psx_type_shape_t rhs = {0};
+  if (!semantic_context ||
+      !describe_type(semantic_context, lhs_type, &lhs) ||
+      !describe_type(semantic_context, rhs_type, &rhs))
+    return;
+
+  int compatible = 0;
+  int lhs_pointer = kind_is_pointer_like(lhs.kind);
+  int rhs_pointer = kind_is_pointer_like(rhs.kind);
+  psx_qual_type_t effective_lhs = lhs_pointer
+      ? decay_pointer_like(semantic_context, lhs_type, &lhs)
+      : lhs_type;
+  psx_qual_type_t effective_rhs = rhs_pointer
+      ? decay_pointer_like(semantic_context, rhs_type, &rhs)
+      : rhs_type;
+  switch (operator) {
+    case PSX_TYPE_BINARY_COMMA:
+      compatible = 1;
+      break;
+    case PSX_TYPE_BINARY_LOGICAL:
+      compatible = psx_type_kind_is_scalar(lhs.kind) &&
+                   psx_type_kind_is_scalar(rhs.kind);
+      break;
+    case PSX_TYPE_BINARY_EQUALITY:
+      if (kind_is_arithmetic(lhs.kind) &&
+          kind_is_arithmetic(rhs.kind)) {
+        compatible = 1;
+      } else if (lhs_pointer && rhs_pointer) {
+        compatible = pointer_types_are_compatible(
+            semantic_context, effective_lhs, effective_rhs,
+            1, 1, 0);
+      } else if (lhs_pointer && kind_is_integer(rhs.kind)) {
+        compatible = rhs_is_null_pointer_constant;
+      } else if (rhs_pointer && kind_is_integer(lhs.kind)) {
+        compatible = lhs_is_null_pointer_constant;
+      }
+      break;
+    case PSX_TYPE_BINARY_RELATIONAL:
+      if (kind_is_real(lhs.kind) && kind_is_real(rhs.kind)) {
+        compatible = 1;
+      } else if (lhs_pointer && rhs_pointer) {
+        compatible = pointer_types_are_compatible(
+            semantic_context, effective_lhs, effective_rhs,
+            0, 0, 0);
+      }
+      break;
+    case PSX_TYPE_BINARY_ADD:
+      compatible =
+          (kind_is_arithmetic(lhs.kind) &&
+           kind_is_arithmetic(rhs.kind)) ||
+          (lhs_pointer && kind_is_integer(rhs.kind) &&
+           pointer_points_to_complete_object(
+               semantic_context, effective_lhs)) ||
+          (rhs_pointer && kind_is_integer(lhs.kind) &&
+           pointer_points_to_complete_object(
+               semantic_context, effective_rhs));
+      break;
+    case PSX_TYPE_BINARY_SUB:
+      compatible =
+          (kind_is_arithmetic(lhs.kind) &&
+           kind_is_arithmetic(rhs.kind)) ||
+          (lhs_pointer && kind_is_integer(rhs.kind) &&
+           pointer_points_to_complete_object(
+               semantic_context, effective_lhs)) ||
+          (lhs_pointer && rhs_pointer &&
+           pointer_types_are_compatible(
+               semantic_context, effective_lhs, effective_rhs,
+               0, 0, 1));
+      break;
+    case PSX_TYPE_BINARY_MUL:
+    case PSX_TYPE_BINARY_DIV:
+      compatible = kind_is_arithmetic(lhs.kind) &&
+                   kind_is_arithmetic(rhs.kind);
+      break;
+    case PSX_TYPE_BINARY_MOD:
+    case PSX_TYPE_BINARY_BITAND:
+    case PSX_TYPE_BINARY_BITXOR:
+    case PSX_TYPE_BINARY_BITOR:
+    case PSX_TYPE_BINARY_SHL:
+    case PSX_TYPE_BINARY_SHR:
+      compatible = kind_is_integer(lhs.kind) &&
+                   kind_is_integer(rhs.kind);
+      break;
+  }
+  if (!compatible) {
+    resolution->status = PSX_BINARY_OPERANDS_INCOMPATIBLE;
+    return;
+  }
+  resolution->result_qual_type =
+      psx_resolve_binary_result_qual_type_in(
+          semantic_context, operator, lhs_type, rhs_type);
+  if (resolution->result_qual_type.type_id != PSX_TYPE_ID_INVALID)
+    resolution->status = PSX_BINARY_TYPES_OK;
 }
 
 psx_qual_type_t psx_resolve_conditional_result_qual_type_in(
@@ -359,7 +550,7 @@ void psx_resolve_address_operand_qual_type_in(
 }
 
 void psx_resolve_incdec_operand_qual_type_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type,
     psx_incdec_operand_resolution_t *resolution) {
   if (!resolution) return;
@@ -379,12 +570,19 @@ void psx_resolve_incdec_operand_qual_type_in(
        !kind_is_integer(shape.kind) &&
        shape.kind != PSX_TYPE_FLOAT))
     return;
+  if (shape.kind == PSX_TYPE_POINTER &&
+      !pointer_points_to_complete_object(
+          semantic_context, operand_type)) {
+    resolution->status =
+        PSX_INCDEC_OPERAND_POINTER_NOT_COMPLETE_OBJECT;
+    return;
+  }
   resolution->status = PSX_INCDEC_OPERAND_OK;
   resolution->result_qual_type = unqualified(operand_type);
 }
 
 psx_qual_type_t psx_resolve_incdec_result_qual_type_in(
-    const psx_semantic_context_t *semantic_context,
+    psx_semantic_context_t *semantic_context,
     psx_qual_type_t operand_type) {
   psx_incdec_operand_resolution_t resolution;
   psx_resolve_incdec_operand_qual_type_in(

@@ -94,7 +94,7 @@ static int pointer_targets_are_compatible(
   int value_function = value_shape.kind == PSX_TYPE_FUNCTION;
   if (target_function || value_function) {
     if (target_function && value_function)
-      return psx_semantic_type_table_unqualified_types_match(
+      return psx_semantic_type_table_function_types_compatible(
           types, target_base, value_base);
     return 0;
   }
@@ -152,7 +152,21 @@ void psx_resolve_assignment_qual_types_in(
       psx_qual_type_t value_pointee =
           psx_semantic_type_table_pointee_value(
               types, value_type.type_id);
-      if ((value_pointee.qualifiers &
+      unsigned int value_pointee_qualifiers =
+          value_pointee.qualifiers;
+      psx_type_shape_t target_pointee_shape = {0};
+      psx_type_shape_t value_pointee_shape = {0};
+      if (describe_type(types, target_pointee, &target_pointee_shape) &&
+          describe_type(types, value_pointee, &value_pointee_shape) &&
+          (target_pointee_shape.kind == PSX_TYPE_VOID ||
+           value_pointee_shape.kind == PSX_TYPE_VOID)) {
+        /* _Atomic identifies an atomic object type rather than an access
+         * qualification that is lost through a void pointer.  The generic
+         * atomic interfaces rely on conversion between A * and void *;
+         * const/volatile/restrict still participate in qualifier checks. */
+        value_pointee_qualifiers &= ~PSX_TYPE_QUALIFIER_ATOMIC;
+      }
+      if ((value_pointee_qualifiers &
            ~target_pointee.qualifiers) != 0) {
         resolution->status =
             PSX_ASSIGNMENT_DISCARDS_QUALIFIERS;

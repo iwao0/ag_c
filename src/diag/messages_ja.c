@@ -208,6 +208,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_TYPE_QUERY_INVALID_TYPE: return "sizeof と _Alignof は関数型または不完全型には適用できません (C11 6.5.3.4p1)";
     case DIAG_ERR_PARSER_SIZEOF_BITFIELD: return "sizeof はビットフィールドには適用できません (C11 6.5.3.4p1)";
     case DIAG_ERR_PARSER_ADDRESS_OF_REGISTER: return "register 記憶域を持つオブジェクトのアドレスは取得できません (C11 6.5.3.2p1)";
+    case DIAG_ERR_PARSER_CALL_ARGUMENT_TYPES_INCOMPATIBLE: return "関数呼び出しの引数を対応する非修飾仮引数型へ代入できません (C11 6.5.2.2p2)";
+    case DIAG_ERR_PARSER_CALL_ARGUMENT_DISCARDS_QUALIFIERS: return "関数呼び出しの引数変換で参照先型の修飾子を破棄できません (C11 6.5.2.2p2, 6.5.16.1p2)";
+    case DIAG_ERR_PARSER_BINARY_OPERANDS_INCOMPATIBLE: return "二項演算子のオペランド型が必要な制約を満たしていません (C11 6.5.5-6.5.14)";
+    case DIAG_ERR_PARSER_INCDEC_POINTER_NOT_COMPLETE_OBJECT: return "ポインタのインクリメントまたはデクリメントには完全オブジェクト型へのポインタが必要です (C11 6.5.6p2)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

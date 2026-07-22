@@ -238,6 +238,14 @@ static int diagnose_direct_syntax_rejection(
           operator_name);
       return 1;
     }
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_INCDEC_POINTER_NOT_COMPLETE_OBJECT:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_INCDEC_POINTER_NOT_COMPLETE_OBJECT, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_INCDEC_POINTER_NOT_COMPLETE_OBJECT));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_ASSIGN_REQUIRES_LVALUE:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
@@ -310,6 +318,30 @@ static int diagnose_direct_syntax_rejection(
           "%s", diag_message_for_in(
                     diagnostics,
                     DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_TYPES_INCOMPATIBLE:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_CALL_ARGUMENT_TYPES_INCOMPATIBLE, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CALL_ARGUMENT_TYPES_INCOMPATIBLE));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_DISCARDS_QUALIFIERS:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_CALL_ARGUMENT_DISCARDS_QUALIFIERS, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_CALL_ARGUMENT_DISCARDS_QUALIFIERS));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_BINARY_OPERANDS_INCOMPATIBLE:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_BINARY_OPERANDS_INCOMPATIBLE, token,
+          "%s", diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_BINARY_OPERANDS_INCOMPATIBLE));
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID:
       diag_emit_tokf_in(
