@@ -229,6 +229,7 @@ typedef struct {
 
 typedef struct {
   ag_compilation_session_t *session;
+  unsigned int session_generation;
   wasm_pending_continuation_t continuation;
   char diagnostic_locale[3];
   int diagnostic_record_limit;
@@ -238,6 +239,25 @@ typedef struct {
 
 static agc_wasm_adapter_t *wasm_adapter_from_handle(int handle) {
   return handle ? (agc_wasm_adapter_t *)(long)handle : NULL;
+}
+
+static void wasm_adapter_discard_session(agc_wasm_adapter_t *adapter) {
+  if (!adapter) return;
+  ag_compilation_session_destroy(adapter->session);
+  adapter->session = NULL;
+}
+
+static ag_compilation_session_t *wasm_adapter_language_session(
+    agc_wasm_adapter_t *adapter) {
+  if (!adapter) return NULL;
+  if (adapter->session &&
+      ag_compilation_session_is_complete(adapter->session))
+    return adapter->session;
+  wasm_adapter_discard_session(adapter);
+  ag_target_info_t target = ag_target_info_wasm32();
+  adapter->session = ag_compilation_session_create(&target);
+  if (adapter->session) adapter->session_generation++;
+  return adapter->session;
 }
 
 int agc_wasm_adapter_create(void) {
@@ -252,10 +272,14 @@ int agc_wasm_adapter_create(void) {
 int agc_wasm_adapter_destroy(int handle) {
   agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
   if (!adapter) return -1;
-  ag_compilation_session_destroy(adapter->session);
-  adapter->session = NULL;
+  wasm_adapter_discard_session(adapter);
   free(adapter);
   return 0;
+}
+
+int agc_wasm_adapter_session_generation(int handle) {
+  agc_wasm_adapter_t *adapter = wasm_adapter_from_handle(handle);
+  return adapter ? (int)adapter->session_generation : -1;
 }
 
 int agc_wasm_adapter_set_diagnostic_locale(int handle, int locale_code) {
@@ -340,8 +364,9 @@ static int attach_wasm_backend_context(
 static void wasm_adapter_retain_session(
     agc_wasm_adapter_t *adapter, ag_compilation_session_t *session) {
   if (!adapter || adapter->session == session) return;
-  ag_compilation_session_destroy(adapter->session);
+  wasm_adapter_discard_session(adapter);
   adapter->session = session;
+  if (session) adapter->session_generation++;
 }
 
 static int agc_wasm_compile_to_memory(
@@ -352,8 +377,7 @@ static int agc_wasm_compile_to_memory(
                                       int max_header_total_bytes, int max_include_depth,
                                       int out_addr, int out_cap, int object_mode) {
   if (!adapter) return -1;
-  ag_compilation_session_destroy(adapter->session);
-  adapter->session = NULL;
+  wasm_adapter_discard_session(adapter);
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
@@ -590,25 +614,29 @@ int agc_wasm_adapter_analyze_source_virtual(
   if (!adapter || !source_addr || !source_name_addr || cursor_offset < 0 ||
       !out_addr || out_cap <= 0) return -1;
   memset(&adapter->analysis_error, 0, sizeof(adapter->analysis_error));
-  ag_compilation_session_destroy(adapter->session);
-  adapter->session = NULL;
-  ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session =
-      ag_compilation_session_create(&target);
+      wasm_adapter_language_session(adapter);
   if (!session) return -4;
-  wasm_adapter_retain_session(adapter, session);
   ag_diagnostic_context_t *diagnostics =
       ag_compilation_session_diagnostic_context(session);
   diag_context_set_locale(diagnostics, adapter->diagnostic_locale);
   if (diag_context_set_limits(
           diagnostics, adapter->diagnostic_record_limit,
-          adapter->diagnostic_byte_limit) != 0)
+          adapter->diagnostic_byte_limit) != 0) {
+    wasm_adapter_discard_session(adapter);
     return -4;
+  }
   diag_reset_records_in(diagnostics);
   const char *source = (const char *)(long)source_addr;
   const char *source_name = (const char *)(long)source_name_addr;
   size_t source_length = strlen(source);
-  if ((size_t)cursor_offset > source_length) return -1;
+  if ((size_t)cursor_offset > source_length) {
+    if (!ag_compilation_session_reset_translation_unit(session)) {
+      wasm_adapter_discard_session(adapter);
+      return -4;
+    }
+    return -1;
+  }
   ag_language_analysis_snapshot_t snapshot = {0};
   int ok = ag_language_analyze_source(
       session,
@@ -642,12 +670,14 @@ int agc_wasm_adapter_analyze_source_virtual(
       },
       &snapshot, &adapter->analysis_error);
   if (!ok) {
-    return adapter->analysis_error.status == AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT
-               ? -7
-               : adapter->analysis_error.status ==
-                         AG_LANGUAGE_ANALYSIS_INVALID_REQUEST
-                     ? -6
-                     : -4;
+    if (adapter->analysis_error.status ==
+        AG_LANGUAGE_ANALYSIS_RESOURCE_LIMIT)
+      return -7;
+    if (adapter->analysis_error.status ==
+        AG_LANGUAGE_ANALYSIS_INVALID_REQUEST)
+      return -6;
+    wasm_adapter_discard_session(adapter);
+    return -4;
   }
   int json_length = ag_language_analysis_snapshot_write_json(
       &snapshot, NULL, 0);

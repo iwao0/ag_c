@@ -1509,6 +1509,14 @@ if (sessionContextAccessorNames.some((name) =>
       compilerMainSource,
     ) ||
     !/wasm_adapter_retain_session\s*\(/.test(compilerMainSource) ||
+    !/wasm_adapter_language_session\s*\(/.test(compilerMainSource) ||
+    !/wasm_adapter_discard_session\s*\(/.test(compilerMainSource) ||
+    !/agc_wasm_adapter_session_generation\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    /agc_wasm_adapter_analyze_source_virtual\s*\([^]*?ag_compilation_session_destroy\s*\(adapter->session\)[^]*?agc_wasm_adapter_analysis_error_code_ptr/.test(
+      compilerMainSource,
+    ) ||
     !/agc_wasm_adapter_create\s*\(/.test(compilerMainSource) ||
     !/agc_wasm_adapter_destroy\s*\(/.test(compilerMainSource) ||
     /\bagc_wasm_compile_(?:wat|object)/.test(compilerMainSource) ||
@@ -5829,6 +5837,9 @@ if (semanticWarningCalls.length === 0 ||
     !/--export=agc_wasm_adapter_set_diagnostic_locale/.test(selfHostBuildSource) ||
     !/--export=agc_wasm_adapter_create/.test(selfHostBuildSource) ||
     !/--export=agc_wasm_adapter_destroy/.test(selfHostBuildSource) ||
+    !/--export=agc_wasm_adapter_session_generation/.test(
+      selfHostBuildSource,
+    ) ||
     /--export=agc_wasm_(?:compile|set_|diagnostic_(?:set|count|bytes|limit|severity|code|message|source|start|end))/.test(
       selfHostBuildSource,
     ) ||

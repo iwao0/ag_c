@@ -50,6 +50,7 @@ AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
   --stack-size=16777216 \
   --export=agc_wasm_adapter_create \
   --export=agc_wasm_adapter_destroy \
+  --export=agc_wasm_adapter_session_generation \
   --export=agc_wasm_adapter_compile_wat \
   --export=agc_wasm_adapter_compile_object \
   --export=agc_wasm_adapter_compile_wat_named \

@@ -1368,7 +1368,17 @@ int ag_language_analyze_source(
     ag_language_analysis_error_t *error) {
   if (snapshot) memset(snapshot, 0, sizeof(*snapshot));
   if (error) memset(error, 0, sizeof(*error));
-  if (!session || !snapshot || !request || !request->source_name ||
+  if (!session) {
+    set_error(error, AG_LANGUAGE_ANALYSIS_INVALID_REQUEST,
+              "AGC_LANGUAGE_ANALYSIS_INVALID_REQUEST", NULL, 0, 0);
+    return 0;
+  }
+  if (!ag_compilation_session_reset_translation_unit(session)) {
+    set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
+              "AGC_LANGUAGE_ANALYSIS_SESSION_RESET_FAILED", NULL, 0, 0);
+    return 0;
+  }
+  if (!snapshot || !request || !request->source_name ||
       !request->source_name[0] || !request->source ||
       !request->cursor_source_name ||
       strcmp(request->source_name, request->cursor_source_name) != 0 ||
@@ -1414,11 +1424,6 @@ int ag_language_analyze_source(
     return 0;
   }
   snapshot_builder_t builder = {snapshot, error, limits, 0};
-  if (!ag_compilation_session_reset_translation_unit(session)) {
-    set_error(error, AG_LANGUAGE_ANALYSIS_FAILED,
-              "AGC_LANGUAGE_ANALYSIS_SESSION_RESET_FAILED", NULL, 0, 0);
-    return 0;
-  }
   static const unsigned char empty_virtual_headers[4] = {0, 0, 0, 0};
   const unsigned char *header_bundle = request->virtual_header_bundle
                                            ? request->virtual_header_bundle
