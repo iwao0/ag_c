@@ -38,6 +38,8 @@ int lower_resolved_global_object_declaration(
                                                : (request->is_static ? 1 : 0);
   global->is_compiler_generated =
       request->is_compiler_generated ? 1 : 0;
+  global->is_compound_literal =
+      request->is_compound_literal ? 1 : 0;
   if (!ps_global_registry_bind_decl_qual_type(
           global_registry, global,
           request->resolution->declaration_qual_type)) {

@@ -23,11 +23,13 @@
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
+#include "semantic/assignment_resolution.h"
 #include "semantic/scope_graph.h"
 #include "source_manager.h"
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/static_initializer_materialization.h"
+#include "semantic/syntax_typed_hir_resolution.h"
 #include "semantic/typed_hir_materialization.h"
 #include "semantic/parameter_declaration_resolution.h"
 
@@ -180,6 +182,7 @@ int psx_begin_global_declaration_pipeline(
               .is_extern_decl = request->is_extern_decl,
               .is_static = request->is_static,
               .is_compiler_generated = request->is_compiler_generated,
+              .is_compound_literal = request->is_compound_literal,
               .resolution = &resolution,
           },
           &lowered)) {
@@ -216,6 +219,92 @@ static const node_t *selected_static_initializer_syntax(
       (const node_init_list_t *)initializer->value;
   return list->entry_count == 1 && list->entries
              ? list->entries[0].value : NULL;
+}
+
+static int static_initializer_is_null_pointer_constant(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    const node_t *initializer) {
+  const psx_typed_hir_tree_t *typed_hir = NULL;
+  psx_syntax_integer_constant_result_t constant = {0};
+  psx_resolved_hir_build_failure_t failure = {0};
+  return initializer &&
+         psx_resolve_syntax_integer_constant_expression_direct_to_typed_hir_in_contexts(
+             semantic_context, global_registry, local_registry,
+             NULL, initializer, &typed_hir,
+             &constant, &failure) == PSX_SYNTAX_TYPED_HIR_RESOLVED &&
+         typed_hir && constant.is_constant && constant.value == 0;
+}
+
+static int validate_static_scalar_initializer_assignment(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_qual_type_t object_qual_type, const node_t *initializer,
+    const psx_frontend_expression_hir_t *expression_hir,
+    token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry ||
+      !initializer || !expression_hir ||
+      !expression_hir->module ||
+      expression_hir->root == PSX_HIR_NODE_ID_INVALID)
+    return 0;
+  const psx_hir_node_t *root = psx_hir_module_lookup(
+      expression_hir->module, expression_hir->root);
+  if (!root) return 0;
+  psx_type_shape_t object_shape = {0};
+  psx_type_shape_t value_shape = {0};
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
+  if (!psx_semantic_type_table_describe(
+          semantic_types, object_qual_type.type_id, &object_shape) ||
+      !psx_semantic_type_table_describe(
+          semantic_types, psx_hir_node_qual_type(root).type_id,
+          &value_shape))
+    return 0;
+  if (psx_hir_node_kind(root) == PSX_HIR_STRING &&
+      object_shape.kind == PSX_TYPE_ARRAY)
+    return 1;
+  int is_null_pointer_constant =
+      object_shape.kind == PSX_TYPE_POINTER &&
+      (value_shape.kind == PSX_TYPE_BOOL ||
+       value_shape.kind == PSX_TYPE_INTEGER) &&
+      static_initializer_is_null_pointer_constant(
+          semantic_context, global_registry, local_registry,
+          initializer);
+  object_qual_type.qualifiers &= PSX_TYPE_QUALIFIER_ATOMIC;
+  psx_assignment_types_resolution_t assignment;
+  psx_resolve_assignment_qual_types_in(
+      semantic_context, object_qual_type,
+      psx_hir_node_qual_type(root),
+      is_null_pointer_constant,
+      &assignment);
+  if (assignment.status == PSX_ASSIGNMENT_TYPES_OK) return 1;
+
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  token_t *token = initializer->tok
+      ? initializer->tok : fallback_diag_tok;
+  diag_error_id_t diagnostic =
+      assignment.status == PSX_ASSIGNMENT_DISCARDS_QUALIFIERS
+          ? DIAG_ERR_PARSER_CONST_QUAL_DISCARD
+          : DIAG_ERR_PARSER_ASSIGN_TYPES_INCOMPATIBLE;
+  diag_emit_tokf_in(
+      diagnostics, diagnostic, token, "%s",
+      diag_message_for_in(diagnostics, diagnostic));
+  return 0;
+}
+
+static void diagnose_nonconstant_static_initializer(
+    psx_semantic_context_t *semantic_context, token_t *token) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
+  diag_emit_tokf_in(
+      diagnostics, DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT,
+      token, "%s",
+      diag_message_for_in(
+          diagnostics,
+          DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT));
 }
 
 static int finish_global_declaration_pipeline(
@@ -270,6 +359,12 @@ static int finish_global_declaration_pipeline(
                 initializer,
                 request->initializer->value_tok,
                 &aggregate_plan)) {
+          if (aggregate_plan.failure ==
+              PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT) {
+            diagnose_nonconstant_static_initializer(
+                request->semantic_context,
+                request->initializer->value_tok);
+          }
           return 0;
         }
         lowering_input.aggregate_plan = &aggregate_plan;
@@ -287,6 +382,14 @@ static int finish_global_declaration_pipeline(
                 &expression_hir)) {
           return 0;
         }
+        if (!validate_static_scalar_initializer_assignment(
+                request->semantic_context, request->global_registry,
+                request->local_registry,
+                initializer_resolution.object_qual_type,
+                initializer, &expression_hir, request->diag_tok)) {
+          psx_frontend_expression_hir_dispose(&expression_hir);
+          return 0;
+        }
         lowering_input.initializer_hir = expression_hir.module;
         lowering_input.initializer_hir_root = expression_hir.root;
       }
@@ -295,12 +398,10 @@ static int finish_global_declaration_pipeline(
           &lowering_input);
       psx_frontend_expression_hir_dispose(&expression_hir);
       if (!lowered) {
-        ps_diag_ctx_in(
-            ps_ctx_diagnostics(request->semantic_context),
-            request->initializer->value_tok, "static-init", "%s",
-            diag_message_for_in(
-                ps_ctx_diagnostics(request->semantic_context),
-                DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+        diagnose_nonconstant_static_initializer(
+            request->semantic_context,
+            request->initializer->value_tok);
+        return 0;
       }
       result->initialized = 1;
     }
@@ -826,6 +927,11 @@ int psx_finish_static_local_declaration_pipeline(
             request->options, resolution.object_qual_type,
             initializer, request->initializer->value_tok,
             &aggregate_plan)) {
+      if (aggregate_plan.failure ==
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT)
+        diagnose_nonconstant_static_initializer(
+            request->semantic_context,
+            request->initializer->value_tok);
       return 0;
     }
     lowering_input.aggregate_plan = &aggregate_plan;
@@ -840,6 +946,13 @@ int psx_finish_static_local_declaration_pipeline(
             &expression_hir)) {
       return 0;
     }
+    if (!validate_static_scalar_initializer_assignment(
+            request->semantic_context, request->global_registry,
+            request->local_registry, resolution.object_qual_type,
+            initializer, &expression_hir, request->diag_tok)) {
+      psx_frontend_expression_hir_dispose(&expression_hir);
+      return 0;
+    }
     lowering_input.initializer_hir = expression_hir.module;
     lowering_input.initializer_hir_root = expression_hir.root;
   }
@@ -848,6 +961,9 @@ int psx_finish_static_local_declaration_pipeline(
       result->global, &lowering_input, &result->type_completed);
   psx_frontend_expression_hir_dispose(&expression_hir);
   if (!lowered) {
+    diagnose_nonconstant_static_initializer(
+        request->semantic_context,
+        request->initializer->value_tok);
     return 0;
   }
   if (result->type_completed &&
@@ -894,8 +1010,14 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
     if (!psx_materialize_static_aggregate_initializer_plan(
             initializer_typed_hir, request->global_registry,
             request->lowering_context, resolution.object_qual_type,
-            request->initializer->value_tok, &aggregate_plan))
+            request->initializer->value_tok, &aggregate_plan)) {
+      if (aggregate_plan.failure ==
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT)
+        diagnose_nonconstant_static_initializer(
+            request->semantic_context,
+            request->initializer->value_tok);
       return 0;
+    }
     lowering_input.aggregate_plan = &aggregate_plan;
   } else {
     initializer_hir = psx_hir_module_create();
@@ -909,12 +1031,31 @@ int psx_finish_static_local_declaration_typed_hir_pipeline(
     }
     lowering_input.initializer_hir = initializer_hir;
     lowering_input.initializer_hir_root = initializer_root;
+    psx_frontend_expression_hir_t expression_hir = {
+        .module = initializer_hir,
+        .root = initializer_root,
+    };
+    const node_t *initializer = selected_static_initializer_syntax(
+        request->initializer, &resolution);
+    if (!initializer ||
+        !validate_static_scalar_initializer_assignment(
+            request->semantic_context, request->global_registry,
+            request->local_registry, resolution.object_qual_type,
+            initializer, &expression_hir, request->diag_tok)) {
+      psx_hir_module_destroy(initializer_hir);
+      return 0;
+    }
   }
   int lowered = lower_static_local_declaration_initializer(
       request->global_registry, request->lowering_context,
       result->global, &lowering_input, &result->type_completed);
   psx_hir_module_destroy(initializer_hir);
-  if (!lowered) return 0;
+  if (!lowered) {
+    diagnose_nonconstant_static_initializer(
+        request->semantic_context,
+        request->initializer->value_tok);
+    return 0;
+  }
   if (result->type_completed &&
       !ps_local_registry_complete_array_qual_type(
           request->local_registry, result->alias,

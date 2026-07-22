@@ -37,7 +37,7 @@ int hir_ir_node_is_lvalue(const psx_hir_node_t *node) {
   psx_hir_node_kind_t kind = psx_hir_node_kind(node);
   return kind == PSX_HIR_LOCAL || kind == PSX_HIR_GLOBAL ||
          kind == PSX_HIR_DEREF || kind == PSX_HIR_SUBSCRIPT ||
-         kind == PSX_HIR_MEMBER_ACCESS;
+         kind == PSX_HIR_MEMBER_ACCESS || kind == PSX_HIR_STMT_EXPR;
 }
 
 static int semantic_type_is_pointer_like(const psx_type_shape_t *type) {

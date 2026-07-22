@@ -28,6 +28,7 @@ typedef struct {
   int is_thread_local;
   int requested_alignment;
   int is_compiler_generated;
+  int is_compound_literal;
   const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_global_declaration_pipeline_request_t;

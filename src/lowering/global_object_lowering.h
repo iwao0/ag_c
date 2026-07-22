@@ -19,6 +19,7 @@ typedef struct {
   int is_extern_decl;
   int is_static;
   int is_compiler_generated;
+  int is_compound_literal;
   const psx_global_declaration_resolution_t *resolution;
 } psx_resolved_global_object_request_t;
 

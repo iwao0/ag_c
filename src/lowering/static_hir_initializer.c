@@ -114,6 +114,14 @@ static global_var_t *find_global(
   return find_global_named(eval, name, (int)name_length);
 }
 
+static int global_value_is_foldable_extension(
+    const global_var_t *global) {
+  return global &&
+         (global->is_compound_literal ||
+          (ps_gvar_decl_qual_type(global).qualifiers &
+           PSX_TYPE_QUALIFIER_CONST) != 0);
+}
+
 static char *persist_symbol_name(
     const static_hir_eval_t *eval, const char *name, int name_len) {
   if (!eval || !name) return NULL;
@@ -185,7 +193,8 @@ static long long eval_const_int(
       psx_type_shape_t type = {0};
       int has_type = global && type_shape(
           eval, ps_gvar_decl_type_id(global), &type);
-      if (global && global->has_init && !global->init_symbol &&
+      if (global_value_is_foldable_extension(global) &&
+          global->has_init && !global->init_symbol &&
           !global->init_values && !global->init_fvalues && has_type &&
           type.kind != PSX_TYPE_ARRAY && type.kind != PSX_TYPE_FLOAT &&
           type.kind != PSX_TYPE_COMPLEX)
@@ -329,6 +338,18 @@ static double eval_const_fp(
       return (double)eval_const_int(eval, node, ok);
     case PSX_HIR_BITWISE_NOT:
       return (double)eval_const_int(eval, node, ok);
+    case PSX_HIR_GLOBAL: {
+      global_var_t *global = find_global(eval, node);
+      psx_type_shape_t type = {0};
+      if (global_value_is_foldable_extension(global) &&
+          global->has_init && !global->init_symbol &&
+          !global->init_values && !global->init_fvalues &&
+          type_shape(eval, ps_gvar_decl_type_id(global), &type) &&
+          type.kind == PSX_TYPE_FLOAT)
+        return global->fval;
+      if (ok) *ok = 0;
+      return 0.0;
+    }
     case PSX_HIR_ADD:
     case PSX_HIR_SUB:
     case PSX_HIR_MUL:
@@ -464,6 +485,7 @@ typedef struct {
   static_hir_eval_t eval;
   global_var_t *global;
   psx_initializer_scalar_leaf_list_t leaves;
+  psx_static_aggregate_initializer_failure_t failure;
 } static_hir_aggregate_t;
 
 static int aggregate_type_size(
@@ -648,21 +670,38 @@ static int aggregate_write_scalar(
   long long offset = 0;
   if (target_type.kind == PSX_TYPE_POINTER ||
       target_type.kind == PSX_TYPE_FUNCTION) {
-    if (resolve_address(
-            &aggregate->eval, value, &symbol, &symbol_len, &offset)) {
+    int integer_ok = 1;
+    integer = eval_const_int(&aggregate->eval, value, &integer_ok);
+    if (integer_ok && integer == 0) {
+      symbol = NULL;
+    } else if (resolve_address(
+                   &aggregate->eval, value, &symbol, &symbol_len,
+                   &offset)) {
       integer = offset;
       symbol = persist_symbol_name(
           &aggregate->eval, symbol, symbol_len);
       if (!symbol) return 0;
+    } else {
+      aggregate->failure =
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
+      return 0;
     }
   } else if (target_type.kind == PSX_TYPE_FLOAT) {
     int ok = 1;
     floating = eval_const_fp(&aggregate->eval, value, &ok);
-    if (!ok) floating = 0.0;
+    if (!ok) {
+      aggregate->failure =
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
+      return 0;
+    }
   } else {
     int ok = 1;
     integer = eval_const_int(&aggregate->eval, value, &ok);
-    if (!ok) integer = 0;
+    if (!ok) {
+      aggregate->failure =
+          PSX_STATIC_AGGREGATE_INITIALIZER_FAILURE_NON_CONSTANT;
+      return 0;
+    }
     if (target_type.kind == PSX_TYPE_BOOL) integer = integer != 0;
   }
   ps_gvar_init_slot_write(
@@ -839,7 +878,10 @@ int psx_build_static_aggregate_hir_initializer_plan(
   int lowered = aggregate_lower_list(
       &aggregate, type_id, 0, initializer);
   psx_initializer_scalar_leaf_list_dispose(&aggregate.leaves);
-  if (!lowered) return 0;
+  if (!lowered) {
+    plan->failure = aggregate.failure;
+    return 0;
+  }
   *plan = (psx_static_aggregate_initializer_plan_t){
       .values = temporary.init_values,
       .floating_values = temporary.init_fvalues,
@@ -930,6 +972,8 @@ int psx_lower_static_scalar_hir_initializer(
     global->init_val = type.kind == PSX_TYPE_BOOL ? integer != 0 : integer;
     return 1;
   }
+
+  if (type.kind != PSX_TYPE_POINTER) return 0;
 
   const char *symbol = NULL;
   int symbol_len = 0;

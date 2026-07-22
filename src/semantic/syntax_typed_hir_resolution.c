@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "../declaration_pipeline.h"
+#include "../diag/diag.h"
 #include "../lowering/cast_lowering.h"
 #include "../lowering/local_object_lowering.h"
 #include "../lowering/runtime_context.h"
@@ -4686,6 +4687,7 @@ static int resolve_direct_compound_literal(
                   .type = object_qual_type,
                   .is_static = 1,
                   .is_compiler_generated = 1,
+                  .is_compound_literal = 1,
                   .initializer = &storage_initializer,
                   .diag_tok = compound->base.tok,
               },
@@ -4993,14 +4995,26 @@ static int preflight_direct_local_declaration(
                       context->global_registry,
                       context->local_registry, initializer->value,
                       &initializer_typed_hir, &initializer_failure);
-        if (initializer_status == PSX_SYNTAX_TYPED_HIR_FAILED) {
-          context->preflight_failed = 1;
+        if (initializer_status != PSX_SYNTAX_TYPED_HIR_RESOLVED) {
           if (context->failure)
             *context->failure = initializer_failure;
+          if (initializer_status == PSX_SYNTAX_TYPED_HIR_FAILED) {
+            context->preflight_failed = 1;
+          } else if (initializer_failure.rejection ==
+                     PSX_SYNTAX_TYPED_HIR_REJECTION_NONE) {
+            ag_diagnostic_context_t *diagnostics =
+                ps_ctx_diagnostics(context->semantic_context);
+            diag_emit_tokf_in(
+                diagnostics,
+                DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT,
+                initializer->value_tok, "%s",
+                diag_message_for_in(
+                    diagnostics,
+                    DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT));
+          }
           return 0;
         }
-        if (initializer_status != PSX_SYNTAX_TYPED_HIR_RESOLVED ||
-            !initializer_typed_hir ||
+        if (!initializer_typed_hir ||
             !psx_finish_static_local_declaration_typed_hir_pipeline(
                 &static_request, &static_result,
                 initializer_typed_hir))

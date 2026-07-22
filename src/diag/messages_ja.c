@@ -203,6 +203,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE: return "& のオペランドは関数指示子またはオブジェクトを指す左辺値である必要があります (C11 6.5.3.2p1)";
     case DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD: return "ビットフィールドのアドレスは取得できません (C11 6.5.3.2p1)";
     case DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE: return "複合リテラルには完全なオブジェクト型または要素数不明の配列型が必要です (C11 6.5.2.5p1)";
+    case DIAG_ERR_PARSER_EMPTY_INITIALIZER_LIST: return "初期化リストには1つ以上の初期化子が必要です (C11 6.7.9)";
+    case DIAG_ERR_PARSER_STATIC_INITIALIZER_NOT_CONSTANT: return "静的記憶域期間を持つオブジェクトの初期化子には定数式が必要です (C11 6.7.9p4)";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

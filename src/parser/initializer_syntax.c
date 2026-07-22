@@ -69,6 +69,16 @@ node_t *psx_parse_initializer_syntax_list_with_context(
   if (!tk_ctx) return NULL;
   token_t *brace_tok = curtok(runtime_context);
   tk_expect_ctx(tk_ctx, '{');
+  if (curtok(runtime_context) &&
+      curtok(runtime_context)->kind == TK_RBRACE) {
+    diag_emit_tokf_in(
+        diagnostics(runtime_context),
+        DIAG_ERR_PARSER_EMPTY_INITIALIZER_LIST,
+        curtok(runtime_context), "%s",
+        diag_message_for_in(
+            diagnostics(runtime_context),
+            DIAG_ERR_PARSER_EMPTY_INITIALIZER_LIST));
+  }
   psx_initializer_entry_t *entries = NULL;
   int count = 0;
   int capacity = 0;
