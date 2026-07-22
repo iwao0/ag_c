@@ -107,10 +107,6 @@ node_t *psx_parse_local_declaration_syntax(
   node->base.kind = ND_LOCAL_DECLARATION;
   node->declaration = declaration;
   declaration->diagnostic_token = curtok(callbacks);
-  declaration->is_typedef =
-      curtok(callbacks)->kind == TK_TYPEDEF;
-  if (declaration->is_typedef)
-    tk_set_current_token_ctx(tk_ctx, curtok(callbacks)->next);
   if (!callbacks->parse_decl_specifier(
           callbacks->context, &declaration->specifier)) {
     diag_report_tokf_in(diagnostics(callbacks),
@@ -120,6 +116,8 @@ node_t *psx_parse_local_declaration_syntax(
         callbacks->runtime_context);
     return NULL;
   }
+  declaration->is_typedef =
+      declaration->specifier.type_spec.is_typedef ? 1 : 0;
   declaration->is_extern =
       declaration->specifier.type_spec.is_extern ? 1 : 0;
   declaration->is_static =

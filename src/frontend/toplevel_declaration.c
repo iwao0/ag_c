@@ -38,7 +38,8 @@ static ag_diagnostic_context_t *application_diagnostics(
 
 static void apply_function_prototype(
     psx_semantic_context_t *semantic_context,
-    token_ident_t *name, psx_qual_type_t function_qual_type) {
+    token_ident_t *name, psx_qual_type_t function_qual_type,
+    int is_static) {
   psx_type_shape_t function_shape = {0};
   if (!name ||
       !psx_semantic_type_table_describe(
@@ -52,6 +53,7 @@ static void apply_function_prototype(
               .name = name->str,
               .name_len = name->len,
               .function_qual_type = function_qual_type,
+              .is_static = is_static,
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
           })) {
@@ -84,11 +86,12 @@ static int begin_declaration(
   if (declaration->is_standalone_tag) {
     if (declaration->specifier.alignas_specifier_count > 0 ||
         declaration->specifier.type_spec.is_inline ||
-        declaration->specifier.type_spec.is_noreturn) {
+        declaration->specifier.type_spec.is_noreturn ||
+        psx_decl_specifier_has_storage_class(&declaration->specifier)) {
       ps_diag_ctx_in(
           application_diagnostics(application),
           declaration->diagnostic_token, "declaration-specifier",
-          "standalone tag declaration cannot use function or alignment specifiers");
+          "standalone tag declaration cannot use storage, function, or alignment specifiers");
       return 0;
     }
     psx_apply_parsed_standalone_tag_in_contexts(
@@ -144,7 +147,7 @@ static void begin_declarator(
           application->semantic_context, &declaration->specifier,
           application->current_qual_type,
           application->requested_alignment, declaration->is_typedef,
-          0, declarator->has_bitfield,
+          PSX_DECLARATION_CONTEXT_FILE, declarator->has_bitfield,
           declarator->diagnostic_token))
     return;
 
@@ -174,7 +177,8 @@ static void begin_declarator(
     }
     apply_function_prototype(
         application->semantic_context, name,
-        application->current_qual_type);
+        application->current_qual_type,
+        declaration->is_static);
     application->current_kind = PSX_TOPLEVEL_APPLY_FUNCTION;
     return;
   }

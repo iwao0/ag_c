@@ -44,11 +44,25 @@ void psx_resolve_function_declaration(
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
+  const psx_function_symbol_t *existing_function =
+      existing && existing->kind == PSX_DECL_FUNCTION
+          ? existing->payload : NULL;
+  if (existing_function && request->is_static &&
+      !ps_function_symbol_has_internal_linkage(existing_function)) {
+    resolution->status = PSX_FUNCTION_DECLARATION_LINKAGE_CONFLICT;
+    return;
+  }
   resolution->function = ps_ctx_register_function_qual_type_in(
       semantic_context, request->name, request->name_len,
       request->function_qual_type);
   if (!resolution->function) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
+    return;
+  }
+  if (request->is_static &&
+      !ps_ctx_mark_function_internal_linkage_in(
+          semantic_context, request->name, request->name_len)) {
+    resolution->function = NULL;
     return;
   }
   if (request->is_definition &&
@@ -58,5 +72,7 @@ void psx_resolve_function_declaration(
     resolution->status = PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION;
     return;
   }
+  resolution->effective_is_static =
+      ps_function_symbol_has_internal_linkage(resolution->function);
   resolution->status = PSX_FUNCTION_DECLARATION_OK;
 }

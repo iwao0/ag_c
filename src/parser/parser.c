@@ -71,6 +71,8 @@ static token_kind_t parse_atomic_type_specifier(
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out);
 static void skip_cv_qualifiers_into_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
+static int try_consume_decl_modifier(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 static int try_consume_post_cv_qualifier(
     tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out, token_kind_t kind);
@@ -80,7 +82,8 @@ static inline void set_curtok_in(
 
 bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
-         k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
+         k == TK_AUTO || k == TK_REGISTER || k == TK_TYPEDEF ||
+         k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC ||
          k == TK_RESTRICT;
 }
@@ -157,73 +160,88 @@ static inline void set_curtok_in(
 
 static void skip_cv_qualifiers_into_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
-  tokenizer_context_t *tokenizer_context = syntax->tokenizer_context;
-  ag_diagnostic_context_t *diagnostics = syntax->diagnostics;
   psx_type_spec_result_reset(out);
-  /* C11 6.7.1p2: 宣言指定子に storage class 指定子は高々 1 個。
-   * 例外として _Thread_local は static / extern と一緒に書ける。 */
-  int storage_count = 0;
-  int saw_thread_local = 0;
-  token_t *first_storage_tok = NULL;
-  while (psx_is_decl_prefix_token(curtok_in(tokenizer_context)->kind)) {
-    if (curtok_in(tokenizer_context)->kind == TK_CONST)
-      out->is_const_qualified = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_VOLATILE)
-      out->is_volatile_qualified = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_RESTRICT)
-      out->is_restrict_qualified = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_INLINE)
-      out->is_inline = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_NORETURN)
-      out->is_noreturn = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_REGISTER)
-      out->is_register = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_EXTERN) out->is_extern = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_STATIC) out->is_static = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_EXTERN ||
-        curtok_in(tokenizer_context)->kind == TK_STATIC ||
-        curtok_in(tokenizer_context)->kind == TK_AUTO ||
-        curtok_in(tokenizer_context)->kind == TK_REGISTER) {
-      if (!first_storage_tok)
-        first_storage_tok = curtok_in(tokenizer_context);
-      storage_count++;
-    }
-    if (curtok_in(tokenizer_context)->kind == TK_THREAD_LOCAL)
-      saw_thread_local = 1;
-    if (curtok_in(tokenizer_context)->kind == TK_ALIGNAS) {
-      if (syntax && syntax->consume_alignas) {
-        syntax->consume_alignas(
-            syntax->consume_alignas_context, out);
-        continue;
-      }
-      ps_diag_ctx_in(
-          diagnostics, curtok_in(tokenizer_context), "type-spec-syntax",
-          "alignas syntax consumer is required");
-    }
-    if (curtok_in(tokenizer_context)->kind == TK_ATOMIC &&
-        curtok_in(tokenizer_context)->next &&
-        curtok_in(tokenizer_context)->next->kind == TK_LPAREN) {
-      return;
-    }
-    if (curtok_in(tokenizer_context)->kind == TK_ATOMIC) {
-      out->is_atomic = 1;
-    }
-    if (curtok_in(tokenizer_context)->kind == TK_THREAD_LOCAL) {
+  psx_consume_decl_modifiers_with_syntax_ex(out, syntax);
+}
+
+static void record_storage_class(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax,
+    token_t *token) {
+  if (!out || !syntax || !token) return;
+  switch (token->kind) {
+    case TK_TYPEDEF: out->is_typedef = 1; break;
+    case TK_EXTERN: out->is_extern = 1; break;
+    case TK_STATIC: out->is_static = 1; break;
+    case TK_AUTO: out->is_auto = 1; break;
+    case TK_REGISTER: out->is_register = 1; break;
+    case TK_THREAD_LOCAL:
       out->is_thread_local = 1;
-    }
-    set_curtok_in(
-        tokenizer_context, curtok_in(tokenizer_context)->next);
+      out->thread_local_count++;
+      if (out->thread_local_count > 1) {
+        ps_diag_ctx_in(
+            syntax->diagnostics, token, "decl",
+            "'_Thread_local' may appear only once in a declaration");
+      }
+      if (out->is_typedef || out->is_auto || out->is_register) {
+        ps_diag_ctx_in(
+            syntax->diagnostics, token, "decl",
+            "'_Thread_local' may only be combined with 'static' or 'extern'");
+      }
+      return;
+    default: return;
   }
-  /* storage class が 2 個以上同時指定されているとエラー。
-   * `_Thread_local` 単独は storage_count に数えていないので
-   * `_Thread_local int x;` は 0 で通り、`static _Thread_local int x;` は 1 で通る。 */
-  if (storage_count > 1) {
+  out->storage_class_count++;
+  if (out->storage_class_count > 1) {
     ps_diag_ctx_in(
-        diagnostics, first_storage_tok, "decl",
-        "storage class 指定子は1つまでです (C11 6.7.1p2)");
+        syntax->diagnostics, token, "decl",
+        "storage class specifier may appear at most once (C11 6.7.1p2)");
   }
-  (void)saw_thread_local;
-  psx_skip_gnu_attributes_ctx(tokenizer_context);
+  if (out->is_thread_local &&
+      (out->is_typedef || out->is_auto || out->is_register)) {
+    ps_diag_ctx_in(
+        syntax->diagnostics, token, "decl",
+        "'_Thread_local' may only be combined with 'static' or 'extern'");
+  }
+}
+
+static int try_consume_decl_modifier(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
+  if (!out || !syntax || !syntax->tokenizer_context) return 0;
+  tokenizer_context_t *tokenizer_context = syntax->tokenizer_context;
+  token_t *token = curtok_in(tokenizer_context);
+  token_kind_t kind = token->kind;
+  if (!psx_is_decl_prefix_token(kind)) return 0;
+  if (kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN)
+    return 0;
+  if (kind == TK_ALIGNAS) {
+    if (!syntax->consume_alignas) {
+      ps_diag_ctx_in(
+          syntax->diagnostics, token, "type-spec-syntax",
+          "alignas syntax consumer is required");
+      return 0;
+    }
+    syntax->consume_alignas(syntax->consume_alignas_context, out);
+    return 1;
+  }
+  switch (kind) {
+    case TK_CONST: out->is_const_qualified = 1; break;
+    case TK_VOLATILE: out->is_volatile_qualified = 1; break;
+    case TK_RESTRICT: out->is_restrict_qualified = 1; break;
+    case TK_ATOMIC: out->is_atomic = 1; break;
+    case TK_INLINE: out->is_inline = 1; break;
+    case TK_NORETURN: out->is_noreturn = 1; break;
+    default: record_storage_class(out, syntax, token); break;
+  }
+  set_curtok_in(tokenizer_context, token->next);
+  return 1;
+}
+
+void psx_consume_decl_modifiers_with_syntax_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
+  if (!out || !syntax || !syntax->tokenizer_context) return;
+  while (try_consume_decl_modifier(out, syntax)) {
+  }
+  psx_skip_gnu_attributes_ctx(syntax->tokenizer_context);
 }
 
 static token_kind_t parse_atomic_type_specifier(
@@ -659,50 +677,9 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
           tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
-    // 後置 cv 修飾子（int const, volatile int const など）は同じ形なので集約。
-    if (try_consume_post_cv_qualifier(tokenizer_context, out, k)) continue;
-    /* C11 6.7p1: declaration-specifiers の順序は任意。型指定子の後ろに storage class
-     * (static / extern / auto / register / inline / _Noreturn / _Thread_local / _Alignas) が
-     * 来てもよい (`int static x = 5;` 等)。ここで遭遇したら skip_cv_qualifiers と同じ要領で
-     * 1 つ消費して flag を立てループ継続。skip_cv_qualifiers を直接呼ぶと先頭で reset され
-     * 既に立っている qualifier 情報 (const/volatile/atomic) を失うため、ここでは OR 的に
-     * 1 トークンずつ処理する。 */
-    if (psx_is_decl_prefix_token(k)) {
-      /* storage class の重複・併用検出 (C11 6.7.1p2): static / extern / auto / register は
-       * 高々 1 個。型指定子の前 (skip_cv_qualifiers) ですでに 1 つ立っていたら 2 つ目で error。 */
-      int is_new_storage = (k == TK_STATIC || k == TK_EXTERN ||
-                            k == TK_AUTO || k == TK_REGISTER);
-      if (is_new_storage && (out->is_static || out->is_extern)) {
-        ps_diag_ctx_in(
-            diagnostics, curtok_in(tokenizer_context),
-            "decl",
-            "storage class 指定子は1つまでです (C11 6.7.1p2)");
-      }
-      if (k == TK_CONST)        out->is_const_qualified = 1;
-      else if (k == TK_VOLATILE) out->is_volatile_qualified = 1;
-      else if (k == TK_RESTRICT) out->is_restrict_qualified = 1;
-      else if (k == TK_INLINE)   out->is_inline = 1;
-      else if (k == TK_NORETURN) out->is_noreturn = 1;
-      else if (k == TK_REGISTER) out->is_register = 1;
-      else if (k == TK_STATIC)   out->is_static = 1;
-      else if (k == TK_EXTERN)   out->is_extern = 1;
-      else if (k == TK_THREAD_LOCAL) out->is_thread_local = 1;
-      else if (k == TK_ATOMIC) {
-        /* `int _Atomic(int) x` 形式は ATOMIC 後に `(` が来る (型指定子)。型指定子の後の
-         * 単独 `_Atomic` は qualifier 形 (`int _Atomic x`)。 */
-        if (curtok_in(tokenizer_context)->next &&
-            curtok_in(tokenizer_context)->next->kind == TK_LPAREN)
-          break;
-        out->is_atomic = 1;
-      }
-      /* TK_AUTO / TK_REGISTER / TK_INLINE / TK_NORETURN / TK_ALIGNAS(...) は flag を立てずに
-       * 単純消費。TK_ALIGNAS は `(value)` 形のため複雑だが、型指定子の後の出現は稀 (実例は
-       * `int _Alignas(8) x` で C11 では基本的に typespec の前)。ここでは省略 — 必要ならば
-       * 既存の skip_cv_qualifiers の TK_ALIGNAS 分岐を引用する。 */
-      set_curtok_in(
-          tokenizer_context, curtok_in(tokenizer_context)->next);
-      continue;
-    }
+    /* C11 6.7p1: declaration-specifiers の順序は任意。型指定子の
+     * 前後で同じ記録処理を使い、storage-class の情報を失わない。 */
+    if (try_consume_decl_modifier(out, syntax)) continue;
     break;
   }
 

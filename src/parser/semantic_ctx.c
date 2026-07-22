@@ -147,6 +147,7 @@ struct psx_function_symbol_t {
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
    * のみではこのフラグは立たない。 */
   int is_defined;
+  int has_internal_linkage;
 };
 
 struct psx_semantic_context_t {
@@ -1480,6 +1481,11 @@ psx_qual_type_t ps_function_symbol_qual_type(
                                  PSX_TYPE_QUALIFIER_NONE};
 }
 
+int ps_function_symbol_has_internal_linkage(
+    const psx_function_symbol_t *symbol) {
+  return symbol && symbol->has_internal_linkage;
+}
+
 void ps_ctx_checkpoint_function_registration_in(
     psx_semantic_context_t *context, char *name, int len,
     psx_function_registration_checkpoint_t *checkpoint) {
@@ -1491,6 +1497,8 @@ void ps_ctx_checkpoint_function_registration_in(
   if (!function) return;
   checkpoint->existed = 1;
   checkpoint->is_defined = function->is_defined;
+  checkpoint->has_internal_linkage =
+      function->has_internal_linkage;
   checkpoint->function_qual_type = function->function_qual_type;
 }
 
@@ -1515,6 +1523,8 @@ void ps_ctx_rollback_function_registration_in(
     return;
   }
   function->is_defined = checkpoint->is_defined;
+  function->has_internal_linkage =
+      checkpoint->has_internal_linkage;
   function->function_qual_type = checkpoint->function_qual_type;
 }
 
@@ -1601,6 +1611,15 @@ const psx_function_symbol_t *ps_ctx_register_function_qual_type_in(
   }
   f->function_qual_type = function_type;
   return f;
+}
+
+int ps_ctx_mark_function_internal_linkage_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  psx_function_symbol_t *function =
+      find_function_name_mut_in(context, name, len);
+  if (!function) return 0;
+  function->has_internal_linkage = 1;
+  return 1;
 }
 
 psx_qual_type_t ps_ctx_get_function_qual_type_in(

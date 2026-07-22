@@ -12,6 +12,7 @@
 #include "../parser/arena.h"
 #include "../parser/ast.h"
 #include "../parser/decl.h"
+#include "../parser/diag.h"
 #include "../parser/function_definition_syntax.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_declaration_syntax.h"
@@ -4633,6 +4634,16 @@ static int preflight_direct_local_declaration(
     return 0;
   }
   if (declaration->is_standalone_tag) {
+    if (declaration->specifier.alignas_specifier_count > 0 ||
+        declaration->specifier.type_spec.is_inline ||
+        declaration->specifier.type_spec.is_noreturn ||
+        psx_decl_specifier_has_storage_class(&declaration->specifier)) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(context->semantic_context),
+          declaration->diagnostic_token, "declaration-specifier",
+          "standalone tag declaration cannot use storage, function, or alignment specifiers");
+      return 0;
+    }
     *binding = (direct_local_declaration_binding_t){
         .syntax = syntax,
         .is_semantic_only = 1,
@@ -4693,7 +4704,8 @@ static int preflight_direct_local_declaration(
       if (!psx_validate_parsed_decl_specifier_constraints_in_context(
               context->semantic_context, &declaration->specifier,
               decl_qual_type, specifier_resolution.requested_alignment,
-              1, 0, declarator->has_bitfield,
+              1, PSX_DECLARATION_CONTEXT_BLOCK,
+              declarator->has_bitfield,
               declarator->diagnostic_token))
         return 0;
       psx_typedef_declaration_resolution_t resolution;
@@ -4763,7 +4775,8 @@ static int preflight_direct_local_declaration(
         !psx_validate_parsed_decl_specifier_constraints_in_context(
             context->semantic_context, &declaration->specifier,
             decl_qual_type, specifier_resolution.requested_alignment,
-            0, 0, declarator->has_bitfield,
+            0, PSX_DECLARATION_CONTEXT_BLOCK,
+            declarator->has_bitfield,
             declarator->diagnostic_token))
       return 0;
     if (has_type && (declaration->is_extern ||
@@ -4800,6 +4813,8 @@ static int preflight_direct_local_declaration(
                   .name = name->str,
                   .name_len = name->len,
                   .type = decl_qual_type,
+                  .is_thread_local =
+                      declaration->specifier.type_spec.is_thread_local,
                   .requested_alignment =
                       specifier_resolution.requested_alignment,
                   .has_initializer = initializer->has_initializer,
@@ -4825,6 +4840,8 @@ static int preflight_direct_local_declaration(
           .name = name->str,
           .name_len = name->len,
           .type = decl_qual_type,
+          .is_thread_local =
+              declaration->specifier.type_spec.is_thread_local,
           .requested_alignment =
               specifier_resolution.requested_alignment,
           .initializer = initializer,

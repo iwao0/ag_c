@@ -21,6 +21,7 @@ typedef struct {
   const char *file_main;
   const char *file_other;
   int expected_i;
+  const char *rename_other_symbol;
 } wasm_link2_case_t;
 
 #define MAX_EXTRA_CASES 1024
@@ -39,10 +40,13 @@ typedef struct {
 static const wasm_link2_case_t link2_cases[] = {
     {"probes_found_bugs", "static_internal_linkage_xtu",
      "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c",
-     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42},
+     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42, NULL},
     {"probes_found_bugs", "extern_funcptr_xtu",
      "test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c",
-     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42},
+     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42, NULL},
+    {"probes_found_bugs", "inherited_static_linkage_xtu",
+     "test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_main.c",
+     "test/fixtures/probes_found_bugs/inherited_static_linkage_xtu_other.c", 42, "shared_name"},
 };
 
 static const wasm_e2e_reject_case_t reject_cases[] = {
@@ -849,7 +853,12 @@ static int write_link2_wrapper_source(const wasm_link2_case_t *tc, const char *c
   fprintf(out, "#define assert(expr) do { if (!(expr)) return 100; } while (0)\n");
   fprintf(out, "#define s __ag_%s_other_s\n", case_id);
   fprintf(out, "#define base __ag_%s_other_base\n", case_id);
+  if (tc->rename_other_symbol) {
+    fprintf(out, "#define %s __ag_%s_other_%s\n", tc->rename_other_symbol, case_id,
+            tc->rename_other_symbol);
+  }
   fprintf(out, "#include \"%s\"\n", tc->file_other);
+  if (tc->rename_other_symbol) fprintf(out, "#undef %s\n", tc->rename_other_symbol);
   fprintf(out, "#undef base\n");
   fprintf(out, "#undef s\n");
   fprintf(out, "#include \"%s\"\n", tc->file_main);

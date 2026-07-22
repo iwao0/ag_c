@@ -107,12 +107,17 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     }
     if (parameter->specifier.alignas_specifier_count > 0 ||
         parameter->specifier.type_spec.is_inline ||
-        parameter->specifier.type_spec.is_noreturn) {
+        parameter->specifier.type_spec.is_noreturn ||
+        parameter->specifier.type_spec.is_typedef ||
+        parameter->specifier.type_spec.is_extern ||
+        parameter->specifier.type_spec.is_static ||
+        parameter->specifier.type_spec.is_auto ||
+        parameter->specifier.type_spec.is_thread_local) {
       ps_diag_ctx_in(
           diagnostics(runtime_context),
           parameter->specifier.diagnostic_token,
           "function-parameters",
-          "parameter declaration cannot use alignment or function specifiers");
+          "parameter declaration may only use the 'register' storage class");
     }
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree_in_contexts(

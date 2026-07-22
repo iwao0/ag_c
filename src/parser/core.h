@@ -27,9 +27,13 @@ typedef struct {
   int is_restrict_qualified;
   int is_inline;
   int is_noreturn;
+  int is_typedef;
+  int is_auto;
   int is_register;
   int is_extern;
   int is_static;
+  int storage_class_count;
+  int thread_local_count;
 } psx_type_spec_result_t;
 
 typedef struct {
@@ -43,6 +47,8 @@ typedef struct {
 } psx_type_spec_syntax_t;
 
 token_kind_t psx_consume_type_kind_with_syntax_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
+void psx_consume_decl_modifiers_with_syntax_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 bool psx_is_decl_prefix_token(token_kind_t k);
 bool psx_is_type_specifier_token(token_kind_t kind);

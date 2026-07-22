@@ -88,6 +88,12 @@ static void diagnose_global_declaration(
           "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
           request->name_len, request->name);
       return;
+    case PSX_GLOBAL_DECLARATION_LINKAGE_CONFLICT:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "declaration of '%.*s' changes its language linkage",
+          request->name_len, request->name);
+      return;
     default:
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, "decl",
@@ -155,6 +161,15 @@ int psx_begin_global_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_GLOBAL_DECLARATION_OK)
     diagnose_global_declaration(request, resolution.status);
+  if (resolution.existing &&
+      resolution.existing->is_thread_local !=
+          (unsigned int)(request->is_thread_local != 0)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        "every declaration of '%.*s' must consistently use '_Thread_local'",
+        request->name_len, request->name);
+  }
 
   psx_global_object_result_t lowered = {0};
   if (!lower_resolved_global_object_declaration(
@@ -176,6 +191,8 @@ int psx_begin_global_declaration_pipeline(
   }
   result->global = lowered.global;
   result->created = lowered.created;
+  if (result->created && result->global)
+    result->global->is_thread_local = request->is_thread_local ? 1 : 0;
   if (result->global &&
       request->requested_alignment > result->global->requested_alignment)
     result->global->requested_alignment = request->requested_alignment;
@@ -210,7 +227,6 @@ static int finish_global_declaration_pipeline(
       !result->global || !request->initializer) return 0;
   global_var_t *global = result->global;
   if (!request->is_extern_decl) {
-    global->is_thread_local = request->is_thread_local;
     if (request->initializer->has_initializer) {
       psx_static_initializer_resolution_t initializer_resolution;
       psx_resolve_static_initializer(
@@ -324,6 +340,12 @@ static void diagnose_function_declaration(
           "関数 '%.*s' の型が以前の宣言と異なります (C11 6.7p3-4)",
           request->name_len, request->name);
       return;
+    case PSX_FUNCTION_DECLARATION_LINKAGE_CONFLICT:
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "declaration of function '%.*s' changes its language linkage",
+          request->name_len, request->name);
+      return;
     case PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION:
       ps_diag_ctx_in(
           diagnostics, request->diag_tok, context,
@@ -351,6 +373,7 @@ int psx_apply_function_declaration_pipeline(
           .name_len = request->name_len,
           .function_qual_type = request->function_qual_type,
           .is_definition = request->is_definition,
+          .is_static = request->is_static,
       },
       &resolution);
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
@@ -748,6 +771,8 @@ int psx_begin_static_local_declaration_pipeline(
   }
   result->global = storage.global;
   result->alias = storage.alias;
+  if (result->global)
+    result->global->is_thread_local = request->is_thread_local ? 1 : 0;
   if (result->global &&
       request->requested_alignment > result->global->requested_alignment)
     result->global->requested_alignment = request->requested_alignment;
@@ -1118,6 +1143,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .name_len = request->name_len,
               .type = request->type,
               .is_extern_decl = 1,
+              .is_thread_local = request->is_thread_local,
               .requested_alignment = request->requested_alignment,
               .initializer = &initializer,
               .diag_tok = request->diag_tok,

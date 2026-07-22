@@ -19,6 +19,13 @@ typedef enum {
   PSX_DECLARATION_PHASE_STANDALONE_TAG,
 } psx_declaration_phase_state_t;
 
+typedef enum {
+  PSX_DECLARATION_CONTEXT_FILE = 0,
+  PSX_DECLARATION_CONTEXT_BLOCK,
+  PSX_DECLARATION_CONTEXT_PARAMETER,
+  PSX_DECLARATION_CONTEXT_MEMBER,
+} psx_declaration_context_t;
+
 typedef struct {
   psx_parsed_decl_specifier_t syntax;
   psx_qual_type_t base_qual_type;
@@ -67,8 +74,11 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier,
     psx_qual_type_t declared_type, int requested_alignment,
-    int is_typedef, int is_parameter, int is_bitfield,
+    int is_typedef, psx_declaration_context_t declaration_context,
+    int is_bitfield,
     token_t *diagnostic_token);
+int psx_decl_specifier_has_storage_class(
+    const psx_parsed_decl_specifier_t *specifier);
 void psx_apply_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

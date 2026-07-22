@@ -91,7 +91,6 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
       !context->parse_assignment_expression ||
       !tokenizer(runtime_context))
     return 0;
-  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   psx_decl_specifier_syntax_options_t syntax_options = {
       .name_classifier = name_classifier,
       .expression_context = context->context,
@@ -101,12 +100,6 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
   };
   *declaration = (psx_parsed_toplevel_declaration_t){0};
   declaration->diagnostic_token = current_token(runtime_context);
-  if (current_token(runtime_context)->kind == TK_TYPEDEF) {
-    declaration->is_typedef = 1;
-    tk_set_current_token_ctx(
-        tk_ctx, current_token(runtime_context)->next);
-  }
-
   if (!psx_try_parse_decl_specifier_syntax_ex(
           &declaration->specifier,
           &(psx_decl_specifier_syntax_options_t){
@@ -124,6 +117,8 @@ int psx_parse_toplevel_declaration_head_syntax_with_context(
         diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     return 0;
   }
+  declaration->is_typedef =
+      declaration->specifier.type_spec.is_typedef ? 1 : 0;
   declaration->is_extern = declaration->specifier.type_spec.is_extern;
   declaration->is_static = declaration->specifier.type_spec.is_static;
   declaration->is_thread_local =

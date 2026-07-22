@@ -54,7 +54,8 @@ static void diagnose_type_name_storage_class(
   for (token_t *token = start;
        token && psx_is_decl_prefix_token(token->kind);
        token = token->next) {
-    if (token->kind == TK_THREAD_LOCAL || token->kind == TK_EXTERN ||
+    if (token->kind == TK_THREAD_LOCAL || token->kind == TK_TYPEDEF ||
+        token->kind == TK_EXTERN ||
         token->kind == TK_STATIC || token->kind == TK_AUTO ||
         token->kind == TK_REGISTER || token->kind == TK_ALIGNAS ||
         token->kind == TK_INLINE || token->kind == TK_NORETURN) {
@@ -63,11 +64,17 @@ static void diagnose_type_name_storage_class(
           diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
     }
   }
-  if (start && start->kind == TK_TYPEDEF) {
-    ps_diag_ctx_in(diagnostics(runtime_context),
-        start, "cast", "%s",
-        diag_message_for_in(diagnostics(runtime_context), DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
-  }
+}
+
+static int type_name_has_forbidden_declaration_specifier(
+    const psx_parsed_decl_specifier_t *specifier) {
+  if (!specifier) return 0;
+  const psx_type_spec_result_t *type_spec = &specifier->type_spec;
+  return type_spec->is_typedef || type_spec->is_extern ||
+         type_spec->is_static || type_spec->is_auto ||
+         type_spec->is_register || type_spec->is_thread_local ||
+         type_spec->is_inline || type_spec->is_noreturn ||
+         specifier->alignas_specifier_count > 0;
 }
 
 static token_t *find_declaration_expression_end(
@@ -292,6 +299,15 @@ static int parse_type_name_syntax_at(
       psx_dispose_type_name_syntax(out);
       tk_set_current_token_ctx(tk_ctx, saved);
       return 0;
+    }
+    if (type_name_has_forbidden_declaration_specifier(
+            &out->specifier)) {
+      ps_diag_ctx_in(
+          diagnostics(runtime_context), out->diagnostic_token,
+          "type-name", "%s",
+          diag_message_for_in(
+              diagnostics(runtime_context),
+              DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
     }
   }
 
@@ -837,18 +853,16 @@ int psx_try_parse_decl_specifier_syntax_ex(
       current_token(runtime_context)->kind == TK_ENUM) {
     specifier->source = PSX_PARSED_DECL_TYPE_TAG;
     parse_tag_specifier(specifier, options);
-    while (current_token(runtime_context)->kind == TK_CONST ||
-           current_token(runtime_context)->kind == TK_VOLATILE ||
-           current_token(runtime_context)->kind == TK_RESTRICT) {
-      if (current_token(runtime_context)->kind == TK_CONST)
-        specifier->type_spec.is_const_qualified = 1;
-      if (current_token(runtime_context)->kind == TK_VOLATILE)
-        specifier->type_spec.is_volatile_qualified = 1;
-      if (current_token(runtime_context)->kind == TK_RESTRICT)
-        specifier->type_spec.is_restrict_qualified = 1;
-      tk_set_current_token_ctx(
-          tk_ctx, current_token(runtime_context)->next);
-    }
+    psx_consume_decl_modifiers_with_syntax_ex(
+        &specifier->type_spec,
+        &(psx_type_spec_syntax_t){
+            .context = options->context,
+            .diagnostics = diagnostics(runtime_context),
+            .tokenizer_context = tk_ctx,
+            .name_classifier = options->name_classifier,
+            .consume_alignas_context = &alignas_context,
+            .consume_alignas = consume_declaration_alignas,
+        });
     return 1;
   }
   if (current_token(runtime_context)->kind == TK_IDENT &&
@@ -860,23 +874,16 @@ int psx_try_parse_decl_specifier_syntax_ex(
         (token_ident_t *)current_token(runtime_context);
     tk_set_current_token_ctx(
         tk_ctx, current_token(runtime_context)->next);
-    while (current_token(runtime_context)->kind == TK_CONST ||
-           current_token(runtime_context)->kind == TK_VOLATILE ||
-           current_token(runtime_context)->kind == TK_RESTRICT ||
-           (current_token(runtime_context)->kind == TK_ATOMIC &&
-            !(current_token(runtime_context)->next &&
-              current_token(runtime_context)->next->kind == TK_LPAREN))) {
-      if (current_token(runtime_context)->kind == TK_CONST)
-        specifier->type_spec.is_const_qualified = 1;
-      if (current_token(runtime_context)->kind == TK_VOLATILE)
-        specifier->type_spec.is_volatile_qualified = 1;
-      if (current_token(runtime_context)->kind == TK_RESTRICT)
-        specifier->type_spec.is_restrict_qualified = 1;
-      if (current_token(runtime_context)->kind == TK_ATOMIC)
-        specifier->type_spec.is_atomic = 1;
-      tk_set_current_token_ctx(
-          tk_ctx, current_token(runtime_context)->next);
-    }
+    psx_consume_decl_modifiers_with_syntax_ex(
+        &specifier->type_spec,
+        &(psx_type_spec_syntax_t){
+            .context = options->context,
+            .diagnostics = diagnostics(runtime_context),
+            .tokenizer_context = tk_ctx,
+            .name_classifier = options->name_classifier,
+            .consume_alignas_context = &alignas_context,
+            .consume_alignas = consume_declaration_alignas,
+        });
     return 1;
   }
   if (options && options->allow_implicit_int) {

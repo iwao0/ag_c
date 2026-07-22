@@ -190,7 +190,8 @@ static psx_decl_specifier_value_status_t resolve_aggregate_body_value(
               &application);
       if (!psx_validate_parsed_decl_specifier_constraints_in_context(
               context->semantic_context, &declaration->specifier,
-              member_qual_type, requested_alignment, 0, 0,
+              member_qual_type, requested_alignment, 0,
+              PSX_DECLARATION_CONTEXT_MEMBER,
               declarator->has_bitfield,
               declarator->diagnostic_token))
         return PSX_DECL_SPECIFIER_VALUE_INVALID;

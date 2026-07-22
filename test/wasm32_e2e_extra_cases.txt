@@ -627,6 +627,7 @@ probes_found_bugs/conditional_void_pointer_null.c
 probes_found_bugs/oldstyle_prototype_default_promotion.c
 probes_found_bugs/declaration_qualifier_constraints.c
 probes_found_bugs/alignas_global_static_storage.c
+probes_found_bugs/storage_class_constraints.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

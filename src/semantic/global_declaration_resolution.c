@@ -163,6 +163,12 @@ void psx_resolve_global_declaration(
     }
   }
   if (resolution->existing) {
+    if ((request->is_static && !resolution->existing->is_static) ||
+        (!request->is_static && !request->is_extern_decl &&
+         resolution->existing->is_static)) {
+      resolution->status = PSX_GLOBAL_DECLARATION_LINKAGE_CONFLICT;
+      return;
+    }
     psx_qual_type_t existing_type =
         ps_gvar_decl_qual_type(resolution->existing);
     if (!global_types_compatible(types, existing_type, request->type)) {

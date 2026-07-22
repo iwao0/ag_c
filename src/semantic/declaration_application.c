@@ -108,7 +108,8 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
           });
       if (!psx_validate_parsed_decl_specifier_constraints_in_context(
               semantic_context, &declaration->specifier,
-              member_qual_type, requested_alignment, 0, 0,
+              member_qual_type, requested_alignment, 0,
+              PSX_DECLARATION_CONTEXT_MEMBER,
               head->has_bitfield, head->diagnostic_token))
         continue;
       member_count += psx_apply_aggregate_member_declaration(
@@ -488,11 +489,21 @@ int psx_resolve_parsed_decl_alignment_in_contexts(
   return alignment;
 }
 
+int psx_decl_specifier_has_storage_class(
+    const psx_parsed_decl_specifier_t *specifier) {
+  if (!specifier) return 0;
+  const psx_type_spec_result_t *type_spec = &specifier->type_spec;
+  return type_spec->is_typedef || type_spec->is_extern ||
+         type_spec->is_static || type_spec->is_auto ||
+         type_spec->is_register || type_spec->is_thread_local;
+}
+
 int psx_validate_parsed_decl_specifier_constraints_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier,
     psx_qual_type_t declared_type, int requested_alignment,
-    int is_typedef, int is_parameter, int is_bitfield,
+    int is_typedef, psx_declaration_context_t declaration_context,
+    int is_bitfield,
     token_t *diagnostic_token) {
   if (!semantic_context || !specifier ||
       declared_type.type_id == PSX_TYPE_ID_INVALID)
@@ -503,9 +514,70 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
           declared_type.type_id, &shape))
     return 0;
   int is_function = shape.kind == PSX_TYPE_FUNCTION;
+  const psx_type_spec_result_t *type_spec = &specifier->type_spec;
+  int is_parameter =
+      declaration_context == PSX_DECLARATION_CONTEXT_PARAMETER;
+  int has_typedef = is_typedef || type_spec->is_typedef;
+  int has_non_typedef_storage =
+      type_spec->is_extern || type_spec->is_static ||
+      type_spec->is_auto || type_spec->is_register ||
+      type_spec->is_thread_local;
+  if (has_typedef && has_non_typedef_storage) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "'typedef' cannot be combined with another storage class");
+    return 0;
+  }
+  if (declaration_context == PSX_DECLARATION_CONTEXT_MEMBER &&
+      psx_decl_specifier_has_storage_class(specifier)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "aggregate member declaration cannot use a storage class");
+    return 0;
+  }
+  if (is_parameter &&
+      (has_typedef || type_spec->is_extern || type_spec->is_static ||
+       type_spec->is_auto || type_spec->is_thread_local)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "parameter declaration may only use the 'register' storage class");
+    return 0;
+  }
+  if (declaration_context == PSX_DECLARATION_CONTEXT_FILE &&
+      (type_spec->is_auto || type_spec->is_register)) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "file-scope declaration cannot use 'auto' or 'register'");
+    return 0;
+  }
+  if (is_function &&
+      (type_spec->is_thread_local || type_spec->is_auto ||
+       type_spec->is_register ||
+       (declaration_context == PSX_DECLARATION_CONTEXT_BLOCK &&
+        type_spec->is_static))) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "invalid storage class for a function declaration");
+    return 0;
+  }
+  if (!is_function &&
+      declaration_context == PSX_DECLARATION_CONTEXT_BLOCK &&
+      type_spec->is_thread_local &&
+      !type_spec->is_static && !type_spec->is_extern) {
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), diagnostic_token,
+        "declaration-specifier",
+        "block-scope '_Thread_local' requires 'static' or 'extern'");
+    return 0;
+  }
   if ((specifier->type_spec.is_inline ||
        specifier->type_spec.is_noreturn) &&
-      (is_typedef || is_parameter || is_bitfield || !is_function)) {
+      (has_typedef || is_parameter || is_bitfield || !is_function)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context), diagnostic_token,
         "declaration-specifier",
@@ -513,7 +585,7 @@ int psx_validate_parsed_decl_specifier_constraints_in_context(
     return 0;
   }
   if (specifier->alignas_specifier_count <= 0) return 1;
-  if (is_typedef || is_parameter || is_bitfield || is_function ||
+  if (has_typedef || is_parameter || is_bitfield || is_function ||
       specifier->type_spec.is_register) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context), diagnostic_token,

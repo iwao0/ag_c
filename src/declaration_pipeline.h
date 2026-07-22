@@ -54,6 +54,7 @@ typedef struct {
   int name_len;
   psx_qual_type_t function_qual_type;
   int is_definition;
+  int is_static;
   const char *diag_context;
   token_t *diag_tok;
 } psx_function_declaration_pipeline_request_t;
@@ -112,6 +113,7 @@ typedef struct {
   char *name;
   int name_len;
   psx_qual_type_t type;
+  int is_thread_local;
   int requested_alignment;
   const psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
@@ -169,6 +171,7 @@ typedef struct {
   char *name;
   int name_len;
   psx_qual_type_t type;
+  int is_thread_local;
   int requested_alignment;
   int has_initializer;
   token_t *diag_tok;

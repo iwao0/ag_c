@@ -101,6 +101,13 @@ static int resolve_function_definition_header(
         "canonical function return type construction failed");
     return 0;
   }
+  if (!psx_validate_parsed_decl_specifier_constraints_in_context(
+          semantic_context, &definition->return_specifier,
+          applied.function_qual_type, 0, 0,
+          PSX_DECLARATION_CONTEXT_FILE, 0,
+          definition->declarator.diagnostic_token)) {
+    return 0;
+  }
 
   token_ident_t *name = definition->declarator.identifier;
   if (!name || !psx_apply_function_declaration_pipeline(
@@ -110,6 +117,7 @@ static int resolve_function_definition_header(
               .name_len = name ? name->len : 0,
               .function_qual_type = applied.function_qual_type,
               .is_definition = 1,
+              .is_static = definition->is_static,
               .diag_context = "funcdef",
               .diag_tok = (token_t *)name,
           })) {
@@ -152,7 +160,9 @@ static int resolve_function_definition_header(
   resolution->parameters = resolved_parameters;
   resolution->parameter_count = applied.nargs;
   resolution->locals = ps_decl_get_storage_objects_in(local_registry);
-  resolution->is_static = definition->is_static;
+  resolution->is_static = ps_function_symbol_has_internal_linkage(
+      ps_ctx_find_function_symbol_in(
+          semantic_context, name->str, name->len));
   resolution->is_variadic = function_shape.is_variadic_function;
   resolution->has_implicit_int_return =
       definition->has_implicit_int_return;
