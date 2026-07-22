@@ -10029,9 +10029,24 @@ static void test_global_declaration_resolution_boundary(
   ASSERT_TRUE(typedef_declaration != NULL);
   ASSERT_TRUE(enum_declaration != NULL);
 
+  expect_parse_ok(test_suite_session,
+      "struct DeferredRecord; "
+      "struct DeferredRecord deferred_record; "
+      "struct DeferredRecord { int value; }; "
+      "int main(void) { deferred_record.value = 42; "
+      "return deferred_record.value != 42; }");
+  expect_parse_ok(test_suite_session,
+      "struct ExternalRecord; "
+      "extern struct ExternalRecord external_record; "
+      "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "struct Incomplete; "
       "struct Incomplete incomplete_object; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(test_suite_session,
+      "struct InternalIncomplete; "
+      "static struct InternalIncomplete internal_incomplete; "
+      "struct InternalIncomplete { int value; }; "
       "int main(void) { return 0; }");
   expect_parse_fail(test_suite_session,
       "extern int conflicting_global[]; "

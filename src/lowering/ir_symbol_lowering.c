@@ -103,6 +103,15 @@ ir_symbol_t *lower_ir_global_symbol(
   }
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts, type_id,
                                      ag_target_info_data_layout(target));
+  /* Streaming functions may take the address of a tentative record before
+   * its later tag definition supplies a layout. No allocation uses this
+   * per-function symbol marker; translation-unit data lowering sees the
+   * completed RecordId and emits the real size. */
+  if ((storage_size <= 0 || alignment <= 0) &&
+      psx_type_kind_is_aggregate(type.kind)) {
+    storage_size = 1;
+    alignment = 1;
+  }
   if (storage_size <= 0 || alignment <= 0) return NULL;
 
   symbol = ir_module_add_symbol(module, name, name_len);

@@ -38,7 +38,7 @@ void psx_resolve_global_declaration(
     const psx_global_declaration_resolution_request_t *request,
     psx_global_declaration_resolution_t *resolution);
 
-int psx_finalize_tentative_global_arrays_in(
+int psx_finalize_tentative_globals_in(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry);
 

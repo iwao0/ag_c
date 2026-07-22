@@ -337,7 +337,7 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
     return 0;
   psx_semantic_context_t *semantic_context =
       ag_compilation_session_semantic_context(stream->session);
-  int finalized = psx_finalize_tentative_global_arrays_in(
+  int finalized = psx_finalize_tentative_globals_in(
       semantic_context,
       ag_compilation_session_global_registry(stream->session));
   ps_ctx_emit_deferred_parser_diagnostics_in(semantic_context);

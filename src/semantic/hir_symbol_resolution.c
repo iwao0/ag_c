@@ -24,9 +24,12 @@ int psx_resolve_global_hir_symbol_spec_in(
   int alignment = psx_type_layout_alignof(semantic_types, record_layouts,
                                           qual_type.type_id, data_layout);
   psx_type_shape_t shape = {0};
-  int is_incomplete_array = psx_semantic_type_table_describe(
-      semantic_types, qual_type.type_id, &shape) &&
-      shape.kind == PSX_TYPE_ARRAY && shape.array_len <= 0 && !shape.is_vla;
+  int has_shape = psx_semantic_type_table_describe(
+      semantic_types, qual_type.type_id, &shape);
+  int is_incomplete_array = has_shape && shape.kind == PSX_TYPE_ARRAY &&
+                            shape.array_len <= 0 && !shape.is_vla;
+  int is_incomplete_record =
+      has_shape && psx_type_kind_is_aggregate(shape.kind) && byte_size <= 0;
   /* Function bodies may refer to the array before a later declaration
    * completes its bound. The element size is sufficient for that access. */
   if ((byte_size <= 0 || alignment <= 0) && is_incomplete_array) {
@@ -41,10 +44,24 @@ int psx_resolve_global_hir_symbol_spec_in(
                                             base.type_id, data_layout);
     }
   }
+  /* An incomplete record object may likewise be named only for operations
+   * that do not require its layout (notably address-of). HIR symbols retain
+   * a nonzero opaque storage marker until the shared RecordId is completed. */
+  if ((byte_size <= 0 || alignment <= 0) && is_incomplete_record) {
+    byte_size = 1;
+    alignment = 1;
+  }
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          ps_ctx_scope_graph(semantic_context),
+          PSX_SCOPE_ID_TRANSLATION_UNIT, PSX_NAMESPACE_ORDINARY,
+          ps_gvar_name(global), ps_gvar_name_len(global));
+  if (!declaration || declaration->payload != global) return 0;
   *symbol = (psx_hir_symbol_spec_t){
       .name = ps_gvar_name(global),
       .name_length = ps_gvar_name_len(global) > 0
                          ? (size_t)ps_gvar_name_len(global) : 0,
+      .declaration_id = declaration->id,
       .qual_type = qual_type,
       .byte_size = byte_size,
       .alignment = alignment,

@@ -154,6 +154,7 @@ static const wasm_e2e_case_t cases[] = {
     {"for", "inc", "test/fixtures/for/inc.c"},
     {"for", "post_inc_expr", "test/fixtures/for/post_inc_expr.c"},
     {"for", "empty_for", "test/fixtures/for/empty_for.c"},
+    {"for", "declaration_multiple", "test/fixtures/for/declaration_multiple.c"},
 
     {"bitwise", "bit_and", "test/fixtures/bitwise/bit_and.c"},
     {"bitwise", "bit_xor", "test/fixtures/bitwise/bit_xor.c"},
@@ -418,6 +419,7 @@ static const wasm_e2e_case_t cases[] = {
     {"inline_func", "static_inline", "test/fixtures/inline_func/static_inline.c"},
     {"inline_func", "multi_inline", "test/fixtures/inline_func/multi_inline.c"},
     {"inline_func", "extern_inline", "test/fixtures/inline_func/extern_inline.c"},
+    {"inline_func", "static_inline_pointer", "test/fixtures/inline_func/static_inline_pointer.c"},
     {"flex_array", "parse_ok", "test/fixtures/flex_array/parse_ok.c"},
     {"flex_array", "sizeof_flex", "test/fixtures/flex_array/sizeof_flex.c"},
     {"array", "brace_wrapped_string_concat", "test/fixtures/array/brace_wrapped_string_concat.c"},
@@ -599,6 +601,7 @@ static const wasm_e2e_case_t cases[] = {
     {"func_name", "each_func_distinct", "test/fixtures/func_name/each_func_distinct.c"},
     {"func_name", "first_char_helper", "test/fixtures/func_name/first_char_helper.c"},
     {"func_name", "first_char_main", "test/fixtures/func_name/first_char_main.c"},
+    {"func_name", "sizeof_and_terminator", "test/fixtures/func_name/sizeof_and_terminator.c"},
     {"string", "empty", "test/fixtures/string/empty.c"},
     {"string", "charlit", "test/fixtures/string/charlit.c"},
     {"string", "newline", "test/fixtures/string/newline.c"},

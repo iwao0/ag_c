@@ -344,6 +344,14 @@ static void lower_global_object(global_var_t *global, void *user) {
   }
   int alignment = type_alignment_id(
       lowering, type_id);
+  /* An extern declaration of an incomplete record allocates no storage in
+   * this translation unit. Keep only an opaque nonzero symbol description
+   * so address relocations can target the definition in another unit. */
+  if (is_extern && has_type && psx_type_kind_is_aggregate(type.kind) &&
+      (storage_size <= 0 || alignment <= 0)) {
+    storage_size = 1;
+    alignment = 1;
+  }
   ir_data_object_t *object = ir_data_module_add_object(
       lowering->module, name, name_len, IR_DATA_OBJECT);
   if (!object || storage_size <= 0 || alignment <= 0) {

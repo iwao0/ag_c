@@ -2,6 +2,7 @@
 
 #include "scope_graph.h"
 
+#include "../diag/diag.h"
 #include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
@@ -107,10 +108,18 @@ void psx_resolve_global_declaration(
           types, request->type.type_id, &incoming_shape))
     return;
 
-  /* An external-linkage incomplete array without an initializer is a
+  int contains_incomplete_record = type_contains_incomplete_record(
+      semantic_context, request->type.type_id);
+  /* A tentative definition with external linkage may name an incomplete
+   * record that is completed later in the translation unit. Internal
+   * linkage and initialized definitions still require a complete type at
+   * the declaration (C11 6.9.2p3). */
+  int defer_incomplete_record =
+      contains_incomplete_record && !request->is_static &&
+      !request->has_initializer;
+  /* An external-linkage incomplete array without an initializer is also a
    * tentative definition. A static one is forbidden by C11 6.9.2p3. */
-  if (type_contains_incomplete_record(
-          semantic_context, request->type.type_id) ||
+  if ((contains_incomplete_record && !defer_incomplete_record) ||
       (incoming_shape.kind == PSX_TYPE_ARRAY &&
        incoming_shape.array_len <= 0 && !request->is_extern_decl &&
        !request->has_initializer && request->is_static)) {
@@ -125,7 +134,8 @@ void psx_resolve_global_declaration(
                                           types, request->type.type_id)
                                     : request->type;
   if (object_type.type_id == PSX_TYPE_ID_INVALID ||
-      !type_is_complete_object(semantic_context, object_type.type_id)) {
+      (!defer_incomplete_record &&
+       !type_is_complete_object(semantic_context, object_type.type_id))) {
     return;
   }
   resolution->declaration_qual_type = request->type;
@@ -177,10 +187,34 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   int succeeded;
-} tentative_array_finalization_t;
+} tentative_global_finalization_t;
 
-static void finalize_tentative_array(global_var_t *global, void *user) {
-  tentative_array_finalization_t *finalization = user;
+static void report_unresolved_incomplete_global(
+    tentative_global_finalization_t *finalization,
+    global_var_t *global) {
+  psx_scope_graph_t *scope_graph = ps_ctx_scope_graph(
+      finalization->semantic_context);
+  const psx_scope_declaration_t *declaration =
+      psx_scope_graph_lookup_declaration_in_scope(
+          scope_graph, PSX_SCOPE_ID_TRANSLATION_UNIT,
+          PSX_NAMESPACE_ORDINARY, ps_gvar_name(global),
+          ps_gvar_name_len(global));
+  const char *input = declaration ? declaration->source_input : NULL;
+  const char *loc = input && declaration->source_byte_offset >= 0
+                        ? input + declaration->source_byte_offset
+                        : input;
+  ag_diagnostic_context_t *diagnostics = ps_ctx_diagnostics(
+      finalization->semantic_context);
+  (void)diag_report_atf_in(
+      diagnostics, DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN,
+      input, loc, "%s: '%.*s'",
+      diag_message_for_in(
+          diagnostics, DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN),
+      ps_gvar_name_len(global), ps_gvar_name(global));
+}
+
+static void finalize_tentative_global(global_var_t *global, void *user) {
+  tentative_global_finalization_t *finalization = user;
   if (!global || !finalization || !finalization->succeeded ||
       ps_gvar_is_extern_decl(global))
     return;
@@ -189,32 +223,44 @@ static void finalize_tentative_array(global_var_t *global, void *user) {
   psx_qual_type_t current = ps_gvar_decl_qual_type(global);
   psx_type_shape_t shape = {0};
   if (!psx_semantic_type_table_describe(
-          types, current.type_id, &shape) ||
-      shape.kind != PSX_TYPE_ARRAY || shape.array_len > 0 || shape.is_vla)
-    return;
-  /* C11 6.9.2p5 completes an otherwise-incomplete tentative array as if
-   * it had one element at the end of the translation unit. */
-  psx_qual_type_t element =
-      psx_semantic_type_table_base(types, current.type_id);
-  psx_qual_type_t completed = ps_ctx_intern_array_of_qual_type_in(
-      finalization->semantic_context, element, 1, 0);
-  completed.qualifiers = current.qualifiers;
-  if (completed.type_id == PSX_TYPE_ID_INVALID ||
-      !ps_global_registry_complete_array_qual_type(
-          finalization->global_registry, global, completed))
+          types, current.type_id, &shape)) {
     finalization->succeeded = 0;
+    return;
+  }
+  if (shape.kind == PSX_TYPE_ARRAY && shape.array_len <= 0 &&
+      !shape.is_vla) {
+    /* C11 6.9.2p5 completes an otherwise-incomplete tentative array as if
+     * it had one element at the end of the translation unit. */
+    psx_qual_type_t element =
+        psx_semantic_type_table_base(types, current.type_id);
+    psx_qual_type_t completed = ps_ctx_intern_array_of_qual_type_in(
+        finalization->semantic_context, element, 1, 0);
+    completed.qualifiers = current.qualifiers;
+    if (completed.type_id == PSX_TYPE_ID_INVALID ||
+        !ps_global_registry_complete_array_qual_type(
+            finalization->global_registry, global, completed)) {
+      finalization->succeeded = 0;
+      return;
+    }
+    current = completed;
+  }
+  if (type_contains_incomplete_record(
+          finalization->semantic_context, current.type_id)) {
+    report_unresolved_incomplete_global(finalization, global);
+    finalization->succeeded = 0;
+  }
 }
 
-int psx_finalize_tentative_global_arrays_in(
+int psx_finalize_tentative_globals_in(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry) {
   if (!semantic_context || !global_registry) return 0;
-  tentative_array_finalization_t finalization = {
+  tentative_global_finalization_t finalization = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .succeeded = 1,
   };
   ps_iter_globals_in(
-      global_registry, finalize_tentative_array, &finalization);
+      global_registry, finalize_tentative_global, &finalization);
   return finalization.succeeded;
 }

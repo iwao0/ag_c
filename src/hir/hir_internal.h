@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
   const char *name;
   size_t name_length;
+  psx_decl_id_t declaration_id;
   psx_qual_type_t qual_type;
   int byte_size;
   int alignment;

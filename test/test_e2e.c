@@ -182,6 +182,7 @@ static const test_case_t test_cases[] = {
     {"for", "inc", CASE_ASSERT_FILE, "test/fixtures/for/inc.c", 0, 0},
     {"for", "post_inc_expr", CASE_ASSERT_FILE, "test/fixtures/for/post_inc_expr.c", 0, 0},
     {"for", "empty_for", CASE_ASSERT_FILE, "test/fixtures/for/empty_for.c", 0, 0},
+    {"for", "declaration_multiple", CASE_ASSERT_FILE, "test/fixtures/for/declaration_multiple.c", 0, 0},
 
     {"bitwise", "bit_and", CASE_ASSERT_FILE, "test/fixtures/bitwise/bit_and.c", 0, 0},
     {"bitwise", "bit_xor", CASE_ASSERT_FILE, "test/fixtures/bitwise/bit_xor.c", 0, 0},
@@ -811,6 +812,7 @@ static const test_case_t test_cases[] = {
     {"func_name", "first_char_main", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_main.c", 0, 0},
     {"func_name", "first_char_helper", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_helper.c", 0, 0},
     {"func_name", "each_func_distinct", CASE_ASSERT_FILE, "test/fixtures/func_name/each_func_distinct.c", 0, 0},
+    {"func_name", "sizeof_and_terminator", CASE_ASSERT_FILE, "test/fixtures/func_name/sizeof_and_terminator.c", 0, 0},
     // 2D VLA: constant inner dimension
     {"vla_2d", "const_inner_read", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_read.c", 0, 0},
     {"vla_2d", "const_inner_loop", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_loop.c", 0, 0},
@@ -821,11 +823,13 @@ static const test_case_t test_cases[] = {
     {"vla_param", "basic_access", CASE_ASSERT_FILE, "test/fixtures/vla_param/basic_access.c", 0, 0},
     {"vla_param", "sizeof_is_ptr", CASE_ASSERT_FILE, "test/fixtures/vla_param/sizeof_is_ptr.c", 0, 0},
     {"vla_param", "write_through", CASE_ASSERT_FILE, "test/fixtures/vla_param/write_through.c", 0, 0},
+    {"vla_param", "static_restrict_access", CASE_ASSERT_FILE, "test/fixtures/vla_param/static_restrict_access.c", 0, 0},
     // inline 指定子: 単一翻訳単位では通常関数と同様にコード生成 (C11 6.7.4)
     {"inline_func", "basic_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/basic_inline.c", 0, 0},
     {"inline_func", "static_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/static_inline.c", 0, 0},
     {"inline_func", "extern_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/extern_inline.c", 0, 0},
     {"inline_func", "multi_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/multi_inline.c", 0, 0},
+    {"inline_func", "static_inline_pointer", CASE_ASSERT_FILE, "test/fixtures/inline_func/static_inline_pointer.c", 0, 0},
     // グローバル変数: 暫定定義
     {"global_var", "tentative_rw", CASE_ASSERT_FILE, "test/fixtures/global_var/tentative_rw.c", 0, 0},
     {"global_var", "tentative_multi_func", CASE_ASSERT_FILE, "test/fixtures/global_var/tentative_multi_func.c", 0, 0},
@@ -1322,6 +1326,10 @@ static const test_case_t test_cases[] = {
     {"probes", "tentative_definition_with_initializer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_definition_with_initializer.c", 0, 0},
     {"probes", "function_parameter_adjustment_redeclaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_parameter_adjustment_redeclaration.c", 0, 0},
     {"probes", "block_scope_extern_binding", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_binding.c", 0, 0},
+    {"probes", "tentative_incomplete_record_completion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_record_completion.c", 0, 0},
+    {"probes", "tentative_incomplete_record_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_record_address.c", 0, 0},
+    {"probes", "extern_incomplete_record_declaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_incomplete_record_declaration.c", 0, 0},
+    {"probes", "tentative_incomplete_union_completion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_union_completion.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
@@ -1398,6 +1406,12 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"static_tentative_incomplete_array_rejected",
      "static int values[]; int main(void) { return 0; }",
      "不完全型のオブジェクトは宣言できません"},
+    {"static_tentative_incomplete_record_rejected",
+     "struct Value; static struct Value value; struct Value { int member; }; int main(void) { return 0; }",
+     "不完全型のオブジェクトは宣言できません"},
+    {"unresolved_tentative_incomplete_record_rejected",
+     "struct Value; struct Value value; int main(void) { return 0; }",
+     "E3037"},
     {"funcdef_unnamed_param_rejected",
      "int bad(int) { return 0; }",
      "必要な項目がありません: 仮引数"},

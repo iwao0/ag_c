@@ -572,6 +572,7 @@ vla_2d/runtime_inner_loop.c
 vla_2d/runtime_inner_read.c
 vla_param/basic_access.c
 vla_param/sizeof_is_ptr.c
+vla_param/static_restrict_access.c
 vla_param/write_through.c
 probes_found_bugs/struct_funcptr_designated_zero_init.c
 probes_found_bugs/nested_struct_funcptr_designated_zero_init.c
@@ -588,6 +589,10 @@ probes_found_bugs/scope_graph_namespace_lifetime.c
 probes_found_bugs/target_layout_pointer_record.c
 probes_found_bugs/vla_typedef_bound_identity.c
 probes_found_bugs/abi_dynamic_mixed_params.c
+probes_found_bugs/tentative_incomplete_record_completion.c
+probes_found_bugs/tentative_incomplete_record_address.c
+probes_found_bugs/extern_incomplete_record_declaration.c
+probes_found_bugs/tentative_incomplete_union_completion.c
 probes_found_bugs/pp_active_macro_redefinition.c
 probes_found_bugs/qualified_pointer_array_function.c
 probes_found_bugs/prototype_typedef_array_qualifiers.c

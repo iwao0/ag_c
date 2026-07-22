@@ -54,6 +54,7 @@ typedef struct {
 struct psx_hir_symbol_t {
   char *name;
   size_t name_length;
+  psx_decl_id_t declaration_id;
   psx_qual_type_t qual_type;
   int byte_size;
   int alignment;
@@ -235,16 +236,24 @@ psx_hir_symbol_id_t psx_hir_module_intern_symbol(
       spec->byte_size <= 0 || spec->alignment <= 0)
     return PSX_HIR_SYMBOL_ID_INVALID;
   for (size_t i = 0; i < module->symbol_count; i++) {
-    const psx_hir_symbol_t *symbol = module->symbols[i];
+    psx_hir_symbol_t *symbol = module->symbols[i];
     if (symbol->name_length != spec->name_length ||
         memcmp(symbol->name, spec->name, spec->name_length) != 0)
       continue;
-    if (symbol->qual_type.type_id != spec->qual_type.type_id ||
+    if (symbol->declaration_id == PSX_DECL_ID_INVALID ||
+        spec->declaration_id == PSX_DECL_ID_INVALID ||
+        symbol->declaration_id != spec->declaration_id ||
         symbol->qual_type.qualifiers != spec->qual_type.qualifiers ||
-        symbol->byte_size != spec->byte_size ||
-        symbol->alignment != spec->alignment ||
         symbol->is_thread_local != spec->is_thread_local)
       return PSX_HIR_SYMBOL_ID_INVALID;
+    /* The same DeclId can acquire a composite array type or a complete
+     * RecordId later in the translation unit. Refresh the canonical type
+     * and layout without creating a second symbol identity. */
+    symbol->qual_type = spec->qual_type;
+    symbol->byte_size = spec->byte_size;
+    symbol->alignment = spec->alignment;
+    symbol->is_extern = spec->is_extern;
+    symbol->is_static = spec->is_static;
     return (psx_hir_symbol_id_t)(i + 1);
   }
   if (!reserve_symbols(module, module->symbol_count + 1))
@@ -257,6 +266,7 @@ psx_hir_symbol_id_t psx_hir_module_intern_symbol(
     return PSX_HIR_SYMBOL_ID_INVALID;
   }
   symbol->name_length = spec->name_length;
+  symbol->declaration_id = spec->declaration_id;
   symbol->qual_type = spec->qual_type;
   symbol->byte_size = spec->byte_size;
   symbol->alignment = spec->alignment;
