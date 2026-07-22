@@ -581,6 +581,7 @@ static const test_case_t test_cases[] = {
     {"pointer", "arith_sub", CASE_ASSERT_FILE, "test/fixtures/pointer/arith_sub.c", 0, 0},
     {"pointer", "ptr_subtract", CASE_ASSERT_FILE, "test/fixtures/pointer/ptr_subtract.c", 0, 0},
     {"pointer", "array_decay_diff", CASE_ASSERT_FILE, "test/fixtures/pointer/array_decay_diff.c", 0, 0},
+    {"pointer", "comma_postfix", CASE_ASSERT_FILE, "test/fixtures/pointer/comma_postfix.c", 0, 0},
     {"pointer", "global_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/pointer/global_funcptr_array.c", 0, 0},
     {"pointer", "arith_char", CASE_ASSERT_FILE, "test/fixtures/pointer/arith_char.c", 0, 0},
     {"pointer", "triple_deref", CASE_ASSERT_FILE, "test/fixtures/pointer/triple_deref.c", 0, 0},
@@ -619,6 +620,7 @@ static const test_case_t test_cases[] = {
     {"array", "struct_array_brace_init", CASE_ASSERT_FILE, "test/fixtures/array/struct_array_brace_init.c", 0, 0},
     {"array", "struct_array_brace_partial", CASE_ASSERT_FILE, "test/fixtures/array/struct_array_brace_partial.c", 0, 0},
     {"array", "char_array_string_init", CASE_ASSERT_FILE, "test/fixtures/array/char_array_string_init.c", 0, 0},
+    {"array", "char_3d_string_rows", CASE_ASSERT_FILE, "test/fixtures/array/char_3d_string_rows.c", 0, 0},
     {"array", "inferred_size_brace", CASE_ASSERT_FILE, "test/fixtures/array/inferred_size_brace.c", 0, 0},
     {"array", "inferred_size_brace_trailing_comma", CASE_ASSERT_FILE, "test/fixtures/array/inferred_size_trailing_comma.c", 0, 0},
     {"array", "inferred_size_string", CASE_ASSERT_FILE, "test/fixtures/array/inferred_size_string.c", 0, 0},
@@ -791,6 +793,7 @@ static const test_case_t test_cases[] = {
     {"vla", "loop_fill", CASE_ASSERT_FILE, "test/fixtures/vla/loop_fill.c", 0, 0},
     {"vla", "param_size", CASE_ASSERT_FILE, "test/fixtures/vla/param_size.c", 0, 0},
     {"vla", "sizeof_vla", CASE_ASSERT_FILE, "test/fixtures/vla/sizeof_vla.c", 0, 0},
+    {"vla", "typedef_capture", CASE_ASSERT_FILE, "test/fixtures/type_decl/vla_typedef_capture.c", 0, 0},
     // 構造体引数渡し (ARM64 ABI)
     {"struct_arg", "small_sum", CASE_ASSERT_FILE, "test/fixtures/struct_arg/small_sum.c", 0, 0},
     {"struct_arg", "small_member", CASE_ASSERT_FILE, "test/fixtures/struct_arg/small_member.c", 0, 0},
@@ -1330,6 +1333,15 @@ static const test_case_t test_cases[] = {
     {"probes", "tentative_incomplete_record_address", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_record_address.c", 0, 0},
     {"probes", "extern_incomplete_record_declaration", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_incomplete_record_declaration.c", 0, 0},
     {"probes", "tentative_incomplete_union_completion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tentative_incomplete_union_completion.c", 0, 0},
+    {"probes", "deferred_type_name_binding", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/deferred_type_name_binding.c", 0, 0},
+    {"probes", "generic_semantic_selection", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_semantic_selection.c", 0, 0},
+    {"probes", "local_typedef_funcptr_array_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_typedef_funcptr_array_call.c", 0, 0},
+    {"probes", "sizeof_vla_type_name", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_vla_type_name.c", 0, 0},
+    {"probes", "type_name_shadowing_delayed", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/type_name_shadowing_delayed.c", 0, 0},
+    {"probes", "unary_semantic_resolution", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unary_semantic_resolution.c", 0, 0},
+    {"probes", "function_designator_operator_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_designator_operator_call.c", 0, 0},
+    {"probes", "array_parameter_const_adjustment", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_parameter_const_adjustment.c", 0, 0},
+    {"probes", "block_scope_extern_array_binding", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/block_scope_extern_array_binding.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
