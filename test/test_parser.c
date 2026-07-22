@@ -7897,6 +7897,23 @@ static void test_direct_function_typed_hir_resolution_boundary(
       PSX_SYNTAX_TYPED_HIR_REJECTION_CALL_ARGUMENT_COUNT_MISMATCH,
       ND_FUNCALL);
   assert_direct_function_rejection(test_suite_session,
+      "int __direct_generic_incomplete_type(void) { "
+      "return _Generic(1, int[]: 1, default: 2); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID,
+      ND_GENERIC_SELECTION);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_generic_implicit_incomplete_tag(void) { "
+      "return _Generic(1, struct __direct_missing: 1, default: 2); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID,
+      ND_GENERIC_SELECTION);
+  assert_direct_function_rejection(test_suite_session,
+      "int __direct_compound_incomplete_type(void) { "
+      "struct __direct_incomplete; "
+      "return _Generic(1, int: 0, "
+      "default: (struct __direct_incomplete){0}); }",
+      PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+      ND_COMPOUND_LITERAL);
+  assert_direct_function_rejection(test_suite_session,
       "int __direct_generic_duplicate_default(void) { "
       "return _Generic(1, default: 1, default: 2); }",
       PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT,

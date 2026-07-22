@@ -201,6 +201,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_CAST_OPERAND_NOT_SCALAR, "E3111", "parser.cast_operand_not_scalar"},
     {DIAG_ERR_PARSER_ADDRESS_REQUIRES_ADDRESSABLE_VALUE, "E3112", "parser.address_requires_addressable_value"},
     {DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD, "E3113", "parser.address_of_bitfield"},
+    {DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE, "E3114", "parser.compound_literal_invalid_object_type"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

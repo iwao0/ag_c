@@ -311,6 +311,13 @@ static int diagnose_direct_syntax_rejection(
                     diagnostics,
                     DIAG_ERR_PARSER_CALL_ARGUMENT_COUNT_MISMATCH));
       return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID:
+      diag_emit_tokf_in(
+          diagnostics, DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
+      return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_DUPLICATE_DEFAULT:
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_GENERIC_DUPLICATE_DEFAULT,
@@ -434,6 +441,14 @@ static int diagnose_direct_syntax_rejection(
           token, "%s", diag_message_for_in(
                          diagnostics,
                          DIAG_ERR_PARSER_ADDRESS_OF_BITFIELD));
+      return 1;
+    case PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE:
+      diag_emit_tokf_in(
+          diagnostics,
+          DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+          token, "%s", diag_message_for_in(
+                           diagnostics,
+                           DIAG_ERR_PARSER_COMPOUND_LITERAL_INVALID_OBJECT_TYPE));
       return 1;
     case PSX_SYNTAX_TYPED_HIR_REJECTION_INITIALIZER_UNION_TOO_MANY_ELEMENTS:
       diag_emit_tokf_in(

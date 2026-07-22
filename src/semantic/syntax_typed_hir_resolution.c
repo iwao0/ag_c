@@ -544,6 +544,39 @@ static int preflight_direct_sizeof_operand(
   return resolved;
 }
 
+static int direct_type_is_complete_object(
+    direct_resolution_context_t *context, psx_type_id_t type_id) {
+  if (!context || type_id == PSX_TYPE_ID_INVALID) return 0;
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(context->semantic_context);
+  psx_type_shape_t type = {0};
+  if (!psx_semantic_type_table_describe(types, type_id, &type)) return 0;
+  if (type.kind == PSX_TYPE_INVALID || type.kind == PSX_TYPE_VOID ||
+      type.kind == PSX_TYPE_FUNCTION)
+    return 0;
+  if (type.kind == PSX_TYPE_POINTER) return 1;
+  if (psx_type_kind_is_aggregate(type.kind)) {
+    const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+        context->semantic_context, type.record_id);
+    return record && record->is_complete;
+  }
+  if (type.kind == PSX_TYPE_ARRAY) {
+    psx_qual_type_t element = psx_semantic_type_table_base(types, type_id);
+    return !type.is_vla && type.array_len > 0 &&
+           direct_type_is_complete_object(context, element.type_id);
+  }
+  return 1;
+}
+
+static int direct_generic_association_type_is_valid(
+    direct_resolution_context_t *context, psx_qual_type_t type) {
+  const psx_semantic_type_table_t *types = context
+      ? ps_ctx_semantic_type_table_in(context->semantic_context)
+      : NULL;
+  return types && direct_type_is_complete_object(context, type.type_id) &&
+         !psx_semantic_type_table_contains_vla_array(types, type.type_id);
+}
+
 static int resolve_direct_generic_selection(
     direct_resolution_context_t *context,
     const node_generic_selection_t *selection,
@@ -587,7 +620,17 @@ static int resolve_direct_generic_selection(
             context->semantic_context, context->global_registry,
             context->local_registry, &association->type_name,
             &association_types[i]))
-      return 0;
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID,
+          &selection->base);
+    if (!association->is_default &&
+        !direct_generic_association_type_is_valid(
+            context, association_types[i]))
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_GENERIC_ASSOC_TYPE_INVALID,
+          &selection->base);
   }
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_qual_types_in(
@@ -4510,7 +4553,10 @@ static int resolve_direct_compound_literal(
           context->semantic_context, context->global_registry,
           context->local_registry, &compound->type_name,
           &object_qual_type))
-    return 0;
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+        &compound->base);
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(context->semantic_context);
   psx_type_shape_t object_shape = {0};
@@ -4529,10 +4575,16 @@ static int resolve_direct_compound_literal(
         context, object_qual_type, &initializer);
     if (!psx_semantic_type_table_describe(
             semantic_types, object_qual_type.type_id, &object_shape))
-      return 0;
+      return note_direct_semantic_rejection(
+          context,
+          PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+          &compound->base);
   }
   if (object_qual_type.type_id == PSX_TYPE_ID_INVALID)
-    return 0;
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+        &compound->base);
 
   direct_compound_literal_binding_t *binding = arena_alloc_in(
       ps_ctx_arena(context->semantic_context), sizeof(*binding));
@@ -4550,7 +4602,10 @@ static int resolve_direct_compound_literal(
           compound->type_name.scope_seq,
           context->function_name != NULL,
           &binding->plan))
-    return 0;
+    return note_direct_semantic_rejection(
+        context,
+        PSX_SYNTAX_TYPED_HIR_REJECTION_COMPOUND_LITERAL_INVALID_OBJECT_TYPE,
+        &compound->base);
   const node_string_t *string_initializer =
       direct_character_array_string_initializer(&initializer);
   if (object_shape.kind == PSX_TYPE_ARRAY && string_initializer) {
